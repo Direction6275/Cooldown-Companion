@@ -181,6 +181,7 @@ local function RefreshColumn4(container)
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
             CS.selectedTab = tab
             CS.panelSettingsTab = tab
+            CooldownCompanion:ClearAllConditionalVisualPreviews()
             if tab ~= "effects" then
                 CooldownCompanion:ClearAllTextureIndicatorPreviews()
                 if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then

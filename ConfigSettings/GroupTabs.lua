@@ -48,6 +48,7 @@ local BuildProcGlowControls = ST._BuildProcGlowControls
 local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
+local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
@@ -2092,6 +2093,9 @@ local function BuildEffectsTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     CreateCheckboxPromoteButton(oorCb, nil, "showOutOfRange", group, style)
+    if style.showOutOfRange and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Out of Range State (3s)", "out_of_range")
+    end
 
     -- Loss of Control
     local locCb = BuildLossOfControlControls(container, style, function()
@@ -2104,6 +2108,9 @@ local function BuildEffectsTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
+    if style.showUnusable and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Unusable State (3s)", "unusable")
+    end
 
     -- Show Tooltips
     local tooltipCb = BuildShowTooltipsControls(container, style, function()
@@ -2566,6 +2573,9 @@ local function BuildAppearanceTab(container)
 
     local cdTextAdvExpanded, cdTextAdvBtn = AddAdvancedToggle(cdTextCb, "cooldownText", tabInfoButtons, style.showCooldownText)
     CreateCheckboxPromoteButton(cdTextCb, cdTextAdvBtn, "cooldownText", group, style)
+    if style.showCooldownText and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Cooldown State (3s)", "cooldown")
+    end
 
     if cdTextAdvExpanded and style.showCooldownText then
         AddFontControls(container, style, "cooldown", { size = 12 }, refreshStyle)
@@ -2597,6 +2607,10 @@ local function BuildAppearanceTab(container)
 
     local chargeAdvExpanded, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "chargeText", tabInfoButtons, style.showChargeText ~= false)
     CreateCheckboxPromoteButton(chargeTextCb, chargeAdvBtn, "chargeText", group, style)
+    if style.showChargeText ~= false and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Missing Charges (3s)", "charge_missing")
+        AddConditionalPreviewButton(container, "Preview Zero Charges (3s)", "charge_zero")
+    end
 
     if chargeAdvExpanded and style.showChargeText ~= false then
         AddFontControls(container, style, "charge", { size = 12 }, refreshStyle)
@@ -2621,6 +2635,9 @@ local function BuildAppearanceTab(container)
 
     local auraTextAdvExpanded, auraTextAdvBtn = AddAdvancedToggle(auraTextCb, "auraText", tabInfoButtons, style.showAuraText ~= false)
     local auraTextPromoteBtn = CreateCheckboxPromoteButton(auraTextCb, auraTextAdvBtn, "auraText", group, style)
+    if style.showAuraText ~= false and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Aura State (3s)", "aura")
+    end
 
     local auraPosInfo = CreateInfoButton(auraTextCb.frame, auraTextPromoteBtn, "LEFT", "RIGHT", 4, 0, {
         "Shared Position",

@@ -178,7 +178,10 @@ local function UpdateIconTint(button, buttonData, style)
     local r, g, b, a = 1, 1, 1, bc and bc[4] or 1
     local stateOverride = false
     if style.showOutOfRange then
-        if buttonData.type == "spell" then
+        if button._conditionalOutOfRangePreview then
+            r, g, b = 1, 0.2, 0.2
+            stateOverride = true
+        elseif buttonData.type == "spell" then
             if button._spellOutOfRange then
                 r, g, b = 1, 0.2, 0.2
                 stateOverride = true
@@ -198,7 +201,12 @@ local function UpdateIconTint(button, buttonData, style)
     end
     if not stateOverride and style.showUnusable then
         local uc = style.iconUnusableTintColor
-        if buttonData.type == "spell" then
+        if button._conditionalUnusablePreview then
+            r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
+            a = uc and uc[4] or a
+            stateOverride = true
+            button._unusableTintActive = true
+        elseif buttonData.type == "spell" then
             local spellID = button._displaySpellId or buttonData.id
             local isUsable = C_Spell.IsSpellUsable(spellID)
             if not isUsable then

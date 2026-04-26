@@ -15,6 +15,7 @@ local pairs = pairs
 local ipairs = ipairs
 local tonumber = tonumber
 local wipe = wipe
+local GetTime = GetTime
 local C_Timer_After = C_Timer.After
 
 -- Token stores for each glow type (used to invalidate stale timed callbacks)
@@ -29,6 +30,8 @@ local readyButtonPreviewTokens = {}
 local kphPreviewTokens = {}
 local textureIndicatorPreviewTokens = {}
 local triggerEffectPreviewTokens = {}
+local conditionalVisualGroupTokens = {}
+local conditionalVisualButtonTokens = {}
 
 local function BumpButtonPreviewToken(tokenStore, groupId, buttonIndex)
     local groupTokens = tokenStore[groupId]
@@ -126,6 +129,151 @@ local function ClearAllPreviews(self, previewFlag, cacheFlag, cacheValue, groupT
             if onClear then onClear(button) end
             if updateCooldown and button.UpdateCooldown then
                 button:UpdateCooldown()
+            end
+        end
+    end
+end
+
+local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
+    cooldown = { kind = "cooldown", duration = 12, remaining = 8 },
+    aura = { kind = "aura", duration = 12, remaining = 8, stackText = "3" },
+    pandemic = { kind = "pandemic", duration = 12, remaining = 3, stackText = "3" },
+    charge_full = { kind = "charge_full" },
+    charge_missing = { kind = "charge_missing" },
+    charge_zero = { kind = "charge_zero" },
+    unusable = { kind = "unusable" },
+    out_of_range = { kind = "out_of_range" },
+}
+
+local function BuildConditionalVisualPreviewState(previewKind, sampleState)
+    local base = CONDITIONAL_VISUAL_PREVIEW_DEFAULTS[previewKind] or CONDITIONAL_VISUAL_PREVIEW_DEFAULTS.cooldown
+    local state = {}
+    for key, value in pairs(base) do
+        state[key] = value
+    end
+    if sampleState then
+        for key, value in pairs(sampleState) do
+            state[key] = value
+        end
+    end
+
+    local duration = tonumber(state.duration)
+    local remaining = tonumber(state.remaining)
+    if duration and duration > 0 then
+        if not remaining or remaining <= 0 or remaining > duration then
+            remaining = duration
+        end
+        state.duration = duration
+        state.remaining = remaining
+        state.startTime = GetTime() - (duration - remaining)
+    end
+    return state
+end
+
+local function ClearConditionalVisualPreviewDerivedFields(button)
+    if button._conditionalAuraPreview then
+        button._auraActive = false
+        button._auraHasTimer = false
+        button._auraStackText = ""
+    end
+    if button._conditionalPandemicPreview then
+        button._inPandemic = false
+        button._pandemicGraceStart = nil
+    end
+    button._conditionalPreviewKind = nil
+    button._conditionalPreviewStartTime = nil
+    button._conditionalPreviewDuration = nil
+    button._conditionalPreviewRemaining = nil
+    button._conditionalPreviewDomain = nil
+    button._conditionalAuraPreview = nil
+    button._conditionalPandemicPreview = nil
+    button._conditionalUnusablePreview = nil
+    button._conditionalOutOfRangePreview = nil
+    button._conditionalReadyPreview = nil
+    button._conditionalBarAuraActivePreview = nil
+end
+
+local function RefreshConditionalVisualPreviewButton(self, button)
+    if button.UpdateCooldown then
+        button:UpdateCooldown()
+    elseif type(self.UpdateAuraTextureVisual) == "function" then
+        self:UpdateAuraTextureVisual(button)
+    end
+end
+
+local function SetConditionalVisualPreviewOnButton(self, button, state)
+    button._conditionalVisualPreview = state
+    if not state then
+        ClearConditionalVisualPreviewDerivedFields(button)
+    end
+    RefreshConditionalVisualPreviewButton(self, button)
+end
+
+local function SetConditionalVisualPreview(self, groupId, buttonIndex, state)
+    if not self.groupFrames then return end
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if button.index == buttonIndex then
+            SetConditionalVisualPreviewOnButton(self, button, state)
+            return
+        end
+    end
+end
+
+local function SetGroupConditionalVisualPreview(self, groupId, state)
+    if not self.groupFrames then return end
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        SetConditionalVisualPreviewOnButton(self, button, state)
+    end
+end
+
+local function GetConditionalVisualPreview(button)
+    return button and button._conditionalVisualPreview or nil
+end
+
+ST._GetConditionalVisualPreview = GetConditionalVisualPreview
+
+function CooldownCompanion:PlayConditionalVisualPreview(groupId, buttonIndex, previewKind, durationSeconds, sampleState)
+    local duration = tonumber(durationSeconds) or 3
+    if duration <= 0 then duration = 3 end
+
+    local state = BuildConditionalVisualPreviewState(previewKind, sampleState)
+    if buttonIndex then
+        local token = BumpButtonPreviewToken(conditionalVisualButtonTokens, groupId, buttonIndex)
+        SetConditionalVisualPreview(self, groupId, buttonIndex, state)
+
+        C_Timer_After(duration, function()
+            local groupTokens = conditionalVisualButtonTokens[groupId]
+            if not groupTokens or groupTokens[buttonIndex] ~= token then return end
+            SetConditionalVisualPreview(self, groupId, buttonIndex, nil)
+        end)
+        return
+    end
+
+    conditionalVisualButtonTokens[groupId] = nil
+    local token = (conditionalVisualGroupTokens[groupId] or 0) + 1
+    conditionalVisualGroupTokens[groupId] = token
+    SetGroupConditionalVisualPreview(self, groupId, state)
+
+    C_Timer_After(duration, function()
+        if conditionalVisualGroupTokens[groupId] ~= token then return end
+        SetGroupConditionalVisualPreview(self, groupId, nil)
+    end)
+end
+
+function CooldownCompanion:ClearAllConditionalVisualPreviews()
+    wipe(conditionalVisualGroupTokens)
+    wipe(conditionalVisualButtonTokens)
+    if not self.groupFrames then return end
+    for _, frame in pairs(self.groupFrames) do
+        for _, button in ipairs(frame.buttons) do
+            if button._conditionalVisualPreview then
+                SetConditionalVisualPreviewOnButton(self, button, nil)
+            else
+                ClearConditionalVisualPreviewDerivedFields(button)
             end
         end
     end

@@ -35,6 +35,40 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
 
+local function AddConditionalPreviewButton(container, label, previewKind, opts)
+    if not (container and CooldownCompanion.PlayConditionalVisualPreview) then
+        return nil
+    end
+
+    local btn = AceGUI:Create("Button")
+    btn:SetText(label)
+    btn:SetFullWidth(true)
+    btn:SetCallback("OnClick", function()
+        local groupId = opts and opts.groupId or CS.selectedGroup
+        local buttonIndex = opts and opts.buttonIndex
+        if type(groupId) == "function" then
+            groupId = groupId()
+        end
+        if type(buttonIndex) == "function" then
+            buttonIndex = buttonIndex()
+        end
+        if opts and opts.requireButton and not buttonIndex then
+            return
+        end
+        if groupId then
+            CooldownCompanion:PlayConditionalVisualPreview(
+                groupId,
+                buttonIndex,
+                previewKind,
+                opts and opts.durationSeconds or 3,
+                opts and opts.sampleState
+            )
+        end
+    end)
+    container:AddChild(btn)
+    return btn
+end
+
 local function BuildCooldownTextControls(container, styleTable, refreshCallback)
     local cdTextCb = AceGUI:Create("CheckBox")
     cdTextCb:SetLabel("Show Cooldown Text")
@@ -1076,6 +1110,7 @@ end
 -- EXPORTS
 ------------------------------------------------------------------------
 ST._BuildCooldownTextControls = BuildCooldownTextControls
+ST._AddConditionalPreviewButton = AddConditionalPreviewButton
 ST._BuildAuraTextControls = BuildAuraTextControls
 ST._BuildAuraStackTextControls = BuildAuraStackTextControls
 ST._BuildKeybindTextControls = BuildKeybindTextControls

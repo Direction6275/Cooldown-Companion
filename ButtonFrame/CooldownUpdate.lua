@@ -14,6 +14,7 @@ local tostring = tostring
 local ipairs = ipairs
 local wipe = wipe
 local issecretvalue = issecretvalue
+local math_max = math.max
 
 -- Imports from Glows
 local GetViewerAuraStackText = ST._GetViewerAuraStackText
@@ -34,6 +35,9 @@ local UnitCanAttack = UnitCanAttack
 
 -- Imports from Utils
 local HasTooltipCooldown = ST.HasTooltipCooldown
+
+-- Imports from Preview
+local GetConditionalVisualPreview = ST._GetConditionalVisualPreview
 
 -- Imports from Tracking
 local UpdateChargeTracking = ST._UpdateChargeTracking
@@ -67,6 +71,168 @@ local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
 local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
+
+local function ClearConditionalVisualPreviewFields(button)
+    if button._conditionalAuraPreview then
+        local buttonData = button.buttonData
+        if not (buttonData and (buttonData.auraTracking or buttonData.isPassive)) then
+            button._auraActive = false
+            button._auraHasTimer = false
+            button._auraStackText = ""
+        end
+    end
+    if button._conditionalPandemicPreview then
+        local buttonData = button.buttonData
+        if not (buttonData and buttonData.auraTracking) then
+            button._inPandemic = false
+            button._pandemicGraceStart = nil
+        end
+    end
+    button._conditionalPreviewKind = nil
+    button._conditionalPreviewStartTime = nil
+    button._conditionalPreviewDuration = nil
+    button._conditionalPreviewRemaining = nil
+    button._conditionalPreviewDomain = nil
+    button._conditionalAuraPreview = nil
+    button._conditionalPandemicPreview = nil
+    button._conditionalUnusablePreview = nil
+    button._conditionalOutOfRangePreview = nil
+    button._conditionalReadyPreview = nil
+    button._conditionalBarAuraActivePreview = nil
+end
+
+local function ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)
+    if not (button and button.count and (style.chargeFontColor or style.chargeFontColorMissing or style.chargeFontColorZero)) then
+        return
+    end
+
+    local cc
+    if usesChargeBehavior and button._chargeState == CHARGE_STATE_ZERO then
+        cc = style.chargeFontColorZero or DEFAULT_WHITE
+    elseif usesChargeBehavior and button._chargeState == CHARGE_STATE_MISSING then
+        cc = style.chargeFontColorMissing or DEFAULT_WHITE
+    elseif usesChargeBehavior and button._chargeState == CHARGE_STATE_FULL then
+        cc = style.chargeFontColor or DEFAULT_WHITE
+    elseif usesChargeBehavior then
+        cc = style.chargeFontColor or DEFAULT_WHITE
+    elseif UsesChargeTextLane(buttonData) then
+        cc = style.chargeFontColor or DEFAULT_WHITE
+    end
+
+    if cc then
+        button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+    end
+end
+
+local function GetConditionalPreviewTiming(preview, now)
+    local duration = tonumber(preview and preview.duration)
+    local startTime = tonumber(preview and preview.startTime)
+    if not duration or duration <= 0 then
+        return nil, nil, nil
+    end
+    if not startTime then
+        startTime = now
+    end
+
+    local remaining = duration - (now - startTime)
+    if remaining < 0 then
+        remaining = 0
+    end
+    return startTime, duration, remaining
+end
+
+local function ApplyConditionalVisualPreview(button, buttonData, style, preview, now, usesChargeBehavior)
+    if not preview then
+        return
+    end
+
+    local kind = preview.kind
+    button._conditionalPreviewKind = kind
+
+    if kind == "cooldown" then
+        local startTime, duration, remaining = GetConditionalPreviewTiming(preview, now)
+        if not startTime then return end
+        button._cooldownState = COOLDOWN_STATE_COOLDOWN
+        button._desatCooldownActive = true
+        button._cooldownDeferred = nil
+        button._conditionalPreviewDomain = "cooldown"
+        button._conditionalPreviewStartTime = startTime
+        button._conditionalPreviewDuration = duration
+        button._conditionalPreviewRemaining = remaining
+        if button.cooldown then
+            button.cooldown:SetCooldown(startTime, duration)
+        end
+        return
+    end
+
+    if kind == "aura" or kind == "pandemic" then
+        local startTime, duration, remaining = GetConditionalPreviewTiming(preview, now)
+        if not startTime then return end
+        button._auraActive = true
+        button._auraHasTimer = true
+        button._auraStackText = preview.stackText or "3"
+        button._inPandemic = kind == "pandemic"
+        button._conditionalAuraPreview = true
+        button._conditionalPandemicPreview = kind == "pandemic" or nil
+        button._conditionalBarAuraActivePreview = true
+        button._conditionalPreviewDomain = "aura"
+        button._conditionalPreviewStartTime = startTime
+        button._conditionalPreviewDuration = duration
+        button._conditionalPreviewRemaining = remaining
+        if button.cooldown then
+            button.cooldown:SetCooldown(startTime, duration)
+        end
+        if button.auraStackCount and style.showAuraStackText ~= false then
+            button.auraStackCount:SetText(button._auraStackText or "")
+        end
+        return
+    end
+
+    if kind == "charge_full" or kind == "charge_missing" or kind == "charge_zero" then
+        if not usesChargeBehavior then
+            return
+        end
+        local maxCharges = buttonData.maxCharges or 2
+        if maxCharges < 2 then
+            maxCharges = 2
+        end
+
+        local currentCharges = maxCharges
+        if kind == "charge_missing" then
+            currentCharges = math_max(1, maxCharges - 1)
+            button._chargeState = CHARGE_STATE_MISSING
+            button._zeroChargesConfirmed = false
+        elseif kind == "charge_zero" then
+            currentCharges = 0
+            button._chargeState = CHARGE_STATE_ZERO
+            button._zeroChargesConfirmed = true
+            button._desatCooldownActive = true
+        else
+            button._chargeState = CHARGE_STATE_FULL
+            button._zeroChargesConfirmed = false
+            button._desatCooldownActive = false
+        end
+
+        button._chargeCountReadable = true
+        button._currentReadableCharges = currentCharges
+        button._chargeText = currentCharges
+        if button.count and style.showChargeText ~= false then
+            button.count:SetText(currentCharges)
+        end
+        return
+    end
+
+    if kind == "unusable" then
+        button._isUnusable = true
+        button._conditionalUnusablePreview = true
+        return
+    end
+
+    if kind == "out_of_range" then
+        button._isOutOfRange = true
+        button._conditionalOutOfRangePreview = true
+    end
+end
 
 local function AuraDataHasTimer(auraData)
     if not auraData then return false end
@@ -457,6 +623,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local now = GetTime()
     local isGCDOnly = false
     local desatWasActive = button._desatCooldownActive == true
+    ClearConditionalVisualPreviewFields(button)
 
     if button.count and button._countTextLaneStyled ~= useChargeTextLane then
         if button._isBar then
@@ -1347,10 +1514,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._readyGlowStartTime = nil
     end
 
-    if not button._isBar and not button._isText then
-        UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
-    end
-
     if usesChargeBehavior then
       if buttonData.type == "spell" and buttonData.hasCharges then
         -- Bar/text mode: charge bars are driven by the recharge DurationObject, not
@@ -1432,23 +1595,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Charge text color: three-state (zero / partial / max).
     -- Uses the canonical charge state resolved above.
-    if style.chargeFontColor or style.chargeFontColorMissing or style.chargeFontColorZero then
-        local cc
-        if usesChargeBehavior and button._chargeState == CHARGE_STATE_ZERO then
-            cc = style.chargeFontColorZero or DEFAULT_WHITE
-        elseif usesChargeBehavior and button._chargeState == CHARGE_STATE_MISSING then
-            cc = style.chargeFontColorMissing or DEFAULT_WHITE
-        elseif usesChargeBehavior and button._chargeState == CHARGE_STATE_FULL then
-            cc = style.chargeFontColor or DEFAULT_WHITE
-        elseif usesChargeBehavior then
-            cc = style.chargeFontColor or DEFAULT_WHITE
-        elseif UsesChargeTextLane(buttonData) then
-            cc = style.chargeFontColor or DEFAULT_WHITE
-        end
-        if cc then
-            button.count:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-        end
-    end
+    ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)
 
     -- Per-button sound alerts (Blizzard-scoped events, CDM-valid only).
     if buttonData.type == "spell" then
@@ -1624,6 +1771,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._isOutOfRange = false
     end
 
+    ApplyConditionalVisualPreview(
+        button,
+        buttonData,
+        style,
+        GetConditionalVisualPreview and GetConditionalVisualPreview(button),
+        now,
+        usesChargeBehavior
+    )
+    ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)
+
     -- Mode-specific visual dispatch
     if button._isText then
         UpdateTextDisplay(button)
@@ -1631,6 +1788,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateBarDisplay(button)
         DispatchStandaloneTextureVisual(button)
     else
+        UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
         UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         DispatchStandaloneTextureVisual(button)
     end

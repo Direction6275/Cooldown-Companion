@@ -30,6 +30,7 @@ local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
 local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
+local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -255,6 +256,9 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local timeAdvExpanded, timeAdvBtn = AddAdvancedToggle(showTimeCbBasic, "barCooldownText", tabInfoButtons, style.showCooldownText)
     CreateCheckboxPromoteButton(showTimeCbBasic, timeAdvBtn, "cooldownText", group, style)
+    if style.showCooldownText and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Cooldown State (3s)", "cooldown")
+    end
 
     if timeAdvExpanded and style.showCooldownText then
         local flipTimeCheck = AceGUI:Create("CheckBox")
@@ -292,6 +296,10 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local chargeAdvExpanded, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "barChargeText", tabInfoButtons, style.showChargeText ~= false)
     CreateCheckboxPromoteButton(chargeTextCb, chargeAdvBtn, "chargeText", group, style)
+    if style.showChargeText ~= false and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Missing Charges (3s)", "charge_missing")
+        AddConditionalPreviewButton(container, "Preview Zero Charges (3s)", "charge_zero")
+    end
 
     if chargeAdvExpanded and style.showChargeText ~= false then
         AddFontControls(container, style, "charge", {}, refreshStyle)
@@ -318,6 +326,9 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local barAuraTextAdvExpanded, barAuraTextAdvBtn = AddAdvancedToggle(auraTextCb, "barAuraText", tabInfoButtons, style.showAuraText ~= false)
     CreateCheckboxPromoteButton(auraTextCb, barAuraTextAdvBtn, "auraText", group, style)
+    if style.showAuraText ~= false and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Aura State (3s)", "aura")
+    end
 
     if barAuraTextAdvExpanded and style.showAuraText ~= false then
         AddFontControls(container, style, "auraText", {sizeMin = 6, sizeMax = 24}, refreshStyle)
@@ -549,6 +560,9 @@ local function BuildBarEffectsTab(container, group, style)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
+        if style.showUnusable and AddConditionalPreviewButton then
+            AddConditionalPreviewButton(container, "Preview Unusable State (3s)", "unusable")
+        end
 
         -- Show Tooltips
         local tooltipCb = BuildShowTooltipsControls(container, style, function()

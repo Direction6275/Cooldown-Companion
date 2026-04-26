@@ -43,6 +43,7 @@ local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
 local BuildTextFontControls = ST._BuildTextFontControls
 local BuildTextColorsControls = ST._BuildTextColorsControls
 local BuildTextBackgroundControls = ST._BuildTextBackgroundControls
+local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 
 local function PrimeSelectedReadyGlowCappedChargeTransition(groupId, buttonIndex)
     local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
@@ -151,6 +152,17 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
             CooldownCompanion:RefreshConfigPanel()
         end)
         scroll:AddChild(clearBtn)
+    end
+
+    if AddConditionalPreviewButton then
+        local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
+        AddConditionalPreviewButton(scroll, "Preview Cooldown State (3s)", "cooldown", target)
+        AddConditionalPreviewButton(scroll, "Preview Aura State (3s)", "aura", target)
+        AddConditionalPreviewButton(scroll, "Preview Pandemic State (3s)", "pandemic", target)
+        AddConditionalPreviewButton(scroll, "Preview Missing Charges (3s)", "charge_missing", target)
+        AddConditionalPreviewButton(scroll, "Preview Zero Charges (3s)", "charge_zero", target)
+        AddConditionalPreviewButton(scroll, "Preview Unusable State (3s)", "unusable", target)
+        AddConditionalPreviewButton(scroll, "Preview Out of Range State (3s)", "out_of_range", target)
     end
 end
 
@@ -464,6 +476,27 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                                 end
                             end)
                             scroll:AddChild(btn)
+                        end
+
+                        if AddConditionalPreviewButton then
+                            local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
+                            if sectionId == "cooldownText" or sectionId == "cooldownSwipe" or sectionId == "desaturation" then
+                                AddConditionalPreviewButton(scroll, "Preview Cooldown State (3s)", "cooldown", target)
+                            elseif sectionId == "auraText" or sectionId == "auraStackText" or sectionId == "auraDurationSwipe" then
+                                AddConditionalPreviewButton(scroll, "Preview Aura State (3s)", "aura", target)
+                            elseif sectionId == "chargeText" then
+                                AddConditionalPreviewButton(scroll, "Preview Missing Charges (3s)", "charge_missing", target)
+                                AddConditionalPreviewButton(scroll, "Preview Zero Charges (3s)", "charge_zero", target)
+                            elseif sectionId == "showOutOfRange" then
+                                AddConditionalPreviewButton(scroll, "Preview Out of Range State (3s)", "out_of_range", target)
+                            elseif sectionId == "unusableDimming" then
+                                AddConditionalPreviewButton(scroll, "Preview Unusable State (3s)", "unusable", target)
+                            elseif sectionId == "iconTint" then
+                                AddConditionalPreviewButton(scroll, "Preview Cooldown Tint (3s)", "cooldown", target)
+                                AddConditionalPreviewButton(scroll, "Preview Aura Tint (3s)", "aura", target)
+                                AddConditionalPreviewButton(scroll, "Preview Unusable Tint (3s)", "unusable", target)
+                                AddConditionalPreviewButton(scroll, "Preview Out of Range Tint (3s)", "out_of_range", target)
+                            end
                         end
                     end
                 end

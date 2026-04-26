@@ -94,8 +94,30 @@ local function UpdateBarFill(button)
     -- Items use stored C_Item.GetItemCooldown values (_itemCdStart/_itemCdDuration).
     local onCooldown = false
     local itemRemaining = 0
+    local previewRemaining = button._conditionalPreviewRemaining
+    local previewDuration = button._conditionalPreviewDuration
+    if previewRemaining and previewDuration and button._conditionalPreviewStartTime then
+        previewRemaining = previewDuration - (GetTime() - button._conditionalPreviewStartTime)
+        if previewRemaining < 0 then previewRemaining = 0 end
+        button._conditionalPreviewRemaining = previewRemaining
+    end
 
-    if button._durationObj and not button._barGCDSuppressed then
+    if previewRemaining and previewRemaining > 0 and not button._barGCDSuppressed then
+        onCooldown = true
+        previewDuration = previewDuration or previewRemaining
+        if previewDuration <= 0 then
+            previewDuration = previewRemaining
+        end
+        local frac
+        if button._conditionalPreviewDomain == "aura" then
+            frac = previewRemaining / previewDuration
+        else
+            frac = 1 - (previewRemaining / previewDuration)
+        end
+        if frac < 0 then frac = 0 end
+        if frac > 1 then frac = 1 end
+        button.statusBar:SetValue(frac)
+    elseif button._durationObj and not button._barGCDSuppressed then
         onCooldown = true
         -- SetValue accepts secret values; fraction animates natively in the engine
         if button._auraActive then
@@ -175,7 +197,9 @@ local function UpdateBarFill(button)
             -- Non-secret: full FormatTime formatting ("1:30:00", "1:30", "45", etc.)
             -- Secret: pass secret number to C++ SetFormattedText ("%.1f" / "%.0f" format)
             local decimal = button.style.decimalTimers
-            if button._durationObj then
+            if previewRemaining and previewRemaining > 0 then
+                button.timeText:SetText(FormatTime(previewRemaining, decimal))
+            elseif button._durationObj then
                 local remaining = button._durationObj:GetRemainingDuration()
                 if not button._durationObj:HasSecretValues() then
                     if remaining > 0 then
@@ -207,7 +231,7 @@ local function UpdateBarFill(button)
             button.statusBar:SetMinMaxValues(0, 1)
             button._viewerBar = nil
         end
-        if button._barAuraActivePreview then
+        if button._barAuraActivePreview or button._conditionalBarAuraActivePreview then
             button.statusBar:SetValue(1)
             button.timeText:SetText("")
         elseif button.buttonData.isPassive then
@@ -273,7 +297,8 @@ local function UpdateBarDisplay(button)
     -- _durationObj may also hold aura/totem timing and must not imply cooldown.
     local isChargeButton = UsesChargeBehavior(button.buttonData)
     local chargeState = button._chargeState
-    local auraTimerActive = button._auraActive and (button._durationObj or button._viewerBar)
+    local auraTimerActive = button._auraActive
+        and (button._durationObj or button._viewerBar or button._conditionalPreviewRemaining)
     local onCooldown
     if isChargeButton then
         onCooldown = chargeState == CHARGE_STATE_MISSING
@@ -325,9 +350,9 @@ local function UpdateBarDisplay(button)
 
     -- Bar aura color: override bar fill when aura is active (pandemic overrides aura color)
     local wantAuraColor
-    if button._pandemicPreview then
+    if button._pandemicPreview or button._conditionalPreviewKind == "pandemic" then
         wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
-    elseif button._barAuraActivePreview then
+    elseif button._barAuraActivePreview or button._conditionalBarAuraActivePreview then
         wantAuraColor = (button.style and button.style.barAuraColor) or DEFAULT_BAR_AURA_COLOR
     elseif button._auraActive then
         if button._inPandemic and style.showPandemicGlow ~= false
@@ -361,9 +386,11 @@ local function UpdateBarDisplay(button)
 
     -- Bar aura effect (pandemic overrides effect color)
     local barAuraEffectPandemic = button._pandemicPreview
+        or button._conditionalPreviewKind == "pandemic"
         or (button._auraActive and button._inPandemic and style.showPandemicGlow ~= false
             and (not style.pandemicGlowCombatOnly or inCombat))
     local barAuraEffectShow = button._barAuraEffectPreview or button._barAuraActivePreview
+        or button._conditionalBarAuraActivePreview
         or button._pandemicPreview
         or (button._auraActive and (barAuraEffectPandemic
             or (barAuraVisualsEnabled and (not style.auraGlowCombatOnly or inCombat))))
@@ -373,6 +400,7 @@ local function UpdateBarDisplay(button)
     -- Gated behind the same master toggles as existing bar aura effects:
     -- barAuraVisualsEnabled for aura-active, showPandemicGlow for pandemic (via barAuraEffectPandemic).
     local auraActiveForPulse = button._barAuraActivePreview
+        or button._conditionalBarAuraActivePreview
         or (barAuraVisualsEnabled and button._auraActive
             and (not style.auraGlowCombatOnly or inCombat))
 

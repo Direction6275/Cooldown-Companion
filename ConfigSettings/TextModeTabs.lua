@@ -19,6 +19,7 @@ local OpenFormatEditor = ST._OpenFormatEditor
 local AddColorPicker = ST._AddColorPicker
 local RenderFormatPreview = ST._RenderFormatPreview
 local ParseFormatString = ST._ParseFormatString
+local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -285,6 +286,16 @@ local function BuildTextAppearanceTab(container, group, style)
         OpenFormatEditor(style, CS.selectedGroup)
     end)
     container:AddChild(editBtn)
+
+    if AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Cooldown State (3s)", "cooldown")
+        AddConditionalPreviewButton(container, "Preview Aura State (3s)", "aura")
+        AddConditionalPreviewButton(container, "Preview Pandemic State (3s)", "pandemic")
+        AddConditionalPreviewButton(container, "Preview Missing Charges (3s)", "charge_missing")
+        AddConditionalPreviewButton(container, "Preview Zero Charges (3s)", "charge_zero")
+        AddConditionalPreviewButton(container, "Preview Unusable State (3s)", "unusable")
+        AddConditionalPreviewButton(container, "Preview Out of Range State (3s)", "out_of_range")
+    end
     end -- not fmtCollapsed
 
     -- ================================================================

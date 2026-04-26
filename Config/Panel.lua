@@ -422,6 +422,7 @@ local function ResetConfigForProfileChange()
     end
     CooldownCompanion:StopCastBarPreview()
     CooldownCompanion:StopResourceBarPreview()
+    CooldownCompanion:ClearAllConditionalVisualPreviews()
 end
 
 local function MaybeAutoOpenChangelog()
@@ -540,6 +541,7 @@ local function CreateConfigPanel()
         CooldownCompanion:ClearAllReadyGlowPreviews()
         CooldownCompanion:ClearAllKeyPressHighlightPreviews()
         CooldownCompanion:ClearAllBarAuraActivePreviews()
+        CooldownCompanion:ClearAllConditionalVisualPreviews()
         CooldownCompanion:ClearAllTextureIndicatorPreviews()
         if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
             CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
@@ -1482,6 +1484,7 @@ local function CreateConfigPanel()
         CooldownCompanion:ClearAllReadyGlowPreviews()
         CooldownCompanion:ClearAllKeyPressHighlightPreviews()
         CooldownCompanion:ClearAllBarAuraActivePreviews()
+        CooldownCompanion:ClearAllConditionalVisualPreviews()
         widget:ReleaseChildren()
 
         local scroll = AceGUI:Create("ScrollFrame")
