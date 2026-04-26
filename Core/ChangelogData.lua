@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.13.2",
         "1.13.1",
         "1.13",
         "1.12.5",
@@ -22,6 +23,17 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.13.2"] = {
+            markdown = [[
+## New Features
+
+- **Blizzard-style aura swipes:** Icon-mode aura durations can now use a yellow swipe overlay, enabled from icon panel Appearance settings, that more closely matches Blizzard's Cooldown Manager aura display.
+
+## Bug Fixes
+
+- **Frame anchoring alpha errors:** Anchored player and target frames using Inherit Alpha should no longer cause recurring Lua errors during target changes or other alpha updates.
+]],
+        },
         ["1.13.1"] = {
             markdown = [[
 ## New Features
