@@ -1200,7 +1200,7 @@ local function RefreshColumn2()
             end
             header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
             header:SetCallback("OnClick", function()
-                CooldownCompanion:ClearAllConditionalVisualPreviews()
+                CooldownCompanion:ClearAllConfigPreviews()
                 CS.selectedContainer = CS.browseContainerId
                 CS.selectedGroup = panelGroupId
                 CS.selectedButton = nil
@@ -1238,7 +1238,7 @@ local function RefreshColumn2()
                     end
                     local capturedIndex = buttonIndex
                     entry:SetCallback("OnClick", function()
-                        CooldownCompanion:ClearAllConditionalVisualPreviews()
+                        CooldownCompanion:ClearAllConfigPreviews()
                         CS.selectedContainer = CS.browseContainerId
                         CS.selectedGroup = panelGroupId
                         CS.selectedButton = capturedIndex
@@ -2380,7 +2380,7 @@ local function RefreshColumn2()
                                     CS.selectedButton = btnIndex
                                 end
                             end
-                            CooldownCompanion:ClearAllConditionalVisualPreviews()
+                            CooldownCompanion:ClearAllConfigPreviews()
                             CooldownCompanion:RefreshConfigPanel()
                         elseif mouseButton == "RightButton" then
                             -- Auto-select panel on right-click too

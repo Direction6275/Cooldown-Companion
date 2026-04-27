@@ -13,6 +13,7 @@ local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local HookSliderEditBox = ST._HookSliderEditBox
 local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
+local RefreshConfigPanelForPreviewToggle = ST._RefreshConfigPanelForPreviewToggle
 
 ------------------------------------------------------------------------
 -- CAST BAR SETTINGS PANEL
@@ -118,9 +119,13 @@ local function BuildCastBarAnchoringPanel(container)
     previewCb:SetFullWidth(true)
     previewCb:SetCallback("OnValueChanged", function(widget, event, val)
         if val then
+            CooldownCompanion:ClearAllConfigPreviews()
             CooldownCompanion:StartCastBarPreview()
         else
             CooldownCompanion:StopCastBarPreview()
+        end
+        if RefreshConfigPanelForPreviewToggle then
+            RefreshConfigPanelForPreviewToggle()
         end
     end)
     container:AddChild(previewCb)

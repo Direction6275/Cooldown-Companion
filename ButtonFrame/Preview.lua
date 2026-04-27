@@ -805,3 +805,45 @@ function CooldownCompanion:ClearAllAuraTexturePickerPreviews()
         end
     end
 end
+
+function CooldownCompanion:ClearAllConfigPreviews()
+    if self.ClearAllProcGlowPreviews then
+        self:ClearAllProcGlowPreviews()
+    end
+    if self.ClearAllAuraGlowPreviews then
+        self:ClearAllAuraGlowPreviews()
+    end
+    if self.ClearAllPandemicPreviews then
+        self:ClearAllPandemicPreviews()
+    end
+    if self.ClearAllReadyGlowPreviews then
+        self:ClearAllReadyGlowPreviews()
+    end
+    if self.ClearAllKeyPressHighlightPreviews then
+        self:ClearAllKeyPressHighlightPreviews()
+    end
+    if self.ClearAllBarAuraActivePreviews then
+        self:ClearAllBarAuraActivePreviews()
+    end
+    if self.ClearAllConditionalVisualPreviews then
+        self:ClearAllConditionalVisualPreviews()
+    end
+    if self.ClearAllTextureIndicatorPreviews then
+        self:ClearAllTextureIndicatorPreviews()
+    end
+    if self.ClearAllTriggerPanelEffectPreviews then
+        self:ClearAllTriggerPanelEffectPreviews()
+    end
+    if self.ClearAllCustomAuraBarPreviews then
+        self:ClearAllCustomAuraBarPreviews()
+    end
+    if self.ClearAllAuraTexturePickerPreviews then
+        self:ClearAllAuraTexturePickerPreviews()
+    end
+    if self.StopCastBarPreview then
+        self:StopCastBarPreview()
+    end
+    if self.StopResourceBarPreview then
+        self:StopResourceBarPreview()
+    end
+end

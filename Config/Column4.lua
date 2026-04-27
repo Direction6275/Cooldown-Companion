@@ -183,13 +183,7 @@ local function RefreshColumn4(container)
             CS.panelSettingsTab = tab
             local preservePreviews = CS.previewToggleRefreshActive == true
             if not preservePreviews then
-                CooldownCompanion:ClearAllConditionalVisualPreviews()
-            end
-            if tab ~= "effects" and not preservePreviews then
-                CooldownCompanion:ClearAllTextureIndicatorPreviews()
-                if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
-                    CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
-                end
+                CooldownCompanion:ClearAllConfigPreviews()
             end
             -- Clean up raw (?) info buttons BEFORE releasing children, so they
             -- don't leak onto recycled AceGUI frames when switching tabs

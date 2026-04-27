@@ -420,9 +420,6 @@ local function ResetConfigForProfileChange()
     if ST._CancelAutoAddFlow then
         ST._CancelAutoAddFlow()
     end
-    CooldownCompanion:StopCastBarPreview()
-    CooldownCompanion:StopResourceBarPreview()
-    CooldownCompanion:ClearAllConditionalVisualPreviews()
 end
 
 local function MaybeAutoOpenChangelog()
@@ -536,23 +533,8 @@ local function CreateConfigPanel()
             CS.CancelPickAuraTexture()
         end
         if not CS.previewToggleRefreshActive then
-            CooldownCompanion:ClearAllProcGlowPreviews()
-            CooldownCompanion:ClearAllAuraGlowPreviews()
-            CooldownCompanion:ClearAllPandemicPreviews()
-            CooldownCompanion:ClearAllReadyGlowPreviews()
-            CooldownCompanion:ClearAllKeyPressHighlightPreviews()
-            CooldownCompanion:ClearAllBarAuraActivePreviews()
-            CooldownCompanion:ClearAllConditionalVisualPreviews()
+            CooldownCompanion:ClearAllConfigPreviews()
         end
-        CooldownCompanion:ClearAllTextureIndicatorPreviews()
-        if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
-            CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
-        end
-        if CooldownCompanion.ClearAllCustomAuraBarPreviews then
-            CooldownCompanion:ClearAllCustomAuraBarPreviews()
-        end
-        CooldownCompanion:ClearAllAuraTexturePickerPreviews()
-        CooldownCompanion:StopCastBarPreview()
         if ClearConfigShiftTooltipHover then
             ClearConfigShiftTooltipHover()
         end
@@ -1484,13 +1466,7 @@ local function CreateConfigPanel()
         wipe(CS.buttonSettingsInfoButtons)
 
         if not CS.previewToggleRefreshActive then
-            CooldownCompanion:ClearAllProcGlowPreviews()
-            CooldownCompanion:ClearAllAuraGlowPreviews()
-            CooldownCompanion:ClearAllPandemicPreviews()
-            CooldownCompanion:ClearAllReadyGlowPreviews()
-            CooldownCompanion:ClearAllKeyPressHighlightPreviews()
-            CooldownCompanion:ClearAllBarAuraActivePreviews()
-            CooldownCompanion:ClearAllConditionalVisualPreviews()
+            CooldownCompanion:ClearAllConfigPreviews()
         end
         widget:ReleaseChildren()
 

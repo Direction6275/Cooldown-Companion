@@ -27,6 +27,7 @@ local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
 local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
 local AddPreviewToggleButton = ST._AddPreviewToggleButton
+local RefreshConfigPanelForPreviewToggle = ST._RefreshConfigPanelForPreviewToggle
 local tabInfoButtons = CS.tabInfoButtons
 
 local function RefreshLayoutOrderPreview()
@@ -184,9 +185,13 @@ local function BuildResourceBarAnchoringPanel(container)
     previewCb:SetFullWidth(true)
     previewCb:SetCallback("OnValueChanged", function(widget, event, val)
         if val then
+            CooldownCompanion:ClearAllConfigPreviews()
             CooldownCompanion:StartResourceBarPreview()
         else
             CooldownCompanion:StopResourceBarPreview()
+        end
+        if RefreshConfigPanelForPreviewToggle then
+            RefreshConfigPanelForPreviewToggle()
         end
     end)
     container:AddChild(previewCb)
@@ -2049,9 +2054,13 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                         previewCb:SetFullWidth(true)
                         previewCb:SetCallback("OnValueChanged", function(widget, event, val)
                             if val then
+                                CooldownCompanion:ClearAllConfigPreviews()
                                 CooldownCompanion:StartResourceBarPreview()
                             else
                                 CooldownCompanion:StopResourceBarPreview()
+                            end
+                            if RefreshConfigPanelForPreviewToggle then
+                                RefreshConfigPanelForPreviewToggle()
                             end
                         end)
                         container:AddChild(previewCb)

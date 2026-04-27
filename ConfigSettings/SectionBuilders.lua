@@ -42,6 +42,18 @@ local function ResolvePreviewOption(value)
     return value
 end
 
+local function RefreshConfigPanelForPreviewToggle()
+    if not CooldownCompanion.RefreshConfigPanel then
+        return false
+    end
+
+    local wasPreviewRefresh = CS.previewToggleRefreshActive
+    CS.previewToggleRefreshActive = true
+    CooldownCompanion:RefreshConfigPanel()
+    CS.previewToggleRefreshActive = wasPreviewRefresh
+    return true
+end
+
 local function AddPreviewToggleButton(container, offLabel, isActiveFn, setActiveFn)
     if not (container and isActiveFn and setActiveFn) then
         return nil
@@ -51,13 +63,12 @@ local function AddPreviewToggleButton(container, offLabel, isActiveFn, setActive
     btn:SetText(isActiveFn() and "Preview: ON" or offLabel)
     btn:SetFullWidth(true)
     btn:SetCallback("OnClick", function()
-        setActiveFn(not isActiveFn())
-        if CooldownCompanion.RefreshConfigPanel then
-            local wasPreviewRefresh = CS.previewToggleRefreshActive
-            CS.previewToggleRefreshActive = true
-            CooldownCompanion:RefreshConfigPanel()
-            CS.previewToggleRefreshActive = wasPreviewRefresh
-        else
+        local showPreview = not isActiveFn()
+        if showPreview and CooldownCompanion.ClearAllConfigPreviews then
+            CooldownCompanion:ClearAllConfigPreviews()
+        end
+        setActiveFn(showPreview)
+        if not RefreshConfigPanelForPreviewToggle() then
             btn:SetText(isActiveFn() and "Preview: ON" or offLabel)
         end
     end)
@@ -1141,6 +1152,7 @@ end
 ------------------------------------------------------------------------
 ST._BuildCooldownTextControls = BuildCooldownTextControls
 ST._AddPreviewToggleButton = AddPreviewToggleButton
+ST._RefreshConfigPanelForPreviewToggle = RefreshConfigPanelForPreviewToggle
 ST._AddConditionalPreviewButton = AddConditionalPreviewButton
 ST._BuildAuraTextControls = BuildAuraTextControls
 ST._BuildAuraStackTextControls = BuildAuraStackTextControls
