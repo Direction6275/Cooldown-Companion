@@ -302,6 +302,7 @@ local function RefreshProfileBar(bar)
     profileDrop:SetValue(currentProfile)
     profileDrop:SetWidth(150)
     profileDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        CooldownCompanion:ClearAllConfigPreviews()
         db:SetProfile(val)
         CS.selectedContainer = nil
         CS.selectedGroup = nil

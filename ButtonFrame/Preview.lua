@@ -837,6 +837,7 @@ end
 
 function CooldownCompanion:ClearAllTextureIndicatorPreviews()
     for indicatorKey in pairs(TEXTURE_INDICATOR_PREVIEW_FLAGS) do
+        ClearActivePreviewFlag(TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey])
         wipe(GetTextureIndicatorTokenStore(indicatorKey))
     end
 

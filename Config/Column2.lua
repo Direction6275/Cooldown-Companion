@@ -198,6 +198,7 @@ local function FinalizeCreatedPanel(newPanelId, displayMode, opts)
         CooldownCompanion:RefreshGroupFrame(newPanelId)
     end
 
+    CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedGroup = newPanelId
     if opts and opts.clearSelection then
         CS.selectedButton = nil
@@ -731,6 +732,7 @@ local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGrou
     table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
     CooldownCompanion:RefreshGroupFrame(targetGroupId)
     CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+    CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedButton = nil
     wipe(CS.selectedButtons)
     CooldownCompanion:RefreshConfigPanel()
@@ -2016,6 +2018,7 @@ local function RefreshColumn2()
                                 CloseDropDownMenus()
                                 local newPanelId = CooldownCompanion:DuplicatePanel(ctxContainerId, ctxPanelId)
                                 if newPanelId then
+                                    CooldownCompanion:ClearAllConfigPreviews()
                                     CS.selectedGroup = newPanelId
                                     CooldownCompanion:RefreshConfigPanel()
                                 end
@@ -2108,6 +2111,7 @@ local function RefreshColumn2()
                                     info.func = function()
                                         CloseDropDownMenus()
                                         local _, sourceDeleted = CooldownCompanion:MovePanel(ctxPanelId, c.id)
+                                        CooldownCompanion:ClearAllConfigPreviews()
                                         if sourceDeleted then
                                             CS.selectedContainer = c.id
                                         end
@@ -2135,6 +2139,7 @@ local function RefreshColumn2()
                                     info.func = function()
                                         CloseDropDownMenus()
                                         local _, sourceDeleted = CooldownCompanion:MovePanel(ctxPanelId, c.id)
+                                        CooldownCompanion:ClearAllConfigPreviews()
                                         if sourceDeleted then
                                             CS.selectedContainer = c.id
                                         end
@@ -2178,6 +2183,7 @@ local function RefreshColumn2()
                         CS.addingToPanelId = nil
                     else
                         CS.addingToPanelId = addBtnPanelId
+                        CooldownCompanion:ClearAllConfigPreviews()
                         CS.selectedGroup = addBtnPanelId
                         CS.selectedButton = nil
                         wipe(CS.selectedButtons)
@@ -2486,6 +2492,7 @@ local function RefreshColumn2()
                             ToggleDropDownMenu(1, nil, CS.buttonContextMenu, "cursor", 0, 0)
                         elseif mouseButton == "MiddleButton" then
                             if CS.selectedGroup ~= btnPanelId then
+                                CooldownCompanion:ClearAllConfigPreviews()
                                 CS.selectedGroup = btnPanelId
                                 CS.selectedButton = nil
                                 wipe(CS.selectedButtons)

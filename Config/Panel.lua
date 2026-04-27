@@ -828,6 +828,7 @@ local function CreateConfigPanel()
         if CS.resourceBarPanelActive then
             SetPrimaryMode("buttons", { skipRefresh = true })
         end
+        CooldownCompanion:ClearAllConfigPreviews()
         CS.browseMode = true
         CS.browseCharKey = nil
         CS.browseContainerId = nil
