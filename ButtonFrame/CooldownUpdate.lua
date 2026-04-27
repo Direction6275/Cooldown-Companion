@@ -12,6 +12,7 @@ local GetTime = GetTime
 local tonumber = tonumber
 local tostring = tostring
 local ipairs = ipairs
+local type = type
 local wipe = wipe
 local issecretvalue = issecretvalue
 local math_max = math.max
@@ -65,6 +66,11 @@ local HasCastCountText = CooldownCompanion.HasCastCountText
 local GetCastCountSpellID = CooldownCompanion.GetCastCountSpellID
 local GetConditionalCastCountSpellID = CooldownCompanion.GetConditionalCastCountSpellID
 local TARGET_SWITCH_SAFETY_CAP = 0.60
+local COOLDOWN_API_TRACE_TTL = 30
+local COOLDOWN_API_TRACE_VERSION = 2
+-- One normal GCD plus a small buffer. The continuity guard is only for the
+-- opening post-cast API blind spot, not later cooldown-end GCD transitions.
+local REAL_COOLDOWN_GCD_HOLD_WINDOW = 1.60
 local COOLDOWN_STATE_READY = CooldownLogic.STATE_READY
 local COOLDOWN_STATE_GCD = CooldownLogic.STATE_GCD
 local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
@@ -405,12 +411,14 @@ local function IsSpellCooldownDeferred(info)
 end
 
 local ProbeActionSlotCooldownForSpell
+local ProbeSpellBookCooldownForSpell
 
-local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID)
+local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
     local result = {
         spellID = spellID,
         fetchOk = false,
         state = COOLDOWN_STATE_READY,
+        source = "ready",
         realCooldownShown = false,
         isOnGCD = false,
         deferred = false,
@@ -419,6 +427,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID)
     if not spellID then
         return result
     end
+
+    options = options or {}
 
     local info = C_Spell.GetSpellCooldown(spellID)
     result.info = info
@@ -434,9 +444,11 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID)
                 result.slotProbe = slotProbe
                 if result.realCooldownShown and slotProbe.realDurationObj then
                     result.state = COOLDOWN_STATE_COOLDOWN
+                    result.source = "action-slot-real-no-spell-info"
                     result.renderDurationObj = slotProbe.realDurationObj
                 elseif slotProbe.shown and slotProbe.durationObj then
                     result.state = COOLDOWN_STATE_GCD
+                    result.source = "action-slot-gcd-no-spell-info"
                     result.renderDurationObj = slotProbe.durationObj
                     result.isOnGCD = true
                 end
@@ -458,15 +470,50 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID)
 
     if result.deferred then
         result.state = COOLDOWN_STATE_COOLDOWN
+        result.source = "spell-deferred"
     elseif result.realCooldownShown and result.realDurationObj then
         result.state = COOLDOWN_STATE_COOLDOWN
+        result.source = "spell-real-ignore-gcd"
         result.renderDurationObj = result.realDurationObj
     elseif CooldownLogic.IsSpellGCDOnly(info, {
         normalCooldownShown = result.normalCooldownShown,
         realCooldownShown = result.realCooldownShown,
     }) then
         result.state = COOLDOWN_STATE_GCD
+        result.source = "spell-gcd"
         result.renderDurationObj = result.durationObj or CooldownCompanion._gcdDurationObj
+    end
+
+    local needsRealCooldownFallback = result.state ~= COOLDOWN_STATE_COOLDOWN
+        and (result.isOnGCD == true or result.normalCooldownShown == true)
+
+    -- Some short real cooldowns surface as GCD-only through the spell lane
+    -- until the GCD ends. The action-slot duration object matches Blizzard's
+    -- button display and can expose the real ignoreGCD cooldown immediately.
+    if needsRealCooldownFallback
+        and options.allowActionSlotRealFallback
+        and ProbeActionSlotCooldownForSpell then
+        local slotProbe = ProbeActionSlotCooldownForSpell(baseSpellID or spellID, spellID)
+        if slotProbe.realShown == true and slotProbe.realDurationObj then
+            result.slotProbe = slotProbe
+            result.normalCooldownShown = slotProbe.shown == true or result.normalCooldownShown
+            result.realCooldownShown = true
+            result.durationObj = slotProbe.durationObj or result.durationObj
+            result.realDurationObj = slotProbe.realDurationObj
+            result.state = COOLDOWN_STATE_COOLDOWN
+            result.source = "action-slot-real-fallback"
+            result.fallbackUsed = true
+            result.renderDurationObj = slotProbe.realDurationObj
+        end
+    end
+
+    if options.captureLaneDiagnostics then
+        if not result.slotProbe and ProbeActionSlotCooldownForSpell then
+            result.slotProbe = ProbeActionSlotCooldownForSpell(baseSpellID or spellID, spellID)
+        end
+        if ProbeSpellBookCooldownForSpell then
+            result.spellbookProbe = ProbeSpellBookCooldownForSpell(baseSpellID or spellID, spellID)
+        end
     end
 
     return result
@@ -485,8 +532,168 @@ local function GetLiveOverrideSpellID(buttonData)
     return nil
 end
 
-local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
-    return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id)
+local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldown)
+    local allowActionSlotRealFallback = buttonData.hasCharges ~= true
+        and cooldownSpellId == buttonData.id
+        and noCooldown ~= true
+
+    return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id, {
+        allowActionSlotRealFallback = allowActionSlotRealFallback,
+        captureLaneDiagnostics = allowActionSlotRealFallback,
+    })
+end
+
+local function ClearRealCooldownContinuity(button)
+    button._lastRealCooldownSpellID = nil
+    button._lastRealCooldownDurationObj = nil
+    button._lastRealCooldownSource = nil
+    button._lastRealCooldownAt = nil
+end
+
+local function CanHoldRealCooldown(buttonData, cooldownSpellId, noCooldown)
+    return buttonData.type == "spell"
+        and buttonData.isPassive ~= true
+        and buttonData.hasCharges ~= true
+        and cooldownSpellId == buttonData.id
+        and noCooldown ~= true
+end
+
+local function ApplyRealCooldownContinuity(button, buttonData, cooldownSpellId, noCooldown, result, now)
+    if not (button and result and result.fetchOk) then
+        return result
+    end
+
+    if not CanHoldRealCooldown(buttonData, cooldownSpellId, noCooldown) then
+        ClearRealCooldownContinuity(button)
+        return result
+    end
+
+    if result.state == COOLDOWN_STATE_COOLDOWN
+        and result.realCooldownShown == true
+        and result.renderDurationObj then
+        button._lastRealCooldownSpellID = cooldownSpellId
+        button._lastRealCooldownDurationObj = result.renderDurationObj
+        button._lastRealCooldownSource = result.source
+        button._lastRealCooldownAt = now
+        return result
+    end
+
+    local previousDurationObj = button._lastRealCooldownDurationObj
+    local previousAt = button._lastRealCooldownAt
+    local canReusePrevious = previousDurationObj
+        and previousAt
+        and button._lastRealCooldownSpellID == cooldownSpellId
+        and now - previousAt <= REAL_COOLDOWN_GCD_HOLD_WINDOW
+    local lastOwnCastAt = button._lastOwnSpellCastAt
+    local castAge = lastOwnCastAt and (now - lastOwnCastAt) or nil
+    local recentlyCastThisSpell = castAge and castAge <= REAL_COOLDOWN_GCD_HOLD_WINDOW
+
+    if result.state == COOLDOWN_STATE_READY then
+        ClearRealCooldownContinuity(button)
+        return result
+    end
+
+    if canReusePrevious and result.state == COOLDOWN_STATE_GCD and result.source == "spell-gcd" then
+        if recentlyCastThisSpell and DurationObjectShowsCooldown(previousDurationObj) then
+            result.preContinuityState = result.state
+            result.preContinuitySource = result.source
+            result.state = COOLDOWN_STATE_COOLDOWN
+            result.source = "held-real-cooldown-over-gcd"
+            result.realCooldownShown = true
+            result.realDurationObj = previousDurationObj
+            result.renderDurationObj = previousDurationObj
+            result.continuityHeld = true
+            result.continuityAge = now - previousAt
+            result.continuityCastAge = castAge
+            result.continuitySource = button._lastRealCooldownSource
+            return result
+        end
+
+        if not recentlyCastThisSpell then
+            result.continuityBlockedReason = "not-recent-own-cast"
+            result.continuityCastAge = castAge
+        end
+        ClearRealCooldownContinuity(button)
+    end
+
+    return result
+end
+
+local function BuildCooldownApiTrace(result, now)
+    if not result then
+        return nil
+    end
+
+    local info = result.info
+    local slotProbe = result.slotProbe
+    local spellbookProbe = result.spellbookProbe
+    local trace = {
+        t = now,
+        traceVersion = COOLDOWN_API_TRACE_VERSION,
+        spellID = result.spellID,
+        state = result.state,
+        source = result.source,
+        fallbackUsed = result.fallbackUsed or false,
+        continuityHeld = result.continuityHeld or false,
+        continuityAge = result.continuityAge,
+        continuityCastAge = result.continuityCastAge,
+        continuitySource = result.continuitySource,
+        continuityBlockedReason = result.continuityBlockedReason,
+        preContinuityState = result.preContinuityState,
+        preContinuitySource = result.preContinuitySource,
+        fetchOk = result.fetchOk or false,
+        spellInfoPresent = info ~= nil,
+        spellIsOnGCD = result.isOnGCD or false,
+        spellDeferred = result.deferred or false,
+        spellNormalShown = result.normalCooldownShown or false,
+        spellRealShown = result.realCooldownShown or false,
+    }
+
+    if info then
+        trace.spellIsActive = info.isActive == true
+        trace.spellIsEnabled = info.isEnabled == true
+    end
+
+    if slotProbe then
+        trace.actionSawSlot = slotProbe.sawAnySlot or false
+        trace.actionSlot = slotProbe.slot
+        trace.actionMatchedSpellID = slotProbe.matchedSpellID
+        trace.actionNormalShown = slotProbe.shown == true
+        trace.actionRealShown = slotProbe.realShown == true
+    end
+
+    if spellbookProbe then
+        trace.spellbookSawSlot = spellbookProbe.sawSlot or false
+        trace.spellbookSlot = spellbookProbe.slot
+        trace.spellbookBank = spellbookProbe.bank and tostring(spellbookProbe.bank) or nil
+        trace.spellbookMatchedSpellID = spellbookProbe.matchedSpellID
+        trace.spellbookNormalShown = spellbookProbe.shown == true
+        trace.spellbookRealShown = spellbookProbe.realShown == true
+    end
+
+    return trace
+end
+
+local function StoreCooldownApiTrace(button, result, now)
+    if not button then
+        return
+    end
+
+    local interesting = result
+        and (result.state ~= COOLDOWN_STATE_READY
+            or result.slotProbe ~= nil
+            or result.spellbookProbe ~= nil
+            or result.deferred == true)
+
+    if interesting then
+        button._cooldownApiTrace = BuildCooldownApiTrace(result, now)
+        return
+    end
+
+    local existing = button._cooldownApiTrace
+    if type(existing) == "table" and existing.t and now - existing.t > COOLDOWN_API_TRACE_TTL then
+        button._cooldownApiTrace = nil
+    end
 end
 
 local function ResolveChargeState(button, buttonData)
@@ -528,11 +735,19 @@ local actionSlotSeenScratch = {}
 local function MergeActionSlotProbe(result, probe)
     if probe.sawAnySlot then result.sawAnySlot = true end
     if probe.sawUnknown then result.sawUnknown = true end
-    if probe.shown then
-        result.shown = true
-        result.durationObj = probe.durationObj
-        result.realShown = probe.realShown
-        result.realDurationObj = probe.realDurationObj
+    if probe.slot and not result.slot then result.slot = probe.slot end
+    if probe.matchedSpellID and not result.matchedSpellID then result.matchedSpellID = probe.matchedSpellID end
+    if probe.shown ~= nil then result.shown = probe.shown end
+    if probe.realShown ~= nil then result.realShown = probe.realShown end
+    if probe.durationObj then result.durationObj = result.durationObj or probe.durationObj end
+    if probe.realDurationObj then result.realDurationObj = result.realDurationObj or probe.realDurationObj end
+    if probe.shown or probe.realShown then
+        result.shown = probe.shown == true
+        result.durationObj = probe.durationObj or result.durationObj
+        result.realShown = probe.realShown == true
+        result.realDurationObj = probe.realDurationObj or result.realDurationObj
+        result.slot = probe.slot or result.slot
+        result.matchedSpellID = probe.matchedSpellID or result.matchedSpellID
         return true
     end
     return false
@@ -555,6 +770,8 @@ local function ProbeActionSlotsForSpellID(spellID)
         if not actionSlotSeenScratch[slot] then
             actionSlotSeenScratch[slot] = true
             result.sawAnySlot = true
+            result.slot = result.slot or slot
+            result.matchedSpellID = result.matchedSpellID or spellID
 
             local durationObj = C_ActionBar.GetActionCooldownDuration(slot)
             local realDurationObj = C_ActionBar.GetActionCooldownDuration(slot, true)
@@ -569,11 +786,13 @@ local function ProbeActionSlotsForSpellID(spellID)
                 realShown = DurationObjectShowsCooldown(realDurationObj)
             end
 
-            if shown then
-                result.shown = true
+            if shown or realShown then
+                result.shown = shown == true
                 result.durationObj = durationObj
-                result.realShown = realShown
+                result.realShown = realShown == true
                 result.realDurationObj = realDurationObj
+                result.slot = slot
+                result.matchedSpellID = spellID
                 return result
             end
         end
@@ -607,6 +826,52 @@ function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
     if result.sawAnySlot and not result.sawUnknown then
         result.shown = false
         result.realShown = false
+    end
+
+    return result
+end
+
+local function ProbeSpellBookCooldownForSpellID(spellID)
+    local result = {
+        shown = false,
+        realShown = false,
+        sawSlot = false,
+    }
+
+    if not spellID then return result end
+
+    local slot, bank = C_SpellBook.FindSpellBookSlotForSpell(spellID)
+    if not (slot and bank) then
+        return result
+    end
+
+    result.sawSlot = true
+    result.slot = slot
+    result.bank = bank
+    result.matchedSpellID = spellID
+
+    local durationObj = C_SpellBook.GetSpellBookItemCooldownDuration(slot, bank)
+    local realDurationObj = C_SpellBook.GetSpellBookItemCooldownDuration(slot, bank, true)
+
+    if durationObj then
+        result.shown = DurationObjectShowsCooldown(durationObj)
+    end
+
+    if realDurationObj then
+        result.realShown = DurationObjectShowsCooldown(realDurationObj)
+    end
+
+    return result
+end
+
+function ProbeSpellBookCooldownForSpell(baseSpellID, displaySpellID)
+    local result = ProbeSpellBookCooldownForSpellID(baseSpellID)
+    if result.sawSlot then
+        return result
+    end
+
+    if displaySpellID and displaySpellID ~= baseSpellID then
+        result = ProbeSpellBookCooldownForSpellID(displaySpellID)
     end
 
     return result
@@ -773,6 +1038,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     button._cooldownState = COOLDOWN_STATE_READY
     button._chargeState = nil
     button._chargeCooldownVisualActive = nil
+    if buttonData.type ~= "spell" or buttonData.isPassive then
+        button._cooldownApiTrace = nil
+    end
 
     -- Fetch cooldown data and update the cooldown widget.
     -- isOnGCD is NeverSecret (always readable even during restricted combat).
@@ -1322,7 +1590,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     if not auraOverrideActive then
         if buttonData.type == "spell" and not buttonData.isPassive then
-            spellCooldownResult = EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
+            spellCooldownResult = EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, button._noCooldown)
+            spellCooldownResult = ApplyRealCooldownContinuity(
+                button,
+                buttonData,
+                cooldownSpellId,
+                button._noCooldown,
+                spellCooldownResult,
+                now
+            )
+            StoreCooldownApiTrace(button, spellCooldownResult, now)
             if spellCooldownResult and spellCooldownResult.fetchOk then
                 spellCooldownInfo = spellCooldownResult.info
                 spellCooldownDuration = spellCooldownResult.durationObj
