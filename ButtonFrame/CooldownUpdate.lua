@@ -81,6 +81,12 @@ local function ClearConditionalVisualPreviewFields(button)
             button._auraStackText = ""
         end
     end
+    if button._conditionalAuraStackTextPreview then
+        button._auraStackText = ""
+        if button.auraStackCount then
+            button.auraStackCount:SetText("")
+        end
+    end
     if button._conditionalPandemicPreview then
         local buttonData = button.buttonData
         if not (buttonData and buttonData.auraTracking) then
@@ -94,6 +100,8 @@ local function ClearConditionalVisualPreviewFields(button)
     button._conditionalPreviewRemaining = nil
     button._conditionalPreviewDomain = nil
     button._conditionalAuraPreview = nil
+    button._conditionalAuraDurationTextPreview = nil
+    button._conditionalAuraStackTextPreview = nil
     button._conditionalPandemicPreview = nil
     button._conditionalUnusablePreview = nil
     button._conditionalOutOfRangePreview = nil
@@ -182,6 +190,29 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         if button.cooldown then
             button.cooldown:SetCooldown(startTime, duration)
         end
+        if button.auraStackCount and style.showAuraStackText ~= false then
+            button.auraStackCount:SetText(button._auraStackText or "")
+        end
+        return
+    end
+
+    if kind == "aura_duration_text" then
+        local startTime, duration, remaining = GetConditionalPreviewTiming(preview, now)
+        if not startTime then return end
+        button._conditionalAuraDurationTextPreview = true
+        button._conditionalPreviewDomain = "aura_text"
+        button._conditionalPreviewStartTime = startTime
+        button._conditionalPreviewDuration = duration
+        button._conditionalPreviewRemaining = remaining
+        if button.cooldown then
+            button.cooldown:SetCooldown(startTime, duration)
+        end
+        return
+    end
+
+    if kind == "aura_stack_text" then
+        button._auraStackText = preview.stackText or "3"
+        button._conditionalAuraStackTextPreview = true
         if button.auraStackCount and style.showAuraStackText ~= false then
             button.auraStackCount:SetText(button._auraStackText or "")
         end
@@ -623,6 +654,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local now = GetTime()
     local isGCDOnly = false
     local desatWasActive = button._desatCooldownActive == true
+    local conditionalPreview = GetConditionalVisualPreview and GetConditionalVisualPreview(button)
     ClearConditionalVisualPreviewFields(button)
 
     if button.count and button._countTextLaneStyled ~= useChargeTextLane then
@@ -1584,9 +1616,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Aura stack count display (aura-tracking spells with stackable auras)
     -- Text is a secret value in combat — pass through directly to SetText.
     -- Blizzard sets it to "" when stacks <= 1 and the count string when > 1.
-    if button.auraStackCount and (button._auraTrackingReady or buttonData.isPassive)
+    if button.auraStackCount and (button._auraTrackingReady or buttonData.isPassive or button._conditionalAuraStackTextPreview)
        and (style.showAuraStackText ~= false) then
-        if button._auraActive then
+        if button._auraActive or button._conditionalAuraStackTextPreview then
             button.auraStackCount:SetText(button._auraStackText or "")
         else
             button.auraStackCount:SetText("")
@@ -1680,14 +1712,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Config panel QOL: selected buttons in column 2 are always fully visible.
     local forceVisibleByConfig = IsConfigButtonForceVisible(button)
-    if forceVisibleByUnlockPreview then
+    local forceVisibleByPreview = conditionalPreview ~= nil and not isTriggerPanel
+    if forceVisibleByUnlockPreview or forceVisibleByPreview then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = 1
     elseif forceVisibleByConfig and not isTriggerPanel then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = 1
     end
-    button._forceVisibleByConfig = ((forceVisibleByConfig or forceVisibleByUnlockPreview) and not isTriggerPanel) or nil
+    button._forceVisibleByConfig = ((forceVisibleByConfig or forceVisibleByUnlockPreview or forceVisibleByPreview) and not isTriggerPanel) or nil
 
     -- Track visibility/force-visible state changes for compact layout reflow.
     local visibilityChanged = button._visibilityHidden ~= button._prevVisibilityHidden
@@ -1775,7 +1808,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button,
         buttonData,
         style,
-        GetConditionalVisualPreview and GetConditionalVisualPreview(button),
+        conditionalPreview,
         now,
         usesChargeBehavior
     )

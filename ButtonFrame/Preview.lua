@@ -137,6 +137,8 @@ end
 local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
     cooldown = { kind = "cooldown", duration = 12, remaining = 8 },
     aura = { kind = "aura", duration = 12, remaining = 8, stackText = "3" },
+    aura_duration_text = { kind = "aura_duration_text", duration = 12, remaining = 8 },
+    aura_stack_text = { kind = "aura_stack_text", stackText = "3" },
     pandemic = { kind = "pandemic", duration = 12, remaining = 3, stackText = "3" },
     charge_full = { kind = "charge_full" },
     charge_missing = { kind = "charge_missing" },
@@ -176,6 +178,12 @@ local function ClearConditionalVisualPreviewDerivedFields(button)
         button._auraHasTimer = false
         button._auraStackText = ""
     end
+    if button._conditionalAuraStackTextPreview then
+        button._auraStackText = ""
+        if button.auraStackCount then
+            button.auraStackCount:SetText("")
+        end
+    end
     if button._conditionalPandemicPreview then
         button._inPandemic = false
         button._pandemicGraceStart = nil
@@ -186,6 +194,8 @@ local function ClearConditionalVisualPreviewDerivedFields(button)
     button._conditionalPreviewRemaining = nil
     button._conditionalPreviewDomain = nil
     button._conditionalAuraPreview = nil
+    button._conditionalAuraDurationTextPreview = nil
+    button._conditionalAuraStackTextPreview = nil
     button._conditionalPandemicPreview = nil
     button._conditionalUnusablePreview = nil
     button._conditionalOutOfRangePreview = nil
@@ -230,11 +240,66 @@ local function SetGroupConditionalVisualPreview(self, groupId, state)
     end
 end
 
+local function IsGroupButtonPreviewActive(self, groupId, buttonIndex, predicate)
+    if not (self.groupFrames and groupId and predicate) then
+        return false
+    end
+    local frame = self.groupFrames[groupId]
+    if not frame then
+        return false
+    end
+
+    for _, button in ipairs(frame.buttons) do
+        if not buttonIndex or button.index == buttonIndex then
+            if predicate(button) then
+                return true
+            end
+            if buttonIndex then
+                return false
+            end
+        end
+    end
+    return false
+end
+
 local function GetConditionalVisualPreview(button)
     return button and button._conditionalVisualPreview or nil
 end
 
 ST._GetConditionalVisualPreview = GetConditionalVisualPreview
+
+function CooldownCompanion:IsPreviewFlagActive(groupId, buttonIndex, previewFlag)
+    if not previewFlag then
+        return false
+    end
+    return IsGroupButtonPreviewActive(self, groupId, buttonIndex, function(button)
+        return button[previewFlag] == true
+    end)
+end
+
+function CooldownCompanion:IsConditionalVisualPreviewActive(groupId, buttonIndex, previewKind)
+    return IsGroupButtonPreviewActive(self, groupId, buttonIndex, function(button)
+        local state = GetConditionalVisualPreview(button)
+        return state and state.kind == previewKind
+    end)
+end
+
+function CooldownCompanion:SetConditionalVisualPreviewActive(groupId, buttonIndex, previewKind, show, sampleState)
+    if not groupId then
+        return
+    end
+
+    local state = show and BuildConditionalVisualPreviewState(previewKind, sampleState) or nil
+    if buttonIndex then
+        BumpButtonPreviewToken(conditionalVisualButtonTokens, groupId, buttonIndex)
+        SetConditionalVisualPreview(self, groupId, buttonIndex, state)
+        return
+    end
+
+    conditionalVisualButtonTokens[groupId] = nil
+    conditionalVisualGroupTokens[groupId] = (conditionalVisualGroupTokens[groupId] or 0) + 1
+    SetGroupConditionalVisualPreview(self, groupId, state)
+end
 
 function CooldownCompanion:PlayConditionalVisualPreview(groupId, buttonIndex, previewKind, durationSeconds, sampleState)
     local duration = tonumber(durationSeconds) or 3
@@ -411,6 +476,29 @@ end
 local barAuraActiveGroupTokens = {}
 local barAuraActiveButtonTokens = {}
 
+function CooldownCompanion:SetBarAuraActivePreview(groupId, buttonIndex, show)
+    if not groupId then return end
+    if buttonIndex then
+        BumpButtonPreviewToken(barAuraActiveButtonTokens, groupId, buttonIndex)
+    else
+        barAuraActiveButtonTokens[groupId] = nil
+        barAuraActiveGroupTokens[groupId] = (barAuraActiveGroupTokens[groupId] or 0) + 1
+    end
+
+    local frame = self.groupFrames[groupId]
+    if not frame then return end
+    for _, button in ipairs(frame.buttons) do
+        if not buttonIndex or button.index == buttonIndex then
+            button._barAuraActivePreview = show or nil
+            if button.UpdateCooldown then button:UpdateCooldown() end
+        end
+    end
+end
+
+function CooldownCompanion:IsBarAuraActivePreviewActive(groupId, buttonIndex)
+    return self:IsPreviewFlagActive(groupId, buttonIndex, "_barAuraActivePreview")
+end
+
 function CooldownCompanion:PlayBarAuraActivePreview(groupId, buttonIndex, durationSeconds)
     local duration = tonumber(durationSeconds) or 3
     if duration <= 0 then duration = 3 end
@@ -569,6 +657,11 @@ function CooldownCompanion:SetGroupTextureIndicatorPreview(groupId, indicatorKey
     )
 end
 
+function CooldownCompanion:IsGroupTextureIndicatorPreviewActive(groupId, indicatorKey)
+    local previewFlag = TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey]
+    return previewFlag and self:IsPreviewFlagActive(groupId, nil, previewFlag) or false
+end
+
 function CooldownCompanion:PlayGroupTextureIndicatorPreview(groupId, indicatorKey, durationSeconds)
     local previewFlag = TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey]
     if not previewFlag then
@@ -626,6 +719,10 @@ function CooldownCompanion:SetTriggerPanelEffectsPreview(groupId, show)
             self:UpdateAuraTextureVisual(button)
         end
     end
+end
+
+function CooldownCompanion:IsTriggerPanelEffectsPreviewActive(groupId)
+    return self:IsPreviewFlagActive(groupId, nil, "_triggerEffectsPreview")
 end
 
 function CooldownCompanion:PlayTriggerPanelEffectsPreview(groupId, durationSeconds)

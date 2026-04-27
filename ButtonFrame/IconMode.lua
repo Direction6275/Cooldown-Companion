@@ -700,7 +700,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
 
     -- When separate text positions: move primary text to aura anchor during aura, cooldown anchor otherwise
     if button._secondaryCdTextRegion and button._cdTextRegion then
-        local wantAuraPos = button._auraActive == true
+        local wantAuraPos = button._auraActive == true or button._conditionalAuraDurationTextPreview == true
         if button._cdTextAtAuraPos ~= wantAuraPos then
             button._cdTextAtAuraPos = wantAuraPos
             button._cdTextRegion:ClearAllPoints()
@@ -722,7 +722,8 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     -- Color is reapplied each tick because WoW's CooldownFrame may reset it.
     if button._cdTextRegion then
         local showText, fontColor, wantFont, wantSize, wantOutline
-        if button._auraActive then
+        local auraTextPreview = button._conditionalAuraDurationTextPreview == true
+        if button._auraActive or auraTextPreview then
             showText = style.showAuraText ~= false
             fontColor = style.auraTextFontColor or DEFAULT_AURA_TEXT_COLOR
             wantFont = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
@@ -745,7 +746,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             local cc = fontColor
             button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             -- Only call SetFont when mode changes to avoid per-tick overhead
-            local mode = button._auraActive and "aura" or "cd"
+            local mode = (button._auraActive or auraTextPreview) and "aura" or "cd"
             if button._cdTextMode ~= mode then
                 button._cdTextMode = mode
                 button._cdTextRegion:SetFont(wantFont, wantSize, wantOutline)

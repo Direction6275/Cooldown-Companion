@@ -26,6 +26,7 @@ local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
 local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
+local AddPreviewToggleButton = ST._AddPreviewToggleButton
 local tabInfoButtons = CS.tabInfoButtons
 
 local function RefreshLayoutOrderPreview()
@@ -1938,13 +1939,15 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                         })
                         BuildBarAuraPulseControls(container, customBars[cabIdx], cabApplyBars)
 
-                        local activeAuraPreviewBtn = AceGUI:Create("Button")
-                        activeAuraPreviewBtn:SetText("Preview Active Aura Effects (3s)")
-                        activeAuraPreviewBtn:SetFullWidth(true)
-                        activeAuraPreviewBtn:SetCallback("OnClick", function()
-                            CooldownCompanion:PlayCustomAuraBarActivePreview(customBars[cabIdx], 3)
-                        end)
-                        container:AddChild(activeAuraPreviewBtn)
+                        if AddPreviewToggleButton then
+                            AddPreviewToggleButton(container, "Preview Active Aura Effects", function()
+                                return CooldownCompanion:IsCustomAuraBarActivePreviewActive(customBars[cabIdx])
+                            end, function(show)
+                                CooldownCompanion:SetCustomAuraBarActivePreview(customBars[cabIdx], show)
+                            end)
+                        end
+                    else
+                        CooldownCompanion:SetCustomAuraBarActivePreview(customBars[cabIdx], false)
                     end
 
                     if resolvedAuraUnit == "target" then
@@ -1977,14 +1980,18 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                             BuildPandemicBarControls(container, customBars[cabIdx], cabApplyBars)
                             BuildPandemicBarPulseControls(container, customBars[cabIdx], cabApplyBars)
 
-                            local pandemicPreviewBtn = AceGUI:Create("Button")
-                            pandemicPreviewBtn:SetText("Preview Pandemic Effects (3s)")
-                            pandemicPreviewBtn:SetFullWidth(true)
-                            pandemicPreviewBtn:SetCallback("OnClick", function()
-                                CooldownCompanion:PlayCustomAuraBarPandemicPreview(customBars[cabIdx], 3)
-                            end)
-                            container:AddChild(pandemicPreviewBtn)
+                            if AddPreviewToggleButton then
+                                AddPreviewToggleButton(container, "Preview Pandemic Effects", function()
+                                    return CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(customBars[cabIdx])
+                                end, function(show)
+                                    CooldownCompanion:SetCustomAuraBarPandemicPreview(customBars[cabIdx], show)
+                                end)
+                            end
+                        else
+                            CooldownCompanion:SetCustomAuraBarPandemicPreview(customBars[cabIdx], false)
                         end
+                    else
+                        CooldownCompanion:SetCustomAuraBarPandemicPreview(customBars[cabIdx], false)
                     end
                 else
                     local thresholdCb = AceGUI:Create("CheckBox")

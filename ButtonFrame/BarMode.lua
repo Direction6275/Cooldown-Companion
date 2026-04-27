@@ -102,6 +102,8 @@ local function UpdateBarFill(button)
         button._conditionalPreviewRemaining = previewRemaining
     end
 
+    local auraDurationTextPreview = button._conditionalAuraDurationTextPreview == true
+
     if previewRemaining and previewRemaining > 0 and not button._barGCDSuppressed then
         onCooldown = true
         previewDuration = previewDuration or previewRemaining
@@ -109,7 +111,7 @@ local function UpdateBarFill(button)
             previewDuration = previewRemaining
         end
         local frac
-        if button._conditionalPreviewDomain == "aura" then
+        if button._conditionalPreviewDomain == "aura" or button._conditionalPreviewDomain == "aura_text" then
             frac = previewRemaining / previewDuration
         else
             frac = 1 - (previewRemaining / previewDuration)
@@ -165,16 +167,16 @@ local function UpdateBarFill(button)
     end
 
     if onCooldown then
-        local showTimeText = button._auraActive
+        local showTimeText = (button._auraActive or auraDurationTextPreview)
             and (button.style.showAuraText ~= false)
-            or (not button._auraActive and button.style.showCooldownText)
+            or (not button._auraActive and not auraDurationTextPreview and button.style.showCooldownText)
         if showTimeText then
             -- Switch font/color when mode changes
-            local mode = button._auraActive and "aura" or "cd"
+            local mode = (button._auraActive or auraDurationTextPreview) and "aura" or "cd"
             if button._barTextMode ~= mode then
                 button._barTextMode = mode
                 button._barTextColorDirty = true
-                if button._auraActive then
+                if button._auraActive or auraDurationTextPreview then
                     local f = CooldownCompanion:FetchFont(button.style.auraTextFont or "Friz Quadrata TT")
                     local s = button.style.auraTextFontSize or 12
                     local o = button.style.auraTextFontOutline or "OUTLINE"
@@ -188,7 +190,7 @@ local function UpdateBarFill(button)
             end
             if button._barTextColorDirty then
                 button._barTextColorDirty = nil
-                local cc = button._auraActive
+                local cc = (button._auraActive or auraDurationTextPreview)
                     and (button.style.auraTextFontColor or DEFAULT_AURA_TEXT_COLOR)
                     or (button.style.cooldownFontColor or DEFAULT_WHITE)
                 button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])

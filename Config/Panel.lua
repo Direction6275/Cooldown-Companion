@@ -535,16 +535,21 @@ local function CreateConfigPanel()
         if CS.CancelPickAuraTexture then
             CS.CancelPickAuraTexture()
         end
-        CooldownCompanion:ClearAllProcGlowPreviews()
-        CooldownCompanion:ClearAllAuraGlowPreviews()
-        CooldownCompanion:ClearAllPandemicPreviews()
-        CooldownCompanion:ClearAllReadyGlowPreviews()
-        CooldownCompanion:ClearAllKeyPressHighlightPreviews()
-        CooldownCompanion:ClearAllBarAuraActivePreviews()
-        CooldownCompanion:ClearAllConditionalVisualPreviews()
+        if not CS.previewToggleRefreshActive then
+            CooldownCompanion:ClearAllProcGlowPreviews()
+            CooldownCompanion:ClearAllAuraGlowPreviews()
+            CooldownCompanion:ClearAllPandemicPreviews()
+            CooldownCompanion:ClearAllReadyGlowPreviews()
+            CooldownCompanion:ClearAllKeyPressHighlightPreviews()
+            CooldownCompanion:ClearAllBarAuraActivePreviews()
+            CooldownCompanion:ClearAllConditionalVisualPreviews()
+        end
         CooldownCompanion:ClearAllTextureIndicatorPreviews()
         if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
             CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
+        end
+        if CooldownCompanion.ClearAllCustomAuraBarPreviews then
+            CooldownCompanion:ClearAllCustomAuraBarPreviews()
         end
         CooldownCompanion:ClearAllAuraTexturePickerPreviews()
         CooldownCompanion:StopCastBarPreview()

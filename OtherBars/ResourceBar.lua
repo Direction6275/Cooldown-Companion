@@ -3339,6 +3339,63 @@ local function RefreshCustomAuraBarPreviewState(cabConfig, previewKey, show)
     end
 end
 
+local function IsCustomAuraBarPreviewStateActive(cabConfig, previewKey)
+    if not (cabConfig and previewKey) then
+        return false
+    end
+    for _, barInfo in ipairs(resourceBarFrames) do
+        if barInfo.cabConfig == cabConfig and barInfo.frame and barInfo.frame[previewKey] then
+            return true
+        end
+    end
+    return false
+end
+
+function CooldownCompanion:SetCustomAuraBarActivePreview(cabConfig, show)
+    if not cabConfig then return end
+    customAuraBarActivePreviewTokens[cabConfig] = (customAuraBarActivePreviewTokens[cabConfig] or 0) + 1
+    RefreshCustomAuraBarPreviewState(cabConfig, "_barAuraActivePreview", show)
+end
+
+function CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig)
+    return IsCustomAuraBarPreviewStateActive(cabConfig, "_barAuraActivePreview")
+end
+
+function CooldownCompanion:SetCustomAuraBarPandemicPreview(cabConfig, show)
+    if not cabConfig then return end
+    customAuraBarPandemicPreviewTokens[cabConfig] = (customAuraBarPandemicPreviewTokens[cabConfig] or 0) + 1
+    RefreshCustomAuraBarPreviewState(cabConfig, "_pandemicPreview", show)
+end
+
+function CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(cabConfig)
+    return IsCustomAuraBarPreviewStateActive(cabConfig, "_pandemicPreview")
+end
+
+function CooldownCompanion:ClearAllCustomAuraBarPreviews()
+    wipe(customAuraBarActivePreviewTokens)
+    wipe(customAuraBarPandemicPreviewTokens)
+
+    local anyUpdated = false
+    for _, barInfo in ipairs(resourceBarFrames) do
+        local frame = barInfo.frame
+        if frame and (frame._barAuraActivePreview or frame._pandemicPreview) then
+            frame._barAuraActivePreview = nil
+            frame._pandemicPreview = nil
+            UpdateCustomAuraBar(barInfo)
+            if barInfo.barType == "custom_continuous" then
+                AnimateCustomAuraBarIndicator(frame)
+            end
+            anyUpdated = true
+        end
+    end
+
+    if anyUpdated and layoutDirty then
+        layoutDirty = false
+        RelayoutBars()
+        CooldownCompanion:RepositionCastBar()
+    end
+end
+
 function CooldownCompanion:PlayCustomAuraBarActivePreview(cabConfig, durationSeconds)
     if not cabConfig then return end
 

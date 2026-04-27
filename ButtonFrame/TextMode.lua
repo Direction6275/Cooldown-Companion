@@ -340,8 +340,9 @@ local function SubstituteTokens(button, segments, style, effectState)
     local currentCharges = button._currentReadableCharges
     local maxCharges = button.buttonData.maxCharges
     local stackDisplayText, stackDisplayKind = ResolveTextModeStackDisplay(button)
-    local auraActive = button._auraActive
-    local auraHasTimer = button._auraHasTimer == true
+    local auraDurationTextPreview = button._conditionalAuraDurationTextPreview == true
+    local auraActive = button._auraActive or auraDurationTextPreview
+    local auraHasTimer = button._auraHasTimer == true or auraDurationTextPreview
     -- _durationObj holds either cooldown remaining or aura remaining (when aura override is active).
     -- Determine which domain owns it this tick.
     local durationRemaining = nil

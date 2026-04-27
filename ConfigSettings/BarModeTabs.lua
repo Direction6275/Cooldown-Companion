@@ -30,6 +30,7 @@ local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
 local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
+local AddPreviewToggleButton = ST._AddPreviewToggleButton
 local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 
 local tabInfoButtons = CS.tabInfoButtons
@@ -256,9 +257,6 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local timeAdvExpanded, timeAdvBtn = AddAdvancedToggle(showTimeCbBasic, "barCooldownText", tabInfoButtons, style.showCooldownText)
     CreateCheckboxPromoteButton(showTimeCbBasic, timeAdvBtn, "cooldownText", group, style)
-    if style.showCooldownText and AddConditionalPreviewButton then
-        AddConditionalPreviewButton(container, "Preview Cooldown State (3s)", "cooldown")
-    end
 
     if timeAdvExpanded and style.showCooldownText then
         local flipTimeCheck = AceGUI:Create("CheckBox")
@@ -280,6 +278,10 @@ local function BuildBarAppearanceTab(container, group, style)
         AddFontControls(container, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle)
         AddColorPicker(container, style, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshStyle, refreshStyle)
         AddOffsetSliders(container, style, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle)
+
+        if AddConditionalPreviewButton then
+            AddConditionalPreviewButton(container, "Preview Cooldown Text", "cooldown")
+        end
     end
 
     -- Show Charge Text toggle
@@ -296,10 +298,6 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local chargeAdvExpanded, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "barChargeText", tabInfoButtons, style.showChargeText ~= false)
     CreateCheckboxPromoteButton(chargeTextCb, chargeAdvBtn, "chargeText", group, style)
-    if style.showChargeText ~= false and AddConditionalPreviewButton then
-        AddConditionalPreviewButton(container, "Preview Missing Charges (3s)", "charge_missing")
-        AddConditionalPreviewButton(container, "Preview Zero Charges (3s)", "charge_zero")
-    end
 
     if chargeAdvExpanded and style.showChargeText ~= false then
         AddFontControls(container, style, "charge", {}, refreshStyle)
@@ -326,13 +324,14 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local barAuraTextAdvExpanded, barAuraTextAdvBtn = AddAdvancedToggle(auraTextCb, "barAuraText", tabInfoButtons, style.showAuraText ~= false)
     CreateCheckboxPromoteButton(auraTextCb, barAuraTextAdvBtn, "auraText", group, style)
-    if style.showAuraText ~= false and AddConditionalPreviewButton then
-        AddConditionalPreviewButton(container, "Preview Aura State (3s)", "aura")
-    end
 
     if barAuraTextAdvExpanded and style.showAuraText ~= false then
         AddFontControls(container, style, "auraText", {sizeMin = 6, sizeMax = 24}, refreshStyle)
         AddColorPicker(container, style, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshStyle, refreshStyle)
+
+        if AddConditionalPreviewButton then
+            AddConditionalPreviewButton(container, "Preview Aura Duration Text", "aura_duration_text")
+        end
     end -- barAuraTextAdvExpanded
 
     -- ================================================================
@@ -357,6 +356,10 @@ local function BuildBarAppearanceTab(container, group, style)
         AddColorPicker(container, style, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
         AddAnchorDropdown(container, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle)
         AddOffsetSliders(container, style, "auraStackXOffset", "auraStackYOffset", {x = 2, y = 2}, refreshStyle)
+
+        if AddConditionalPreviewButton then
+            AddConditionalPreviewButton(container, "Preview Aura Stack Text", "aura_stack_text")
+        end
     end -- barAuraStackAdvExpanded
 
     -- Show Ready Text toggle
@@ -460,15 +463,17 @@ local function BuildBarEffectsTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
 
-    local auraActivePreviewBtn = AceGUI:Create("Button")
-    auraActivePreviewBtn:SetText("Preview Active Aura Effects (3s)")
-    auraActivePreviewBtn:SetFullWidth(true)
-    auraActivePreviewBtn:SetCallback("OnClick", function()
-        if CS.selectedGroup then
-            CooldownCompanion:PlayBarAuraActivePreview(CS.selectedGroup, nil, 3)
-        end
-    end)
-    container:AddChild(auraActivePreviewBtn)
+    if AddPreviewToggleButton then
+        AddPreviewToggleButton(container, "Preview Active Aura Effects", function()
+            return CS.selectedGroup and CooldownCompanion:IsBarAuraActivePreviewActive(CS.selectedGroup, nil)
+        end, function(show)
+            if CS.selectedGroup then
+                CooldownCompanion:SetBarAuraActivePreview(CS.selectedGroup, nil, show)
+            end
+        end)
+    end
+    elseif CS.selectedGroup then
+        CooldownCompanion:SetBarAuraActivePreview(CS.selectedGroup, nil, false)
     end -- barAuraAdvExpanded
 
     -- ================================================================
@@ -508,15 +513,17 @@ local function BuildBarEffectsTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
 
-    local pandemicPreviewBtn = AceGUI:Create("Button")
-    pandemicPreviewBtn:SetText("Preview Pandemic Effects (3s)")
-    pandemicPreviewBtn:SetFullWidth(true)
-    pandemicPreviewBtn:SetCallback("OnClick", function()
-        if CS.selectedGroup then
-            CooldownCompanion:PlayGroupPandemicPreview(CS.selectedGroup, 3)
-        end
-    end)
-    container:AddChild(pandemicPreviewBtn)
+    if AddPreviewToggleButton then
+        AddPreviewToggleButton(container, "Preview Pandemic Effects", function()
+            return CS.selectedGroup and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, nil, "_pandemicPreview")
+        end, function(show)
+            if CS.selectedGroup then
+                CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, show)
+            end
+        end)
+    end
+    elseif CS.selectedGroup then
+        CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
     end -- barPandemicAdvExpanded
 
     -- ================================================================
@@ -558,10 +565,12 @@ local function BuildBarEffectsTab(container, group, style)
         -- ================================================================
         local unusableCb = BuildUnusableDimmingControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
         end)
-        CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
-        if style.showUnusable and AddConditionalPreviewButton then
-            AddConditionalPreviewButton(container, "Preview Unusable State (3s)", "unusable")
+        local unusableAdvExpanded, unusableAdvBtn = AddAdvancedToggle(unusableCb, "barUnusableDimming", tabInfoButtons, style.showUnusable)
+        CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
+        if unusableAdvExpanded and style.showUnusable and AddConditionalPreviewButton then
+            AddConditionalPreviewButton(container, "Preview Unusable State", "unusable")
         end
 
         -- Show Tooltips

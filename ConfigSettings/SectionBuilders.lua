@@ -35,38 +35,68 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
 
-local function AddConditionalPreviewButton(container, label, previewKind, opts)
-    if not (container and CooldownCompanion.PlayConditionalVisualPreview) then
+local function ResolvePreviewOption(value)
+    if type(value) == "function" then
+        return value()
+    end
+    return value
+end
+
+local function AddPreviewToggleButton(container, offLabel, isActiveFn, setActiveFn)
+    if not (container and isActiveFn and setActiveFn) then
         return nil
     end
 
     local btn = AceGUI:Create("Button")
-    btn:SetText(label)
+    btn:SetText(isActiveFn() and "Preview: ON" or offLabel)
     btn:SetFullWidth(true)
     btn:SetCallback("OnClick", function()
-        local groupId = opts and opts.groupId or CS.selectedGroup
-        local buttonIndex = opts and opts.buttonIndex
-        if type(groupId) == "function" then
-            groupId = groupId()
-        end
-        if type(buttonIndex) == "function" then
-            buttonIndex = buttonIndex()
-        end
-        if opts and opts.requireButton and not buttonIndex then
-            return
-        end
-        if groupId then
-            CooldownCompanion:PlayConditionalVisualPreview(
-                groupId,
-                buttonIndex,
-                previewKind,
-                opts and opts.durationSeconds or 3,
-                opts and opts.sampleState
-            )
+        setActiveFn(not isActiveFn())
+        if CooldownCompanion.RefreshConfigPanel then
+            local wasPreviewRefresh = CS.previewToggleRefreshActive
+            CS.previewToggleRefreshActive = true
+            CooldownCompanion:RefreshConfigPanel()
+            CS.previewToggleRefreshActive = wasPreviewRefresh
+        else
+            btn:SetText(isActiveFn() and "Preview: ON" or offLabel)
         end
     end)
     container:AddChild(btn)
     return btn
+end
+
+local function AddConditionalPreviewButton(container, label, previewKind, opts)
+    if not (container and CooldownCompanion.SetConditionalVisualPreviewActive and CooldownCompanion.IsConditionalVisualPreviewActive) then
+        return nil
+    end
+
+    local function ResolveTarget()
+        local groupId = ResolvePreviewOption(opts and opts.groupId) or CS.selectedGroup
+        local buttonIndex = ResolvePreviewOption(opts and opts.buttonIndex)
+        if opts and opts.requireButton and not buttonIndex then
+            return nil, nil
+        end
+        return groupId, buttonIndex
+    end
+
+    return AddPreviewToggleButton(container, label, function()
+        local groupId, buttonIndex = ResolveTarget()
+        if not groupId then
+            return false
+        end
+        return CooldownCompanion:IsConditionalVisualPreviewActive(groupId, buttonIndex, previewKind)
+    end, function(show)
+        local groupId, buttonIndex = ResolveTarget()
+        if groupId then
+            CooldownCompanion:SetConditionalVisualPreviewActive(
+                groupId,
+                buttonIndex,
+                previewKind,
+                show,
+                opts and opts.sampleState
+            )
+        end
+    end)
 end
 
 local function BuildCooldownTextControls(container, styleTable, refreshCallback)
@@ -1110,6 +1140,7 @@ end
 -- EXPORTS
 ------------------------------------------------------------------------
 ST._BuildCooldownTextControls = BuildCooldownTextControls
+ST._AddPreviewToggleButton = AddPreviewToggleButton
 ST._AddConditionalPreviewButton = AddConditionalPreviewButton
 ST._BuildAuraTextControls = BuildAuraTextControls
 ST._BuildAuraStackTextControls = BuildAuraStackTextControls
