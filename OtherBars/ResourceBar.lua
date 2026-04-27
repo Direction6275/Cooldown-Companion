@@ -156,6 +156,8 @@ local processingCustomAuraWakeRetryQueue = false
 local independentWrapperFrame = nil
 local customAuraBarActivePreviewTokens = {}
 local customAuraBarPandemicPreviewTokens = {}
+local activeCustomAuraBarActivePreviews = {}
+local activeCustomAuraBarPandemicPreviews = {}
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL = 0.65
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = 3
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = 12.3
@@ -427,6 +429,17 @@ local function ClearCustomAuraBarIndicatorState(barInfo, clearPreviewFlags)
     end
 
     ResetCustomAuraBarIndicatorVisuals(bar, barInfo.cabConfig)
+end
+
+local function ApplyCustomAuraBarPreviewState(barInfo)
+    local bar = barInfo and barInfo.frame
+    local cabConfig = barInfo and barInfo.cabConfig
+    if not (bar and cabConfig) then
+        return
+    end
+
+    bar._barAuraActivePreview = activeCustomAuraBarActivePreviews[cabConfig] and true or nil
+    bar._pandemicPreview = activeCustomAuraBarPandemicPreviews[cabConfig] and true or nil
 end
 
 local function AnimateCustomAuraBarIndicator(bar)
@@ -2294,6 +2307,7 @@ local function PrepareCustomAuraBar(
 
     barInfo.cabConfig = cabConfig
     barInfo.powerType = powerType
+    ApplyCustomAuraBarPreviewState(barInfo)
     barInfo.frame:SetSize(customWidth, customHeight)
     barInfo.frame._isVertical = customIsVertical
     barInfo.frame._reverseFill = customReverseFill
@@ -3303,6 +3317,8 @@ function CooldownCompanion:RevertResourceBars()
     isPreviewActive = false
     wipe(customAuraBarActivePreviewTokens)
     wipe(customAuraBarPandemicPreviewTokens)
+    wipe(activeCustomAuraBarActivePreviews)
+    wipe(activeCustomAuraBarPandemicPreviews)
     activeResources = {}
 end
 
@@ -3354,26 +3370,32 @@ end
 function CooldownCompanion:SetCustomAuraBarActivePreview(cabConfig, show)
     if not cabConfig then return end
     customAuraBarActivePreviewTokens[cabConfig] = (customAuraBarActivePreviewTokens[cabConfig] or 0) + 1
+    activeCustomAuraBarActivePreviews[cabConfig] = show or nil
     RefreshCustomAuraBarPreviewState(cabConfig, "_barAuraActivePreview", show)
 end
 
 function CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig)
-    return IsCustomAuraBarPreviewStateActive(cabConfig, "_barAuraActivePreview")
+    return activeCustomAuraBarActivePreviews[cabConfig] == true
+        or IsCustomAuraBarPreviewStateActive(cabConfig, "_barAuraActivePreview")
 end
 
 function CooldownCompanion:SetCustomAuraBarPandemicPreview(cabConfig, show)
     if not cabConfig then return end
     customAuraBarPandemicPreviewTokens[cabConfig] = (customAuraBarPandemicPreviewTokens[cabConfig] or 0) + 1
+    activeCustomAuraBarPandemicPreviews[cabConfig] = show or nil
     RefreshCustomAuraBarPreviewState(cabConfig, "_pandemicPreview", show)
 end
 
 function CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(cabConfig)
-    return IsCustomAuraBarPreviewStateActive(cabConfig, "_pandemicPreview")
+    return activeCustomAuraBarPandemicPreviews[cabConfig] == true
+        or IsCustomAuraBarPreviewStateActive(cabConfig, "_pandemicPreview")
 end
 
 function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     wipe(customAuraBarActivePreviewTokens)
     wipe(customAuraBarPandemicPreviewTokens)
+    wipe(activeCustomAuraBarActivePreviews)
+    wipe(activeCustomAuraBarPandemicPreviews)
 
     local anyUpdated = false
     for _, barInfo in ipairs(resourceBarFrames) do
@@ -3405,10 +3427,12 @@ function CooldownCompanion:PlayCustomAuraBarActivePreview(cabConfig, durationSec
     local token = (customAuraBarActivePreviewTokens[cabConfig] or 0) + 1
     customAuraBarActivePreviewTokens[cabConfig] = token
 
+    activeCustomAuraBarActivePreviews[cabConfig] = true
     RefreshCustomAuraBarPreviewState(cabConfig, "_barAuraActivePreview", true)
 
     C_Timer.After(duration, function()
         if customAuraBarActivePreviewTokens[cabConfig] ~= token then return end
+        activeCustomAuraBarActivePreviews[cabConfig] = nil
         RefreshCustomAuraBarPreviewState(cabConfig, "_barAuraActivePreview", false)
     end)
 end
@@ -3422,10 +3446,12 @@ function CooldownCompanion:PlayCustomAuraBarPandemicPreview(cabConfig, durationS
     local token = (customAuraBarPandemicPreviewTokens[cabConfig] or 0) + 1
     customAuraBarPandemicPreviewTokens[cabConfig] = token
 
+    activeCustomAuraBarPandemicPreviews[cabConfig] = true
     RefreshCustomAuraBarPreviewState(cabConfig, "_pandemicPreview", true)
 
     C_Timer.After(duration, function()
         if customAuraBarPandemicPreviewTokens[cabConfig] ~= token then return end
+        activeCustomAuraBarPandemicPreviews[cabConfig] = nil
         RefreshCustomAuraBarPreviewState(cabConfig, "_pandemicPreview", false)
     end)
 end

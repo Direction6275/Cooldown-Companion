@@ -128,7 +128,12 @@ local function UpdateBlizzardAuraSwipe(button, style)
     overlay:SetSwipeColor(BLIZZARD_AURA_SWIPE_R, BLIZZARD_AURA_SWIPE_G, BLIZZARD_AURA_SWIPE_B, BLIZZARD_AURA_SWIPE_A)
 
     local rendered = false
-    if button._durationObj then
+    if button._conditionalAuraDurationTextPreview == true
+        and button._conditionalPreviewStartTime
+        and button._conditionalPreviewDuration then
+        overlay:SetCooldown(button._conditionalPreviewStartTime, button._conditionalPreviewDuration)
+        rendered = true
+    elseif button._durationObj then
         overlay:SetCooldownFromDurationObject(button._durationObj)
         rendered = overlay:IsShown()
     else
@@ -664,6 +669,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         -- keeps any explicit real-cooldown presentation from being hidden here.
         local suppressGCD = not style.showGCDSwipe
             and isGCDOnly
+            and button._chargeCooldownVisualActive ~= true
             and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
 
         if suppressGCD then

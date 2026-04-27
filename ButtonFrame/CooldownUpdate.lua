@@ -755,6 +755,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     button._cooldownDeferred = nil
     button._cooldownState = COOLDOWN_STATE_READY
     button._chargeState = nil
+    button._chargeCooldownVisualActive = nil
 
     -- Fetch cooldown data and update the cooldown widget.
     -- isOnGCD is NeverSecret (always readable even during restricted combat).
@@ -1354,7 +1355,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if usesChargeBehavior and buttonData.hasCharges and buttonData.type == "spell" then
         button._displayCountZeroUsabilityFallback = nil
         charges = UpdateChargeTracking(button, buttonData, cooldownSpellId)
-        button._chargeRecharging = DurationObjectShowsCooldown(button._chargeDurationObj)
+        button._chargeCooldownVisualActive = DurationObjectShowsCooldown(button._chargeDurationObj)
+        button._chargeRecharging = button._chargeCooldownVisualActive
     elseif usesChargeBehavior
         and (buttonData._hasDisplayCount or buttonData._displayCountFamily)
         and buttonData.type == "spell"
@@ -1583,23 +1585,33 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._durationObj = nil
         end
 
+        local normalCooldownDisplayActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+            or (button._cooldownState == COOLDOWN_STATE_GCD and style.showGCDSwipe == true)
         if not auraOverrideActive and button._chargeDurationObj then
             if not button._isBar and not button._isText then
-                -- Icon mode: always set _durationObj, show recharge radial
-                button._durationObj = button._chargeDurationObj
-                button.cooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
+                if button._chargeCooldownVisualActive then
+                    -- Icon mode: active recharge owns the shared cooldown frame.
+                    button._durationObj = button._chargeDurationObj
+                    button.cooldown:SetCooldownFromDurationObject(button._chargeDurationObj)
+                elseif not normalCooldownDisplayActive then
+                    button.cooldown:SetCooldown(0, 0)
+                end
             elseif button._chargeRecharging then
                 -- Bar/text mode: only set _durationObj if actually recharging
                 button._durationObj = button._chargeDurationObj
             end
         elseif not button._isBar and not button._isText and not auraOverrideActive then
             -- Icon mode fallback: no chargeDurationObj, try fetching one.
-            -- Clear if unavailable to prevent stale cooldown widget state.
+            -- Only an active charge DurationObject may replace an existing GCD display.
             local chargeSpellID = cooldownSpellId or buttonData.id
             local fallbackDuration = C_Spell.GetSpellChargeDuration(chargeSpellID)
-            if fallbackDuration then
+            local fallbackActive = DurationObjectShowsCooldown(fallbackDuration)
+            button._chargeCooldownVisualActive = fallbackActive or nil
+            if fallbackActive then
+                button._chargeRecharging = true
+                button._durationObj = fallbackDuration
                 button.cooldown:SetCooldownFromDurationObject(fallbackDuration)
-            else
+            elseif not normalCooldownDisplayActive then
                 button.cooldown:SetCooldown(0, 0)
             end
         end

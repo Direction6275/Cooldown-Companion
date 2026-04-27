@@ -22,6 +22,8 @@ local NotifyTutorialAction = ST._NotifyTutorialAction
 -- Precondition: CS.selectedContainer is already set by the caller's
 -- panel/container selection flow.
 local function SelectNewButton(panelId, buttonIndex)
+    CooldownCompanion:ClearAllConfigPreviews()
+
     local group = panelId and CooldownCompanion.db
         and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups
