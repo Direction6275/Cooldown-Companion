@@ -112,7 +112,7 @@ local function UpdateBlizzardAuraSwipe(button, style)
 
     local enabled = style.auraUseBlizzardSwipe == true
         and (button._auraActive == true or button._conditionalAuraDurationTextPreview == true)
-        and button._auraHasTimer ~= false
+        and (button._conditionalAuraDurationTextPreview == true or button._auraHasTimer ~= false)
 
     if not enabled then
         HideBlizzardAuraSwipe(button, style)
