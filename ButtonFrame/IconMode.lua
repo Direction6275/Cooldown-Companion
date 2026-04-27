@@ -955,6 +955,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._readyGlowActive = nil
     button._keyPressHighlightActive = nil
     button._displaySpellId = nil
+    button._liveOverrideSpellId = nil
     button._spellOutOfRange = nil
     button._itemCount = nil
     button._auraActive = nil

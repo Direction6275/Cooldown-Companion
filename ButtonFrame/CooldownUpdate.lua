@@ -687,12 +687,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local liveOverrideId
     if buttonData.type == "spell" and not buttonData.cdmChildSlot then
         local refreshIcon = false
+        local previousLiveOverrideId = button._liveOverrideSpellId
         liveOverrideId = GetLiveOverrideSpellID(buttonData)
+        button._liveOverrideSpellId = liveOverrideId
         if liveOverrideId then
             if liveOverrideId ~= cooldownSpellId then
                 refreshIcon = true
             end
             cooldownSpellId = liveOverrideId
+        elseif previousLiveOverrideId then
+            cooldownSpellId = buttonData.id
+            refreshIcon = true
         end
 
         if button._displaySpellId ~= cooldownSpellId then

@@ -915,6 +915,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._zeroChargesConfirmed = nil
     button._nilConfirmPending = nil
     button._displaySpellId = nil
+    button._liveOverrideSpellId = nil
     button._itemCount = nil
     button._auraActive = nil
     button._showingAuraIcon = nil
