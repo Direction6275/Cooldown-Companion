@@ -135,9 +135,9 @@ local function ClearAllPreviews(self, previewFlag, cacheFlag, cacheValue, groupT
 end
 
 local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
-    cooldown = { kind = "cooldown", duration = 12, remaining = 8 },
+    cooldown = { kind = "cooldown", duration = 12, remaining = 8, loop = true },
     aura = { kind = "aura", duration = 12, remaining = 8, stackText = "3" },
-    aura_duration_text = { kind = "aura_duration_text", duration = 12, remaining = 8 },
+    aura_duration_text = { kind = "aura_duration_text", duration = 12, remaining = 8, loop = true },
     aura_stack_text = { kind = "aura_stack_text", stackText = "3" },
     pandemic = { kind = "pandemic", duration = 12, remaining = 3, stackText = "3" },
     charge_full = { kind = "charge_full" },
@@ -161,13 +161,18 @@ local function BuildConditionalVisualPreviewState(previewKind, sampleState)
 
     local duration = tonumber(state.duration)
     local remaining = tonumber(state.remaining)
+    local now = GetTime()
     if duration and duration > 0 then
         if not remaining or remaining <= 0 or remaining > duration then
             remaining = duration
         end
         state.duration = duration
         state.remaining = remaining
-        state.startTime = GetTime() - (duration - remaining)
+        state.startTime = now - (duration - remaining)
+        if state.loop == true then
+            state.loopDuration = remaining
+            state.loopStartTime = now
+        end
     end
     return state
 end
@@ -192,6 +197,9 @@ local function ClearConditionalVisualPreviewDerivedFields(button)
     button._conditionalPreviewStartTime = nil
     button._conditionalPreviewDuration = nil
     button._conditionalPreviewRemaining = nil
+    button._conditionalPreviewLoop = nil
+    button._conditionalPreviewLoopStartTime = nil
+    button._conditionalPreviewLoopDuration = nil
     button._conditionalPreviewDomain = nil
     button._conditionalAuraPreview = nil
     button._conditionalAuraDurationTextPreview = nil

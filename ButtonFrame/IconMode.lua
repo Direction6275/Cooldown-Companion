@@ -345,16 +345,14 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     ApplyCountTextStyle(button, style)
 
-    -- Aura stack count text — separate FontString for aura stacks, independent of charge text
-    if buttonData.auraTracking or buttonData.isPassive then
-        button.auraStackCount = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-        button.auraStackCount:SetText("")
-        ApplyFontStyle(button.auraStackCount, style, "auraStack")
-        local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
-        local asXOff = style.auraStackXOffset or 2
-        local asYOff = style.auraStackYOffset or 2
-        button.auraStackCount:SetPoint(asAnchor, asXOff, asYOff)
-    end
+    -- Aura stack count text: separate FontString for aura stacks and config previews.
+    button.auraStackCount = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    button.auraStackCount:SetText("")
+    ApplyFontStyle(button.auraStackCount, style, "auraStack")
+    local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
+    local asXOff = style.auraStackXOffset or 2
+    local asYOff = style.auraStackYOffset or 2
+    button.auraStackCount:SetPoint(asAnchor, asXOff, asYOff)
 
     -- Keybind text overlay
     button.keybindText = button.overlayFrame:CreateFontString(nil, "OVERLAY")

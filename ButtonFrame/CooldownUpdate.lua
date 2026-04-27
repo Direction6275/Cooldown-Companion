@@ -98,6 +98,9 @@ local function ClearConditionalVisualPreviewFields(button)
     button._conditionalPreviewStartTime = nil
     button._conditionalPreviewDuration = nil
     button._conditionalPreviewRemaining = nil
+    button._conditionalPreviewLoop = nil
+    button._conditionalPreviewLoopStartTime = nil
+    button._conditionalPreviewLoopDuration = nil
     button._conditionalPreviewDomain = nil
     button._conditionalAuraPreview = nil
     button._conditionalAuraDurationTextPreview = nil
@@ -142,11 +145,42 @@ local function GetConditionalPreviewTiming(preview, now)
         startTime = now
     end
 
+    local loopDuration = tonumber(preview and preview.loopDuration)
+    local loopStartTime = tonumber(preview and preview.loopStartTime)
+    if preview and preview.loop == true and loopDuration and loopDuration > 0 then
+        if loopDuration > duration then
+            loopDuration = duration
+        end
+        if not loopStartTime then
+            loopStartTime = startTime + (duration - loopDuration)
+        end
+        local elapsed = now - loopStartTime
+        if elapsed < 0 then
+            elapsed = 0
+        end
+        local cycleElapsed = elapsed % loopDuration
+        local remaining = loopDuration - cycleElapsed
+        if remaining > duration then
+            remaining = duration
+        end
+        startTime = now - (duration - remaining)
+        return startTime, duration, remaining, loopStartTime, loopDuration
+    end
+
     local remaining = duration - (now - startTime)
     if remaining < 0 then
         remaining = 0
     end
     return startTime, duration, remaining
+end
+
+local function SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
+    button._conditionalPreviewStartTime = startTime
+    button._conditionalPreviewDuration = duration
+    button._conditionalPreviewRemaining = remaining
+    button._conditionalPreviewLoop = (loopStartTime and loopDuration) and true or nil
+    button._conditionalPreviewLoopStartTime = loopStartTime
+    button._conditionalPreviewLoopDuration = loopDuration
 end
 
 local function ApplyConditionalVisualPreview(button, buttonData, style, preview, now, usesChargeBehavior)
@@ -158,15 +192,13 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
     button._conditionalPreviewKind = kind
 
     if kind == "cooldown" then
-        local startTime, duration, remaining = GetConditionalPreviewTiming(preview, now)
+        local startTime, duration, remaining, loopStartTime, loopDuration = GetConditionalPreviewTiming(preview, now)
         if not startTime then return end
         button._cooldownState = COOLDOWN_STATE_COOLDOWN
         button._desatCooldownActive = true
         button._cooldownDeferred = nil
         button._conditionalPreviewDomain = "cooldown"
-        button._conditionalPreviewStartTime = startTime
-        button._conditionalPreviewDuration = duration
-        button._conditionalPreviewRemaining = remaining
+        SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
         if button.cooldown then
             button.cooldown:SetCooldown(startTime, duration)
         end
@@ -174,7 +206,7 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
     end
 
     if kind == "aura" or kind == "pandemic" then
-        local startTime, duration, remaining = GetConditionalPreviewTiming(preview, now)
+        local startTime, duration, remaining, loopStartTime, loopDuration = GetConditionalPreviewTiming(preview, now)
         if not startTime then return end
         button._auraActive = true
         button._auraHasTimer = true
@@ -184,9 +216,7 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         button._conditionalPandemicPreview = kind == "pandemic" or nil
         button._conditionalBarAuraActivePreview = true
         button._conditionalPreviewDomain = "aura"
-        button._conditionalPreviewStartTime = startTime
-        button._conditionalPreviewDuration = duration
-        button._conditionalPreviewRemaining = remaining
+        SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
         if button.cooldown then
             button.cooldown:SetCooldown(startTime, duration)
         end
@@ -197,13 +227,11 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
     end
 
     if kind == "aura_duration_text" then
-        local startTime, duration, remaining = GetConditionalPreviewTiming(preview, now)
+        local startTime, duration, remaining, loopStartTime, loopDuration = GetConditionalPreviewTiming(preview, now)
         if not startTime then return end
         button._conditionalAuraDurationTextPreview = true
         button._conditionalPreviewDomain = "aura_text"
-        button._conditionalPreviewStartTime = startTime
-        button._conditionalPreviewDuration = duration
-        button._conditionalPreviewRemaining = remaining
+        SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
         if button.cooldown then
             button.cooldown:SetCooldown(startTime, duration)
         end

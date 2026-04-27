@@ -85,6 +85,43 @@ local function SetBarIconTooltipScripts(button, enable)
     end
 end
 
+local function ResolveConditionalPreviewRemaining(button)
+    local previewRemaining = button._conditionalPreviewRemaining
+    local previewDuration = button._conditionalPreviewDuration
+    if not (previewRemaining and previewDuration) then
+        return previewRemaining, previewDuration
+    end
+
+    if button._conditionalPreviewLoop
+        and button._conditionalPreviewLoopStartTime
+        and button._conditionalPreviewLoopDuration
+    then
+        local loopDuration = button._conditionalPreviewLoopDuration
+        if loopDuration > 0 then
+            local now = GetTime()
+            local elapsed = now - button._conditionalPreviewLoopStartTime
+            if elapsed < 0 then
+                elapsed = 0
+            end
+            local cycleElapsed = elapsed % loopDuration
+            previewRemaining = loopDuration - cycleElapsed
+            if previewRemaining > previewDuration then
+                previewRemaining = previewDuration
+            end
+            button._conditionalPreviewRemaining = previewRemaining
+            button._conditionalPreviewStartTime = now - (previewDuration - previewRemaining)
+        end
+        return previewRemaining, previewDuration
+    end
+
+    if button._conditionalPreviewStartTime then
+        previewRemaining = previewDuration - (GetTime() - button._conditionalPreviewStartTime)
+        if previewRemaining < 0 then previewRemaining = 0 end
+        button._conditionalPreviewRemaining = previewRemaining
+    end
+    return previewRemaining, previewDuration
+end
+
 -- Lightweight OnUpdate: interpolates bar fill + time text between ticker updates.
 local function UpdateBarFill(button)
     -- Single-bar path
@@ -94,13 +131,7 @@ local function UpdateBarFill(button)
     -- Items use stored C_Item.GetItemCooldown values (_itemCdStart/_itemCdDuration).
     local onCooldown = false
     local itemRemaining = 0
-    local previewRemaining = button._conditionalPreviewRemaining
-    local previewDuration = button._conditionalPreviewDuration
-    if previewRemaining and previewDuration and button._conditionalPreviewStartTime then
-        previewRemaining = previewDuration - (GetTime() - button._conditionalPreviewStartTime)
-        if previewRemaining < 0 then previewRemaining = 0 end
-        button._conditionalPreviewRemaining = previewRemaining
-    end
+    local previewRemaining, previewDuration = ResolveConditionalPreviewRemaining(button)
 
     local auraDurationTextPreview = button._conditionalAuraDurationTextPreview == true
 
@@ -735,19 +766,17 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     -- Apply count text font/anchor settings
     ApplyBarCountTextStyle(button, style)
 
-    -- Aura stack count text — separate FontString for aura stacks, independent of charge text
-    if buttonData.auraTracking or buttonData.isPassive then
-        button.auraStackCount = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-        button.auraStackCount:SetText("")
-        ApplyFontStyle(button.auraStackCount, style, "auraStack")
-        local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
-        local asXOff = style.auraStackXOffset or 2
-        local asYOff = style.auraStackYOffset or 2
-        if showIcon then
-            button.auraStackCount:SetPoint(asAnchor, button.icon, asAnchor, asXOff, asYOff)
-        else
-            button.auraStackCount:SetPoint(asAnchor, button, asAnchor, asXOff, asYOff)
-        end
+    -- Aura stack count text: separate FontString for aura stacks and config previews.
+    button.auraStackCount = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    button.auraStackCount:SetText("")
+    ApplyFontStyle(button.auraStackCount, style, "auraStack")
+    local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
+    local asXOff = style.auraStackXOffset or 2
+    local asYOff = style.auraStackYOffset or 2
+    if showIcon then
+        button.auraStackCount:SetPoint(asAnchor, button.icon, asAnchor, asXOff, asYOff)
+    else
+        button.auraStackCount:SetPoint(asAnchor, button, asAnchor, asXOff, asYOff)
     end
 
     -- Store button data

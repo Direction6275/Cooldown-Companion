@@ -1483,13 +1483,15 @@ local function CreateConfigPanel()
         end
         wipe(CS.buttonSettingsInfoButtons)
 
-        CooldownCompanion:ClearAllProcGlowPreviews()
-        CooldownCompanion:ClearAllAuraGlowPreviews()
-        CooldownCompanion:ClearAllPandemicPreviews()
-        CooldownCompanion:ClearAllReadyGlowPreviews()
-        CooldownCompanion:ClearAllKeyPressHighlightPreviews()
-        CooldownCompanion:ClearAllBarAuraActivePreviews()
-        CooldownCompanion:ClearAllConditionalVisualPreviews()
+        if not CS.previewToggleRefreshActive then
+            CooldownCompanion:ClearAllProcGlowPreviews()
+            CooldownCompanion:ClearAllAuraGlowPreviews()
+            CooldownCompanion:ClearAllPandemicPreviews()
+            CooldownCompanion:ClearAllReadyGlowPreviews()
+            CooldownCompanion:ClearAllKeyPressHighlightPreviews()
+            CooldownCompanion:ClearAllBarAuraActivePreviews()
+            CooldownCompanion:ClearAllConditionalVisualPreviews()
+        end
         widget:ReleaseChildren()
 
         local scroll = AceGUI:Create("ScrollFrame")
