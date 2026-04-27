@@ -26,11 +26,11 @@ ST._changelogData = {
     entries = {
         ["1.13.3"] = {
             markdown = [[
-## Polish
+## Polish | QoL
 
 - **Better settings previews:** Preview buttons across the settings UI now act like stay-on toggles and now work for text elements like cooldown / aura duration / aura stacks.
 
-## Polish | QoL
+## Bug Fixes
 
 - **PvP talent availability:** PvP talent buttons now hide automatically when entering content that disables them without needing a reload.
 - **Replacement spell cooldowns:** Fixed a regression where buttons for spells that temporarily become another ability now follow the replacement ability's icon and cooldown, then return to the original spell when the replacement ends.
