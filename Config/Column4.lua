@@ -179,10 +179,13 @@ local function RefreshColumn4(container)
         tabGroup:SetLayout("Fill")
 
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+            local previousTab = container._activePanelSettingsTab
+            local tabChanged = previousTab ~= nil and previousTab ~= tab
+            container._activePanelSettingsTab = tab
             CS.selectedTab = tab
             CS.panelSettingsTab = tab
             local preservePreviews = CS.previewToggleRefreshActive == true
-            if not preservePreviews then
+            if tabChanged and not preservePreviews then
                 CooldownCompanion:ClearAllConfigPreviews()
             end
             -- Clean up raw (?) info buttons BEFORE releasing children, so they

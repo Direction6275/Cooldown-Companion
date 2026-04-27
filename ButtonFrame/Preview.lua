@@ -32,6 +32,11 @@ local textureIndicatorPreviewTokens = {}
 local triggerEffectPreviewTokens = {}
 local conditionalVisualGroupTokens = {}
 local conditionalVisualButtonTokens = {}
+local activeGroupPreviewFlags = {}
+local activeButtonPreviewFlags = {}
+local activeTriggerPanelEffectPreviews = {}
+local activeConditionalGroupPreviews = {}
+local activeConditionalButtonPreviews = {}
 
 local function BumpButtonPreviewToken(tokenStore, groupId, buttonIndex)
     local groupTokens = tokenStore[groupId]
@@ -48,12 +53,113 @@ end
 -- Shared Helpers
 --------------------------------------------------------------------------------
 
+local function CopyPreviewState(state)
+    if not state then
+        return nil
+    end
+    local copy = {}
+    for key, value in pairs(state) do
+        copy[key] = value
+    end
+    return copy
+end
+
+local function SetActiveGroupPreviewFlag(groupId, previewFlag, show)
+    if not (groupId and previewFlag) then return end
+    local groupFlags = activeGroupPreviewFlags[groupId]
+    if show then
+        if not groupFlags then
+            groupFlags = {}
+            activeGroupPreviewFlags[groupId] = groupFlags
+        end
+        groupFlags[previewFlag] = true
+    elseif groupFlags then
+        groupFlags[previewFlag] = nil
+        if not next(groupFlags) then
+            activeGroupPreviewFlags[groupId] = nil
+        end
+    end
+end
+
+local function SetActiveButtonPreviewFlag(groupId, buttonIndex, previewFlag, show)
+    if not (groupId and buttonIndex and previewFlag) then return end
+    local groupButtons = activeButtonPreviewFlags[groupId]
+    local buttonFlags = groupButtons and groupButtons[buttonIndex]
+    if show then
+        if not groupButtons then
+            groupButtons = {}
+            activeButtonPreviewFlags[groupId] = groupButtons
+        end
+        if not buttonFlags then
+            buttonFlags = {}
+            groupButtons[buttonIndex] = buttonFlags
+        end
+        buttonFlags[previewFlag] = true
+    elseif buttonFlags then
+        buttonFlags[previewFlag] = nil
+        if not next(buttonFlags) then
+            groupButtons[buttonIndex] = nil
+            if not next(groupButtons) then
+                activeButtonPreviewFlags[groupId] = nil
+            end
+        end
+    end
+end
+
+local function ClearActiveButtonPreviewFlagForGroup(groupId, previewFlag)
+    local groupButtons = activeButtonPreviewFlags[groupId]
+    if not (groupButtons and previewFlag) then return end
+    for buttonIndex, buttonFlags in pairs(groupButtons) do
+        buttonFlags[previewFlag] = nil
+        if not next(buttonFlags) then
+            groupButtons[buttonIndex] = nil
+        end
+    end
+    if not next(groupButtons) then
+        activeButtonPreviewFlags[groupId] = nil
+    end
+end
+
+local function ClearActivePreviewFlag(previewFlag)
+    for groupId in pairs(activeGroupPreviewFlags) do
+        SetActiveGroupPreviewFlag(groupId, previewFlag, false)
+    end
+    for groupId in pairs(activeButtonPreviewFlags) do
+        ClearActiveButtonPreviewFlagForGroup(groupId, previewFlag)
+    end
+end
+
+local function IsActivePreviewFlagStored(groupId, buttonIndex, previewFlag)
+    if not (groupId and previewFlag) then
+        return false
+    end
+    local groupFlags = activeGroupPreviewFlags[groupId]
+    if groupFlags and groupFlags[previewFlag] then
+        return true
+    end
+    local groupButtons = activeButtonPreviewFlags[groupId]
+    if not groupButtons then
+        return false
+    end
+    if buttonIndex then
+        local buttonFlags = groupButtons[buttonIndex]
+        return buttonFlags and buttonFlags[previewFlag] == true or false
+    end
+    for _, buttonFlags in pairs(groupButtons) do
+        if buttonFlags[previewFlag] then
+            return true
+        end
+    end
+    return false
+end
+
 -- Set preview on a single button.
 -- cacheValue: false forces cache miss on next tick; nil forces re-evaluate.
 local function SetButtonPreview(self, groupId, buttonIndex, show, previewFlag, cacheFlag, cacheValue, buttonTokenStore, onToggle, updateCooldown)
     if buttonTokenStore and not show then
         BumpButtonPreviewToken(buttonTokenStore, groupId, buttonIndex)
     end
+    SetActiveButtonPreviewFlag(groupId, buttonIndex, previewFlag, show)
     local frame = self.groupFrames[groupId]
     if not frame then return end
     for _, button in ipairs(frame.buttons) do
@@ -72,6 +178,8 @@ end
 -- Set preview on all buttons in a group.
 local function SetGroupPreview(self, groupId, show, previewFlag, cacheFlag, cacheValue, groupTokenStore, buttonTokenStore, onToggle, updateCooldown)
     if buttonTokenStore then buttonTokenStore[groupId] = nil end
+    SetActiveGroupPreviewFlag(groupId, previewFlag, show)
+    ClearActiveButtonPreviewFlagForGroup(groupId, previewFlag)
     if not show then
         groupTokenStore[groupId] = (groupTokenStore[groupId] or 0) + 1
     end
@@ -122,6 +230,7 @@ end
 local function ClearAllPreviews(self, previewFlag, cacheFlag, cacheValue, groupTokenStore, buttonTokenStore, onClear, updateCooldown)
     wipe(groupTokenStore)
     if buttonTokenStore then wipe(buttonTokenStore) end
+    ClearActivePreviewFlag(previewFlag)
     for _, frame in pairs(self.groupFrames) do
         for _, button in ipairs(frame.buttons) do
             button[previewFlag] = nil
@@ -280,12 +389,31 @@ function CooldownCompanion:IsPreviewFlagActive(groupId, buttonIndex, previewFlag
     if not previewFlag then
         return false
     end
+    if IsActivePreviewFlagStored(groupId, buttonIndex, previewFlag) then
+        return true
+    end
     return IsGroupButtonPreviewActive(self, groupId, buttonIndex, function(button)
         return button[previewFlag] == true
     end)
 end
 
 function CooldownCompanion:IsConditionalVisualPreviewActive(groupId, buttonIndex, previewKind)
+    local groupState = activeConditionalGroupPreviews[groupId]
+    if groupState and groupState.kind == previewKind then
+        return true
+    end
+    local groupButtons = activeConditionalButtonPreviews[groupId]
+    if groupButtons then
+        if buttonIndex then
+            local buttonState = groupButtons[buttonIndex]
+            return buttonState and buttonState.kind == previewKind or false
+        end
+        for _, buttonState in pairs(groupButtons) do
+            if buttonState and buttonState.kind == previewKind then
+                return true
+            end
+        end
+    end
     return IsGroupButtonPreviewActive(self, groupId, buttonIndex, function(button)
         local state = GetConditionalVisualPreview(button)
         return state and state.kind == previewKind
@@ -300,11 +428,25 @@ function CooldownCompanion:SetConditionalVisualPreviewActive(groupId, buttonInde
     local state = show and BuildConditionalVisualPreviewState(previewKind, sampleState) or nil
     if buttonIndex then
         BumpButtonPreviewToken(conditionalVisualButtonTokens, groupId, buttonIndex)
+        activeConditionalGroupPreviews[groupId] = nil
+        if state then
+            if not activeConditionalButtonPreviews[groupId] then
+                activeConditionalButtonPreviews[groupId] = {}
+            end
+            activeConditionalButtonPreviews[groupId][buttonIndex] = CopyPreviewState(state)
+        elseif activeConditionalButtonPreviews[groupId] then
+            activeConditionalButtonPreviews[groupId][buttonIndex] = nil
+            if not next(activeConditionalButtonPreviews[groupId]) then
+                activeConditionalButtonPreviews[groupId] = nil
+            end
+        end
         SetConditionalVisualPreview(self, groupId, buttonIndex, state)
         return
     end
 
     conditionalVisualButtonTokens[groupId] = nil
+    activeConditionalButtonPreviews[groupId] = nil
+    activeConditionalGroupPreviews[groupId] = CopyPreviewState(state)
     conditionalVisualGroupTokens[groupId] = (conditionalVisualGroupTokens[groupId] or 0) + 1
     SetGroupConditionalVisualPreview(self, groupId, state)
 end
@@ -340,6 +482,8 @@ end
 function CooldownCompanion:ClearAllConditionalVisualPreviews()
     wipe(conditionalVisualGroupTokens)
     wipe(conditionalVisualButtonTokens)
+    wipe(activeConditionalGroupPreviews)
+    wipe(activeConditionalButtonPreviews)
     if not self.groupFrames then return end
     for _, frame in pairs(self.groupFrames) do
         for _, button in ipairs(frame.buttons) do
@@ -488,9 +632,12 @@ function CooldownCompanion:SetBarAuraActivePreview(groupId, buttonIndex, show)
     if not groupId then return end
     if buttonIndex then
         BumpButtonPreviewToken(barAuraActiveButtonTokens, groupId, buttonIndex)
+        SetActiveButtonPreviewFlag(groupId, buttonIndex, "_barAuraActivePreview", show)
     else
         barAuraActiveButtonTokens[groupId] = nil
         barAuraActiveGroupTokens[groupId] = (barAuraActiveGroupTokens[groupId] or 0) + 1
+        SetActiveGroupPreviewFlag(groupId, "_barAuraActivePreview", show)
+        ClearActiveButtonPreviewFlagForGroup(groupId, "_barAuraActivePreview")
     end
 
     local frame = self.groupFrames[groupId]
@@ -550,6 +697,7 @@ end
 function CooldownCompanion:ClearAllBarAuraActivePreviews()
     wipe(barAuraActiveGroupTokens)
     wipe(barAuraActiveButtonTokens)
+    ClearActivePreviewFlag("_barAuraActivePreview")
     for _, frame in pairs(self.groupFrames) do
         for _, button in ipairs(frame.buttons) do
             if button._barAuraActivePreview then
@@ -710,7 +858,11 @@ function CooldownCompanion:ClearAllTextureIndicatorPreviews()
 end
 
 function CooldownCompanion:SetTriggerPanelEffectsPreview(groupId, show)
+    if not groupId then
+        return
+    end
     local frame = self.groupFrames[groupId]
+    activeTriggerPanelEffectPreviews[groupId] = show or nil
     if not frame then
         return
     end
@@ -730,6 +882,9 @@ function CooldownCompanion:SetTriggerPanelEffectsPreview(groupId, show)
 end
 
 function CooldownCompanion:IsTriggerPanelEffectsPreviewActive(groupId)
+    if activeTriggerPanelEffectPreviews[groupId] then
+        return true
+    end
     return self:IsPreviewFlagActive(groupId, nil, "_triggerEffectsPreview")
 end
 
@@ -739,6 +894,7 @@ end
 
 function CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
     wipe(triggerEffectPreviewTokens)
+    wipe(activeTriggerPanelEffectPreviews)
     for _, frame in pairs(self.groupFrames) do
         for _, button in ipairs(frame.buttons) do
             button._triggerEffectsPreview = nil
@@ -801,6 +957,82 @@ function CooldownCompanion:ClearAllAuraTexturePickerPreviews()
                 button:UpdateCooldown()
             else
                 self:UpdateAuraTextureVisual(button)
+            end
+        end
+    end
+end
+
+local function ApplyPreviewFlagToButton(button, previewFlag)
+    button[previewFlag] = true
+    if previewFlag == "_procGlowPreview" then
+        button._procGlowActive = false
+    elseif previewFlag == "_auraGlowPreview" or previewFlag == "_pandemicPreview" then
+        button._auraGlowActive = false
+        if previewFlag == "_pandemicPreview" then
+            pandemicOnToggle(button, true)
+        end
+    elseif previewFlag == "_readyGlowPreview" then
+        button._readyGlowActive = false
+    elseif previewFlag == "_keyPressHighlightPreview" then
+        button._keyPressHighlightActive = nil
+    elseif previewFlag == "_textureProcPreview"
+        or previewFlag == "_textureAuraPreview"
+        or previewFlag == "_texturePandemicPreview"
+        or previewFlag == "_textureReadyPreview"
+        or previewFlag == "_textureUnusablePreview" then
+        button._textureIndicatorPreviewDirty = false
+    end
+end
+
+function CooldownCompanion:ApplyConfigPreviewsToGroup(groupId)
+    if not (self.groupFrames and groupId) then
+        return
+    end
+    local frame = self.groupFrames[groupId]
+    if not frame then
+        return
+    end
+
+    local groupFlags = activeGroupPreviewFlags[groupId]
+    if groupFlags then
+        for _, button in ipairs(frame.buttons) do
+            for previewFlag in pairs(groupFlags) do
+                ApplyPreviewFlagToButton(button, previewFlag)
+            end
+        end
+    end
+
+    local buttonFlagsByIndex = activeButtonPreviewFlags[groupId]
+    if buttonFlagsByIndex then
+        for _, button in ipairs(frame.buttons) do
+            local buttonFlags = buttonFlagsByIndex[button.index]
+            if buttonFlags then
+                for previewFlag in pairs(buttonFlags) do
+                    ApplyPreviewFlagToButton(button, previewFlag)
+                end
+            end
+        end
+    end
+
+    if activeTriggerPanelEffectPreviews[groupId] then
+        for _, button in ipairs(frame.buttons) do
+            button._triggerEffectsPreview = true
+        end
+    end
+
+    local groupConditionalPreview = activeConditionalGroupPreviews[groupId]
+    if groupConditionalPreview then
+        for _, button in ipairs(frame.buttons) do
+            SetConditionalVisualPreviewOnButton(self, button, CopyPreviewState(groupConditionalPreview))
+        end
+    end
+
+    local conditionalButtons = activeConditionalButtonPreviews[groupId]
+    if conditionalButtons then
+        for _, button in ipairs(frame.buttons) do
+            local preview = conditionalButtons[button.index]
+            if preview then
+                SetConditionalVisualPreviewOnButton(self, button, CopyPreviewState(preview))
             end
         end
     end

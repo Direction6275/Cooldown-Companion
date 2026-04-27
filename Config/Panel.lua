@@ -1456,6 +1456,9 @@ local function CreateConfigPanel()
     bsTabGroup:SetLayout("Fill")
 
     bsTabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+        local previousTab = col3._activeButtonSettingsTab
+        local tabChanged = previousTab ~= nil and previousTab ~= tab
+        col3._activeButtonSettingsTab = tab
         CS.buttonSettingsTab = tab
         -- Clean up info/collapse buttons before releasing
         for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
@@ -1465,7 +1468,7 @@ local function CreateConfigPanel()
         end
         wipe(CS.buttonSettingsInfoButtons)
 
-        if not CS.previewToggleRefreshActive then
+        if tabChanged and not CS.previewToggleRefreshActive then
             CooldownCompanion:ClearAllConfigPreviews()
         end
         widget:ReleaseChildren()

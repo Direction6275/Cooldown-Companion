@@ -237,6 +237,13 @@ local function WrapColor(text, color)
 end
 
 local function ResolveTextModeStackDisplay(button)
+    if button._conditionalAuraStackTextPreview then
+        local previewStackText = button._auraStackText
+        if previewStackText and (issecretvalue(previewStackText) or previewStackText ~= "") then
+            return previewStackText, "aura"
+        end
+    end
+
     local auraUnit = button._auraUnit
     local auraInstanceID = button._auraInstanceID
     if auraUnit and auraInstanceID then

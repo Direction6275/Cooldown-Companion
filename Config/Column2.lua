@@ -1892,6 +1892,7 @@ local function RefreshColumn2()
                         end
 
                         if IsControlKeyDown() then
+                            CooldownCompanion:ClearAllConfigPreviews()
                             if CS.selectedPanels[panelId] then
                                 CS.selectedPanels[panelId] = nil
                             else
@@ -1909,6 +1910,7 @@ local function RefreshColumn2()
                         end
 
                         wipe(CS.selectedPanels)
+                        CooldownCompanion:ClearAllConfigPreviews()
                         if CS.selectedGroup == panelId and not CS.selectedButton then
                             CS.selectedGroup = nil
                         else
@@ -2385,6 +2387,7 @@ local function RefreshColumn2()
                         elseif mouseButton == "RightButton" then
                             -- Auto-select panel on right-click too
                             if CS.selectedGroup ~= btnPanelId then
+                                CooldownCompanion:ClearAllConfigPreviews()
                                 CS.selectedGroup = btnPanelId
                                 CS.selectedButton = nil
                                 wipe(CS.selectedButtons)
