@@ -3777,6 +3777,7 @@ local function FinishPanelDrag(state)
     local dropTarget = state.dropTarget
     local changed = dropTarget and not IsPanelReorderNoOp(state.sourcePanelId, dropTarget.targetIndex, state.panelDropTargets)
     if changed then
+        CooldownCompanion:ClearAllConfigPreviews()
         wipe(CS.selectedPanels)
         CS.selectedGroup = state.sourcePanelId
         CS.selectedButton = nil
@@ -3820,6 +3821,7 @@ local function FinishButtonDrag(state)
         PerformButtonReorder(state.groupId, state.sourceIndex, state.dropIndex or state.sourceIndex)
         CooldownCompanion:RefreshGroupFrame(state.groupId)
     end
+    CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedButton = nil
     wipe(CS.selectedButtons)
     CooldownCompanion:RefreshConfigPanel()
