@@ -905,6 +905,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._readyGlowMaxChargesActive = nil
     button._readyGlowMaxChargesSpellID = nil
     button._noCooldown = nil
+    button._noCooldownSpellId = nil
     button._vertexR = nil
     button._vertexG = nil
     button._vertexB = nil
@@ -914,6 +915,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._zeroChargesConfirmed = nil
     button._nilConfirmPending = nil
     button._displaySpellId = nil
+    button._liveOverrideSpellId = nil
     button._itemCount = nil
     button._auraActive = nil
     button._showingAuraIcon = nil

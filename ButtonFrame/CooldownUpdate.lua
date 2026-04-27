@@ -406,7 +406,7 @@ end
 
 local ProbeActionSlotCooldownForSpell
 
-local function EvaluateSpellCooldownLane(spellID, secrecy)
+local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID)
     local result = {
         spellID = spellID,
         fetchOk = false,
@@ -424,7 +424,7 @@ local function EvaluateSpellCooldownLane(spellID, secrecy)
     result.info = info
     if not info then
         if secrecy ~= 0 and ProbeActionSlotCooldownForSpell then
-            local slotProbe = ProbeActionSlotCooldownForSpell(spellID)
+            local slotProbe = ProbeActionSlotCooldownForSpell(baseSpellID or spellID, spellID)
             if slotProbe.shown ~= nil then
                 result.fetchOk = true
                 result.normalCooldownShown = slotProbe.shown == true
@@ -472,35 +472,21 @@ local function EvaluateSpellCooldownLane(spellID, secrecy)
     return result
 end
 
-local function SelectSpellCooldownResult(current, candidate)
-    if not candidate or not candidate.fetchOk then
-        return current
+local function GetLiveOverrideSpellID(buttonData)
+    if not (buttonData and buttonData.type == "spell" and not buttonData.isPassive) then
+        return nil
     end
-    if not current or not current.fetchOk then
-        return candidate
+
+    local overrideID = C_Spell.GetOverrideSpell(buttonData.id)
+    if overrideID and overrideID ~= 0 and overrideID ~= buttonData.id then
+        return overrideID
     end
-    return CooldownLogic.SelectStrongerCooldownState(current, candidate)
+
+    return nil
 end
 
 local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
-    local displayResult = EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy)
-    local result = displayResult
-
-    if cooldownSpellId and cooldownSpellId ~= buttonData.id then
-        local displayBaseSpellID = C_Spell.GetBaseSpell(cooldownSpellId)
-        if displayBaseSpellID == buttonData.id then
-            local baseResult = EvaluateSpellCooldownLane(buttonData.id, buttonData._cooldownSecrecy)
-            result = SelectSpellCooldownResult(
-                result,
-                baseResult
-            )
-            if result and (displayResult.isOnGCD or baseResult.isOnGCD) then
-                result.isOnGCD = true
-            end
-        end
-    end
-
-    return result
+    return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id)
 end
 
 local function ResolveChargeState(button, buttonData)
@@ -695,21 +681,52 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- For transforming spells (e.g. Command Demon → pet ability), use the
-    -- current override spell for cooldown queries. _displaySpellId is set
-    -- by UpdateButtonIcon on SPELL_UPDATE_ICON and creation.
-    -- Lazy-cache no-cooldown detection for spells (GCD-only, no real CD).
-    -- Computed once (nil → true/false), reset in UpdateButtonStyle on respec.
-    if button._noCooldown == nil then
-        if buttonData.type == "spell" and not buttonData.isPassive and not usesChargeBehavior then
-            local baseCd = GetSpellBaseCooldown(buttonData.id)
-            button._noCooldown = (not baseCd or baseCd == 0) and not HasTooltipCooldown(buttonData.id)
-        else
-            button._noCooldown = false
+    -- For transforming spells (e.g. Void Eruption -> Void Volley), keep the
+    -- displayed spell fresh even when the game does not fire SPELL_UPDATE_ICON.
+    local cooldownSpellId = button._displaySpellId or buttonData.id
+    local liveOverrideId
+    local forceBaseDisplayId = false
+    if buttonData.type == "spell" and not buttonData.cdmChildSlot then
+        local refreshIcon = false
+        local previousLiveOverrideId = button._liveOverrideSpellId
+        liveOverrideId = GetLiveOverrideSpellID(buttonData)
+        button._liveOverrideSpellId = liveOverrideId
+        if liveOverrideId then
+            if liveOverrideId ~= cooldownSpellId then
+                refreshIcon = true
+            end
+            cooldownSpellId = liveOverrideId
+        elseif previousLiveOverrideId then
+            cooldownSpellId = buttonData.id
+            forceBaseDisplayId = true
+            refreshIcon = true
+        end
+
+        if button._displaySpellId ~= cooldownSpellId then
+            refreshIcon = true
+        end
+
+        -- Per-tick icon staleness detection for silent transforms (e.g. Tiger's
+        -- Fury changing Rake/Rip icons). GetSpellTexture dynamically resolves
+        -- the current visual, but no event fires for these transforms.
+        local freshIcon = C_Spell.GetSpellTexture(buttonData.id)
+        if freshIcon and freshIcon ~= button._lastSpellTexture then
+            button._lastSpellTexture = freshIcon
+            refreshIcon = true
+        end
+
+        if refreshIcon then
+            if forceBaseDisplayId then
+                button._forceBaseDisplaySpellId = true
+            end
+            CooldownCompanion:UpdateButtonIcon(button)
+            button._forceBaseDisplaySpellId = nil
+            cooldownSpellId = forceBaseDisplayId and buttonData.id
+                or liveOverrideId
+                or button._displaySpellId
+                or buttonData.id
         end
     end
-
-    local cooldownSpellId = button._displaySpellId or buttonData.id
 
     -- Deferred icon refresh for cdmChildSlot buttons (set by OnSpellUpdateIcon).
     -- One-tick delay ensures the CDM viewer's RefreshSpellTexture has already
@@ -717,21 +734,21 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if button._iconDirty then
         button._iconDirty = nil
         CooldownCompanion:UpdateButtonIcon(button)
-        cooldownSpellId = button._displaySpellId or buttonData.id
+        cooldownSpellId = liveOverrideId or button._displaySpellId or buttonData.id
     end
 
-    -- Per-tick icon staleness detection for silent transforms (e.g. Tiger's Fury
-    -- changing Rake/Rip icons). GetSpellTexture dynamically resolves the current
-    -- visual, but no event fires for these transforms. cdmChildSlot buttons
-    -- already have their own per-tick viewer-based icon re-sync.
-    -- Event-driven updates (_iconDirty) remain instant (handled above).
-    if buttonData.type == "spell" and not buttonData.cdmChildSlot then
-        local freshIcon = C_Spell.GetSpellTexture(buttonData.id)
-        if freshIcon and freshIcon ~= button._lastSpellTexture then
-            button._lastSpellTexture = freshIcon
-            CooldownCompanion:UpdateButtonIcon(button)
-            cooldownSpellId = button._displaySpellId or buttonData.id
+    -- Lazy-cache no-cooldown detection for spells (GCD-only, no real CD).
+    -- Tie the cache to the displayed spell so replacements do not inherit the
+    -- base spell's cooldown classification.
+    if buttonData.type == "spell" and not buttonData.isPassive and not usesChargeBehavior then
+        if button._noCooldown == nil or button._noCooldownSpellId ~= cooldownSpellId then
+            button._noCooldownSpellId = cooldownSpellId
+            local baseCd = GetSpellBaseCooldown(cooldownSpellId)
+            button._noCooldown = (not baseCd or baseCd == 0) and not HasTooltipCooldown(cooldownSpellId)
         end
+    else
+        button._noCooldown = false
+        button._noCooldownSpellId = nil
     end
 
     -- Proc state: event-driven table lookup (base spell + current displayed override).
