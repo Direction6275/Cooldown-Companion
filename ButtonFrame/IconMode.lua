@@ -111,8 +111,8 @@ local function UpdateBlizzardAuraSwipe(button, style)
     end
 
     local enabled = style.auraUseBlizzardSwipe == true
-        and button._auraActive == true
-        and button._auraHasTimer ~= false
+        and (button._auraActive == true or button._conditionalAuraDurationTextPreview == true)
+        and (button._conditionalAuraDurationTextPreview == true or button._auraHasTimer ~= false)
 
     if not enabled then
         HideBlizzardAuraSwipe(button, style)
@@ -128,7 +128,12 @@ local function UpdateBlizzardAuraSwipe(button, style)
     overlay:SetSwipeColor(BLIZZARD_AURA_SWIPE_R, BLIZZARD_AURA_SWIPE_G, BLIZZARD_AURA_SWIPE_B, BLIZZARD_AURA_SWIPE_A)
 
     local rendered = false
-    if button._durationObj then
+    if button._conditionalAuraDurationTextPreview == true
+        and button._conditionalPreviewStartTime
+        and button._conditionalPreviewDuration then
+        overlay:SetCooldown(button._conditionalPreviewStartTime, button._conditionalPreviewDuration)
+        rendered = true
+    elseif button._durationObj then
         overlay:SetCooldownFromDurationObject(button._durationObj)
         rendered = overlay:IsShown()
     else
@@ -345,16 +350,14 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     ApplyCountTextStyle(button, style)
 
-    -- Aura stack count text — separate FontString for aura stacks, independent of charge text
-    if buttonData.auraTracking or buttonData.isPassive then
-        button.auraStackCount = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-        button.auraStackCount:SetText("")
-        ApplyFontStyle(button.auraStackCount, style, "auraStack")
-        local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
-        local asXOff = style.auraStackXOffset or 2
-        local asYOff = style.auraStackYOffset or 2
-        button.auraStackCount:SetPoint(asAnchor, asXOff, asYOff)
-    end
+    -- Aura stack count text: separate FontString for aura stacks and config previews.
+    button.auraStackCount = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    button.auraStackCount:SetText("")
+    ApplyFontStyle(button.auraStackCount, style, "auraStack")
+    local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
+    local asXOff = style.auraStackXOffset or 2
+    local asYOff = style.auraStackYOffset or 2
+    button.auraStackCount:SetPoint(asAnchor, asXOff, asYOff)
 
     -- Keybind text overlay
     button.keybindText = button.overlayFrame:CreateFontString(nil, "OVERLAY")
@@ -666,6 +669,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         -- keeps any explicit real-cooldown presentation from being hidden here.
         local suppressGCD = not style.showGCDSwipe
             and isGCDOnly
+            and button._chargeCooldownVisualActive ~= true
             and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
 
         if suppressGCD then
@@ -700,7 +704,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
 
     -- When separate text positions: move primary text to aura anchor during aura, cooldown anchor otherwise
     if button._secondaryCdTextRegion and button._cdTextRegion then
-        local wantAuraPos = button._auraActive == true
+        local wantAuraPos = button._auraActive == true or button._conditionalAuraDurationTextPreview == true
         if button._cdTextAtAuraPos ~= wantAuraPos then
             button._cdTextAtAuraPos = wantAuraPos
             button._cdTextRegion:ClearAllPoints()
@@ -722,7 +726,8 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     -- Color is reapplied each tick because WoW's CooldownFrame may reset it.
     if button._cdTextRegion then
         local showText, fontColor, wantFont, wantSize, wantOutline
-        if button._auraActive then
+        local auraTextPreview = button._conditionalAuraDurationTextPreview == true
+        if button._auraActive or auraTextPreview then
             showText = style.showAuraText ~= false
             fontColor = style.auraTextFontColor or DEFAULT_AURA_TEXT_COLOR
             wantFont = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
@@ -745,7 +750,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             local cc = fontColor
             button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             -- Only call SetFont when mode changes to avoid per-tick overhead
-            local mode = button._auraActive and "aura" or "cd"
+            local mode = (button._auraActive or auraTextPreview) and "aura" or "cd"
             if button._cdTextMode ~= mode then
                 button._cdTextMode = mode
                 button._cdTextRegion:SetFont(wantFont, wantSize, wantOutline)

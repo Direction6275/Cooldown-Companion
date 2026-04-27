@@ -420,8 +420,6 @@ local function ResetConfigForProfileChange()
     if ST._CancelAutoAddFlow then
         ST._CancelAutoAddFlow()
     end
-    CooldownCompanion:StopCastBarPreview()
-    CooldownCompanion:StopResourceBarPreview()
 end
 
 local function MaybeAutoOpenChangelog()
@@ -534,18 +532,9 @@ local function CreateConfigPanel()
         if CS.CancelPickAuraTexture then
             CS.CancelPickAuraTexture()
         end
-        CooldownCompanion:ClearAllProcGlowPreviews()
-        CooldownCompanion:ClearAllAuraGlowPreviews()
-        CooldownCompanion:ClearAllPandemicPreviews()
-        CooldownCompanion:ClearAllReadyGlowPreviews()
-        CooldownCompanion:ClearAllKeyPressHighlightPreviews()
-        CooldownCompanion:ClearAllBarAuraActivePreviews()
-        CooldownCompanion:ClearAllTextureIndicatorPreviews()
-        if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
-            CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
+        if not CS.previewToggleRefreshActive then
+            CooldownCompanion:ClearAllConfigPreviews()
         end
-        CooldownCompanion:ClearAllAuraTexturePickerPreviews()
-        CooldownCompanion:StopCastBarPreview()
         if ClearConfigShiftTooltipHover then
             ClearConfigShiftTooltipHover()
         end
@@ -839,6 +828,7 @@ local function CreateConfigPanel()
         if CS.resourceBarPanelActive then
             SetPrimaryMode("buttons", { skipRefresh = true })
         end
+        CooldownCompanion:ClearAllConfigPreviews()
         CS.browseMode = true
         CS.browseCharKey = nil
         CS.browseContainerId = nil
@@ -1467,6 +1457,9 @@ local function CreateConfigPanel()
     bsTabGroup:SetLayout("Fill")
 
     bsTabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+        local previousTab = col3._activeButtonSettingsTab
+        local tabChanged = previousTab ~= nil and previousTab ~= tab
+        col3._activeButtonSettingsTab = tab
         CS.buttonSettingsTab = tab
         -- Clean up info/collapse buttons before releasing
         for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
@@ -1476,12 +1469,9 @@ local function CreateConfigPanel()
         end
         wipe(CS.buttonSettingsInfoButtons)
 
-        CooldownCompanion:ClearAllProcGlowPreviews()
-        CooldownCompanion:ClearAllAuraGlowPreviews()
-        CooldownCompanion:ClearAllPandemicPreviews()
-        CooldownCompanion:ClearAllReadyGlowPreviews()
-        CooldownCompanion:ClearAllKeyPressHighlightPreviews()
-        CooldownCompanion:ClearAllBarAuraActivePreviews()
+        if tabChanged and not CS.previewToggleRefreshActive then
+            CooldownCompanion:ClearAllConfigPreviews()
+        end
         widget:ReleaseChildren()
 
         local scroll = AceGUI:Create("ScrollFrame")

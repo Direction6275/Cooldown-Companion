@@ -48,6 +48,8 @@ local BuildProcGlowControls = ST._BuildProcGlowControls
 local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
+local AddPreviewToggleButton = ST._AddPreviewToggleButton
+local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
@@ -145,23 +147,23 @@ local TEXTURE_INDICATOR_EFFECT_ORDER = {
 local TEXTURE_INDICATOR_SECTION_DEFS = {
     proc = {
         label = "Show Proc Effect",
-        previewText = "Preview Proc Effect (3s)",
+        previewText = "Preview Proc Effect",
     },
     aura = {
         label = "Show Aura Effect",
-        previewText = "Preview Aura Effect (3s)",
+        previewText = "Preview Aura Effect",
     },
     pandemic = {
         label = "Show Pandemic Effect",
-        previewText = "Preview Pandemic Effect (3s)",
+        previewText = "Preview Pandemic Effect",
     },
     ready = {
         label = "Show Ready Effect",
-        previewText = "Preview Ready Effect (3s)",
+        previewText = "Preview Ready Effect",
     },
     unusable = {
         label = "Show Unusable Effect",
-        previewText = "Preview Unusable Effect (3s)",
+        previewText = "Preview Unusable Effect",
     },
 }
 
@@ -1476,6 +1478,9 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
     local advExpanded = AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled)
 
     if not advExpanded or not config.enabled then
+        if CS.selectedGroup then
+            CooldownCompanion:SetGroupTextureIndicatorPreview(CS.selectedGroup, sectionKey, false)
+        end
         return
     end
 
@@ -1528,13 +1533,16 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
         BuildTextureIndicatorSpeedSlider(container, config, "Bounce Duration")
     end
 
-    local previewBtn = AceGUI:Create("Button")
-    previewBtn:SetText(sectionDef.previewText)
-    previewBtn:SetFullWidth(true)
-    previewBtn:SetCallback("OnClick", function()
-        CooldownCompanion:PlayGroupTextureIndicatorPreview(CS.selectedGroup, sectionKey, 3)
-    end)
-    container:AddChild(previewBtn)
+    if AddPreviewToggleButton then
+        AddPreviewToggleButton(container, sectionDef.previewText, function()
+            return CS.selectedGroup
+                and CooldownCompanion:IsGroupTextureIndicatorPreviewActive(CS.selectedGroup, sectionKey)
+        end, function(show)
+            if CS.selectedGroup then
+                CooldownCompanion:SetGroupTextureIndicatorPreview(CS.selectedGroup, sectionKey, show)
+            end
+        end)
+    end
 end
 
 local function BuildTriggerPanelEffectSection(container, effects, effectKey)
@@ -1558,7 +1566,7 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
     local advKey = "triggerEffect_" .. effectKey
     local advExpanded = AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled)
     if not advExpanded or not config.enabled then
-        return
+        return false
     end
 
     if effectKey == "colorShift" then
@@ -1575,6 +1583,7 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
     end
 
     BuildTextureIndicatorSpeedSlider(container, config, def.speedLabel)
+    return true
 end
 
 local function GetTriggerPanelEffectOrderForDisplayType(group)
@@ -1628,22 +1637,31 @@ local function BuildTriggerEffectsTab(container, group)
     end
 
     local anyEnabled = false
+    local anyAdvancedExpanded = false
     local effectOrder = GetTriggerPanelEffectOrderForDisplayType(group)
     for _, effectKey in ipairs(effectOrder) do
-        BuildTriggerPanelEffectSection(container, effects, effectKey)
+        local sectionAdvancedExpanded = BuildTriggerPanelEffectSection(container, effects, effectKey)
         if effects[effectKey] and effects[effectKey].enabled then
             anyEnabled = true
         end
+        if sectionAdvancedExpanded then
+            anyAdvancedExpanded = true
+        end
     end
 
-    local previewBtn = AceGUI:Create("Button")
-    previewBtn:SetText("Preview Effects (3s)")
-    previewBtn:SetFullWidth(true)
-    previewBtn:SetDisabled(not anyEnabled)
-    previewBtn:SetCallback("OnClick", function()
-        CooldownCompanion:PlayTriggerPanelEffectsPreview(CS.selectedGroup, 3)
-    end)
-    container:AddChild(previewBtn)
+    if anyEnabled and anyAdvancedExpanded then
+        if AddPreviewToggleButton then
+            AddPreviewToggleButton(container, "Preview Effects", function()
+                return CS.selectedGroup and CooldownCompanion:IsTriggerPanelEffectsPreviewActive(CS.selectedGroup)
+            end, function(show)
+                if CS.selectedGroup then
+                    CooldownCompanion:SetTriggerPanelEffectsPreview(CS.selectedGroup, show)
+                end
+            end)
+        end
+    elseif CS.selectedGroup then
+        CooldownCompanion:SetTriggerPanelEffectsPreview(CS.selectedGroup, false)
+    end
 end
 
 local function BuildTextureEffectsTab(container, group)
@@ -1658,11 +1676,12 @@ local function BuildTextureEffectsTab(container, group)
 end
 
 local function BuildBarModeEffects(container, group, style)
-    CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
-    CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
-    CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
-    CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
-    CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
+    if not CS.previewToggleRefreshActive then
+        CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
+    end
     BuildBarEffectsTab(container, group, style)
 end
 
@@ -1701,13 +1720,15 @@ local function BuildProcGlowSection(container, group, style)
 
     BuildProcGlowControls(container, style, UpdateSelectedGroupStyle)
 
-    local procPreviewBtn = AceGUI:Create("Button")
-    procPreviewBtn:SetText("Preview Proc Glow (3s)")
-    procPreviewBtn:SetFullWidth(true)
-    procPreviewBtn:SetCallback("OnClick", function()
-        CooldownCompanion:PlayGroupProcGlowPreview(CS.selectedGroup, 3)
-    end)
-    container:AddChild(procPreviewBtn)
+    if AddPreviewToggleButton then
+        AddPreviewToggleButton(container, "Preview Proc Glow", function()
+            return CS.selectedGroup and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, nil, "_procGlowPreview")
+        end, function(show)
+            if CS.selectedGroup then
+                CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, show)
+            end
+        end)
+    end
 end
 
 local function BuildAuraGlowSection(container, group, style)
@@ -1753,13 +1774,15 @@ local function BuildAuraGlowSection(container, group, style)
 
     BuildAuraIndicatorControls(container, style, UpdateSelectedGroupStyle)
 
-    local auraPreviewBtn = AceGUI:Create("Button")
-    auraPreviewBtn:SetText("Preview Aura Glow (3s)")
-    auraPreviewBtn:SetFullWidth(true)
-    auraPreviewBtn:SetCallback("OnClick", function()
-        CooldownCompanion:PlayGroupAuraGlowPreview(CS.selectedGroup, 3)
-    end)
-    container:AddChild(auraPreviewBtn)
+    if AddPreviewToggleButton then
+        AddPreviewToggleButton(container, "Preview Aura Glow", function()
+            return CS.selectedGroup and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, nil, "_auraGlowPreview")
+        end, function(show)
+            if CS.selectedGroup then
+                CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, show)
+            end
+        end)
+    end
 end
 
 local function BuildPandemicGlowSection(container, group, style)
@@ -1794,13 +1817,15 @@ local function BuildPandemicGlowSection(container, group, style)
 
     BuildPandemicGlowControls(container, style, UpdateSelectedGroupStyle)
 
-    local pandemicPreviewBtn = AceGUI:Create("Button")
-    pandemicPreviewBtn:SetText("Preview Pandemic Glow (3s)")
-    pandemicPreviewBtn:SetFullWidth(true)
-    pandemicPreviewBtn:SetCallback("OnClick", function()
-        CooldownCompanion:PlayGroupPandemicPreview(CS.selectedGroup, 3)
-    end)
-    container:AddChild(pandemicPreviewBtn)
+    if AddPreviewToggleButton then
+        AddPreviewToggleButton(container, "Preview Pandemic Glow", function()
+            return CS.selectedGroup and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, nil, "_pandemicPreview")
+        end, function(show)
+            if CS.selectedGroup then
+                CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, show)
+            end
+        end)
+    end
 end
 
 local function BuildReadyGlowSection(container, group, style)
@@ -1895,13 +1920,15 @@ local function BuildReadyGlowSection(container, group, style)
 
     BuildReadyGlowControls(container, style, UpdateSelectedGroupStyle)
 
-    local readyPreviewBtn = AceGUI:Create("Button")
-    readyPreviewBtn:SetText("Preview Ready Glow Style (3s)")
-    readyPreviewBtn:SetFullWidth(true)
-    readyPreviewBtn:SetCallback("OnClick", function()
-        CooldownCompanion:PlayGroupReadyGlowPreview(CS.selectedGroup, 3)
-    end)
-    container:AddChild(readyPreviewBtn)
+    if AddPreviewToggleButton then
+        AddPreviewToggleButton(container, "Preview Ready Glow Style", function()
+            return CS.selectedGroup and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, nil, "_readyGlowPreview")
+        end, function(show)
+            if CS.selectedGroup then
+                CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, show)
+            end
+        end)
+    end
 end
 
 local function BuildKeyPressHighlightSection(container, group, style)
@@ -1940,13 +1967,15 @@ local function BuildKeyPressHighlightSection(container, group, style)
 
     BuildKeyPressHighlightControls(container, style, UpdateSelectedGroupStyle)
 
-    local kphPreviewBtn = AceGUI:Create("Button")
-    kphPreviewBtn:SetText("Preview Key Press Highlight (3s)")
-    kphPreviewBtn:SetFullWidth(true)
-    kphPreviewBtn:SetCallback("OnClick", function()
-        CooldownCompanion:PlayGroupKeyPressHighlightPreview(CS.selectedGroup, 3)
-    end)
-    container:AddChild(kphPreviewBtn)
+    if AddPreviewToggleButton then
+        AddPreviewToggleButton(container, "Preview Key Press Highlight", function()
+            return CS.selectedGroup and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, nil, "_keyPressHighlightPreview")
+        end, function(show)
+            if CS.selectedGroup then
+                CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, show)
+            end
+        end)
+    end
 end
 
 local function BuildEffectsTab(container)
@@ -1957,19 +1986,25 @@ local function BuildEffectsTab(container)
     if not group then return end
     local style = group.style
 
-    ResetEffectsTabPreviews()
+    local displayMode = group.displayMode
+    if not CS.previewToggleRefreshActive
+        and (CS.lastEffectsPreviewGroup ~= CS.selectedGroup or CS.lastEffectsPreviewMode ~= displayMode) then
+        ResetEffectsTabPreviews()
+        CS.lastEffectsPreviewGroup = CS.selectedGroup
+        CS.lastEffectsPreviewMode = displayMode
+    end
 
-    if group.displayMode == "trigger" then
+    if displayMode == "trigger" then
         BuildTriggerEffectsTab(container, group)
         return
     end
 
-    if group.displayMode == "textures" then
+    if displayMode == "textures" then
         BuildTextureEffectsTab(container, group)
         return
     end
 
-    if group.displayMode == "bars" then
+    if displayMode == "bars" then
         BuildBarModeEffects(container, group, style)
         return
     end
@@ -2090,8 +2125,13 @@ local function BuildEffectsTab(container)
     -- Out of Range
     local oorCb = BuildShowOutOfRangeControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
     end)
-    CreateCheckboxPromoteButton(oorCb, nil, "showOutOfRange", group, style)
+    local oorAdvExpanded, oorAdvBtn = AddAdvancedToggle(oorCb, "showOutOfRange", tabInfoButtons, style.showOutOfRange)
+    CreateCheckboxPromoteButton(oorCb, oorAdvBtn, "showOutOfRange", group, style)
+    if oorAdvExpanded and style.showOutOfRange and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Out of Range State", "out_of_range")
+    end
 
     -- Loss of Control
     local locCb = BuildLossOfControlControls(container, style, function()
@@ -2102,8 +2142,13 @@ local function BuildEffectsTab(container)
     -- Unusable Dimming
     local unusableCb = BuildUnusableDimmingControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
     end)
-    CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
+    local unusableAdvExpanded, unusableAdvBtn = AddAdvancedToggle(unusableCb, "unusableDimming", tabInfoButtons, style.showUnusable)
+    CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
+    if unusableAdvExpanded and style.showUnusable and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Unusable State", "unusable")
+    end
 
     -- Show Tooltips
     local tooltipCb = BuildShowTooltipsControls(container, style, function()
@@ -2581,6 +2626,9 @@ local function BuildAppearanceTab(container)
 
         AddOffsetSliders(container, style, "cooldownTextXOffset", "cooldownTextYOffset", { x = 0, y = 0 }, refreshStyle)
 
+        if AddConditionalPreviewButton then
+            AddConditionalPreviewButton(container, "Preview Cooldown Text", "cooldown")
+        end
     end -- cdTextAdvExpanded + showCooldownText
 
     -- Show Charge Text toggle
@@ -2654,6 +2702,10 @@ local function BuildAppearanceTab(container)
             AddAnchorDropdown(container, style, "auraTextAnchor", "TOPLEFT", refreshStyle)
             AddOffsetSliders(container, style, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle)
         end
+
+        if AddConditionalPreviewButton then
+            AddConditionalPreviewButton(container, "Preview Aura Duration Text", "aura_duration_text")
+        end
     end -- auraTextAdvExpanded + showAuraText
 
     -- Show Aura Stack Text toggle
@@ -2676,6 +2728,10 @@ local function BuildAppearanceTab(container)
         AddColorPicker(container, style, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
         AddAnchorDropdown(container, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle)
         AddOffsetSliders(container, style, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle)
+
+        if AddConditionalPreviewButton then
+            AddConditionalPreviewButton(container, "Preview Aura Stack Text", "aura_stack_text")
+        end
     end -- auraStackAdvExpanded + showAuraStackText
 
     local auraSwipeCb = BuildAuraDurationSwipeControls(container, style, function()

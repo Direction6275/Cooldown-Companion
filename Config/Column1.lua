@@ -40,6 +40,7 @@ local GenerateGroupName
 -- Clear all selection state (container, panel, button, multi-select)
 ------------------------------------------------------------------------
 local function ClearSelection()
+    CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedContainer = nil
     CS.selectedGroup = nil
     CS.selectedButton = nil
@@ -208,6 +209,7 @@ local function RenderBrowseMode()
             -- Left-click: select for preview; Right-click: copy context menu
             entry.frame:SetScript("OnMouseUp", function(self, button)
                 if button == "LeftButton" then
+                    CooldownCompanion:ClearAllConfigPreviews()
                     if CS.browseContainerId == containerId then
                         CS.browseContainerId = nil
                         CS.selectedContainer = nil
@@ -235,6 +237,7 @@ local function RenderBrowseMode()
                             if not db.groupContainers[containerId] then return end
                             local newId = CooldownCompanion:CopyContainerFromBrowse(containerId)
                             if newId then
+                                CooldownCompanion:ClearAllConfigPreviews()
                                 CS.browseMode = false
                                 CS.browseCharKey = nil
                                 CS.browseContainerId = nil
@@ -394,6 +397,7 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
                 CloseDropDownMenus()
                 local newContainerId = CooldownCompanion:DuplicateGroup(containerId)
                 if newContainerId then
+                    CooldownCompanion:ClearAllConfigPreviews()
                     CS.selectedContainer = newContainerId
                     CS.selectedGroup = nil
                     CooldownCompanion:RefreshConfigPanel()
@@ -543,6 +547,7 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
                     CloseDropDownMenus()
                     local newPanelId = CooldownCompanion:CreatePanel(containerId, targetMode)
                     if newPanelId then
+                        CooldownCompanion:ClearAllConfigPreviews()
                         CS.selectedContainer = containerId
                         CS.selectedGroup = newPanelId
                         CS.addingToPanelId = newPanelId
@@ -581,6 +586,7 @@ local function ShowFolderContextMenu(db, folderId, folder)
             CloseDropDownMenus()
             local containerId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
             CooldownCompanion:MoveGroupToFolder(containerId, folderId)
+            CooldownCompanion:ClearAllConfigPreviews()
             CS.selectedContainer = containerId
             CS.selectedGroup = nil
             CS.selectedButton = nil
@@ -745,6 +751,7 @@ local function PopulateColumn1ButtonBar()
     newGroupBtn:SetText("New Group")
     newGroupBtn:SetCallback("OnClick", function()
         local containerId, groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
+        CooldownCompanion:ClearAllConfigPreviews()
         CS.selectedContainer = containerId
         CS.selectedGroup = nil
         CS.selectedButton = nil
@@ -1210,6 +1217,7 @@ local function RefreshColumn1(preserveDrag)
                     return
                 end
                 -- Normal click: toggle-through selection, clear multi-select
+                CooldownCompanion:ClearAllConfigPreviews()
                 wipe(CS.selectedGroups)
                 if CS.selectedContainer == containerId then
                     if CS.selectedGroup then

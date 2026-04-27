@@ -1605,6 +1605,7 @@ local function ResetConfigSelection(full)
     if full and ST._CancelAutoAddFlow then
         ST._CancelAutoAddFlow()
     end
+    CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedButton = nil
     wipe(CS.selectedButtons)
     wipe(CS.selectedPanels)
@@ -1636,8 +1637,7 @@ local function SetConfigPrimaryMode(mode, opts)
         ResetConfigSelection(true)
     elseif (not toBars) and wasBars then
         -- Stop preview loops when returning to button settings mode.
-        CooldownCompanion:StopCastBarPreview()
-        CooldownCompanion:StopResourceBarPreview()
+        CooldownCompanion:ClearAllConfigPreviews()
     end
 
     CS.resourceBarPanelActive = toBars

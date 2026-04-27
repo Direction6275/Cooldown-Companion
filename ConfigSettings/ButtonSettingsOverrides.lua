@@ -5,6 +5,7 @@ local CS = ST._configState
 
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
+local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateRevertButton = ST._CreateRevertButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
@@ -43,6 +44,8 @@ local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
 local BuildTextFontControls = ST._BuildTextFontControls
 local BuildTextColorsControls = ST._BuildTextColorsControls
 local BuildTextBackgroundControls = ST._BuildTextBackgroundControls
+local AddPreviewToggleButton = ST._AddPreviewToggleButton
+local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 
 local function PrimeSelectedReadyGlowCappedChargeTransition(groupId, buttonIndex)
     local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
@@ -72,6 +75,56 @@ local function PrimeSelectedReadyGlowNormalTransition(groupId, buttonIndex)
     button._readyGlowStartTime = GetTime()
 end
 
+local PREVIEWABLE_OVERRIDE_SECTIONS = {
+    cooldownText = true,
+    cooldownSwipe = true,
+    desaturation = true,
+    auraText = true,
+    auraStackText = true,
+    auraDurationSwipe = true,
+    showOutOfRange = true,
+    unusableDimming = true,
+    iconTint = true,
+    procGlow = true,
+    auraIndicator = true,
+    pandemicGlow = true,
+    barActiveAura = true,
+    pandemicBar = true,
+    readyGlow = true,
+}
+
+local function AddSelectedButtonPreviewToggle(container, label, previewFlag, setPreviewFn)
+    if not AddPreviewToggleButton then
+        return
+    end
+
+    AddPreviewToggleButton(container, label, function()
+        return CS.selectedGroup
+            and CS.selectedButton
+            and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, CS.selectedButton, previewFlag)
+    end, function(show)
+        if CS.selectedGroup and CS.selectedButton then
+            setPreviewFn(CooldownCompanion, CS.selectedGroup, CS.selectedButton, show)
+        end
+    end)
+end
+
+local function AddSelectedBarAuraActivePreviewToggle(container, label)
+    if not AddPreviewToggleButton then
+        return
+    end
+
+    AddPreviewToggleButton(container, label, function()
+        return CS.selectedGroup
+            and CS.selectedButton
+            and CooldownCompanion:IsBarAuraActivePreviewActive(CS.selectedGroup, CS.selectedButton)
+    end, function(show)
+        if CS.selectedGroup and CS.selectedButton then
+            CooldownCompanion:SetBarAuraActivePreview(CS.selectedGroup, CS.selectedButton, show)
+        end
+    end)
+end
+
 local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
     local fmtHeading = AceGUI:Create("Heading")
     fmtHeading:SetText("Format Override")
@@ -79,7 +132,10 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
     fmtHeading:SetFullWidth(true)
     scroll:AddChild(fmtHeading)
 
-    local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtHeading.label, "LEFT", "RIGHT", 4, 0, {
+    local fmtPreviewAdvExpanded, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "buttonTextFormatPreview", infoButtons)
+    fmtPreviewAdvBtn:SetPoint("LEFT", fmtHeading.label, "RIGHT", 4, 0)
+
+    local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtPreviewAdvBtn, "LEFT", "RIGHT", 4, 0, {
         {"Per-Button Format Override", 1, 0.82, 0, true},
         " ",
         {"Overrides the group format string for this button only.", 1, 1, 1},
@@ -151,6 +207,16 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
             CooldownCompanion:RefreshConfigPanel()
         end)
         scroll:AddChild(clearBtn)
+    end
+
+    if fmtPreviewAdvExpanded and AddConditionalPreviewButton then
+        local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
+        AddConditionalPreviewButton(scroll, "Preview Cooldown State", "cooldown", target)
+        AddConditionalPreviewButton(scroll, "Preview Aura Duration Text", "aura_duration_text", target)
+        AddConditionalPreviewButton(scroll, "Preview Aura Stack Text", "aura_stack_text", target)
+        AddConditionalPreviewButton(scroll, "Preview Pandemic State", "pandemic", target)
+        AddConditionalPreviewButton(scroll, "Preview Unusable State", "unusable", target)
+        AddConditionalPreviewButton(scroll, "Preview Out of Range State", "out_of_range", target)
     end
 end
 
@@ -277,7 +343,19 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                     CooldownCompanion:RefreshConfigPanel()
                 end)
 
-                table.insert(infoButtons, CreateRevertButton(heading, buttonData, sectionId))
+                local revertBtn = CreateRevertButton(heading, buttonData, sectionId)
+                table.insert(infoButtons, revertBtn)
+
+                local previewAdvExpanded
+                if PREVIEWABLE_OVERRIDE_SECTIONS[sectionId] then
+                    local previewAdvBtn
+                    previewAdvExpanded, previewAdvBtn = AddAdvancedToggle(heading, "overridePreview_" .. sectionId, infoButtons)
+                    previewAdvBtn:SetPoint("LEFT", revertBtn, "RIGHT", 4, 0)
+                    heading.right:ClearAllPoints()
+                    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+                    heading.right:SetPoint("LEFT", previewAdvBtn, "RIGHT", 4, 0)
+                end
+
                 if not overrideCollapsed then
                     local builder = sectionBuilders[sectionId]
                     if builder then
@@ -404,66 +482,38 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                             afterEnableCallback = afterEnableCallback,
                         })
 
-                        if sectionId == "procGlow" and overrides.procGlowStyle ~= "none" then
-                            local btn = AceGUI:Create("Button")
-                            btn:SetText("Preview Proc Glow (3s)")
-                            btn:SetFullWidth(true)
-                            btn:SetCallback("OnClick", function()
-                                if CS.selectedGroup and CS.selectedButton then
-                                    CooldownCompanion:PlayProcGlowPreview(CS.selectedGroup, CS.selectedButton, 3)
-                                end
-                            end)
-                            scroll:AddChild(btn)
-                        elseif sectionId == "auraIndicator" and overrides.auraGlowStyle ~= "none" then
-                            local btn = AceGUI:Create("Button")
-                            btn:SetText("Preview Aura Glow (3s)")
-                            btn:SetFullWidth(true)
-                            btn:SetCallback("OnClick", function()
-                                if CS.selectedGroup and CS.selectedButton then
-                                    CooldownCompanion:PlayAuraGlowPreview(CS.selectedGroup, CS.selectedButton, 3)
-                                end
-                            end)
-                            scroll:AddChild(btn)
-                        elseif sectionId == "pandemicGlow" and GetEffectiveOverrideValue("showPandemicGlow") ~= false then
-                            local btn = AceGUI:Create("Button")
-                            btn:SetText("Preview Pandemic Glow (3s)")
-                            btn:SetFullWidth(true)
-                            btn:SetCallback("OnClick", function()
-                                if CS.selectedGroup and CS.selectedButton then
-                                    CooldownCompanion:PlayPandemicPreview(CS.selectedGroup, CS.selectedButton, 3)
-                                end
-                            end)
-                            scroll:AddChild(btn)
-                        elseif sectionId == "barActiveAura" then
-                            local btn = AceGUI:Create("Button")
-                            btn:SetText("Preview Active Aura Effects (3s)")
-                            btn:SetFullWidth(true)
-                            btn:SetCallback("OnClick", function()
-                                if CS.selectedGroup and CS.selectedButton then
-                                    CooldownCompanion:PlayBarAuraActivePreview(CS.selectedGroup, CS.selectedButton, 3)
-                                end
-                            end)
-                            scroll:AddChild(btn)
-                        elseif sectionId == "pandemicBar" then
-                            local btn = AceGUI:Create("Button")
-                            btn:SetText("Preview Pandemic Effects (3s)")
-                            btn:SetFullWidth(true)
-                            btn:SetCallback("OnClick", function()
-                                if CS.selectedGroup and CS.selectedButton then
-                                    CooldownCompanion:PlayPandemicPreview(CS.selectedGroup, CS.selectedButton, 3)
-                                end
-                            end)
-                            scroll:AddChild(btn)
-                        elseif sectionId == "readyGlow" and overrides.readyGlowStyle and overrides.readyGlowStyle ~= "none" then
-                            local btn = AceGUI:Create("Button")
-                            btn:SetText("Preview Ready Glow Style (3s)")
-                            btn:SetFullWidth(true)
-                            btn:SetCallback("OnClick", function()
-                                if CS.selectedGroup and CS.selectedButton then
-                                    CooldownCompanion:PlayReadyGlowPreview(CS.selectedGroup, CS.selectedButton, 3)
-                                end
-                            end)
-                            scroll:AddChild(btn)
+                        if previewAdvExpanded and sectionId == "procGlow" and overrides.procGlowStyle ~= "none" then
+                            AddSelectedButtonPreviewToggle(scroll, "Preview Proc Glow", "_procGlowPreview", CooldownCompanion.SetProcGlowPreview)
+                        elseif previewAdvExpanded and sectionId == "auraIndicator" and overrides.auraGlowStyle ~= "none" then
+                            AddSelectedButtonPreviewToggle(scroll, "Preview Aura Glow", "_auraGlowPreview", CooldownCompanion.SetAuraGlowPreview)
+                        elseif previewAdvExpanded and sectionId == "pandemicGlow" and GetEffectiveOverrideValue("showPandemicGlow") ~= false then
+                            AddSelectedButtonPreviewToggle(scroll, "Preview Pandemic Glow", "_pandemicPreview", CooldownCompanion.SetPandemicPreview)
+                        elseif previewAdvExpanded and sectionId == "barActiveAura" then
+                            AddSelectedBarAuraActivePreviewToggle(scroll, "Preview Active Aura Effects")
+                        elseif previewAdvExpanded and sectionId == "pandemicBar" then
+                            AddSelectedButtonPreviewToggle(scroll, "Preview Pandemic Effects", "_pandemicPreview", CooldownCompanion.SetPandemicPreview)
+                        elseif previewAdvExpanded and sectionId == "readyGlow" and overrides.readyGlowStyle and overrides.readyGlowStyle ~= "none" then
+                            AddSelectedButtonPreviewToggle(scroll, "Preview Ready Glow Style", "_readyGlowPreview", CooldownCompanion.SetReadyGlowPreview)
+                        end
+
+                        if previewAdvExpanded and AddConditionalPreviewButton then
+                            local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
+                            if sectionId == "cooldownText" or sectionId == "cooldownSwipe" or sectionId == "desaturation" then
+                                AddConditionalPreviewButton(scroll, "Preview Cooldown State", "cooldown", target)
+                            elseif sectionId == "auraText" or sectionId == "auraDurationSwipe" then
+                                AddConditionalPreviewButton(scroll, "Preview Aura Duration Text", "aura_duration_text", target)
+                            elseif sectionId == "auraStackText" then
+                                AddConditionalPreviewButton(scroll, "Preview Aura Stack Text", "aura_stack_text", target)
+                            elseif sectionId == "showOutOfRange" then
+                                AddConditionalPreviewButton(scroll, "Preview Out of Range State", "out_of_range", target)
+                            elseif sectionId == "unusableDimming" then
+                                AddConditionalPreviewButton(scroll, "Preview Unusable State", "unusable", target)
+                            elseif sectionId == "iconTint" then
+                                AddConditionalPreviewButton(scroll, "Preview Cooldown Tint", "cooldown", target)
+                                AddConditionalPreviewButton(scroll, "Preview Aura Tint", "aura", target)
+                                AddConditionalPreviewButton(scroll, "Preview Unusable Tint", "unusable", target)
+                                AddConditionalPreviewButton(scroll, "Preview Out of Range Tint", "out_of_range", target)
+                            end
                         end
                     end
                 end

@@ -179,13 +179,14 @@ local function RefreshColumn4(container)
         tabGroup:SetLayout("Fill")
 
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+            local previousTab = container._activePanelSettingsTab
+            local tabChanged = previousTab ~= nil and previousTab ~= tab
+            container._activePanelSettingsTab = tab
             CS.selectedTab = tab
             CS.panelSettingsTab = tab
-            if tab ~= "effects" then
-                CooldownCompanion:ClearAllTextureIndicatorPreviews()
-                if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
-                    CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
-                end
+            local preservePreviews = CS.previewToggleRefreshActive == true
+            if tabChanged and not preservePreviews then
+                CooldownCompanion:ClearAllConfigPreviews()
             end
             -- Clean up raw (?) info buttons BEFORE releasing children, so they
             -- don't leak onto recycled AceGUI frames when switching tabs
@@ -301,6 +302,7 @@ local function RefreshProfileBar(bar)
     profileDrop:SetValue(currentProfile)
     profileDrop:SetWidth(150)
     profileDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        CooldownCompanion:ClearAllConfigPreviews()
         db:SetProfile(val)
         CS.selectedContainer = nil
         CS.selectedGroup = nil

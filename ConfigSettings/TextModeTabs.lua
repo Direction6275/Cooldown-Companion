@@ -10,6 +10,7 @@ local CS = ST._configState
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
+local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
@@ -19,6 +20,7 @@ local OpenFormatEditor = ST._OpenFormatEditor
 local AddColorPicker = ST._AddColorPicker
 local RenderFormatPreview = ST._RenderFormatPreview
 local ParseFormatString = ST._ParseFormatString
+local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -219,9 +221,11 @@ local function BuildTextAppearanceTab(container, group, style)
         CS.collapsedSections["textappearance_format"] = not CS.collapsedSections["textappearance_format"]
         CooldownCompanion:RefreshConfigPanel()
     end)
+    local fmtPreviewAdvExpanded, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "textFormatPreview", tabInfoButtons)
+    fmtPreviewAdvBtn:SetPoint("LEFT", fmtCollapseBtn, "RIGHT", 4, 0)
 
     -- Token reference info button
-    local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtCollapseBtn, "LEFT", "RIGHT", 4, 0, {
+    local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtPreviewAdvBtn, "LEFT", "RIGHT", 4, 0, {
         {"Format String", 1, 0.82, 0, true},
         " ",
         {"Controls what each button displays using", 1, 1, 1, true},
@@ -285,6 +289,15 @@ local function BuildTextAppearanceTab(container, group, style)
         OpenFormatEditor(style, CS.selectedGroup)
     end)
     container:AddChild(editBtn)
+
+    if fmtPreviewAdvExpanded and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Cooldown State", "cooldown")
+        AddConditionalPreviewButton(container, "Preview Aura Duration Text", "aura_duration_text")
+        AddConditionalPreviewButton(container, "Preview Aura Stack Text", "aura_stack_text")
+        AddConditionalPreviewButton(container, "Preview Pandemic State", "pandemic")
+        AddConditionalPreviewButton(container, "Preview Unusable State", "unusable")
+        AddConditionalPreviewButton(container, "Preview Out of Range State", "out_of_range")
+    end
     end -- not fmtCollapsed
 
     -- ================================================================

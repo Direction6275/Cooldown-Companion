@@ -237,6 +237,13 @@ local function WrapColor(text, color)
 end
 
 local function ResolveTextModeStackDisplay(button)
+    if button._conditionalAuraStackTextPreview then
+        local previewStackText = button._auraStackText
+        if previewStackText and (issecretvalue(previewStackText) or previewStackText ~= "") then
+            return previewStackText, "aura"
+        end
+    end
+
     local auraUnit = button._auraUnit
     local auraInstanceID = button._auraInstanceID
     if auraUnit and auraInstanceID then
@@ -340,13 +347,16 @@ local function SubstituteTokens(button, segments, style, effectState)
     local currentCharges = button._currentReadableCharges
     local maxCharges = button.buttonData.maxCharges
     local stackDisplayText, stackDisplayKind = ResolveTextModeStackDisplay(button)
-    local auraActive = button._auraActive
-    local auraHasTimer = button._auraHasTimer == true
+    local auraDurationTextPreview = button._conditionalAuraDurationTextPreview == true
+    local auraActive = button._auraActive or auraDurationTextPreview
+    local auraHasTimer = button._auraHasTimer == true or auraDurationTextPreview
     -- _durationObj holds either cooldown remaining or aura remaining (when aura override is active).
     -- Determine which domain owns it this tick.
     local durationRemaining = nil
     local durationIsSecret = false
-    if button._durationObj then
+    if button._conditionalPreviewRemaining and button._conditionalPreviewRemaining > 0 then
+        durationRemaining = button._conditionalPreviewRemaining
+    elseif button._durationObj then
         local rem = button._durationObj:GetRemainingDuration()
         if button._durationObj:HasSecretValues() then
             durationIsSecret = true

@@ -1015,6 +1015,10 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     -- Update clickthrough state
     self:UpdateGroupClickthrough(groupId)
 
+    if self.ApplyConfigPreviewsToGroup then
+        self:ApplyConfigPreviewsToGroup(groupId)
+    end
+
     -- Initial cooldown update
     frame:UpdateCooldowns()
 

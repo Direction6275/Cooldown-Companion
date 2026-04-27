@@ -68,6 +68,7 @@ StaticPopupDialogs["CDC_DELETE_GROUP"] = {
         if not data then return end
         local id = data.containerId or data.groupId
         if id then
+            CooldownCompanion:ClearAllConfigPreviews()
             CooldownCompanion:DeleteGroup(id)
             if data.containerId then
                 if CS.selectedContainer == id then
@@ -99,6 +100,7 @@ StaticPopupDialogs["CDC_DELETE_PANEL"] = {
     button2 = "Cancel",
     OnAccept = function(self, data)
         if not data then return end
+        CooldownCompanion:ClearAllConfigPreviews()
         CooldownCompanion:DeletePanel(data.containerId, data.panelId)
         if CS.selectedGroup == data.panelId then
             CS.selectedGroup = nil
@@ -206,6 +208,7 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_PANELS"] = {
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.panelIds and data.containerId then
+            CooldownCompanion:ClearAllConfigPreviews()
             for _, pid in ipairs(data.panelIds) do
                 CooldownCompanion:DeletePanel(data.containerId, pid)
             end
@@ -690,6 +693,7 @@ StaticPopupDialogs["CDC_CROSS_PANEL_STRIP_OVERRIDES"] = {
             data.targetPanelId, data.targetIndex
         )
         if buttonData then
+            CooldownCompanion:ClearAllConfigPreviews()
             ST._StripButtonOverrides(buttonData)
             CooldownCompanion:RefreshGroupFrame(data.sourcePanelId)
             CooldownCompanion:RefreshGroupFrame(data.targetPanelId)
@@ -828,6 +832,7 @@ StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.folderId then
+            CooldownCompanion:ClearAllConfigPreviews()
             CooldownCompanion:DeleteFolder(data.folderId)
             if CS.selectedGroup then
                 local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
