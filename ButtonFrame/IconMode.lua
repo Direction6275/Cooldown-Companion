@@ -496,10 +496,14 @@ function CooldownCompanion:UpdateButtonIcon(button)
     local icon
     local displayId = buttonData.id
     local overrideId = nil
+    local forceBaseDisplay = button._forceBaseDisplaySpellId == true
 
     if buttonData.type == "spell" then
         overrideId = C_Spell.GetOverrideSpell(buttonData.id)
         if overrideId == buttonData.id or overrideId == 0 then
+            overrideId = nil
+        end
+        if forceBaseDisplay then
             overrideId = nil
         end
         -- Look up viewer child for current override info (icon, display name).
@@ -513,7 +517,7 @@ function CooldownCompanion:UpdateButtonIcon(button)
         else
             child = CooldownCompanion.viewerAuraFrames[buttonData.id]
         end
-        if child and child.cooldownInfo then
+        if child and child.cooldownInfo and not forceBaseDisplay then
             -- For multi-slot buttons, keep the slot-specific buff viewer child —
             -- FindCooldownViewerChild is not slot-aware and would lose differentiation.
             if not buttonData.cdmChildSlot then

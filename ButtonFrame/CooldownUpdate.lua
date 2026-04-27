@@ -406,7 +406,7 @@ end
 
 local ProbeActionSlotCooldownForSpell
 
-local function EvaluateSpellCooldownLane(spellID, secrecy)
+local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID)
     local result = {
         spellID = spellID,
         fetchOk = false,
@@ -424,7 +424,7 @@ local function EvaluateSpellCooldownLane(spellID, secrecy)
     result.info = info
     if not info then
         if secrecy ~= 0 and ProbeActionSlotCooldownForSpell then
-            local slotProbe = ProbeActionSlotCooldownForSpell(spellID)
+            local slotProbe = ProbeActionSlotCooldownForSpell(baseSpellID or spellID, spellID)
             if slotProbe.shown ~= nil then
                 result.fetchOk = true
                 result.normalCooldownShown = slotProbe.shown == true
@@ -486,7 +486,7 @@ local function GetLiveOverrideSpellID(buttonData)
 end
 
 local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId)
-    return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy)
+    return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id)
 end
 
 local function ResolveChargeState(button, buttonData)
@@ -685,6 +685,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- displayed spell fresh even when the game does not fire SPELL_UPDATE_ICON.
     local cooldownSpellId = button._displaySpellId or buttonData.id
     local liveOverrideId
+    local forceBaseDisplayId = false
     if buttonData.type == "spell" and not buttonData.cdmChildSlot then
         local refreshIcon = false
         local previousLiveOverrideId = button._liveOverrideSpellId
@@ -697,6 +698,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             cooldownSpellId = liveOverrideId
         elseif previousLiveOverrideId then
             cooldownSpellId = buttonData.id
+            forceBaseDisplayId = true
             refreshIcon = true
         end
 
@@ -714,8 +716,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
 
         if refreshIcon then
+            if forceBaseDisplayId then
+                button._forceBaseDisplaySpellId = true
+            end
             CooldownCompanion:UpdateButtonIcon(button)
-            cooldownSpellId = liveOverrideId or button._displaySpellId or buttonData.id
+            button._forceBaseDisplaySpellId = nil
+            cooldownSpellId = forceBaseDisplayId and buttonData.id
+                or liveOverrideId
+                or button._displaySpellId
+                or buttonData.id
         end
     end
 
