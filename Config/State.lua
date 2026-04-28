@@ -1105,6 +1105,7 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcCollapseIcon then entry.frame._cdcCollapseIcon:Hide() end
     if entry.frame._cdcCollapseBtn then entry.frame._cdcCollapseBtn:Hide() end
     if entry.frame._cdcAddBtn then entry.frame._cdcAddBtn:Hide() end
+    if entry.frame._cdcGenericRenameBadge then entry.frame._cdcGenericRenameBadge:Hide() end
     if entry.frame._cdcAnchorBadge then entry.frame._cdcAnchorBadge:Hide() end
     if entry.frame._cdcHeaderDisabledBadge then entry.frame._cdcHeaderDisabledBadge:Hide() end
     if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end

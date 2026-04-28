@@ -124,6 +124,68 @@ local function EnsurePanelTypeTooltipTarget(header)
     return target
 end
 
+local function TrimPanelName(name)
+    if name == nil then return "" end
+    return tostring(name):match("^%s*(.-)%s*$") or ""
+end
+
+local function IsGenericPanelName(name)
+    local trimmed = TrimPanelName(name)
+    return trimmed == "" or trimmed == "Panel" or trimmed:match("^Panel%s+%d+$") ~= nil
+end
+
+local function EnsureGenericRenameBadge(header)
+    local badge = header.frame._cdcGenericRenameBadge
+    if not badge then
+        badge = CreateFrame("Button", nil, header.frame)
+        badge:SetSize(14, 14)
+        badge:SetPropagateMouseClicks(false)
+        badge:SetPropagateMouseMotion(false)
+        badge.icon = badge:CreateTexture(nil, "OVERLAY")
+        badge.icon:SetAllPoints()
+        badge:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Default name. Click to rename.", 1, 0.82, 0, true)
+            GameTooltip:Show()
+        end)
+        badge:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        header.frame._cdcGenericRenameBadge = badge
+    end
+
+    badge:SetFrameLevel(header.frame:GetFrameLevel() + 25)
+    return badge
+end
+
+local function ConfigureGenericRenameBadge(header, panel, panelId, rightOffset)
+    local badge = EnsureGenericRenameBadge(header)
+    badge:ClearAllPoints()
+    badge:SetScript("OnClick", nil)
+
+    if not IsGenericPanelName(panel and panel.name) then
+        badge:Hide()
+        return rightOffset
+    end
+
+    local currentName = TrimPanelName(panel and panel.name)
+    if currentName == "" then
+        currentName = "Panel " .. tostring(panelId)
+    end
+
+    badge.icon:SetAtlas("QuestLegendary", false)
+    badge.icon:SetVertexColor(1, 0.82, 0, 0.85)
+    badge:SetPoint("LEFT", header.label, "CENTER", rightOffset, 0)
+    badge:SetScript("OnClick", function(_, button)
+        if button ~= "LeftButton" then return end
+        GameTooltip:Hide()
+        ShowPopupAboveConfig("CDC_RENAME_GROUP", currentName, { groupId = panelId })
+    end)
+    badge:Show()
+
+    return rightOffset + 18
+end
+
 local function ConfigurePanelTypeBadge(header, displayMode, textWidth)
     local modeBadge = header._cdcModeBadge
     if not modeBadge then
@@ -1816,6 +1878,9 @@ local function RefreshColumn2()
                 ConfigurePanelTypeBadge(header, panel.displayMode, textW)
                 header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
+                local rightOffset = (textW / 2) + 4
+                rightOffset = ConfigureGenericRenameBadge(header, panel, panelId, rightOffset)
+
                 -- Anchor unlock badge (shown when panel is individually unlocked)
                 local anchorBadge = header.frame._cdcAnchorBadge
                 if not anchorBadge then
@@ -1824,10 +1889,11 @@ local function RefreshColumn2()
                 end
                 anchorBadge:SetSize(16, 16)
                 anchorBadge:ClearAllPoints()
-                anchorBadge:SetPoint("LEFT", header.label, "CENTER", (textW / 2) + 4, 0)
+                anchorBadge:SetPoint("LEFT", header.label, "CENTER", rightOffset, 0)
                 if panel.locked == false then
                     anchorBadge:SetAtlas("ShipMissionIcon-Training-Map", false)
                     anchorBadge:Show()
+                    rightOffset = rightOffset + 22
                 else
                     anchorBadge:Hide()
                 end
@@ -1840,11 +1906,11 @@ local function RefreshColumn2()
                 end
                 disabledBadge:SetSize(16, 16)
                 disabledBadge:ClearAllPoints()
-                local disabledOffset = (panel.locked == false) and 22 or 0
-                disabledBadge:SetPoint("LEFT", header.label, "CENTER", (textW / 2) + 4 + disabledOffset, 0)
+                disabledBadge:SetPoint("LEFT", header.label, "CENTER", rightOffset, 0)
                 if panel.enabled == false then
                     disabledBadge:SetAtlas("GM-icon-visibleDis-pressed", false)
                     disabledBadge:Show()
+                    rightOffset = rightOffset + 22
                 else
                     disabledBadge:Hide()
                 end
@@ -1873,9 +1939,6 @@ local function RefreshColumn2()
                 end
 
                 local specBadgeIdx = 0
-                local rightOffset = (textW / 2) + 4
-                if panel.locked == false then rightOffset = rightOffset + 22 end
-                if panel.enabled == false then rightOffset = rightOffset + 22 end
 
                 if panel.specs then
                     for specId in pairs(panel.specs) do
