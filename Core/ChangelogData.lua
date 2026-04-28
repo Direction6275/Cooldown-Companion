@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.13.4",
         "1.13.3",
         "1.13.2",
         "1.13.1",
@@ -24,6 +25,13 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.13.4"] = {
+            markdown = [[
+## Bug Fixes
+
+- **Short cooldown timing:** Fixed an issue where very short cooldowns should no longer briefly flash as ready right after use, and cooldowns ending during the global cooldown should catch up more smoothly.
+]],
+        },
         ["1.13.3"] = {
             markdown = [[
 ## Polish | QoL
