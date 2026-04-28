@@ -161,17 +161,12 @@ end
 -- Shared by icon-mode and bar-mode display paths.
 local function UpdateIconTint(button, buttonData, style)
     button._unusableTintActive = false
-    button._iconTintReason = nil
     if buttonData.isPassive then
         local c
         if style.iconAuraTintEnabled and buttonData.auraTracking and button._auraActive then
             c = style.iconAuraTintColor
-            button._iconTintReason = "aura"
         end
         c = c or style.iconTintColor
-        if not button._iconTintReason and c then
-            button._iconTintReason = "base"
-        end
         local r, g, b, a = c and c[1] or 1, c and c[2] or 1, c and c[3] or 1, c and c[4] or 1
         if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b or button._vertexA ~= a then
             button._vertexR, button._vertexG, button._vertexB, button._vertexA = r, g, b, a
@@ -186,12 +181,10 @@ local function UpdateIconTint(button, buttonData, style)
         if button._conditionalOutOfRangePreview then
             r, g, b = 1, 0.2, 0.2
             stateOverride = true
-            button._iconTintReason = "out-of-range-preview"
         elseif buttonData.type == "spell" then
             if button._spellOutOfRange then
                 r, g, b = 1, 0.2, 0.2
                 stateOverride = true
-                button._iconTintReason = "out-of-range"
             end
         elseif buttonData.type == "item" then
             -- C_Item.IsItemInRange is protected in combat for non-enemy targets (10.2.0);
@@ -202,7 +195,6 @@ local function UpdateIconTint(button, buttonData, style)
                 if inRange == false then
                     r, g, b = 1, 0.2, 0.2
                     stateOverride = true
-                    button._iconTintReason = "out-of-range"
                 end
             end
         end
@@ -214,7 +206,6 @@ local function UpdateIconTint(button, buttonData, style)
             a = uc and uc[4] or a
             stateOverride = true
             button._unusableTintActive = true
-            button._iconTintReason = "unusable-preview"
         elseif buttonData.type == "spell" then
             local spellID = button._displaySpellId or buttonData.id
             local isUsable = C_Spell.IsSpellUsable(spellID)
@@ -223,7 +214,6 @@ local function UpdateIconTint(button, buttonData, style)
                 a = uc and uc[4] or a
                 stateOverride = true
                 button._unusableTintActive = true
-                button._iconTintReason = "unusable"
             end
         elseif buttonData.type == "item" then
             local usable = IsUsableItem(buttonData.id)
@@ -232,7 +222,6 @@ local function UpdateIconTint(button, buttonData, style)
                 a = uc and uc[4] or a
                 stateOverride = true
                 button._unusableTintActive = true
-                button._iconTintReason = "unusable"
             end
         end
     end
@@ -242,18 +231,15 @@ local function UpdateIconTint(button, buttonData, style)
             local c = style.iconAuraTintColor
             if c then
                 r, g, b, a = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
-                button._iconTintReason = "aura"
             end
         elseif style.iconCooldownTintEnabled and button._desatCooldownActive then
             local c = style.iconCooldownTintColor
             if c then
                 r, g, b, a = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
-                button._iconTintReason = "cooldown"
             end
         else
             if bc then
                 r, g, b, a = bc[1] or 1, bc[2] or 1, bc[3] or 1, bc[4] or 1
-                button._iconTintReason = "base"
             end
         end
     end
@@ -272,54 +258,38 @@ end
 -- Shared by icon-mode and bar-mode display paths.
 local function EvaluateDesaturation(button, buttonData, style)
     local wantDesat = false
-    local desaturationReason
     if button._auraTrackingReady == true then
         if buttonData.isPassive then
             if buttonData.neverDesaturate then
                 wantDesat = false
             elseif buttonData.invertAuraDesaturationLogic then
                 wantDesat = button._auraActive == true
-                if wantDesat then
-                    desaturationReason = "aura-active-inverted"
-                end
             else
                 wantDesat = not button._auraActive
-                if wantDesat then
-                    desaturationReason = "aura-inactive"
-                end
             end
         else
             wantDesat = buttonData.desaturateWhileAuraNotActive and not button._auraActive
-            if wantDesat then
-                desaturationReason = "aura-inactive"
-            end
         end
         if not wantDesat and not button._auraActive
             and style.desaturateOnCooldown and button._desatCooldownActive then
             wantDesat = true
-            desaturationReason = "cooldown"
         end
     elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges
         or buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
         if style.desaturateOnCooldown and button._desatCooldownActive then
             wantDesat = true
-            desaturationReason = "cooldown"
         end
         if not wantDesat and buttonData.desaturateWhileZeroCharges
                 and button._chargeState == CHARGE_STATE_ZERO then
             wantDesat = true
-            desaturationReason = "zero-charges"
         end
         if not wantDesat and buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
             wantDesat = true
-            desaturationReason = "zero-stacks"
         end
     end
     if not wantDesat and button._isEquippableNotEquipped then
         wantDesat = true
-        desaturationReason = "not-equipped"
     end
-    button._desaturationReason = desaturationReason
     if button._desaturated ~= wantDesat then
         button._desaturated = wantDesat
         button.icon:SetDesaturated(wantDesat)
