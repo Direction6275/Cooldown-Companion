@@ -1202,7 +1202,7 @@ local function RefreshColumn1(preserveDrag)
         local showGenericRenameBadge = IsGenericGroupName(groupName)
         local displayName = groupName
         if showGenericRenameBadge then
-            displayName = displayName .. "  |A:QuestLegendary:12:12|a"
+            displayName = displayName .. "      "
         end
         if panelCount > 1 then
             displayName = displayName .. "  |cff888888(" .. panelCount .. " panels)|r"
