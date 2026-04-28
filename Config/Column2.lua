@@ -31,6 +31,9 @@ local EncodeExportData = ST._EncodeExportData
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local NotifyTutorialAction = ST._NotifyTutorialAction
+local IsConfigFinderActive = ST._IsConfigFinderActive
+local BuildConfigFinderResults = ST._BuildConfigFinderResults
+local SelectConfigFinderResult = ST._SelectConfigFinderResult
 
 local IsTriggerPanelGroup
 
@@ -420,6 +423,97 @@ local function RenderColumn2NoPanelsState(classColor)
         panelHelp:SetFont((GameFontNormal:GetFont()), 12, "")
         panelHelp:SetColor(0.75, 0.75, 0.75)
         CS.col2Scroll:AddChild(panelHelp)
+    end
+
+    CS.col2Scroll:DoLayout()
+end
+
+local function RenderConfigFinderResults()
+    if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
+    CS.col2Scroll.frame:SetPoint("BOTTOMRIGHT", CS.col2Scroll.frame:GetParent(), "BOTTOMRIGHT", 0, 0)
+    CS.lastCol2RenderedRows = {}
+    CS.lastCol2PanelMetas = {}
+
+    local results = BuildConfigFinderResults and BuildConfigFinderResults()
+    if not results or #results.panelResults == 0 then
+        local label = AceGUI:Create("Label")
+        label:SetText("|cff888888No matching panels or entries.|r")
+        label:SetFullWidth(true)
+        CS.col2Scroll:AddChild(label)
+        return
+    end
+
+    local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+
+    for resultIndex, result in ipairs(results.panelResults) do
+        local panel = result.panel
+        local panelId = result.panelId
+        local containerId = result.containerId
+        local container = result.container
+
+        if resultIndex > 1 then
+            AddClassAccentSpacer(CS.col2Scroll, cc)
+        end
+
+        local panelContainer = AceGUI:Create("InlineGroup")
+        panelContainer:SetTitle("")
+        panelContainer:SetLayout("List")
+        panelContainer:SetFullWidth(true)
+        CompactUntitledInlineGroupConfig(panelContainer)
+        CS.col2Scroll:AddChild(panelContainer)
+
+        local panelName = panel and panel.name or ("Panel " .. tostring(panelId))
+        local groupName = container and container.name or "Group"
+        local headerText = groupName .. "  |cff666666/|r  " .. panelName
+
+        local header = AceGUI:Create("InteractiveLabel")
+        CleanRecycledEntry(header)
+        header:SetText(headerText)
+        header:SetImage("Interface\\BUTTONS\\WHITE8X8")
+        header:SetImageSize(1, 32)
+        if header.image then header.image:SetAlpha(0) end
+        header:SetFullWidth(true)
+        header:SetFontObject(GameFontHighlight)
+        header:SetJustifyH("CENTER")
+        header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        ConfigurePanelTypeBadge(header, panel and panel.displayMode, header.label:GetStringWidth())
+        if panel and panel.enabled == false then
+            header:SetColor(0.5, 0.5, 0.5)
+        elseif result.panelMatches then
+            header:SetColor(1.0, 0.82, 0.0)
+        end
+        header:SetCallback("OnClick", function(widget, event, mouseButton)
+            if mouseButton == "LeftButton" and SelectConfigFinderResult then
+                SelectConfigFinderResult(containerId, panelId, nil)
+            end
+        end)
+        panelContainer:AddChild(header)
+
+        for _, entryInfo in ipairs(result.entryMatches or {}) do
+            local buttonData = entryInfo.button
+            local entry = AceGUI:Create("InteractiveLabel")
+            CleanRecycledEntry(entry)
+            entry:SetText(entryInfo.text or (buttonData and buttonData.name) or "Entry")
+            entry:SetImage(buttonData and GetButtonIcon(buttonData) or 134400)
+            entry:SetImageSize(32, 32)
+            entry:SetFullWidth(true)
+            entry:SetFontObject(GameFontHighlight)
+            entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+            if buttonData and buttonData.enabled == false then
+                entry:SetColor(0.5, 0.5, 0.5)
+                if entry.image and entry.image.SetDesaturated then
+                    entry.image:SetDesaturated(true)
+                end
+            end
+
+            local buttonIndex = entryInfo.index
+            entry:SetCallback("OnClick", function(widget, event, mouseButton)
+                if mouseButton == "LeftButton" and SelectConfigFinderResult then
+                    SelectConfigFinderResult(containerId, panelId, buttonIndex)
+                end
+            end)
+            panelContainer:AddChild(entry)
+        end
     end
 
     CS.col2Scroll:DoLayout()
@@ -1375,6 +1469,11 @@ local function RefreshColumn2()
             end
         end)
         CS.col2Scroll:AddChild(copyAllBtn)
+        return
+    end
+
+    if IsConfigFinderActive and IsConfigFinderActive() then
+        RenderConfigFinderResults()
         return
     end
 

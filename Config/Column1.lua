@@ -33,6 +33,9 @@ local ContainersHaveForeignSpecs = ST._ContainersHaveForeignSpecs
 local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local NotifyTutorialAction = ST._NotifyTutorialAction
+local IsConfigFinderActive = ST._IsConfigFinderActive
+local BuildConfigFinderResults = ST._BuildConfigFinderResults
+local ClearConfigFinderText = ST._ClearConfigFinderText
 
 local GenerateGroupName
 
@@ -900,6 +903,7 @@ local function RefreshColumn1(preserveDrag)
 
     local db = CooldownCompanion.db.profile
     local charKey = CooldownCompanion.db.keys.char
+    local searchResults = IsConfigFinderActive and IsConfigFinderActive() and BuildConfigFinderResults and BuildConfigFinderResults() or nil
 
     -- Ensure folders table exists
     if not db.folders then db.folders = {} end
@@ -998,7 +1002,10 @@ local function RefreshColumn1(preserveDrag)
         local folderChildContainers = {}  -- [folderId] = { containerId, ... }
         for _, cid in ipairs(sectionContainerIds) do
             local container = db.groupContainers[cid]
-            if container.folderId and validFolderIds[container.folderId] then
+            if searchResults and not searchResults.containerMatches[cid] then
+                -- Search hides non-matching groups while preserving folder context
+                -- for the groups that do match.
+            elseif container.folderId and validFolderIds[container.folderId] then
                 if not folderChildContainers[container.folderId] then
                     folderChildContainers[container.folderId] = {}
                 end
@@ -1021,7 +1028,9 @@ local function RefreshColumn1(preserveDrag)
         -- Build top-level items list: folders + loose containers
         local items = {}
         for _, fid in ipairs(sectionFolderIds) do
-            table.insert(items, { kind = "folder", id = fid, order = CooldownCompanion:GetOrderForSpec(db.folders[fid], specId, fid) })
+            if not searchResults or (folderChildContainers[fid] and #folderChildContainers[fid] > 0) then
+                table.insert(items, { kind = "folder", id = fid, order = CooldownCompanion:GetOrderForSpec(db.folders[fid], specId, fid) })
+            end
         end
         for _, cid in ipairs(looseContainerIds) do
             table.insert(items, { kind = "container", id = cid, order = CooldownCompanion:GetOrderForSpec(db.groupContainers[cid], specId, cid) })
@@ -1165,6 +1174,7 @@ local function RefreshColumn1(preserveDrag)
 
         entry:SetCallback("OnClick", function(widget, event, mouseButton)
             if mouseButton == "LeftButton"
+                and not searchResults
                 and not IsShiftKeyDown()
                 and not IsControlKeyDown()
                 and not GetCursorInfo()
@@ -1193,6 +1203,20 @@ local function RefreshColumn1(preserveDrag)
         entry.frame:SetScript("OnMouseUp", function(self, button)
             if CS.dragState and CS.dragState.phase == "active" then return end
             if button == "LeftButton" then
+                if searchResults then
+                    CooldownCompanion:ClearAllConfigPreviews()
+                    wipe(CS.selectedGroups)
+                    wipe(CS.selectedPanels)
+                    wipe(CS.selectedButtons)
+                    CS.selectedContainer = containerId
+                    CS.selectedGroup = nil
+                    CS.selectedButton = nil
+                    if ClearConfigFinderText then
+                        ClearConfigFinderText()
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                    return
+                end
                 if IsShiftKeyDown() then
                     if CS.specExpandedGroupId == containerId then
                         CS.specExpandedGroupId = nil
@@ -1492,7 +1516,7 @@ local function RefreshColumn1(preserveDrag)
         })
 
         entry:SetCallback("OnClick", function(widget, event, mouseButton)
-            if mouseButton == "LeftButton" and not IsShiftKeyDown() and not GetCursorInfo() then
+            if mouseButton == "LeftButton" and not searchResults and not IsShiftKeyDown() and not GetCursorInfo() then
                 local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
                 CS.dragState = {
                     kind = "folder",
@@ -1514,6 +1538,9 @@ local function RefreshColumn1(preserveDrag)
         entry.frame:SetScript("OnMouseUp", function(self, button)
             if CS.dragState and CS.dragState.phase == "active" then return end
             if button == "LeftButton" then
+                if searchResults then
+                    return
+                end
                 if IsShiftKeyDown() then
                     if CS.specExpandedFolderId == folderId then
                         CS.specExpandedFolderId = nil
@@ -1739,7 +1766,7 @@ local function RefreshColumn1(preserveDrag)
                         RenderFolderSpecPanel(item.id, section)
                     end
                     -- If expanded, render children with accent bar
-                    if not CS.collapsedFolders[item.id] then
+                    if searchResults or not CS.collapsedFolders[item.id] then
                         local children = folderChildContainers[item.id]
                         if children and #children > 0 then
                             local firstEntry, lastEntry
@@ -1812,6 +1839,16 @@ local function RefreshColumn1(preserveDrag)
         elseif container.createdBy == charKey then
             table.insert(charIds, id)
         end
+    end
+
+    if searchResults and not next(searchResults.containerMatches) then
+        local label = AceGUI:Create("Label")
+        label:SetText("|cff888888No matching groups.|r")
+        label:SetFullWidth(true)
+        CS.col1Scroll:AddChild(label)
+        CS.lastCol1RenderedRows = col1RenderedRows
+        PopulateColumn1ButtonBar()
+        return
     end
 
     if showNewUserEmptyState then
