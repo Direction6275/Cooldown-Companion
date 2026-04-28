@@ -51,6 +51,70 @@ local function ClearSelection()
     wipe(CS.selectedPanels)
 end
 
+local function TrimGroupName(name)
+    if name == nil then return "" end
+    return tostring(name):match("^%s*(.-)%s*$") or ""
+end
+
+local function IsGenericGroupName(name)
+    local trimmed = TrimGroupName(name)
+    return trimmed == ""
+        or trimmed == "New Group"
+        or trimmed:match("^New Group%s+%d+$") ~= nil
+        or trimmed == "Group"
+        or trimmed:match("^Group%s+%d+$") ~= nil
+end
+
+local function EnsureGenericGroupRenameBadge(entry)
+    local badge = entry.frame._cdcGenericRenameBadge
+    if not badge then
+        badge = CreateFrame("Button", nil, entry.frame)
+        badge:SetSize(14, 14)
+        badge:SetPropagateMouseClicks(false)
+        badge:SetPropagateMouseMotion(false)
+        badge.icon = badge:CreateTexture(nil, "OVERLAY")
+        badge.icon:SetAllPoints()
+        badge:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Default name. Click to rename.", 1, 0.82, 0, true)
+            GameTooltip:Show()
+        end)
+        badge:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        entry.frame._cdcGenericRenameBadge = badge
+    end
+
+    badge:SetFrameLevel(entry.frame:GetFrameLevel() + 25)
+    return badge
+end
+
+local function ConfigureGenericGroupRenameBadge(entry, container, containerId, nameWidth)
+    local badge = EnsureGenericGroupRenameBadge(entry)
+    badge:ClearAllPoints()
+    badge:SetScript("OnClick", nil)
+
+    if not IsGenericGroupName(container and container.name) then
+        badge:Hide()
+        return
+    end
+
+    local currentName = TrimGroupName(container and container.name)
+    if currentName == "" then
+        currentName = "New Group"
+    end
+
+    badge.icon:SetAtlas("QuestLegendary", false)
+    badge.icon:SetVertexColor(1, 0.82, 0, 0.85)
+    badge:SetPoint("CENTER", entry.label, "LEFT", nameWidth + 13, 0)
+    badge:SetScript("OnClick", function(_, button)
+        if button ~= "LeftButton" then return end
+        GameTooltip:Hide()
+        ShowPopupAboveConfig("CDC_RENAME_GROUP", currentName, { containerId = containerId })
+    end)
+    badge:Show()
+end
+
 ------------------------------------------------------------------------
 -- Browse mode: class-colored name helper
 ------------------------------------------------------------------------
@@ -1134,7 +1198,12 @@ local function RefreshColumn1(preserveDrag)
 
         -- Show panel count in name when >1 panel
         local panelCount = CooldownCompanion:GetPanelCount(containerId)
-        local displayName = container.name
+        local groupName = container.name or "New Group"
+        local showGenericRenameBadge = IsGenericGroupName(groupName)
+        local displayName = groupName
+        if showGenericRenameBadge then
+            displayName = displayName .. "  |A:QuestLegendary:12:12|a"
+        end
         if panelCount > 1 then
             displayName = displayName .. "  |cff888888(" .. panelCount .. " panels)|r"
         end
@@ -1154,6 +1223,12 @@ local function RefreshColumn1(preserveDrag)
         end
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
+        local groupNameWidth = 0
+        if showGenericRenameBadge and entry.label then
+            entry.label:SetText(groupName)
+            groupNameWidth = entry.label:GetStringWidth()
+            entry:SetText(displayName)
+        end
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
         -- Color: blue for multi-selected, green for selected, gray for inactive
@@ -1171,6 +1246,9 @@ local function RefreshColumn1(preserveDrag)
         if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
 
         SetupGroupRowIndicators(entry, container)
+        if showGenericRenameBadge then
+            ConfigureGenericGroupRenameBadge(entry, container, containerId, groupNameWidth)
+        end
 
         entry:SetCallback("OnClick", function(widget, event, mouseButton)
             if mouseButton == "LeftButton"
