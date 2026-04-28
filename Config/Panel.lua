@@ -26,6 +26,10 @@ local UpdateCol2CursorPreview = ST._UpdateCol2CursorPreview
 local ClearCol2AnimatedPreview = ST._ClearCol2AnimatedPreview
 local ClearConfigShiftTooltipHover = ST._ClearConfigShiftTooltipHover
 local GetConfigEntryDisplayName = ST._GetConfigEntryDisplayName
+local IsConfigFinderAvailable = ST._IsConfigFinderAvailable
+local IsConfigFinderActive = ST._IsConfigFinderActive
+local SetConfigFinderText = ST._SetConfigFinderText
+local ClearConfigFinderText = ST._ClearConfigFinderText
 local MaybeAutoStartFirstIconPanelTutorial = ST._MaybeAutoStartFirstIconPanelTutorial
 local StartFirstIconPanelTutorial = ST._StartFirstIconPanelTutorial
 local CancelFirstIconPanelTutorial = ST._CancelFirstIconPanelTutorial
@@ -231,6 +235,9 @@ local function ApplyConfigColumnTitles(frame)
     elseif CS.browseMode then
         frame.col1:SetTitle("Browse Characters")
         frame.col2:SetTitle("Preview")
+    elseif IsConfigFinderActive and IsConfigFinderActive() then
+        frame.col1:SetTitle("Groups")
+        frame.col2:SetTitle("Search Results")
     else
         frame.col1:SetTitle("Groups")
         frame.col2:SetTitle("Panels")
@@ -276,12 +283,23 @@ end
 
 local pendingOverrideConfigRefreshToken = 0
 local pendingOverrideSpellIds = {}
+local pendingConfigFinderRefreshToken = 0
 
 local function IsConfigFrameOpenForRefresh()
     return CS.configFrame
         and CS.configFrame.frame
         and CS.configFrame.frame:IsShown()
         and not CS.talentPickerMode
+end
+
+local function QueueConfigFinderRefresh()
+    pendingConfigFinderRefreshToken = pendingConfigFinderRefreshToken + 1
+    local token = pendingConfigFinderRefreshToken
+    C_Timer.After(0.1, function()
+        if pendingConfigFinderRefreshToken ~= token then return end
+        if not IsConfigFrameOpenForRefresh() then return end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
 end
 
 local function IsConfigSpellOverrideRefreshMode()
@@ -416,6 +434,9 @@ local function ResetConfigForProfileChange()
     wipe(CS.collapsedPanels)
     wipe(CS.customAuraBarSubTabs)
     wipe(CS.resourceAuraOverlayDrafts)
+    if ClearConfigFinderText then
+        ClearConfigFinderText()
+    end
     SetPrimaryMode("buttons", { skipRefresh = true })
     if ST._CancelAutoAddFlow then
         ST._CancelAutoAddFlow()
@@ -1287,6 +1308,34 @@ local function CreateConfigPanel()
     end)
     col2._infoBtn = infoBtn
 
+    -- Config finder searches saved groups, panels, and entries without
+    -- changing the active selection while the user types.
+    local configFinder = AceGUI:Create("EditBox")
+    configFinder:SetLabel("")
+    configFinder:SetText(CS.configSearchText or "")
+    configFinder:DisableButton(true)
+    configFinder.frame:SetParent(colParent)
+    configFinder.frame:ClearAllPoints()
+    configFinder.frame:SetHeight(28)
+    if configFinder.editbox and configFinder.editbox.Instructions then
+        configFinder.editbox.Instructions:SetText("Find groups, panels, entries...")
+    end
+    configFinder:SetCallback("OnTextChanged", function(widget, event, text)
+        if CS.configFinderSuppressTextChanged then
+            return
+        end
+        if SetConfigFinderText then
+            SetConfigFinderText(text or "", { syncWidget = false })
+        else
+            CS.configSearchText = text or ""
+        end
+        QueueConfigFinderRefresh()
+    end)
+    configFinder:SetCallback("OnEnterPressed", function(widget)
+        widget:ClearFocus()
+    end)
+    CS.configFinderBox = configFinder
+
     -- Column 3: Button Settings
     local col3 = AceGUI:Create("InlineGroup")
     col3:SetTitle("Button Settings")
@@ -1672,6 +1721,12 @@ local function CreateConfigPanel()
 
         -- Talent picker mode: 2 wide columns (col1 + col3), col2/col4 hidden
         if CS.talentPickerMode then
+            if CS.configFinderBox then
+                CS.configFinderBox.frame:Hide()
+            end
+            if ClearConfigFinderText then
+                ClearConfigFinderText()
+            end
             local wideColWidth = equalColWidth * 2 + pad
             local usedWidth = (wideColWidth * 2) + pad
             local leftInset = math.floor((w - usedWidth) * 0.5)
@@ -1693,14 +1748,31 @@ local function CreateConfigPanel()
         local col2Width = equalColWidth
         local col3Width = equalColWidth
         local col4Width = equalColWidth
+        local finderAvailable = IsConfigFinderAvailable and IsConfigFinderAvailable()
+        local finderHeight = finderAvailable and 32 or 0
+        local col12Height = math.max(1, h - finderHeight)
+
+        if CS.configFinderBox then
+            if finderAvailable then
+                CS.configFinderBox.frame:ClearAllPoints()
+                CS.configFinderBox.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", leftInset, 0)
+                CS.configFinderBox.frame:SetSize(col1Width + pad + col2Width, 28)
+                CS.configFinderBox.frame:Show()
+            else
+                CS.configFinderBox.frame:Hide()
+                if ClearConfigFinderText then
+                    ClearConfigFinderText()
+                end
+            end
+        end
 
         col1.frame:ClearAllPoints()
-        col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", leftInset, 0)
-        col1.frame:SetSize(col1Width, h)
+        col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", leftInset, -finderHeight)
+        col1.frame:SetSize(col1Width, col12Height)
 
         col2.frame:ClearAllPoints()
         col2.frame:SetPoint("TOPLEFT", col1.frame, "TOPRIGHT", pad, 0)
-        col2.frame:SetSize(col2Width, h)
+        col2.frame:SetSize(col2Width, col12Height)
 
         col3.frame:ClearAllPoints()
         col3.frame:SetPoint("TOPLEFT", col2.frame, "TOPRIGHT", pad, 0)
@@ -1760,6 +1832,11 @@ function CooldownCompanion:RefreshConfigPanel()
     if not CS.configFrame then return end
     if not CS.configFrame.frame:IsShown() then return end
     if CS.talentPickerMode then return end
+    if IsConfigFinderAvailable and not IsConfigFinderAvailable() and ClearConfigFinderText then
+        ClearConfigFinderText()
+    elseif SetConfigFinderText then
+        SetConfigFinderText(CS.configSearchText or "")
+    end
     if ClearConfigShiftTooltipHover then
         ClearConfigShiftTooltipHover()
     end
@@ -1824,6 +1901,9 @@ function CooldownCompanion:RefreshConfigPanel()
     end
     if CS.configFrame.UpdateBrowseButtonState then
         CS.configFrame.UpdateBrowseButtonState()
+    end
+    if CS.configFrame.LayoutColumns then
+        CS.configFrame.LayoutColumns()
     end
     RefreshColumn1()
     RefreshColumn2()

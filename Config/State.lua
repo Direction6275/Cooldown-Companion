@@ -203,6 +203,11 @@ ST._configState = {
     autocompleteCache = nil,
     pendingEditBoxFocus = false,
 
+    -- Config finder state
+    configSearchText = "",
+    configFinderBox = nil,
+    configFinderSuppressTextChanged = false,
+
     -- Spec filter inline expansion
     specExpandedGroupId = nil,
     specExpandedFolderId = nil,
@@ -380,6 +385,156 @@ local function GetConfigEntryDisplayName(buttonData, opts)
     end
 
     return entryName
+end
+
+local function NormalizeConfigFinderText(text)
+    if type(text) ~= "string" then
+        return ""
+    end
+    text = text:gsub("|c%x%x%x%x%x%x%x%x", "")
+        :gsub("|r", "")
+        :gsub("|A:.-|a", "")
+        :gsub("^%s*(.-)%s*$", "%1")
+    return strlower(text)
+end
+
+local function ConfigFinderTextMatches(value, query)
+    if not query or query == "" then
+        return false
+    end
+    return NormalizeConfigFinderText(value):find(query, 1, true) ~= nil
+end
+
+local function IsConfigFinderAvailable()
+    return not CS.resourceBarPanelActive
+        and not CS.browseMode
+        and not CS.talentPickerMode
+        and not CooldownCompanion._unsupportedLegacyProfile
+end
+
+local function IsConfigFinderActive()
+    return IsConfigFinderAvailable() and NormalizeConfigFinderText(CS.configSearchText) ~= ""
+end
+
+local function SetConfigFinderText(text, opts)
+    text = type(text) == "string" and text or ""
+    CS.configSearchText = text
+
+    if opts and opts.syncWidget == false then
+        return
+    end
+
+    local searchBox = CS.configFinderBox
+    if searchBox and searchBox.GetText and searchBox:GetText() ~= text then
+        CS.configFinderSuppressTextChanged = true
+        searchBox:SetText(text)
+        CS.configFinderSuppressTextChanged = false
+    end
+end
+
+local function ClearConfigFinderText(opts)
+    SetConfigFinderText("", opts)
+end
+
+local function IsContainerVisibleInConfig(container, charKey)
+    if not container then
+        return false
+    end
+    return container.isGlobal or container.createdBy == charKey
+end
+
+local function BuildConfigFinderResults()
+    if not IsConfigFinderActive() then
+        return nil
+    end
+
+    local query = NormalizeConfigFinderText(CS.configSearchText)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if not db then
+        return nil
+    end
+
+    local charKey = CooldownCompanion.db.keys.char
+    local results = {
+        query = query,
+        containerMatches = {},
+        panelResults = {},
+        totalPanelResults = 0,
+        totalEntryResults = 0,
+    }
+
+    local function markContainer(containerId)
+        if containerId then
+            results.containerMatches[containerId] = true
+        end
+    end
+
+    for containerId, container in pairs(db.groupContainers or {}) do
+        if IsContainerVisibleInConfig(container, charKey) and ConfigFinderTextMatches(container.name, query) then
+            markContainer(containerId)
+        end
+    end
+
+    for panelId, panel in pairs(db.groups or {}) do
+        local containerId = panel.parentContainerId
+        local container = containerId and db.groupContainers and db.groupContainers[containerId]
+        if IsContainerVisibleInConfig(container, charKey) then
+            local panelMatches = ConfigFinderTextMatches(panel.name, query)
+            local entryMatches = {}
+
+            for buttonIndex, buttonData in ipairs(panel.buttons or {}) do
+                local entryName = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
+                    or buttonData.name
+                    or ("Unknown " .. tostring(buttonData.type))
+                local idText = buttonData.id and tostring(buttonData.id) or nil
+                if ConfigFinderTextMatches(entryName, query) or ConfigFinderTextMatches(idText, query) then
+                    entryMatches[#entryMatches + 1] = {
+                        index = buttonIndex,
+                        button = buttonData,
+                        text = entryName,
+                    }
+                end
+            end
+
+            if panelMatches or #entryMatches > 0 then
+                markContainer(containerId)
+                results.totalPanelResults = results.totalPanelResults + 1
+                results.totalEntryResults = results.totalEntryResults + #entryMatches
+                results.panelResults[#results.panelResults + 1] = {
+                    containerId = containerId,
+                    container = container,
+                    panelId = panelId,
+                    panel = panel,
+                    panelMatches = panelMatches,
+                    entryMatches = entryMatches,
+                }
+            end
+        end
+    end
+
+    table.sort(results.panelResults, function(a, b)
+        local orderA = a.container and CooldownCompanion:GetOrderForSpec(a.container, CooldownCompanion._currentSpecId, a.containerId) or 0
+        local orderB = b.container and CooldownCompanion:GetOrderForSpec(b.container, CooldownCompanion._currentSpecId, b.containerId) or 0
+        if orderA ~= orderB then
+            return orderA < orderB
+        end
+        return (a.panel and a.panel.order or 0) < (b.panel and b.panel.order or 0)
+    end)
+
+    return results
+end
+
+local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
+    CooldownCompanion:ClearAllConfigPreviews()
+    wipe(CS.selectedGroups)
+    wipe(CS.selectedPanels)
+    wipe(CS.selectedButtons)
+    CS.selectedContainer = containerId
+    CS.selectedGroup = panelId
+    CS.selectedButton = buttonIndex
+    CS.addingToPanelId = nil
+    ClearConfigFinderText()
+    CooldownCompanion:RefreshConfigPanel()
 end
 
 ------------------------------------------------------------------------
@@ -1790,6 +1945,13 @@ ST._ClearCol2PreviewHost = ClearCol2PreviewHost
 ST._EmbedWidget = EmbedWidget
 ST._GetButtonIcon = GetButtonIcon
 ST._GetConfigEntryDisplayName = GetConfigEntryDisplayName
+ST._NormalizeConfigFinderText = NormalizeConfigFinderText
+ST._IsConfigFinderAvailable = IsConfigFinderAvailable
+ST._IsConfigFinderActive = IsConfigFinderActive
+ST._SetConfigFinderText = SetConfigFinderText
+ST._ClearConfigFinderText = ClearConfigFinderText
+ST._BuildConfigFinderResults = BuildConfigFinderResults
+ST._SelectConfigFinderResult = SelectConfigFinderResult
 ST._GetGroupIcon = GetGroupIcon
 ST._GetContainerIcon = GetContainerIcon
 ST._GetFolderIcon = GetFolderIcon
