@@ -1203,6 +1203,20 @@ local function RefreshColumn1(preserveDrag)
         entry.frame:SetScript("OnMouseUp", function(self, button)
             if CS.dragState and CS.dragState.phase == "active" then return end
             if button == "LeftButton" then
+                if searchResults then
+                    CooldownCompanion:ClearAllConfigPreviews()
+                    wipe(CS.selectedGroups)
+                    wipe(CS.selectedPanels)
+                    wipe(CS.selectedButtons)
+                    CS.selectedContainer = containerId
+                    CS.selectedGroup = nil
+                    CS.selectedButton = nil
+                    if ClearConfigFinderText then
+                        ClearConfigFinderText()
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                    return
+                end
                 if IsShiftKeyDown() then
                     if CS.specExpandedGroupId == containerId then
                         CS.specExpandedGroupId = nil
@@ -1244,9 +1258,6 @@ local function RefreshColumn1(preserveDrag)
                 CS.selectedButton = nil
                 wipe(CS.selectedButtons)
                 wipe(CS.selectedPanels)
-                if searchResults and ClearConfigFinderText then
-                    ClearConfigFinderText()
-                end
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
                 ShowContainerContextMenu(db, charKey, containerId, container)
@@ -1752,7 +1763,7 @@ local function RefreshColumn1(preserveDrag)
                         RenderFolderSpecPanel(item.id, section)
                     end
                     -- If expanded, render children with accent bar
-                    if not CS.collapsedFolders[item.id] then
+                    if searchResults or not CS.collapsedFolders[item.id] then
                         local children = folderChildContainers[item.id]
                         if children and #children > 0 then
                             local firstEntry, lastEntry
