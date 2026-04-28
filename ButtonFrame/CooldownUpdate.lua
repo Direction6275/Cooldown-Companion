@@ -510,6 +510,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
                     result.state = COOLDOWN_STATE_COOLDOWN
                     result.source = "action-slot-real-no-spell-info"
                     result.renderDurationObj = slotProbe.realDurationObj
+                    result.isOnGCD = CooldownCompanion._gcdActive == true
+                    ApplyGCDSyncIfRealEndsInside(result, slotProbe.realDurationObj, "action-slot-gcd-sync")
                 elseif slotProbe.shown and slotProbe.durationObj then
                     result.state = COOLDOWN_STATE_GCD
                     result.source = "action-slot-gcd-no-spell-info"
