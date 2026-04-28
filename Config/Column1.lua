@@ -1538,6 +1538,9 @@ local function RefreshColumn1(preserveDrag)
         entry.frame:SetScript("OnMouseUp", function(self, button)
             if CS.dragState and CS.dragState.phase == "active" then return end
             if button == "LeftButton" then
+                if searchResults then
+                    return
+                end
                 if IsShiftKeyDown() then
                     if CS.specExpandedFolderId == folderId then
                         CS.specExpandedFolderId = nil
