@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.13.5",
         "1.13.4",
         "1.13.3",
         "1.13.2",
@@ -25,6 +26,17 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.13.5"] = {
+            markdown = [[
+## New Features
+
+- **Search Function:** Added a search bar to the config UI so you can quickly locate saved groups, panels, and entries, then jump straight to the match.
+
+## Polish | QoL
+
+- **Rename reminders:** Added small rename badges for default group and panel names, making it easier to clean up generic names with the existing rename popup.
+]],
+        },
         ["1.13.4"] = {
             markdown = [[
 ## Bug Fixes
