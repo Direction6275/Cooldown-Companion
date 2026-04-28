@@ -1317,11 +1317,23 @@ local function CreateConfigPanel()
     configFinder.frame:SetParent(colParent)
     configFinder.frame:ClearAllPoints()
     configFinder.frame:SetHeight(28)
-    if configFinder.editbox and configFinder.editbox.Instructions then
-        configFinder.editbox.Instructions:SetText("Find groups, panels, entries...")
+    local configFinderPlaceholder
+    if configFinder.editbox then
+        configFinderPlaceholder = configFinder.editbox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        configFinderPlaceholder:SetPoint("LEFT", configFinder.editbox, "LEFT", 6, 0)
+        configFinderPlaceholder:SetPoint("RIGHT", configFinder.editbox, "RIGHT", -6, 0)
+        configFinderPlaceholder:SetJustifyH("LEFT")
+        configFinderPlaceholder:SetText("Find groups, panels, entries...")
     end
+    local function UpdateConfigFinderPlaceholder(text)
+        if not configFinderPlaceholder then return end
+        configFinderPlaceholder:SetShown((text or "") == "")
+    end
+    configFinder._cdcUpdatePlaceholder = UpdateConfigFinderPlaceholder
+    UpdateConfigFinderPlaceholder(CS.configSearchText)
     configFinder:SetCallback("OnTextChanged", function(widget, event, text)
         if CS.configFinderSuppressTextChanged then
+            UpdateConfigFinderPlaceholder(text)
             return
         end
         if SetConfigFinderText then
@@ -1329,11 +1341,20 @@ local function CreateConfigPanel()
         else
             CS.configSearchText = text or ""
         end
+        UpdateConfigFinderPlaceholder(text)
         QueueConfigFinderRefresh()
     end)
     configFinder:SetCallback("OnEnterPressed", function(widget)
         widget:ClearFocus()
     end)
+    if configFinder.editbox then
+        configFinder.editbox:HookScript("OnEditFocusGained", function(self)
+            UpdateConfigFinderPlaceholder(self:GetText())
+        end)
+        configFinder.editbox:HookScript("OnEditFocusLost", function(self)
+            UpdateConfigFinderPlaceholder(self:GetText())
+        end)
+    end
     CS.configFinderBox = configFinder
 
     -- Column 3: Button Settings
@@ -1756,7 +1777,7 @@ local function CreateConfigPanel()
             if finderAvailable then
                 CS.configFinderBox.frame:ClearAllPoints()
                 CS.configFinderBox.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", leftInset, 0)
-                CS.configFinderBox.frame:SetSize(col1Width + pad + col2Width, 28)
+                CS.configFinderBox.frame:SetSize(col1Width, 28)
                 CS.configFinderBox.frame:Show()
             else
                 CS.configFinderBox.frame:Hide()
@@ -1776,11 +1797,11 @@ local function CreateConfigPanel()
 
         col3.frame:ClearAllPoints()
         col3.frame:SetPoint("TOPLEFT", col2.frame, "TOPRIGHT", pad, 0)
-        col3.frame:SetSize(col3Width, h)
+        col3.frame:SetSize(col3Width, col12Height)
 
         col4.frame:ClearAllPoints()
         col4.frame:SetPoint("TOPLEFT", col3.frame, "TOPRIGHT", pad, 0)
-        col4.frame:SetSize(col4Width, h)
+        col4.frame:SetSize(col4Width, col12Height)
 
         PositionPrimaryAxisUI()
     end

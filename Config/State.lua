@@ -430,6 +430,9 @@ local function SetConfigFinderText(text, opts)
         searchBox:SetText(text)
         CS.configFinderSuppressTextChanged = false
     end
+    if searchBox and searchBox._cdcUpdatePlaceholder then
+        searchBox._cdcUpdatePlaceholder(text)
+    end
 end
 
 local function ClearConfigFinderText(opts)
