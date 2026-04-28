@@ -281,6 +281,14 @@ local function ClearScrollState(widget)
     state.scrollvalue = nil
 end
 
+local function ResetScrollState(widget)
+    if not widget then return end
+    ClearScrollState(widget)
+    if widget.SetScroll then
+        widget:SetScroll(0)
+    end
+end
+
 local pendingOverrideConfigRefreshToken = 0
 local pendingOverrideSpellIds = {}
 local pendingConfigFinderRefreshToken = 0
@@ -298,7 +306,24 @@ local function QueueConfigFinderRefresh()
     C_Timer.After(0.1, function()
         if pendingConfigFinderRefreshToken ~= token then return end
         if not IsConfigFrameOpenForRefresh() then return end
-        CooldownCompanion:RefreshConfigPanel()
+
+        local finderActive = IsConfigFinderActive and IsConfigFinderActive()
+        local saved1 = not finderActive and SaveScrollState(CS.col1Scroll) or nil
+        local saved2 = not finderActive and SaveScrollState(CS.col2Scroll) or nil
+        if finderActive then
+            ResetScrollState(CS.col1Scroll)
+            ResetScrollState(CS.col2Scroll)
+        end
+        RefreshColumn1()
+        RefreshColumn2()
+        ApplyConfigColumnTitles(CS.configFrame)
+        if finderActive then
+            ResetScrollState(CS.col1Scroll)
+            ResetScrollState(CS.col2Scroll)
+        else
+            RestoreScrollState(CS.col1Scroll, saved1)
+            RestoreScrollState(CS.col2Scroll, saved2)
+        end
     end)
 end
 
