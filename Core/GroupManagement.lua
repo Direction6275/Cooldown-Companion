@@ -9,6 +9,7 @@ local CooldownCompanion = ST.Addon
 local pairs = pairs
 local ipairs = ipairs
 local tonumber = tonumber
+local InCombatLockdown = InCombatLockdown
 local math_floor = math.floor
 local table_sort = table.sort
 local table_remove = table.remove
@@ -18,8 +19,17 @@ local GROUP_SETTING_PRESET_MODES = {
     text = true,
 }
 
+local DIRECT_STYLE_COPY_MODES = {
+    icons = true,
+    bars = true,
+}
+
 local function IsValidGroupSettingPresetMode(mode)
     return GROUP_SETTING_PRESET_MODES[mode] == true
+end
+
+local function IsValidDirectStyleCopyMode(mode)
+    return DIRECT_STYLE_COPY_MODES[mode] == true
 end
 
 local function GetAnchorOffset(point, width, height)
@@ -284,6 +294,32 @@ local function GetGroupDisplayMode(group)
     return "icons"
 end
 
+local function GroupMatchesDirectStyleCopyMode(group, mode)
+    if not group or not IsValidDirectStyleCopyMode(mode) then
+        return false
+    end
+    if mode == "bars" then
+        return group.displayMode == "bars"
+    end
+    return group.displayMode == nil or group.displayMode == "icons"
+end
+
+local function CopyCompactLayoutSettings(sourceGroup, targetGroup)
+    targetGroup.compactLayout = sourceGroup.compactLayout == true
+    targetGroup.compactGrowthDirection = sourceGroup.compactGrowthDirection or "center"
+
+    local sourceMaxVisible = tonumber(sourceGroup.maxVisibleButtons) or 0
+    local targetButtonCount = targetGroup.buttons and #targetGroup.buttons or 0
+    if sourceMaxVisible > 0 and targetButtonCount > 0 then
+        targetGroup.maxVisibleButtons = math.min(sourceMaxVisible, targetButtonCount)
+        if targetGroup.maxVisibleButtons >= targetButtonCount then
+            targetGroup.maxVisibleButtons = 0
+        end
+    else
+        targetGroup.maxVisibleButtons = 0
+    end
+end
+
 local function BuildGroupSettingPresetBaseline(profile, mode)
     local style = CopyTable(profile.globalStyle or {})
     if mode == "bars" then
@@ -494,6 +530,125 @@ function CooldownCompanion:ApplyGroupSettingPreset(mode, presetName, groupId)
     end
 
     self:RefreshGroupFrame(groupId)
+    return true
+end
+
+function CooldownCompanion:GetDirectStyleCopyPanelList(mode, targetGroupId)
+    targetGroupId = tonumber(targetGroupId)
+    if not IsValidDirectStyleCopyMode(mode) then
+        return {}, {}
+    end
+
+    local db = self.db and self.db.profile
+    if not db then
+        return {}, {}
+    end
+
+    local targetGroup = db.groups and db.groups[targetGroupId]
+    if not GroupMatchesDirectStyleCopyMode(targetGroup, mode) then
+        return {}, {}
+    end
+
+    local list = {}
+    local order = {}
+    local sortData = {}
+    for groupId, group in pairs(db.groups or {}) do
+        if groupId ~= targetGroupId
+            and GroupMatchesDirectStyleCopyMode(group, mode)
+            and self:IsGroupVisibleToCurrentChar(groupId) then
+            local parentContainer = self:GetParentContainer(group)
+            local containerName = parentContainer and parentContainer.name
+                or group.name
+                or ("Panel " .. tostring(groupId))
+            local panelName = group.name or ("Panel " .. tostring(groupId))
+            local label = containerName
+            if parentContainer and panelName ~= containerName then
+                label = containerName .. " - " .. panelName
+            end
+            local orderValue = parentContainer
+                and self:GetOrderForSpec(parentContainer, self._currentSpecId, group.parentContainerId)
+                or (group.order or groupId)
+
+            list[groupId] = label
+            order[#order + 1] = groupId
+            sortData[groupId] = {
+                order = orderValue or groupId,
+                panelOrder = group.order or groupId,
+                label = label,
+            }
+        end
+    end
+
+    table_sort(order, function(a, b)
+        local left = sortData[a]
+        local right = sortData[b]
+        if left.order ~= right.order then
+            return left.order < right.order
+        end
+        if left.panelOrder ~= right.panelOrder then
+            return left.panelOrder < right.panelOrder
+        end
+        return left.label < right.label
+    end)
+
+    return list, order
+end
+
+function CooldownCompanion:CopyDirectStyleFromPanel(mode, sourceGroupId, targetGroupId)
+    sourceGroupId = tonumber(sourceGroupId)
+    targetGroupId = tonumber(targetGroupId)
+    if not IsValidDirectStyleCopyMode(mode) then
+        return false, "invalid_mode"
+    end
+
+    local db = self.db and self.db.profile
+    local sourceGroup = db and db.groups and db.groups[sourceGroupId]
+    local targetGroup = db and db.groups and db.groups[targetGroupId]
+    if not sourceGroup or not targetGroup then
+        return false, "missing_group"
+    end
+    if sourceGroupId == targetGroupId then
+        return false, "same_group"
+    end
+    if not GroupMatchesDirectStyleCopyMode(sourceGroup, mode)
+        or not GroupMatchesDirectStyleCopyMode(targetGroup, mode) then
+        return false, "mode_mismatch"
+    end
+    if not self:IsGroupVisibleToCurrentChar(sourceGroupId) then
+        return false, "source_unavailable"
+    end
+
+    local oldMasqueEnabled = targetGroup.masqueEnabled and true or false
+    local presetData = CaptureGroupSettingPresetData(db, mode, sourceGroup)
+    ApplyGroupSettingPresetData(db, targetGroup, mode, presetData)
+    CopyCompactLayoutSettings(sourceGroup, targetGroup)
+    local newMasqueEnabled = targetGroup.masqueEnabled and true or false
+
+    if mode == "icons" and not self.Masque and newMasqueEnabled then
+        targetGroup.masqueEnabled = false
+        newMasqueEnabled = false
+    end
+
+    local frame = self.groupFrames and self.groupFrames[targetGroupId]
+    if InCombatLockdown() and (not frame or frame:IsProtected()) then
+        if frame then
+            frame._layoutDirty = true
+        end
+        self._pendingFullRefresh = true
+        return true
+    end
+
+    if mode == "icons" and self.Masque and oldMasqueEnabled ~= newMasqueEnabled then
+        self:ToggleGroupMasque(targetGroupId, newMasqueEnabled)
+    end
+
+    if self.PopulateGroupButtons then
+        self:PopulateGroupButtons(targetGroupId)
+    end
+    if frame then
+        frame._layoutDirty = true
+    end
+    self:RefreshGroupFrame(targetGroupId)
     return true
 end
 

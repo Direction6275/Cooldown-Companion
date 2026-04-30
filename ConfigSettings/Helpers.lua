@@ -731,6 +731,7 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     -- Add the row after children are populated so List-layout parent containers
     -- compute scroll height correctly on first render.
     container:AddChild(buttonRow)
+
 end
 
 local charCopyButtons = {}

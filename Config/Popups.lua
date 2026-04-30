@@ -1330,6 +1330,30 @@ StaticPopupDialogs["CDC_DELETE_GROUP_SETTINGS_PRESET"] = {
     preferredIndex = 3,
 }
 
+StaticPopupDialogs["CDC_CONFIRM_PANEL_STYLE_COPY"] = {
+    text = "Copy style from '%s' to this panel?\n\nThis copies Appearance, Indicators, and layout style. Positioning, Load Conditions, and panel contents stay unchanged.",
+    button1 = "Copy",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not (data and data.mode and data.sourceGroupId and data.targetGroupId) then
+            CooldownCompanion:Print("Style copy failed: missing context.")
+            return
+        end
+
+        local ok = CooldownCompanion:CopyDirectStyleFromPanel(data.mode, data.sourceGroupId, data.targetGroupId)
+        if not ok then
+            CooldownCompanion:Print("Style copy failed.")
+            return
+        end
+
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {
     text = "Copy selected %s settings from the chosen character to this character?",
     button1 = "Copy",
