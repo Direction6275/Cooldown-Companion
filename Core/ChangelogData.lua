@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.13.6",
         "1.13.5",
         "1.13.4",
         "1.13.3",
@@ -26,6 +27,21 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.13.6"] = {
+            markdown = [[
+## New Features
+
+- **Copy panel styles directly:** Icon and bar panels can now copy their visual setup from another same-type panel from the panel header right-click menu.
+
+## Polish | QoL
+
+- **Clearer CDM aura choices:** CDM aura options now appear and add as their specific tracked states more consistently across panel entries, custom aura bars, resource aura pickers, and Auto Add.
+
+## Bug Fixes
+
+- **Custom Aura Bar Fix:** Custom aura bars that track stacks and hide while inactive should now appear as soon as the tracked aura is active, regardless of aura stack count.
+]],
+        },
         ["1.13.5"] = {
             markdown = [[
 ## New Features
