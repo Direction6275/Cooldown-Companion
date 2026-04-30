@@ -78,13 +78,22 @@ local RefreshResourceAuraUnitForSpell = RB.RefreshResourceAuraUnitForSpell
 ------------------------------------------------------------------------
 local auraBarAutocompleteCache = nil
 
+local function IsSharedAuraAutocompleteEntry(entry)
+    if type(entry) ~= "table" or entry.isItem then
+        return false
+    end
+    return entry.category == "Cooldown Manager"
+        or entry.forceAura == true
+        or entry.isPassive == true
+end
+
 local function BuildAuraBarAutocompleteCache()
     local cache = {}
     local sharedCache = CS.autocompleteCache
         or (ST._BuildAutocompleteCache and ST._BuildAutocompleteCache())
         or {}
     for _, entry in ipairs(sharedCache) do
-        if entry.category == "Cooldown Manager" then
+        if IsSharedAuraAutocompleteEntry(entry) then
             cache[#cache + 1] = entry
         end
     end

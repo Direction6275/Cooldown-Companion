@@ -1716,8 +1716,8 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
     if cab.enabled and independentSubTab == "settings" then
 
             local trackedAuraName = cab.spellID
-                and ((type(cab.label) == "string" and cab.label ~= "" and cab.label)
-                    or GetAuraBarAutocompleteDisplayName(cab.spellID))
+                and (GetAuraBarAutocompleteDisplayName(cab.spellID)
+                    or (type(cab.label) == "string" and cab.label ~= "" and cab.label))
             local trackedAuraIcon = cab.spellID and GetAuraBarAutocompleteDisplayIcon(cab.spellID)
             local trackedAuraLabel = AceGUI:Create("Label")
             local trackedAuraText
