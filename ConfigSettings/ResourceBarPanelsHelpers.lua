@@ -80,36 +80,85 @@ local auraBarAutocompleteCache = nil
 
 local function BuildAuraBarAutocompleteCache()
     local cache = {}
-    local seen = {}
-    for _, cat in ipairs({
-        Enum.CooldownViewerCategory.TrackedBuff,
-        Enum.CooldownViewerCategory.TrackedBar,
-    }) do
-        local catLabel = (cat == Enum.CooldownViewerCategory.TrackedBuff)
-            and "Tracked Buff" or "Tracked Bar"
-        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
-        if ids then
-            for _, cdID in ipairs(ids) do
-                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info and info.spellID and not seen[info.spellID] then
-                    seen[info.spellID] = true
-                    local name = C_Spell.GetSpellName(info.spellID)
-                    local icon = C_Spell.GetSpellTexture(info.spellID)
-                    if name then
-                        cache[#cache + 1] = {
-                            id = info.spellID,
-                            name = name,
-                            nameLower = name:lower(),
-                            icon = icon or 134400,
-                            category = catLabel,
-                        }
-                    end
-                end
-            end
+    local sharedCache = CS.autocompleteCache
+        or (ST._BuildAutocompleteCache and ST._BuildAutocompleteCache())
+        or {}
+    for _, entry in ipairs(sharedCache) do
+        if entry.category == "Cooldown Manager" then
+            cache[#cache + 1] = entry
         end
     end
     auraBarAutocompleteCache = cache
     return cache
+end
+
+local function FindAuraBarAutocompleteEntryByID(spellID)
+    if not spellID then
+        return nil
+    end
+    local cache = BuildAuraBarAutocompleteCache()
+    for _, entry in ipairs(cache) do
+        if entry.id == spellID then
+            return entry
+        end
+    end
+    return nil
+end
+
+local function GetAuraBarAutocompleteDisplayName(spellID)
+    local entry = FindAuraBarAutocompleteEntryByID(spellID)
+    if entry and entry.name then
+        return entry.name
+    end
+    return spellID and C_Spell.GetSpellName(spellID) or nil
+end
+
+local function GetAuraBarAutocompleteDisplayIcon(spellID)
+    local entry = FindAuraBarAutocompleteEntryByID(spellID)
+    if entry and entry.icon then
+        return entry.icon
+    end
+    return spellID and C_Spell.GetSpellTexture(spellID) or nil
+end
+
+local function GetAuraBarAutocompleteEntryName(entry)
+    if type(entry) ~= "table" then
+        return nil
+    end
+    return type(entry.name) == "string" and entry.name ~= "" and entry.name or nil
+end
+
+local function ResolveAuraBarAutocompleteEntry(text)
+    if not text then return nil end
+    local cleaned = text:gsub("^%s+", ""):gsub("%s+$", "")
+    if cleaned == "" then
+        return nil
+    end
+
+    local numeric = tonumber(cleaned)
+    local lookup = cleaned:lower()
+    local cache = BuildAuraBarAutocompleteCache()
+    for _, entry in ipairs(cache) do
+        if (numeric and entry.id == numeric) or entry.nameLower == lookup then
+            return entry
+        end
+    end
+
+    return nil
+end
+
+local function SearchAuraBarAutocomplete(text)
+    local cache = BuildAuraBarAutocompleteCache()
+    return CS.SearchAutocompleteInCache(text, cache)
+end
+
+local function ShowAuraBarAutocompleteResults(text, widget, onAuraSelect)
+    if text and #text >= 1 then
+        local results = SearchAuraBarAutocomplete(text)
+        CS.ShowAutocompleteResults(results, widget, onAuraSelect)
+    else
+        CS.HideAutocomplete()
+    end
 end
 
 ------------------------------------------------------------------------
@@ -322,12 +371,9 @@ local function ResolveAuraColorSpellIDFromText(text)
         return numeric, false
     end
 
-    local cache = auraBarAutocompleteCache or BuildAuraBarAutocompleteCache()
-    local lookup = cleaned:lower()
-    for _, entry in ipairs(cache) do
-        if entry.nameLower == lookup then
-            return entry.id, false
-        end
+    local entry = ResolveAuraBarAutocompleteEntry(cleaned)
+    if entry then
+        return entry.id, false
     end
 
     return nil, false
@@ -491,13 +537,7 @@ end
 
 local function AttachAuraAutocompleteHandlers(editBoxWidget, onAuraSelect)
     editBoxWidget:SetCallback("OnTextChanged", function(widget, event, text)
-        if text and #text >= 1 then
-            local cache = auraBarAutocompleteCache or BuildAuraBarAutocompleteCache()
-            local results = CS.SearchAutocompleteInCache(text, cache)
-            CS.ShowAutocompleteResults(results, widget, onAuraSelect)
-        else
-            CS.HideAutocomplete()
-        end
+        ShowAuraBarAutocompleteResults(text, widget, onAuraSelect)
     end)
 
     CS.SetupAutocompleteKeyHandler(editBoxWidget)
@@ -557,7 +597,7 @@ local function AddResourceAuraEntryFields(container, powerType, resourceName, en
     container:AddChild(spellEdit)
 
     if spellID then
-        local auraName = C_Spell.GetSpellName(spellID)
+        local auraName = GetAuraBarAutocompleteDisplayName(spellID)
         if auraName then
             local auraLabel = AceGUI:Create("Label")
             auraLabel:SetText("|cff888888" .. auraName .. "|r")
@@ -925,6 +965,10 @@ ST._RBP = {
     GetContinuousTickPercentConfig = GetContinuousTickPercentConfig,
     GetContinuousTickAbsoluteConfig = GetContinuousTickAbsoluteConfig,
     AttachAuraAutocompleteHandlers = AttachAuraAutocompleteHandlers,
+    GetAuraBarAutocompleteDisplayName = GetAuraBarAutocompleteDisplayName,
+    GetAuraBarAutocompleteDisplayIcon = GetAuraBarAutocompleteDisplayIcon,
+    GetAuraBarAutocompleteEntryName = GetAuraBarAutocompleteEntryName,
+    ShowAuraBarAutocompleteResults = ShowAuraBarAutocompleteResults,
     AddResourceAuraEntryFields = AddResourceAuraEntryFields,
     ClearLegacyResourceAuraFieldsConfig = ClearLegacyResourceAuraFieldsConfig,
     ClearResourceAuraEntryConfig = ClearResourceAuraEntryConfig,
