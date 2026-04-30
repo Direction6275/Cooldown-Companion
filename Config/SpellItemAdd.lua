@@ -141,6 +141,12 @@ local function TryAddSpell(input, isPetSpell, forceAura, displayNameOverride)
             PrintBlockedSpellMessage(spellName)
             return false
         end
+        if CooldownCompanion.ABILITY_BUFF_OVERRIDES
+            and CooldownCompanion.ABILITY_BUFF_OVERRIDES[spellId]
+        then
+            CooldownCompanion:Print("Choose a specific CDM aura for " .. spellName .. ".")
+            return false
+        end
         local passiveOrProc = IsPassiveOrProc(spellId)
         -- forceAura overrides passive/proc classification for dual-CDM spells
         if forceAura == false then

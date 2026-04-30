@@ -786,6 +786,10 @@ end
 -- are completely unlinked by any API (GetCooldownAuraBySpellID returns 0).
 -- Format: [abilitySpellID] = "comma-separated buff spell IDs"
 CooldownCompanion.ABILITY_BUFF_OVERRIDES = {
+    -- Legacy compatibility only: older saved Eclipse buttons may still use
+    -- the ability IDs, but new adds must choose the specific CDM aura row.
+    [1233346] = "48517,48518",  -- Solar Eclipse legacy ability -> Eclipse buffs
+    [1233272] = "48517,48518",  -- Lunar Eclipse legacy ability -> Eclipse buffs
 }
 
 -------------------------------------------------------------------------------
