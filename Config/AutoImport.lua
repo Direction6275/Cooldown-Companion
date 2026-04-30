@@ -33,6 +33,64 @@ local SOURCE_GROUP_ORDER_SPEC = 2000
 local SOURCE_GROUP_ORDER_PET = 3000
 local SOURCE_GROUP_ORDER_GENERAL = 4000
 
+local function IsConcreteSpellID(spellID)
+    return type(spellID) == "number" and spellID > 0 and not issecretvalue(spellID)
+end
+
+local function ResolveCDMAuraSpellID(cooldownInfo)
+    if type(cooldownInfo) ~= "table" then
+        return nil
+    end
+    if IsConcreteSpellID(cooldownInfo.overrideTooltipSpellID) then
+        return cooldownInfo.overrideTooltipSpellID
+    end
+    if IsConcreteSpellID(cooldownInfo.overrideSpellID) then
+        return cooldownInfo.overrideSpellID
+    end
+    if IsConcreteSpellID(cooldownInfo.spellID) then
+        return cooldownInfo.spellID
+    end
+    return nil
+end
+
+local function CooldownInfoReferencesSpellID(cooldownInfo, spellID)
+    if type(cooldownInfo) ~= "table" or not IsConcreteSpellID(spellID) then
+        return false
+    end
+    return cooldownInfo.spellID == spellID
+        or cooldownInfo.overrideSpellID == spellID
+        or cooldownInfo.overrideTooltipSpellID == spellID
+end
+
+local function ResolveTrackedCDMAuraSpellIDForSpell(spellID)
+    if not IsConcreteSpellID(spellID) then
+        return nil, false, false
+    end
+
+    local resolvedAuraID
+    local found = false
+    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
+        local cooldownIDs = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if cooldownIDs then
+            for _, cooldownID in ipairs(cooldownIDs) do
+                local cooldownInfo = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
+                if CooldownInfoReferencesSpellID(cooldownInfo, spellID) then
+                    found = true
+                    local auraID = ResolveCDMAuraSpellID(cooldownInfo)
+                    if auraID then
+                        if resolvedAuraID and resolvedAuraID ~= auraID then
+                            return nil, true, true
+                        end
+                        resolvedAuraID = auraID
+                    end
+                end
+            end
+        end
+    end
+
+    return resolvedAuraID, false, found
+end
+
 local function CreateAutoAddPrefDefaults()
     local selectedBars = {}
     for i = 1, ACTION_BAR_COUNT do
@@ -155,15 +213,13 @@ local function TryAddEntry(result, seen, bucketKey, entry, sourceLabel)
     local dedupeKey
     if bucketKey == "items" then
         dedupeKey = "item:" .. tostring(entry.id)
+    elseif bucketKey == "auras" then
+        dedupeKey = "spell:" .. tostring(entry.id) .. ":aura"
     else
         -- Resolve spell ID to base form for dedup so that variant transforms
         -- (e.g. Raze and Maul) share a single key and don't double-add.
         local resolvedId = ST.ResolveToBaseSpell(entry.id)
-        if bucketKey == "auras" then
-            dedupeKey = "spell:" .. tostring(resolvedId) .. ":aura"
-        else
-            dedupeKey = "spell:" .. tostring(resolvedId) .. ":spell"
-        end
+        dedupeKey = "spell:" .. tostring(resolvedId) .. ":spell"
     end
 
     if seen[dedupeKey] then
@@ -224,20 +280,31 @@ local function BuildActionBarPreview(selectedBars)
                             elseif IsNeverTrackableSpell(spellID) then
                                 -- Omit known non-trackable spells from preview.
                             else
-                                local isAura = IsPassiveOrProc(spellID)
-                                if isAura and not IsSpellInCDMBuffBar(spellID) then
+                                local cdmAuraSpellID, ambiguousCDMAuras, hasTrackedCDMAura = ResolveTrackedCDMAuraSpellIDForSpell(spellID)
+                                local isBuffOnlyCDMSpell = hasTrackedCDMAura and not IsSpellInCDMCooldown(spellID)
+                                local isAura = IsPassiveOrProc(spellID) or isBuffOnlyCDMSpell
+                                if ambiguousCDMAuras then
+                                    AddSkipped(result, sourceLabel, "Choose a specific CDM aura.", spellName)
+                                elseif isAura and not cdmAuraSpellID then
                                     AddSkipped(result, sourceLabel, "Passive/proc spell is not tracked in CDM.", spellName)
                                 else
                                     local bucketKey = isAura and "auras" or "spells"
-                                    TryAddEntry(result, seen, bucketKey, {
-                                        type = "spell",
-                                        id = spellID,
-                                        name = spellName,
-                                        icon = spellInfo.iconID or C_ActionBar.GetActionTexture(slot) or ICON_FALLBACK,
-                                        source = sourceLabel,
-                                        sourceGroup = barSourceGroup,
-                                        sourceOrder = barIndex,
-                                    }, sourceLabel)
+                                    local entryID = isAura and cdmAuraSpellID or spellID
+                                    local entrySpellInfo = isAura and C_Spell.GetSpellInfo(entryID) or spellInfo
+                                    local entryName = entrySpellInfo and entrySpellInfo.name
+                                    if not entryName then
+                                        AddSkipped(result, sourceLabel, "Spell data is unavailable.", "Spell " .. tostring(entryID))
+                                    else
+                                        TryAddEntry(result, seen, bucketKey, {
+                                            type = "spell",
+                                            id = entryID,
+                                            name = entryName,
+                                            icon = entrySpellInfo.iconID or C_ActionBar.GetActionTexture(slot) or ICON_FALLBACK,
+                                            source = sourceLabel,
+                                            sourceGroup = barSourceGroup,
+                                            sourceOrder = barIndex,
+                                        }, sourceLabel)
+                                    end
                                 end
                             end
                         else
@@ -344,13 +411,14 @@ local function BuildCDMAuraPreview()
                 elseif not cooldownInfo.isKnown then
                     -- Known/current-spec only; omit unknown entries silently.
                 else
-                    local spellInfo = C_Spell.GetSpellInfo(cooldownInfo.spellID)
+                    local auraSpellID = ResolveCDMAuraSpellID(cooldownInfo)
+                    local spellInfo = auraSpellID and C_Spell.GetSpellInfo(auraSpellID)
                     if not spellInfo or not spellInfo.name then
-                        AddSkipped(result, catInfo.label, "Spell data is unavailable.", "Spell " .. cooldownInfo.spellID)
+                        AddSkipped(result, catInfo.label, "Spell data is unavailable.", "Spell " .. tostring(auraSpellID or cooldownInfo.spellID))
                     else
                         TryAddEntry(result, seen, "auras", {
                             type = "spell",
-                            id = cooldownInfo.spellID,
+                            id = auraSpellID,
                             name = spellInfo.name,
                             icon = spellInfo.iconID or ICON_FALLBACK,
                             source = catInfo.label,
@@ -653,8 +721,7 @@ local function ApplyPreviewToGroup(groupID, preview, selectedEntries, suppressRe
         if selectedEntries[entry.importKey] then
             local spellInfo = C_Spell.GetSpellInfo(entry.id)
             if spellInfo and spellInfo.name then
-                local isPassive = IsPassiveOrProc(entry.id) and true or nil
-                local buttonIndex = CooldownCompanion:AddButtonToGroup(groupID, "spell", entry.id, spellInfo.name, nil, isPassive, true)
+                local buttonIndex = CooldownCompanion:AddButtonToGroup(groupID, "spell", entry.id, spellInfo.name, nil, true, true)
                 if buttonIndex then
                     addedAuras = addedAuras + 1
                     addedButtonIndexes[#addedButtonIndexes + 1] = buttonIndex

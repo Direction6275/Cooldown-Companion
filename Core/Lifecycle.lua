@@ -207,6 +207,9 @@ function CooldownCompanion:OnEnable()
 
     -- Rebuild viewer aura map when Cooldown Manager layout changes (user rearranges spells)
     EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
+        if ST._configState then
+            ST._configState.autocompleteCache = nil
+        end
         C_Timer.After(0.2, function()
             self:QueueBuildViewerAuraMap()
         end)

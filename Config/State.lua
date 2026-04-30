@@ -323,6 +323,35 @@ local function GetButtonIcon(buttonData)
     return 134400
 end
 
+local function GetCooldownInfoDisplaySpellID(cooldownInfo)
+    if type(cooldownInfo) ~= "table" then
+        return nil
+    end
+
+    local tooltipID = cooldownInfo.overrideTooltipSpellID
+    if type(tooltipID) == "number" and tooltipID > 0
+        and not (issecretvalue and issecretvalue(tooltipID))
+    then
+        return tooltipID
+    end
+
+    local overrideID = cooldownInfo.overrideSpellID
+    if type(overrideID) == "number" and overrideID > 0
+        and not (issecretvalue and issecretvalue(overrideID))
+    then
+        return overrideID
+    end
+
+    local spellID = cooldownInfo.spellID
+    if type(spellID) == "number" and spellID > 0
+        and not (issecretvalue and issecretvalue(spellID))
+    then
+        return spellID
+    end
+
+    return nil
+end
+
 local function GetConfigEntryDisplayName(buttonData, opts)
     if not buttonData then
         return nil
@@ -330,7 +359,7 @@ local function GetConfigEntryDisplayName(buttonData, opts)
 
     opts = opts or {}
     local includeDecorations = opts.includeDecorations == true
-    local entryName = buttonData.name
+    local entryName = buttonData.customName or buttonData.name
 
     if buttonData.type == "spell" then
         local child
@@ -341,17 +370,17 @@ local function GetConfigEntryDisplayName(buttonData, opts)
             child = CooldownCompanion.viewerAuraFrames[buttonData.id]
         end
 
-        if child and child.cooldownInfo and child.cooldownInfo.overrideSpellID then
-            local spellName = C_Spell.GetSpellName(child.cooldownInfo.overrideSpellID)
-            if spellName then
-                entryName = spellName
+        if not buttonData.customName then
+            local displayId = GetCooldownInfoDisplaySpellID(child and child.cooldownInfo)
+            if not displayId then
+                local raw = C_Spell.GetOverrideSpell(buttonData.id)
+                displayId = (raw and raw ~= 0) and raw or buttonData.id
             end
-        else
-            local raw = C_Spell.GetOverrideSpell(buttonData.id)
-            local displayId = (raw and raw ~= 0) and raw or buttonData.id
-            local spellName = C_Spell.GetSpellName(displayId)
-            if spellName then
-                entryName = spellName
+            if displayId then
+                local spellName = C_Spell.GetSpellName(displayId)
+                if spellName then
+                    entryName = spellName
+                end
             end
         end
 

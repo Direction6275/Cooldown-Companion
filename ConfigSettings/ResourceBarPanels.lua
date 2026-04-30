@@ -107,7 +107,11 @@ local GetContinuousTickModeConfig = RBP.GetContinuousTickModeConfig
 local GetContinuousTickPercentConfig = RBP.GetContinuousTickPercentConfig
 local GetContinuousTickAbsoluteConfig = RBP.GetContinuousTickAbsoluteConfig
 local AddCdmAuraReadinessWarning = RBP.AddCdmAuraReadinessWarning
-local BuildAuraBarAutocompleteCache = RBP.BuildAuraBarAutocompleteCache
+local ResolveAuraColorSpellIDFromText = RBP.ResolveAuraColorSpellIDFromText
+local GetAuraBarAutocompleteDisplayName = RBP.GetAuraBarAutocompleteDisplayName
+local GetAuraBarAutocompleteDisplayIcon = RBP.GetAuraBarAutocompleteDisplayIcon
+local GetAuraBarAutocompleteEntryName = RBP.GetAuraBarAutocompleteEntryName
+local ShowAuraBarAutocompleteResults = RBP.ShowAuraBarAutocompleteResults
 local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
 local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
 local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
@@ -1350,10 +1354,13 @@ local function ApplyCustomAuraBarPanelChanges(opts)
     end
 end
 
-local function SetCustomAuraBarTrackedSpell(customBars, capturedIdx, spellId)
+local function SetCustomAuraBarTrackedSpell(customBars, capturedIdx, spellId, labelOverride)
     customBars[capturedIdx].spellID = spellId
     if spellId then
-        customBars[capturedIdx].label = C_Spell.GetSpellName(spellId) or ""
+        customBars[capturedIdx].label = labelOverride
+            or GetAuraBarAutocompleteDisplayName(spellId)
+            or C_Spell.GetSpellName(spellId)
+            or ""
     else
         customBars[capturedIdx].label = ""
     end
@@ -1708,8 +1715,10 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
 
     if cab.enabled and independentSubTab == "settings" then
 
-            local trackedAuraName = cab.spellID and C_Spell.GetSpellName(cab.spellID)
-            local trackedAuraIcon = cab.spellID and C_Spell.GetSpellTexture(cab.spellID)
+            local trackedAuraName = cab.spellID
+                and (GetAuraBarAutocompleteDisplayName(cab.spellID)
+                    or (type(cab.label) == "string" and cab.label ~= "" and cab.label))
+            local trackedAuraIcon = cab.spellID and GetAuraBarAutocompleteDisplayIcon(cab.spellID)
             local trackedAuraLabel = AceGUI:Create("Label")
             local trackedAuraText
             if trackedAuraName then
@@ -1738,7 +1747,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
             local function onAuraBarSelect(entry)
                 CS.HideAutocomplete()
                 local bars = CooldownCompanion:GetSpecCustomAuraBars()
-                SetCustomAuraBarTrackedSpell(bars, capturedIdx, entry.id)
+                SetCustomAuraBarTrackedSpell(bars, capturedIdx, entry.id, GetAuraBarAutocompleteEntryName(entry))
                 ApplyCustomAuraBarPanelChanges({
                     updateAnchors = true,
                     refreshConfig = true,
@@ -1748,8 +1757,10 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
             spellEdit:SetCallback("OnEnterPressed", function(widget, event, text)
                 if CS.ConsumeAutocompleteEnter() then return end
                 CS.HideAutocomplete()
-                text = text:gsub("%s", "")
-                local id = tonumber(text)
+                local id, explicitClear = ResolveAuraColorSpellIDFromText(text)
+                if not id and not explicitClear then
+                    return
+                end
                 local bars = CooldownCompanion:GetSpecCustomAuraBars()
                 SetCustomAuraBarTrackedSpell(bars, capturedIdx, id)
                 ApplyCustomAuraBarPanelChanges({
@@ -1758,13 +1769,7 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
                 })
             end)
             spellEdit:SetCallback("OnTextChanged", function(widget, event, text)
-                if text and #text >= 1 then
-                    local cache = BuildAuraBarAutocompleteCache()
-                    local results = CS.SearchAutocompleteInCache(text, cache)
-                    CS.ShowAutocompleteResults(results, widget, onAuraBarSelect)
-                else
-                    CS.HideAutocomplete()
-                end
+                ShowAuraBarAutocompleteResults(text, widget, onAuraBarSelect)
             end)
 
             CS.SetupAutocompleteKeyHandler(spellEdit)

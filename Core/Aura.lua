@@ -130,6 +130,40 @@ local function ResolveViewerFrameForSpellID(spellID, buffOnly)
     return candidate
 end
 
+local function ResolveDirectBuffViewerSpellID(spellID)
+    local numericID = tonumber(spellID)
+    if not numericID or numericID == 0 then
+        return nil
+    end
+
+    local frame = ResolveViewerFrameForSpellID(numericID, true)
+    local info = frame and frame.cooldownInfo
+    if type(info) ~= "table" then
+        return nil
+    end
+
+    if tonumber(info.overrideTooltipSpellID) == numericID
+        or tonumber(info.overrideSpellID) == numericID then
+        return numericID
+    end
+
+    if tonumber(info.spellID) == numericID then
+        local tooltipOverride = tonumber(info.overrideTooltipSpellID)
+        if tooltipOverride and tooltipOverride ~= 0 then
+            return tooltipOverride
+        end
+
+        local spellOverride = tonumber(info.overrideSpellID)
+        if spellOverride and spellOverride ~= 0 then
+            return spellOverride
+        end
+
+        return numericID
+    end
+
+    return nil
+end
+
 local function CooldownInfoMatchesCandidateSet(cooldownInfo, candidateSet)
     if type(cooldownInfo) ~= "table" then
         return false
@@ -342,6 +376,10 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
         return first and tonumber(first)
     end
     if buttonData.type == "spell" then
+        local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
+        if directAuraID then
+            return directAuraID
+        end
         -- Resolve through base spell so form-variant spells (e.g. Stampeding
         -- Roar: 106898/77764/77761) use the base ID for aura lookups — the
         -- buff is always applied as the base spell regardless of form.
@@ -368,6 +406,11 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
     local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[buttonData.id]
     if overrideBuffs then
         return overrideBuffs
+    end
+
+    local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
+    if directAuraID then
+        return tostring(directAuraID)
     end
 
     local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
@@ -440,6 +483,11 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
     local explicitAuraID = ResolveSingleSpellID(buttonData.auraSpellID)
     if explicitAuraID then
         return explicitAuraID
+    end
+
+    local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
+    if directAuraID then
+        return directAuraID
     end
 
     local resolvedAuraID = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
@@ -750,11 +798,12 @@ end
 
 -- Hardcoded ability → buff overrides for spells whose ability ID and buff IDs
 -- are completely unlinked by any API (GetCooldownAuraBySpellID returns 0).
--- Both Eclipse forms map to both buff IDs so whichever buff is active gets tracked.
 -- Format: [abilitySpellID] = "comma-separated buff spell IDs"
 CooldownCompanion.ABILITY_BUFF_OVERRIDES = {
-    [1233346] = "48517,48518",  -- Solar Eclipse → Eclipse (Solar) + Eclipse (Lunar) buffs
-    [1233272] = "48517,48518",  -- Lunar Eclipse → Eclipse (Solar) + Eclipse (Lunar) buffs
+    -- Legacy compatibility only: older saved Eclipse buttons may still use
+    -- the ability IDs, but new adds must choose the specific CDM aura row.
+    [1233346] = "48517,48518",  -- Solar Eclipse legacy ability -> Eclipse buffs
+    [1233272] = "48517,48518",  -- Lunar Eclipse legacy ability -> Eclipse buffs
 }
 
 -------------------------------------------------------------------------------
@@ -851,6 +900,23 @@ end
 function CooldownCompanion:BuildViewerAuraMap()
     wipe(self.viewerAuraFrames)
     wipe(self.viewerAuraAllChildren)
+
+    local function AddViewerAuraChild(spellID, child)
+        if not spellID or not child then
+            return
+        end
+        if not self.viewerAuraAllChildren[spellID] then
+            self.viewerAuraAllChildren[spellID] = {}
+        end
+        local children = self.viewerAuraAllChildren[spellID]
+        for _, existing in ipairs(children) do
+            if existing == child then
+                return
+            end
+        end
+        table.insert(children, child)
+    end
+
     for _, name in ipairs(VIEWER_NAMES) do
         local viewer = _G[name]
         if viewer then
@@ -865,10 +931,7 @@ function CooldownCompanion:BuildViewerAuraMap()
                         -- Diabolic Ritual twice in Tracked Buffs), not cross-section
                         -- matches (e.g. Agony in Essential + Buffs).
                         if BUFF_VIEWER_SET[name] then
-                            if not self.viewerAuraAllChildren[spellID] then
-                                self.viewerAuraAllChildren[spellID] = {}
-                            end
-                            table.insert(self.viewerAuraAllChildren[spellID], child)
+                            AddViewerAuraChild(spellID, child)
                         end
                     end
                     local override = info.overrideSpellID
@@ -884,6 +947,12 @@ function CooldownCompanion:BuildViewerAuraMap()
                             self.viewerAuraFrames[linked] = child
                         end
                     end
+                    if BUFF_VIEWER_SET[name] then
+                        local specificSpellID = info.overrideTooltipSpellID or info.overrideSpellID
+                        if specificSpellID and specificSpellID ~= spellID then
+                            AddViewerAuraChild(specificSpellID, child)
+                        end
+                    end
                 end
             end
         end
@@ -893,8 +962,8 @@ function CooldownCompanion:BuildViewerAuraMap()
     self:MapButtonSpellsToViewers()
 
     -- Map hardcoded overrides: ability IDs and buff IDs → viewer child.
-    -- Group by buff string so sibling abilities (e.g. Solar/Lunar Eclipse)
-    -- cross-map to the same viewer child even if only one form is current.
+    -- Group by buff string so sibling abilities can cross-map to the same
+    -- viewer child even if only one form is current.
     local groupsByBuffs = {}
     for abilityID, buffIDStr in pairs(self.ABILITY_BUFF_OVERRIDES) do
         if not groupsByBuffs[buffIDStr] then
