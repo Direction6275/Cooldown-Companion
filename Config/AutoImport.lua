@@ -53,6 +53,44 @@ local function ResolveCDMAuraSpellID(cooldownInfo)
     return nil
 end
 
+local function CooldownInfoReferencesSpellID(cooldownInfo, spellID)
+    if type(cooldownInfo) ~= "table" or not IsConcreteSpellID(spellID) then
+        return false
+    end
+    return cooldownInfo.spellID == spellID
+        or cooldownInfo.overrideSpellID == spellID
+        or cooldownInfo.overrideTooltipSpellID == spellID
+end
+
+local function ResolveTrackedCDMAuraSpellIDForSpell(spellID)
+    if not IsConcreteSpellID(spellID) then
+        return nil, false, false
+    end
+
+    local resolvedAuraID
+    local found = false
+    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
+        local cooldownIDs = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if cooldownIDs then
+            for _, cooldownID in ipairs(cooldownIDs) do
+                local cooldownInfo = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
+                if CooldownInfoReferencesSpellID(cooldownInfo, spellID) then
+                    found = true
+                    local auraID = ResolveCDMAuraSpellID(cooldownInfo)
+                    if auraID then
+                        if resolvedAuraID and resolvedAuraID ~= auraID then
+                            return nil, true, true
+                        end
+                        resolvedAuraID = auraID
+                    end
+                end
+            end
+        end
+    end
+
+    return resolvedAuraID, false, found
+end
+
 local function CreateAutoAddPrefDefaults()
     local selectedBars = {}
     for i = 1, ACTION_BAR_COUNT do
@@ -242,20 +280,31 @@ local function BuildActionBarPreview(selectedBars)
                             elseif IsNeverTrackableSpell(spellID) then
                                 -- Omit known non-trackable spells from preview.
                             else
-                                local isAura = IsPassiveOrProc(spellID)
-                                if isAura and not IsSpellInCDMBuffBar(spellID) then
+                                local cdmAuraSpellID, ambiguousCDMAuras, hasTrackedCDMAura = ResolveTrackedCDMAuraSpellIDForSpell(spellID)
+                                local isBuffOnlyCDMSpell = hasTrackedCDMAura and not IsSpellInCDMCooldown(spellID)
+                                local isAura = IsPassiveOrProc(spellID) or isBuffOnlyCDMSpell
+                                if ambiguousCDMAuras then
+                                    AddSkipped(result, sourceLabel, "Choose a specific CDM aura.", spellName)
+                                elseif isAura and not cdmAuraSpellID then
                                     AddSkipped(result, sourceLabel, "Passive/proc spell is not tracked in CDM.", spellName)
                                 else
                                     local bucketKey = isAura and "auras" or "spells"
-                                    TryAddEntry(result, seen, bucketKey, {
-                                        type = "spell",
-                                        id = spellID,
-                                        name = spellName,
-                                        icon = spellInfo.iconID or C_ActionBar.GetActionTexture(slot) or ICON_FALLBACK,
-                                        source = sourceLabel,
-                                        sourceGroup = barSourceGroup,
-                                        sourceOrder = barIndex,
-                                    }, sourceLabel)
+                                    local entryID = isAura and cdmAuraSpellID or spellID
+                                    local entrySpellInfo = isAura and C_Spell.GetSpellInfo(entryID) or spellInfo
+                                    local entryName = entrySpellInfo and entrySpellInfo.name
+                                    if not entryName then
+                                        AddSkipped(result, sourceLabel, "Spell data is unavailable.", "Spell " .. tostring(entryID))
+                                    else
+                                        TryAddEntry(result, seen, bucketKey, {
+                                            type = "spell",
+                                            id = entryID,
+                                            name = entryName,
+                                            icon = entrySpellInfo.iconID or C_ActionBar.GetActionTexture(slot) or ICON_FALLBACK,
+                                            source = sourceLabel,
+                                            sourceGroup = barSourceGroup,
+                                            sourceOrder = barIndex,
+                                        }, sourceLabel)
+                                    end
                                 end
                             end
                         else

@@ -143,10 +143,24 @@ local function ResolveDirectBuffViewerSpellID(spellID)
     end
 
     if tonumber(info.overrideTooltipSpellID) == numericID
-        or tonumber(info.overrideSpellID) == numericID
-        or tonumber(info.spellID) == numericID then
+        or tonumber(info.overrideSpellID) == numericID then
         return numericID
     end
+
+    if tonumber(info.spellID) == numericID then
+        local tooltipOverride = tonumber(info.overrideTooltipSpellID)
+        if tooltipOverride and tooltipOverride ~= 0 then
+            return tooltipOverride
+        end
+
+        local spellOverride = tonumber(info.overrideSpellID)
+        if spellOverride and spellOverride ~= 0 then
+            return spellOverride
+        end
+
+        return numericID
+    end
+
     return nil
 end
 
