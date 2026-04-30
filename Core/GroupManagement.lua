@@ -9,6 +9,7 @@ local CooldownCompanion = ST.Addon
 local pairs = pairs
 local ipairs = ipairs
 local tonumber = tonumber
+local InCombatLockdown = InCombatLockdown
 local math_floor = math.floor
 local table_sort = table.sort
 local table_remove = table.remove
@@ -628,6 +629,15 @@ function CooldownCompanion:CopyDirectStyleFromPanel(mode, sourceGroupId, targetG
         newMasqueEnabled = false
     end
 
+    local frame = self.groupFrames and self.groupFrames[targetGroupId]
+    if InCombatLockdown() and (not frame or frame:IsProtected()) then
+        if frame then
+            frame._layoutDirty = true
+        end
+        self._pendingFullRefresh = true
+        return true
+    end
+
     if mode == "icons" and self.Masque and oldMasqueEnabled ~= newMasqueEnabled then
         self:ToggleGroupMasque(targetGroupId, newMasqueEnabled)
     end
@@ -635,7 +645,6 @@ function CooldownCompanion:CopyDirectStyleFromPanel(mode, sourceGroupId, targetG
     if self.PopulateGroupButtons then
         self:PopulateGroupButtons(targetGroupId)
     end
-    local frame = self.groupFrames and self.groupFrames[targetGroupId]
     if frame then
         frame._layoutDirty = true
     end

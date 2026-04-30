@@ -1222,9 +1222,21 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
         self:AnchorGroupFrame(frame, group.anchor)
 
-        -- Recreate Masque group if it was deleted during unload
-        if group.masqueEnabled and self.Masque and not self.MasqueGroups[groupId] then
-            self:CreateMasqueGroup(groupId)
+        -- Keep runtime Masque state aligned with saved group settings. This
+        -- also resolves style-copy changes that were deferred during combat.
+        if self.Masque then
+            if (group.displayMode == nil or group.displayMode == "icons") and group.masqueEnabled then
+                if not self.MasqueGroups[groupId] then
+                    self:CreateMasqueGroup(groupId)
+                end
+            elseif self.MasqueGroups[groupId] then
+                if frame.buttons then
+                    for _, button in ipairs(frame.buttons) do
+                        self:RemoveButtonFromMasque(groupId, button)
+                    end
+                end
+                self:DeleteMasqueGroup(groupId)
+            end
         end
 
         self:PopulateGroupButtons(groupId)
