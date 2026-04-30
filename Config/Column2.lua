@@ -2207,6 +2207,24 @@ local function RefreshColumn2()
                                 UIDropDownMenu_AddButton(info, level)
                             end
 
+                            -- "Move to Group" submenu (only when other visible containers exist)
+                            local db = CooldownCompanion.db.profile
+                            local hasOtherContainer = false
+                            for cid, _ in pairs(db.groupContainers) do
+                                if cid ~= ctxContainerId and CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
+                                    hasOtherContainer = true
+                                    break
+                                end
+                            end
+                            if hasOtherContainer then
+                                info = UIDropDownMenu_CreateInfo()
+                                info.text = "Move to Group"
+                                info.notCheckable = true
+                                info.hasArrow = true
+                                info.menuList = "MOVE_TO_GROUP"
+                                UIDropDownMenu_AddButton(info, level)
+                            end
+
                             -- Export single panel
                             info = UIDropDownMenu_CreateInfo()
                             info.text = "Export"
@@ -2227,24 +2245,6 @@ local function RefreshColumn2()
                                 ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
                             end
                             UIDropDownMenu_AddButton(info, level)
-
-                            -- "Move to Group" submenu (only when other visible containers exist)
-                            local db = CooldownCompanion.db.profile
-                            local hasOtherContainer = false
-                            for cid, _ in pairs(db.groupContainers) do
-                                if cid ~= ctxContainerId and CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
-                                    hasOtherContainer = true
-                                    break
-                                end
-                            end
-                            if hasOtherContainer then
-                                info = UIDropDownMenu_CreateInfo()
-                                info.text = "Move to Group"
-                                info.notCheckable = true
-                                info.hasArrow = true
-                                info.menuList = "MOVE_TO_GROUP"
-                                UIDropDownMenu_AddButton(info, level)
-                            end
 
                             info = UIDropDownMenu_CreateInfo()
                             info.text = "|cffff4444Delete|r"

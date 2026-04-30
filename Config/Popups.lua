@@ -1331,7 +1331,7 @@ StaticPopupDialogs["CDC_DELETE_GROUP_SETTINGS_PRESET"] = {
 }
 
 StaticPopupDialogs["CDC_CONFIRM_PANEL_STYLE_COPY"] = {
-    text = "Copy visual settings from '%s' to this panel? This replaces the current panel's style settings.",
+    text = "Copy style from '%s' to this panel?\n\nThis copies Appearance, Indicators, and layout style. Positioning, Load Conditions, and panel contents stay unchanged.",
     button1 = "Copy",
     button2 = "Cancel",
     OnAccept = function(self, data)
