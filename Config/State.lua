@@ -327,17 +327,28 @@ local function GetCooldownInfoDisplaySpellID(cooldownInfo)
     if type(cooldownInfo) ~= "table" then
         return nil
     end
-    for _, spellID in ipairs({
-        cooldownInfo.overrideTooltipSpellID,
-        cooldownInfo.overrideSpellID,
-        cooldownInfo.spellID,
-    }) do
-        if type(spellID) == "number" and spellID > 0
-            and not (issecretvalue and issecretvalue(spellID))
-        then
-            return spellID
-        end
+
+    local tooltipID = cooldownInfo.overrideTooltipSpellID
+    if type(tooltipID) == "number" and tooltipID > 0
+        and not (issecretvalue and issecretvalue(tooltipID))
+    then
+        return tooltipID
     end
+
+    local overrideID = cooldownInfo.overrideSpellID
+    if type(overrideID) == "number" and overrideID > 0
+        and not (issecretvalue and issecretvalue(overrideID))
+    then
+        return overrideID
+    end
+
+    local spellID = cooldownInfo.spellID
+    if type(spellID) == "number" and spellID > 0
+        and not (issecretvalue and issecretvalue(spellID))
+    then
+        return spellID
+    end
+
     return nil
 end
 

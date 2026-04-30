@@ -673,6 +673,7 @@ local function BuildAutocompleteCache()
                                 category = "Cooldown Manager",
                                 isItem = false,
                                 isPassive = true,
+                                forceAura = true,
                             })
                         end
                     end
