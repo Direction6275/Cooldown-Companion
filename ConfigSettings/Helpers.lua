@@ -604,12 +604,8 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     end
 
     local presetList, presetOrder = CooldownCompanion:GetGroupSettingPresetList(mode)
-    local copyPanelList, copyPanelOrder = CooldownCompanion:GetDirectStyleCopyPanelList(mode, CS.selectedGroup)
     if not CS.groupPresetSelection then
         CS.groupPresetSelection = { icons = nil, bars = nil }
-    end
-    if not CS.groupStyleCopySelection then
-        CS.groupStyleCopySelection = { icons = nil, bars = nil }
     end
 
     local selectedPreset = CS.groupPresetSelection[mode]
@@ -617,30 +613,25 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
         selectedPreset = nil
         CS.groupPresetSelection[mode] = nil
     end
-    local selectedCopyPanel = CS.groupStyleCopySelection[mode]
-    if selectedCopyPanel and not copyPanelList[selectedCopyPanel] then
-        selectedCopyPanel = nil
-        CS.groupStyleCopySelection[mode] = nil
-    end
 
     local heading = AceGUI:Create("Heading")
-    heading:SetText(mode == "bars" and "Bar Panel Style" or "Icon Panel Style")
+    heading:SetText(mode == "bars" and "Bar Panel Preset" or "Icon Panel Preset")
     ColorHeading(heading)
     heading:SetFullWidth(true)
     container:AddChild(heading)
 
-    local presetModeLabel = mode == "bars" and "Bar Panel Style" or "Icon Panel Style"
+    local presetModeLabel = mode == "bars" and "Bar Panel Presets" or "Icon Panel Presets"
     local modeSpecificLine = mode == "bars"
-        and "Copy and presets only work on bar panels."
-        or "Copy and presets only work on icon panels."
+        and "Bar presets only work on bar panels."
+        or "Icon presets only work on icon panels."
     local headingInfoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
         presetModeLabel,
-        {"Copy From Panel applies another same-type panel's visual settings directly.", 1, 1, 1},
-        " ",
         {"Click Save to store this panel's settings as a preset.", 1, 1, 1},
         " ",
-        {"Copy and presets include appearance, indicator, and text settings.", 1, 1, 1},
-        {"They do not change entries, load rules, anchors, or placement.", 1, 1, 1},
+        {"Presets save appearance, indicator, and text settings.", 1, 1, 1},
+        {"Load Conditions (including Spec/Hero filters) are not saved or changed.", 1, 1, 1},
+        {"Presets do not include Columns 1, 2, or 3.", 1, 1, 1},
+        {"Anchors are not saved or changed.", 1, 1, 1},
         " ",
         {"Apply resets preset settings first, then applies the preset.", 1, 1, 1},
         " ",
@@ -741,52 +732,6 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
     -- compute scroll height correctly on first render.
     container:AddChild(buttonRow)
 
-    local copyDrop = AceGUI:Create("Dropdown")
-    copyDrop:SetLabel("Copy From Panel")
-    copyDrop:SetList(copyPanelList, copyPanelOrder)
-    copyDrop:SetValue(selectedCopyPanel)
-    copyDrop:SetFullWidth(true)
-    local copyBtn
-    copyDrop:SetCallback("OnValueChanged", function(widget, event, value)
-        CS.groupStyleCopySelection[mode] = value
-        if copyBtn then
-            copyBtn:SetDisabled(value == nil)
-        end
-    end)
-    container:AddChild(copyDrop)
-
-    if #copyPanelOrder == 0 then
-        local copyHint = AceGUI:Create("Label")
-        copyHint:SetText("|cff888888No other " .. (mode == "bars" and "bar" or "icon") .. " panels available to copy from.|r")
-        copyHint:SetFullWidth(true)
-        container:AddChild(copyHint)
-    end
-
-    local copyButtonRow = AceGUI:Create("SimpleGroup")
-    copyButtonRow:SetFullWidth(true)
-    copyButtonRow:SetLayout("Flow")
-
-    copyBtn = AceGUI:Create("Button")
-    copyBtn:SetText("Copy Style")
-    copyBtn:SetRelativeWidth(1)
-    copyBtn:SetDisabled(selectedCopyPanel == nil)
-    copyBtn:SetCallback("OnClick", function()
-        local sourceGroupId = CS.groupStyleCopySelection and CS.groupStyleCopySelection[mode]
-        if not sourceGroupId then return end
-        if not ShowPopupAboveConfig then
-            CooldownCompanion:Print("Style copy confirmation is unavailable.")
-            return
-        end
-
-        local sourceName = copyPanelList[sourceGroupId] or "the selected panel"
-        ShowPopupAboveConfig("CDC_CONFIRM_PANEL_STYLE_COPY", sourceName, {
-            mode = mode,
-            sourceGroupId = sourceGroupId,
-            targetGroupId = CS.selectedGroup,
-        })
-    end)
-    copyButtonRow:AddChild(copyBtn)
-    container:AddChild(copyButtonRow)
 end
 
 local charCopyButtons = {}

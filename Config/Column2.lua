@@ -2187,6 +2187,26 @@ local function RefreshColumn2()
                             end
                             UIDropDownMenu_AddButton(info, level)
 
+                            local copyStyleMode
+                            if ctxPanel.displayMode == "bars" then
+                                copyStyleMode = "bars"
+                            elseif ctxPanel.displayMode == nil or ctxPanel.displayMode == "icons" then
+                                copyStyleMode = "icons"
+                            end
+                            if copyStyleMode then
+                                local _, copyPanelOrder = CooldownCompanion:GetDirectStyleCopyPanelList(copyStyleMode, ctxPanelId)
+                                info = UIDropDownMenu_CreateInfo()
+                                info.text = "Copy Style From"
+                                info.notCheckable = true
+                                if #copyPanelOrder > 0 then
+                                    info.hasArrow = true
+                                    info.menuList = "COPY_STYLE_FROM_PANEL"
+                                else
+                                    info.disabled = true
+                                end
+                                UIDropDownMenu_AddButton(info, level)
+                            end
+
                             -- Export single panel
                             info = UIDropDownMenu_CreateInfo()
                             info.text = "Export"
@@ -2234,6 +2254,38 @@ local function RefreshColumn2()
                                 ShowPopupAboveConfig("CDC_DELETE_PANEL", ctxPanel.name or "Panel", { containerId = ctxContainerId, panelId = ctxPanelId })
                             end
                             UIDropDownMenu_AddButton(info, level)
+
+                        elseif menuList == "COPY_STYLE_FROM_PANEL" then
+                            local copyStyleMode
+                            if ctxPanel.displayMode == "bars" then
+                                copyStyleMode = "bars"
+                            elseif ctxPanel.displayMode == nil or ctxPanel.displayMode == "icons" then
+                                copyStyleMode = "icons"
+                            end
+                            local copyPanelList, copyPanelOrder = CooldownCompanion:GetDirectStyleCopyPanelList(copyStyleMode, ctxPanelId)
+                            if #copyPanelOrder == 0 then
+                                local emptyInfo = UIDropDownMenu_CreateInfo()
+                                emptyInfo.text = "No same-type panels available"
+                                emptyInfo.notCheckable = true
+                                emptyInfo.disabled = true
+                                UIDropDownMenu_AddButton(emptyInfo, level)
+                            else
+                                for _, sourceGroupId in ipairs(copyPanelOrder) do
+                                    local sourceName = copyPanelList[sourceGroupId] or ("Panel " .. tostring(sourceGroupId))
+                                    local copyInfo = UIDropDownMenu_CreateInfo()
+                                    copyInfo.text = sourceName
+                                    copyInfo.notCheckable = true
+                                    copyInfo.func = function()
+                                        CloseDropDownMenus()
+                                        ShowPopupAboveConfig("CDC_CONFIRM_PANEL_STYLE_COPY", sourceName, {
+                                            mode = copyStyleMode,
+                                            sourceGroupId = sourceGroupId,
+                                            targetGroupId = ctxPanelId,
+                                        })
+                                    end
+                                    UIDropDownMenu_AddButton(copyInfo, level)
+                                end
+                            end
 
                         elseif menuList == "MOVE_TO_GROUP" then
                             local db = CooldownCompanion.db.profile
