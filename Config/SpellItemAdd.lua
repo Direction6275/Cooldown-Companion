@@ -558,11 +558,14 @@ local function BuildAutocompleteCache()
                 then
                     local id = itemInfo.spellID
                     local isAura = IsPassiveOrProc(id)
+                    local isBuffOnlyCDMSpell = cdmBuffSet[id] and not cdmCooldownSet[id]
                     if ShouldSuppressSpellbookEntry(id, lineIdx, isAura) then
                         -- Omit filtered entries to reduce autocomplete noise.
                     elseif not seen[id] then
                         seen[id] = true
-                        if dualCDMSet[id] then
+                        if isBuffOnlyCDMSpell then
+                            -- The CDM aura row below is the addable identity for buff/bar-only entries.
+                        elseif dualCDMSet[id] then
                             -- Dual-CDM spell: insert separate Cooldown and Buff entries
                             table.insert(cache, {
                                 id = id,
