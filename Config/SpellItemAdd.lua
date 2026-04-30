@@ -58,6 +58,40 @@ local function IsTriggerPanelTarget(groupId)
     return group and group.displayMode == "trigger"
 end
 
+local function IsConcreteSpellID(spellID)
+    return type(spellID) == "number" and spellID > 0 and not issecretvalue(spellID)
+end
+
+local function ResolveCDMAuraSpellID(cooldownInfo)
+    if type(cooldownInfo) ~= "table" then
+        return nil
+    end
+    if IsConcreteSpellID(cooldownInfo.overrideTooltipSpellID) then
+        return cooldownInfo.overrideTooltipSpellID
+    end
+    if IsConcreteSpellID(cooldownInfo.overrideSpellID) then
+        return cooldownInfo.overrideSpellID
+    end
+    if IsConcreteSpellID(cooldownInfo.spellID) then
+        return cooldownInfo.spellID
+    end
+    return nil
+end
+
+local function CDMAuraChildrenShareResolvedSpellID(children)
+    local resolvedID
+    for _, child in ipairs(children or {}) do
+        local childID = child and ResolveCDMAuraSpellID(child.cooldownInfo)
+        if childID then
+            if resolvedID and resolvedID ~= childID then
+                return false
+            end
+            resolvedID = childID
+        end
+    end
+    return resolvedID ~= nil
+end
+
 -- File-local state
 local autocompleteDropdown
 
@@ -118,13 +152,19 @@ local function TryAddSpell(input, isPetSpell, forceAura)
             CooldownCompanion:Print("Passive/proc spell " .. spellName .. " is not tracked in the Cooldown Manager.")
             return false
         end
-        -- Multi-CDM-child: if passive/proc spell has multiple CDM entries, auto-add one button per child
-        if passiveOrProc
-            and not IsTexturePanelTarget(CS.selectedGroup)
-            and not IsTriggerPanelTarget(CS.selectedGroup)
-        then
+        -- Multi-CDM-child entries only expand when all rows represent the same
+        -- aura spell ID. If CDM exposes distinct aura IDs, the user must pick
+        -- the specific aura instead of a generic base entry.
+        if passiveOrProc then
             local allChildren = CooldownCompanion.viewerAuraAllChildren[spellId]
-            if allChildren and #allChildren > 1 then
+            if allChildren and #allChildren > 1 and not CDMAuraChildrenShareResolvedSpellID(allChildren) then
+                CooldownCompanion:Print("Choose a specific CDM aura for " .. spellName .. ".")
+                return false
+            end
+            if allChildren and #allChildren > 1
+                and not IsTexturePanelTarget(CS.selectedGroup)
+                and not IsTriggerPanelTarget(CS.selectedGroup)
+            then
                 local count = #allChildren
                 local firstIdx
                 for i = 1, count do
@@ -253,21 +293,16 @@ local function TryAdd(input)
         -- Passive/proc spell: require CDM presence
         if spellFound and passiveOrProc then
             if IsSpellInCDMBuffBar(id) then
-                local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name, nil, true)
-                if not idx then
-                    return false
-                end
-                SelectNewButton(CS.selectedGroup, idx)
-                if not notified then
-                    CooldownCompanion:Print("Added spell: " .. spellInfo.name)
-                end
-                return true
+                return TryAddSpell(tostring(id), nil, true)
             end
             -- Not in CDM — fall through to try as item, then report error
         end
 
         -- Non-passive spell → add it
         if spellFound and not passiveOrProc then
+            if IsSpellInCDMBuffBar(id) and not IsSpellInCDMCooldown(id) then
+                return TryAddSpell(tostring(id), nil, true)
+            end
             local forceAura = nil
             if IsSpellInCDMCooldown(id) and IsSpellInCDMBuffBar(id) then
                 forceAura = false  -- dual-CDM: default to cooldown mode
@@ -357,18 +392,13 @@ local function TryAdd(input)
             local passiveOrProc = IsPassiveOrProc(spellId)
             if passiveOrProc then
                 if IsSpellInCDMBuffBar(spellId) then
-                    local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, nil, true)
-                    if not idx then
-                        return false
-                    end
-                    SelectNewButton(CS.selectedGroup, idx)
-                    if not notified then
-                        CooldownCompanion:Print("Added spell: " .. spellName)
-                    end
-                    return true
+                    return TryAddSpell(tostring(spellId), nil, true)
                 end
                 -- Not in CDM — fall through to try as item, then report error
             else
+                if IsSpellInCDMBuffBar(spellId) and not IsSpellInCDMCooldown(spellId) then
+                    return TryAddSpell(tostring(spellId), nil, true)
+                end
                 local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName)
                 if not idx then
                     return false
@@ -432,6 +462,7 @@ end
 local function BuildAutocompleteCache()
     local cache = {}
     local seen = {}
+    local seenAuras = {}
 
     -- Pre-compute dual-CDM spell set (spells in both cooldown and buff CDM categories)
     local cdmCooldownSet = {}
@@ -469,6 +500,38 @@ local function BuildAutocompleteCache()
         end
     end
 
+    local cdmDistinctAuraBaseSet = {}
+    local cdmAuraIDsByBase = {}
+    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
+            for _, cdID in ipairs(ids) do
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if info and IsConcreteSpellID(info.spellID) then
+                    local auraID = ResolveCDMAuraSpellID(info)
+                    if auraID then
+                        local byBase = cdmAuraIDsByBase[info.spellID]
+                        if not byBase then
+                            byBase = {}
+                            cdmAuraIDsByBase[info.spellID] = byBase
+                        end
+                        byBase[auraID] = true
+                    end
+                end
+            end
+        end
+    end
+    for baseID, auraIDs in pairs(cdmAuraIDsByBase) do
+        local firstID
+        for auraID in pairs(auraIDs) do
+            if firstID and firstID ~= auraID then
+                cdmDistinctAuraBaseSet[baseID] = true
+                break
+            end
+            firstID = auraID
+        end
+    end
+
     -- Iterate spellbook skill lines
     local numLines = C_SpellBook.GetNumSpellBookSkillLines()
     for lineIdx = 1, numLines do
@@ -501,15 +564,22 @@ local function BuildAutocompleteCache()
                                 isItem = false,
                                 forceAura = false,
                             })
-                            table.insert(cache, {
-                                id = id,
-                                name = itemInfo.name .. " (Buff)",
-                                nameLower = itemInfo.name:lower(),
-                                icon = itemInfo.iconID or 134400,
-                                category = "Tracked Buff",
-                                isItem = false,
-                                forceAura = true,
-                            })
+                            local resolvedSpellInfo = C_Spell.GetSpellInfo(id)
+                            local spellbookNameIsSpecific = not resolvedSpellInfo
+                                or not resolvedSpellInfo.name
+                                or resolvedSpellInfo.name == itemInfo.name
+                            if not cdmDistinctAuraBaseSet[id] and spellbookNameIsSpecific then
+                                seenAuras[id] = true
+                                table.insert(cache, {
+                                    id = id,
+                                    name = itemInfo.name .. " (Buff)",
+                                    nameLower = itemInfo.name:lower(),
+                                    icon = itemInfo.iconID or 134400,
+                                    category = "Tracked Buff",
+                                    isItem = false,
+                                    forceAura = true,
+                                })
+                            end
                         else
                             table.insert(cache, {
                                 id = id,
@@ -578,18 +648,20 @@ local function BuildAutocompleteCache()
         end
     end
 
-    -- Iterate CDM TrackedBuff + TrackedBar for passive/proc spells
+    -- Iterate CDM TrackedBuff + TrackedBar entries by their specific aura
+    -- identity. Some tracked auras are active spellbook spells, so CDM
+    -- membership is the important addability signal here.
     for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
         local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
         if ids then
             for _, cdID in ipairs(ids) do
                 local cdInfo = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
                 if cdInfo and cdInfo.spellID then
-                    local id = cdInfo.spellID
-                    if not IsNeverTrackableSpell(id) and not seen[id] then
+                    local id = ResolveCDMAuraSpellID(cdInfo)
+                    if id and not IsNeverTrackableSpell(id) and not seenAuras[id] then
                         local spellInfo = C_Spell.GetSpellInfo(id)
-                        if spellInfo and spellInfo.name and IsPassiveOrProc(id) then
-                            seen[id] = true
+                        if spellInfo and spellInfo.name then
+                            seenAuras[id] = true
                             table.insert(cache, {
                                 id = id,
                                 name = spellInfo.name,

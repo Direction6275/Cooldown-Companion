@@ -33,6 +33,26 @@ local SOURCE_GROUP_ORDER_SPEC = 2000
 local SOURCE_GROUP_ORDER_PET = 3000
 local SOURCE_GROUP_ORDER_GENERAL = 4000
 
+local function IsConcreteSpellID(spellID)
+    return type(spellID) == "number" and spellID > 0 and not issecretvalue(spellID)
+end
+
+local function ResolveCDMAuraSpellID(cooldownInfo)
+    if type(cooldownInfo) ~= "table" then
+        return nil
+    end
+    if IsConcreteSpellID(cooldownInfo.overrideTooltipSpellID) then
+        return cooldownInfo.overrideTooltipSpellID
+    end
+    if IsConcreteSpellID(cooldownInfo.overrideSpellID) then
+        return cooldownInfo.overrideSpellID
+    end
+    if IsConcreteSpellID(cooldownInfo.spellID) then
+        return cooldownInfo.spellID
+    end
+    return nil
+end
+
 local function CreateAutoAddPrefDefaults()
     local selectedBars = {}
     for i = 1, ACTION_BAR_COUNT do
@@ -344,13 +364,14 @@ local function BuildCDMAuraPreview()
                 elseif not cooldownInfo.isKnown then
                     -- Known/current-spec only; omit unknown entries silently.
                 else
-                    local spellInfo = C_Spell.GetSpellInfo(cooldownInfo.spellID)
+                    local auraSpellID = ResolveCDMAuraSpellID(cooldownInfo)
+                    local spellInfo = auraSpellID and C_Spell.GetSpellInfo(auraSpellID)
                     if not spellInfo or not spellInfo.name then
-                        AddSkipped(result, catInfo.label, "Spell data is unavailable.", "Spell " .. cooldownInfo.spellID)
+                        AddSkipped(result, catInfo.label, "Spell data is unavailable.", "Spell " .. tostring(auraSpellID or cooldownInfo.spellID))
                     else
                         TryAddEntry(result, seen, "auras", {
                             type = "spell",
-                            id = cooldownInfo.spellID,
+                            id = auraSpellID,
                             name = spellInfo.name,
                             icon = spellInfo.iconID or ICON_FALLBACK,
                             source = catInfo.label,
@@ -653,8 +674,7 @@ local function ApplyPreviewToGroup(groupID, preview, selectedEntries, suppressRe
         if selectedEntries[entry.importKey] then
             local spellInfo = C_Spell.GetSpellInfo(entry.id)
             if spellInfo and spellInfo.name then
-                local isPassive = IsPassiveOrProc(entry.id) and true or nil
-                local buttonIndex = CooldownCompanion:AddButtonToGroup(groupID, "spell", entry.id, spellInfo.name, nil, isPassive, true)
+                local buttonIndex = CooldownCompanion:AddButtonToGroup(groupID, "spell", entry.id, spellInfo.name, nil, true, true)
                 if buttonIndex then
                     addedAuras = addedAuras + 1
                     addedButtonIndexes[#addedButtonIndexes + 1] = buttonIndex

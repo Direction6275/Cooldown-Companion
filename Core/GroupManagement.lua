@@ -1241,9 +1241,10 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     -- Resolve spell transforms to base spell ID so the override chain can
     -- freely reach all variant forms at runtime.  Skip for items (no spell
     -- transform system), pet spells (may not resolve through GetBaseSpell),
-    -- and CDM child-slot buttons (viewer-frame mapping uses specific IDs).
+    -- forced aura entries, and CDM child-slot buttons (viewer-frame mapping
+    -- uses specific IDs).
     local transformNotified
-    if buttonType == "spell" and not isPetSpell and not cdmChildSlot then
+    if buttonType == "spell" and not isPetSpell and forceAura ~= true and not cdmChildSlot then
         local baseID = ST.ResolveToBaseSpell(id)
         if baseID ~= id then
             id = baseID
