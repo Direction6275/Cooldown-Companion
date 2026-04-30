@@ -112,7 +112,7 @@ end
 ------------------------------------------------------------------------
 -- Helper: Add spell to selected group
 ------------------------------------------------------------------------
-local function TryAddSpell(input, isPetSpell, forceAura)
+local function TryAddSpell(input, isPetSpell, forceAura, displayNameOverride)
     if input == "" or not CS.selectedGroup then return false end
 
     local spellId = tonumber(input)
@@ -147,6 +147,9 @@ local function TryAddSpell(input, isPetSpell, forceAura)
             passiveOrProc = false   -- Cooldown mode: treat as normal spell
         elseif forceAura == true then
             passiveOrProc = true    -- Buff mode: treat as passive/proc
+        end
+        if displayNameOverride and passiveOrProc then
+            spellName = displayNameOverride
         end
         if passiveOrProc and not IsSpellInCDMBuffBar(spellId) then
             CooldownCompanion:Print("Passive/proc spell " .. spellName .. " is not tracked in the Cooldown Manager.")
@@ -780,7 +783,14 @@ local function OnAutocompleteSelect(entry)
     if entry.isItem then
         added = TryAddItem(tostring(entry.id))
     else
-        added = TryAddSpell(tostring(entry.id), entry.isPetSpell, entry.forceAura)
+        local displayNameOverride
+        if entry.category == "Cooldown Manager"
+            and type(entry.name) == "string"
+            and entry.name ~= ""
+        then
+            displayNameOverride = entry.name
+        end
+        added = TryAddSpell(tostring(entry.id), entry.isPetSpell, entry.forceAura, displayNameOverride)
     end
     if added then
         if NotifyTutorialAction and CS.selectedGroup and CS.selectedButton then
