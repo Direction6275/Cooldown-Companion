@@ -1732,6 +1732,24 @@ local function UpdateCustomAuraBar(barInfo)
         end
     end
 
+    if not auraPresent and configUnit == "player" then
+        local auraData = C_UnitAuras.GetPlayerAuraBySpellID(cabConfig.spellID)
+        if auraData then
+            instId = auraData.auraInstanceID
+            auraUnit = "player"
+            auraPresent = true
+            applications = auraData.applications or 0
+            if isActive then
+                stacks = 1
+            else
+                stacks = applications
+            end
+            if needsDuration and instId then
+                durationObj = C_UnitAuras.GetAuraDuration("player", instId)
+            end
+        end
+    end
+
     if indicatorPreview and not auraPresent then
         auraPresent = true
         applications = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
