@@ -9,6 +9,7 @@ local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateRevertButton = ST._CreateRevertButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
+local AddColorPicker = ST._AddColorPicker
 local HasTooltipCooldown = ST.HasTooltipCooldown
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
@@ -38,7 +39,6 @@ local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
 local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
-local BuildBarColorsControls = ST._BuildBarColorsControls
 local BuildBarNameTextControls = ST._BuildBarNameTextControls
 local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
 local BuildTextFontControls = ST._BuildTextFontControls
@@ -220,6 +220,12 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
     end
 end
 
+local function BuildSingleBarColorControl(key, label, defaultColor)
+    return function(container, styleTable, onChange)
+        AddColorPicker(container, styleTable, key, label, defaultColor, true, onChange, onChange)
+    end
+end
+
 function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
@@ -258,7 +264,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         "borderSettings", "cooldownText", "auraText", "auraStackText",
         "auraDurationSwipe", "keybindText", "chargeText", "desaturation", "cooldownSwipe", "showGCDSwipe", "showOutOfRange", "showTooltips",
         "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "auraIndicator", "pandemicGlow", "readyGlow", "keyPressHighlight",
-        "barColors", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
+        "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
         "textFont", "textColors", "textBackground",
     }
 
@@ -292,7 +298,10 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         end,
         readyGlow = BuildReadyGlowControls,
         keyPressHighlight = BuildKeyPressHighlightControls,
-        barColors = BuildBarColorsControls,
+        barColor = BuildSingleBarColorControl("barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}),
+        barCooldownColor = BuildSingleBarColorControl("barCooldownColor", "Bar Cooldown Color", {0.6, 0.6, 0.6, 1.0}),
+        barChargeColor = BuildSingleBarColorControl("barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1.0}),
+        barBgColor = BuildSingleBarColorControl("barBgColor", "Bar Background Color", {0.1, 0.1, 0.1, 0.8}),
         barNameText = BuildBarNameTextControls,
         barReadyText = BuildBarReadyTextControls,
         pandemicBar = function(container, styleTable, onChange, opts)

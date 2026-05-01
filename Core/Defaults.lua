@@ -692,9 +692,24 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"showBarIcon", "barIconReverse", "barIconOffset", "barIconSizeOverride", "barIconSize"},
         modes = {bars = true},
     },
-    barColors = {
-        label = "Bar Colors",
-        keys = {"barColor", "barCooldownColor", "barChargeColor", "barBgColor"},
+    barColor = {
+        label = "Bar Color",
+        keys = {"barColor"},
+        modes = {bars = true},
+    },
+    barCooldownColor = {
+        label = "Bar Cooldown Color",
+        keys = {"barCooldownColor"},
+        modes = {bars = true},
+    },
+    barChargeColor = {
+        label = "Bar Recharging Color",
+        keys = {"barChargeColor"},
+        modes = {bars = true},
+    },
+    barBgColor = {
+        label = "Bar Background Color",
+        keys = {"barBgColor"},
         modes = {bars = true},
     },
     barNameText = {

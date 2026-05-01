@@ -305,6 +305,77 @@ local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId
     return promoteBtn
 end
 
+local function CreateColorPickerPromoteButton(colorPickerWidget, sectionId, group, groupStyle)
+    if not GroupSupportsPerButtonOverrides(group) then
+        return nil
+    end
+
+    local btnData = CS.selectedButton and group.buttons[CS.selectedButton]
+    local frame = colorPickerWidget.frame
+    local promoteBtn = frame._cdcColorPromoteBtn
+
+    if not promoteBtn then
+        promoteBtn = CreateFrame("Button", nil, frame)
+        promoteBtn:SetSize(16, 16)
+        promoteBtn.icon = promoteBtn:CreateTexture(nil, "OVERLAY")
+        promoteBtn.icon:SetSize(12, 12)
+        promoteBtn.icon:SetPoint("CENTER")
+        frame._cdcColorPromoteBtn = promoteBtn
+    end
+
+    promoteBtn:SetParent(frame)
+    promoteBtn:ClearAllPoints()
+    promoteBtn:SetPoint("LEFT", colorPickerWidget.colorSwatch, "RIGHT", colorPickerWidget.text:GetStringWidth() + 8, 0)
+    promoteBtn:Show()
+    promoteBtn.icon:Show()
+
+    local multiCount = 0
+    if CS.selectedButtons then
+        for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+    end
+    local canPromote = CS.selectedButton ~= nil and multiCount < 2
+        and btnData ~= nil
+        and not (btnData.overrideSections and btnData.overrideSections[sectionId])
+
+    if canPromote then
+        promoteBtn.icon:SetAtlas("Crosshair_VehichleCursor_32")
+        promoteBtn:Enable()
+    else
+        promoteBtn.icon:SetAtlas("Crosshair_unableVehichleCursor_32")
+        promoteBtn:Disable()
+    end
+
+    local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+    local sectionLabel = sectionDef and sectionDef.label or sectionId
+
+    promoteBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if canPromote then
+            GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
+        else
+            GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
+        end
+        GameTooltip:Show()
+    end)
+    promoteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    promoteBtn:SetScript("OnClick", function()
+        if not canPromote then return end
+        CooldownCompanion:PromoteSection(btnData, groupStyle, sectionId)
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CS.buttonSettingsTab = "overrides"
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    colorPickerWidget:SetCallback("OnRelease", function()
+        promoteBtn:ClearAllPoints()
+        promoteBtn:Hide()
+        promoteBtn:SetParent(nil)
+    end)
+
+    table.insert(tabInfoButtons, promoteBtn)
+    return promoteBtn
+end
+
 ------------------------------------------------------------------------
 -- INFO BUTTON HELPER
 ------------------------------------------------------------------------
@@ -949,6 +1020,7 @@ ST._AddAdvancedToggle = AddAdvancedToggle
 ST._CreatePromoteButton = CreatePromoteButton
 ST._CreateRevertButton = CreateRevertButton
 ST._CreateCheckboxPromoteButton = CreateCheckboxPromoteButton
+ST._CreateColorPickerPromoteButton = CreateColorPickerPromoteButton
 ST._CreateInfoButton = CreateInfoButton
 ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
