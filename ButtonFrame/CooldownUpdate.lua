@@ -1224,8 +1224,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 local ids = button._parsedAuraIDs
                 if not ids or button._parsedAuraIDsRaw ~= buttonData.auraSpellID then
                     ids = {}
+                    button._parsedAuraIDsIncludeButtonID = nil
                     for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
-                        ids[#ids + 1] = tonumber(id)
+                        local numId = tonumber(id)
+                        ids[#ids + 1] = numId
+                        if numId == buttonData.id then
+                            button._parsedAuraIDsIncludeButtonID = true
+                        end
                     end
                     button._parsedAuraIDs = ids
                     button._parsedAuraIDsRaw = buttonData.auraSpellID
@@ -1233,6 +1238,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 for _, numId in ipairs(ids) do
                     auraData = C_UnitAuras.GetPlayerAuraBySpellID(numId)
                     if auraData then break end
+                end
+                if not auraData and not button._parsedAuraIDsIncludeButtonID then
+                    local baseId = C_Spell.GetBaseSpell(buttonData.id)
+                    local fallbackId = baseId and baseId ~= button._auraSpellID and baseId or nil
+                    auraData = fallbackId and C_UnitAuras.GetPlayerAuraBySpellID(fallbackId)
                 end
             else
                 local baseId = C_Spell.GetBaseSpell(buttonData.id)

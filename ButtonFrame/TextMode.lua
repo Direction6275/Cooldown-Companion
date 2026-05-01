@@ -589,7 +589,6 @@ end
 local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverride)
     local style = button.style
     if not style or not button._textSegments then return end
-    button._textSecretNameActive = hasSecretNameOverride == true
 
     -- Reset pulse content flag before substitution
     local es = button._effectState
@@ -598,6 +597,7 @@ local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverri
     end
 
     local text, secretValue, secretColorToken, secretStackValue, secretNameValue, hasSecretNameValue = SubstituteTokens(button, button._textSegments, style, es, secretNameOverride, hasSecretNameOverride)
+    button._textSecretNameActive = hasSecretNameValue == true
 
     if secretValue or secretStackValue or hasSecretNameValue then
         -- Secret value pass-through: use SetFormattedText with the secret value
