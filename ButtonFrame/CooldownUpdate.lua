@@ -66,9 +66,6 @@ local HasCastCountText = CooldownCompanion.HasCastCountText
 local GetCastCountSpellID = CooldownCompanion.GetCastCountSpellID
 local GetConditionalCastCountSpellID = CooldownCompanion.GetConditionalCastCountSpellID
 local TARGET_SWITCH_SAFETY_CAP = 0.60
--- One normal GCD plus a small buffer. The continuity guard is only for the
--- opening post-cast API blind spot, not later cooldown-end GCD transitions.
-local REAL_COOLDOWN_GCD_HOLD_WINDOW = 1.60
 local COOLDOWN_STATE_READY = CooldownLogic.STATE_READY
 local COOLDOWN_STATE_GCD = CooldownLogic.STATE_GCD
 local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
@@ -719,75 +716,6 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldo
     return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id, {
         allowActionSlotRealFallback = allowActionSlotRealFallback,
     })
-end
-
-local function ClearRealCooldownContinuity(button)
-    button._lastRealCooldownSpellID = nil
-    button._lastRealCooldownDurationObj = nil
-    button._lastRealCooldownAt = nil
-end
-
-local function CanHoldRealCooldown(buttonData, cooldownSpellId, noCooldown)
-    return buttonData.type == "spell"
-        and buttonData.isPassive ~= true
-        and buttonData.hasCharges ~= true
-        and cooldownSpellId == buttonData.id
-        and noCooldown ~= true
-end
-
-local function ApplyRealCooldownContinuity(button, buttonData, cooldownSpellId, noCooldown, result, now)
-    if not (button and result and result.fetchOk) then
-        return result
-    end
-
-    if not CanHoldRealCooldown(buttonData, cooldownSpellId, noCooldown) then
-        ClearRealCooldownContinuity(button)
-        return result
-    end
-
-    if result.state == COOLDOWN_STATE_COOLDOWN
-        and result.realCooldownShown == true
-        and result.renderDurationObj then
-        button._lastRealCooldownSpellID = cooldownSpellId
-        button._lastRealCooldownDurationObj = result.renderDurationObj
-        button._lastRealCooldownAt = now
-        return result
-    end
-
-    local previousDurationObj = button._lastRealCooldownDurationObj
-    local previousAt = button._lastRealCooldownAt
-    local canReusePrevious = previousDurationObj
-        and previousAt
-        and button._lastRealCooldownSpellID == cooldownSpellId
-        and now - previousAt <= REAL_COOLDOWN_GCD_HOLD_WINDOW
-    local lastOwnCastAt = button._lastOwnSpellCastAt
-    local castAge = lastOwnCastAt and (now - lastOwnCastAt) or nil
-    local recentlyCastThisSpell = castAge and castAge <= REAL_COOLDOWN_GCD_HOLD_WINDOW
-
-    if result.state == COOLDOWN_STATE_READY then
-        ClearRealCooldownContinuity(button)
-        return result
-    end
-
-    if canReusePrevious and result.state == COOLDOWN_STATE_GCD and result.source == "spell-gcd" then
-        if recentlyCastThisSpell and DurationObjectShowsCooldown(previousDurationObj) then
-            if ApplyGCDSyncIfRealEndsInside(result, previousDurationObj, "continuity-gcd-sync") then
-                ClearRealCooldownContinuity(button)
-                return result
-            end
-
-            result.state = COOLDOWN_STATE_COOLDOWN
-            result.source = "held-real-cooldown-over-gcd"
-            result.realCooldownShown = true
-            result.realDurationObj = previousDurationObj
-            result.renderDurationObj = previousDurationObj
-            return result
-        end
-
-        ClearRealCooldownContinuity(button)
-    end
-
-    return result
 end
 
 local function ResolveChargeState(button, buttonData)
@@ -1686,14 +1614,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if not auraOverrideActive then
         if buttonData.type == "spell" and not buttonData.isPassive then
             spellCooldownResult = EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, button._noCooldown)
-            spellCooldownResult = ApplyRealCooldownContinuity(
-                button,
-                buttonData,
-                cooldownSpellId,
-                button._noCooldown,
-                spellCooldownResult,
-                now
-            )
             if spellCooldownResult and spellCooldownResult.fetchOk then
                 spellCooldownInfo = spellCooldownResult.info
                 spellCooldownDuration = spellCooldownResult.durationObj
