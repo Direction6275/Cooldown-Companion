@@ -882,6 +882,9 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.showCooldownSwipe == nil then style.showCooldownSwipe = true end
     if style.showCooldownSwipeFill == nil then style.showCooldownSwipeFill = true end
     if style.auraUseBlizzardSwipe == nil then style.auraUseBlizzardSwipe = false end
+    if style.iconFillEnabled == nil then style.iconFillEnabled = false end
+    if style.iconFillCooldownColor == nil then style.iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55} end
+    if style.iconFillAuraColor == nil then style.iconFillAuraColor = {0.2, 1.0, 0.2, 0.55} end
     if style.barAuraEffect == nil then style.barAuraEffect = "color" end
 
     if displayMode == "textures" then

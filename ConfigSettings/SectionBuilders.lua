@@ -440,6 +440,40 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     end
 end
 
+local function BuildIconFillTimerControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local disabledByMasque = opts.masqueEnabled == true
+
+    local cb = AceGUI:Create("CheckBox")
+    cb:SetLabel("Enable Icon Fill Timer")
+    cb:SetValue(styleTable.iconFillEnabled == true)
+    cb:SetFullWidth(true)
+    cb:SetDisabled(disabledByMasque)
+    cb:SetCallback("OnValueChanged", function(widget, event, val)
+        if disabledByMasque then return end
+        styleTable.iconFillEnabled = val == true
+        refreshCallback()
+        CooldownCompanion:UpdateAllCooldowns()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(cb)
+
+    if disabledByMasque then
+        local note = AceGUI:Create("Label")
+        note:SetText("|cff888888Unavailable while Masque skinning is enabled for this group.|r")
+        note:SetFullWidth(true)
+        container:AddChild(note)
+        return cb
+    end
+
+    if styleTable.iconFillEnabled == true then
+        AddColorPicker(container, styleTable, "iconFillCooldownColor", "Cooldown Fill Color", {0.6, 0.13, 0.18, 0.55}, true, refreshCallback, refreshCallback)
+        AddColorPicker(container, styleTable, "iconFillAuraColor", "Aura Fill Color", {0.2, 1.0, 0.2, 0.55}, true, refreshCallback, refreshCallback)
+    end
+
+    return cb
+end
+
 local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback)
     local cb = AceGUI:Create("CheckBox")
     cb:SetLabel("Blizzard CDM Aura Swipe Style")
@@ -1165,6 +1199,7 @@ ST._BuildShowTooltipsControls = BuildShowTooltipsControls
 ST._BuildShowOutOfRangeControls = BuildShowOutOfRangeControls
 ST._BuildShowGCDSwipeControls = BuildShowGCDSwipeControls
 ST._BuildCooldownSwipeControls = BuildCooldownSwipeControls
+ST._BuildIconFillTimerControls = BuildIconFillTimerControls
 ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildLossOfControlControls = BuildLossOfControlControls
 ST._BuildUnusableDimmingControls = BuildUnusableDimmingControls

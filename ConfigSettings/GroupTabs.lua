@@ -40,6 +40,7 @@ local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
 local BuildShowOutOfRangeControls = ST._BuildShowOutOfRangeControls
 local BuildShowGCDSwipeControls = ST._BuildShowGCDSwipeControls
 local BuildCooldownSwipeControls = ST._BuildCooldownSwipeControls
+local BuildIconFillTimerControls = ST._BuildIconFillTimerControls
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
 local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildIconTintControls = ST._BuildIconTintControls
@@ -2029,6 +2030,21 @@ local function BuildEffectsTab(container)
     end)
     container:AddChild(desatCb)
     CreateCheckboxPromoteButton(desatCb, nil, "desaturation", group, style)
+
+    local iconFillHeading = AceGUI:Create("Heading")
+    iconFillHeading:SetText("Icon Fill Timer")
+    ColorHeading(iconFillHeading)
+    iconFillHeading:SetFullWidth(true)
+    container:AddChild(iconFillHeading)
+
+    local iconFillCb = BuildIconFillTimerControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end, {
+        masqueEnabled = group.masqueEnabled == true,
+    })
+    if not group.masqueEnabled then
+        CreateCheckboxPromoteButton(iconFillCb, nil, "iconFillTimer", group, style)
+    end
 
     -- ================================================================
     -- Cooldown Swipe

@@ -108,6 +108,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateTalentConditions()
     self:MigrateChoiceTalentConditions()
     self:MigrateNewDefaults()
+    self:MigrateIconFillTimerDefaults()
     self:MigrateCharacterScopedBarSettings()
     self:MigratePanelAnchorCenter()
     self:MigrateContainerAnchorsToScreenOffsets()
@@ -1452,6 +1453,31 @@ function CooldownCompanion:MigrateNewDefaults()
     end
 
     profile.newDefaultsMigrated = true
+end
+
+local ICON_FILL_COOLDOWN_COLOR_DEFAULT = {0.6, 0.13, 0.18, 0.55}
+local ICON_FILL_AURA_COLOR_DEFAULT = {0.2, 1.0, 0.2, 0.55}
+
+local function EnsureIconFillTimerDefaults(style)
+    if type(style) ~= "table" then return end
+    if rawget(style, "iconFillEnabled") == nil then style.iconFillEnabled = false end
+    if rawget(style, "iconFillCooldownColor") == nil then style.iconFillCooldownColor = CopyTable(ICON_FILL_COOLDOWN_COLOR_DEFAULT) end
+    if rawget(style, "iconFillAuraColor") == nil then style.iconFillAuraColor = CopyTable(ICON_FILL_AURA_COLOR_DEFAULT) end
+end
+
+function CooldownCompanion:MigrateIconFillTimerDefaults()
+    local profile = self.db and self.db.profile
+    if not profile or profile._migratedIconFillTimerDefaults then return end
+
+    EnsureIconFillTimerDefaults(rawget(profile, "globalStyle"))
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            EnsureIconFillTimerDefaults(group and group.style)
+        end
+    end
+
+    profile._migratedIconFillTimerDefaults = true
 end
 
 function CooldownCompanion:MigrateCharacterScopedBarSettings()
