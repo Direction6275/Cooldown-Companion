@@ -1042,6 +1042,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local auraEventRemoved = button._auraEventRemoved
     button._auraEventRemoved = nil
     if buttonData.auraTracking and button._auraSpellID then
+        local priorAuraDisplayName = button._auraDisplayName
         button._auraDisplayName = nil
         local configUnit = GetConfiguredAuraUnit(buttonData)
         local auraUnit = button._auraUnit or configUnit
@@ -1064,13 +1065,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Cache parsed IDs on the button to avoid per-tick gmatch allocation.
         if not viewerFrame and buttonData.auraSpellID then
             local ids = button._parsedAuraIDs
-            if not ids or button._parsedAuraIDsRaw ~= buttonData.auraSpellID then
+            if not ids or button._parsedAuraIDsRaw ~= buttonData.auraSpellID or button._parsedAuraIDsButtonID ~= buttonData.id then
                 ids = {}
+                button._parsedAuraIDsIncludeButtonID = nil
                 for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
-                    ids[#ids + 1] = tonumber(id)
+                    local numId = tonumber(id)
+                    ids[#ids + 1] = numId
+                    if numId == buttonData.id then
+                        button._parsedAuraIDsIncludeButtonID = true
+                    end
                 end
                 button._parsedAuraIDs = ids
                 button._parsedAuraIDsRaw = buttonData.auraSpellID
+                button._parsedAuraIDsButtonID = buttonData.id
             end
             for _, numId in ipairs(ids) do
                 local f = CooldownCompanion:ResolveBuffViewerFrameForSpell(numId)
@@ -1222,7 +1229,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local auraData
             if buttonData.auraSpellID then
                 local ids = button._parsedAuraIDs
-                if not ids or button._parsedAuraIDsRaw ~= buttonData.auraSpellID then
+                if not ids or button._parsedAuraIDsRaw ~= buttonData.auraSpellID or button._parsedAuraIDsButtonID ~= buttonData.id then
                     ids = {}
                     button._parsedAuraIDsIncludeButtonID = nil
                     for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
@@ -1234,6 +1241,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     end
                     button._parsedAuraIDs = ids
                     button._parsedAuraIDsRaw = buttonData.auraSpellID
+                    button._parsedAuraIDsButtonID = buttonData.id
                 end
                 for _, numId in ipairs(ids) do
                     auraData = C_UnitAuras.GetPlayerAuraBySpellID(numId)
@@ -1346,6 +1354,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 if now - button._auraGraceStart <= 0.3 or button._targetSwitchAt then
                     button._durationObj = prevAuraDurationObj
                     auraOverrideActive = true
+                    if priorAuraDisplayName then
+                        button._auraDisplayName = priorAuraDisplayName
+                        auraDisplayNameApplied = true
+                    end
                 else
                     button._auraGraceStart = nil
                 end
@@ -1386,6 +1398,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             else
                 button._durationObj = prevAuraDurationObj
                 auraOverrideActive = true
+                if priorAuraDisplayName then
+                    button._auraDisplayName = priorAuraDisplayName
+                    auraDisplayNameApplied = true
+                end
             end
         end
         button._auraActive = auraOverrideActive
