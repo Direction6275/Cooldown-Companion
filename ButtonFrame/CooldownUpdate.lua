@@ -1104,6 +1104,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local auraProbeRealCooldownShown = false
     local auraDisplayNameState
     local activeAuraSpellID
+    local activeAuraSpellIDFromFallback = false
+    local previousActiveAuraSpellID = button._activeAuraSpellID
+    local previousActiveAuraSpellIDFromFallback = button._activeAuraSpellIDFromFallback == true
 
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
@@ -1316,6 +1319,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     auraData = C_UnitAuras.GetPlayerAuraBySpellID(numId)
                     if auraData then
                         activeAuraSpellID = numId
+                        activeAuraSpellIDFromFallback = true
                         break
                     end
                 end
@@ -1325,6 +1329,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     auraData = fallbackId and C_UnitAuras.GetPlayerAuraBySpellID(fallbackId)
                     if auraData then
                         activeAuraSpellID = fallbackId
+                        activeAuraSpellIDFromFallback = true
                     end
                 end
             else
@@ -1334,11 +1339,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 auraData = fallbackId and C_UnitAuras.GetPlayerAuraBySpellID(fallbackId)
                 if auraData then
                     activeAuraSpellID = fallbackId
+                    activeAuraSpellIDFromFallback = true
                 end
                 if not auraData then
                     auraData = C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID)
                     if auraData then
                         activeAuraSpellID = button._auraSpellID
+                        activeAuraSpellIDFromFallback = true
                     end
                 end
             end
@@ -1475,11 +1482,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if auraOverrideActive then
             button._auraHasTimer = auraHasTimer
             button._activeAuraSpellID = activeAuraSpellID or button._activeAuraSpellID
+            if activeAuraSpellID then
+                button._activeAuraSpellIDFromFallback = activeAuraSpellIDFromFallback or nil
+            end
         end
         if not auraOverrideActive then
             button._auraInstanceID = nil
             button._auraUnit = configUnit
             button._activeAuraSpellID = nil
+            button._activeAuraSpellIDFromFallback = nil
         end
 
         -- Viewer icon change detection: for passive aura-tracked buttons, the
@@ -1514,7 +1525,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if buttonData.auraShowAuraIcon and button._auraSpellID then
             local shouldShow = auraOverrideActive
             button._auraViewerFrame = shouldShow and viewerFrame or nil
-            if shouldShow ~= (button._showingAuraIcon or false) then
+            local activeAuraSpellChanged = shouldShow
+                and (button._activeAuraSpellID ~= previousActiveAuraSpellID
+                    or (button._activeAuraSpellIDFromFallback == true) ~= previousActiveAuraSpellIDFromFallback)
+            if shouldShow ~= (button._showingAuraIcon or false) or activeAuraSpellChanged then
                 button._showingAuraIcon = shouldShow
                 CooldownCompanion:UpdateButtonIcon(button)
             elseif shouldShow and viewerFrame then

@@ -393,6 +393,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button._showingAuraIcon = false
     button._auraViewerFrame = nil
     button._activeAuraSpellID = nil
+    button._activeAuraSpellIDFromFallback = nil
     button._lastViewerTexId = nil
     button._lastSpellTexture = nil
     button._spellTexBaseline = nil
@@ -626,7 +627,7 @@ function CooldownCompanion:UpdateButtonIcon(button)
         -- Read the viewer frame's Icon texture (updates per-stage for multi-stage
         -- auras like Hot Streak). GetTextureFileID may return a secret value in
         -- combat; pass it straight through — do not test or branch on it.
-        local vf = button._auraViewerFrame
+        local vf = button._activeAuraSpellIDFromFallback and nil or button._auraViewerFrame
         local hasViewerIcon
         if vf then
             local iconTexture = vf.Icon
@@ -970,6 +971,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._showingAuraIcon = nil
     button._auraViewerFrame = nil
     button._activeAuraSpellID = nil
+    button._activeAuraSpellIDFromFallback = nil
     button._lastViewerTexId = nil
     button._lastSpellTexture = nil
     button._spellTexBaseline = nil
