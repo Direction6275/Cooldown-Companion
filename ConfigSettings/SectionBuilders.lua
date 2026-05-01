@@ -383,18 +383,9 @@ local function IsIconFillTimerEnabled(styleTable, opts)
     return opts and opts.fallbackStyle and opts.fallbackStyle.iconFillEnabled == true
 end
 
-local function AddDisabledReason(container, reason)
-    if not reason then return end
-    local note = AceGUI:Create("Label")
-    note:SetText("|cff888888" .. reason .. "|r")
-    note:SetFullWidth(true)
-    container:AddChild(note)
-end
-
 local function BuildCooldownSwipeControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
-    local disabledReason = disabledByIconFill and "Unavailable while Icon Fill Timer is enabled." or nil
 
     local cb = AceGUI:Create("CheckBox")
     cb:SetLabel("Show Cooldown/Duration Swipe")
@@ -407,7 +398,6 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         refreshCallback()
     end)
     container:AddChild(cb)
-    AddDisabledReason(container, disabledReason)
 
     local reverseCb = AceGUI:Create("CheckBox")
     reverseCb:SetLabel("Reverse Swipe")
@@ -479,7 +469,7 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
     local disabledByMasque = opts.masqueEnabled == true
 
     local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Enable Icon Fill Timer")
+    cb:SetLabel("Icon Fill Timer")
     cb:SetValue(styleTable.iconFillEnabled == true)
     cb:SetFullWidth(true)
     cb:SetDisabled(disabledByMasque)
@@ -523,7 +513,6 @@ local function BuildAuraDurationSwipeControls(container, styleTable, refreshCall
         refreshCallback()
     end)
     container:AddChild(cb)
-    AddDisabledReason(container, disabledByIconFill and "Unavailable while Icon Fill Timer is enabled." or nil)
     return cb
 end
 

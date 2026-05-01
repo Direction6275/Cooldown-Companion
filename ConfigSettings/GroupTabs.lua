@@ -107,6 +107,14 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
 
+local function AddIndicatorsHeading(container, text)
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(text)
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+end
+
 -- Imports from BarModeTabs.lua
 local BuildBarAppearanceTab = ST._BuildBarAppearanceTab
 local BuildBarEffectsTab = ST._BuildBarEffectsTab
@@ -2010,30 +2018,66 @@ local function BuildEffectsTab(container)
         return
     end
 
+    AddIndicatorsHeading(container, "Glows")
     BuildProcGlowSection(container, group, style)
     BuildAuraGlowSection(container, group, style)
-
     BuildPandemicGlowSection(container, group, style)
     BuildReadyGlowSection(container, group, style)
     BuildKeyPressHighlightSection(container, group, style)
 
-    -- ================================================================
-    -- Desaturate on Cooldown
-    -- ================================================================
-    local desatCb = AceGUI:Create("CheckBox")
-    desatCb:SetLabel("Show Desaturate On Cooldown")
-    desatCb:SetValue(style.desaturateOnCooldown or false)
-    desatCb:SetFullWidth(true)
-    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.desaturateOnCooldown = val
+    local assistedCb = AceGUI:Create("CheckBox")
+    assistedCb:SetLabel("Show Assisted Highlight")
+    assistedCb:SetValue(style.showAssistedHighlight or false)
+    assistedCb:SetFullWidth(true)
+    assistedCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.showAssistedHighlight = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(desatCb)
-    CreateCheckboxPromoteButton(desatCb, nil, "desaturation", group, style)
+    container:AddChild(assistedCb)
 
-    -- ================================================================
-    -- Cooldown Swipe
-    -- ================================================================
+    local assistedAdvExpanded = AddAdvancedToggle(assistedCb, "assistedHighlight", tabInfoButtons, style.showAssistedHighlight or false)
+
+    if assistedAdvExpanded and style.showAssistedHighlight then
+        local assistedCombatCb = AceGUI:Create("CheckBox")
+        assistedCombatCb:SetLabel("Show Only In Combat")
+        assistedCombatCb:SetValue(style.assistedHighlightCombatOnly or false)
+        assistedCombatCb:SetFullWidth(true)
+        assistedCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.assistedHighlightCombatOnly = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(assistedCombatCb)
+        ApplyCheckboxIndent(assistedCombatCb, 20)
+
+        BuildAssistedHighlightControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+    end -- assistedAdvExpanded
+
+    AddIndicatorsHeading(container, "Timers")
+    local iconFillCb = BuildIconFillTimerControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end, {
+        masqueEnabled = group.masqueEnabled == true,
+    })
+    local iconFillPromoteBtn
+    if not group.masqueEnabled then
+        iconFillPromoteBtn = CreateCheckboxPromoteButton(iconFillCb, nil, "iconFillTimer", group, style)
+    end
+    local iconFillInfoAnchor = iconFillCb.checkbg
+    local iconFillInfoXOff = iconFillCb.text:GetStringWidth() + 4
+    if iconFillPromoteBtn and iconFillPromoteBtn:IsShown() then
+        iconFillInfoAnchor = iconFillPromoteBtn
+        iconFillInfoXOff = 4
+    end
+    CreateInfoButton(iconFillCb.frame, iconFillInfoAnchor, "LEFT", "RIGHT", iconFillInfoXOff, 0, {
+        "Icon Fill Timer",
+        {"Shows cooldowns and tracked aura durations as a rectangular fill over the icon instead of radial swipes. Active auras use the aura fill color.", 1, 1, 1, true},
+        " ",
+        {"Show Cooldown/Duration Swipe and Blizzard CDM Aura Swipe Style are unavailable while Icon Fill Timer is active.", 0.7, 0.7, 0.7, true},
+    }, tabInfoButtons)
+
     local iconFillTimerActive = style.iconFillEnabled == true and group.masqueEnabled ~= true
     local swipeCb = AceGUI:Create("CheckBox")
     swipeCb:SetLabel("Show Cooldown/Duration Swipe")
@@ -2047,12 +2091,6 @@ local function BuildEffectsTab(container)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(swipeCb)
-    if iconFillTimerActive then
-        local swipeNote = AceGUI:Create("Label")
-        swipeNote:SetText("|cff888888Unavailable while Icon Fill Timer is enabled.|r")
-        swipeNote:SetFullWidth(true)
-        container:AddChild(swipeNote)
-    end
 
     local swipeAdvExpanded, swipeAdvBtn = AddAdvancedToggle(swipeCb, "cooldownSwipe", tabInfoButtons, style.showCooldownSwipe ~= false and not iconFillTimerActive)
     if not iconFillTimerActive then
@@ -2120,9 +2158,27 @@ local function BuildEffectsTab(container)
         end
     end -- swipeAdvExpanded
 
-    -- ================================================================
-    -- GCD Swipe
-    -- ================================================================
+    local auraSwipeCb = BuildAuraDurationSwipeControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:UpdateAllCooldowns()
+    end, {
+        masqueEnabled = group.masqueEnabled == true,
+    })
+    local auraSwipePromoteBtn
+    if not iconFillTimerActive then
+        auraSwipePromoteBtn = CreateCheckboxPromoteButton(auraSwipeCb, nil, "auraDurationSwipe", group, style)
+    end
+    local auraSwipeInfoAnchor = auraSwipeCb.checkbg
+    local auraSwipeInfoXOff = auraSwipeCb.text:GetStringWidth() + 4
+    if auraSwipePromoteBtn and auraSwipePromoteBtn:IsShown() then
+        auraSwipeInfoAnchor = auraSwipePromoteBtn
+        auraSwipeInfoXOff = 4
+    end
+    CreateInfoButton(auraSwipeCb.frame, auraSwipeInfoAnchor, "LEFT", "RIGHT", auraSwipeInfoXOff, 0, {
+        "Blizzard-style Aura Duration Swipe",
+        {"While this style is shown for an active aura, the Cooldown/Duration Swipe settings do not affect that aura overlay.", 1, 1, 1, true},
+    }, tabInfoButtons)
+
     local gcdCb = AceGUI:Create("CheckBox")
     gcdCb:SetLabel("Show GCD Swipe")
     gcdCb:SetValue(style.showGCDSwipe == true)
@@ -2134,7 +2190,18 @@ local function BuildEffectsTab(container)
     container:AddChild(gcdCb)
     CreateCheckboxPromoteButton(gcdCb, nil, "showGCDSwipe", group, style)
 
-    -- Out of Range
+    AddIndicatorsHeading(container, "States")
+    local desatCb = AceGUI:Create("CheckBox")
+    desatCb:SetLabel("Show Desaturate On Cooldown")
+    desatCb:SetValue(style.desaturateOnCooldown or false)
+    desatCb:SetFullWidth(true)
+    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.desaturateOnCooldown = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(desatCb)
+    CreateCheckboxPromoteButton(desatCb, nil, "desaturation", group, style)
+
     local oorCb = BuildShowOutOfRangeControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
@@ -2167,39 +2234,6 @@ local function BuildEffectsTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
-
-    -- ================================================================
-    -- Assisted Highlight (icon-only)
-    -- ================================================================
-    local assistedCb = AceGUI:Create("CheckBox")
-    assistedCb:SetLabel("Show Assisted Highlight")
-    assistedCb:SetValue(style.showAssistedHighlight or false)
-    assistedCb:SetFullWidth(true)
-    assistedCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.showAssistedHighlight = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(assistedCb)
-
-    local assistedAdvExpanded = AddAdvancedToggle(assistedCb, "assistedHighlight", tabInfoButtons, style.showAssistedHighlight or false)
-
-    if assistedAdvExpanded and style.showAssistedHighlight then
-    local assistedCombatCb = AceGUI:Create("CheckBox")
-    assistedCombatCb:SetLabel("Show Only In Combat")
-    assistedCombatCb:SetValue(style.assistedHighlightCombatOnly or false)
-    assistedCombatCb:SetFullWidth(true)
-    assistedCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.assistedHighlightCombatOnly = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(assistedCombatCb)
-    ApplyCheckboxIndent(assistedCombatCb, 20)
-
-    BuildAssistedHighlightControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    end -- assistedAdvExpanded
 
     -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
     if CooldownCompanion.db.profile.hideInfoButtons then
@@ -2745,47 +2779,6 @@ local function BuildAppearanceTab(container)
             AddConditionalPreviewButton(container, "Preview Aura Stack Text", "aura_stack_text")
         end
     end -- auraStackAdvExpanded + showAuraStackText
-
-    local iconFillCb = BuildIconFillTimerControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end, {
-        masqueEnabled = group.masqueEnabled == true,
-    })
-    local iconFillPromoteBtn
-    if not group.masqueEnabled then
-        iconFillPromoteBtn = CreateCheckboxPromoteButton(iconFillCb, nil, "iconFillTimer", group, style)
-    end
-    local iconFillInfoAnchor = iconFillCb.checkbg
-    local iconFillInfoXOff = iconFillCb.text:GetStringWidth() + 4
-    if iconFillPromoteBtn and iconFillPromoteBtn:IsShown() then
-        iconFillInfoAnchor = iconFillPromoteBtn
-        iconFillInfoXOff = 4
-    end
-    CreateInfoButton(iconFillCb.frame, iconFillInfoAnchor, "LEFT", "RIGHT", iconFillInfoXOff, 0, {
-        "Icon Fill Timer",
-        {"Replaces icon radial cooldown and aura swipes with a rectangular fill over the icon. Aura fill takes priority while active.", 1, 1, 1, true},
-    }, tabInfoButtons)
-
-    local auraSwipeCb = BuildAuraDurationSwipeControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:UpdateAllCooldowns()
-    end, {
-        masqueEnabled = group.masqueEnabled == true,
-    })
-    local auraSwipePromoteBtn
-    if style.iconFillEnabled ~= true or group.masqueEnabled == true then
-        auraSwipePromoteBtn = CreateCheckboxPromoteButton(auraSwipeCb, nil, "auraDurationSwipe", group, style)
-    end
-    local auraSwipeInfoAnchor = auraSwipeCb.checkbg
-    local auraSwipeInfoXOff = auraSwipeCb.text:GetStringWidth() + 4
-    if auraSwipePromoteBtn and auraSwipePromoteBtn:IsShown() then
-        auraSwipeInfoAnchor = auraSwipePromoteBtn
-        auraSwipeInfoXOff = 4
-    end
-    CreateInfoButton(auraSwipeCb.frame, auraSwipeInfoAnchor, "LEFT", "RIGHT", auraSwipeInfoXOff, 0, {
-        "Blizzard-style Aura Duration Swipe",
-        {"While this style is shown for an active aura, the Cooldown/Duration Swipe settings do not affect that aura overlay.", 1, 1, 1, true},
-    }, tabInfoButtons)
 
     -- Show Keybind/Custom Text toggle
     local kbCb = AceGUI:Create("CheckBox")
