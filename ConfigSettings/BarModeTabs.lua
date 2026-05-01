@@ -12,6 +12,7 @@ local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
+local CreateColorPickerPromoteButton = ST._CreateColorPickerPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
@@ -121,7 +122,8 @@ local function BuildBarAppearanceTab(container, group, style)
     container:AddChild(barTexDrop)
 
     -- Bar Color (basic)
-    AddColorPicker(container, style, "barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}, true, refreshStyle, refreshStyle)
+    local barColorPicker = AddColorPicker(container, style, "barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}, true, refreshStyle, refreshStyle)
+    CreateColorPickerPromoteButton(barColorPicker, "barColor", group, style)
 
     if barAdvExpanded then
     local updateFreqSlider = AceGUI:Create("Slider")
@@ -139,13 +141,17 @@ local function BuildBarAppearanceTab(container, group, style)
     end -- not barSettingsCollapsed
 
     -- Contextual color pickers (no heading/collapse/promote)
-    AddColorPicker(container, style, "barCooldownColor", "Bar Cooldown Color", {0.6, 0.6, 0.6, 1.0}, true, refreshStyle, refreshStyle)
+    local barCooldownColorPicker = AddColorPicker(container, style, "barCooldownColor", "Bar Cooldown Color", {0.6, 0.6, 0.6, 1.0}, true, refreshStyle, refreshStyle)
+    CreateColorPickerPromoteButton(barCooldownColorPicker, "barCooldownColor", group, style)
 
-    AddColorPicker(container, style, "barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1.0}, true, refreshStyle, refreshStyle)
+    local barChargeColorPicker = AddColorPicker(container, style, "barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1.0}, true, refreshStyle, refreshStyle)
+    CreateColorPickerPromoteButton(barChargeColorPicker, "barChargeColor", group, style)
 
-    AddColorPicker(container, style, "barBgColor", "Bar Background Color", {0.1, 0.1, 0.1, 0.8}, true, refreshStyle, refreshStyle)
+    local barBgColorPicker = AddColorPicker(container, style, "barBgColor", "Bar Background Color", {0.1, 0.1, 0.1, 0.8}, true, refreshStyle, refreshStyle)
+    CreateColorPickerPromoteButton(barBgColorPicker, "barBgColor", group, style)
 
-    AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
+    local borderColorPicker = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
+    CreateColorPickerPromoteButton(borderColorPicker, "borderSettings", group, style)
 
     -- ================================================================
     -- Show Icon (standalone checkbox with advanced toggle + promote)
