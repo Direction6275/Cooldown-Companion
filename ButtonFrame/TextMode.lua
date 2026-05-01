@@ -322,14 +322,16 @@ end
 ------------------------------------------------------------------------
 -- SUBSTITUTE TOKENS
 -- Builds the final display string from pre-parsed segments.
--- Returns: displayText, secretValue, secretColorToken, secretStackValue
+-- Returns: displayText, secretValue, secretColorToken, secretStackValue, secretNameValue, hasSecretNameValue
 ------------------------------------------------------------------------
-local function SubstituteTokens(button, segments, style, effectState)
+local function SubstituteTokens(button, segments, style, effectState, secretNameOverride, hasSecretNameOverride)
     local buttonData = button.buttonData
     local parts = {}
     local secretValue = nil
     local secretColorToken = nil
     local secretStackValue = nil
+    local secretNameValue = nil
+    local hasSecretNameValue = false
 
     local baseColor = style.textFontColor or DEFAULT_WHITE
     local cdColor = style.textCooldownColor or DEFAULT_CD_COLOR
@@ -451,13 +453,24 @@ local function SubstituteTokens(button, segments, style, effectState)
             if token == "name" then
                 local name = buttonData.customName or buttonData.name or ""
                 if not buttonData.customName and buttonData.type == "spell" then
-                    local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
-                    if spellName then name = spellName end
+                    if button._auraActive and hasSecretNameOverride then
+                        secretNameValue = secretNameOverride
+                        hasSecretNameValue = true
+                        parts[#parts + 1] = WrapColor("%NAME%", colorOverride or baseColor)
+                        name = nil
+                    elseif button._auraActive and button._auraDisplayName then
+                        name = button._auraDisplayName
+                    else
+                        local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
+                        if spellName then name = spellName end
+                    end
                 elseif not buttonData.customName and buttonData.type == "item" then
                     local itemName = C_Item.GetItemNameByID(buttonData.id)
                     if itemName then name = itemName end
                 end
-                parts[#parts + 1] = WrapColor(name, colorOverride or baseColor)
+                if name then
+                    parts[#parts + 1] = WrapColor(name, colorOverride or baseColor)
+                end
 
             elseif token == "time" then
                 if timeIsSecret then
@@ -566,14 +579,14 @@ local function SubstituteTokens(button, segments, style, effectState)
         end
     end
 
-    return table_concat(parts), secretValue, secretColorToken, secretStackValue
+    return table_concat(parts), secretValue, secretColorToken, secretStackValue, secretNameValue, hasSecretNameValue
 end
 
 ------------------------------------------------------------------------
 -- UPDATE TEXT DISPLAY
 -- Called each tick from CooldownUpdate.lua after data is resolved.
 ------------------------------------------------------------------------
-local function UpdateTextDisplay(button)
+local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverride)
     local style = button.style
     if not style or not button._textSegments then return end
 
@@ -583,9 +596,10 @@ local function UpdateTextDisplay(button)
         es.pulseActive = false
     end
 
-    local text, secretValue, secretColorToken, secretStackValue = SubstituteTokens(button, button._textSegments, style, es)
+    local text, secretValue, secretColorToken, secretStackValue, secretNameValue, hasSecretNameValue = SubstituteTokens(button, button._textSegments, style, es, secretNameOverride, hasSecretNameOverride)
+    button._textSecretNameActive = hasSecretNameValue == true
 
-    if secretValue or secretStackValue then
+    if secretValue or secretStackValue or hasSecretNameValue then
         -- Secret value pass-through: use SetFormattedText with the secret value
         -- Per-token coloring via |c..|r escape sequences works alongside % format specifiers
         -- (they operate at different layers: WoW text rendering vs C sprintf)
@@ -602,6 +616,7 @@ local function UpdateTextDisplay(button)
             {text = "%AURA%",   val = secretValue,      fmt = timeFmt},
             {text = "%STATUS%", val = secretValue,      fmt = timeFmt},
             {text = "%STACKS%", val = secretStackValue,  fmt = "%s"},
+            {text = "%NAME%",   val = secretNameValue,   fmt = "%s", active = hasSecretNameValue},
         }
 
         -- Single left-to-right pass: build format string and ordered args together
@@ -611,7 +626,7 @@ local function UpdateTextDisplay(button)
         while pos <= #fmtStr do
             local bestIdx, bestInfo
             for _, info in ipairs(allPlaceholders) do
-                if info.val then
+                if info.active or info.val then
                     local idx = fmtStr:find(info.text, pos, true)
                     if idx and (not bestIdx or idx < bestIdx) then
                         bestIdx = idx
@@ -666,6 +681,15 @@ local function EffectOnUpdate(self, elapsed)
     local now = GetTime()
     local es = self._effectState
     es.pulseAlpha = ComputePulse(now)
+
+    if self._textSecretNameActive then
+        if es.pulseActive then
+            self.textString:SetAlpha(es.pulseAlpha)
+        else
+            self.textString:SetAlpha(1.0)
+        end
+        return
+    end
 
     UpdateTextDisplay(self)
 end
@@ -846,9 +870,14 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button._auraTrackingReady = buttonData.isPassive == true
     button._showingAuraIcon = false
     button._auraViewerFrame = nil
+    button._activeAuraSpellID = nil
+    button._activeAuraSpellIDFromFallback = nil
     button._lastViewerTexId = nil
     button._auraInstanceID = nil
     button._viewerBar = nil
+    button._auraDisplayName = nil
+    button._auraNameOverrideActive = nil
+    button._textSecretNameActive = nil
 
     -- Per-button visibility runtime state
     button._visibilityHidden = false
