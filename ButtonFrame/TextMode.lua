@@ -589,6 +589,7 @@ end
 local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverride)
     local style = button.style
     if not style or not button._textSegments then return end
+    button._textSecretNameActive = hasSecretNameOverride == true
 
     -- Reset pulse content flag before substitution
     local es = button._effectState
@@ -680,6 +681,15 @@ local function EffectOnUpdate(self, elapsed)
     local now = GetTime()
     local es = self._effectState
     es.pulseAlpha = ComputePulse(now)
+
+    if self._textSecretNameActive then
+        if es.pulseActive then
+            self.textString:SetAlpha(es.pulseAlpha)
+        else
+            self.textString:SetAlpha(1.0)
+        end
+        return
+    end
 
     UpdateTextDisplay(self)
 end
@@ -865,6 +875,7 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button._viewerBar = nil
     button._auraDisplayName = nil
     button._auraNameOverrideActive = nil
+    button._textSecretNameActive = nil
 
     -- Per-button visibility runtime state
     button._visibilityHidden = false

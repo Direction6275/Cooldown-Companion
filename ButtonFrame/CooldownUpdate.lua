@@ -1042,6 +1042,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local auraEventRemoved = button._auraEventRemoved
     button._auraEventRemoved = nil
     if buttonData.auraTracking and button._auraSpellID then
+        button._auraDisplayName = nil
         local configUnit = GetConfiguredAuraUnit(buttonData)
         local auraUnit = button._auraUnit or configUnit
 
@@ -1384,7 +1385,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if not auraOverrideActive then
             button._auraInstanceID = nil
             button._auraUnit = configUnit
-            button._auraDisplayName = nil
         end
 
         -- Viewer icon change detection: for passive aura-tracked buttons, the
