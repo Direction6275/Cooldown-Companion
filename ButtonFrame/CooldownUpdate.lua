@@ -1104,6 +1104,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local auraProbeRealCooldownShown = false
     local auraDisplayNameState
     local activeAuraSpellID
+    local activeAuraSpellIDSourceResolved = false
     local activeAuraSpellIDFromFallback = false
     local previousActiveAuraSpellID = button._activeAuraSpellID
     local previousActiveAuraSpellIDFromFallback = button._activeAuraSpellIDFromFallback == true
@@ -1203,6 +1204,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     if auraData then
                         RecordAuraDisplayName(auraDisplayNameState, auraData)
                         activeAuraSpellID = GetReadableAuraSpellID(auraData)
+                        activeAuraSpellIDSourceResolved = true
                         button._durationObj = durationObj
                         button._viewerBar = nil  -- primary path: DurationObject available
                         button.cooldown:SetCooldownFromDurationObject(durationObj)
@@ -1356,6 +1358,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     if durationObj then
                         RecordAuraDisplayName(auraDisplayNameState, auraData)
                         activeAuraSpellID = activeAuraSpellID or GetReadableAuraSpellID(auraData)
+                        activeAuraSpellIDSourceResolved = true
                         button._durationObj = durationObj
                         button._viewerBar = nil
                         button.cooldown:SetCooldownFromDurationObject(durationObj)
@@ -1482,7 +1485,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if auraOverrideActive then
             button._auraHasTimer = auraHasTimer
             button._activeAuraSpellID = activeAuraSpellID or button._activeAuraSpellID
-            if activeAuraSpellID then
+            if activeAuraSpellIDSourceResolved then
                 button._activeAuraSpellIDFromFallback = activeAuraSpellIDFromFallback or nil
             end
         end
