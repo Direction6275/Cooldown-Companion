@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.13.7",
         "1.13.6",
         "1.13.5",
         "1.13.4",
@@ -27,6 +28,18 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.13.7"] = {
+            markdown = [[
+## Polish | QoL
+
+- **Bar color overrides:** Bar colors for entries in bar panels are now able to set per-entry overrides in order to have custom bar colors within a panel.
+
+## Bug Fixes
+
+- **Aura display updates:** Multi-variant aura displays now keep their active names and icons more reliably and reset cleanly when the aura ends (eg. Roll the Bones).
+- **Cooldown responsiveness:** Cooldown buttons now recover more quickly after rapid resets (eg. Between the Eyes, Bloodthirst), so spells that become available right away should no longer look unavailable longer than they are.
+]],
+        },
         ["1.13.6"] = {
             markdown = [[
 ## New Features
