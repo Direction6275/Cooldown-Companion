@@ -805,6 +805,8 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._auraInstanceID = nil
     button._viewerBar = nil
     button._viewerAuraVisualsActive = nil
+    button._auraDisplayName = nil
+    button._auraNameOverrideActive = nil
 
     -- Per-button visibility runtime state
     button._visibilityHidden = false
@@ -823,7 +825,9 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     if style.showBarNameText ~= false or buttonData.customName then
         local displayName = buttonData.customName or buttonData.name
         if not buttonData.customName then
-            if buttonData.type == "spell" then
+            if button._auraActive and button._auraDisplayName then
+                displayName = button._auraDisplayName
+            elseif buttonData.type == "spell" then
                 local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
                 if spellName then displayName = spellName end
             elseif buttonData.type == "item" then
@@ -928,6 +932,8 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._pandemicGraceStart = nil
     button._pandemicGraceSuppressed = nil
     button._viewerAuraVisualsActive = nil
+    button._auraDisplayName = nil
+    button._auraNameOverrideActive = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
     button._auraStackText = nil
@@ -1123,7 +1129,9 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     if newStyle.showBarNameText ~= false or (button.buttonData and button.buttonData.customName) then
         local displayName = button.buttonData.customName or button.buttonData.name
         if not button.buttonData.customName then
-            if button.buttonData.type == "spell" then
+            if button._auraActive and button._auraDisplayName then
+                displayName = button._auraDisplayName
+            elseif button.buttonData.type == "spell" then
                 local spellName = C_Spell.GetSpellName(button._displaySpellId or button.buttonData.id)
                 if spellName then displayName = spellName end
             elseif button.buttonData.type == "item" then

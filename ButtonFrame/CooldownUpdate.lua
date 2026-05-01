@@ -319,6 +319,40 @@ local function GetViewerNameFontString(viewerFrame)
     return bar and bar.Name or nil
 end
 
+local function ApplyAuraDisplayName(button, auraData)
+    if not (button and auraData) then return end
+    local auraName = auraData.name
+    if issecretvalue(auraName) then
+        local buttonData = button.buttonData
+        if button.nameText and not (buttonData and buttonData.customName) then
+            button.nameText:SetText(auraName)
+            button._auraNameOverrideActive = true
+            return true
+        end
+    elseif auraName and auraName ~= "" then
+        button._auraDisplayName = auraName
+        button._auraNameOverrideActive = true
+        return true
+    end
+end
+
+local function RestoreBaseDisplayName(button, buttonData)
+    if not (button and button.nameText and buttonData) or buttonData.customName then
+        return
+    end
+
+    local baseName = buttonData.name
+    if buttonData.type == "spell" then
+        baseName = C_Spell.GetSpellName(buttonData.id) or baseName
+    elseif buttonData.type == "item" then
+        baseName = C_Item.GetItemNameByID(buttonData.id) or baseName
+    end
+
+    if baseName then
+        button.nameText:SetText(baseName)
+    end
+end
+
 -- Hidden scratch CooldownFrame for probing DurationObject activity.
 -- DurationObject:IsZero() returns a secret boolean in tainted contexts;
 -- feeding the object to a Cooldown widget and checking IsShown() yields
@@ -993,6 +1027,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local auraProbeDuration
     local auraProbeNormalCooldownShown = false
     local auraProbeRealCooldownShown = false
+    local auraDisplayNameApplied = false
 
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
@@ -1079,6 +1114,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     -- old target after a target switch), causing ghost auras.
                     local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, viewerInstId)
                     if auraData then
+                        auraDisplayNameApplied = ApplyAuraDisplayName(button, auraData) or auraDisplayNameApplied
                         button._durationObj = durationObj
                         button._viewerBar = nil  -- primary path: DurationObject available
                         button.cooldown:SetCooldownFromDurationObject(durationObj)
@@ -1174,18 +1210,36 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local canUsePlayerAuraFallback = auraTrackingReady and configUnit == "player"
 
         if canUsePlayerAuraFallback and not auraOverrideActive then
-            local baseId = C_Spell.GetBaseSpell(buttonData.id)
-            -- Try base spell first (buff is applied as base), then _auraSpellID
-            local fallbackId = baseId and baseId ~= button._auraSpellID and baseId or nil
-            local auraData = fallbackId and C_UnitAuras.GetPlayerAuraBySpellID(fallbackId)
-            if not auraData then
-                auraData = C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID)
+            local auraData
+            if buttonData.auraSpellID then
+                local ids = button._parsedAuraIDs
+                if not ids or button._parsedAuraIDsRaw ~= buttonData.auraSpellID then
+                    ids = {}
+                    for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
+                        ids[#ids + 1] = tonumber(id)
+                    end
+                    button._parsedAuraIDs = ids
+                    button._parsedAuraIDsRaw = buttonData.auraSpellID
+                end
+                for _, numId in ipairs(ids) do
+                    auraData = C_UnitAuras.GetPlayerAuraBySpellID(numId)
+                    if auraData then break end
+                end
+            else
+                local baseId = C_Spell.GetBaseSpell(buttonData.id)
+                -- Try base spell first for implicit form-variant spells where the buff is applied as base.
+                local fallbackId = baseId and baseId ~= button._auraSpellID and baseId or nil
+                auraData = fallbackId and C_UnitAuras.GetPlayerAuraBySpellID(fallbackId)
+                if not auraData then
+                    auraData = C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID)
+                end
             end
             if auraData then
                 local instId = auraData.auraInstanceID
                 if instId and not issecretvalue(instId) then
                     local durationObj = C_UnitAuras.GetAuraDuration("player", instId)
                     if durationObj then
+                        auraDisplayNameApplied = ApplyAuraDisplayName(button, auraData) or auraDisplayNameApplied
                         button._durationObj = durationObj
                         button._viewerBar = nil
                         button.cooldown:SetCooldownFromDurationObject(durationObj)
@@ -1211,6 +1265,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 if auraData then
                     local durationObj = C_UnitAuras.GetAuraDuration(cachedUnit, button._auraInstanceID)
                     if durationObj then
+                        auraDisplayNameApplied = ApplyAuraDisplayName(button, auraData) or auraDisplayNameApplied
                         button._durationObj = durationObj
                         button._viewerBar = nil
                         button.cooldown:SetCooldownFromDurationObject(durationObj)
@@ -1311,6 +1366,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if not auraOverrideActive then
             button._auraInstanceID = nil
             button._auraUnit = configUnit
+            button._auraDisplayName = nil
         end
 
         -- Viewer icon change detection: for passive aura-tracked buttons, the
@@ -1437,7 +1493,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- active. This mirrors CDM state-based names (e.g. Light/Moderate/Heavy).
         -- Icon is NOT passed through — UpdateButtonIcon is the sole authoritative source.
         if auraOverrideActive then
-            if viewerFrame then
+            if button.nameText and not buttonData.customName and button._auraDisplayName then
+                button.nameText:SetText(button._auraDisplayName)
+                button._auraNameOverrideActive = true
+            elseif auraDisplayNameApplied then
+                -- Secret aura names are already passed through directly above.
+            elseif viewerFrame then
                 local viewerName = GetViewerNameFontString(viewerFrame)
                 if button.nameText and not buttonData.customName and viewerName and viewerName.GetText then
                     -- Pass through the CDM-rendered text directly; avoid calling viewer mixin methods
@@ -1453,15 +1514,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
                 button._viewerAuraVisualsActive = true
             end
-        elseif button._viewerAuraVisualsActive then
+        elseif button._viewerAuraVisualsActive or button._auraNameOverrideActive then
             button._viewerAuraVisualsActive = nil
-            if button.nameText and not buttonData.customName then
-                local restoreSpellID = button._displaySpellId or buttonData.id
-                local baseName = C_Spell.GetSpellName(restoreSpellID)
-                if baseName then
-                    button.nameText:SetText(baseName)
-                end
-            end
+            button._auraNameOverrideActive = nil
+            RestoreBaseDisplayName(button, buttonData)
             -- Multi-slot buttons got their icon from per-tick viewer reads while
             -- the aura was active. Now that the aura has dropped, re-sync the icon
             -- to the viewer's current (base) state.

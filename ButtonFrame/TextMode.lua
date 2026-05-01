@@ -451,8 +451,12 @@ local function SubstituteTokens(button, segments, style, effectState)
             if token == "name" then
                 local name = buttonData.customName or buttonData.name or ""
                 if not buttonData.customName and buttonData.type == "spell" then
-                    local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
-                    if spellName then name = spellName end
+                    if button._auraActive and button._auraDisplayName then
+                        name = button._auraDisplayName
+                    else
+                        local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
+                        if spellName then name = spellName end
+                    end
                 elseif not buttonData.customName and buttonData.type == "item" then
                     local itemName = C_Item.GetItemNameByID(buttonData.id)
                     if itemName then name = itemName end
@@ -849,6 +853,8 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button._lastViewerTexId = nil
     button._auraInstanceID = nil
     button._viewerBar = nil
+    button._auraDisplayName = nil
+    button._auraNameOverrideActive = nil
 
     -- Per-button visibility runtime state
     button._visibilityHidden = false

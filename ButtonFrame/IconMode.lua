@@ -398,6 +398,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     button._auraInstanceID = nil
     button._viewerAuraVisualsActive = nil
+    button._auraDisplayName = nil
+    button._auraNameOverrideActive = nil
 
     -- Key press highlight runtime state
     button._keyPressHighlightActive = nil
@@ -974,6 +976,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._pandemicGraceStart = nil
     button._pandemicGraceSuppressed = nil
     button._viewerAuraVisualsActive = nil
+    button._auraDisplayName = nil
+    button._auraNameOverrideActive = nil
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(button.buttonData)
     button._auraUnit = button.buttonData.auraUnit or "player"
     button._auraStackText = nil
