@@ -374,6 +374,9 @@ local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback)
 end
 
 local function IsIconFillTimerEnabled(styleTable, opts)
+    if opts and opts.masqueEnabled == true then
+        return false
+    end
     if styleTable and styleTable.iconFillEnabled ~= nil then
         return styleTable.iconFillEnabled == true
     end

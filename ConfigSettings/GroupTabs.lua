@@ -2034,7 +2034,7 @@ local function BuildEffectsTab(container)
     -- ================================================================
     -- Cooldown Swipe
     -- ================================================================
-    local iconFillTimerActive = style.iconFillEnabled == true
+    local iconFillTimerActive = style.iconFillEnabled == true and group.masqueEnabled ~= true
     local swipeCb = AceGUI:Create("CheckBox")
     swipeCb:SetLabel("Show Cooldown/Duration Swipe")
     swipeCb:SetValue(style.showCooldownSwipe ~= false)
@@ -2769,9 +2769,11 @@ local function BuildAppearanceTab(container)
     local auraSwipeCb = BuildAuraDurationSwipeControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:UpdateAllCooldowns()
-    end)
+    end, {
+        masqueEnabled = group.masqueEnabled == true,
+    })
     local auraSwipePromoteBtn
-    if style.iconFillEnabled ~= true then
+    if style.iconFillEnabled ~= true or group.masqueEnabled == true then
         auraSwipePromoteBtn = CreateCheckboxPromoteButton(auraSwipeCb, nil, "auraDurationSwipe", group, style)
     end
     local auraSwipeInfoAnchor = auraSwipeCb.checkbg
