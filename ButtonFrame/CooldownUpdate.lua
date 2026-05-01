@@ -341,6 +341,13 @@ local function RecordAuraDisplayName(state, auraData)
     end
 end
 
+local function GetReadableAuraSpellID(auraData)
+    local spellID = auraData and auraData.spellId
+    if spellID and not issecretvalue(spellID) then
+        return spellID
+    end
+end
+
 local function PreserveSecretAuraTextRender(state)
     if not (state and state.priorSecretTextActive) then return end
     state.preserveSecretTextRender = true
@@ -1096,6 +1103,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local auraProbeNormalCooldownShown = false
     local auraProbeRealCooldownShown = false
     local auraDisplayNameState
+    local activeAuraSpellID
 
     -- Aura tracking: check for active buff/debuff and override cooldown swipe
     local auraOverrideActive = false
@@ -1191,6 +1199,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, viewerInstId)
                     if auraData then
                         RecordAuraDisplayName(auraDisplayNameState, auraData)
+                        activeAuraSpellID = GetReadableAuraSpellID(auraData)
                         button._durationObj = durationObj
                         button._viewerBar = nil  -- primary path: DurationObject available
                         button.cooldown:SetCooldownFromDurationObject(durationObj)
@@ -1305,20 +1314,32 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
                 for _, numId in ipairs(ids) do
                     auraData = C_UnitAuras.GetPlayerAuraBySpellID(numId)
-                    if auraData then break end
+                    if auraData then
+                        activeAuraSpellID = numId
+                        break
+                    end
                 end
                 if not auraData and not button._parsedAuraIDsIncludeButtonID then
                     local baseId = C_Spell.GetBaseSpell(buttonData.id)
                     local fallbackId = baseId and baseId ~= button._auraSpellID and baseId or nil
                     auraData = fallbackId and C_UnitAuras.GetPlayerAuraBySpellID(fallbackId)
+                    if auraData then
+                        activeAuraSpellID = fallbackId
+                    end
                 end
             else
                 local baseId = C_Spell.GetBaseSpell(buttonData.id)
                 -- Try base spell first for implicit form-variant spells where the buff is applied as base.
                 local fallbackId = baseId and baseId ~= button._auraSpellID and baseId or nil
                 auraData = fallbackId and C_UnitAuras.GetPlayerAuraBySpellID(fallbackId)
+                if auraData then
+                    activeAuraSpellID = fallbackId
+                end
                 if not auraData then
                     auraData = C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID)
+                    if auraData then
+                        activeAuraSpellID = button._auraSpellID
+                    end
                 end
             end
             if auraData then
@@ -1327,6 +1348,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     local durationObj = C_UnitAuras.GetAuraDuration("player", instId)
                     if durationObj then
                         RecordAuraDisplayName(auraDisplayNameState, auraData)
+                        activeAuraSpellID = activeAuraSpellID or GetReadableAuraSpellID(auraData)
                         button._durationObj = durationObj
                         button._viewerBar = nil
                         button.cooldown:SetCooldownFromDurationObject(durationObj)
@@ -1353,6 +1375,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     local durationObj = C_UnitAuras.GetAuraDuration(cachedUnit, button._auraInstanceID)
                     if durationObj then
                         RecordAuraDisplayName(auraDisplayNameState, auraData)
+                        activeAuraSpellID = GetReadableAuraSpellID(auraData)
                         button._durationObj = durationObj
                         button._viewerBar = nil
                         button.cooldown:SetCooldownFromDurationObject(durationObj)
@@ -1451,10 +1474,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._auraActive = auraOverrideActive
         if auraOverrideActive then
             button._auraHasTimer = auraHasTimer
+            button._activeAuraSpellID = activeAuraSpellID or button._activeAuraSpellID
         end
         if not auraOverrideActive then
             button._auraInstanceID = nil
             button._auraUnit = configUnit
+            button._activeAuraSpellID = nil
         elseif auraDisplayNameState and not auraDisplayNameState.nameApplied then
             PreserveSecretAuraTextRender(auraDisplayNameState)
         end
