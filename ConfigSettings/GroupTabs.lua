@@ -2031,39 +2031,35 @@ local function BuildEffectsTab(container)
     container:AddChild(desatCb)
     CreateCheckboxPromoteButton(desatCb, nil, "desaturation", group, style)
 
-    local iconFillHeading = AceGUI:Create("Heading")
-    iconFillHeading:SetText("Icon Fill Timer")
-    ColorHeading(iconFillHeading)
-    iconFillHeading:SetFullWidth(true)
-    container:AddChild(iconFillHeading)
-
-    local iconFillCb = BuildIconFillTimerControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end, {
-        masqueEnabled = group.masqueEnabled == true,
-    })
-    if not group.masqueEnabled then
-        CreateCheckboxPromoteButton(iconFillCb, nil, "iconFillTimer", group, style)
-    end
-
     -- ================================================================
     -- Cooldown Swipe
     -- ================================================================
+    local iconFillTimerActive = style.iconFillEnabled == true
     local swipeCb = AceGUI:Create("CheckBox")
     swipeCb:SetLabel("Show Cooldown/Duration Swipe")
     swipeCb:SetValue(style.showCooldownSwipe ~= false)
     swipeCb:SetFullWidth(true)
+    swipeCb:SetDisabled(iconFillTimerActive)
     swipeCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if iconFillTimerActive then return end
         style.showCooldownSwipe = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(swipeCb)
+    if iconFillTimerActive then
+        local swipeNote = AceGUI:Create("Label")
+        swipeNote:SetText("|cff888888Unavailable while Icon Fill Timer is enabled.|r")
+        swipeNote:SetFullWidth(true)
+        container:AddChild(swipeNote)
+    end
 
-    local swipeAdvExpanded, swipeAdvBtn = AddAdvancedToggle(swipeCb, "cooldownSwipe", tabInfoButtons, style.showCooldownSwipe ~= false)
-    CreateCheckboxPromoteButton(swipeCb, swipeAdvBtn, "cooldownSwipe", group, style)
+    local swipeAdvExpanded, swipeAdvBtn = AddAdvancedToggle(swipeCb, "cooldownSwipe", tabInfoButtons, style.showCooldownSwipe ~= false and not iconFillTimerActive)
+    if not iconFillTimerActive then
+        CreateCheckboxPromoteButton(swipeCb, swipeAdvBtn, "cooldownSwipe", group, style)
+    end
 
-    if swipeAdvExpanded and style.showCooldownSwipe ~= false then
+    if swipeAdvExpanded and style.showCooldownSwipe ~= false and not iconFillTimerActive then
         -- Reverse Swipe
         local reverseCb = AceGUI:Create("CheckBox")
         reverseCb:SetLabel("Reverse Swipe")
@@ -2750,11 +2746,34 @@ local function BuildAppearanceTab(container)
         end
     end -- auraStackAdvExpanded + showAuraStackText
 
+    local iconFillCb = BuildIconFillTimerControls(container, style, function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end, {
+        masqueEnabled = group.masqueEnabled == true,
+    })
+    local iconFillPromoteBtn
+    if not group.masqueEnabled then
+        iconFillPromoteBtn = CreateCheckboxPromoteButton(iconFillCb, nil, "iconFillTimer", group, style)
+    end
+    local iconFillInfoAnchor = iconFillCb.checkbg
+    local iconFillInfoXOff = iconFillCb.text:GetStringWidth() + 4
+    if iconFillPromoteBtn and iconFillPromoteBtn:IsShown() then
+        iconFillInfoAnchor = iconFillPromoteBtn
+        iconFillInfoXOff = 4
+    end
+    CreateInfoButton(iconFillCb.frame, iconFillInfoAnchor, "LEFT", "RIGHT", iconFillInfoXOff, 0, {
+        "Icon Fill Timer",
+        {"Replaces icon radial cooldown and aura swipes with a rectangular fill over the icon. Aura fill takes priority while active.", 1, 1, 1, true},
+    }, tabInfoButtons)
+
     local auraSwipeCb = BuildAuraDurationSwipeControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:UpdateAllCooldowns()
     end)
-    local auraSwipePromoteBtn = CreateCheckboxPromoteButton(auraSwipeCb, nil, "auraDurationSwipe", group, style)
+    local auraSwipePromoteBtn
+    if style.iconFillEnabled ~= true then
+        auraSwipePromoteBtn = CreateCheckboxPromoteButton(auraSwipeCb, nil, "auraDurationSwipe", group, style)
+    end
     local auraSwipeInfoAnchor = auraSwipeCb.checkbg
     local auraSwipeInfoXOff = auraSwipeCb.text:GetStringWidth() + 4
     if auraSwipePromoteBtn and auraSwipePromoteBtn:IsShown() then

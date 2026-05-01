@@ -373,22 +373,46 @@ local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback)
     container:AddChild(cb)
 end
 
-local function BuildCooldownSwipeControls(container, styleTable, refreshCallback)
+local function IsIconFillTimerEnabled(styleTable, opts)
+    if styleTable and styleTable.iconFillEnabled ~= nil then
+        return styleTable.iconFillEnabled == true
+    end
+    return opts and opts.fallbackStyle and opts.fallbackStyle.iconFillEnabled == true
+end
+
+local function AddDisabledReason(container, reason)
+    if not reason then return end
+    local note = AceGUI:Create("Label")
+    note:SetText("|cff888888" .. reason .. "|r")
+    note:SetFullWidth(true)
+    container:AddChild(note)
+end
+
+local function BuildCooldownSwipeControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
+    local disabledReason = disabledByIconFill and "Unavailable while Icon Fill Timer is enabled." or nil
+
     local cb = AceGUI:Create("CheckBox")
     cb:SetLabel("Show Cooldown/Duration Swipe")
     cb:SetValue(styleTable.showCooldownSwipe ~= false)
     cb:SetFullWidth(true)
+    cb:SetDisabled(disabledByIconFill)
     cb:SetCallback("OnValueChanged", function(widget, event, val)
+        if disabledByIconFill then return end
         styleTable.showCooldownSwipe = val
         refreshCallback()
     end)
     container:AddChild(cb)
+    AddDisabledReason(container, disabledReason)
 
     local reverseCb = AceGUI:Create("CheckBox")
     reverseCb:SetLabel("Reverse Swipe")
     reverseCb:SetValue(styleTable.cooldownSwipeReverse or false)
     reverseCb:SetFullWidth(true)
+    reverseCb:SetDisabled(disabledByIconFill)
     reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if disabledByIconFill then return end
         styleTable.cooldownSwipeReverse = val
         refreshCallback()
     end)
@@ -399,7 +423,9 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     fillCb:SetLabel("Show Swipe Fill")
     fillCb:SetValue(styleTable.showCooldownSwipeFill ~= false)
     fillCb:SetFullWidth(true)
+    fillCb:SetDisabled(disabledByIconFill)
     fillCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if disabledByIconFill then return end
         styleTable.showCooldownSwipeFill = val
         refreshCallback()
         CooldownCompanion:RefreshConfigPanel()
@@ -415,7 +441,9 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         alphaSlider:SetIsPercent(true)
         alphaSlider:SetValue(styleTable.cooldownSwipeAlpha or 0.8)
         alphaSlider:SetFullWidth(true)
+        if alphaSlider.SetDisabled then alphaSlider:SetDisabled(disabledByIconFill) end
         alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if disabledByIconFill then return end
             styleTable.cooldownSwipeAlpha = val
             refreshCallback()
         end)
@@ -426,7 +454,9 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     edgeCb:SetLabel("Show Swipe Edge")
     edgeCb:SetValue(styleTable.showCooldownSwipeEdge ~= false)
     edgeCb:SetFullWidth(true)
+    edgeCb:SetDisabled(disabledByIconFill)
     edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if disabledByIconFill then return end
         styleTable.showCooldownSwipeEdge = val
         refreshCallback()
         CooldownCompanion:RefreshConfigPanel()
@@ -436,7 +466,8 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
 
     -- Swipe Edge Color (only when edge is visible)
     if styleTable.showCooldownSwipeEdge ~= false then
-        AddColorPicker(container, styleTable, "cooldownSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+        local edgeColor = AddColorPicker(container, styleTable, "cooldownSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+        if edgeColor.SetDisabled then edgeColor:SetDisabled(disabledByIconFill) end
     end
 end
 
@@ -474,16 +505,22 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
     return cb
 end
 
-local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback)
+local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
+
     local cb = AceGUI:Create("CheckBox")
     cb:SetLabel("Blizzard CDM Aura Swipe Style")
     cb:SetValue(styleTable.auraUseBlizzardSwipe == true)
     cb:SetFullWidth(true)
+    cb:SetDisabled(disabledByIconFill)
     cb:SetCallback("OnValueChanged", function(widget, event, val)
+        if disabledByIconFill then return end
         styleTable.auraUseBlizzardSwipe = val == true
         refreshCallback()
     end)
     container:AddChild(cb)
+    AddDisabledReason(container, disabledByIconFill and "Unavailable while Icon Fill Timer is enabled." or nil)
     return cb
 end
 

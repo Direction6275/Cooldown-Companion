@@ -264,7 +264,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
 
     local sectionOrder = {
         "borderSettings", "cooldownText", "auraText", "auraStackText",
-        "auraDurationSwipe", "keybindText", "chargeText", "desaturation", "iconFillTimer", "cooldownSwipe", "showGCDSwipe", "showOutOfRange", "showTooltips",
+        "iconFillTimer", "auraDurationSwipe", "keybindText", "chargeText", "desaturation", "cooldownSwipe", "showGCDSwipe", "showOutOfRange", "showTooltips",
         "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "auraIndicator", "pandemicGlow", "readyGlow", "keyPressHighlight",
         "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
         "textFont", "textColors", "textBackground",
@@ -293,11 +293,11 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         procGlow = BuildProcGlowControls,
         pandemicGlow = BuildPandemicGlowControls,
         auraIndicator = BuildAuraIndicatorControls,
-        auraDurationSwipe = function(container, styleTable, onChange)
+        auraDurationSwipe = function(container, styleTable, onChange, opts)
             BuildAuraDurationSwipeControls(container, styleTable, function()
                 onChange()
                 CooldownCompanion:UpdateAllCooldowns()
-            end)
+            end, opts)
         end,
         readyGlow = BuildReadyGlowControls,
         keyPressHighlight = BuildKeyPressHighlightControls,
