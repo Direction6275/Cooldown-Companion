@@ -111,14 +111,16 @@ function CooldownCompanion:EnsureRuntimeInitialized()
 end
 
 function CooldownCompanion:OnEnable()
-    -- Register cooldown events — set dirty flag, let ticker do the actual update.
-    -- The 0.1s ticker runs regardless, so latency is at most ~100ms for
-    -- event-triggered updates — indistinguishable visually since the cooldown
-    -- frame animates independently. This prevents redundant full-update passes
-    -- during event storms.
-    -- Cooldown/state change events that trigger a dirty-flag update pass
+    -- Cooldown events can expose very short ready windows, so refresh them
+    -- immediately instead of waiting for the ticker.
     for _, evt in ipairs({
         "SPELL_UPDATE_COOLDOWN", "BAG_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_COOLDOWN",
+    }) do
+        self:RegisterEvent(evt, "OnCooldownStateChanged")
+    end
+
+    -- Broader state changes can wait for the regular ticker pass.
+    for _, evt in ipairs({
         "UNIT_POWER_FREQUENT", "LOSS_OF_CONTROL_ADDED", "LOSS_OF_CONTROL_UPDATE",
         "ITEM_COUNT_CHANGED", "PLAYER_EQUIPMENT_CHANGED",
     }) do
@@ -296,6 +298,11 @@ function CooldownCompanion:MarkCooldownsDirty()
     self._cooldownsDirty = true
 end
 
+function CooldownCompanion:OnCooldownStateChanged()
+    self._cooldownsDirty = true
+    self:UpdateAllCooldowns()
+end
+
 -- Iterate every button across all groups, calling callback(button, buttonData) for each.
 -- Skips buttons without buttonData.
 function CooldownCompanion:ForEachButton(callback)
@@ -388,7 +395,6 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
                and not buttonData.isPassive then
                 local displaySpellID = button._displaySpellId or buttonData.id
                 if spellID == buttonData.id or spellID == displaySpellID then
-                    button._lastOwnSpellCastAt = GetTime()
                     if self.UsesChargeBehavior(buttonData) and buttonData.hasCharges then
                         -- Track charge consumption for restricted-mode color heuristic.
                         -- _chargeRecharging at event time reflects the PRE-cast state:
