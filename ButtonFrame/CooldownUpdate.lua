@@ -1480,8 +1480,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._auraInstanceID = nil
             button._auraUnit = configUnit
             button._activeAuraSpellID = nil
-        elseif auraDisplayNameState and not auraDisplayNameState.nameApplied then
-            PreserveSecretAuraTextRender(auraDisplayNameState)
         end
 
         -- Viewer icon change detection: for passive aura-tracked buttons, the
