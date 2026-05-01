@@ -1386,6 +1386,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     if durationObj then
                         RecordAuraDisplayName(auraDisplayNameState, auraData)
                         activeAuraSpellID = GetReadableAuraSpellID(auraData)
+                        if activeAuraSpellID then
+                            activeAuraSpellIDSourceResolved = true
+                            activeAuraSpellIDFromFallback = true
+                        end
                         button._durationObj = durationObj
                         button._viewerBar = nil
                         button.cooldown:SetCooldownFromDurationObject(durationObj)

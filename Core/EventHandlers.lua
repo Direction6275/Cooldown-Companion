@@ -43,6 +43,45 @@ local function QueueSpellAvailabilitySettlingRefresh(addon)
     end)
 end
 
+local function PlayerHasTrackedAuraForButton(button, buttonData)
+    if button._activeAuraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(button._activeAuraSpellID) then
+        return true
+    end
+
+    if buttonData.auraSpellID then
+        local includesButtonID
+        for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
+            local spellID = tonumber(id)
+            if spellID then
+                if spellID == buttonData.id then
+                    includesButtonID = true
+                end
+                if C_UnitAuras.GetPlayerAuraBySpellID(spellID) then
+                    return true
+                end
+            end
+        end
+        if not includesButtonID and buttonData.type == "spell" then
+            local baseId = C_Spell.GetBaseSpell(buttonData.id)
+            if baseId and baseId ~= button._auraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(baseId) then
+                return true
+            end
+        end
+        return false
+    end
+
+    if buttonData.type ~= "spell" then
+        return button._auraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID) ~= nil
+    end
+
+    local baseId = C_Spell.GetBaseSpell(buttonData.id)
+    if baseId and baseId ~= button._auraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(baseId) then
+        return true
+    end
+
+    return button._auraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID) ~= nil
+end
+
 function CooldownCompanion:RefreshSpellAvailabilityState(opts)
     opts = opts or {}
     self:CachePlayerState()
@@ -421,7 +460,7 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
                         local unit = button._auraUnit or "player"
                         local apiConfirms = false
                         if unit == "player" and button._auraSpellID then
-                            apiConfirms = C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID) ~= nil
+                            apiConfirms = PlayerHasTrackedAuraForButton(button, bd)
                         elseif unit == "target" and UnitExists("target") and button._auraInstanceID then
                             apiConfirms = C_UnitAuras.GetAuraDuration("target", button._auraInstanceID) ~= nil
                         end
