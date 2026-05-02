@@ -61,6 +61,9 @@ local function GetVersionFooterText()
 end
 
 local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
+local CONFIG_FINDER_BOX_HEIGHT = 28
+local CONFIG_FINDER_BUTTON_GAP = 6
+local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
 
 if not AceGUI:GetLayout(MANUAL_COLUMN_LAYOUT) then
     -- These columns are positioned and sized manually, so their layout should
@@ -1339,9 +1342,11 @@ local function CreateConfigPanel()
     configFinder:SetLabel("")
     configFinder:SetText(CS.configSearchText or "")
     configFinder:DisableButton(true)
-    configFinder.frame:SetParent(colParent)
+    configFinder.frame:SetParent(col1.content)
     configFinder.frame:ClearAllPoints()
-    configFinder.frame:SetHeight(28)
+    configFinder.frame:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
+    configFinder.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
+    configFinder.frame:SetHeight(CONFIG_FINDER_BOX_HEIGHT)
     local configFinderPlaceholder
     if configFinder.editbox then
         configFinderPlaceholder = configFinder.editbox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -1795,14 +1800,9 @@ local function CreateConfigPanel()
         local col3Width = equalColWidth
         local col4Width = equalColWidth
         local finderAvailable = IsConfigFinderAvailable and IsConfigFinderAvailable()
-        local finderHeight = finderAvailable and 32 or 0
-        local col12Height = math.max(1, h - finderHeight)
 
         if CS.configFinderBox then
             if finderAvailable then
-                CS.configFinderBox.frame:ClearAllPoints()
-                CS.configFinderBox.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", leftInset, 0)
-                CS.configFinderBox.frame:SetSize(col1Width, 28)
                 CS.configFinderBox.frame:Show()
             else
                 CS.configFinderBox.frame:Hide()
@@ -1811,22 +1811,33 @@ local function CreateConfigPanel()
                 end
             end
         end
+        if CS.col1Scroll and CS.col1Scroll.frame then
+            CS.col1Scroll.frame:ClearAllPoints()
+            CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
+            CS.col1Scroll.frame:SetPoint(
+                "BOTTOMRIGHT",
+                col1.content,
+                "BOTTOMRIGHT",
+                0,
+                finderAvailable and (30 + CONFIG_FINDER_RESERVED_HEIGHT) or 30
+            )
+        end
 
         col1.frame:ClearAllPoints()
-        col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", leftInset, -finderHeight)
-        col1.frame:SetSize(col1Width, col12Height)
+        col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", leftInset, 0)
+        col1.frame:SetSize(col1Width, h)
 
         col2.frame:ClearAllPoints()
         col2.frame:SetPoint("TOPLEFT", col1.frame, "TOPRIGHT", pad, 0)
-        col2.frame:SetSize(col2Width, col12Height)
+        col2.frame:SetSize(col2Width, h)
 
         col3.frame:ClearAllPoints()
         col3.frame:SetPoint("TOPLEFT", col2.frame, "TOPRIGHT", pad, 0)
-        col3.frame:SetSize(col3Width, col12Height)
+        col3.frame:SetSize(col3Width, h)
 
         col4.frame:ClearAllPoints()
         col4.frame:SetPoint("TOPLEFT", col3.frame, "TOPRIGHT", pad, 0)
-        col4.frame:SetSize(col4Width, col12Height)
+        col4.frame:SetSize(col4Width, h)
 
         PositionPrimaryAxisUI()
     end
