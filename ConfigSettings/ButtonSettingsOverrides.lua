@@ -25,6 +25,7 @@ local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
 local BuildShowOutOfRangeControls = ST._BuildShowOutOfRangeControls
 local BuildShowGCDSwipeControls = ST._BuildShowGCDSwipeControls
 local BuildCooldownSwipeControls = ST._BuildCooldownSwipeControls
+local BuildIconFillTimerControls = ST._BuildIconFillTimerControls
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
 local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildIconTintControls = ST._BuildIconTintControls
@@ -78,6 +79,7 @@ end
 local PREVIEWABLE_OVERRIDE_SECTIONS = {
     cooldownText = true,
     cooldownSwipe = true,
+    iconFillTimer = true,
     desaturation = true,
     auraText = true,
     auraStackText = true,
@@ -262,7 +264,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
 
     local sectionOrder = {
         "borderSettings", "cooldownText", "auraText", "auraStackText",
-        "auraDurationSwipe", "keybindText", "chargeText", "desaturation", "cooldownSwipe", "showGCDSwipe", "showOutOfRange", "showTooltips",
+        "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
         "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "auraIndicator", "pandemicGlow", "readyGlow", "keyPressHighlight",
         "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
         "textFont", "textColors", "textBackground",
@@ -276,6 +278,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         keybindText = BuildKeybindTextControls,
         chargeText = BuildChargeTextControls,
         desaturation = BuildDesaturationControls,
+        iconFillTimer = BuildIconFillTimerControls,
         cooldownSwipe = BuildCooldownSwipeControls,
         showGCDSwipe = BuildShowGCDSwipeControls,
         showOutOfRange = BuildShowOutOfRangeControls,
@@ -290,11 +293,11 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         procGlow = BuildProcGlowControls,
         pandemicGlow = BuildPandemicGlowControls,
         auraIndicator = BuildAuraIndicatorControls,
-        auraDurationSwipe = function(container, styleTable, onChange)
+        auraDurationSwipe = function(container, styleTable, onChange, opts)
             BuildAuraDurationSwipeControls(container, styleTable, function()
                 onChange()
                 CooldownCompanion:UpdateAllCooldowns()
-            end)
+            end, opts)
         end,
         readyGlow = BuildReadyGlowControls,
         keyPressHighlight = BuildKeyPressHighlightControls,
@@ -489,6 +492,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                             isOverride = true,
                             fallbackStyle = group.style,
                             afterEnableCallback = afterEnableCallback,
+                            masqueEnabled = group.masqueEnabled == true,
                         })
 
                         if previewAdvExpanded and sectionId == "procGlow" and overrides.procGlowStyle ~= "none" then
@@ -509,6 +513,9 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                             local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
                             if sectionId == "cooldownText" or sectionId == "cooldownSwipe" or sectionId == "desaturation" then
                                 AddConditionalPreviewButton(scroll, "Preview Cooldown State", "cooldown", target)
+                            elseif sectionId == "iconFillTimer" then
+                                AddConditionalPreviewButton(scroll, "Preview Cooldown Fill", "cooldown", target)
+                                AddConditionalPreviewButton(scroll, "Preview Aura Fill", "aura_duration_text", target)
                             elseif sectionId == "auraText" or sectionId == "auraDurationSwipe" then
                                 AddConditionalPreviewButton(scroll, "Preview Aura Duration Text", "aura_duration_text", target)
                             elseif sectionId == "auraStackText" then

@@ -373,12 +373,27 @@ local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback)
     container:AddChild(cb)
 end
 
-local function BuildCooldownSwipeControls(container, styleTable, refreshCallback)
+local function IsIconFillTimerEnabled(styleTable, opts)
+    if opts and opts.masqueEnabled == true then
+        return false
+    end
+    if styleTable and styleTable.iconFillEnabled ~= nil then
+        return styleTable.iconFillEnabled == true
+    end
+    return opts and opts.fallbackStyle and opts.fallbackStyle.iconFillEnabled == true
+end
+
+local function BuildCooldownSwipeControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
+
     local cb = AceGUI:Create("CheckBox")
     cb:SetLabel("Show Cooldown/Duration Swipe")
     cb:SetValue(styleTable.showCooldownSwipe ~= false)
     cb:SetFullWidth(true)
+    cb:SetDisabled(disabledByIconFill)
     cb:SetCallback("OnValueChanged", function(widget, event, val)
+        if disabledByIconFill then return end
         styleTable.showCooldownSwipe = val
         refreshCallback()
     end)
@@ -388,7 +403,9 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     reverseCb:SetLabel("Reverse Swipe")
     reverseCb:SetValue(styleTable.cooldownSwipeReverse or false)
     reverseCb:SetFullWidth(true)
+    reverseCb:SetDisabled(disabledByIconFill)
     reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if disabledByIconFill then return end
         styleTable.cooldownSwipeReverse = val
         refreshCallback()
     end)
@@ -399,7 +416,9 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     fillCb:SetLabel("Show Swipe Fill")
     fillCb:SetValue(styleTable.showCooldownSwipeFill ~= false)
     fillCb:SetFullWidth(true)
+    fillCb:SetDisabled(disabledByIconFill)
     fillCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if disabledByIconFill then return end
         styleTable.showCooldownSwipeFill = val
         refreshCallback()
         CooldownCompanion:RefreshConfigPanel()
@@ -415,7 +434,9 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         alphaSlider:SetIsPercent(true)
         alphaSlider:SetValue(styleTable.cooldownSwipeAlpha or 0.8)
         alphaSlider:SetFullWidth(true)
+        if alphaSlider.SetDisabled then alphaSlider:SetDisabled(disabledByIconFill) end
         alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if disabledByIconFill then return end
             styleTable.cooldownSwipeAlpha = val
             refreshCallback()
         end)
@@ -426,7 +447,9 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     edgeCb:SetLabel("Show Swipe Edge")
     edgeCb:SetValue(styleTable.showCooldownSwipeEdge ~= false)
     edgeCb:SetFullWidth(true)
+    edgeCb:SetDisabled(disabledByIconFill)
     edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if disabledByIconFill then return end
         styleTable.showCooldownSwipeEdge = val
         refreshCallback()
         CooldownCompanion:RefreshConfigPanel()
@@ -436,16 +459,56 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
 
     -- Swipe Edge Color (only when edge is visible)
     if styleTable.showCooldownSwipeEdge ~= false then
-        AddColorPicker(container, styleTable, "cooldownSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+        local edgeColor = AddColorPicker(container, styleTable, "cooldownSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+        if edgeColor.SetDisabled then edgeColor:SetDisabled(disabledByIconFill) end
     end
 end
 
-local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback)
+local function BuildIconFillTimerControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local disabledByMasque = opts.masqueEnabled == true
+
+    local cb = AceGUI:Create("CheckBox")
+    cb:SetLabel("Icon Fill Timer")
+    cb:SetValue(styleTable.iconFillEnabled == true)
+    cb:SetFullWidth(true)
+    cb:SetDisabled(disabledByMasque)
+    cb:SetCallback("OnValueChanged", function(widget, event, val)
+        if disabledByMasque then return end
+        styleTable.iconFillEnabled = val == true
+        refreshCallback()
+        CooldownCompanion:UpdateAllCooldowns()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(cb)
+
+    if disabledByMasque then
+        local note = AceGUI:Create("Label")
+        note:SetText("|cff888888Unavailable while Masque skinning is enabled for this group.|r")
+        note:SetFullWidth(true)
+        container:AddChild(note)
+        return cb
+    end
+
+    if styleTable.iconFillEnabled == true then
+        AddColorPicker(container, styleTable, "iconFillCooldownColor", "Cooldown Fill Color", {0.6, 0.13, 0.18, 0.55}, true, refreshCallback, refreshCallback)
+        AddColorPicker(container, styleTable, "iconFillAuraColor", "Aura Fill Color", {0.2, 1.0, 0.2, 0.55}, true, refreshCallback, refreshCallback)
+    end
+
+    return cb
+end
+
+local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
+
     local cb = AceGUI:Create("CheckBox")
     cb:SetLabel("Blizzard CDM Aura Swipe Style")
     cb:SetValue(styleTable.auraUseBlizzardSwipe == true)
     cb:SetFullWidth(true)
+    cb:SetDisabled(disabledByIconFill)
     cb:SetCallback("OnValueChanged", function(widget, event, val)
+        if disabledByIconFill then return end
         styleTable.auraUseBlizzardSwipe = val == true
         refreshCallback()
     end)
@@ -1165,6 +1228,7 @@ ST._BuildShowTooltipsControls = BuildShowTooltipsControls
 ST._BuildShowOutOfRangeControls = BuildShowOutOfRangeControls
 ST._BuildShowGCDSwipeControls = BuildShowGCDSwipeControls
 ST._BuildCooldownSwipeControls = BuildCooldownSwipeControls
+ST._BuildIconFillTimerControls = BuildIconFillTimerControls
 ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildLossOfControlControls = BuildLossOfControlControls
 ST._BuildUnusableDimmingControls = BuildUnusableDimmingControls

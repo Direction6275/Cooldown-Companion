@@ -113,6 +113,9 @@ local defaults = {
                         iconCooldownTintColor = {1, 0, 0.102, 1}, -- cooldown tint (default: 60% opacity white)
                         iconAuraTintEnabled = false,             -- apply separate tint when aura is active
                         iconAuraTintColor = {0, 0.925, 1, 1},       -- aura tint (default: white full opacity)
+                        iconFillEnabled = false,
+                        iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55},
+                        iconFillAuraColor = {0.2, 1.0, 0.2, 0.55},
                         showLossOfControl = false,
                         procGlowOverhang = 32,
                         procGlowColor = {1, 1, 1, 1},
@@ -277,6 +280,9 @@ local defaults = {
             iconCooldownTintColor = {1, 0, 0.102, 1},
             iconAuraTintEnabled = false,
             iconAuraTintColor = {0, 0.925, 1, 1},
+            iconFillEnabled = false,
+            iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55},
+            iconFillAuraColor = {0.2, 1.0, 0.2, 0.55},
             showLossOfControl = false,
             procGlowOverhang = 32,
             procGlowColor = {1, 1, 1, 1},
@@ -640,6 +646,11 @@ ST.OVERRIDE_SECTIONS = {
         label = "Icon Tint",
         keys = {"iconTintColor", "iconCooldownTintEnabled", "iconCooldownTintColor", "iconAuraTintEnabled", "iconAuraTintColor", "backgroundColor"},
         modes = {icons = true, bars = true},
+    },
+    iconFillTimer = {
+        label = "Icon Fill Timer",
+        keys = {"iconFillEnabled", "iconFillCooldownColor", "iconFillAuraColor"},
+        modes = {icons = true},
     },
     assistedHighlight = {
         label = "Assisted Highlight",
