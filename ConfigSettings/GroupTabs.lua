@@ -2080,6 +2080,8 @@ local function BuildEffectsTab(container)
         "Icon Fill Timer",
         {"Shows cooldowns and tracked aura durations as a rectangular fill over the icon instead of radial swipes.", 1, 1, 1, true},
         " ",
+        {"Does not work while Masque is enabled.", 1, 1, 1, true},
+        " ",
         {"Show Cooldown/Duration Swipe and Blizzard CDM Aura Swipe Style are unavailable while Icon Fill Timer is active.", 0.7, 0.7, 0.7, true},
     }, tabInfoButtons)
 
