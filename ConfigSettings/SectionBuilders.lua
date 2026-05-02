@@ -509,27 +509,27 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
         end)
         container:AddChild(orientationDrop)
 
-        local startEdgeDrop = AceGUI:Create("Dropdown")
-        startEdgeDrop:SetLabel("Start Edge")
+        local anchorEdgeDrop = AceGUI:Create("Dropdown")
+        anchorEdgeDrop:SetLabel("Anchor Edge")
         if iconFillOrientation == "vertical" then
-            startEdgeDrop:SetList({
+            anchorEdgeDrop:SetList({
                 default = "Bottom",
                 reverse = "Top",
             }, { "default", "reverse" })
         else
-            startEdgeDrop:SetList({
+            anchorEdgeDrop:SetList({
                 default = "Left",
                 reverse = "Right",
             }, { "default", "reverse" })
         end
-        startEdgeDrop:SetValue(styleTable.iconFillReverse == true and "reverse" or "default")
-        startEdgeDrop:SetFullWidth(true)
-        startEdgeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        anchorEdgeDrop:SetValue(styleTable.iconFillReverse == true and "reverse" or "default")
+        anchorEdgeDrop:SetFullWidth(true)
+        anchorEdgeDrop:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable.iconFillReverse = val == "reverse"
             refreshCallback()
             CooldownCompanion:UpdateAllCooldowns()
         end)
-        container:AddChild(startEdgeDrop)
+        container:AddChild(anchorEdgeDrop)
 
         local timerMotionDrop = AceGUI:Create("Dropdown")
         timerMotionDrop:SetLabel("Timer Motion")

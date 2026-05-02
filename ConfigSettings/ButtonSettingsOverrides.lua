@@ -513,7 +513,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                             local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
                             if sectionId == "cooldownText" or sectionId == "cooldownSwipe" or sectionId == "desaturation" then
                                 AddConditionalPreviewButton(scroll, "Preview Cooldown State", "cooldown", target)
-                            elseif sectionId == "iconFillTimer" then
+                            elseif sectionId == "iconFillTimer" and overrides.iconFillEnabled == true and group.masqueEnabled ~= true then
                                 AddConditionalPreviewButton(scroll, "Preview Cooldown Fill", "cooldown", target)
                                 AddConditionalPreviewButton(scroll, "Preview Aura Fill", "aura_duration_text", target)
                             elseif sectionId == "auraText" or sectionId == "auraDurationSwipe" then
