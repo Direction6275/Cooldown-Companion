@@ -2056,19 +2056,24 @@ local function BuildEffectsTab(container)
     end -- assistedAdvExpanded
 
     AddIndicatorsHeading(container, "Timers")
+    local iconFillTimerActive = style.iconFillEnabled == true and group.masqueEnabled ~= true
     local iconFillCb = BuildIconFillTimerControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end, {
         masqueEnabled = group.masqueEnabled == true,
     })
+    local iconFillAdvExpanded, iconFillAdvBtn = AddAdvancedToggle(iconFillCb, "iconFillTimerPreview", tabInfoButtons, iconFillTimerActive)
     local iconFillPromoteBtn
     if not group.masqueEnabled then
-        iconFillPromoteBtn = CreateCheckboxPromoteButton(iconFillCb, nil, "iconFillTimer", group, style)
+        iconFillPromoteBtn = CreateCheckboxPromoteButton(iconFillCb, iconFillAdvBtn, "iconFillTimer", group, style)
     end
     local iconFillInfoAnchor = iconFillCb.checkbg
     local iconFillInfoXOff = iconFillCb.text:GetStringWidth() + 4
     if iconFillPromoteBtn and iconFillPromoteBtn:IsShown() then
         iconFillInfoAnchor = iconFillPromoteBtn
+        iconFillInfoXOff = 4
+    elseif iconFillAdvBtn and iconFillAdvBtn:IsShown() then
+        iconFillInfoAnchor = iconFillAdvBtn
         iconFillInfoXOff = 4
     end
     CreateInfoButton(iconFillCb.frame, iconFillInfoAnchor, "LEFT", "RIGHT", iconFillInfoXOff, 0, {
@@ -2080,7 +2085,11 @@ local function BuildEffectsTab(container)
         {"Show Cooldown/Duration Swipe and Blizzard CDM Aura Swipe Style are unavailable while Icon Fill Timer is active.", 0.7, 0.7, 0.7, true},
     }, tabInfoButtons)
 
-    local iconFillTimerActive = style.iconFillEnabled == true and group.masqueEnabled ~= true
+    if iconFillAdvExpanded and iconFillTimerActive and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Cooldown Fill", "cooldown")
+        AddConditionalPreviewButton(container, "Preview Aura Fill", "aura_duration_text")
+    end
+
     local swipeCb = AceGUI:Create("CheckBox")
     swipeCb:SetLabel("Show Cooldown/Duration Swipe")
     swipeCb:SetValue(style.showCooldownSwipe ~= false)

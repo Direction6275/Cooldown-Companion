@@ -491,14 +491,14 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
     end
 
     if styleTable.iconFillEnabled == true then
-        local iconFillOrientation = styleTable.iconFillOrientation == "vertical" and "vertical" or "horizontal"
+        local iconFillOrientation = styleTable.iconFillOrientation == "horizontal" and "horizontal" or "vertical"
 
         local orientationDrop = AceGUI:Create("Dropdown")
         orientationDrop:SetLabel("Orientation")
         orientationDrop:SetList({
-            horizontal = "Horizontal",
             vertical = "Vertical",
-        }, { "horizontal", "vertical" })
+            horizontal = "Horizontal",
+        }, { "vertical", "horizontal" })
         orientationDrop:SetValue(iconFillOrientation)
         orientationDrop:SetFullWidth(true)
         orientationDrop:SetCallback("OnValueChanged", function(widget, event, val)

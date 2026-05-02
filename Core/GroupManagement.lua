@@ -883,7 +883,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.showCooldownSwipeFill == nil then style.showCooldownSwipeFill = true end
     if style.auraUseBlizzardSwipe == nil then style.auraUseBlizzardSwipe = false end
     if style.iconFillEnabled == nil then style.iconFillEnabled = false end
-    if style.iconFillOrientation == nil then style.iconFillOrientation = "horizontal" end
+    if style.iconFillOrientation == nil then style.iconFillOrientation = "vertical" end
     if style.iconFillReverse == nil then style.iconFillReverse = false end
     if style.iconFillTimerBehavior == nil then style.iconFillTimerBehavior = "drain" end
     if style.iconFillCooldownColor == nil then style.iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55} end

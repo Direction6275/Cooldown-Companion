@@ -101,7 +101,7 @@ local function ApplyIconFillGeometry(button, style)
         return
     end
 
-    local orientation = style and style.iconFillOrientation == "vertical" and "VERTICAL" or "HORIZONTAL"
+    local orientation = style and style.iconFillOrientation == "horizontal" and "HORIZONTAL" or "VERTICAL"
     button.iconFill:SetOrientation(orientation)
     button.iconFill:SetReverseFill(style and style.iconFillReverse == true or false)
 end
