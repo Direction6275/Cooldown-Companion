@@ -2079,8 +2079,6 @@ local function BuildEffectsTab(container)
     CreateInfoButton(iconFillCb.frame, iconFillInfoAnchor, "LEFT", "RIGHT", iconFillInfoXOff, 0, {
         "Icon Fill Timer",
         {"Shows cooldowns and tracked aura durations as a rectangular fill over the icon instead of radial swipes.", 1, 1, 1, true},
-        {"Orientation chooses horizontal or vertical movement. Start Edge chooses where the overlay begins. Timer Motion chooses whether timers drain from full or fill from empty.", 1, 1, 1, true},
-        {"Active auras use the aura fill color.", 1, 1, 1, true},
         " ",
         {"Show Cooldown/Duration Swipe and Blizzard CDM Aura Swipe Style are unavailable while Icon Fill Timer is active.", 0.7, 0.7, 0.7, true},
     }, tabInfoButtons)
