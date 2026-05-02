@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.13.8",
         "1.13.7",
         "1.13.6",
         "1.13.5",
@@ -28,6 +29,18 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.13.8"] = {
+            markdown = [[
+## New Features
+
+- **Icon Fill Timer:** Icon panels can now show cooldowns and tracked aura durations as a rectangular fill over the icon, with separate cooldown and aura colors and a full aura-colored fill for untimed active auras.
+
+## Polish | QoL
+
+- **Cleaner Buttons search placement:** The Buttons config search field now sits inside the Groups column footer, returning columns in the config to pre-search height.
+- **Indicator settings organization:** The icon-mode Indicators tab is easier to scan, with Glows, Timers, and States grouped more clearly.
+]],
+        },
         ["1.13.7"] = {
             markdown = [[
 ## Polish | QoL
