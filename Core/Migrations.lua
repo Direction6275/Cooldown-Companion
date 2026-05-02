@@ -150,6 +150,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile._migratedCustomAuraSlots5 = nil
     profile._migratedCustomAuraSlots5v2 = nil
     profile._migratedBaseSpells = nil
+    profile._migratedIconFillTimerDefaults = nil
     profile._migratedLayoutOrder = nil
     profile._migratedSpecOverrides = nil
 end

@@ -113,6 +113,12 @@ local function ClearConditionalVisualPreviewFields(button)
     button._conditionalBarAuraActivePreview = nil
 end
 
+local function HideIconFillForHiddenButton(button)
+    if not (button and button.iconFill) then return end
+    button.iconFill:Hide()
+    button.iconFill:SetScript("OnUpdate", nil)
+end
+
 local function ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)
     if not (button and button.count and (style.chargeFontColor or style.chargeFontColorMissing or style.chargeFontColorZero)) then
         return
@@ -2089,6 +2095,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Non-compact mode: alpha=0 for hidden, restore for visible
         if button._visibilityHidden then
             button.cooldown:Hide()  -- prevent stale IsShown() across ticks
+            HideIconFillForHiddenButton(button)
             if button._lastVisAlpha ~= 0 then
                 button:SetAlpha(0)
                 button._lastVisAlpha = 0
@@ -2109,6 +2116,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- auto-hide the CooldownFrame; without this, bar mode _mainCDShown
             -- and icon mode force-show both read stale true on next tick.
             button.cooldown:Hide()
+            HideIconFillForHiddenButton(button)
             DispatchStandaloneTextureVisual(button)
             return  -- Skip visual updates for hidden buttons
         else
