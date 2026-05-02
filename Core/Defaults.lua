@@ -114,6 +114,9 @@ local defaults = {
                         iconAuraTintEnabled = false,             -- apply separate tint when aura is active
                         iconAuraTintColor = {0, 0.925, 1, 1},       -- aura tint (default: white full opacity)
                         iconFillEnabled = false,
+                        iconFillOrientation = "horizontal",
+                        iconFillReverse = false,
+                        iconFillTimerBehavior = "drain",
                         iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55},
                         iconFillAuraColor = {0.2, 1.0, 0.2, 0.55},
                         showLossOfControl = false,
@@ -281,6 +284,9 @@ local defaults = {
             iconAuraTintEnabled = false,
             iconAuraTintColor = {0, 0.925, 1, 1},
             iconFillEnabled = false,
+            iconFillOrientation = "horizontal",
+            iconFillReverse = false,
+            iconFillTimerBehavior = "drain",
             iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55},
             iconFillAuraColor = {0.2, 1.0, 0.2, 0.55},
             showLossOfControl = false,
@@ -649,7 +655,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     iconFillTimer = {
         label = "Icon Fill Timer",
-        keys = {"iconFillEnabled", "iconFillCooldownColor", "iconFillAuraColor"},
+        keys = {"iconFillEnabled", "iconFillOrientation", "iconFillReverse", "iconFillTimerBehavior", "iconFillCooldownColor", "iconFillAuraColor"},
         modes = {icons = true},
     },
     assistedHighlight = {

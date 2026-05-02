@@ -96,6 +96,33 @@ local function AnchorIconFill(button)
     button.iconFill:SetPoint("BOTTOMRIGHT", button.icon, "BOTTOMRIGHT", 0, 0)
 end
 
+local function ApplyIconFillGeometry(button, style)
+    if not (button and button.iconFill) then
+        return
+    end
+
+    local orientation = style and style.iconFillOrientation == "vertical" and "VERTICAL" or "HORIZONTAL"
+    button.iconFill:SetOrientation(orientation)
+    button.iconFill:SetReverseFill(style and style.iconFillReverse == true or false)
+end
+
+local function ResolveIconFillTimerValue(button, elapsedPercent)
+    if button and button.style and button.style.iconFillTimerBehavior == "fill" then
+        return elapsedPercent
+    end
+    return 1 - elapsedPercent
+end
+
+local function ResolveIconFillDurationObjectValue(button, durationObj)
+    if not durationObj then
+        return nil
+    end
+    if button and button.style and button.style.iconFillTimerBehavior == "fill" then
+        return durationObj:GetElapsedPercent()
+    end
+    return durationObj:GetRemainingPercent()
+end
+
 local function AnchorAuraBlizzardCooldown(button)
     if not (button and button.auraBlizzardCooldown and button.icon) then
         return
@@ -197,10 +224,7 @@ local function SetIconFillFromCooldownWidget(button)
     if elapsed < 0 then elapsed = 0 end
     if elapsed > durMs then elapsed = durMs end
 
-    local value = elapsed / durMs
-    if button._iconFillMode == "aura" then
-        value = 1 - value
-    end
+    local value = ResolveIconFillTimerValue(button, elapsed / durMs)
 
     button.iconFill:SetValue(value)
     return true
@@ -218,20 +242,12 @@ local function SetIconFillValue(button)
 
     local remaining, duration = ResolveIconFillPreviewRemaining(button)
     if remaining and duration and duration > 0 then
-        if button._iconFillMode == "aura" then
-            button.iconFill:SetValue(remaining / duration)
-        else
-            button.iconFill:SetValue(1 - (remaining / duration))
-        end
+        button.iconFill:SetValue(ResolveIconFillTimerValue(button, 1 - (remaining / duration)))
         return
     end
 
     if button._durationObj then
-        if button._iconFillMode == "aura" then
-            button.iconFill:SetValue(button._durationObj:GetRemainingPercent())
-        else
-            button.iconFill:SetValue(button._durationObj:GetElapsedPercent())
-        end
+        button.iconFill:SetValue(ResolveIconFillDurationObjectValue(button, button._durationObj))
         return
     end
 
@@ -246,7 +262,7 @@ local function SetIconFillValue(button)
             if elapsed < 0 then elapsed = 0 end
             local value = elapsed / durationSeconds
             if value > 1 then value = 1 end
-            button.iconFill:SetValue(value)
+            button.iconFill:SetValue(ResolveIconFillTimerValue(button, value))
             return
         end
     end
@@ -307,6 +323,7 @@ local function UpdateIconFill(button, buttonData, style)
     button._iconFillActive = true
     button._iconFillMode = mode
     button._iconFillAuraActive = (mode == "aura" or mode == "aura_static") or nil
+    ApplyIconFillGeometry(button, style)
     button.iconFill:SetStatusBarColor(color[1], color[2], color[3], color[4])
     SetIconFillValue(button)
     button.iconFill:Show()
@@ -445,8 +462,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     AnchorIconFill(button)
     button.iconFill:SetMinMaxValues(0, 1)
     button.iconFill:SetValue(0)
-    button.iconFill:SetOrientation("HORIZONTAL")
-    button.iconFill:SetReverseFill(false)
+    ApplyIconFillGeometry(button, style)
     button.iconFill:SetStatusBarTexture(ICON_FILL_TEXTURE)
     button.iconFill:Hide()
     SetFrameClickThroughRecursive(button.iconFill, true, true)
@@ -1239,8 +1255,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         AnchorIconFill(button)
         button.iconFill:SetMinMaxValues(0, 1)
         button.iconFill:SetValue(0)
-        button.iconFill:SetOrientation("HORIZONTAL")
-        button.iconFill:SetReverseFill(false)
+        ApplyIconFillGeometry(button, style)
         button.iconFill:SetStatusBarTexture(ICON_FILL_TEXTURE)
         button.iconFill:SetScript("OnUpdate", nil)
         button.iconFill:Hide()
