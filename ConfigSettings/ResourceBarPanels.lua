@@ -8,6 +8,7 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
+local LSM = LibStub("LibSharedMedia-3.0")
 local CS = ST._configState
 
 -- Imports from Helpers.lua
@@ -141,6 +142,24 @@ local ResetDragIndicatorStyle = ST._ResetDragIndicatorStyle
 
 local HealthResource = { ID = RB.RESOURCE_HEALTH }
 
+function HealthResource.GetEffectTextureOptions()
+    local options = {}
+    local order = {}
+    for _, name in ipairs(LSM:List("statusbar")) do
+        options[name] = name
+        table.insert(order, name)
+    end
+    return options, order
+end
+
+function HealthResource.NormalizeEffectTexture(health, key)
+    if type(health[key]) ~= "string"
+        or health[key] == ""
+        or not LSM:IsValid("statusbar", health[key]) then
+        health[key] = DEFAULT_HEALTH_EFFECT_TEXTURE
+    end
+end
+
 function HealthResource.EnsureSettings(settings)
     settings.resources = settings.resources or {}
     if type(settings.resources[HealthResource.ID]) ~= "table" then
@@ -157,10 +176,10 @@ function HealthResource.EnsureSettings(settings)
     if type(health.healthHealAbsorbColor) ~= "table" then health.healthHealAbsorbColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR end
     if type(health.healthIncomingHealColor) ~= "table" then health.healthIncomingHealColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR end
     if type(health.healthLowHealthAlertColor) ~= "table" then health.healthLowHealthAlertColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR end
-    if type(health.healthAbsorbTexture) ~= "string" or health.healthAbsorbTexture == "" then health.healthAbsorbTexture = DEFAULT_HEALTH_EFFECT_TEXTURE end
-    if type(health.healthHealAbsorbTexture) ~= "string" or health.healthHealAbsorbTexture == "" then health.healthHealAbsorbTexture = DEFAULT_HEALTH_EFFECT_TEXTURE end
-    if type(health.healthIncomingHealTexture) ~= "string" or health.healthIncomingHealTexture == "" then health.healthIncomingHealTexture = DEFAULT_HEALTH_EFFECT_TEXTURE end
-    if type(health.healthLowHealthAlertTexture) ~= "string" or health.healthLowHealthAlertTexture == "" then health.healthLowHealthAlertTexture = DEFAULT_HEALTH_EFFECT_TEXTURE end
+    HealthResource.NormalizeEffectTexture(health, "healthAbsorbTexture")
+    HealthResource.NormalizeEffectTexture(health, "healthHealAbsorbTexture")
+    HealthResource.NormalizeEffectTexture(health, "healthIncomingHealTexture")
+    HealthResource.NormalizeEffectTexture(health, "healthLowHealthAlertTexture")
     return settings.resources[HealthResource.ID]
 end
 
@@ -181,7 +200,7 @@ end
 function HealthResource.AddEffectTextureDropdown(container, health, key, label, applyBars)
     local drop = AceGUI:Create("Dropdown")
     drop:SetLabel(label)
-    drop:SetList(ST._GetBarTextureOptions())
+    drop:SetList(HealthResource.GetEffectTextureOptions())
     drop:SetValue(health[key] or DEFAULT_HEALTH_EFFECT_TEXTURE)
     drop:SetFullWidth(true)
     drop:SetCallback("OnValueChanged", function(widget, event, val)
@@ -773,8 +792,6 @@ local function BuildResourceBarPositioningPanel(container)
 end
 
 ------------------------------------------------------------------------
-
-local LSM = LibStub("LibSharedMedia-3.0")
 
 local function GetResourceBarTextureOptions()
     local t = {}
