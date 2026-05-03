@@ -27,6 +27,7 @@ local POWER_NAMES = RB.POWER_NAMES
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
 local MAX_CUSTOM_AURA_BARS = RB.MAX_CUSTOM_AURA_BARS or ST.MAX_CUSTOM_AURA_BARS or 5
 local CUSTOM_AURA_BAR_BASE = RB.CUSTOM_AURA_BAR_BASE
+local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local RESOURCE_MAELSTROM_WEAPON = RB.RESOURCE_MAELSTROM_WEAPON
 local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
 local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
@@ -43,6 +44,7 @@ local LayoutSegments = RB.LayoutSegments
 local CreateOverlayBar = RB.CreateOverlayBar
 local LayoutOverlaySegments = RB.LayoutOverlaySegments
 local StyleContinuousBar = RB.StyleContinuousBar
+local StyleHealthBar = RB.StyleHealthBar
 local StyleSegmentedBar = RB.StyleSegmentedBar
 local PrepareCustomAuraBar = RB.PrepareCustomAuraBar
 local ApplyPreviewBarState = RB.ApplyPreviewBarState
@@ -50,6 +52,7 @@ local GetMWMaxStacks = RB.GetMWMaxStacks
 local CreatePixelBorders = RB.CreatePixelBorders
 local ApplyPixelBorders = RB.ApplyPixelBorders
 local HidePixelBorders = RB.HidePixelBorders
+local POWER_SHORT_NAMES = RB.POWER_SHORT_NAMES or {}
 
 local LAYOUT_PREVIEW_PADDING = 12
 local LAYOUT_PREVIEW_SECTION_GAP = 18
@@ -755,6 +758,13 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
     rbSettings.resources = rbSettings.resources or {}
 
     local function GetSlotColor(powerType)
+        if powerType == RESOURCE_HEALTH then
+            local health = rbSettings.resources and rbSettings.resources[RESOURCE_HEALTH]
+            local color = CloneColor(health and health.healthBarColor, RB.DEFAULT_HEALTH_BAR_COLOR)
+            color[4] = tonumber(health and health.healthBarOpacity) or RB.DEFAULT_HEALTH_BAR_OPACITY
+            return color
+        end
+
         local color = { GetResourceColors(powerType, rbSettings) }
         if color[1] == nil then
             return { 1, 1, 1, 1 }
@@ -768,9 +778,16 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
     end
 
     for _, powerType in ipairs(activeResources) do
-        rbSettings.resources[powerType] = rbSettings.resources[powerType] or {}
+        if powerType == RESOURCE_HEALTH and type(rbSettings.resources[powerType]) ~= "table" then
+            rbSettings.resources[powerType] = { enabled = false }
+        else
+            rbSettings.resources[powerType] = rbSettings.resources[powerType] or {}
+        end
         local resourceConfig = rbSettings.resources[powerType]
-        local showResource = resourceBarsEnabled and resourceConfig.enabled ~= false
+        local showResource = resourceBarsEnabled and (
+            powerType == RESOURCE_HEALTH and resourceConfig.enabled == true
+            or resourceConfig.enabled ~= false
+        )
         if showResource and powerType == 0 and rbSettings.hideManaForNonHealer then
             local specIndex = C_SpecializationInfo.GetSpecialization()
             if specIndex then
@@ -793,7 +810,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                 kind = "resource",
                 powerType = powerType,
                 label = POWER_NAMES[powerType] or ("Power " .. powerType),
-                shortLabel = GetShortLabel(POWER_NAMES[powerType] or ("Power " .. powerType)),
+                shortLabel = POWER_SHORT_NAMES[powerType] or GetShortLabel(POWER_NAMES[powerType] or ("Power " .. powerType)),
                 color = GetSlotColor(powerType),
                 icon = resourceConfig.previewIcon or LAYOUT_PREVIEW_ICON_FALLBACK,
                 getPos = function()
@@ -1108,6 +1125,19 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         end
         barInfo.frame:SetSize(width, height)
         StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings)
+    elseif slot.powerType == RESOURCE_HEALTH then
+        if not barInfo or barInfo.barType ~= "health_continuous" then
+            if barInfo and barInfo.frame then
+                barInfo.frame:Hide()
+            end
+            barInfo = {
+                frame = CreateContinuousBar(frame.previewCanvas),
+                barType = "health_continuous",
+                powerType = slot.powerType,
+            }
+        end
+        barInfo.frame:SetSize(width, height)
+        StyleHealthBar(barInfo.frame, rbSettings)
     elseif slot.powerType == RESOURCE_MAELSTROM_WEAPON then
         local mwMaxStacks = GetMWMaxStacks() or 5
         local halfSegments = (mwMaxStacks <= 5) and mwMaxStacks or (mwMaxStacks / 2)

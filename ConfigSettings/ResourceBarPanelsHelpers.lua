@@ -64,6 +64,7 @@ local DEFAULT_ARCANE_MAX_COLOR = RB.DEFAULT_ARCANE_MAX_COLOR
 local DEFAULT_ESSENCE_READY_COLOR = RB.DEFAULT_ESSENCE_READY_COLOR
 local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
 local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
+local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local CLASS_RESOURCES_CONFIG = RB.CLASS_RESOURCES_CONFIG
 local SPEC_RESOURCES_CONFIG = RB.SPEC_RESOURCES_CONFIG
 local IsAstralPowerAvailableForCurrentDruidSpec = RB.IsAstralPowerAvailableForCurrentDruidSpec
@@ -242,6 +243,21 @@ local function SupportsResourceAuraStackModeConfig(powerType)
     return powerType == 100 or SEGMENTED_TYPES[powerType] == true
 end
 
+local function AddHealthResourceConfig(resources)
+    local result = { RESOURCE_HEALTH }
+    if type(resources) ~= "table" then
+        return result
+    end
+
+    for _, powerType in ipairs(resources) do
+        if powerType ~= RESOURCE_HEALTH then
+            result[#result + 1] = powerType
+        end
+    end
+
+    return result
+end
+
 local function GetConfigActiveResources()
     local _, _, classID = UnitClass("player")
     if not classID then return {} end
@@ -255,7 +271,7 @@ local function GetConfigActiveResources()
     -- For Druid, only expose Astral Power while currently in Balance spec.
     if classID == 11 then
         if IsAstralPowerAvailableForCurrentDruidSpec() then
-            return CLASS_RESOURCES_CONFIG[11]
+            return AddHealthResourceConfig(CLASS_RESOURCES_CONFIG[11])
         end
         local resources = {}
         for _, powerType in ipairs(CLASS_RESOURCES_CONFIG[11] or {}) do
@@ -263,14 +279,14 @@ local function GetConfigActiveResources()
                 resources[#resources + 1] = powerType
             end
         end
-        return resources
+        return AddHealthResourceConfig(resources)
     end
 
     if specID and SPEC_RESOURCES_CONFIG[specID] then
-        return SPEC_RESOURCES_CONFIG[specID]
+        return AddHealthResourceConfig(SPEC_RESOURCES_CONFIG[specID])
     end
 
-    return CLASS_RESOURCES_CONFIG[classID] or {}
+    return AddHealthResourceConfig(CLASS_RESOURCES_CONFIG[classID] or {})
 end
 
 local function GetCurrentConfigSpecID()
@@ -915,10 +931,10 @@ local function BuildResourceAuraOverlaySection(container, settings)
         local rbAuraOverlayAdvBtns = {}
         local resources = GetConfigActiveResources()
         for _, pt in ipairs(resources) do
-            if not settings.resources[pt] then
+            if pt ~= RESOURCE_HEALTH and not settings.resources[pt] then
                 settings.resources[pt] = {}
             end
-            if settings.resources[pt].enabled ~= false then
+            if pt ~= RESOURCE_HEALTH and settings.resources[pt].enabled ~= false then
                 local resourceName = POWER_NAMES[pt] or ("Power " .. pt)
                 AddResourceAuraOverrideControls(container, settings, pt, resourceName, rbAuraOverlayAdvBtns)
             end

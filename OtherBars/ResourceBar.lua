@@ -39,6 +39,7 @@ local CUSTOM_AURA_BAR_BASE = RB.CUSTOM_AURA_BAR_BASE
 local MAX_CUSTOM_AURA_BARS = RB.MAX_CUSTOM_AURA_BARS
 local MW_SPELL_ID = RB.MW_SPELL_ID
 local RAGING_MAELSTROM_SPELL_ID = RB.RAGING_MAELSTROM_SPELL_ID
+local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local RESOURCE_MAELSTROM_WEAPON = RB.RESOURCE_MAELSTROM_WEAPON
 local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
 local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
@@ -161,6 +162,7 @@ local activeCustomAuraBarPandemicPreviews = {}
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL = 0.65
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = 3
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = 12.3
+local HealthBar = {}
 
 local function GetCustomAuraAlphaModuleId(slotIdx)
     if not slotIdx or slotIdx < 1 or slotIdx > MAX_CUSTOM_AURA_BARS then
@@ -1256,6 +1258,265 @@ local function UpdateContinuousBar(bar, powerType, settings, auraActiveCache)
         end
     end
 
+end
+
+------------------------------------------------------------------------
+-- Update logic: Player Health resource
+------------------------------------------------------------------------
+
+function HealthBar.GetConfig(settings)
+    return settings and settings.resources and settings.resources[RESOURCE_HEALTH] or nil
+end
+
+function HealthBar.GetColor(config, key, fallback)
+    local color = config and config[key]
+    if type(color) == "table" and color[1] ~= nil and color[2] ~= nil and color[3] ~= nil then
+        return color
+    end
+    return fallback
+end
+
+function HealthBar.GetAlpha(config, key, fallback)
+    local value = tonumber(config and config[key])
+    if not value then
+        value = fallback
+    end
+    if value < 0 then
+        return 0
+    elseif value > 1 then
+        return 1
+    end
+    return value
+end
+
+function HealthBar.IsBackgroundGradientEnabled(config)
+    local enabled = config and config.healthBackgroundGradient
+    if enabled == nil then
+        return RB.DEFAULT_HEALTH_BACKGROUND_GRADIENT == true
+    end
+    return enabled == true
+end
+
+function HealthBar.IsFillGradientEnabled(config)
+    local enabled = config and config.healthBarGradient
+    if enabled == nil then
+        return RB.DEFAULT_HEALTH_BAR_GRADIENT == true
+    end
+    return enabled == true
+end
+
+function HealthBar.SetBackgroundAnchors(bar)
+    local bg = bar and bar.bg
+    if not bg then return end
+
+    local fillTexture = bar:GetStatusBarTexture()
+    bg:ClearAllPoints()
+
+    if bar._isVertical then
+        if bar._reverseFill then
+            bg:SetPoint("TOPLEFT", fillTexture, "BOTTOMLEFT", 0, 0)
+            bg:SetPoint("TOPRIGHT", fillTexture, "BOTTOMRIGHT", 0, 0)
+            bg:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+            bg:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+        else
+            bg:SetPoint("BOTTOMLEFT", fillTexture, "TOPLEFT", 0, 0)
+            bg:SetPoint("BOTTOMRIGHT", fillTexture, "TOPRIGHT", 0, 0)
+            bg:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+            bg:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
+        end
+    else
+        bg:SetPoint("TOPLEFT", fillTexture, "TOPRIGHT", 0, 0)
+        bg:SetPoint("BOTTOMLEFT", fillTexture, "BOTTOMRIGHT", 0, 0)
+        bg:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
+        bg:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+    end
+end
+
+function HealthBar.BuildGradientCurve(config, opacityKey, opacityDefault, fullKey, fullDefault, halfKey, halfDefault, lowKey, lowDefault)
+    local opacity = HealthBar.GetAlpha(config, opacityKey, opacityDefault)
+    local full = HealthBar.GetColor(config, fullKey, fullDefault)
+    local half = HealthBar.GetColor(config, halfKey, halfDefault)
+    local low = HealthBar.GetColor(config, lowKey, lowDefault)
+    local curve = C_CurveUtil.CreateColorCurve()
+    curve:AddPoint(0.0, CreateColor(low[1], low[2], low[3], opacity))
+    curve:AddPoint(0.5, CreateColor(half[1], half[2], half[3], opacity))
+    curve:AddPoint(1.0, CreateColor(full[1], full[2], full[3], opacity))
+    return curve
+end
+
+function HealthBar.BuildFillCurve(config)
+    return HealthBar.BuildGradientCurve(
+        config,
+        "healthBarOpacity", RB.DEFAULT_HEALTH_BAR_OPACITY,
+        "healthBarFullColor", RB.DEFAULT_HEALTH_BAR_FULL_COLOR,
+        "healthBarHalfColor", RB.DEFAULT_HEALTH_BAR_HALF_COLOR,
+        "healthBarLowColor", RB.DEFAULT_HEALTH_BAR_LOW_COLOR
+    )
+end
+
+function HealthBar.BuildBackgroundCurve(config)
+    return HealthBar.BuildGradientCurve(
+        config,
+        "healthBackgroundOpacity", RB.DEFAULT_HEALTH_BACKGROUND_OPACITY,
+        "healthBackgroundFullColor", RB.DEFAULT_HEALTH_BACKGROUND_FULL_COLOR,
+        "healthBackgroundHalfColor", RB.DEFAULT_HEALTH_BACKGROUND_HALF_COLOR,
+        "healthBackgroundLowColor", RB.DEFAULT_HEALTH_BACKGROUND_LOW_COLOR
+    )
+end
+
+function HealthBar.GetPreviewGradientColor(config, percent, opacityKey, opacityDefault, fullKey, fullDefault, halfKey, halfDefault, lowKey, lowDefault)
+    percent = tonumber(percent) or 0.65
+    if percent < 0 then
+        percent = 0
+    elseif percent > 1 then
+        percent = 1
+    end
+
+    local opacity = HealthBar.GetAlpha(config, opacityKey, opacityDefault)
+    local full = HealthBar.GetColor(config, fullKey, fullDefault)
+    local half = HealthBar.GetColor(config, halfKey, halfDefault)
+    local low = HealthBar.GetColor(config, lowKey, lowDefault)
+    local fromColor = low
+    local toColor = half
+    local t = percent * 2
+
+    if percent > 0.5 then
+        fromColor = half
+        toColor = full
+        t = (percent - 0.5) * 2
+    end
+
+    return CreateColor(
+        fromColor[1] + ((toColor[1] - fromColor[1]) * t),
+        fromColor[2] + ((toColor[2] - fromColor[2]) * t),
+        fromColor[3] + ((toColor[3] - fromColor[3]) * t),
+        opacity
+    )
+end
+
+function HealthBar.ApplyFillColor(bar, config, previewPercent)
+    if not bar then return end
+
+    local color
+    if HealthBar.IsFillGradientEnabled(config) then
+        if previewPercent then
+            color = HealthBar.GetPreviewGradientColor(
+                config, previewPercent,
+                "healthBarOpacity", RB.DEFAULT_HEALTH_BAR_OPACITY,
+                "healthBarFullColor", RB.DEFAULT_HEALTH_BAR_FULL_COLOR,
+                "healthBarHalfColor", RB.DEFAULT_HEALTH_BAR_HALF_COLOR,
+                "healthBarLowColor", RB.DEFAULT_HEALTH_BAR_LOW_COLOR
+            )
+        else
+            color = UnitHealthPercent("player", true, bar._healthBarCurve)
+        end
+    else
+        local opacity = HealthBar.GetAlpha(config, "healthBarOpacity", RB.DEFAULT_HEALTH_BAR_OPACITY)
+        local static = HealthBar.GetColor(config, "healthBarColor", RB.DEFAULT_HEALTH_BAR_COLOR)
+        color = CreateColor(static[1], static[2], static[3], opacity)
+    end
+
+    if type(color) == "table" and color.GetRGBA then
+        local r, g, b, a = color:GetRGBA()
+        bar:SetStatusBarColor(r, g, b, 1)
+        local fillTexture = bar:GetStatusBarTexture()
+        if fillTexture and fillTexture.SetAlpha then
+            fillTexture:SetAlpha(a)
+        end
+        return
+    end
+
+    local r, g, b, a
+    if type(color) == "table" then
+        r = color.r or color[1]
+        g = color.g or color[2]
+        b = color.b or color[3]
+        a = color.a or color[4]
+    end
+
+    if r and g and b then
+        bar:SetStatusBarColor(r, g, b, 1)
+        local fillTexture = bar:GetStatusBarTexture()
+        if fillTexture and fillTexture.SetAlpha then
+            fillTexture:SetAlpha(a ~= nil and a or HealthBar.GetAlpha(config, "healthBarOpacity", RB.DEFAULT_HEALTH_BAR_OPACITY))
+        end
+    end
+end
+
+function HealthBar.ApplyBackgroundColor(bar, config, previewPercent)
+    if not bar or not bar.bg then return end
+
+    local color
+    if HealthBar.IsBackgroundGradientEnabled(config) then
+        if previewPercent then
+            color = HealthBar.GetPreviewGradientColor(
+                config, previewPercent,
+                "healthBackgroundOpacity", RB.DEFAULT_HEALTH_BACKGROUND_OPACITY,
+                "healthBackgroundFullColor", RB.DEFAULT_HEALTH_BACKGROUND_FULL_COLOR,
+                "healthBackgroundHalfColor", RB.DEFAULT_HEALTH_BACKGROUND_HALF_COLOR,
+                "healthBackgroundLowColor", RB.DEFAULT_HEALTH_BACKGROUND_LOW_COLOR
+            )
+        else
+            color = UnitHealthPercent("player", true, bar._healthBackgroundCurve)
+        end
+    else
+        local opacity = HealthBar.GetAlpha(config, "healthBackgroundOpacity", RB.DEFAULT_HEALTH_BACKGROUND_OPACITY)
+        local static = HealthBar.GetColor(config, "healthBackgroundColor", RB.DEFAULT_HEALTH_BACKGROUND_COLOR)
+        color = CreateColor(static[1], static[2], static[3], opacity)
+    end
+
+    if type(color) == "table" and color.GetRGBA then
+        bar.bg:SetVertexColor(color:GetRGBA())
+        return
+    end
+
+    local r, g, b, a
+    if type(color) == "table" then
+        r = color.r or color[1]
+        g = color.g or color[2]
+        b = color.b or color[3]
+        a = color.a or color[4]
+    end
+
+    if r and g and b then
+        bar.bg:SetVertexColor(r, g, b, a ~= nil and a or HealthBar.GetAlpha(config, "healthBackgroundOpacity", RB.DEFAULT_HEALTH_BACKGROUND_OPACITY))
+    end
+end
+
+function HealthBar.Update(bar, settings)
+    if not settings then
+        settings = GetResourceBarSettings()
+    end
+
+    local currentHealth = UnitHealth("player")
+    local maxHealth = UnitHealthMax("player")
+    local maxHealthIsSecret = issecretvalue and issecretvalue(maxHealth)
+    if not maxHealthIsSecret and (not maxHealth or maxHealth < 1) then
+        maxHealth = 1
+    end
+
+    bar:SetMinMaxValues(0, maxHealth)
+    bar:SetValue(currentHealth)
+    local config = HealthBar.GetConfig(settings)
+    HealthBar.ApplyFillColor(bar, config)
+    HealthBar.ApplyBackgroundColor(bar, config)
+
+    if bar.text and bar.text:IsShown() then
+        local textFormat = bar._textFormat
+        if textFormat == "current" then
+            bar.text:SetFormattedText("%s", AbbreviateNumbers(currentHealth))
+        elseif textFormat == "current_max" then
+            bar.text:SetFormattedText("%s / %s", AbbreviateNumbers(currentHealth), AbbreviateNumbers(maxHealth))
+        elseif textFormat == "current_percent" then
+            bar.text:SetFormattedText(
+                "%s | %.0f%%",
+                AbbreviateNumbers(currentHealth),
+                UnitHealthPercent("player", true, PERCENT_SCALE_CURVE)
+            )
+        else
+            bar.text:SetFormattedText("%.0f%%", UnitHealthPercent("player", true, PERCENT_SCALE_CURVE))
+        end
+    end
 end
 
 ------------------------------------------------------------------------
@@ -2359,6 +2620,8 @@ local function PrepareCustomAuraBar(
         barInfo.frame._isVertical = customIsVertical
         barInfo.frame._reverseFill = customReverseFill
         local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
+        barInfo.frame.bg:ClearAllPoints()
+        barInfo.frame.bg:SetAllPoints(barInfo.frame)
         barInfo.frame.bg:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
         local borderStyle = settings.borderStyle or "pixel"
         local borderColor = settings.borderColor or { 0, 0, 0, 1 }
@@ -2555,6 +2818,8 @@ local function OnUpdate(self, elapsed)
         if barInfo.frame and barInfo.frame:IsShown() then
             if barInfo.barType == "continuous" then
                 UpdateContinuousBar(barInfo.frame, barInfo.powerType, settings, auraActiveCache)
+            elseif barInfo.barType == "health_continuous" then
+                HealthBar.Update(barInfo.frame, settings)
             elseif barInfo.barType == "segmented" then
                 UpdateSegmentedBar(barInfo.frame, barInfo.powerType, settings, auraActiveCache)
             elseif barInfo.barType == "mw_segmented" then
@@ -2738,6 +3003,8 @@ local function StyleContinuousBar(bar, powerType, settings)
     ApplyContinuousFillColor(bar, powerType, settings, nil)
 
     local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
+    bar.bg:ClearAllPoints()
+    bar.bg:SetAllPoints(bar)
     bar.bg:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
 
     local borderStyle = settings.borderStyle or "pixel"
@@ -2794,6 +3061,65 @@ local function StyleContinuousBar(bar, powerType, settings)
     end
 end
 
+function HealthBar.Style(bar, settings)
+    local resourceConfig = HealthBar.GetConfig(settings)
+    local texName = settings.barTexture or "Solid"
+    local isVertical = IsVerticalResourceLayout(settings)
+    local reverseFill = IsVerticalFillReversed(settings)
+    local texture = CooldownCompanion:FetchStatusBar(texName == "blizzard_class" and "Blizzard" or texName)
+
+    bar:SetStatusBarTexture(texture)
+    bar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+    bar:SetReverseFill(isVertical and reverseFill or false)
+    bar._isVertical = isVertical
+    bar._reverseFill = reverseFill
+    bar._healthBarCurve = HealthBar.BuildFillCurve(resourceConfig)
+    bar._healthBackgroundCurve = HealthBar.BuildBackgroundCurve(resourceConfig)
+
+    HealthBar.ApplyFillColor(bar, resourceConfig)
+
+    if bar.brightnessOverlay then
+        bar.brightnessOverlay:Hide()
+    end
+
+    bar.bg:SetTexture(texture)
+    HealthBar.SetBackgroundAnchors(bar)
+    HealthBar.ApplyBackgroundColor(bar, resourceConfig)
+
+    local borderStyle = settings.borderStyle or "pixel"
+    local borderColor = settings.borderColor or { 0, 0, 0, 1 }
+    local borderSize = settings.borderSize or 1
+
+    if borderStyle == "pixel" then
+        ApplyPixelBorders(bar.borders, bar, borderColor, borderSize)
+    else
+        HidePixelBorders(bar.borders)
+    end
+
+    local textFormat = resourceConfig and resourceConfig.textFormat or "percent"
+    if textFormat ~= "percent" and textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "current_percent" then
+        textFormat = "percent"
+    end
+    local textFontName = resourceConfig and resourceConfig.textFont or DEFAULT_RESOURCE_TEXT_FONT
+    local textSize = tonumber(resourceConfig and resourceConfig.textFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
+    local textOutline = resourceConfig and resourceConfig.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE
+    local textColor = resourceConfig and resourceConfig.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR
+    if type(textColor) ~= "table" or textColor[1] == nil or textColor[2] == nil or textColor[3] == nil then
+        textColor = DEFAULT_RESOURCE_TEXT_COLOR
+    end
+
+    bar.text:SetFont(CooldownCompanion:FetchFont(textFontName), textSize, textOutline)
+    bar.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
+    bar.text:ClearAllPoints()
+    bar.text:SetPoint(
+        resourceConfig and resourceConfig.textAnchor or "CENTER",
+        resourceConfig and resourceConfig.textXOffset or 0,
+        resourceConfig and resourceConfig.textYOffset or 0
+    )
+    bar.text:SetShown(resourceConfig and resourceConfig.showText == true)
+    bar._textFormat = textFormat
+end
+
 local function StyleSegmentedText(holder, powerType, settings)
     if not holder or not holder.text then return end
     if not IsSegmentedTextResource(powerType) then
@@ -2848,6 +3174,7 @@ local function StyleSegmentedBar(holder, powerType, settings)
 end
 
 RB.StyleContinuousBar = StyleContinuousBar
+RB.StyleHealthBar = HealthBar.Style
 RB.StyleSegmentedText = StyleSegmentedText
 RB.StyleSegmentedBar = StyleSegmentedBar
 
@@ -3017,7 +3344,23 @@ function CooldownCompanion:ApplyResourceBars()
         local effectiveWidth = isVerticalLayout and effectiveThickness or totalPrimaryLength
         local effectiveHeight = isVerticalLayout and totalPrimaryLength or effectiveThickness
 
-        if powerType == 101 then  -- Stagger
+        if powerType == RESOURCE_HEALTH then
+            if not barInfo or barInfo.barType ~= "health_continuous" then
+                if barInfo and barInfo.frame then
+                    ClearResourceAuraVisuals(barInfo.frame)
+                    barInfo.frame:Hide()
+                end
+                local bar = CreateContinuousBar(targetContainer)
+                barInfo = { frame = bar, barType = "health_continuous", powerType = powerType }
+                resourceBarFrames[idx] = barInfo
+            else
+                barInfo.powerType = powerType
+            end
+
+            barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+            HealthBar.Style(barInfo.frame, settings)
+
+        elseif powerType == 101 then  -- Stagger
             -- Stagger: continuous bar with dedicated update (health-based max, threshold colors)
             if not barInfo or barInfo.barType ~= "stagger_continuous" then
                 if barInfo and barInfo.frame then
@@ -3659,6 +4002,24 @@ local function ApplyPreviewDataToBar(barInfo, settings)
                 barInfo.frame.text:SetText("65")
             else
                 barInfo.frame.text:SetText("65 / 100")
+            end
+        end
+    elseif barInfo.barType == "health_continuous" then
+        barInfo.frame:SetMinMaxValues(0, 100)
+        barInfo.frame:SetValue(65)
+        local config = HealthBar.GetConfig(settings)
+        HealthBar.ApplyFillColor(barInfo.frame, config, 0.65)
+        HealthBar.ApplyBackgroundColor(barInfo.frame, config, 0.65)
+        if barInfo.frame.text and barInfo.frame.text:IsShown() then
+            local textFormat = barInfo.frame._textFormat
+            if textFormat == "current" then
+                barInfo.frame.text:SetText("650K")
+            elseif textFormat == "current_max" then
+                barInfo.frame.text:SetText("650K / 1M")
+            elseif textFormat == "current_percent" then
+                barInfo.frame.text:SetText("650K | 65%")
+            else
+                barInfo.frame.text:SetText("65%")
             end
         end
     elseif barInfo.barType == "segmented" then
