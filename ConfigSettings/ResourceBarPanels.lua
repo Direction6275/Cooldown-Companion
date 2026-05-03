@@ -143,6 +143,10 @@ function HealthResource.EnsureSettings(settings)
     elseif settings.resources[HealthResource.ID].enabled == nil then
         settings.resources[HealthResource.ID].enabled = false
     end
+    local health = settings.resources[HealthResource.ID]
+    if health.showAbsorbs == nil then health.showAbsorbs = false end
+    if health.showHealAbsorbs == nil then health.showHealAbsorbs = false end
+    if health.showIncomingHeals == nil then health.showIncomingHeals = false end
     return settings.resources[HealthResource.ID]
 end
 
@@ -227,6 +231,62 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     end
 
     HealthResource.AddOpacitySlider(container, health, "healthBackgroundOpacity", "Missing Health Opacity", DEFAULT_HEALTH_BACKGROUND_OPACITY, applyBars)
+
+    local effectsHeading = AceGUI:Create("Heading")
+    effectsHeading:SetText("Health Effects")
+    ColorHeading(effectsHeading)
+    effectsHeading:SetFullWidth(true)
+    container:AddChild(effectsHeading)
+
+    local absorbsCb = AceGUI:Create("CheckBox")
+    absorbsCb:SetLabel("Show Absorbs")
+    absorbsCb:SetValue(health.showAbsorbs == true)
+    absorbsCb:SetFullWidth(true)
+    absorbsCb:SetCallback("OnValueChanged", function(widget, event, val)
+        health.showAbsorbs = val == true
+        applyBars()
+    end)
+    container:AddChild(absorbsCb)
+
+    local healAbsorbsCb = AceGUI:Create("CheckBox")
+    healAbsorbsCb:SetLabel("Show Heal Absorbs")
+    healAbsorbsCb:SetValue(health.showHealAbsorbs == true)
+    healAbsorbsCb:SetFullWidth(true)
+    healAbsorbsCb:SetCallback("OnValueChanged", function(widget, event, val)
+        health.showHealAbsorbs = val == true
+        applyBars()
+    end)
+    container:AddChild(healAbsorbsCb)
+
+    local incomingHealsCb = AceGUI:Create("CheckBox")
+    incomingHealsCb:SetLabel("Show Incoming Heals")
+    incomingHealsCb:SetValue(health.showIncomingHeals == true)
+    incomingHealsCb:SetFullWidth(true)
+    incomingHealsCb:SetCallback("OnValueChanged", function(widget, event, val)
+        health.showIncomingHeals = val == true
+        applyBars()
+    end)
+    container:AddChild(incomingHealsCb)
+
+    if AddPreviewToggleButton then
+        AddPreviewToggleButton(container, "Preview Absorbs", function()
+            return CooldownCompanion:IsHealthEffectPreviewActive("absorbs")
+        end, function(show)
+            CooldownCompanion:SetHealthEffectPreview("absorbs", show)
+        end)
+
+        AddPreviewToggleButton(container, "Preview Heal Absorbs", function()
+            return CooldownCompanion:IsHealthEffectPreviewActive("healAbsorbs")
+        end, function(show)
+            CooldownCompanion:SetHealthEffectPreview("healAbsorbs", show)
+        end)
+
+        AddPreviewToggleButton(container, "Preview Incoming Heals", function()
+            return CooldownCompanion:IsHealthEffectPreviewActive("incomingHeals")
+        end, function(show)
+            CooldownCompanion:SetHealthEffectPreview("incomingHeals", show)
+        end)
+    end
 end
 
 CS.healthResourceUI = HealthResource

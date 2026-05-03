@@ -461,6 +461,9 @@ local defaults = {
                     healthBackgroundOpacity = 1,
                     showText = false,
                     textFormat = "percent",
+                    showAbsorbs = false,
+                    showHealAbsorbs = false,
+                    showIncomingHeals = false,
                 },
                 [100] = {
                     enabled = true,
