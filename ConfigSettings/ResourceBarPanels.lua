@@ -171,14 +171,14 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         gradientEnabled = DEFAULT_HEALTH_BACKGROUND_GRADIENT
     end
 
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Health")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    container:AddChild(heading)
+    local fillHeading = AceGUI:Create("Heading")
+    fillHeading:SetText("Health")
+    ColorHeading(fillHeading)
+    fillHeading:SetFullWidth(true)
+    container:AddChild(fillHeading)
 
     local fillGradientCb = AceGUI:Create("CheckBox")
-    fillGradientCb:SetLabel("Use Health Bar Gradient")
+    fillGradientCb:SetLabel("Use Health Gradient")
     fillGradientCb:SetValue(fillGradientEnabled == true)
     fillGradientCb:SetFullWidth(true)
     fillGradientCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -189,16 +189,22 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     container:AddChild(fillGradientCb)
 
     if fillGradientEnabled == true then
-        AddColorPicker(container, health, "healthBarFullColor", "Health Bar Full Health", DEFAULT_HEALTH_BAR_FULL_COLOR, false, applyBars, applyBars)
-        AddColorPicker(container, health, "healthBarHalfColor", "Health Bar Half Health", DEFAULT_HEALTH_BAR_HALF_COLOR, false, applyBars, applyBars)
-        AddColorPicker(container, health, "healthBarLowColor", "Health Bar Low Health", DEFAULT_HEALTH_BAR_LOW_COLOR, false, applyBars, applyBars)
+        AddColorPicker(container, health, "healthBarFullColor", "Full Health", DEFAULT_HEALTH_BAR_FULL_COLOR, false, applyBars, applyBars)
+        AddColorPicker(container, health, "healthBarHalfColor", "Half Health", DEFAULT_HEALTH_BAR_HALF_COLOR, false, applyBars, applyBars)
+        AddColorPicker(container, health, "healthBarLowColor", "Low Health", DEFAULT_HEALTH_BAR_LOW_COLOR, false, applyBars, applyBars)
     else
-        AddColorPicker(container, health, "healthBarColor", "Health Bar Color", DEFAULT_HEALTH_BAR_COLOR, false, applyBars, applyBars)
+        AddColorPicker(container, health, "healthBarColor", "Health Color", DEFAULT_HEALTH_BAR_COLOR, false, applyBars, applyBars)
     end
-    HealthResource.AddOpacitySlider(container, health, "healthBarOpacity", "Health Bar Opacity", DEFAULT_HEALTH_BAR_OPACITY, applyBars)
+    HealthResource.AddOpacitySlider(container, health, "healthBarOpacity", "Health Opacity", DEFAULT_HEALTH_BAR_OPACITY, applyBars)
+
+    local missingHeading = AceGUI:Create("Heading")
+    missingHeading:SetText("Missing Health")
+    ColorHeading(missingHeading)
+    missingHeading:SetFullWidth(true)
+    container:AddChild(missingHeading)
 
     local bgGradientCb = AceGUI:Create("CheckBox")
-    bgGradientCb:SetLabel("Use Health Background Gradient")
+    bgGradientCb:SetLabel("Use Missing Health Gradient")
     bgGradientCb:SetValue(gradientEnabled == true)
     bgGradientCb:SetFullWidth(true)
     bgGradientCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -209,14 +215,14 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     container:AddChild(bgGradientCb)
 
     if gradientEnabled == true then
-        AddColorPicker(container, health, "healthBackgroundFullColor", "Background Full Health", DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, false, applyBars, applyBars)
-        AddColorPicker(container, health, "healthBackgroundHalfColor", "Background Half Health", DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, false, applyBars, applyBars)
-        AddColorPicker(container, health, "healthBackgroundLowColor", "Background Low Health", DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, false, applyBars, applyBars)
+        AddColorPicker(container, health, "healthBackgroundFullColor", "Missing Health Full", DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, false, applyBars, applyBars)
+        AddColorPicker(container, health, "healthBackgroundHalfColor", "Missing Health Half", DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, false, applyBars, applyBars)
+        AddColorPicker(container, health, "healthBackgroundLowColor", "Missing Health Low", DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, false, applyBars, applyBars)
     else
-        AddColorPicker(container, health, "healthBackgroundColor", "Health Background Color", DEFAULT_HEALTH_BACKGROUND_COLOR, false, applyBars, applyBars)
+        AddColorPicker(container, health, "healthBackgroundColor", "Missing Health Color", DEFAULT_HEALTH_BACKGROUND_COLOR, false, applyBars, applyBars)
     end
 
-    HealthResource.AddOpacitySlider(container, health, "healthBackgroundOpacity", "Health Background Opacity", DEFAULT_HEALTH_BACKGROUND_OPACITY, applyBars)
+    HealthResource.AddOpacitySlider(container, health, "healthBackgroundOpacity", "Missing Health Opacity", DEFAULT_HEALTH_BACKGROUND_OPACITY, applyBars)
 end
 
 CS.healthResourceUI = HealthResource
@@ -995,7 +1001,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
     local colorInfoBtn = CreateInfoButton(colorHeading.frame, colorCollapseBtn, "LEFT", "RIGHT", 4, 0, {
         "Per-Resource Colors",
-        {"Most resource color settings are per-specialization. Health colors are character-level.", 1, 1, 1, true},
+        {"Most resource color settings are per-specialization. Health colors are character-level and appear when Health is enabled.", 1, 1, 1, true},
     }, colorHeading)
 
     colorHeading.right:ClearAllPoints()
@@ -1005,7 +1011,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     local _colorSpecID = GetCurrentConfigSpecID()
 
     if not colorCollapsed then
-        CS.healthResourceUI.BuildColorControls(container, settings, applyBars)
+        local health = settings.resources and settings.resources[healthResourceID]
+        if health and health.enabled == true then
+            CS.healthResourceUI.BuildColorControls(container, settings, applyBars)
+        end
     end
 
     if not _colorSpecID and not colorCollapsed then
