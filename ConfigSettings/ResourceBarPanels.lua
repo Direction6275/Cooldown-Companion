@@ -72,6 +72,10 @@ local DEFAULT_HEALTH_BACKGROUND_HALF_COLOR = RB.DEFAULT_HEALTH_BACKGROUND_HALF_C
 local DEFAULT_HEALTH_BACKGROUND_LOW_COLOR = RB.DEFAULT_HEALTH_BACKGROUND_LOW_COLOR
 local DEFAULT_HEALTH_BACKGROUND_OPACITY = RB.DEFAULT_HEALTH_BACKGROUND_OPACITY
 local DEFAULT_HEALTH_BACKGROUND_GRADIENT = RB.DEFAULT_HEALTH_BACKGROUND_GRADIENT
+local DEFAULT_HEALTH_ABSORB_COLOR = RB.DEFAULT_HEALTH_ABSORB_COLOR
+local DEFAULT_HEALTH_HEAL_ABSORB_COLOR = RB.DEFAULT_HEALTH_HEAL_ABSORB_COLOR
+local DEFAULT_HEALTH_INCOMING_HEAL_COLOR = RB.DEFAULT_HEALTH_INCOMING_HEAL_COLOR
+local DEFAULT_HEALTH_EFFECT_TEXTURE = RB.DEFAULT_HEALTH_EFFECT_TEXTURE
 local DEFAULT_COMBO_COLOR = RB.DEFAULT_COMBO_COLOR
 local DEFAULT_COMBO_MAX_COLOR = RB.DEFAULT_COMBO_MAX_COLOR
 local DEFAULT_COMBO_CHARGED_COLOR = RB.DEFAULT_COMBO_CHARGED_COLOR
@@ -147,6 +151,12 @@ function HealthResource.EnsureSettings(settings)
     if health.showAbsorbs == nil then health.showAbsorbs = false end
     if health.showHealAbsorbs == nil then health.showHealAbsorbs = false end
     if health.showIncomingHeals == nil then health.showIncomingHeals = false end
+    if type(health.healthAbsorbColor) ~= "table" then health.healthAbsorbColor = DEFAULT_HEALTH_ABSORB_COLOR end
+    if type(health.healthHealAbsorbColor) ~= "table" then health.healthHealAbsorbColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR end
+    if type(health.healthIncomingHealColor) ~= "table" then health.healthIncomingHealColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR end
+    if type(health.healthAbsorbTexture) ~= "string" or health.healthAbsorbTexture == "" then health.healthAbsorbTexture = DEFAULT_HEALTH_EFFECT_TEXTURE end
+    if type(health.healthHealAbsorbTexture) ~= "string" or health.healthHealAbsorbTexture == "" then health.healthHealAbsorbTexture = DEFAULT_HEALTH_EFFECT_TEXTURE end
+    if type(health.healthIncomingHealTexture) ~= "string" or health.healthIncomingHealTexture == "" then health.healthIncomingHealTexture = DEFAULT_HEALTH_EFFECT_TEXTURE end
     return settings.resources[HealthResource.ID]
 end
 
@@ -162,6 +172,30 @@ function HealthResource.AddOpacitySlider(container, health, key, label, defaultV
         applyBars()
     end)
     container:AddChild(slider)
+end
+
+function HealthResource.AddEffectTextureDropdown(container, health, key, label, applyBars)
+    local drop = AceGUI:Create("Dropdown")
+    drop:SetLabel(label)
+    drop:SetList(ST._GetBarTextureOptions())
+    drop:SetValue(health[key] or DEFAULT_HEALTH_EFFECT_TEXTURE)
+    drop:SetFullWidth(true)
+    drop:SetCallback("OnValueChanged", function(widget, event, val)
+        health[key] = val or DEFAULT_HEALTH_EFFECT_TEXTURE
+        applyBars()
+    end)
+    container:AddChild(drop)
+end
+
+function HealthResource.AddEffectStyleControls(container, checkbox, health, options, applyBars)
+    local enabled = health[options.enabledKey] == true
+    local expanded = AddAdvancedToggle(checkbox, options.advancedKey, tabInfoButtons, enabled)
+    if not (enabled and expanded) then
+        return
+    end
+
+    AddColorPicker(container, health, options.colorKey, "Effect Color", options.defaultColor, true, applyBars, applyBars)
+    HealthResource.AddEffectTextureDropdown(container, health, options.textureKey, "Effect Texture", applyBars)
 end
 
 function HealthResource.BuildColorControls(container, settings, applyBars)
@@ -245,8 +279,16 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     absorbsCb:SetCallback("OnValueChanged", function(widget, event, val)
         health.showAbsorbs = val == true
         applyBars()
+        CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(absorbsCb)
+    HealthResource.AddEffectStyleControls(container, absorbsCb, health, {
+        enabledKey = "showAbsorbs",
+        advancedKey = "healthAbsorbs",
+        colorKey = "healthAbsorbColor",
+        textureKey = "healthAbsorbTexture",
+        defaultColor = DEFAULT_HEALTH_ABSORB_COLOR,
+    }, applyBars)
 
     local healAbsorbsCb = AceGUI:Create("CheckBox")
     healAbsorbsCb:SetLabel("Show Heal Absorbs")
@@ -255,8 +297,16 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     healAbsorbsCb:SetCallback("OnValueChanged", function(widget, event, val)
         health.showHealAbsorbs = val == true
         applyBars()
+        CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(healAbsorbsCb)
+    HealthResource.AddEffectStyleControls(container, healAbsorbsCb, health, {
+        enabledKey = "showHealAbsorbs",
+        advancedKey = "healthHealAbsorbs",
+        colorKey = "healthHealAbsorbColor",
+        textureKey = "healthHealAbsorbTexture",
+        defaultColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR,
+    }, applyBars)
 
     local incomingHealsCb = AceGUI:Create("CheckBox")
     incomingHealsCb:SetLabel("Show Incoming Heals")
@@ -265,8 +315,16 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     incomingHealsCb:SetCallback("OnValueChanged", function(widget, event, val)
         health.showIncomingHeals = val == true
         applyBars()
+        CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(incomingHealsCb)
+    HealthResource.AddEffectStyleControls(container, incomingHealsCb, health, {
+        enabledKey = "showIncomingHeals",
+        advancedKey = "healthIncomingHeals",
+        colorKey = "healthIncomingHealColor",
+        textureKey = "healthIncomingHealTexture",
+        defaultColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
+    }, applyBars)
 
     if AddPreviewToggleButton then
         AddPreviewToggleButton(container, "Preview Absorbs", function()

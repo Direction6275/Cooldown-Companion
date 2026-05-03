@@ -164,10 +164,10 @@ local CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = 3
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = 12.3
 local HealthBar = {}
 local HEALTH_EFFECTS = {
-    texture = "Interface\\Buttons\\WHITE8x8",
-    incomingHealColor = { 0.1, 0.85, 0.35, 0.45 },
-    absorbColor = { 0.55, 0.85, 1.0, 0.45 },
-    healAbsorbColor = { 1.0, 0.12, 0.12, 0.55 },
+    texture = RB.DEFAULT_HEALTH_EFFECT_TEXTURE or "Solid",
+    incomingHealColor = RB.DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
+    absorbColor = RB.DEFAULT_HEALTH_ABSORB_COLOR,
+    healAbsorbColor = RB.DEFAULT_HEALTH_HEAL_ABSORB_COLOR,
     absorbMissingCalc = CreateUnitHealPredictionCalculator(),
     absorbOverflowCalc = CreateUnitHealPredictionCalculator(),
     preview = {},
@@ -1363,7 +1363,7 @@ function HealthBar.EnsureEffectBar(bar, key, color, frameLevelOffset)
 
     if not bar[key] then
         local effectBar = CreateFrame("StatusBar", nil, bar.healthEffectClip)
-        effectBar:SetStatusBarTexture(HEALTH_EFFECTS.texture)
+        effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(HEALTH_EFFECTS.texture))
         effectBar:SetMinMaxValues(0, 1)
         effectBar:SetValue(0)
         effectBar:Hide()
@@ -1372,9 +1372,21 @@ function HealthBar.EnsureEffectBar(bar, key, color, frameLevelOffset)
 
     local effectBar = bar[key]
     effectBar:SetFrameLevel(bar:GetFrameLevel() + (frameLevelOffset or 2))
-    effectBar:SetStatusBarTexture(HEALTH_EFFECTS.texture)
+    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(HEALTH_EFFECTS.texture))
     effectBar:SetStatusBarColor(color[1], color[2], color[3], color[4])
     return effectBar
+end
+
+function HealthBar.ApplyEffectStyle(effectBar, config, colorKey, defaultColor, textureKey)
+    if not effectBar then return end
+
+    local color = HealthBar.GetColor(config, colorKey, defaultColor)
+    local texture = config and config[textureKey]
+    if type(texture) ~= "string" or texture == "" then
+        texture = HEALTH_EFFECTS.texture
+    end
+    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texture))
+    effectBar:SetStatusBarColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
 end
 
 function HealthBar.EnsureEffectBars(bar)
@@ -1491,6 +1503,7 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
     preview = preview or HEALTH_EFFECTS.preview
 
     if bar.incomingHealBar then
+        HealthBar.ApplyEffectStyle(bar.incomingHealBar, config, "healthIncomingHealColor", HEALTH_EFFECTS.incomingHealColor, "healthIncomingHealTexture")
         if config.showIncomingHeals == true or preview.incomingHeals == true then
             bar.incomingHealBar:SetMinMaxValues(0, maxHealth)
             if preview.incomingHeals == true then
@@ -1506,6 +1519,8 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
     end
 
     if bar.absorbBar then
+        HealthBar.ApplyEffectStyle(bar.absorbBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
+        HealthBar.ApplyEffectStyle(bar.absorbOverflowBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
         if config.showAbsorbs == true or preview.absorbs == true then
             local missingHealthAbsorb
             local absorbOverflowing
@@ -1542,6 +1557,7 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
     end
 
     if bar.healAbsorbBar then
+        HealthBar.ApplyEffectStyle(bar.healAbsorbBar, config, "healthHealAbsorbColor", HEALTH_EFFECTS.healAbsorbColor, "healthHealAbsorbTexture")
         if config.showHealAbsorbs == true or preview.healAbsorbs == true then
             bar.healAbsorbBar:SetMinMaxValues(0, maxHealth)
             if preview.healAbsorbs == true then

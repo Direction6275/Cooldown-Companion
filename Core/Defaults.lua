@@ -464,6 +464,12 @@ local defaults = {
                     showAbsorbs = false,
                     showHealAbsorbs = false,
                     showIncomingHeals = false,
+                    healthAbsorbColor = { 0.55, 0.85, 1.0, 0.45 },
+                    healthAbsorbTexture = "Solid",
+                    healthHealAbsorbColor = { 1.0, 0.12, 0.12, 0.55 },
+                    healthHealAbsorbTexture = "Solid",
+                    healthIncomingHealColor = { 0.1, 0.85, 0.35, 0.45 },
+                    healthIncomingHealTexture = "Solid",
                 },
                 [100] = {
                     enabled = true,
