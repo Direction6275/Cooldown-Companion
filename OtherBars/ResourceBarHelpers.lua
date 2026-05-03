@@ -29,6 +29,7 @@ local DEFAULT_CONTINUOUS_TICK_WIDTH = RB.DEFAULT_CONTINUOUS_TICK_WIDTH
 local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
 local DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT = RB.DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT
 local MAX_CUSTOM_AURA_BARS = RB.MAX_CUSTOM_AURA_BARS
+local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local CLASS_RESOURCES = RB.CLASS_RESOURCES
 local SPEC_RESOURCES = RB.SPEC_RESOURCES
 local DRUID_FORM_RESOURCES = RB.DRUID_FORM_RESOURCES
@@ -379,6 +380,21 @@ local function GetDruidResources()
     return DRUID_DEFAULT_RESOURCES
 end
 
+local function AddHealthResource(resources)
+    local result = { RESOURCE_HEALTH }
+    if type(resources) ~= "table" then
+        return result
+    end
+
+    for _, powerType in ipairs(resources) do
+        if powerType ~= RESOURCE_HEALTH then
+            result[#result + 1] = powerType
+        end
+    end
+
+    return result
+end
+
 --- Determine which resources the current class/spec should display.
 local function DetermineActiveResources()
     local classID = GetPlayerClassID()
@@ -398,18 +414,18 @@ local function DetermineActiveResources()
                 table.insert(result, pt)
             end
             table.insert(result, 0)
-            return result
+            return AddHealthResource(result)
         end
-        return resources
+        return AddHealthResource(resources)
     end
 
     -- Check spec-specific override first
     local specID = GetCurrentSpecID()
     if specID and SPEC_RESOURCES[specID] then
-        return SPEC_RESOURCES[specID]
+        return AddHealthResource(SPEC_RESOURCES[specID])
     end
 
-    return CLASS_RESOURCES[classID] or {}
+    return AddHealthResource(CLASS_RESOURCES[classID] or {})
 end
 
 ------------------------------------------------------------------------
@@ -595,6 +611,11 @@ end
 
 --- Check if a specific resource is enabled in settings.
 local function IsResourceEnabled(powerType, settings)
+    if powerType == RESOURCE_HEALTH then
+        local health = settings and settings.resources and settings.resources[RESOURCE_HEALTH]
+        return type(health) == "table" and health.enabled == true
+    end
+
     if settings and settings.resources then
         local override = settings.resources[powerType]
         if override and override.enabled == false then

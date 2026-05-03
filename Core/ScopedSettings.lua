@@ -148,7 +148,9 @@ local function GetCurrentClassSpecInfo()
     return specIDs, currentSpecID
 end
 
--- Keep these resource mappings aligned with OtherBars/ResourceBar.lua.
+-- Keep these resource mappings aligned with OtherBars/ResourceBarConstants.lua.
+local RESOURCE_HEALTH = -1
+
 local CLASS_RESOURCES_BY_CLASS_ID = {
     [1]  = { 1 },
     [2]  = { 9, 0 },
@@ -203,6 +205,7 @@ local function GetCurrentClassApplicableResourceSet()
     end
 
     local resourceSet = {}
+    resourceSet[RESOURCE_HEALTH] = true
     BuildResourceSet(CLASS_RESOURCES_BY_CLASS_ID[classID], resourceSet)
 
     if classID == 11 then
