@@ -6,6 +6,8 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
+local RB = ST._RB
+local RESOURCE_HEALTH = RB and RB.RESOURCE_HEALTH or -1
 
 local AceGUI = LibStub("AceGUI-3.0")
 
@@ -1124,6 +1126,12 @@ local function RefreshColumn2()
                         else
                             ST._BuildResourceBarStylingPanel(scroll, "colors")
                         end
+                    elseif tab == "health" then
+                        if ST._BuildResourceBarHealthStylingPanel then
+                            ST._BuildResourceBarHealthStylingPanel(scroll)
+                        else
+                            ST._BuildResourceBarStylingPanel(scroll, "health")
+                        end
                     elseif tab == "positioning" then
                         if ST._BuildResourceBarPositioningPanel then
                             ST._BuildResourceBarPositioningPanel(scroll)
@@ -1152,15 +1160,26 @@ local function RefreshColumn2()
                     colorsTabText = "Colors: " .. ST._GetClassColoredText(specName)
                 end
             end
-            col2._resourceStylingTabGroup:SetTabs({
+
+            local rbSettings = CooldownCompanion:GetResourceBarSettings()
+            local health = rbSettings and rbSettings.resources and rbSettings.resources[RESOURCE_HEALTH]
+            local healthEnabled = health and health.enabled == true
+            local tabs = {
                 { value = "bar_text", text = "Styling" },
                 { value = "positioning", text = "Layout" },
                 { value = "colors", text = colorsTabText },
-            })
+            }
+            if healthEnabled then
+                tabs[#tabs + 1] = { value = "health", text = "Health" }
+            elseif CS.resourceStylingTab == "health" then
+                CS.resourceStylingTab = "bar_text"
+            end
+            col2._resourceStylingTabGroup:SetTabs(tabs)
 
             if CS.resourceStylingTab ~= "bar_text"
                 and CS.resourceStylingTab ~= "colors"
                 and CS.resourceStylingTab ~= "positioning"
+                and not (healthEnabled and CS.resourceStylingTab == "health")
             then
                 CS.resourceStylingTab = "bar_text"
             end

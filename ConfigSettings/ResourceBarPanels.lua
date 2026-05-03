@@ -176,6 +176,10 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     ColorHeading(fillHeading)
     fillHeading:SetFullWidth(true)
     container:AddChild(fillHeading)
+    CreateInfoButton(fillHeading.frame, fillHeading.label, "LEFT", "RIGHT", 4, 0, {
+        "Health Colors",
+        {"Resource Background Color is used by regular resource bars. Health uses Missing Health for its empty region.", 1, 1, 1, true},
+    }, fillHeading)
 
     local fillGradientCb = AceGUI:Create("CheckBox")
     fillGradientCb:SetLabel("Use Health Gradient")
@@ -361,6 +365,9 @@ local function BuildResourceBarAnchoringPanel(container)
                     settings.resources[pt] = {}
                 end
                 settings.resources[pt].enabled = val
+                if pt == HealthResource.ID then
+                    CS.resourceStylingTab = val and "health" or "bar_text"
+                end
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:UpdateAnchorStacking()
                 CooldownCompanion:RefreshConfigPanel()
@@ -679,6 +686,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     local mode = sectionMode or "all"
     local showBarText = (mode == "all" or mode == "bar_text")
     local showColors = (mode == "all" or mode == "colors")
+    local showHealthColors = (mode == "all" or mode == "health")
     local showAuraOverlays = (mode == "all" or mode == "colors") -- aura overlays merged into Colors tab
 
     local applyBars = function() CooldownCompanion:ApplyResourceBars() end
@@ -719,8 +727,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
         container:AddChild(brightSlider)
     end
 
-    -- Background Color
-    AddColorPicker(container, settings, "backgroundColor", "Background Color", { 0, 0, 0, 0.5 }, true, applyBars)
+    -- Resource Background Color
+    AddColorPicker(container, settings, "backgroundColor", "Resource Background Color", { 0, 0, 0, 0.5 }, true, applyBars)
 
     -- Border Style
     local borderDrop = AceGUI:Create("Dropdown")
@@ -983,6 +991,18 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
     end
 
+    if showHealthColors then
+        local health = settings.resources and settings.resources[healthResourceID]
+        if health and health.enabled == true then
+            CS.healthResourceUI.BuildColorControls(container, settings, applyBars)
+        elseif mode == "health" then
+            local label = AceGUI:Create("Label")
+            label:SetText("Enable Health to configure health colors.")
+            label:SetFullWidth(true)
+            container:AddChild(label)
+        end
+    end
+
     if showColors then
     -- ============ Per-Resource Colors Section ============
     local colorHeading = AceGUI:Create("Heading")
@@ -1001,7 +1021,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
     local colorInfoBtn = CreateInfoButton(colorHeading.frame, colorCollapseBtn, "LEFT", "RIGHT", 4, 0, {
         "Per-Resource Colors",
-        {"Most resource color settings are per-specialization. Health colors are character-level and appear when Health is enabled.", 1, 1, 1, true},
+        {"Resource colors are saved per specialization.", 1, 1, 1, true},
     }, colorHeading)
 
     colorHeading.right:ClearAllPoints()
@@ -1009,13 +1029,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     colorHeading.right:SetPoint("LEFT", colorInfoBtn, "RIGHT", 4, 0)
 
     local _colorSpecID = GetCurrentConfigSpecID()
-
-    if not colorCollapsed then
-        local health = settings.resources and settings.resources[healthResourceID]
-        if health and health.enabled == true then
-            CS.healthResourceUI.BuildColorControls(container, settings, applyBars)
-        end
-    end
 
     if not _colorSpecID and not colorCollapsed then
         local specUnavailLabel = AceGUI:Create("Label")
@@ -1419,6 +1432,10 @@ end
 
 local function BuildResourceBarColorsStylingPanel(container)
     BuildResourceBarStylingPanel(container, "colors")
+end
+
+local function BuildResourceBarHealthStylingPanel(container)
+    BuildResourceBarStylingPanel(container, "health")
 end
 
 ------------------------------------------------------------------------
@@ -3002,5 +3019,6 @@ ST._BuildResourceBarPositioningPanel = BuildResourceBarPositioningPanel
 ST._BuildResourceBarStylingPanel = BuildResourceBarStylingPanel
 ST._BuildResourceBarBarTextStylingPanel = BuildResourceBarBarTextStylingPanel
 ST._BuildResourceBarColorsStylingPanel = BuildResourceBarColorsStylingPanel
+ST._BuildResourceBarHealthStylingPanel = BuildResourceBarHealthStylingPanel
 ST._BuildCustomAuraBarPanel = BuildCustomAuraBarPanel
 ST._BuildLayoutOrderPanel = BuildLayoutOrderPanel
