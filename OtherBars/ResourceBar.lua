@@ -172,12 +172,18 @@ local HEALTH_EFFECTS = {
     lowHealthAlertThreshold = 0.35,
     lowHealthAlertThresholdFade = 0.001,
     lowHealthAlertPulseSpeed = 0.85,
+    netHealingCalc = CreateUnitHealPredictionCalculator(),
     absorbMissingCalc = CreateUnitHealPredictionCalculator(),
     absorbOverflowCalc = CreateUnitHealPredictionCalculator(),
     preview = {},
 }
-HEALTH_EFFECTS.absorbMissingCalc:SetDamageAbsorbClampMode(1)
-HEALTH_EFFECTS.absorbOverflowCalc:SetDamageAbsorbClampMode(2)
+HEALTH_EFFECTS.netHealingCalc:SetIncomingHealClampMode(Enum.UnitIncomingHealClampMode.MissingHealth)
+HEALTH_EFFECTS.netHealingCalc:SetHealAbsorbClampMode(Enum.UnitHealAbsorbClampMode.CurrentHealth)
+HEALTH_EFFECTS.netHealingCalc:SetHealAbsorbMode(Enum.UnitHealAbsorbMode.ReducedByIncomingHeals)
+HEALTH_EFFECTS.absorbMissingCalc:SetIncomingHealClampMode(Enum.UnitIncomingHealClampMode.MissingHealth)
+HEALTH_EFFECTS.absorbMissingCalc:SetHealAbsorbMode(Enum.UnitHealAbsorbMode.ReducedByIncomingHeals)
+HEALTH_EFFECTS.absorbMissingCalc:SetDamageAbsorbClampMode(Enum.UnitDamageAbsorbClampMode.MissingHealth)
+HEALTH_EFFECTS.absorbOverflowCalc:SetDamageAbsorbClampMode(Enum.UnitDamageAbsorbClampMode.MaximumHealth)
 
 local function EnsureNonNilNumber(value)
     if type(value) == "nil" then
@@ -1482,8 +1488,8 @@ function HealthBar.LayoutFullEffectBar(bar, effectBar)
     end
 end
 
-function HealthBar.LayoutForwardEffectBar(bar, effectBar)
-    local fillTexture = bar and bar:GetStatusBarTexture()
+function HealthBar.LayoutForwardEffectBar(bar, effectBar, anchorTexture)
+    local fillTexture = anchorTexture or (bar and bar:GetStatusBarTexture())
     if not bar or not effectBar or not fillTexture then return end
 
     effectBar:ClearAllPoints()
@@ -1579,6 +1585,15 @@ end
 function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
     if not bar then return end
 
+    local netHealingCalcPopulated = false
+    local function GetNetHealingCalc()
+        if not netHealingCalcPopulated then
+            UnitGetDetailedHealPrediction("player", nil, HEALTH_EFFECTS.netHealingCalc)
+            netHealingCalcPopulated = true
+        end
+        return HEALTH_EFFECTS.netHealingCalc
+    end
+
     if not config then
         if bar.lowHealthAlertBar then bar.lowHealthAlertBar:Hide() end
         if bar.incomingHealBar then bar.incomingHealBar:Hide() end
@@ -1603,6 +1618,7 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
         end
     end
 
+    local incomingHealAnchorTexture = nil
     if bar.incomingHealBar then
         HealthBar.ApplyEffectStyle(bar.incomingHealBar, config, "healthIncomingHealColor", HEALTH_EFFECTS.incomingHealColor, "healthIncomingHealTexture")
         if config.showIncomingHeals == true or preview.incomingHeals == true then
@@ -1610,9 +1626,10 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
             if preview.incomingHeals == true then
                 bar.incomingHealBar:SetValue(18)
             else
-                bar.incomingHealBar:SetValue(EnsureNonNilNumber(UnitGetIncomingHeals("player")))
+                bar.incomingHealBar:SetValue(EnsureNonNilNumber(GetNetHealingCalc():GetIncomingHeals()))
             end
             bar.incomingHealBar:Show()
+            incomingHealAnchorTexture = bar.incomingHealBar:GetStatusBarTexture()
         else
             bar.incomingHealBar:Hide()
             bar.incomingHealBar:SetValue(0)
@@ -1620,6 +1637,7 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
     end
 
     if bar.absorbBar then
+        HealthBar.LayoutForwardEffectBar(bar, bar.absorbBar, incomingHealAnchorTexture)
         HealthBar.ApplyEffectStyle(bar.absorbBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
         HealthBar.ApplyEffectStyle(bar.absorbOverflowBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
         if config.showAbsorbs == true or preview.absorbs == true then
@@ -1664,7 +1682,7 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
             if preview.healAbsorbs == true then
                 bar.healAbsorbBar:SetValue(22)
             else
-                bar.healAbsorbBar:SetValue(EnsureNonNilNumber(UnitGetTotalHealAbsorbs("player")))
+                bar.healAbsorbBar:SetValue(EnsureNonNilNumber(GetNetHealingCalc():GetHealAbsorbs()))
             end
             bar.healAbsorbBar:Show()
         else
