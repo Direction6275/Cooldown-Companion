@@ -1454,6 +1454,13 @@ function HealthBar.ApplyLowHealthAlertColor(bar, config, preview)
     fillTexture:SetVertexColor(0, 0, 0, 0)
 end
 
+function HealthBar.SetEffectFillAlphaFromBoolean(effectBar, value, alphaIfTrue, alphaIfFalse)
+    local fillTexture = effectBar and effectBar:GetStatusBarTexture()
+    if fillTexture and fillTexture.SetAlphaFromBoolean then
+        fillTexture:SetAlphaFromBoolean(value, alphaIfTrue, alphaIfFalse)
+    end
+end
+
 function HealthBar.EnsureEffectBars(bar)
     HealthBar.EnsureEffectBar(bar, "lowHealthAlertBar", HEALTH_EFFECTS.lowHealthAlertColor, 2)
     HealthBar.EnsureEffectBar(bar, "incomingHealBar", HEALTH_EFFECTS.incomingHealColor, 3)
@@ -1624,20 +1631,20 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
                 absorbOverflowing = true
                 overflowAbsorb = 28
             else
-                UnitGetDetailedHealPrediction("player", "player", HEALTH_EFFECTS.absorbMissingCalc)
+                UnitGetDetailedHealPrediction("player", nil, HEALTH_EFFECTS.absorbMissingCalc)
                 missingHealthAbsorb, absorbOverflowing = HEALTH_EFFECTS.absorbMissingCalc:GetDamageAbsorbs()
-                UnitGetDetailedHealPrediction("player", "player", HEALTH_EFFECTS.absorbOverflowCalc)
+                UnitGetDetailedHealPrediction("player", nil, HEALTH_EFFECTS.absorbOverflowCalc)
                 overflowAbsorb = HEALTH_EFFECTS.absorbOverflowCalc:GetDamageAbsorbs()
             end
 
             bar.absorbBar:SetMinMaxValues(0, maxHealth)
             bar.absorbBar:SetValue(EnsureNonNilNumber(missingHealthAbsorb))
-            bar.absorbBar:SetAlphaFromBoolean(absorbOverflowing, 0, 1)
+            HealthBar.SetEffectFillAlphaFromBoolean(bar.absorbBar, absorbOverflowing, 0, 1)
             bar.absorbBar:Show()
             if bar.absorbOverflowBar then
                 bar.absorbOverflowBar:SetMinMaxValues(0, maxHealth)
                 bar.absorbOverflowBar:SetValue(EnsureNonNilNumber(overflowAbsorb))
-                bar.absorbOverflowBar:SetAlphaFromBoolean(absorbOverflowing, 1, 0)
+                HealthBar.SetEffectFillAlphaFromBoolean(bar.absorbOverflowBar, absorbOverflowing, 1, 0)
                 bar.absorbOverflowBar:Show()
             end
         else
