@@ -1416,10 +1416,18 @@ function HealthBar.ApplyFillColor(bar, config, previewPercent)
         color = CreateColor(static[1], static[2], static[3], opacity)
     end
 
-    local r, g, b, a
     if type(color) == "table" and color.GetRGBA then
-        r, g, b, a = color:GetRGBA()
-    elseif type(color) == "table" then
+        local r, g, b, a = color:GetRGBA()
+        bar:SetStatusBarColor(r, g, b, 1)
+        local fillTexture = bar:GetStatusBarTexture()
+        if fillTexture and fillTexture.SetAlpha then
+            fillTexture:SetAlpha(a)
+        end
+        return
+    end
+
+    local r, g, b, a
+    if type(color) == "table" then
         r = color.r or color[1]
         g = color.g or color[2]
         b = color.b or color[3]
@@ -1457,10 +1465,13 @@ function HealthBar.ApplyBackgroundColor(bar, config, previewPercent)
         color = CreateColor(static[1], static[2], static[3], opacity)
     end
 
-    local r, g, b, a
     if type(color) == "table" and color.GetRGBA then
-        r, g, b, a = color:GetRGBA()
-    elseif type(color) == "table" then
+        bar.bg:SetVertexColor(color:GetRGBA())
+        return
+    end
+
+    local r, g, b, a
+    if type(color) == "table" then
         r = color.r or color[1]
         g = color.g or color[2]
         b = color.b or color[3]
