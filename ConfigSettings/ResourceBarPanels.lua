@@ -75,6 +75,7 @@ local DEFAULT_HEALTH_BACKGROUND_GRADIENT = RB.DEFAULT_HEALTH_BACKGROUND_GRADIENT
 local DEFAULT_HEALTH_ABSORB_COLOR = RB.DEFAULT_HEALTH_ABSORB_COLOR
 local DEFAULT_HEALTH_HEAL_ABSORB_COLOR = RB.DEFAULT_HEALTH_HEAL_ABSORB_COLOR
 local DEFAULT_HEALTH_INCOMING_HEAL_COLOR = RB.DEFAULT_HEALTH_INCOMING_HEAL_COLOR
+local DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR = RB.DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR
 local DEFAULT_HEALTH_EFFECT_TEXTURE = RB.DEFAULT_HEALTH_EFFECT_TEXTURE
 local DEFAULT_COMBO_COLOR = RB.DEFAULT_COMBO_COLOR
 local DEFAULT_COMBO_MAX_COLOR = RB.DEFAULT_COMBO_MAX_COLOR
@@ -151,12 +152,15 @@ function HealthResource.EnsureSettings(settings)
     if health.showAbsorbs == nil then health.showAbsorbs = false end
     if health.showHealAbsorbs == nil then health.showHealAbsorbs = false end
     if health.showIncomingHeals == nil then health.showIncomingHeals = false end
+    if health.showLowHealthAlert == nil then health.showLowHealthAlert = false end
     if type(health.healthAbsorbColor) ~= "table" then health.healthAbsorbColor = DEFAULT_HEALTH_ABSORB_COLOR end
     if type(health.healthHealAbsorbColor) ~= "table" then health.healthHealAbsorbColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR end
     if type(health.healthIncomingHealColor) ~= "table" then health.healthIncomingHealColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR end
+    if type(health.healthLowHealthAlertColor) ~= "table" then health.healthLowHealthAlertColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR end
     if type(health.healthAbsorbTexture) ~= "string" or health.healthAbsorbTexture == "" then health.healthAbsorbTexture = DEFAULT_HEALTH_EFFECT_TEXTURE end
     if type(health.healthHealAbsorbTexture) ~= "string" or health.healthHealAbsorbTexture == "" then health.healthHealAbsorbTexture = DEFAULT_HEALTH_EFFECT_TEXTURE end
     if type(health.healthIncomingHealTexture) ~= "string" or health.healthIncomingHealTexture == "" then health.healthIncomingHealTexture = DEFAULT_HEALTH_EFFECT_TEXTURE end
+    if type(health.healthLowHealthAlertTexture) ~= "string" or health.healthLowHealthAlertTexture == "" then health.healthLowHealthAlertTexture = DEFAULT_HEALTH_EFFECT_TEXTURE end
     return settings.resources[HealthResource.ID]
 end
 
@@ -332,6 +336,26 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         defaultColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
     }, applyBars)
 
+    local lowHealthAlertCb = AceGUI:Create("CheckBox")
+    lowHealthAlertCb:SetLabel("Show Low Health Alert")
+    lowHealthAlertCb:SetValue(health.showLowHealthAlert == true)
+    lowHealthAlertCb:SetFullWidth(true)
+    lowHealthAlertCb:SetCallback("OnValueChanged", function(widget, event, val)
+        health.showLowHealthAlert = val == true
+        applyBars()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(lowHealthAlertCb)
+    HealthResource.AddEffectStyleControls(container, lowHealthAlertCb, health, {
+        enabledKey = "showLowHealthAlert",
+        advancedKey = "healthLowHealthAlert",
+        colorKey = "healthLowHealthAlertColor",
+        textureKey = "healthLowHealthAlertTexture",
+        colorLabel = "Low Health Alert Color",
+        textureLabel = "Low Health Alert Texture",
+        defaultColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR,
+    }, applyBars)
+
     if AddPreviewToggleButton then
         AddPreviewToggleButton(container, "Preview Absorbs", function()
             return CooldownCompanion:IsHealthEffectPreviewActive("absorbs")
@@ -349,6 +373,12 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
             return CooldownCompanion:IsHealthEffectPreviewActive("incomingHeals")
         end, function(show)
             CooldownCompanion:SetHealthEffectPreview("incomingHeals", show)
+        end)
+
+        AddPreviewToggleButton(container, "Preview Low Health Alert", function()
+            return CooldownCompanion:IsHealthEffectPreviewActive("lowHealthAlert")
+        end, function(show)
+            CooldownCompanion:SetHealthEffectPreview("lowHealthAlert", show)
         end)
     end
 end

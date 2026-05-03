@@ -168,6 +168,10 @@ local HEALTH_EFFECTS = {
     incomingHealColor = RB.DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
     absorbColor = RB.DEFAULT_HEALTH_ABSORB_COLOR,
     healAbsorbColor = RB.DEFAULT_HEALTH_HEAL_ABSORB_COLOR,
+    lowHealthAlertColor = RB.DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR,
+    lowHealthAlertThreshold = 0.35,
+    lowHealthAlertThresholdFade = 0.001,
+    lowHealthAlertPulseSpeed = 0.85,
     absorbMissingCalc = CreateUnitHealPredictionCalculator(),
     absorbOverflowCalc = CreateUnitHealPredictionCalculator(),
     preview = {},
@@ -1389,11 +1393,86 @@ function HealthBar.ApplyEffectStyle(effectBar, config, colorKey, defaultColor, t
     effectBar:SetStatusBarColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
 end
 
+function HealthBar.GetLowHealthAlertThreshold()
+    local threshold = LowHealthFrame and tonumber(LowHealthFrame.lowHealthPercentStart)
+    if not threshold or threshold <= 0 or threshold >= 1 then
+        threshold = HEALTH_EFFECTS.lowHealthAlertThreshold
+    end
+    return threshold
+end
+
+function HealthBar.BuildLowHealthAlertCurve(config)
+    local color = HealthBar.GetColor(config, "healthLowHealthAlertColor", HEALTH_EFFECTS.lowHealthAlertColor)
+    local alpha = color[4]
+    if alpha == nil then
+        alpha = HEALTH_EFFECTS.lowHealthAlertColor[4] or 1
+    end
+
+    local threshold = HealthBar.GetLowHealthAlertThreshold()
+    local curve = C_CurveUtil.CreateColorCurve()
+    local alertColor = CreateColor(color[1], color[2], color[3], alpha)
+    local transparentColor = CreateColor(color[1], color[2], color[3], 0)
+    curve:AddPoint(0.0, alertColor)
+    curve:AddPoint(threshold, alertColor)
+    curve:AddPoint(math_min(1.0, threshold + HEALTH_EFFECTS.lowHealthAlertThresholdFade), transparentColor)
+    curve:AddPoint(1.0, transparentColor)
+    return curve
+end
+
+function HealthBar.ApplyLowHealthAlertStyle(effectBar, config)
+    if not effectBar then return end
+
+    local texture = config and config.healthLowHealthAlertTexture
+    if type(texture) ~= "string" or texture == "" then
+        texture = HEALTH_EFFECTS.texture
+    end
+    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texture))
+    effectBar:SetMinMaxValues(0, 1)
+    effectBar:SetValue(1)
+end
+
+function HealthBar.ApplyLowHealthAlertColor(bar, config, preview)
+    local effectBar = bar and bar.lowHealthAlertBar
+    local fillTexture = effectBar and effectBar:GetStatusBarTexture()
+    if not fillTexture then return end
+
+    if preview == true then
+        local color = HealthBar.GetColor(config, "healthLowHealthAlertColor", HEALTH_EFFECTS.lowHealthAlertColor)
+        fillTexture:SetVertexColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
+        return
+    end
+
+    if not bar._lowHealthAlertCurve then
+        bar._lowHealthAlertCurve = HealthBar.BuildLowHealthAlertCurve(config)
+    end
+    local color = UnitHealthPercent("player", true, bar._lowHealthAlertCurve)
+    if type(color) == "table" and color.GetRGBA then
+        fillTexture:SetVertexColor(color:GetRGBA())
+        return
+    end
+
+    fillTexture:SetVertexColor(0, 0, 0, 0)
+end
+
 function HealthBar.EnsureEffectBars(bar)
-    HealthBar.EnsureEffectBar(bar, "incomingHealBar", HEALTH_EFFECTS.incomingHealColor, 2)
-    HealthBar.EnsureEffectBar(bar, "absorbBar", HEALTH_EFFECTS.absorbColor, 3)
-    HealthBar.EnsureEffectBar(bar, "absorbOverflowBar", HEALTH_EFFECTS.absorbColor, 4)
-    HealthBar.EnsureEffectBar(bar, "healAbsorbBar", HEALTH_EFFECTS.healAbsorbColor, 5)
+    HealthBar.EnsureEffectBar(bar, "lowHealthAlertBar", HEALTH_EFFECTS.lowHealthAlertColor, 2)
+    HealthBar.EnsureEffectBar(bar, "incomingHealBar", HEALTH_EFFECTS.incomingHealColor, 3)
+    HealthBar.EnsureEffectBar(bar, "absorbBar", HEALTH_EFFECTS.absorbColor, 4)
+    HealthBar.EnsureEffectBar(bar, "absorbOverflowBar", HEALTH_EFFECTS.absorbColor, 5)
+    HealthBar.EnsureEffectBar(bar, "healAbsorbBar", HEALTH_EFFECTS.healAbsorbColor, 6)
+end
+
+function HealthBar.LayoutFullEffectBar(bar, effectBar)
+    if not bar or not effectBar then return end
+
+    effectBar:ClearAllPoints()
+    effectBar:SetOrientation(bar._isVertical and "VERTICAL" or "HORIZONTAL")
+    effectBar:SetReverseFill(false)
+    if bar.healthEffectClip then
+        effectBar:SetAllPoints(bar.healthEffectClip)
+    else
+        effectBar:SetAllPoints(bar)
+    end
 end
 
 function HealthBar.LayoutForwardEffectBar(bar, effectBar)
@@ -1480,6 +1559,7 @@ function HealthBar.LayoutEffectBars(bar, borderStyle, borderSize)
             bar.healthEffectClip:SetAllPoints(bar)
         end
     end
+    HealthBar.LayoutFullEffectBar(bar, bar.lowHealthAlertBar)
     HealthBar.LayoutForwardEffectBar(bar, bar.incomingHealBar)
     HealthBar.LayoutForwardEffectBar(bar, bar.absorbBar)
     HealthBar.LayoutReverseEdgeEffectBar(bar, bar.absorbOverflowBar)
@@ -1493,6 +1573,7 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
     if not bar then return end
 
     if not config then
+        if bar.lowHealthAlertBar then bar.lowHealthAlertBar:Hide() end
         if bar.incomingHealBar then bar.incomingHealBar:Hide() end
         if bar.absorbBar then bar.absorbBar:Hide() end
         if bar.absorbOverflowBar then bar.absorbOverflowBar:Hide() end
@@ -1501,6 +1582,19 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
     end
 
     preview = preview or HEALTH_EFFECTS.preview
+
+    if bar.lowHealthAlertBar then
+        HealthBar.ApplyLowHealthAlertStyle(bar.lowHealthAlertBar, config)
+        if config.showLowHealthAlert == true or preview.lowHealthAlert == true then
+            HealthBar.ApplyLowHealthAlertColor(bar, config, preview.lowHealthAlert == true)
+            bar.lowHealthAlertBar:SetAlpha(0.6 + (0.4 * math_sin(GetTime() * 2 * math_pi / HEALTH_EFFECTS.lowHealthAlertPulseSpeed)))
+            bar.lowHealthAlertBar:Show()
+        else
+            bar.lowHealthAlertBar:Hide()
+            bar.lowHealthAlertBar:SetAlpha(1)
+            bar.lowHealthAlertBar:SetValue(0)
+        end
+    end
 
     if bar.incomingHealBar then
         HealthBar.ApplyEffectStyle(bar.incomingHealBar, config, "healthIncomingHealColor", HEALTH_EFFECTS.incomingHealColor, "healthIncomingHealTexture")
@@ -3051,9 +3145,12 @@ local function OnUpdate(self, elapsed)
     if elapsed_acc < UPDATE_INTERVAL then return end
     elapsed_acc = 0
 
-    if isPreviewActive then return end
-
     local settings = GetResourceBarSettings()
+    if isPreviewActive then
+        HealthBar.RefreshEffectPreviewAnimation(settings)
+        return
+    end
+
     local auraActiveCache = {}
 
     for _, barInfo in ipairs(resourceBarFrames) do
@@ -3317,6 +3414,7 @@ function HealthBar.Style(bar, settings)
     bar._reverseFill = reverseFill
     bar._healthBarCurve = HealthBar.BuildFillCurve(resourceConfig)
     bar._healthBackgroundCurve = HealthBar.BuildBackgroundCurve(resourceConfig)
+    bar._lowHealthAlertCurve = HealthBar.BuildLowHealthAlertCurve(resourceConfig)
 
     HealthBar.ApplyFillColor(bar, resourceConfig)
     HealthBar.EnsureEffectBars(bar)
@@ -4068,6 +4166,7 @@ function HealthBar.HasActiveEffectPreview()
     return preview.absorbs == true
         or preview.healAbsorbs == true
         or preview.incomingHeals == true
+        or preview.lowHealthAlert == true
 end
 
 function HealthBar.RefreshEffectPreviewState()
@@ -4085,8 +4184,25 @@ function HealthBar.RefreshEffectPreviewState()
     end
 end
 
+function HealthBar.RefreshEffectPreviewAnimation(settings)
+    local preview = HEALTH_EFFECTS.preview
+    if preview.lowHealthAlert ~= true then
+        return
+    end
+
+    local config = HealthBar.GetConfig(settings)
+    for _, barInfo in ipairs(resourceBarFrames) do
+        if barInfo.barType == "health_continuous" and barInfo.frame and barInfo.frame:IsShown() then
+            HealthBar.UpdateEffectBars(barInfo.frame, config, 100, preview)
+        end
+    end
+end
+
 function CooldownCompanion:SetHealthEffectPreview(effectKey, show)
-    if effectKey ~= "absorbs" and effectKey ~= "healAbsorbs" and effectKey ~= "incomingHeals" then
+    if effectKey ~= "absorbs"
+        and effectKey ~= "healAbsorbs"
+        and effectKey ~= "incomingHeals"
+        and effectKey ~= "lowHealthAlert" then
         return
     end
 
