@@ -194,8 +194,8 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
         return
     end
 
-    AddColorPicker(container, health, options.colorKey, "Effect Color", options.defaultColor, true, applyBars, applyBars)
-    HealthResource.AddEffectTextureDropdown(container, health, options.textureKey, "Effect Texture", applyBars)
+    AddColorPicker(container, health, options.colorKey, options.colorLabel, options.defaultColor, true, applyBars, applyBars)
+    HealthResource.AddEffectTextureDropdown(container, health, options.textureKey, options.textureLabel, applyBars)
 end
 
 function HealthResource.BuildColorControls(container, settings, applyBars)
@@ -287,11 +287,13 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         advancedKey = "healthAbsorbs",
         colorKey = "healthAbsorbColor",
         textureKey = "healthAbsorbTexture",
+        colorLabel = "Absorb Color",
+        textureLabel = "Absorb Texture",
         defaultColor = DEFAULT_HEALTH_ABSORB_COLOR,
     }, applyBars)
 
     local healAbsorbsCb = AceGUI:Create("CheckBox")
-    healAbsorbsCb:SetLabel("Show Heal Absorbs")
+    healAbsorbsCb:SetLabel("Show Healing Absorbs")
     healAbsorbsCb:SetValue(health.showHealAbsorbs == true)
     healAbsorbsCb:SetFullWidth(true)
     healAbsorbsCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -305,6 +307,8 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         advancedKey = "healthHealAbsorbs",
         colorKey = "healthHealAbsorbColor",
         textureKey = "healthHealAbsorbTexture",
+        colorLabel = "Healing Absorb Color",
+        textureLabel = "Healing Absorb Texture",
         defaultColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR,
     }, applyBars)
 
@@ -323,6 +327,8 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         advancedKey = "healthIncomingHeals",
         colorKey = "healthIncomingHealColor",
         textureKey = "healthIncomingHealTexture",
+        colorLabel = "Incoming Heal Color",
+        textureLabel = "Incoming Heal Texture",
         defaultColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
     }, applyBars)
 
