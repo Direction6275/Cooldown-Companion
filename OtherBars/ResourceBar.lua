@@ -1461,10 +1461,9 @@ function HealthBar.ApplyLowHealthAlertColor(bar, config, preview)
     fillTexture:SetVertexColor(0, 0, 0, 0)
 end
 
-function HealthBar.SetEffectFillAlphaFromBoolean(effectBar, value, alphaIfTrue, alphaIfFalse)
-    local fillTexture = effectBar and effectBar:GetStatusBarTexture()
-    if fillTexture and fillTexture.SetAlphaFromBoolean then
-        fillTexture:SetAlphaFromBoolean(value, alphaIfTrue, alphaIfFalse)
+function HealthBar.SetEffectAlphaFromBoolean(effectBar, value, alphaIfTrue, alphaIfFalse)
+    if effectBar and effectBar.SetAlphaFromBoolean then
+        effectBar:SetAlphaFromBoolean(value, alphaIfTrue, alphaIfFalse)
     end
 end
 
@@ -1677,12 +1676,12 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
 
             bar.absorbBar:SetMinMaxValues(0, maxHealth)
             bar.absorbBar:SetValue(EnsureNonNilNumber(missingHealthAbsorb))
-            HealthBar.SetEffectFillAlphaFromBoolean(bar.absorbBar, absorbOverflowing, 0, 1)
+            bar.absorbBar:SetAlpha(1)
             bar.absorbBar:Show()
             if bar.absorbOverflowBar then
                 bar.absorbOverflowBar:SetMinMaxValues(0, maxHealth)
                 bar.absorbOverflowBar:SetValue(EnsureNonNilNumber(overflowAbsorb))
-                HealthBar.SetEffectFillAlphaFromBoolean(bar.absorbOverflowBar, absorbOverflowing, 1, 0)
+                HealthBar.SetEffectAlphaFromBoolean(bar.absorbOverflowBar, absorbOverflowing, 1, 0)
                 bar.absorbOverflowBar:Show()
             end
         else
