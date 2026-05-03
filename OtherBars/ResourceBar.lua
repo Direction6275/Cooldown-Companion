@@ -1472,10 +1472,6 @@ function HealthBar.ApplyBackgroundColor(bar, config, previewPercent)
     end
 end
 
-function HealthBar.FormatNumber(value)
-    return AbbreviateNumbers(value)
-end
-
 function HealthBar.Update(bar, settings)
     if not settings then
         settings = GetResourceBarSettings()
@@ -1496,9 +1492,15 @@ function HealthBar.Update(bar, settings)
     if bar.text and bar.text:IsShown() then
         local textFormat = bar._textFormat
         if textFormat == "current" then
-            bar.text:SetText(HealthBar.FormatNumber(currentHealth))
+            bar.text:SetFormattedText("%s", AbbreviateNumbers(currentHealth))
         elseif textFormat == "current_max" then
-            bar.text:SetText(HealthBar.FormatNumber(currentHealth) .. " / " .. HealthBar.FormatNumber(maxHealth))
+            bar.text:SetFormattedText("%s / %s", AbbreviateNumbers(currentHealth), AbbreviateNumbers(maxHealth))
+        elseif textFormat == "current_percent" then
+            bar.text:SetFormattedText(
+                "%s | %.0f%%",
+                AbbreviateNumbers(currentHealth),
+                UnitHealthPercent("player", true, PERCENT_SCALE_CURVE)
+            )
         else
             bar.text:SetFormattedText("%.0f%%", UnitHealthPercent("player", true, PERCENT_SCALE_CURVE))
         end
@@ -3083,7 +3085,7 @@ function HealthBar.Style(bar, settings)
     end
 
     local textFormat = resourceConfig and resourceConfig.textFormat or "percent"
-    if textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "percent" then
+    if textFormat ~= "percent" and textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "current_percent" then
         textFormat = "percent"
     end
     local textFontName = resourceConfig and resourceConfig.textFont or DEFAULT_RESOURCE_TEXT_FONT
@@ -4002,6 +4004,8 @@ local function ApplyPreviewDataToBar(barInfo, settings)
                 barInfo.frame.text:SetText("650K")
             elseif textFormat == "current_max" then
                 barInfo.frame.text:SetText("650K / 1M")
+            elseif textFormat == "current_percent" then
+                barInfo.frame.text:SetText("650K | 65%")
             else
                 barInfo.frame.text:SetText("65%")
             end

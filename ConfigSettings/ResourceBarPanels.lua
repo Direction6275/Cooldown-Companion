@@ -677,6 +677,12 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
     local applyBars = function() CooldownCompanion:ApplyResourceBars() end
     local healthResourceID = -1 -- Keep aligned with RB.RESOURCE_HEALTH without adding an upvalue here.
+    local function isHealthTextFormat(textFormat)
+        return textFormat == "percent"
+            or textFormat == "current"
+            or textFormat == "current_max"
+            or textFormat == "current_percent"
+    end
 
     if showBarText then
     -- Bar Texture
@@ -793,7 +799,11 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
             cb:SetCallback("OnValueChanged", function(widget, event, val)
                 if not settings.resources[capturedPt] then settings.resources[capturedPt] = {} end
                 if isHealthResource then
-                    settings.resources[capturedPt].showText = val and true or false
+                    local healthSettings = settings.resources[capturedPt]
+                    healthSettings.showText = val and true or false
+                    if not isHealthTextFormat(healthSettings.textFormat) then
+                        healthSettings.textFormat = "percent"
+                    end
                 elseif isSegmentedResource then
                     settings.resources[capturedPt].showText = val and true or nil
                 else
@@ -819,8 +829,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         percent = "Percent",
                         current = "Current Health",
                         current_max = "Current / Max Health",
+                        current_percent = "Current + Percent",
                     }
-                    textFormatOrder = { "percent", "current", "current_max" }
+                    textFormatOrder = { "percent", "current", "current_max", "current_percent" }
                 elseif isSegmentedResource then
                     textFormatOptions = {
                         current = "Current Value",
@@ -838,7 +849,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 textFormatDrop:SetList(textFormatOptions, textFormatOrder)
                 local textFormatValue = resSettings.textFormat or (isHealthResource and "percent" or DEFAULT_RESOURCE_TEXT_FORMAT)
                 if isHealthResource then
-                    if textFormatValue ~= "current" and textFormatValue ~= "current_max" and textFormatValue ~= "percent" then
+                    if not isHealthTextFormat(textFormatValue) then
                         textFormatValue = "percent"
                     end
                 elseif isSegmentedResource then
@@ -854,7 +865,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 textFormatDrop:SetFullWidth(true)
                 textFormatDrop:SetCallback("OnValueChanged", function(widget, event, val)
                     if isHealthResource then
-                        if val == "current" or val == "current_max" or val == "percent" then
+                        if isHealthTextFormat(val) then
                             settings.resources[capturedPt].textFormat = val
                         else
                             settings.resources[capturedPt].textFormat = "percent"
