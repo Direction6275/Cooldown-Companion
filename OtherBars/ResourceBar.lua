@@ -1479,7 +1479,8 @@ function HealthBar.Update(bar, settings)
 
     local currentHealth = UnitHealth("player")
     local maxHealth = UnitHealthMax("player")
-    if not maxHealth or maxHealth < 1 then
+    local maxHealthIsSecret = issecretvalue and issecretvalue(maxHealth)
+    if not maxHealthIsSecret and (not maxHealth or maxHealth < 1) then
         maxHealth = 1
     end
 
