@@ -13,6 +13,8 @@ local AceGUI = LibStub("AceGUI-3.0")
 
 -- Imports from earlier Config/ files
 local CleanRecycledEntry = ST._CleanRecycledEntry
+local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
+local ApplyConfigTextRow = ST._ApplyConfigTextRow
 local GetButtonIcon = ST._GetButtonIcon
 local GetConfigEntryDisplayName = ST._GetConfigEntryDisplayName
 local GenerateFolderName = ST._GenerateFolderName
@@ -533,12 +535,10 @@ local function RenderConfigFinderResults()
         local header = AceGUI:Create("InteractiveLabel")
         CleanRecycledEntry(header)
         header:SetText(headerText)
-        header:SetImage("Interface\\BUTTONS\\WHITE8X8")
-        header:SetImageSize(1, 32)
-        if header.image then header.image:SetAlpha(0) end
         header:SetFullWidth(true)
         header:SetFontObject(GameFontHighlight)
         header:SetJustifyH("CENTER")
+        ApplyConfigTextRow(header, "CENTER")
         header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
         ConfigurePanelTypeBadge(header, panel and panel.displayMode, header.label:GetStringWidth())
         if panel and panel.enabled == false then
@@ -557,17 +557,14 @@ local function RenderConfigFinderResults()
             local buttonData = entryInfo.button
             local entry = AceGUI:Create("InteractiveLabel")
             CleanRecycledEntry(entry)
+            local entryDisabled = buttonData and buttonData.enabled == false
             entry:SetText(entryInfo.text or (buttonData and buttonData.name) or "Entry")
-            entry:SetImage(buttonData and GetButtonIcon(buttonData) or 134400)
-            entry:SetImageSize(32, 32)
             entry:SetFullWidth(true)
             entry:SetFontObject(GameFontHighlight)
+            ApplyConfigRowIcon(entry, buttonData and GetButtonIcon(buttonData) or 134400, { desaturated = entryDisabled })
             entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-            if buttonData and buttonData.enabled == false then
+            if entryDisabled then
                 entry:SetColor(0.5, 0.5, 0.5)
-                if entry.image and entry.image.SetDesaturated then
-                    entry.image:SetDesaturated(true)
-                end
             end
 
             local buttonIndex = entryInfo.index
@@ -1345,12 +1342,11 @@ local function RefreshColumn2()
             local header = AceGUI:Create("InteractiveLabel")
             CleanRecycledEntry(header)
             header:SetText(headerText)
-            header:SetImage("Interface\\BUTTONS\\WHITE8X8")
-            header.image:SetAlpha(0)
 
             header:SetFullWidth(true)
             header:SetFontObject(GameFontHighlight)
             header:SetJustifyH("CENTER")
+            ApplyConfigTextRow(header, "CENTER")
             local textW = header.label:GetStringWidth()
             ConfigurePanelTypeBadge(header, panel.displayMode, textW)
 
@@ -1404,14 +1400,14 @@ local function RefreshColumn2()
                     entry:SetText(buttonData.name or ("ID: " .. (buttonData.id or "?")))
                     entry:SetFullWidth(true)
                     entry:SetFontObject(GameFontHighlightSmall)
+                    if buttonData.enabled == false and entry.image and entry.image.SetDesaturated then
+                        entry.image:SetDesaturated(true)
+                    end
                     entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
                     if CS.selectedGroup == panelGroupId and CS.selectedButton == buttonIndex then
                         entry:SetColor(0, 1, 0)
                     elseif buttonData.enabled == false then
                         entry:SetColor(0.5, 0.5, 0.5)
-                    end
-                    if buttonData.enabled == false and entry.image and entry.image.SetDesaturated then
-                        entry.image:SetDesaturated(true)
                     end
                     local capturedIndex = buttonIndex
                     entry:SetCallback("OnClick", function()
@@ -1884,14 +1880,12 @@ local function RefreshColumn2()
                 local header = AceGUI:Create("InteractiveLabel")
                 CleanRecycledEntry(header)
                 header:SetText(headerText)
-                header:SetImage(134400) -- invisible dummy for 32px row height
-                header:SetImageSize(1, 32)
-                header.image:SetAlpha(0)
 
                 -- Mode badge overlay (pooled on widget, same pattern as old Column 1)
                 header:SetFullWidth(true)
                 header:SetFontObject(GameFontHighlight)
                 header:SetJustifyH("CENTER")
+                ApplyConfigTextRow(header, "CENTER")
                 -- Position badge to the left of centered text
                 local textW = header.label:GetStringWidth()
                 ConfigurePanelTypeBadge(header, panel.displayMode, textW)
@@ -2452,13 +2446,9 @@ local function RefreshColumn2()
                         and GetTriggerRowDisplayText(buttonData)
                         or GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
                     entry:SetText(entryName or ("Unknown " .. buttonData.type))
-                    entry:SetImage(GetButtonIcon(buttonData))
-                    entry:SetImageSize(32, 32)
-                    if entry.image and entry.image.SetDesaturated then
-                        entry.image:SetDesaturated(not usable)
-                    end
                     entry:SetFullWidth(true)
                     entry:SetFontObject(GameFontHighlight)
+                    ApplyConfigRowIcon(entry, GetButtonIcon(buttonData), { desaturated = not usable })
                     entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
                     if buttonData.type == "spell" then
                         BindConfigShiftTooltip(entry, "spell", ResolveColumn2TooltipSpellId(buttonData), entry.frame, "ANCHOR_RIGHT")

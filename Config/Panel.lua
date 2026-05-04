@@ -36,6 +36,7 @@ local CancelFirstIconPanelTutorial = ST._CancelFirstIconPanelTutorial
 local RebuildTutorialAnchors = ST._RebuildTutorialAnchors
 local RefreshTutorialPlacement = ST._RefreshTutorialPlacement
 local SetupChangelogOverlay = ST._SetupChangelogOverlay
+local RefreshVisibleConfigCompactRows = ST._RefreshVisibleConfigCompactRows
 
 local function GetAddonVersionText()
     if ST._GetAddonVersion then
@@ -64,6 +65,8 @@ local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
 local CONFIG_FINDER_BOX_HEIGHT = 28
 local CONFIG_FINDER_BUTTON_GAP = 6
 local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
+local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
+local CONFIG_NESTED_INLINE_GROUP_INSET = 20
 
 if not AceGUI:GetLayout(MANUAL_COLUMN_LAYOUT) then
     -- These columns are positioned and sized manually, so their layout should
@@ -319,6 +322,9 @@ local function QueueConfigFinderRefresh()
         end
         RefreshColumn1()
         RefreshColumn2()
+        if CS.configFrame.UpdateCompactConfigRows then
+            CS.configFrame.UpdateCompactConfigRows()
+        end
         ApplyConfigColumnTitles(CS.configFrame)
         if finderActive then
             ResetScrollState(CS.col1Scroll)
@@ -409,6 +415,9 @@ function CooldownCompanion:RefreshConfigForSpellOverride(pendingSpellIds)
     local selectedEntryAffected = DoesButtonReferencePendingOverrideSpell(GetSelectedConfigButtonData(), pendingSpellIds)
 
     RefreshColumn2()
+    if CS.configFrame.UpdateCompactConfigRows then
+        CS.configFrame.UpdateCompactConfigRows()
+    end
     if selectedEntryAffected then
         RefreshColumn3()
     end
@@ -1758,6 +1767,34 @@ local function CreateConfigPanel()
         end
     end
 
+    local function GetScrollRowWidth(scrollWidget, fallbackFrame)
+        local contentWidth = scrollWidget and scrollWidget.content and scrollWidget.content.width
+        if contentWidth and contentWidth > 0 then
+            return contentWidth
+        end
+
+        local scrollFrame = scrollWidget and scrollWidget.scrollframe
+        local width = (scrollFrame and scrollFrame:GetWidth()) or (fallbackFrame and fallbackFrame:GetWidth()) or 0
+        return math.max(0, width or 0)
+    end
+
+    local function UpdateCompactConfigRows()
+        local col1RowWidth = GetScrollRowWidth(CS.col1Scroll, col1.content)
+        local col2RowWidth = GetScrollRowWidth(CS.col2Scroll, col2.content) - CONFIG_NESTED_INLINE_GROUP_INSET
+        local narrowestRowWidth = math.min(col1RowWidth, math.max(0, col2RowWidth))
+        if narrowestRowWidth <= 0 then
+            return
+        end
+
+        local compact = narrowestRowWidth < CONFIG_COMPACT_ROW_MIN_WIDTH
+        if CS.compactConfigRows ~= compact then
+            CS.compactConfigRows = compact
+            if RefreshVisibleConfigCompactRows then
+                RefreshVisibleConfigCompactRows()
+            end
+        end
+    end
+
     -- Layout columns on size change
     local function LayoutColumns()
         local w = colParent:GetWidth()
@@ -1780,25 +1817,25 @@ local function CreateConfigPanel()
             end
             local wideColWidth = equalColWidth * 2 + pad
             local usedWidth = (wideColWidth * 2) + pad
-            local leftInset = math.floor((w - usedWidth) * 0.5)
+            local leftoverWidth = math.max(0, w - usedWidth)
 
             col1.frame:ClearAllPoints()
-            col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", leftInset, 0)
+            col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
             col1.frame:SetSize(wideColWidth, h)
 
             col3.frame:ClearAllPoints()
             col3.frame:SetPoint("TOPLEFT", col1.frame, "TOPRIGHT", pad, 0)
-            col3.frame:SetSize(wideColWidth, h)
+            col3.frame:SetSize(wideColWidth + leftoverWidth, h)
             return
         end
 
         local usedWidth = (equalColWidth * 4) + (pad * 3)
-        local leftInset = math.floor((w - usedWidth) * 0.5)
+        local leftoverWidth = math.max(0, w - usedWidth)
 
         local col1Width = equalColWidth
         local col2Width = equalColWidth
         local col3Width = equalColWidth
-        local col4Width = equalColWidth
+        local col4Width = equalColWidth + leftoverWidth
         local finderAvailable = IsConfigFinderAvailable and IsConfigFinderAvailable()
 
         if CS.configFinderBox then
@@ -1824,7 +1861,7 @@ local function CreateConfigPanel()
         end
 
         col1.frame:ClearAllPoints()
-        col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", leftInset, 0)
+        col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
         col1.frame:SetSize(col1Width, h)
 
         col2.frame:ClearAllPoints()
@@ -1839,6 +1876,7 @@ local function CreateConfigPanel()
         col4.frame:SetPoint("TOPLEFT", col3.frame, "TOPRIGHT", pad, 0)
         col4.frame:SetSize(col4Width, h)
 
+        UpdateCompactConfigRows()
         PositionPrimaryAxisUI()
     end
 
@@ -1873,6 +1911,7 @@ local function CreateConfigPanel()
     frame.col4 = col4
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
+    frame.UpdateCompactConfigRows = UpdateCompactConfigRows
     frame.UpdateModeNavigationUI = UpdateModeNavigationUI
     frame.UpdateBrowseButtonState = UpdateBrowseBtnState
     UpdateBrowseBtnState()
@@ -1964,6 +2003,9 @@ function CooldownCompanion:RefreshConfigPanel()
     end
     RefreshColumn1()
     RefreshColumn2()
+    if CS.configFrame.UpdateCompactConfigRows then
+        CS.configFrame.UpdateCompactConfigRows()
+    end
     RefreshColumn3()
     RefreshColumn4(CS.col4Container)
     ApplyConfigColumnTitles(CS.configFrame)
