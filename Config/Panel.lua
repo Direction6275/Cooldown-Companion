@@ -1823,25 +1823,25 @@ local function CreateConfigPanel()
             end
             local wideColWidth = equalColWidth * 2 + pad
             local usedWidth = (wideColWidth * 2) + pad
-            local leftInset = math.floor((w - usedWidth) * 0.5)
+            local leftoverWidth = math.max(0, w - usedWidth)
 
             col1.frame:ClearAllPoints()
-            col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", leftInset, 0)
+            col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
             col1.frame:SetSize(wideColWidth, h)
 
             col3.frame:ClearAllPoints()
             col3.frame:SetPoint("TOPLEFT", col1.frame, "TOPRIGHT", pad, 0)
-            col3.frame:SetSize(wideColWidth, h)
+            col3.frame:SetSize(wideColWidth + leftoverWidth, h)
             return
         end
 
         local usedWidth = (equalColWidth * 4) + (pad * 3)
-        local leftInset = math.floor((w - usedWidth) * 0.5)
+        local leftoverWidth = math.max(0, w - usedWidth)
 
         local col1Width = equalColWidth
         local col2Width = equalColWidth
         local col3Width = equalColWidth
-        local col4Width = equalColWidth
+        local col4Width = equalColWidth + leftoverWidth
         local finderAvailable = IsConfigFinderAvailable and IsConfigFinderAvailable()
 
         if CS.configFinderBox then
@@ -1867,7 +1867,7 @@ local function CreateConfigPanel()
         end
 
         col1.frame:ClearAllPoints()
-        col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", leftInset, 0)
+        col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
         col1.frame:SetSize(col1Width, h)
 
         col2.frame:ClearAllPoints()
