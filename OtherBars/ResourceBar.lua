@@ -162,6 +162,7 @@ local activeCustomAuraBarPandemicPreviews = {}
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL = 0.65
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = 3
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = 12.3
+local HEALTH_EFFECT_JOIN_OVERLAP = 1
 local HealthBar = {}
 local HEALTH_EFFECTS = {
     texture = RB.DEFAULT_HEALTH_EFFECT_TEXTURE or "Solid",
@@ -1462,15 +1463,23 @@ function HealthBar.ApplyLowHealthAlertColor(bar, config, preview)
 end
 
 function HealthBar.SetEffectAlphaFromBoolean(effectBar, value, alphaIfTrue, alphaIfFalse)
-    if effectBar and effectBar.SetAlphaFromBoolean then
+    if not effectBar then
+        return
+    end
+    if effectBar.SetAlphaFromBoolean then
         effectBar:SetAlphaFromBoolean(value, alphaIfTrue, alphaIfFalse)
+        return
+    end
+    local texture = effectBar.GetStatusBarTexture and effectBar:GetStatusBarTexture()
+    if texture and texture.SetAlphaFromBoolean then
+        texture:SetAlphaFromBoolean(value, alphaIfTrue, alphaIfFalse)
     end
 end
 
 function HealthBar.EnsureEffectBars(bar)
     HealthBar.EnsureEffectBar(bar, "lowHealthAlertBar", HEALTH_EFFECTS.lowHealthAlertColor, 2)
-    HealthBar.EnsureEffectBar(bar, "absorbOverflowBar", HEALTH_EFFECTS.absorbColor, 3)
-    HealthBar.EnsureEffectBar(bar, "incomingHealBar", HEALTH_EFFECTS.incomingHealColor, 4)
+    HealthBar.EnsureEffectBar(bar, "incomingHealBar", HEALTH_EFFECTS.incomingHealColor, 3)
+    HealthBar.EnsureEffectBar(bar, "absorbOverflowBar", HEALTH_EFFECTS.absorbColor, 4)
     HealthBar.EnsureEffectBar(bar, "absorbBar", HEALTH_EFFECTS.absorbColor, 5)
     HealthBar.EnsureEffectBar(bar, "healAbsorbBar", HEALTH_EFFECTS.healAbsorbColor, 6)
 end
@@ -1488,29 +1497,30 @@ function HealthBar.LayoutFullEffectBar(bar, effectBar)
     end
 end
 
-function HealthBar.LayoutForwardEffectBar(bar, effectBar, anchorTexture)
+function HealthBar.LayoutForwardEffectBar(bar, effectBar, anchorTexture, overlapJoin)
     local fillTexture = anchorTexture or (bar and bar:GetStatusBarTexture())
     if not bar or not effectBar or not fillTexture then return end
 
     effectBar:ClearAllPoints()
     effectBar:SetOrientation(bar._isVertical and "VERTICAL" or "HORIZONTAL")
+    local overlap = overlapJoin and HEALTH_EFFECT_JOIN_OVERLAP or 0
 
     if bar._isVertical then
         effectBar:SetHeight(bar:GetHeight())
         if bar._reverseFill then
             effectBar:SetReverseFill(true)
-            effectBar:SetPoint("TOPLEFT", fillTexture, "BOTTOMLEFT", 0, 0)
-            effectBar:SetPoint("TOPRIGHT", fillTexture, "BOTTOMRIGHT", 0, 0)
+            effectBar:SetPoint("TOPLEFT", fillTexture, "BOTTOMLEFT", 0, overlap)
+            effectBar:SetPoint("TOPRIGHT", fillTexture, "BOTTOMRIGHT", 0, overlap)
         else
             effectBar:SetReverseFill(false)
-            effectBar:SetPoint("BOTTOMLEFT", fillTexture, "TOPLEFT", 0, 0)
-            effectBar:SetPoint("BOTTOMRIGHT", fillTexture, "TOPRIGHT", 0, 0)
+            effectBar:SetPoint("BOTTOMLEFT", fillTexture, "TOPLEFT", 0, -overlap)
+            effectBar:SetPoint("BOTTOMRIGHT", fillTexture, "TOPRIGHT", 0, -overlap)
         end
     else
         effectBar:SetReverseFill(false)
         effectBar:SetWidth(bar:GetWidth())
-        effectBar:SetPoint("TOPLEFT", fillTexture, "TOPRIGHT", 0, 0)
-        effectBar:SetPoint("BOTTOMLEFT", fillTexture, "BOTTOMRIGHT", 0, 0)
+        effectBar:SetPoint("TOPLEFT", fillTexture, "TOPRIGHT", -overlap, 0)
+        effectBar:SetPoint("BOTTOMLEFT", fillTexture, "BOTTOMRIGHT", -overlap, 0)
     end
 end
 
@@ -1646,7 +1656,7 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
     end
 
     if bar.absorbBar then
-        HealthBar.LayoutForwardEffectBar(bar, bar.absorbBar, incomingHealAnchorTexture)
+        HealthBar.LayoutForwardEffectBar(bar, bar.absorbBar, incomingHealAnchorTexture, true)
         HealthBar.ApplyEffectStyle(bar.absorbBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
         HealthBar.ApplyEffectStyle(bar.absorbOverflowBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
         if config.showAbsorbs == true or preview.absorbs == true then
