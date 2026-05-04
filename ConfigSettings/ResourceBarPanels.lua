@@ -864,9 +864,11 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     local healthResourceID = -1 -- Keep aligned with RB.RESOURCE_HEALTH without adding an upvalue here.
     local function isHealthTextFormat(textFormat)
         return textFormat == "percent"
+            or textFormat == "percent_no_sign"
             or textFormat == "current"
             or textFormat == "current_max"
             or textFormat == "current_percent"
+            or textFormat == "current_percent_no_sign"
     end
 
     if showBarText then
@@ -1012,11 +1014,20 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 if isHealthResource then
                     textFormatOptions = {
                         percent = "Percent",
+                        percent_no_sign = "Percent (No %)",
                         current = "Current Health",
                         current_max = "Current / Max Health",
                         current_percent = "Current + Percent",
+                        current_percent_no_sign = "Current + Percent (No %)",
                     }
-                    textFormatOrder = { "percent", "current", "current_max", "current_percent" }
+                    textFormatOrder = {
+                        "percent",
+                        "percent_no_sign",
+                        "current",
+                        "current_max",
+                        "current_percent",
+                        "current_percent_no_sign",
+                    }
                 elseif isSegmentedResource then
                     textFormatOptions = {
                         current = "Current Value",

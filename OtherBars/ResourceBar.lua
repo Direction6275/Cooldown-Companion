@@ -1894,6 +1894,14 @@ function HealthBar.Update(bar, settings)
                 AbbreviateNumbers(currentHealth),
                 UnitHealthPercent("player", true, PERCENT_SCALE_CURVE)
             )
+        elseif textFormat == "current_percent_no_sign" then
+            bar.text:SetFormattedText(
+                "%s | %.0f",
+                AbbreviateNumbers(currentHealth),
+                UnitHealthPercent("player", true, PERCENT_SCALE_CURVE)
+            )
+        elseif textFormat == "percent_no_sign" then
+            bar.text:SetFormattedText("%.0f", UnitHealthPercent("player", true, PERCENT_SCALE_CURVE))
         else
             bar.text:SetFormattedText("%.0f%%", UnitHealthPercent("player", true, PERCENT_SCALE_CURVE))
         end
@@ -3484,7 +3492,12 @@ function HealthBar.Style(bar, settings)
     HealthBar.LayoutEffectBars(bar, borderStyle, borderSize)
 
     local textFormat = resourceConfig and resourceConfig.textFormat or "percent"
-    if textFormat ~= "percent" and textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "current_percent" then
+    if textFormat ~= "percent"
+        and textFormat ~= "percent_no_sign"
+        and textFormat ~= "current"
+        and textFormat ~= "current_max"
+        and textFormat ~= "current_percent"
+        and textFormat ~= "current_percent_no_sign" then
         textFormat = "percent"
     end
     local textFontName = resourceConfig and resourceConfig.textFont or DEFAULT_RESOURCE_TEXT_FONT
@@ -4490,6 +4503,10 @@ local function ApplyPreviewDataToBar(barInfo, settings)
                 barInfo.frame.text:SetText("650K / 1M")
             elseif textFormat == "current_percent" then
                 barInfo.frame.text:SetText("650K | 65%")
+            elseif textFormat == "current_percent_no_sign" then
+                barInfo.frame.text:SetText("650K | 65")
+            elseif textFormat == "percent_no_sign" then
+                barInfo.frame.text:SetText("65")
             else
                 barInfo.frame.text:SetText("65%")
             end
