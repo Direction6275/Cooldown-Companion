@@ -1767,18 +1767,6 @@ local function CreateConfigPanel()
         end
     end
 
-    local function SetCompactConfigRows(compact)
-        compact = compact == true
-        if CS.compactConfigRows == compact then
-            return
-        end
-
-        CS.compactConfigRows = compact
-        if RefreshVisibleConfigCompactRows then
-            RefreshVisibleConfigCompactRows()
-        end
-    end
-
     local function GetScrollRowWidth(scrollWidget, fallbackFrame)
         local contentWidth = scrollWidget and scrollWidget.content and scrollWidget.content.width
         if contentWidth and contentWidth > 0 then
@@ -1798,7 +1786,13 @@ local function CreateConfigPanel()
             return
         end
 
-        SetCompactConfigRows(narrowestRowWidth < CONFIG_COMPACT_ROW_MIN_WIDTH)
+        local compact = narrowestRowWidth < CONFIG_COMPACT_ROW_MIN_WIDTH
+        if CS.compactConfigRows ~= compact then
+            CS.compactConfigRows = compact
+            if RefreshVisibleConfigCompactRows then
+                RefreshVisibleConfigCompactRows()
+            end
+        end
     end
 
     -- Layout columns on size change

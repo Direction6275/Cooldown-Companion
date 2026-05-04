@@ -13,6 +13,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 local BuildHeroTalentSubTreeCheckboxes = ST._BuildHeroTalentSubTreeCheckboxes
 local CleanRecycledEntry = ST._CleanRecycledEntry
 local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
+local ApplyConfigTextRow = ST._ApplyConfigTextRow
 local SetupGroupRowIndicators = ST._SetupGroupRowIndicators
 local SetupFolderRowIndicators = ST._SetupFolderRowIndicators
 local SetupColumn1MarkerRow = ST._SetupColumn1MarkerRow
@@ -149,13 +150,7 @@ local function RenderBrowseMode()
         backBtn:SetText("|A:common-icon-backarrow:14:14|a  Back to My Groups")
         backBtn:SetFullWidth(true)
         backBtn:SetFontObject(GameFontHighlight)
-        ApplyConfigRowIcon(backBtn, 134400, {
-            width = 1,
-            height = 32,
-            alpha = 0,
-            normalLeftPad = 0,
-            normalHideIcon = true,
-        })
+        ApplyConfigTextRow(backBtn)
         backBtn:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
         backBtn:SetCallback("OnClick", function()
             CS.browseMode = false
@@ -210,13 +205,7 @@ local function RenderBrowseMode()
         backBtn:SetText("|A:common-icon-backarrow:14:14|a  Back to Characters")
         backBtn:SetFullWidth(true)
         backBtn:SetFontObject(GameFontHighlight)
-        ApplyConfigRowIcon(backBtn, 134400, {
-            width = 1,
-            height = 32,
-            alpha = 0,
-            normalLeftPad = 0,
-            normalHideIcon = true,
-        })
+        ApplyConfigTextRow(backBtn)
         backBtn:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
         backBtn:SetCallback("OnClick", function()
             CS.browseCharKey = nil
@@ -1226,11 +1215,7 @@ local function RefreshColumn1(preserveDrag)
         if showManualIcon then
             ApplyConfigRowIcon(entry, container.manualIcon)
         else
-            ApplyConfigRowIcon(entry, "Interface\\BUTTONS\\WHITE8X8", {
-                width = inFolder and 13 or 1,
-                height = 30,
-                alpha = 0,
-            })
+            ApplyConfigTextRow(entry, "LEFT", inFolder and 17 or 0)
         end
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
