@@ -8,6 +8,7 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
+local LSM = LibStub("LibSharedMedia-3.0")
 local CS = ST._configState
 
 -- Imports from Helpers.lua
@@ -72,6 +73,11 @@ local DEFAULT_HEALTH_BACKGROUND_HALF_COLOR = RB.DEFAULT_HEALTH_BACKGROUND_HALF_C
 local DEFAULT_HEALTH_BACKGROUND_LOW_COLOR = RB.DEFAULT_HEALTH_BACKGROUND_LOW_COLOR
 local DEFAULT_HEALTH_BACKGROUND_OPACITY = RB.DEFAULT_HEALTH_BACKGROUND_OPACITY
 local DEFAULT_HEALTH_BACKGROUND_GRADIENT = RB.DEFAULT_HEALTH_BACKGROUND_GRADIENT
+local DEFAULT_HEALTH_ABSORB_COLOR = RB.DEFAULT_HEALTH_ABSORB_COLOR
+local DEFAULT_HEALTH_HEAL_ABSORB_COLOR = RB.DEFAULT_HEALTH_HEAL_ABSORB_COLOR
+local DEFAULT_HEALTH_INCOMING_HEAL_COLOR = RB.DEFAULT_HEALTH_INCOMING_HEAL_COLOR
+local DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR = RB.DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR
+local DEFAULT_HEALTH_EFFECT_TEXTURE = RB.DEFAULT_HEALTH_EFFECT_TEXTURE
 local DEFAULT_COMBO_COLOR = RB.DEFAULT_COMBO_COLOR
 local DEFAULT_COMBO_MAX_COLOR = RB.DEFAULT_COMBO_MAX_COLOR
 local DEFAULT_COMBO_CHARGED_COLOR = RB.DEFAULT_COMBO_CHARGED_COLOR
@@ -136,6 +142,24 @@ local ResetDragIndicatorStyle = ST._ResetDragIndicatorStyle
 
 local HealthResource = { ID = RB.RESOURCE_HEALTH }
 
+function HealthResource.GetEffectTextureOptions()
+    local options = {}
+    local order = {}
+    for _, name in ipairs(LSM:List("statusbar")) do
+        options[name] = name
+        table.insert(order, name)
+    end
+    return options, order
+end
+
+function HealthResource.NormalizeEffectTexture(health, key)
+    if type(health[key]) ~= "string"
+        or health[key] == ""
+        or not LSM:IsValid("statusbar", health[key]) then
+        health[key] = DEFAULT_HEALTH_EFFECT_TEXTURE
+    end
+end
+
 function HealthResource.EnsureSettings(settings)
     settings.resources = settings.resources or {}
     if type(settings.resources[HealthResource.ID]) ~= "table" then
@@ -143,6 +167,19 @@ function HealthResource.EnsureSettings(settings)
     elseif settings.resources[HealthResource.ID].enabled == nil then
         settings.resources[HealthResource.ID].enabled = false
     end
+    local health = settings.resources[HealthResource.ID]
+    if health.showAbsorbs == nil then health.showAbsorbs = false end
+    if health.showHealAbsorbs == nil then health.showHealAbsorbs = false end
+    if health.showIncomingHeals == nil then health.showIncomingHeals = false end
+    if health.showLowHealthAlert == nil then health.showLowHealthAlert = false end
+    if type(health.healthAbsorbColor) ~= "table" then health.healthAbsorbColor = DEFAULT_HEALTH_ABSORB_COLOR end
+    if type(health.healthHealAbsorbColor) ~= "table" then health.healthHealAbsorbColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR end
+    if type(health.healthIncomingHealColor) ~= "table" then health.healthIncomingHealColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR end
+    if type(health.healthLowHealthAlertColor) ~= "table" then health.healthLowHealthAlertColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR end
+    HealthResource.NormalizeEffectTexture(health, "healthAbsorbTexture")
+    HealthResource.NormalizeEffectTexture(health, "healthHealAbsorbTexture")
+    HealthResource.NormalizeEffectTexture(health, "healthIncomingHealTexture")
+    HealthResource.NormalizeEffectTexture(health, "healthLowHealthAlertTexture")
     return settings.resources[HealthResource.ID]
 end
 
@@ -158,6 +195,30 @@ function HealthResource.AddOpacitySlider(container, health, key, label, defaultV
         applyBars()
     end)
     container:AddChild(slider)
+end
+
+function HealthResource.AddEffectTextureDropdown(container, health, key, label, applyBars)
+    local drop = AceGUI:Create("Dropdown")
+    drop:SetLabel(label)
+    drop:SetList(HealthResource.GetEffectTextureOptions())
+    drop:SetValue(health[key] or DEFAULT_HEALTH_EFFECT_TEXTURE)
+    drop:SetFullWidth(true)
+    drop:SetCallback("OnValueChanged", function(widget, event, val)
+        health[key] = val or DEFAULT_HEALTH_EFFECT_TEXTURE
+        applyBars()
+    end)
+    container:AddChild(drop)
+end
+
+function HealthResource.AddEffectStyleControls(container, checkbox, health, options, applyBars)
+    local enabled = health[options.enabledKey] == true
+    local expanded = AddAdvancedToggle(checkbox, options.advancedKey, tabInfoButtons, enabled)
+    if not (enabled and expanded) then
+        return
+    end
+
+    AddColorPicker(container, health, options.colorKey, options.colorLabel, options.defaultColor, true, applyBars, applyBars)
+    HealthResource.AddEffectTextureDropdown(container, health, options.textureKey, options.textureLabel, applyBars)
 end
 
 function HealthResource.BuildColorControls(container, settings, applyBars)
@@ -227,6 +288,118 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     end
 
     HealthResource.AddOpacitySlider(container, health, "healthBackgroundOpacity", "Missing Health Opacity", DEFAULT_HEALTH_BACKGROUND_OPACITY, applyBars)
+
+    local effectsHeading = AceGUI:Create("Heading")
+    effectsHeading:SetText("Health Effects")
+    ColorHeading(effectsHeading)
+    effectsHeading:SetFullWidth(true)
+    container:AddChild(effectsHeading)
+
+    local absorbsCb = AceGUI:Create("CheckBox")
+    absorbsCb:SetLabel("Show Absorbs")
+    absorbsCb:SetValue(health.showAbsorbs == true)
+    absorbsCb:SetFullWidth(true)
+    absorbsCb:SetCallback("OnValueChanged", function(widget, event, val)
+        health.showAbsorbs = val == true
+        applyBars()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(absorbsCb)
+    HealthResource.AddEffectStyleControls(container, absorbsCb, health, {
+        enabledKey = "showAbsorbs",
+        advancedKey = "healthAbsorbs",
+        colorKey = "healthAbsorbColor",
+        textureKey = "healthAbsorbTexture",
+        colorLabel = "Absorb Color",
+        textureLabel = "Absorb Texture",
+        defaultColor = DEFAULT_HEALTH_ABSORB_COLOR,
+    }, applyBars)
+
+    local healAbsorbsCb = AceGUI:Create("CheckBox")
+    healAbsorbsCb:SetLabel("Show Healing Absorbs")
+    healAbsorbsCb:SetValue(health.showHealAbsorbs == true)
+    healAbsorbsCb:SetFullWidth(true)
+    healAbsorbsCb:SetCallback("OnValueChanged", function(widget, event, val)
+        health.showHealAbsorbs = val == true
+        applyBars()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(healAbsorbsCb)
+    HealthResource.AddEffectStyleControls(container, healAbsorbsCb, health, {
+        enabledKey = "showHealAbsorbs",
+        advancedKey = "healthHealAbsorbs",
+        colorKey = "healthHealAbsorbColor",
+        textureKey = "healthHealAbsorbTexture",
+        colorLabel = "Healing Absorb Color",
+        textureLabel = "Healing Absorb Texture",
+        defaultColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR,
+    }, applyBars)
+
+    local incomingHealsCb = AceGUI:Create("CheckBox")
+    incomingHealsCb:SetLabel("Show Incoming Heals")
+    incomingHealsCb:SetValue(health.showIncomingHeals == true)
+    incomingHealsCb:SetFullWidth(true)
+    incomingHealsCb:SetCallback("OnValueChanged", function(widget, event, val)
+        health.showIncomingHeals = val == true
+        applyBars()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(incomingHealsCb)
+    HealthResource.AddEffectStyleControls(container, incomingHealsCb, health, {
+        enabledKey = "showIncomingHeals",
+        advancedKey = "healthIncomingHeals",
+        colorKey = "healthIncomingHealColor",
+        textureKey = "healthIncomingHealTexture",
+        colorLabel = "Incoming Heal Color",
+        textureLabel = "Incoming Heal Texture",
+        defaultColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
+    }, applyBars)
+
+    local lowHealthAlertCb = AceGUI:Create("CheckBox")
+    lowHealthAlertCb:SetLabel("Show Low Health Alert")
+    lowHealthAlertCb:SetValue(health.showLowHealthAlert == true)
+    lowHealthAlertCb:SetFullWidth(true)
+    lowHealthAlertCb:SetCallback("OnValueChanged", function(widget, event, val)
+        health.showLowHealthAlert = val == true
+        applyBars()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(lowHealthAlertCb)
+    HealthResource.AddEffectStyleControls(container, lowHealthAlertCb, health, {
+        enabledKey = "showLowHealthAlert",
+        advancedKey = "healthLowHealthAlert",
+        colorKey = "healthLowHealthAlertColor",
+        textureKey = "healthLowHealthAlertTexture",
+        colorLabel = "Low Health Alert Color",
+        textureLabel = "Low Health Alert Texture",
+        defaultColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR,
+    }, applyBars)
+
+    if AddPreviewToggleButton then
+        AddPreviewToggleButton(container, "Preview Absorbs", function()
+            return CooldownCompanion:IsHealthEffectPreviewActive("absorbs")
+        end, function(show)
+            CooldownCompanion:SetHealthEffectPreview("absorbs", show)
+        end)
+
+        AddPreviewToggleButton(container, "Preview Heal Absorbs", function()
+            return CooldownCompanion:IsHealthEffectPreviewActive("healAbsorbs")
+        end, function(show)
+            CooldownCompanion:SetHealthEffectPreview("healAbsorbs", show)
+        end)
+
+        AddPreviewToggleButton(container, "Preview Incoming Heals", function()
+            return CooldownCompanion:IsHealthEffectPreviewActive("incomingHeals")
+        end, function(show)
+            CooldownCompanion:SetHealthEffectPreview("incomingHeals", show)
+        end)
+
+        AddPreviewToggleButton(container, "Preview Low Health Alert", function()
+            return CooldownCompanion:IsHealthEffectPreviewActive("lowHealthAlert")
+        end, function(show)
+            CooldownCompanion:SetHealthEffectPreview("lowHealthAlert", show)
+        end)
+    end
 end
 
 CS.healthResourceUI = HealthResource
@@ -620,8 +793,6 @@ end
 
 ------------------------------------------------------------------------
 
-local LSM = LibStub("LibSharedMedia-3.0")
-
 local function GetResourceBarTextureOptions()
     local t = {}
     for _, name in ipairs(LSM:List("statusbar")) do
@@ -693,9 +864,11 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     local healthResourceID = -1 -- Keep aligned with RB.RESOURCE_HEALTH without adding an upvalue here.
     local function isHealthTextFormat(textFormat)
         return textFormat == "percent"
+            or textFormat == "percent_no_sign"
             or textFormat == "current"
             or textFormat == "current_max"
             or textFormat == "current_percent"
+            or textFormat == "current_percent_no_sign"
     end
 
     if showBarText then
@@ -841,11 +1014,20 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 if isHealthResource then
                     textFormatOptions = {
                         percent = "Percent",
+                        percent_no_sign = "Percent (No %)",
                         current = "Current Health",
                         current_max = "Current / Max Health",
                         current_percent = "Current + Percent",
+                        current_percent_no_sign = "Current + Percent (No %)",
                     }
-                    textFormatOrder = { "percent", "current", "current_max", "current_percent" }
+                    textFormatOrder = {
+                        "percent",
+                        "percent_no_sign",
+                        "current",
+                        "current_max",
+                        "current_percent",
+                        "current_percent_no_sign",
+                    }
                 elseif isSegmentedResource then
                     textFormatOptions = {
                         current = "Current Value",

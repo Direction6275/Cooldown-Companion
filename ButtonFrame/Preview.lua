@@ -1070,6 +1070,9 @@ function CooldownCompanion:ClearAllConfigPreviews()
     if self.ClearAllCustomAuraBarPreviews then
         self:ClearAllCustomAuraBarPreviews()
     end
+    if self.ClearAllHealthEffectPreviews then
+        self:ClearAllHealthEffectPreviews()
+    end
     if self.ClearAllAuraTexturePickerPreviews then
         self:ClearAllAuraTexturePickerPreviews()
     end

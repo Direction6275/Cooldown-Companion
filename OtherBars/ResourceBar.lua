@@ -162,7 +162,37 @@ local activeCustomAuraBarPandemicPreviews = {}
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL = 0.65
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = 3
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = 12.3
+local HEALTH_EFFECT_JOIN_OVERLAP = 1
 local HealthBar = {}
+local HEALTH_EFFECTS = {
+    texture = RB.DEFAULT_HEALTH_EFFECT_TEXTURE or "Solid",
+    incomingHealColor = RB.DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
+    absorbColor = RB.DEFAULT_HEALTH_ABSORB_COLOR,
+    healAbsorbColor = RB.DEFAULT_HEALTH_HEAL_ABSORB_COLOR,
+    lowHealthAlertColor = RB.DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR,
+    lowHealthAlertThreshold = 0.35,
+    lowHealthAlertThresholdFade = 0.001,
+    lowHealthAlertPulseSpeed = 0.85,
+    netHealingCalc = CreateUnitHealPredictionCalculator(),
+    standaloneHealingCalc = CreateUnitHealPredictionCalculator(),
+    absorbMissingCalc = CreateUnitHealPredictionCalculator(),
+    absorbOverflowCalc = CreateUnitHealPredictionCalculator(),
+    preview = {},
+}
+HEALTH_EFFECTS.netHealingCalc:SetIncomingHealClampMode(Enum.UnitIncomingHealClampMode.MissingHealth)
+HEALTH_EFFECTS.netHealingCalc:SetHealAbsorbClampMode(Enum.UnitHealAbsorbClampMode.CurrentHealth)
+HEALTH_EFFECTS.netHealingCalc:SetHealAbsorbMode(Enum.UnitHealAbsorbMode.ReducedByIncomingHeals)
+HEALTH_EFFECTS.standaloneHealingCalc:SetHealAbsorbClampMode(Enum.UnitHealAbsorbClampMode.CurrentHealth)
+HEALTH_EFFECTS.standaloneHealingCalc:SetHealAbsorbMode(Enum.UnitHealAbsorbMode.Total)
+HEALTH_EFFECTS.absorbMissingCalc:SetIncomingHealClampMode(Enum.UnitIncomingHealClampMode.MissingHealth)
+HEALTH_EFFECTS.absorbOverflowCalc:SetDamageAbsorbClampMode(Enum.UnitDamageAbsorbClampMode.MaximumHealth)
+
+local function EnsureNonNilNumber(value)
+    if type(value) == "nil" then
+        return 0
+    end
+    return value
+end
 
 local function GetCustomAuraAlphaModuleId(slotIdx)
     if not slotIdx or slotIdx < 1 or slotIdx > MAX_CUSTOM_AURA_BARS then
@@ -1332,6 +1362,366 @@ function HealthBar.SetBackgroundAnchors(bar)
     end
 end
 
+function HealthBar.EnsureEffectBar(bar, key, color, frameLevelOffset)
+    if not bar then return nil end
+
+    if not bar.healthEffectClip then
+        local clip = CreateFrame("Frame", nil, bar)
+        clip:SetAllPoints(bar)
+        clip:SetClipsChildren(true)
+        clip:SetFrameLevel(bar:GetFrameLevel() + 1)
+        bar.healthEffectClip = clip
+    end
+
+    if not bar[key] then
+        local effectBar = CreateFrame("StatusBar", nil, bar.healthEffectClip)
+        effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(HEALTH_EFFECTS.texture))
+        effectBar:SetMinMaxValues(0, 1)
+        effectBar:SetValue(0)
+        effectBar:Hide()
+        bar[key] = effectBar
+    end
+
+    local effectBar = bar[key]
+    effectBar:SetFrameLevel(bar:GetFrameLevel() + (frameLevelOffset or 2))
+    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(HEALTH_EFFECTS.texture))
+    effectBar:SetStatusBarColor(color[1], color[2], color[3], color[4])
+    return effectBar
+end
+
+function HealthBar.ApplyEffectStyle(effectBar, config, colorKey, defaultColor, textureKey)
+    if not effectBar then return end
+
+    local color = HealthBar.GetColor(config, colorKey, defaultColor)
+    local texture = config and config[textureKey]
+    if type(texture) ~= "string" or texture == "" then
+        texture = HEALTH_EFFECTS.texture
+    end
+    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texture))
+    effectBar:SetStatusBarColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
+end
+
+function HealthBar.GetLowHealthAlertThreshold()
+    local threshold = LowHealthFrame and tonumber(LowHealthFrame.lowHealthPercentStart)
+    if not threshold or threshold <= 0 or threshold >= 1 then
+        threshold = HEALTH_EFFECTS.lowHealthAlertThreshold
+    end
+    return threshold
+end
+
+function HealthBar.BuildLowHealthAlertCurve(config)
+    local color = HealthBar.GetColor(config, "healthLowHealthAlertColor", HEALTH_EFFECTS.lowHealthAlertColor)
+    local alpha = color[4]
+    if alpha == nil then
+        alpha = HEALTH_EFFECTS.lowHealthAlertColor[4] or 1
+    end
+
+    local threshold = HealthBar.GetLowHealthAlertThreshold()
+    local curve = C_CurveUtil.CreateColorCurve()
+    local alertColor = CreateColor(color[1], color[2], color[3], alpha)
+    local transparentColor = CreateColor(color[1], color[2], color[3], 0)
+    curve:AddPoint(0.0, alertColor)
+    curve:AddPoint(threshold, alertColor)
+    curve:AddPoint(math_min(1.0, threshold + HEALTH_EFFECTS.lowHealthAlertThresholdFade), transparentColor)
+    curve:AddPoint(1.0, transparentColor)
+    return curve
+end
+
+function HealthBar.ApplyLowHealthAlertStyle(effectBar, config)
+    if not effectBar then return end
+
+    local texture = config and config.healthLowHealthAlertTexture
+    if type(texture) ~= "string" or texture == "" then
+        texture = HEALTH_EFFECTS.texture
+    end
+    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texture))
+    effectBar:SetMinMaxValues(0, 1)
+    effectBar:SetValue(1)
+end
+
+function HealthBar.ApplyLowHealthAlertColor(bar, config, preview)
+    local effectBar = bar and bar.lowHealthAlertBar
+    local fillTexture = effectBar and effectBar:GetStatusBarTexture()
+    if not fillTexture then return end
+
+    if preview == true then
+        local color = HealthBar.GetColor(config, "healthLowHealthAlertColor", HEALTH_EFFECTS.lowHealthAlertColor)
+        fillTexture:SetVertexColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
+        return
+    end
+
+    if not bar._lowHealthAlertCurve then
+        bar._lowHealthAlertCurve = HealthBar.BuildLowHealthAlertCurve(config)
+    end
+    local color = UnitHealthPercent("player", true, bar._lowHealthAlertCurve)
+    if type(color) == "table" and color.GetRGBA then
+        fillTexture:SetVertexColor(color:GetRGBA())
+        return
+    end
+
+    fillTexture:SetVertexColor(0, 0, 0, 0)
+end
+
+function HealthBar.SetEffectAlphaFromBoolean(effectBar, value, alphaIfTrue, alphaIfFalse)
+    if not effectBar then
+        return
+    end
+    if effectBar.SetAlphaFromBoolean then
+        effectBar:SetAlphaFromBoolean(value, alphaIfTrue, alphaIfFalse)
+        return
+    end
+    local texture = effectBar.GetStatusBarTexture and effectBar:GetStatusBarTexture()
+    if texture and texture.SetAlphaFromBoolean then
+        texture:SetAlphaFromBoolean(value, alphaIfTrue, alphaIfFalse)
+    end
+end
+
+function HealthBar.EnsureEffectBars(bar)
+    HealthBar.EnsureEffectBar(bar, "lowHealthAlertBar", HEALTH_EFFECTS.lowHealthAlertColor, 2)
+    HealthBar.EnsureEffectBar(bar, "incomingHealBar", HEALTH_EFFECTS.incomingHealColor, 3)
+    HealthBar.EnsureEffectBar(bar, "absorbOverflowBar", HEALTH_EFFECTS.absorbColor, 4)
+    HealthBar.EnsureEffectBar(bar, "absorbBar", HEALTH_EFFECTS.absorbColor, 5)
+    HealthBar.EnsureEffectBar(bar, "healAbsorbBar", HEALTH_EFFECTS.healAbsorbColor, 6)
+end
+
+function HealthBar.LayoutFullEffectBar(bar, effectBar)
+    if not bar or not effectBar then return end
+
+    effectBar:ClearAllPoints()
+    effectBar:SetOrientation(bar._isVertical and "VERTICAL" or "HORIZONTAL")
+    effectBar:SetReverseFill(false)
+    if bar.healthEffectClip then
+        effectBar:SetAllPoints(bar.healthEffectClip)
+    else
+        effectBar:SetAllPoints(bar)
+    end
+end
+
+function HealthBar.LayoutForwardEffectBar(bar, effectBar, anchorTexture, overlapJoin)
+    local fillTexture = anchorTexture or (bar and bar:GetStatusBarTexture())
+    if not bar or not effectBar or not fillTexture then return end
+
+    effectBar:ClearAllPoints()
+    effectBar:SetOrientation(bar._isVertical and "VERTICAL" or "HORIZONTAL")
+    local overlap = overlapJoin and HEALTH_EFFECT_JOIN_OVERLAP or 0
+
+    if bar._isVertical then
+        effectBar:SetHeight(bar:GetHeight())
+        if bar._reverseFill then
+            effectBar:SetReverseFill(true)
+            effectBar:SetPoint("TOPLEFT", fillTexture, "BOTTOMLEFT", 0, overlap)
+            effectBar:SetPoint("TOPRIGHT", fillTexture, "BOTTOMRIGHT", 0, overlap)
+        else
+            effectBar:SetReverseFill(false)
+            effectBar:SetPoint("BOTTOMLEFT", fillTexture, "TOPLEFT", 0, -overlap)
+            effectBar:SetPoint("BOTTOMRIGHT", fillTexture, "TOPRIGHT", 0, -overlap)
+        end
+    else
+        effectBar:SetReverseFill(false)
+        effectBar:SetWidth(bar:GetWidth())
+        effectBar:SetPoint("TOPLEFT", fillTexture, "TOPRIGHT", -overlap, 0)
+        effectBar:SetPoint("BOTTOMLEFT", fillTexture, "BOTTOMRIGHT", -overlap, 0)
+    end
+end
+
+function HealthBar.LayoutHealAbsorbBar(bar)
+    local effectBar = bar and bar.healAbsorbBar
+    local fillTexture = bar and bar:GetStatusBarTexture()
+    if not bar or not effectBar or not fillTexture then return end
+
+    effectBar:ClearAllPoints()
+    effectBar:SetOrientation(bar._isVertical and "VERTICAL" or "HORIZONTAL")
+
+    if bar._isVertical then
+        effectBar:SetHeight(bar:GetHeight())
+        if bar._reverseFill then
+            effectBar:SetReverseFill(false)
+            effectBar:SetPoint("BOTTOMLEFT", fillTexture, "BOTTOMLEFT", 0, 0)
+            effectBar:SetPoint("BOTTOMRIGHT", fillTexture, "BOTTOMRIGHT", 0, 0)
+        else
+            effectBar:SetReverseFill(true)
+            effectBar:SetPoint("TOPLEFT", fillTexture, "TOPLEFT", 0, 0)
+            effectBar:SetPoint("TOPRIGHT", fillTexture, "TOPRIGHT", 0, 0)
+        end
+    else
+        effectBar:SetReverseFill(true)
+        effectBar:SetWidth(bar:GetWidth())
+        effectBar:SetPoint("TOPRIGHT", fillTexture, "TOPRIGHT", 0, 0)
+        effectBar:SetPoint("BOTTOMRIGHT", fillTexture, "BOTTOMRIGHT", 0, 0)
+    end
+end
+
+function HealthBar.LayoutReverseEdgeEffectBar(bar, effectBar)
+    if not bar or not effectBar then return end
+
+    effectBar:ClearAllPoints()
+    effectBar:SetOrientation(bar._isVertical and "VERTICAL" or "HORIZONTAL")
+    if bar.healthEffectClip then
+        effectBar:SetAllPoints(bar.healthEffectClip)
+    else
+        effectBar:SetAllPoints(bar)
+    end
+
+    if bar._isVertical then
+        effectBar:SetReverseFill(not bar._reverseFill)
+    else
+        effectBar:SetReverseFill(true)
+    end
+end
+
+function HealthBar.LayoutEffectBars(bar, borderStyle, borderSize)
+    if not bar then return end
+    if bar.healthEffectClip then
+        bar.healthEffectClip:SetFrameLevel(bar:GetFrameLevel() + 1)
+        bar.healthEffectClip:ClearAllPoints()
+        if borderStyle == "pixel" then
+            borderSize = tonumber(borderSize) or 1
+            bar.healthEffectClip:SetPoint("TOPLEFT", bar, "TOPLEFT", borderSize, -borderSize)
+            bar.healthEffectClip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -borderSize, borderSize)
+        else
+            bar.healthEffectClip:SetAllPoints(bar)
+        end
+    end
+    HealthBar.LayoutFullEffectBar(bar, bar.lowHealthAlertBar)
+    HealthBar.LayoutForwardEffectBar(bar, bar.incomingHealBar)
+    HealthBar.LayoutForwardEffectBar(bar, bar.absorbBar)
+    HealthBar.LayoutReverseEdgeEffectBar(bar, bar.absorbOverflowBar)
+    HealthBar.LayoutHealAbsorbBar(bar)
+    if bar.textLayer then
+        bar.textLayer:SetFrameLevel(bar:GetFrameLevel() + 7)
+    end
+end
+
+function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
+    if not bar then return end
+
+    local netHealingCalcPopulated = false
+    local standaloneHealingCalcPopulated = false
+    local function GetNetHealingCalc()
+        if not netHealingCalcPopulated then
+            UnitGetDetailedHealPrediction("player", nil, HEALTH_EFFECTS.netHealingCalc)
+            netHealingCalcPopulated = true
+        end
+        return HEALTH_EFFECTS.netHealingCalc
+    end
+    local function GetStandaloneHealingCalc()
+        if not standaloneHealingCalcPopulated then
+            UnitGetDetailedHealPrediction("player", nil, HEALTH_EFFECTS.standaloneHealingCalc)
+            standaloneHealingCalcPopulated = true
+        end
+        return HEALTH_EFFECTS.standaloneHealingCalc
+    end
+
+    if not config then
+        if bar.lowHealthAlertBar then bar.lowHealthAlertBar:Hide() end
+        if bar.incomingHealBar then bar.incomingHealBar:Hide() end
+        if bar.absorbBar then bar.absorbBar:Hide() end
+        if bar.absorbOverflowBar then bar.absorbOverflowBar:Hide() end
+        if bar.healAbsorbBar then bar.healAbsorbBar:Hide() end
+        return
+    end
+
+    preview = preview or HEALTH_EFFECTS.preview
+
+    if bar.lowHealthAlertBar then
+        HealthBar.ApplyLowHealthAlertStyle(bar.lowHealthAlertBar, config)
+        if config.showLowHealthAlert == true or preview.lowHealthAlert == true then
+            HealthBar.ApplyLowHealthAlertColor(bar, config, preview.lowHealthAlert == true)
+            bar.lowHealthAlertBar:SetAlpha(0.6 + (0.4 * math_sin(GetTime() * 2 * math_pi / HEALTH_EFFECTS.lowHealthAlertPulseSpeed)))
+            bar.lowHealthAlertBar:Show()
+        else
+            bar.lowHealthAlertBar:Hide()
+            bar.lowHealthAlertBar:SetAlpha(1)
+            bar.lowHealthAlertBar:SetValue(0)
+        end
+    end
+
+    local incomingHealsVisible = config.showIncomingHeals == true or preview.incomingHeals == true
+    local incomingHealAnchorTexture = nil
+    if bar.incomingHealBar then
+        HealthBar.ApplyEffectStyle(bar.incomingHealBar, config, "healthIncomingHealColor", HEALTH_EFFECTS.incomingHealColor, "healthIncomingHealTexture")
+        if incomingHealsVisible then
+            bar.incomingHealBar:SetMinMaxValues(0, maxHealth)
+            if preview.incomingHeals == true then
+                bar.incomingHealBar:SetValue(18)
+            else
+                bar.incomingHealBar:SetValue(EnsureNonNilNumber(GetNetHealingCalc():GetIncomingHeals()))
+            end
+            bar.incomingHealBar:Show()
+            incomingHealAnchorTexture = bar.incomingHealBar:GetStatusBarTexture()
+        else
+            bar.incomingHealBar:Hide()
+            bar.incomingHealBar:SetValue(0)
+        end
+    end
+
+    if bar.absorbBar then
+        HealthBar.LayoutForwardEffectBar(bar, bar.absorbBar, incomingHealAnchorTexture, true)
+        HealthBar.ApplyEffectStyle(bar.absorbBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
+        HealthBar.ApplyEffectStyle(bar.absorbOverflowBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
+        if config.showAbsorbs == true or preview.absorbs == true then
+            local missingHealthAbsorb
+            local absorbOverflowing
+            local overflowAbsorb
+            if preview.absorbs == true then
+                missingHealthAbsorb = 0
+                absorbOverflowing = true
+                overflowAbsorb = 28
+            else
+                HEALTH_EFFECTS.absorbMissingCalc:SetDamageAbsorbClampMode(
+                    incomingHealsVisible
+                        and Enum.UnitDamageAbsorbClampMode.MissingHealth
+                        or Enum.UnitDamageAbsorbClampMode.MissingHealthWithoutIncomingHeals
+                )
+                HEALTH_EFFECTS.absorbMissingCalc:SetHealAbsorbMode(
+                    incomingHealsVisible
+                        and Enum.UnitHealAbsorbMode.ReducedByIncomingHeals
+                        or Enum.UnitHealAbsorbMode.Total
+                )
+                UnitGetDetailedHealPrediction("player", nil, HEALTH_EFFECTS.absorbMissingCalc)
+                missingHealthAbsorb, absorbOverflowing = HEALTH_EFFECTS.absorbMissingCalc:GetDamageAbsorbs()
+                UnitGetDetailedHealPrediction("player", nil, HEALTH_EFFECTS.absorbOverflowCalc)
+                overflowAbsorb = HEALTH_EFFECTS.absorbOverflowCalc:GetDamageAbsorbs()
+            end
+
+            bar.absorbBar:SetMinMaxValues(0, maxHealth)
+            bar.absorbBar:SetValue(EnsureNonNilNumber(missingHealthAbsorb))
+            bar.absorbBar:SetAlpha(1)
+            bar.absorbBar:Show()
+            if bar.absorbOverflowBar then
+                bar.absorbOverflowBar:SetMinMaxValues(0, maxHealth)
+                bar.absorbOverflowBar:SetValue(EnsureNonNilNumber(overflowAbsorb))
+                HealthBar.SetEffectAlphaFromBoolean(bar.absorbOverflowBar, absorbOverflowing, 1, 0)
+                bar.absorbOverflowBar:Show()
+            end
+        else
+            bar.absorbBar:Hide()
+            bar.absorbBar:SetValue(0)
+            if bar.absorbOverflowBar then
+                bar.absorbOverflowBar:Hide()
+                bar.absorbOverflowBar:SetValue(0)
+            end
+        end
+    end
+
+    if bar.healAbsorbBar then
+        HealthBar.ApplyEffectStyle(bar.healAbsorbBar, config, "healthHealAbsorbColor", HEALTH_EFFECTS.healAbsorbColor, "healthHealAbsorbTexture")
+        if config.showHealAbsorbs == true or preview.healAbsorbs == true then
+            bar.healAbsorbBar:SetMinMaxValues(0, maxHealth)
+            if preview.healAbsorbs == true then
+                bar.healAbsorbBar:SetValue(22)
+            else
+                local healAbsorbCalc = incomingHealsVisible and GetNetHealingCalc() or GetStandaloneHealingCalc()
+                bar.healAbsorbBar:SetValue(EnsureNonNilNumber(healAbsorbCalc:GetHealAbsorbs()))
+            end
+            bar.healAbsorbBar:Show()
+        else
+            bar.healAbsorbBar:Hide()
+            bar.healAbsorbBar:SetValue(0)
+        end
+    end
+end
+
 function HealthBar.BuildGradientCurve(config, opacityKey, opacityDefault, fullKey, fullDefault, halfKey, halfDefault, lowKey, lowDefault)
     local opacity = HealthBar.GetAlpha(config, opacityKey, opacityDefault)
     local full = HealthBar.GetColor(config, fullKey, fullDefault)
@@ -1500,6 +1890,7 @@ function HealthBar.Update(bar, settings)
     local config = HealthBar.GetConfig(settings)
     HealthBar.ApplyFillColor(bar, config)
     HealthBar.ApplyBackgroundColor(bar, config)
+    HealthBar.UpdateEffectBars(bar, config, maxHealth)
 
     if bar.text and bar.text:IsShown() then
         local textFormat = bar._textFormat
@@ -1513,6 +1904,14 @@ function HealthBar.Update(bar, settings)
                 AbbreviateNumbers(currentHealth),
                 UnitHealthPercent("player", true, PERCENT_SCALE_CURVE)
             )
+        elseif textFormat == "current_percent_no_sign" then
+            bar.text:SetFormattedText(
+                "%s | %.0f",
+                AbbreviateNumbers(currentHealth),
+                UnitHealthPercent("player", true, PERCENT_SCALE_CURVE)
+            )
+        elseif textFormat == "percent_no_sign" then
+            bar.text:SetFormattedText("%.0f", UnitHealthPercent("player", true, PERCENT_SCALE_CURVE))
         else
             bar.text:SetFormattedText("%.0f%%", UnitHealthPercent("player", true, PERCENT_SCALE_CURVE))
         end
@@ -2809,9 +3208,12 @@ local function OnUpdate(self, elapsed)
     if elapsed_acc < UPDATE_INTERVAL then return end
     elapsed_acc = 0
 
-    if isPreviewActive then return end
-
     local settings = GetResourceBarSettings()
+    if isPreviewActive then
+        HealthBar.RefreshEffectPreviewAnimation(settings)
+        return
+    end
+
     local auraActiveCache = {}
 
     for _, barInfo in ipairs(resourceBarFrames) do
@@ -3075,8 +3477,10 @@ function HealthBar.Style(bar, settings)
     bar._reverseFill = reverseFill
     bar._healthBarCurve = HealthBar.BuildFillCurve(resourceConfig)
     bar._healthBackgroundCurve = HealthBar.BuildBackgroundCurve(resourceConfig)
+    bar._lowHealthAlertCurve = HealthBar.BuildLowHealthAlertCurve(resourceConfig)
 
     HealthBar.ApplyFillColor(bar, resourceConfig)
+    HealthBar.EnsureEffectBars(bar)
 
     if bar.brightnessOverlay then
         bar.brightnessOverlay:Hide()
@@ -3095,9 +3499,15 @@ function HealthBar.Style(bar, settings)
     else
         HidePixelBorders(bar.borders)
     end
+    HealthBar.LayoutEffectBars(bar, borderStyle, borderSize)
 
     local textFormat = resourceConfig and resourceConfig.textFormat or "percent"
-    if textFormat ~= "percent" and textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "current_percent" then
+    if textFormat ~= "percent"
+        and textFormat ~= "percent_no_sign"
+        and textFormat ~= "current"
+        and textFormat ~= "current_max"
+        and textFormat ~= "current_percent"
+        and textFormat ~= "current_percent_no_sign" then
         textFormat = "percent"
     end
     local textFontName = resourceConfig and resourceConfig.textFont or DEFAULT_RESOURCE_TEXT_FONT
@@ -3676,6 +4086,8 @@ function CooldownCompanion:RevertResourceBars()
     HideIndependentWrapperFrame()
 
     isPreviewActive = false
+    wipe(HEALTH_EFFECTS.preview)
+    HEALTH_EFFECTS.forcedPreview = nil
     wipe(customAuraBarActivePreviewTokens)
     wipe(customAuraBarPandemicPreviewTokens)
     wipe(activeCustomAuraBarActivePreviews)
@@ -3815,6 +4227,88 @@ function CooldownCompanion:PlayCustomAuraBarPandemicPreview(cabConfig, durationS
         activeCustomAuraBarPandemicPreviews[cabConfig] = nil
         RefreshCustomAuraBarPreviewState(cabConfig, "_pandemicPreview", false)
     end)
+end
+
+function HealthBar.HasActiveEffectPreview()
+    local preview = HEALTH_EFFECTS.preview
+    return preview.absorbs == true
+        or preview.healAbsorbs == true
+        or preview.incomingHeals == true
+        or preview.lowHealthAlert == true
+end
+
+function HealthBar.RefreshEffectPreviewState()
+    if isPreviewActive and ApplyPreviewData then
+        ApplyPreviewData()
+        return
+    end
+
+    local settings = GetResourceBarSettings()
+    local config = HealthBar.GetConfig(settings)
+    for _, barInfo in ipairs(resourceBarFrames) do
+        if barInfo.barType == "health_continuous" and barInfo.frame then
+            HealthBar.UpdateEffectBars(barInfo.frame, config, UnitHealthMax("player"), HEALTH_EFFECTS.preview)
+        end
+    end
+end
+
+function HealthBar.RefreshEffectPreviewAnimation(settings)
+    local preview = HEALTH_EFFECTS.preview
+    if preview.lowHealthAlert ~= true then
+        return
+    end
+
+    local config = HealthBar.GetConfig(settings)
+    for _, barInfo in ipairs(resourceBarFrames) do
+        if barInfo.barType == "health_continuous" and barInfo.frame and barInfo.frame:IsShown() then
+            HealthBar.UpdateEffectBars(barInfo.frame, config, 100, preview)
+        end
+    end
+end
+
+function CooldownCompanion:SetHealthEffectPreview(effectKey, show)
+    if effectKey ~= "absorbs"
+        and effectKey ~= "healAbsorbs"
+        and effectKey ~= "incomingHeals"
+        and effectKey ~= "lowHealthAlert" then
+        return
+    end
+
+    HEALTH_EFFECTS.preview[effectKey] = show and true or nil
+    if show then
+        if not isPreviewActive then
+            HEALTH_EFFECTS.forcedPreview = true
+            self:StartResourceBarPreview()
+        else
+            HealthBar.RefreshEffectPreviewState()
+        end
+        return
+    end
+
+    if not HealthBar.HasActiveEffectPreview() and HEALTH_EFFECTS.forcedPreview then
+        HEALTH_EFFECTS.forcedPreview = nil
+        self:StopResourceBarPreview()
+    else
+        HealthBar.RefreshEffectPreviewState()
+    end
+end
+
+function CooldownCompanion:IsHealthEffectPreviewActive(effectKey)
+    return HEALTH_EFFECTS.preview[effectKey] == true
+end
+
+function CooldownCompanion:ClearAllHealthEffectPreviews()
+    if not HealthBar.HasActiveEffectPreview() then
+        return
+    end
+
+    wipe(HEALTH_EFFECTS.preview)
+    if HEALTH_EFFECTS.forcedPreview then
+        HEALTH_EFFECTS.forcedPreview = nil
+        self:StopResourceBarPreview()
+    else
+        HealthBar.RefreshEffectPreviewState()
+    end
 end
 
 function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
@@ -4010,6 +4504,7 @@ local function ApplyPreviewDataToBar(barInfo, settings)
         local config = HealthBar.GetConfig(settings)
         HealthBar.ApplyFillColor(barInfo.frame, config, 0.65)
         HealthBar.ApplyBackgroundColor(barInfo.frame, config, 0.65)
+        HealthBar.UpdateEffectBars(barInfo.frame, config, 100, HEALTH_EFFECTS.preview)
         if barInfo.frame.text and barInfo.frame.text:IsShown() then
             local textFormat = barInfo.frame._textFormat
             if textFormat == "current" then
@@ -4018,6 +4513,10 @@ local function ApplyPreviewDataToBar(barInfo, settings)
                 barInfo.frame.text:SetText("650K / 1M")
             elseif textFormat == "current_percent" then
                 barInfo.frame.text:SetText("650K | 65%")
+            elseif textFormat == "current_percent_no_sign" then
+                barInfo.frame.text:SetText("650K | 65")
+            elseif textFormat == "percent_no_sign" then
+                barInfo.frame.text:SetText("65")
             else
                 barInfo.frame.text:SetText("65%")
             end
@@ -4191,6 +4690,8 @@ end
 function CooldownCompanion:StopResourceBarPreview()
     if not isPreviewActive then return end
     isPreviewActive = false
+    wipe(HEALTH_EFFECTS.preview)
+    HEALTH_EFFECTS.forcedPreview = nil
     -- Resume live updates on next OnUpdate tick
 end
 
