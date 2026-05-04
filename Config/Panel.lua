@@ -322,6 +322,9 @@ local function QueueConfigFinderRefresh()
         end
         RefreshColumn1()
         RefreshColumn2()
+        if CS.configFrame.UpdateCompactConfigRows then
+            CS.configFrame.UpdateCompactConfigRows()
+        end
         ApplyConfigColumnTitles(CS.configFrame)
         if finderActive then
             ResetScrollState(CS.col1Scroll)
@@ -412,6 +415,9 @@ function CooldownCompanion:RefreshConfigForSpellOverride(pendingSpellIds)
     local selectedEntryAffected = DoesButtonReferencePendingOverrideSpell(GetSelectedConfigButtonData(), pendingSpellIds)
 
     RefreshColumn2()
+    if CS.configFrame.UpdateCompactConfigRows then
+        CS.configFrame.UpdateCompactConfigRows()
+    end
     if selectedEntryAffected then
         RefreshColumn3()
     end
@@ -1911,6 +1917,7 @@ local function CreateConfigPanel()
     frame.col4 = col4
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
+    frame.UpdateCompactConfigRows = UpdateCompactConfigRows
     frame.UpdateModeNavigationUI = UpdateModeNavigationUI
     frame.UpdateBrowseButtonState = UpdateBrowseBtnState
     UpdateBrowseBtnState()
@@ -2002,6 +2009,9 @@ function CooldownCompanion:RefreshConfigPanel()
     end
     RefreshColumn1()
     RefreshColumn2()
+    if CS.configFrame.UpdateCompactConfigRows then
+        CS.configFrame.UpdateCompactConfigRows()
+    end
     RefreshColumn3()
     RefreshColumn4(CS.col4Container)
     ApplyConfigColumnTitles(CS.configFrame)

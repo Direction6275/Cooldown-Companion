@@ -1135,6 +1135,47 @@ local function ResetConfigRowIcon(entry)
     icon:SetAlpha(1)
 end
 
+local function RestoreConfigRowHandlers(entry)
+    if not entry then
+        return
+    end
+
+    if entry._cdcConfigRowWidthHandlerInstalled then
+        entry.OnWidthSet = entry._cdcConfigRowOriginalOnWidthSet
+        entry._cdcConfigRowOriginalOnWidthSet = nil
+        entry._cdcConfigRowWidthHandlerInstalled = nil
+    end
+
+    if entry._cdcConfigRowReleaseHandlerInstalled then
+        entry.OnRelease = entry._cdcConfigRowOriginalOnRelease
+        entry._cdcConfigRowOriginalOnRelease = nil
+        entry._cdcConfigRowReleaseHandlerInstalled = nil
+    end
+end
+
+local function ClearConfigRowIcon(entry, restoreHandlers)
+    if not entry then
+        return
+    end
+
+    entry._cdcConfigRowIconStored = nil
+    entry._cdcConfigRowIconTexture = nil
+    entry._cdcConfigRowIconOpts = nil
+    entry.imageshown = nil
+    ResetConfigRowIcon(entry)
+    if entry.image then
+        entry.image:Show()
+        entry.image:SetAlpha(1)
+        if entry.image.SetDesaturated then
+            entry.image:SetDesaturated(false)
+        end
+    end
+
+    if restoreHandlers then
+        RestoreConfigRowHandlers(entry)
+    end
+end
+
 local function ApplyConfigRowIconLayout(entry, opts)
     if not (entry and entry._cdcConfigRowIconStored and entry.frame and entry.label) then
         return
@@ -1208,6 +1249,22 @@ local function EnsureConfigRowWidthHandler(entry)
     entry._cdcConfigRowWidthHandlerInstalled = true
 end
 
+local function EnsureConfigRowReleaseHandler(entry)
+    if entry._cdcConfigRowReleaseHandlerInstalled then
+        return
+    end
+
+    entry._cdcConfigRowOriginalOnRelease = entry.OnRelease
+    entry.OnRelease = function(self)
+        local originalOnRelease = self._cdcConfigRowOriginalOnRelease
+        ClearConfigRowIcon(self, true)
+        if originalOnRelease then
+            originalOnRelease(self)
+        end
+    end
+    entry._cdcConfigRowReleaseHandlerInstalled = true
+end
+
 local function CleanRecycledEntry(entry)
     if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
     if entry._cdcModeBadgeHitRect then entry._cdcModeBadgeHitRect:Hide() end
@@ -1235,18 +1292,7 @@ local function CleanRecycledEntry(entry)
     entry.frame:SetScript("OnReceiveDrag", nil)
     entry.frame._cdcOnMouseDown = nil
     entry.frame._cdcLastClickTime = nil
-    entry._cdcConfigRowIconStored = nil
-    entry._cdcConfigRowIconTexture = nil
-    entry._cdcConfigRowIconOpts = nil
-    entry.imageshown = nil
-    ResetConfigRowIcon(entry)
-    if entry.image then
-        entry.image:Show()
-        entry.image:SetAlpha(1)
-        if entry.image.SetDesaturated then
-            entry.image:SetDesaturated(false)
-        end
-    end
+    ClearConfigRowIcon(entry, true)
 end
 
 local function ApplyConfigRowIcon(entry, texture, opts)
@@ -1255,6 +1301,7 @@ local function ApplyConfigRowIcon(entry, texture, opts)
     entry._cdcConfigRowIconTexture = texture
     entry._cdcConfigRowIconOpts = opts
     EnsureConfigRowWidthHandler(entry)
+    EnsureConfigRowReleaseHandler(entry)
 
     entry:SetImage(nil)
     entry.imageshown = nil
@@ -1297,6 +1344,12 @@ local function ReapplyConfigRowIcons(widget)
     end
 end
 
+local function RelayoutConfigRowScroll(scrollWidget)
+    if scrollWidget and scrollWidget.DoLayout then
+        scrollWidget:DoLayout()
+    end
+end
+
 local function UpdateConfigFolderAccentBars()
     local showBars = not CS.compactConfigRows
     for _, bar in ipairs(CS.folderAccentBars or {}) do
@@ -1312,6 +1365,8 @@ local function RefreshVisibleConfigCompactRows()
     ReapplyConfigRowIcons(CS.col1Scroll)
     ReapplyConfigRowIcons(CS.col2Scroll)
     UpdateConfigFolderAccentBars()
+    RelayoutConfigRowScroll(CS.col1Scroll)
+    RelayoutConfigRowScroll(CS.col2Scroll)
 end
 
 local function AcquireBadge(frame, index)
