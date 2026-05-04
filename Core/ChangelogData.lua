@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.13.9",
         "1.13.8",
         "1.13.7",
         "1.13.6",
@@ -29,6 +30,21 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.13.9"] = {
+            markdown = [[
+## New Features
+
+- **Health Bar:** Bars & Frames can now show an optional player health bar alongside your existing resource bars.
+  - Health has its own tab, can be turned on from Resource Toggles, and uses the existing resource-bar sizing, ordering, layout, preview, texture, border, and text controls.
+  - Health and Missing Health can be styled separately, with independent colors, opacity, and optional gradients.
+  - Health bars can show friendly absorbs, healing absorbs, incoming heals, and low-health alerts, with previewable colors and bar textures for each effect.
+  - Health text can show percent, current health, current / max health, current + percent, and compact percent formats without the `%` sign.
+
+## Bug Fixes
+
+- **Cast bar color flash:** Custom-styled cast bars should no longer briefly flash back to Blizzard's default fill color when a cast finishes, stops, fails, or is interrupted.
+]],
+        },
         ["1.13.8"] = {
             markdown = [[
 ## New Features
