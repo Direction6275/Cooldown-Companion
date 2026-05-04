@@ -12,6 +12,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 -- Imports from earlier Config/ files
 local BuildHeroTalentSubTreeCheckboxes = ST._BuildHeroTalentSubTreeCheckboxes
 local CleanRecycledEntry = ST._CleanRecycledEntry
+local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local SetupGroupRowIndicators = ST._SetupGroupRowIndicators
 local SetupFolderRowIndicators = ST._SetupFolderRowIndicators
 local SetupColumn1MarkerRow = ST._SetupColumn1MarkerRow
@@ -146,11 +147,15 @@ local function RenderBrowseMode()
         local backBtn = AceGUI:Create("InteractiveLabel")
         CleanRecycledEntry(backBtn)
         backBtn:SetText("|A:common-icon-backarrow:14:14|a  Back to My Groups")
-        backBtn:SetImage(134400)
-        backBtn:SetImageSize(1, 32)
-        backBtn.image:SetAlpha(0)
         backBtn:SetFullWidth(true)
         backBtn:SetFontObject(GameFontHighlight)
+        ApplyConfigRowIcon(backBtn, 134400, {
+            width = 1,
+            height = 32,
+            alpha = 0,
+            normalLeftPad = 0,
+            normalHideIcon = true,
+        })
         backBtn:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
         backBtn:SetCallback("OnClick", function()
             CS.browseMode = false
@@ -180,19 +185,15 @@ local function RenderBrowseMode()
             CleanRecycledEntry(entry)
             local displayName, cc = GetClassColoredCharName(charInfo.charKey, charInfo.classFilename)
 
-            -- Class icon (use individual atlas to avoid tiled-sheet border)
-            if charInfo.classFilename then
-                entry:SetImage(134400) -- placeholder to initialise image widget
-                entry.image:SetAtlas("classicon-" .. strlower(charInfo.classFilename), false)
-                entry:SetImageSize(32, 32)
-            else
-                entry:SetImage(134400)
-                entry:SetImageSize(32, 32)
-            end
-
             entry:SetText(displayName)
             entry:SetFullWidth(true)
             entry:SetFontObject(GameFontHighlight)
+            -- Class icon (use individual atlas to avoid tiled-sheet border)
+            if charInfo.classFilename then
+                ApplyConfigRowIcon(entry, 134400, { atlas = "classicon-" .. strlower(charInfo.classFilename) })
+            else
+                ApplyConfigRowIcon(entry, 134400)
+            end
             entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
             entry:SetCallback("OnClick", function()
                 CS.browseCharKey = charInfo.charKey
@@ -207,11 +208,15 @@ local function RenderBrowseMode()
         local backBtn = AceGUI:Create("InteractiveLabel")
         CleanRecycledEntry(backBtn)
         backBtn:SetText("|A:common-icon-backarrow:14:14|a  Back to Characters")
-        backBtn:SetImage(134400)
-        backBtn:SetImageSize(1, 32)
-        backBtn.image:SetAlpha(0)
         backBtn:SetFullWidth(true)
         backBtn:SetFontObject(GameFontHighlight)
+        ApplyConfigRowIcon(backBtn, 134400, {
+            width = 1,
+            height = 32,
+            alpha = 0,
+            normalLeftPad = 0,
+            normalHideIcon = true,
+        })
         backBtn:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
         backBtn:SetCallback("OnClick", function()
             CS.browseCharKey = nil
@@ -259,10 +264,9 @@ local function RenderBrowseMode()
             end
 
             entry:SetText(displayName)
-            entry:SetImage(GetContainerIcon(containerId, db))
-            entry:SetImageSize(32, 32)
             entry:SetFullWidth(true)
             entry:SetFontObject(GameFontHighlight)
+            ApplyConfigRowIcon(entry, GetContainerIcon(containerId, db))
             entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
             -- Green highlight for selected browse container
@@ -962,6 +966,7 @@ local function RefreshColumn1(preserveDrag)
     for i, bar in ipairs(CS.folderAccentBars) do
         bar:Hide()
         bar:ClearAllPoints()
+        bar._cdcFolderAccentActive = nil
     end
     local accentBarIndex = 0  -- pool cursor, incremented as bars are used
 
@@ -1210,17 +1215,6 @@ local function RefreshColumn1(preserveDrag)
 
         entry:SetText(displayName)
         local showManualIcon = not inFolder and IsValidIconTexture(container.manualIcon)
-        if showManualIcon then
-            entry:SetImage(container.manualIcon)
-            entry:SetImageSize(32, 32)
-        else
-            entry:SetImage("Interface\\BUTTONS\\WHITE8X8")
-            entry:SetImageSize(inFolder and 13 or 1, 30)
-        end
-        if entry.image then
-            entry.image:Show()
-            entry.image:SetAlpha(showManualIcon and 1 or 0)
-        end
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
         local groupNameWidth = 0
@@ -1228,6 +1222,15 @@ local function RefreshColumn1(preserveDrag)
             entry.label:SetText(groupName)
             groupNameWidth = entry.label:GetStringWidth()
             entry:SetText(displayName)
+        end
+        if showManualIcon then
+            ApplyConfigRowIcon(entry, container.manualIcon)
+        else
+            ApplyConfigRowIcon(entry, "Interface\\BUTTONS\\WHITE8X8", {
+                width = inFolder and 13 or 1,
+                height = 30,
+                alpha = 0,
+            })
         end
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
@@ -1559,14 +1562,9 @@ local function RefreshColumn1(preserveDrag)
         local entry = AceGUI:Create("InteractiveLabel")
         CleanRecycledEntry(entry)
         entry:SetText(folder.name .. collapseTag)
-        entry:SetImage(GetFolderIcon(folderId, db))
-        entry:SetImageSize(32, 32)
-        if entry.image then
-            entry.image:Show()
-            entry.image:SetAlpha(1)
-        end
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
+        ApplyConfigRowIcon(entry, GetFolderIcon(folderId, db))
         local allChildrenInactive = IsFolderFullyInactive(folderId, childContainerIds)
         if allChildrenInactive then
             entry:SetColor(0.5, 0.5, 0.5)
@@ -1867,9 +1865,14 @@ local function RefreshColumn1(preserveDrag)
                                 bar:SetWidth(3)
                                 bar:ClearAllPoints()
                                 bar._cdcFolderId = item.id
+                                bar._cdcFolderAccentActive = true
                                 bar:SetPoint("TOPLEFT", firstEntry.frame, "TOPLEFT", 0, 0)
                                 bar:SetPoint("BOTTOMLEFT", lastEntry.frame, "BOTTOMLEFT", 0, 0)
-                                bar:Show()
+                                if CS.compactConfigRows then
+                                    bar:Hide()
+                                else
+                                    bar:Show()
+                                end
                             end
                         end
                     end

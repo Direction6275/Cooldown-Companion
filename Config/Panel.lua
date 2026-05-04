@@ -36,6 +36,7 @@ local CancelFirstIconPanelTutorial = ST._CancelFirstIconPanelTutorial
 local RebuildTutorialAnchors = ST._RebuildTutorialAnchors
 local RefreshTutorialPlacement = ST._RefreshTutorialPlacement
 local SetupChangelogOverlay = ST._SetupChangelogOverlay
+local RefreshVisibleConfigCompactRows = ST._RefreshVisibleConfigCompactRows
 
 local function GetAddonVersionText()
     if ST._GetAddonVersion then
@@ -64,6 +65,8 @@ local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
 local CONFIG_FINDER_BOX_HEIGHT = 28
 local CONFIG_FINDER_BUTTON_GAP = 6
 local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
+local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
+local CONFIG_NESTED_INLINE_GROUP_INSET = 20
 
 if not AceGUI:GetLayout(MANUAL_COLUMN_LAYOUT) then
     -- These columns are positioned and sized manually, so their layout should
@@ -1758,6 +1761,40 @@ local function CreateConfigPanel()
         end
     end
 
+    local function SetCompactConfigRows(compact)
+        compact = compact == true
+        if CS.compactConfigRows == compact then
+            return
+        end
+
+        CS.compactConfigRows = compact
+        if RefreshVisibleConfigCompactRows then
+            RefreshVisibleConfigCompactRows()
+        end
+    end
+
+    local function GetScrollRowWidth(scrollWidget, fallbackFrame)
+        local contentWidth = scrollWidget and scrollWidget.content and scrollWidget.content.width
+        if contentWidth and contentWidth > 0 then
+            return contentWidth
+        end
+
+        local scrollFrame = scrollWidget and scrollWidget.scrollframe
+        local width = (scrollFrame and scrollFrame:GetWidth()) or (fallbackFrame and fallbackFrame:GetWidth()) or 0
+        return math.max(0, width or 0)
+    end
+
+    local function UpdateCompactConfigRows()
+        local col1RowWidth = GetScrollRowWidth(CS.col1Scroll, col1.content)
+        local col2RowWidth = GetScrollRowWidth(CS.col2Scroll, col2.content) - CONFIG_NESTED_INLINE_GROUP_INSET
+        local narrowestRowWidth = math.min(col1RowWidth, math.max(0, col2RowWidth))
+        if narrowestRowWidth <= 0 then
+            return
+        end
+
+        SetCompactConfigRows(narrowestRowWidth < CONFIG_COMPACT_ROW_MIN_WIDTH)
+    end
+
     -- Layout columns on size change
     local function LayoutColumns()
         local w = colParent:GetWidth()
@@ -1839,6 +1876,7 @@ local function CreateConfigPanel()
         col4.frame:SetPoint("TOPLEFT", col3.frame, "TOPRIGHT", pad, 0)
         col4.frame:SetSize(col4Width, h)
 
+        UpdateCompactConfigRows()
         PositionPrimaryAxisUI()
     end
 
