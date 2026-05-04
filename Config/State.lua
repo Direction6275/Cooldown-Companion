@@ -1135,6 +1135,23 @@ local function ResetConfigRowIcon(entry)
     icon:SetAlpha(1)
 end
 
+local function ResetConfigRowLabel(entry)
+    local label = entry and entry.label
+    if not label then
+        return
+    end
+
+    if label.SetWordWrap then
+        label:SetWordWrap(true)
+    end
+    if label.SetNonSpaceWrap then
+        label:SetNonSpaceWrap(false)
+    end
+    if label.SetMaxLines then
+        label:SetMaxLines(0)
+    end
+end
+
 local function RestoreConfigRowHandlers(entry)
     if not entry then
         return
@@ -1163,6 +1180,7 @@ local function ClearConfigRowIcon(entry, restoreHandlers)
     entry._cdcConfigRowIconOpts = nil
     entry.imageshown = nil
     ResetConfigRowIcon(entry)
+    ResetConfigRowLabel(entry)
     if entry.image then
         entry.image:Show()
         entry.image:SetAlpha(1)
@@ -1208,6 +1226,15 @@ local function ApplyConfigRowIconLayout(entry, opts)
     local rowWidth = frame.width or frame:GetWidth() or 0
     if rowWidth > 0 then
         label:SetWidth(math.max(1, rowWidth - leftPad - rightPad))
+    end
+    if label.SetWordWrap then
+        label:SetWordWrap(false)
+    end
+    if label.SetNonSpaceWrap then
+        label:SetNonSpaceWrap(false)
+    end
+    if label.SetMaxLines then
+        label:SetMaxLines(1)
     end
     label:SetJustifyH(justifyH)
     label:SetJustifyV(justifyV)
