@@ -239,63 +239,92 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     ColorHeading(fillHeading)
     fillHeading:SetFullWidth(true)
     container:AddChild(fillHeading)
-    CreateInfoButton(fillHeading.frame, fillHeading.label, "LEFT", "RIGHT", 4, 0, {
-        "Health Colors",
-        {"Resource Background Color is used by regular resource bars. Health uses Missing Health for its empty region.", 1, 1, 1, true},
-    }, fillHeading)
-
-    local fillGradientCb = AceGUI:Create("CheckBox")
-    fillGradientCb:SetLabel("Use Health Gradient")
-    fillGradientCb:SetValue(fillGradientEnabled == true)
-    fillGradientCb:SetFullWidth(true)
-    fillGradientCb:SetCallback("OnValueChanged", function(widget, event, val)
-        health.healthBarGradient = val == true
-        applyBars()
+    local healthFillKey = "rb_health_fill"
+    local healthFillCollapsed = resourceBarCollapsedSections[healthFillKey]
+    AttachCollapseButton(fillHeading, healthFillCollapsed, function()
+        resourceBarCollapsedSections[healthFillKey] = not resourceBarCollapsedSections[healthFillKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(fillGradientCb)
 
-    if fillGradientEnabled == true then
-        AddColorPicker(container, health, "healthBarFullColor", "Full Health", DEFAULT_HEALTH_BAR_FULL_COLOR, false, applyBars, applyBars)
-        AddColorPicker(container, health, "healthBarHalfColor", "Half Health", DEFAULT_HEALTH_BAR_HALF_COLOR, false, applyBars, applyBars)
-        AddColorPicker(container, health, "healthBarLowColor", "Low Health", DEFAULT_HEALTH_BAR_LOW_COLOR, false, applyBars, applyBars)
-    else
-        AddColorPicker(container, health, "healthBarColor", "Health Color", DEFAULT_HEALTH_BAR_COLOR, false, applyBars, applyBars)
+    if not healthFillCollapsed then
+        local fillGradientCb = AceGUI:Create("CheckBox")
+        fillGradientCb:SetLabel("Use Health Gradient")
+        fillGradientCb:SetValue(fillGradientEnabled == true)
+        fillGradientCb:SetFullWidth(true)
+        fillGradientCb:SetCallback("OnValueChanged", function(widget, event, val)
+            health.healthBarGradient = val == true
+            applyBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(fillGradientCb)
+
+        if fillGradientEnabled == true then
+            AddColorPicker(container, health, "healthBarFullColor", "Full Health", DEFAULT_HEALTH_BAR_FULL_COLOR, false, applyBars, applyBars)
+            AddColorPicker(container, health, "healthBarHalfColor", "Half Health", DEFAULT_HEALTH_BAR_HALF_COLOR, false, applyBars, applyBars)
+            AddColorPicker(container, health, "healthBarLowColor", "Low Health", DEFAULT_HEALTH_BAR_LOW_COLOR, false, applyBars, applyBars)
+        else
+            AddColorPicker(container, health, "healthBarColor", "Health Color", DEFAULT_HEALTH_BAR_COLOR, false, applyBars, applyBars)
+        end
+        HealthResource.AddOpacitySlider(container, health, "healthBarOpacity", "Health Opacity", DEFAULT_HEALTH_BAR_OPACITY, applyBars)
     end
-    HealthResource.AddOpacitySlider(container, health, "healthBarOpacity", "Health Opacity", DEFAULT_HEALTH_BAR_OPACITY, applyBars)
 
     local missingHeading = AceGUI:Create("Heading")
     missingHeading:SetText("Missing Health")
     ColorHeading(missingHeading)
     missingHeading:SetFullWidth(true)
     container:AddChild(missingHeading)
-
-    local bgGradientCb = AceGUI:Create("CheckBox")
-    bgGradientCb:SetLabel("Use Missing Health Gradient")
-    bgGradientCb:SetValue(gradientEnabled == true)
-    bgGradientCb:SetFullWidth(true)
-    bgGradientCb:SetCallback("OnValueChanged", function(widget, event, val)
-        health.healthBackgroundGradient = val == true
-        applyBars()
+    local healthMissingKey = "rb_health_missing"
+    local healthMissingCollapsed = resourceBarCollapsedSections[healthMissingKey]
+    local healthMissingCollapseBtn = AttachCollapseButton(missingHeading, healthMissingCollapsed, function()
+        resourceBarCollapsedSections[healthMissingKey] = not resourceBarCollapsedSections[healthMissingKey]
         CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(bgGradientCb)
+    local missingInfoBtn = CreateInfoButton(missingHeading.frame, healthMissingCollapseBtn, "LEFT", "RIGHT", 4, 0, {
+        "Missing Health",
+        {"Resource Background Color is used by regular resource bars. Health uses Missing Health for its empty region.", 1, 1, 1, true},
+    }, missingHeading)
+    missingHeading.right:ClearAllPoints()
+    missingHeading.right:SetPoint("RIGHT", missingHeading.frame, "RIGHT", -3, 0)
+    missingHeading.right:SetPoint("LEFT", missingInfoBtn, "RIGHT", 4, 0)
 
-    if gradientEnabled == true then
-        AddColorPicker(container, health, "healthBackgroundFullColor", "Missing Health Full", DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, false, applyBars, applyBars)
-        AddColorPicker(container, health, "healthBackgroundHalfColor", "Missing Health Half", DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, false, applyBars, applyBars)
-        AddColorPicker(container, health, "healthBackgroundLowColor", "Missing Health Low", DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, false, applyBars, applyBars)
-    else
-        AddColorPicker(container, health, "healthBackgroundColor", "Missing Health Color", DEFAULT_HEALTH_BACKGROUND_COLOR, false, applyBars, applyBars)
+    if not healthMissingCollapsed then
+        local bgGradientCb = AceGUI:Create("CheckBox")
+        bgGradientCb:SetLabel("Use Missing Health Gradient")
+        bgGradientCb:SetValue(gradientEnabled == true)
+        bgGradientCb:SetFullWidth(true)
+        bgGradientCb:SetCallback("OnValueChanged", function(widget, event, val)
+            health.healthBackgroundGradient = val == true
+            applyBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(bgGradientCb)
+
+        if gradientEnabled == true then
+            AddColorPicker(container, health, "healthBackgroundFullColor", "Missing Health Full", DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, false, applyBars, applyBars)
+            AddColorPicker(container, health, "healthBackgroundHalfColor", "Missing Health Half", DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, false, applyBars, applyBars)
+            AddColorPicker(container, health, "healthBackgroundLowColor", "Missing Health Low", DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, false, applyBars, applyBars)
+        else
+            AddColorPicker(container, health, "healthBackgroundColor", "Missing Health Color", DEFAULT_HEALTH_BACKGROUND_COLOR, false, applyBars, applyBars)
+        end
+
+        HealthResource.AddOpacitySlider(container, health, "healthBackgroundOpacity", "Missing Health Opacity", DEFAULT_HEALTH_BACKGROUND_OPACITY, applyBars)
     end
-
-    HealthResource.AddOpacitySlider(container, health, "healthBackgroundOpacity", "Missing Health Opacity", DEFAULT_HEALTH_BACKGROUND_OPACITY, applyBars)
 
     local effectsHeading = AceGUI:Create("Heading")
     effectsHeading:SetText("Health Effects")
     ColorHeading(effectsHeading)
     effectsHeading:SetFullWidth(true)
     container:AddChild(effectsHeading)
+    local healthEffectsKey = "rb_health_effects"
+    local healthEffectsCollapsed = resourceBarCollapsedSections[healthEffectsKey]
+    AttachCollapseButton(effectsHeading, healthEffectsCollapsed, function()
+        resourceBarCollapsedSections[healthEffectsKey] = not resourceBarCollapsedSections[healthEffectsKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if healthEffectsCollapsed then
+        return
+    end
 
     local absorbsCb = AceGUI:Create("CheckBox")
     absorbsCb:SetLabel("Show Absorbs")
