@@ -1497,6 +1497,43 @@ function HealthBar.LayoutFullEffectBar(bar, effectBar)
     end
 end
 
+function HealthBar.LayoutLowHealthAlertBar(bar, config)
+    local effectBar = bar and bar.lowHealthAlertBar
+    if not bar or not effectBar then return end
+
+    if not (config and config.healthLowHealthAlertMissingHealthOnly == true) then
+        HealthBar.LayoutFullEffectBar(bar, effectBar)
+        return
+    end
+
+    local fillTexture = bar:GetStatusBarTexture()
+    local outerFrame = bar.healthEffectClip or bar
+    if not fillTexture or not outerFrame then return end
+
+    effectBar:ClearAllPoints()
+    effectBar:SetOrientation(bar._isVertical and "VERTICAL" or "HORIZONTAL")
+    effectBar:SetReverseFill(false)
+
+    if bar._isVertical then
+        if bar._reverseFill then
+            effectBar:SetPoint("TOPLEFT", fillTexture, "BOTTOMLEFT", 0, 0)
+            effectBar:SetPoint("TOPRIGHT", fillTexture, "BOTTOMRIGHT", 0, 0)
+            effectBar:SetPoint("BOTTOMLEFT", outerFrame, "BOTTOMLEFT", 0, 0)
+            effectBar:SetPoint("BOTTOMRIGHT", outerFrame, "BOTTOMRIGHT", 0, 0)
+        else
+            effectBar:SetPoint("BOTTOMLEFT", fillTexture, "TOPLEFT", 0, 0)
+            effectBar:SetPoint("BOTTOMRIGHT", fillTexture, "TOPRIGHT", 0, 0)
+            effectBar:SetPoint("TOPLEFT", outerFrame, "TOPLEFT", 0, 0)
+            effectBar:SetPoint("TOPRIGHT", outerFrame, "TOPRIGHT", 0, 0)
+        end
+    else
+        effectBar:SetPoint("TOPLEFT", fillTexture, "TOPRIGHT", 0, 0)
+        effectBar:SetPoint("BOTTOMLEFT", fillTexture, "BOTTOMRIGHT", 0, 0)
+        effectBar:SetPoint("TOPRIGHT", outerFrame, "TOPRIGHT", 0, 0)
+        effectBar:SetPoint("BOTTOMRIGHT", outerFrame, "BOTTOMRIGHT", 0, 0)
+    end
+end
+
 function HealthBar.LayoutForwardEffectBar(bar, effectBar, anchorTexture, overlapJoin)
     local fillTexture = anchorTexture or (bar and bar:GetStatusBarTexture())
     if not bar or not effectBar or not fillTexture then return end
@@ -1569,7 +1606,7 @@ function HealthBar.LayoutReverseEdgeEffectBar(bar, effectBar)
     end
 end
 
-function HealthBar.LayoutEffectBars(bar, borderStyle, borderSize)
+function HealthBar.LayoutEffectBars(bar, borderStyle, borderSize, config)
     if not bar then return end
     if bar.healthEffectClip then
         bar.healthEffectClip:SetFrameLevel(bar:GetFrameLevel() + 1)
@@ -1582,7 +1619,7 @@ function HealthBar.LayoutEffectBars(bar, borderStyle, borderSize)
             bar.healthEffectClip:SetAllPoints(bar)
         end
     end
-    HealthBar.LayoutFullEffectBar(bar, bar.lowHealthAlertBar)
+    HealthBar.LayoutLowHealthAlertBar(bar, config)
     HealthBar.LayoutForwardEffectBar(bar, bar.incomingHealBar)
     HealthBar.LayoutForwardEffectBar(bar, bar.absorbBar)
     HealthBar.LayoutReverseEdgeEffectBar(bar, bar.absorbOverflowBar)
@@ -3499,7 +3536,7 @@ function HealthBar.Style(bar, settings)
     else
         HidePixelBorders(bar.borders)
     end
-    HealthBar.LayoutEffectBars(bar, borderStyle, borderSize)
+    HealthBar.LayoutEffectBars(bar, borderStyle, borderSize, resourceConfig)
 
     local textFormat = resourceConfig and resourceConfig.textFormat or "percent"
     if textFormat ~= "percent"
