@@ -618,6 +618,32 @@ local function RevertFXScaling(cb)
 end
 
 ------------------------------------------------------------------------
+-- Fill styling — safe C-level widget calls only.
+------------------------------------------------------------------------
+
+local function ReapplyCastBarFillStyling(cb, s)
+    if not cb or not s or s.enabled ~= true or s.stylingEnabled ~= true then return end
+
+    local tex = s.barTexture
+    if tex and tex ~= "" then
+        cb:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(tex))
+    end
+
+    local bc = s.barColor
+    if bc then
+        cb:SetStatusBarColor(bc[1] or 0, bc[2] or 0, bc[3] or 0, bc[4] or 1)
+    end
+end
+
+local function ReapplyActiveCastBarFillStyling(cb)
+    if not isApplied then return nil end
+
+    local s = GetCastBarSettings()
+    ReapplyCastBarFillStyling(cb, s)
+    return s
+end
+
+------------------------------------------------------------------------
 -- FX suppression — hides/stops individual FX categories.
 -- Called from DeferredReapply and ApplyCastBarSettings (both branches).
 -- Uses ~= false so missing keys default to enabled.
@@ -665,14 +691,37 @@ local function InstallFXHooks(cb)
     if fxHooksInstalled then return end
     fxHooksInstalled = true
 
-    -- Each type-specific hook also suppresses FlashAnim + Flash (the shared border
-    -- glow).  PlayFadeAnim (FlashAnim) fires BEFORE PlayFinishAnim in the same frame,
-    -- so stopping FlashAnim from the type hook is still same-frame — no visible flash.
+    -- FlashAnim covers completed stops even when the current bar type has no finishAnim.
+    local function HookFinishFlashAnim(animGroup)
+        if not animGroup then return end
+        local anim = animGroup
+        hooksecurefunc(anim, "Play", function()
+            local s = ReapplyActiveCastBarFillStyling(cb)
+            if s and s.showCastFinishFX == false then
+                anim:Stop()
+                if cb.Flash then cb.Flash:SetAlpha(0) end
+            end
+        end)
+    end
+
+    -- HoldFadeOutAnim covers interrupted/failed stops, which do not call PlayFadeAnim.
+    local function HookFillReapplyAnim(animGroup)
+        if not animGroup then return end
+        local anim = animGroup
+        hooksecurefunc(anim, "Play", function()
+            ReapplyActiveCastBarFillStyling(cb)
+        end)
+    end
+
+    HookFinishFlashAnim(cb.FlashAnim)
+    HookFillReapplyAnim(cb.HoldFadeOutAnim)
+
+    -- Type-specific finish hooks still suppress optional finish FX in the same frame.
     local function HookFinishAnim(animGroup)
         if not animGroup then return end
         local anim = animGroup  -- capture in insecure context (self in hook is secret)
         hooksecurefunc(anim, "Play", function()
-            local s = GetCastBarSettings()
+            local s = ReapplyActiveCastBarFillStyling(cb)
             if s and s.showCastFinishFX == false then
                 anim:Stop()
                 if cb.FlashAnim then cb.FlashAnim:Stop() end
@@ -820,16 +869,8 @@ local function DeferredReapply()
     SuppressFX(cb, s)
 
     if s.stylingEnabled then
-        -- Re-apply custom bar texture (Blizzard resets to atlas on each cast event)
-        if s.barTexture and s.barTexture ~= "" then
-            cb:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(s.barTexture))
-        end
-
-        -- Re-apply custom bar color
-        local bc = s.barColor
-        if bc then
-            cb:SetStatusBarColor(bc[1], bc[2], bc[3], bc[4])
-        end
+        -- Re-apply custom fill (Blizzard resets to atlas on cast events)
+        ReapplyCastBarFillStyling(cb, s)
 
         -- Re-apply icon visibility, size, and position
         if cb.Icon then
@@ -1179,17 +1220,8 @@ function CooldownCompanion:ApplyCastBarSettings()
     if settings.stylingEnabled then
         -- ---- STYLING (optional layer) ----
 
-        -- Bar fill color (C widget method — safe)
-        local bc = settings.barColor
-        if bc then
-            cb:SetStatusBarColor(bc[1], bc[2], bc[3], bc[4])
-        end
-
-        -- Bar fill texture (C widget method — safe)
-        local tex = settings.barTexture
-        if tex and tex ~= "" then
-            cb:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(tex))
-        end
+        -- Bar fill texture + color (C widget methods — safe)
+        ReapplyCastBarFillStyling(cb, settings)
 
         -- Background color (C methods on child — safe)
         if cb.Background then
