@@ -168,10 +168,11 @@ function HealthResource.EnsureSettings(settings)
         settings.resources[HealthResource.ID].enabled = false
     end
     local health = settings.resources[HealthResource.ID]
-    if health.showAbsorbs == nil then health.showAbsorbs = false end
-    if health.showHealAbsorbs == nil then health.showHealAbsorbs = false end
-    if health.showIncomingHeals == nil then health.showIncomingHeals = false end
+    if health.showAbsorbs == nil then health.showAbsorbs = true end
+    if health.showHealAbsorbs == nil then health.showHealAbsorbs = true end
+    if health.showIncomingHeals == nil then health.showIncomingHeals = true end
     if health.showLowHealthAlert == nil then health.showLowHealthAlert = false end
+    if health.healthLowHealthAlertMissingHealthOnly == nil then health.healthLowHealthAlertMissingHealthOnly = false end
     if type(health.healthAbsorbColor) ~= "table" then health.healthAbsorbColor = DEFAULT_HEALTH_ABSORB_COLOR end
     if type(health.healthHealAbsorbColor) ~= "table" then health.healthHealAbsorbColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR end
     if type(health.healthIncomingHealColor) ~= "table" then health.healthIncomingHealColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR end
@@ -212,13 +213,14 @@ end
 
 function HealthResource.AddEffectStyleControls(container, checkbox, health, options, applyBars)
     local enabled = health[options.enabledKey] == true
-    local expanded = AddAdvancedToggle(checkbox, options.advancedKey, tabInfoButtons, enabled)
+    local expanded, advBtn = AddAdvancedToggle(checkbox, options.advancedKey, tabInfoButtons, enabled)
     if not (enabled and expanded) then
-        return
+        return expanded, advBtn
     end
 
     AddColorPicker(container, health, options.colorKey, options.colorLabel, options.defaultColor, true, applyBars, applyBars)
     HealthResource.AddEffectTextureDropdown(container, health, options.textureKey, options.textureLabel, applyBars)
+    return expanded, advBtn
 end
 
 function HealthResource.BuildColorControls(container, settings, applyBars)
@@ -365,7 +367,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(lowHealthAlertCb)
-    HealthResource.AddEffectStyleControls(container, lowHealthAlertCb, health, {
+    local lowHealthAlertAdvancedExpanded, lowHealthAlertAdvancedBtn = HealthResource.AddEffectStyleControls(container, lowHealthAlertCb, health, {
         enabledKey = "showLowHealthAlert",
         advancedKey = "healthLowHealthAlert",
         colorKey = "healthLowHealthAlertColor",
@@ -374,6 +376,28 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         textureLabel = "Low Health Alert Texture",
         defaultColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR,
     }, applyBars)
+    local lowHealthAlertInfoAnchor = lowHealthAlertAdvancedBtn
+    local lowHealthAlertInfoOffset = 4
+    if not (lowHealthAlertInfoAnchor and lowHealthAlertInfoAnchor:IsShown()) then
+        lowHealthAlertInfoAnchor = lowHealthAlertCb.checkbg
+        lowHealthAlertInfoOffset = lowHealthAlertCb.text:GetStringWidth() + 4
+    end
+    CreateInfoButton(lowHealthAlertCb.frame, lowHealthAlertInfoAnchor, "LEFT", "RIGHT", lowHealthAlertInfoOffset, 0, {
+        "Low Health Alert",
+        {"Blizzard sets the low-health threshold to 35%. This cannot be configured.", 1, 1, 1, true},
+    }, lowHealthAlertCb)
+    if health.showLowHealthAlert == true and lowHealthAlertAdvancedExpanded then
+        local missingHealthOnlyCb = AceGUI:Create("CheckBox")
+        missingHealthOnlyCb:SetLabel("Pulse Missing Health Only")
+        missingHealthOnlyCb:SetValue(health.healthLowHealthAlertMissingHealthOnly == true)
+        missingHealthOnlyCb:SetFullWidth(true)
+        missingHealthOnlyCb:SetCallback("OnValueChanged", function(widget, event, val)
+            health.healthLowHealthAlertMissingHealthOnly = val == true
+            applyBars()
+        end)
+        ApplyCheckboxIndent(missingHealthOnlyCb, 20)
+        container:AddChild(missingHealthOnlyCb)
+    end
 
     if AddPreviewToggleButton then
         AddPreviewToggleButton(container, "Preview Absorbs", function()
