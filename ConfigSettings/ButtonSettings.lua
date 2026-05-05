@@ -26,6 +26,7 @@ local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local NormalizeItemFallbacks = CooldownCompanion.NormalizeItemFallbacks
+local UpdateItemChargeMetadata = CooldownCompanion.UpdateItemChargeMetadata
 
 -- Imports from SectionBuilders.lua (used by BuildOverridesTab)
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
@@ -1194,6 +1195,7 @@ local function UpdatePrimaryFallbackItem(buttonData, itemID)
     buttonData.name = GetItemFallbackName(itemID)
     buttonData.hasCharges = nil
     buttonData.maxCharges = nil
+    UpdateItemChargeMetadata(buttonData, itemID)
 end
 
 local function MoveFallbackPriorityItem(buttonData, sourceIndex, targetIndex)

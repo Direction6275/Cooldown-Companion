@@ -208,7 +208,7 @@ local function GetItemAvailableQuantity(itemID, forceChargeCount)
     if forceChargeCount then
         return useCount, "charges"
     end
-    if useCount > stackCount then
+    if useCount ~= stackCount then
         return useCount, "charges"
     end
     return stackCount, "stacks"
@@ -223,38 +223,82 @@ local function HasItemFallbacks(buttonData)
 end
 CooldownCompanion.HasItemFallbacks = HasItemFallbacks
 
-local function NormalizeItemFallbackVisibilitySettings(buttonData)
-    if not HasItemFallbacks(buttonData) then
+local function UpdateItemChargeMetadata(buttonData, itemID)
+    if not (buttonData and buttonData.type == "item") then
         return false
     end
 
-    local changed = false
-    if buttonData.hideWhileZeroCharges then
-        buttonData.hideWhileZeroStacks = true
-    end
-    if buttonData.desaturateWhileZeroCharges then
-        buttonData.desaturateWhileZeroStacks = true
-    end
-    if buttonData.useBaselineAlphaFallbackZeroCharges then
-        buttonData.useBaselineAlphaFallbackZeroStacks = true
+    itemID = tonumber(itemID or buttonData.id)
+    if not itemID then
+        return false
     end
 
-    if buttonData.hideWhileZeroCharges ~= nil then
-        buttonData.hideWhileZeroCharges = nil
-        changed = true
+    local stackCount = C_Item.GetItemCount(itemID) or 0
+    local useCount = C_Item.GetItemCount(itemID, false, true) or stackCount
+    if useCount == stackCount then
+        return false
     end
-    if buttonData.desaturateWhileZeroCharges ~= nil then
-        buttonData.desaturateWhileZeroCharges = nil
-        changed = true
+
+    buttonData.hasCharges = true
+    buttonData.showChargeText = true
+    if useCount > (buttonData.maxCharges or 0) then
+        buttonData.maxCharges = useCount
     end
-    if buttonData.useBaselineAlphaFallbackZeroCharges ~= nil then
-        buttonData.useBaselineAlphaFallbackZeroCharges = nil
-        changed = true
+    return true
+end
+CooldownCompanion.UpdateItemChargeMetadata = UpdateItemChargeMetadata
+
+local function NormalizeItemFallbackVisibilitySettings(buttonData, hasFallbacks, hadFallbacks)
+    local changed = false
+
+    if hasFallbacks then
+        if buttonData.hideWhileZeroCharges then
+            buttonData.hideWhileZeroStacks = true
+        end
+        if buttonData.desaturateWhileZeroCharges then
+            buttonData.desaturateWhileZeroStacks = true
+        end
+        if buttonData.useBaselineAlphaFallbackZeroCharges then
+            buttonData.useBaselineAlphaFallbackZeroStacks = true
+        end
+
+        if buttonData.hideWhileZeroCharges ~= nil then
+            buttonData.hideWhileZeroCharges = nil
+            changed = true
+        end
+        if buttonData.desaturateWhileZeroCharges ~= nil then
+            buttonData.desaturateWhileZeroCharges = nil
+            changed = true
+        end
+        if buttonData.useBaselineAlphaFallbackZeroCharges ~= nil then
+            buttonData.useBaselineAlphaFallbackZeroCharges = nil
+            changed = true
+        end
+    elseif hadFallbacks and buttonData.type == "item" and UsesChargeBehavior(buttonData) then
+        if buttonData.hideWhileZeroStacks then
+            buttonData.hideWhileZeroCharges = true
+        end
+        if buttonData.desaturateWhileZeroStacks then
+            buttonData.desaturateWhileZeroCharges = true
+        end
+        if buttonData.useBaselineAlphaFallbackZeroStacks then
+            buttonData.useBaselineAlphaFallbackZeroCharges = true
+        end
+
+        if buttonData.hideWhileZeroStacks ~= nil then
+            buttonData.hideWhileZeroStacks = nil
+            changed = true
+        end
+        if buttonData.desaturateWhileZeroStacks ~= nil then
+            buttonData.desaturateWhileZeroStacks = nil
+            changed = true
+        end
+        if buttonData.useBaselineAlphaFallbackZeroStacks ~= nil then
+            buttonData.useBaselineAlphaFallbackZeroStacks = nil
+            changed = true
+        end
     end
-    if buttonData.hideCooldownWithCharges ~= nil then
-        buttonData.hideCooldownWithCharges = nil
-        changed = true
-    end
+
     return changed
 end
 CooldownCompanion.NormalizeItemFallbackVisibilitySettings = NormalizeItemFallbackVisibilitySettings
@@ -265,6 +309,7 @@ local function NormalizeItemFallbacks(buttonData)
     end
 
     local primaryID = tonumber(buttonData.id)
+    local hadFallbacks = true
     local seen = {}
     local normalized = {}
     local changed = false
@@ -286,7 +331,7 @@ local function NormalizeItemFallbacks(buttonData)
     else
         buttonData.itemFallbacks = normalized
     end
-    if NormalizeItemFallbackVisibilitySettings(buttonData) then
+    if NormalizeItemFallbackVisibilitySettings(buttonData, #normalized > 0, hadFallbacks) then
         changed = true
     end
     return changed

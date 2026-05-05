@@ -25,6 +25,7 @@ local ApplyIconTexCoord = ST._ApplyIconTexCoord
 local FitHighlightFrame = ST._FitHighlightFrame
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
+local HasItemFallbacks = CooldownCompanion.HasItemFallbacks
 
 -- Imports from Glows
 local CreateGlowContainer = ST._CreateGlowContainer
@@ -944,7 +945,8 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
 
     -- Charge-visual suppression: when toggle is active and charges remain,
     -- hide the swipe fill (dark overlay) but keep the edge visible.
-    if UsesChargeBehavior(buttonData) and buttonData.hideCooldownWithCharges and not button._auraActive then
+    if UsesChargeBehavior(buttonData) and buttonData.hideCooldownWithCharges
+            and not HasItemFallbacks(buttonData) and not button._auraActive then
         local hasChargesRemaining = (button._chargeState ~= CHARGE_STATE_ZERO)
         if hasChargesRemaining ~= button._hideCooldownChargesActive then
             button._hideCooldownChargesActive = hasChargesRemaining
