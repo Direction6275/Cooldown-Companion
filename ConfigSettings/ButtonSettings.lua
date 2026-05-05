@@ -1181,25 +1181,58 @@ local function TryReceiveFallbackItemDrop(buttonData)
     return added
 end
 
-local function MoveFallbackItem(buttonData, sourceIndex, targetIndex)
-    local fallbackIDs = buttonData and buttonData.itemFallbacks
-    if type(fallbackIDs) ~= "table" then
+local function UpdatePrimaryFallbackItem(buttonData, itemID)
+    buttonData.id = itemID
+    buttonData.name = GetItemFallbackName(itemID)
+    buttonData.hasCharges = nil
+    buttonData.maxCharges = nil
+end
+
+local function MoveFallbackPriorityItem(buttonData, sourceIndex, targetIndex)
+    if not (buttonData and buttonData.type == "item") then
         return false
     end
+    local fallbackIDs = buttonData.itemFallbacks
+    if type(fallbackIDs) ~= "table" then
+        fallbackIDs = {}
+    end
+
     local count = #fallbackIDs
     sourceIndex = tonumber(sourceIndex)
     targetIndex = tonumber(targetIndex)
-    if not sourceIndex or not targetIndex or sourceIndex < 1 or sourceIndex > count then
+    if not sourceIndex or not targetIndex or sourceIndex < 0 or sourceIndex > count then
         return false
     end
-    if targetIndex < 1 then targetIndex = 1 end
+    if targetIndex < 0 then targetIndex = 0 end
     if targetIndex > count then targetIndex = count end
     if targetIndex == sourceIndex then
         return false
     end
 
-    local itemID = table.remove(fallbackIDs, sourceIndex)
-    table.insert(fallbackIDs, targetIndex, itemID)
+    local orderedIDs = { tonumber(buttonData.id) }
+    for _, rawID in ipairs(fallbackIDs) do
+        orderedIDs[#orderedIDs + 1] = tonumber(rawID)
+    end
+
+    local movedID = table.remove(orderedIDs, sourceIndex + 1)
+    if not movedID then
+        return false
+    end
+    table.insert(orderedIDs, targetIndex + 1, movedID)
+
+    local newPrimaryID = orderedIDs[1]
+    if not (newPrimaryID and newPrimaryID > 0) then
+        return false
+    end
+    if newPrimaryID ~= tonumber(buttonData.id) then
+        UpdatePrimaryFallbackItem(buttonData, newPrimaryID)
+    end
+
+    local newFallbacks = {}
+    for index = 2, #orderedIDs do
+        newFallbacks[#newFallbacks + 1] = orderedIDs[index]
+    end
+    buttonData.itemFallbacks = newFallbacks
     NormalizeItemFallbacks(buttonData)
     return true
 end
@@ -1317,10 +1350,10 @@ local function ConfigureFallbackMoveButton(button, rotation, tooltipTitle, toolt
     button:Show()
 end
 
-local function EnsureFallbackMoveButtons(entry, buttonData, rowIndex)
+local function EnsureFallbackMoveButtons(entry, buttonData, rowIndex, isPrimary)
     local frame = entry.frame
     local upBtn = frame._cdcFallbackUpBtn
-    if not upBtn then
+    if not upBtn and not isPrimary then
         upBtn = CreateFrame("Button", nil, frame)
         frame._cdcFallbackUpBtn = upBtn
     end
@@ -1330,6 +1363,30 @@ local function EnsureFallbackMoveButtons(entry, buttonData, rowIndex)
         frame._cdcFallbackDownBtn = downBtn
     end
 
+    local fallbackIDs = buttonData.itemFallbacks or {}
+    if isPrimary then
+        if upBtn then
+            upBtn:Hide()
+        end
+
+        downBtn:ClearAllPoints()
+        downBtn:SetPoint("RIGHT", frame, "RIGHT", -4, 0)
+        downBtn:SetFrameLevel(frame:GetFrameLevel() + 6)
+        ConfigureFallbackMoveButton(
+            downBtn,
+            -math_pi / 2,
+            "Move Down",
+            "Swap this primary item with the first fallback.",
+            #fallbackIDs == 0,
+            function()
+                if MoveFallbackPriorityItem(buttonData, 0, 1) then
+                    RefreshFallbackEntry(CS.selectedGroup)
+                end
+            end
+        )
+        return
+    end
+
     upBtn:ClearAllPoints()
     upBtn:SetPoint("RIGHT", frame, "RIGHT", -24, 0)
     upBtn:SetFrameLevel(frame:GetFrameLevel() + 6)
@@ -1337,16 +1394,15 @@ local function EnsureFallbackMoveButtons(entry, buttonData, rowIndex)
         upBtn,
         math_pi / 2,
         "Move Up",
-        "Move this fallback one priority slot higher.",
-        rowIndex <= 1,
+        rowIndex == 1 and "Make this fallback the primary item." or "Move this fallback one priority slot higher.",
+        false,
         function()
-            if MoveFallbackItem(buttonData, rowIndex, rowIndex - 1) then
+            if MoveFallbackPriorityItem(buttonData, rowIndex, rowIndex - 1) then
                 RefreshFallbackEntry(CS.selectedGroup)
             end
         end
     )
 
-    local fallbackIDs = buttonData.itemFallbacks or {}
     downBtn:ClearAllPoints()
     downBtn:SetPoint("RIGHT", frame, "RIGHT", -4, 0)
     downBtn:SetFrameLevel(frame:GetFrameLevel() + 6)
@@ -1357,7 +1413,7 @@ local function EnsureFallbackMoveButtons(entry, buttonData, rowIndex)
         "Move this fallback one priority slot lower.",
         rowIndex >= #fallbackIDs,
         function()
-            if MoveFallbackItem(buttonData, rowIndex, rowIndex + 1) then
+            if MoveFallbackPriorityItem(buttonData, rowIndex, rowIndex + 1) then
                 RefreshFallbackEntry(CS.selectedGroup)
             end
         end
@@ -1408,16 +1464,17 @@ local function CreateFallbackItemRow(scroll, buttonData, itemID, rowIndex, isPri
     row:SetFullWidth(true)
     row:SetFontObject(GameFontHighlight)
     row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-    ApplyConfigRowIcon(row, C_Item.GetItemIconByID(itemID) or 134400, { rightPad = isPrimary and 4 or 48 })
+    ApplyConfigRowIcon(row, C_Item.GetItemIconByID(itemID) or 134400, { rightPad = isPrimary and 28 or 48 })
     if BindConfigShiftTooltip then
         BindConfigShiftTooltip(row, "item", itemID, row.frame, "ANCHOR_RIGHT")
     end
 
     if isPrimary then
         row:SetColor(1, 1, 1)
+        EnsureFallbackMoveButtons(row, buttonData, 0, true)
         InstallFallbackDropScript(row.frame, buttonData)
     else
-        EnsureFallbackMoveButtons(row, buttonData, rowIndex)
+        EnsureFallbackMoveButtons(row, buttonData, rowIndex, false)
         InstallFallbackRowMenu(row, buttonData, rowIndex)
     end
 
@@ -1454,7 +1511,7 @@ local function BuildItemFallbacksTab(scroll, buttonData, infoButtons)
 
     local infoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
         "Item Fallbacks",
-        {"The primary item is always first. Fallbacks are used only when higher-priority items are not in your bags.", 1, 1, 1, true},
+        {"Use the arrows to set priority. The top item is the primary item, and fallbacks are used only when higher-priority items are not in your bags.", 1, 1, 1, true},
         {"Stacks and charges both count as available uses for choosing the active item.", 1, 1, 1, true},
     }, infoButtons)
     heading.right:ClearAllPoints()
