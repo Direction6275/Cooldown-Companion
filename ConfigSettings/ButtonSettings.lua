@@ -1153,6 +1153,10 @@ local function SearchFallbackAutocomplete(buttonData, query)
 end
 
 local function AddItemFallback(buttonData, itemID)
+    if CS.browseMode then
+        return false
+    end
+
     local validID, err = ValidateFallbackItem(buttonData, itemID)
     if not validID then
         CooldownCompanion:Print(err)
@@ -1168,6 +1172,10 @@ local function AddItemFallback(buttonData, itemID)
 end
 
 local function TryReceiveFallbackItemDrop(buttonData)
+    if CS.browseMode then
+        return false
+    end
+
     local cursorType, cursorID = GetCursorInfo()
     if cursorType ~= "item" or not cursorID then
         return false
@@ -1189,6 +1197,10 @@ local function UpdatePrimaryFallbackItem(buttonData, itemID)
 end
 
 local function MoveFallbackPriorityItem(buttonData, sourceIndex, targetIndex)
+    if CS.browseMode then
+        return false
+    end
+
     if not (buttonData and buttonData.type == "item") then
         return false
     end
@@ -1251,7 +1263,7 @@ local function InstallFallbackDropScript(frame, buttonData)
 
     frame:SetScript("OnReceiveDrag", function(self, ...)
         local activeButtonData = self._cdcFallbackDropButtonData
-        if CS.buttonSettingsTab == "fallbacks" and activeButtonData then
+        if CS.buttonSettingsTab == "fallbacks" and not CS.browseMode and activeButtonData then
             local cursorType = GetCursorInfo()
             if cursorType == "item" then
                 TryReceiveFallbackItemDrop(activeButtonData)
@@ -1265,7 +1277,7 @@ local function InstallFallbackDropScript(frame, buttonData)
     end)
     frame:SetScript("OnMouseUp", function(self, button, ...)
         local activeButtonData = self._cdcFallbackDropButtonData
-        if CS.buttonSettingsTab ~= "fallbacks" or button ~= "LeftButton" then
+        if CS.buttonSettingsTab ~= "fallbacks" or CS.browseMode or button ~= "LeftButton" then
             local original = self._cdcFallbackOriginalOnMouseUp
             if original then
                 return original(self, button, ...)
@@ -1315,6 +1327,7 @@ local function BuildFallbackRowText(itemID, rowIndex, isPrimary)
 end
 
 local function ConfigureFallbackMoveButton(button, rotation, tooltipTitle, tooltipBody, disabled, onClick)
+    local isDisabled = disabled or CS.browseMode
     button:SetSize(18, 18)
     if button.text then
         button.text:Hide()
@@ -1332,13 +1345,13 @@ local function ConfigureFallbackMoveButton(button, rotation, tooltipTitle, toolt
     button.icon:SetAtlas("arrow-short", false)
     button.icon:SetRotation(rotation)
     if button.icon.SetDesaturated then
-        button.icon:SetDesaturated(disabled == true)
+        button.icon:SetDesaturated(isDisabled == true)
     end
-    button.icon:SetVertexColor(1, 0.82, 0, disabled and 0.45 or 1)
+    button.icon:SetVertexColor(1, 0.82, 0, isDisabled and 0.45 or 1)
     button.icon:Show()
-    button:SetAlpha(disabled and 0.35 or 1)
+    button:SetAlpha(isDisabled and 0.35 or 1)
     button:EnableMouse(true)
-    button:SetScript("OnClick", disabled and nil or onClick)
+    button:SetScript("OnClick", isDisabled and nil or onClick)
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine(tooltipTitle)
@@ -1422,6 +1435,10 @@ local function EnsureFallbackMoveButtons(entry, buttonData, rowIndex, isPrimary)
 end
 
 local function ShowFallbackRowMenu(buttonData, rowIndex)
+    if CS.browseMode then
+        return
+    end
+
     if not CS.fallbackContextMenu then
         CS.fallbackContextMenu = CreateFrame("Frame", "CDCFallbackContextMenu", UIParent, "UIDropDownMenuTemplate")
     end
@@ -1448,6 +1465,9 @@ end
 
 local function InstallFallbackRowMenu(entry, buttonData, rowIndex)
     entry.frame:SetScript("OnMouseUp", function(_, button)
+        if CS.browseMode then
+            return
+        end
         if button == "RightButton" then
             ShowFallbackRowMenu(buttonData, rowIndex)
             return
@@ -1536,9 +1556,13 @@ local function BuildItemFallbacksTab(scroll, buttonData, infoButtons)
     addBox:DisableButton(true)
     addBox:SetFullWidth(true)
     addBox:SetCallback("OnTextChanged", function(widget, _, text)
+        if CS.browseMode then
+            CS.HideAutocomplete()
+            return
+        end
         if text and #text >= 1 then
             CS.ShowAutocompleteResults(SearchFallbackAutocomplete(buttonData, text), widget, function(entry)
-                if entry and AddItemFallback(buttonData, entry.id) then
+                if entry and not CS.browseMode and AddItemFallback(buttonData, entry.id) then
                     RefreshFallbackEntry(CS.selectedGroup)
                 else
                     CS.HideAutocomplete()
@@ -1549,6 +1573,10 @@ local function BuildItemFallbacksTab(scroll, buttonData, infoButtons)
         end
     end)
     addBox:SetCallback("OnEnterPressed", function(widget, _, text)
+        if CS.browseMode then
+            CS.HideAutocomplete()
+            return
+        end
         if CS.ConsumeAutocompleteEnter and CS.ConsumeAutocompleteEnter() then
             return
         end

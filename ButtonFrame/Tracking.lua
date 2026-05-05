@@ -284,10 +284,14 @@ local function EvaluateDesaturation(button, buttonData, style)
             wantDesat = true
         end
         if not wantDesat and buttonData.desaturateWhileZeroCharges
+                and not CooldownCompanion.HasItemFallbacks(buttonData)
                 and button._chargeState == CHARGE_STATE_ZERO then
             wantDesat = true
         end
-        if not wantDesat and buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+        local itemUseCount = CooldownCompanion.HasItemFallbacks(buttonData)
+            and button._resolvedItemAvailableQuantity
+            or button._itemCount
+        if not wantDesat and buttonData.desaturateWhileZeroStacks and (itemUseCount or 0) == 0 then
             wantDesat = true
         end
     end

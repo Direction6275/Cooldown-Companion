@@ -131,10 +131,8 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
 
     -- Check hideWhileZeroCharges (charge-based spells and items)
     if buttonData.hideWhileZeroCharges
-            and (button._chargeState == CHARGE_STATE_ZERO
-                or (buttonData.type == "item"
-                    and buttonData.itemFallbacks
-                    and (button._resolvedItemAvailableQuantity or 0) == 0)) then
+            and not CooldownCompanion.HasItemFallbacks(buttonData)
+            and button._chargeState == CHARGE_STATE_ZERO then
         hideReasons = bit_bor(hideReasons, HIDE_ZERO_CHARGES)
     end
 
