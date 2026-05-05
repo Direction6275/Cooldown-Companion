@@ -18,6 +18,7 @@ local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local HasTooltipCooldown = ST.HasTooltipCooldown
 local HasUsageRequirement = ST.HasUsageRequirement
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
+local HasItemFallbacks = CooldownCompanion.HasItemFallbacks
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -73,6 +74,7 @@ local function FilterTargetAuraTracking(bd)
     return bd.auraTracking == true and bd.auraUnit == "target"
 end
 local function FilterChargeCapable(bd)
+    if HasItemFallbacks(bd) then return false end
     if not UsesChargeBehavior(bd) then return false end
     if bd.type == "spell" then return true end
     if bd.type == "item" and not CooldownCompanion.IsItemEquippable(bd) then return true end
@@ -162,6 +164,14 @@ local function AnySelectedNonEquippable(group)
     for idx in pairs(CS.selectedButtons) do
         local bd = group.buttons[idx]
         if bd and bd.type == "item" and not CooldownCompanion.IsItemEquippable(bd) then return true end
+    end
+    return false
+end
+
+local function AnySelectedHasItemFallbacks(group)
+    for idx in pairs(CS.selectedButtons) do
+        local bd = group.buttons[idx]
+        if bd and HasItemFallbacks(bd) then return true end
     end
     return false
 end
@@ -755,7 +765,11 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     -- Batch: show if any selected button is charge-capable
     local showChargeSection
     if isBatch then showChargeSection = AnySelectedChargeCapable(group)
-    else showChargeSection = UsesChargeBehavior(buttonData) and (buttonData.type == "spell" or (isItem and not CooldownCompanion.IsItemEquippable(buttonData))) end
+    else
+        showChargeSection = UsesChargeBehavior(buttonData)
+            and (buttonData.type == "spell" or (isItem and not CooldownCompanion.IsItemEquippable(buttonData)))
+            and not HasItemFallbacks(buttonData)
+    end
     if showChargeSection then
         -- Hide While At Zero Charges
         local hideZeroChargesCb = AceGUI:Create("CheckBox")
@@ -832,12 +846,13 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     if showStackSection then
         -- Batch: show stacks section if any selected lacks charges (stack-based items)
         local hasStacks
-        if isBatch then hasStacks = not AllSelectedChargeCapable(group)
-        else hasStacks = not UsesChargeBehavior(buttonData) end
+        if isBatch then hasStacks = AnySelectedHasItemFallbacks(group) or not AllSelectedChargeCapable(group)
+        else hasStacks = HasItemFallbacks(buttonData) or not UsesChargeBehavior(buttonData) end
         if hasStacks then
+            local fallbackItemUses = isBatch and AnySelectedHasItemFallbacks(group) or HasItemFallbacks(buttonData)
             -- Hide While At Zero Stacks
             local hideZeroStacksCb = AceGUI:Create("CheckBox")
-            hideZeroStacksCb:SetLabel("Hide While At Zero Stacks")
+            hideZeroStacksCb:SetLabel(fallbackItemUses and "Hide While No Uses Available" or "Hide While At Zero Stacks")
             SetCheckboxValue(hideZeroStacksCb, "hideWhileZeroStacks", FilterNonEquippable)
             hideZeroStacksCb:SetFullWidth(true)
             WrapBatchCallback(hideZeroStacksCb, function(widget, event, val)
@@ -876,7 +891,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             -- Desaturate While At Zero Stacks
             if not isTexturePanel then
                 local desatZeroStacksCb = AceGUI:Create("CheckBox")
-                desatZeroStacksCb:SetLabel("Desaturate While At Zero Stacks")
+                desatZeroStacksCb:SetLabel(fallbackItemUses and "Desaturate While No Uses Available" or "Desaturate While At Zero Stacks")
                 SetCheckboxValue(desatZeroStacksCb, "desaturateWhileZeroStacks", FilterNonEquippable)
                 desatZeroStacksCb:SetFullWidth(true)
                 WrapBatchCallback(desatZeroStacksCb, function(widget, event, val)

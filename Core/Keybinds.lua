@@ -191,7 +191,8 @@ local function CacheButtonBindingKeys(button, buttonData)
     if buttonData.type == "spell" then
         slots = C_ActionBar.FindSpellActionButtons(buttonData.id)
     elseif buttonData.type == "item" then
-        local slot = CooldownCompanion._itemSlotCache[buttonData.id]
+        local itemID = button._resolvedItemId or buttonData.id
+        local slot = CooldownCompanion._itemSlotCache[itemID]
         if slot then slots = {slot} end
     end
     if slots then
@@ -308,7 +309,7 @@ function CooldownCompanion:RebuildAddonSlotBindings()
 end
 
 -- Return the formatted keybind text for a button, or nil if none found.
-function CooldownCompanion:GetKeybindText(buttonData)
+function CooldownCompanion:GetKeybindText(buttonData, itemIDOverride)
     if not buttonData then return nil end
 
     if buttonData.type == "spell" then
@@ -322,7 +323,7 @@ function CooldownCompanion:GetKeybindText(buttonData)
             end
         end
     elseif buttonData.type == "item" then
-        local slot = self._itemSlotCache[buttonData.id]
+        local slot = self._itemSlotCache[itemIDOverride or buttonData.id]
         if slot then
             return GetKeybindForSlot(slot)
         end
@@ -334,7 +335,7 @@ end
 -- Return the icon-only display text for keybind overlays.
 -- This intentionally leaves GetKeybindText unchanged so text-mode {keybind}
 -- tokens continue reflecting the detected action bar bind only.
-function CooldownCompanion:GetDisplayedKeybindText(buttonData)
+function CooldownCompanion:GetDisplayedKeybindText(buttonData, itemIDOverride)
     if not buttonData then return nil end
 
     local customText = buttonData.customKeybindText
@@ -342,14 +343,14 @@ function CooldownCompanion:GetDisplayedKeybindText(buttonData)
         return customText
     end
 
-    return self:GetKeybindText(buttonData)
+    return self:GetKeybindText(buttonData, itemIDOverride)
 end
 
 -- Refresh keybind text and binding key caches on all buttons.
 function CooldownCompanion:OnKeybindsChanged()
     self:ForEachButton(function(button, buttonData)
         if button.keybindText then
-            local text = CooldownCompanion:GetDisplayedKeybindText(buttonData)
+            local text = CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId)
             button.keybindText:SetText(text or "")
             button.keybindText:SetShown(button.style.showKeybindText and text ~= nil)
         end

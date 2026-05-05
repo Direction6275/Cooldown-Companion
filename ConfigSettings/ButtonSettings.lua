@@ -2,6 +2,7 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
+local math_pi = math.pi
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
@@ -20,7 +21,12 @@ local HookSliderEditBox = ST._HookSliderEditBox
 local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
+local CleanRecycledEntry = ST._CleanRecycledEntry
+local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
+local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
+local NormalizeItemFallbacks = CooldownCompanion.NormalizeItemFallbacks
+local UpdateItemChargeMetadata = CooldownCompanion.UpdateItemChargeMetadata
 
 -- Imports from SectionBuilders.lua (used by BuildOverridesTab)
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
@@ -70,7 +76,7 @@ local function GroupUsesTriggerPanelEntries(group)
     return group and group.displayMode == "trigger"
 end
 
-local function BuildButtonSettingsTabs(group)
+local function BuildButtonSettingsTabs(group, buttonData)
     if GroupUsesTriggerPanelEntries(group) then
         return {
             { value = "settings", text = "Condition" },
@@ -80,8 +86,12 @@ local function BuildButtonSettingsTabs(group)
 
     local tabs = {
         { value = "settings", text = "Settings" },
-        { value = "soundalerts", text = "Sound Alerts" },
     }
+    if buttonData and buttonData.type == "item" then
+        tabs[#tabs + 1] = { value = "fallbacks", text = "Fallbacks" }
+    else
+        tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
+    end
 
     -- Texture panels only ever manage a single texture entry, so the
     -- per-button Overrides tab does not apply there and just creates noise.
@@ -1029,6 +1039,566 @@ local function BuildEquipItemSettings(scroll, buttonData, infoButtons)
     -- Currently no equip-item-specific settings
 end
 
+local function RefreshFallbackEntry(groupId)
+    if CS.HideAutocomplete then
+        CS.HideAutocomplete()
+    end
+    CooldownCompanion:RefreshGroupFrame(groupId)
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function GetItemFallbackName(itemID)
+    return C_Item.GetItemNameByID(itemID) or ("Item " .. tostring(itemID))
+end
+
+local function GetItemQualityAtlas(itemID)
+    local qualityInfo = C_TradeSkillUI.GetItemCraftedQualityInfo(itemID)
+        or C_TradeSkillUI.GetItemReagentQualityInfo(itemID)
+    return qualityInfo and qualityInfo.iconSmall or nil
+end
+
+local function GetItemFallbackDisplayName(itemID)
+    local itemName = GetItemFallbackName(itemID)
+    local qualityAtlas = GetItemQualityAtlas(itemID)
+    if qualityAtlas then
+        return ("%s |A:%s:20:20|a"):format(itemName, qualityAtlas)
+    end
+    return itemName
+end
+
+local function IsExistingFallback(buttonData, itemID)
+    if type(buttonData.itemFallbacks) ~= "table" then
+        return false
+    end
+    for _, existingID in ipairs(buttonData.itemFallbacks) do
+        if tonumber(existingID) == itemID then
+            return true
+        end
+    end
+    return false
+end
+
+local function ValidateFallbackItem(buttonData, itemID)
+    itemID = tonumber(itemID)
+    if not itemID or itemID <= 0 then
+        return nil, "Enter a valid item ID."
+    end
+    if itemID == tonumber(buttonData.id) then
+        return nil, "That item is already the primary item."
+    end
+    if IsExistingFallback(buttonData, itemID) then
+        return nil, "That fallback is already listed."
+    end
+
+    if not C_Item.IsItemDataCachedByID(itemID) then
+        C_Item.RequestLoadItemDataByID(itemID)
+        return nil, "Loading item data. Try again in a moment."
+    end
+
+    if CooldownCompanion.IsItemEquippable({ id = itemID }) then
+        return nil, "Fallbacks only support non-equippable consumable items."
+    end
+
+    if not C_Item.GetItemSpell(itemID) then
+        return nil, "Fallback item must have a usable effect."
+    end
+
+    return itemID
+end
+
+local function IsFallbackAutocompleteCandidate(buttonData, itemID)
+    itemID = tonumber(itemID)
+    if not itemID or itemID <= 0 then
+        return false
+    end
+    if itemID == tonumber(buttonData.id) or IsExistingFallback(buttonData, itemID) then
+        return false
+    end
+    if CooldownCompanion.IsItemEquippable({ id = itemID }) then
+        return false
+    end
+    return C_Item.GetItemSpell(itemID) ~= nil
+end
+
+local function BuildFallbackAutocompleteCache(buttonData)
+    local cache = {}
+    local seen = {}
+    for bag = 0, 4 do
+        local numSlots = C_Container.GetContainerNumSlots(bag)
+        for slot = 1, numSlots do
+            local containerInfo = C_Container.GetContainerItemInfo(bag, slot)
+            local itemID = containerInfo and containerInfo.itemID
+            if itemID and not seen[itemID] and IsFallbackAutocompleteCandidate(buttonData, itemID) then
+                seen[itemID] = true
+                local itemName = containerInfo.itemName or C_Item.GetItemNameByID(itemID) or ("Item " .. tostring(itemID))
+                local displayName = GetItemFallbackDisplayName(itemID)
+                cache[#cache + 1] = {
+                    id = itemID,
+                    name = displayName,
+                    nameLower = itemName:lower(),
+                    icon = containerInfo.iconFileID or C_Item.GetItemIconByID(itemID) or 134400,
+                    category = "Bag",
+                    isItem = true,
+                }
+            end
+        end
+    end
+    return cache
+end
+
+local function SearchFallbackAutocomplete(buttonData, query)
+    if not (CS.SearchAutocompleteInCache and query and #query >= 1) then
+        return nil
+    end
+    return CS.SearchAutocompleteInCache(query, BuildFallbackAutocompleteCache(buttonData))
+end
+
+local function AddItemFallback(buttonData, itemID)
+    if CS.browseMode then
+        return false
+    end
+
+    local validID, err = ValidateFallbackItem(buttonData, itemID)
+    if not validID then
+        CooldownCompanion:Print(err)
+        return false
+    end
+
+    if not buttonData.itemFallbacks then
+        buttonData.itemFallbacks = {}
+    end
+    buttonData.itemFallbacks[#buttonData.itemFallbacks + 1] = validID
+    NormalizeItemFallbacks(buttonData)
+    return true
+end
+
+local function TryReceiveFallbackItemDrop(buttonData)
+    if CS.browseMode then
+        return false
+    end
+
+    local cursorType, cursorID = GetCursorInfo()
+    if cursorType ~= "item" or not cursorID then
+        return false
+    end
+
+    local added = AddItemFallback(buttonData, cursorID)
+    ClearCursor()
+    if added then
+        RefreshFallbackEntry(CS.selectedGroup)
+    end
+    return added
+end
+
+local function UpdatePrimaryFallbackItem(buttonData, itemID)
+    buttonData.id = itemID
+    buttonData.name = GetItemFallbackName(itemID)
+    buttonData.hasCharges = nil
+    buttonData.maxCharges = nil
+    UpdateItemChargeMetadata(buttonData, itemID)
+end
+
+local function MoveFallbackPriorityItem(buttonData, sourceIndex, targetIndex)
+    if CS.browseMode then
+        return false
+    end
+
+    if not (buttonData and buttonData.type == "item") then
+        return false
+    end
+    local fallbackIDs = buttonData.itemFallbacks
+    if type(fallbackIDs) ~= "table" then
+        fallbackIDs = {}
+    end
+
+    local count = #fallbackIDs
+    sourceIndex = tonumber(sourceIndex)
+    targetIndex = tonumber(targetIndex)
+    if not sourceIndex or not targetIndex or sourceIndex < 0 or sourceIndex > count then
+        return false
+    end
+    if targetIndex < 0 then targetIndex = 0 end
+    if targetIndex > count then targetIndex = count end
+    if targetIndex == sourceIndex then
+        return false
+    end
+
+    local orderedIDs = { tonumber(buttonData.id) }
+    for _, rawID in ipairs(fallbackIDs) do
+        orderedIDs[#orderedIDs + 1] = tonumber(rawID)
+    end
+
+    local movedID = table.remove(orderedIDs, sourceIndex + 1)
+    if not movedID then
+        return false
+    end
+    table.insert(orderedIDs, targetIndex + 1, movedID)
+
+    local newPrimaryID = orderedIDs[1]
+    if not (newPrimaryID and newPrimaryID > 0) then
+        return false
+    end
+    if newPrimaryID ~= tonumber(buttonData.id) then
+        UpdatePrimaryFallbackItem(buttonData, newPrimaryID)
+    end
+
+    local newFallbacks = {}
+    for index = 2, #orderedIDs do
+        newFallbacks[#newFallbacks + 1] = orderedIDs[index]
+    end
+    buttonData.itemFallbacks = newFallbacks
+    NormalizeItemFallbacks(buttonData)
+    return true
+end
+
+local function InstallFallbackDropScript(frame, buttonData)
+    if not frame or not frame.SetScript then
+        return
+    end
+
+    if not frame._cdcFallbackDropWrapped and frame.GetScript then
+        frame._cdcFallbackOriginalOnReceiveDrag = frame:GetScript("OnReceiveDrag")
+        frame._cdcFallbackOriginalOnMouseUp = frame:GetScript("OnMouseUp")
+        frame._cdcFallbackDropWrapped = true
+    end
+    frame._cdcFallbackDropButtonData = buttonData
+
+    frame:SetScript("OnReceiveDrag", function(self, ...)
+        local activeButtonData = self._cdcFallbackDropButtonData
+        if CS.buttonSettingsTab == "fallbacks" and not CS.browseMode and activeButtonData then
+            local cursorType = GetCursorInfo()
+            if cursorType == "item" then
+                TryReceiveFallbackItemDrop(activeButtonData)
+                return
+            end
+        end
+        local original = self._cdcFallbackOriginalOnReceiveDrag
+        if original then
+            return original(self, ...)
+        end
+    end)
+    frame:SetScript("OnMouseUp", function(self, button, ...)
+        local activeButtonData = self._cdcFallbackDropButtonData
+        if CS.buttonSettingsTab ~= "fallbacks" or CS.browseMode or button ~= "LeftButton" then
+            local original = self._cdcFallbackOriginalOnMouseUp
+            if original then
+                return original(self, button, ...)
+            end
+            return
+        end
+        if GetCursorInfo() and activeButtonData then
+            TryReceiveFallbackItemDrop(activeButtonData)
+            return
+        end
+
+        local original = self._cdcFallbackOriginalOnMouseUp
+        if original then
+            return original(self, button, ...)
+        end
+    end)
+end
+
+local function InstallFallbackColumnDropTargets(scroll, buttonData)
+    local seen = {}
+    local function addTarget(frame)
+        if frame and not seen[frame] then
+            seen[frame] = true
+            InstallFallbackDropScript(frame, buttonData)
+        end
+    end
+
+    addTarget(scroll and scroll.frame)
+    addTarget(scroll and scroll.scrollframe)
+    addTarget(scroll and scroll.content)
+
+    local parent = scroll and scroll.frame and scroll.frame:GetParent()
+    for _ = 1, 4 do
+        if not parent then break end
+        addTarget(parent)
+        parent = parent.GetParent and parent:GetParent() or nil
+    end
+end
+
+local function BuildFallbackRowText(itemID, rowIndex, isPrimary)
+    local displayIndex = isPrimary and 1 or (rowIndex + 1)
+    local prefix = tostring(displayIndex) .. ". "
+    return ("%s%s"):format(
+        prefix,
+        GetItemFallbackDisplayName(itemID)
+    )
+end
+
+local function ConfigureFallbackMoveButton(button, rotation, tooltipTitle, tooltipBody, disabled, onClick)
+    local isDisabled = disabled or CS.browseMode
+    button:SetSize(18, 18)
+    if button.text then
+        button.text:Hide()
+    end
+    if not button.icon then
+        button.icon = button:CreateTexture(nil, "ARTWORK")
+        button.icon:SetPoint("TOPLEFT", 2, -2)
+        button.icon:SetPoint("BOTTOMRIGHT", -2, 2)
+    end
+    if not button.highlight then
+        button.highlight = button:CreateTexture(nil, "HIGHLIGHT")
+        button.highlight:SetAllPoints()
+        button.highlight:SetColorTexture(0.3, 0.55, 0.85, 0.25)
+    end
+    button.icon:SetAtlas("arrow-short", false)
+    button.icon:SetRotation(rotation)
+    if button.icon.SetDesaturated then
+        button.icon:SetDesaturated(isDisabled == true)
+    end
+    button.icon:SetVertexColor(1, 0.82, 0, isDisabled and 0.45 or 1)
+    button.icon:Show()
+    button:SetAlpha(isDisabled and 0.35 or 1)
+    button:EnableMouse(true)
+    button:SetScript("OnClick", isDisabled and nil or onClick)
+    button:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(tooltipTitle)
+        GameTooltip:AddLine(tooltipBody, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    button:Show()
+end
+
+local function EnsureFallbackMoveButtons(entry, buttonData, rowIndex, isPrimary)
+    local frame = entry.frame
+    local upBtn = frame._cdcFallbackUpBtn
+    if not upBtn and not isPrimary then
+        upBtn = CreateFrame("Button", nil, frame)
+        frame._cdcFallbackUpBtn = upBtn
+    end
+    local downBtn = frame._cdcFallbackDownBtn
+    if not downBtn then
+        downBtn = CreateFrame("Button", nil, frame)
+        frame._cdcFallbackDownBtn = downBtn
+    end
+
+    local fallbackIDs = buttonData.itemFallbacks or {}
+    if isPrimary then
+        if upBtn then
+            upBtn:Hide()
+        end
+
+        downBtn:ClearAllPoints()
+        downBtn:SetPoint("RIGHT", frame, "RIGHT", -4, 0)
+        downBtn:SetFrameLevel(frame:GetFrameLevel() + 6)
+        ConfigureFallbackMoveButton(
+            downBtn,
+            -math_pi / 2,
+            "Move Down",
+            "Swap this primary item with the first fallback.",
+            #fallbackIDs == 0,
+            function()
+                if MoveFallbackPriorityItem(buttonData, 0, 1) then
+                    RefreshFallbackEntry(CS.selectedGroup)
+                end
+            end
+        )
+        return
+    end
+
+    upBtn:ClearAllPoints()
+    upBtn:SetPoint("RIGHT", frame, "RIGHT", -24, 0)
+    upBtn:SetFrameLevel(frame:GetFrameLevel() + 6)
+    ConfigureFallbackMoveButton(
+        upBtn,
+        math_pi / 2,
+        "Move Up",
+        rowIndex == 1 and "Make this fallback the primary item." or "Move this fallback one priority slot higher.",
+        false,
+        function()
+            if MoveFallbackPriorityItem(buttonData, rowIndex, rowIndex - 1) then
+                RefreshFallbackEntry(CS.selectedGroup)
+            end
+        end
+    )
+
+    downBtn:ClearAllPoints()
+    downBtn:SetPoint("RIGHT", frame, "RIGHT", -4, 0)
+    downBtn:SetFrameLevel(frame:GetFrameLevel() + 6)
+    ConfigureFallbackMoveButton(
+        downBtn,
+        -math_pi / 2,
+        "Move Down",
+        "Move this fallback one priority slot lower.",
+        rowIndex >= #fallbackIDs,
+        function()
+            if MoveFallbackPriorityItem(buttonData, rowIndex, rowIndex + 1) then
+                RefreshFallbackEntry(CS.selectedGroup)
+            end
+        end
+    )
+end
+
+local function ShowFallbackRowMenu(buttonData, rowIndex)
+    if CS.browseMode then
+        return
+    end
+
+    if not CS.fallbackContextMenu then
+        CS.fallbackContextMenu = CreateFrame("Frame", "CDCFallbackContextMenu", UIParent, "UIDropDownMenuTemplate")
+    end
+
+    UIDropDownMenu_Initialize(CS.fallbackContextMenu, function(_, level)
+        if level ~= 1 then return end
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = "|cffff4444Delete|r"
+        info.notCheckable = true
+        info.func = function()
+            CloseDropDownMenus()
+            local fallbackIDs = buttonData.itemFallbacks
+            if type(fallbackIDs) == "table" then
+                table.remove(fallbackIDs, rowIndex)
+                NormalizeItemFallbacks(buttonData)
+                RefreshFallbackEntry(CS.selectedGroup)
+            end
+        end
+        UIDropDownMenu_AddButton(info, level)
+    end, "MENU")
+    CS.fallbackContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+    ToggleDropDownMenu(1, nil, CS.fallbackContextMenu, "cursor", 0, 0)
+end
+
+local function InstallFallbackRowMenu(entry, buttonData, rowIndex)
+    entry.frame:SetScript("OnMouseUp", function(_, button)
+        if CS.browseMode then
+            return
+        end
+        if button == "RightButton" then
+            ShowFallbackRowMenu(buttonData, rowIndex)
+            return
+        end
+        if button == "LeftButton" and GetCursorInfo() then
+            TryReceiveFallbackItemDrop(buttonData)
+        end
+    end)
+end
+
+local function CreateFallbackItemRow(scroll, buttonData, itemID, rowIndex, isPrimary)
+    local row = AceGUI:Create("InteractiveLabel")
+    CleanRecycledEntry(row)
+    row:SetText(BuildFallbackRowText(itemID, rowIndex, isPrimary))
+    row:SetFullWidth(true)
+    row:SetFontObject(GameFontHighlight)
+    row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    ApplyConfigRowIcon(row, C_Item.GetItemIconByID(itemID) or 134400, { rightPad = isPrimary and 28 or 48 })
+    if BindConfigShiftTooltip then
+        BindConfigShiftTooltip(row, "item", itemID, row.frame, "ANCHOR_RIGHT")
+    end
+
+    if isPrimary then
+        row:SetColor(1, 1, 1)
+        EnsureFallbackMoveButtons(row, buttonData, 0, true)
+        InstallFallbackDropScript(row.frame, buttonData)
+    else
+        EnsureFallbackMoveButtons(row, buttonData, rowIndex, false)
+        InstallFallbackRowMenu(row, buttonData, rowIndex)
+    end
+
+    scroll:AddChild(row)
+    return row
+end
+
+local function BuildItemFallbacksTab(scroll, buttonData, infoButtons)
+    if not (buttonData and buttonData.type == "item") then
+        local label = AceGUI:Create("Label")
+        label:SetText("Fallbacks are available for item entries only.")
+        label:SetFullWidth(true)
+        scroll:AddChild(label)
+        return
+    end
+
+    if CooldownCompanion.IsItemEquippable(buttonData) then
+        local label = AceGUI:Create("Label")
+        label:SetText("Fallbacks are available for non-equippable consumable items only.")
+        label:SetFullWidth(true)
+        scroll:AddChild(label)
+        return
+    end
+
+    NormalizeItemFallbacks(buttonData)
+    InstallFallbackColumnDropTargets(scroll, buttonData)
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Item Fallbacks")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    InstallFallbackDropScript(heading.frame, buttonData)
+    scroll:AddChild(heading)
+
+    local infoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
+        "Item Fallbacks",
+        {"Use arrows to choose which item should appear first.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Fallbacks are used only when higher-priority items are not in your bags.", 1, 1, 1, true},
+    }, infoButtons)
+    heading.right:ClearAllPoints()
+    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+    heading.right:SetPoint("LEFT", infoBtn, "RIGHT", 4, 0)
+
+    local primaryID = tonumber(buttonData.id)
+    CreateFallbackItemRow(scroll, buttonData, primaryID, 0, true)
+
+    local fallbackIDs = buttonData.itemFallbacks or {}
+    if #fallbackIDs > 0 then
+        for index, itemID in ipairs(fallbackIDs) do
+            CreateFallbackItemRow(scroll, buttonData, itemID, index, false)
+        end
+    end
+
+    local addBox = AceGUI:Create("EditBox")
+    addBox:SetLabel("Search Bag Consumables")
+    addBox:SetText("")
+    addBox:DisableButton(true)
+    addBox:SetFullWidth(true)
+    addBox:SetCallback("OnTextChanged", function(widget, _, text)
+        if CS.browseMode then
+            CS.HideAutocomplete()
+            return
+        end
+        if text and #text >= 1 then
+            CS.ShowAutocompleteResults(SearchFallbackAutocomplete(buttonData, text), widget, function(entry)
+                if entry and not CS.browseMode and AddItemFallback(buttonData, entry.id) then
+                    RefreshFallbackEntry(CS.selectedGroup)
+                else
+                    CS.HideAutocomplete()
+                end
+            end)
+        else
+            CS.HideAutocomplete()
+        end
+    end)
+    addBox:SetCallback("OnEnterPressed", function(widget, _, text)
+        if CS.browseMode then
+            CS.HideAutocomplete()
+            return
+        end
+        if CS.ConsumeAutocompleteEnter and CS.ConsumeAutocompleteEnter() then
+            return
+        end
+        CS.HideAutocomplete()
+        if AddItemFallback(buttonData, text) then
+            widget:SetText("")
+            RefreshFallbackEntry(CS.selectedGroup)
+        end
+    end)
+    if addBox.editbox and addBox.editbox.Instructions then
+        addBox.editbox.Instructions:Hide()
+    end
+    InstallFallbackDropScript(addBox.frame, buttonData)
+    InstallFallbackDropScript(addBox.editbox, buttonData)
+    if CS.SetupAutocompleteKeyHandler then
+        CS.SetupAutocompleteKeyHandler(addBox)
+    end
+    scroll:AddChild(addBox)
+end
+
 ------------------------------------------------------------------------
 -- TYPE CLASSIFICATION (for batch visibility)
 ------------------------------------------------------------------------
@@ -1112,7 +1682,8 @@ local function RefreshButtonSettingsColumn()
 
     if hasSelection then
         local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-        bsCol.bsTabGroup:SetTabs(BuildButtonSettingsTabs(group))
+        local buttonData = group and group.buttons and group.buttons[CS.selectedButton]
+        bsCol.bsTabGroup:SetTabs(BuildButtonSettingsTabs(group, buttonData))
 
         if GroupUsesTriggerPanelEntries(group)
             and CS.buttonSettingsTab ~= "settings"
@@ -1120,6 +1691,10 @@ local function RefreshButtonSettingsColumn()
             CS.buttonSettingsTab = "settings"
         elseif GroupUsesTexturePanelEntries(group) and CS.buttonSettingsTab == "overrides" then
             CS.buttonSettingsTab = "settings"
+        elseif buttonData and buttonData.type == "item" and CS.buttonSettingsTab == "soundalerts" then
+            CS.buttonSettingsTab = "fallbacks"
+        elseif buttonData and buttonData.type ~= "item" and CS.buttonSettingsTab == "fallbacks" then
+            CS.buttonSettingsTab = "soundalerts"
         end
 
         if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
@@ -1256,6 +1831,7 @@ end
 ST._BuildSpellSettings = BuildSpellSettings
 ST._BuildItemSettings = BuildItemSettings
 ST._BuildEquipItemSettings = BuildEquipItemSettings
+ST._BuildItemFallbacksTab = BuildItemFallbacksTab
 ST._RefreshButtonSettingsColumn = RefreshButtonSettingsColumn
 ST._RefreshButtonSettingsMultiSelect = RefreshButtonSettingsMultiSelect
 ST._RefreshPanelMultiSelect = RefreshPanelMultiSelect

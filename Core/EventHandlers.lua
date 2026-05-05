@@ -292,18 +292,9 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                 end
                 buttonData.hasCharges = hasRealCharges
             elseif buttonData.type == "item" and typeFilter ~= "spell" then
-                -- Never clear hasCharges for items: at 0 charges both count APIs
-                -- return 0, indistinguishable from "item not owned".
-                local plainCount = C_Item.GetItemCount(buttonData.id)
-                local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
-                if not issecretvalue(plainCount) and not issecretvalue(chargeCount) then
-                    if chargeCount > plainCount then
-                        buttonData.hasCharges = true
-                        if chargeCount > (buttonData.maxCharges or 0) then
-                            buttonData.maxCharges = chargeCount
-                        end
-                    end
-                end
+                -- Never clear hasCharges for items; unavailable charged items can
+                -- be indistinguishable from unowned items through count APIs.
+                self.UpdateItemChargeMetadata(buttonData, buttonData.id)
             end
         end
     end

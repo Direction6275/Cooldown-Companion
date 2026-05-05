@@ -578,7 +578,7 @@ local function IsTextureIndicatorSectionActive(button, sectionKey, config)
             return not C_Spell_IsSpellUsable(spellID)
         end
         if buttonData.type == "item" or buttonData.type == "equipitem" then
-            return not C_Item_IsUsableItem(buttonData.id)
+            return not C_Item_IsUsableItem(button._resolvedItemId or buttonData.id)
         end
         return false
     end
@@ -618,7 +618,7 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
 
         if buttonData.type == "item" or buttonData.type == "equipitem" then
             if not InCombatLockdown() or UnitCanAttack("player", "target") then
-                local inRange = C_Item_IsItemInRange(buttonData.id, "target")
+                local inRange = C_Item_IsItemInRange(button._resolvedItemId or buttonData.id, "target")
                 if inRange == nil then
                     return nil
                 end
@@ -640,7 +640,7 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
             return C_Spell_IsSpellUsable(spellID)
         end
         if buttonData.type == "item" or buttonData.type == "equipitem" then
-            return C_Item_IsUsableItem(buttonData.id)
+            return C_Item_IsUsableItem(button._resolvedItemId or buttonData.id)
         end
         return false
     end

@@ -72,7 +72,7 @@ local function SetBarIconTooltipScripts(button, enable)
             if bd.type == "spell" then
                 GameTooltip:SetSpellByID(button._displaySpellId or bd.id)
             elseif bd.type == "item" then
-                GameTooltip:SetItemByID(bd.id)
+                GameTooltip:SetItemByID(button._resolvedItemId or bd.id)
             end
             GameTooltip:Show()
         end)
@@ -328,12 +328,16 @@ local function UpdateBarDisplay(button)
 
     -- "On cooldown" for bar color/ready text follows canonical state.
     -- _durationObj may also hold aura/totem timing and must not imply cooldown.
+    local itemUsesResolvedCooldownState = button.buttonData.type == "item"
+        and button._resolvedItemQuantityKind == "stacks"
     local isChargeButton = UsesChargeBehavior(button.buttonData)
     local chargeState = button._chargeState
     local auraTimerActive = button._auraActive
         and (button._durationObj or button._viewerBar or button._conditionalPreviewRemaining)
     local onCooldown
-    if isChargeButton then
+    if itemUsesResolvedCooldownState then
+        onCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+    elseif isChargeButton then
         onCooldown = chargeState == CHARGE_STATE_MISSING
             or chargeState == CHARGE_STATE_ZERO
     else
@@ -810,6 +814,13 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._auraDisplayName = nil
     button._auraNameOverrideActive = nil
 
+    if buttonData.type == "item" then
+        local resolvedItemID, availableQuantity, quantityKind = CooldownCompanion.ResolveItemFallback(buttonData)
+        button._resolvedItemId = resolvedItemID or buttonData.id
+        button._resolvedItemAvailableQuantity = availableQuantity or 0
+        button._resolvedItemQuantityKind = quantityKind or "stacks"
+    end
+
     -- Per-button visibility runtime state
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
@@ -833,7 +844,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
                 local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
                 if spellName then displayName = spellName end
             elseif buttonData.type == "item" then
-                local itemName = C_Item.GetItemNameByID(buttonData.id)
+                local itemName = C_Item.GetItemNameByID(button._resolvedItemId or buttonData.id)
                 if itemName then displayName = itemName end
             end
         end
@@ -1139,7 +1150,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
                 local spellName = C_Spell.GetSpellName(button._displaySpellId or button.buttonData.id)
                 if spellName then displayName = spellName end
             elseif button.buttonData.type == "item" then
-                local itemName = C_Item.GetItemNameByID(button.buttonData.id)
+                local itemName = C_Item.GetItemNameByID(button._resolvedItemId or button.buttonData.id)
                 if itemName then displayName = itemName end
             end
         end

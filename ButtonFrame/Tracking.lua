@@ -10,6 +10,7 @@ local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
 local issecretvalue = issecretvalue
+local tonumber = tonumber
 local InCombatLockdown = InCombatLockdown
 local UnitCanAttack = UnitCanAttack
 local IsItemInRange = C_Item.IsItemInRange
@@ -135,11 +136,16 @@ end
 -- Item charge tracking (e.g. Hellstone): simpler than spells, no secret values.
 -- Reads charge count via C_Item.GetItemCount with includeUses, updates text display.
 local function UpdateItemChargeTracking(button, buttonData)
-    local chargeCount = C_Item.GetItemCount(buttonData.id, false, true)
+    local itemID = button._resolvedItemId or buttonData.id
+    local chargeCount = C_Item.GetItemCount(itemID, false, true)
 
-    -- Update persisted maxCharges upward when observable
-    if chargeCount > (buttonData.maxCharges or 0) then
+    -- Update persisted maxCharges upward only for the primary item. Fallback
+    -- stacks and charges are runtime choices, not permanent entry metadata.
+    local isPrimaryItem = tonumber(itemID) == tonumber(buttonData.id)
+    if isPrimaryItem and chargeCount > (buttonData.maxCharges or 0) then
         buttonData.maxCharges = chargeCount
+    elseif not isPrimaryItem and chargeCount > (button._resolvedItemMaxCharges or 0) then
+        button._resolvedItemMaxCharges = chargeCount
     end
 
     -- Items are always readable — feed the same field spells use so the
@@ -190,7 +196,8 @@ local function UpdateIconTint(button, buttonData, style)
             -- C_Item.IsItemInRange is protected in combat for non-enemy targets (10.2.0);
             -- only call when out of combat or target is attackable.
             if not InCombatLockdown() or UnitCanAttack("player", "target") then
-                local inRange = IsItemInRange(buttonData.id, "target")
+                local itemID = button._resolvedItemId or buttonData.id
+                local inRange = IsItemInRange(itemID, "target")
                 -- inRange is nil when no target or item has no range; only tint on explicit false
                 if inRange == false then
                     r, g, b = 1, 0.2, 0.2
@@ -216,7 +223,8 @@ local function UpdateIconTint(button, buttonData, style)
                 button._unusableTintActive = true
             end
         elseif buttonData.type == "item" then
-            local usable = IsUsableItem(buttonData.id)
+            local itemID = button._resolvedItemId or buttonData.id
+            local usable = IsUsableItem(itemID)
             if not usable then
                 r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
                 a = uc and uc[4] or a
@@ -280,10 +288,14 @@ local function EvaluateDesaturation(button, buttonData, style)
             wantDesat = true
         end
         if not wantDesat and buttonData.desaturateWhileZeroCharges
+                and not CooldownCompanion.HasItemFallbacks(buttonData)
                 and button._chargeState == CHARGE_STATE_ZERO then
             wantDesat = true
         end
-        if not wantDesat and buttonData.desaturateWhileZeroStacks and (button._itemCount or 0) == 0 then
+        local itemUseCount = CooldownCompanion.HasItemFallbacks(buttonData)
+            and button._resolvedItemAvailableQuantity
+            or button._itemCount
+        if not wantDesat and buttonData.desaturateWhileZeroStacks and (itemUseCount or 0) == 0 then
             wantDesat = true
         end
     end

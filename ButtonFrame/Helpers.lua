@@ -11,6 +11,8 @@ local ipairs = ipairs
 local math_floor = math.floor
 local pairs = pairs
 local string_format = string.format
+local tonumber = tonumber
+local type = type
 
 -- Color constants
 local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
@@ -194,6 +196,172 @@ local function UsesChargeTextLane(buttonData)
         or buttonData.isPassive == true
 end
 CooldownCompanion.UsesChargeTextLane = UsesChargeTextLane
+
+local function GetItemAvailableQuantity(itemID, forceChargeCount)
+    itemID = tonumber(itemID)
+    if not itemID then
+        return 0, "stacks"
+    end
+
+    local stackCount = C_Item.GetItemCount(itemID) or 0
+    local useCount = C_Item.GetItemCount(itemID, false, true) or stackCount
+    if forceChargeCount then
+        return useCount, "charges"
+    end
+    if useCount ~= stackCount then
+        return useCount, "charges"
+    end
+    return stackCount, "stacks"
+end
+CooldownCompanion.GetItemAvailableQuantity = GetItemAvailableQuantity
+
+local function HasItemFallbacks(buttonData)
+    return buttonData
+        and buttonData.type == "item"
+        and type(buttonData.itemFallbacks) == "table"
+        and #buttonData.itemFallbacks > 0
+end
+CooldownCompanion.HasItemFallbacks = HasItemFallbacks
+
+local function UpdateItemChargeMetadata(buttonData, itemID)
+    if not (buttonData and buttonData.type == "item") then
+        return false
+    end
+
+    itemID = tonumber(itemID or buttonData.id)
+    if not itemID then
+        return false
+    end
+
+    local stackCount = C_Item.GetItemCount(itemID) or 0
+    local useCount = C_Item.GetItemCount(itemID, false, true) or stackCount
+    if useCount == stackCount then
+        return false
+    end
+
+    buttonData.hasCharges = true
+    buttonData.showChargeText = true
+    if useCount > (buttonData.maxCharges or 0) then
+        buttonData.maxCharges = useCount
+    end
+    return true
+end
+CooldownCompanion.UpdateItemChargeMetadata = UpdateItemChargeMetadata
+
+local function NormalizeItemFallbackVisibilitySettings(buttonData, hasFallbacks, hadFallbacks)
+    local changed = false
+
+    if hasFallbacks then
+        if buttonData.hideWhileZeroCharges then
+            buttonData.hideWhileZeroStacks = true
+        end
+        if buttonData.desaturateWhileZeroCharges then
+            buttonData.desaturateWhileZeroStacks = true
+        end
+        if buttonData.useBaselineAlphaFallbackZeroCharges then
+            buttonData.useBaselineAlphaFallbackZeroStacks = true
+        end
+
+        if buttonData.hideWhileZeroCharges ~= nil then
+            buttonData.hideWhileZeroCharges = nil
+            changed = true
+        end
+        if buttonData.desaturateWhileZeroCharges ~= nil then
+            buttonData.desaturateWhileZeroCharges = nil
+            changed = true
+        end
+        if buttonData.useBaselineAlphaFallbackZeroCharges ~= nil then
+            buttonData.useBaselineAlphaFallbackZeroCharges = nil
+            changed = true
+        end
+    elseif hadFallbacks and buttonData.type == "item" and UsesChargeBehavior(buttonData) then
+        if buttonData.hideWhileZeroStacks then
+            buttonData.hideWhileZeroCharges = true
+        end
+        if buttonData.desaturateWhileZeroStacks then
+            buttonData.desaturateWhileZeroCharges = true
+        end
+        if buttonData.useBaselineAlphaFallbackZeroStacks then
+            buttonData.useBaselineAlphaFallbackZeroCharges = true
+        end
+
+        if buttonData.hideWhileZeroStacks ~= nil then
+            buttonData.hideWhileZeroStacks = nil
+            changed = true
+        end
+        if buttonData.desaturateWhileZeroStacks ~= nil then
+            buttonData.desaturateWhileZeroStacks = nil
+            changed = true
+        end
+        if buttonData.useBaselineAlphaFallbackZeroStacks ~= nil then
+            buttonData.useBaselineAlphaFallbackZeroStacks = nil
+            changed = true
+        end
+    end
+
+    return changed
+end
+CooldownCompanion.NormalizeItemFallbackVisibilitySettings = NormalizeItemFallbackVisibilitySettings
+
+local function NormalizeItemFallbacks(buttonData)
+    if not (buttonData and type(buttonData.itemFallbacks) == "table") then
+        return false
+    end
+
+    local primaryID = tonumber(buttonData.id)
+    local hadFallbacks = true
+    local seen = {}
+    local normalized = {}
+    local changed = false
+    for index, rawID in ipairs(buttonData.itemFallbacks) do
+        local itemID = tonumber(rawID)
+        if itemID and itemID > 0 and itemID ~= primaryID and not seen[itemID] then
+            seen[itemID] = true
+            normalized[#normalized + 1] = itemID
+            if rawID ~= itemID or #normalized ~= index then
+                changed = true
+            end
+        else
+            changed = true
+        end
+    end
+
+    if #normalized == 0 then
+        buttonData.itemFallbacks = nil
+    else
+        buttonData.itemFallbacks = normalized
+    end
+    if NormalizeItemFallbackVisibilitySettings(buttonData, #normalized > 0, hadFallbacks) then
+        changed = true
+    end
+    return changed
+end
+CooldownCompanion.NormalizeItemFallbacks = NormalizeItemFallbacks
+
+local function ResolveItemFallback(buttonData)
+    if not (buttonData and buttonData.type == "item") then
+        return nil, 0, "stacks"
+    end
+
+    local primaryID = tonumber(buttonData.id)
+    local primaryQuantity, primaryKind = GetItemAvailableQuantity(primaryID, buttonData.hasCharges == true)
+    if primaryQuantity > 0 or not HasItemFallbacks(buttonData) then
+        return primaryID, primaryQuantity, primaryKind
+    end
+
+    for _, rawID in ipairs(buttonData.itemFallbacks) do
+        local itemID = tonumber(rawID)
+        if itemID and itemID ~= primaryID then
+            local quantity, quantityKind = GetItemAvailableQuantity(itemID)
+            if quantity > 0 then
+                return itemID, quantity, quantityKind
+            end
+        end
+    end
+
+    return primaryID, primaryQuantity, primaryKind
+end
+CooldownCompanion.ResolveItemFallback = ResolveItemFallback
 
 -- Position a region in the icon area of a bar button.
 -- inset=0 for backgrounds/bounds, inset=borderSize for the icon texture itself.

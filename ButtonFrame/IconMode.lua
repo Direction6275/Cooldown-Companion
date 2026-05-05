@@ -25,6 +25,7 @@ local ApplyIconTexCoord = ST._ApplyIconTexCoord
 local FitHighlightFrame = ST._FitHighlightFrame
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
+local HasItemFallbacks = CooldownCompanion.HasItemFallbacks
 
 -- Imports from Glows
 local CreateGlowContainer = ST._CreateGlowContainer
@@ -590,6 +591,13 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.count:SetText("")
     button.buttonData = buttonData
 
+    if buttonData.type == "item" then
+        local resolvedItemID, availableQuantity, quantityKind = CooldownCompanion.ResolveItemFallback(buttonData)
+        button._resolvedItemId = resolvedItemID or buttonData.id
+        button._resolvedItemAvailableQuantity = availableQuantity or 0
+        button._resolvedItemQuantityKind = quantityKind or "stacks"
+    end
+
     ApplyCountTextStyle(button, style)
 
     -- Aura stack count text: separate FontString for aura stacks and config previews.
@@ -609,7 +617,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         local xOff = style.keybindXOffset or -2
         local yOff = style.keybindYOffset or -2
         button.keybindText:SetPoint(anchor, xOff, yOff)
-        local text = CooldownCompanion:GetDisplayedKeybindText(buttonData)
+        local text = CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId)
         button.keybindText:SetText(text or "")
         button.keybindText:SetShown(style.showKeybindText and text ~= nil)
     end
@@ -857,7 +865,8 @@ function CooldownCompanion:UpdateButtonIcon(button)
             icon = C_Spell.GetSpellTexture(buttonData.id)
         end
     elseif buttonData.type == "item" then
-        icon = C_Item.GetItemIconByID(buttonData.id)
+        local itemID = button._resolvedItemId or buttonData.id
+        icon = C_Item.GetItemIconByID(itemID)
     end
 
     -- Manual icon override: replaces base icon; aura icon swap still takes precedence
@@ -936,7 +945,8 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
 
     -- Charge-visual suppression: when toggle is active and charges remain,
     -- hide the swipe fill (dark overlay) but keep the edge visible.
-    if UsesChargeBehavior(buttonData) and buttonData.hideCooldownWithCharges and not button._auraActive then
+    if UsesChargeBehavior(buttonData) and buttonData.hideCooldownWithCharges
+            and not HasItemFallbacks(buttonData) and not button._auraActive then
         local hasChargesRemaining = (button._chargeState ~= CHARGE_STATE_ZERO)
         if hasChargesRemaining ~= button._hideCooldownChargesActive then
             button._hideCooldownChargesActive = hasChargesRemaining
@@ -1328,7 +1338,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         local xOff = style.keybindXOffset or -2
         local yOff = style.keybindYOffset or -2
         button.keybindText:SetPoint(anchor, xOff, yOff)
-        local text = CooldownCompanion:GetDisplayedKeybindText(button.buttonData)
+        local text = CooldownCompanion:GetDisplayedKeybindText(button.buttonData, button._resolvedItemId)
         button.keybindText:SetText(text or "")
         button.keybindText:SetShown(style.showKeybindText and text ~= nil)
     end
