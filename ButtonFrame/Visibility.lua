@@ -137,8 +137,10 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     end
 
     -- Check hideWhileZeroStacks (stack-based items)
-    if buttonData.hideWhileZeroStacks
-            and (button._itemCount or button._resolvedItemAvailableQuantity or 0) == 0 then
+    local itemUseCount = CooldownCompanion.HasItemFallbacks(buttonData)
+        and button._resolvedItemAvailableQuantity
+        or button._itemCount
+    if buttonData.hideWhileZeroStacks and (itemUseCount or 0) == 0 then
         hideReasons = bit_bor(hideReasons, HIDE_ZERO_STACKS)
     end
 

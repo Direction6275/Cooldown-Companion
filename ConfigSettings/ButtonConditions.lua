@@ -74,6 +74,7 @@ local function FilterTargetAuraTracking(bd)
     return bd.auraTracking == true and bd.auraUnit == "target"
 end
 local function FilterChargeCapable(bd)
+    if HasItemFallbacks(bd) then return false end
     if not UsesChargeBehavior(bd) then return false end
     if bd.type == "spell" then return true end
     if bd.type == "item" and not CooldownCompanion.IsItemEquippable(bd) then return true end
