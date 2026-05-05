@@ -744,6 +744,11 @@ local function ResolveChargeState(button, buttonData)
 
     local currentCharges = button._currentReadableCharges
     local maxCharges = buttonData.maxCharges
+    if buttonData.type == "item"
+            and button._resolvedItemId
+            and tonumber(button._resolvedItemId) ~= tonumber(buttonData.id) then
+        maxCharges = button._resolvedItemMaxCharges
+    end
     if button._chargeCountReadable == true and currentCharges ~= nil then
         if currentCharges <= 0 then
             return CHARGE_STATE_ZERO
@@ -933,6 +938,7 @@ local function UpdateResolvedItemState(button, buttonData)
         button._resolvedItemId = nil
         button._resolvedItemAvailableQuantity = nil
         button._resolvedItemQuantityKind = nil
+        button._resolvedItemMaxCharges = nil
         return false
     end
 
@@ -940,6 +946,9 @@ local function UpdateResolvedItemState(button, buttonData)
     local changed = resolvedItemID ~= button._resolvedItemId
         or quantityKind ~= button._resolvedItemQuantityKind
 
+    if changed then
+        button._resolvedItemMaxCharges = nil
+    end
     button._resolvedItemId = resolvedItemID or buttonData.id
     button._resolvedItemAvailableQuantity = availableQuantity or 0
     button._resolvedItemQuantityKind = quantityKind or "stacks"

@@ -10,6 +10,7 @@ local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
 local issecretvalue = issecretvalue
+local tonumber = tonumber
 local InCombatLockdown = InCombatLockdown
 local UnitCanAttack = UnitCanAttack
 local IsItemInRange = C_Item.IsItemInRange
@@ -140,8 +141,11 @@ local function UpdateItemChargeTracking(button, buttonData)
 
     -- Update persisted maxCharges upward only for the primary item. Fallback
     -- stacks and charges are runtime choices, not permanent entry metadata.
-    if itemID == buttonData.id and chargeCount > (buttonData.maxCharges or 0) then
+    local isPrimaryItem = tonumber(itemID) == tonumber(buttonData.id)
+    if isPrimaryItem and chargeCount > (buttonData.maxCharges or 0) then
         buttonData.maxCharges = chargeCount
+    elseif not isPrimaryItem and chargeCount > (button._resolvedItemMaxCharges or 0) then
+        button._resolvedItemMaxCharges = chargeCount
     end
 
     -- Items are always readable — feed the same field spells use so the

@@ -73,10 +73,16 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     -- Phase 1: Evaluate each hide condition and accumulate active reasons as bits.
     local hideReasons = 0
     local auraTrackingReady = button._auraTrackingReady == true
+    local itemUsesResolvedCooldownState = buttonData.type == "item"
+        and button._resolvedItemQuantityKind == "stacks"
 
     -- Check hideWhileOnCooldown (skip for no-CD spells — always "not on CD")
     if buttonData.hideWhileOnCooldown and not button._noCooldown then
-        if UsesChargeBehavior(buttonData) then
+        if itemUsesResolvedCooldownState then
+            if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
+                hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
+            end
+        elseif UsesChargeBehavior(buttonData) then
             if button._chargeState == CHARGE_STATE_ZERO
                     or button._chargeState == CHARGE_STATE_MISSING then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
@@ -94,7 +100,11 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
 
     -- Check hideWhileNotOnCooldown (skip for no-CD spells — would permanently hide)
     if buttonData.hideWhileNotOnCooldown and not button._noCooldown then
-        if UsesChargeBehavior(buttonData) then
+        if itemUsesResolvedCooldownState then
+            if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN then
+                hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
+            end
+        elseif UsesChargeBehavior(buttonData) then
             if button._chargeState == CHARGE_STATE_FULL then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
