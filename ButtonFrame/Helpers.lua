@@ -18,6 +18,7 @@ local type = type
 local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
 local DEFAULT_BAR_PANDEMIC_COLOR = {1.0, 0.5, 0.0, 1.0}
 local DEFAULT_BAR_CHARGE_COLOR = {1.0, 0.82, 0.0, 1.0}
+local HEALTHSTONE_ITEM_ID = 5512
 
 -- Format remaining seconds for time display (shared across bar, text, and preview modes).
 local function FormatTime(seconds, decimal)
@@ -223,6 +224,19 @@ local function HasItemFallbacks(buttonData)
 end
 CooldownCompanion.HasItemFallbacks = HasItemFallbacks
 
+local function IsDeferredHealthstoneItem(itemID)
+    itemID = tonumber(itemID)
+    if itemID ~= HEALTHSTONE_ITEM_ID then
+        return false
+    end
+    if C_Item.IsUsableItem(itemID) then
+        return false
+    end
+
+    local cdStart, _, enableCooldownTimer = C_Item.GetItemCooldown(itemID)
+    return enableCooldownTimer == false and cdStart and cdStart > 0
+end
+
 local function UpdateItemChargeMetadata(buttonData, itemID)
     if not (buttonData and buttonData.type == "item") then
         return false
@@ -344,8 +358,10 @@ local function ResolveItemFallback(buttonData)
     end
 
     local primaryID = tonumber(buttonData.id)
+    local hasFallbacks = HasItemFallbacks(buttonData)
     local primaryQuantity, primaryKind = GetItemAvailableQuantity(primaryID, buttonData.hasCharges == true)
-    if primaryQuantity > 0 or not HasItemFallbacks(buttonData) then
+    if (primaryQuantity > 0 and not (hasFallbacks and IsDeferredHealthstoneItem(primaryID)))
+            or not hasFallbacks then
         return primaryID, primaryQuantity, primaryKind
     end
 
@@ -353,7 +369,7 @@ local function ResolveItemFallback(buttonData)
         local itemID = tonumber(rawID)
         if itemID and itemID ~= primaryID then
             local quantity, quantityKind = GetItemAvailableQuantity(itemID)
-            if quantity > 0 then
+            if quantity > 0 and not IsDeferredHealthstoneItem(itemID) then
                 return itemID, quantity, quantityKind
             end
         end
