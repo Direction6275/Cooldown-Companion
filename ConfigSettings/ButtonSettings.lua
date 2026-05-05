@@ -1306,7 +1306,8 @@ local function InstallFallbackColumnDropTargets(scroll, buttonData)
 end
 
 local function BuildFallbackRowText(itemID, rowIndex, isPrimary)
-    local prefix = isPrimary and "" or (tostring(rowIndex) .. ". ")
+    local displayIndex = isPrimary and 1 or (rowIndex + 1)
+    local prefix = tostring(displayIndex) .. ". "
     return ("%s%s"):format(
         prefix,
         GetItemFallbackDisplayName(itemID)
@@ -1511,8 +1512,9 @@ local function BuildItemFallbacksTab(scroll, buttonData, infoButtons)
 
     local infoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
         "Item Fallbacks",
-        {"Use the arrows to set priority. The top item is the primary item, and fallbacks are used only when higher-priority items are not in your bags.", 1, 1, 1, true},
-        {"Stacks and charges both count as available uses for choosing the active item.", 1, 1, 1, true},
+        {"Use arrows to choose which item should appear first.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Fallbacks are used only when higher-priority items are not in your bags.", 1, 1, 1, true},
     }, infoButtons)
     heading.right:ClearAllPoints()
     heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)

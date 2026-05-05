@@ -768,14 +768,12 @@ local function PlaceRowBadge(frame, badge, offsetX)
     return offsetX - ROW_BADGE_SIZE - ROW_BADGE_SPACING
 end
 
-local function LayoutRowBadges(frame, badge1, badge2, badge3, badge4, badge5, badge6)
+local function LayoutRowBadges(frame, ...)
     local offsetX = -ROW_BADGE_RIGHT_PAD
-    offsetX = PlaceRowBadge(frame, badge1, offsetX)
-    offsetX = PlaceRowBadge(frame, badge2, offsetX)
-    offsetX = PlaceRowBadge(frame, badge3, offsetX)
-    offsetX = PlaceRowBadge(frame, badge4, offsetX)
-    offsetX = PlaceRowBadge(frame, badge5, offsetX)
-    PlaceRowBadge(frame, badge6, offsetX)
+    for index = 1, select("#", ...) do
+        local badge = select(index, ...)
+        offsetX = PlaceRowBadge(frame, badge, offsetX)
+    end
 end
 
 local function IsAuraTrackingConfigReady(buttonData, cdmEnabled)
@@ -2472,7 +2470,7 @@ local function RefreshColumn2()
                     -- Right-side row badges
                     local rowFrame = entry.frame
                     local rowBadgeLevel = rowFrame:GetFrameLevel() + 5
-                    local warnBadge, overrideBadge, soundBadge, auraBadge
+                    local warnBadge, overrideBadge, soundBadge, auraBadge, fallbackBadge
 
                     if not usable and buttonData.enabled ~= false then
                         warnBadge = EnsureRowBadge(rowFrame, "_cdcWarnBtn", "Ping_Marker_Icon_Warning")
@@ -2491,6 +2489,13 @@ local function RefreshColumn2()
                         overrideBadge:SetFrameLevel(rowBadgeLevel)
                         SetRowBadgeTooltip(overrideBadge, "Has appearance overrides")
                         overrideBadge:Show()
+                    end
+
+                    if CooldownCompanion.HasItemFallbacks(buttonData) then
+                        fallbackBadge = EnsureRowBadge(rowFrame, "_cdcFallbackBadge", "banker")
+                        fallbackBadge:SetFrameLevel(rowBadgeLevel)
+                        SetRowBadgeTooltip(fallbackBadge, "Uses item fallbacks")
+                        fallbackBadge:Show()
                     end
 
                     if buttonData.type == "spell" then
@@ -2547,7 +2552,7 @@ local function RefreshColumn2()
                         disabledBadge:Show()
                     end
 
-                    LayoutRowBadges(rowFrame, disabledBadge, warnBadge, overrideBadge, soundBadge, auraBadge, talentBadge)
+                    LayoutRowBadges(rowFrame, disabledBadge, warnBadge, overrideBadge, fallbackBadge, soundBadge, auraBadge, talentBadge)
 
                     entry:SetCallback("OnClick", function(widget, event, mouseButton)
                         if mouseButton == "LeftButton" and not IsControlKeyDown() and not GetCursorInfo() then

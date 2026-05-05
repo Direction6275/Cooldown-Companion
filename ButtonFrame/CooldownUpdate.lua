@@ -49,6 +49,7 @@ local UpdateItemChargeTracking = ST._UpdateItemChargeTracking
 local ApplyIconCountTextStyle = ST._ApplyIconCountTextStyle
 local UpdateIconModeVisuals = ST._UpdateIconModeVisuals
 local UpdateIconModeGlows = ST._UpdateIconModeGlows
+local CacheButtonBindingKeys = ST._CacheButtonBindingKeys
 
 -- Imports from BarMode
 local ApplyBarCountTextStyle = ST._ApplyBarCountTextStyle
@@ -539,6 +540,17 @@ local function IsReadyGlowAtMaxCharges(button, buttonData)
     return button._chargeState == CHARGE_STATE_FULL
 end
 
+function CooldownCompanion:RefreshResolvedItemKeybindState(button, buttonData)
+    if button.keybindText then
+        local text = self:GetDisplayedKeybindText(buttonData, button._resolvedItemId)
+        button.keybindText:SetText(text or "")
+        button.keybindText:SetShown(button.style and button.style.showKeybindText and text ~= nil)
+    end
+    if CacheButtonBindingKeys then
+        CacheButtonBindingKeys(button, buttonData)
+    end
+end
+
 -- Deferred spell cooldown detection: distinguish true held cooldowns from
 -- start-recovery / empower recovery windows. In 12.0.1, unrelated spells can
 -- transiently report isEnabled=false, isActive=false, and a positive
@@ -735,6 +747,9 @@ local function ResolveChargeState(button, buttonData)
     if button._chargeCountReadable == true and currentCharges ~= nil then
         if currentCharges <= 0 then
             return CHARGE_STATE_ZERO
+        end
+        if buttonData.type == "item" and button._resolvedItemQuantityKind == "stacks" then
+            return CHARGE_STATE_FULL
         end
         if maxCharges and maxCharges > 0 then
             if currentCharges >= maxCharges then
@@ -945,6 +960,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if UpdateResolvedItemState(button, buttonData) then
         CooldownCompanion:UpdateButtonIcon(button)
         RestoreBaseDisplayName(button, buttonData)
+        CooldownCompanion:RefreshResolvedItemKeybindState(button, buttonData)
     end
 
     if button.count and button._countTextLaneStyled ~= useChargeTextLane then

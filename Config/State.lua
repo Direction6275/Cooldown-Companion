@@ -1270,6 +1270,7 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcOverrideBadge then entry.frame._cdcOverrideBadge:Hide() end
     if entry.frame._cdcSoundBadge then entry.frame._cdcSoundBadge:Hide() end
     if entry.frame._cdcAuraBadge then entry.frame._cdcAuraBadge:Hide() end
+    if entry.frame._cdcFallbackBadge then entry.frame._cdcFallbackBadge:Hide() end
     if entry.frame._cdcTalentBadge then entry.frame._cdcTalentBadge:Hide() end
     if entry.frame._cdcCollapseIcon then entry.frame._cdcCollapseIcon:Hide() end
     if entry.frame._cdcCollapseBtn then entry.frame._cdcCollapseBtn:Hide() end
