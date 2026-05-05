@@ -1339,10 +1339,9 @@ local function ConfigureFallbackMoveButton(button, rotation, tooltipTitle, toolt
         button.icon:SetPoint("TOPLEFT", 2, -2)
         button.icon:SetPoint("BOTTOMRIGHT", -2, 2)
     end
-    if not button.highlight then
-        button.highlight = button:CreateTexture(nil, "HIGHLIGHT")
-        button.highlight:SetAllPoints()
-        button.highlight:SetColorTexture(0.3, 0.55, 0.85, 0.25)
+    if button.highlight then
+        button.highlight:Hide()
+        button.highlight:SetAlpha(0)
     end
     button.icon:SetAtlas("arrow-short", false)
     button.icon:SetRotation(rotation)
