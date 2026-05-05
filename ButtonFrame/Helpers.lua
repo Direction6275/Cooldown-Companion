@@ -11,6 +11,8 @@ local ipairs = ipairs
 local math_floor = math.floor
 local pairs = pairs
 local string_format = string.format
+local tonumber = tonumber
+local type = type
 
 -- Color constants
 local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
@@ -194,6 +196,85 @@ local function UsesChargeTextLane(buttonData)
         or buttonData.isPassive == true
 end
 CooldownCompanion.UsesChargeTextLane = UsesChargeTextLane
+
+local function GetItemAvailableQuantity(itemID)
+    itemID = tonumber(itemID)
+    if not itemID then
+        return 0, "stacks"
+    end
+
+    local stackCount = C_Item.GetItemCount(itemID) or 0
+    local useCount = C_Item.GetItemCount(itemID, false, true) or stackCount
+    if useCount > stackCount then
+        return useCount, "charges"
+    end
+    return stackCount, "stacks"
+end
+CooldownCompanion.GetItemAvailableQuantity = GetItemAvailableQuantity
+
+local function HasItemFallbacks(buttonData)
+    return buttonData
+        and buttonData.type == "item"
+        and type(buttonData.itemFallbacks) == "table"
+        and #buttonData.itemFallbacks > 0
+end
+CooldownCompanion.HasItemFallbacks = HasItemFallbacks
+
+local function NormalizeItemFallbacks(buttonData)
+    if not (buttonData and type(buttonData.itemFallbacks) == "table") then
+        return false
+    end
+
+    local primaryID = tonumber(buttonData.id)
+    local seen = {}
+    local normalized = {}
+    local changed = false
+    for index, rawID in ipairs(buttonData.itemFallbacks) do
+        local itemID = tonumber(rawID)
+        if itemID and itemID > 0 and itemID ~= primaryID and not seen[itemID] then
+            seen[itemID] = true
+            normalized[#normalized + 1] = itemID
+            if rawID ~= itemID or #normalized ~= index then
+                changed = true
+            end
+        else
+            changed = true
+        end
+    end
+
+    if #normalized == 0 then
+        buttonData.itemFallbacks = nil
+    else
+        buttonData.itemFallbacks = normalized
+    end
+    return changed
+end
+CooldownCompanion.NormalizeItemFallbacks = NormalizeItemFallbacks
+
+local function ResolveItemFallback(buttonData)
+    if not (buttonData and buttonData.type == "item") then
+        return nil, 0, "stacks"
+    end
+
+    local primaryID = tonumber(buttonData.id)
+    local primaryQuantity, primaryKind = GetItemAvailableQuantity(primaryID)
+    if primaryQuantity > 0 or not HasItemFallbacks(buttonData) then
+        return primaryID, primaryQuantity, primaryKind
+    end
+
+    for _, rawID in ipairs(buttonData.itemFallbacks) do
+        local itemID = tonumber(rawID)
+        if itemID and itemID ~= primaryID then
+            local quantity, quantityKind = GetItemAvailableQuantity(itemID)
+            if quantity > 0 then
+                return itemID, quantity, quantityKind
+            end
+        end
+    end
+
+    return primaryID, primaryQuantity, primaryKind
+end
+CooldownCompanion.ResolveItemFallback = ResolveItemFallback
 
 -- Position a region in the icon area of a bar button.
 -- inset=0 for backgrounds/bounds, inset=borderSize for the icon texture itself.

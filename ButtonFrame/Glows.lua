@@ -759,7 +759,7 @@ local function SetupTooltipScripts(button)
         if self.buttonData.type == "spell" then
             GameTooltip:SetSpellByID(self._displaySpellId or self.buttonData.id)
         elseif self.buttonData.type == "item" then
-            GameTooltip:SetItemByID(self.buttonData.id)
+            GameTooltip:SetItemByID(self._resolvedItemId or self.buttonData.id)
         end
         GameTooltip:Show()
     end)

@@ -1616,6 +1616,8 @@ local function CreateConfigPanel()
             else
                 ST._BuildSpellSoundAlertsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
             end
+        elseif tab == "fallbacks" then
+            ST._BuildItemFallbacksTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         elseif tab == "overrides" then
             ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         end

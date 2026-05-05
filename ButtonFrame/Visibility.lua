@@ -130,12 +130,17 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     end
 
     -- Check hideWhileZeroCharges (charge-based spells and items)
-    if buttonData.hideWhileZeroCharges and button._chargeState == CHARGE_STATE_ZERO then
+    if buttonData.hideWhileZeroCharges
+            and (button._chargeState == CHARGE_STATE_ZERO
+                or (buttonData.type == "item"
+                    and buttonData.itemFallbacks
+                    and (button._resolvedItemAvailableQuantity or 0) == 0)) then
         hideReasons = bit_bor(hideReasons, HIDE_ZERO_CHARGES)
     end
 
     -- Check hideWhileZeroStacks (stack-based items)
-    if buttonData.hideWhileZeroStacks and (button._itemCount or 0) == 0 then
+    if buttonData.hideWhileZeroStacks
+            and (button._itemCount or button._resolvedItemAvailableQuantity or 0) == 0 then
         hideReasons = bit_bor(hideReasons, HIDE_ZERO_STACKS)
     end
 
@@ -152,7 +157,8 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                 hideReasons = bit_bor(hideReasons, HIDE_UNUSABLE)
             end
         elseif buttonData.type == "item" then
-            if not IsUsableItem(buttonData.id) then
+            local itemID = button._resolvedItemId or buttonData.id
+            if not IsUsableItem(itemID) then
                 hideReasons = bit_bor(hideReasons, HIDE_UNUSABLE)
             end
         end

@@ -1189,10 +1189,11 @@ local function ApplyConfigRowLayout(entry)
 
     label:ClearAllPoints()
     label:SetPoint("LEFT", frame, "LEFT", leftPad, 0)
-    label:SetPoint("RIGHT", frame, "RIGHT", -CONFIG_ROW_RIGHT_PAD, 0)
+    local rightPad = row.rightPad or CONFIG_ROW_RIGHT_PAD
+    label:SetPoint("RIGHT", frame, "RIGHT", -rightPad, 0)
     local rowWidth = frame.width or frame:GetWidth() or 0
     if rowWidth > 0 then
-        label:SetWidth(math.max(1, rowWidth - leftPad - CONFIG_ROW_RIGHT_PAD))
+        label:SetWidth(math.max(1, rowWidth - leftPad - rightPad))
     end
     if label.SetWordWrap then
         label:SetWordWrap(false)
@@ -1277,6 +1278,9 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcAnchorBadge then entry.frame._cdcAnchorBadge:Hide() end
     if entry.frame._cdcHeaderDisabledBadge then entry.frame._cdcHeaderDisabledBadge:Hide() end
     if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end
+    if entry.frame._cdcFallbackRemoveBtn then entry.frame._cdcFallbackRemoveBtn:Hide() end
+    if entry.frame._cdcFallbackUpBtn then entry.frame._cdcFallbackUpBtn:Hide() end
+    if entry.frame._cdcFallbackDownBtn then entry.frame._cdcFallbackDownBtn:Hide() end
     if entry.frame._cdcMarkerLeft then entry.frame._cdcMarkerLeft:Hide() end
     if entry.frame._cdcMarkerRight then entry.frame._cdcMarkerRight:Hide() end
     entry.frame:SetScript("OnMouseUp", nil)
@@ -1293,6 +1297,7 @@ local function ApplyConfigRowIcon(entry, texture, opts)
         texture = texture,
         atlas = opts.atlas,
         desaturated = opts.desaturated == true,
+        rightPad = opts.rightPad,
     }
     EnsureConfigRowHandlers(entry)
 
@@ -1302,11 +1307,12 @@ local function ApplyConfigRowIcon(entry, texture, opts)
     ApplyConfigRowLayout(entry)
 end
 
-local function ApplyConfigTextRow(entry, justifyH, normalLeftPad)
+local function ApplyConfigTextRow(entry, justifyH, normalLeftPad, rightPad)
     entry._cdcConfigRow = {
         kind = "text",
         justifyH = justifyH or "LEFT",
         normalLeftPad = normalLeftPad or 0,
+        rightPad = rightPad,
     }
     EnsureConfigRowHandlers(entry)
 

@@ -290,7 +290,7 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
     elseif tokenName == "aura" then
         return button._auraActive == true or auraIsSecret or (auraRemaining and auraRemaining > 0)
     elseif tokenName == "keybind" then
-        local kb = CooldownCompanion:GetKeybindText(button.buttonData)
+        local kb = CooldownCompanion:GetKeybindText(button.buttonData, button._resolvedItemId)
         return kb and kb ~= ""
     elseif tokenName == "pandemic" then
         return button._inPandemic == true
@@ -465,7 +465,7 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
                         if spellName then name = spellName end
                     end
                 elseif not buttonData.customName and buttonData.type == "item" then
-                    local itemName = C_Item.GetItemNameByID(buttonData.id)
+                    local itemName = C_Item.GetItemNameByID(button._resolvedItemId or buttonData.id)
                     if itemName then name = itemName end
                 end
                 if name then
@@ -525,7 +525,7 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
                 end
 
             elseif token == "keybind" then
-                local kb = CooldownCompanion:GetKeybindText(buttonData)
+                local kb = CooldownCompanion:GetKeybindText(buttonData, button._resolvedItemId)
                 if kb and kb ~= "" then
                     parts[#parts + 1] = WrapColor(kb, colorOverride or baseColor)
                 end
@@ -878,6 +878,13 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button._auraDisplayName = nil
     button._auraNameOverrideActive = nil
     button._textSecretNameActive = nil
+
+    if buttonData.type == "item" then
+        local resolvedItemID, availableQuantity, quantityKind = CooldownCompanion.ResolveItemFallback(buttonData)
+        button._resolvedItemId = resolvedItemID or buttonData.id
+        button._resolvedItemAvailableQuantity = availableQuantity or 0
+        button._resolvedItemQuantityKind = quantityKind or "stacks"
+    end
 
     -- Per-button visibility runtime state
     button._visibilityHidden = false
