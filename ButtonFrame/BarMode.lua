@@ -328,12 +328,16 @@ local function UpdateBarDisplay(button)
 
     -- "On cooldown" for bar color/ready text follows canonical state.
     -- _durationObj may also hold aura/totem timing and must not imply cooldown.
+    local itemUsesResolvedCooldownState = button.buttonData.type == "item"
+        and button._resolvedItemQuantityKind == "stacks"
     local isChargeButton = UsesChargeBehavior(button.buttonData)
     local chargeState = button._chargeState
     local auraTimerActive = button._auraActive
         and (button._durationObj or button._viewerBar or button._conditionalPreviewRemaining)
     local onCooldown
-    if isChargeButton then
+    if itemUsesResolvedCooldownState then
+        onCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+    elseif isChargeButton then
         onCooldown = chargeState == CHARGE_STATE_MISSING
             or chargeState == CHARGE_STATE_ZERO
     else
