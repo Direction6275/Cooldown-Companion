@@ -3125,6 +3125,8 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
         inheritedSources = CooldownCompanion:GetInheritedLoadConditionSources(container),
         headingText = "Hide This Group In",
         headingTextWhenInherited = "Also Hide This Group In",
+        inheritedCollapsedKey = "container_loadconditions_inherited",
+        localCollapsedKey = "container_loadconditions_local",
         onChanged = function()
             RefreshPanels()
             CooldownCompanion:RefreshConfigPanel()
@@ -3299,6 +3301,7 @@ local function BuildFolderLoadConditionsTab(scroll, folderId)
         defaults = CooldownCompanion:GetLocalLoadConditionDefaults(),
         inheritedSources = {},
         headingText = "Hide This Folder In",
+        localCollapsedKey = "folder_loadconditions_local",
         preserveMissing = true,
         onChanged = function()
             if folder.loadConditions and not next(folder.loadConditions) then

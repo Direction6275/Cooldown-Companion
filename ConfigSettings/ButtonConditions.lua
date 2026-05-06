@@ -60,7 +60,7 @@ local function GetActiveInheritedLabel(sources, key, optionDefault)
     return nil
 end
 
-local function AddInheritedLoadSummary(container, sources)
+local function AddInheritedLoadSummary(container, sources, collapsedKey)
     local labelsBySource = {}
     local hasAny = false
 
@@ -86,6 +86,15 @@ local function AddInheritedLoadSummary(container, sources)
     ColorHeading(heading)
     heading:SetFullWidth(true)
     container:AddChild(heading)
+
+    local collapsed = collapsedKey and CS.collapsedSections[collapsedKey]
+    if collapsedKey then
+        AttachCollapseButton(heading, collapsed, function()
+            CS.collapsedSections[collapsedKey] = not CS.collapsedSections[collapsedKey]
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+    end
+    if collapsed then return end
 
     local inherited = {}
     for _, source in ipairs(sources or {}) do
@@ -119,13 +128,22 @@ local function AddScopedLoadConditionToggles(container, opts)
         end
     end
 
-    AddInheritedLoadSummary(container, inheritedSources)
+    AddInheritedLoadSummary(container, inheritedSources, opts.inheritedCollapsedKey)
 
     local heading = AceGUI:Create("Heading")
     heading:SetText((inheritedAny and opts.headingTextWhenInherited) or opts.headingText or "Hide When In")
     ColorHeading(heading)
     heading:SetFullWidth(true)
     container:AddChild(heading)
+
+    local localCollapsed = opts.localCollapsedKey and CS.collapsedSections[opts.localCollapsedKey]
+    if opts.localCollapsedKey then
+        AttachCollapseButton(heading, localCollapsed, function()
+            CS.collapsedSections[opts.localCollapsedKey] = not CS.collapsedSections[opts.localCollapsedKey]
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+    end
+    if localCollapsed then return end
 
     if inheritedAny then
         local inheritedLabel = AceGUI:Create("Label")
@@ -1563,6 +1581,8 @@ local function BuildLoadConditionsTab(container)
         inheritedSources = CooldownCompanion:GetInheritedLoadConditionSources(group),
         headingText = "Hide This Panel In",
         headingTextWhenInherited = "Also Hide This Panel In",
+        inheritedCollapsedKey = "loadconditions_panel_inherited",
+        localCollapsedKey = "loadconditions_panel_local",
         onChanged = function()
             CooldownCompanion:RefreshGroupFrame(groupId)
             CooldownCompanion:RefreshConfigPanel()
@@ -1703,6 +1723,8 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
         inheritedSources = CooldownCompanion:GetLoadConditionSourcesForGroup(group),
         headingText = "Hide This Entry In",
         headingTextWhenInherited = "Also Hide This Entry In",
+        inheritedCollapsedKey = "loadconditions_entry_inherited",
+        localCollapsedKey = "loadconditions_entry_local",
         preserveMissing = true,
         onChanged = function()
             if buttonData.loadConditions and not next(buttonData.loadConditions) then
