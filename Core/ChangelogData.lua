@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.13.10",
         "1.13.9",
         "1.13.8",
         "1.13.7",
@@ -30,6 +31,19 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.13.10"] = {
+            markdown = [[
+## New Features
+
+- **Item fallback settings:** Consumables can now use an ordered fallback list, letting one consumable entry automatically show and track the first available usable item from your bags.
+  - Healthstone entries with item fallbacks move to the next available fallback during the short combat state where Healthstone is unusable but its visible cooldown has not started yet.
+- **Load conditions extended to entries:** Environment based load conditions can now be configured at the level of individual entries in addition to panels, groups, and folders.
+
+## Polish | QoL
+
+- **Narrow config resizing:** The config window now automatically hides folder/group/entry icons when reducing the width past a certain threshold in order to maintain visual clarity.
+]],
+        },
         ["1.13.9"] = {
             markdown = [[
 ## New Features
