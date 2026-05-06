@@ -3119,30 +3119,17 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
         CooldownCompanion:RefreshContainerPanels(containerId)
     end
 
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Do Not Load When In")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    scroll:AddChild(heading)
-
-    local instanceCollapsed = CS.collapsedSections["container_loadconditions_instance"]
-    AttachCollapseButton(heading, instanceCollapsed, function()
-        CS.collapsedSections["container_loadconditions_instance"] = not CS.collapsedSections["container_loadconditions_instance"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    if not instanceCollapsed then
     AddScopedLoadConditionToggles(scroll, {
         target = container,
         defaults = CooldownCompanion:GetDefaultLoadConditions(),
         inheritedSources = CooldownCompanion:GetInheritedLoadConditionSources(container),
-        headingText = "This Group Adds",
+        headingText = "Hide This Group In",
+        headingTextWhenInherited = "Also Hide This Group In",
         onChanged = function()
             RefreshPanels()
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
-    end -- not instanceCollapsed
 
     -- Spec filter section
     local specHeading = AceGUI:Create("Heading")
@@ -3307,17 +3294,11 @@ local function BuildFolderLoadConditionsTab(scroll, folderId)
     local folder = db.folders and db.folders[folderId]
     if not folder then return end
 
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Do Not Load When In")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    scroll:AddChild(heading)
-
     AddScopedLoadConditionToggles(scroll, {
         target = folder,
         defaults = CooldownCompanion:GetLocalLoadConditionDefaults(),
         inheritedSources = {},
-        headingText = "This Folder Adds",
+        headingText = "Hide This Folder In",
         preserveMissing = true,
         onChanged = function()
             if folder.loadConditions and not next(folder.loadConditions) then

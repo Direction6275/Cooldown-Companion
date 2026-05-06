@@ -60,50 +60,39 @@ local function GetActiveInheritedLabel(sources, key, optionDefault)
     return nil
 end
 
-local function AddInheritedLoadSummary(container, sources, localLoadConditions, localDefaults, localLabel)
+local function AddInheritedLoadSummary(container, sources)
+    local labelsBySource = {}
     local hasAny = false
+
+    local function AddLabel(sourceLabel, conditionLabel)
+        if not labelsBySource[sourceLabel] then
+            labelsBySource[sourceLabel] = {}
+        end
+        labelsBySource[sourceLabel][#labelsBySource[sourceLabel] + 1] = conditionLabel
+        hasAny = true
+    end
+
     for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
-        if GetActiveInheritedLabel(sources, cond.key, cond.default) then
-            hasAny = true
-            break
+        local inheritedLabel = GetActiveInheritedLabel(sources, cond.key, cond.default)
+        if inheritedLabel then
+            AddLabel(inheritedLabel, cond.label)
         end
     end
-    if not hasAny then
-        for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
-            if GetLoadConditionValue(localLoadConditions, cond.key, localDefaults, cond.default) then
-                hasAny = true
-                break
-            end
-        end
-    end
+
     if not hasAny then return end
 
     local heading = AceGUI:Create("Heading")
-    heading:SetText("Effective Load Conditions")
+    heading:SetText("Inherited Load Conditions")
     ColorHeading(heading)
     heading:SetFullWidth(true)
     container:AddChild(heading)
 
     local inherited = {}
     for _, source in ipairs(sources or {}) do
-        local labels = {}
-        for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
-            if GetLoadConditionValue(source.loadConditions, cond.key, source.defaults, cond.default) then
-                labels[#labels + 1] = cond.label
-            end
+        local labels = labelsBySource[source.label]
+        if labels then
+            inherited[#inherited + 1] = "|cff888888From " .. source.label .. ":|r " .. table.concat(labels, ", ")
         end
-        if #labels > 0 then
-            inherited[#inherited + 1] = "|cff888888Inherited from " .. source.label .. ":|r " .. table.concat(labels, ", ")
-        end
-    end
-    local localLabels = {}
-    for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
-        if GetLoadConditionValue(localLoadConditions, cond.key, localDefaults, cond.default) then
-            localLabels[#localLabels + 1] = cond.label
-        end
-    end
-    if #localLabels > 0 then
-        inherited[#inherited + 1] = "|cff888888" .. (localLabel or "This Scope Adds") .. ":|r " .. table.concat(localLabels, ", ")
     end
 
     local label = AceGUI:Create("Label")
@@ -122,14 +111,6 @@ local function AddScopedLoadConditionToggles(container, opts)
     local inheritedSources = opts.inheritedSources or {}
     local onChanged = opts.onChanged
 
-    AddInheritedLoadSummary(container, inheritedSources, loadConditions, defaults, opts.headingText)
-
-    local heading = AceGUI:Create("Heading")
-    heading:SetText(opts.headingText or "This Scope Adds")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    container:AddChild(heading)
-
     local inheritedAny = false
     for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
         if GetActiveInheritedLabel(inheritedSources, cond.key, cond.default) then
@@ -137,9 +118,18 @@ local function AddScopedLoadConditionToggles(container, opts)
             break
         end
     end
+
+    AddInheritedLoadSummary(container, inheritedSources)
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText((inheritedAny and opts.headingTextWhenInherited) or opts.headingText or "Hide When In")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
     if inheritedAny then
         local inheritedLabel = AceGUI:Create("Label")
-        inheritedLabel:SetText("|cff888888Inherited active conditions are locked here. Local conditions can only add more restrictions.|r")
+        inheritedLabel:SetText("|cff888888Inherited rules are locked here. You can only add more places to hide this.|r")
         inheritedLabel:SetFullWidth(true)
         container:AddChild(inheritedLabel)
     end
@@ -147,7 +137,7 @@ local function AddScopedLoadConditionToggles(container, opts)
     for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
         local inheritedLabel = GetActiveInheritedLabel(inheritedSources, cond.key, cond.default)
         local cb = AceGUI:Create("CheckBox")
-        cb:SetLabel(inheritedLabel and (cond.label .. " |cff888888(Inherited from " .. inheritedLabel .. ")|r") or cond.label)
+        cb:SetLabel(inheritedLabel and (cond.label .. " |cff888888(locked by " .. inheritedLabel .. ")|r") or cond.label)
         cb:SetFullWidth(true)
         if inheritedLabel then
             cb:SetValue(true)
@@ -1567,30 +1557,17 @@ local function BuildLoadConditionsTab(container)
     local effectiveSpecs, inheritedSpecFilter = CooldownCompanion:GetEffectiveSpecs(group)
     local effectiveHeroTalents, inheritedHeroFilter = CooldownCompanion:GetEffectiveHeroTalents(group)
 
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Do Not Load When In")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    container:AddChild(heading)
-
-    local instanceCollapsed = CS.collapsedSections["loadconditions_instance"]
-    AttachCollapseButton(heading, instanceCollapsed, function()
-        CS.collapsedSections["loadconditions_instance"] = not CS.collapsedSections["loadconditions_instance"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    if not instanceCollapsed then
     AddScopedLoadConditionToggles(container, {
         target = group,
         defaults = CooldownCompanion:GetDefaultLoadConditions(),
         inheritedSources = CooldownCompanion:GetInheritedLoadConditionSources(group),
-        headingText = "This Panel Adds",
+        headingText = "Hide This Panel In",
+        headingTextWhenInherited = "Also Hide This Panel In",
         onChanged = function()
             CooldownCompanion:RefreshGroupFrame(groupId)
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
-    end -- not instanceCollapsed
 
     -- Specialization heading
     local specHeading = AceGUI:Create("Heading")
@@ -1724,7 +1701,8 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
         target = buttonData,
         defaults = CooldownCompanion:GetLocalLoadConditionDefaults(),
         inheritedSources = CooldownCompanion:GetLoadConditionSourcesForGroup(group),
-        headingText = "This Entry Adds",
+        headingText = "Hide This Entry In",
+        headingTextWhenInherited = "Also Hide This Entry In",
         preserveMissing = true,
         onChanged = function()
             if buttonData.loadConditions and not next(buttonData.loadConditions) then
