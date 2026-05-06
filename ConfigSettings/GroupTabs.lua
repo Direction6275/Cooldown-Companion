@@ -3277,11 +3277,18 @@ local function BuildFolderGeneralTab(scroll, folderId)
     nameBox:SetLabel("Name")
     nameBox:SetText(folder.name or "")
     nameBox:SetFullWidth(true)
+    local function CommitFolderName(widget, text)
+        if CooldownCompanion:RenameFolder(folderId, text) then
+            CooldownCompanion:RefreshConfigPanel()
+        elseif widget and widget.SetText then
+            widget:SetText(folder.name or "")
+        end
+    end
     nameBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        CooldownCompanion:RenameFolder(folderId, text)
+        CommitFolderName(widget, text)
     end)
     nameBox:SetCallback("OnEditFocusLost", function(widget)
-        CooldownCompanion:RenameFolder(folderId, widget:GetText())
+        CommitFolderName(widget, widget:GetText())
     end)
     scroll:AddChild(nameBox)
 

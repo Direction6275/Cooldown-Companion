@@ -2006,6 +2006,7 @@ local function ResetConfigSelection(full)
         ST._CancelAutoAddFlow()
     end
     CooldownCompanion:ClearAllConfigPreviews()
+    CS.selectedFolder = nil
     CS.selectedButton = nil
     wipe(CS.selectedButtons)
     wipe(CS.selectedPanels)

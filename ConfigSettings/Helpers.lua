@@ -16,7 +16,7 @@ end
 -- Helper: attach a reusable collapse/expand arrow button to an AceGUI Heading.
 -- Stores the button on heading.frame._cdcCollapseBtn so it survives widget
 -- recycling without creating duplicate textures or stale handlers.
-local COLLAPSE_ARROW_ATLAS = "glues-characterSelect-icon-arrowDown-small"
+local COLLAPSE_ARROW_ATLAS = "glues-characterselect-icon-arrowdown-small"
 local COLLAPSE_ROTATION_RIGHT = math.pi / 2   -- collapsed: arrow points right
 local COLLAPSE_ROTATION_DOWN  = 0              -- expanded:  arrow points down
 

@@ -806,12 +806,13 @@ function CooldownCompanion:IsHeroTalentAllowed(group)
     return effectiveHeroTalents[heroSpecId] == true
 end
 
-function CooldownCompanion:GroupHasUsableButtons(group)
+function CooldownCompanion:GroupHasUsableButtons(group, opts)
+    opts = opts or {}
     if not (group and group.buttons and #group.buttons > 0) then
         return false
     end
     for _, buttonData in ipairs(group.buttons) do
-        if self:IsButtonUsable(buttonData, group) then
+        if self:IsButtonUsable(buttonData, group, opts) then
             return true
         end
     end
@@ -841,7 +842,9 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         if group.enabled == false then return false end
     end
 
-    if opts.requireButtons and not self:GroupHasUsableButtons(group) then
+    if opts.requireButtons and not self:GroupHasUsableButtons(group, {
+        checkLoadConditions = opts.checkLoadConditions,
+    }) then
         return false
     end
 
@@ -1346,10 +1349,11 @@ local function SpellIDsMatchCanonicalForm(storedSpellID, resolvedSpellID)
         and storedBaseSpellID == resolvedBaseSpellID
 end
 
-function CooldownCompanion:IsButtonUsable(buttonData, group)
+function CooldownCompanion:IsButtonUsable(buttonData, group, opts)
+    opts = opts or {}
     if buttonData.enabled == false then return false end
 
-    if not self:IsButtonLoadConditionMet(buttonData, group) then return false end
+    if opts.checkLoadConditions ~= false and not self:IsButtonLoadConditionMet(buttonData, group) then return false end
 
     -- Per-button talent condition: gate visibility on a specific talent node.
     if not self:IsTalentConditionMet(buttonData) then return false end

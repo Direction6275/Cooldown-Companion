@@ -46,6 +46,7 @@ local GenerateGroupName
 ------------------------------------------------------------------------
 local function ClearSelection()
     CooldownCompanion:ClearAllConfigPreviews()
+    CS.selectedFolder = nil
     CS.selectedContainer = nil
     CS.selectedGroup = nil
     CS.selectedButton = nil
@@ -748,6 +749,9 @@ local function ShowFolderContextMenu(db, folderId, folder)
             end
             if folder.heroTalents and next(folder.heroTalents) then
                 folderData.heroTalents = CopyTable(folder.heroTalents)
+            end
+            if CooldownCompanion:HasLocalLoadConditions(folder) then
+                folderData.loadConditions = CopyTable(folder.loadConditions)
             end
 
             local orderedCids = {}
@@ -1572,7 +1576,7 @@ local function RefreshColumn1(preserveDrag)
             collapseBtn._arrow = collapseBtn:CreateTexture(nil, "ARTWORK")
             collapseBtn._arrow:SetSize(12, 12)
             collapseBtn._arrow:SetPoint("CENTER")
-            collapseBtn._arrow:SetAtlas("glues-characterSelect-icon-arrowDown-small")
+            collapseBtn._arrow:SetAtlas("glues-characterselect-icon-arrowdown-small")
             entry.frame._cdcCollapseBtn = collapseBtn
         end
         collapseBtn:SetParent(entry.frame)
@@ -1639,6 +1643,7 @@ local function RefreshColumn1(preserveDrag)
                     CooldownCompanion:RefreshConfigPanel()
                     return
                 end
+                CooldownCompanion:ClearAllConfigPreviews()
                 CS.selectedFolder = folderId
                 CS.selectedContainer = nil
                 CS.selectedGroup = nil
