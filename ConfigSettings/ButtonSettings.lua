@@ -1339,10 +1339,9 @@ local function ConfigureFallbackMoveButton(button, rotation, tooltipTitle, toolt
         button.icon:SetPoint("TOPLEFT", 2, -2)
         button.icon:SetPoint("BOTTOMRIGHT", -2, 2)
     end
-    if not button.highlight then
-        button.highlight = button:CreateTexture(nil, "HIGHLIGHT")
-        button.highlight:SetAllPoints()
-        button.highlight:SetColorTexture(0.3, 0.55, 0.85, 0.25)
+    if button.highlight then
+        button.highlight:Hide()
+        button.highlight:SetAlpha(0)
     end
     button.icon:SetAtlas("arrow-short", false)
     button.icon:SetRotation(rotation)
@@ -1534,9 +1533,11 @@ local function BuildItemFallbacksTab(scroll, buttonData, infoButtons)
 
     local infoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
         "Item Fallbacks",
-        {"Use arrows to choose which item should appear first.", 1, 1, 1, true},
+        {"Use arrows to set item priority.", 1, 1, 1, true},
+        {"If a higher-priority item is unavailable, the next available fallback can appear instead.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"Fallbacks are used only when higher-priority items are not in your bags.", 1, 1, 1, true},
+        {"Settings apply to whichever item is currently shown from this priority list.", 1, 1, 1, true},
+        {"This includes options like zero-use visibility and desaturation.", 1, 1, 1, true},
     }, infoButtons)
     heading.right:ClearAllPoints()
     heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
