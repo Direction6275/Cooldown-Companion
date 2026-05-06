@@ -26,6 +26,7 @@ local BuildAlphaControls = ST._BuildAlphaControls
 local OpenTriggerPanelIconPicker = ST._OpenTriggerPanelIconPicker
 local ApplyEdgePositions = ST._ApplyEdgePositions
 local ApplyIconTexCoord = ST._ApplyIconTexCoord
+local AddScopedLoadConditionToggles = ST._AddScopedLoadConditionToggles
 
 -- Imports from SectionBuilders.lua
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
@@ -3118,55 +3119,19 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
         CooldownCompanion:RefreshContainerPanels(containerId)
     end
 
-    if not container.loadConditions then
-        container.loadConditions = {}
-    end
-    local loadConditions = container.loadConditions
-
-    local function CreateLoadConditionToggle(label, key, defaultVal)
-        local cb = AceGUI:Create("CheckBox")
-        cb:SetLabel(label)
-        local val = loadConditions[key]
-        if val == nil then val = defaultVal or false end
-        cb:SetValue(val)
-        cb:SetFullWidth(true)
-        cb:SetCallback("OnValueChanged", function(widget, event, newVal)
-            loadConditions[key] = newVal
+    AddScopedLoadConditionToggles(scroll, {
+        target = container,
+        defaults = CooldownCompanion:GetDefaultLoadConditions(),
+        inheritedSources = CooldownCompanion:GetInheritedLoadConditionSources(container),
+        headingText = "Hide This Group In",
+        headingTextWhenInherited = "Also Hide This Group In",
+        inheritedCollapsedKey = "container_loadconditions_inherited",
+        localCollapsedKey = "container_loadconditions_local",
+        onChanged = function()
             RefreshPanels()
             CooldownCompanion:RefreshConfigPanel()
-        end)
-        return cb
-    end
-
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Do Not Load When In")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    scroll:AddChild(heading)
-
-    local instanceCollapsed = CS.collapsedSections["container_loadconditions_instance"]
-    AttachCollapseButton(heading, instanceCollapsed, function()
-        CS.collapsedSections["container_loadconditions_instance"] = not CS.collapsedSections["container_loadconditions_instance"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    if not instanceCollapsed then
-    local conditions = {
-        { key = "raid",          label = "Raid" },
-        { key = "dungeon",       label = "Dungeon" },
-        { key = "delve",         label = "Delve" },
-        { key = "battleground",  label = "Battleground" },
-        { key = "arena",         label = "Arena" },
-        { key = "openWorld",     label = "Open World" },
-        { key = "rested",        label = "Rested Area" },
-        { key = "petBattle",     label = "Pet Battle", default = true },
-        { key = "vehicleUI",     label = "Vehicle / Override UI", default = true },
-    }
-
-    for _, cond in ipairs(conditions) do
-        scroll:AddChild(CreateLoadConditionToggle(cond.label, cond.key, cond.default))
-    end
-    end -- not instanceCollapsed
+        end,
+    })
 
     -- Spec filter section
     local specHeading = AceGUI:Create("Heading")
@@ -3297,9 +3262,81 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
     end -- not specCollapsed
 end
 
+local function BuildFolderGeneralTab(scroll, folderId)
+    local db = CooldownCompanion.db.profile
+    local folder = db.folders and db.folders[folderId]
+    if not folder then return end
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Folder")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    scroll:AddChild(heading)
+
+    local nameBox = AceGUI:Create("EditBox")
+    nameBox:SetLabel("Name")
+    nameBox:SetText(folder.name or "")
+    nameBox:SetFullWidth(true)
+    local function CommitFolderName(widget, text)
+        if CooldownCompanion:RenameFolder(folderId, text) then
+            CooldownCompanion:RefreshConfigPanel()
+        elseif widget and widget.SetText then
+            widget:SetText(folder.name or "")
+        end
+    end
+    nameBox:SetCallback("OnEnterPressed", function(widget, event, text)
+        CommitFolderName(widget, text)
+    end)
+    nameBox:SetCallback("OnEditFocusLost", function(widget)
+        CommitFolderName(widget, widget:GetText())
+    end)
+    scroll:AddChild(nameBox)
+
+    local section = AceGUI:Create("Label")
+    section:SetText("|cff888888Section:|r " .. tostring(folder.section or "character"))
+    section:SetFullWidth(true)
+    scroll:AddChild(section)
+end
+
+local function BuildFolderLoadConditionsTab(scroll, folderId)
+    local db = CooldownCompanion.db.profile
+    local folder = db.folders and db.folders[folderId]
+    if not folder then return end
+
+    AddScopedLoadConditionToggles(scroll, {
+        target = folder,
+        defaults = CooldownCompanion:GetLocalLoadConditionDefaults(),
+        inheritedSources = {},
+        headingText = "Hide This Folder In",
+        localCollapsedKey = "folder_loadconditions_local",
+        preserveMissing = true,
+        onChanged = function()
+            if folder.loadConditions and not next(folder.loadConditions) then
+                folder.loadConditions = nil
+            end
+            CooldownCompanion:RefreshAllGroups()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
+    if CooldownCompanion:HasLocalLoadConditions(folder) then
+        local clearBtn = AceGUI:Create("Button")
+        clearBtn:SetText("Clear Folder Load Conditions")
+        clearBtn:SetFullWidth(true)
+        clearBtn:SetCallback("OnClick", function()
+            folder.loadConditions = nil
+            CooldownCompanion:RefreshAllGroups()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(clearBtn)
+    end
+end
+
 -- Expose for Config.lua
 ST._BuildLayoutTab = BuildLayoutTab
 ST._BuildAppearanceTab = BuildAppearanceTab
 ST._BuildEffectsTab = BuildEffectsTab
 ST._BuildContainerGeneralTab = BuildContainerGeneralTab
 ST._BuildContainerLoadConditionsTab = BuildContainerLoadConditionsTab
+ST._BuildFolderGeneralTab = BuildFolderGeneralTab
+ST._BuildFolderLoadConditionsTab = BuildFolderLoadConditionsTab

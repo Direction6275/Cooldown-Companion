@@ -834,6 +834,9 @@ StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
         if data and data.folderId then
             CooldownCompanion:ClearAllConfigPreviews()
             CooldownCompanion:DeleteFolder(data.folderId)
+            if CS.selectedFolder == data.folderId then
+                CS.selectedFolder = nil
+            end
             if CS.selectedGroup then
                 local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
                 if not group then
@@ -1131,6 +1134,18 @@ local function ImportGroupData(text)
         if not importedSpecs then
             importedHeroTalents = nil
         end
+        local importedLoadConditions = nil
+        if type(data.folder.loadConditions) == "table" then
+            importedLoadConditions = {}
+            for key, enabled in pairs(data.folder.loadConditions) do
+                if enabled == true then
+                    importedLoadConditions[key] = true
+                end
+            end
+            if not next(importedLoadConditions) then
+                importedLoadConditions = nil
+            end
+        end
         db.folders[folderId] = {
             name = data.folder.name or "Imported Folder",
             order = folderId,
@@ -1139,6 +1154,7 @@ local function ImportGroupData(text)
             manualIcon = importedManualIcon,
             specs = importedSpecs,
             heroTalents = importedHeroTalents,
+            loadConditions = importedLoadConditions,
         }
         local count = 0
         if data.containers then

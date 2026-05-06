@@ -23,6 +23,158 @@ local HasItemFallbacks = CooldownCompanion.HasItemFallbacks
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 
+local LOAD_CONDITION_OPTIONS = ST.LOAD_CONDITION_OPTIONS
+
+local function GetLoadConditionValue(loadConditions, key, defaults, optionDefault)
+    if type(loadConditions) ~= "table" then return false end
+    local val = loadConditions[key]
+    if val == nil then
+        if defaults and defaults[key] ~= nil then
+            val = defaults[key]
+        else
+            val = optionDefault or false
+        end
+    end
+    return val == true
+end
+
+local function SetLoadConditionValue(loadConditions, key, value, defaults, optionDefault)
+    if type(loadConditions) ~= "table" then return end
+    local defaultValue = optionDefault or false
+    if defaults and defaults[key] ~= nil then
+        defaultValue = defaults[key]
+    end
+    if value == defaultValue then
+        loadConditions[key] = nil
+    else
+        loadConditions[key] = value == true
+    end
+end
+
+local function GetActiveInheritedLabel(sources, key, optionDefault)
+    for _, source in ipairs(sources or {}) do
+        if GetLoadConditionValue(source.loadConditions, key, source.defaults, optionDefault) then
+            return source.label
+        end
+    end
+    return nil
+end
+
+local function AddInheritedLoadSummary(container, sources, collapsedKey)
+    local labelsBySource = {}
+    local hasAny = false
+
+    local function AddLabel(sourceLabel, conditionLabel)
+        if not labelsBySource[sourceLabel] then
+            labelsBySource[sourceLabel] = {}
+        end
+        labelsBySource[sourceLabel][#labelsBySource[sourceLabel] + 1] = conditionLabel
+        hasAny = true
+    end
+
+    for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
+        local inheritedLabel = GetActiveInheritedLabel(sources, cond.key, cond.default)
+        if inheritedLabel then
+            AddLabel(inheritedLabel, cond.label)
+        end
+    end
+
+    if not hasAny then return end
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Inherited Load Conditions")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    local collapsed = collapsedKey and CS.collapsedSections[collapsedKey]
+    if collapsedKey then
+        AttachCollapseButton(heading, collapsed, function()
+            CS.collapsedSections[collapsedKey] = not CS.collapsedSections[collapsedKey]
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+    end
+    if collapsed then return end
+
+    local inherited = {}
+    for _, source in ipairs(sources or {}) do
+        local labels = labelsBySource[source.label]
+        if labels then
+            inherited[#inherited + 1] = "|cff888888From " .. source.label .. ":|r " .. table.concat(labels, ", ")
+        end
+    end
+
+    local label = AceGUI:Create("Label")
+    label:SetText(table.concat(inherited, "\n"))
+    label:SetFullWidth(true)
+    container:AddChild(label)
+end
+
+local function AddScopedLoadConditionToggles(container, opts)
+    local target = opts.target
+    if not target.loadConditions and not opts.preserveMissing then
+        target.loadConditions = {}
+    end
+    local loadConditions = target.loadConditions or {}
+    local defaults = opts.defaults
+    local inheritedSources = opts.inheritedSources or {}
+    local onChanged = opts.onChanged
+
+    local inheritedAny = false
+    for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
+        if GetActiveInheritedLabel(inheritedSources, cond.key, cond.default) then
+            inheritedAny = true
+            break
+        end
+    end
+
+    AddInheritedLoadSummary(container, inheritedSources, opts.inheritedCollapsedKey)
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText((inheritedAny and opts.headingTextWhenInherited) or opts.headingText or "Hide When In")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    local localCollapsed = opts.localCollapsedKey and CS.collapsedSections[opts.localCollapsedKey]
+    if opts.localCollapsedKey then
+        AttachCollapseButton(heading, localCollapsed, function()
+            CS.collapsedSections[opts.localCollapsedKey] = not CS.collapsedSections[opts.localCollapsedKey]
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+    end
+    if localCollapsed then return end
+
+    if inheritedAny then
+        local inheritedLabel = AceGUI:Create("Label")
+        inheritedLabel:SetText("|cff888888Inherited rules are locked here. You can only add more places to hide this.|r")
+        inheritedLabel:SetFullWidth(true)
+        container:AddChild(inheritedLabel)
+    end
+
+    for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
+        local inheritedLabel = GetActiveInheritedLabel(inheritedSources, cond.key, cond.default)
+        local cb = AceGUI:Create("CheckBox")
+        cb:SetLabel(inheritedLabel and (cond.label .. " |cff888888(locked by " .. inheritedLabel .. ")|r") or cond.label)
+        cb:SetFullWidth(true)
+        if inheritedLabel then
+            cb:SetValue(true)
+            cb:SetDisabled(true)
+        else
+            cb:SetValue(GetLoadConditionValue(loadConditions, cond.key, defaults, cond.default))
+            cb:SetCallback("OnValueChanged", function(widget, event, newVal)
+                if not target.loadConditions then
+                    target.loadConditions = {}
+                    loadConditions = target.loadConditions
+                end
+                SetLoadConditionValue(loadConditions, cond.key, newVal, defaults, cond.default)
+                if onChanged then onChanged() end
+            end)
+        end
+        container:AddChild(cb)
+    end
+end
+
 ------------------------------------------------------------------------
 -- BATCH HELPERS (multi-select visibility)
 ------------------------------------------------------------------------
@@ -1423,87 +1575,19 @@ local function BuildLoadConditionsTab(container)
     local effectiveSpecs, inheritedSpecFilter = CooldownCompanion:GetEffectiveSpecs(group)
     local effectiveHeroTalents, inheritedHeroFilter = CooldownCompanion:GetEffectiveHeroTalents(group)
 
-    -- Look up parent container's load conditions for inheritance
-    local containerLc = nil
-    if group.parentContainerId then
-        local containers = CooldownCompanion.db.profile.groupContainers
-        local parentContainer = containers and containers[group.parentContainerId]
-        if parentContainer then
-            containerLc = parentContainer.loadConditions
-        end
-    end
-
-    local function isContainerConditionActive(key, defaultVal)
-        if not containerLc then return false end
-        local val = containerLc[key]
-        if val == nil then val = defaultVal or false end
-        return val
-    end
-
-    local function CreateLoadConditionToggle(label, key, defaultVal)
-        local cb = AceGUI:Create("CheckBox")
-        cb:SetLabel(label)
-        cb:SetFullWidth(true)
-        if isContainerConditionActive(key, defaultVal) then
-            cb:SetValue(true)
-            cb:SetDisabled(true)
-        else
-            local val = lc[key]
-            if val == nil then val = defaultVal or false end
-            cb:SetValue(val)
-            cb:SetCallback("OnValueChanged", function(widget, event, newVal)
-                lc[key] = newVal
-                CooldownCompanion:RefreshGroupFrame(groupId)
-            end)
-        end
-        return cb
-    end
-
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Do Not Load When In")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    container:AddChild(heading)
-
-    local instanceCollapsed = CS.collapsedSections["loadconditions_instance"]
-    AttachCollapseButton(heading, instanceCollapsed, function()
-        CS.collapsedSections["loadconditions_instance"] = not CS.collapsedSections["loadconditions_instance"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    if not instanceCollapsed then
-    local conditions = {
-        { key = "raid",          label = "Raid" },
-        { key = "dungeon",       label = "Dungeon" },
-        { key = "delve",         label = "Delve" },
-        { key = "battleground",  label = "Battleground" },
-        { key = "arena",         label = "Arena" },
-        { key = "openWorld",     label = "Open World" },
-        { key = "rested",        label = "Rested Area" },
-        { key = "petBattle",     label = "Pet Battle", default = true },
-        { key = "vehicleUI",    label = "Vehicle / Override UI", default = true },
-    }
-
-    if containerLc then
-        local anyInherited = false
-        for _, cond in ipairs(conditions) do
-            if isContainerConditionActive(cond.key, cond.default) then
-                anyInherited = true
-                break
-            end
-        end
-        if anyInherited then
-            local inheritedLabel = AceGUI:Create("Label")
-            inheritedLabel:SetText("|cff888888Some conditions inherited from group settings.|r")
-            inheritedLabel:SetFullWidth(true)
-            container:AddChild(inheritedLabel)
-        end
-    end
-
-    for _, cond in ipairs(conditions) do
-        container:AddChild(CreateLoadConditionToggle(cond.label, cond.key, cond.default))
-    end
-    end -- not instanceCollapsed
+    AddScopedLoadConditionToggles(container, {
+        target = group,
+        defaults = CooldownCompanion:GetDefaultLoadConditions(),
+        inheritedSources = CooldownCompanion:GetInheritedLoadConditionSources(group),
+        headingText = "Hide This Panel In",
+        headingTextWhenInherited = "Also Hide This Panel In",
+        inheritedCollapsedKey = "loadconditions_panel_inherited",
+        localCollapsedKey = "loadconditions_panel_local",
+        onChanged = function()
+            CooldownCompanion:RefreshGroupFrame(groupId)
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
     -- Specialization heading
     local specHeading = AceGUI:Create("Heading")
@@ -1627,11 +1711,49 @@ local function BuildLoadConditionsTab(container)
     end -- not specCollapsed
 end
 
+local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
+    if not (CS.selectedGroup and buttonData) then return end
+    local groupId = CS.selectedGroup
+    local group = CooldownCompanion.db.profile.groups[groupId]
+    if not group then return end
+
+    AddScopedLoadConditionToggles(container, {
+        target = buttonData,
+        defaults = CooldownCompanion:GetLocalLoadConditionDefaults(),
+        inheritedSources = CooldownCompanion:GetLoadConditionSourcesForGroup(group),
+        headingText = "Hide This Entry In",
+        headingTextWhenInherited = "Also Hide This Entry In",
+        inheritedCollapsedKey = "loadconditions_entry_inherited",
+        localCollapsedKey = "loadconditions_entry_local",
+        preserveMissing = true,
+        onChanged = function()
+            if buttonData.loadConditions and not next(buttonData.loadConditions) then
+                buttonData.loadConditions = nil
+            end
+            CooldownCompanion:RefreshGroupFrame(groupId)
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
+    if CooldownCompanion:HasLocalLoadConditions(buttonData) then
+        local clearBtn = AceGUI:Create("Button")
+        clearBtn:SetText("Clear Entry Load Conditions")
+        clearBtn:SetFullWidth(true)
+        clearBtn:SetCallback("OnClick", function()
+            buttonData.loadConditions = nil
+            CooldownCompanion:RefreshGroupFrame(groupId)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(clearBtn)
+    end
+end
 
 ------------------------------------------------------------------------
 -- EXPORTS
 ------------------------------------------------------------------------
 ST._BuildVisibilitySettings = BuildVisibilitySettings
 ST._BuildLoadConditionsTab = BuildLoadConditionsTab
+ST._BuildEntryLoadConditionsTab = BuildEntryLoadConditionsTab
+ST._AddScopedLoadConditionToggles = AddScopedLoadConditionToggles
 ST._GetConditionDisplayName = GetConditionDisplayName
 ST._GetConditionListContextSuffix = GetConditionListContextSuffix

@@ -1159,9 +1159,11 @@ end
 
 function CooldownCompanion:RenameFolder(folderId, newName)
     local folder = self.db.profile.folders[folderId]
-    if folder then
-        folder.name = newName
-    end
+    if not folder then return false end
+    local normalizedName = tostring(newName or ""):match("^%s*(.-)%s*$")
+    if normalizedName == "" then return false end
+    folder.name = normalizedName
+    return true
 end
 
 function CooldownCompanion:MoveGroupToFolder(id, folderId)

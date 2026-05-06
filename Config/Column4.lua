@@ -32,6 +32,9 @@ local function RefreshColumn4(container)
         if container.containerTabGroup then
             container.containerTabGroup.frame:Hide()
         end
+        if container.folderTabGroup then
+            container.folderTabGroup.frame:Hide()
+        end
         if container.customAuraScroll then
             container.customAuraScroll.frame:Hide()
         end
@@ -78,6 +81,9 @@ local function RefreshColumn4(container)
         if container.containerTabGroup then
             container.containerTabGroup.frame:Hide()
         end
+        if container.folderTabGroup then
+            container.folderTabGroup.frame:Hide()
+        end
         return
     end
 
@@ -97,7 +103,62 @@ local function RefreshColumn4(container)
         if container.containerTabGroup then
             container.containerTabGroup.frame:Hide()
         end
+        if container.folderTabGroup then
+            container.folderTabGroup.frame:Hide()
+        end
         return
+    end
+
+    -- Folder settings: direct folder selection with no child group/panel selected.
+    if CS.selectedFolder and not CS.selectedContainer and not CS.selectedGroup then
+        if container.placeholderLabel then container.placeholderLabel:Hide() end
+        if container.tabGroup then container.tabGroup.frame:Hide() end
+        if container.containerTabGroup then container.containerTabGroup.frame:Hide() end
+
+        if not container.folderTabGroup then
+            local tabGroup = AceGUI:Create("TabGroup")
+            tabGroup:SetLayout("Fill")
+            tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+                CS.selectedFolderTab = tab
+                widget:ReleaseChildren()
+
+                local scroll = AceGUI:Create("ScrollFrame")
+                scroll:SetLayout("List")
+                widget:AddChild(scroll)
+                CS.col4Scroll = scroll
+
+                if tab == "general" then
+                    ST._BuildFolderGeneralTab(scroll, CS.selectedFolder)
+                elseif tab == "loadconditions" then
+                    ST._BuildFolderLoadConditionsTab(scroll, CS.selectedFolder)
+                end
+
+                if CS.browseMode then
+                    ST._DisableAllWidgets(scroll)
+                end
+            end)
+            tabGroup.frame:SetParent(container)
+            tabGroup.frame:ClearAllPoints()
+            tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+            tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+            container.folderTabGroup = tabGroup
+        end
+
+        container.folderTabGroup:SetTabs({
+            { value = "general",         text = "General" },
+            { value = "loadconditions",  text = "Load Conditions" },
+        })
+        container.folderTabGroup.frame:Show()
+        local folderTab = CS.selectedFolderTab
+        if folderTab ~= "general" and folderTab ~= "loadconditions" then
+            folderTab = "general"
+        end
+        container.folderTabGroup:SelectTab(folderTab or "general")
+        return
+    end
+
+    if container.folderTabGroup then
+        container.folderTabGroup.frame:Hide()
     end
 
     -- Group settings: direct group selection with no panel selected.
@@ -151,6 +212,9 @@ local function RefreshColumn4(container)
     -- Hide container tab group when not in container mode
     if container.containerTabGroup then
         container.containerTabGroup.frame:Hide()
+    end
+    if container.folderTabGroup then
+        container.folderTabGroup.frame:Hide()
     end
 
     if not CS.selectedGroup then

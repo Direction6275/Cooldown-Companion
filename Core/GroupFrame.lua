@@ -633,7 +633,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         group = group,
         checkCharVisibility = true,
         checkLoadConditions = true,
-        requireButtons = false,
+        requireButtons = true,
     }) then
         frame:Show()
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
@@ -862,7 +862,7 @@ local function GetButtonDimensions(group)
         if GetEffectiveTextHeight then
             local maxHeight = GetEffectiveTextHeight(style, style.textFormat or "{name}  {status}")
             for _, buttonData in ipairs(group.buttons or {}) do
-                if CooldownCompanion:IsButtonUsable(buttonData) then
+                if CooldownCompanion:IsButtonUsable(buttonData, group) then
                     local effectiveStyle = CooldownCompanion:GetEffectiveStyle(style, buttonData)
                     local fmt = buttonData.textFormat or effectiveStyle.textFormat or "{name}  {status}"
                     local buttonHeight = GetEffectiveTextHeight(effectiveStyle, fmt)
@@ -957,7 +957,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
     local visibleIndex = 0
     for i, buttonData in ipairs(group.buttons) do
-        if self:IsButtonUsable(buttonData) then
+        if self:IsButtonUsable(buttonData, group) then
             visibleIndex = visibleIndex + 1
             local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
             local button

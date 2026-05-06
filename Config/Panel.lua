@@ -1562,6 +1562,7 @@ local function CreateConfigPanel()
         { value = "settings",  text = "Settings" },
         { value = "soundalerts", text = "Sound Alerts" },
         { value = "overrides", text = "Overrides" },
+        { value = "loadconditions", text = "Load Conditions" },
     })
     bsTabGroup:SetLayout("Fill")
 
@@ -1618,6 +1619,8 @@ local function CreateConfigPanel()
             end
         elseif tab == "fallbacks" then
             ST._BuildItemFallbacksTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
+        elseif tab == "loadconditions" then
+            ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         elseif tab == "overrides" then
             ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         end

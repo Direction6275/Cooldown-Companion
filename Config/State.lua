@@ -119,6 +119,7 @@ local PROFILE_BAR_HEIGHT = 36
 ------------------------------------------------------------------------
 ST._configState = {
     -- Selection state
+    selectedFolder = nil,        -- folderId selected in Column 1
     selectedContainer = nil,     -- containerId selected in Column 1
     selectedGroup = nil,         -- panelId (groupId) selected in Column 2 panel list
     selectedButton = nil,
@@ -126,6 +127,7 @@ ST._configState = {
     selectedPanels = {},         -- multi-selected panel IDs (within a container)
     selectedGroups = {},         -- multi-selected container IDs
     selectedTab = "appearance",
+    selectedFolderTab = "general",
     selectedContainerTab = "general",
     buttonSettingsTab = "settings",
     panelSettingsTab = "appearance",
@@ -562,6 +564,7 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
     wipe(CS.selectedButtons)
+    CS.selectedFolder = nil
     CS.selectedContainer = containerId
     CS.selectedGroup = panelId
     CS.selectedButton = buttonIndex
@@ -1035,6 +1038,10 @@ local function ShowConfigShiftTooltip()
             HideConfigShiftTooltip(active)
         end
         return false
+    end
+    local extraLine = widget:GetUserData("cdcShiftTooltipExtraLine")
+    if extraLine then
+        GameTooltip:AddLine(extraLine, 0.7, 0.7, 0.7, true)
     end
     active.tooltipOwner = owner
     active.tooltipShown = true
@@ -1999,6 +2006,7 @@ local function ResetConfigSelection(full)
         ST._CancelAutoAddFlow()
     end
     CooldownCompanion:ClearAllConfigPreviews()
+    CS.selectedFolder = nil
     CS.selectedButton = nil
     wipe(CS.selectedButtons)
     wipe(CS.selectedPanels)

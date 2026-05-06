@@ -386,9 +386,12 @@ local function FormatDiagnosticAsText(diag)
                 indent, i, btn.type or "?", tostring(btn.id or "?"), btn.name or "?")
             local extras = {}
             for k, v in pairs(btn) do
-                if k ~= "type" and k ~= "id" and k ~= "name" then
+                if k ~= "type" and k ~= "id" and k ~= "name" and k ~= "loadConditions" then
                     extras[#extras + 1] = tostring(k) .. "=" .. formatValue(v)
                 end
+            end
+            if btn.loadConditions then
+                extras[#extras + 1] = "entryLoadLocal=" .. dumpKV(btn.loadConditions)
             end
             if btn.auraTracking and not btn.auraUnit then
                 extras[#extras + 1] = "auraUnit=player(default)"
@@ -597,6 +600,9 @@ local function FormatDiagnosticAsText(diag)
                 end
                 if g.heroTalents and next(g.heroTalents) then
                     add("    heroTalents: " .. formatSpecList(g.heroTalents))
+                end
+                if g.loadConditions then
+                    add("    loadLocal: " .. dumpKV(g.loadConditions))
                 end
 
                 -- Panel style
@@ -850,6 +856,9 @@ local function FormatDiagnosticAsText(diag)
                 end
                 if f.heroTalents and next(f.heroTalents) then
                     add(("  heroTalents: %s"):format(formatSpecList(f.heroTalents)))
+                end
+                if f.loadConditions and next(f.loadConditions) then
+                    add(("  loadLocal: %s"):format(dumpKV(f.loadConditions)))
                 end
             end
         end

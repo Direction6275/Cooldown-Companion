@@ -80,6 +80,7 @@ local function BuildButtonSettingsTabs(group, buttonData)
     if GroupUsesTriggerPanelEntries(group) then
         return {
             { value = "settings", text = "Condition" },
+            { value = "loadconditions", text = "Load Conditions" },
             { value = "soundalerts", text = "Sound Alerts" },
         }
     end
@@ -98,6 +99,7 @@ local function BuildButtonSettingsTabs(group, buttonData)
     if not GroupUsesTexturePanelEntries(group) then
         tabs[#tabs + 1] = { value = "overrides", text = "Overrides" }
     end
+    tabs[#tabs + 1] = { value = "loadconditions", text = "Load Conditions" }
 
     return tabs
 end
@@ -1688,6 +1690,7 @@ local function RefreshButtonSettingsColumn()
 
         if GroupUsesTriggerPanelEntries(group)
             and CS.buttonSettingsTab ~= "settings"
+            and CS.buttonSettingsTab ~= "loadconditions"
             and CS.buttonSettingsTab ~= "soundalerts" then
             CS.buttonSettingsTab = "settings"
         elseif GroupUsesTexturePanelEntries(group) and CS.buttonSettingsTab == "overrides" then

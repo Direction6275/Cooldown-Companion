@@ -238,7 +238,7 @@ local defaults = {
         nextGroupId = 1,
         groupContainers = {},  -- [containerId] = { name, order, folderId, enabled, locked, specs, heroTalents, loadConditions, alpha/fade, anchor, ... }
         nextContainerId = 1,
-        folders = {},       -- [folderId] = { name, order, section, manualIcon?, specs?, heroTalents? }
+        folders = {},       -- [folderId] = { name, order, section, manualIcon?, specs?, heroTalents?, loadConditions? }
         nextFolderId = 1,
         globalStyle = {
             buttonSize = 36,
