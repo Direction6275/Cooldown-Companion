@@ -1533,9 +1533,11 @@ local function BuildItemFallbacksTab(scroll, buttonData, infoButtons)
 
     local infoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
         "Item Fallbacks",
-        {"Use arrows to choose which item should appear first.", 1, 1, 1, true},
+        {"Use arrows to set item priority.", 1, 1, 1, true},
+        {"If a higher-priority item is unavailable, the next available fallback can appear instead.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"Fallbacks are used only when higher-priority items are not in your bags.", 1, 1, 1, true},
+        {"Settings apply to whichever item is currently shown from this priority list.", 1, 1, 1, true},
+        {"This includes options like zero-use visibility and desaturation.", 1, 1, 1, true},
     }, infoButtons)
     heading.right:ClearAllPoints()
     heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
