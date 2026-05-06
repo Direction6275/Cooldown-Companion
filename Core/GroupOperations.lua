@@ -17,6 +17,42 @@ local UnitExists = UnitExists
 local UnitCanAttack = UnitCanAttack
 local InCombatLockdown = InCombatLockdown
 
+local LOAD_CONDITION_DEFAULTS = {
+    raid = false,
+    dungeon = false,
+    delve = false,
+    battleground = false,
+    arena = false,
+    openWorld = false,
+    rested = false,
+    petBattle = true,
+    vehicleUI = true,
+}
+
+local LOCAL_LOAD_CONDITION_DEFAULTS = {
+    raid = false,
+    dungeon = false,
+    delve = false,
+    battleground = false,
+    arena = false,
+    openWorld = false,
+    rested = false,
+    petBattle = false,
+    vehicleUI = false,
+}
+
+ST.LOAD_CONDITION_OPTIONS = ST.LOAD_CONDITION_OPTIONS or {
+    { key = "raid",          label = "Raid" },
+    { key = "dungeon",       label = "Dungeon" },
+    { key = "delve",         label = "Delve" },
+    { key = "battleground",  label = "Battleground" },
+    { key = "arena",         label = "Arena" },
+    { key = "openWorld",     label = "Open World" },
+    { key = "rested",        label = "Rested Area" },
+    { key = "petBattle",     label = "Pet Battle", default = true },
+    { key = "vehicleUI",     label = "Vehicle / Override UI", default = true },
+}
+
 -- LibSharedMedia for font/texture selection
 local LSM = LibStub("LibSharedMedia-3.0")
 
@@ -770,6 +806,18 @@ function CooldownCompanion:IsHeroTalentAllowed(group)
     return effectiveHeroTalents[heroSpecId] == true
 end
 
+function CooldownCompanion:GroupHasUsableButtons(group)
+    if not (group and group.buttons and #group.buttons > 0) then
+        return false
+    end
+    for _, buttonData in ipairs(group.buttons) do
+        if self:IsButtonUsable(buttonData, group) then
+            return true
+        end
+    end
+    return false
+end
+
 function CooldownCompanion:IsGroupActive(groupId, opts)
     opts = opts or {}
     local group = opts.group or self.db.profile.groups[groupId]
@@ -788,16 +836,12 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         if container.enabled == false then return false end
         if group.enabled == false then return false end
 
-        -- Container-level load conditions
-        if opts.checkLoadConditions ~= false and not self:CheckLoadConditions(container) then
-            return false
-        end
     else
         -- Legacy path: enabled lives on the group
         if group.enabled == false then return false end
     end
 
-    if opts.requireButtons and (not group.buttons or #group.buttons == 0) then
+    if opts.requireButtons and not self:GroupHasUsableButtons(group) then
         return false
     end
 
@@ -817,9 +861,10 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         return false
     end
 
-    -- Group-level load conditions (for panels, adds to container restrictions)
-    if opts.checkLoadConditions ~= false and not self:CheckLoadConditions(group) then
-        return false
+    if opts.checkLoadConditions ~= false then
+        if not self:IsGroupLoadConditionMet(group) then
+            return false
+        end
     end
 
     return true
@@ -1146,9 +1191,30 @@ function CooldownCompanion:PopulatePanelAnchorTargetDropdown(dropdown, sourceGro
     return eligibleCount
 end
 
-function CooldownCompanion:CheckLoadConditions(group)
-    local lc = group.loadConditions
+function CooldownCompanion:GetDefaultLoadConditions()
+    return CopyTable(LOAD_CONDITION_DEFAULTS)
+end
+
+function CooldownCompanion:GetLocalLoadConditionDefaults()
+    return CopyTable(LOCAL_LOAD_CONDITION_DEFAULTS)
+end
+
+function CooldownCompanion:HasLocalLoadConditions(entity)
+    if not (type(entity) == "table" and type(entity.loadConditions) == "table") then
+        return false
+    end
+    for _, value in pairs(entity.loadConditions) do
+        if value == true then
+            return true
+        end
+    end
+    return false
+end
+
+function CooldownCompanion:EvaluateLoadConditions(loadConditions, defaults)
+    local lc = loadConditions
     if not lc then return true end
+    defaults = defaults or LOAD_CONDITION_DEFAULTS
 
     local instanceType = self._currentInstanceType
 
@@ -1174,16 +1240,82 @@ function CooldownCompanion:CheckLoadConditions(group)
     -- If rested condition is enabled and player is resting, unload
     if lc.rested and self._isResting then return false end
 
-    -- If pet battle condition is enabled and player is in a pet battle, unload
-    -- Default is true (hide during pet battles); nil treated as true since
-    -- AceDB has no per-group metatable defaults for loadConditions sub-keys.
-    if lc.petBattle ~= false and self._inPetBattle then return false end
+    -- If pet battle condition is enabled and player is in a pet battle, unload.
+    -- Group/panel scopes default this on; folder/entry scopes default it off.
+    local petBattle = lc.petBattle
+    if petBattle == nil then petBattle = defaults.petBattle or false end
+    if petBattle and self._inPetBattle then return false end
 
     -- If vehicle/override UI condition is enabled and player is in a vehicle or
-    -- override bar, unload. Default is true; nil treated as true (same as petBattle).
-    if lc.vehicleUI ~= false and self._inVehicleUI then return false end
+    -- override bar, unload. Defaults follow the same scope rules as pet battles.
+    local vehicleUI = lc.vehicleUI
+    if vehicleUI == nil then vehicleUI = defaults.vehicleUI or false end
+    if vehicleUI and self._inVehicleUI then return false end
 
     return true
+end
+
+function CooldownCompanion:CheckLoadConditions(group)
+    return self:EvaluateLoadConditions(group and group.loadConditions)
+end
+
+local function AddLoadConditionSource(sources, label, entity, defaults)
+    if type(entity) == "table" and type(entity.loadConditions) == "table" then
+        sources[#sources + 1] = {
+            label = label,
+            loadConditions = entity.loadConditions,
+            defaults = defaults,
+        }
+    end
+end
+
+function CooldownCompanion:GetInheritedLoadConditionSources(group)
+    local sources = {}
+    local db = self.db and self.db.profile
+    if not (db and group) then return sources end
+
+    local container = self:GetParentContainer(group)
+    if container then
+        local folder = container.folderId and db.folders and db.folders[container.folderId]
+        AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS)
+        AddLoadConditionSource(sources, "Group", container, LOAD_CONDITION_DEFAULTS)
+        return sources
+    end
+
+    local folder = group.folderId and db.folders and db.folders[group.folderId]
+    AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS)
+    return sources
+end
+
+function CooldownCompanion:GetLoadConditionSourcesForGroup(group)
+    local sources = self:GetInheritedLoadConditionSources(group)
+    if group then
+        AddLoadConditionSource(sources, group.parentContainerId and "Panel" or "Group", group, LOAD_CONDITION_DEFAULTS)
+    end
+    return sources
+end
+
+function CooldownCompanion:GetLoadConditionSourcesForEntry(buttonData, group)
+    local sources = self:GetLoadConditionSourcesForGroup(group)
+    AddLoadConditionSource(sources, "Entry", buttonData, LOCAL_LOAD_CONDITION_DEFAULTS)
+    return sources
+end
+
+function CooldownCompanion:EvaluateLoadConditionSources(sources)
+    for _, source in ipairs(sources or {}) do
+        if not self:EvaluateLoadConditions(source.loadConditions, source.defaults) then
+            return false, source.label
+        end
+    end
+    return true, nil
+end
+
+function CooldownCompanion:IsGroupLoadConditionMet(group)
+    return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForGroup(group))
+end
+
+function CooldownCompanion:IsButtonLoadConditionMet(buttonData, group)
+    return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForEntry(buttonData, group))
 end
 
 
@@ -1214,8 +1346,10 @@ local function SpellIDsMatchCanonicalForm(storedSpellID, resolvedSpellID)
         and storedBaseSpellID == resolvedBaseSpellID
 end
 
-function CooldownCompanion:IsButtonUsable(buttonData)
+function CooldownCompanion:IsButtonUsable(buttonData, group)
     if buttonData.enabled == false then return false end
+
+    if not self:IsButtonLoadConditionMet(buttonData, group) then return false end
 
     -- Per-button talent condition: gate visibility on a specific talent node.
     if not self:IsTalentConditionMet(buttonData) then return false end
@@ -1303,7 +1437,7 @@ function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group)
     local usableButtons = {}
     local usableCount = 0
     for _, buttonData in ipairs(group.buttons) do
-        if self:IsButtonUsable(buttonData) then
+        if self:IsButtonUsable(buttonData, group) then
             usableCount = usableCount + 1
             usableButtons[usableCount] = buttonData
         end
@@ -1536,7 +1670,10 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                 self:UnloadGroup(groupId)
             else
                 local frame = self.groupFrames[groupId]
-                if not frame then
+                if frame and self:GroupButtonSetNeedsRebuild(groupId, group) then
+                    self:RefreshGroupFrame(groupId)
+                    frame = self.groupFrames[groupId]
+                elseif not frame then
                     if self:GroupButtonSetNeedsRebuild(groupId, group) then
                         self:DiscardDormantFrame(groupId)
                     end

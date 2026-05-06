@@ -545,7 +545,7 @@ local function GetSavedPreviewButtons(group)
     for _, buttonData in ipairs(group.buttons or {}) do
         if buttonData and buttonData.enabled ~= false then
             fallbackButtons[#fallbackButtons + 1] = { buttonData = buttonData }
-            if not CooldownCompanion.IsButtonUsable or CooldownCompanion:IsButtonUsable(buttonData) then
+            if not CooldownCompanion.IsButtonUsable or CooldownCompanion:IsButtonUsable(buttonData, group) then
                 buttons[#buttons + 1] = { buttonData = buttonData }
             end
         end

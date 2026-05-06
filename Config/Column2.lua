@@ -2438,7 +2438,8 @@ local function RefreshColumn2()
                 for i, buttonData in ipairs(panelButtons) do
                     local entry = AceGUI:Create("InteractiveLabel")
                     CleanRecycledEntry(entry)
-                    local usable = CooldownCompanion:IsButtonUsable(buttonData)
+                    local usable = CooldownCompanion:IsButtonUsable(buttonData, panel)
+                    local loadAllowed = CooldownCompanion:IsButtonLoadConditionMet(buttonData, panel)
 
                     local entryName = IsTriggerPanelGroup(panel)
                         and GetTriggerRowDisplayText(buttonData)
@@ -2453,6 +2454,12 @@ local function RefreshColumn2()
                     elseif buttonData.type == "item" then
                         BindConfigShiftTooltip(entry, "item", buttonData.id, entry.frame, "ANCHOR_RIGHT")
                     end
+                    entry:SetUserData(
+                        "cdcShiftTooltipExtraLine",
+                        CooldownCompanion:HasLocalLoadConditions(buttonData)
+                            and "This entry adds load conditions."
+                            or nil
+                    )
 
                     -- Selection highlighting: only show if this panel is the selected one
                     if CS.selectedGroup == panelId then
@@ -2475,7 +2482,11 @@ local function RefreshColumn2()
                     if not usable and buttonData.enabled ~= false then
                         warnBadge = EnsureRowBadge(rowFrame, "_cdcWarnBtn", "Ping_Marker_Icon_Warning")
                         warnBadge:SetFrameLevel(rowBadgeLevel)
-                        SetRowBadgeTooltip(warnBadge, "Spell/item unavailable", 1, 0.3, 0.3)
+                        if not loadAllowed then
+                            SetRowBadgeTooltip(warnBadge, "Hidden by load conditions", 1, 0.3, 0.3)
+                        else
+                            SetRowBadgeTooltip(warnBadge, "Spell/item unavailable", 1, 0.3, 0.3)
+                        end
                         warnBadge:Show()
                     end
 

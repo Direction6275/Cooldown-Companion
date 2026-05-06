@@ -34,6 +34,18 @@ local LOAD_CONDITIONS_DEFAULTS = {
     vehicleUI = true,
 }
 
+local LOCAL_LOAD_CONDITIONS_DEFAULTS = {
+    raid = false,
+    dungeon = false,
+    delve = false,
+    battleground = false,
+    arena = false,
+    openWorld = false,
+    rested = false,
+    petBattle = false,
+    vehicleUI = false,
+}
+
 local PANEL_DEFAULTS = {
     displayMode = "icons",
     masqueEnabled = false,
@@ -313,7 +325,10 @@ local function GetEntityDefaults(formatVersion)
     return COMPACT_ENTITY_DEFAULTS[formatVersion]
 end
 
-local function GetLoadConditionsDefaults(formatVersion)
+local function GetLoadConditionsDefaults(formatVersion, localScope)
+    if localScope then
+        return LOCAL_LOAD_CONDITIONS_DEFAULTS
+    end
     local entityDefaults = GetEntityDefaults(formatVersion)
     if entityDefaults and entityDefaults.loadConditions then
         return entityDefaults.loadConditions
@@ -368,19 +383,82 @@ local function CompactAnchorIfDefault(anchor, defaultAnchor)
     return CopyTable(anchor)
 end
 
-local function CompactLoadConditions(loadConditions, formatVersion)
+local function CompactLoadConditions(loadConditions, formatVersion, localScope)
     if type(loadConditions) ~= "table" then
         return nil
     end
-    local compact = CompactTableAgainstDefaults(loadConditions, GetLoadConditionsDefaults(formatVersion))
+    local compact = CompactTableAgainstDefaults(loadConditions, GetLoadConditionsDefaults(formatVersion, localScope))
+    if localScope then
+        return compact
+    end
     return compact or {}
 end
 
-local function RehydrateLoadConditions(loadConditions, formatVersion)
+local function RehydrateLoadConditions(loadConditions, formatVersion, localScope)
     if type(loadConditions) ~= "table" then
         return nil
     end
-    return MergeWithDefaults(loadConditions, GetLoadConditionsDefaults(formatVersion))
+    if localScope then
+        local localOnly = {}
+        for key, value in pairs(loadConditions) do
+            if value == true then
+                localOnly[key] = true
+            end
+        end
+        return next(localOnly) and localOnly or nil
+    end
+    return MergeWithDefaults(loadConditions, GetLoadConditionsDefaults(formatVersion, localScope))
+end
+
+local function CompactButton(button, formatVersion)
+    if type(button) ~= "table" then
+        return CopyValue(button)
+    end
+
+    local compact = {}
+    for key, value in pairs(button) do
+        if key == "loadConditions" then
+            local compactLoadConditions = CompactLoadConditions(value, formatVersion, true)
+            if compactLoadConditions then
+                compact.loadConditions = compactLoadConditions
+            end
+        else
+            compact[key] = CopyValue(value)
+        end
+    end
+    return compact
+end
+
+local function RehydrateButton(button, formatVersion)
+    if type(button) ~= "table" then
+        return
+    end
+
+    if button.loadConditions ~= nil then
+        button.loadConditions = RehydrateLoadConditions(button.loadConditions, formatVersion, true)
+    end
+end
+
+local function CompactButtons(buttons, formatVersion)
+    if type(buttons) ~= "table" then
+        return CopyValue(buttons)
+    end
+
+    local compact = {}
+    for index, button in ipairs(buttons) do
+        compact[index] = CompactButton(button, formatVersion)
+    end
+    return compact
+end
+
+local function RehydrateButtons(buttons, formatVersion)
+    if type(buttons) ~= "table" then
+        return
+    end
+
+    for _, button in ipairs(buttons) do
+        RehydrateButton(button, formatVersion)
+    end
 end
 
 local function CompactPanel(group, styleDefaults, panelContainerRef, formatVersion)
@@ -401,6 +479,8 @@ local function CompactPanel(group, styleDefaults, panelContainerRef, formatVersi
             if compactLoadConditions then
                 compact.loadConditions = compactLoadConditions
             end
+        elseif key == "buttons" then
+            compact.buttons = CompactButtons(value, formatVersion)
         elseif key == "anchor" then
             local compactAnchor = CompactAnchorIfDefault(value, BuildPanelDefaultAnchor(panelContainerRef))
             if compactAnchor then
@@ -428,6 +508,7 @@ local function RehydratePanel(group, styleDefaults, panelContainerRef, formatVer
     if group.loadConditions ~= nil then
         group.loadConditions = RehydrateLoadConditions(group.loadConditions, formatVersion)
     end
+    RehydrateButtons(group.buttons, formatVersion)
 
     local defaultAnchor = BuildPanelDefaultAnchor(panelContainerRef)
     if group.anchor == nil and defaultAnchor then
@@ -500,14 +581,19 @@ local function RehydrateContainer(container, formatVersion)
     end
 end
 
-local function CompactFolder(folder)
+local function CompactFolder(folder, formatVersion)
     if type(folder) ~= "table" then
         return nil
     end
 
     local compact = {}
     for key, value in pairs(folder) do
-        if key == "specs" or key == "heroTalents" then
+        if key == "loadConditions" then
+            local compactLoadConditions = CompactLoadConditions(value, formatVersion, true)
+            if compactLoadConditions then
+                compact.loadConditions = compactLoadConditions
+            end
+        elseif key == "specs" or key == "heroTalents" then
             if type(value) == "table" and next(value) ~= nil then
                 compact[key] = CopyTable(value)
             end
@@ -516,6 +602,24 @@ local function CompactFolder(folder)
         end
     end
     return compact
+end
+
+local function RehydrateFolder(folder, formatVersion)
+    if type(folder) ~= "table" then
+        return
+    end
+    if folder.specs and not next(folder.specs) then
+        folder.specs = nil
+    end
+    if folder.heroTalents and not next(folder.heroTalents) then
+        folder.heroTalents = nil
+    end
+    if folder.loadConditions ~= nil then
+        folder.loadConditions = RehydrateLoadConditions(folder.loadConditions, formatVersion, true)
+        if folder.loadConditions and not next(folder.loadConditions) then
+            folder.loadConditions = nil
+        end
+    end
 end
 
 local function CompactScopedSettings(settings, defaultKey, preserveEmptyRoot, formatVersion)
@@ -677,7 +781,7 @@ local function CompactProfile(profile, formatVersion)
             elseif key == "folders" and type(value) == "table" then
                 local compactFolders = {}
                 for folderId, folder in pairs(value) do
-                    compactFolders[folderId] = CompactFolder(folder)
+                    compactFolders[folderId] = CompactFolder(folder, formatVersion)
                 end
                 compact.folders = compactFolders
             else
@@ -744,14 +848,7 @@ local function RehydrateProfile(profile, formatVersion)
 
     if type(profile.folders) == "table" then
         for _, folder in pairs(profile.folders) do
-            if type(folder) == "table" then
-                if folder.specs and not next(folder.specs) then
-                    folder.specs = nil
-                end
-                if folder.heroTalents and not next(folder.heroTalents) then
-                    folder.heroTalents = nil
-                end
-            end
+            RehydrateFolder(folder, formatVersion)
         end
     end
 
@@ -806,10 +903,10 @@ local function CompactEntityPayload(payload, formatVersion)
         end
     end
     if payload.folder then
-        compact.folder = CompactFolder(payload.folder)
+        compact.folder = CompactFolder(payload.folder, formatVersion)
     end
     if type(payload.containers) ~= "table" and payload.type == "folder" then
-        compact.folder = CompactFolder(payload.folder)
+        compact.folder = CompactFolder(payload.folder, formatVersion)
     end
 
     return compact
@@ -834,6 +931,9 @@ local function RehydrateEntityPayload(payload, formatVersion)
     end
     if type(payload.container) == "table" then
         RehydrateContainer(payload.container, formatVersion)
+    end
+    if type(payload.folder) == "table" then
+        RehydrateFolder(payload.folder, formatVersion)
     end
     if type(payload.panels) == "table" then
         local panelContainerRef = payload._originalContainerId
