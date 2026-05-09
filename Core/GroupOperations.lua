@@ -1519,7 +1519,7 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
         end
     end
 
-    self._cooldownsDirty = true
+    self:MarkCooldownsDirty()
 end
 
 function CooldownCompanion:RefreshAllGroupsForSpellAvailability()

@@ -168,14 +168,22 @@ function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInR
     if checksRange then
         outOfRange = not isInRange
     end
+    local changed = false
     self:ForEachButton(function(button, bd)
         if bd.type == "spell" and bd.id == spellIdentifier then
-            button._spellOutOfRange = outOfRange
+            if button._spellOutOfRange ~= outOfRange then
+                button._spellOutOfRange = outOfRange
+                changed = true
+            end
         end
     end)
+    if changed then
+        self:MarkCooldownsDirty()
+    end
 end
 
 function CooldownCompanion:OnBagChanged()
+    self:MarkCooldownsDirty()
     self:RefreshChargeFlags("item")
     self:RefreshConfigPanel()
 end
@@ -467,7 +475,7 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
                     end
                 end
             end)
-            self._cooldownsDirty = true
+            self:MarkCooldownsDirty()
         end)
     end
 end
