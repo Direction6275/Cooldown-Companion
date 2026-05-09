@@ -354,7 +354,7 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
     )
 
     local otherPanelBtn = AceGUI:Create("Button")
-    otherPanelBtn:SetText("Extra")
+    otherPanelBtn:SetText("More")
     otherPanelBtn:SetCallback("OnClick", function()
         local menu = EnsureCol2PanelTypeMenu()
         UIDropDownMenu_Initialize(menu, function(self, level)
