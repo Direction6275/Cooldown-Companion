@@ -465,10 +465,23 @@ local function GetOrCreateResourceAuraEntryConfig(resource, specID)
     return entry
 end
 
-local function IsResourceAuraOverlayEnabledConfig(resource)
+local function IsResourceAuraOverlayEnabledConfig(resource, specID)
     if type(resource) ~= "table" then
         return false
     end
+    if specID then
+        local specData = type(resource.specOverrides) == "table"
+            and (resource.specOverrides[specID] or resource.specOverrides[tostring(specID)])
+            or nil
+        if type(specData) == "table" and type(specData.auraOverlayEnabled) == "boolean" then
+            return specData.auraOverlayEnabled
+        end
+        if type(GetResourceAuraEntryConfig(resource, specID)) == "table" then
+            return true
+        end
+        return false
+    end
+
     if type(resource.auraOverlayEnabled) == "boolean" then
         return resource.auraOverlayEnabled
     end
@@ -756,6 +769,19 @@ local function ClearResourceAuraEntryConfig(powerType, resource, specID)
     if not next(resource.auraOverlayEntries) then
         resource.auraOverlayEntries = nil
     end
+    if type(resource.specOverrides) == "table" then
+        local specData = resource.specOverrides[specID] or resource.specOverrides[tostring(specID)]
+        if type(specData) == "table" then
+            specData.auraOverlayEnabled = nil
+            if not next(specData) then
+                resource.specOverrides[specID] = nil
+                resource.specOverrides[tostring(specID)] = nil
+                if not next(resource.specOverrides) then
+                    resource.specOverrides = nil
+                end
+            end
+        end
+    end
 
     CooldownCompanion:ApplyResourceBars()
     CooldownCompanion:RefreshConfigPanel()
@@ -768,14 +794,23 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
     end
     local res = settings.resources[powerType]
     local auraAdvKey = "rbAuraOverlay_" .. powerType
+    local currentSpecID = GetCurrentConfigSpecID()
+    if not currentSpecID then
+        local specUnavailLabel = AceGUI:Create("Label")
+        specUnavailLabel:SetText("Specialization data not yet available.")
+        specUnavailLabel:SetFullWidth(true)
+        container:AddChild(specUnavailLabel)
+        return
+    end
+    local auraOverlayEnabled = IsResourceAuraOverlayEnabledConfig(res, currentSpecID)
 
     local enableAuraOverlayCb = AceGUI:Create("CheckBox")
     enableAuraOverlayCb:SetLabel("Enable " .. resourceName .. " Aura Overlay")
-    enableAuraOverlayCb:SetValue(IsResourceAuraOverlayEnabledConfig(res))
+    enableAuraOverlayCb:SetValue(auraOverlayEnabled)
     enableAuraOverlayCb:SetFullWidth(true)
     enableAuraOverlayCb:SetCallback("OnValueChanged", function(widget, event, val)
         if not settings.resources[powerType] then settings.resources[powerType] = {} end
-        settings.resources[powerType].auraOverlayEnabled = (val == true)
+        WriteSpecOverrideKey(settings, powerType, currentSpecID, "auraOverlayEnabled", val == true)
 
         if val then
             if type(CooldownCompanion.db.profile.showAdvanced) ~= "table" then
@@ -792,20 +827,10 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
         enableAuraOverlayCb,
         auraAdvKey,
         auraAdvButtons or tabInfoButtons,
-        IsResourceAuraOverlayEnabledConfig(res)
+        auraOverlayEnabled
     )
 
-    if not IsResourceAuraOverlayEnabledConfig(res) or not auraAdvExpanded then
-        return
-    end
-
-    -- Aura overlay fields are shown for the current spec only; switching specs reconfigures the fields
-    local currentSpecID = GetCurrentConfigSpecID()
-    if not currentSpecID then
-        local specUnavailLabel = AceGUI:Create("Label")
-        specUnavailLabel:SetText("Specialization data not yet available.")
-        specUnavailLabel:SetFullWidth(true)
-        container:AddChild(specUnavailLabel)
+    if not auraOverlayEnabled or not auraAdvExpanded then
         return
     end
 
@@ -946,19 +971,22 @@ end
 -- Simple queries
 ------------------------------------------------------------------------
 
-local function IsResourceBarVerticalConfig(settings)
+local function IsResourceBarVerticalConfig(settings, layout)
+    if layout and layout.orientation ~= nil then
+        return layout.orientation == "vertical"
+    end
     return settings and settings.orientation == "vertical"
 end
 
-local function GetResourceThicknessFieldConfig(settings)
-    if IsResourceBarVerticalConfig(settings) then
+local function GetResourceThicknessFieldConfig(settings, layout)
+    if IsResourceBarVerticalConfig(settings, layout) then
         return "barWidth", "Bar Width", "Custom Resource Bar Widths"
     end
     return "barHeight", "Bar Height", "Custom Resource Bar Heights"
 end
 
-local function GetResourceGapFieldConfig(settings)
-    if IsResourceBarVerticalConfig(settings) then
+local function GetResourceGapFieldConfig(settings, layout)
+    if IsResourceBarVerticalConfig(settings, layout) then
         return "verticalXOffset", "X Offset"
     end
     return "yOffset", "Y Offset"

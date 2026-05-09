@@ -1128,10 +1128,22 @@ local function RefreshColumn2()
         if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
         if col2 and col2._infoBtn then col2._infoBtn:Hide() end
         if not col2 then return end
+        if col2._infoBtn and not col2._defaultInfoOnEnter then
+            col2._defaultInfoOnEnter = col2._infoBtn:GetScript("OnEnter")
+            col2._defaultInfoOnLeave = col2._infoBtn:GetScript("OnLeave")
+        end
 
         -- Update column title based on active bar panel tab
         local col2Title = "Customization: Resources"
-        if CS.barPanelTab == "castbar_anchoring" then
+        if CS.barPanelTab == "resource_anchoring" then
+            local specIdx = C_SpecializationInfo.GetSpecialization()
+            if specIdx then
+                local _, specName = C_SpecializationInfo.GetSpecializationInfo(specIdx)
+                if specName and specName ~= "" then
+                    col2Title = "Customization: Resources (" .. ST._GetClassColoredText(specName) .. ")"
+                end
+            end
+        elseif CS.barPanelTab == "castbar_anchoring" then
             col2Title = "Customization: Cast Bar"
         elseif CS.barPanelTab == "frame_anchoring" then
             col2Title = "Customization: Unit Frames"
@@ -1141,6 +1153,18 @@ local function RefreshColumn2()
         HideAllBarWidgets(col2)
 
         if CS.barPanelTab == "resource_anchoring" then
+            if col2._infoBtn then
+                col2._infoBtn:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:AddLine("Resource Customization")
+                    GameTooltip:AddLine("Every control in Styling, Layout, Colors, and Health edits the active specialization's Resource Bar customization.", 1, 1, 1, true)
+                    GameTooltip:Show()
+                end)
+                col2._infoBtn:SetScript("OnLeave", function()
+                    GameTooltip:Hide()
+                end)
+                col2._infoBtn:Show()
+            end
             if not col2._resourceStylingTabGroup then
                 local tabGroup = AceGUI:Create("TabGroup")
                 tabGroup:SetLayout("Fill")
@@ -1182,23 +1206,13 @@ local function RefreshColumn2()
                 col2._resourceStylingTabGroup = tabGroup
             end
 
-            -- Build dynamic "Colors: SpecName" tab text (updates on spec change)
-            local colorsTabText = "Colors"
-            local specIdx = C_SpecializationInfo.GetSpecialization()
-            if specIdx then
-                local _, specName = C_SpecializationInfo.GetSpecializationInfo(specIdx)
-                if specName and specName ~= "" then
-                    colorsTabText = "Colors: " .. ST._GetClassColoredText(specName)
-                end
-            end
-
             local rbSettings = CooldownCompanion:GetResourceBarSettings()
             local health = rbSettings and rbSettings.resources and rbSettings.resources[RESOURCE_HEALTH]
             local healthEnabled = health and health.enabled == true
             local tabs = {
                 { value = "bar_text", text = "Styling" },
                 { value = "positioning", text = "Layout" },
-                { value = "colors", text = colorsTabText },
+                { value = "colors", text = "Colors" },
             }
             if healthEnabled then
                 tabs[#tabs + 1] = { value = "health", text = "Health" }
@@ -1290,7 +1304,11 @@ local function RefreshColumn2()
 
     -- Normal mode: hide bars styling scroll and tab groups
     if col2 then HideAllBarWidgets(col2) end
-    if col2 and col2._infoBtn then col2._infoBtn:Show() end
+    if col2 and col2._infoBtn then
+        if col2._defaultInfoOnEnter then col2._infoBtn:SetScript("OnEnter", col2._defaultInfoOnEnter) end
+        if col2._defaultInfoOnLeave then col2._infoBtn:SetScript("OnLeave", col2._defaultInfoOnLeave) end
+        col2._infoBtn:Show()
+    end
 
     CancelDrag()
     CS.HideAutocomplete()

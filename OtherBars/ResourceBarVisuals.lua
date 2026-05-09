@@ -29,9 +29,14 @@ local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetCurrentSpecID = RB.GetCurrentSpecID
 local GetResourceColors = RB.GetResourceColors
 local GetContinuousTickConfig = RB.GetContinuousTickConfig
+local GetSpecResourceDisplayProfile = RB.GetSpecResourceDisplayProfile
 local GetSafeRGBColor = RB.GetSafeRGBColor
 local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
 local GetResolvedResourceAuraUnit = RB.GetResolvedResourceAuraUnit
+
+local function GetResourceDisplayStyle(settings)
+    return GetSpecResourceDisplayProfile and GetSpecResourceDisplayProfile(settings) or settings
+end
 
 ------------------------------------------------------------------------
 -- Resource Aura Overlay
@@ -130,6 +135,17 @@ local function IsResourceAuraOverlayEnabled(resource)
     if type(resource) ~= "table" then
         return false
     end
+    local specID = GetCurrentSpecID()
+    if specID then
+        local specData = type(resource.specOverrides) == "table"
+            and (resource.specOverrides[specID] or resource.specOverrides[tostring(specID)])
+            or nil
+        if type(specData) == "table" and type(specData.auraOverlayEnabled) == "boolean" then
+            return specData.auraOverlayEnabled
+        end
+        return type(GetResourceAuraEntry(resource, specID)) == "table"
+    end
+
     if type(resource.auraOverlayEnabled) == "boolean" then
         return resource.auraOverlayEnabled
     end
@@ -230,9 +246,10 @@ end
 
 local function LayoutResourceAuraStackSegments(holder, settings, orientationOverride, reverseFillOverride)
     if not holder or not holder.auraStackSegments or not holder.segments then return end
-    local barTexture = CooldownCompanion:FetchStatusBar(settings and settings.barTexture or "Solid")
-    local borderStyle = settings and settings.borderStyle or "pixel"
-    local borderSize = settings and settings.borderSize or 1
+    local style = GetResourceDisplayStyle(settings)
+    local barTexture = CooldownCompanion:FetchStatusBar(style and style.barTexture or "Solid")
+    local borderStyle = style and style.borderStyle or "pixel"
+    local borderSize = style and style.borderSize or 1
     local isVertical
     if orientationOverride == "vertical" then
         isVertical = true
@@ -379,8 +396,9 @@ local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, ma
     local marker = bar.tickMarker
     marker:SetColorTexture(tickColor[1], tickColor[2], tickColor[3], tickColor[4] ~= nil and tickColor[4] or 1)
 
-    local borderStyle = settings and settings.borderStyle or "pixel"
-    local borderSize = (borderStyle == "pixel") and (settings.borderSize or 1) or 0
+    local style = GetResourceDisplayStyle(settings)
+    local borderStyle = style and style.borderStyle or "pixel"
+    local borderSize = (borderStyle == "pixel") and (style and style.borderSize or 1) or 0
     local width = bar:GetWidth() or 0
     local height = bar:GetHeight() or 0
     if width <= 0 or height <= 0 then
@@ -417,7 +435,8 @@ end
 local function ApplyContinuousFillColor(bar, powerType, settings, overrideColor)
     if not bar or not settings then return end
 
-    local texName = settings.barTexture or "Solid"
+    local style = GetResourceDisplayStyle(settings)
+    local texName = style and style.barTexture or "Solid"
     local atlasInfo = (texName == "blizzard_class") and POWER_ATLAS_INFO[powerType] or nil
     if atlasInfo then
         if overrideColor then
@@ -426,7 +445,7 @@ local function ApplyContinuousFillColor(bar, powerType, settings, overrideColor)
             return
         end
 
-        local brightness = settings.classBarBrightness or 1.3
+        local brightness = style and style.classBarBrightness or 1.3
         bar:SetStatusBarColor(1, 1, 1, 1)
         if brightness > 1.0 then
             bar.brightnessOverlay:SetAlpha(brightness - 1.0)
@@ -760,11 +779,12 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, or
     local n = #holder.segments
     if n == 0 then return end
 
-    local barTexture = CooldownCompanion:FetchStatusBar(settings and settings.barTexture or "Solid")
-    local bgColor = settings and settings.backgroundColor or { 0, 0, 0, 0.5 }
-    local borderStyle = settings and settings.borderStyle or "pixel"
-    local borderColor = settings and settings.borderColor or { 0, 0, 0, 1 }
-    local borderSize = settings and settings.borderSize or 1
+    local style = GetResourceDisplayStyle(settings)
+    local barTexture = CooldownCompanion:FetchStatusBar(style and style.barTexture or "Solid")
+    local bgColor = style and style.backgroundColor or { 0, 0, 0, 0.5 }
+    local borderStyle = style and style.borderStyle or "pixel"
+    local borderColor = style and style.borderColor or { 0, 0, 0, 1 }
+    local borderSize = style and style.borderSize or 1
     local isVertical
     if orientationOverride == "vertical" then
         isVertical = true
@@ -892,11 +912,12 @@ end
 local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, settings, halfSegments, orientationOverride, reverseFillOverride)
     if not holder or not holder.segments then return end
 
-    local barTexture = CooldownCompanion:FetchStatusBar(settings and settings.barTexture or "Solid")
-    local bgColor = settings and settings.backgroundColor or { 0, 0, 0, 0.5 }
-    local borderStyle = settings and settings.borderStyle or "pixel"
-    local borderColor = settings and settings.borderColor or { 0, 0, 0, 1 }
-    local borderSize = settings and settings.borderSize or 1
+    local style = GetResourceDisplayStyle(settings)
+    local barTexture = CooldownCompanion:FetchStatusBar(style and style.barTexture or "Solid")
+    local bgColor = style and style.backgroundColor or { 0, 0, 0, 0.5 }
+    local borderStyle = style and style.borderStyle or "pixel"
+    local borderColor = style and style.borderColor or { 0, 0, 0, 1 }
+    local borderSize = style and style.borderSize or 1
     local isVertical
     if orientationOverride == "vertical" then
         isVertical = true

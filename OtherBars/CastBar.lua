@@ -66,16 +66,18 @@ local function GetAttachedCastBarPanelYOffset(settings)
     if not settings or settings.independentAnchorEnabled == true then
         return 0
     end
-    if settings.panelAnchorYOffsetEnabled ~= true then
-        return 0
-    end
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
+    local specLayout = CooldownCompanion:GetSpecLayoutOrder()
+    local castLayout = specLayout and specLayout.castBar
     if not rbSettings
         or rbSettings.enabled ~= true
-        or rbSettings.independentAnchorEnabled == true then
+        or (specLayout and specLayout.independentAnchorEnabled == true) then
         return 0
     end
-    return tonumber(settings.panelAnchorYOffset) or 0
+    if not castLayout or castLayout.panelAnchorYOffsetEnabled ~= true then
+        return 0
+    end
+    return tonumber(castLayout.panelAnchorYOffset) or 0
 end
 
 ------------------------------------------------------------------------
@@ -813,10 +815,17 @@ local function ApplyPosition(cb, s, height)
     local cbLayout = specLayout and specLayout.castBar
     local cbPosition = (cbLayout and cbLayout.position) or "below"
     local cbOrder = (cbLayout and cbLayout.order) or 2000
-    local predecessor = CooldownCompanion:GetResourceBarPredecessor(cbPosition, cbOrder)
+    local predecessor = nil
+    if not (specLayout and specLayout.independentAnchorEnabled == true) then
+        predecessor = CooldownCompanion:GetResourceBarPredecessor(cbPosition, cbOrder)
+    end
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
-    local gap = rbSettings and (rbSettings.yOffset or 3) or 3
-    local barSpacing = rbSettings and (rbSettings.barSpacing or 3.6) or 3.6
+    local gap = specLayout and (specLayout.yOffset or specLayout.verticalXOffset)
+        or (rbSettings and (rbSettings.yOffset or rbSettings.verticalXOffset))
+        or 3
+    local barSpacing = specLayout and specLayout.barSpacing
+        or (rbSettings and rbSettings.barSpacing)
+        or 3.6
     local panelYOffset = GetAttachedCastBarPanelYOffset(s)
 
     if predecessor then

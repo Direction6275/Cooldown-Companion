@@ -70,6 +70,8 @@ local GetPlayerClassID = RB.GetPlayerClassID
 local GetSpecCustomAuraBars = RB.GetSpecCustomAuraBars
 local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
 local GetSpecLayoutOrder = RB.GetSpecLayoutOrder
+local GetResourceDisplayValue = RB.GetResourceDisplayValue
+local GetResourceDisplayConfig = RB.GetResourceDisplayConfig
 local GetAnchorOffset = RB.GetAnchorOffset
 local RoundToTenths = RB.RoundToTenths
 local ClampIndependentDimension = RB.ClampIndependentDimension
@@ -926,11 +928,12 @@ end
 -- Independent Stack Anchoring (entire resource bar stack to UIParent)
 ------------------------------------------------------------------------
 
-local function EnsureIndependentStackConfig(settings)
-    if type(settings.independentAnchor) ~= "table" then
-        settings.independentAnchor = {}
+local function EnsureIndependentStackConfig(settings, layout)
+    layout = layout or GetSpecLayoutOrder(settings) or settings
+    if type(layout.independentAnchor) ~= "table" then
+        layout.independentAnchor = type(settings.independentAnchor) == "table" and CopyTable(settings.independentAnchor) or {}
     end
-    local anchor = settings.independentAnchor
+    local anchor = layout.independentAnchor
     anchor.point = anchor.point or "CENTER"
     anchor.relativePoint = anchor.relativePoint or "CENTER"
     anchor.x = tonumber(anchor.x) or 0
@@ -938,17 +941,22 @@ local function EnsureIndependentStackConfig(settings)
     if anchor.relativeTo ~= nil and type(anchor.relativeTo) ~= "string" then
         anchor.relativeTo = nil
     end
-    settings.independentWidth = ClampIndependentDimension(settings.independentWidth, 200)
+    layout.independentWidth = ClampIndependentDimension(layout.independentWidth or settings.independentWidth, 200)
+    if layout.independentAnchorLocked == nil then
+        layout.independentAnchorLocked = settings.independentAnchorLocked
+    end
 end
 
 local function SaveIndependentStackAnchor(refreshConfig)
     if not independentWrapperFrame then return end
     local settings = GetResourceBarSettings()
     if not settings then return end
-    EnsureIndependentStackConfig(settings)
+    local placementSettings = GetSpecLayoutOrder(settings)
+    if not placementSettings then return end
+    EnsureIndependentStackConfig(settings, placementSettings)
 
     local frame = independentWrapperFrame
-    local anchor = settings.independentAnchor
+    local anchor = placementSettings.independentAnchor
 
     local cx, cy = frame:GetCenter()
     local fw, fh = frame:GetSize()
@@ -1040,14 +1048,17 @@ local function CreateIndependentWrapperFrame()
 
         local function DoNudge()
             local settings = GetResourceBarSettings()
-            if not settings or settings.independentAnchorLocked then return end
+            if not settings then return end
+            local placementSettings = GetSpecLayoutOrder(settings)
+            if not placementSettings then return end
+            if placementSettings.independentAnchorLocked then return end
             frame:AdjustPointsOffset(dir.dx, dir.dy)
             -- Write position per step and update coord label (GroupFrame pattern)
             local _, _, _, x, y = frame:GetPoint()
             if x and y then
-                EnsureIndependentStackConfig(settings)
-                settings.independentAnchor.x = RoundToTenths(x)
-                settings.independentAnchor.y = RoundToTenths(y)
+                EnsureIndependentStackConfig(settings, placementSettings)
+                placementSettings.independentAnchor.x = RoundToTenths(x)
+                placementSettings.independentAnchor.y = RoundToTenths(y)
                 if frame._coordLabel then
                     frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
                 end
@@ -1092,7 +1103,10 @@ local function CreateIndependentWrapperFrame()
     dragHandle:RegisterForDrag("LeftButton")
     dragHandle:SetScript("OnDragStart", function()
         local settings = GetResourceBarSettings()
-        if not settings or settings.independentAnchorLocked then return end
+        if not settings then return end
+        local placementSettings = GetSpecLayoutOrder(settings)
+        if not placementSettings then return end
+        if placementSettings.independentAnchorLocked then return end
         if InCombatLockdown() then return end
         frame:StartMoving()
     end)
@@ -1104,10 +1118,12 @@ local function CreateIndependentWrapperFrame()
         if button ~= "MiddleButton" then return end
         local settings = GetResourceBarSettings()
         if not settings then return end
-        settings.independentAnchorLocked = true
+        local placementSettings = GetSpecLayoutOrder(settings)
+        if not placementSettings then return end
+        placementSettings.independentAnchorLocked = true
         frame:StopMovingOrSizing()
         SaveIndependentStackAnchor(true)
-        UpdateIndependentStackDragState(settings)
+        UpdateIndependentStackDragState(settings, placementSettings)
     end)
 
     frame._dragHandle = dragHandle
@@ -1116,10 +1132,11 @@ local function CreateIndependentWrapperFrame()
     independentWrapperFrame = frame
 end
 
-UpdateIndependentStackDragState = function(settings)
+UpdateIndependentStackDragState = function(settings, placementSettings)
     if not independentWrapperFrame then return end
     local frame = independentWrapperFrame
-    local unlocked = settings and settings.independentAnchorEnabled and not settings.independentAnchorLocked
+    placementSettings = placementSettings or (settings and GetSpecLayoutOrder(settings)) or settings
+    local unlocked = placementSettings and placementSettings.independentAnchorEnabled == true and not placementSettings.independentAnchorLocked
 
     frame:SetMovable(unlocked or false)
 
@@ -1185,7 +1202,7 @@ end
 
 --- Re-anchor drag handle and coord label to frame the bar content.
 --- Called after containers are positioned and RelayoutBars() completes.
-local function UpdateIndependentStackChrome(isVerticalLayout)
+local function UpdateIndependentStackChrome(isVerticalLayout, placementSettings)
     if not independentWrapperFrame then return end
     if not containerFrameAbove or not containerFrameBelow then return end
     local frame = independentWrapperFrame
@@ -1228,10 +1245,11 @@ local function UpdateIndependentStackChrome(isVerticalLayout)
         end
 
         local settings = GetResourceBarSettings()
-        if settings and settings.independentAnchor then
+        placementSettings = placementSettings or (settings and GetSpecLayoutOrder(settings)) or settings
+        if placementSettings and placementSettings.independentAnchor then
             coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(
-                settings.independentAnchor.x or 0,
-                settings.independentAnchor.y or 0
+                placementSettings.independentAnchor.x or 0,
+                placementSettings.independentAnchor.y or 0
             ))
         end
     end
@@ -1295,7 +1313,7 @@ end
 ------------------------------------------------------------------------
 
 function HealthBar.GetConfig(settings)
-    return settings and settings.resources and settings.resources[RESOURCE_HEALTH] or nil
+    return GetResourceDisplayConfig(settings, RESOURCE_HEALTH)
 end
 
 function HealthBar.GetColor(config, key, fallback)
@@ -3049,19 +3067,20 @@ local function PrepareCustomAuraBar(
         )
     end
     if mode == "continuous" then
-        local barTexture = CooldownCompanion:FetchStatusBar(settings.barTexture or "Solid")
+        local barTextureName = GetResourceDisplayValue(settings, "barTexture", "Solid")
+        local barTexture = CooldownCompanion:FetchStatusBar(barTextureName)
         barInfo.frame:SetStatusBarTexture(barTexture)
         barInfo.frame:SetOrientation(customIsVertical and "VERTICAL" or "HORIZONTAL")
         barInfo.frame:SetReverseFill(customIsVertical and customReverseFill or false)
         barInfo.frame._isVertical = customIsVertical
         barInfo.frame._reverseFill = customReverseFill
-        local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
+        local bgc = GetResourceDisplayValue(settings, "backgroundColor", { 0, 0, 0, 0.5 })
         barInfo.frame.bg:ClearAllPoints()
         barInfo.frame.bg:SetAllPoints(barInfo.frame)
         barInfo.frame.bg:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
-        local borderStyle = settings.borderStyle or "pixel"
-        local borderColor = settings.borderColor or { 0, 0, 0, 1 }
-        local borderSize = settings.borderSize or 1
+        local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
+        local borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 })
+        local borderSize = GetResourceDisplayValue(settings, "borderSize", 1)
         if borderStyle == "pixel" then
             ApplyPixelBorders(barInfo.frame.borders, barInfo.frame, borderColor, borderSize)
         else
@@ -3098,9 +3117,9 @@ local function PrepareCustomAuraBar(
 
     if cabConfig.maxStacksGlowEnabled then
         EnsureMaxStacksIndicator(barInfo)
-        local indBorderStyle = settings.borderStyle or "pixel"
-        local indBorderSize = settings.borderSize or 1
-        local indBarTexture = CooldownCompanion:FetchStatusBar(settings.barTexture or "Solid")
+        local indBorderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
+        local indBorderSize = GetResourceDisplayValue(settings, "borderSize", 1)
+        local indBarTexture = CooldownCompanion:FetchStatusBar(GetResourceDisplayValue(settings, "barTexture", "Solid"))
         LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, indBarTexture, indBorderStyle, indBorderSize)
     else
         ClearMaxStacksIndicator(barInfo)
@@ -3308,6 +3327,7 @@ local function EnableLifecycleEvents()
                         if not rebuilt then
                             CooldownCompanion:EvaluateResourceBars()
                         end
+                        CooldownCompanion:RepositionCastBar()
                         CooldownCompanion:UpdateAnchorStacking()
                     end)
                 end
@@ -3416,7 +3436,7 @@ end
 ------------------------------------------------------------------------
 
 local function StyleContinuousBar(bar, powerType, settings)
-    local texName = settings.barTexture or "Solid"
+    local texName = GetResourceDisplayValue(settings, "barTexture", "Solid")
     local isVertical = IsVerticalResourceLayout(settings)
     local reverseFill = IsVerticalFillReversed(settings)
 
@@ -3441,14 +3461,14 @@ local function StyleContinuousBar(bar, powerType, settings)
 
     ApplyContinuousFillColor(bar, powerType, settings, nil)
 
-    local bgc = settings.backgroundColor or { 0, 0, 0, 0.5 }
+    local bgc = GetResourceDisplayValue(settings, "backgroundColor", { 0, 0, 0, 0.5 })
     bar.bg:ClearAllPoints()
     bar.bg:SetAllPoints(bar)
     bar.bg:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
 
-    local borderStyle = settings.borderStyle or "pixel"
-    local borderColor = settings.borderColor or { 0, 0, 0, 1 }
-    local borderSize = settings.borderSize or 1
+    local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
+    local borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 })
+    local borderSize = GetResourceDisplayValue(settings, "borderSize", 1)
 
     if borderStyle == "pixel" then
         ApplyPixelBorders(bar.borders, bar, borderColor, borderSize)
@@ -3457,7 +3477,7 @@ local function StyleContinuousBar(bar, powerType, settings)
     end
 
     -- Text setup
-    local resourceConfig = settings.resources and settings.resources[powerType]
+    local resourceConfig = GetResourceDisplayConfig(settings, powerType)
     local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
     if textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "percent" then
         textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
@@ -3502,7 +3522,7 @@ end
 
 function HealthBar.Style(bar, settings)
     local resourceConfig = HealthBar.GetConfig(settings)
-    local texName = settings.barTexture or "Solid"
+    local texName = GetResourceDisplayValue(settings, "barTexture", "Solid")
     local isVertical = IsVerticalResourceLayout(settings)
     local reverseFill = IsVerticalFillReversed(settings)
     local texture = CooldownCompanion:FetchStatusBar(texName == "blizzard_class" and "Blizzard" or texName)
@@ -3527,9 +3547,9 @@ function HealthBar.Style(bar, settings)
     HealthBar.SetBackgroundAnchors(bar)
     HealthBar.ApplyBackgroundColor(bar, resourceConfig)
 
-    local borderStyle = settings.borderStyle or "pixel"
-    local borderColor = settings.borderColor or { 0, 0, 0, 1 }
-    local borderSize = settings.borderSize or 1
+    local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
+    local borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 })
+    local borderSize = GetResourceDisplayValue(settings, "borderSize", 1)
 
     if borderStyle == "pixel" then
         ApplyPixelBorders(bar.borders, bar, borderColor, borderSize)
@@ -3576,7 +3596,7 @@ local function StyleSegmentedText(holder, powerType, settings)
         return
     end
 
-    local resourceConfig = settings.resources and settings.resources[powerType]
+    local resourceConfig = GetResourceDisplayConfig(settings, powerType)
     local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
     if textFormat ~= "current" and textFormat ~= "current_max" then
         textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
@@ -3632,7 +3652,13 @@ function CooldownCompanion:ApplyResourceBars()
         return
     end
 
-    local isIndependentStack = settings.independentAnchorEnabled == true
+    local layout = GetSpecLayoutOrder(settings)
+    if not layout then
+        self:RevertResourceBars()
+        return
+    end
+
+    local isIndependentStack = layout.independentAnchorEnabled == true
     local groupId, groupFrame
 
     if isIndependentStack then
@@ -3698,21 +3724,20 @@ function CooldownCompanion:ApplyResourceBars()
 
     -- Create or recycle bar frames
     local globalBarThickness = GetResourceGlobalThickness(settings)
-    local barSpacing = settings.barSpacing or 3.6
+    local barSpacing = layout.barSpacing or settings.barSpacing or 3.6
     lastAppliedBarSpacing = barSpacing
     lastAppliedBarThickness = globalBarThickness
     lastAppliedOrientation = GetResourceLayoutOrientation(settings)
-    local segmentGap = settings.segmentGap or 4
+    local segmentGap = layout.segmentGap or settings.segmentGap or 4
     local totalPrimaryLength
     if isIndependentStack then
-        EnsureIndependentStackConfig(settings)
-        totalPrimaryLength = settings.independentWidth
+        EnsureIndependentStackConfig(settings, layout)
+        totalPrimaryLength = layout.independentWidth
     else
         totalPrimaryLength = GetResourcePrimaryLength(groupFrame, settings)
     end
 
     -- Determine side/order for each bar (per-spec layout)
-    local layout = GetSpecLayoutOrder(settings)
     local sideList = {}
     local orderList = {}
     local fallbackOrder = 900
@@ -3769,18 +3794,18 @@ function CooldownCompanion:ApplyResourceBars()
 
         -- Resolve per-bar thickness override
         local effectiveThickness = globalBarThickness
-        if settings.customBarHeights then
+        if layout.customBarHeights then
             local thicknessKey = isVerticalLayout and "barWidth" or "barHeight"
             if powerType >= CUSTOM_AURA_BAR_BASE and powerType < CUSTOM_AURA_BAR_BASE + MAX_CUSTOM_AURA_BARS then
                 local cabIdx = powerType - CUSTOM_AURA_BAR_BASE + 1
-                local cab = customBars[cabIdx]
+                local slotLayout = layout.customAuraBarSlots and layout.customAuraBarSlots[cabIdx]
                 if thicknessKey == "barWidth" then
-                    effectiveThickness = (cab and (cab.barWidth or cab.barHeight)) or globalBarThickness
+                    effectiveThickness = (slotLayout and (slotLayout.barWidth or slotLayout.barHeight)) or globalBarThickness
                 else
-                    effectiveThickness = (cab and (cab.barHeight or cab.barWidth)) or globalBarThickness
+                    effectiveThickness = (slotLayout and (slotLayout.barHeight or slotLayout.barWidth)) or globalBarThickness
                 end
             else
-                local res = settings.resources and settings.resources[powerType]
+                local res = layout.resources and layout.resources[powerType]
                 if thicknessKey == "barWidth" then
                     effectiveThickness = (res and (res.barWidth or res.barHeight)) or globalBarThickness
                 else
@@ -3936,7 +3961,7 @@ function CooldownCompanion:ApplyResourceBars()
     activeResources = filtered
 
     -- Layout: per-element positioning using side containers
-    local gap = GetResourceAnchorGap(settings)
+    local gap = GetResourceAnchorGap(settings, layout)
     lastAppliedPrimaryLength = totalPrimaryLength
 
     -- Anchor containers to anchor reference (group frame or independent wrapper)
@@ -3945,7 +3970,7 @@ function CooldownCompanion:ApplyResourceBars()
     if isIndependentStack then
         -- Independent mode: create wrapper frame at saved position, anchor containers to it
         CreateIndependentWrapperFrame()
-        local anchor = settings.independentAnchor
+        local anchor = layout.independentAnchor
         local relFrame = UIParent
         if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
             relFrame = _G[anchor.relativeTo] or UIParent
@@ -3966,7 +3991,7 @@ function CooldownCompanion:ApplyResourceBars()
             containerFrameBelow:SetPoint("TOP", independentWrapperFrame, "BOTTOM", 0, -gap)
         end
 
-        UpdateIndependentStackDragState(settings)
+        UpdateIndependentStackDragState(settings, layout)
     elseif groupFrame then
         -- Group-relative mode (original behavior)
         HideIndependentWrapperFrame()
@@ -3988,7 +4013,7 @@ function CooldownCompanion:ApplyResourceBars()
 
     -- Anchor drag chrome to frame the content (after containers are sized)
     if isIndependentStack then
-        UpdateIndependentStackChrome(isVerticalLayout)
+        UpdateIndependentStackChrome(isVerticalLayout, layout)
     end
 
     -- Enable OnUpdate
@@ -4019,7 +4044,7 @@ function CooldownCompanion:ApplyResourceBars()
         if #frames > 0 then
             CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, frames)
         end
-    elseif settings.inheritAlpha and groupFrame then
+    elseif layout.inheritAlpha and groupFrame then
         -- Attached + inheriting: sync to group alpha via 30Hz polling
         CooldownCompanion:UnregisterModuleAlpha(rbModuleId)
 
@@ -4775,7 +4800,8 @@ local function InstallHooks()
     hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
         local s = GetResourceBarSettings()
         if not s or not s.enabled then return end
-        if s.independentAnchorEnabled then return end  -- independent stack: width not tied to group
+        local layout = GetSpecLayoutOrder(s)
+        if layout and layout.independentAnchorEnabled then return end  -- independent stack: width not tied to group
         local anchorGroupId = GetEffectiveAnchorGroupId(s)
         if anchorGroupId ~= groupId then return end
         local groupFrame = CooldownCompanion.groupFrames[groupId]
@@ -4791,7 +4817,8 @@ local function InstallHooks()
     hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId)
         local s = GetResourceBarSettings()
         if not s or not s.enabled then return end
-        if s.independentAnchorEnabled then return end  -- independent stack: width not tied to group
+        local layout = GetSpecLayoutOrder(s)
+        if layout and layout.independentAnchorEnabled then return end  -- independent stack: width not tied to group
         local anchorGroupId = GetEffectiveAnchorGroupId(s)
         if anchorGroupId ~= groupId then return end
         local groupFrame = CooldownCompanion.groupFrames[groupId]

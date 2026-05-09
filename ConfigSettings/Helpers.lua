@@ -1063,10 +1063,11 @@ ST._HookSliderEditBox = HookSliderEditBox
 -- config: table with alpha fields (baselineAlpha, forceAlpha*, forceHide*, fade*, etc.)
 -- refreshFn: function called after value changes (typically RefreshConfigPanel)
 -- collapseKey: string key for CS.collapsedSections
--- opts (optional): { onBaselineChanged = fn(val), isGlobal = bool }
+-- opts (optional): { onBaselineChanged = fn(val), isGlobal = bool, disabled = bool }
 local function BuildAlphaControls(container, config, refreshFn, collapseKey, opts)
     opts = opts or {}
     local tabInfoBtns = CS.tabInfoButtons
+    local controlsDisabled = opts.disabled == true
 
     local alphaHeading = AceGUI:Create("Heading")
     alphaHeading:SetText("Alpha")
@@ -1087,7 +1088,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
     baseAlphaSlider:SetSliderValues(0, 1, 0.1)
     baseAlphaSlider:SetValue(config.baselineAlpha or 1)
     baseAlphaSlider:SetFullWidth(true)
+    baseAlphaSlider:SetDisabled(controlsDisabled)
     baseAlphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        if controlsDisabled then return end
         config.baselineAlpha = val
         if opts.onBaselineChanged then
             opts.onBaselineChanged(val)
@@ -1123,7 +1126,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             cb:SetLabel(TriStateLabel(label, val))
             cb:SetValue(val)
             cb:SetFullWidth(true)
+            cb:SetDisabled(controlsDisabled)
             cb:SetCallback("OnValueChanged", function(widget, event, newVal)
+                if controlsDisabled then return end
                 config[visibleKey] = (newVal == true)
                 config[hiddenKey] = (newVal == nil)
                 refreshFn()
@@ -1147,7 +1152,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             travelCb:SetLabel("Include Druid Travel Form (applies to both)")
             travelCb:SetValue(travelVal)
             travelCb:SetFullWidth(true)
+            travelCb:SetDisabled(controlsDisabled)
             travelCb:SetCallback("OnValueChanged", function(widget, event, val)
+                if controlsDisabled then return end
                 config.treatTravelFormAsMounted = val
             end)
             container:AddChild(travelCb)
@@ -1158,7 +1165,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         targetCb:SetLabel(targetVal and "Target Exists - |cff00ff00Fully Visible|r" or "Target Exists")
         targetCb:SetValue(targetVal)
         targetCb:SetFullWidth(true)
+        targetCb:SetDisabled(controlsDisabled)
         targetCb:SetCallback("OnValueChanged", function(widget, event, val)
+            if controlsDisabled then return end
             config.forceAlphaTargetExists = val
             refreshFn()
         end)
@@ -1170,7 +1179,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             enemyOnlyCb:SetLabel("Enemy Only")
             enemyOnlyCb:SetValue(enemyOnlyVal)
             enemyOnlyCb:SetFullWidth(true)
+            enemyOnlyCb:SetDisabled(controlsDisabled)
             enemyOnlyCb:SetCallback("OnValueChanged", function(widget, event, val)
+                if controlsDisabled then return end
                 config.forceAlphaTargetEnemyOnly = val
                 refreshFn()
             end)
@@ -1183,7 +1194,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         mouseoverCb:SetLabel(mouseoverVal and "Mouseover - |cff00ff00Fully Visible|r" or "Mouseover")
         mouseoverCb:SetValue(mouseoverVal)
         mouseoverCb:SetFullWidth(true)
+        mouseoverCb:SetDisabled(controlsDisabled)
         mouseoverCb:SetCallback("OnValueChanged", function(widget, event, val)
+            if controlsDisabled then return end
             config.forceAlphaMouseover = val
             refreshFn()
         end)
@@ -1198,7 +1211,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         fadeCb:SetLabel("Custom Fade Settings")
         fadeCb:SetValue(config.customFade or false)
         fadeCb:SetFullWidth(true)
+        fadeCb:SetDisabled(controlsDisabled)
         fadeCb:SetCallback("OnValueChanged", function(widget, event, val)
+            if controlsDisabled then return end
             config.customFade = val or nil
             refreshFn()
         end)
@@ -1210,7 +1225,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         fadeDelaySlider:SetSliderValues(0, 5, 0.1)
         fadeDelaySlider:SetValue(config.fadeDelay or 1)
         fadeDelaySlider:SetFullWidth(true)
+        fadeDelaySlider:SetDisabled(controlsDisabled)
         fadeDelaySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if controlsDisabled then return end
             config.fadeDelay = val
         end)
         container:AddChild(fadeDelaySlider)
@@ -1220,7 +1237,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         fadeInSlider:SetSliderValues(0, 5, 0.1)
         fadeInSlider:SetValue(config.fadeInDuration or 0.2)
         fadeInSlider:SetFullWidth(true)
+        fadeInSlider:SetDisabled(controlsDisabled)
         fadeInSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if controlsDisabled then return end
             config.fadeInDuration = val
         end)
         container:AddChild(fadeInSlider)
@@ -1230,7 +1249,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         fadeOutSlider:SetSliderValues(0, 5, 0.1)
         fadeOutSlider:SetValue(config.fadeOutDuration or 0.2)
         fadeOutSlider:SetFullWidth(true)
+        fadeOutSlider:SetDisabled(controlsDisabled)
         fadeOutSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if controlsDisabled then return end
             config.fadeOutDuration = val
         end)
         container:AddChild(fadeOutSlider)
