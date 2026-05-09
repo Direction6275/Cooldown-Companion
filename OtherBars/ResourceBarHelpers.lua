@@ -38,16 +38,84 @@ local DRUID_BALANCE_SPEC_ID = 102
 
 local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
 
+local RESOURCE_DISPLAY_PROFILE_KEYS = {
+    "barTexture",
+    "classBarBrightness",
+    "backgroundColor",
+    "borderStyle",
+    "borderColor",
+    "borderSize",
+}
+
+local RESOURCE_TEXT_DISPLAY_KEYS = {
+    "showText",
+    "textFormat",
+    "textFont",
+    "textFontSize",
+    "textFontOutline",
+    "textFontColor",
+    "textAnchor",
+    "textXOffset",
+    "textYOffset",
+    "hideTextAtZero",
+}
+
+local RESOURCE_HEALTH_DISPLAY_KEYS = {
+    "healthBarColor",
+    "healthBarOpacity",
+    "healthBarGradient",
+    "healthBarFullColor",
+    "healthBarHalfColor",
+    "healthBarLowColor",
+    "healthBackgroundColor",
+    "healthBackgroundGradient",
+    "healthBackgroundFullColor",
+    "healthBackgroundHalfColor",
+    "healthBackgroundLowColor",
+    "healthBackgroundOpacity",
+    "showAbsorbs",
+    "showHealAbsorbs",
+    "showIncomingHeals",
+    "showLowHealthAlert",
+    "healthAbsorbColor",
+    "healthAbsorbTexture",
+    "healthHealAbsorbColor",
+    "healthHealAbsorbTexture",
+    "healthIncomingHealColor",
+    "healthIncomingHealTexture",
+    "healthLowHealthAlertColor",
+    "healthLowHealthAlertTexture",
+    "healthLowHealthAlertMissingHealthOnly",
+}
+
 ------------------------------------------------------------------------
 -- Layout Helpers
 ------------------------------------------------------------------------
+
+local GetSpecLayoutOrder
 
 local function GetResourceBarSettings()
     return CooldownCompanion:GetResourceBarSettings()
 end
 
+local function GetResourceLayout(settings)
+    if type(settings) ~= "table" then return nil end
+    return GetSpecLayoutOrder and GetSpecLayoutOrder(settings) or nil
+end
+
+local function GetResourceLayoutValue(settings, key, fallback)
+    local layout = GetResourceLayout(settings)
+    if layout and layout[key] ~= nil then
+        return layout[key]
+    end
+    if settings and settings[key] ~= nil then
+        return settings[key]
+    end
+    return fallback
+end
+
 local function IsVerticalResourceLayout(settings)
-    return settings and settings.orientation == "vertical"
+    return GetResourceLayoutValue(settings, "orientation", "horizontal") == "vertical"
 end
 
 local function GetResourceLayoutOrientation(settings)
@@ -58,7 +126,7 @@ local function IsVerticalFillReversed(settings)
     if not IsVerticalResourceLayout(settings) then
         return false
     end
-    return settings.verticalFillDirection == "top_to_bottom"
+    return GetResourceLayoutValue(settings, "verticalFillDirection", "bottom_to_top") == "top_to_bottom"
 end
 
 local function GetResourcePrimaryLength(groupFrame, settings)
@@ -71,16 +139,27 @@ end
 
 local function GetResourceGlobalThickness(settings)
     if IsVerticalResourceLayout(settings) then
-        return settings.barWidth or settings.barHeight or 12
+        return GetResourceLayoutValue(settings, "barWidth")
+            or GetResourceLayoutValue(settings, "barHeight")
+            or 12
     end
-    return settings.barHeight or settings.barWidth or 12
+    return GetResourceLayoutValue(settings, "barHeight")
+        or GetResourceLayoutValue(settings, "barWidth")
+        or 12
 end
 
-local function GetResourceAnchorGap(settings)
+local function GetResourceAnchorGap(settings, layout)
+    layout = layout or GetResourceLayout(settings)
     if IsVerticalResourceLayout(settings) then
-        return settings.verticalXOffset or settings.yOffset or 3
+        return (layout and (layout.verticalXOffset or layout.yOffset))
+            or settings.verticalXOffset
+            or settings.yOffset
+            or 3
     end
-    return settings.yOffset or settings.verticalXOffset or 3
+    return (layout and (layout.yOffset or layout.verticalXOffset))
+        or settings.yOffset
+        or settings.verticalXOffset
+        or 3
 end
 
 local function GetVerticalSideFallback(horizontalSide)
@@ -262,22 +341,188 @@ local function RefreshResourceAuraUnitForSpell(resourceAuraEntry, spellID)
     return EnsureResourceAuraUnit(resourceAuraEntry, resolvedSpellID, GetDefaultResourceAuraUnit(resolvedSpellID), false)
 end
 
-local function CreateDefaultLayoutOrder()
-    return {
+local function CopyIndependentAnchor(anchor)
+    if type(anchor) ~= "table" then
+        return nil
+    end
+    return CopyTable(anchor)
+end
+
+local function SeedResourceLayoutFromGlobal(layout, settings, cbSettings, specID)
+    if type(layout) ~= "table" or type(settings) ~= "table" then
+        return layout
+    end
+
+    if type(layout.resources) ~= "table" then layout.resources = {} end
+    if type(layout.customAuraBarSlots) ~= "table" then layout.customAuraBarSlots = {} end
+    if type(layout.castBar) ~= "table" then layout.castBar = {} end
+
+    if layout.independentAnchorEnabled == nil then
+        layout.independentAnchorEnabled = settings.independentAnchorEnabled == true
+    end
+    if layout.orientation == nil then layout.orientation = settings.orientation or "horizontal" end
+    if layout.verticalFillDirection == nil then layout.verticalFillDirection = settings.verticalFillDirection or "bottom_to_top" end
+    if layout.barSpacing == nil then layout.barSpacing = settings.barSpacing or 3.6 end
+    if layout.segmentGap == nil then layout.segmentGap = settings.segmentGap or 4 end
+    if layout.barHeight == nil then layout.barHeight = settings.barHeight or 12 end
+    if layout.barWidth == nil then layout.barWidth = settings.barWidth or layout.barHeight or 12 end
+    if layout.customBarHeights == nil then layout.customBarHeights = settings.customBarHeights == true end
+    if layout.inheritAlpha == nil then layout.inheritAlpha = settings.inheritAlpha == true end
+    if layout.yOffset == nil then layout.yOffset = settings.yOffset or 3 end
+    if layout.verticalXOffset == nil then layout.verticalXOffset = settings.verticalXOffset or layout.yOffset or 3 end
+    if layout.independentWidth == nil then layout.independentWidth = settings.independentWidth end
+    if layout.independentAnchorLocked == nil then layout.independentAnchorLocked = settings.independentAnchorLocked end
+    if type(layout.independentAnchor) ~= "table" then
+        layout.independentAnchor = CopyIndependentAnchor(settings.independentAnchor)
+    end
+
+    if type(settings.resources) == "table" then
+        for pt, res in pairs(settings.resources) do
+            if type(res) == "table" and (res.barHeight ~= nil or res.barWidth ~= nil) then
+                if type(layout.resources[pt]) ~= "table" then layout.resources[pt] = {} end
+                local target = layout.resources[pt]
+                if target.barHeight == nil then target.barHeight = res.barHeight end
+                if target.barWidth == nil then target.barWidth = res.barWidth end
+            end
+        end
+    end
+
+    if specID and type(settings.customAuraBars) == "table" and type(settings.customAuraBars[specID]) == "table" then
+        for slotIdx, cab in pairs(settings.customAuraBars[specID]) do
+            if type(cab) == "table" and (cab.barHeight ~= nil or cab.barWidth ~= nil) then
+                if type(layout.customAuraBarSlots[slotIdx]) ~= "table" then layout.customAuraBarSlots[slotIdx] = {} end
+                local target = layout.customAuraBarSlots[slotIdx]
+                if target.barHeight == nil then target.barHeight = cab.barHeight end
+                if target.barWidth == nil then target.barWidth = cab.barWidth end
+            end
+        end
+    end
+
+    if type(cbSettings) ~= "table" and CooldownCompanion.GetCastBarSettings then
+        cbSettings = CooldownCompanion:GetCastBarSettings()
+    end
+    if type(cbSettings) == "table" then
+        if layout.castBar.position == nil then layout.castBar.position = cbSettings.position or "below" end
+        if layout.castBar.order == nil then layout.castBar.order = cbSettings.order or 2000 end
+        if layout.castBar.panelAnchorYOffsetEnabled == nil then
+            layout.castBar.panelAnchorYOffsetEnabled = cbSettings.panelAnchorYOffsetEnabled == true
+        end
+        if layout.castBar.panelAnchorYOffset == nil then
+            layout.castBar.panelAnchorYOffset = cbSettings.panelAnchorYOffset or 0
+        end
+    else
+        if layout.castBar.position == nil then layout.castBar.position = "below" end
+        if layout.castBar.order == nil then layout.castBar.order = 2000 end
+        if layout.castBar.panelAnchorYOffsetEnabled == nil then layout.castBar.panelAnchorYOffsetEnabled = false end
+        if layout.castBar.panelAnchorYOffset == nil then layout.castBar.panelAnchorYOffset = 0 end
+    end
+
+    return layout
+end
+
+local function CreateDefaultLayoutOrder(settings, cbSettings, specID)
+    return SeedResourceLayoutFromGlobal({
         resources = {},
         customAuraBarSlots = {},
         castBar = { position = "below", order = 2000 },
-    }
+    }, settings, cbSettings, specID)
 end
 
-local function GetSpecLayoutOrder(settings)
-    local specID = GetCurrentSpecID()
+GetSpecLayoutOrder = function(settings, specID)
+    if type(settings) ~= "table" then return nil end
+    specID = specID or GetCurrentSpecID()
     if not specID then return nil end
+    specID = tonumber(specID) or specID
     if not settings.layoutOrder then settings.layoutOrder = {} end
-    if not settings.layoutOrder[specID] then
-        settings.layoutOrder[specID] = CreateDefaultLayoutOrder()
+    if type(settings.layoutOrder[specID]) ~= "table" then
+        settings.layoutOrder[specID] = CreateDefaultLayoutOrder(settings, nil, specID)
+    else
+        SeedResourceLayoutFromGlobal(settings.layoutOrder[specID], settings, nil, specID)
     end
     return settings.layoutOrder[specID]
+end
+
+local function SeedResourceDisplayProfileFromGlobal(profile, settings)
+    if type(profile) ~= "table" or type(settings) ~= "table" then
+        return profile
+    end
+    for _, key in ipairs(RESOURCE_DISPLAY_PROFILE_KEYS) do
+        if profile[key] == nil then
+            local value = settings[key]
+            profile[key] = type(value) == "table" and CopyTable(value) or value
+        end
+    end
+    if profile.barTexture == nil then profile.barTexture = "Solid" end
+    if profile.backgroundColor == nil then profile.backgroundColor = { 0, 0, 0, 0.5 } end
+    if profile.borderStyle == nil then profile.borderStyle = "pixel" end
+    if profile.borderColor == nil then profile.borderColor = { 0, 0, 0, 1 } end
+    if profile.borderSize == nil then profile.borderSize = 1 end
+    if profile.classBarBrightness == nil then profile.classBarBrightness = 1.3 end
+    return profile
+end
+
+local function GetSpecResourceDisplayProfile(settings, specID)
+    if type(settings) ~= "table" then return nil end
+    specID = specID or GetCurrentSpecID()
+    if not specID then return nil end
+    specID = tonumber(specID) or specID
+    if type(settings.displayProfiles) ~= "table" then
+        settings.displayProfiles = {}
+    end
+    if type(settings.displayProfiles[specID]) ~= "table" then
+        settings.displayProfiles[specID] = {}
+    end
+    return SeedResourceDisplayProfileFromGlobal(settings.displayProfiles[specID], settings)
+end
+
+local function GetResourceDisplayValue(settings, key, fallback)
+    local profile = GetSpecResourceDisplayProfile(settings)
+    if profile and profile[key] ~= nil then
+        return profile[key]
+    end
+    if settings and settings[key] ~= nil then
+        return settings[key]
+    end
+    return fallback
+end
+
+local function GetResourceDisplayConfig(settings, powerType)
+    local resource = settings and settings.resources and settings.resources[powerType]
+    if type(resource) ~= "table" then return nil end
+    local specID = GetCurrentSpecID()
+    if not specID then return resource end
+    local resolved = CopyTable(resource)
+    local specOverrides = resource.specOverrides
+    local specData = type(specOverrides) == "table" and (specOverrides[specID] or specOverrides[tostring(specID)]) or nil
+    if type(specData) == "table" then
+        for key, value in pairs(specData) do
+            resolved[key] = value
+        end
+    end
+    return resolved
+end
+
+local function GetResourceSpecOverrideTable(settings, powerType, specID, create)
+    if type(settings) ~= "table" or not specID then return nil end
+    specID = tonumber(specID) or specID
+    if type(settings.resources) ~= "table" then
+        if not create then return nil end
+        settings.resources = {}
+    end
+    if type(settings.resources[powerType]) ~= "table" then
+        if not create then return nil end
+        settings.resources[powerType] = {}
+    end
+    local resource = settings.resources[powerType]
+    if type(resource.specOverrides) ~= "table" then
+        if not create then return nil end
+        resource.specOverrides = {}
+    end
+    if type(resource.specOverrides[specID]) ~= "table" then
+        if not create then return nil end
+        resource.specOverrides[specID] = {}
+    end
+    return resource.specOverrides[specID]
 end
 
 local function GetAnchorOffset(point, width, height)
@@ -734,6 +979,13 @@ RB.EnsureResourceAuraUnit = EnsureResourceAuraUnit
 RB.RefreshResourceAuraUnitForSpell = RefreshResourceAuraUnitForSpell
 RB.CreateDefaultLayoutOrder = CreateDefaultLayoutOrder
 RB.GetSpecLayoutOrder = GetSpecLayoutOrder
+RB.SeedResourceLayoutFromGlobal = SeedResourceLayoutFromGlobal
+RB.GetSpecResourceDisplayProfile = GetSpecResourceDisplayProfile
+RB.GetResourceDisplayValue = GetResourceDisplayValue
+RB.GetResourceDisplayConfig = GetResourceDisplayConfig
+RB.GetResourceSpecOverrideTable = GetResourceSpecOverrideTable
+RB.RESOURCE_TEXT_DISPLAY_KEYS = RESOURCE_TEXT_DISPLAY_KEYS
+RB.RESOURCE_HEALTH_DISPLAY_KEYS = RESOURCE_HEALTH_DISPLAY_KEYS
 RB.GetAnchorOffset = GetAnchorOffset
 RB.RoundToTenths = RoundToTenths
 RB.ClampIndependentDimension = ClampIndependentDimension

@@ -508,6 +508,7 @@ local defaults = {
             },
             customAuraBars = {},
             layoutOrder = {},
+            displayProfiles = {},
             textFont = "Friz Quadrata TT",
             textFontSize = 10,
             textFontOutline = "OUTLINE",

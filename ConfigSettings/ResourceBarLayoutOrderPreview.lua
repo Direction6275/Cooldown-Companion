@@ -1096,7 +1096,8 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
 
     local barInfo = frame.previewBarInfo
     local rbSettings = preview.rbSettings
-    local segmentGap = rbSettings.segmentGap or 4
+    local layout = preview.layout
+    local segmentGap = (layout and layout.segmentGap) or rbSettings.segmentGap or 4
 
     if slot.kind == "custom" then
         local customBars = CooldownCompanion:GetSpecCustomAuraBars()
@@ -1984,6 +1985,8 @@ local function CreateLayoutDragModel(preview)
         slotData.setOrder(newOrder)
 
         if oldPos ~= lane.side or oldOrder ~= newOrder then
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RepositionCastBar()
             CooldownCompanion:UpdateAnchorStacking()
             CooldownCompanion:RefreshConfigPanel()
         end
@@ -2001,14 +2004,16 @@ function ST._BuildLayoutOrderPreviewPanel(container)
     preview.host = container
     preview.rbSettings = CooldownCompanion:GetResourceBarSettings()
     preview.cbSettings = CooldownCompanion:GetCastBarSettings()
-    preview.isVerticalLayout = preview.rbSettings and IsResourceBarVerticalConfig(preview.rbSettings) or false
+    local layout = CooldownCompanion:GetSpecLayoutOrder()
+    preview.isVerticalLayout = preview.rbSettings and IsResourceBarVerticalConfig(preview.rbSettings, layout) or false
 
     ResetPreviewState(preview)
+    preview.layout = layout
     HidePreviewMessage(preview)
 
     local rbSettings = preview.rbSettings
     local cbSettings = preview.cbSettings
-    local supportsAttachedResourceBars = rbSettings and not IsTruthyConfigFlag(rbSettings.independentAnchorEnabled)
+    local supportsAttachedResourceBars = rbSettings and not (layout and IsTruthyConfigFlag(layout.independentAnchorEnabled))
     local hasAttachedCastBar = cbSettings and cbSettings.enabled and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled)
     if not supportsAttachedResourceBars and not hasAttachedCastBar then
         SetPreviewMessage(preview, "These settings apply only when Resource Bars or Cast Bar are anchored to a panel.")
@@ -2016,7 +2021,6 @@ function ST._BuildLayoutOrderPreviewPanel(container)
         return
     end
 
-    local layout = CooldownCompanion:GetSpecLayoutOrder()
     if not layout then
         SetPreviewMessage(preview, "Specialization data loading...")
         FinalizePreviewState(preview)

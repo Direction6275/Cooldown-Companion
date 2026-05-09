@@ -98,6 +98,8 @@ local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
 local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
 local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
 local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
+local GetResourceSpecOverrideTable = RB.GetResourceSpecOverrideTable
+local RESOURCE_HEALTH_DISPLAY_KEYS = RB.RESOURCE_HEALTH_DISPLAY_KEYS
 
 local function IsHeroSpecProxyCondition(cond)
     return type(cond) == "table"
@@ -134,11 +136,62 @@ local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
 local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
 local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
 
+local function EnsureResourceLayoutAnchor(settings, layout)
+    if type(layout.independentAnchor) ~= "table" then
+        layout.independentAnchor = type(settings.independentAnchor) == "table" and CopyTable(settings.independentAnchor)
+            or { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
+    end
+    layout.independentAnchor.point = layout.independentAnchor.point or "CENTER"
+    layout.independentAnchor.relativePoint = layout.independentAnchor.relativePoint or "CENTER"
+    layout.independentAnchor.x = tonumber(layout.independentAnchor.x) or 0
+    layout.independentAnchor.y = tonumber(layout.independentAnchor.y) or 0
+    if layout.independentAnchorLocked == nil then
+        layout.independentAnchorLocked = settings.independentAnchorLocked
+    end
+    if layout.independentWidth == nil then
+        layout.independentWidth = settings.independentWidth
+    end
+end
+
 local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
 local StartDragTracking = ST._StartDragTracking
 local GetDragIndicator = ST._GetDragIndicator
 local HideDragIndicator = ST._HideDragIndicator
 local ResetDragIndicatorStyle = ST._ResetDragIndicatorStyle
+
+local function CopyTableValue(value)
+    return type(value) == "table" and CopyTable(value) or value
+end
+
+local function SeedSpecResourceDisplaySettings(settings, powerType, specID, keys)
+    local specSettings = GetResourceSpecOverrideTable(settings, powerType, specID, true)
+    local baseSettings = settings and settings.resources and settings.resources[powerType]
+    if not specSettings then return baseSettings end
+    if type(baseSettings) == "table" and type(keys) == "table" then
+        for _, key in ipairs(keys) do
+            if specSettings[key] == nil and baseSettings[key] ~= nil then
+                specSettings[key] = CopyTableValue(baseSettings[key])
+            end
+        end
+    end
+    return specSettings
+end
+
+local function ReadDisplaySetting(baseSettings, specSettings, key, fallback)
+    if type(specSettings) == "table" and specSettings[key] ~= nil then
+        return specSettings[key]
+    end
+    if type(baseSettings) == "table" and baseSettings[key] ~= nil then
+        return baseSettings[key]
+    end
+    return fallback
+end
+
+CS._SeedSpecResourceDisplaySettings = SeedSpecResourceDisplaySettings
+CS._ReadResourceDisplaySetting = ReadDisplaySetting
+CS._GetCurrentConfigSpecID = GetCurrentConfigSpecID
+CS._GetSpecResourceDisplayProfile = RB.GetSpecResourceDisplayProfile
+CS._ResourceTextDisplayKeys = RB.RESOURCE_TEXT_DISPLAY_KEYS
 
 local HealthResource = { ID = RB.RESOURCE_HEALTH }
 
@@ -184,6 +237,26 @@ function HealthResource.EnsureSettings(settings)
     return settings.resources[HealthResource.ID]
 end
 
+function HealthResource.EnsureDisplaySettings(settings, specID)
+    local base = HealthResource.EnsureSettings(settings)
+    local health = SeedSpecResourceDisplaySettings(settings, HealthResource.ID, specID, RESOURCE_HEALTH_DISPLAY_KEYS)
+    if not health then return base end
+    if health.showAbsorbs == nil then health.showAbsorbs = base.showAbsorbs ~= false end
+    if health.showHealAbsorbs == nil then health.showHealAbsorbs = base.showHealAbsorbs ~= false end
+    if health.showIncomingHeals == nil then health.showIncomingHeals = base.showIncomingHeals ~= false end
+    if health.showLowHealthAlert == nil then health.showLowHealthAlert = base.showLowHealthAlert == true end
+    if health.healthLowHealthAlertMissingHealthOnly == nil then health.healthLowHealthAlertMissingHealthOnly = base.healthLowHealthAlertMissingHealthOnly == true end
+    if type(health.healthAbsorbColor) ~= "table" then health.healthAbsorbColor = CopyTableValue(base.healthAbsorbColor or DEFAULT_HEALTH_ABSORB_COLOR) end
+    if type(health.healthHealAbsorbColor) ~= "table" then health.healthHealAbsorbColor = CopyTableValue(base.healthHealAbsorbColor or DEFAULT_HEALTH_HEAL_ABSORB_COLOR) end
+    if type(health.healthIncomingHealColor) ~= "table" then health.healthIncomingHealColor = CopyTableValue(base.healthIncomingHealColor or DEFAULT_HEALTH_INCOMING_HEAL_COLOR) end
+    if type(health.healthLowHealthAlertColor) ~= "table" then health.healthLowHealthAlertColor = CopyTableValue(base.healthLowHealthAlertColor or DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR) end
+    HealthResource.NormalizeEffectTexture(health, "healthAbsorbTexture")
+    HealthResource.NormalizeEffectTexture(health, "healthHealAbsorbTexture")
+    HealthResource.NormalizeEffectTexture(health, "healthIncomingHealTexture")
+    HealthResource.NormalizeEffectTexture(health, "healthLowHealthAlertTexture")
+    return health
+end
+
 function HealthResource.AddOpacitySlider(container, health, key, label, defaultValue, applyBars)
     local slider = AceGUI:Create("Slider")
     slider:SetLabel(label)
@@ -224,7 +297,15 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
 end
 
 function HealthResource.BuildColorControls(container, settings, applyBars)
-    local health = HealthResource.EnsureSettings(settings)
+    local specID = GetCurrentConfigSpecID()
+    if not specID then
+        local label = AceGUI:Create("Label")
+        label:SetText("Specialization data loading...")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
+    local health = HealthResource.EnsureDisplaySettings(settings, specID)
     local fillGradientEnabled = health.healthBarGradient
     if fillGradientEnabled == nil then
         fillGradientEnabled = DEFAULT_HEALTH_BAR_GRADIENT
@@ -460,7 +541,8 @@ CS.healthResourceUI = HealthResource
 local function BuildResourceBarAnchoringPanel(container)
     local db = CooldownCompanion.db.profile
     local settings = CooldownCompanion:GetResourceBarSettings()
-    local thicknessField, thicknessLabel = GetResourceThicknessFieldConfig(settings)
+    local layout = CooldownCompanion:GetSpecLayoutOrder()
+    local thicknessField, thicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
 
     -- Enable Resource Bars
     local enableCb = AceGUI:Create("CheckBox")
@@ -484,38 +566,15 @@ local function BuildResourceBarAnchoringPanel(container)
     if not settings.enabled then return end
     if not settings.resources then settings.resources = {} end
 
-    local isIndependentStack = settings.independentAnchorEnabled == true
-
-    -- Anchoring Mode dropdown
-    local anchorModeDrop = AceGUI:Create("Dropdown")
-    anchorModeDrop:SetLabel("Anchoring Mode")
-    anchorModeDrop:SetList({
-        attached = "Attached to Panel",
-        independent = "Independent",
-    }, { "attached", "independent" })
-    anchorModeDrop:SetValue(isIndependentStack and "independent" or "attached")
-    anchorModeDrop:SetFullWidth(true)
-    anchorModeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.independentAnchorEnabled = (val == "independent")
-        CooldownCompanion:EvaluateResourceBars()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(anchorModeDrop)
-
-    -- Inherit panel alpha (only when attached to panel)
-    if not isIndependentStack then
-        local inheritCb = AceGUI:Create("CheckBox")
-        inheritCb:SetLabel("Inherit panel alpha")
-        inheritCb:SetValue(settings.inheritAlpha)
-        inheritCb:SetFullWidth(true)
-        inheritCb:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.inheritAlpha = val
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(inheritCb)
+    if not layout then
+        local label = AceGUI:Create("Label")
+        label:SetText("Specialization data loading...")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
     end
+
+    local isIndependentStack = layout.independentAnchorEnabled == true
 
     -- Preview toggle (ephemeral)
     local previewCb = AceGUI:Create("CheckBox")
@@ -600,31 +659,36 @@ local function BuildResourceBarAnchoringPanel(container)
             end)
             container:AddChild(resCb)
 
-            if settings.customBarHeights then
+            if layout.customBarHeights then
                 local advExpanded = AddAdvancedToggle(resCb, "rbHeight_" .. pt, rbHeightAdvBtns, enabled)
                 if advExpanded then
+                    if type(layout.resources[pt]) ~= "table" then
+                        layout.resources[pt] = {}
+                    end
+                    local resLayout = layout.resources[pt]
                     local resHeightSlider = AceGUI:Create("Slider")
                     resHeightSlider:SetLabel(thicknessLabel)
                     resHeightSlider:SetSliderValues(4, 40, 0.1)
                     if thicknessField == "barWidth" then
                         resHeightSlider:SetValue(
-                            settings.resources[pt].barWidth or settings.resources[pt].barHeight
-                            or settings.barWidth or settings.barHeight or 12
+                            resLayout.barWidth or resLayout.barHeight
+                            or layout.barWidth or layout.barHeight or settings.barWidth or settings.barHeight or 12
                         )
                     else
                         resHeightSlider:SetValue(
-                            settings.resources[pt].barHeight or settings.resources[pt].barWidth
-                            or settings.barHeight or settings.barWidth or 12
+                            resLayout.barHeight or resLayout.barWidth
+                            or layout.barHeight or layout.barWidth or settings.barHeight or settings.barWidth or 12
                         )
                     end
                     resHeightSlider:SetFullWidth(true)
                     local capturedPt = pt
                     resHeightSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        if not settings.resources[capturedPt] then
-                            settings.resources[capturedPt] = {}
+                        if not layout.resources[capturedPt] then
+                            layout.resources[capturedPt] = {}
                         end
-                        settings.resources[capturedPt][thicknessField] = val
+                        layout.resources[capturedPt][thicknessField] = val
                         CooldownCompanion:ApplyResourceBars()
+                        CooldownCompanion:RepositionCastBar()
                         CooldownCompanion:UpdateAnchorStacking()
                     end)
                     container:AddChild(resHeightSlider)
@@ -634,19 +698,21 @@ local function BuildResourceBarAnchoringPanel(container)
     end
 
     -- ============ Alpha Section ============
-    if isIndependentStack or not settings.inheritAlpha then
-        local group = db.groups[CS.selectedGroup]
-        BuildAlphaControls(container, settings, function()
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end, "rb_alpha", { isGlobal = group and group.isGlobal })
-    end
+    local group = db.groups[CS.selectedGroup]
+    BuildAlphaControls(container, settings, function()
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:RefreshConfigPanel()
+    end, "rb_alpha", {
+        isGlobal = group and group.isGlobal,
+        disabled = not isIndependentStack and layout.inheritAlpha == true,
+    })
 end
 
 ------------------------------------------------------------------------
 
 local function BuildResourceBarPositioningPanel(container)
     local settings = CooldownCompanion:GetResourceBarSettings()
+    local layout = CooldownCompanion:GetSpecLayoutOrder()
 
     if not settings.enabled then
         local label = AceGUI:Create("Label")
@@ -656,9 +722,35 @@ local function BuildResourceBarPositioningPanel(container)
         return
     end
 
-    local isVerticalLayout = IsResourceBarVerticalConfig(settings)
-    local gapField, gapLabel = GetResourceGapFieldConfig(settings)
-    local isIndependentStack = settings.independentAnchorEnabled == true
+    if not layout then
+        local label = AceGUI:Create("Label")
+        label:SetText("Specialization data loading...")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
+
+    local isVerticalLayout = IsResourceBarVerticalConfig(settings, layout)
+    local gapField, gapLabel = GetResourceGapFieldConfig(settings, layout)
+    local isIndependentStack = layout.independentAnchorEnabled == true
+
+    -- Anchoring Mode dropdown
+    local anchorModeDrop = AceGUI:Create("Dropdown")
+    anchorModeDrop:SetLabel("Anchoring Mode")
+    anchorModeDrop:SetList({
+        attached = "Attached to Panel",
+        independent = "Independent",
+    }, { "attached", "independent" })
+    anchorModeDrop:SetValue(isIndependentStack and "independent" or "attached")
+    anchorModeDrop:SetFullWidth(true)
+    anchorModeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        layout.independentAnchorEnabled = (val == "independent")
+        CooldownCompanion:EvaluateResourceBars()
+        CooldownCompanion:RepositionCastBar()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(anchorModeDrop)
 
     -- Bar Orientation
     local orientDrop = AceGUI:Create("Dropdown")
@@ -667,11 +759,12 @@ local function BuildResourceBarPositioningPanel(container)
         horizontal = "Horizontal",
         vertical = "Vertical",
     }, { "horizontal", "vertical" })
-    orientDrop:SetValue(settings.orientation or "horizontal")
+    orientDrop:SetValue(layout.orientation or settings.orientation or "horizontal")
     orientDrop:SetFullWidth(true)
     orientDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.orientation = val
+        layout.orientation = val
         CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:RepositionCastBar()
         CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -684,12 +777,13 @@ local function BuildResourceBarPositioningPanel(container)
         bottom_to_top = "Bottom to Top",
         top_to_bottom = "Top to Bottom",
     }, { "bottom_to_top", "top_to_bottom" })
-    fillDirDrop:SetValue(settings.verticalFillDirection or "bottom_to_top")
+    fillDirDrop:SetValue(layout.verticalFillDirection or settings.verticalFillDirection or "bottom_to_top")
     fillDirDrop:SetDisabled(not isVerticalLayout)
     fillDirDrop:SetFullWidth(true)
     fillDirDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.verticalFillDirection = val
+        layout.verticalFillDirection = val
         CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:RepositionCastBar()
         CooldownCompanion:UpdateAnchorStacking()
     end)
     container:AddChild(fillDirDrop)
@@ -698,11 +792,12 @@ local function BuildResourceBarPositioningPanel(container)
     local spacingSlider = AceGUI:Create("Slider")
     spacingSlider:SetLabel("Bar Spacing")
     spacingSlider:SetSliderValues(0, 20, 0.1)
-    spacingSlider:SetValue(settings.barSpacing or 3.6)
+    spacingSlider:SetValue(layout.barSpacing or settings.barSpacing or 3.6)
     spacingSlider:SetFullWidth(true)
     spacingSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.barSpacing = val
+        layout.barSpacing = val
         CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:RepositionCastBar()
         CooldownCompanion:UpdateAnchorStacking()
     end)
     container:AddChild(spacingSlider)
@@ -711,16 +806,16 @@ local function BuildResourceBarPositioningPanel(container)
     local segGapSlider = AceGUI:Create("Slider")
     segGapSlider:SetLabel("Segment Gap")
     segGapSlider:SetSliderValues(0, 20, 0.1)
-    segGapSlider:SetValue(settings.segmentGap or 4)
+    segGapSlider:SetValue(layout.segmentGap or settings.segmentGap or 4)
     segGapSlider:SetFullWidth(true)
     segGapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.segmentGap = val
+        layout.segmentGap = val
         CooldownCompanion:ApplyResourceBars()
     end)
     container:AddChild(segGapSlider)
 
     -- Bar Height + Custom Heights
-    ST._BuildBarHeightControls(container, settings)
+    ST._BuildBarHeightControls(container, settings, layout)
 
     -- ============ Anchor Settings (independent mode only) ============
     if isIndependentStack then
@@ -739,17 +834,15 @@ local function BuildResourceBarPositioningPanel(container)
         end)
 
         if not stackPosCollapsed then
-            if type(settings.independentAnchor) ~= "table" then
-                settings.independentAnchor = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
-            end
-            local anchor = settings.independentAnchor
+            EnsureResourceLayoutAnchor(settings, layout)
+            local anchor = layout.independentAnchor
 
             local unlockCb = AceGUI:Create("CheckBox")
             unlockCb:SetLabel("Unlock Placement")
-            unlockCb:SetValue(not settings.independentAnchorLocked)
+            unlockCb:SetValue(not layout.independentAnchorLocked)
             unlockCb:SetFullWidth(true)
             unlockCb:SetCallback("OnValueChanged", function(widget, event, val)
-                settings.independentAnchorLocked = not val
+                layout.independentAnchorLocked = not val
                 CooldownCompanion:ApplyResourceBars()
             end)
             container:AddChild(unlockCb)
@@ -757,10 +850,10 @@ local function BuildResourceBarPositioningPanel(container)
             local widthSlider = AceGUI:Create("Slider")
             widthSlider:SetLabel("Bar Width")
             widthSlider:SetSliderValues(20, 600, 1)
-            widthSlider:SetValue(settings.independentWidth or 200)
+            widthSlider:SetValue(layout.independentWidth or settings.independentWidth or 200)
             widthSlider:SetFullWidth(true)
             widthSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                settings.independentWidth = val
+                layout.independentWidth = val
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:UpdateAnchorStacking()
             end)
@@ -825,23 +918,25 @@ local function BuildResourceBarPositioningPanel(container)
             gapSlider:SetLabel(gapLabel)
             gapSlider:SetSliderValues(-100, 100, 0.1)
             if gapField == "verticalXOffset" then
-                gapSlider:SetValue(settings.verticalXOffset or settings.yOffset or 3)
+                gapSlider:SetValue(layout.verticalXOffset or layout.yOffset or settings.verticalXOffset or settings.yOffset or 3)
             else
-                gapSlider:SetValue(settings.yOffset or settings.verticalXOffset or 3)
+                gapSlider:SetValue(layout.yOffset or layout.verticalXOffset or settings.yOffset or settings.verticalXOffset or 3)
             end
             gapSlider:SetFullWidth(true)
             gapSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                settings[gapField] = val
+                layout[gapField] = val
                 CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RepositionCastBar()
                 CooldownCompanion:UpdateAnchorStacking()
             end)
             container:AddChild(gapSlider)
 
             if ST._BuildAttachedCastBarOffsetControls then
-                ST._BuildAttachedCastBarOffsetControls(container)
+                ST._BuildAttachedCastBarOffsetControls(container, layout)
             end
         end
     end
+
 end
 
 ------------------------------------------------------------------------
@@ -856,33 +951,49 @@ local function GetResourceBarTextureOptions()
 end
 
 -- Extracted to its own function to keep upvalue counts manageable in the caller.
-local function BuildBarHeightControls(container, settings)
-    local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings)
+local function BuildBarHeightControls(container, settings, layout)
+    layout = layout or settings
+    local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
 
     local hSlider = AceGUI:Create("Slider")
     hSlider:SetLabel(thicknessLabel)
     hSlider:SetSliderValues(4, 40, 0.1)
     if thicknessField == "barWidth" then
-        hSlider:SetValue(settings.barWidth or settings.barHeight or 12)
+        hSlider:SetValue(layout.barWidth or layout.barHeight or settings.barWidth or settings.barHeight or 12)
     else
-        hSlider:SetValue(settings.barHeight or settings.barWidth or 12)
+        hSlider:SetValue(layout.barHeight or layout.barWidth or settings.barHeight or settings.barWidth or 12)
     end
     hSlider:SetFullWidth(true)
     hSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        settings[thicknessField] = val
+        layout[thicknessField] = val
         CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:RepositionCastBar()
         CooldownCompanion:UpdateAnchorStacking()
     end)
-    hSlider:SetDisabled(settings.customBarHeights or false)
+    hSlider:SetDisabled(layout.customBarHeights or false)
     container:AddChild(hSlider)
+
+    if layout.independentAnchorEnabled ~= true then
+        local inheritCb = AceGUI:Create("CheckBox")
+        inheritCb:SetLabel("Inherit panel alpha")
+        inheritCb:SetValue(layout.inheritAlpha)
+        inheritCb:SetFullWidth(true)
+        inheritCb:SetCallback("OnValueChanged", function(widget, event, val)
+            layout.inheritAlpha = val == true
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(inheritCb)
+    end
 
     local customHeightsCb = AceGUI:Create("CheckBox")
     customHeightsCb:SetLabel(customThicknessLabel)
-    customHeightsCb:SetValue(settings.customBarHeights or false)
+    customHeightsCb:SetValue(layout.customBarHeights or false)
     customHeightsCb:SetFullWidth(true)
     customHeightsCb:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.customBarHeights = val
+        layout.customBarHeights = val
         CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:RepositionCastBar()
         CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -915,6 +1026,15 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
     local applyBars = function() CooldownCompanion:ApplyResourceBars() end
     local healthResourceID = -1 -- Keep aligned with RB.RESOURCE_HEALTH without adding an upvalue here.
+    local displaySpecID = CS._GetCurrentConfigSpecID()
+    local displayProfile = displaySpecID and CS._GetSpecResourceDisplayProfile(settings, displaySpecID) or nil
+    if not displaySpecID or not displayProfile then
+        local label = AceGUI:Create("Label")
+        label:SetText("Specialization data loading...")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
     local function isHealthTextFormat(textFormat)
         return textFormat == "percent"
             or textFormat == "percent_no_sign"
@@ -929,10 +1049,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     local texDrop = AceGUI:Create("Dropdown")
     texDrop:SetLabel("Bar Texture")
     texDrop:SetList(GetResourceBarTextureOptions())
-    texDrop:SetValue(settings.barTexture or "Solid")
+    texDrop:SetValue(displayProfile.barTexture or settings.barTexture or "Solid")
     texDrop:SetFullWidth(true)
     texDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.barTexture = val
+        displayProfile.barTexture = val
         CooldownCompanion:ApplyResourceBars()
         -- Defer panel rebuild to next frame so it doesn't interfere with current callback
         C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
@@ -940,21 +1060,21 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     container:AddChild(texDrop)
 
     -- Brightness slider (only for Blizzard Class texture)
-    if settings.barTexture == "blizzard_class" then
+    if (displayProfile.barTexture or settings.barTexture) == "blizzard_class" then
         local brightSlider = AceGUI:Create("Slider")
         brightSlider:SetLabel("Class Texture Brightness")
         brightSlider:SetSliderValues(0.5, 2.0, 0.1)
-        brightSlider:SetValue(settings.classBarBrightness or 1.3)
+        brightSlider:SetValue(displayProfile.classBarBrightness or settings.classBarBrightness or 1.3)
         brightSlider:SetFullWidth(true)
         brightSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.classBarBrightness = val
+            displayProfile.classBarBrightness = val
             CooldownCompanion:ApplyResourceBars()
         end)
         container:AddChild(brightSlider)
     end
 
     -- Resource Background Color
-    AddColorPicker(container, settings, "backgroundColor", "Resource Background Color", { 0, 0, 0, 0.5 }, true, applyBars)
+    AddColorPicker(container, displayProfile, "backgroundColor", "Resource Background Color", { 0, 0, 0, 0.5 }, true, applyBars)
 
     -- Border Style
     local borderDrop = AceGUI:Create("Dropdown")
@@ -963,26 +1083,26 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
         pixel = "Pixel",
         none = "None",
     }, { "pixel", "none" })
-    borderDrop:SetValue(settings.borderStyle or "pixel")
+    borderDrop:SetValue(displayProfile.borderStyle or settings.borderStyle or "pixel")
     borderDrop:SetFullWidth(true)
     borderDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        settings.borderStyle = val
+        displayProfile.borderStyle = val
         CooldownCompanion:ApplyResourceBars()
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(borderDrop)
 
-    if settings.borderStyle == "pixel" then
-        AddColorPicker(container, settings, "borderColor", "Border Color", { 0, 0, 0, 1 }, true, applyBars)
+    if (displayProfile.borderStyle or settings.borderStyle or "pixel") == "pixel" then
+        AddColorPicker(container, displayProfile, "borderColor", "Border Color", { 0, 0, 0, 1 }, true, applyBars)
 
         local borderSizeSlider = AceGUI:Create("Slider")
         borderSizeSlider:SetLabel("Border Size")
         borderSizeSlider:SetSliderValues(0, 4, 0.1)
-        borderSizeSlider:SetValue(settings.borderSize or 1)
+        borderSizeSlider:SetValue(displayProfile.borderSize or settings.borderSize or 1)
         borderSizeSlider:SetIsPercent(false)
         borderSizeSlider:SetFullWidth(true)
         borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.borderSize = val
+            displayProfile.borderSize = val
             CooldownCompanion:ApplyResourceBars()
         end)
         container:AddChild(borderSizeSlider)
@@ -1021,15 +1141,17 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
             elseif not settings.resources[capturedPt] then
                 settings.resources[capturedPt] = {}
             end
-            local resSettings = settings.resources[capturedPt]
+            local baseSettings = settings.resources[capturedPt]
+            local resSettings = CS._SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, CS._ResourceTextDisplayKeys) or baseSettings
             local name = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
 
             local showTextEnabled
+            local showTextValue = CS._ReadResourceDisplaySetting(baseSettings, resSettings, "showText", nil)
             if isHealthResource or isSegmentedResource then
                 -- Segmented resources and Health are off by default unless explicitly enabled.
-                showTextEnabled = resSettings.showText == true
+                showTextEnabled = showTextValue == true
             else
-                showTextEnabled = resSettings.showText ~= false
+                showTextEnabled = showTextValue ~= false
             end
 
             local cb = AceGUI:Create("CheckBox")
@@ -1037,21 +1159,15 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
             cb:SetValue(showTextEnabled)
             cb:SetFullWidth(true)
             cb:SetCallback("OnValueChanged", function(widget, event, val)
-                if not settings.resources[capturedPt] then settings.resources[capturedPt] = {} end
                 if isHealthResource then
-                    local healthSettings = settings.resources[capturedPt]
-                    healthSettings.showText = val and true or false
-                    if not isHealthTextFormat(healthSettings.textFormat) then
-                        healthSettings.textFormat = "percent"
+                    resSettings.showText = val and true or false
+                    if not isHealthTextFormat(resSettings.textFormat) then
+                        resSettings.textFormat = "percent"
                     end
                 elseif isSegmentedResource then
-                    settings.resources[capturedPt].showText = val and true or nil
+                    resSettings.showText = val == true
                 else
-                    if val then
-                        settings.resources[capturedPt].showText = nil
-                    else
-                        settings.resources[capturedPt].showText = false
-                    end
+                    resSettings.showText = val == true
                 end
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:RefreshConfigPanel()
@@ -1096,7 +1212,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     textFormatOrder = { "current", "current_max", "percent" }
                 end
                 textFormatDrop:SetList(textFormatOptions, textFormatOrder)
-                local textFormatValue = resSettings.textFormat or (isHealthResource and "percent" or DEFAULT_RESOURCE_TEXT_FORMAT)
+                local textFormatValue = CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textFormat", isHealthResource and "percent" or DEFAULT_RESOURCE_TEXT_FORMAT)
                 if isHealthResource then
                     if not isHealthTextFormat(textFormatValue) then
                         textFormatValue = "percent"
@@ -1115,21 +1231,21 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 textFormatDrop:SetCallback("OnValueChanged", function(widget, event, val)
                     if isHealthResource then
                         if isHealthTextFormat(val) then
-                            settings.resources[capturedPt].textFormat = val
+                            resSettings.textFormat = val
                         else
-                            settings.resources[capturedPt].textFormat = "percent"
+                            resSettings.textFormat = "percent"
                         end
                     elseif isSegmentedResource then
                         if val == "current" or val == "current_max" then
-                            settings.resources[capturedPt].textFormat = val
+                            resSettings.textFormat = val
                         else
-                            settings.resources[capturedPt].textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
+                            resSettings.textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
                         end
                     else
                         if val == "current" or val == "current_max" or val == "percent" then
-                            settings.resources[capturedPt].textFormat = val
+                            resSettings.textFormat = val
                         else
-                            settings.resources[capturedPt].textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
+                            resSettings.textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
                         end
                     end
                     CooldownCompanion:ApplyResourceBars()
@@ -1139,10 +1255,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 local fontDrop = AceGUI:Create("Dropdown")
                 fontDrop:SetLabel("Font")
                 CS.SetupFontDropdown(fontDrop)
-                fontDrop:SetValue(resSettings.textFont or DEFAULT_RESOURCE_TEXT_FONT)
+                fontDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textFont", DEFAULT_RESOURCE_TEXT_FONT))
                 fontDrop:SetFullWidth(true)
                 fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                    settings.resources[capturedPt].textFont = val
+                    resSettings.textFont = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(fontDrop)
@@ -1150,10 +1266,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 local sizeDrop = AceGUI:Create("Slider")
                 sizeDrop:SetLabel("Font Size")
                 sizeDrop:SetSliderValues(6, 24, 1)
-                sizeDrop:SetValue(resSettings.textFontSize or DEFAULT_RESOURCE_TEXT_SIZE)
+                sizeDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textFontSize", DEFAULT_RESOURCE_TEXT_SIZE))
                 sizeDrop:SetFullWidth(true)
                 sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                    settings.resources[capturedPt].textFontSize = val
+                    resSettings.textFontSize = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(sizeDrop)
@@ -1161,15 +1277,15 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 local outlineDrop = AceGUI:Create("Dropdown")
                 outlineDrop:SetLabel("Outline")
                 outlineDrop:SetList(CS.outlineOptions)
-                outlineDrop:SetValue(resSettings.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
+                outlineDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
                 outlineDrop:SetFullWidth(true)
                 outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                    settings.resources[capturedPt].textFontOutline = val
+                    resSettings.textFontOutline = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(outlineDrop)
 
-                AddColorPicker(container, settings.resources[capturedPt], "textFontColor", "Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, applyBars)
+                AddColorPicker(container, resSettings, "textFontColor", "Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, applyBars)
 
                 local textAnchorDrop = AceGUI:Create("Dropdown")
                 textAnchorDrop:SetLabel("Text Anchor")
@@ -1178,10 +1294,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     textAnchorValues[pt] = CS.anchorPointLabels[pt]
                 end
                 textAnchorDrop:SetList(textAnchorValues, CS.anchorPoints)
-                textAnchorDrop:SetValue(resSettings.textAnchor or DEFAULT_RESOURCE_TEXT_ANCHOR)
+                textAnchorDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR))
                 textAnchorDrop:SetFullWidth(true)
                 textAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                    settings.resources[capturedPt].textAnchor = val
+                    resSettings.textAnchor = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(textAnchorDrop)
@@ -1189,10 +1305,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 local textXSlider = AceGUI:Create("Slider")
                 textXSlider:SetLabel("Text X Offset")
                 textXSlider:SetSliderValues(-50, 50, 0.1)
-                textXSlider:SetValue(resSettings.textXOffset or DEFAULT_RESOURCE_TEXT_X_OFFSET)
+                textXSlider:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET))
                 textXSlider:SetFullWidth(true)
                 textXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                    settings.resources[capturedPt].textXOffset = val
+                    resSettings.textXOffset = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(textXSlider)
@@ -1200,10 +1316,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 local textYSlider = AceGUI:Create("Slider")
                 textYSlider:SetLabel("Text Y Offset")
                 textYSlider:SetSliderValues(-50, 50, 0.1)
-                textYSlider:SetValue(resSettings.textYOffset or DEFAULT_RESOURCE_TEXT_Y_OFFSET)
+                textYSlider:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET))
                 textYSlider:SetFullWidth(true)
                 textYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                    settings.resources[capturedPt].textYOffset = val
+                    resSettings.textYOffset = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 container:AddChild(textYSlider)
@@ -1211,11 +1327,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 if HIDE_AT_ZERO_ELIGIBLE[capturedPt] then
                     local hideAtZeroCb = AceGUI:Create("CheckBox")
                     hideAtZeroCb:SetLabel("Hide at 0")
-                    hideAtZeroCb:SetValue(resSettings.hideTextAtZero == true)
+                    hideAtZeroCb:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "hideTextAtZero", false) == true)
                     hideAtZeroCb:SetFullWidth(true)
                     hideAtZeroCb:SetCallback("OnValueChanged", function(widget, event, val)
-                        if not settings.resources[capturedPt] then settings.resources[capturedPt] = {} end
-                        settings.resources[capturedPt].hideTextAtZero = val and true or nil
+                        resSettings.hideTextAtZero = val == true
                         CooldownCompanion:ApplyResourceBars()
                     end)
                     container:AddChild(hideAtZeroCb)
@@ -1254,14 +1369,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
         CooldownCompanion:RefreshConfigPanel()
     end)
 
-    local colorInfoBtn = CreateInfoButton(colorHeading.frame, colorCollapseBtn, "LEFT", "RIGHT", 4, 0, {
-        "Per-Resource Colors",
-        {"Resource colors are saved per specialization.", 1, 1, 1, true},
-    }, colorHeading)
-
     colorHeading.right:ClearAllPoints()
     colorHeading.right:SetPoint("RIGHT", colorHeading.frame, "RIGHT", -3, 0)
-    colorHeading.right:SetPoint("LEFT", colorInfoBtn, "RIGHT", 4, 0)
+    colorHeading.right:SetPoint("LEFT", colorCollapseBtn, "RIGHT", 4, 0)
 
     local _colorSpecID = GetCurrentConfigSpecID()
 
@@ -1280,7 +1390,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
             end
 
             if pt == healthResourceID then
-                -- Health colors are character-level and rendered above.
+                -- Health colors are rendered in the Health tab.
             elseif pt == 4 then
                 -- Combo Points: two color pickers (normal vs at max)
                 local _p4n = { comboColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboColor", DEFAULT_COMBO_COLOR) }
@@ -1417,7 +1527,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
             else
                 local name = POWER_NAMES[pt] or ("Power " .. pt)
 
-                if settings.barTexture == "blizzard_class" and ST.POWER_ATLAS_TYPES and ST.POWER_ATLAS_TYPES[pt] then
+                if (displayProfile.barTexture or settings.barTexture) == "blizzard_class" and ST.POWER_ATLAS_TYPES and ST.POWER_ATLAS_TYPES[pt] then
                     -- Atlas-backed type; color picker not applicable
                 else
                     local capturedGenericPt = pt
@@ -1710,7 +1820,7 @@ local function GetResolvedCustomAuraIndependentOrientation(cab, settings)
     if orientation then
         return orientation
     end
-    return IsResourceBarVerticalConfig(settings) and "vertical" or "horizontal"
+    return IsResourceBarVerticalConfig(settings, CooldownCompanion:GetSpecLayoutOrder()) and "vertical" or "horizontal"
 end
 
 local function EnsureCustomAuraIndependentConfig(cab, settings)
@@ -1962,7 +2072,8 @@ end
 
 local function BuildCustomAuraBarPanel(container, slotIdx)
     local settings = CooldownCompanion:GetResourceBarSettings()
-    local thicknessField, thicknessLabel = GetResourceThicknessFieldConfig(settings)
+    local layout = CooldownCompanion:GetSpecLayoutOrder()
+    local thicknessField, thicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
     local customBars = CooldownCompanion:GetSpecCustomAuraBars()
     local maxSlots = ST.MAX_CUSTOM_AURA_BARS or 3
     local rbCabTextAdvBtns = {}
@@ -2273,20 +2384,31 @@ local function BuildCustomAuraBarPanel(container, slotIdx)
             end
 
             -- Per-slot bar thickness override
-            if settings.customBarHeights then
+            if layout and layout.customBarHeights then
+                if type(layout.customAuraBarSlots) ~= "table" then
+                    layout.customAuraBarSlots = {}
+                end
+                if type(layout.customAuraBarSlots[capturedIdx]) ~= "table" then
+                    layout.customAuraBarSlots[capturedIdx] = {}
+                end
+                local slotLayout = layout.customAuraBarSlots[capturedIdx]
                 local cabHeightSlider = AceGUI:Create("Slider")
                 cabHeightSlider:SetLabel(thicknessLabel)
                 cabHeightSlider:SetSliderValues(4, 40, 0.1)
                 if thicknessField == "barWidth" then
-                    cabHeightSlider:SetValue(cab.barWidth or cab.barHeight or settings.barWidth or settings.barHeight or 12)
+                    cabHeightSlider:SetValue(slotLayout.barWidth or slotLayout.barHeight or layout.barWidth or layout.barHeight or settings.barWidth or settings.barHeight or 12)
                 else
-                    cabHeightSlider:SetValue(cab.barHeight or cab.barWidth or settings.barHeight or settings.barWidth or 12)
+                    cabHeightSlider:SetValue(slotLayout.barHeight or slotLayout.barWidth or layout.barHeight or layout.barWidth or settings.barHeight or settings.barWidth or 12)
                 end
                 cabHeightSlider:SetFullWidth(true)
                 local cabIdx = capturedIdx
                 cabHeightSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                    customBars[cabIdx][thicknessField] = val
+                    if not layout.customAuraBarSlots[cabIdx] then
+                        layout.customAuraBarSlots[cabIdx] = {}
+                    end
+                    layout.customAuraBarSlots[cabIdx][thicknessField] = val
                     CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:RepositionCastBar()
                     CooldownCompanion:UpdateAnchorStacking()
                 end)
                 container:AddChild(cabHeightSlider)
@@ -2912,7 +3034,6 @@ local function BuildLayoutOrderPanel(container)
 
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
     local cbSettings = CooldownCompanion:GetCastBarSettings()
-    local isVerticalLayout = IsResourceBarVerticalConfig(rbSettings)
 
     if not rbSettings or not rbSettings.enabled then
         local label = AceGUI:Create("Label")
@@ -2930,6 +3051,7 @@ local function BuildLayoutOrderPanel(container)
         container:AddChild(label)
         return
     end
+    local isVerticalLayout = IsResourceBarVerticalConfig(rbSettings, layout)
 
     -- Build the ordered list of all active bar slots
     local activeResources = GetConfigActiveResources()
@@ -2964,6 +3086,8 @@ local function BuildLayoutOrderPanel(container)
 
     -- Helper: refresh after any order/position change
     local function ApplyAndRefresh()
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:RepositionCastBar()
         CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:RefreshConfigPanel()
     end
