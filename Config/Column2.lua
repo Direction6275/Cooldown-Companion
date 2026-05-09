@@ -616,6 +616,40 @@ local function SubmitInlineAdd(rawInput)
     return true
 end
 
+local function ConfigureInlineAddInstructions(inputBox, placeholderText)
+    local editFrame = inputBox and inputBox.editbox
+    if not editFrame then
+        return function() end
+    end
+
+    local instructions = editFrame._cdcInlineAddInstructions
+    if not instructions then
+        instructions = editFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+        instructions:SetPoint("LEFT", editFrame, "LEFT", 6, 0)
+        instructions:SetPoint("RIGHT", editFrame, "RIGHT", -6, 0)
+        instructions:SetJustifyH("LEFT")
+        instructions:SetTextColor(0.5, 0.5, 0.5)
+        editFrame._cdcInlineAddInstructions = instructions
+    end
+    instructions:SetText(placeholderText)
+
+    local function Update(text)
+        instructions:SetShown((text or "") == "")
+    end
+
+    local prevOnRelease = inputBox.events and inputBox.events["OnRelease"]
+    inputBox:SetCallback("OnRelease", function(widget)
+        if prevOnRelease then
+            prevOnRelease(widget, "OnRelease")
+        end
+        instructions:Hide()
+        instructions:SetText("")
+    end)
+
+    Update(editFrame:GetText())
+    return Update
+end
+
 local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId, btnCount)
     if CS.addingToPanelId ~= panelId or (panel.displayMode == "textures" and btnCount >= 1) then
         return
@@ -629,12 +663,14 @@ local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId,
     inputBox:DisableButton(true)
     inputBox:SetFullWidth(true)
     panelMeta.addInputFrame = inputBox.frame
+    local updatePlaceholder = ConfigureInlineAddInstructions(inputBox, "Add spells, items, and IDs")
     inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
         if CS.ConsumeAutocompleteEnter() then return end
         CS.HideAutocomplete()
         SubmitInlineAdd(text)
     end)
     inputBox:SetCallback("OnTextChanged", function(widget, event, text)
+        updatePlaceholder(text)
         CS.newInput = text
         if text and #text >= 1 then
             local results = SearchAutocomplete(text)
