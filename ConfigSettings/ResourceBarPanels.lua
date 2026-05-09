@@ -1165,13 +1165,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         resSettings.textFormat = "percent"
                     end
                 elseif isSegmentedResource then
-                    resSettings.showText = val and true or nil
+                    resSettings.showText = val == true
                 else
-                    if val then
-                        resSettings.showText = nil
-                    else
-                        resSettings.showText = false
-                    end
+                    resSettings.showText = val == true
                 end
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:RefreshConfigPanel()
@@ -1334,7 +1330,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     hideAtZeroCb:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "hideTextAtZero", false) == true)
                     hideAtZeroCb:SetFullWidth(true)
                     hideAtZeroCb:SetCallback("OnValueChanged", function(widget, event, val)
-                        resSettings.hideTextAtZero = val and true or nil
+                        resSettings.hideTextAtZero = val == true
                         CooldownCompanion:ApplyResourceBars()
                     end)
                     container:AddChild(hideAtZeroCb)

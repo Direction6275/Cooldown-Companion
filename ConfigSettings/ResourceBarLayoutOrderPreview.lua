@@ -1096,7 +1096,8 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
 
     local barInfo = frame.previewBarInfo
     local rbSettings = preview.rbSettings
-    local segmentGap = rbSettings.segmentGap or 4
+    local layout = preview.layout
+    local segmentGap = (layout and layout.segmentGap) or rbSettings.segmentGap or 4
 
     if slot.kind == "custom" then
         local customBars = CooldownCompanion:GetSpecCustomAuraBars()
@@ -2007,6 +2008,7 @@ function ST._BuildLayoutOrderPreviewPanel(container)
     preview.isVerticalLayout = preview.rbSettings and IsResourceBarVerticalConfig(preview.rbSettings, layout) or false
 
     ResetPreviewState(preview)
+    preview.layout = layout
     HidePreviewMessage(preview)
 
     local rbSettings = preview.rbSettings

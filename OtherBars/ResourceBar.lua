@@ -2974,7 +2974,7 @@ local function PrepareCustomAuraBar(
             elseif fillDirection == "bottom_to_top" then
                 customReverseFill = false
             else
-                customReverseFill = settings.verticalFillDirection == "top_to_bottom"
+                customReverseFill = reverseVerticalFill == true
             end
         else
             customReverseFill = reverseVerticalFill
