@@ -101,9 +101,11 @@ function CooldownCompanion:EnsureRuntimeInitialized()
                 self.assistedSpellID = AssistedCombatManager.lastNextCastSpellID
             end
 
-            self:UpdateAllCooldowns()
+            if not self:CanSkipTickerCooldownRefresh() then
+                self:RunCooldownRefresh("ticker")
+            end
             self:UpdateAllGroupLayouts()
-            self._cooldownsDirty = false
+            self:ClearCooldownsDirty()
         end)
     end
 
@@ -201,7 +203,7 @@ function CooldownCompanion:OnEnable()
             if ST._QueueInheritedUnitFrameAlphaResync then
                 ST._QueueInheritedUnitFrameAlphaResync()
             end
-            self._cooldownsDirty = true
+            self:MarkCooldownsDirty()
             self:UpdateAllCooldowns()
         end)
     end
@@ -296,11 +298,32 @@ end
 
 function CooldownCompanion:MarkCooldownsDirty()
     self._cooldownsDirty = true
+    self._cooldownDirtySerial = (self._cooldownDirtySerial or 0) + 1
+end
+
+function CooldownCompanion:ClearCooldownsDirty()
+    self._cooldownsDirty = false
+end
+
+function CooldownCompanion:RunCooldownRefresh(source)
+    self:UpdateAllCooldowns()
+    self._lastCooldownRefreshSerial = self._cooldownDirtySerial or 0
+    self._lastCooldownRefreshSource = source
+end
+
+function CooldownCompanion:CanSkipTickerCooldownRefresh()
+    -- Only cooldown-event refreshes can satisfy the next ticker pass. Aura,
+    -- target, and other dirty paths keep their normal ticker confirmation.
+    return self._cooldownsDirty
+        and self._lastCooldownRefreshSource == "cooldown-event"
+        and self._lastCooldownRefreshSerial == (self._cooldownDirtySerial or 0)
 end
 
 function CooldownCompanion:OnCooldownStateChanged()
-    self._cooldownsDirty = true
-    self:UpdateAllCooldowns()
+    self:MarkCooldownsDirty()
+    -- Preserve immediate cooldown-event accuracy. This refresh only suppresses
+    -- the next ticker walk when no other dirty state appears afterward.
+    self:RunCooldownRefresh("cooldown-event")
 end
 
 -- Iterate every button across all groups, calling callback(button, buttonData) for each.
@@ -384,7 +407,7 @@ end
 
 function CooldownCompanion:OnProcGlowHide(event, spellID)
     self.procOverlaySpells[spellID] = nil
-    self._cooldownsDirty = true
+    self:MarkCooldownsDirty()
     self:UpdateAllCooldowns()
 end
 

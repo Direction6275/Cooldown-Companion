@@ -255,7 +255,7 @@ local function ForEachAuraLayoutInfo(callback)
 end
 
 function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
-    self._cooldownsDirty = true
+    self:MarkCooldownsDirty()
     if unit == "player" and self._isDracthyr then
         self:InvalidateMountAlphaCache()
     end
@@ -333,7 +333,7 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
             end
         end
     end)
-    self._cooldownsDirty = true
+    self:MarkCooldownsDirty()
 end
 
 function CooldownCompanion:OnTargetChanged()
