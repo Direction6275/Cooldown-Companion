@@ -476,6 +476,9 @@ local function IsResourceAuraOverlayEnabledConfig(resource, specID)
         if type(specData) == "table" and type(specData.auraOverlayEnabled) == "boolean" then
             return specData.auraOverlayEnabled
         end
+        if resource.auraOverlayEnabled == false then
+            return false
+        end
         if type(GetResourceAuraEntryConfig(resource, specID)) == "table" then
             return true
         end
