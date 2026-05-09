@@ -123,7 +123,7 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     if isExpanded then
         btn._icon:SetVertexColor(1, 0.82, 0, 1)
     else
-        btn._icon:SetVertexColor(0.5, 0.5, 0.5, 0.7)
+        btn._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
     end
 
     btn:SetScript("OnClick", function()
