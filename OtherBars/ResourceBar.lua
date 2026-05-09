@@ -291,13 +291,26 @@ local function ResolveIndependentAnchorTarget(cabConfig, settings)
 end
 
 
+local function ShouldInheritIndependentAlpha(settings)
+    if type(settings) ~= "table" then
+        return false
+    end
+
+    local layout = GetSpecLayoutOrder(settings)
+    if layout and layout.inheritAlpha ~= nil then
+        return layout.inheritAlpha == true
+    end
+
+    return settings.inheritAlpha == true
+end
+
 local function ApplyIndependentAlphaSync(frame, settings, targetFrame)
     if not frame then return end
     if not frame._cdcIndependentAlphaSync then
         frame._cdcIndependentAlphaSync = CreateFrame("Frame", nil, frame)
     end
 
-    if settings and settings.inheritAlpha and targetFrame then
+    if ShouldInheritIndependentAlpha(settings) and targetFrame then
         frame._cdcIndependentAlphaTarget = targetFrame
         frame._cdcIndependentLastAlpha = targetFrame:GetEffectiveAlpha()
         frame:SetAlpha(frame._cdcIndependentLastAlpha)
