@@ -325,6 +325,24 @@ function CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, s
     return scopedEvents
 end
 
+function CooldownCompanion:GetScopedValidSoundAlertEventsForCustomBar(customBar)
+    if type(customBar) ~= "table" or not customBar.spellID then
+        return nil
+    end
+
+    local entryType = customBar.entryType or "aura"
+    local scopedEvents = {}
+    if entryType == "aura" then
+        scopedEvents.onAuraApplied = true
+        scopedEvents.onAuraRemoved = true
+    end
+
+    if not next(scopedEvents) then
+        return nil
+    end
+    return scopedEvents
+end
+
 function CooldownCompanion:GetButtonSoundAlertConfig(buttonData, createIfMissing)
     if not buttonData then return nil end
 
@@ -346,8 +364,34 @@ function CooldownCompanion:GetButtonSoundAlertConfig(buttonData, createIfMissing
     return cfg
 end
 
+function CooldownCompanion:GetCustomBarSoundAlertConfig(customBar, createIfMissing)
+    if type(customBar) ~= "table" then return nil end
+    local cfg = customBar.soundAlerts
+    if type(cfg) ~= "table" then
+        if not createIfMissing then return nil end
+        cfg = {}
+        customBar.soundAlerts = cfg
+    end
+    if createIfMissing and cfg.channel == nil then
+        cfg.channel = DEFAULT_SOUND_CHANNEL
+    end
+    if createIfMissing and type(cfg.events) ~= "table" then
+        cfg.events = {}
+    end
+    return cfg
+end
+
 function CooldownCompanion:GetButtonSoundAlertChannel(buttonData)
     local cfg = self:GetButtonSoundAlertConfig(buttonData, false)
+    local channel = cfg and cfg.channel
+    if channel and channel ~= "" then
+        return channel
+    end
+    return DEFAULT_SOUND_CHANNEL
+end
+
+function CooldownCompanion:GetCustomBarSoundAlertChannel(customBar)
+    local cfg = self:GetCustomBarSoundAlertConfig(customBar, false)
     local channel = cfg and cfg.channel
     if channel and channel ~= "" then
         return channel
@@ -432,6 +476,15 @@ function CooldownCompanion:GetButtonSoundAlertSelection(buttonData, eventKey)
     return SOUND_NONE_KEY
 end
 
+function CooldownCompanion:GetCustomBarSoundAlertSelection(customBar, eventKey)
+    local cfg = self:GetCustomBarSoundAlertConfig(customBar, false)
+    local events = cfg and cfg.events
+    if events and events[eventKey] then
+        return events[eventKey]
+    end
+    return SOUND_NONE_KEY
+end
+
 function CooldownCompanion:SetButtonSoundAlertEvent(buttonData, eventKey, soundName)
     if not SOUND_ALERT_EVENT_LABELS[eventKey] then return end
 
@@ -462,6 +515,28 @@ function CooldownCompanion:SetButtonSoundAlertEvent(buttonData, eventKey, soundN
         cfg.events = nil
         if (cfg.channel == nil or cfg.channel == DEFAULT_SOUND_CHANNEL) then
             buttonData.soundAlerts = nil
+        end
+    end
+end
+
+function CooldownCompanion:SetCustomBarSoundAlertEvent(customBar, eventKey, soundName)
+    if not SOUND_ALERT_EVENT_LABELS[eventKey] then return end
+
+    local validEvents = self:GetScopedValidSoundAlertEventsForCustomBar(customBar)
+    if not (validEvents and validEvents[eventKey]) then return end
+
+    local cfg = self:GetCustomBarSoundAlertConfig(customBar, true)
+    local events = cfg.events
+    if not soundName or soundName == SOUND_NONE_KEY then
+        events[eventKey] = nil
+    else
+        events[eventKey] = soundName
+    end
+
+    if not next(events) then
+        cfg.events = nil
+        if cfg.channel == nil or cfg.channel == DEFAULT_SOUND_CHANNEL then
+            customBar.soundAlerts = nil
         end
     end
 end
@@ -528,6 +603,10 @@ function CooldownCompanion:GetSoundAlertEventLabelForButton(buttonData, eventKey
     return self:GetSoundAlertEventLabel(eventKey)
 end
 
+function CooldownCompanion:GetCustomBarSoundAlertEventLabel(customBar, eventKey)
+    return self:GetSoundAlertEventLabel(eventKey)
+end
+
 local function ParseBlizzardSoundSelection(soundName)
     if type(soundName) ~= "string" then
         return nil, nil
@@ -553,6 +632,22 @@ local function GetButtonSpeechText(buttonData)
         end
     end
     return "Cooldown alert"
+end
+
+local function GetCustomBarSpeechText(customBar)
+    if type(customBar) == "table" then
+        local spellID = tonumber(customBar.spellID)
+        if spellID then
+            local spellInfo = C_Spell.GetSpellInfo(spellID)
+            if spellInfo and spellInfo.name then
+                return spellInfo.name
+            end
+        end
+        if type(customBar.label) == "string" and customBar.label ~= "" then
+            return customBar.label
+        end
+    end
+    return "Custom bar alert"
 end
 
 local function GetTriggerPanelSpeechText(group)
@@ -598,6 +693,10 @@ function CooldownCompanion:PreviewSoundAlertSelection(buttonData, soundName)
     return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
 end
 
+function CooldownCompanion:PreviewCustomBarSoundAlertSelection(customBar, soundName)
+    return PlaySharedMediaSound(soundName, self:GetCustomBarSoundAlertChannel(customBar), GetCustomBarSpeechText(customBar))
+end
+
 function CooldownCompanion:PreviewTriggerPanelSoundAlertSelection(groupOrId, soundName)
     local group = ResolveGroup(groupOrId)
     return PlaySharedMediaSound(soundName, DEFAULT_SOUND_CHANNEL, GetTriggerPanelSpeechText(group))
@@ -616,6 +715,14 @@ function CooldownCompanion:PlayButtonSoundAlertEvent(buttonData, eventKey)
     if not soundName then return false end
 
     return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
+end
+
+function CooldownCompanion:PlayCustomBarSoundAlertEvent(customBar, eventKey)
+    local cfg = self:GetCustomBarSoundAlertConfig(customBar, false)
+    local soundName = cfg and cfg.events and cfg.events[eventKey]
+    if not soundName or soundName == SOUND_NONE_KEY then return false end
+
+    return PlaySharedMediaSound(soundName, self:GetCustomBarSoundAlertChannel(customBar), GetCustomBarSpeechText(customBar))
 end
 
 function CooldownCompanion:PlayTriggerPanelSoundAlertEvent(groupOrId, eventKey)
@@ -660,6 +767,59 @@ function CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData, spell
         return nil
     end
     return enabledEvents
+end
+
+function CooldownCompanion:GetEnabledSoundAlertEventsForCustomBar(customBar)
+    local cfg = self:GetCustomBarSoundAlertConfig(customBar, false)
+    if not cfg or type(cfg.events) ~= "table" then
+        return nil
+    end
+
+    local validEvents = self:GetScopedValidSoundAlertEventsForCustomBar(customBar)
+    if not validEvents then
+        return nil
+    end
+
+    local enabledEvents = {}
+    for _, eventKey in ipairs(SOUND_ALERT_EVENT_ORDER) do
+        local soundName = cfg.events[eventKey]
+        if validEvents[eventKey] and soundName and soundName ~= SOUND_NONE_KEY then
+            enabledEvents[eventKey] = true
+        end
+    end
+
+    if not next(enabledEvents) then
+        return nil
+    end
+    return enabledEvents
+end
+
+function CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, auraActive)
+    local customBar = barInfo and barInfo.cabConfig
+    local enabledEvents = self:GetEnabledSoundAlertEventsForCustomBar(customBar)
+    if not enabledEvents then
+        if barInfo then
+            barInfo._sndInitialized = nil
+        end
+        return
+    end
+
+    auraActive = auraActive and true or false
+    if not barInfo._sndInitialized then
+        barInfo._sndInitialized = true
+        barInfo._sndPrevAuraActive = auraActive
+        return
+    end
+
+    if enabledEvents.onAuraApplied and auraActive and not barInfo._sndPrevAuraActive then
+        self:PlayCustomBarSoundAlertEvent(customBar, "onAuraApplied")
+    end
+
+    if enabledEvents.onAuraRemoved and barInfo._sndPrevAuraActive and not auraActive then
+        self:PlayCustomBarSoundAlertEvent(customBar, "onAuraRemoved")
+    end
+
+    barInfo._sndPrevAuraActive = auraActive
 end
 
 function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, _isOnGCD, cooldownActive, auraActive, currentCharges, _maxCharges, chargeRecharging, chargeCooldownStartTime)

@@ -172,8 +172,10 @@ local function BuildDiagnosticSnapshot()
     local resourceStores = rawget(db.profile, "resourceBarsByChar")
     if type(resourceStores) == "table" then
         for _, resourceSettings in pairs(resourceStores) do
-            if type(resourceSettings) == "table" and type(resourceSettings.customAuraBars) == "table" then
-                for sid in pairs(resourceSettings.customAuraBars) do
+            local customBars = type(resourceSettings) == "table"
+                and (type(resourceSettings.customBars) == "table" and resourceSettings.customBars or resourceSettings.customAuraBars)
+            if type(customBars) == "table" then
+                for sid in pairs(customBars) do
                     if sid ~= 0 then cacheSpecName(sid) end
                 end
             end
@@ -695,7 +697,7 @@ local function FormatDiagnosticAsText(diag)
         local hasAnchorGroupId = false
         for k, v in pairs(settings) do
             if k == "anchorGroupId" then hasAnchorGroupId = true end
-            if k ~= "resources" and k ~= "customAuraBars" then
+            if k ~= "resources" and k ~= "customAuraBars" and k ~= "customBars" then
                 rbSimple[#rbSimple + 1] = tostring(k) .. "=" .. formatValue(v)
             end
         end
@@ -720,21 +722,22 @@ local function FormatDiagnosticAsText(diag)
             end
         end
 
-        if settings.customAuraBars then
+        local customBars = type(settings.customBars) == "table" and settings.customBars or settings.customAuraBars
+        if customBars then
             local hasAny = false
-            for _ in pairs(settings.customAuraBars) do hasAny = true; break end
+            for _ in pairs(customBars) do hasAny = true; break end
             if hasAny then
-                add("  customAuraBars:")
+                add("  customBars:")
                 local specIds = {}
-                for sid in pairs(settings.customAuraBars) do specIds[#specIds + 1] = sid end
-                table.sort(specIds)
+                for sid in pairs(customBars) do specIds[#specIds + 1] = sid end
+                table.sort(specIds, function(a, b) return tostring(a) < tostring(b) end)
                 for _, sid in ipairs(specIds) do
                     local sName = sid == 0 and "Default" or specNames[sid]
                     local entryLabel = sName
                         and ("[%s] (%s)"):format(tostring(sid), sName)
                         or ("[%s]"):format(tostring(sid))
                     add(("    %s"):format(entryLabel))
-                    local specBars = settings.customAuraBars[sid]
+                    local specBars = customBars[sid]
                     local slots = {}
                     for slot in pairs(specBars) do slots[#slots + 1] = slot end
                     table.sort(slots, function(a, b) return tostring(a) < tostring(b) end)

@@ -100,16 +100,16 @@ local function GetLayoutOrderColumnTitle()
     return "Layout & Order: " .. GetClassColoredText(specName)
 end
 
-local function GetCustomAuraBarsColumnTitle()
+local function GetCustomBarsColumnTitle()
     local specIdx = C_SpecializationInfo.GetSpecialization()
     if not specIdx then
-        return "Custom Aura Bars"
+        return "Custom Bars"
     end
     local _, specName = C_SpecializationInfo.GetSpecializationInfo(specIdx)
     if not specName or specName == "" then
-        return "Custom Aura Bars"
+        return "Custom Bars"
     end
-    return "Custom Aura Bars: " .. GetClassColoredText(specName)
+    return "Custom Bars: " .. GetClassColoredText(specName)
 end
 
 local function CountSelections(selectionSet)
@@ -193,6 +193,9 @@ end
 
 local function GetColumn4HeaderMode(selection)
     if CS.resourceBarPanelActive then
+        if CS.selectedCustomBarId then
+            return "custom_bar"
+        end
         return "layout_order"
     end
     if selection.panelMultiCount >= 2 or selection.hasSelectedPanel then
@@ -204,7 +207,7 @@ end
 local function GetColumn3HeaderTitle(selection)
     local mode = GetColumn3HeaderMode(selection)
     if mode == "custom_aura" then
-        return GetCustomAuraBarsColumnTitle()
+        return GetCustomBarsColumnTitle()
     elseif mode == "auto_add" then
         return "Auto Add"
     elseif mode == "panel_actions" then
@@ -221,6 +224,8 @@ local function GetColumn4HeaderTitle(selection)
     local mode = GetColumn4HeaderMode(selection)
     if mode == "layout_order" then
         return GetLayoutOrderColumnTitle()
+    elseif mode == "custom_bar" then
+        return "Custom Bar Settings"
     elseif mode == "panel" then
         local panelName = GetSelectedPanelHeaderName(selection)
         if panelName then
@@ -469,7 +474,7 @@ local function ResetConfigForProfileChange()
     ResetConfigSelection(true)
     wipe(CS.collapsedFolders)
     wipe(CS.collapsedPanels)
-    wipe(CS.customAuraBarSubTabs)
+    CS.selectedCustomBarId = nil
     wipe(CS.resourceAuraOverlayDrafts)
     if ClearConfigFinderText then
         ClearConfigFinderText()
@@ -1415,16 +1420,10 @@ local function CreateConfigPanel()
     bsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if CS.resourceBarPanelActive then
-            GameTooltip:AddLine("Custom Aura Bars")
-            GameTooltip:AddLine("Track any buff or debuff as a resource-style bar.", 1, 1, 1)
+            GameTooltip:AddLine("Custom Bars")
+            GameTooltip:AddLine("Track buffs or debuffs as resource-style bars.", 1, 1, 1)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Each slot is configured per-spec and supports autocomplete by name or spell ID.", 1, 1, 1)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Tracking Modes", 1, 0.82, 0)
-            GameTooltip:AddLine("Stack Count: fills the bar based on current stacks (e.g. 3/5 = 60%).", 1, 1, 1)
-            GameTooltip:AddLine("Active: shows a full bar that drains as the aura expires.", 1, 1, 1)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Both modes support optional duration and stack text overlays.", 1, 1, 1)
+            GameTooltip:AddLine("Entries are configured per-spec.", 1, 1, 1)
         elseif CS.autoAddFlowActive then
             GameTooltip:AddLine("Auto Add")
             GameTooltip:AddLine("Guided import flow for Action Bars, Spellbook, and CDM Auras.", 1, 1, 1, true)
@@ -1971,14 +1970,12 @@ function CooldownCompanion:RefreshConfigPanel()
     end
     local function getCustomAuraScrollKey()
         if not CS.resourceBarPanelActive then return nil end
-        local barTab = tostring(CS.customAuraBarTab or "bar_1")
-        local slotIdx = tonumber(barTab:match("^bar_(%d+)$")) or 1
-        local subTab = CS.customAuraBarSubTabs and CS.customAuraBarSubTabs[slotIdx] or "settings"
-        return barTab .. ":" .. tostring(subTab)
+        local selectedId = tostring(CS.selectedCustomBarId or "layout")
+        return selectedId .. ":" .. tostring(CS.customBarSettingsTab or "settings")
     end
     local function getCustomAuraScrollWidget(col3)
         if not col3 then return nil end
-        return col3._customAuraSubScroll or col3._customAuraScroll
+        return col3._customBarsScroll or col3._customAuraSubScroll or col3._customAuraScroll
     end
 
     local saved1   = SaveScrollState(CS.col1Scroll)

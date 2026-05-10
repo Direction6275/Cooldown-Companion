@@ -120,6 +120,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateBaseSpellResolution()
     self:MigrateSpecColorsToSpecOverrides()
     self:MigrateResourceBarDisplayProfiles()
+    self:MigrateCustomAuraBarsToCustomBars()
     return true
 end
 
@@ -158,6 +159,8 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile._migratedSpecOverrides = nil
     profile._migratedResourceBarDisplayProfiles = nil
     profile._migratedResourceBarDisplayProfilesV2 = nil
+    profile._migratedCustomBarsDynamic = nil
+    profile._migratedCustomBarsDynamicV2 = nil
 end
 
 function CooldownCompanion:MigrateGroupOwnership()
@@ -2215,5 +2218,188 @@ function CooldownCompanion:MigrateResourceBarDisplayProfiles()
 
     profile._migratedResourceBarDisplayProfiles = true
     profile._migratedResourceBarDisplayProfilesV2 = true
+end
+
+function CooldownCompanion:MigrateCustomAuraBarsToCustomBars()
+    local profile = self.db and self.db.profile
+    if not profile or profile._migratedCustomBarsDynamicV2 then return end
+
+    local function IsConfiguredCustomBar(cab)
+        return type(cab) == "table"
+            and (
+                cab.spellID ~= nil
+                or cab.enabled == true
+                or cab.independentAnchorEnabled ~= nil
+                or cab.trackingMode ~= nil
+                or cab.displayMode ~= nil
+                or cab.maxStacks ~= nil
+                or cab.barColor ~= nil
+                or cab.talentConditions ~= nil
+            )
+    end
+
+    local function EnsureNextId(settings, entry)
+        local function IdOwnedByOther(customBarId)
+            if type(customBarId) ~= "string" or customBarId == "" or type(settings.customBars) ~= "table" then
+                return false
+            end
+            for _, specBars in pairs(settings.customBars) do
+                if type(specBars) == "table" then
+                    for _, candidate in pairs(specBars) do
+                        if candidate ~= entry
+                            and type(candidate) == "table"
+                            and candidate.customBarId == customBarId then
+                            return true
+                        end
+                    end
+                end
+            end
+            return false
+        end
+
+        if type(entry.customBarId) == "string" and entry.customBarId ~= "" and not IdOwnedByOther(entry.customBarId) then
+            return entry.customBarId
+        end
+        settings.nextCustomBarId = tonumber(settings.nextCustomBarId) or 1
+        local id
+        repeat
+            id = "custom_bar_" .. tostring(settings.nextCustomBarId)
+            settings.nextCustomBarId = settings.nextCustomBarId + 1
+        until not IdOwnedByOther(id)
+        entry.customBarId = id
+        return id
+    end
+
+    local function HasConfiguredCustomBars(specBars)
+        if type(specBars) ~= "table" then return false end
+        for _, entry in pairs(specBars) do
+            if IsConfiguredCustomBar(entry) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function MigrateSettings(settings)
+        if type(settings) ~= "table" then return end
+        if type(settings.customBars) ~= "table" then
+            settings.customBars = {}
+        end
+
+        if type(settings.customAuraBars) == "table" then
+            for specID, legacyBars in pairs(settings.customAuraBars) do
+                local normalizedSpecID = tonumber(specID) or specID
+                local stringSpecID = tostring(normalizedSpecID)
+                if type(settings.customBars[normalizedSpecID]) ~= "table"
+                    and stringSpecID ~= normalizedSpecID
+                    and type(settings.customBars[stringSpecID]) == "table"
+                then
+                    settings.customBars[normalizedSpecID] = settings.customBars[stringSpecID]
+                    settings.customBars[stringSpecID] = nil
+                end
+
+                if type(legacyBars) == "table" then
+                    local specBars = settings.customBars[normalizedSpecID]
+                    if type(specBars) ~= "table" then
+                        specBars = {}
+                        settings.customBars[normalizedSpecID] = specBars
+                    end
+                    local numericSlots = {}
+                    for slotIdx in pairs(legacyBars) do
+                        if tonumber(slotIdx) then
+                            numericSlots[#numericSlots + 1] = tonumber(slotIdx)
+                        end
+                    end
+                    table.sort(numericSlots)
+
+                    local layout = type(settings.layoutOrder) == "table"
+                        and (settings.layoutOrder[normalizedSpecID] or settings.layoutOrder[tostring(normalizedSpecID)])
+                        or nil
+
+                    if not HasConfiguredCustomBars(specBars) then
+                        for _, slotIdx in ipairs(numericSlots) do
+                            local cab = legacyBars[slotIdx] or legacyBars[tostring(slotIdx)]
+                            if IsConfiguredCustomBar(cab) then
+                                local entry = CopyTable(cab)
+                                entry.entryType = entry.entryType or "aura"
+                                local id = EnsureNextId(settings, entry)
+                                specBars[#specBars + 1] = entry
+
+                                if type(layout) == "table" then
+                                    if type(layout.customBars) ~= "table" then
+                                        layout.customBars = {}
+                                    end
+                                    local legacySlot = type(layout.customAuraBarSlots) == "table"
+                                        and layout.customAuraBarSlots[slotIdx]
+                                        or nil
+                                    layout.customBars[id] = type(legacySlot) == "table"
+                                        and CopyTable(legacySlot)
+                                        or { position = "below", order = 1000 + #specBars }
+                                end
+                            end
+                        end
+                    else
+                        for _, entry in pairs(specBars) do
+                            if type(entry) == "table" then
+                                entry.entryType = entry.entryType or "aura"
+                                EnsureNextId(settings, entry)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        local normalizedCustomBars = {}
+        for specID, specBars in pairs(settings.customBars) do
+            local normalizedSpecID = tonumber(specID) or specID
+            if type(specBars) == "table" then
+                if type(normalizedCustomBars[normalizedSpecID]) ~= "table" then
+                    normalizedCustomBars[normalizedSpecID] = {}
+                end
+                local target = normalizedCustomBars[normalizedSpecID]
+                local numericKeys = {}
+                for key in pairs(specBars) do
+                    if type(key) == "number" then
+                        numericKeys[#numericKeys + 1] = key
+                    end
+                end
+                table.sort(numericKeys)
+
+                local seen = {}
+                for _, key in ipairs(numericKeys) do
+                    local entry = specBars[key]
+                    if IsConfiguredCustomBar(entry) then
+                        entry.entryType = entry.entryType or "aura"
+                        EnsureNextId(settings, entry)
+                        target[#target + 1] = entry
+                    end
+                    seen[key] = true
+                end
+
+                for key, entry in pairs(specBars) do
+                    if not seen[key] and IsConfiguredCustomBar(entry) then
+                        entry.entryType = entry.entryType or "aura"
+                        EnsureNextId(settings, entry)
+                        target[#target + 1] = entry
+                    end
+                end
+            end
+        end
+        settings.customBars = normalizedCustomBars
+    end
+
+    MigrateSettings(rawget(profile, "resourceBars"))
+    MigrateSettings(rawget(profile, "legacyResourceBarsSeed"))
+
+    local store = rawget(profile, "resourceBarsByChar")
+    if type(store) == "table" then
+        for _, charSettings in pairs(store) do
+            MigrateSettings(charSettings)
+        end
+    end
+
+    profile._migratedCustomBarsDynamic = true
+    profile._migratedCustomBarsDynamicV2 = true
 end
 

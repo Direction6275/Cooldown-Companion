@@ -62,6 +62,75 @@ local function CloneSettingValue(value)
     return value
 end
 
+local function GetSpecKeyedTable(source, specID)
+    if type(source) ~= "table" then
+        return nil
+    end
+
+    local direct = source[specID]
+    if type(direct) == "table" then
+        return direct
+    end
+
+    local numericKey = tonumber(specID)
+    if numericKey and type(source[numericKey]) == "table" then
+        return source[numericKey]
+    end
+
+    local stringKey = tostring(specID)
+    if type(source[stringKey]) == "table" then
+        return source[stringKey]
+    end
+
+    return nil
+end
+
+local function PreserveTargetCustomBarLayouts(copied, target)
+    if type(copied) ~= "table"
+        or type(target) ~= "table"
+        or type(target.customBars) ~= "table"
+    then
+        return
+    end
+
+    if type(copied.layoutOrder) ~= "table" then
+        copied.layoutOrder = {}
+    end
+
+    for _, layout in pairs(copied.layoutOrder) do
+        if type(layout) == "table" then
+            layout.customBars = {}
+        end
+    end
+
+    local targetLayoutOrder = type(target.layoutOrder) == "table" and target.layoutOrder or nil
+    for specID, targetSpecBars in pairs(target.customBars) do
+        if type(targetSpecBars) == "table" then
+            local targetLayout = GetSpecKeyedTable(targetLayoutOrder, specID)
+            local copiedLayout = GetSpecKeyedTable(copied.layoutOrder, specID)
+            if not copiedLayout then
+                copiedLayout = type(targetLayout) == "table" and CopyTable(targetLayout) or {}
+                copied.layoutOrder[specID] = copiedLayout
+            end
+
+            copiedLayout.customBars = {}
+
+            local targetCustomBarLayouts = type(targetLayout) == "table" and targetLayout.customBars or nil
+            for _, entry in pairs(targetSpecBars) do
+                local customBarId = type(entry) == "table" and entry.customBarId or nil
+                if type(customBarId) == "string" and customBarId ~= "" then
+                    local targetCustomBarLayout = type(targetCustomBarLayouts) == "table"
+                        and targetCustomBarLayouts[customBarId]
+                        or nil
+                    if type(targetCustomBarLayout) == "table" then
+                        copiedLayout.customBars[customBarId] = CopyTable(targetCustomBarLayout)
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function EnsureScopedBarSystemStore(profile, storeKey)
     local store = rawget(profile, storeKey)
     if type(store) ~= "table" then
@@ -383,9 +452,11 @@ local function NormalizeResourceSpecOverridesForCurrentClass(settings)
 end
 
 local function NormalizeCustomAuraBarsForCurrentClass(settings)
-    if type(settings) ~= "table" or type(settings.customAuraBars) ~= "table" then
+    if type(settings) ~= "table" then
         return
     end
+    local barsBySpec = type(settings.customBars) == "table" and settings.customBars or settings.customAuraBars
+    if type(barsBySpec) ~= "table" then return end
 
     local allowedSpecIDs = GetCurrentClassSpecInfo()
     if type(allowedSpecIDs) ~= "table" then
@@ -393,7 +464,7 @@ local function NormalizeCustomAuraBarsForCurrentClass(settings)
     end
 
     local filtered = {}
-    for key, specBars in pairs(settings.customAuraBars) do
+    for key, specBars in pairs(barsBySpec) do
         local numericSpecID = tonumber(key)
         if type(specBars) == "table" and (
             numericSpecID == 0
@@ -403,7 +474,11 @@ local function NormalizeCustomAuraBarsForCurrentClass(settings)
         end
     end
 
-    settings.customAuraBars = filtered
+    if type(settings.customBars) == "table" then
+        settings.customBars = filtered
+    else
+        settings.customAuraBars = filtered
+    end
 end
 
 local function SanitizeAnchorGroupID(groupId)
@@ -444,12 +519,13 @@ local function SanitizeResourceBarAnchors(settings)
         settings.independentAnchor = nil
     end
 
-    if type(settings.customAuraBars) ~= "table" then
+    local customBarsBySpec = type(settings.customBars) == "table" and settings.customBars or settings.customAuraBars
+    if type(customBarsBySpec) ~= "table" then
         return
     end
 
     local ensureCustomAuraBarAuraUnit = GetEnsureCustomAuraBarAuraUnit()
-    for _, specBars in pairs(settings.customAuraBars) do
+    for _, specBars in pairs(customBarsBySpec) do
         if type(specBars) == "table" then
             for _, customAuraBar in pairs(specBars) do
                 if type(customAuraBar) == "table" then
@@ -533,7 +609,7 @@ local function ComposeCopiedResourceBarSettings(source, target)
 
     if type(source) == "table" then
         for key, value in pairs(source) do
-            if key ~= "resources" and key ~= "customAuraBars" and key ~= "customAuraBarSlots" and key ~= "layoutOrder" then
+            if key ~= "resources" and key ~= "customAuraBars" and key ~= "customBars" and key ~= "customAuraBarSlots" and key ~= "layoutOrder" then
                 copied[key] = CloneSettingValue(value)
             end
         end
@@ -564,6 +640,8 @@ local function ComposeCopiedResourceBarSettings(source, target)
     end
 
     copied.customAuraBars = type(target) == "table" and CloneSettingValue(target.customAuraBars) or copied.customAuraBars
+    copied.customBars = type(target) == "table" and CloneSettingValue(target.customBars) or copied.customBars
+    PreserveTargetCustomBarLayouts(copied, target)
 
     return copied
 end

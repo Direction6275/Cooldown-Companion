@@ -433,10 +433,10 @@ end
 ------------------------------------------------------------------------
 local function BuildBarEffectsTab(container, group, style)
     -- ================================================================
-    -- Show Active Aura Color/Glow
+    -- Show Active Aura Indicator
     -- ================================================================
     local barAuraEnableCb = AceGUI:Create("CheckBox")
-    barAuraEnableCb:SetLabel("Show Active Aura Color/Glow")
+    barAuraEnableCb:SetLabel("Show Active Aura Indicator")
     barAuraEnableCb:SetValue(style.barAuraEffect ~= "none")
     barAuraEnableCb:SetFullWidth(true)
     barAuraEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -483,10 +483,10 @@ local function BuildBarEffectsTab(container, group, style)
     end -- barAuraAdvExpanded
 
     -- ================================================================
-    -- Show Pandemic Color/Glow
+    -- Show Pandemic Indicator
     -- ================================================================
     local pandemicIndicatorCb = AceGUI:Create("CheckBox")
-    pandemicIndicatorCb:SetLabel("Show Pandemic Color/Glow")
+    pandemicIndicatorCb:SetLabel("Show Pandemic Indicator")
     pandemicIndicatorCb:SetValue(style.showPandemicGlow ~= false)
     pandemicIndicatorCb:SetFullWidth(true)
     pandemicIndicatorCb:SetCallback("OnValueChanged", function(widget, event, val)

@@ -75,17 +75,12 @@ local EnsureResourceAuraUnit = RB.EnsureResourceAuraUnit
 local RefreshResourceAuraUnitForSpell = RB.RefreshResourceAuraUnitForSpell
 
 ------------------------------------------------------------------------
--- Aura bar autocomplete cache (TrackedBuff + TrackedBar spells only)
+-- Aura bar autocomplete cache (spell/aura entries only)
 ------------------------------------------------------------------------
 local auraBarAutocompleteCache = nil
 
 local function IsSharedAuraAutocompleteEntry(entry)
-    if type(entry) ~= "table" or entry.isItem then
-        return false
-    end
-    return entry.category == "Cooldown Manager"
-        or entry.forceAura == true
-        or entry.isPassive == true
+    return type(entry) == "table" and entry.isItem ~= true
 end
 
 local function BuildAuraBarAutocompleteCache()
@@ -172,7 +167,7 @@ local function ShowAuraBarAutocompleteResults(text, widget, onAuraSelect)
 end
 
 ------------------------------------------------------------------------
--- CDM Aura Readiness Warning (shared by Resource Aura Overlays & Custom Aura Bars)
+-- CDM Aura Readiness Warning (shared by Resource Aura Overlays & Custom Bars)
 ------------------------------------------------------------------------
 local function AddCdmAuraReadinessWarning(container, spellID)
     if not spellID then return end
@@ -399,6 +394,18 @@ local function ResolveAuraColorSpellIDFromText(text)
     local entry = ResolveAuraBarAutocompleteEntry(cleaned)
     if entry then
         return entry.id, false
+    end
+
+    local spellInfo = C_Spell.GetSpellInfo(cleaned)
+    if spellInfo and spellInfo.spellID then
+        return spellInfo.spellID, false
+    end
+
+    if CooldownCompanion.FindTalentSpellByName then
+        local spellID = CooldownCompanion:FindTalentSpellByName(cleaned)
+        if spellID then
+            return spellID, false
+        end
     end
 
     return nil, false
@@ -698,7 +705,7 @@ local function AddResourceAuraEntryFields(container, powerType, resourceName, en
         trackDrop:SetLabel("Tracking Mode")
         trackDrop:SetList({
             stacks = "Stack Count",
-            active = "Active (On/Off)",
+            active = "Active",
         }, { "stacks", "active" })
         trackDrop:SetValue(trackingMode)
         trackDrop:SetFullWidth(true)
