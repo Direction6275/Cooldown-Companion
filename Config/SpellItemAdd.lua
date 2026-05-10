@@ -836,6 +836,7 @@ local function GetOrCreateAutocompleteDropdown()
     dropdown.rows = {}
     for i = 1, AUTOCOMPLETE_MAX_ROWS do
         local row = CreateFrame("Button", nil, dropdown)
+        row:RegisterForClicks("AnyUp")
         row:SetHeight(AUTOCOMPLETE_ROW_HEIGHT)
         row:SetPoint("TOPLEFT", dropdown, "TOPLEFT", 1, -((i - 1) * AUTOCOMPLETE_ROW_HEIGHT) - 1)
         row:SetPoint("TOPRIGHT", dropdown, "TOPRIGHT", -1, -((i - 1) * AUTOCOMPLETE_ROW_HEIGHT) - 1)

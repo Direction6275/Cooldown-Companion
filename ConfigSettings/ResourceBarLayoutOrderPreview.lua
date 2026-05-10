@@ -25,8 +25,6 @@ local ApplyIconTexCoord = ST._ApplyIconTexCoord
 
 local POWER_NAMES = RB.POWER_NAMES
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
-local MAX_CUSTOM_AURA_BARS = RB.MAX_CUSTOM_AURA_BARS or ST.MAX_CUSTOM_AURA_BARS or 5
-local CUSTOM_AURA_BAR_BASE = RB.CUSTOM_AURA_BAR_BASE
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local RESOURCE_MAELSTROM_WEAPON = RB.RESOURCE_MAELSTROM_WEAPON
 local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
@@ -47,6 +45,9 @@ local StyleContinuousBar = RB.StyleContinuousBar
 local StyleHealthBar = RB.StyleHealthBar
 local StyleSegmentedBar = RB.StyleSegmentedBar
 local PrepareCustomAuraBar = RB.PrepareCustomAuraBar
+local EnsureCustomBarId = RB.EnsureCustomBarId
+local EnsureCustomBarLayout = RB.EnsureCustomBarLayout
+local GetCustomBarLayout = RB.GetCustomBarLayout
 local ApplyPreviewBarState = RB.ApplyPreviewBarState
 local GetMWMaxStacks = RB.GetMWMaxStacks
 local CreatePixelBorders = RB.CreatePixelBorders
@@ -754,6 +755,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
 
     layout.resources = layout.resources or {}
     layout.customAuraBarSlots = layout.customAuraBarSlots or {}
+    layout.customBars = layout.customBars or {}
     rbSettings = rbSettings or {}
     rbSettings.resources = rbSettings.resources or {}
 
@@ -852,32 +854,34 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
     end
 
     if resourceBarsEnabled then
-        for slotIndex = 1, MAX_CUSTOM_AURA_BARS do
-            local customAura = customBars and customBars[slotIndex]
+        for customIndex, customAura in ipairs(customBars or {}) do
             if customAura and customAura.enabled and customAura.spellID and not IsTruthyConfigFlag(customAura.independentAnchorEnabled) then
+                local customBarId = EnsureCustomBarId(rbSettings, customAura)
                 local spellInfo = C_Spell.GetSpellInfo(customAura.spellID)
-                local label = spellInfo and spellInfo.name or ("Custom Aura " .. slotIndex)
-                local slotName = "Custom Aura " .. slotIndex .. ": " .. label
+                local label = spellInfo and spellInfo.name or customAura.label or ("Custom Bar " .. customIndex)
+                local slotName = "Custom Bar: " .. label
                 local function EnsureLayoutSlot()
-                    layout.customAuraBarSlots[slotIndex] = layout.customAuraBarSlots[slotIndex] or {
-                        position = "below",
-                        order = 1000 + slotIndex,
-                    }
-                    return layout.customAuraBarSlots[slotIndex]
+                    return EnsureCustomBarLayout(rbSettings, nil, customBarId, 1000 + customIndex)
                 end
 
                 table_insert(primarySlots, {
-                    id = "custom:" .. tostring(slotIndex),
+                    id = "custom:" .. tostring(customBarId),
                     slotCategory = "primary",
                     kind = "custom",
-                    customAuraIndex = slotIndex,
-                    powerType = CUSTOM_AURA_BAR_BASE + slotIndex - 1,
+                    customAuraIndex = customIndex,
+                    customBarId = customBarId,
+                    customEntry = {
+                        kind = "custom",
+                        customBarIndex = customIndex,
+                        customBarId = customBarId,
+                        config = customAura,
+                    },
                     label = slotName,
                     shortLabel = GetShortLabel(label),
                     color = CloneColor(customAura.barColor, { 0.52, 0.64, 1.0, 1 }),
                     icon = C_Spell.GetSpellTexture(customAura.spellID) or LAYOUT_PREVIEW_ICON_FALLBACK,
                     getPos = function()
-                        local slot = layout.customAuraBarSlots[slotIndex]
+                        local slot = GetCustomBarLayout(rbSettings, nil, customAura, false)
                         if isVerticalLayout then
                             local pos = slot and slot.verticalPosition
                             if pos == "left" or pos == "right" then
@@ -888,11 +892,11 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                         return (slot and slot.position) or "below"
                     end,
                     getOrder = function()
-                        local slot = layout.customAuraBarSlots[slotIndex]
+                        local slot = GetCustomBarLayout(rbSettings, nil, customAura, false)
                         if isVerticalLayout then
-                            return (slot and slot.verticalOrder) or (slot and slot.order) or (1000 + slotIndex)
+                            return (slot and slot.verticalOrder) or (slot and slot.order) or (1000 + customIndex)
                         end
-                        return (slot and slot.order) or (1000 + slotIndex)
+                        return (slot and slot.order) or (1000 + customIndex)
                     end,
                     setPos = function(value)
                         local slot = EnsureLayoutSlot()
@@ -1104,7 +1108,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         barInfo = PrepareCustomAuraBar(
             frame.previewCanvas,
             barInfo,
-            slot.powerType,
+            slot.customEntry,
             customBars,
             rbSettings,
             preview.isVerticalLayout,
@@ -2042,7 +2046,7 @@ function ST._BuildLayoutOrderPreviewPanel(container)
     end
 
     if #primarySlots == 0 and #castSlots == 0 then
-        SetPreviewMessage(preview, "No active bars to order. Enable resources, custom aura bars, or cast bar first.")
+        SetPreviewMessage(preview, "No active bars to order. Enable resources, Custom Bars, or cast bar first.")
         FinalizePreviewState(preview)
         return
     end

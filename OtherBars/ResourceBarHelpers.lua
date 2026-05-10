@@ -28,7 +28,6 @@ local DEFAULT_CONTINUOUS_TICK_ABSOLUTE = RB.DEFAULT_CONTINUOUS_TICK_ABSOLUTE
 local DEFAULT_CONTINUOUS_TICK_WIDTH = RB.DEFAULT_CONTINUOUS_TICK_WIDTH
 local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
 local DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT = RB.DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT
-local MAX_CUSTOM_AURA_BARS = RB.MAX_CUSTOM_AURA_BARS
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local CLASS_RESOURCES = RB.CLASS_RESOURCES
 local SPEC_RESOURCES = RB.SPEC_RESOURCES
@@ -191,20 +190,200 @@ local function GetPlayerClassID()
     return classID
 end
 
+local function IsConfiguredCustomBar(cab)
+    return type(cab) == "table"
+        and (
+            cab.spellID ~= nil
+            or cab.enabled == true
+            or cab.independentAnchorEnabled ~= nil
+            or cab.trackingMode ~= nil
+            or cab.displayMode ~= nil
+            or cab.maxStacks ~= nil
+            or cab.barColor ~= nil
+            or cab.talentConditions ~= nil
+        )
+end
+
+local function CustomBarIdOwnedByOther(settings, customBarId, owner)
+    if type(settings) ~= "table"
+        or type(settings.customBars) ~= "table"
+        or type(customBarId) ~= "string"
+        or customBarId == "" then
+        return false
+    end
+
+    for _, specBars in pairs(settings.customBars) do
+        if type(specBars) == "table" then
+            for _, entry in pairs(specBars) do
+                if entry ~= owner
+                    and type(entry) == "table"
+                    and entry.customBarId == customBarId then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function EnsureCustomBarId(settings, entry)
+    if type(settings) ~= "table" or type(entry) ~= "table" then
+        return nil
+    end
+
+    if type(entry.customBarId) == "string"
+        and entry.customBarId ~= ""
+        and not CustomBarIdOwnedByOther(settings, entry.customBarId, entry) then
+        return entry.customBarId
+    end
+
+    settings.nextCustomBarId = tonumber(settings.nextCustomBarId) or 1
+    local id
+    repeat
+        id = "custom_bar_" .. tostring(settings.nextCustomBarId)
+        settings.nextCustomBarId = settings.nextCustomBarId + 1
+    until not CustomBarIdOwnedByOther(settings, id, entry)
+    entry.customBarId = id
+    return id
+end
+
+local function EnsureCustomBarLayout(settings, specID, customBarId, fallbackOrder)
+    local layout = GetSpecLayoutOrder and GetSpecLayoutOrder(settings, specID)
+    if type(layout) ~= "table" or type(customBarId) ~= "string" then
+        return nil
+    end
+
+    if type(layout.customBars) ~= "table" then
+        layout.customBars = {}
+    end
+    if type(layout.customBars[customBarId]) ~= "table" then
+        layout.customBars[customBarId] = {
+            position = "below",
+            order = fallbackOrder or 1000,
+        }
+    end
+    return layout.customBars[customBarId]
+end
+
+local function GetCustomBarLayout(settings, specID, entry, create)
+    if type(entry) ~= "table" then
+        return nil
+    end
+    local customBarId = entry.customBarId
+    local layout = GetSpecLayoutOrder and GetSpecLayoutOrder(settings, specID)
+    if type(layout) ~= "table" or type(customBarId) ~= "string" then
+        return nil
+    end
+    if type(layout.customBars) ~= "table" then
+        if not create then return nil end
+        layout.customBars = {}
+    end
+    if type(layout.customBars[customBarId]) ~= "table" and create then
+        layout.customBars[customBarId] = { position = "below", order = 1000 }
+    end
+    return layout.customBars[customBarId]
+end
+
+local function MigrateLegacyCustomAuraBars(settings, specID, target)
+    specID = tonumber(specID) or specID
+    local legacyBySpec = type(settings.customAuraBars) == "table" and settings.customAuraBars or nil
+    local legacyBars = legacyBySpec and (legacyBySpec[specID] or legacyBySpec[tostring(specID)])
+    if type(legacyBars) ~= "table" then
+        return
+    end
+
+    local numericSlots = {}
+    for slotIdx in pairs(legacyBars) do
+        if tonumber(slotIdx) then
+            numericSlots[#numericSlots + 1] = tonumber(slotIdx)
+        end
+    end
+    table.sort(numericSlots)
+
+    local layout = GetSpecLayoutOrder and GetSpecLayoutOrder(settings, specID)
+    for _, slotIdx in ipairs(numericSlots) do
+        local cab = legacyBars[slotIdx] or legacyBars[tostring(slotIdx)]
+        if IsConfiguredCustomBar(cab) then
+            local entry = CopyTable(cab)
+            entry.entryType = entry.entryType or "aura"
+            local id = EnsureCustomBarId(settings, entry)
+            target[#target + 1] = entry
+
+            local legacyLayout = layout
+                and type(layout.customAuraBarSlots) == "table"
+                and layout.customAuraBarSlots[slotIdx]
+            if type(legacyLayout) == "table" and id then
+                if type(layout.customBars) ~= "table" then
+                    layout.customBars = {}
+                end
+                layout.customBars[id] = CopyTable(legacyLayout)
+            else
+                EnsureCustomBarLayout(settings, specID, id, 1000 + #target)
+            end
+        end
+    end
+end
+
+local function NormalizeCustomBars(settings, specID)
+    if type(settings.customBars) ~= "table" then
+        settings.customBars = {}
+    end
+
+    specID = tonumber(specID) or specID
+    local stringSpecID = tostring(specID)
+    local specBars = settings.customBars[specID]
+    if type(specBars) ~= "table" and stringSpecID ~= specID and type(settings.customBars[stringSpecID]) == "table" then
+        specBars = settings.customBars[stringSpecID]
+        settings.customBars[specID] = specBars
+        settings.customBars[stringSpecID] = nil
+    end
+
+    if type(specBars) ~= "table" then
+        specBars = {}
+        settings.customBars[specID] = specBars
+        MigrateLegacyCustomAuraBars(settings, specID, specBars)
+    end
+
+    local compact = {}
+    local numericKeys = {}
+    for key in pairs(specBars) do
+        if type(key) == "number" then
+            numericKeys[#numericKeys + 1] = key
+        end
+    end
+    table.sort(numericKeys)
+
+    local seen = {}
+    for _, key in ipairs(numericKeys) do
+        local entry = specBars[key]
+        if IsConfiguredCustomBar(entry) then
+            entry.entryType = entry.entryType or "aura"
+            EnsureCustomBarId(settings, entry)
+            compact[#compact + 1] = entry
+        end
+        seen[key] = true
+    end
+
+    for key, entry in pairs(specBars) do
+        if not seen[key] and IsConfiguredCustomBar(entry) then
+            entry.entryType = entry.entryType or "aura"
+            EnsureCustomBarId(settings, entry)
+            compact[#compact + 1] = entry
+        end
+    end
+
+    wipe(specBars)
+    for index, entry in ipairs(compact) do
+        specBars[index] = entry
+    end
+    settings.customBars[specID] = specBars
+    return specBars
+end
+
 local function GetSpecCustomAuraBars(settings)
     local specID = GetCurrentSpecID()
     if not specID then return {} end
-    if not settings.customAuraBars then
-        settings.customAuraBars = {}
-    end
-    if not settings.customAuraBars[specID] then
-        local newBars = {}
-        for i = 1, MAX_CUSTOM_AURA_BARS do
-            newBars[i] = { enabled = false }
-        end
-        settings.customAuraBars[specID] = newBars
-    end
-    return settings.customAuraBars[specID]
+    return NormalizeCustomBars(settings, specID)
 end
 
 local function IsValidCustomAuraUnit(unit)
@@ -227,6 +406,10 @@ local function GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID)
         resolvedSpellID = cabConfig.spellID
     end
 
+    if type(cabConfig) == "table" and (cabConfig.entryType == nil or cabConfig.entryType == "aura") then
+        return GetDefaultCustomAuraUnit(resolvedSpellID)
+    end
+
     if type(cabConfig) == "table" and IsValidCustomAuraUnit(cabConfig.auraUnit) then
         return cabConfig.auraUnit
     end
@@ -241,6 +424,13 @@ local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit, explicit)
     end
 
     if type(cabConfig) == "table" then
+        if cabConfig.entryType == nil or cabConfig.entryType == "aura" then
+            local resolvedUnit = GetDefaultCustomAuraUnit(resolvedSpellID)
+            cabConfig.auraUnit = resolvedUnit
+            cabConfig.auraUnitExplicit = nil
+            return resolvedUnit
+        end
+
         local wasExplicit = HasExplicitCustomAuraBarAuraUnit(cabConfig)
         local resolvedUnit = IsValidCustomAuraUnit(unit) and unit
             or GetResolvedCustomAuraBarAuraUnit(cabConfig, resolvedSpellID)
@@ -355,6 +545,7 @@ local function SeedResourceLayoutFromGlobal(layout, settings, cbSettings, specID
 
     if type(layout.resources) ~= "table" then layout.resources = {} end
     if type(layout.customAuraBarSlots) ~= "table" then layout.customAuraBarSlots = {} end
+    if type(layout.customBars) ~= "table" then layout.customBars = {} end
     if type(layout.castBar) ~= "table" then layout.castBar = {} end
 
     if layout.independentAnchorEnabled == nil then
@@ -387,11 +578,12 @@ local function SeedResourceLayoutFromGlobal(layout, settings, cbSettings, specID
         end
     end
 
-    if specID and type(settings.customAuraBars) == "table" and type(settings.customAuraBars[specID]) == "table" then
-        for slotIdx, cab in pairs(settings.customAuraBars[specID]) do
-            if type(cab) == "table" and (cab.barHeight ~= nil or cab.barWidth ~= nil) then
-                if type(layout.customAuraBarSlots[slotIdx]) ~= "table" then layout.customAuraBarSlots[slotIdx] = {} end
-                local target = layout.customAuraBarSlots[slotIdx]
+    if specID and type(settings.customBars) == "table" and type(settings.customBars[specID]) == "table" then
+        for _, cab in pairs(settings.customBars[specID]) do
+            local customBarId = type(cab) == "table" and cab.customBarId
+            if type(customBarId) == "string" and (cab.barHeight ~= nil or cab.barWidth ~= nil) then
+                if type(layout.customBars[customBarId]) ~= "table" then layout.customBars[customBarId] = {} end
+                local target = layout.customBars[customBarId]
                 if target.barHeight == nil then target.barHeight = cab.barHeight end
                 if target.barWidth == nil then target.barWidth = cab.barWidth end
             end
@@ -424,6 +616,7 @@ local function CreateDefaultLayoutOrder(settings, cbSettings, specID)
     return SeedResourceLayoutFromGlobal({
         resources = {},
         customAuraBarSlots = {},
+        customBars = {},
         castBar = { position = "below", order = 2000 },
     }, settings, cbSettings, specID)
 end
@@ -966,6 +1159,10 @@ RB.GetAnchorGroupFrame = GetAnchorGroupFrame
 RB.GetCurrentSpecID = GetCurrentSpecID
 RB.GetPlayerClassID = GetPlayerClassID
 RB.GetSpecCustomAuraBars = GetSpecCustomAuraBars
+RB.EnsureCustomBarId = EnsureCustomBarId
+RB.GetCustomBarLayout = GetCustomBarLayout
+RB.EnsureCustomBarLayout = EnsureCustomBarLayout
+RB.IsConfiguredCustomBar = IsConfiguredCustomBar
 RB.IsValidCustomAuraUnit = IsValidCustomAuraUnit
 RB.GetDefaultCustomAuraUnit = GetDefaultCustomAuraUnit
 RB.GetResolvedCustomAuraBarAuraUnit = GetResolvedCustomAuraBarAuraUnit

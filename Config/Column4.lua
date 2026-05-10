@@ -15,13 +15,70 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 ------------------------------------------------------------------------
 -- COLUMN 4: Group / Panel Settings Column
 ------------------------------------------------------------------------
+local function IsTruthyConfigFlag(value)
+    return value == true or value == "true" or value == 1 or value == "1"
+end
+
+local function ClearInfoButtons(buttons)
+    if type(buttons) ~= "table" then
+        return
+    end
+
+    for _, btn in ipairs(buttons) do
+        btn:ClearAllPoints()
+        btn:Hide()
+        btn:SetParent(nil)
+    end
+    wipe(buttons)
+end
+
+local function FindSelectedCustomBar()
+    if not CS.selectedCustomBarId or not CooldownCompanion.GetSpecCustomAuraBars then
+        return nil
+    end
+
+    local customBars = CooldownCompanion:GetSpecCustomAuraBars()
+    for _, entry in ipairs(customBars or {}) do
+        if type(entry) == "table" and entry.customBarId == CS.selectedCustomBarId then
+            return entry
+        end
+    end
+    return nil
+end
+
+local function GetCustomBarEntryTabs(entry)
+    local tabs = {
+        { value = "settings", text = "Settings" },
+    }
+
+    if entry and IsTruthyConfigFlag(entry.independentAnchorEnabled) then
+        tabs[#tabs + 1] = { value = "layout", text = "Layout" }
+    end
+
+    tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
+    tabs[#tabs + 1] = { value = "loadconditions", text = "Load Conditions" }
+    return tabs
+end
+
+local function IsCustomBarEntryTabAllowed(entry, tab)
+    if tab == "settings" or tab == "soundalerts" or tab == "loadconditions" then
+        return true
+    end
+    return entry and IsTruthyConfigFlag(entry.independentAnchorEnabled) and tab == "layout"
+end
+
+local function GetCustomBarDetailScrollKey()
+    if not CS.selectedCustomBarId then return nil end
+    return tostring(CS.selectedCustomBarId) .. ":" .. tostring(CS.customBarSettingsTab or "settings")
+end
+
 local function RefreshColumn4(container)
     -- Hide browse placeholder
     if container._browsePlaceholder then
         container._browsePlaceholder:Hide()
     end
 
-    -- Resource Bar panel mode: show Layout & Order preview instead of group settings
+    -- Resource Bar panel mode: show selected Custom Bar settings, or Layout & Order.
     if CS.resourceBarPanelActive then
         if container.placeholderLabel then
             container.placeholderLabel:Hide()
@@ -41,6 +98,89 @@ local function RefreshColumn4(container)
         if container.layoutOrderScroll then
             container.layoutOrderScroll.frame:Hide()
         end
+        if container.customBarsDetailScroll then
+            container.customBarsDetailScroll.frame:Hide()
+        end
+        if container.customBarEntryTabGroup then
+            container.customBarEntryTabGroup.frame:Hide()
+        end
+        if CS.selectedCustomBarId then
+            if container.layoutOrderHost then
+                container.layoutOrderHost:Hide()
+            end
+
+            local selectedEntry = FindSelectedCustomBar()
+            if not selectedEntry then
+                CS.selectedCustomBarId = nil
+                CS.customBarSettingsTab = "settings"
+            else
+                if CS.customBarSettingsTab == "anchor" or CS.customBarSettingsTab == "alpha" then
+                    CS.customBarSettingsTab = "layout"
+                end
+                if not IsCustomBarEntryTabAllowed(selectedEntry, CS.customBarSettingsTab) then
+                    CS.customBarSettingsTab = "settings"
+                end
+
+                if not container.customBarEntryTabGroup then
+                    local tabGroup = AceGUI:Create("TabGroup")
+                    tabGroup:SetLayout("Fill")
+                    tabGroup.frame:SetParent(container)
+                    tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+                        CS.customBarSettingsTab = tab or "settings"
+                        ClearInfoButtons(CS.customBarInfoButtons)
+                        widget:ReleaseChildren()
+
+                        local scroll = AceGUI:Create("ScrollFrame")
+                        scroll:SetLayout("List")
+                        widget:AddChild(scroll)
+                        container.customBarsDetailScroll = scroll
+                        CS.customBarSettingsScroll = scroll
+                        container._customBarDetailScrollKey = GetCustomBarDetailScrollKey()
+                        ST._BuildCustomAuraBarPanel(scroll, CS.selectedCustomBarId, CS.customBarSettingsTab)
+                    end)
+                    container.customBarEntryTabGroup = tabGroup
+                end
+
+                local tabGroup = container.customBarEntryTabGroup
+                tabGroup.frame:ClearAllPoints()
+                tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+                tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+                tabGroup:SetTabs(GetCustomBarEntryTabs(selectedEntry))
+                tabGroup.frame:Show()
+
+                local savedOffset, savedScrollvalue
+                local currentScrollKey = GetCustomBarDetailScrollKey()
+                if container.customBarsDetailScroll and container._customBarDetailScrollKey == currentScrollKey then
+                    local state = container.customBarsDetailScroll.status or container.customBarsDetailScroll.localstatus
+                    if state and state.offset and state.offset > 0 then
+                        savedOffset = state.offset
+                        savedScrollvalue = state.scrollvalue
+                    end
+                end
+
+                tabGroup:SelectTab(CS.customBarSettingsTab or "settings")
+
+                if savedOffset and container.customBarsDetailScroll then
+                    local state = container.customBarsDetailScroll.status or container.customBarsDetailScroll.localstatus
+                    if state then
+                        state.offset = savedOffset
+                        state.scrollvalue = savedScrollvalue
+                    end
+                end
+                return
+            end
+        end
+        if container.customBarEntryTabGroup then
+            container.customBarEntryTabGroup.frame:Hide()
+        end
+        if container.customBarsDetailScroll then
+            container.customBarsDetailScroll.frame:Hide()
+        end
+        if not CS.selectedCustomBarId then
+            -- Fall through to Layout & Order when the selected Custom Bar was removed.
+        else
+            return
+        end
         if not container.layoutOrderHost then
             local host = CreateFrame("Frame", nil, container)
             host:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
@@ -55,6 +195,12 @@ local function RefreshColumn4(container)
     end
     if container.layoutOrderHost then
         container.layoutOrderHost:Hide()
+    end
+    if container.customBarsDetailScroll then
+        container.customBarsDetailScroll.frame:Hide()
+    end
+    if container.customBarEntryTabGroup then
+        container.customBarEntryTabGroup.frame:Hide()
     end
     -- Hide layout order scroll if it exists
     if container.layoutOrderScroll then

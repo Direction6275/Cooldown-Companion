@@ -1026,7 +1026,7 @@ local function BuildPandemicBarControls(container, styleTable, refreshCallback, 
     BuildBarEffectControls(container, styleTable, refreshCallback, {
         colorKey = "barPandemicColor", colorLabel = "Pandemic Bar Color",
         defaultColor = {1, 0.5, 0, 1},
-        enableKey = "showPandemicGlow", enableLabel = "Show Pandemic Color/Glow",
+        enableKey = "showPandemicGlow", enableLabel = "Show Pandemic Indicator",
         effectKey = "pandemicBarEffect", effectLabel = "Pandemic Effect",
         effectColorKey = "pandemicBarEffectColor", effectColorLabel = "Pandemic Effect Color",
         defaultEffectColor = {1, 0.5, 0, 1},

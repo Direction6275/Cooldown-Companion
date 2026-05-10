@@ -507,6 +507,8 @@ local defaults = {
                 [5] = { position = "below", order = 1005 },
             },
             customAuraBars = {},
+            customBars = {},
+            nextCustomBarId = 1,
             layoutOrder = {},
             displayProfiles = {},
             textFont = "Friz Quadrata TT",

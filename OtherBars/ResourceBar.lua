@@ -16,6 +16,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local CS = ST._configState
 
 local math_floor = math.floor
 local math_min = math.min
@@ -36,7 +37,6 @@ local RB = ST._RB
 local UPDATE_INTERVAL = RB.UPDATE_INTERVAL
 local PERCENT_SCALE_CURVE = RB.PERCENT_SCALE_CURVE
 local CUSTOM_AURA_BAR_BASE = RB.CUSTOM_AURA_BAR_BASE
-local MAX_CUSTOM_AURA_BARS = RB.MAX_CUSTOM_AURA_BARS
 local MW_SPELL_ID = RB.MW_SPELL_ID
 local RAGING_MAELSTROM_SPELL_ID = RB.RAGING_MAELSTROM_SPELL_ID
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
@@ -196,11 +196,11 @@ local function EnsureNonNilNumber(value)
     return value
 end
 
-local function GetCustomAuraAlphaModuleId(slotIdx)
-    if not slotIdx or slotIdx < 1 or slotIdx > MAX_CUSTOM_AURA_BARS then
+local function GetCustomAuraAlphaModuleId(customBarId)
+    if type(customBarId) ~= "string" or customBarId == "" then
         return nil
     end
-    return "custom_aura_bar_" .. tostring(slotIdx)
+    return "custom_bar_" .. customBarId
 end
 
 local function CustomAuraUsesOwnAlpha(cabConfig)
@@ -341,15 +341,6 @@ local function ApplyIndependentAlphaSync(frame, settings, targetFrame)
     frame:SetAlpha(1)
 end
 
-local function GetCustomAuraSlotFromPowerType(powerType)
-    local pt = tonumber(powerType)
-    if not pt then return nil end
-    if pt < CUSTOM_AURA_BAR_BASE or pt >= CUSTOM_AURA_BAR_BASE + MAX_CUSTOM_AURA_BARS then
-        return nil
-    end
-    return pt - CUSTOM_AURA_BAR_BASE + 1
-end
-
 local IsIndependentCustomAuraUnlocked
 
 local function IsIndependentCustomAuraConfigEditing(barInfo)
@@ -357,13 +348,12 @@ local function IsIndependentCustomAuraConfigEditing(barInfo)
         return false
     end
 
-    local slotIdx = GetCustomAuraSlotFromPowerType(barInfo.powerType)
     local configState = ST._configState
-    if not slotIdx or not configState or not configState.resourceBarPanelActive then
+    if type(barInfo.customBarId) ~= "string" or not configState or not configState.resourceBarPanelActive then
         return false
     end
 
-    return configState.customAuraBarTab == ("bar_" .. tostring(slotIdx))
+    return configState.selectedCustomBarId == barInfo.customBarId
 end
 
 local function ShouldForceVisibleIndependentCustomAura(barInfo)
@@ -374,8 +364,7 @@ local function ApplyIndependentCustomAuraAlpha(barInfo, settings, targetFrame)
     if not barInfo or not barInfo.frame or not barInfo.cabConfig then return end
 
     local frame = barInfo.frame
-    local slotIdx = GetCustomAuraSlotFromPowerType(barInfo.powerType)
-    local alphaModuleId = GetCustomAuraAlphaModuleId(slotIdx)
+    local alphaModuleId = GetCustomAuraAlphaModuleId(barInfo.customBarId)
     local previousAlphaModuleId = frame._cdcCustomAuraAlphaModuleId
     if previousAlphaModuleId and previousAlphaModuleId ~= alphaModuleId then
         CooldownCompanion:UnregisterModuleAlpha(previousAlphaModuleId)
@@ -645,17 +634,13 @@ IsIndependentCustomAuraUnlocked = function(barInfo)
 end
 
 local function GetIndependentCustomAuraHeaderText(barInfo)
-    local slotIdx = GetCustomAuraSlotFromPowerType(barInfo and barInfo.powerType) or 0
     if barInfo and barInfo.cabConfig and barInfo.cabConfig.spellID then
         local spellName = C_Spell.GetSpellName(barInfo.cabConfig.spellID)
         if spellName and spellName ~= "" then
             return spellName
         end
     end
-    if slotIdx > 0 then
-        return "Aura Bar " .. tostring(slotIdx)
-    end
-    return "Aura Bar"
+    return "Custom Bar"
 end
 
 local function SaveIndependentCustomAuraAnchor(barInfo, refreshConfig)
@@ -2478,10 +2463,43 @@ local function UpdateCustomAuraBar(barInfo)
         end
     end
 
+    local soundAuraActive = auraPresent
     if indicatorPreview and not auraPresent then
         auraPresent = true
         applications = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
         stacks = 1
+    end
+
+    if CooldownCompanion.UpdateCustomBarSoundAlerts then
+        CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, soundAuraActive)
+    end
+
+    local inPandemic = false
+    local pandemicStateFrame = barInfo.frame
+    if pandemicPreview then
+        inPandemic = true
+    elseif configUnit == "target" and auraPresent and viewerFrame then
+        local pi = viewerFrame.PandemicIcon
+        if pandemicStateFrame._pandemicGraceSuppressed then
+            pandemicStateFrame._pandemicGraceSuppressed = nil
+            pandemicStateFrame._pandemicGraceStart = nil
+        elseif pi and pi:IsVisible() then
+            inPandemic = true
+            pandemicStateFrame._pandemicGraceStart = nil
+        elseif pandemicStateFrame._inPandemic then
+            local now = GetTime()
+            if not pandemicStateFrame._pandemicGraceStart then
+                pandemicStateFrame._pandemicGraceStart = now
+            end
+            if now - pandemicStateFrame._pandemicGraceStart <= 0.3 then
+                inPandemic = true
+            else
+                pandemicStateFrame._pandemicGraceStart = nil
+            end
+        end
+    else
+        pandemicStateFrame._pandemicGraceStart = nil
+        pandemicStateFrame._pandemicGraceSuppressed = nil
     end
 
     if isActive and bar then
@@ -2493,40 +2511,24 @@ local function UpdateCustomAuraBar(barInfo)
             bar._auraUnit = nil
         end
 
-        local inPandemic = false
-        if pandemicPreview then
-            inPandemic = true
-        elseif configUnit == "target" and auraPresent and cabConfig.showPandemicGlow == true and viewerFrame then
-            local pi = viewerFrame.PandemicIcon
-            if bar._pandemicGraceSuppressed then
-                bar._pandemicGraceSuppressed = nil
-                bar._pandemicGraceStart = nil
-            elseif pi and pi:IsVisible() then
-                inPandemic = true
-                bar._pandemicGraceStart = nil
-            elseif bar._inPandemic then
-                local now = GetTime()
-                if not bar._pandemicGraceStart then
-                    bar._pandemicGraceStart = now
-                end
-                if now - bar._pandemicGraceStart <= 0.3 then
-                    inPandemic = true
-                else
-                    bar._pandemicGraceStart = nil
-                end
-            end
-        else
-            bar._pandemicGraceStart = nil
-            bar._pandemicGraceSuppressed = nil
-        end
         bar._inPandemic = inPandemic or nil
+    elseif pandemicStateFrame then
+        pandemicStateFrame._inPandemic = inPandemic or nil
     end
 
-    -- Hide When Inactive: hide the bar frame when aura is absent.
+    -- Aura visibility rules hide the bar based on the resolved aura state.
     -- Independent bars stay visible while being edited or placed so they do not disappear.
-    if cabConfig.hideWhenInactive then
+    if cabConfig.hideWhenInactive or cabConfig.hideWhileAuraActive then
         local forceVisibleForEditing = barInfo._isIndependent and ShouldForceVisibleIndependentCustomAura(barInfo)
-        local shouldShow = auraPresent or forceVisibleForEditing or auraPreview or pandemicPreview
+        local hideWhileAuraActive = cabConfig.hideWhileAuraActive == true
+            and cabConfig.hideWhenInactive ~= true
+            and auraPresent
+            and not (cabConfig.hideAuraActiveExceptPandemic == true and inPandemic)
+        local hideWhileAuraNotActive = cabConfig.hideWhenInactive == true and not auraPresent
+        local shouldShow = not (hideWhileAuraActive or hideWhileAuraNotActive)
+            or forceVisibleForEditing
+            or auraPreview
+            or pandemicPreview
         local wasShown = barInfo.frame:IsShown()
         barInfo.frame:SetShown(shouldShow)
         if wasShown ~= shouldShow then
@@ -2701,7 +2703,7 @@ end
 local RelayoutBars
 
 local function ResolveDeferredCustomAuraWakeRetryBarInfo(entry)
-    if not entry or not entry.powerType or not entry.cabConfig then
+    if not entry or not entry.customBarId or not entry.cabConfig then
         return nil
     end
 
@@ -2710,7 +2712,7 @@ local function ResolveDeferredCustomAuraWakeRetryBarInfo(entry)
     -- captured table/frame from queue time.
     for _, candidate in ipairs(resourceBarFrames) do
         if candidate
-            and candidate.powerType == entry.powerType
+            and candidate.customBarId == entry.customBarId
             and candidate.cabConfig == entry.cabConfig then
             return candidate
         end
@@ -2741,7 +2743,7 @@ local function ProcessDeferredCustomAuraWakeRetries()
             and cabConfig
             and barInfo.cabConfig == entry.cabConfig
             and IsEventDrivenCustomAuraBar(barInfo)
-            and cabConfig.hideWhenInactive == true
+            and (cabConfig.hideWhenInactive == true or cabConfig.hideWhileAuraActive == true)
             and GetHiddenCustomAuraWakeUnit(cabConfig) == entry.unit
             and not frame:IsShown()
         then
@@ -2769,8 +2771,13 @@ local function QueueDeferredCustomAuraWakeRetry(barInfo, unit)
 
     local frame = barInfo and barInfo.frame
     local cabConfig = barInfo and barInfo.cabConfig
-    local powerType = barInfo and barInfo.powerType
-    if not frame or not cabConfig or not powerType or cabConfig.hideWhenInactive ~= true then return end
+    local customBarId = barInfo and barInfo.customBarId
+    if not frame
+        or not cabConfig
+        or not customBarId
+        or not (cabConfig.hideWhenInactive == true or cabConfig.hideWhileAuraActive == true) then
+        return
+    end
     if frame:IsShown() then return end
     if GetHiddenCustomAuraWakeUnit(cabConfig) ~= unit then return end
     if customAuraWakeRetryPending[cabConfig] then return end
@@ -2778,7 +2785,7 @@ local function QueueDeferredCustomAuraWakeRetry(barInfo, unit)
     customAuraWakeRetryPending[cabConfig] = true
     customAuraWakeRetryQueue[#customAuraWakeRetryQueue + 1] = {
         cabConfig = cabConfig,
-        powerType = powerType,
+        customBarId = customBarId,
         unit = unit,
     }
 
@@ -2799,7 +2806,9 @@ local function RefreshEventDrivenCustomAuraBarsForUnit(unit)
         local cabConfig = barInfo and barInfo.cabConfig
         local shouldRefresh = frame and (
             IsEventDrivenCustomAuraBar(barInfo)
-            or (not frame:IsShown() and cabConfig and cabConfig.hideWhenInactive)
+            or (not frame:IsShown()
+                and cabConfig
+                and (cabConfig.hideWhenInactive or cabConfig.hideWhileAuraActive))
         )
         if shouldRefresh
             and cabConfig
@@ -2915,7 +2924,7 @@ local function StyleCustomAuraBar(barInfo, cabConfig)
 end
 
 local function FinalizeAppliedBarVisibility(barInfo, powerType, previewActive)
-    if powerType >= CUSTOM_AURA_BAR_BASE and powerType < CUSTOM_AURA_BAR_BASE + MAX_CUSTOM_AURA_BARS then
+    if barInfo and type(barInfo.customBarId) == "string" then
         if previewActive then
             barInfo.frame:Show()
         elseif barInfo.cabConfig and barInfo.cabConfig.hideWhenInactive then
@@ -2940,6 +2949,10 @@ local function HideUnusedResourceBarFrames(owner, firstHiddenIndex)
             barInfo.frame:Hide()
             barInfo.cabConfig = nil
             barInfo.powerType = nil
+            barInfo.customBarId = nil
+            barInfo.customBarIndex = nil
+            barInfo._sndInitialized = nil
+            barInfo._sndPrevAuraActive = nil
             barInfo._isIndependent = nil
             barInfo._side = nil
             barInfo._order = nil
@@ -2954,7 +2967,7 @@ end
 local function PrepareCustomAuraBar(
     targetContainer,
     barInfo,
-    powerType,
+    customEntry,
     customBars,
     settings,
     isVerticalLayout,
@@ -2963,8 +2976,24 @@ local function PrepareCustomAuraBar(
     effectiveHeight,
     segmentGap
 )
-    local cabIndex = powerType - CUSTOM_AURA_BAR_BASE + 1
-    local cabConfig = customBars[cabIndex]
+    local cabIndex
+    local cabConfig
+    local customBarId
+    local legacyPowerType
+    if type(customEntry) == "table" then
+        cabIndex = customEntry.customBarIndex or customEntry.index
+        cabConfig = customEntry.config or (customBars and cabIndex and customBars[cabIndex])
+        customBarId = customEntry.customBarId or (cabConfig and cabConfig.customBarId)
+    else
+        legacyPowerType = customEntry
+        cabIndex = legacyPowerType - CUSTOM_AURA_BAR_BASE + 1
+        cabConfig = customBars[cabIndex]
+        customBarId = cabConfig and cabConfig.customBarId
+    end
+    if not cabConfig then
+        return barInfo, false
+    end
+    customBarId = customBarId or RB.EnsureCustomBarId(settings, cabConfig)
     local isActive = cabConfig.trackingMode == "active"
     local mode = isActive and "continuous" or (cabConfig.displayMode or "segmented")
     local maxStacks = isActive and 1 or (cabConfig.maxStacks or 1)
@@ -3029,17 +3058,17 @@ local function PrepareCustomAuraBar(
         if mode == "continuous" then
             local bar = CreateContinuousBar(targetContainer)
             bar:SetMinMaxValues(0, maxStacks)
-            barInfo = { frame = bar, barType = "custom_continuous", powerType = powerType }
+            barInfo = { frame = bar, barType = "custom_continuous" }
         elseif mode == "segmented" then
             local holder = CreateSegmentedBar(targetContainer, maxStacks)
             for si = 1, maxStacks do
                 holder.segments[si]:SetMinMaxValues(si - 1, si)
             end
-            barInfo = { frame = holder, barType = "custom_segmented", powerType = powerType }
+            barInfo = { frame = holder, barType = "custom_segmented" }
         elseif mode == "overlay" then
             local half = math.ceil(maxStacks / 2)
             local holder = CreateOverlayBar(targetContainer, half)
-            barInfo = { frame = holder, barType = "custom_overlay", powerType = powerType, halfSegments = half }
+            barInfo = { frame = holder, barType = "custom_overlay", halfSegments = half }
         end
     end
 
@@ -3051,8 +3080,14 @@ local function PrepareCustomAuraBar(
         EnsureCustomAuraOverlayThresholdOverlays(barInfo.frame, barInfo.halfSegments or math.ceil(maxStacks / 2))
     end
 
+    if barInfo.customBarId ~= customBarId then
+        barInfo._sndInitialized = nil
+        barInfo._sndPrevAuraActive = nil
+    end
     barInfo.cabConfig = cabConfig
-    barInfo.powerType = powerType
+    barInfo.powerType = legacyPowerType
+    barInfo.customBarId = customBarId
+    barInfo.customBarIndex = cabIndex
     ApplyCustomAuraBarPreviewState(barInfo)
     barInfo.frame:SetSize(customWidth, customHeight)
     barInfo.frame._isVertical = customIsVertical
@@ -3163,7 +3198,9 @@ end
 
 local function CompareBarOrder(a, b)
     if a._order ~= b._order then return a._order < b._order end
-    return (a.powerType or 0) < (b.powerType or 0)
+    local aKey = a.powerType or a.customBarId or ""
+    local bKey = b.powerType or b.customBarId or ""
+    return tostring(aKey) < tostring(bKey)
 end
 
 RelayoutBars = function()
@@ -3710,13 +3747,19 @@ function CooldownCompanion:ApplyResourceBars()
         end
     end
 
-    -- Append enabled custom aura bars
+    -- Append enabled Custom Bars
     local customBars = GetSpecCustomAuraBars(settings)
-    for i = 1, MAX_CUSTOM_AURA_BARS do
-        local cab = customBars[i]
+    local customBarLoadDefaults = CooldownCompanion:GetLocalLoadConditionDefaults()
+    for i, cab in ipairs(customBars) do
         if cab and cab.enabled and cab.spellID
-            and CooldownCompanion:IsTalentConditionMet(cab) then
-            table.insert(filtered, CUSTOM_AURA_BAR_BASE + i - 1)
+            and CooldownCompanion:IsTalentConditionMet(cab)
+            and CooldownCompanion:EvaluateLoadConditions(cab.loadConditions, customBarLoadDefaults) then
+            table.insert(filtered, {
+                kind = "custom",
+                customBarIndex = i,
+                customBarId = RB.EnsureCustomBarId(settings, cab),
+                config = cab,
+            })
         end
     end
 
@@ -3754,13 +3797,14 @@ function CooldownCompanion:ApplyResourceBars()
     local sideList = {}
     local orderList = {}
     local fallbackOrder = 900
-    for idx, powerType in ipairs(filtered) do
+    for idx, entry in ipairs(filtered) do
+        local isCustomEntry = type(entry) == "table" and entry.kind == "custom"
+        local powerType = isCustomEntry and nil or entry
         local side, order
-        if powerType >= CUSTOM_AURA_BAR_BASE then
-            local slotIdx = powerType - CUSTOM_AURA_BAR_BASE + 1
-            local cabConfig = customBars and customBars[slotIdx]
+        if isCustomEntry then
+            local cabConfig = entry.config
             if not IsCustomAuraBarIndependent(cabConfig) then
-                local slotCfg = layout and layout.customAuraBarSlots and layout.customAuraBarSlots[slotIdx]
+                local slotCfg = RB.GetCustomBarLayout(settings, nil, cabConfig, false)
                 if isVerticalLayout then
                     local storedHorizontalSide = (slotCfg and slotCfg.position) or "below"
                     side = (slotCfg and slotCfg.verticalPosition) or GetVerticalSideFallback(storedHorizontalSide)
@@ -3799,7 +3843,9 @@ function CooldownCompanion:ApplyResourceBars()
     -- Hide existing bars that we don't need
     HideUnusedResourceBarFrames(self, #filtered + 1)
 
-    for idx, powerType in ipairs(filtered) do
+    for idx, entry in ipairs(filtered) do
+        local isCustomEntry = type(entry) == "table" and entry.kind == "custom"
+        local powerType = isCustomEntry and nil or entry
         local isSegmented = SEGMENTED_TYPES[powerType]
         local barInfo = resourceBarFrames[idx]
         local firstSide = isVerticalLayout and "left" or "above"
@@ -3809,9 +3855,8 @@ function CooldownCompanion:ApplyResourceBars()
         local effectiveThickness = globalBarThickness
         if layout.customBarHeights then
             local thicknessKey = isVerticalLayout and "barWidth" or "barHeight"
-            if powerType >= CUSTOM_AURA_BAR_BASE and powerType < CUSTOM_AURA_BAR_BASE + MAX_CUSTOM_AURA_BARS then
-                local cabIdx = powerType - CUSTOM_AURA_BAR_BASE + 1
-                local slotLayout = layout.customAuraBarSlots and layout.customAuraBarSlots[cabIdx]
+            if isCustomEntry then
+                local slotLayout = RB.GetCustomBarLayout(settings, nil, entry.config, false)
                 if thicknessKey == "barWidth" then
                     effectiveThickness = (slotLayout and (slotLayout.barWidth or slotLayout.barHeight)) or globalBarThickness
                 else
@@ -3891,11 +3936,11 @@ function CooldownCompanion:ApplyResourceBars()
             end
             StyleSegmentedText(barInfo.frame, powerType, settings)
 
-        elseif powerType >= CUSTOM_AURA_BAR_BASE and powerType < CUSTOM_AURA_BAR_BASE + MAX_CUSTOM_AURA_BARS then
+        elseif isCustomEntry then
             barInfo = PrepareCustomAuraBar(
                 targetContainer,
                 barInfo,
-                powerType,
+                entry,
                 customBars,
                 settings,
                 isVerticalLayout,
@@ -3946,9 +3991,8 @@ function CooldownCompanion:ApplyResourceBars()
         end
 
         local isIndependentCustomAura = false
-        if powerType >= CUSTOM_AURA_BAR_BASE and powerType < CUSTOM_AURA_BAR_BASE + MAX_CUSTOM_AURA_BARS then
-            local slotIdx = powerType - CUSTOM_AURA_BAR_BASE + 1
-            local cabConfig = customBars and customBars[slotIdx]
+        if isCustomEntry then
+            local cabConfig = entry.config
             isIndependentCustomAura = IsCustomAuraBarIndependent(cabConfig)
         end
 
@@ -4392,6 +4436,7 @@ function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
         local entry = {
             index = idx,
             powerType = barInfo.powerType,
+            customBarId = barInfo.customBarId,
             barType = barInfo.barType,
             shown = barInfo.frame and barInfo.frame:IsShown() or false,
             isIndependent = barInfo._isIndependent == true,
@@ -4405,20 +4450,28 @@ function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
     return info
 end
 
-function CooldownCompanion:InitializeCustomAuraIndependentAnchor(slotIdx)
+function CooldownCompanion:InitializeCustomAuraIndependentAnchor(customBarRef)
     local settings = GetResourceBarSettings()
     if not settings then return end
 
-    local idx = tonumber(slotIdx)
-    if not idx or idx < 1 or idx > MAX_CUSTOM_AURA_BARS then
-        return
-    end
-
     local customBars = GetSpecCustomAuraBars(settings)
-    local cabConfig = customBars[idx]
+    local idx = tonumber(customBarRef)
+    local cabConfig
+    if type(customBarRef) == "string" then
+        for entryIndex, entry in ipairs(customBars) do
+            if entry.customBarId == customBarRef then
+                idx = entryIndex
+                cabConfig = entry
+                break
+            end
+        end
+    elseif idx and idx >= 1 then
+        cabConfig = customBars[idx]
+    end
     if type(cabConfig) ~= "table" then
         return
     end
+    local customBarId = RB.EnsureCustomBarId(settings, cabConfig)
 
     local hasAnchor = type(cabConfig.independentAnchor) == "table"
         and cabConfig.independentAnchor.x ~= nil
@@ -4446,10 +4499,9 @@ function CooldownCompanion:InitializeCustomAuraIndependentAnchor(slotIdx)
         cabConfig.independentSize = {}
     end
 
-    local powerType = CUSTOM_AURA_BAR_BASE + idx - 1
     local sourceFrame = nil
     for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo and barInfo.powerType == powerType and barInfo.frame then
+        if barInfo and barInfo.customBarId == customBarId and barInfo.frame then
             sourceFrame = barInfo.frame
             break
         end
@@ -4511,7 +4563,7 @@ function CooldownCompanion:GetResourceBarPredecessor(side, upToOrder)
             elseif barInfo._order > best._order then
                 best = barInfo
             elseif barInfo._order == best._order
-                and (barInfo.powerType or 0) > (best.powerType or 0) then
+                and tostring(barInfo.powerType or barInfo.customBarId or "") > tostring(best.powerType or best.customBarId or "") then
                 best = barInfo
             end
         end
@@ -4763,6 +4815,9 @@ function CooldownCompanion:StartResourceBarPreview()
 end
 
 function CooldownCompanion:StopResourceBarPreview()
+    if CS then
+        CS.customBarIndicatorPreviewActive = nil
+    end
     if not isPreviewActive then return end
     isPreviewActive = false
     wipe(HEALTH_EFFECTS.preview)

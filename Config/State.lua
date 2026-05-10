@@ -161,6 +161,7 @@ ST._configState = {
     moveMenuFrame = nil,
     groupContextMenu = nil,
     buttonContextMenu = nil,
+    customBarContextMenu = nil,
     gearDropdownFrame = nil,
     folderContextMenu = nil,
     folderIconPickerFrame = nil,
@@ -223,14 +224,16 @@ ST._configState = {
 
     -- Tab UI state (populated by ConfigSettings, cleaned by both files)
     tabInfoButtons = {},
+    customBarInfoButtons = {},
     appearanceTabElements = {},
     resourceBarPanelActive = false,
     barPanelTab = "resource_anchoring",
     resourceStylingTab = "bar_text",
     castBarStylingTab = "styling",
     resourceAuraOverlayDrafts = {},
-    customAuraBarTab = "bar_1",
-    customAuraBarSubTabs = {},
+    customBarSettingsTab = "settings",
+    selectedCustomBarId = nil,
+    customBarIndicatorPreviewActive = nil,
     groupPresetSelection = {
         icons = nil,
         bars = nil,
@@ -1286,6 +1289,11 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcAnchorBadge then entry.frame._cdcAnchorBadge:Hide() end
     if entry.frame._cdcHeaderDisabledBadge then entry.frame._cdcHeaderDisabledBadge:Hide() end
     if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end
+    if entry.frame._cdcCustomBarTypeBadge then entry.frame._cdcCustomBarTypeBadge:Hide() end
+    if entry.frame._cdcCustomBarPlacementBadge then entry.frame._cdcCustomBarPlacementBadge:Hide() end
+    if entry.frame._cdcCustomBarAuraStatusBadge then entry.frame._cdcCustomBarAuraStatusBadge:Hide() end
+    if entry.frame._cdcCustomBarDisabledBadge then entry.frame._cdcCustomBarDisabledBadge:Hide() end
+    if entry.frame._cdcCustomBarUnlockedBadge then entry.frame._cdcCustomBarUnlockedBadge:Hide() end
     if entry.frame._cdcFallbackRemoveBtn then entry.frame._cdcFallbackRemoveBtn:Hide() end
     if entry.frame._cdcFallbackUpBtn then entry.frame._cdcFallbackUpBtn:Hide() end
     if entry.frame._cdcFallbackDownBtn then entry.frame._cdcFallbackDownBtn:Hide() end
@@ -2008,6 +2016,8 @@ local function ResetConfigSelection(full)
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedFolder = nil
     CS.selectedButton = nil
+    CS.selectedCustomBarId = nil
+    CS.customBarSettingsTab = "settings"
     wipe(CS.selectedButtons)
     wipe(CS.selectedPanels)
     if full then
@@ -2039,6 +2049,8 @@ local function SetConfigPrimaryMode(mode, opts)
     elseif (not toBars) and wasBars then
         -- Stop preview loops when returning to button settings mode.
         CooldownCompanion:ClearAllConfigPreviews()
+        CS.selectedCustomBarId = nil
+        CS.customBarSettingsTab = "settings"
     end
 
     CS.resourceBarPanelActive = toBars

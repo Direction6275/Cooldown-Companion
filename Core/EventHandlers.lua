@@ -350,12 +350,14 @@ function CooldownCompanion:CachePlayerState()
 end
 
 function CooldownCompanion:OnZoneChanged()
-    self:RefreshSpellAvailabilityState()
+    self:RefreshSpellAvailabilityState({ evaluateResourceBars = true })
 end
 
 function CooldownCompanion:OnRestingChanged()
     self._isResting = IsResting()
     self:RefreshAllGroupsVisibilityOnly()
+    self:EvaluateResourceBars()
+    self:UpdateAnchorStacking()
     self:RefreshConfigPanel()
 end
 
@@ -370,12 +372,16 @@ end
 function CooldownCompanion:OnPetBattleStart()
     self._inPetBattle = true
     self:RefreshAllGroupsVisibilityOnly()
+    self:EvaluateResourceBars()
+    self:UpdateAnchorStacking()
     self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:OnPetBattleEnd()
     self._inPetBattle = false
     self:RefreshAllGroupsVisibilityOnly()
+    self:EvaluateResourceBars()
+    self:UpdateAnchorStacking()
     self:RefreshConfigPanel()
 end
 
@@ -385,6 +391,8 @@ function CooldownCompanion:OnVehicleUIChanged(event, unit)
         or C_ActionBar.HasVehicleActionBar()
         or C_ActionBar.HasOverrideActionBar()
     self:RefreshAllGroupsVisibilityOnly()
+    self:EvaluateResourceBars()
+    self:UpdateAnchorStacking()
     self:RefreshConfigPanel()
 end
 
@@ -526,6 +534,8 @@ function CooldownCompanion:OnActionBarLayoutChanged()
         or C_ActionBar.HasOverrideActionBar()
     if self._inVehicleUI ~= wasInVehicleUI then
         self:RefreshAllGroupsVisibilityOnly()
+        self:EvaluateResourceBars()
+        self:UpdateAnchorStacking()
     end
 end
 

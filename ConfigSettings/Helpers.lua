@@ -1063,10 +1063,10 @@ ST._HookSliderEditBox = HookSliderEditBox
 -- config: table with alpha fields (baselineAlpha, forceAlpha*, forceHide*, fade*, etc.)
 -- refreshFn: function called after value changes (typically RefreshConfigPanel)
 -- collapseKey: string key for CS.collapsedSections
--- opts (optional): { onBaselineChanged = fn(val), isGlobal = bool, disabled = bool }
+-- opts (optional): { onBaselineChanged = fn(val), isGlobal = bool, disabled = bool, infoButtons = table }
 local function BuildAlphaControls(container, config, refreshFn, collapseKey, opts)
     opts = opts or {}
-    local tabInfoBtns = CS.tabInfoButtons
+    local tabInfoBtns = opts.infoButtons or CS.tabInfoButtons
     local controlsDisabled = opts.disabled == true
 
     local alphaHeading = AceGUI:Create("Heading")
