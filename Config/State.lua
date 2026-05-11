@@ -127,7 +127,6 @@ ST._configState = {
     selectedPanels = {},         -- multi-selected panel IDs (within a container)
     selectedGroups = {},         -- multi-selected container IDs
     selectedTab = "appearance",
-    selectedFolderTab = "general",
     selectedContainerTab = "general",
     buttonSettingsTab = "settings",
     panelSettingsTab = "appearance",
@@ -1240,6 +1239,10 @@ local function ApplyConfigRowLayout(entry)
             icon:Hide()
         end
     end
+
+    if entry._cdcAfterConfigRowLayout then
+        entry:_cdcAfterConfigRowLayout()
+    end
 end
 
 local function EnsureConfigRowHandlers(entry)
@@ -1299,6 +1302,7 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcFallbackDownBtn then entry.frame._cdcFallbackDownBtn:Hide() end
     if entry.frame._cdcMarkerLeft then entry.frame._cdcMarkerLeft:Hide() end
     if entry.frame._cdcMarkerRight then entry.frame._cdcMarkerRight:Hide() end
+    entry._cdcAfterConfigRowLayout = nil
     entry.frame:SetScript("OnMouseUp", nil)
     entry.frame:SetScript("OnReceiveDrag", nil)
     entry.frame._cdcOnMouseDown = nil
@@ -1568,6 +1572,25 @@ local function SetupFolderRowIndicators(entry, folder)
             end
         end
     end
+end
+
+local function GetConfigRowBadgeReserve(frame)
+    local reserve = BADGE_RIGHT_PAD
+    local hasShownBadge = false
+
+    if frame and frame._cdcBadges then
+        for _, badge in ipairs(frame._cdcBadges) do
+            if badge:IsShown() then
+                if hasShownBadge then
+                    reserve = reserve + BADGE_SPACING
+                end
+                reserve = reserve + badge:GetWidth()
+                hasShownBadge = true
+            end
+        end
+    end
+
+    return reserve
 end
 
 local function EnsureColumn1MarkerParts(frame)
@@ -2195,6 +2218,7 @@ ST._RefreshVisibleConfigCompactRows = RefreshVisibleConfigCompactRows
 ST._AcquireBadge = AcquireBadge
 ST._SetupGroupRowIndicators = SetupGroupRowIndicators
 ST._SetupFolderRowIndicators = SetupFolderRowIndicators
+ST._GetConfigRowBadgeReserve = GetConfigRowBadgeReserve
 ST._ApplyColumn1MarkerAppearance = ApplyColumn1MarkerAppearance
 ST._SetupColumn1MarkerRow = SetupColumn1MarkerRow
 ST._CreateScrollFrame = CreateScrollFrame

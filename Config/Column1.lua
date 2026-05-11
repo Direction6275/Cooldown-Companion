@@ -16,6 +16,7 @@ local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local ApplyConfigTextRow = ST._ApplyConfigTextRow
 local SetupGroupRowIndicators = ST._SetupGroupRowIndicators
 local SetupFolderRowIndicators = ST._SetupFolderRowIndicators
+local GetConfigRowBadgeReserve = ST._GetConfigRowBadgeReserve
 local SetupColumn1MarkerRow = ST._SetupColumn1MarkerRow
 local GetGroupIcon = ST._GetGroupIcon
 local GetContainerIcon = ST._GetContainerIcon
@@ -1546,22 +1547,20 @@ local function RefreshColumn1(preserveDrag)
 
         local isCollapsed = CS.collapsedFolders[folderId]
         local function ToggleFolderCollapsed()
-            CS.selectedFolder = nil
             CS.collapsedFolders[folderId] = not CS.collapsedFolders[folderId]
             CooldownCompanion:RefreshConfigPanel()
         end
-        local collapseTag = isCollapsed
-            and "  |A:common-icon-plus:10:10|a"
-            or "  |A:common-icon-minus:10:10|a"
 
         local entry = AceGUI:Create("InteractiveLabel")
         CleanRecycledEntry(entry)
-        entry:SetText(folder.name .. collapseTag)
+        entry:SetText(folder.name)
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
         ApplyConfigRowIcon(entry, GetFolderIcon(folderId, db))
         local allChildrenInactive = IsFolderFullyInactive(folderId, childContainerIds)
-        if allChildrenInactive then
+        if CS.selectedFolder == folderId and not CS.selectedContainer and not CS.selectedGroup then
+            entry:SetColor(0.25, 0.62, 1.0)
+        elseif allChildrenInactive then
             entry:SetColor(0.5, 0.5, 0.5)
         else
             entry:SetColor(1.0, 0.82, 0.0)
@@ -1574,6 +1573,61 @@ local function RefreshColumn1(preserveDrag)
         entry.frame._cdcItemKind = "folder"
         entry.frame._cdcFolderId = folderId
         entry.frame._cdcSection = sectionTag
+
+        local collapseBtn = entry.frame._cdcCollapseBtn
+        if not collapseBtn then
+            collapseBtn = CreateFrame("Button", nil, entry.frame)
+            collapseBtn:SetSize(16, 16)
+            collapseBtn:SetPropagateMouseClicks(false)
+            collapseBtn:SetPropagateMouseMotion(false)
+            collapseBtn._arrow = collapseBtn:CreateTexture(nil, "ARTWORK")
+            collapseBtn._arrow:SetSize(10, 10)
+            collapseBtn._arrow:SetPoint("CENTER")
+            entry.frame._cdcCollapseBtn = collapseBtn
+        end
+        collapseBtn:SetParent(entry.frame)
+        local function PositionCollapseButton()
+            collapseBtn:ClearAllPoints()
+            local collapseButtonGap = 4
+            local collapseButtonWidth = collapseBtn:GetWidth() or 16
+            local badgeReserve = GetConfigRowBadgeReserve(entry.frame)
+            local labelRightPad = badgeReserve + collapseButtonWidth + (collapseButtonGap * 2)
+            local leftPad = 0
+            if entry.label and entry.label.GetPoint then
+                local _, _, _, xOfs = entry.label:GetPoint(1)
+                leftPad = xOfs or 0
+                entry.label:ClearAllPoints()
+                entry.label:SetPoint("LEFT", entry.frame, "LEFT", leftPad, 0)
+            end
+            local folderNameWidth = entry.label and entry.label:GetStringWidth() or 0
+            local rowWidth = entry.frame.width or entry.frame:GetWidth() or 0
+            local visibleLabelWidth = rowWidth > 0 and math.max(1, rowWidth - leftPad - labelRightPad) or (entry.label and entry.label:GetWidth() or 0)
+            if visibleLabelWidth > 0 then
+                if entry.label and entry.label.SetWidth then
+                    entry.label:SetWidth(visibleLabelWidth)
+                end
+                folderNameWidth = math.min(folderNameWidth, visibleLabelWidth)
+            end
+            collapseBtn:SetPoint("LEFT", entry.label, "LEFT", folderNameWidth + collapseButtonGap, 0)
+        end
+        entry._cdcAfterConfigRowLayout = PositionCollapseButton
+        PositionCollapseButton()
+        collapseBtn:SetFrameLevel(entry.frame:GetFrameLevel() + 25)
+        collapseBtn._arrow:SetAtlas(isCollapsed and "common-icon-plus" or "common-icon-minus", false)
+        collapseBtn._arrow:SetRotation(0)
+        collapseBtn:Show()
+        collapseBtn._arrow:Show()
+        collapseBtn:SetScript("OnClick", function()
+            ToggleFolderCollapsed()
+        end)
+        collapseBtn:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(isCollapsed and "Expand" or "Collapse")
+            GameTooltip:Show()
+        end)
+        collapseBtn:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
 
         TrackRenderedRow({
             kind = "folder",
@@ -1622,7 +1676,15 @@ local function RefreshColumn1(preserveDrag)
                     CooldownCompanion:RefreshConfigPanel()
                     return
                 end
-                ToggleFolderCollapsed()
+                CooldownCompanion:ClearAllConfigPreviews()
+                CS.selectedFolder = folderId
+                CS.selectedContainer = nil
+                CS.selectedGroup = nil
+                CS.selectedButton = nil
+                wipe(CS.selectedGroups)
+                wipe(CS.selectedPanels)
+                wipe(CS.selectedButtons)
+                CooldownCompanion:RefreshConfigPanel()
             elseif button == "MiddleButton" then
                 -- Lock/unlock all containers in this folder
                 local containers = db.groupContainers or {}

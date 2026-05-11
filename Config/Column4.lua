@@ -265,7 +265,6 @@ local function RefreshColumn4(container)
             local tabGroup = AceGUI:Create("TabGroup")
             tabGroup:SetLayout("Fill")
             tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
-                CS.selectedFolderTab = tab
                 widget:ReleaseChildren()
 
                 local scroll = AceGUI:Create("ScrollFrame")
@@ -273,11 +272,7 @@ local function RefreshColumn4(container)
                 widget:AddChild(scroll)
                 CS.col4Scroll = scroll
 
-                if tab == "general" then
-                    ST._BuildFolderGeneralTab(scroll, CS.selectedFolder)
-                elseif tab == "loadconditions" then
-                    ST._BuildFolderLoadConditionsTab(scroll, CS.selectedFolder)
-                end
+                ST._BuildFolderLoadConditionsTab(scroll, CS.selectedFolder)
 
                 if CS.browseMode then
                     ST._DisableAllWidgets(scroll)
@@ -291,15 +286,10 @@ local function RefreshColumn4(container)
         end
 
         container.folderTabGroup:SetTabs({
-            { value = "general",         text = "General" },
             { value = "loadconditions",  text = "Load Conditions" },
         })
         container.folderTabGroup.frame:Show()
-        local folderTab = CS.selectedFolderTab
-        if folderTab ~= "general" and folderTab ~= "loadconditions" then
-            folderTab = "general"
-        end
-        container.folderTabGroup:SelectTab(folderTab or "general")
+        container.folderTabGroup:SelectTab("loadconditions")
         return
     end
 
@@ -514,6 +504,7 @@ local function RefreshProfileBar(bar)
     profileDrop:SetCallback("OnValueChanged", function(widget, event, val)
         CooldownCompanion:ClearAllConfigPreviews()
         db:SetProfile(val)
+        CS.selectedFolder = nil
         CS.selectedContainer = nil
         CS.selectedGroup = nil
         CS.selectedButton = nil
