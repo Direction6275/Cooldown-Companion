@@ -3,6 +3,12 @@ name: Discord PR Merge Notification
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Commit SHA to announce
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -19,7 +25,8 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_MERGES }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ inputs.commit_sha || github.sha }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           node <<'NODE'
           const {
@@ -27,6 +34,7 @@ jobs:
             GITHUB_TOKEN,
             REPOSITORY,
             COMMIT_SHA,
+            COMMIT_MESSAGE,
           } = process.env;
 
           if (!DISCORD_WEBHOOK_URL) {
@@ -39,32 +47,80 @@ jobs:
             "x-github-api-version": "2022-11-28",
           };
 
-          const pullsResponse = await fetch(
-            `https://api.github.com/repos/${REPOSITORY}/commits/${COMMIT_SHA}/pulls`,
-            { headers }
-          );
-
-          if (!pullsResponse.ok) {
-            throw new Error(`GitHub PR lookup failed: ${pullsResponse.status} ${await pullsResponse.text()}`);
+          async function fetchJson(url) {
+            const response = await fetch(url, { headers });
+            if (!response.ok) {
+              throw new Error(`GitHub request failed: ${response.status} ${await response.text()}`);
+            }
+            return response.json();
           }
 
-          const pulls = await pullsResponse.json();
-          const pull = pulls.find((item) => item.base?.ref === "main" && item.merged_at);
+          async function fetchPull(number) {
+            return fetchJson(`https://api.github.com/repos/${REPOSITORY}/pulls/${number}`);
+          }
+
+          function candidateNumbersFromCommitMessage(message) {
+            const numbers = new Set();
+            const mergeMatch = message.match(/Merge pull request #(\d+)/);
+            const squashMatch = message.match(/\(#(\d+)\)/);
+
+            if (mergeMatch) {
+              numbers.add(Number(mergeMatch[1]));
+            }
+
+            if (squashMatch) {
+              numbers.add(Number(squashMatch[1]));
+            }
+
+            return [...numbers];
+          }
+
+          async function findMergedPull() {
+            const candidateNumbers = candidateNumbersFromCommitMessage(COMMIT_MESSAGE || "");
+
+            for (let attempt = 1; attempt <= 12; attempt += 1) {
+              for (const number of candidateNumbers) {
+                const pull = await fetchPull(number);
+                if (
+                  pull.base?.ref === "main" &&
+                  pull.merged_at &&
+                  pull.merge_commit_sha === COMMIT_SHA
+                ) {
+                  return pull;
+                }
+              }
+
+              const pulls = await fetchJson(
+                `https://api.github.com/repos/${REPOSITORY}/commits/${COMMIT_SHA}/pulls`
+              );
+
+              for (const candidate of pulls) {
+                const pull = await fetchPull(candidate.number);
+                if (pull.base?.ref === "main" && pull.merged_at) {
+                  return pull;
+                }
+              }
+
+              if (attempt < 12) {
+                console.log(`No merged pull request found yet for ${COMMIT_SHA}; retrying...`);
+                await new Promise((resolve) => setTimeout(resolve, 5000));
+              }
+            }
+
+            return null;
+          }
+
+          const pull = await findMergedPull();
 
           if (!pull) {
             console.log("No merged pull request was associated with this push to main.");
             process.exit(0);
           }
 
-          const pullResponse = await fetch(
-            `https://api.github.com/repos/${REPOSITORY}/pulls/${pull.number}`,
-            { headers }
-          );
-          const pullDetails = pullResponse.ok ? await pullResponse.json() : pull;
-          const mergedBy = pullDetails.merged_by?.login || "unknown";
+          const mergedBy = pull.merged_by?.login || "unknown";
 
           const payload = {
-            username: "GitHub Merges",
+            username: "GitHub PR Mergebot",
             embeds: [
               {
                 title: `Merged PR #${pull.number}: ${pull.title}`,
