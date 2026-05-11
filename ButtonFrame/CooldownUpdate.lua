@@ -636,7 +636,9 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
                     result.source = "action-slot-real-no-spell-info"
                     result.renderDurationObj = slotProbe.realDurationObj
                     result.isOnGCD = CooldownCompanion._gcdActive == true
-                    ApplyGCDSyncIfRealEndsInside(result, slotProbe.realDurationObj, "action-slot-gcd-sync")
+                    if options.syncRealCooldownToGCD ~= false then
+                        ApplyGCDSyncIfRealEndsInside(result, slotProbe.realDurationObj, "action-slot-gcd-sync")
+                    end
                 elseif slotProbe.shown and slotProbe.durationObj then
                     result.state = COOLDOWN_STATE_GCD
                     result.source = "action-slot-gcd-no-spell-info"
@@ -675,7 +677,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
         result.renderDurationObj = result.durationObj or CooldownCompanion._gcdDurationObj
     end
 
-    if result.state == COOLDOWN_STATE_COOLDOWN
+    if options.syncRealCooldownToGCD ~= false
+        and result.state == COOLDOWN_STATE_COOLDOWN
         and result.realCooldownShown == true
         and result.realDurationObj then
         ApplyGCDSyncIfRealEndsInside(result, result.realDurationObj, "spell-gcd-sync")
@@ -697,7 +700,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
                 return result
             end
 
-            if ApplyGCDSyncIfRealEndsInside(result, slotProbe.realDurationObj, "action-slot-gcd-sync") then
+            if options.syncRealCooldownToGCD ~= false
+                and ApplyGCDSyncIfRealEndsInside(result, slotProbe.realDurationObj, "action-slot-gcd-sync") then
                 return result
             end
 
@@ -735,6 +739,73 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldo
     return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id, {
         allowActionSlotRealFallback = allowActionSlotRealFallback,
     })
+end
+
+function CooldownCompanion:EvaluateSpellCooldownStateForCustomBar(customBar)
+    local spellID = tonumber(customBar and customBar.spellID)
+    local result
+    if not spellID then
+        return EvaluateSpellCooldownLane(nil, 0, nil)
+    end
+
+    local cooldownSpellID = C_Spell.GetOverrideSpell(spellID)
+    if not cooldownSpellID or cooldownSpellID == 0 then
+        cooldownSpellID = spellID
+    end
+
+    if C_Secrets and C_Secrets.GetSpellCooldownSecrecy
+        and (customBar._cooldownSecrecy == nil or customBar._cooldownSecrecySpellID ~= cooldownSpellID) then
+        customBar._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(cooldownSpellID)
+        customBar._cooldownSecrecySpellID = cooldownSpellID
+    end
+
+    local charges = C_Spell.GetSpellCharges(cooldownSpellID)
+    local maxCharges = charges and tonumber(charges.maxCharges)
+    if maxCharges and maxCharges > 1 then
+        customBar.hasCharges = true
+        customBar.maxCharges = maxCharges
+    elseif charges then
+        customBar.hasCharges = nil
+        customBar.maxCharges = maxCharges
+    elseif not charges then
+        customBar.hasCharges = nil
+    end
+
+    result = EvaluateSpellCooldownLane(cooldownSpellID, customBar._cooldownSecrecy, spellID, {
+        allowActionSlotRealFallback = customBar.hasCharges ~= true and cooldownSpellID == spellID,
+        syncRealCooldownToGCD = false,
+    })
+    result.baseSpellID = spellID
+    result.cooldownSpellID = cooldownSpellID
+
+    if customBar.hasCharges == true and maxCharges and maxCharges > 1 then
+        result.hasCharges = true
+        result.maxCharges = maxCharges
+        result.charges = charges
+
+        if charges and charges.currentCharges ~= nil and not issecretvalue(charges.currentCharges) then
+            result.currentCharges = charges.currentCharges
+            if result.currentCharges <= 0 then
+                result.chargeState = CHARGE_STATE_ZERO
+            elseif result.currentCharges >= maxCharges then
+                result.chargeState = CHARGE_STATE_FULL
+            else
+                result.chargeState = CHARGE_STATE_MISSING
+            end
+        end
+
+        local chargeDurationObj = C_Spell.GetSpellChargeDuration(cooldownSpellID)
+        local chargeRecharging = DurationObjectShowsCooldown(chargeDurationObj)
+        result.chargeDurationObj = chargeDurationObj
+        result.chargeRecharging = chargeRecharging or false
+        if chargeRecharging then
+            result.state = COOLDOWN_STATE_COOLDOWN
+            result.source = "spell-charge-recharge"
+            result.renderDurationObj = chargeDurationObj
+        end
+    end
+
+    return result
 end
 
 local function ResolveChargeState(button, buttonData)

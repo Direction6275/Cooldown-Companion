@@ -2674,6 +2674,86 @@ local function UpdateCustomAuraBar(barInfo)
     end
 end
 
+function RB.UpdateCustomCooldownBar(barInfo)
+    local cabConfig = barInfo and barInfo.cabConfig
+    local bar = barInfo and barInfo.frame
+    if not (cabConfig and cabConfig.spellID and bar) then return end
+
+    local cooldownResult = CooldownCompanion.EvaluateSpellCooldownStateForCustomBar
+        and CooldownCompanion:EvaluateSpellCooldownStateForCustomBar(cabConfig)
+    local durationObj = cooldownResult and cooldownResult.renderDurationObj
+    local cooldownActive = cooldownResult
+        and cooldownResult.state == ST.CooldownLogic.STATE_COOLDOWN
+
+    local barColor = cabConfig.barColor or {0.5, 0.5, 1, 1}
+    local cooldownColor = cabConfig.barCooldownColor or {0.6, 0.13, 0.18, 1}
+    local rechargeColor = cabConfig.barChargeColor or {1.0, 0.82, 0.0, 1}
+    local chargeState = cooldownResult and cooldownResult.chargeState
+    local fillColor = barColor
+    if cooldownResult and cooldownResult.hasCharges == true then
+        if chargeState == ST.CooldownLogic.CHARGE_STATE_ZERO then
+            fillColor = cooldownColor
+        elseif cooldownActive then
+            fillColor = rechargeColor
+        end
+    elseif cooldownActive then
+        fillColor = cooldownColor
+    end
+    bar:SetStatusBarColor(fillColor[1], fillColor[2], fillColor[3], fillColor[4] ~= nil and fillColor[4] or 1)
+
+    bar:SetMinMaxValues(0, 1)
+    if cooldownActive and durationObj then
+        bar:SetValue(durationObj:GetElapsedPercent())
+    elseif cooldownActive then
+        bar:SetValue(0)
+    else
+        bar:SetValue(1)
+    end
+
+    if bar.thresholdOverlay then
+        bar.thresholdOverlay:SetValue(0)
+        bar.thresholdOverlay:Hide()
+    end
+
+    if bar.text and bar.text:IsShown() then
+        if cooldownActive and durationObj then
+            local remaining = durationObj:GetRemainingDuration()
+            if durationObj:HasSecretValues() then
+                bar.text:SetFormattedText(cabConfig.decimalTimers and "%.1f" or "%.0f", remaining)
+            elseif remaining and remaining > 0 then
+                bar.text:SetText(FormatTime(remaining, cabConfig.decimalTimers))
+            else
+                bar.text:SetText("")
+            end
+        else
+            bar.text:SetText("")
+        end
+    end
+
+    if bar.stackText and bar.stackText:IsShown() then
+        local currentCharges = cooldownResult and cooldownResult.currentCharges
+        local maxCharges = cooldownResult and cooldownResult.maxCharges
+        if currentCharges and maxCharges and maxCharges > 1 then
+            bar.stackText:SetFormattedText("%d / %d", currentCharges, maxCharges)
+        else
+            bar.stackText:SetText("")
+        end
+    end
+
+    if barInfo._maxStacksIndicator then
+        barInfo._maxStacksIndicator:SetValue(0)
+    end
+
+    if CooldownCompanion.UpdateCustomBarSoundAlerts then
+        local soundCooldownActive = cooldownActive
+        if cooldownResult and cooldownResult.hasCharges == true then
+            soundCooldownActive = cooldownResult.chargeState == ST.CooldownLogic.CHARGE_STATE_ZERO
+                or (cooldownResult.chargeState == nil and cooldownActive)
+        end
+        CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, false, soundCooldownActive, cooldownResult)
+    end
+end
+
 local function GetHiddenCustomAuraWakeUnit(cabConfig)
     if not cabConfig or not cabConfig.spellID then
         return nil
@@ -2831,10 +2911,11 @@ end
 
 local function StyleCustomAuraBar(barInfo, cabConfig)
     local barColor = cabConfig.barColor or {0.5, 0.5, 1}
-    local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
+    local isSpellCustomBar = RB.GetCustomBarEntryType and RB.GetCustomBarEntryType(cabConfig) == "spell"
+    local thresholdEnabled = (not isSpellCustomBar) and IsCustomAuraMaxThresholdEnabled(cabConfig)
     local thresholdColor = GetCustomAuraMaxThresholdColor(cabConfig)
 
-    if barInfo.barType == "custom_continuous" then
+    if barInfo.barType == "custom_continuous" or barInfo.barType == "custom_cooldown" then
         local bar = barInfo.frame
         bar.style = cabConfig
         local isVertical = bar._isVertical == true
@@ -2845,10 +2926,12 @@ local function StyleCustomAuraBar(barInfo, cabConfig)
         end
 
         -- Determine visibility for both text elements
-        local isActive = cabConfig.trackingMode == "active"
+        local isActive = isSpellCustomBar or cabConfig.trackingMode == "active"
         local showDuration = cabConfig.showDurationText == true
         local showStack = cabConfig.showStackText
-        if showStack == nil then
+        if isSpellCustomBar then
+            showStack = showStack == true
+        elseif showStack == nil then
             -- Backwards compat: fall back to showText for stacks mode
             if not isActive then
                 showStack = cabConfig.showText == true
@@ -2927,11 +3010,17 @@ local function FinalizeAppliedBarVisibility(barInfo, powerType, previewActive)
     if barInfo and type(barInfo.customBarId) == "string" then
         if previewActive then
             barInfo.frame:Show()
-        elseif barInfo.cabConfig and barInfo.cabConfig.hideWhenInactive then
+        elseif barInfo.barType ~= "custom_cooldown"
+            and barInfo.cabConfig
+            and barInfo.cabConfig.hideWhenInactive then
             UpdateCustomAuraBar(barInfo)
         else
             barInfo.frame:Show()
-            UpdateCustomAuraBar(barInfo)
+            if barInfo.barType == "custom_cooldown" then
+                RB.UpdateCustomCooldownBar(barInfo)
+            else
+                UpdateCustomAuraBar(barInfo)
+            end
         end
     else
         barInfo.frame:Show()
@@ -2953,6 +3042,10 @@ local function HideUnusedResourceBarFrames(owner, firstHiddenIndex)
             barInfo.customBarIndex = nil
             barInfo._sndInitialized = nil
             barInfo._sndPrevAuraActive = nil
+            barInfo._sndPrevCooldownActive = nil
+            barInfo._sndPrevCharges = nil
+            barInfo._sndPrevChargeRecharging = nil
+            barInfo._sndPrevChargeCooldownStart = nil
             barInfo._isIndependent = nil
             barInfo._side = nil
             barInfo._order = nil
@@ -2994,10 +3087,11 @@ local function PrepareCustomAuraBar(
         return barInfo, false
     end
     customBarId = customBarId or RB.EnsureCustomBarId(settings, cabConfig)
-    local isActive = cabConfig.trackingMode == "active"
-    local mode = isActive and "continuous" or (cabConfig.displayMode or "segmented")
+    local isSpellCustomBar = RB.GetCustomBarEntryType and RB.GetCustomBarEntryType(cabConfig) == "spell"
+    local isActive = isSpellCustomBar or cabConfig.trackingMode == "active"
+    local mode = isSpellCustomBar and "continuous" or (isActive and "continuous" or (cabConfig.displayMode or "segmented"))
     local maxStacks = isActive and 1 or (cabConfig.maxStacks or 1)
-    local targetBarType = "custom_" .. mode
+    local targetBarType = isSpellCustomBar and "custom_cooldown" or ("custom_" .. mode)
     local isIndependentCustomAura = IsCustomAuraBarIndependent(cabConfig)
     local customOrientation = isVerticalLayout and "vertical" or "horizontal"
     if isIndependentCustomAura then
@@ -3058,7 +3152,7 @@ local function PrepareCustomAuraBar(
         if mode == "continuous" then
             local bar = CreateContinuousBar(targetContainer)
             bar:SetMinMaxValues(0, maxStacks)
-            barInfo = { frame = bar, barType = "custom_continuous" }
+            barInfo = { frame = bar, barType = targetBarType }
         elseif mode == "segmented" then
             local holder = CreateSegmentedBar(targetContainer, maxStacks)
             for si = 1, maxStacks do
@@ -3083,6 +3177,10 @@ local function PrepareCustomAuraBar(
     if barInfo.customBarId ~= customBarId then
         barInfo._sndInitialized = nil
         barInfo._sndPrevAuraActive = nil
+        barInfo._sndPrevCooldownActive = nil
+        barInfo._sndPrevCharges = nil
+        barInfo._sndPrevChargeRecharging = nil
+        barInfo._sndPrevChargeCooldownStart = nil
     end
     barInfo.cabConfig = cabConfig
     barInfo.powerType = legacyPowerType
@@ -3164,11 +3262,15 @@ local function PrepareCustomAuraBar(
     StyleCustomAuraBar(barInfo, cabConfig)
 
     if cabConfig.maxStacksGlowEnabled then
-        EnsureMaxStacksIndicator(barInfo)
-        local indBorderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
-        local indBorderSize = GetResourceDisplayValue(settings, "borderSize", 1)
-        local indBarTexture = CooldownCompanion:FetchStatusBar(GetResourceDisplayValue(settings, "barTexture", "Solid"))
-        LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, indBarTexture, indBorderStyle, indBorderSize)
+        if isSpellCustomBar then
+            ClearMaxStacksIndicator(barInfo)
+        else
+            EnsureMaxStacksIndicator(barInfo)
+            local indBorderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
+            local indBorderSize = GetResourceDisplayValue(settings, "borderSize", 1)
+            local indBarTexture = CooldownCompanion:FetchStatusBar(GetResourceDisplayValue(settings, "barTexture", "Solid"))
+            LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, indBarTexture, indBorderStyle, indBorderSize)
+        end
     else
         ClearMaxStacksIndicator(barInfo)
     end
@@ -3334,6 +3436,11 @@ local function OnUpdate(self, elapsed)
                 UpdateMaelstromWeaponBar(barInfo.frame, settings, auraActiveCache)
             elseif barInfo.barType == "stagger_continuous" then
                 UpdateStaggerBar(barInfo.frame, settings)
+            elseif barInfo.barType == "custom_cooldown" then
+                RB.UpdateCustomCooldownBar(barInfo)
+                if barInfo._isIndependent and barInfo.cabConfig then
+                    ApplyIndependentCustomAuraAlpha(barInfo, settings, ResolveIndependentAnchorTarget(barInfo.cabConfig, settings))
+                end
             elseif barInfo.barType == "custom_continuous" then
                 UpdateCustomAuraBar(barInfo)
                 if barInfo._isIndependent and barInfo.cabConfig then
@@ -4695,6 +4802,24 @@ local function ApplyPreviewDataToBar(barInfo, settings)
         end
         ApplyResourceAuraLanePreview(barInfo, 0.5)
         SetSegmentedText(barInfo.frame, previewStacks, mwMaxStacks)
+    elseif barInfo.barType == "custom_cooldown" then
+        barInfo.frame:SetMinMaxValues(0, 1)
+        barInfo.frame:SetValue(0.45)
+        if barInfo.frame.thresholdOverlay then
+            barInfo.frame.thresholdOverlay:SetValue(0)
+            barInfo.frame.thresholdOverlay:Hide()
+        end
+        if barInfo.frame.text and barInfo.frame.text:IsShown() then
+            local cabConfig = barInfo.cabConfig
+            barInfo.frame.text:SetText(FormatTime(12.3, cabConfig and cabConfig.decimalTimers))
+        end
+        if barInfo.frame.stackText and barInfo.frame.stackText:IsShown() then
+            barInfo.frame.stackText:SetText("1 / 2")
+        end
+        ClearCustomAuraBarIndicatorState(barInfo, true)
+        if barInfo._maxStacksIndicator then
+            barInfo._maxStacksIndicator:SetValue(0)
+        end
     elseif barInfo.barType == "custom_continuous" then
         local cabConfig = barInfo.cabConfig
         local isActive = cabConfig and cabConfig.trackingMode == "active"

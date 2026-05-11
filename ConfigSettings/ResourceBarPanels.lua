@@ -10,6 +10,7 @@ local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local LSM = LibStub("LibSharedMedia-3.0")
 local CS = ST._configState
+local IsPassiveOrProc = ST._IsPassiveOrProc
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
@@ -99,6 +100,7 @@ local DEFAULT_ESSENCE_READY_COLOR = RB.DEFAULT_ESSENCE_READY_COLOR
 local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
 local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
 local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
+local GetCustomBarEntryType = RB.GetCustomBarEntryType
 local EnsureCustomBarId = RB.EnsureCustomBarId
 local EnsureCustomBarLayout = RB.EnsureCustomBarLayout
 local GetCustomBarLayout = RB.GetCustomBarLayout
@@ -113,6 +115,9 @@ local function IsHeroSpecProxyCondition(cond)
         and type(cond.name) == "string"
         and type(cond.heroName) == "string"
         and cond.name == cond.heroName
+end
+local function IsSpellCustomBarConfig(cab)
+    return GetCustomBarEntryType and GetCustomBarEntryType(cab) == "spell"
 end
 local RefreshCustomAuraBarAuraUnitForSpell = RB.RefreshCustomAuraBarAuraUnitForSpell
 
@@ -134,7 +139,9 @@ local ResolveAuraColorSpellIDFromText = RBP.ResolveAuraColorSpellIDFromText
 local GetAuraBarAutocompleteDisplayName = RBP.GetAuraBarAutocompleteDisplayName
 local GetAuraBarAutocompleteDisplayIcon = RBP.GetAuraBarAutocompleteDisplayIcon
 local GetAuraBarAutocompleteEntryName = RBP.GetAuraBarAutocompleteEntryName
+local ResolveAuraBarAutocompleteEntry = RBP.ResolveAuraBarAutocompleteEntry
 local ShowAuraBarAutocompleteResults = RBP.ShowAuraBarAutocompleteResults
+local BuildAuraBarAutocompleteCache = RBP.BuildAuraBarAutocompleteCache
 local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
 local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
 local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
@@ -2718,18 +2725,85 @@ local function BuildCustomBarsListPanel(container)
     addBox:SetLabel("")
     addBox:SetFullWidth(true)
     addBox:DisableButton(true)
-    local updatePlaceholder = ConfigureCustomBarAddInstructions(addBox, "Add aura by name or ID")
+    local updatePlaceholder = ConfigureCustomBarAddInstructions(addBox, "Add spell or aura by name or ID")
 
-    local function AddCustomBarFromSpell(spellId, labelOverride)
+    local function GetCustomBarEntryTypeForAutocomplete(entry)
+        if type(entry) ~= "table" then
+            return "spell"
+        end
+        if entry.forceAura == true or entry.isPassive == true then
+            return "aura"
+        end
+        if entry.forceAura == false then
+            return "spell"
+        end
+        if IsPassiveOrProc and entry.id and IsPassiveOrProc(entry.id) then
+            return "aura"
+        end
+        return "spell"
+    end
+
+    local function StripExplicitCustomBarEntryTypeSuffix(text)
+        local cleaned = text and text:gsub("^%s+", ""):gsub("%s+$", ""):lower() or ""
+        if cleaned:match("%s%((buff)%)$") or cleaned:match("%s%((aura)%)$") then
+            return (text or ""):gsub("%s+%([Bb][Uu][Ff][Ff]%)%s*$", ""):gsub("%s+%([Aa][Uu][Rr][Aa]%)%s*$", ""), "aura"
+        end
+        if cleaned:match("%s%((cooldown)%)$") then
+            return (text or ""):gsub("%s+%([Cc][Oo][Oo][Ll][Dd][Oo][Ww][Nn]%)%s*$", ""), "spell"
+        end
+        return text, nil
+    end
+
+    local function GetCustomBarEntryTypeForSpellID(spellId, explicitType)
+        if explicitType then
+            return explicitType
+        end
+        if not spellId or not C_Spell.GetSpellInfo(spellId) then
+            return "aura"
+        end
+        local sawAuraEntry = false
+        local sawSpellEntry = false
+        local cache = BuildAuraBarAutocompleteCache and BuildAuraBarAutocompleteCache() or nil
+        for _, entry in ipairs(cache or {}) do
+            if entry.id == spellId then
+                if GetCustomBarEntryTypeForAutocomplete(entry) == "aura" then
+                    sawAuraEntry = true
+                else
+                    sawSpellEntry = true
+                end
+            end
+        end
+        if sawAuraEntry and not sawSpellEntry then
+            return "aura"
+        elseif sawSpellEntry and not sawAuraEntry then
+            return "spell"
+        end
+        if IsPassiveOrProc and IsPassiveOrProc(spellId) then
+            return "aura"
+        end
+        return "spell"
+    end
+
+    local function AddCustomBarFromSpell(spellId, labelOverride, entryType)
         if not spellId then return false end
+        entryType = entryType == "aura" and "aura" or "spell"
         local entry = {
-            entryType = "aura",
+            entryType = entryType,
             enabled = true,
-            trackingMode = "active",
             spellID = spellId,
             label = labelOverride or GetAuraBarAutocompleteDisplayName(spellId) or C_Spell.GetSpellName(spellId) or "",
         }
-        RefreshCustomAuraBarAuraUnitForSpell(entry, spellId)
+        if entryType == "aura" then
+            entry.trackingMode = "active"
+            RefreshCustomAuraBarAuraUnitForSpell(entry, spellId)
+        else
+            local charges = C_Spell.GetSpellCharges(spellId)
+            local maxCharges = charges and tonumber(charges.maxCharges)
+            if maxCharges and maxCharges > 1 then
+                entry.hasCharges = true
+                entry.maxCharges = maxCharges
+            end
+        end
         local id = EnsureCustomBarId(settings, entry)
         customBars[#customBars + 1] = entry
         EnsureCustomBarLayout(settings, nil, id, 1000 + #customBars)
@@ -2742,26 +2816,44 @@ local function BuildCustomBarsListPanel(container)
     end
 
     local function CommitCustomBarText(widget, text)
-        local id, explicitClear = ResolveAuraColorSpellIDFromText(text)
+        local lookupText, explicitType = StripExplicitCustomBarEntryTypeSuffix(text)
+        local autocompleteEntry = ResolveAuraBarAutocompleteEntry and (
+            ResolveAuraBarAutocompleteEntry(text)
+            or (lookupText ~= text and ResolveAuraBarAutocompleteEntry(lookupText))
+        )
+        if autocompleteEntry and AddCustomBarFromSpell(
+            autocompleteEntry.id,
+            GetAuraBarAutocompleteEntryName(autocompleteEntry),
+            explicitType or GetCustomBarEntryTypeForAutocomplete(autocompleteEntry)
+        ) then
+            widget:SetText("")
+            return true
+        end
+
+        local id, explicitClear = ResolveAuraColorSpellIDFromText(lookupText)
         if explicitClear then
             widget:SetText("")
             return true
         end
-        if AddCustomBarFromSpell(id) then
+        if AddCustomBarFromSpell(id, nil, GetCustomBarEntryTypeForSpellID(id, explicitType)) then
             widget:SetText("")
             return true
         end
 
         local cleaned = text and text:gsub("^%s+", ""):gsub("%s+$", "") or ""
         if cleaned ~= "" then
-            CooldownCompanion:Print("Custom Bar aura not found: " .. cleaned)
+            CooldownCompanion:Print("Custom Bar spell or aura not found: " .. cleaned)
         end
         return false
     end
 
     local function onAuraBarSelect(entry)
         CS.HideAutocomplete()
-        if entry and AddCustomBarFromSpell(entry.id, GetAuraBarAutocompleteEntryName(entry)) then
+        if entry and AddCustomBarFromSpell(
+            entry.id,
+            GetAuraBarAutocompleteEntryName(entry),
+            GetCustomBarEntryTypeForAutocomplete(entry)
+        ) then
             addBox._cdcCustomBarAutocompleteCommitted = true
             addBox:SetText("")
         end
@@ -2837,8 +2929,9 @@ local function BuildCustomBarsListPanel(container)
         end
 
         local rowFrame = row.frame
-        local resolvedRowAuraUnit = GetResolvedCustomAuraBarAuraUnit(entry, entry.spellID)
-        local auraStatus = ResolveCustomBarAuraTrackingStatus(entry, resolvedRowAuraUnit)
+        local isSpellCustomBar = IsSpellCustomBarConfig(entry)
+        local resolvedRowAuraUnit = isSpellCustomBar and nil or GetResolvedCustomAuraBarAuraUnit(entry, entry.spellID)
+        local auraStatus = (not isSpellCustomBar) and ResolveCustomBarAuraTrackingStatus(entry, resolvedRowAuraUnit) or nil
         local rightBadgeAnchor = rowFrame
         local rightBadgePoint = "RIGHT"
         local rightBadgeOffset = -4
@@ -2861,29 +2954,37 @@ local function BuildCustomBarsListPanel(container)
             rightBadgeOffset = -4
         end
 
-        local auraStatusBadge = EnsureCustomBarRowIconBadge(rowFrame, "_cdcCustomBarAuraStatusBadge", "icon_trackedbuffs")
-        auraStatusBadge:SetPoint("RIGHT", rightBadgeAnchor, rightBadgePoint, rightBadgeOffset, 0)
-        if auraStatus.ready == true then
-            auraStatusBadge.icon:SetVertexColor(1, 1, 1, 1)
-            SetCustomBarRowBadgeTooltip(auraStatusBadge, "Aura tracking: Active", 0.2, 1, 0.2)
-        else
-            auraStatusBadge.icon:SetVertexColor(1, 0.2, 0.2, 1)
-            local tooltipText = "Aura tracking: Inactive"
-            if auraStatus.state == "cdmDisabled" then
-                tooltipText = "Aura tracking: Inactive (Blizzard CDM disabled)"
-            elseif auraStatus.state == "trackedAuraUnavailable" then
-                tooltipText = "Aura tracking: Inactive (tracked in CDM, but the Buffs/Debuffs viewer is not currently readable)"
-            elseif auraStatus.state == "associatedAuraNotTracked" then
-                tooltipText = "Aura tracking: Inactive (associated aura is not currently tracked in CDM)"
-            elseif auraStatus.state == "noAssociatedAura" then
-                tooltipText = "Aura tracking: Inactive (no associated aura found)"
+        local placementAnchor = rightBadgeAnchor
+        local placementPoint = rightBadgePoint
+        local placementOffset = rightBadgeOffset
+        if not isSpellCustomBar then
+            local auraStatusBadge = EnsureCustomBarRowIconBadge(rowFrame, "_cdcCustomBarAuraStatusBadge", "icon_trackedbuffs")
+            auraStatusBadge:SetPoint("RIGHT", rightBadgeAnchor, rightBadgePoint, rightBadgeOffset, 0)
+            if auraStatus.ready == true then
+                auraStatusBadge.icon:SetVertexColor(1, 1, 1, 1)
+                SetCustomBarRowBadgeTooltip(auraStatusBadge, "Aura tracking: Active", 0.2, 1, 0.2)
+            else
+                auraStatusBadge.icon:SetVertexColor(1, 0.2, 0.2, 1)
+                local tooltipText = "Aura tracking: Inactive"
+                if auraStatus.state == "cdmDisabled" then
+                    tooltipText = "Aura tracking: Inactive (Blizzard CDM disabled)"
+                elseif auraStatus.state == "trackedAuraUnavailable" then
+                    tooltipText = "Aura tracking: Inactive (tracked in CDM, but the Buffs/Debuffs viewer is not currently readable)"
+                elseif auraStatus.state == "associatedAuraNotTracked" then
+                    tooltipText = "Aura tracking: Inactive (associated aura is not currently tracked in CDM)"
+                elseif auraStatus.state == "noAssociatedAura" then
+                    tooltipText = "Aura tracking: Inactive (no associated aura found)"
+                end
+                SetCustomBarRowBadgeTooltip(auraStatusBadge, tooltipText, 1, 0.2, 0.2)
             end
-            SetCustomBarRowBadgeTooltip(auraStatusBadge, tooltipText, 1, 0.2, 0.2)
+            placementAnchor = auraStatusBadge
+            placementPoint = "LEFT"
+            placementOffset = -4
         end
 
         local placementBadge = EnsureCustomBarRowTextBadge(rowFrame, "_cdcCustomBarPlacementBadge")
         placementBadge:SetText(IsTruthyConfigFlag(entry.independentAnchorEnabled) and "|cffb88cffIndependent|r" or "|cff7dff7dAttached|r")
-        placementBadge:SetPoint("RIGHT", auraStatusBadge, "LEFT", -4, 0)
+        placementBadge:SetPoint("RIGHT", placementAnchor, placementPoint, placementOffset, 0)
         placementBadge:SetWidth(66)
 
         row:SetCallback("OnClick", function(widget, event, mouseButton)
@@ -2938,7 +3039,8 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     local capturedId = EnsureCustomBarId(settings, cab)
     local capturedKey = capturedId or tostring(capturedIdx)
     EnsureCustomAuraIndependentConfig(cab, settings)
-    local resolvedAuraUnit = GetResolvedCustomAuraBarAuraUnit(cab, cab.spellID)
+    local isSpellCustomBar = IsSpellCustomBarConfig(cab)
+    local resolvedAuraUnit = isSpellCustomBar and nil or GetResolvedCustomAuraBarAuraUnit(cab, cab.spellID)
     activeTab = activeTab or "settings"
 
     if activeTab == "anchor" or activeTab == "alpha" then
@@ -2978,7 +3080,9 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
         return
     end
 
-    BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUnit, infoButtons)
+    if not isSpellCustomBar then
+        BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUnit, infoButtons)
+    end
     AddCustomBarSettingsHeading(container, "Placement", infoButtons, "Choose whether this Custom Bar appears attached to the panel stack or uses its own independent anchor.")
 
     local anchorModeDrop = AceGUI:Create("Dropdown")
@@ -3015,15 +3119,18 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     end)
     container:AddChild(anchorModeDrop)
 
-    AddCustomBarSettingsHeading(container, "Display", infoButtons, {
-        "Determines how the tracked aura is displayed on this Custom Bar.",
-        " ",
-        "Active: shows the aura's remaining duration while it is active.",
-        " ",
-        "Stack Count: ignores duration and shows only the aura's current stack count.",
-    })
+    if not isSpellCustomBar then
+        AddCustomBarSettingsHeading(container, "Display", infoButtons, {
+            "Determines how the tracked aura is displayed on this Custom Bar.",
+            " ",
+            "Active: shows the aura's remaining duration while it is active.",
+            " ",
+            "Stack Count: ignores duration and shows only the aura's current stack count.",
+        })
+    end
 
             -- Tracking Mode dropdown
+            if not isSpellCustomBar then
             local trackDrop = AceGUI:Create("Dropdown")
             trackDrop:SetLabel("Tracking Mode")
             trackDrop:SetList({
@@ -3040,9 +3147,10 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                 })
             end)
             container:AddChild(trackDrop)
+            end
 
             -- Max Stacks slider (hidden in "active" tracking mode)
-            if (cab.trackingMode or "stacks") ~= "active" then
+            if not isSpellCustomBar and (cab.trackingMode or "stacks") ~= "active" then
             local maxSlider = AceGUI:Create("Slider")
             maxSlider:SetLabel("Max Stacks")
             maxSlider:SetSliderValues(1, 99, 1)
@@ -3065,7 +3173,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
             end
 
             -- Display Mode dropdown (hidden in "active" tracking mode)
-            if (cab.trackingMode or "stacks") ~= "active" then
+            if not isSpellCustomBar and (cab.trackingMode or "stacks") ~= "active" then
             local modeDrop = AceGUI:Create("Dropdown")
             modeDrop:SetLabel("Display Mode")
             modeDrop:SetList({
@@ -3127,8 +3235,15 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                 AddColorPicker(container, customBars[cabIdx], "barColor", "Bar Color", {0.5, 0.5, 1}, false,
                     cabApplyBars, function() CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx]) end)
 
+                if isSpellCustomBar then
+                    AddColorPicker(container, customBars[cabIdx], "barCooldownColor", "Cooldown Color", {0.6, 0.13, 0.18, 1}, true,
+                        cabApplyBars, cabApplyBars)
+                    AddColorPicker(container, customBars[cabIdx], "barChargeColor", "Recharge Color", {1.0, 0.82, 0.0, 1}, true,
+                        cabApplyBars, cabApplyBars)
+                end
+
                 -- Overlay Color (overlay mode only)
-                if cab.displayMode == "overlay" and (cab.trackingMode or "stacks") ~= "active" then
+                if not isSpellCustomBar and cab.displayMode == "overlay" and (cab.trackingMode or "stacks") ~= "active" then
                     local cpOverlay = AddColorPicker(container, customBars[cabIdx], "overlayColor", "Overlay Color", {1, 0.84, 0}, false,
                         cabApplyBars, function() CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx]) end)
 
@@ -3143,8 +3258,8 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     end)
                 end
 
-                local isActiveTracking = (cab.trackingMode or "stacks") == "active"
-                if isActiveTracking then
+                local isActiveTracking = isSpellCustomBar or (cab.trackingMode or "stacks") == "active"
+                if isActiveTracking and not isSpellCustomBar then
                     local indicatorsHeading = AceGUI:Create("Heading")
                     indicatorsHeading:SetText("Indicators")
                     ColorHeading(indicatorsHeading)
@@ -3244,7 +3359,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     else
                         CooldownCompanion:SetCustomAuraBarPandemicPreview(customBars[cabIdx], false)
                     end
-                else
+                elseif not isSpellCustomBar then
                     local thresholdCb = AceGUI:Create("CheckBox")
                     thresholdCb:SetLabel("Enable Max Stack Color")
                     thresholdCb:SetValue(cab.thresholdColorEnabled == true)
@@ -3381,8 +3496,8 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                 end
 
                 -- ---- Text / Duration controls ----
-                local isActive = (cab.trackingMode or "stacks") == "active"
-                local isContinuous = isActive or (cab.displayMode == "continuous")
+                local isActive = isSpellCustomBar or (cab.trackingMode or "stacks") == "active"
+                local isContinuous = isSpellCustomBar or isActive or (cab.displayMode == "continuous")
 
                 if isContinuous then
                     local textsHeading = AceGUI:Create("Heading")
@@ -3410,7 +3525,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     end
 
                     local stackTextCb = AceGUI:Create("CheckBox")
-                    stackTextCb:SetLabel("Show Stack Text")
+                    stackTextCb:SetLabel(isSpellCustomBar and "Show Charge Text" or "Show Stack Text")
                     stackTextCb:SetValue(stackVal == true)
                     stackTextCb:SetFullWidth(true)
                     stackTextCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3505,7 +3620,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         end
 
                         local fontDrop = AceGUI:Create("Dropdown")
-                        fontDrop:SetLabel("Stack Font")
+                        fontDrop:SetLabel(isSpellCustomBar and "Charge Font" or "Stack Font")
                         CS.SetupFontDropdown(fontDrop)
                         fontDrop:SetValue(cab.stackTextFont or DEFAULT_RESOURCE_TEXT_FONT)
                         fontDrop:SetFullWidth(true)
@@ -3516,7 +3631,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         container:AddChild(fontDrop)
 
                         local sizeDrop = AceGUI:Create("Slider")
-                        sizeDrop:SetLabel("Stack Font Size")
+                        sizeDrop:SetLabel(isSpellCustomBar and "Charge Font Size" or "Stack Font Size")
                         sizeDrop:SetSliderValues(6, 24, 1)
                         sizeDrop:SetValue(cab.stackTextFontSize or DEFAULT_RESOURCE_TEXT_SIZE)
                         sizeDrop:SetFullWidth(true)
@@ -3527,7 +3642,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         container:AddChild(sizeDrop)
 
                         local outlineDrop = AceGUI:Create("Dropdown")
-                        outlineDrop:SetLabel("Stack Outline")
+                        outlineDrop:SetLabel(isSpellCustomBar and "Charge Outline" or "Stack Outline")
                         outlineDrop:SetList(CS.outlineOptions)
                         outlineDrop:SetValue(cab.stackTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
                         outlineDrop:SetFullWidth(true)
@@ -3541,7 +3656,9 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     end
                 end
 
-                BuildCustomBarVisibilityRulesSection(container, customBars, capturedIdx, cab, resolvedAuraUnit, capturedKey, infoButtons)
+                if not isSpellCustomBar then
+                    BuildCustomBarVisibilityRulesSection(container, customBars, capturedIdx, cab, resolvedAuraUnit, capturedKey, infoButtons)
+                end
 
                 -- ---- Talent Conditions section ----
                 local talentHeading = AceGUI:Create("Heading")

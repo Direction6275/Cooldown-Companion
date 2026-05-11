@@ -194,14 +194,32 @@ local function IsConfiguredCustomBar(cab)
     return type(cab) == "table"
         and (
             cab.spellID ~= nil
+            or cab.entryType ~= nil
             or cab.enabled == true
             or cab.independentAnchorEnabled ~= nil
             or cab.trackingMode ~= nil
             or cab.displayMode ~= nil
             or cab.maxStacks ~= nil
             or cab.barColor ~= nil
+            or cab.soundAlerts ~= nil
+            or cab.loadConditions ~= nil
             or cab.talentConditions ~= nil
         )
+end
+
+local function GetCustomBarEntryType(cab)
+    if type(cab) == "table" and cab.entryType == "spell" then
+        return "spell"
+    end
+    return "aura"
+end
+
+local function NormalizeCustomBarEntryType(cab)
+    if type(cab) ~= "table" then
+        return "aura"
+    end
+    cab.entryType = GetCustomBarEntryType(cab)
+    return cab.entryType
 end
 
 local function CustomBarIdOwnedByOther(settings, customBarId, owner)
@@ -305,7 +323,7 @@ local function MigrateLegacyCustomAuraBars(settings, specID, target)
         local cab = legacyBars[slotIdx] or legacyBars[tostring(slotIdx)]
         if IsConfiguredCustomBar(cab) then
             local entry = CopyTable(cab)
-            entry.entryType = entry.entryType or "aura"
+            entry.entryType = "aura"
             local id = EnsureCustomBarId(settings, entry)
             target[#target + 1] = entry
 
@@ -357,7 +375,7 @@ local function NormalizeCustomBars(settings, specID)
     for _, key in ipairs(numericKeys) do
         local entry = specBars[key]
         if IsConfiguredCustomBar(entry) then
-            entry.entryType = entry.entryType or "aura"
+            NormalizeCustomBarEntryType(entry)
             EnsureCustomBarId(settings, entry)
             compact[#compact + 1] = entry
         end
@@ -366,7 +384,7 @@ local function NormalizeCustomBars(settings, specID)
 
     for key, entry in pairs(specBars) do
         if not seen[key] and IsConfiguredCustomBar(entry) then
-            entry.entryType = entry.entryType or "aura"
+            NormalizeCustomBarEntryType(entry)
             EnsureCustomBarId(settings, entry)
             compact[#compact + 1] = entry
         end
@@ -1163,6 +1181,7 @@ RB.EnsureCustomBarId = EnsureCustomBarId
 RB.GetCustomBarLayout = GetCustomBarLayout
 RB.EnsureCustomBarLayout = EnsureCustomBarLayout
 RB.IsConfiguredCustomBar = IsConfiguredCustomBar
+RB.GetCustomBarEntryType = GetCustomBarEntryType
 RB.IsValidCustomAuraUnit = IsValidCustomAuraUnit
 RB.GetDefaultCustomAuraUnit = GetDefaultCustomAuraUnit
 RB.GetResolvedCustomAuraBarAuraUnit = GetResolvedCustomAuraBarAuraUnit
