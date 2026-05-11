@@ -169,12 +169,23 @@ local function GetSelectedGroupHeaderName(selection)
     return container and NormalizeHeaderName(container.name)
 end
 
+local function GetSelectedFolderHeaderName(selection)
+    if not (selection and selection.hasSelectedFolder and CS.selectedFolder) then
+        return nil
+    end
+
+    local profile = GetConfigProfile()
+    local folder = profile and profile.folders and profile.folders[CS.selectedFolder]
+    return folder and NormalizeHeaderName(folder.name)
+end
+
 local function GetConfigSelectionSummary()
     return {
         panelMultiCount = CountSelections(CS.selectedPanels),
         groupMultiCount = CountSelections(CS.selectedGroups),
         hasSelectedPanel = CS.selectedGroup ~= nil,
         hasSelectedGroup = CS.selectedContainer ~= nil,
+        hasSelectedFolder = CS.selectedFolder ~= nil and CS.selectedContainer == nil and CS.selectedGroup == nil,
     }
 end
 
@@ -200,6 +211,9 @@ local function GetColumn4HeaderMode(selection)
     end
     if selection.panelMultiCount >= 2 or selection.hasSelectedPanel then
         return "panel"
+    end
+    if selection.hasSelectedFolder then
+        return "folder"
     end
     return "group"
 end
@@ -232,6 +246,12 @@ local function GetColumn4HeaderTitle(selection)
             return "Panel: " .. panelName
         end
         return "Panel Settings"
+    elseif mode == "folder" then
+        local folderName = GetSelectedFolderHeaderName(selection)
+        if folderName then
+            return "Folder: " .. folderName
+        end
+        return "Folder Settings"
     end
     local groupName = GetSelectedGroupHeaderName(selection)
     if groupName then
@@ -895,6 +915,7 @@ local function CreateConfigPanel()
         CS.browseMode = true
         CS.browseCharKey = nil
         CS.browseContainerId = nil
+        CS.selectedFolder = nil
         CS.selectedContainer = nil
         CS.selectedGroup = nil
         CS.selectedButton = nil
@@ -1478,7 +1499,12 @@ local function CreateConfigPanel()
         else
             local selection = GetConfigSelectionSummary()
             local mode = GetColumn4HeaderMode(selection)
-            if mode == "panel" then
+            if mode == "folder" then
+                GameTooltip:AddLine("Folder Settings")
+                GameTooltip:AddLine("The selected folder is configured here.", 1, 1, 1, true)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("Folder load conditions apply to all groups inside the folder.", 1, 1, 1, true)
+            elseif mode == "panel" then
                 GameTooltip:AddLine("Panel Settings")
                 if selection.panelMultiCount >= 2 then
                     GameTooltip:AddLine("Select a single panel to configure it here.", 1, 1, 1, true)
