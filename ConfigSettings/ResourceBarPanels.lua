@@ -100,6 +100,7 @@ local DEFAULT_ESSENCE_READY_COLOR = RB.DEFAULT_ESSENCE_READY_COLOR
 local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
 local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
 local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
+local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
 local GetCustomBarEntryType = RB.GetCustomBarEntryType
 local EnsureCustomBarId = RB.EnsureCustomBarId
 local EnsureCustomBarLayout = RB.EnsureCustomBarLayout
@@ -1909,15 +1910,25 @@ end
 local function ResolveCustomBarAuraTrackingStatus(entry, resolvedAuraUnit)
     local spellID = tonumber(entry and entry.spellID)
     local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
-    local viewerFrame = spellID and CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID) or nil
+    local isSpellEntry = entry and entry.entryType == "spell"
+    local auraTrackingEnabled = true
+    if isSpellEntry then
+        auraTrackingEnabled = entry.auraTracking == true
+    end
+    local auraSpellID = tostring(spellID)
+    if isSpellEntry then
+        auraSpellID = entry and entry.auraSpellID or nil
+    end
+    local buttonData = spellID and {
+        type = "spell",
+        id = spellID,
+        auraSpellID = auraSpellID,
+        auraTracking = auraTrackingEnabled,
+        auraUnit = resolvedAuraUnit,
+    } or nil
+    local viewerFrame = buttonData and CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData) or nil
 
-    return spellID and CooldownCompanion:ResolveAuraTrackingConfigStatus({
-            type = "spell",
-            id = spellID,
-            auraSpellID = tostring(spellID),
-            auraTracking = true,
-            auraUnit = resolvedAuraUnit,
-        }, cdmEnabled, viewerFrame)
+    return buttonData and CooldownCompanion:ResolveAuraTrackingConfigStatus(buttonData, cdmEnabled, viewerFrame)
         or { state = "noAssociatedAura", ready = false, cdmEnabled = cdmEnabled }
 end
 
@@ -2229,6 +2240,12 @@ local function AddCustomBarSettingsHeading(container, text, infoButtons, tooltip
 end
 
 local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUnit, infoButtons)
+    local isSpellCustomBar = IsSpellCustomBarConfig(cab)
+    local spellID = tonumber(cab and cab.spellID)
+    if isSpellCustomBar and spellID and not (resolvedAuraUnit == "player" or resolvedAuraUnit == "target") then
+        resolvedAuraUnit = EnsureCustomAuraBarAuraUnit(cab, spellID)
+    end
+
     local heading = AceGUI:Create("Heading")
     heading:SetText("Aura Tracking")
     ColorHeading(heading)
@@ -2237,9 +2254,9 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
 
     local infoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
         "Aura Tracking",
-        {"Shows the tracked aura's remaining duration or stack state on this Custom Bar.", 1, 1, 1, true},
+        {isSpellCustomBar and "Shows a tracked buff or debuff on top of this spell Custom Bar." or "Shows the tracked aura's remaining duration or stack state on this Custom Bar.", 1, 1, 1, true},
         " ",
-        {"Custom Bars keep their tracked aura identity in the entry row. This section shows whether that aura is ready to drive the bar.", 1, 1, 1, true},
+        {isSpellCustomBar and "This follows the same Aura Tracking model used by spell entries in bar panels." or "Custom Bars keep their tracked aura identity in the entry row. This section shows whether that aura is ready to drive the bar.", 1, 1, 1, true},
         " ",
         "Requires:",
         {"- Blizzard Cooldown Manager (CDM) must be enabled.", 1, 1, 1, true},
@@ -2251,18 +2268,119 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
     heading.right:SetPoint("LEFT", infoBtn, "RIGHT", 4, 0)
 
     local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
-    local spellID = tonumber(cab and cab.spellID)
-    local viewerFrame = spellID and CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID) or nil
-    local auraStatus = spellID and CooldownCompanion:ResolveAuraTrackingConfigStatus({
+    local auraTrackingEnabled = true
+    if isSpellCustomBar then
+        auraTrackingEnabled = cab.auraTracking == true
+    end
+    local auraSpellID = tostring(spellID)
+    if isSpellCustomBar then
+        auraSpellID = cab.auraSpellID
+    end
+    local buttonData = spellID and {
             type = "spell",
             id = spellID,
-            auraSpellID = tostring(spellID),
-            auraTracking = true,
+            auraSpellID = auraSpellID,
+            auraTracking = auraTrackingEnabled,
             auraUnit = resolvedAuraUnit,
-        }, cdmEnabled, viewerFrame)
+        } or nil
+    local viewerFrame = buttonData and CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData) or nil
+    local auraStatus = buttonData and CooldownCompanion:ResolveAuraTrackingConfigStatus(buttonData, cdmEnabled, viewerFrame)
         or { state = "noAssociatedAura", ready = false, cdmEnabled = cdmEnabled }
     local auraConfigReady = auraStatus.ready == true
     local inactiveColor = auraStatus.state == "associatedAuraNotTracked" and "|cffffff00" or "|cffff0000"
+
+    local auraLabel = "Aura Tracking"
+    auraLabel = auraLabel .. (auraConfigReady and ": |cff00ff00Active|r" or ": " .. inactiveColor .. "Inactive|r")
+
+    if isSpellCustomBar then
+        local auraCb = AceGUI:Create("CheckBox")
+        auraCb:SetLabel(auraLabel)
+        auraCb:SetValue(cab.auraTracking == true)
+        auraCb:SetFullWidth(true)
+        auraCb:SetCallback("OnValueChanged", function(_, _, value)
+            cab.auraTracking = value and true or false
+            if value then
+                EnsureCustomAuraBarAuraUnit(cab, spellID)
+            else
+                CooldownCompanion:SetCustomAuraBarActivePreview(cab, false)
+                CooldownCompanion:SetCustomAuraBarPandemicPreview(cab, false)
+            end
+            ApplyCustomAuraBarPanelChanges({
+                updateAnchors = true,
+                refreshConfig = true,
+            })
+        end)
+        container:AddChild(auraCb)
+
+        if cab.auraTracking ~= true then
+            AddCustomBarAuraTrackingGap(container)
+            return
+        end
+
+        local auraEditBox = AceGUI:Create("EditBox")
+        if auraEditBox.editbox.Instructions then
+            auraEditBox.editbox.Instructions:Hide()
+        end
+        auraEditBox:SetLabel("Spell ID Override")
+        auraEditBox:SetText(cab.auraSpellID and tostring(cab.auraSpellID) or "")
+        auraEditBox:SetFullWidth(true)
+        auraEditBox:SetCallback("OnEnterPressed", function(widget, _, text)
+            text = text:gsub("%s", "")
+            if text ~= "" then
+                for token in text:gmatch("[^,]+") do
+                    if not tonumber(token) then
+                        CooldownCompanion:Print("Invalid spell ID: " .. token)
+                        widget:SetText(cab.auraSpellID and tostring(cab.auraSpellID) or "")
+                        return
+                    end
+                end
+            end
+            cab.auraSpellID = text ~= "" and text or nil
+            EnsureCustomAuraBarAuraUnit(cab, spellID)
+            ApplyCustomAuraBarPanelChanges({
+                updateAnchors = true,
+                refreshConfig = true,
+            })
+        end)
+        container:AddChild(auraEditBox)
+
+        CreateInfoButton(auraEditBox.frame, auraEditBox.frame, "TOPLEFT", "TOPLEFT", auraEditBox.label:GetStringWidth() + 4, -2, {
+            "Spell ID Override",
+            {"Most spells are tracked automatically, but some abilities apply a buff or debuff with a different spell ID than the ability itself. If tracking isn't working, enter the buff/debuff spell ID here. Use commas only when one entry should intentionally watch multiple IDs.\n\nUse \"Pick CDM\" below to visually select a spell from the Cooldown Manager.", 1, 1, 1, true},
+        }, infoButtons)
+
+        AddCustomBarAuraTrackingGap(container)
+
+        if not (cab.auraUnit == "player" or cab.auraUnit == "target") then
+            resolvedAuraUnit = EnsureCustomAuraBarAuraUnit(cab, spellID)
+        end
+
+        local auraUnitDrop = AceGUI:Create("Dropdown")
+        auraUnitDrop:SetLabel("Aura Unit")
+        auraUnitDrop:SetList({
+            player = "Player",
+            target = "Target",
+        }, { "player", "target" })
+        auraUnitDrop:SetValue((cab.auraUnitExplicit == true and cab.auraUnit) or resolvedAuraUnit or "player")
+        auraUnitDrop:SetFullWidth(true)
+        auraUnitDrop:SetCallback("OnValueChanged", function(_, _, value)
+            if value ~= "player" and value ~= "target" then
+                return
+            end
+            EnsureCustomAuraBarAuraUnit(cab, spellID, value)
+            ApplyCustomAuraBarPanelChanges({
+                updateAnchors = true,
+                refreshConfig = true,
+            })
+        end)
+        container:AddChild(auraUnitDrop)
+        CreateInfoButton(auraUnitDrop.frame, auraUnitDrop.label, "LEFT", "RIGHT", 4, 0, {
+            "Aura Unit",
+            {"This controls where the tracked aura is expected to exist. Use Target for debuffs on your target, or Player for buffs/procs on yourself, even if the Custom Bar's spell is something else.", 1, 1, 1, true},
+        }, infoButtons)
+
+        AddCustomBarAuraTrackingGap(container)
+    end
 
     local cdmToggleBtn = AceGUI:Create("Button")
     cdmToggleBtn:SetText(cdmEnabled and "Blizzard CDM: |cff00ff00Active|r" or "Blizzard CDM: |cffff0000Inactive|r")
@@ -2286,13 +2404,44 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
 
     local openCdmBtn = AceGUI:Create("Button")
     openCdmBtn:SetText("CDM Settings")
-    openCdmBtn:SetRelativeWidth(1.0)
+    openCdmBtn:SetRelativeWidth(isSpellCustomBar and 0.5 or 1.0)
     openCdmBtn:SetCallback("OnClick", function()
         if CooldownViewerSettings then
             CooldownViewerSettings:TogglePanel()
         end
     end)
     cdmRow:AddChild(openCdmBtn)
+
+    if isSpellCustomBar then
+        local pickCDMBtn = AceGUI:Create("Button")
+        pickCDMBtn:SetText("Pick CDM")
+        pickCDMBtn:SetRelativeWidth(0.5)
+        pickCDMBtn:SetCallback("OnClick", function()
+            CS.StartPickCDM(function(pickedSpellID)
+                if CS.configFrame then
+                    CS.configFrame.frame:Show()
+                end
+                if pickedSpellID then
+                    cab.auraSpellID = tostring(pickedSpellID)
+                    EnsureCustomAuraBarAuraUnit(cab, spellID)
+                end
+                ApplyCustomAuraBarPanelChanges({
+                    updateAnchors = true,
+                    refreshConfig = true,
+                })
+            end)
+        end)
+        pickCDMBtn:SetCallback("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+            GameTooltip:AddLine("Pick from Cooldown Manager")
+            GameTooltip:AddLine("Shows a list of Tracked Buff/Tracked Bar auras currently tracked in the Cooldown Manager. Click one to populate the Spell ID Override.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        pickCDMBtn:SetCallback("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        cdmRow:AddChild(pickCDMBtn)
+    end
     container:AddChild(cdmRow)
 
     AddCustomBarAuraTrackingGap(container)
@@ -2642,8 +2791,9 @@ local function BuildCustomBarsListPanel(container)
 
         local rowFrame = row.frame
         local isSpellCustomBar = IsSpellCustomBarConfig(entry)
-        local resolvedRowAuraUnit = isSpellCustomBar and nil or GetResolvedCustomAuraBarAuraUnit(entry, entry.spellID)
-        local auraStatus = (not isSpellCustomBar) and ResolveCustomBarAuraTrackingStatus(entry, resolvedRowAuraUnit) or nil
+        local resolvedRowAuraUnit = GetResolvedCustomAuraBarAuraUnit(entry, entry.spellID)
+        local showAuraStatusBadge = (not isSpellCustomBar) or entry.auraTracking == true
+        local auraStatus = showAuraStatusBadge and ResolveCustomBarAuraTrackingStatus(entry, resolvedRowAuraUnit) or nil
         local rightBadgeAnchor = rowFrame
         local rightBadgePoint = "RIGHT"
         local rightBadgeOffset = -4
@@ -2657,7 +2807,7 @@ local function BuildCustomBarsListPanel(container)
             rightBadgeOffset = -4
         end
 
-        if not isSpellCustomBar then
+        if showAuraStatusBadge then
             local auraStatusBadge = EnsureCustomBarRowIconBadge(rowFrame, "_cdcCustomBarAuraStatusBadge", "icon_trackedbuffs")
             auraStatusBadge:SetPoint("RIGHT", rightBadgeAnchor, rightBadgePoint, rightBadgeOffset, 0)
             if auraStatus.ready == true then
@@ -2723,7 +2873,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     local capturedId = EnsureCustomBarId(settings, cab)
     local capturedKey = capturedId or tostring(capturedIdx)
     local isSpellCustomBar = IsSpellCustomBarConfig(cab)
-    local resolvedAuraUnit = isSpellCustomBar and nil or GetResolvedCustomAuraBarAuraUnit(cab, cab.spellID)
+    local resolvedAuraUnit = GetResolvedCustomAuraBarAuraUnit(cab, cab.spellID)
     activeTab = activeTab or "settings"
 
     if activeTab == "anchor" or activeTab == "alpha" then
@@ -2744,9 +2894,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
         return
     end
 
-    if not isSpellCustomBar then
-        BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUnit, infoButtons)
-    end
+    BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUnit, infoButtons)
 
     if not isSpellCustomBar then
         AddCustomBarSettingsHeading(container, "Display", infoButtons, {
@@ -2888,7 +3036,9 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                 end
 
                 local isActiveTracking = isSpellCustomBar or (cab.trackingMode or "stacks") == "active"
-                if isActiveTracking and not isSpellCustomBar then
+                local hasActiveAuraIndicatorControls = (not isSpellCustomBar and isActiveTracking)
+                    or (isSpellCustomBar and cab.auraTracking == true)
+                if hasActiveAuraIndicatorControls then
                     local indicatorsHeading = AceGUI:Create("Heading")
                     indicatorsHeading:SetText("Indicators")
                     ColorHeading(indicatorsHeading)
@@ -2930,7 +3080,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         ApplyCheckboxIndent(activeAuraCombatCb, 20)
 
                         BuildBarActiveAuraControls(container, customBars[cabIdx], cabApplyBars, {
-                            hidePrimaryColorPicker = true,
+                            hidePrimaryColorPicker = not isSpellCustomBar,
                         })
                         BuildBarAuraPulseControls(container, customBars[cabIdx], cabApplyBars)
 
@@ -3285,7 +3435,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     end
                 end
 
-                if not isSpellCustomBar then
+                if not isSpellCustomBar or cab.auraTracking == true then
                     BuildCustomBarVisibilityRulesSection(container, customBars, capturedIdx, cab, resolvedAuraUnit, capturedKey, infoButtons)
                 end
 

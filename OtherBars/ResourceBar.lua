@@ -68,6 +68,7 @@ local GetVerticalSideFallback = RB.GetVerticalSideFallback
 local GetEffectiveAnchorGroupId = RB.GetEffectiveAnchorGroupId
 local GetPlayerClassID = RB.GetPlayerClassID
 local GetSpecCustomAuraBars = RB.GetSpecCustomAuraBars
+local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
 local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
 local GetSpecLayoutOrder = RB.GetSpecLayoutOrder
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
@@ -221,8 +222,16 @@ local function ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
     end
 end
 
+local function IsCustomBarAuraIndicatorFrame(barInfo)
+    if not barInfo then
+        return false
+    end
+    return barInfo.barType == "custom_continuous"
+        or barInfo.barType == "custom_cooldown"
+end
+
 local function ClearCustomAuraBarIndicatorState(barInfo, clearPreviewFlags)
-    if not barInfo or barInfo.barType ~= "custom_continuous" then
+    if not IsCustomBarAuraIndicatorFrame(barInfo) then
         return
     end
 
@@ -289,8 +298,11 @@ local function AnimateCustomAuraBarIndicator(bar)
 end
 
 local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPresent)
-    if not barInfo or barInfo.barType ~= "custom_continuous" then return end
-    if not cabConfig or cabConfig.trackingMode ~= "active" then
+    local isSpellCustomCooldown = barInfo and barInfo.barType == "custom_cooldown"
+    if not barInfo or (barInfo.barType ~= "custom_continuous" and not isSpellCustomCooldown) then return end
+    if not cabConfig
+        or (isSpellCustomCooldown and cabConfig.auraTracking ~= true)
+        or (not isSpellCustomCooldown and cabConfig.trackingMode ~= "active") then
         ClearCustomAuraBarIndicatorState(barInfo, false)
         return
     end
@@ -318,15 +330,19 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
     local pandemicCombatAllowed = not cabConfig.pandemicGlowCombatOnly or inCombat
 
     local wantAuraColor
+    local activeAuraColor = isSpellCustomCooldown
+        and (cabConfig.barAuraColor or {0.2, 1.0, 0.2, 1.0})
+        or (cabConfig.barColor or {0.5, 0.5, 1})
+
     if pandemicPreview then
         wantAuraColor = cabConfig.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
     elseif auraPreview then
-        wantAuraColor = cabConfig.barColor or {0.5, 0.5, 1}
+        wantAuraColor = activeAuraColor
     elseif auraPresent then
         if bar._inPandemic and pandemicEnabled and pandemicCombatAllowed then
             wantAuraColor = cabConfig.barPandemicColor or DEFAULT_BAR_PANDEMIC_COLOR
         elseif auraVisualsEnabled and auraCombatAllowed then
-            wantAuraColor = cabConfig.barColor or {0.5, 0.5, 1}
+            wantAuraColor = activeAuraColor
         end
     end
 
@@ -439,6 +455,16 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     end
     frame._cdcIndependentAlphaTarget = nil
     frame._cdcIndependentLastAlpha = nil
+    frame._auraActive = nil
+    frame._auraInstanceID = nil
+    frame._auraUnit = nil
+    frame._inPandemic = nil
+    frame._pandemicGraceStart = nil
+    frame._pandemicGraceSuppressed = nil
+    frame._parsedCustomBarAuraIDs = nil
+    frame._parsedCustomBarAuraIDsRaw = nil
+    frame._parsedCustomBarAuraIDsSpellID = nil
+    frame._parsedCustomBarAuraIDsIncludeSpellID = nil
     frame:SetAlpha(1)
 end
 
@@ -1926,6 +1952,58 @@ end
 -- Update logic: Custom aura bars (aura-based, secret-safe)
 ------------------------------------------------------------------------
 
+local function ResolveCustomBarPandemicState(frame, configUnit, auraPresent, viewerFrame, pandemicPreview)
+    if not frame then
+        return false
+    end
+
+    if pandemicPreview then
+        return true
+    end
+
+    if configUnit == "target" and auraPresent and viewerFrame then
+        local pi = viewerFrame.PandemicIcon
+        if frame._pandemicGraceSuppressed then
+            frame._pandemicGraceSuppressed = nil
+            frame._pandemicGraceStart = nil
+        elseif pi and pi:IsVisible() then
+            frame._pandemicGraceStart = nil
+            return true
+        elseif frame._inPandemic then
+            local now = GetTime()
+            if not frame._pandemicGraceStart then
+                frame._pandemicGraceStart = now
+            end
+            if now - frame._pandemicGraceStart <= 0.3 then
+                return true
+            end
+            frame._pandemicGraceStart = nil
+        end
+    else
+        frame._pandemicGraceStart = nil
+        frame._pandemicGraceSuppressed = nil
+    end
+
+    return false
+end
+
+local function ResolveCustomAuraVisibility(cabConfig, auraPresent, inPandemic, auraPreview, pandemicPreview)
+    if not (cabConfig and (cabConfig.hideWhenInactive or cabConfig.hideWhileAuraActive)) then
+        return true, false
+    end
+
+    local hideWhileAuraActive = cabConfig.hideWhileAuraActive == true
+        and cabConfig.hideWhenInactive ~= true
+        and auraPresent
+        and not (cabConfig.hideAuraActiveExceptPandemic == true and inPandemic)
+    local hideWhileAuraNotActive = cabConfig.hideWhenInactive == true and not auraPresent
+    local shouldShow = not (hideWhileAuraActive or hideWhileAuraNotActive)
+        or auraPreview
+        or pandemicPreview
+
+    return shouldShow, true
+end
+
 local function UpdateCustomAuraBar(barInfo)
     local cabConfig = barInfo.cabConfig
     if not cabConfig or not cabConfig.spellID then return end
@@ -1994,33 +2072,8 @@ local function UpdateCustomAuraBar(barInfo)
         CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, soundAuraActive)
     end
 
-    local inPandemic = false
     local pandemicStateFrame = barInfo.frame
-    if pandemicPreview then
-        inPandemic = true
-    elseif configUnit == "target" and auraPresent and viewerFrame then
-        local pi = viewerFrame.PandemicIcon
-        if pandemicStateFrame._pandemicGraceSuppressed then
-            pandemicStateFrame._pandemicGraceSuppressed = nil
-            pandemicStateFrame._pandemicGraceStart = nil
-        elseif pi and pi:IsVisible() then
-            inPandemic = true
-            pandemicStateFrame._pandemicGraceStart = nil
-        elseif pandemicStateFrame._inPandemic then
-            local now = GetTime()
-            if not pandemicStateFrame._pandemicGraceStart then
-                pandemicStateFrame._pandemicGraceStart = now
-            end
-            if now - pandemicStateFrame._pandemicGraceStart <= 0.3 then
-                inPandemic = true
-            else
-                pandemicStateFrame._pandemicGraceStart = nil
-            end
-        end
-    else
-        pandemicStateFrame._pandemicGraceStart = nil
-        pandemicStateFrame._pandemicGraceSuppressed = nil
-    end
+    local inPandemic = ResolveCustomBarPandemicState(pandemicStateFrame, configUnit, auraPresent, viewerFrame, pandemicPreview)
 
     if isActive and bar then
         if auraPresent then
@@ -2036,16 +2089,8 @@ local function UpdateCustomAuraBar(barInfo)
         pandemicStateFrame._inPandemic = inPandemic or nil
     end
 
-    -- Aura visibility rules hide the bar based on the resolved aura state.
-    if cabConfig.hideWhenInactive or cabConfig.hideWhileAuraActive then
-        local hideWhileAuraActive = cabConfig.hideWhileAuraActive == true
-            and cabConfig.hideWhenInactive ~= true
-            and auraPresent
-            and not (cabConfig.hideAuraActiveExceptPandemic == true and inPandemic)
-        local hideWhileAuraNotActive = cabConfig.hideWhenInactive == true and not auraPresent
-        local shouldShow = not (hideWhileAuraActive or hideWhileAuraNotActive)
-            or auraPreview
-            or pandemicPreview
+    local shouldShow, hasVisibilityRule = ResolveCustomAuraVisibility(cabConfig, auraPresent, inPandemic, auraPreview, pandemicPreview)
+    if hasVisibilityRule then
         local wasShown = barInfo.frame:IsShown()
         barInfo.frame:SetShown(shouldShow)
         if wasShown ~= shouldShow then
@@ -2189,6 +2234,237 @@ local function UpdateCustomAuraBar(barInfo)
     end
 end
 
+local function BuildSpellCustomBarAuraButtonData(cabConfig)
+    local spellID = tonumber(cabConfig and cabConfig.spellID)
+    if not spellID or not (cabConfig and cabConfig.auraTracking == true) then
+        return nil, nil
+    end
+
+    return {
+        type = "spell",
+        id = spellID,
+        auraSpellID = cabConfig.auraSpellID,
+        auraTracking = true,
+        auraUnit = GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID),
+    }, spellID
+end
+
+local function GetSpellCustomBarParsedAuraIDs(bar, cabConfig, spellID)
+    if not (bar and cabConfig and cabConfig.auraSpellID) then
+        return nil, false
+    end
+
+    local rawIDs = tostring(cabConfig.auraSpellID)
+    if bar._parsedCustomBarAuraIDsRaw == rawIDs
+        and bar._parsedCustomBarAuraIDsSpellID == spellID then
+        return bar._parsedCustomBarAuraIDs, bar._parsedCustomBarAuraIDsIncludeSpellID == true
+    end
+
+    local ids = {}
+    local includesSpellID = false
+    for id in rawIDs:gmatch("%d+") do
+        local numericID = tonumber(id)
+        ids[#ids + 1] = numericID
+        if numericID == spellID then
+            includesSpellID = true
+        end
+    end
+
+    bar._parsedCustomBarAuraIDs = ids
+    bar._parsedCustomBarAuraIDsRaw = rawIDs
+    bar._parsedCustomBarAuraIDsSpellID = spellID
+    bar._parsedCustomBarAuraIDsIncludeSpellID = includesSpellID or nil
+    return ids, includesSpellID
+end
+
+local function ResolveSpellCustomBarPlayerAuraData(bar, cabConfig, spellID, resolvedAuraSpellID)
+    local auraData
+    if cabConfig.auraSpellID then
+        local ids, includesSpellID = GetSpellCustomBarParsedAuraIDs(bar, cabConfig, spellID)
+        if ids then
+            for _, auraID in ipairs(ids) do
+                auraData = C_UnitAuras.GetPlayerAuraBySpellID(auraID)
+                if auraData then
+                    return auraData
+                end
+            end
+        end
+        if not includesSpellID then
+            local baseID = C_Spell.GetBaseSpell(spellID)
+            local fallbackID = baseID and baseID ~= resolvedAuraSpellID and baseID or nil
+            return fallbackID and C_UnitAuras.GetPlayerAuraBySpellID(fallbackID) or nil
+        end
+        return nil
+    end
+
+    local baseID = C_Spell.GetBaseSpell(spellID)
+    local fallbackID = baseID and baseID ~= resolvedAuraSpellID and baseID or nil
+    auraData = fallbackID and C_UnitAuras.GetPlayerAuraBySpellID(fallbackID) or nil
+    if auraData then
+        return auraData
+    end
+
+    return resolvedAuraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(resolvedAuraSpellID) or nil
+end
+
+local function ViewerFrameHasAuraForUnit(viewerFrame, configUnit)
+    local instId = viewerFrame and viewerFrame.auraInstanceID
+    if not instId then
+        return false
+    end
+
+    local viewerUnit = viewerFrame.auraDataUnit or configUnit
+    return viewerUnit == configUnit
+        and C_UnitAuras.GetAuraDataByAuraInstanceID(viewerUnit, instId) ~= nil
+end
+
+local function ResolveSpellCustomBarAuraViewerFrame(bar, cabConfig, spellID, buttonData, configUnit)
+    if cabConfig and cabConfig.auraSpellID then
+        local ids = GetSpellCustomBarParsedAuraIDs(bar, cabConfig, spellID)
+        local firstTrackedFrame
+        if ids then
+            for _, auraID in ipairs(ids) do
+                local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(auraID)
+                if viewerFrame then
+                    if ViewerFrameHasAuraForUnit(viewerFrame, configUnit) then
+                        return viewerFrame
+                    end
+                    if not firstTrackedFrame then
+                        firstTrackedFrame = viewerFrame
+                    end
+                end
+            end
+        end
+        if firstTrackedFrame then
+            return firstTrackedFrame
+        end
+    end
+
+    return CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
+end
+
+local function SpellCustomBarAuraDataMatches(bar, cabConfig, spellID, resolvedAuraSpellID, auraData)
+    local auraSpellID = auraData and auraData.spellId
+    if not auraSpellID or (issecretvalue and issecretvalue(auraSpellID)) then
+        return false
+    end
+
+    if cabConfig and cabConfig.auraSpellID then
+        local ids = GetSpellCustomBarParsedAuraIDs(bar, cabConfig, spellID)
+        if ids then
+            for _, auraID in ipairs(ids) do
+                if auraSpellID == auraID then
+                    return true
+                end
+            end
+        end
+    end
+
+    local baseID = C_Spell.GetBaseSpell(spellID)
+    return auraSpellID == resolvedAuraSpellID
+        or auraSpellID == spellID
+        or (baseID and auraSpellID == baseID)
+end
+
+local function ResolveSpellCustomBarAuraState(barInfo)
+    local cabConfig = barInfo and barInfo.cabConfig
+    local bar = barInfo and barInfo.frame
+    local buttonData, spellID = BuildSpellCustomBarAuraButtonData(cabConfig)
+    if not (buttonData and spellID and bar) then
+        return nil
+    end
+
+    local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+    local configUnit = buttonData.auraUnit or "player"
+    local viewerFrame = ResolveSpellCustomBarAuraViewerFrame(bar, cabConfig, spellID, buttonData, configUnit)
+    if not CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame) then
+        return {
+            ready = false,
+            auraPresent = false,
+            configUnit = configUnit,
+            viewerFrame = viewerFrame,
+        }
+    end
+
+    local resolvedAuraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
+    local auraData
+    local durationObj
+    local auraUnit = configUnit
+    local instId = viewerFrame and viewerFrame.auraInstanceID
+
+    if instId and (configUnit == "player" or configUnit == "target") then
+        local viewerUnit = viewerFrame.auraDataUnit or configUnit
+        if viewerUnit == configUnit then
+            auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(viewerUnit, instId)
+            if auraData then
+                durationObj = C_UnitAuras.GetAuraDuration(viewerUnit, instId)
+                if durationObj then
+                    auraUnit = viewerUnit
+                end
+            end
+        end
+    end
+
+    if not (auraData and durationObj) and configUnit == "player" then
+        auraData = ResolveSpellCustomBarPlayerAuraData(bar, cabConfig, spellID, resolvedAuraSpellID)
+        instId = auraData and auraData.auraInstanceID or nil
+        if instId and not issecretvalue(instId) then
+            durationObj = C_UnitAuras.GetAuraDuration("player", instId)
+            auraUnit = "player"
+        end
+    end
+
+    if not (auraData and durationObj) and configUnit == "player" and bar._auraInstanceID then
+        local cachedUnit = bar._auraUnit or configUnit
+        if cachedUnit == configUnit then
+            auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(cachedUnit, bar._auraInstanceID)
+            if SpellCustomBarAuraDataMatches(bar, cabConfig, spellID, resolvedAuraSpellID, auraData) then
+                durationObj = C_UnitAuras.GetAuraDuration(cachedUnit, bar._auraInstanceID)
+                instId = bar._auraInstanceID
+                auraUnit = cachedUnit
+            end
+        end
+    end
+
+    if not auraData then
+        return {
+            ready = true,
+            auraPresent = false,
+            configUnit = configUnit,
+            viewerFrame = viewerFrame,
+        }
+    end
+
+    return {
+        ready = true,
+        auraPresent = true,
+        auraData = auraData,
+        auraInstanceID = instId,
+        auraUnit = auraUnit,
+        configUnit = configUnit,
+        viewerFrame = viewerFrame,
+        durationObj = durationObj,
+    }
+end
+
+local function ClearSpellCustomBarAuraRuntimeState(barInfo)
+    ClearCustomAuraBarIndicatorState(barInfo, false)
+end
+
+local function UpdateSpellCustomBarChargeText(bar, cooldownResult)
+    if not (bar and bar.stackText and bar.stackText:IsShown()) then
+        return
+    end
+
+    local currentCharges = cooldownResult and cooldownResult.currentCharges
+    local maxCharges = cooldownResult and cooldownResult.maxCharges
+    if currentCharges and maxCharges and maxCharges > 1 then
+        bar.stackText:SetFormattedText("%d / %d", currentCharges, maxCharges)
+    else
+        bar.stackText:SetText("")
+    end
+end
+
 function RB.UpdateCustomCooldownBar(barInfo)
     local cabConfig = barInfo and barInfo.cabConfig
     local bar = barInfo and barInfo.frame
@@ -2199,6 +2475,11 @@ function RB.UpdateCustomCooldownBar(barInfo)
     local durationObj = cooldownResult and cooldownResult.renderDurationObj
     local cooldownActive = cooldownResult
         and cooldownResult.state == ST.CooldownLogic.STATE_COOLDOWN
+    local auraState = ResolveSpellCustomBarAuraState(barInfo)
+    local auraPresent = auraState and auraState.ready == true and auraState.auraPresent == true
+    local auraPreview = bar._barAuraActivePreview == true
+    local pandemicPreview = bar._pandemicPreview == true
+    local renderAuraState = cabConfig.auraTracking == true and (auraPresent or auraPreview or pandemicPreview)
 
     local barColor = cabConfig.barColor or {0.5, 0.5, 1, 1}
     local cooldownColor = cabConfig.barCooldownColor or {0.6, 0.13, 0.18, 1}
@@ -2214,9 +2495,108 @@ function RB.UpdateCustomCooldownBar(barInfo)
     elseif cooldownActive then
         fillColor = cooldownColor
     end
-    bar:SetStatusBarColor(fillColor[1], fillColor[2], fillColor[3], fillColor[4] ~= nil and fillColor[4] or 1)
+
+    local function UpdateSpellCustomBarSounds(soundAuraActive)
+        if CooldownCompanion.UpdateCustomBarSoundAlerts then
+            local soundCooldownActive = cooldownActive
+            if cooldownResult and cooldownResult.hasCharges == true then
+                soundCooldownActive = cooldownResult.chargeState == ST.CooldownLogic.CHARGE_STATE_ZERO
+                    or (cooldownResult.chargeState == nil and cooldownActive)
+            end
+            CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, soundAuraActive, soundCooldownActive, cooldownResult)
+        end
+    end
+
+    local configUnit = (auraState and auraState.configUnit)
+        or GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
+    local inPandemic = ResolveCustomBarPandemicState(
+        bar,
+        configUnit,
+        auraPresent,
+        auraState and auraState.viewerFrame,
+        pandemicPreview
+    )
+
+    if auraState
+        and auraState.ready == true
+        and (cabConfig.hideWhenInactive or cabConfig.hideWhileAuraActive) then
+        local shouldShow = ResolveCustomAuraVisibility(cabConfig, auraPresent, inPandemic, auraPreview, pandemicPreview)
+        local wasShown = bar:IsShown()
+        bar:SetShown(shouldShow)
+        if wasShown ~= shouldShow then
+            layoutDirty = true
+        end
+        if not shouldShow then
+            ClearSpellCustomBarAuraRuntimeState(barInfo)
+            UpdateSpellCustomBarSounds(auraPresent)
+            return
+        end
+    elseif (cabConfig.hideWhenInactive or cabConfig.hideWhileAuraActive)
+        and not bar:IsShown() then
+        bar:Show()
+        layoutDirty = true
+    end
+
+    if renderAuraState then
+        if auraPresent then
+            bar._auraActive = true
+            bar._auraInstanceID = auraState.auraInstanceID
+            bar._auraUnit = auraState.auraUnit
+        else
+            bar._auraActive = true
+            bar._auraInstanceID = nil
+            bar._auraUnit = nil
+        end
+        bar._inPandemic = inPandemic or nil
+
+        local auraDurationObj = auraState and auraState.durationObj
+        bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] ~= nil and barColor[4] or 1)
+        bar:SetMinMaxValues(0, 1)
+        if auraDurationObj then
+            bar:SetValue(auraDurationObj:GetRemainingPercent())
+        elseif auraPreview or pandemicPreview then
+            bar:SetValue(CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL)
+        else
+            bar:SetValue(1)
+        end
+
+        if bar.thresholdOverlay then
+            bar.thresholdOverlay:SetValue(0)
+            bar.thresholdOverlay:Hide()
+        end
+
+        if bar.text and bar.text:IsShown() then
+            if auraDurationObj then
+                local remaining = auraDurationObj:GetRemainingDuration()
+                if auraDurationObj:HasSecretValues() then
+                    bar.text:SetFormattedText(cabConfig.decimalTimers and "%.1f" or "%.0f", remaining)
+                elseif remaining and remaining > 0 then
+                    bar.text:SetText(FormatTime(remaining, cabConfig.decimalTimers))
+                else
+                    bar.text:SetText("")
+                end
+            elseif auraPreview or pandemicPreview then
+                bar.text:SetText(FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig.decimalTimers))
+            else
+                bar.text:SetText("")
+            end
+        end
+
+        UpdateSpellCustomBarChargeText(bar, cooldownResult)
+        UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPresent)
+
+        if barInfo._maxStacksIndicator then
+            barInfo._maxStacksIndicator:SetValue(0)
+        end
+
+        UpdateSpellCustomBarSounds(auraPresent)
+        return
+    end
+
+    ClearSpellCustomBarAuraRuntimeState(barInfo)
 
     bar:SetMinMaxValues(0, 1)
+    bar:SetStatusBarColor(fillColor[1], fillColor[2], fillColor[3], fillColor[4] ~= nil and fillColor[4] or 1)
     if cooldownActive and durationObj then
         bar:SetValue(durationObj:GetElapsedPercent())
     elseif cooldownActive then
@@ -2245,28 +2625,13 @@ function RB.UpdateCustomCooldownBar(barInfo)
         end
     end
 
-    if bar.stackText and bar.stackText:IsShown() then
-        local currentCharges = cooldownResult and cooldownResult.currentCharges
-        local maxCharges = cooldownResult and cooldownResult.maxCharges
-        if currentCharges and maxCharges and maxCharges > 1 then
-            bar.stackText:SetFormattedText("%d / %d", currentCharges, maxCharges)
-        else
-            bar.stackText:SetText("")
-        end
-    end
+    UpdateSpellCustomBarChargeText(bar, cooldownResult)
 
     if barInfo._maxStacksIndicator then
         barInfo._maxStacksIndicator:SetValue(0)
     end
 
-    if CooldownCompanion.UpdateCustomBarSoundAlerts then
-        local soundCooldownActive = cooldownActive
-        if cooldownResult and cooldownResult.hasCharges == true then
-            soundCooldownActive = cooldownResult.chargeState == ST.CooldownLogic.CHARGE_STATE_ZERO
-                or (cooldownResult.chargeState == nil and cooldownActive)
-        end
-        CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, false, soundCooldownActive, cooldownResult)
-    end
+    UpdateSpellCustomBarSounds(false)
 end
 
 local function GetHiddenCustomAuraWakeUnit(cabConfig)
@@ -2279,7 +2644,34 @@ end
 local function IsEventDrivenCustomAuraBar(barInfo)
     return barInfo
         and (barInfo.barType == "custom_segmented"
-            or barInfo.barType == "custom_overlay")
+            or barInfo.barType == "custom_overlay"
+            or barInfo.barType == "custom_cooldown")
+end
+
+local function ShouldUpdateHiddenCustomAuraPandemicWake(barInfo)
+    local frame = barInfo and barInfo.frame
+    local cabConfig = barInfo and barInfo.cabConfig
+    if not (frame and cabConfig) then
+        return false
+    end
+    if frame:IsShown() then
+        return false
+    end
+    if cabConfig.hideWhileAuraActive ~= true
+        or cabConfig.hideWhenInactive == true
+        or cabConfig.hideAuraActiveExceptPandemic ~= true then
+        return false
+    end
+
+    local isTrackedSpellBar = barInfo.barType == "custom_cooldown"
+        and cabConfig.auraTracking == true
+    local isActiveAuraBar = barInfo.barType == "custom_continuous"
+        and cabConfig.trackingMode == "active"
+    if not (isTrackedSpellBar or isActiveAuraBar) then
+        return false
+    end
+
+    return GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID) == "target"
 end
 
 local function StopDeferredCustomAuraWakeRetryFrame()
@@ -2343,7 +2735,11 @@ local function ProcessDeferredCustomAuraWakeRetries()
             and GetHiddenCustomAuraWakeUnit(cabConfig) == entry.unit
             and not frame:IsShown()
         then
-            UpdateCustomAuraBar(barInfo)
+            if barInfo.barType == "custom_cooldown" then
+                RB.UpdateCustomCooldownBar(barInfo)
+            else
+                UpdateCustomAuraBar(barInfo)
+            end
             if frame:IsShown() then
                 relayoutNeeded = true
             end
@@ -2408,10 +2804,15 @@ local function RefreshEventDrivenCustomAuraBarsForUnit(unit)
             and cabConfig
             and (barInfo.barType == "custom_continuous"
                 or barInfo.barType == "custom_segmented"
-                or barInfo.barType == "custom_overlay")
+                or barInfo.barType == "custom_overlay"
+                or barInfo.barType == "custom_cooldown")
             and GetHiddenCustomAuraWakeUnit(cabConfig) == unit then
             local wasShown = frame:IsShown()
-            UpdateCustomAuraBar(barInfo)
+            if barInfo.barType == "custom_cooldown" then
+                RB.UpdateCustomCooldownBar(barInfo)
+            else
+                UpdateCustomAuraBar(barInfo)
+            end
             if not wasShown and not frame:IsShown() then
                 QueueDeferredCustomAuraWakeRetry(barInfo, unit)
             end
@@ -2524,10 +2925,13 @@ local function FinalizeAppliedBarVisibility(barInfo, powerType, previewActive)
     if barInfo and type(barInfo.customBarId) == "string" then
         if previewActive then
             barInfo.frame:Show()
-        elseif barInfo.barType ~= "custom_cooldown"
-            and barInfo.cabConfig
-            and barInfo.cabConfig.hideWhenInactive then
-            UpdateCustomAuraBar(barInfo)
+        elseif barInfo.cabConfig
+            and (barInfo.cabConfig.hideWhenInactive or barInfo.cabConfig.hideWhileAuraActive) then
+            if barInfo.barType == "custom_cooldown" then
+                RB.UpdateCustomCooldownBar(barInfo)
+            else
+                UpdateCustomAuraBar(barInfo)
+            end
         else
             barInfo.frame:Show()
             if barInfo.barType == "custom_cooldown" then
@@ -2914,7 +3318,7 @@ local function OnUpdate(self, elapsed)
     local auraActiveCache = {}
 
     for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.frame and barInfo.frame:IsShown() then
+        if barInfo.frame and (barInfo.frame:IsShown() or ShouldUpdateHiddenCustomAuraPandemicWake(barInfo)) then
             if barInfo.barType == "continuous" then
                 UpdateContinuousBar(barInfo.frame, barInfo.powerType, settings, auraActiveCache)
             elseif barInfo.barType == "health_continuous" then
@@ -2927,9 +3331,14 @@ local function OnUpdate(self, elapsed)
                 UpdateStaggerBar(barInfo.frame, settings)
             elseif barInfo.barType == "custom_cooldown" then
                 RB.UpdateCustomCooldownBar(barInfo)
+                if barInfo.frame:IsShown() then
+                    AnimateCustomAuraBarIndicator(barInfo.frame)
+                end
             elseif barInfo.barType == "custom_continuous" then
                 UpdateCustomAuraBar(barInfo)
-                AnimateCustomAuraBarIndicator(barInfo.frame)
+                if barInfo.frame:IsShown() then
+                    AnimateCustomAuraBarIndicator(barInfo.frame)
+                end
             end
         end
     end
@@ -3014,13 +3423,18 @@ local function EnableEventFrame()
                 for _, barInfo in ipairs(resourceBarFrames) do
                     local bar = barInfo and barInfo.frame
                     local cabConfig = barInfo and barInfo.cabConfig
-                    if barInfo and barInfo.barType == "custom_continuous"
-                        and cabConfig and cabConfig.trackingMode == "active"
+                    if barInfo
+                        and ((barInfo.barType == "custom_continuous"
+                                and cabConfig and cabConfig.trackingMode == "active")
+                            or (barInfo.barType == "custom_cooldown"
+                                and cabConfig and cabConfig.auraTracking == true))
                         and bar and bar._auraInstanceID and bar._auraUnit == unit then
                         if removedIDs then
                             for _, instId in ipairs(removedIDs) do
                                 if bar._auraInstanceID == instId then
+                                    bar._auraActive = nil
                                     bar._auraInstanceID = nil
+                                    bar._auraUnit = nil
                                     bar._inPandemic = nil
                                     bar._pandemicGraceStart = nil
                                     break
@@ -3043,10 +3457,15 @@ local function EnableEventFrame()
                 for _, barInfo in ipairs(resourceBarFrames) do
                     local bar = barInfo and barInfo.frame
                     local cabConfig = barInfo and barInfo.cabConfig
-                    if barInfo and barInfo.barType == "custom_continuous"
-                        and cabConfig and cabConfig.trackingMode == "active"
-                        and bar and EnsureCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID) == "target" then
+                    if barInfo
+                        and ((barInfo.barType == "custom_continuous"
+                                and cabConfig and cabConfig.trackingMode == "active")
+                            or (barInfo.barType == "custom_cooldown"
+                                and cabConfig and cabConfig.auraTracking == true))
+                        and bar and GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID) == "target" then
+                        bar._auraActive = nil
                         bar._auraInstanceID = nil
+                        bar._auraUnit = nil
                         bar._inPandemic = nil
                         bar._pandemicGraceStart = nil
                         bar._pandemicGraceSuppressed = nil
@@ -3808,8 +4227,12 @@ local function RefreshCustomAuraBarPreviewState(cabConfig, previewKey, show)
     for _, barInfo in ipairs(resourceBarFrames) do
         if barInfo.cabConfig == cabConfig and barInfo.frame then
             barInfo.frame[previewKey] = show or nil
-            UpdateCustomAuraBar(barInfo)
-            if barInfo.barType == "custom_continuous" then
+            if barInfo.barType == "custom_cooldown" then
+                RB.UpdateCustomCooldownBar(barInfo)
+            else
+                UpdateCustomAuraBar(barInfo)
+            end
+            if barInfo.barType == "custom_continuous" or barInfo.barType == "custom_cooldown" then
                 AnimateCustomAuraBarIndicator(barInfo.frame)
             end
             anyUpdated = true
@@ -3869,8 +4292,12 @@ function CooldownCompanion:ClearAllCustomAuraBarPreviews()
         if frame and (frame._barAuraActivePreview or frame._pandemicPreview) then
             frame._barAuraActivePreview = nil
             frame._pandemicPreview = nil
-            UpdateCustomAuraBar(barInfo)
-            if barInfo.barType == "custom_continuous" then
+            if barInfo.barType == "custom_cooldown" then
+                RB.UpdateCustomCooldownBar(barInfo)
+            else
+                UpdateCustomAuraBar(barInfo)
+            end
+            if barInfo.barType == "custom_continuous" or barInfo.barType == "custom_cooldown" then
                 AnimateCustomAuraBarIndicator(frame)
             end
             anyUpdated = true
