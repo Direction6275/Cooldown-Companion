@@ -1,0 +1,91 @@
+name: Discord PR Merge Notification
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  notify:
+    name: Notify Discord
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send merge notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_MERGES }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          node <<'NODE'
+          const {
+            DISCORD_WEBHOOK_URL,
+            GITHUB_TOKEN,
+            REPOSITORY,
+            COMMIT_SHA,
+          } = process.env;
+
+          if (!DISCORD_WEBHOOK_URL) {
+            throw new Error("Missing DISCORD_WEBHOOK_URL_MERGES repository secret.");
+          }
+
+          const headers = {
+            authorization: `Bearer ${GITHUB_TOKEN}`,
+            accept: "application/vnd.github+json",
+            "x-github-api-version": "2022-11-28",
+          };
+
+          const pullsResponse = await fetch(
+            `https://api.github.com/repos/${REPOSITORY}/commits/${COMMIT_SHA}/pulls`,
+            { headers }
+          );
+
+          if (!pullsResponse.ok) {
+            throw new Error(`GitHub PR lookup failed: ${pullsResponse.status} ${await pullsResponse.text()}`);
+          }
+
+          const pulls = await pullsResponse.json();
+          const pull = pulls.find((item) => item.base?.ref === "main" && item.merged_at);
+
+          if (!pull) {
+            console.log("No merged pull request was associated with this push to main.");
+            process.exit(0);
+          }
+
+          const pullResponse = await fetch(
+            `https://api.github.com/repos/${REPOSITORY}/pulls/${pull.number}`,
+            { headers }
+          );
+          const pullDetails = pullResponse.ok ? await pullResponse.json() : pull;
+          const mergedBy = pullDetails.merged_by?.login || "unknown";
+
+          const payload = {
+            username: "GitHub Merges",
+            embeds: [
+              {
+                title: `Merged PR #${pull.number}: ${pull.title}`,
+                url: pull.html_url,
+                color: 5763719,
+                fields: [
+                  { name: "Repository", value: REPOSITORY, inline: true },
+                  { name: "Author", value: pull.user.login, inline: true },
+                  { name: "Merged by", value: mergedBy, inline: true },
+                ],
+              },
+            ],
+          };
+
+          const response = await fetch(DISCORD_WEBHOOK_URL, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Discord webhook failed: ${response.status} ${await response.text()}`);
+          }
+          NODE
