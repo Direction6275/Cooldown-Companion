@@ -230,7 +230,7 @@ ST._configState = {
     resourceStylingTab = "bar_text",
     castBarStylingTab = "styling",
     resourceAuraOverlayDrafts = {},
-    customBarSettingsTab = "settings",
+    customBarSettingsTab = "appearance",
     selectedCustomBarId = nil,
     customBarIndicatorPreviewActive = nil,
     groupPresetSelection = {
@@ -2038,7 +2038,7 @@ local function ResetConfigSelection(full)
     CS.selectedFolder = nil
     CS.selectedButton = nil
     CS.selectedCustomBarId = nil
-    CS.customBarSettingsTab = "settings"
+    CS.customBarSettingsTab = "appearance"
     wipe(CS.selectedButtons)
     wipe(CS.selectedPanels)
     if full then
@@ -2071,7 +2071,7 @@ local function SetConfigPrimaryMode(mode, opts)
         -- Stop preview loops when returning to button settings mode.
         CooldownCompanion:ClearAllConfigPreviews()
         CS.selectedCustomBarId = nil
-        CS.customBarSettingsTab = "settings"
+        CS.customBarSettingsTab = "appearance"
     end
 
     CS.resourceBarPanelActive = toBars
