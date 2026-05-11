@@ -15,10 +15,6 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 ------------------------------------------------------------------------
 -- COLUMN 4: Group / Panel Settings Column
 ------------------------------------------------------------------------
-local function IsTruthyConfigFlag(value)
-    return value == true or value == "true" or value == 1 or value == "1"
-end
-
 local function ClearInfoButtons(buttons)
     if type(buttons) ~= "table" then
         return
@@ -51,10 +47,6 @@ local function GetCustomBarEntryTabs(entry)
         { value = "settings", text = "Settings" },
     }
 
-    if entry and IsTruthyConfigFlag(entry.independentAnchorEnabled) then
-        tabs[#tabs + 1] = { value = "layout", text = "Layout" }
-    end
-
     tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
     tabs[#tabs + 1] = { value = "loadconditions", text = "Load Conditions" }
     return tabs
@@ -64,7 +56,7 @@ local function IsCustomBarEntryTabAllowed(entry, tab)
     if tab == "settings" or tab == "soundalerts" or tab == "loadconditions" then
         return true
     end
-    return entry and IsTruthyConfigFlag(entry.independentAnchorEnabled) and tab == "layout"
+    return false
 end
 
 local function GetCustomBarDetailScrollKey()

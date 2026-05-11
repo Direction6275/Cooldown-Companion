@@ -190,20 +190,68 @@ local function GetPlayerClassID()
     return classID
 end
 
+local customBarContentFields = {
+    "spellID",
+    "trackingMode",
+    "displayMode",
+    "maxStacks",
+    "barColor",
+    "barCooldownColor",
+    "barChargeColor",
+    "overlayColor",
+    "soundAlerts",
+    "loadConditions",
+    "talentConditions",
+    "hideWhenInactive",
+    "hideWhileAuraActive",
+    "hideAuraActiveExceptPandemic",
+    "barAuraEffect",
+    "auraGlowCombatOnly",
+    "showPandemicGlow",
+    "pandemicGlowCombatOnly",
+    "thresholdColorEnabled",
+    "maxStacksGlowEnabled",
+    "maxStacksGlowStyle",
+    "maxStacksGlowSize",
+    "maxStacksGlowSpeed",
+    "maxStacksGlowThickness",
+    "showDurationText",
+    "durationTextFont",
+    "durationTextFontSize",
+    "durationTextFontOutline",
+    "decimalTimers",
+    "showStackText",
+    "showText",
+    "stackTextFormat",
+    "stackTextFont",
+    "stackTextFontSize",
+    "stackTextFontOutline",
+    "auraUnit",
+    "hasCharges",
+    "maxCharges",
+}
+
+local function HasCustomBarContent(cab)
+    if type(cab) ~= "table" then
+        return false
+    end
+    if cab.enabled == true then
+        return true
+    end
+    for _, field in ipairs(customBarContentFields) do
+        if cab[field] ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
 local function IsConfiguredCustomBar(cab)
     return type(cab) == "table"
         and (
-            cab.spellID ~= nil
+            HasCustomBarContent(cab)
             or cab.entryType ~= nil
-            or cab.enabled == true
             or cab.independentAnchorEnabled ~= nil
-            or cab.trackingMode ~= nil
-            or cab.displayMode ~= nil
-            or cab.maxStacks ~= nil
-            or cab.barColor ~= nil
-            or cab.soundAlerts ~= nil
-            or cab.loadConditions ~= nil
-            or cab.talentConditions ~= nil
         )
 end
 
@@ -220,6 +268,22 @@ local function NormalizeCustomBarEntryType(cab)
     end
     cab.entryType = GetCustomBarEntryType(cab)
     return cab.entryType
+end
+
+local function NormalizeCustomBarAttachedPlacement(cab)
+    if type(cab) ~= "table" then
+        return
+    end
+
+    cab.independentAnchorEnabled = nil
+    cab.independentLocked = nil
+    cab.independentAnchorTargetMode = nil
+    cab.independentAnchorFrameName = nil
+    cab.independentAnchorGroupId = nil
+    cab.independentAnchor = nil
+    cab.independentSize = nil
+    cab.independentOrientation = nil
+    cab.independentVerticalFillDirection = nil
 end
 
 local function CustomBarIdOwnedByOther(settings, customBarId, owner)
@@ -323,20 +387,23 @@ local function MigrateLegacyCustomAuraBars(settings, specID, target)
         local cab = legacyBars[slotIdx] or legacyBars[tostring(slotIdx)]
         if IsConfiguredCustomBar(cab) then
             local entry = CopyTable(cab)
-            entry.entryType = "aura"
-            local id = EnsureCustomBarId(settings, entry)
-            target[#target + 1] = entry
+            NormalizeCustomBarAttachedPlacement(entry)
+            if HasCustomBarContent(entry) then
+                entry.entryType = "aura"
+                local id = EnsureCustomBarId(settings, entry)
+                target[#target + 1] = entry
 
-            local legacyLayout = layout
-                and type(layout.customAuraBarSlots) == "table"
-                and layout.customAuraBarSlots[slotIdx]
-            if type(legacyLayout) == "table" and id then
-                if type(layout.customBars) ~= "table" then
-                    layout.customBars = {}
+                local legacyLayout = layout
+                    and type(layout.customAuraBarSlots) == "table"
+                    and layout.customAuraBarSlots[slotIdx]
+                if type(legacyLayout) == "table" and id then
+                    if type(layout.customBars) ~= "table" then
+                        layout.customBars = {}
+                    end
+                    layout.customBars[id] = CopyTable(legacyLayout)
+                else
+                    EnsureCustomBarLayout(settings, specID, id, 1000 + #target)
                 end
-                layout.customBars[id] = CopyTable(legacyLayout)
-            else
-                EnsureCustomBarLayout(settings, specID, id, 1000 + #target)
             end
         end
     end
@@ -375,18 +442,26 @@ local function NormalizeCustomBars(settings, specID)
     for _, key in ipairs(numericKeys) do
         local entry = specBars[key]
         if IsConfiguredCustomBar(entry) then
-            NormalizeCustomBarEntryType(entry)
-            EnsureCustomBarId(settings, entry)
-            compact[#compact + 1] = entry
+            NormalizeCustomBarAttachedPlacement(entry)
+            if HasCustomBarContent(entry) then
+                NormalizeCustomBarEntryType(entry)
+                local id = EnsureCustomBarId(settings, entry)
+                EnsureCustomBarLayout(settings, specID, id, 1000 + #compact + 1)
+                compact[#compact + 1] = entry
+            end
         end
         seen[key] = true
     end
 
     for key, entry in pairs(specBars) do
         if not seen[key] and IsConfiguredCustomBar(entry) then
-            NormalizeCustomBarEntryType(entry)
-            EnsureCustomBarId(settings, entry)
-            compact[#compact + 1] = entry
+            NormalizeCustomBarAttachedPlacement(entry)
+            if HasCustomBarContent(entry) then
+                NormalizeCustomBarEntryType(entry)
+                local id = EnsureCustomBarId(settings, entry)
+                EnsureCustomBarLayout(settings, specID, id, 1000 + #compact + 1)
+                compact[#compact + 1] = entry
+            end
         end
     end
 
@@ -780,24 +855,6 @@ end
 
 local function IsTruthyConfigFlag(value)
     return value == true or value == 1 or value == "1" or value == "true"
-end
-
-local function NormalizeCustomAuraIndependentOrientation(value)
-    if value == "horizontal" or value == "vertical" then
-        return value
-    end
-    return nil
-end
-
-local function NormalizeCustomAuraIndependentVerticalFillDirection(value)
-    if value == "bottom_to_top" or value == "top_to_bottom" or value == "inherit" then
-        return value
-    end
-    return "inherit"
-end
-
-local function IsCustomAuraBarIndependent(cabConfig)
-    return type(cabConfig) == "table" and IsTruthyConfigFlag(cabConfig.independentAnchorEnabled)
 end
 
 ------------------------------------------------------------------------
@@ -1208,9 +1265,6 @@ RB.ClampIndependentDimension = ClampIndependentDimension
 RB.IsBarsConfigActive = IsBarsConfigActive
 RB.CancelNudgeTimers = CancelNudgeTimers
 RB.IsTruthyConfigFlag = IsTruthyConfigFlag
-RB.NormalizeCustomAuraIndependentOrientation = NormalizeCustomAuraIndependentOrientation
-RB.NormalizeCustomAuraIndependentVerticalFillDirection = NormalizeCustomAuraIndependentVerticalFillDirection
-RB.IsCustomAuraBarIndependent = IsCustomAuraBarIndependent
 RB.NormalizeCustomAuraStackTextFormat = NormalizeCustomAuraStackTextFormat
 RB.IsHealerSpec = IsHealerSpec
 RB.IsAstralPowerAvailableForCurrentDruidSpec = IsAstralPowerAvailableForCurrentDruidSpec

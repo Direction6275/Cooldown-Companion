@@ -2224,18 +2224,83 @@ function CooldownCompanion:MigrateCustomAuraBarsToCustomBars()
     local profile = self.db and self.db.profile
     if not profile or profile._migratedCustomBarsDynamicV2 then return end
 
+    local customBarContentFields = {
+        "spellID",
+        "trackingMode",
+        "displayMode",
+        "maxStacks",
+        "barColor",
+        "barCooldownColor",
+        "barChargeColor",
+        "overlayColor",
+        "soundAlerts",
+        "loadConditions",
+        "talentConditions",
+        "hideWhenInactive",
+        "hideWhileAuraActive",
+        "hideAuraActiveExceptPandemic",
+        "barAuraEffect",
+        "auraGlowCombatOnly",
+        "showPandemicGlow",
+        "pandemicGlowCombatOnly",
+        "thresholdColorEnabled",
+        "maxStacksGlowEnabled",
+        "maxStacksGlowStyle",
+        "maxStacksGlowSize",
+        "maxStacksGlowSpeed",
+        "maxStacksGlowThickness",
+        "showDurationText",
+        "durationTextFont",
+        "durationTextFontSize",
+        "durationTextFontOutline",
+        "decimalTimers",
+        "showStackText",
+        "showText",
+        "stackTextFormat",
+        "stackTextFont",
+        "stackTextFontSize",
+        "stackTextFontOutline",
+        "auraUnit",
+        "hasCharges",
+        "maxCharges",
+    }
+
+    local function HasCustomBarContent(cab)
+        if type(cab) ~= "table" then
+            return false
+        end
+        if cab.enabled == true then
+            return true
+        end
+        for _, field in ipairs(customBarContentFields) do
+            if cab[field] ~= nil then
+                return true
+            end
+        end
+        return false
+    end
+
     local function IsConfiguredCustomBar(cab)
         return type(cab) == "table"
             and (
-                cab.spellID ~= nil
-                or cab.enabled == true
+                HasCustomBarContent(cab)
                 or cab.independentAnchorEnabled ~= nil
-                or cab.trackingMode ~= nil
-                or cab.displayMode ~= nil
-                or cab.maxStacks ~= nil
-                or cab.barColor ~= nil
-                or cab.talentConditions ~= nil
             )
+    end
+
+    local function NormalizeCustomBarAttachedPlacement(entry)
+        if type(entry) ~= "table" then
+            return
+        end
+        entry.independentAnchorEnabled = nil
+        entry.independentLocked = nil
+        entry.independentAnchorTargetMode = nil
+        entry.independentAnchorFrameName = nil
+        entry.independentAnchorGroupId = nil
+        entry.independentAnchor = nil
+        entry.independentSize = nil
+        entry.independentOrientation = nil
+        entry.independentVerticalFillDirection = nil
     end
 
     local function EnsureNextId(settings, entry)
@@ -2321,20 +2386,23 @@ function CooldownCompanion:MigrateCustomAuraBarsToCustomBars()
                             local cab = legacyBars[slotIdx] or legacyBars[tostring(slotIdx)]
                             if IsConfiguredCustomBar(cab) then
                                 local entry = CopyTable(cab)
-                                entry.entryType = entry.entryType or "aura"
-                                local id = EnsureNextId(settings, entry)
-                                specBars[#specBars + 1] = entry
+                                NormalizeCustomBarAttachedPlacement(entry)
+                                if HasCustomBarContent(entry) then
+                                    entry.entryType = entry.entryType or "aura"
+                                    local id = EnsureNextId(settings, entry)
+                                    specBars[#specBars + 1] = entry
 
-                                if type(layout) == "table" then
-                                    if type(layout.customBars) ~= "table" then
-                                        layout.customBars = {}
+                                    if type(layout) == "table" then
+                                        if type(layout.customBars) ~= "table" then
+                                            layout.customBars = {}
+                                        end
+                                        local legacySlot = type(layout.customAuraBarSlots) == "table"
+                                            and layout.customAuraBarSlots[slotIdx]
+                                            or nil
+                                        layout.customBars[id] = type(legacySlot) == "table"
+                                            and CopyTable(legacySlot)
+                                            or { position = "below", order = 1000 + #specBars }
                                     end
-                                    local legacySlot = type(layout.customAuraBarSlots) == "table"
-                                        and layout.customAuraBarSlots[slotIdx]
-                                        or nil
-                                    layout.customBars[id] = type(legacySlot) == "table"
-                                        and CopyTable(legacySlot)
-                                        or { position = "below", order = 1000 + #specBars }
                                 end
                             end
                         end
@@ -2370,18 +2438,24 @@ function CooldownCompanion:MigrateCustomAuraBarsToCustomBars()
                 for _, key in ipairs(numericKeys) do
                     local entry = specBars[key]
                     if IsConfiguredCustomBar(entry) then
-                        entry.entryType = entry.entryType or "aura"
-                        EnsureNextId(settings, entry)
-                        target[#target + 1] = entry
+                        NormalizeCustomBarAttachedPlacement(entry)
+                        if HasCustomBarContent(entry) then
+                            entry.entryType = entry.entryType or "aura"
+                            EnsureNextId(settings, entry)
+                            target[#target + 1] = entry
+                        end
                     end
                     seen[key] = true
                 end
 
                 for key, entry in pairs(specBars) do
                     if not seen[key] and IsConfiguredCustomBar(entry) then
-                        entry.entryType = entry.entryType or "aura"
-                        EnsureNextId(settings, entry)
-                        target[#target + 1] = entry
+                        NormalizeCustomBarAttachedPlacement(entry)
+                        if HasCustomBarContent(entry) then
+                            entry.entryType = entry.entryType or "aura"
+                            EnsureNextId(settings, entry)
+                            target[#target + 1] = entry
+                        end
                     end
                 end
             end

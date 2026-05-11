@@ -222,6 +222,29 @@ local function FormatDiagnosticAsText(diag)
         return table.concat(parts, " ")
     end
 
+    local ignoredCustomBarDiagnosticKeys = {
+        independentAnchorEnabled = true,
+        independentLocked = true,
+        independentAnchorTargetMode = true,
+        independentAnchorFrameName = true,
+        independentAnchorGroupId = true,
+        independentAnchor = true,
+        independentSize = true,
+        independentOrientation = true,
+        independentVerticalFillDirection = true,
+    }
+
+    local function dumpCustomBarKV(t)
+        local parts = {}
+        for k, v in pairs(t) do
+            if not ignoredCustomBarDiagnosticKeys[k] then
+                parts[#parts + 1] = tostring(k) .. "=" .. formatValue(v)
+            end
+        end
+        table.sort(parts)
+        return table.concat(parts, " ")
+    end
+
     -- Explicitly include nil-valued keys that are important for debugging
     local function dumpKVWithNils(t, importantKeys)
         local parts = {}
@@ -362,9 +385,6 @@ local function FormatDiagnosticAsText(diag)
             end
             if entry.hideWhenInactive then
                 parts[#parts + 1] = "hideWhenInactive=true"
-            end
-            if entry.isIndependent then
-                parts[#parts + 1] = "independent=true"
             end
             add("  " .. table.concat(parts, " "))
         end
@@ -742,7 +762,7 @@ local function FormatDiagnosticAsText(diag)
                     for slot in pairs(specBars) do slots[#slots + 1] = slot end
                     table.sort(slots, function(a, b) return tostring(a) < tostring(b) end)
                     for _, slot in ipairs(slots) do
-                        add(("      %s: %s"):format(tostring(slot), dumpKV(specBars[slot])))
+                        add(("      %s: %s"):format(tostring(slot), dumpCustomBarKV(specBars[slot])))
                     end
                 end
             end
