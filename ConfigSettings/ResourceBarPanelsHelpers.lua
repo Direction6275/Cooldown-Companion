@@ -144,7 +144,8 @@ local function ResolveAuraBarAutocompleteEntry(text)
     local lookup = cleaned:lower()
     local cache = BuildAuraBarAutocompleteCache()
     for _, entry in ipairs(cache) do
-        if (numeric and entry.id == numeric) or entry.nameLower == lookup then
+        local entryNameLower = type(entry.name) == "string" and entry.name:lower() or nil
+        if (numeric and entry.id == numeric) or entry.nameLower == lookup or entryNameLower == lookup then
             return entry
         end
     end
@@ -1031,6 +1032,7 @@ ST._RBP = {
     GetAuraBarAutocompleteDisplayName = GetAuraBarAutocompleteDisplayName,
     GetAuraBarAutocompleteDisplayIcon = GetAuraBarAutocompleteDisplayIcon,
     GetAuraBarAutocompleteEntryName = GetAuraBarAutocompleteEntryName,
+    ResolveAuraBarAutocompleteEntry = ResolveAuraBarAutocompleteEntry,
     ShowAuraBarAutocompleteResults = ShowAuraBarAutocompleteResults,
     AddResourceAuraEntryFields = AddResourceAuraEntryFields,
     ClearLegacyResourceAuraFieldsConfig = ClearLegacyResourceAuraFieldsConfig,
