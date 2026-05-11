@@ -44,7 +44,8 @@ end
 
 local function GetCustomBarEntryTabs(entry)
     local tabs = {
-        { value = "settings", text = "Settings" },
+        { value = "appearance", text = "Appearance" },
+        { value = "indicators", text = "Indicators" },
     }
 
     tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
@@ -53,7 +54,7 @@ local function GetCustomBarEntryTabs(entry)
 end
 
 local function IsCustomBarEntryTabAllowed(entry, tab)
-    if tab == "settings" or tab == "soundalerts" or tab == "loadconditions" then
+    if tab == "appearance" or tab == "indicators" or tab == "soundalerts" or tab == "loadconditions" then
         return true
     end
     return false
@@ -61,7 +62,7 @@ end
 
 local function GetCustomBarDetailScrollKey()
     if not CS.selectedCustomBarId then return nil end
-    return tostring(CS.selectedCustomBarId) .. ":" .. tostring(CS.customBarSettingsTab or "settings")
+    return tostring(CS.selectedCustomBarId) .. ":" .. tostring(CS.customBarSettingsTab or "appearance")
 end
 
 local function RefreshColumn4(container)
@@ -104,13 +105,17 @@ local function RefreshColumn4(container)
             local selectedEntry = FindSelectedCustomBar()
             if not selectedEntry then
                 CS.selectedCustomBarId = nil
-                CS.customBarSettingsTab = "settings"
+                CS.customBarSettingsTab = "appearance"
             else
-                if CS.customBarSettingsTab == "anchor" or CS.customBarSettingsTab == "alpha" then
-                    CS.customBarSettingsTab = "layout"
+                if CS.customBarSettingsTab == "settings"
+                    or CS.customBarSettingsTab == "layout"
+                    or CS.customBarSettingsTab == "anchor"
+                    or CS.customBarSettingsTab == "alpha"
+                then
+                    CS.customBarSettingsTab = "appearance"
                 end
                 if not IsCustomBarEntryTabAllowed(selectedEntry, CS.customBarSettingsTab) then
-                    CS.customBarSettingsTab = "settings"
+                    CS.customBarSettingsTab = "appearance"
                 end
 
                 if not container.customBarEntryTabGroup then
@@ -118,7 +123,15 @@ local function RefreshColumn4(container)
                     tabGroup:SetLayout("Fill")
                     tabGroup.frame:SetParent(container)
                     tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
-                        CS.customBarSettingsTab = tab or "settings"
+                        CS.customBarSettingsTab = tab or "appearance"
+                        if CS.customBarSettingsTab ~= "indicators" then
+                            if CooldownCompanion.ClearAllCustomAuraBarPreviews then
+                                CooldownCompanion:ClearAllCustomAuraBarPreviews()
+                            end
+                            if CS.customBarIndicatorPreviewActive and CooldownCompanion.StopResourceBarPreview then
+                                CooldownCompanion:StopResourceBarPreview()
+                            end
+                        end
                         ClearInfoButtons(CS.customBarInfoButtons)
                         widget:ReleaseChildren()
 
@@ -150,7 +163,7 @@ local function RefreshColumn4(container)
                     end
                 end
 
-                tabGroup:SelectTab(CS.customBarSettingsTab or "settings")
+                tabGroup:SelectTab(CS.customBarSettingsTab or "appearance")
 
                 if savedOffset and container.customBarsDetailScroll then
                     local state = container.customBarsDetailScroll.status or container.customBarsDetailScroll.localstatus

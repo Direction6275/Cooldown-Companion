@@ -1997,7 +1997,7 @@ function CooldownCompanion:RefreshConfigPanel()
     local function getCustomAuraScrollKey()
         if not CS.resourceBarPanelActive then return nil end
         local selectedId = tostring(CS.selectedCustomBarId or "layout")
-        return selectedId .. ":" .. tostring(CS.customBarSettingsTab or "settings")
+        return selectedId .. ":" .. tostring(CS.customBarSettingsTab or "appearance")
     end
     local function getCustomAuraScrollWidget(col3)
         if not col3 then return nil end
