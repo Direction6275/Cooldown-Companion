@@ -75,10 +75,6 @@ local GetResourceDisplayConfig = RB.GetResourceDisplayConfig
 local GetAnchorOffset = RB.GetAnchorOffset
 local RoundToTenths = RB.RoundToTenths
 local ClampIndependentDimension = RB.ClampIndependentDimension
-local IsTruthyConfigFlag = RB.IsTruthyConfigFlag
-local NormalizeCustomAuraIndependentOrientation = RB.NormalizeCustomAuraIndependentOrientation
-local NormalizeCustomAuraIndependentVerticalFillDirection = RB.NormalizeCustomAuraIndependentVerticalFillDirection
-local IsCustomAuraBarIndependent = RB.IsCustomAuraBarIndependent
 local NormalizeCustomAuraStackTextFormat = RB.NormalizeCustomAuraStackTextFormat
 local DetermineActiveResources = RB.DetermineActiveResources
 local GetResourceColors = RB.GetResourceColors
@@ -142,6 +138,8 @@ local containerFrameAbove = nil
 local containerFrameBelow = nil
 local lastAppliedPrimaryLength = nil
 local lastAppliedOrientation = nil
+local lastAppliedLayout = nil
+local lastAppliedIndependentStack = false
 local resourceBarFrames = {}   -- array of bar frame objects (ordered by stacking)
 local activeResources = {}     -- array of power type ints currently displayed
 local isPreviewActive = false
@@ -194,227 +192,6 @@ local function EnsureNonNilNumber(value)
         return 0
     end
     return value
-end
-
-local function GetCustomAuraAlphaModuleId(customBarId)
-    if type(customBarId) ~= "string" or customBarId == "" then
-        return nil
-    end
-    return "custom_bar_" .. customBarId
-end
-
-local function CustomAuraUsesOwnAlpha(cabConfig)
-    if type(cabConfig) ~= "table" then
-        return false
-    end
-
-    if (tonumber(cabConfig.baselineAlpha) or 1) ~= 1 then
-        return true
-    end
-
-    return IsTruthyConfigFlag(cabConfig.forceAlphaInCombat)
-        or IsTruthyConfigFlag(cabConfig.forceAlphaOutOfCombat)
-        or IsTruthyConfigFlag(cabConfig.forceAlphaRegularMounted)
-        or IsTruthyConfigFlag(cabConfig.forceAlphaDragonriding)
-        or IsTruthyConfigFlag(cabConfig.forceAlphaTargetExists)
-        or IsTruthyConfigFlag(cabConfig.forceAlphaMouseover)
-        or IsTruthyConfigFlag(cabConfig.forceHideInCombat)
-        or IsTruthyConfigFlag(cabConfig.forceHideOutOfCombat)
-        or IsTruthyConfigFlag(cabConfig.forceHideRegularMounted)
-        or IsTruthyConfigFlag(cabConfig.forceHideDragonriding)
-end
-
-------------------------------------------------------------------------
--- Independent Anchor Config (writes state — stays in main file)
-------------------------------------------------------------------------
-
-local function EnsureCustomAuraIndependentConfig(cabConfig, settings)
-    if type(cabConfig) ~= "table" then return end
-
-    if cabConfig.independentAnchorEnabled ~= nil then
-        cabConfig.independentAnchorEnabled = IsTruthyConfigFlag(cabConfig.independentAnchorEnabled) and true or nil
-    end
-
-    if cabConfig.independentAnchorTargetMode ~= "group"
-        and cabConfig.independentAnchorTargetMode ~= "frame" then
-        cabConfig.independentAnchorTargetMode = "group"
-    end
-    if type(cabConfig.independentLocked) ~= "boolean" then
-        cabConfig.independentLocked = IsTruthyConfigFlag(cabConfig.independentLocked) and true or false
-    end
-
-    cabConfig.independentOrientation = NormalizeCustomAuraIndependentOrientation(cabConfig.independentOrientation)
-    cabConfig.independentVerticalFillDirection =
-        NormalizeCustomAuraIndependentVerticalFillDirection(cabConfig.independentVerticalFillDirection)
-
-    if type(cabConfig.independentAnchor) ~= "table" then
-        cabConfig.independentAnchor = {}
-    end
-    local anchor = cabConfig.independentAnchor
-    anchor.point = anchor.point or "CENTER"
-    anchor.relativePoint = anchor.relativePoint or "CENTER"
-    anchor.x = tonumber(anchor.x) or 0
-    anchor.y = tonumber(anchor.y) or 0
-
-    if type(cabConfig.independentSize) ~= "table" then
-        cabConfig.independentSize = {}
-    end
-    local size = cabConfig.independentSize
-    size.width = ClampIndependentDimension(size.width, 120)
-    size.height = ClampIndependentDimension(size.height, GetResourceGlobalThickness(settings))
-end
-
-local function ResolveIndependentAnchorTarget(cabConfig, settings)
-    if type(cabConfig) ~= "table" then
-        return UIParent, "UIParent"
-    end
-
-    if cabConfig.independentAnchorTargetMode == "frame" then
-        local frameName = cabConfig.independentAnchorFrameName
-        if type(frameName) == "string" and frameName ~= "" then
-            local frame = _G[frameName]
-            if frame then
-                return frame, frameName
-            end
-        end
-        return UIParent, "UIParent"
-    end
-
-    local groupId = cabConfig.independentAnchorGroupId or GetEffectiveAnchorGroupId(settings)
-    if groupId then
-        local groupFrame = CooldownCompanion.groupFrames[groupId]
-        if groupFrame then
-            return groupFrame, "CooldownCompanionGroup" .. groupId
-        end
-    end
-    return UIParent, "UIParent"
-end
-
-
-local function ShouldInheritIndependentAlpha(settings)
-    if type(settings) ~= "table" then
-        return false
-    end
-
-    local layout = GetSpecLayoutOrder(settings)
-    if layout and layout.inheritAlpha ~= nil then
-        return layout.inheritAlpha == true
-    end
-
-    return settings.inheritAlpha == true
-end
-
-local function ApplyIndependentAlphaSync(frame, settings, targetFrame)
-    if not frame then return end
-    if not frame._cdcIndependentAlphaSync then
-        frame._cdcIndependentAlphaSync = CreateFrame("Frame", nil, frame)
-    end
-
-    if ShouldInheritIndependentAlpha(settings) and targetFrame then
-        frame._cdcIndependentAlphaTarget = targetFrame
-        frame._cdcIndependentLastAlpha = targetFrame:GetEffectiveAlpha()
-        frame:SetAlpha(frame._cdcIndependentLastAlpha)
-
-        local accumulator = 0
-        local syncInterval = 1 / 30
-        frame._cdcIndependentAlphaSync:SetScript("OnUpdate", function(syncFrame, dt)
-            accumulator = accumulator + dt
-            if accumulator < syncInterval then return end
-            accumulator = 0
-
-            local owner = syncFrame:GetParent()
-            local target = owner and owner._cdcIndependentAlphaTarget
-            if not target then return end
-
-            local alpha = target:GetEffectiveAlpha()
-            if alpha ~= owner._cdcIndependentLastAlpha then
-                owner._cdcIndependentLastAlpha = alpha
-                owner:SetAlpha(alpha)
-            end
-        end)
-        return
-    end
-
-    frame._cdcIndependentAlphaTarget = nil
-    frame._cdcIndependentLastAlpha = nil
-    frame._cdcIndependentAlphaSync:SetScript("OnUpdate", nil)
-    frame:SetAlpha(1)
-end
-
-local IsIndependentCustomAuraUnlocked
-
-local function IsIndependentCustomAuraConfigEditing(barInfo)
-    if not barInfo or not barInfo._isIndependent or not IsBarsConfigActive() then
-        return false
-    end
-
-    local configState = ST._configState
-    if type(barInfo.customBarId) ~= "string" or not configState or not configState.resourceBarPanelActive then
-        return false
-    end
-
-    return configState.selectedCustomBarId == barInfo.customBarId
-end
-
-local function ShouldForceVisibleIndependentCustomAura(barInfo)
-    return IsIndependentCustomAuraUnlocked(barInfo) or IsIndependentCustomAuraConfigEditing(barInfo)
-end
-
-local function ApplyIndependentCustomAuraAlpha(barInfo, settings, targetFrame)
-    if not barInfo or not barInfo.frame or not barInfo.cabConfig then return end
-
-    local frame = barInfo.frame
-    local alphaModuleId = GetCustomAuraAlphaModuleId(barInfo.customBarId)
-    local previousAlphaModuleId = frame._cdcCustomAuraAlphaModuleId
-    if previousAlphaModuleId and previousAlphaModuleId ~= alphaModuleId then
-        CooldownCompanion:UnregisterModuleAlpha(previousAlphaModuleId)
-    end
-    frame._cdcCustomAuraAlphaModuleId = alphaModuleId
-
-    local bypassAlpha = barInfo._isIndependent and ShouldForceVisibleIndependentCustomAura(barInfo)
-    local useOwnAlpha = CustomAuraUsesOwnAlpha(barInfo.cabConfig)
-    local desiredMode = bypassAlpha and "bypass" or (useOwnAlpha and "custom" or "inherit")
-
-    if frame._cdcCustomAuraAlphaMode == desiredMode and previousAlphaModuleId == alphaModuleId then
-        if desiredMode == "inherit" then
-            if frame._cdcIndependentAlphaTarget == targetFrame then
-                return
-            end
-        elseif desiredMode == "bypass" then
-            frame:SetAlpha(1)
-            return
-        else
-            return
-        end
-    end
-    frame._cdcCustomAuraAlphaMode = desiredMode
-
-    if not alphaModuleId then
-        frame._cdcCustomAuraAlphaModuleId = nil
-        ApplyIndependentAlphaSync(frame, settings, targetFrame)
-        return
-    end
-
-    if bypassAlpha then
-        CooldownCompanion:UnregisterModuleAlpha(alphaModuleId, true)
-        ApplyIndependentAlphaSync(frame, nil, nil)
-        frame:SetAlpha(1)
-        return
-    end
-
-    if useOwnAlpha then
-        ApplyIndependentAlphaSync(frame, nil, nil)
-        CooldownCompanion:RegisterModuleAlpha(alphaModuleId, barInfo.cabConfig, { frame })
-
-        local alphaState = CooldownCompanion.alphaState and CooldownCompanion.alphaState[alphaModuleId]
-        if alphaState and alphaState.currentAlpha ~= nil then
-            frame:SetAlpha(alphaState.currentAlpha)
-        end
-        return
-    end
-
-    CooldownCompanion:UnregisterModuleAlpha(alphaModuleId)
-    ApplyIndependentAlphaSync(frame, settings, targetFrame)
 end
 
 local function HasCustomAuraBarAuraVisuals(cabConfig)
@@ -629,229 +406,7 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
         bar:SetStatusBarColor(resetColor[1], resetColor[2], resetColor[3], resetColor[4] or 1)
     end
 end
-IsIndependentCustomAuraUnlocked = function(barInfo)
-    return barInfo and barInfo.cabConfig and barInfo.cabConfig.independentLocked ~= true
-end
-
-local function GetIndependentCustomAuraHeaderText(barInfo)
-    if barInfo and barInfo.cabConfig and barInfo.cabConfig.spellID then
-        local spellName = C_Spell.GetSpellName(barInfo.cabConfig.spellID)
-        if spellName and spellName ~= "" then
-            return spellName
-        end
-    end
-    return "Custom Bar"
-end
-
-local function SaveIndependentCustomAuraAnchor(barInfo, refreshConfig)
-    if not barInfo or not barInfo.frame or not barInfo.cabConfig then return end
-    local settings = GetResourceBarSettings()
-    if not settings then return end
-
-    local cabConfig = barInfo.cabConfig
-    EnsureCustomAuraIndependentConfig(cabConfig, settings)
-
-    local frame = barInfo.frame
-    local anchor = cabConfig.independentAnchor
-    local targetFrame = ResolveIndependentAnchorTarget(cabConfig, settings)
-    if not targetFrame then
-        targetFrame = UIParent
-    end
-
-    local cx, cy = frame:GetCenter()
-    local fw, fh = frame:GetSize()
-    local tcx, tcy = targetFrame:GetCenter()
-    local tw, th = targetFrame:GetSize()
-    if not (cx and cy and fw and fh and tcx and tcy and tw and th) then
-        return
-    end
-
-    local fax, fay = GetAnchorOffset(anchor.point, fw, fh)
-    local tax, tay = GetAnchorOffset(anchor.relativePoint, tw, th)
-    anchor.x = RoundToTenths((cx + fax) - (tcx + tax))
-    anchor.y = RoundToTenths((cy + fay) - (tcy + tay))
-
-    if refreshConfig and IsBarsConfigActive() and CooldownCompanion.RefreshConfigPanel then
-        CooldownCompanion:RefreshConfigPanel()
-    end
-end
-
-
-local UpdateIndependentDragState
-
-local function EnsureIndependentDragChrome(frame)
-    if not frame or frame._cdcIndependentDragHandle then return end
-
-    local dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
-    dragHandle:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 2)
-    dragHandle:SetHeight(15)
-    dragHandle:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    dragHandle:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    dragHandle:SetBackdropBorderColor(0, 0, 0, 1)
-    dragHandle:EnableMouse(false)
-    dragHandle:RegisterForDrag()
-
-    dragHandle.text = dragHandle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    dragHandle.text:SetPoint("CENTER")
-    dragHandle.text:SetTextColor(1, 1, 1, 1)
-
-    local NUDGE_GAP = 2
-    local nudger = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
-    nudger:SetSize(INDEPENDENT_NUDGE_BTN_SIZE * 2 + NUDGE_GAP, INDEPENDENT_NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
-    nudger:SetPoint("BOTTOM", dragHandle, "TOP", 0, 2)
-    nudger:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    nudger:SetBackdropBorderColor(0, 0, 0, 1)
-    nudger:EnableMouse(false)
-    nudger._cdcButtons = {}
-
-    local directions = {
-        { atlas = "common-dropdown-icon-back", rotation = -math.pi / 2, anchor = "BOTTOM", dx = 0, dy = 1, ox = 0, oy = NUDGE_GAP },  -- up
-        { atlas = "common-dropdown-icon-next", rotation = -math.pi / 2, anchor = "TOP", dx = 0, dy = -1, ox = 0, oy = -NUDGE_GAP },   -- down
-        { atlas = "common-dropdown-icon-back", rotation = 0, anchor = "RIGHT", dx = -1, dy = 0, ox = -NUDGE_GAP, oy = 0 },            -- left
-        { atlas = "common-dropdown-icon-next", rotation = 0, anchor = "LEFT", dx = 1, dy = 0, ox = NUDGE_GAP, oy = 0 },               -- right
-    }
-
-    for _, dir in ipairs(directions) do
-        local btn = CreateFrame("Button", nil, nudger)
-        btn:SetSize(INDEPENDENT_NUDGE_BTN_SIZE, INDEPENDENT_NUDGE_BTN_SIZE)
-        btn:SetPoint(dir.anchor, nudger, "CENTER", dir.ox, dir.oy)
-        btn:EnableMouse(true)
-
-        local arrow = btn:CreateTexture(nil, "OVERLAY")
-        arrow:SetAtlas(dir.atlas, false)
-        arrow:SetAllPoints()
-        arrow:SetRotation(dir.rotation)
-        arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-        btn.arrow = arrow
-
-        local function DoNudge()
-            local info = frame._cdcIndependentBarInfo
-            if not info or not info._isIndependent then return end
-            if not IsIndependentCustomAuraUnlocked(info) then return end
-            frame:AdjustPointsOffset(dir.dx, dir.dy)
-        end
-
-        btn:SetScript("OnEnter", function(self)
-            self.arrow:SetVertexColor(1, 1, 1, 1)
-        end)
-        btn:SetScript("OnLeave", function(self)
-            self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            CancelNudgeTimers(self)
-            local info = frame._cdcIndependentBarInfo
-            if info and info._isIndependent then
-                SaveIndependentCustomAuraAnchor(info, true)
-            end
-        end)
-        btn:SetScript("OnMouseDown", function(self)
-            DoNudge()
-            self._cdcNudgeDelayTimer = C_Timer.NewTimer(INDEPENDENT_NUDGE_REPEAT_DELAY, function()
-                self._cdcNudgeTicker = C_Timer.NewTicker(INDEPENDENT_NUDGE_REPEAT_INTERVAL, function()
-                    DoNudge()
-                end)
-            end)
-        end)
-        btn:SetScript("OnMouseUp", function(self)
-            CancelNudgeTimers(self)
-            local info = frame._cdcIndependentBarInfo
-            if info and info._isIndependent then
-                SaveIndependentCustomAuraAnchor(info, true)
-            end
-        end)
-
-        nudger._cdcButtons[#nudger._cdcButtons + 1] = btn
-    end
-
-    dragHandle:RegisterForDrag("LeftButton")
-    dragHandle:SetScript("OnDragStart", function()
-        local info = frame._cdcIndependentBarInfo
-        if not info or not info._isIndependent then return end
-        if not IsIndependentCustomAuraUnlocked(info) then return end
-        frame:StartMoving()
-    end)
-    dragHandle:SetScript("OnDragStop", function()
-        frame:StopMovingOrSizing()
-        local info = frame._cdcIndependentBarInfo
-        if info and info._isIndependent then
-            SaveIndependentCustomAuraAnchor(info, true)
-        end
-    end)
-    dragHandle:SetScript("OnMouseUp", function(_, button)
-        if button ~= "MiddleButton" then return end
-        local info = frame._cdcIndependentBarInfo
-        if not info or not info._isIndependent or not info.cabConfig then return end
-        info.cabConfig.independentLocked = true
-        SaveIndependentCustomAuraAnchor(info, true)
-        UpdateIndependentDragState(frame, info)
-        local settings = GetResourceBarSettings()
-        if settings then
-            ApplyIndependentCustomAuraAlpha(info, settings, ResolveIndependentAnchorTarget(info.cabConfig, settings))
-        end
-    end)
-
-    frame._cdcIndependentDragHandle = dragHandle
-    frame._cdcIndependentNudger = nudger
-end
-
-UpdateIndependentDragState = function(frame, barInfo)
-    if not frame then return end
-
-    EnsureIndependentDragChrome(frame)
-    local dragHandle = frame._cdcIndependentDragHandle
-    local nudger = frame._cdcIndependentNudger
-    local canShowChrome = barInfo and barInfo._isIndependent
-    local unlocked = canShowChrome and IsIndependentCustomAuraUnlocked(barInfo)
-
-    frame:SetClampedToScreen(true)
-    frame:SetMovable(unlocked)
-    frame:EnableMouse(false)
-    frame:RegisterForDrag()
-
-    if dragHandle then
-        dragHandle:SetShown(unlocked)
-        dragHandle:EnableMouse(unlocked)
-        if unlocked then
-            dragHandle:RegisterForDrag("LeftButton")
-        else
-            dragHandle:RegisterForDrag()
-        end
-        if dragHandle.text then
-            dragHandle.text:SetText(GetIndependentCustomAuraHeaderText(barInfo))
-        end
-        dragHandle:SetFrameStrata(frame:GetFrameStrata())
-        dragHandle:SetFrameLevel(frame:GetFrameLevel() + 20)
-    end
-
-    if nudger then
-        nudger:SetShown(unlocked)
-        nudger:EnableMouse(unlocked)
-        nudger:SetFrameStrata(frame:GetFrameStrata())
-        if dragHandle then
-            nudger:SetFrameLevel(dragHandle:GetFrameLevel() + 5)
-        else
-            nudger:SetFrameLevel(frame:GetFrameLevel() + 25)
-        end
-        if nudger._cdcButtons then
-            for _, btn in ipairs(nudger._cdcButtons) do
-                btn:EnableMouse(unlocked)
-                if not unlocked then
-                    CancelNudgeTimers(btn)
-                end
-            end
-        end
-    end
-end
-
-local function ClearIndependentRuntimeState(frame)
+local function ClearStaleRecycledBarRuntimeState(frame)
     if not frame then return end
     if frame._cdcCustomAuraAlphaModuleId then
         CooldownCompanion:UnregisterModuleAlpha(frame._cdcCustomAuraAlphaModuleId)
@@ -879,47 +434,12 @@ local function ClearIndependentRuntimeState(frame)
         frame._cdcIndependentNudger:Hide()
     end
 
-    ApplyIndependentAlphaSync(frame, nil, nil)
-end
-
-local function ApplyIndependentCustomAuraPlacement(barInfo, cabConfig, settings)
-    if not barInfo or not barInfo.frame then return end
-
-    EnsureCustomAuraIndependentConfig(cabConfig, settings)
-    local frame = barInfo.frame
-    local anchor = cabConfig.independentAnchor
-    local size = cabConfig.independentSize
-    local targetFrame = ResolveIndependentAnchorTarget(cabConfig, settings)
-    local point = anchor.point or "CENTER"
-    local relativePoint = anchor.relativePoint or "CENTER"
-    local x = tonumber(anchor.x) or 0
-    local y = tonumber(anchor.y) or 0
-    local width = ClampIndependentDimension(size.width, frame:GetWidth())
-    local height = ClampIndependentDimension(size.height, frame:GetHeight())
-
-    size.width = width
-    size.height = height
-    anchor.x = x
-    anchor.y = y
-
-    if frame:GetParent() ~= UIParent then
-        frame:SetParent(UIParent)
+    if frame._cdcIndependentAlphaSync then
+        frame._cdcIndependentAlphaSync:SetScript("OnUpdate", nil)
     end
-    frame:ClearAllPoints()
-    frame:SetPoint(point, targetFrame, relativePoint, x, y)
-    frame:SetSize(width, height)
-
-    frame._cdcIndependentBarInfo = barInfo
-    UpdateIndependentDragState(frame, barInfo)
-    ApplyIndependentCustomAuraAlpha(barInfo, settings, targetFrame)
-end
-
-function CooldownCompanion:ApplyIndependentCustomAuraPlacement(barInfo, cabConfig, settings)
-    ApplyIndependentCustomAuraPlacement(barInfo, cabConfig, settings)
-end
-
-function CooldownCompanion:ClearIndependentCustomAuraRuntimeState(frame)
-    ClearIndependentRuntimeState(frame)
+    frame._cdcIndependentAlphaTarget = nil
+    frame._cdcIndependentLastAlpha = nil
+    frame:SetAlpha(1)
 end
 
 ------------------------------------------------------------------------
@@ -2517,24 +2037,19 @@ local function UpdateCustomAuraBar(barInfo)
     end
 
     -- Aura visibility rules hide the bar based on the resolved aura state.
-    -- Independent bars stay visible while being edited or placed so they do not disappear.
     if cabConfig.hideWhenInactive or cabConfig.hideWhileAuraActive then
-        local forceVisibleForEditing = barInfo._isIndependent and ShouldForceVisibleIndependentCustomAura(barInfo)
         local hideWhileAuraActive = cabConfig.hideWhileAuraActive == true
             and cabConfig.hideWhenInactive ~= true
             and auraPresent
             and not (cabConfig.hideAuraActiveExceptPandemic == true and inPandemic)
         local hideWhileAuraNotActive = cabConfig.hideWhenInactive == true and not auraPresent
         local shouldShow = not (hideWhileAuraActive or hideWhileAuraNotActive)
-            or forceVisibleForEditing
             or auraPreview
             or pandemicPreview
         local wasShown = barInfo.frame:IsShown()
         barInfo.frame:SetShown(shouldShow)
         if wasShown ~= shouldShow then
-            if not barInfo._isIndependent then
-                layoutDirty = true
-            end
+            layoutDirty = true
         end
         if not shouldShow then
             if isActive then
@@ -2781,6 +2296,7 @@ local function ClearDeferredCustomAuraWakeRetries()
 end
 
 local RelayoutBars
+local RelayoutResourceStack
 
 local function ResolveDeferredCustomAuraWakeRetryBarInfo(entry)
     if not entry or not entry.customBarId or not entry.cabConfig then
@@ -2828,7 +2344,7 @@ local function ProcessDeferredCustomAuraWakeRetries()
             and not frame:IsShown()
         then
             UpdateCustomAuraBar(barInfo)
-            if not barInfo._isIndependent and frame:IsShown() then
+            if frame:IsShown() then
                 relayoutNeeded = true
             end
         end
@@ -2838,9 +2354,7 @@ local function ProcessDeferredCustomAuraWakeRetries()
     StopDeferredCustomAuraWakeRetryFrame()
 
     if relayoutNeeded then
-        layoutDirty = false
-        RelayoutBars()
-        CooldownCompanion:RepositionCastBar()
+        RelayoutResourceStack()
     end
 end
 
@@ -3027,11 +2541,11 @@ local function FinalizeAppliedBarVisibility(barInfo, powerType, previewActive)
     end
 end
 
-local function HideUnusedResourceBarFrames(owner, firstHiddenIndex)
+local function HideUnusedResourceBarFrames(firstHiddenIndex)
     for i = firstHiddenIndex, #resourceBarFrames do
         local barInfo = resourceBarFrames[i]
         if barInfo and barInfo.frame then
-            owner:ClearIndependentCustomAuraRuntimeState(barInfo.frame)
+            ClearStaleRecycledBarRuntimeState(barInfo.frame)
             ClearCustomAuraBarIndicatorState(barInfo, true)
             ClearResourceAuraVisuals(barInfo.frame)
             ClearMaxStacksIndicator(barInfo)
@@ -3046,7 +2560,6 @@ local function HideUnusedResourceBarFrames(owner, firstHiddenIndex)
             barInfo._sndPrevCharges = nil
             barInfo._sndPrevChargeRecharging = nil
             barInfo._sndPrevChargeCooldownStart = nil
-            barInfo._isIndependent = nil
             barInfo._side = nil
             barInfo._order = nil
             barInfo._effectiveThickness = nil
@@ -3084,7 +2597,7 @@ local function PrepareCustomAuraBar(
         customBarId = cabConfig and cabConfig.customBarId
     end
     if not cabConfig then
-        return barInfo, false
+        return barInfo
     end
     customBarId = customBarId or RB.EnsureCustomBarId(settings, cabConfig)
     local isSpellCustomBar = RB.GetCustomBarEntryType and RB.GetCustomBarEntryType(cabConfig) == "spell"
@@ -3092,47 +2605,14 @@ local function PrepareCustomAuraBar(
     local mode = isSpellCustomBar and "continuous" or (isActive and "continuous" or (cabConfig.displayMode or "segmented"))
     local maxStacks = isActive and 1 or (cabConfig.maxStacks or 1)
     local targetBarType = isSpellCustomBar and "custom_cooldown" or ("custom_" .. mode)
-    local isIndependentCustomAura = IsCustomAuraBarIndependent(cabConfig)
     local customOrientation = isVerticalLayout and "vertical" or "horizontal"
-    if isIndependentCustomAura then
-        local independentOrientation = cabConfig.independentOrientation
-        if independentOrientation == "vertical" or independentOrientation == "horizontal" then
-            customOrientation = independentOrientation
-        end
-    end
     local customIsVertical = customOrientation == "vertical"
     local customReverseFill = false
     if customIsVertical then
-        if isIndependentCustomAura then
-            local fillDirection = cabConfig.independentVerticalFillDirection
-            if fillDirection == "top_to_bottom" then
-                customReverseFill = true
-            elseif fillDirection == "bottom_to_top" then
-                customReverseFill = false
-            else
-                customReverseFill = reverseVerticalFill == true
-            end
-        else
-            customReverseFill = reverseVerticalFill
-        end
+        customReverseFill = reverseVerticalFill
     end
     local customWidth = effectiveWidth
     local customHeight = effectiveHeight
-    if isIndependentCustomAura then
-        local independentSize = cabConfig.independentSize
-        customWidth = tonumber(independentSize and independentSize.width) or customWidth
-        customHeight = tonumber(independentSize and independentSize.height) or customHeight
-        if customWidth < 4 then
-            customWidth = 4
-        elseif customWidth > 1200 then
-            customWidth = 1200
-        end
-        if customHeight < 4 then
-            customHeight = 4
-        elseif customHeight > 1200 then
-            customHeight = 1200
-        end
-    end
 
     local needsRecreate = not barInfo or barInfo.barType ~= targetBarType
     if not needsRecreate and mode == "segmented" then
@@ -3275,7 +2755,7 @@ local function PrepareCustomAuraBar(
         ClearMaxStacksIndicator(barInfo)
     end
 
-    return barInfo, isIndependentCustomAura
+    return barInfo
 end
 
 RB.PrepareCustomAuraBar = PrepareCustomAuraBar
@@ -3316,7 +2796,7 @@ RelayoutBars = function()
         local leftBars = {}
         local rightBars = {}
         for _, barInfo in ipairs(resourceBarFrames) do
-            if barInfo and not barInfo._isIndependent and barInfo.frame and barInfo.frame:IsShown() then
+            if barInfo and barInfo.frame and barInfo.frame:IsShown() then
                 if barInfo._side == "left" then
                     table.insert(leftBars, barInfo)
                 else
@@ -3361,7 +2841,7 @@ RelayoutBars = function()
         local aboveBars = {}
         local belowBars = {}
         for _, barInfo in ipairs(resourceBarFrames) do
-            if barInfo and not barInfo._isIndependent and barInfo.frame and barInfo.frame:IsShown() then
+            if barInfo and barInfo.frame and barInfo.frame:IsShown() then
                 if barInfo._side == "above" then
                     table.insert(aboveBars, barInfo)
                 else
@@ -3405,6 +2885,15 @@ RelayoutBars = function()
     end
 end
 
+RelayoutResourceStack = function()
+    layoutDirty = false
+    RelayoutBars()
+    if lastAppliedIndependentStack then
+        UpdateIndependentStackChrome(lastAppliedOrientation == "vertical", lastAppliedLayout)
+    end
+    CooldownCompanion:RepositionCastBar()
+end
+
 ------------------------------------------------------------------------
 -- OnUpdate handler (30 Hz)
 ------------------------------------------------------------------------
@@ -3438,23 +2927,15 @@ local function OnUpdate(self, elapsed)
                 UpdateStaggerBar(barInfo.frame, settings)
             elseif barInfo.barType == "custom_cooldown" then
                 RB.UpdateCustomCooldownBar(barInfo)
-                if barInfo._isIndependent and barInfo.cabConfig then
-                    ApplyIndependentCustomAuraAlpha(barInfo, settings, ResolveIndependentAnchorTarget(barInfo.cabConfig, settings))
-                end
             elseif barInfo.barType == "custom_continuous" then
                 UpdateCustomAuraBar(barInfo)
-                if barInfo._isIndependent and barInfo.cabConfig then
-                    ApplyIndependentCustomAuraAlpha(barInfo, settings, ResolveIndependentAnchorTarget(barInfo.cabConfig, settings))
-                end
                 AnimateCustomAuraBarIndicator(barInfo.frame)
             end
         end
     end
 
     if layoutDirty then
-        layoutDirty = false
-        RelayoutBars()
-        CooldownCompanion:RepositionCastBar()
+        RelayoutResourceStack()
     end
 end
 
@@ -3891,6 +3372,8 @@ function CooldownCompanion:ApplyResourceBars()
     lastAppliedBarSpacing = barSpacing
     lastAppliedBarThickness = globalBarThickness
     lastAppliedOrientation = GetResourceLayoutOrientation(settings)
+    lastAppliedLayout = layout
+    lastAppliedIndependentStack = isIndependentStack
     local segmentGap = layout.segmentGap or settings.segmentGap or 4
     local totalPrimaryLength
     if isIndependentStack then
@@ -3910,16 +3393,14 @@ function CooldownCompanion:ApplyResourceBars()
         local side, order
         if isCustomEntry then
             local cabConfig = entry.config
-            if not IsCustomAuraBarIndependent(cabConfig) then
-                local slotCfg = RB.GetCustomBarLayout(settings, nil, cabConfig, false)
-                if isVerticalLayout then
-                    local storedHorizontalSide = (slotCfg and slotCfg.position) or "below"
-                    side = (slotCfg and slotCfg.verticalPosition) or GetVerticalSideFallback(storedHorizontalSide)
-                    order = (slotCfg and slotCfg.verticalOrder) or (slotCfg and slotCfg.order) or (fallbackOrder + idx)
-                else
-                    side = (slotCfg and slotCfg.position) or "below"
-                    order = (slotCfg and slotCfg.order) or (fallbackOrder + idx)
-                end
+            local slotCfg = RB.GetCustomBarLayout(settings, nil, cabConfig, false)
+            if isVerticalLayout then
+                local storedHorizontalSide = (slotCfg and slotCfg.position) or "below"
+                side = (slotCfg and slotCfg.verticalPosition) or GetVerticalSideFallback(storedHorizontalSide)
+                order = (slotCfg and slotCfg.verticalOrder) or (slotCfg and slotCfg.order) or (fallbackOrder + idx)
+            else
+                side = (slotCfg and slotCfg.position) or "below"
+                order = (slotCfg and slotCfg.order) or (fallbackOrder + idx)
             end
         else
             local res = layout and layout.resources and layout.resources[powerType]
@@ -3948,7 +3429,7 @@ function CooldownCompanion:ApplyResourceBars()
     end
 
     -- Hide existing bars that we don't need
-    HideUnusedResourceBarFrames(self, #filtered + 1)
+    HideUnusedResourceBarFrames(#filtered + 1)
 
     for idx, entry in ipairs(filtered) do
         local isCustomEntry = type(entry) == "table" and entry.kind == "custom"
@@ -4097,27 +3578,13 @@ function CooldownCompanion:ApplyResourceBars()
             StyleContinuousBar(barInfo.frame, powerType, settings)
         end
 
-        local isIndependentCustomAura = false
-        if isCustomEntry then
-            local cabConfig = entry.config
-            isIndependentCustomAura = IsCustomAuraBarIndependent(cabConfig)
+        ClearStaleRecycledBarRuntimeState(barInfo.frame)
+        if barInfo.frame:GetParent() ~= targetContainer then
+            barInfo.frame:SetParent(targetContainer)
         end
-
-        barInfo._isIndependent = isIndependentCustomAura
-        if isIndependentCustomAura then
-            barInfo._side = nil
-            barInfo._order = nil
-            barInfo._effectiveThickness = nil
-            self:ApplyIndependentCustomAuraPlacement(barInfo, barInfo.cabConfig, settings)
-        else
-            self:ClearIndependentCustomAuraRuntimeState(barInfo.frame)
-            if barInfo.frame:GetParent() ~= targetContainer then
-                barInfo.frame:SetParent(targetContainer)
-            end
-            barInfo._side = sideList[idx]
-            barInfo._order = orderList[idx]
-            barInfo._effectiveThickness = effectiveThickness
-        end
+        barInfo._side = sideList[idx]
+        barInfo._order = orderList[idx]
+        barInfo._effectiveThickness = effectiveThickness
 
         FinalizeAppliedBarVisibility(barInfo, powerType, isPreviewActive)
     end
@@ -4268,6 +3735,8 @@ function CooldownCompanion:RevertResourceBars()
     isApplied = false
     lastAppliedPrimaryLength = nil
     lastAppliedOrientation = nil
+    lastAppliedLayout = nil
+    lastAppliedIndependentStack = false
     lastAppliedBarSpacing = nil
     lastAppliedBarThickness = nil
     layoutDirty = false
@@ -4295,7 +3764,7 @@ function CooldownCompanion:RevertResourceBars()
     -- Hide all bars
     for _, barInfo in ipairs(resourceBarFrames) do
         if barInfo.frame then
-            ClearIndependentRuntimeState(barInfo.frame)
+            ClearStaleRecycledBarRuntimeState(barInfo.frame)
             ClearCustomAuraBarIndicatorState(barInfo, true)
             ClearResourceAuraVisuals(barInfo.frame)
             ClearMaxStacksIndicator(barInfo)
@@ -4348,9 +3817,7 @@ local function RefreshCustomAuraBarPreviewState(cabConfig, previewKey, show)
     end
 
     if anyUpdated and layoutDirty then
-        layoutDirty = false
-        RelayoutBars()
-        CooldownCompanion:RepositionCastBar()
+        RelayoutResourceStack()
     end
 end
 
@@ -4411,9 +3878,7 @@ function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     end
 
     if anyUpdated and layoutDirty then
-        layoutDirty = false
-        RelayoutBars()
-        CooldownCompanion:RepositionCastBar()
+        RelayoutResourceStack()
     end
 end
 
@@ -4546,7 +4011,6 @@ function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
             customBarId = barInfo.customBarId,
             barType = barInfo.barType,
             shown = barInfo.frame and barInfo.frame:IsShown() or false,
-            isIndependent = barInfo._isIndependent == true,
         }
         if barInfo.cabConfig and barInfo.cabConfig.spellID then
             entry.spellID = tonumber(barInfo.cabConfig.spellID) or barInfo.cabConfig.spellID
@@ -4555,83 +4019,6 @@ function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
         info[#info + 1] = entry
     end
     return info
-end
-
-function CooldownCompanion:InitializeCustomAuraIndependentAnchor(customBarRef)
-    local settings = GetResourceBarSettings()
-    if not settings then return end
-
-    local customBars = GetSpecCustomAuraBars(settings)
-    local idx = tonumber(customBarRef)
-    local cabConfig
-    if type(customBarRef) == "string" then
-        for entryIndex, entry in ipairs(customBars) do
-            if entry.customBarId == customBarRef then
-                idx = entryIndex
-                cabConfig = entry
-                break
-            end
-        end
-    elseif idx and idx >= 1 then
-        cabConfig = customBars[idx]
-    end
-    if type(cabConfig) ~= "table" then
-        return
-    end
-    local customBarId = RB.EnsureCustomBarId(settings, cabConfig)
-
-    local hasAnchor = type(cabConfig.independentAnchor) == "table"
-        and cabConfig.independentAnchor.x ~= nil
-        and cabConfig.independentAnchor.y ~= nil
-    local hasSize = type(cabConfig.independentSize) == "table"
-        and tonumber(cabConfig.independentSize.width) ~= nil
-        and tonumber(cabConfig.independentSize.height) ~= nil
-
-    if hasAnchor and hasSize then
-        EnsureCustomAuraIndependentConfig(cabConfig, settings)
-        return
-    end
-
-    cabConfig.independentAnchorTargetMode = "group"
-    if cabConfig.independentAnchorGroupId == nil then
-        cabConfig.independentAnchorGroupId = CooldownCompanion:GetFirstAvailableAnchorGroup()
-    end
-    cabConfig.independentAnchor = {
-        point = "CENTER",
-        relativePoint = "CENTER",
-        x = 0,
-        y = 0,
-    }
-    if type(cabConfig.independentSize) ~= "table" then
-        cabConfig.independentSize = {}
-    end
-
-    local sourceFrame = nil
-    for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo and barInfo.customBarId == customBarId and barInfo.frame then
-            sourceFrame = barInfo.frame
-            break
-        end
-    end
-
-    if sourceFrame then
-        local width, height = sourceFrame:GetSize()
-        cabConfig.independentSize.width = ClampIndependentDimension(width, 120)
-        cabConfig.independentSize.height = ClampIndependentDimension(height, GetResourceGlobalThickness(settings))
-
-        local targetFrame = ResolveIndependentAnchorTarget(cabConfig, settings)
-        local cx, cy = sourceFrame:GetCenter()
-        local tx, ty = targetFrame:GetCenter()
-        if cx and cy and tx and ty then
-            cabConfig.independentAnchor.x = RoundToTenths(cx - tx)
-            cabConfig.independentAnchor.y = RoundToTenths(cy - ty)
-        end
-    else
-        cabConfig.independentSize.width = ClampIndependentDimension(cabConfig.independentSize.width, 120)
-        cabConfig.independentSize.height = ClampIndependentDimension(cabConfig.independentSize.height, GetResourceGlobalThickness(settings))
-    end
-
-    EnsureCustomAuraIndependentConfig(cabConfig, settings)
 end
 
 ------------------------------------------------------------------------
@@ -4661,8 +4048,7 @@ function CooldownCompanion:GetResourceBarPredecessor(side, upToOrder)
 
     local best = nil
     for _, barInfo in ipairs(resourceBarFrames) do
-        if not barInfo._isIndependent
-            and barInfo.frame and barInfo.frame:IsShown()
+        if barInfo.frame and barInfo.frame:IsShown()
             and barInfo._side == side
             and barInfo._order < upToOrder then
             if not best then

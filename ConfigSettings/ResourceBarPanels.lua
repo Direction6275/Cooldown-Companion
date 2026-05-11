@@ -1797,74 +1797,6 @@ end
 -- Custom Bars detail panel
 ------------------------------------------------------------------------
 
-local function ClampCustomAuraIndependentDimension(value, fallback)
-    local dimension = tonumber(value) or tonumber(fallback) or 120
-    if dimension < 4 then
-        dimension = 4
-    elseif dimension > 1200 then
-        dimension = 1200
-    end
-    return dimension
-end
-
-local function IsTruthyConfigFlag(value)
-    return value == true or value == 1 or value == "1" or value == "true"
-end
-
-local function NormalizeCustomAuraIndependentOrientation(value)
-    if value == "horizontal" or value == "vertical" then
-        return value
-    end
-    return nil
-end
-
-local function NormalizeCustomAuraIndependentVerticalFillDirection(value)
-    if value == "bottom_to_top" or value == "top_to_bottom" or value == "inherit" then
-        return value
-    end
-    return "inherit"
-end
-
-local function GetResolvedCustomAuraIndependentOrientation(cab, settings)
-    local orientation = NormalizeCustomAuraIndependentOrientation(cab and cab.independentOrientation)
-    if orientation then
-        return orientation
-    end
-    return IsResourceBarVerticalConfig(settings, CooldownCompanion:GetSpecLayoutOrder()) and "vertical" or "horizontal"
-end
-
-local function EnsureCustomAuraIndependentConfig(cab, settings)
-    if type(cab) ~= "table" then return end
-
-    if cab.independentAnchorEnabled ~= nil then
-        cab.independentAnchorEnabled = IsTruthyConfigFlag(cab.independentAnchorEnabled) and true or nil
-    end
-
-    if cab.independentAnchorTargetMode ~= "group" and cab.independentAnchorTargetMode ~= "frame" then
-        cab.independentAnchorTargetMode = "group"
-    end
-    if type(cab.independentLocked) ~= "boolean" then
-        cab.independentLocked = IsTruthyConfigFlag(cab.independentLocked) and true or false
-    end
-
-    cab.independentOrientation = NormalizeCustomAuraIndependentOrientation(cab.independentOrientation)
-    cab.independentVerticalFillDirection = NormalizeCustomAuraIndependentVerticalFillDirection(cab.independentVerticalFillDirection)
-
-    if type(cab.independentAnchor) ~= "table" then
-        cab.independentAnchor = {}
-    end
-    cab.independentAnchor.point = cab.independentAnchor.point or "CENTER"
-    cab.independentAnchor.relativePoint = cab.independentAnchor.relativePoint or "CENTER"
-    cab.independentAnchor.x = tonumber(cab.independentAnchor.x) or 0
-    cab.independentAnchor.y = tonumber(cab.independentAnchor.y) or 0
-
-    if type(cab.independentSize) ~= "table" then
-        cab.independentSize = {}
-    end
-    cab.independentSize.width = ClampCustomAuraIndependentDimension(cab.independentSize.width, 120)
-    cab.independentSize.height = ClampCustomAuraIndependentDimension(cab.independentSize.height, settings and (settings.barHeight or settings.barWidth or 12) or 12)
-end
-
 local function ApplyCustomAuraBarPanelChanges(opts)
     CooldownCompanion:ApplyResourceBars()
     if opts and opts.updateAnchors then
@@ -2071,22 +2003,11 @@ local function DuplicateCustomBarById(settings, customBars, customBarId)
     return newId
 end
 
-local function ToggleCustomBarPlacementLock(entry)
-    if not (type(entry) == "table" and IsTruthyConfigFlag(entry.independentAnchorEnabled)) then
-        return false
-    end
-
-    entry.independentLocked = entry.independentLocked ~= true
-    return true
-end
-
 local function HideCustomBarRowDecorations(frame)
     if not frame then return end
     if frame._cdcCustomBarTypeBadge then frame._cdcCustomBarTypeBadge:Hide() end
-    if frame._cdcCustomBarPlacementBadge then frame._cdcCustomBarPlacementBadge:Hide() end
     if frame._cdcCustomBarAuraStatusBadge then frame._cdcCustomBarAuraStatusBadge:Hide() end
     if frame._cdcCustomBarDisabledBadge then frame._cdcCustomBarDisabledBadge:Hide() end
-    if frame._cdcCustomBarUnlockedBadge then frame._cdcCustomBarUnlockedBadge:Hide() end
     if frame._cdcModeBadgeHitRect then frame._cdcModeBadgeHitRect:Hide() end
     if frame._cdcGenericRenameBadge then frame._cdcGenericRenameBadge:Hide() end
     if frame._cdcAddBtn then frame._cdcAddBtn:Hide() end
@@ -2139,22 +2060,6 @@ local function OpenCustomBarRowMenu(customBars, customBarId, entry)
             })
         end
         UIDropDownMenu_AddButton(duplicateInfo, level)
-
-        if IsTruthyConfigFlag(entry.independentAnchorEnabled) then
-            local lockInfo = UIDropDownMenu_CreateInfo()
-            lockInfo.text = (entry.independentLocked == true) and "Unlock Placement" or "Lock Placement"
-            lockInfo.notCheckable = true
-            lockInfo.func = function()
-                CloseDropDownMenus()
-                if ToggleCustomBarPlacementLock(entry) then
-                    ApplyCustomAuraBarPanelChanges({
-                        updateAnchors = true,
-                        refreshConfig = true,
-                    })
-                end
-            end
-            UIDropDownMenu_AddButton(lockInfo, level)
-        end
 
         local removeInfo = UIDropDownMenu_CreateInfo()
         removeInfo.text = "Remove"
@@ -2518,199 +2423,6 @@ local function BuildCustomBarVisibilityRulesSection(container, customBars, captu
     }, infoButtons)
 end
 
-local function BuildCustomAuraBarAnchorSettings(container, customBars, settings, capturedIdx, infoButtons)
-    local cab = customBars[capturedIdx]
-    if not cab then return end
-    infoButtons = infoButtons or tabInfoButtons
-    EnsureCustomAuraIndependentConfig(cab, settings)
-
-    local unlockCb = AceGUI:Create("CheckBox")
-    unlockCb:SetLabel("Unlock Placement")
-    unlockCb:SetValue(cab.independentLocked ~= true)
-    unlockCb:SetFullWidth(true)
-    unlockCb:SetCallback("OnValueChanged", function(widget, event, val)
-        local unlocked = IsTruthyConfigFlag(val)
-        customBars[capturedIdx].independentLocked = not unlocked
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(unlockCb)
-
-    local frameRow = AceGUI:Create("SimpleGroup")
-    frameRow:SetLayout("Flow")
-    frameRow:SetFullWidth(true)
-
-    local frameEdit = AceGUI:Create("EditBox")
-    if frameEdit.editbox.Instructions then frameEdit.editbox.Instructions:Hide() end
-    frameEdit:SetLabel("Anchor to Frame")
-    frameEdit:SetText(cab.independentAnchorFrameName or "")
-    frameEdit:SetRelativeWidth(0.68)
-    frameEdit:SetCallback("OnEnterPressed", function(widget, event, text)
-        customBars[capturedIdx].independentAnchorTargetMode = "frame"
-        customBars[capturedIdx].independentAnchorFrameName = text or ""
-        CooldownCompanion:ApplyResourceBars()
-    end)
-    frameRow:AddChild(frameEdit)
-
-    local pickBtn = AceGUI:Create("Button")
-    pickBtn:SetText("Pick")
-    pickBtn:SetRelativeWidth(0.24)
-    pickBtn:SetCallback("OnClick", function()
-        CS.StartPickFrame(function(name)
-            if CS.configFrame then
-                CS.configFrame.frame:Show()
-            end
-            if name then
-                customBars[capturedIdx].independentAnchorTargetMode = "frame"
-                customBars[capturedIdx].independentAnchorFrameName = name
-                CooldownCompanion:ApplyResourceBars()
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-    end)
-    frameRow:AddChild(pickBtn)
-
-    CreateInfoButton(pickBtn.frame, pickBtn.frame, "LEFT", "RIGHT", 2, 0, {
-        "Pick Frame",
-        {"Hides the config panel and highlights frames under your cursor. Left-click a frame to anchor this Custom Bar to it, or right-click to cancel.", 1, 1, 1, true},
-        " ",
-        {"You can also type a frame name directly into the editbox.", 1, 1, 1, true},
-        " ",
-        {"Middle-click the Custom Bar row to toggle lock/unlock.", 1, 1, 1, true},
-    }, infoButtons)
-
-    container:AddChild(frameRow)
-    pickBtn.frame:SetScript("OnUpdate", function(self)
-        self:SetScript("OnUpdate", nil)
-        local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
-        if yOfs then
-            self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
-        end
-    end)
-
-    local groupDrop = AceGUI:Create("Dropdown")
-    groupDrop:SetLabel("Anchor to Panel")
-    CooldownCompanion:PopulateAnchorDropdown(groupDrop)
-    groupDrop:SetValue(cab.independentAnchorGroupId and tostring(cab.independentAnchorGroupId) or "")
-    groupDrop:SetFullWidth(true)
-    groupDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        customBars[capturedIdx].independentAnchorTargetMode = "group"
-        customBars[capturedIdx].independentAnchorGroupId = val ~= "" and tonumber(val) or nil
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(groupDrop)
-
-    local pointValues = {}
-    for _, pt in ipairs(CS.anchorPoints) do
-        pointValues[pt] = CS.anchorPointLabels[pt]
-    end
-
-    local anchorPointDrop = AceGUI:Create("Dropdown")
-    anchorPointDrop:SetLabel("Anchor Point")
-    anchorPointDrop:SetList(pointValues, CS.anchorPoints)
-    anchorPointDrop:SetValue(cab.independentAnchor.point or "CENTER")
-    anchorPointDrop:SetFullWidth(true)
-    anchorPointDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        customBars[capturedIdx].independentAnchor.point = val
-        CooldownCompanion:ApplyResourceBars()
-    end)
-    container:AddChild(anchorPointDrop)
-
-    local relativePointDrop = AceGUI:Create("Dropdown")
-    relativePointDrop:SetLabel("Relative Point")
-    relativePointDrop:SetList(pointValues, CS.anchorPoints)
-    relativePointDrop:SetValue(cab.independentAnchor.relativePoint or "CENTER")
-    relativePointDrop:SetFullWidth(true)
-    relativePointDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        customBars[capturedIdx].independentAnchor.relativePoint = val
-        CooldownCompanion:ApplyResourceBars()
-    end)
-    container:AddChild(relativePointDrop)
-
-    local xSlider = AceGUI:Create("Slider")
-    xSlider:SetLabel("X Offset")
-    xSlider:SetSliderValues(-2000, 2000, 0.1)
-    xSlider:SetValue(cab.independentAnchor.x or 0)
-    xSlider:SetFullWidth(true)
-    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        customBars[capturedIdx].independentAnchor.x = val
-        CooldownCompanion:ApplyResourceBars()
-    end)
-    container:AddChild(xSlider)
-
-    local ySlider = AceGUI:Create("Slider")
-    ySlider:SetLabel("Y Offset")
-    ySlider:SetSliderValues(-2000, 2000, 0.1)
-    ySlider:SetValue(cab.independentAnchor.y or 0)
-    ySlider:SetFullWidth(true)
-    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-        customBars[capturedIdx].independentAnchor.y = val
-        CooldownCompanion:ApplyResourceBars()
-    end)
-    container:AddChild(ySlider)
-
-    local widthSlider = AceGUI:Create("Slider")
-    widthSlider:SetLabel("Width")
-    widthSlider:SetSliderValues(4, 1200, 0.1)
-    widthSlider:SetValue(cab.independentSize.width or 120)
-    widthSlider:SetFullWidth(true)
-    widthSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        customBars[capturedIdx].independentSize.width = ClampCustomAuraIndependentDimension(val, 120)
-        CooldownCompanion:ApplyResourceBars()
-    end)
-    container:AddChild(widthSlider)
-
-    local heightSlider = AceGUI:Create("Slider")
-    heightSlider:SetLabel("Height")
-    heightSlider:SetSliderValues(4, 1200, 0.1)
-    heightSlider:SetValue(cab.independentSize.height or 12)
-    heightSlider:SetFullWidth(true)
-    heightSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        customBars[capturedIdx].independentSize.height = ClampCustomAuraIndependentDimension(val, 12)
-        CooldownCompanion:ApplyResourceBars()
-    end)
-    container:AddChild(heightSlider)
-
-    local resolvedOrientation = GetResolvedCustomAuraIndependentOrientation(cab, settings)
-
-    local orientationDrop = AceGUI:Create("Dropdown")
-    orientationDrop:SetLabel("Orientation")
-    orientationDrop:SetList({
-        horizontal = "Horizontal",
-        vertical = "Vertical",
-    }, { "horizontal", "vertical" })
-    orientationDrop:SetValue(resolvedOrientation)
-    orientationDrop:SetFullWidth(true)
-    orientationDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        if val ~= "horizontal" and val ~= "vertical" then
-            return
-        end
-        customBars[capturedIdx].independentOrientation = val
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    container:AddChild(orientationDrop)
-
-    if resolvedOrientation == "vertical" then
-        local fillDrop = AceGUI:Create("Dropdown")
-        fillDrop:SetLabel("Vertical Fill Direction")
-        fillDrop:SetList({
-            inherit = "Inherit Global",
-            bottom_to_top = "Bottom to Top",
-            top_to_bottom = "Top to Bottom",
-        }, { "inherit", "bottom_to_top", "top_to_bottom" })
-        fillDrop:SetValue(cab.independentVerticalFillDirection or "inherit")
-        fillDrop:SetFullWidth(true)
-        fillDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            customBars[capturedIdx].independentVerticalFillDirection = NormalizeCustomAuraIndependentVerticalFillDirection(val)
-            CooldownCompanion:ApplyResourceBars()
-        end)
-        container:AddChild(fillDrop)
-    end
-
-end
-
 local function BuildCustomBarsListPanel(container)
     local settings = CooldownCompanion:GetResourceBarSettings()
     local customBars = CooldownCompanion:GetSpecCustomAuraBars()
@@ -2945,18 +2657,6 @@ local function BuildCustomBarsListPanel(container)
             rightBadgeOffset = -4
         end
 
-        if IsTruthyConfigFlag(entry.independentAnchorEnabled) and entry.independentLocked ~= true then
-            local unlockedBadge = EnsureCustomBarRowIconBadge(rowFrame, "_cdcCustomBarUnlockedBadge", "ShipMissionIcon-Training-Map")
-            unlockedBadge:SetPoint("RIGHT", rightBadgeAnchor, rightBadgePoint, rightBadgeOffset, 0)
-            SetCustomBarRowBadgeTooltip(unlockedBadge, "Placement unlocked", 1, 0.82, 0.2)
-            rightBadgeAnchor = unlockedBadge
-            rightBadgePoint = "LEFT"
-            rightBadgeOffset = -4
-        end
-
-        local placementAnchor = rightBadgeAnchor
-        local placementPoint = rightBadgePoint
-        local placementOffset = rightBadgeOffset
         if not isSpellCustomBar then
             local auraStatusBadge = EnsureCustomBarRowIconBadge(rowFrame, "_cdcCustomBarAuraStatusBadge", "icon_trackedbuffs")
             auraStatusBadge:SetPoint("RIGHT", rightBadgeAnchor, rightBadgePoint, rightBadgeOffset, 0)
@@ -2977,29 +2677,13 @@ local function BuildCustomBarsListPanel(container)
                 end
                 SetCustomBarRowBadgeTooltip(auraStatusBadge, tooltipText, 1, 0.2, 0.2)
             end
-            placementAnchor = auraStatusBadge
-            placementPoint = "LEFT"
-            placementOffset = -4
         end
-
-        local placementBadge = EnsureCustomBarRowTextBadge(rowFrame, "_cdcCustomBarPlacementBadge")
-        placementBadge:SetText(IsTruthyConfigFlag(entry.independentAnchorEnabled) and "|cffb88cffIndependent|r" or "|cff7dff7dAttached|r")
-        placementBadge:SetPoint("RIGHT", placementAnchor, placementPoint, placementOffset, 0)
-        placementBadge:SetWidth(66)
 
         row:SetCallback("OnClick", function(widget, event, mouseButton)
             if mouseButton == "RightButton" then
                 CS.selectedCustomBarId = customBarId
                 wipe(CS.selectedButtons)
                 OpenCustomBarRowMenu(customBars, customBarId, entry)
-            elseif mouseButton == "MiddleButton" then
-                if ToggleCustomBarPlacementLock(entry) then
-                    CS.selectedCustomBarId = customBarId
-                    ApplyCustomAuraBarPanelChanges({
-                        updateAnchors = true,
-                        refreshConfig = true,
-                    })
-                end
             elseif mouseButton == "LeftButton" then
                 if CS.selectedCustomBarId == customBarId then
                     CS.selectedCustomBarId = nil
@@ -3038,7 +2722,6 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     local capturedIdx = selectedIndex
     local capturedId = EnsureCustomBarId(settings, cab)
     local capturedKey = capturedId or tostring(capturedIdx)
-    EnsureCustomAuraIndependentConfig(cab, settings)
     local isSpellCustomBar = IsSpellCustomBarConfig(cab)
     local resolvedAuraUnit = isSpellCustomBar and nil or GetResolvedCustomAuraBarAuraUnit(cab, cab.spellID)
     activeTab = activeTab or "settings"
@@ -3048,26 +2731,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     end
 
     if activeTab == "layout" then
-        if IsTruthyConfigFlag(cab.independentAnchorEnabled) then
-            BuildCustomAuraBarAnchorSettings(container, customBars, settings, capturedIdx, infoButtons)
-
-            local group = CooldownCompanion.db
-                and CooldownCompanion.db.profile
-                and CooldownCompanion.db.profile.groups
-                and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-            BuildAlphaControls(container, cab, function()
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:RefreshConfigPanel()
-            end, "rb_custom_bar_alpha_" .. tostring(capturedKey), {
-                isGlobal = group and group.isGlobal,
-                infoButtons = infoButtons,
-                onBaselineChanged = function()
-                    CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-        end
-        return
+        activeTab = "settings"
     end
 
     if activeTab == "soundalerts" then
@@ -3083,41 +2747,6 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     if not isSpellCustomBar then
         BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUnit, infoButtons)
     end
-    AddCustomBarSettingsHeading(container, "Placement", infoButtons, "Choose whether this Custom Bar appears attached to the panel stack or uses its own independent anchor.")
-
-    local anchorModeDrop = AceGUI:Create("Dropdown")
-    anchorModeDrop:SetLabel("Anchoring Mode")
-    anchorModeDrop:SetList({
-        attached = "Attached to Panel",
-        independent = "Independent",
-    }, { "attached", "independent" })
-    anchorModeDrop:SetValue(IsTruthyConfigFlag(cab.independentAnchorEnabled) and "independent" or "attached")
-    anchorModeDrop:SetFullWidth(true)
-    anchorModeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        local bars = CooldownCompanion:GetSpecCustomAuraBars()
-        if not bars[capturedIdx] then
-            return
-        end
-
-        local independent = val == "independent"
-        local wasIndependent = IsTruthyConfigFlag(bars[capturedIdx].independentAnchorEnabled)
-        bars[capturedIdx].independentAnchorEnabled = independent and true or nil
-        if independent then
-            EnsureCustomAuraIndependentConfig(bars[capturedIdx], settings)
-            bars[capturedIdx].independentLocked = false
-            if not wasIndependent and CooldownCompanion.InitializeCustomAuraIndependentAnchor then
-                CooldownCompanion:InitializeCustomAuraIndependentAnchor(capturedId)
-            end
-        elseif CS.customBarSettingsTab == "layout" or CS.customBarSettingsTab == "anchor" or CS.customBarSettingsTab == "alpha" then
-            CS.customBarSettingsTab = "settings"
-        end
-
-        ApplyCustomAuraBarPanelChanges({
-            updateAnchors = true,
-            refreshConfig = true,
-        })
-    end)
-    container:AddChild(anchorModeDrop)
 
     if not isSpellCustomBar then
         AddCustomBarSettingsHeading(container, "Display", infoButtons, {
@@ -4046,7 +3675,7 @@ local function BuildLayoutOrderPanel(container)
 
     -- Custom Bar slots
     for slotIdx, cab in ipairs(customBars or {}) do
-        if cab and cab.enabled and cab.spellID and not IsTruthyConfigFlag(cab.independentAnchorEnabled) then
+        if cab and cab.enabled and cab.spellID then
             local customBarId = EnsureCustomBarId(rbSettings, cab)
             local spellInfo = C_Spell.GetSpellInfo(cab.spellID)
             local slotName = "Custom Bar"

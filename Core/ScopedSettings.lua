@@ -529,7 +529,15 @@ local function SanitizeResourceBarAnchors(settings)
         if type(specBars) == "table" then
             for _, customAuraBar in pairs(specBars) do
                 if type(customAuraBar) == "table" then
-                    customAuraBar.independentAnchorGroupId = SanitizeAnchorGroupID(customAuraBar.independentAnchorGroupId)
+                    customAuraBar.independentAnchorEnabled = nil
+                    customAuraBar.independentLocked = nil
+                    customAuraBar.independentAnchorTargetMode = nil
+                    customAuraBar.independentAnchorFrameName = nil
+                    customAuraBar.independentAnchorGroupId = nil
+                    customAuraBar.independentAnchor = nil
+                    customAuraBar.independentSize = nil
+                    customAuraBar.independentOrientation = nil
+                    customAuraBar.independentVerticalFillDirection = nil
                     if ensureCustomAuraBarAuraUnit then
                         ensureCustomAuraBarAuraUnit(customAuraBar, customAuraBar.spellID)
                     end

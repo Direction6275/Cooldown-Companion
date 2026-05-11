@@ -746,18 +746,21 @@ local function GetShortLabel(label)
     return first
 end
 
-local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLayout)
-    local activeResources = GetConfigActiveResources()
-    local customBars = CooldownCompanion:GetSpecCustomAuraBars()
+local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLayout, includeResourceSlots)
+    includeResourceSlots = includeResourceSlots == true
+    local activeResources = includeResourceSlots and GetConfigActiveResources() or {}
+    local customBars = includeResourceSlots and CooldownCompanion:GetSpecCustomAuraBars() or {}
     local primarySlots = {}
     local castSlots = {}
-    local resourceBarsEnabled = rbSettings and rbSettings.enabled
+    local resourceBarsEnabled = includeResourceSlots and rbSettings and rbSettings.enabled
 
-    layout.resources = layout.resources or {}
-    layout.customAuraBarSlots = layout.customAuraBarSlots or {}
-    layout.customBars = layout.customBars or {}
-    rbSettings = rbSettings or {}
-    rbSettings.resources = rbSettings.resources or {}
+    if includeResourceSlots then
+        layout.resources = layout.resources or {}
+        layout.customAuraBarSlots = layout.customAuraBarSlots or {}
+        layout.customBars = layout.customBars or {}
+        rbSettings = rbSettings or {}
+        rbSettings.resources = rbSettings.resources or {}
+    end
 
     local function GetSlotColor(powerType)
         if powerType == RESOURCE_HEALTH then
@@ -855,7 +858,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
 
     if resourceBarsEnabled then
         for customIndex, customAura in ipairs(customBars or {}) do
-            if customAura and customAura.enabled and customAura.spellID and not IsTruthyConfigFlag(customAura.independentAnchorEnabled) then
+            if customAura and customAura.enabled and customAura.spellID then
                 local customBarId = EnsureCustomBarId(rbSettings, customAura)
                 local spellInfo = C_Spell.GetSpellInfo(customAura.spellID)
                 local label = spellInfo and spellInfo.name or customAura.label or ("Custom Bar " .. customIndex)
@@ -1647,6 +1650,36 @@ local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
 end
 
 local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, castSlots, horizontalBarHeight, verticalBarWidth)
+    if #primarySlots == 0 and #castSlots > 0 then
+        local castPanel = RenderMirroredPanel(preview, content, sourcePanel)
+        local panelWidth = castPanel:GetWidth()
+        local panelHeight = castPanel:GetHeight()
+        local castSlotFrameHeight = math_max(8, horizontalBarHeight)
+        local castAbove = SortSlotsForSide(castSlots, "above", true)
+        local castBelow = SortSlotsForSide(castSlots, "below", false)
+        local castAboveHeight = GetLaneExtent(#castAbove, castSlotFrameHeight)
+        local castBelowHeight = GetLaneExtent(#castBelow, castSlotFrameHeight)
+
+        local castAboveLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castAboveHeight, "y", "above", true, castAbove, sourcePanel.width, castSlotFrameHeight, "cast")
+        castAboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+
+        castAboveLane.setPreviewOverflow = function(extra)
+            castAboveLane.frame:ClearAllPoints()
+            castAboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, extra)
+            castAboveLane.frame:SetSize(castAboveLane.baseWidth or panelWidth, (castAboveLane.baseHeight or castAboveHeight) + extra)
+        end
+        castAboveLane.setPreviewOverflow(0)
+
+        castPanel:ClearAllPoints()
+        castPanel:SetPoint("TOPLEFT", castAboveLane.frame, "BOTTOMLEFT", 0, -LAYOUT_PREVIEW_GAP)
+
+        local castBelowLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castBelowHeight, "y", "below", false, castBelow, sourcePanel.width, castSlotFrameHeight, "cast")
+        castBelowLane.frame:SetPoint("TOPLEFT", castPanel, "BOTTOMLEFT", 0, -LAYOUT_PREVIEW_GAP)
+
+        local iconCenterOffsetY = castAboveHeight + LAYOUT_PREVIEW_GAP + (panelHeight / 2)
+        return panelWidth, castAboveHeight + panelHeight + castBelowHeight + (LAYOUT_PREVIEW_GAP * 2), iconCenterOffsetY
+    end
+
     local panelFrame = RenderMirroredPanel(preview, content, sourcePanel)
     local panelWidth = panelFrame:GetWidth()
     local panelHeight = panelFrame:GetHeight()
@@ -1980,10 +2013,12 @@ local function CreateLayoutDragModel(preview)
             end
         end
 
-        local adjustedIndex = math_max(1, math_min(#filtered + 1, dropTarget.insertIndex or 1))
-        local newOrder = GetLayoutOrderForInsertion(filtered, lane.reversed, adjustedIndex)
         local oldPos = slotData.getPos()
         local oldOrder = slotData.getOrder()
+        local adjustedIndex = math_max(1, math_min(#filtered + 1, dropTarget.insertIndex or 1))
+        local newOrder = (#filtered == 0 and oldPos == lane.side)
+            and oldOrder
+            or GetLayoutOrderForInsertion(filtered, lane.reversed, adjustedIndex)
 
         slotData.setPos(lane.side)
         slotData.setOrder(newOrder)
@@ -2038,7 +2073,13 @@ function ST._BuildLayoutOrderPreviewPanel(container)
         return
     end
 
-    local primarySlots, castSlots = CollectPreviewSlots(rbSettings, cbSettings, layout, preview.isVerticalLayout)
+    local primarySlots, castSlots = CollectPreviewSlots(
+        rbSettings,
+        cbSettings,
+        layout,
+        preview.isVerticalLayout,
+        supportsAttachedResourceBars
+    )
     if not preview.isVerticalLayout then
         for _, castSlot in ipairs(castSlots) do
             table_insert(primarySlots, castSlot)

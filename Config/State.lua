@@ -1293,10 +1293,8 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcHeaderDisabledBadge then entry.frame._cdcHeaderDisabledBadge:Hide() end
     if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end
     if entry.frame._cdcCustomBarTypeBadge then entry.frame._cdcCustomBarTypeBadge:Hide() end
-    if entry.frame._cdcCustomBarPlacementBadge then entry.frame._cdcCustomBarPlacementBadge:Hide() end
     if entry.frame._cdcCustomBarAuraStatusBadge then entry.frame._cdcCustomBarAuraStatusBadge:Hide() end
     if entry.frame._cdcCustomBarDisabledBadge then entry.frame._cdcCustomBarDisabledBadge:Hide() end
-    if entry.frame._cdcCustomBarUnlockedBadge then entry.frame._cdcCustomBarUnlockedBadge:Hide() end
     if entry.frame._cdcFallbackRemoveBtn then entry.frame._cdcFallbackRemoveBtn:Hide() end
     if entry.frame._cdcFallbackUpBtn then entry.frame._cdcFallbackUpBtn:Hide() end
     if entry.frame._cdcFallbackDownBtn then entry.frame._cdcFallbackDownBtn:Hide() end
