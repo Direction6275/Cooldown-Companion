@@ -205,6 +205,8 @@ local customBarContentFields = {
     "hideWhenInactive",
     "hideWhileAuraActive",
     "hideAuraActiveExceptPandemic",
+    "auraTracking",
+    "auraSpellID",
     "barAuraEffect",
     "auraGlowCombatOnly",
     "showPandemicGlow",
@@ -227,6 +229,7 @@ local customBarContentFields = {
     "stackTextFontSize",
     "stackTextFontOutline",
     "auraUnit",
+    "auraUnitExplicit",
     "hasCharges",
     "maxCharges",
 }
@@ -487,6 +490,24 @@ local function GetDefaultCustomAuraUnit(spellID)
     return (spellID and C_Spell.IsSpellHarmful(spellID)) and "target" or "player"
 end
 
+local function GetDefaultSpellCustomBarAuraUnit(cabConfig, spellID)
+    local resolvedSpellID = spellID
+    if resolvedSpellID == nil and type(cabConfig) == "table" then
+        resolvedSpellID = cabConfig.spellID
+    end
+    resolvedSpellID = tonumber(resolvedSpellID)
+
+    if CooldownCompanion and CooldownCompanion.ResolveStandaloneAuraDefaultUnit then
+        return CooldownCompanion:ResolveStandaloneAuraDefaultUnit({
+            type = "spell",
+            id = resolvedSpellID,
+            auraSpellID = type(cabConfig) == "table" and cabConfig.auraSpellID or nil,
+        })
+    end
+
+    return GetDefaultCustomAuraUnit(resolvedSpellID)
+end
+
 local function HasExplicitCustomAuraBarAuraUnit(cabConfig)
     return type(cabConfig) == "table"
         and cabConfig.auraUnitExplicit == true
@@ -503,11 +524,11 @@ local function GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID)
         return GetDefaultCustomAuraUnit(resolvedSpellID)
     end
 
-    if type(cabConfig) == "table" and IsValidCustomAuraUnit(cabConfig.auraUnit) then
+    if type(cabConfig) == "table" and HasExplicitCustomAuraBarAuraUnit(cabConfig) then
         return cabConfig.auraUnit
     end
 
-    return GetDefaultCustomAuraUnit(resolvedSpellID)
+    return GetDefaultSpellCustomBarAuraUnit(cabConfig, resolvedSpellID)
 end
 
 local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit, explicit)
@@ -541,7 +562,7 @@ local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit, explicit)
         end
     end
 
-    return GetDefaultCustomAuraUnit(resolvedSpellID)
+    return GetDefaultSpellCustomBarAuraUnit(cabConfig, resolvedSpellID)
 end
 
 local function RefreshCustomAuraBarAuraUnitForSpell(cabConfig, spellID)
@@ -554,7 +575,11 @@ local function RefreshCustomAuraBarAuraUnitForSpell(cabConfig, spellID)
         return cabConfig.auraUnit
     end
 
-    return EnsureCustomAuraBarAuraUnit(cabConfig, resolvedSpellID, GetDefaultCustomAuraUnit(resolvedSpellID), false)
+    local defaultUnit = GetDefaultCustomAuraUnit(resolvedSpellID)
+    if type(cabConfig) == "table" and cabConfig.entryType == "spell" then
+        defaultUnit = GetDefaultSpellCustomBarAuraUnit(cabConfig, resolvedSpellID)
+    end
+    return EnsureCustomAuraBarAuraUnit(cabConfig, resolvedSpellID, defaultUnit, false)
 end
 
 local function IsValidResourceAuraUnit(unit)
