@@ -745,6 +745,13 @@ local function GetBarPanelAuraStackDisplayFromMode(mode)
     return "segmented"
 end
 
+local function NormalizeBarPanelAuraStackTextFormat(format)
+    if format == "current_max" then
+        return "current_max"
+    end
+    return "current"
+end
+
 local function EnsureBarPanelAuraSettings(buttonData)
     if type(buttonData.auraBar) ~= "table" then
         buttonData.auraBar = {}
@@ -860,6 +867,18 @@ function CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
         return
     end
     EnsureBarPanelAuraSettings(buttonData).segmentGap = ClampBarPanelAuraNumber(value, 0, 20, 4)
+end
+
+function CooldownCompanion:GetBarPanelAuraStackTextFormat(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    return NormalizeBarPanelAuraStackTextFormat(type(auraBar) == "table" and auraBar.stackTextFormat or nil)
+end
+
+function CooldownCompanion:SetBarPanelAuraStackTextFormat(buttonData, format)
+    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
+        return
+    end
+    EnsureBarPanelAuraSettings(buttonData).stackTextFormat = NormalizeBarPanelAuraStackTextFormat(format)
 end
 
 function CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame)
