@@ -817,8 +817,9 @@ local CHARACTER_COPY_TOOLTIP_DETAILS = {
         "Does not copy: Resource Bars, Unit Frames, panels, or panel contents.",
     },
     resourceBars = {
-        "Copies: enable state, anchor target, sizing, spacing, colors, text/display options, applicable resource settings, and legacy custom aura bar slot settings.",
-        "Keeps: this character's layout order, Custom Bars, and per-spec aura/resource overrides.",
+        "Use this to make this character's Resource Bars match another character on this profile.",
+        "Copies general bar settings like size, spacing, colors, text, anchors, and resource options.",
+        "Does not copy this character's spec layout, Custom Bars, or aura overlay setup.",
     },
 }
 
@@ -903,6 +904,8 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
         btn:ClearAllPoints()
         btn:Hide()
     end)
+
+    return btn
 end
 
 -- Shared bar texture option builder (used by CastBarPanels and BarModeTabs)

@@ -108,6 +108,7 @@ local EnsureCustomBarLayout = RB.EnsureCustomBarLayout
 local GetCustomBarLayout = RB.GetCustomBarLayout
 local GetResourceSpecOverrideTable = RB.GetResourceSpecOverrideTable
 local RESOURCE_HEALTH_DISPLAY_KEYS = RB.RESOURCE_HEALTH_DISPLAY_KEYS
+local resourceSpecCopyButton
 local resourceSpecCopyMenu
 
 local function IsHeroSpecProxyCondition(cond)
@@ -575,26 +576,49 @@ end
 
 CS.healthResourceUI = HealthResource
 
-local function AddResourceSpecCopyButton(container)
+local function AddResourceSpecCopyButton(enableCb, characterCopyButton)
     local _, initialSpecOrder, currentSpecID = CooldownCompanion:GetResourceBarSpecCopyOptions()
     if not currentSpecID or #initialSpecOrder == 0 then
         return
     end
 
-    local copyBtn = AceGUI:Create("Button")
-    copyBtn:SetText("Copy From Spec")
-    copyBtn:SetWidth(150)
-    copyBtn:SetCallback("OnEnter", function(widget)
-        GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
+    local btn = resourceSpecCopyButton
+    if not btn then
+        btn = CreateFrame("Button", nil, enableCb.frame)
+        btn:SetSize(16, 16)
+
+        local icon = btn:CreateTexture(nil, "OVERLAY")
+        icon:SetSize(14, 14)
+        icon:SetPoint("CENTER")
+        icon:SetAtlas("BattleBar-SwapPetIcon", false)
+        icon:SetVertexColor(0.25, 0.55, 1.0)
+        btn.icon = icon
+
+        resourceSpecCopyButton = btn
+    else
+        btn:SetParent(enableCb.frame)
+    end
+
+    btn:ClearAllPoints()
+    if characterCopyButton then
+        btn:SetPoint("LEFT", characterCopyButton, "RIGHT", 2, 0)
+    else
+        btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
+    end
+    btn:Show()
+
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Copy Column 2 From Spec")
         GameTooltip:AddLine("Copies this character's Resources layout, Custom Bars, and resource display overrides from another spec.", 1, 1, 1, true)
         GameTooltip:AddLine("Aura overlays are not copied.", 1, 1, 1, true)
+        GameTooltip:AddLine("Choose another spec on this character.", 0.75, 0.75, 0.75, true)
         GameTooltip:Show()
     end)
-    copyBtn:SetCallback("OnLeave", function()
+    btn:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
-    copyBtn:SetCallback("OnClick", function()
+    btn:SetScript("OnClick", function()
         if not resourceSpecCopyMenu then
             resourceSpecCopyMenu = CreateFrame("Frame", "CDCResourceSpecCopyMenu", UIParent, "UIDropDownMenuTemplate")
         end
@@ -629,7 +653,14 @@ local function AddResourceSpecCopyButton(container)
         ToggleDropDownMenu(1, nil, resourceSpecCopyMenu, "cursor", 0, 0)
     end)
 
-    container:AddChild(copyBtn)
+    local prevOnRelease = enableCb.events and enableCb.events["OnRelease"]
+    enableCb:SetCallback("OnRelease", function()
+        if prevOnRelease then
+            prevOnRelease(enableCb, "OnRelease")
+        end
+        btn:ClearAllPoints()
+        btn:Hide()
+    end)
 end
 
 local function BuildResourceBarAnchoringPanel(container)
@@ -651,11 +682,12 @@ local function BuildResourceBarAnchoringPanel(container)
     end)
     container:AddChild(enableCb)
 
-    CreateCharacterCopyButton(enableCb, "resourceBars", "Resource Bars", function()
+    local characterCopyButton = CreateCharacterCopyButton(enableCb, "resourceBars", "Resource Bars", function()
         CooldownCompanion:EvaluateResourceBars()
         CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:RefreshConfigPanel()
     end)
+    AddResourceSpecCopyButton(enableCb, characterCopyButton)
 
     if not settings.enabled then return end
     if not settings.resources then settings.resources = {} end
@@ -669,8 +701,6 @@ local function BuildResourceBarAnchoringPanel(container)
     end
 
     local isIndependentStack = layout.independentAnchorEnabled == true
-
-    AddResourceSpecCopyButton(container)
 
     -- Preview toggle (ephemeral)
     local previewCb = AceGUI:Create("CheckBox")
