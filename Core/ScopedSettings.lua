@@ -627,10 +627,6 @@ local function ComposeCopiedResourceBarSettings(source, target)
         copied.customAuraBarSlots = CopyTable(source.customAuraBarSlots)
     end
 
-    if type(source) == "table" and type(source.layoutOrder) == "table" then
-        copied.layoutOrder = CopyTable(source.layoutOrder)
-    end
-
     if type(copied.resources) ~= "table" then
         copied.resources = {}
     end
