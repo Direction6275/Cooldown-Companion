@@ -648,7 +648,9 @@ local function AddResourceSpecCopyButton(enableCb, characterCopyButton)
                         CooldownCompanion:Print("Copy confirmation is unavailable.")
                         return
                     end
-                    ShowPopupAboveConfig("CDC_CONFIRM_RESOURCE_SPEC_COPY", sourceSpecName .. " to " .. (currentSpecName or "Current Spec"), {
+                    local sourceUsesDefaults = CooldownCompanion:IsResourceBarSpecCopySourceUsingDefaults(sourceSpecID)
+                    local popupKey = sourceUsesDefaults and "CDC_CONFIRM_RESOURCE_SPEC_COPY_DEFAULTS" or "CDC_CONFIRM_RESOURCE_SPEC_COPY"
+                    ShowPopupAboveConfig(popupKey, sourceSpecName, {
                         sourceSpecID = sourceSpecID,
                         targetSpecID = refreshedSpecID,
                     })

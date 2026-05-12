@@ -894,7 +894,7 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
                         CooldownCompanion:Print("Copy confirmation is unavailable.")
                         return
                     end
-                    ShowPopupAboveConfig("CDC_CONFIRM_CHARACTER_SCOPED_COPY", label, {
+                    ShowPopupAboveConfig("CDC_CONFIRM_CHARACTER_SCOPED_COPY", label .. " settings from " .. (vals[charKey] or charKey) .. " to this character", {
                         systemKey = systemKey,
                         systemLabel = label,
                         sourceCharKey = charKey,

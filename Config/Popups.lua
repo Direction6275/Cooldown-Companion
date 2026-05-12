@@ -1371,7 +1371,7 @@ StaticPopupDialogs["CDC_CONFIRM_PANEL_STYLE_COPY"] = {
 }
 
 StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {
-    text = "Copy selected %s settings from the chosen character to this character?",
+    text = "Copy %s?",
     button1 = "Copy",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -1396,26 +1396,39 @@ StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {
     preferredIndex = 3,
 }
 
+local function AcceptResourceSpecCopy(self, data)
+    if not (data and data.sourceSpecID and data.targetSpecID) then
+        CooldownCompanion:Print("Copy failed: missing spec context.")
+        return
+    end
+
+    local ok = CooldownCompanion:CopyResourceBarSpecSettings(data.sourceSpecID, data.targetSpecID)
+    if not ok then
+        CooldownCompanion:Print("Copy failed.")
+        return
+    end
+
+    CooldownCompanion:EvaluateResourceBars()
+    CooldownCompanion:UpdateAnchorStacking()
+    CooldownCompanion:RefreshConfigPanel()
+end
+
 StaticPopupDialogs["CDC_CONFIRM_RESOURCE_SPEC_COPY"] = {
-    text = "Copy Resource Column 2 settings from %s?\n\nThis copies only the Styling, Layout, and Colors tabs where those settings apply to the current spec. Custom Bars and aura overlays are not copied.",
+    text = "Copy Resource Column 2 settings from %s?\n\nThis copies only the Styling, Layout, and Colors tabs where those settings apply to the current spec. If that spec is using defaults, those default values are copied. Custom Bars and aura overlays are not copied.",
     button1 = "Copy",
     button2 = "Cancel",
-    OnAccept = function(self, data)
-        if not (data and data.sourceSpecID and data.targetSpecID) then
-            CooldownCompanion:Print("Copy failed: missing spec context.")
-            return
-        end
+    OnAccept = AcceptResourceSpecCopy,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
 
-        local ok = CooldownCompanion:CopyResourceBarSpecSettings(data.sourceSpecID, data.targetSpecID)
-        if not ok then
-            CooldownCompanion:Print("Copy failed.")
-            return
-        end
-
-        CooldownCompanion:EvaluateResourceBars()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end,
+StaticPopupDialogs["CDC_CONFIRM_RESOURCE_SPEC_COPY_DEFAULTS"] = {
+    text = "Copy Resource Column 2 settings from %s?\n\nThat spec is using default Column 2 settings, so default Styling, Layout, and Colors values will be copied into your current spec. Custom Bars and aura overlays are not copied.",
+    button1 = "Copy",
+    button2 = "Cancel",
+    OnAccept = AcceptResourceSpecCopy,
     timeout = 0,
     whileDead = true,
     hideOnEscape = true,

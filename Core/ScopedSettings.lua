@@ -321,6 +321,36 @@ local function CopyResourceSpecOverrides(settings, sourceSpecID, targetSpecID)
     end
 end
 
+local function HasResourceSpecCopyData(settings, specID)
+    if type(settings) ~= "table" then
+        return false
+    end
+
+    if type(GetSpecKeyedTable(settings.layoutOrder, specID)) == "table" then
+        return true
+    end
+
+    if type(GetSpecKeyedTable(settings.displayProfiles, specID)) == "table" then
+        return true
+    end
+
+    if type(settings.resources) == "table" then
+        for _, resource in pairs(settings.resources) do
+            local specOverrides = type(resource) == "table" and resource.specOverrides or nil
+            local sourceSpecData = GetSpecKeyedTable(specOverrides, specID)
+            if type(sourceSpecData) == "table" then
+                for key in pairs(sourceSpecData) do
+                    if not RESOURCE_SPEC_AURA_KEYS[key] then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+
+    return false
+end
+
 -- Keep these resource mappings aligned with OtherBars/ResourceBarConstants.lua.
 local RESOURCE_HEALTH = -1
 
@@ -965,6 +995,16 @@ function CooldownCompanion:GetResourceBarSpecCopyOptions()
     end)
 
     return values, order, currentSpecID, currentSpecName
+end
+
+function CooldownCompanion:IsResourceBarSpecCopySourceUsingDefaults(sourceSpecID)
+    sourceSpecID = tonumber(sourceSpecID)
+    if not sourceSpecID then
+        return true
+    end
+
+    local settings = self:GetResourceBarSettings()
+    return not HasResourceSpecCopyData(settings, sourceSpecID)
 end
 
 function CooldownCompanion:CopyCharacterScopedSettings(systemKey, sourceCharKey)
