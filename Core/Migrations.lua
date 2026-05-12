@@ -1538,7 +1538,7 @@ local ALPHA_FIELDS = {
     "baselineAlpha",
     "forceAlphaInCombat", "forceAlphaOutOfCombat",
     "forceAlphaRegularMounted", "forceAlphaDragonriding",
-    "forceAlphaTargetExists", "forceAlphaMouseover",
+    "forceAlphaTargetExists", "forceAlphaFocusExists", "forceAlphaMouseover",
     "forceHideInCombat", "forceHideOutOfCombat",
     "forceHideRegularMounted", "forceHideDragonriding",
     "fadeInDuration", "fadeOutDuration", "fadeDelay",
