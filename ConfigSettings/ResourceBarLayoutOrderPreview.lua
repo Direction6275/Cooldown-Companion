@@ -44,7 +44,6 @@ local LayoutOverlaySegments = RB.LayoutOverlaySegments
 local StyleContinuousBar = RB.StyleContinuousBar
 local StyleHealthBar = RB.StyleHealthBar
 local StyleSegmentedBar = RB.StyleSegmentedBar
-local ApplySegmentedPreviewColors = RB.ApplySegmentedPreviewColors
 local PrepareCustomAuraBar = RB.PrepareCustomAuraBar
 local EnsureCustomBarId = RB.EnsureCustomBarId
 local EnsureCustomBarLayout = RB.EnsureCustomBarLayout
@@ -1190,7 +1189,6 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         barInfo.frame:SetSize(width, height)
         LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings)
         StyleSegmentedBar(barInfo.frame, slot.powerType, rbSettings)
-        ApplySegmentedPreviewColors(barInfo.frame, slot.powerType, rbSettings)
     else
         if not barInfo or barInfo.barType ~= "continuous" then
             if barInfo and barInfo.frame then

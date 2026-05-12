@@ -3787,19 +3787,22 @@ local function ApplySegmentedPreviewColors(holder, powerType, settings, previewV
     local thresholdEnabled, thresholdValue, thresholdColor = GetSegmentedThresholdConfig(powerType, settings)
     local thresholdActive = thresholdEnabled and thresholdValue and filled >= thresholdValue
 
-    local readyColor, rechargingColor, maxColor = GetResourceColors(powerType, settings)
-    local filledColor = readyColor
-    local emptyColor = readyColor
+    local color1, color2, color3 = GetResourceColors(powerType, settings)
+    local filledColor = color1
+    local emptyColor = color1
 
     if powerType == 5 or powerType == 7 or powerType == 19 then
+        local readyColor, rechargingColor, maxColor = color1, color2, color3
         filledColor = (filled >= numSegments) and maxColor or (thresholdActive and thresholdColor or readyColor)
         emptyColor = rechargingColor or readyColor
     elseif powerType == 4 then
-        filledColor = (filled >= numSegments) and rechargingColor or (thresholdActive and thresholdColor or readyColor)
-        emptyColor = readyColor
+        local normalColor, maxColor = color1, color2
+        filledColor = (filled >= numSegments) and maxColor or (thresholdActive and thresholdColor or normalColor)
+        emptyColor = normalColor
     elseif RESOURCE_COLOR_DEFS[powerType] then
-        filledColor = (filled >= numSegments) and rechargingColor or (thresholdActive and thresholdColor or readyColor)
-        emptyColor = readyColor
+        local normalColor, maxColor = color1, color2
+        filledColor = (filled >= numSegments) and maxColor or (thresholdActive and thresholdColor or normalColor)
+        emptyColor = normalColor
     end
 
     for i, seg in ipairs(holder.segments) do
@@ -3817,7 +3820,6 @@ RB.StyleContinuousBar = StyleContinuousBar
 RB.StyleHealthBar = HealthBar.Style
 RB.StyleSegmentedText = StyleSegmentedText
 RB.StyleSegmentedBar = StyleSegmentedBar
-RB.ApplySegmentedPreviewColors = ApplySegmentedPreviewColors
 
 function CooldownCompanion:ApplyResourceBars()
     local settings = GetResourceBarSettings()
