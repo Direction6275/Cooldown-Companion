@@ -14,11 +14,6 @@ local function GetEnsureCustomAuraBarAuraUnit()
     return rb and rb.EnsureCustomAuraBarAuraUnit
 end
 
-local function GetEnsureCustomBarId()
-    local rb = ST and ST._RB
-    return rb and rb.EnsureCustomBarId
-end
-
 local function BackfillLegacyResourceAuraUnit(resourceAuraEntry)
     if type(resourceAuraEntry) ~= "table" then
         return
@@ -270,49 +265,13 @@ local function GetCurrentClassSpecInfo()
     return specIDs, currentSpecID
 end
 
-local function CopySpecCustomBars(settings, sourceBars, targetBars, ensureCustomBarId)
-    local idMap = {}
-
-    if type(sourceBars) ~= "table" then
-        return idMap
-    end
-
-    local function copyEntry(entry)
-        if type(entry) ~= "table" then
-            return
-        end
-
-        local copiedEntry = CopyTable(entry)
-        local sourceCustomBarId = type(copiedEntry.customBarId) == "string" and copiedEntry.customBarId or nil
-        copiedEntry.customBarId = nil
-        local copiedCustomBarId = ensureCustomBarId(settings, copiedEntry)
-        if sourceCustomBarId and copiedCustomBarId then
-            idMap[sourceCustomBarId] = copiedCustomBarId
-        end
-        targetBars[#targetBars + 1] = copiedEntry
-    end
-
-    local seen = {}
-    for index, entry in ipairs(sourceBars) do
-        copyEntry(entry)
-        seen[index] = true
-    end
-
-    for key, entry in pairs(sourceBars) do
-        if not seen[key] then
-            copyEntry(entry)
-        end
-    end
-
-    return idMap
-end
-
-local function CopySpecLayoutOrder(settings, sourceSpecID, targetSpecID, customBarIdMap)
+local function CopySpecLayoutOrder(settings, sourceSpecID, targetSpecID)
     if type(settings) ~= "table" or type(settings.layoutOrder) ~= "table" then
         return
     end
 
     local sourceLayout = GetSpecKeyedTable(settings.layoutOrder, sourceSpecID)
+    local targetLayout = GetSpecKeyedTable(settings.layoutOrder, targetSpecID)
     ClearSpecKeyedValue(settings.layoutOrder, targetSpecID)
 
     if type(sourceLayout) ~= "table" then
@@ -320,16 +279,8 @@ local function CopySpecLayoutOrder(settings, sourceSpecID, targetSpecID, customB
     end
 
     local copiedLayout = CopyTable(sourceLayout)
-    if type(copiedLayout.customBars) == "table" then
-        local copiedCustomBarLayouts = {}
-        for sourceCustomBarId, customBarLayout in pairs(copiedLayout.customBars) do
-            local copiedCustomBarId = customBarIdMap and customBarIdMap[sourceCustomBarId]
-            if copiedCustomBarId and type(customBarLayout) == "table" then
-                copiedCustomBarLayouts[copiedCustomBarId] = CopyTable(customBarLayout)
-            end
-        end
-        copiedLayout.customBars = copiedCustomBarLayouts
-    end
+    copiedLayout.customBars = type(targetLayout) == "table" and CloneSettingValue(targetLayout.customBars) or nil
+    copiedLayout.customAuraBarSlots = type(targetLayout) == "table" and CloneSettingValue(targetLayout.customAuraBarSlots) or nil
 
     settings.layoutOrder[targetSpecID] = copiedLayout
 end
@@ -1065,21 +1016,7 @@ function CooldownCompanion:CopyResourceBarSpecSettings(sourceSpecID, targetSpecI
         return false, "missing_settings"
     end
 
-    local ensureCustomBarId = GetEnsureCustomBarId()
-    if not ensureCustomBarId then
-        return false, "missing_custom_bar_id_helper"
-    end
-
-    if type(settings.customBars) ~= "table" then
-        settings.customBars = {}
-    end
-
-    local sourceBars = GetSpecKeyedTable(settings.customBars, sourceSpecID)
-    ClearSpecKeyedValue(settings.customBars, targetSpecID)
-    settings.customBars[targetSpecID] = {}
-    local customBarIdMap = CopySpecCustomBars(settings, sourceBars, settings.customBars[targetSpecID], ensureCustomBarId)
-
-    CopySpecLayoutOrder(settings, sourceSpecID, targetSpecID, customBarIdMap)
+    CopySpecLayoutOrder(settings, sourceSpecID, targetSpecID)
     CopySpecDisplayProfile(settings, sourceSpecID, targetSpecID)
     CopyResourceSpecOverrides(settings, sourceSpecID, targetSpecID)
 

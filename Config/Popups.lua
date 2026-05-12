@@ -1397,7 +1397,7 @@ StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {
 }
 
 StaticPopupDialogs["CDC_CONFIRM_RESOURCE_SPEC_COPY"] = {
-    text = "Copy Resource Column 2 settings from %s?\n\nThis copies layout, Custom Bars, and resource display overrides for this character. Aura overlays are not copied.",
+    text = "Copy Resource Column 2 settings from %s?\n\nThis copies only the Styling, Layout, and Colors tabs where those settings apply to the current spec. Custom Bars and aura overlays are not copied.",
     button1 = "Copy",
     button2 = "Cancel",
     OnAccept = function(self, data)

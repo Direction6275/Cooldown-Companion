@@ -817,9 +817,17 @@ local CHARACTER_COPY_TOOLTIP_DETAILS = {
         "Does not copy: Resource Bars, Unit Frames, panels, or panel contents.",
     },
     resourceBars = {
-        "Use this to make this character's Resource Bars match another character on this profile.",
-        "Copies general bar settings like size, spacing, colors, text, anchors, and resource options.",
-        "Does not copy this character's spec layout, Custom Bars, or aura overlay setup.",
+        "Copies broad Resource Bar defaults from another character without replacing this character's spec-specific setup.",
+        "",
+        "What is copied:",
+        "- Enable state and panel anchor target",
+        "- Shared appearance defaults, like texture, text, and default colors",
+        "- Resource options that apply to this class",
+        "",
+        "What is not copied:",
+        "- The current spec's Layout tab or bar order",
+        "- Custom Bars",
+        "- Aura overlays and per-spec resource overrides",
     },
 }
 
@@ -853,9 +861,14 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
         local tooltipDetails = CHARACTER_COPY_TOOLTIP_DETAILS[systemKey]
         if tooltipDetails then
             for _, line in ipairs(tooltipDetails) do
-                GameTooltip:AddLine(line, 1, 1, 1, true)
+                if line == "" then
+                    GameTooltip:AddLine(" ")
+                elseif line == "What is copied:" or line == "What is not copied:" then
+                    GameTooltip:AddLine(line, 1, 0.82, 0, true)
+                else
+                    GameTooltip:AddLine(line, 1, 1, 1, true)
+                end
             end
-            GameTooltip:AddLine("Choose another character on this profile.", 0.75, 0.75, 0.75, true)
         else
             GameTooltip:AddLine("Copy settings from another character on this profile.", 1, 1, 1, true)
         end
