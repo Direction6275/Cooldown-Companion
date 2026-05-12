@@ -1189,6 +1189,19 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             ApplyCheckboxIndent(enemyOnlyCb, 20)
         end
 
+        local focusVal = config.forceAlphaFocusExists or false
+        local focusCb = AceGUI:Create("CheckBox")
+        focusCb:SetLabel(focusVal and "Focus Exists - |cff00ff00Fully Visible|r" or "Focus Exists")
+        focusCb:SetValue(focusVal)
+        focusCb:SetFullWidth(true)
+        focusCb:SetDisabled(controlsDisabled)
+        focusCb:SetCallback("OnValueChanged", function(widget, event, val)
+            if controlsDisabled then return end
+            config.forceAlphaFocusExists = val
+            refreshFn()
+        end)
+        container:AddChild(focusCb)
+
         local mouseoverVal = config.forceAlphaMouseover or false
         local mouseoverCb = AceGUI:Create("CheckBox")
         mouseoverCb:SetLabel(mouseoverVal and "Mouseover - |cff00ff00Fully Visible|r" or "Mouseover")

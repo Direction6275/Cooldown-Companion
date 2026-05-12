@@ -167,7 +167,7 @@ end
 
 -- Shared force-condition evaluation: returns forceFull (bool), forceHidden (bool), baselineAlpha (number).
 -- Used by both UpdateGroupAlpha and UpdateModuleAlpha.
-local function EvaluateDesiredAlpha(config, inCombat, hasTarget, hasEnemyTarget, regularMounted, dragonridingMounted, inTravelForm)
+local function EvaluateDesiredAlpha(config, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
     -- Effective mounted states: mounted subtype plus optional druid travel form.
     local effectiveRegularMounted = regularMounted
     local effectiveDragonridingMounted = dragonridingMounted
@@ -206,12 +206,14 @@ local function EvaluateDesiredAlpha(config, inCombat, hasTarget, hasEnemyTarget,
     elseif config.forceAlphaTargetExists
         and ((config.forceAlphaTargetEnemyOnly and hasEnemyTarget) or ((not config.forceAlphaTargetEnemyOnly) and hasTarget)) then
         forceFull = true
+    elseif config.forceAlphaFocusExists and hasFocus then
+        forceFull = true
     end
 
     return forceFull, forceHidden, config.baselineAlpha or 1
 end
 
-function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, hasEnemyTarget, regularMounted, dragonridingMounted, inTravelForm)
+function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
     local state = self.alphaState[groupId]
     if not state then
         state = {}
@@ -254,7 +256,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
         return
     end
 
-    local forceFull, forceHidden, baseline = EvaluateDesiredAlpha(group, inCombat, hasTarget, hasEnemyTarget, regularMounted, dragonridingMounted, inTravelForm)
+    local forceFull, forceHidden, baseline = EvaluateDesiredAlpha(group, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
 
     -- Mouseover check (geometric, works even when click-through)
     if not forceFull and group.forceAlphaMouseover then
@@ -298,14 +300,14 @@ end
 -- moduleId: unique string key (e.g., "rb", "cb")
 -- config: table with the same alpha fields as group (baselineAlpha, forceAlpha*, etc.)
 -- frames: list of frames to apply alpha to
-function CooldownCompanion:UpdateModuleAlpha(moduleId, config, frames, now, inCombat, hasTarget, hasEnemyTarget, regularMounted, dragonridingMounted, inTravelForm)
+function CooldownCompanion:UpdateModuleAlpha(moduleId, config, frames, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
     local state = self.alphaState[moduleId]
     if not state then
         state = {}
         self.alphaState[moduleId] = state
     end
 
-    local forceFull, forceHidden, baseline = EvaluateDesiredAlpha(config, inCombat, hasTarget, hasEnemyTarget, regularMounted, dragonridingMounted, inTravelForm)
+    local forceFull, forceHidden, baseline = EvaluateDesiredAlpha(config, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
 
     -- Mouseover check across all frames
     if not forceFull and config.forceAlphaMouseover then
@@ -369,7 +371,8 @@ function CooldownCompanion:InitAlphaUpdateFrame()
         if (config.baselineAlpha or 1) < 1 then return true end
         if config.forceAlphaInCombat or config.forceAlphaOutOfCombat
             or config.forceAlphaRegularMounted or config.forceAlphaDragonriding
-            or config.forceAlphaTargetExists or config.forceAlphaMouseover then
+            or config.forceAlphaTargetExists or config.forceAlphaFocusExists
+            or config.forceAlphaMouseover then
             return true
         end
         if config.forceHideInCombat or config.forceHideOutOfCombat
@@ -398,6 +401,7 @@ function CooldownCompanion:InitAlphaUpdateFrame()
         local inCombat = InCombatLockdown()
         local hasTarget = UnitExists("target")
         local hasEnemyTarget = hasTarget and UnitCanAttack("player", "target") and true or false
+        local hasFocus = UnitExists("focus")
         local mounted = IsMounted()
         local regularMounted, dragonridingMounted = self:ResolveMountedAlphaStates(mounted)
 
@@ -424,7 +428,7 @@ function CooldownCompanion:InitAlphaUpdateFrame()
                     else
                         locked = group.locked
                     end
-                    self:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, hasEnemyTarget, regularMounted, dragonridingMounted, inTravelForm)
+                    self:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
                 end
             end
         end
@@ -433,7 +437,7 @@ function CooldownCompanion:InitAlphaUpdateFrame()
         if self._moduleAlphaTargets then
             for moduleId, entry in pairs(self._moduleAlphaTargets) do
                 if ConfigNeedsAlphaUpdate(entry.config, moduleId) then
-                    self:UpdateModuleAlpha(moduleId, entry.config, entry.frames, now, inCombat, hasTarget, hasEnemyTarget, regularMounted, dragonridingMounted, inTravelForm)
+                    self:UpdateModuleAlpha(moduleId, entry.config, entry.frames, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
                 end
             end
         end
