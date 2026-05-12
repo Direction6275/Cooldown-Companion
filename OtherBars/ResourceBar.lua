@@ -2004,18 +2004,33 @@ local function ResolveCustomAuraVisibility(cabConfig, auraPresent, inPandemic, a
     return shouldShow, true
 end
 
+function RB.RequestCustomBarPresentationRefresh()
+    if RB.customBarPresentationRefreshPending then
+        return
+    end
+
+    RB.customBarPresentationRefreshPending = true
+    C_Timer.After(0, function()
+        RB.customBarPresentationRefreshPending = nil
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+    end)
+end
+
 local function UpdateCustomAuraBar(barInfo)
     local cabConfig = barInfo.cabConfig
     if not cabConfig or not cabConfig.spellID then return end
 
     -- Read aura data from viewer frame (applications may be secret in combat)
+    local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
+    local auraState = spellAuraStackDisplay and RB.ResolveSpellCustomBarAuraState and RB.ResolveSpellCustomBarAuraState(barInfo) or nil
     local stacks = 0
     local applications = 0
     local auraPresent = false
     local durationObj
     local isActive = cabConfig.trackingMode == "active"
     local useDrain = isActive
-    local needsDuration = useDrain or cabConfig.showDurationText
+    local needsDuration = (useDrain or cabConfig.showDurationText) and not spellAuraStackDisplay
     local bar = barInfo.barType == "custom_continuous" and barInfo.frame or nil
     local auraPreview = bar and bar._barAuraActivePreview
     local pandemicPreview = bar and bar._pandemicPreview
@@ -2024,7 +2039,18 @@ local function UpdateCustomAuraBar(barInfo)
     local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(cabConfig.spellID)
     local auraUnit = configUnit
     local instId = viewerFrame and viewerFrame.auraInstanceID
-    if instId then
+
+    if spellAuraStackDisplay then
+        configUnit = (auraState and auraState.configUnit) or configUnit
+        viewerFrame = auraState and auraState.viewerFrame or nil
+        if auraState and auraState.ready == true and auraState.auraPresent == true and auraState.auraData then
+            auraPresent = true
+            instId = auraState.auraInstanceID
+            auraUnit = auraState.auraUnit or configUnit
+            applications = auraState.auraData.applications or 0
+            stacks = applications
+        end
+    elseif instId then
         local viewerUnit = viewerFrame.auraDataUnit or configUnit
         if viewerUnit == configUnit then
             local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(configUnit, instId)
@@ -2043,7 +2069,7 @@ local function UpdateCustomAuraBar(barInfo)
         end
     end
 
-    if not auraPresent and configUnit == "player" then
+    if not spellAuraStackDisplay and not auraPresent and configUnit == "player" then
         local auraData = C_UnitAuras.GetPlayerAuraBySpellID(cabConfig.spellID)
         if auraData then
             instId = auraData.auraInstanceID
@@ -2059,6 +2085,11 @@ local function UpdateCustomAuraBar(barInfo)
                 durationObj = C_UnitAuras.GetAuraDuration("player", instId)
             end
         end
+    end
+
+    if spellAuraStackDisplay and not auraPresent and not isPreviewActive then
+        RB.RequestCustomBarPresentationRefresh()
+        return
     end
 
     local soundAuraActive = auraPresent
@@ -2090,6 +2121,10 @@ local function UpdateCustomAuraBar(barInfo)
     end
 
     local shouldShow, hasVisibilityRule = ResolveCustomAuraVisibility(cabConfig, auraPresent, inPandemic, auraPreview, pandemicPreview)
+    if spellAuraStackDisplay and auraState and auraState.ready ~= true then
+        hasVisibilityRule = false
+        shouldShow = true
+    end
     if hasVisibilityRule then
         local wasShown = barInfo.frame:IsShown()
         barInfo.frame:SetShown(shouldShow)
@@ -2105,7 +2140,7 @@ local function UpdateCustomAuraBar(barInfo)
     end
 
     local maxStacks = cabConfig.maxStacks or 1
-    local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
+    local thresholdEnabled = (not spellAuraStackDisplay) and IsCustomAuraMaxThresholdEnabled(cabConfig)
 
     if barInfo.barType == "custom_continuous" then
         local bar = barInfo.frame
@@ -2366,7 +2401,7 @@ local function SpellCustomBarAuraDataMatches(bar, cabConfig, spellID, resolvedAu
         or (baseID and auraSpellID == baseID)
 end
 
-local function ResolveSpellCustomBarAuraState(barInfo)
+function RB.ResolveSpellCustomBarAuraState(barInfo)
     local cabConfig = barInfo and barInfo.cabConfig
     local bar = barInfo and barInfo.frame
     local buttonData, spellID = BuildSpellCustomBarAuraButtonData(cabConfig)
@@ -2465,6 +2500,24 @@ local function UpdateSpellCustomBarChargeText(bar, cooldownResult)
     end
 end
 
+function RB.UpdateSpellCustomBarAuraStackText(bar, cabConfig, stacks, maxStacks, auraPresent)
+    if not (bar and bar.stackText and bar.stackText:IsShown()) then
+        return
+    end
+
+    if not auraPresent then
+        bar.stackText:SetText("")
+        return
+    end
+
+    local stackTextFormat = NormalizeCustomAuraStackTextFormat(cabConfig and cabConfig.stackTextFormat)
+    if stackTextFormat == "current" then
+        bar.stackText:SetFormattedText("%d", stacks)
+    else
+        bar.stackText:SetFormattedText("%d / %d", stacks, maxStacks)
+    end
+end
+
 function RB.UpdateCustomCooldownBar(barInfo)
     local cabConfig = barInfo and barInfo.cabConfig
     local bar = barInfo and barInfo.frame
@@ -2475,11 +2528,14 @@ function RB.UpdateCustomCooldownBar(barInfo)
     local durationObj = cooldownResult and cooldownResult.renderDurationObj
     local cooldownActive = cooldownResult
         and cooldownResult.state == ST.CooldownLogic.STATE_COOLDOWN
-    local auraState = ResolveSpellCustomBarAuraState(barInfo)
+    local auraState = RB.ResolveSpellCustomBarAuraState(barInfo)
     local auraPresent = auraState and auraState.ready == true and auraState.auraPresent == true
     local auraPreview = bar._barAuraActivePreview == true
     local pandemicPreview = bar._pandemicPreview == true
-    local renderAuraState = cabConfig.auraTracking == true and (auraPresent or auraPreview or pandemicPreview)
+    local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
+    local renderAuraState = cabConfig.auraTracking == true
+        and not spellAuraStackDisplay
+        and (auraPresent or auraPreview or pandemicPreview)
 
     local barColor = cabConfig.barColor or {0.5, 0.5, 1, 1}
     local cooldownColor = cabConfig.barCooldownColor or {0.6, 0.13, 0.18, 1}
@@ -2535,6 +2591,11 @@ function RB.UpdateCustomCooldownBar(barInfo)
         and not bar:IsShown() then
         bar:Show()
         layoutDirty = true
+    end
+
+    if spellAuraStackDisplay and auraPresent then
+        RB.RequestCustomBarPresentationRefresh()
+        return
     end
 
     if renderAuraState then
@@ -2826,7 +2887,7 @@ end
 
 local function StyleCustomAuraBar(barInfo, cabConfig)
     local barColor = cabConfig.barColor or {0.5, 0.5, 1}
-    local isSpellCustomBar = RB.GetCustomBarEntryType and RB.GetCustomBarEntryType(cabConfig) == "spell"
+    local isSpellCustomBar = RB.IsSpellCustomBarConfig(cabConfig)
     local thresholdEnabled = (not isSpellCustomBar) and IsCustomAuraMaxThresholdEnabled(cabConfig)
     local thresholdColor = GetCustomAuraMaxThresholdColor(cabConfig)
 
@@ -2841,8 +2902,11 @@ local function StyleCustomAuraBar(barInfo, cabConfig)
         end
 
         -- Determine visibility for both text elements
-        local isActive = isSpellCustomBar or cabConfig.trackingMode == "active"
-        local showDuration = cabConfig.showDurationText == true
+        local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
+        local spellAuraStackActive = spellAuraStackDisplay and barInfo.barType ~= "custom_cooldown"
+        local isActive = isSpellCustomBar and not spellAuraStackActive
+            or ((not isSpellCustomBar) and cabConfig.trackingMode == "active")
+        local showDuration = cabConfig.showDurationText == true and not spellAuraStackActive
         local showStack = cabConfig.showStackText
         if isSpellCustomBar then
             showStack = showStack == true
@@ -3004,11 +3068,23 @@ local function PrepareCustomAuraBar(
         return barInfo
     end
     customBarId = customBarId or RB.EnsureCustomBarId(settings, cabConfig)
-    local isSpellCustomBar = RB.GetCustomBarEntryType and RB.GetCustomBarEntryType(cabConfig) == "spell"
-    local isActive = isSpellCustomBar or cabConfig.trackingMode == "active"
-    local mode = isSpellCustomBar and "continuous" or (isActive and "continuous" or (cabConfig.displayMode or "segmented"))
+    local isSpellCustomBar = RB.IsSpellCustomBarConfig(cabConfig)
+    local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
+    local spellAuraStackPresent = spellAuraStackDisplay and isPreviewActive
+    if spellAuraStackDisplay and not spellAuraStackPresent and barInfo and barInfo.frame then
+        local auraState = RB.ResolveSpellCustomBarAuraState and RB.ResolveSpellCustomBarAuraState(barInfo) or nil
+        spellAuraStackPresent = auraState and auraState.ready == true and auraState.auraPresent == true
+    end
+    local spellAuraStackActive = spellAuraStackDisplay and spellAuraStackPresent
+    local isActive = (isSpellCustomBar and not spellAuraStackActive)
+        or ((not isSpellCustomBar) and cabConfig.trackingMode == "active")
+    local mode = isSpellCustomBar
+        and (spellAuraStackActive and (cabConfig.displayMode or "segmented") or "continuous")
+        or (isActive and "continuous" or (cabConfig.displayMode or "segmented"))
     local maxStacks = isActive and 1 or (cabConfig.maxStacks or 1)
-    local targetBarType = isSpellCustomBar and "custom_cooldown" or ("custom_" .. mode)
+    local targetBarType = (isSpellCustomBar and not spellAuraStackActive)
+        and "custom_cooldown"
+        or ("custom_" .. mode)
     local customOrientation = isVerticalLayout and "vertical" or "horizontal"
     local customIsVertical = customOrientation == "vertical"
     local customReverseFill = false
@@ -4616,18 +4692,36 @@ local function ApplyPreviewDataToBar(barInfo, settings)
         ApplyResourceAuraLanePreview(barInfo, 0.5)
         SetSegmentedText(barInfo.frame, previewStacks, mwMaxStacks)
     elseif barInfo.barType == "custom_cooldown" then
-        barInfo.frame:SetMinMaxValues(0, 1)
-        barInfo.frame:SetValue(0.45)
+        local cabConfig = barInfo.cabConfig
+        local isSpellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
+        local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
+        local previewValue
+        if isSpellAuraStackDisplay then
+            barInfo.frame:SetMinMaxValues(0, maxStacks)
+            previewValue = math.ceil(maxStacks * 0.65)
+            barInfo.frame:SetValue(previewValue)
+        else
+            barInfo.frame:SetMinMaxValues(0, 1)
+            previewValue = 0.45
+            barInfo.frame:SetValue(previewValue)
+        end
         if barInfo.frame.thresholdOverlay then
             barInfo.frame.thresholdOverlay:SetValue(0)
             barInfo.frame.thresholdOverlay:Hide()
         end
         if barInfo.frame.text and barInfo.frame.text:IsShown() then
-            local cabConfig = barInfo.cabConfig
-            barInfo.frame.text:SetText(FormatTime(12.3, cabConfig and cabConfig.decimalTimers))
+            if isSpellAuraStackDisplay then
+                barInfo.frame.text:SetText("")
+            else
+                barInfo.frame.text:SetText(FormatTime(12.3, cabConfig and cabConfig.decimalTimers))
+            end
         end
         if barInfo.frame.stackText and barInfo.frame.stackText:IsShown() then
-            barInfo.frame.stackText:SetText("1 / 2")
+            if isSpellAuraStackDisplay then
+                RB.UpdateSpellCustomBarAuraStackText(barInfo.frame, cabConfig, previewValue, maxStacks, true)
+            else
+                barInfo.frame.stackText:SetText("1 / 2")
+            end
         end
         ClearCustomAuraBarIndicatorState(barInfo, true)
         if barInfo._maxStacksIndicator then
