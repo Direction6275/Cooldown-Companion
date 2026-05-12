@@ -195,10 +195,13 @@ local customBarContentFields = {
     "trackingMode",
     "displayMode",
     "maxStacks",
+    "label",
     "barColor",
     "barCooldownColor",
     "barChargeColor",
     "overlayColor",
+    "barHeight",
+    "barWidth",
     "soundAlerts",
     "loadConditions",
     "talentConditions",
@@ -207,13 +210,38 @@ local customBarContentFields = {
     "hideAuraActiveExceptPandemic",
     "auraTracking",
     "auraSpellID",
+    "barAuraColor",
     "barAuraEffect",
+    "barAuraEffectColor",
+    "barAuraEffectSize",
+    "barAuraEffectThickness",
+    "barAuraEffectSpeed",
+    "barAuraEffectLines",
     "auraGlowCombatOnly",
+    "barAuraPulseEnabled",
+    "barAuraPulseSpeed",
+    "barAuraColorShiftEnabled",
+    "barAuraColorShiftSpeed",
+    "barAuraColorShiftColor",
     "showPandemicGlow",
+    "barPandemicColor",
+    "pandemicBarEffect",
+    "pandemicBarEffectColor",
+    "pandemicBarEffectSize",
+    "pandemicBarEffectThickness",
+    "pandemicBarEffectSpeed",
+    "pandemicBarEffectLines",
     "pandemicGlowCombatOnly",
+    "pandemicBarPulseEnabled",
+    "pandemicBarPulseSpeed",
+    "pandemicBarColorShiftEnabled",
+    "pandemicBarColorShiftSpeed",
+    "pandemicBarColorShiftColor",
     "thresholdColorEnabled",
+    "thresholdMaxColor",
     "maxStacksGlowEnabled",
     "maxStacksGlowStyle",
+    "maxStacksGlowColor",
     "maxStacksGlowSize",
     "maxStacksGlowSpeed",
     "maxStacksGlowThickness",
@@ -221,6 +249,7 @@ local customBarContentFields = {
     "durationTextFont",
     "durationTextFontSize",
     "durationTextFontOutline",
+    "durationTextFontColor",
     "decimalTimers",
     "showStackText",
     "showText",
@@ -228,6 +257,7 @@ local customBarContentFields = {
     "stackTextFont",
     "stackTextFontSize",
     "stackTextFontOutline",
+    "stackTextFontColor",
     "auraUnit",
     "auraUnitExplicit",
     "hasCharges",
@@ -256,6 +286,16 @@ local function IsConfiguredCustomBar(cab)
             or cab.entryType ~= nil
             or cab.independentAnchorEnabled ~= nil
         )
+end
+
+local function HasConfiguredCustomBars(specBars)
+    if type(specBars) ~= "table" then return false end
+    for _, entry in pairs(specBars) do
+        if HasCustomBarContent(entry) then
+            return true
+        end
+    end
+    return false
 end
 
 local function GetCustomBarEntryType(cab)
@@ -449,6 +489,9 @@ local function NormalizeCustomBars(settings, specID)
     if type(specBars) ~= "table" then
         specBars = {}
         settings.customBars[specID] = specBars
+    end
+
+    if not HasConfiguredCustomBars(specBars) then
         MigrateLegacyCustomAuraBars(settings, specID, specBars)
     end
 
