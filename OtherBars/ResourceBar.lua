@@ -3768,12 +3768,9 @@ local function StyleSegmentedText(holder, powerType, settings)
 end
 
 local function StyleSegmentedBar(holder, powerType, settings)
-    -- All segmented types use their first color return as the initial segment color.
-    -- UpdateSegmentedBar dynamically recolors per-segment each tick.
-    local color = GetResourceColors(powerType, settings)
-    for _, seg in ipairs(holder.segments) do
-        seg:SetStatusBarColor(color[1], color[2], color[3], 1)
-    end
+    -- Segment colors are live state, not static style. ApplyResourceBars() can
+    -- run during combat events, so avoid briefly repainting every segment with
+    -- the generic ready color before UpdateSegmentedBar restores per-segment state.
     StyleSegmentedText(holder, powerType, settings)
 end
 
@@ -4059,6 +4056,9 @@ function CooldownCompanion:ApplyResourceBars()
             barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
             LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
             StyleSegmentedBar(barInfo.frame, powerType, settings)
+            if not isPreviewActive then
+                UpdateSegmentedBar(barInfo.frame, powerType, settings, {})
+            end
         else
             -- Continuous bar
             if not barInfo or barInfo.barType ~= "continuous" then
