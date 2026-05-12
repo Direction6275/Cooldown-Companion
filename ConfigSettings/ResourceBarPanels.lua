@@ -11,6 +11,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 local LSM = LibStub("LibSharedMedia-3.0")
 local CS = ST._configState
 local IsPassiveOrProc = ST._IsPassiveOrProc
+local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
@@ -107,6 +108,7 @@ local EnsureCustomBarLayout = RB.EnsureCustomBarLayout
 local GetCustomBarLayout = RB.GetCustomBarLayout
 local GetResourceSpecOverrideTable = RB.GetResourceSpecOverrideTable
 local RESOURCE_HEALTH_DISPLAY_KEYS = RB.RESOURCE_HEALTH_DISPLAY_KEYS
+local resourceSpecCopyMenu
 
 local function IsHeroSpecProxyCondition(cond)
     return type(cond) == "table"
@@ -573,6 +575,63 @@ end
 
 CS.healthResourceUI = HealthResource
 
+local function AddResourceSpecCopyButton(container)
+    local _, initialSpecOrder, currentSpecID = CooldownCompanion:GetResourceBarSpecCopyOptions()
+    if not currentSpecID or #initialSpecOrder == 0 then
+        return
+    end
+
+    local copyBtn = AceGUI:Create("Button")
+    copyBtn:SetText("Copy From Spec")
+    copyBtn:SetWidth(150)
+    copyBtn:SetCallback("OnEnter", function(widget)
+        GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Copy Column 2 From Spec")
+        GameTooltip:AddLine("Copies this character's Resources layout, Custom Bars, and resource display overrides from another spec.", 1, 1, 1, true)
+        GameTooltip:AddLine("Aura overlays are not copied.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    copyBtn:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    copyBtn:SetCallback("OnClick", function()
+        if not resourceSpecCopyMenu then
+            resourceSpecCopyMenu = CreateFrame("Frame", "CDCResourceSpecCopyMenu", UIParent, "UIDropDownMenuTemplate")
+        end
+
+        local specValues, specOrder, refreshedSpecID, currentSpecName = CooldownCompanion:GetResourceBarSpecCopyOptions()
+        if not refreshedSpecID or #specOrder == 0 then
+            return
+        end
+
+        UIDropDownMenu_Initialize(resourceSpecCopyMenu, function(self, level)
+            for _, sourceSpecID in ipairs(specOrder) do
+                local sourceSpecName = specValues[sourceSpecID]
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = sourceSpecName
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    if not ShowPopupAboveConfig then
+                        CooldownCompanion:Print("Copy confirmation is unavailable.")
+                        return
+                    end
+                    ShowPopupAboveConfig("CDC_CONFIRM_RESOURCE_SPEC_COPY", sourceSpecName .. " to " .. (currentSpecName or "Current Spec"), {
+                        sourceSpecID = sourceSpecID,
+                        targetSpecID = refreshedSpecID,
+                    })
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end, "MENU")
+
+        resourceSpecCopyMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+        ToggleDropDownMenu(1, nil, resourceSpecCopyMenu, "cursor", 0, 0)
+    end)
+
+    container:AddChild(copyBtn)
+end
+
 local function BuildResourceBarAnchoringPanel(container)
     local db = CooldownCompanion.db.profile
     local settings = CooldownCompanion:GetResourceBarSettings()
@@ -610,6 +669,8 @@ local function BuildResourceBarAnchoringPanel(container)
     end
 
     local isIndependentStack = layout.independentAnchorEnabled == true
+
+    AddResourceSpecCopyButton(container)
 
     -- Preview toggle (ephemeral)
     local previewCb = AceGUI:Create("CheckBox")

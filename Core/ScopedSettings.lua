@@ -14,6 +14,11 @@ local function GetEnsureCustomAuraBarAuraUnit()
     return rb and rb.EnsureCustomAuraBarAuraUnit
 end
 
+local function GetEnsureCustomBarId()
+    local rb = ST and ST._RB
+    return rb and rb.EnsureCustomBarId
+end
+
 local function BackfillLegacyResourceAuraUnit(resourceAuraEntry)
     if type(resourceAuraEntry) ~= "table" then
         return
@@ -83,6 +88,54 @@ local function GetSpecKeyedTable(source, specID)
     end
 
     return nil
+end
+
+local function ClearSpecKeyedValue(source, specID)
+    if type(source) ~= "table" then
+        return
+    end
+
+    source[specID] = nil
+
+    local numericKey = tonumber(specID)
+    if numericKey then
+        source[numericKey] = nil
+    end
+
+    source[tostring(specID)] = nil
+end
+
+local RESOURCE_SPEC_AURA_KEYS = {
+    auraOverlayEnabled = true,
+    auraOverlayEntries = true,
+    auraColorSpellID = true,
+    auraActiveColor = true,
+    auraColorTrackingMode = true,
+    auraColorMaxStacks = true,
+    auraUnit = true,
+    auraUnitExplicit = true,
+}
+
+local function CopySpecOverrideWithoutAura(sourceSpecData, targetSpecData)
+    local copied = {}
+
+    if type(sourceSpecData) == "table" then
+        for key, value in pairs(sourceSpecData) do
+            if not RESOURCE_SPEC_AURA_KEYS[key] then
+                copied[key] = CloneSettingValue(value)
+            end
+        end
+    end
+
+    if type(targetSpecData) == "table" then
+        for key, value in pairs(targetSpecData) do
+            if RESOURCE_SPEC_AURA_KEYS[key] then
+                copied[key] = CloneSettingValue(value)
+            end
+        end
+    end
+
+    return next(copied) and copied or nil
 end
 
 local function PreserveTargetCustomBarLayouts(copied, target)
@@ -215,6 +268,106 @@ local function GetCurrentClassSpecInfo()
     end
 
     return specIDs, currentSpecID
+end
+
+local function CopySpecCustomBars(settings, sourceBars, targetBars, ensureCustomBarId)
+    local idMap = {}
+
+    if type(sourceBars) ~= "table" then
+        return idMap
+    end
+
+    local function copyEntry(entry)
+        if type(entry) ~= "table" then
+            return
+        end
+
+        local copiedEntry = CopyTable(entry)
+        local sourceCustomBarId = type(copiedEntry.customBarId) == "string" and copiedEntry.customBarId or nil
+        copiedEntry.customBarId = nil
+        local copiedCustomBarId = ensureCustomBarId(settings, copiedEntry)
+        if sourceCustomBarId and copiedCustomBarId then
+            idMap[sourceCustomBarId] = copiedCustomBarId
+        end
+        targetBars[#targetBars + 1] = copiedEntry
+    end
+
+    local seen = {}
+    for index, entry in ipairs(sourceBars) do
+        copyEntry(entry)
+        seen[index] = true
+    end
+
+    for key, entry in pairs(sourceBars) do
+        if not seen[key] then
+            copyEntry(entry)
+        end
+    end
+
+    return idMap
+end
+
+local function CopySpecLayoutOrder(settings, sourceSpecID, targetSpecID, customBarIdMap)
+    if type(settings) ~= "table" or type(settings.layoutOrder) ~= "table" then
+        return
+    end
+
+    local sourceLayout = GetSpecKeyedTable(settings.layoutOrder, sourceSpecID)
+    ClearSpecKeyedValue(settings.layoutOrder, targetSpecID)
+
+    if type(sourceLayout) ~= "table" then
+        return
+    end
+
+    local copiedLayout = CopyTable(sourceLayout)
+    if type(copiedLayout.customBars) == "table" then
+        local copiedCustomBarLayouts = {}
+        for sourceCustomBarId, customBarLayout in pairs(copiedLayout.customBars) do
+            local copiedCustomBarId = customBarIdMap and customBarIdMap[sourceCustomBarId]
+            if copiedCustomBarId and type(customBarLayout) == "table" then
+                copiedCustomBarLayouts[copiedCustomBarId] = CopyTable(customBarLayout)
+            end
+        end
+        copiedLayout.customBars = copiedCustomBarLayouts
+    end
+
+    settings.layoutOrder[targetSpecID] = copiedLayout
+end
+
+local function CopySpecDisplayProfile(settings, sourceSpecID, targetSpecID)
+    if type(settings) ~= "table" or type(settings.displayProfiles) ~= "table" then
+        return
+    end
+
+    local sourceProfile = GetSpecKeyedTable(settings.displayProfiles, sourceSpecID)
+    ClearSpecKeyedValue(settings.displayProfiles, targetSpecID)
+
+    if type(sourceProfile) == "table" then
+        settings.displayProfiles[targetSpecID] = CopyTable(sourceProfile)
+    end
+end
+
+local function CopyResourceSpecOverrides(settings, sourceSpecID, targetSpecID)
+    if type(settings) ~= "table" or type(settings.resources) ~= "table" then
+        return
+    end
+
+    for _, resource in pairs(settings.resources) do
+        if type(resource) == "table" and type(resource.specOverrides) == "table" then
+            local sourceSpecData = GetSpecKeyedTable(resource.specOverrides, sourceSpecID)
+            local targetSpecData = GetSpecKeyedTable(resource.specOverrides, targetSpecID)
+            local copiedSpecData = CopySpecOverrideWithoutAura(sourceSpecData, targetSpecData)
+
+            ClearSpecKeyedValue(resource.specOverrides, targetSpecID)
+            if copiedSpecData then
+                resource.specOverrides[targetSpecID] = copiedSpecData
+            end
+
+            if not next(resource.specOverrides) then
+                resource.specOverrides = nil
+            end
+        end
+    end
 end
 
 -- Keep these resource mappings aligned with OtherBars/ResourceBarConstants.lua.
@@ -829,6 +982,40 @@ function CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
     return values, order
 end
 
+function CooldownCompanion:GetResourceBarSpecCopyOptions()
+    local _, _, classID = UnitClass("player")
+    if not classID then
+        return {}, {}, nil, nil
+    end
+
+    local currentSpecID, currentSpecName
+    local specIndex = C_SpecializationInfo.GetSpecialization()
+    if specIndex then
+        currentSpecID, currentSpecName = C_SpecializationInfo.GetSpecializationInfo(specIndex)
+    end
+
+    local values = {}
+    local order = {}
+    local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID) or 0
+    for i = 1, numSpecs do
+        local specID, specName = GetSpecializationInfoForClassID(classID, i)
+        if specID then
+            if specID == currentSpecID then
+                currentSpecName = currentSpecName or specName
+            else
+                values[specID] = specName or ("Spec " .. tostring(specID))
+                order[#order + 1] = specID
+            end
+        end
+    end
+
+    sort(order, function(a, b)
+        return (values[a] or "") < (values[b] or "")
+    end)
+
+    return values, order, currentSpecID, currentSpecName
+end
+
 function CooldownCompanion:CopyCharacterScopedSettings(systemKey, sourceCharKey)
     local profile = self.db and self.db.profile
     local currentChar = self.db and self.db.keys and self.db.keys.char
@@ -852,5 +1039,52 @@ function CooldownCompanion:CopyCharacterScopedSettings(systemKey, sourceCharKey)
     NormalizeScopedBarSettings(systemKey, copied)
     SanitizeCopiedOrSeededScopedBarSettings(systemKey, copied)
     store[currentChar] = copied
+    return true
+end
+
+function CooldownCompanion:CopyResourceBarSpecSettings(sourceSpecID, targetSpecID)
+    sourceSpecID = tonumber(sourceSpecID)
+    targetSpecID = tonumber(targetSpecID)
+
+    local allowedSpecIDs, currentSpecID = GetCurrentClassSpecInfo()
+    if not targetSpecID then
+        targetSpecID = currentSpecID
+    end
+
+    if not sourceSpecID
+        or not targetSpecID
+        or sourceSpecID == targetSpecID
+        or type(allowedSpecIDs) ~= "table"
+        or allowedSpecIDs[sourceSpecID] ~= true
+        or allowedSpecIDs[targetSpecID] ~= true then
+        return false, "invalid_spec"
+    end
+
+    local settings = self:GetResourceBarSettings()
+    if type(settings) ~= "table" then
+        return false, "missing_settings"
+    end
+
+    local ensureCustomBarId = GetEnsureCustomBarId()
+    if not ensureCustomBarId then
+        return false, "missing_custom_bar_id_helper"
+    end
+
+    if type(settings.customBars) ~= "table" then
+        settings.customBars = {}
+    end
+
+    local sourceBars = GetSpecKeyedTable(settings.customBars, sourceSpecID)
+    ClearSpecKeyedValue(settings.customBars, targetSpecID)
+    settings.customBars[targetSpecID] = {}
+    local customBarIdMap = CopySpecCustomBars(settings, sourceBars, settings.customBars[targetSpecID], ensureCustomBarId)
+
+    CopySpecLayoutOrder(settings, sourceSpecID, targetSpecID, customBarIdMap)
+    CopySpecDisplayProfile(settings, sourceSpecID, targetSpecID)
+    CopyResourceSpecOverrides(settings, sourceSpecID, targetSpecID)
+
+    NormalizeScopedBarSettings("resourceBars", settings)
+    SanitizeCopiedOrSeededScopedBarSettings("resourceBars", settings)
+
     return true
 end

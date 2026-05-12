@@ -1396,6 +1396,32 @@ StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {
     preferredIndex = 3,
 }
 
+StaticPopupDialogs["CDC_CONFIRM_RESOURCE_SPEC_COPY"] = {
+    text = "Copy Resource Column 2 settings from %s?\n\nThis copies layout, Custom Bars, and resource display overrides for this character. Aura overlays are not copied.",
+    button1 = "Copy",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if not (data and data.sourceSpecID and data.targetSpecID) then
+            CooldownCompanion:Print("Copy failed: missing spec context.")
+            return
+        end
+
+        local ok = CooldownCompanion:CopyResourceBarSpecSettings(data.sourceSpecID, data.targetSpecID)
+        if not ok then
+            CooldownCompanion:Print("Copy failed.")
+            return
+        end
+
+        CooldownCompanion:EvaluateResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["CDC_DISCORD_INVITE"] = {
     text = "Join the Cooldown Companion Discord (Ctrl+C to copy):",
     button1 = "Close",
