@@ -3768,13 +3768,52 @@ local function StyleSegmentedText(holder, powerType, settings)
 end
 
 local function StyleSegmentedBar(holder, powerType, settings)
-    -- All segmented types use their first color return as the initial segment color.
-    -- UpdateSegmentedBar dynamically recolors per-segment each tick.
-    local color = GetResourceColors(powerType, settings)
-    for _, seg in ipairs(holder.segments) do
-        seg:SetStatusBarColor(color[1], color[2], color[3], 1)
-    end
+    -- Segment colors are live state, not static style. ApplyResourceBars() can
+    -- run during combat events, so avoid briefly repainting every segment with
+    -- the generic ready color before UpdateSegmentedBar restores per-segment state.
     StyleSegmentedText(holder, powerType, settings)
+end
+
+local function ApplySegmentedPreviewColors(holder, powerType, settings, previewValue)
+    if not holder or not holder.segments then return end
+
+    local numSegments = #holder.segments
+    if numSegments <= 0 then return end
+
+    previewValue = tonumber(previewValue) or (numSegments * 0.6)
+    local filled = math_min(numSegments, math_max(0, math_floor(previewValue)))
+    local hasPartial = previewValue > filled and filled < numSegments
+
+    local thresholdEnabled, thresholdValue, thresholdColor = GetSegmentedThresholdConfig(powerType, settings)
+    local thresholdActive = thresholdEnabled and thresholdValue and filled >= thresholdValue
+
+    local color1, color2, color3 = GetResourceColors(powerType, settings)
+    local filledColor = color1
+    local emptyColor = color1
+
+    if powerType == 5 or powerType == 7 or powerType == 19 then
+        local readyColor, rechargingColor, maxColor = color1, color2, color3
+        filledColor = (filled >= numSegments) and maxColor or (thresholdActive and thresholdColor or readyColor)
+        emptyColor = rechargingColor or readyColor
+    elseif powerType == 4 then
+        local normalColor, maxColor = color1, color2
+        filledColor = (filled >= numSegments) and maxColor or (thresholdActive and thresholdColor or normalColor)
+        emptyColor = normalColor
+    elseif RESOURCE_COLOR_DEFS[powerType] then
+        local normalColor, maxColor = color1, color2
+        filledColor = (filled >= numSegments) and maxColor or (thresholdActive and thresholdColor or normalColor)
+        emptyColor = normalColor
+    end
+
+    for i, seg in ipairs(holder.segments) do
+        local color = (i <= filled) and filledColor or emptyColor
+        if i == filled + 1 and hasPartial then
+            color = emptyColor
+        end
+        if type(color) == "table" then
+            seg:SetStatusBarColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
+        end
+    end
 end
 
 RB.StyleContinuousBar = StyleContinuousBar
@@ -4059,6 +4098,9 @@ function CooldownCompanion:ApplyResourceBars()
             barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
             LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
             StyleSegmentedBar(barInfo.frame, powerType, settings)
+            if not isPreviewActive then
+                UpdateSegmentedBar(barInfo.frame, powerType, settings, {})
+            end
         else
             -- Continuous bar
             if not barInfo or barInfo.barType ~= "continuous" then
@@ -4651,6 +4693,7 @@ local function ApplyPreviewDataToBar(barInfo, settings)
     elseif barInfo.barType == "segmented" then
         local n = #barInfo.frame.segments
         local filled = math_floor(n * 0.6)
+        local previewValue = filled + 0.5
         for i, seg in ipairs(barInfo.frame.segments) do
             if i <= filled then
                 seg:SetValue(1)
@@ -4660,8 +4703,9 @@ local function ApplyPreviewDataToBar(barInfo, settings)
                 seg:SetValue(0)
             end
         end
+        ApplySegmentedPreviewColors(barInfo.frame, barInfo.powerType, settings, previewValue)
         ApplyResourceAuraLanePreview(barInfo, 0.5)
-        SetSegmentedText(barInfo.frame, filled + 0.5, n)
+        SetSegmentedText(barInfo.frame, previewValue, n)
     elseif barInfo.barType == "stagger_continuous" then
         barInfo.frame:SetMinMaxValues(0, 100)
         barInfo.frame:SetValue(45)
