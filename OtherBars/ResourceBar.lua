@@ -2088,6 +2088,9 @@ local function UpdateCustomAuraBar(barInfo)
     end
 
     if spellAuraStackDisplay and not auraPresent and not isPreviewActive then
+        if CooldownCompanion.UpdateCustomBarSoundAlerts then
+            CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, false)
+        end
         RB.RequestCustomBarPresentationRefresh()
         return
     end
@@ -2594,6 +2597,7 @@ function RB.UpdateCustomCooldownBar(barInfo)
     end
 
     if spellAuraStackDisplay and auraPresent then
+        UpdateSpellCustomBarSounds(true)
         RB.RequestCustomBarPresentationRefresh()
         return
     end
