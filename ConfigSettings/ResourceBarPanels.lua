@@ -118,8 +118,32 @@ local function IsHeroSpecProxyCondition(cond)
         and cond.name == cond.heroName
 end
 local function IsSpellCustomBarConfig(cab)
+    if RB.IsSpellCustomBarConfig then
+        return RB.IsSpellCustomBarConfig(cab)
+    end
     return GetCustomBarEntryType and GetCustomBarEntryType(cab) == "spell"
 end
+
+local function IsCustomBarAuraDisplayConfig(cab, isSpellCustomBar)
+    if isSpellCustomBar == nil then
+        isSpellCustomBar = IsSpellCustomBarConfig(cab)
+    end
+
+    return (not isSpellCustomBar) or (cab and cab.auraTracking == true)
+end
+
+local function GetCustomBarTrackingModeConfig(cab, isSpellCustomBar)
+    if RB.GetCustomBarTrackingMode then
+        return RB.GetCustomBarTrackingMode(cab, isSpellCustomBar)
+    end
+
+    local mode = cab and cab.trackingMode
+    if mode == "active" or mode == "stacks" then
+        return mode
+    end
+    return isSpellCustomBar and "active" or "stacks"
+end
+
 local RefreshCustomAuraBarAuraUnitForSpell = RB.RefreshCustomAuraBarAuraUnitForSpell
 
 -- Imports from ResourceBarPanelsHelpers
@@ -2881,9 +2905,10 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
         return
     end
 
-    local isActiveTracking = isSpellCustomBar or (cab.trackingMode or "stacks") == "active"
-    local hasActiveAuraIndicatorControls = (not isSpellCustomBar and isActiveTracking)
-        or (isSpellCustomBar and cab.auraTracking == true)
+    local hasAuraDisplayControls = IsCustomBarAuraDisplayConfig(cab, isSpellCustomBar)
+    local trackingMode = GetCustomBarTrackingModeConfig(cab, isSpellCustomBar)
+    local isActiveTracking = hasAuraDisplayControls and trackingMode == "active"
+    local hasActiveAuraIndicatorControls = isActiveTracking
 
     if hasActiveAuraIndicatorControls then
         renderedControls = true
@@ -2987,7 +3012,7 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
         else
             CooldownCompanion:SetCustomAuraBarPandemicPreview(customBars[cabIdx], false)
         end
-    elseif not isSpellCustomBar then
+    elseif not isSpellCustomBar and hasAuraDisplayControls then
         renderedControls = true
 
         local thresholdHeading = AceGUI:Create("Heading")
@@ -3013,7 +3038,7 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
         end
     end
 
-    if not isActiveTracking then
+    if not isSpellCustomBar and hasAuraDisplayControls and not isActiveTracking then
         renderedControls = true
 
         local indicatorsHeading = AceGUI:Create("Heading")
@@ -3159,6 +3184,9 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     local capturedId = EnsureCustomBarId(settings, cab)
     local capturedKey = capturedId or tostring(capturedIdx)
     local isSpellCustomBar = IsSpellCustomBarConfig(cab)
+    local hasAuraDisplayControls = IsCustomBarAuraDisplayConfig(cab, isSpellCustomBar)
+    local trackingMode = GetCustomBarTrackingModeConfig(cab, isSpellCustomBar)
+    local isStackDisplay = hasAuraDisplayControls and trackingMode ~= "active"
     local resolvedAuraUnit = GetResolvedCustomAuraBarAuraUnit(cab, cab.spellID)
     activeTab = activeTab or "appearance"
 
@@ -3183,7 +3211,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
 
     BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUnit, infoButtons)
 
-    if not isSpellCustomBar then
+    if hasAuraDisplayControls then
         AddCustomBarSettingsHeading(container, "Display", infoButtons, {
             "Determines how the tracked aura is displayed on this Custom Bar.",
             " ",
@@ -3194,17 +3222,21 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     end
 
             -- Tracking Mode dropdown
-            if not isSpellCustomBar then
+            if hasAuraDisplayControls then
             local trackDrop = AceGUI:Create("Dropdown")
             trackDrop:SetLabel("Tracking Mode")
             trackDrop:SetList({
                 active = "Active",
                 stacks = "Stack Count",
             }, { "active", "stacks" })
-            trackDrop:SetValue(cab.trackingMode or "stacks")
+            trackDrop:SetValue(trackingMode)
             trackDrop:SetFullWidth(true)
             trackDrop:SetCallback("OnValueChanged", function(widget, event, val)
                 customBars[capturedIdx].trackingMode = val
+                if val ~= "active" then
+                    CooldownCompanion:SetCustomAuraBarActivePreview(customBars[capturedIdx], false)
+                    CooldownCompanion:SetCustomAuraBarPandemicPreview(customBars[capturedIdx], false)
+                end
                 ApplyCustomAuraBarPanelChanges({
                     updateAnchors = true,
                     refreshConfig = true,
@@ -3214,7 +3246,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
             end
 
             -- Max Stacks slider (hidden in "active" tracking mode)
-            if not isSpellCustomBar and (cab.trackingMode or "stacks") ~= "active" then
+            if isStackDisplay then
             local maxSlider = AceGUI:Create("Slider")
             maxSlider:SetLabel("Max Stacks")
             maxSlider:SetSliderValues(1, 99, 1)
@@ -3237,7 +3269,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
             end
 
             -- Display Mode dropdown (hidden in "active" tracking mode)
-            if not isSpellCustomBar and (cab.trackingMode or "stacks") ~= "active" then
+            if isStackDisplay then
             local modeDrop = AceGUI:Create("Dropdown")
             modeDrop:SetLabel("Display Mode")
             modeDrop:SetList({
@@ -3299,7 +3331,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                 AddColorPicker(container, customBars[cabIdx], "barColor", "Bar Color", {0.5, 0.5, 1}, false,
                     cabApplyBars, function() CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx]) end)
 
-                if isSpellCustomBar then
+                if isSpellCustomBar and not isStackDisplay then
                     AddColorPicker(container, customBars[cabIdx], "barCooldownColor", "Bar Cooldown Color", {0.6, 0.13, 0.18, 1}, true,
                         cabApplyBars, cabApplyBars)
                     AddColorPicker(container, customBars[cabIdx], "barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1}, true,
@@ -3307,7 +3339,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                 end
 
                 -- Overlay Color (overlay mode only)
-                if not isSpellCustomBar and cab.displayMode == "overlay" and (cab.trackingMode or "stacks") ~= "active" then
+                if cab.displayMode == "overlay" and isStackDisplay then
                     local cpOverlay = AddColorPicker(container, customBars[cabIdx], "overlayColor", "Overlay Color", {1, 0.84, 0}, false,
                         cabApplyBars, function() CooldownCompanion:RecolorCustomAuraBar(customBars[cabIdx]) end)
 
@@ -3323,8 +3355,8 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                 end
 
                 -- ---- Text / Duration controls ----
-                local isActive = isSpellCustomBar or (cab.trackingMode or "stacks") == "active"
-                local isContinuous = isSpellCustomBar or isActive or (cab.displayMode == "continuous")
+                local isActive = not isStackDisplay
+                local isContinuous = isActive or (cab.displayMode == "continuous")
 
                 if isContinuous then
                     local textsHeading = AceGUI:Create("Heading")
@@ -3333,17 +3365,20 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     textsHeading:SetFullWidth(true)
                     container:AddChild(textsHeading)
 
-                    -- Show Duration Text
-                    local durationTextCb = AceGUI:Create("CheckBox")
-                    durationTextCb:SetLabel("Show Duration Text")
-                    durationTextCb:SetValue(cab.showDurationText == true)
-                    durationTextCb:SetFullWidth(true)
-                    durationTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-                        customBars[cabIdx].showDurationText = val or nil
-                        CooldownCompanion:ApplyResourceBars()
-                        CooldownCompanion:RefreshConfigPanel()
-                    end)
-                    container:AddChild(durationTextCb)
+                    local showDurationControls = not (isSpellCustomBar and isStackDisplay)
+                    local durationTextCb
+                    if showDurationControls then
+                        durationTextCb = AceGUI:Create("CheckBox")
+                        durationTextCb:SetLabel("Show Duration Text")
+                        durationTextCb:SetValue(cab.showDurationText == true)
+                        durationTextCb:SetFullWidth(true)
+                        durationTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+                            customBars[cabIdx].showDurationText = val or nil
+                            CooldownCompanion:ApplyResourceBars()
+                            CooldownCompanion:RefreshConfigPanel()
+                        end)
+                        container:AddChild(durationTextCb)
+                    end
 
                     -- Show Stack Text
                     local stackVal = cab.showStackText
@@ -3352,7 +3387,11 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     end
 
                     local stackTextCb = AceGUI:Create("CheckBox")
-                    stackTextCb:SetLabel(isSpellCustomBar and "Show Count Text (Charges/Uses)" or "Show Stack Text")
+                    local stackTextLabel = "Show Stack Text"
+                    if isSpellCustomBar then
+                        stackTextLabel = isStackDisplay and "Show Aura Stack Text" or "Show Count Text (Charges/Uses)"
+                    end
+                    stackTextCb:SetLabel(stackTextLabel)
                     stackTextCb:SetValue(stackVal == true)
                     stackTextCb:SetFullWidth(true)
                     stackTextCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -3362,10 +3401,11 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     end)
                     container:AddChild(stackTextCb)
 
-                    local showDuration = cab.showDurationText == true
+                    local showDuration = showDurationControls and cab.showDurationText == true
                     local showStack = (stackVal == true)
-                    local durationAdvExpanded = AddAdvancedToggle(durationTextCb, "rbCabDurationText_" .. capturedKey, rbCabTextAdvBtns, showDuration)
-                    if durationAdvExpanded and showDuration then
+                    local durationAdvExpanded = showDurationControls
+                        and AddAdvancedToggle(durationTextCb, "rbCabDurationText_" .. capturedKey, rbCabTextAdvBtns, showDuration)
+                    if showDurationControls and durationAdvExpanded and showDuration then
                         local fontDrop = AceGUI:Create("Dropdown")
                         fontDrop:SetLabel("Duration Font")
                         CS.SetupFontDropdown(fontDrop)
@@ -3447,7 +3487,8 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         end
 
                         local fontDrop = AceGUI:Create("Dropdown")
-                        fontDrop:SetLabel(isSpellCustomBar and "Charge Font" or "Stack Font")
+                        local stackFontLabel = isSpellCustomBar and (isStackDisplay and "Aura Stack Font" or "Charge Font") or "Stack Font"
+                        fontDrop:SetLabel(stackFontLabel)
                         CS.SetupFontDropdown(fontDrop)
                         fontDrop:SetValue(cab.stackTextFont or DEFAULT_RESOURCE_TEXT_FONT)
                         fontDrop:SetFullWidth(true)
@@ -3458,7 +3499,8 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         container:AddChild(fontDrop)
 
                         local sizeDrop = AceGUI:Create("Slider")
-                        sizeDrop:SetLabel(isSpellCustomBar and "Charge Font Size" or "Stack Font Size")
+                        local stackSizeLabel = isSpellCustomBar and (isStackDisplay and "Aura Stack Font Size" or "Charge Font Size") or "Stack Font Size"
+                        sizeDrop:SetLabel(stackSizeLabel)
                         sizeDrop:SetSliderValues(6, 24, 1)
                         sizeDrop:SetValue(cab.stackTextFontSize or DEFAULT_RESOURCE_TEXT_SIZE)
                         sizeDrop:SetFullWidth(true)
@@ -3469,7 +3511,8 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         container:AddChild(sizeDrop)
 
                         local outlineDrop = AceGUI:Create("Dropdown")
-                        outlineDrop:SetLabel(isSpellCustomBar and "Charge Outline" or "Stack Outline")
+                        local stackOutlineLabel = isSpellCustomBar and (isStackDisplay and "Aura Stack Outline" or "Charge Outline") or "Stack Outline"
+                        outlineDrop:SetLabel(stackOutlineLabel)
                         outlineDrop:SetList(CS.outlineOptions)
                         outlineDrop:SetValue(cab.stackTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
                         outlineDrop:SetFullWidth(true)

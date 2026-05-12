@@ -265,6 +265,26 @@ local function GetCustomBarEntryType(cab)
     return "aura"
 end
 
+local function IsSpellCustomBarConfig(cab)
+    return GetCustomBarEntryType(cab) == "spell"
+end
+
+local function GetCustomBarTrackingMode(cab, isSpellCustomBar)
+    local mode = cab and cab.trackingMode
+    if mode == "active" or mode == "stacks" then
+        return mode
+    end
+
+    return isSpellCustomBar and "active" or "stacks"
+end
+
+local function IsSpellCustomBarAuraStackDisplay(cab)
+    return type(cab) == "table"
+        and IsSpellCustomBarConfig(cab)
+        and cab.auraTracking == true
+        and GetCustomBarTrackingMode(cab, true) ~= "active"
+end
+
 local function NormalizeCustomBarEntryType(cab)
     if type(cab) ~= "table" then
         return "aura"
@@ -1264,6 +1284,9 @@ RB.GetCustomBarLayout = GetCustomBarLayout
 RB.EnsureCustomBarLayout = EnsureCustomBarLayout
 RB.IsConfiguredCustomBar = IsConfiguredCustomBar
 RB.GetCustomBarEntryType = GetCustomBarEntryType
+RB.IsSpellCustomBarConfig = IsSpellCustomBarConfig
+RB.GetCustomBarTrackingMode = GetCustomBarTrackingMode
+RB.IsSpellCustomBarAuraStackDisplay = IsSpellCustomBarAuraStackDisplay
 RB.IsValidCustomAuraUnit = IsValidCustomAuraUnit
 RB.GetDefaultCustomAuraUnit = GetDefaultCustomAuraUnit
 RB.GetResolvedCustomAuraBarAuraUnit = GetResolvedCustomAuraBarAuraUnit
