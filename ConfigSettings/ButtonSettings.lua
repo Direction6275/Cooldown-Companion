@@ -3,6 +3,7 @@ local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 local math_pi = math.pi
+local RB = ST._RB or {}
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
@@ -67,6 +68,7 @@ local RefreshButtonSettingsMultiSelect = ST._RefreshButtonSettingsMultiSelect
 local RefreshPanelMultiSelect = ST._RefreshPanelMultiSelect
 local BuildOverridesTab = ST._BuildOverridesTab
 local SOUND_ALERT_NONE_OPTION_KEY = "None" -- Keep in sync with Core/SoundAlerts.lua SOUND_NONE_KEY.
+local DEFAULT_CUSTOM_AURA_MAX_COLOR = RB.DEFAULT_CUSTOM_AURA_MAX_COLOR or { 1, 0.84, 0 }
 
 local function GroupUsesTexturePanelEntries(group)
     return group and (group.displayMode or "icons") == "textures"
@@ -267,6 +269,64 @@ local function SetupWrappedStatusLabel(scroll, label, text, justifyH)
         label:SetWidth(math.max(1, contentWidth - 20))
     end
     label:SetText(text)
+end
+
+local function EnsureButtonSettingsAuraBar(buttonData)
+    if type(buttonData.auraBar) ~= "table" then
+        buttonData.auraBar = {}
+    end
+    return buttonData.auraBar
+end
+
+local function RefreshSelectedBarPanelAuraDisplay(options)
+    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+    if options and options.updateCooldowns then
+        CooldownCompanion:UpdateAllCooldowns()
+    end
+    if options and options.refreshConfig then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function RefreshSelectedBarPanelAuraButton()
+    local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[CS.selectedGroup]
+    local button = frame and frame.buttons and frame.buttons[CS.selectedButton]
+    if not button then
+        return
+    end
+
+    if CooldownCompanion.RefreshBarPanelAuraStackVisual then
+        CooldownCompanion:RefreshBarPanelAuraStackVisual(button)
+    end
+    CooldownCompanion:UpdateButtonCooldown(button)
+end
+
+local function AddButtonSettingsSubHeading(scroll, text, infoButtons, tooltipLines)
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(text)
+    ColorHeading(heading)
+    heading:SetHeight(22)
+    heading:SetFullWidth(true)
+    heading.label:ClearAllPoints()
+    heading.label:SetPoint("CENTER", heading.frame, "CENTER", 0, 2)
+    heading.left:ClearAllPoints()
+    heading.left:SetPoint("LEFT", heading.frame, "LEFT", 3, 0)
+    heading.left:SetPoint("RIGHT", heading.label, "LEFT", -5, 0)
+    heading.right:ClearAllPoints()
+    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+    heading.right:SetPoint("LEFT", heading.label, "RIGHT", 5, 0)
+    scroll:AddChild(heading)
+
+    if tooltipLines then
+        local tooltip = { text }
+        for _, line in ipairs(tooltipLines) do
+            tooltip[#tooltip + 1] = line
+        end
+        local infoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, tooltip, infoButtons)
+        heading.right:ClearAllPoints()
+        heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+        heading.right:SetPoint("LEFT", infoBtn, "RIGHT", 4, 0)
+    end
 end
 
 local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons, options)
@@ -631,6 +691,204 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
     end
 end
 
+local function BuildBarPanelAuraDisplaySection(scroll, buttonData, infoButtons)
+    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not group or group.displayMode ~= "bars" then
+        return
+    end
+    if not CooldownCompanion:IsBarPanelAuraDisplayEligible(buttonData) then
+        return
+    end
+
+    local auraBar = type(buttonData.auraBar) == "table" and buttonData.auraBar or {}
+    local displayKind = CooldownCompanion:GetBarPanelAuraDisplayKind(buttonData)
+    local isStackDisplay = displayKind == "stacks"
+    local stackDisplayMode = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
+
+    AddButtonSettingsSubHeading(scroll, "Aura Display Mode", infoButtons, {
+        {"Determines how the tracked aura is displayed on this bar panel entry.", 1, 1, 1, true},
+        " ",
+        {"Active: shows the aura's remaining duration while it is active.", 1, 1, 1, true},
+        " ",
+        {"Stack Count: ignores duration and shows only the aura's current stack count.", 1, 1, 1, true},
+    })
+
+    local trackingDrop = AceGUI:Create("Dropdown")
+    trackingDrop:SetList({
+        active = "Active",
+        stacks = "Stack Count",
+    }, { "active", "stacks" })
+    trackingDrop:SetValue(displayKind)
+    trackingDrop:SetFullWidth(true)
+    trackingDrop:SetCallback("OnValueChanged", function(_, _, value)
+        CooldownCompanion:SetBarPanelAuraDisplayKind(buttonData, value)
+        RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true, refreshConfig = true })
+    end)
+    scroll:AddChild(trackingDrop)
+
+    if not isStackDisplay then
+        return
+    end
+    auraBar = EnsureButtonSettingsAuraBar(buttonData)
+
+    local maxStacksSlider = AceGUI:Create("Slider")
+    maxStacksSlider:SetLabel("Max Stacks")
+    maxStacksSlider:SetSliderValues(1, 99, 1)
+    maxStacksSlider:SetValue(CooldownCompanion:GetBarPanelAuraMaxStacks(buttonData))
+    maxStacksSlider:SetFullWidth(true)
+    local pendingMaxStacks = CooldownCompanion:GetBarPanelAuraMaxStacks(buttonData)
+    local function NormalizeMaxStacks(value)
+        return math.max(1, math.min(99, math.floor((tonumber(value) or pendingMaxStacks or 1) + 0.5)))
+    end
+    local function CommitMaxStacks(value)
+        local committedValue = NormalizeMaxStacks(value)
+        if CooldownCompanion:GetBarPanelAuraMaxStacks(buttonData) == committedValue then
+            return
+        end
+        CooldownCompanion:SetBarPanelAuraMaxStacks(buttonData, committedValue)
+        RefreshSelectedBarPanelAuraButton()
+    end
+    maxStacksSlider:SetCallback("OnValueChanged", function(_, _, value)
+        pendingMaxStacks = NormalizeMaxStacks(value)
+    end)
+    maxStacksSlider:SetCallback("OnMouseUp", function(_, _, value)
+        CommitMaxStacks(value)
+    end)
+    HookSliderEditBox(maxStacksSlider)
+    scroll:AddChild(maxStacksSlider)
+
+    local displayModeDrop = AceGUI:Create("Dropdown")
+    displayModeDrop:SetLabel("Display Mode")
+    displayModeDrop:SetList({
+        continuous = "Continuous",
+        segmented = "Segmented",
+        overlay = "Overlay",
+    }, { "continuous", "segmented", "overlay" })
+    displayModeDrop:SetValue(stackDisplayMode)
+    displayModeDrop:SetFullWidth(true)
+    displayModeDrop:SetCallback("OnValueChanged", function(_, _, value)
+        CooldownCompanion:SetBarPanelAuraStackDisplayMode(buttonData, value)
+        if value ~= "continuous" and auraBar.maxStacksGlowStyle == "pulsingOverlay" then
+            auraBar.maxStacksGlowStyle = "solidBorder"
+        end
+        RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true, refreshConfig = true })
+    end)
+    scroll:AddChild(displayModeDrop)
+
+    if stackDisplayMode == "segmented" or stackDisplayMode == "overlay" then
+        local segmentGapSlider = AceGUI:Create("Slider")
+        segmentGapSlider:SetLabel("Segment Gap")
+        segmentGapSlider:SetSliderValues(0, 20, 0.1)
+        segmentGapSlider:SetValue(CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData))
+        segmentGapSlider:SetFullWidth(true)
+        segmentGapSlider:SetCallback("OnValueChanged", function(_, _, value)
+            CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
+            RefreshSelectedBarPanelAuraButton()
+        end)
+        scroll:AddChild(segmentGapSlider)
+    end
+
+    if stackDisplayMode == "overlay" then
+        AddButtonSettingsSubHeading(scroll, "Colors")
+        AddColorPicker(scroll, auraBar, "overlayColor", "Overlay Color", {1, 0.84, 0, 1}, true,
+            function() RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true }) end)
+    end
+
+    AddButtonSettingsSubHeading(scroll, "Max Stack Settings")
+    local thresholdCb = AceGUI:Create("CheckBox")
+    thresholdCb:SetLabel("Enable Max Stack Color")
+    thresholdCb:SetValue(auraBar.thresholdColorEnabled == true)
+    thresholdCb:SetFullWidth(true)
+    thresholdCb:SetCallback("OnValueChanged", function(_, _, value)
+        auraBar.thresholdColorEnabled = value and true or nil
+        RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true, refreshConfig = true })
+    end)
+    scroll:AddChild(thresholdCb)
+
+    if auraBar.thresholdColorEnabled == true then
+        AddColorPicker(scroll, auraBar, "thresholdMaxColor", "Max Stack Color", DEFAULT_CUSTOM_AURA_MAX_COLOR, false,
+            function() RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true }) end)
+    end
+
+    local indicatorCb = AceGUI:Create("CheckBox")
+    indicatorCb:SetLabel("Max Stack Indicator")
+    indicatorCb:SetValue(auraBar.maxStacksGlowEnabled == true)
+    indicatorCb:SetFullWidth(true)
+    indicatorCb:SetCallback("OnValueChanged", function(_, _, value)
+        auraBar.maxStacksGlowEnabled = value and true or nil
+        RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true, refreshConfig = true })
+    end)
+    scroll:AddChild(indicatorCb)
+
+    local indicatorAdvExpanded, indicatorAdvBtn = AddAdvancedToggle(indicatorCb, "barPanelAuraMaxStacksIndicator_" .. CS.selectedGroup .. "_" .. CS.selectedButton, infoButtons, auraBar.maxStacksGlowEnabled == true)
+    CreateInfoButton(indicatorCb.frame, indicatorAdvBtn, "LEFT", "RIGHT", 4, 0, {
+        "Max Stack Indicator",
+        {"Due to combat restrictions, individual bar segments cannot be highlighted independently.", 1, 1, 1, true},
+        " ",
+        {"The indicator covers the whole bar entry and appears automatically when the aura reaches its maximum stack count.", 1, 1, 1, true},
+        " ",
+        {"The Pulsing Overlay style is only available for continuous display mode.", 1, 1, 1, true},
+    }, indicatorCb)
+
+    if indicatorAdvExpanded and auraBar.maxStacksGlowEnabled == true then
+        local currentStyle = auraBar.maxStacksGlowStyle or "solidBorder"
+        local isContinuousDisplay = stackDisplayMode == "continuous"
+        if currentStyle == "pulsingOverlay" and not isContinuousDisplay then
+            currentStyle = "solidBorder"
+        end
+
+        local styleList = {
+            solidBorder = "Solid Border",
+            pulsingBorder = "Pulsing Border",
+        }
+        local styleOrder = { "solidBorder", "pulsingBorder" }
+        if isContinuousDisplay then
+            styleList.pulsingOverlay = "Pulsing Overlay"
+            styleOrder = { "solidBorder", "pulsingBorder", "pulsingOverlay" }
+        end
+
+        local indicatorStyleDrop = AceGUI:Create("Dropdown")
+        indicatorStyleDrop:SetLabel("Indicator Style")
+        indicatorStyleDrop:SetList(styleList, styleOrder)
+        indicatorStyleDrop:SetValue(currentStyle)
+        indicatorStyleDrop:SetFullWidth(true)
+        indicatorStyleDrop:SetCallback("OnValueChanged", function(_, _, value)
+            auraBar.maxStacksGlowStyle = value
+            RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true, refreshConfig = true })
+        end)
+        scroll:AddChild(indicatorStyleDrop)
+
+        AddColorPicker(scroll, auraBar, "maxStacksGlowColor", "Indicator Color", {1, 0.84, 0, 0.9}, true,
+            function() RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true }) end)
+
+        if currentStyle ~= "pulsingOverlay" then
+            local sizeSlider = AceGUI:Create("Slider")
+            sizeSlider:SetLabel("Border Size")
+            sizeSlider:SetSliderValues(1, 8, 1)
+            sizeSlider:SetValue(auraBar.maxStacksGlowSize or 2)
+            sizeSlider:SetFullWidth(true)
+            sizeSlider:SetCallback("OnValueChanged", function(_, _, value)
+                auraBar.maxStacksGlowSize = value
+                RefreshSelectedBarPanelAuraButton()
+            end)
+            scroll:AddChild(sizeSlider)
+        end
+
+        if currentStyle == "pulsingBorder" or currentStyle == "pulsingOverlay" then
+            local speedSlider = AceGUI:Create("Slider")
+            speedSlider:SetLabel("Pulse Duration")
+            speedSlider:SetSliderValues(0.1, 2.0, 0.1)
+            speedSlider:SetValue(auraBar.maxStacksGlowSpeed or 0.5)
+            speedSlider:SetFullWidth(true)
+            speedSlider:SetCallback("OnValueChanged", function(_, _, value)
+                auraBar.maxStacksGlowSpeed = value
+                RefreshSelectedBarPanelAuraButton()
+            end)
+            scroll:AddChild(speedSlider)
+        end
+    end
+end
+
 local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     local soundHeading = AceGUI:Create("Heading")
     soundHeading:SetText("Sound Alerts")
@@ -934,6 +1192,7 @@ local function BuildSpellSettings(scroll, buttonData, infoButtons)
             useCollapse = true,
             collapsedKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_aura",
         })
+        BuildBarPanelAuraDisplaySection(scroll, buttonData, infoButtons)
     end -- buttonData.type == "spell"
 
     -- Charge text settings now live in group Appearance tab (with per-button overrides)

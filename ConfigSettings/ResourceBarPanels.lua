@@ -3212,7 +3212,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUnit, infoButtons)
 
     if hasAuraDisplayControls then
-        AddCustomBarSettingsHeading(container, "Display", infoButtons, {
+        AddCustomBarSettingsHeading(container, "Aura Display Mode", infoButtons, {
             "Determines how the tracked aura is displayed on this Custom Bar.",
             " ",
             "Active: shows the aura's remaining duration while it is active.",
@@ -3221,10 +3221,9 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
         })
     end
 
-            -- Tracking Mode dropdown
+            -- Aura Display Mode dropdown
             if hasAuraDisplayControls then
             local trackDrop = AceGUI:Create("Dropdown")
-            trackDrop:SetLabel("Tracking Mode")
             trackDrop:SetList({
                 active = "Active",
                 stacks = "Stack Count",

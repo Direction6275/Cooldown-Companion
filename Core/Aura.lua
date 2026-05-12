@@ -705,6 +705,163 @@ function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, sibling
     return changed
 end
 
+local BAR_PANEL_AURA_STACK_MODES = {
+    stacks = true,
+    stack = true,
+    stack_continuous = true,
+    stack_segmented = true,
+    stack_overlay = true,
+}
+
+local BAR_PANEL_AURA_ACTIVE_MODES = {
+    active = true,
+    duration = true,
+}
+
+local BAR_PANEL_AURA_STACK_MODE_BY_DISPLAY = {
+    continuous = "stack_continuous",
+    segmented = "stack_segmented",
+    overlay = "stack_overlay",
+}
+
+local function NormalizeBarPanelAuraStackMode(mode)
+    if mode == "stack_continuous" then
+        return "stack_continuous"
+    elseif mode == "stack_overlay" then
+        return "stack_overlay"
+    elseif mode == "stack_segmented" then
+        return "stack_segmented"
+    end
+    return nil
+end
+
+local function GetBarPanelAuraStackDisplayFromMode(mode)
+    mode = NormalizeBarPanelAuraStackMode(mode)
+    if mode == "stack_continuous" then
+        return "continuous"
+    elseif mode == "stack_overlay" then
+        return "overlay"
+    end
+    return "segmented"
+end
+
+local function EnsureBarPanelAuraSettings(buttonData)
+    if type(buttonData.auraBar) ~= "table" then
+        buttonData.auraBar = {}
+    end
+    return buttonData.auraBar
+end
+
+local function SetBarPanelAuraStackMode(auraBar, stackMode)
+    auraBar.mode = stackMode
+    auraBar.stackDisplayMode = stackMode
+end
+
+local function ClampBarPanelAuraNumber(value, minValue, maxValue, defaultValue)
+    value = tonumber(value) or defaultValue
+    if value < minValue then
+        return minValue
+    elseif value > maxValue then
+        return maxValue
+    end
+    return value
+end
+
+function CooldownCompanion:IsBarPanelAuraDisplayEligible(buttonData)
+    if not (buttonData and buttonData.type == "spell") then
+        return false
+    end
+    return buttonData.addedAs == "aura" or buttonData.auraTracking == true
+end
+
+function CooldownCompanion:GetBarPanelAuraDisplayKind(buttonData)
+    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
+        return "active"
+    end
+
+    local auraBar = buttonData.auraBar
+    local mode = type(auraBar) == "table" and auraBar.mode or nil
+    if BAR_PANEL_AURA_STACK_MODES[mode] then
+        return "stacks"
+    end
+    if mode == nil or BAR_PANEL_AURA_ACTIVE_MODES[mode] then
+        return "active"
+    end
+    return "active"
+end
+
+function CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
+    return self:GetBarPanelAuraDisplayKind(buttonData) == "stacks"
+end
+
+function CooldownCompanion:SetBarPanelAuraDisplayKind(buttonData, kind)
+    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
+        return
+    end
+
+    local auraBar = EnsureBarPanelAuraSettings(buttonData)
+    if kind == "stacks" then
+        local stackMode = NormalizeBarPanelAuraStackMode(auraBar.mode)
+            or NormalizeBarPanelAuraStackMode(auraBar.stackDisplayMode)
+            or "stack_segmented"
+        SetBarPanelAuraStackMode(auraBar, stackMode)
+        auraBar.maxStacks = self:GetBarPanelAuraMaxStacks(buttonData)
+        return
+    end
+
+    local stackMode = NormalizeBarPanelAuraStackMode(auraBar.mode)
+    if stackMode then
+        auraBar.stackDisplayMode = stackMode
+    end
+    auraBar.mode = "duration"
+end
+
+function CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    local mode = type(auraBar) == "table" and auraBar.mode or nil
+    if type(auraBar) == "table" then
+        mode = NormalizeBarPanelAuraStackMode(mode) or NormalizeBarPanelAuraStackMode(auraBar.stackDisplayMode)
+    end
+    return GetBarPanelAuraStackDisplayFromMode(mode)
+end
+
+function CooldownCompanion:SetBarPanelAuraStackDisplayMode(buttonData, displayMode)
+    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
+        return
+    end
+
+    local auraBar = EnsureBarPanelAuraSettings(buttonData)
+    local stackMode = BAR_PANEL_AURA_STACK_MODE_BY_DISPLAY[displayMode] or "stack_segmented"
+    SetBarPanelAuraStackMode(auraBar, stackMode)
+    auraBar.maxStacks = self:GetBarPanelAuraMaxStacks(buttonData)
+end
+
+function CooldownCompanion:GetBarPanelAuraMaxStacks(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    local value = type(auraBar) == "table" and auraBar.maxStacks or nil
+    return math.floor(ClampBarPanelAuraNumber(value, 1, 99, 1) + 0.5)
+end
+
+function CooldownCompanion:SetBarPanelAuraMaxStacks(buttonData, value)
+    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
+        return
+    end
+    EnsureBarPanelAuraSettings(buttonData).maxStacks = math.floor(ClampBarPanelAuraNumber(value, 1, 99, 1) + 0.5)
+end
+
+function CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    local value = type(auraBar) == "table" and auraBar.segmentGap or nil
+    return ClampBarPanelAuraNumber(value, 0, 20, 4)
+end
+
+function CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
+    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
+        return
+    end
+    EnsureBarPanelAuraSettings(buttonData).segmentGap = ClampBarPanelAuraNumber(value, 0, 20, 4)
+end
+
 function CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame)
     if not (buttonData and buttonData.type == "spell") then
         return false
