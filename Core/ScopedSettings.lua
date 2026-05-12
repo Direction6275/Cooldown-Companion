@@ -272,15 +272,13 @@ local function CopySpecLayoutOrder(settings, sourceSpecID, targetSpecID)
 
     local sourceLayout = GetSpecKeyedTable(settings.layoutOrder, sourceSpecID)
     local targetLayout = GetSpecKeyedTable(settings.layoutOrder, targetSpecID)
+    local targetCustomBars = type(targetLayout) == "table" and CloneSettingValue(targetLayout.customBars) or nil
+    local targetCustomAuraBarSlots = type(targetLayout) == "table" and CloneSettingValue(targetLayout.customAuraBarSlots) or nil
     ClearSpecKeyedValue(settings.layoutOrder, targetSpecID)
 
-    if type(sourceLayout) ~= "table" then
-        return
-    end
-
-    local copiedLayout = CopyTable(sourceLayout)
-    copiedLayout.customBars = type(targetLayout) == "table" and CloneSettingValue(targetLayout.customBars) or nil
-    copiedLayout.customAuraBarSlots = type(targetLayout) == "table" and CloneSettingValue(targetLayout.customAuraBarSlots) or nil
+    local copiedLayout = type(sourceLayout) == "table" and CopyTable(sourceLayout) or {}
+    copiedLayout.customBars = targetCustomBars
+    copiedLayout.customAuraBarSlots = targetCustomAuraBarSlots
 
     settings.layoutOrder[targetSpecID] = copiedLayout
 end
@@ -319,36 +317,6 @@ local function CopyResourceSpecOverrides(settings, sourceSpecID, targetSpecID)
             end
         end
     end
-end
-
-local function HasResourceSpecCopyData(settings, specID)
-    if type(settings) ~= "table" then
-        return false
-    end
-
-    if type(GetSpecKeyedTable(settings.layoutOrder, specID)) == "table" then
-        return true
-    end
-
-    if type(GetSpecKeyedTable(settings.displayProfiles, specID)) == "table" then
-        return true
-    end
-
-    if type(settings.resources) == "table" then
-        for _, resource in pairs(settings.resources) do
-            local specOverrides = type(resource) == "table" and resource.specOverrides or nil
-            local sourceSpecData = GetSpecKeyedTable(specOverrides, specID)
-            if type(sourceSpecData) == "table" then
-                for key in pairs(sourceSpecData) do
-                    if not RESOURCE_SPEC_AURA_KEYS[key] then
-                        return true
-                    end
-                end
-            end
-        end
-    end
-
-    return false
 end
 
 -- Keep these resource mappings aligned with OtherBars/ResourceBarConstants.lua.
@@ -762,10 +730,6 @@ local function ComposeCopiedResourceBarSettings(source, target)
         end
     end
 
-    if type(source) == "table" and type(source.customAuraBarSlots) == "table" then
-        copied.customAuraBarSlots = CopyTable(source.customAuraBarSlots)
-    end
-
     if type(copied.resources) ~= "table" then
         copied.resources = {}
     end
@@ -969,10 +933,10 @@ function CooldownCompanion:GetResourceBarSpecCopyOptions()
         return {}, {}, nil, nil
     end
 
-    local currentSpecID, currentSpecName
+    local currentSpecID
     local specIndex = C_SpecializationInfo.GetSpecialization()
     if specIndex then
-        currentSpecID, currentSpecName = C_SpecializationInfo.GetSpecializationInfo(specIndex)
+        currentSpecID = C_SpecializationInfo.GetSpecializationInfo(specIndex)
     end
 
     local values = {}
@@ -981,9 +945,7 @@ function CooldownCompanion:GetResourceBarSpecCopyOptions()
     for i = 1, numSpecs do
         local specID, specName = GetSpecializationInfoForClassID(classID, i)
         if specID then
-            if specID == currentSpecID then
-                currentSpecName = currentSpecName or specName
-            else
+            if specID ~= currentSpecID then
                 values[specID] = specName or ("Spec " .. tostring(specID))
                 order[#order + 1] = specID
             end
@@ -994,17 +956,7 @@ function CooldownCompanion:GetResourceBarSpecCopyOptions()
         return (values[a] or "") < (values[b] or "")
     end)
 
-    return values, order, currentSpecID, currentSpecName
-end
-
-function CooldownCompanion:IsResourceBarSpecCopySourceUsingDefaults(sourceSpecID)
-    sourceSpecID = tonumber(sourceSpecID)
-    if not sourceSpecID then
-        return true
-    end
-
-    local settings = self:GetResourceBarSettings()
-    return not HasResourceSpecCopyData(settings, sourceSpecID)
+    return values, order, currentSpecID
 end
 
 function CooldownCompanion:CopyCharacterScopedSettings(systemKey, sourceCharKey)

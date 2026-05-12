@@ -631,7 +631,7 @@ local function AddResourceSpecCopyButton(enableCb, characterCopyButton)
             resourceSpecCopyMenu = CreateFrame("Frame", "CDCResourceSpecCopyMenu", UIParent, "UIDropDownMenuTemplate")
         end
 
-        local specValues, specOrder, refreshedSpecID, currentSpecName = CooldownCompanion:GetResourceBarSpecCopyOptions()
+        local specValues, specOrder, refreshedSpecID = CooldownCompanion:GetResourceBarSpecCopyOptions()
         if not refreshedSpecID or #specOrder == 0 then
             return
         end
@@ -648,9 +648,7 @@ local function AddResourceSpecCopyButton(enableCb, characterCopyButton)
                         CooldownCompanion:Print("Copy confirmation is unavailable.")
                         return
                     end
-                    local sourceUsesDefaults = CooldownCompanion:IsResourceBarSpecCopySourceUsingDefaults(sourceSpecID)
-                    local popupKey = sourceUsesDefaults and "CDC_CONFIRM_RESOURCE_SPEC_COPY_DEFAULTS" or "CDC_CONFIRM_RESOURCE_SPEC_COPY"
-                    ShowPopupAboveConfig(popupKey, sourceSpecName, {
+                    ShowPopupAboveConfig("CDC_CONFIRM_RESOURCE_SPEC_COPY", sourceSpecName, {
                         sourceSpecID = sourceSpecID,
                         targetSpecID = refreshedSpecID,
                     })

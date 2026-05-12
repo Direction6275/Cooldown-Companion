@@ -1424,17 +1424,6 @@ StaticPopupDialogs["CDC_CONFIRM_RESOURCE_SPEC_COPY"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CDC_CONFIRM_RESOURCE_SPEC_COPY_DEFAULTS"] = {
-    text = "Copy Resource Column 2 settings from %s?\n\nThat spec is using default Column 2 settings, so default Styling, Layout, and Colors values will be copied into your current spec. Custom Bars and aura overlays are not copied.",
-    button1 = "Copy",
-    button2 = "Cancel",
-    OnAccept = AcceptResourceSpecCopy,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
 StaticPopupDialogs["CDC_DISCORD_INVITE"] = {
     text = "Join the Cooldown Companion Discord (Ctrl+C to copy):",
     button1 = "Close",
