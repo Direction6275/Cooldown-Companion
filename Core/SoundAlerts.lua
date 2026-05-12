@@ -365,6 +365,9 @@ function CooldownCompanion:GetScopedValidSoundAlertEventsForCustomBar(customBar)
             id = customBar.spellID,
             hasCharges = customBar.hasCharges,
             maxCharges = customBar.maxCharges,
+            auraTracking = customBar.auraTracking == true,
+            auraSpellID = customBar.auraSpellID,
+            auraUnit = customBar.auraUnit,
         }, customBar.spellID))
     end
 
@@ -946,9 +949,11 @@ function CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, auraActive, coold
 
         UpdateCooldownSoundAlertTransitions(barInfo, enabledEvents, {
             cooldownActive = cooldownActive,
+            auraActive = auraActive,
             currentCharges = currentCharges,
             chargeRecharging = chargeRecharging,
             chargeCooldownStartTime = chargeCooldownStartTime,
+            includeAuraEvents = customBar.auraTracking == true,
             usesChargeBehavior = cooldownResult and cooldownResult.hasCharges == true,
             play = function(eventKey)
                 self:PlayCustomBarSoundAlertEvent(customBar, eventKey)

@@ -1011,7 +1011,7 @@ local function ApplyBarCountTextStyle(button, style)
     local defYOff = 2
     local useChargeTextLane = buttonData
         and UsesChargeTextLane(buttonData)
-        and not CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
+        and not (button and button._barAuraStackDisplay)
 
     if useChargeTextLane then
         ApplyFontStyle(button.count, style, "charge")

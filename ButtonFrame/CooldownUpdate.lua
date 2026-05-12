@@ -1029,12 +1029,13 @@ end
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
-    local barAuraStackDisplay = button._isBar and CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
+    local barAuraStackConfigured = button._isBar and CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
+    local barAuraStackDisplay = false
     local previousBarAuraStackValue = button._barAuraStackValue
     local previousBarAuraStackValueAvailable = button._barAuraStackValueAvailable == true
     local previousBarAuraStackValueSecret = button._barAuraStackValueSecret == true
-    local usesChargeBehavior = UsesChargeBehavior(buttonData) and not barAuraStackDisplay
-    local useChargeTextLane = UsesChargeTextLane(buttonData) and not barAuraStackDisplay
+    local usesChargeBehavior = UsesChargeBehavior(buttonData)
+    local useChargeTextLane = UsesChargeTextLane(buttonData)
     local now = GetTime()
     local isGCDOnly = false
     local desatWasActive = button._desatCooldownActive == true
@@ -1149,15 +1150,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     button._cooldownState = COOLDOWN_STATE_READY
     button._chargeState = nil
     button._chargeCooldownVisualActive = nil
-    button._barAuraStackDisplay = barAuraStackDisplay or nil
-    button._barAuraStackValue = barAuraStackDisplay and 0 or nil
-    button._barAuraStackValueAvailable = barAuraStackDisplay or nil
-    button._barAuraStackMax = barAuraStackDisplay and CooldownCompanion:GetBarPanelAuraMaxStacks(buttonData) or nil
-    button._barAuraStackMode = barAuraStackDisplay and CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) or nil
+    button._barAuraStackDisplay = nil
+    button._barAuraStackValue = nil
+    button._barAuraStackValueAvailable = nil
+    button._barAuraStackMax = nil
+    button._barAuraStackMode = nil
     button._barAuraStackValueSecret = nil
-    if not barAuraStackDisplay then
-        button._barAuraStackValueDirty = nil
-    end
+    button._barAuraStackValueDirty = nil
     -- Fetch cooldown data and update the cooldown widget.
     -- isOnGCD is NeverSecret (always readable even during restricted combat).
     local fetchOk, isOnGCD
@@ -1272,7 +1271,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     -- duration object, but still need the validated applications.
                     local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, viewerInstId)
                     local durationObj = C_UnitAuras.GetAuraDuration(unit, viewerInstId)
-                    if auraData and (durationObj or barAuraStackDisplay) then
+                    if auraData and (durationObj or barAuraStackConfigured) then
                         auraApplications = auraData.applications
                         RecordAuraDisplayName(auraDisplayNameState, auraData)
                         activeAuraSpellID = GetReadableAuraSpellID(auraData)
@@ -1432,7 +1431,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 local instId = auraData.auraInstanceID
                 if instId and not issecretvalue(instId) then
                     local durationObj = C_UnitAuras.GetAuraDuration("player", instId)
-                    if durationObj or barAuraStackDisplay then
+                    if durationObj or barAuraStackConfigured then
                         RecordAuraDisplayName(auraDisplayNameState, auraData)
                         activeAuraSpellID = activeAuraSpellID or GetReadableAuraSpellID(auraData)
                         activeAuraSpellIDSourceResolved = true
@@ -1465,7 +1464,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 if auraData then
                     auraApplications = auraData.applications
                     local durationObj = C_UnitAuras.GetAuraDuration(cachedUnit, button._auraInstanceID)
-                    if durationObj or barAuraStackDisplay then
+                    if durationObj or barAuraStackConfigured then
                         RecordAuraDisplayName(auraDisplayNameState, auraData)
                         activeAuraSpellID = GetReadableAuraSpellID(auraData)
                         if activeAuraSpellID then
@@ -1541,7 +1540,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         else
             button._auraGraceStart = nil
             if button._targetSwitchAt then
-                if auraOverrideActive and (button._durationObj or barAuraStackDisplay) then
+                if auraOverrideActive and (button._durationObj or barAuraStackConfigured) then
                     -- Primary path provided fresh aura data: hold complete
                     button._targetSwitchAt = nil
                     button._targetSwitchDataReceived = nil
@@ -1716,6 +1715,26 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         CommitAuraDisplayName(button, buttonData, viewerFrame, auraOverrideActive, auraDisplayNameState)
     end
     button._auraTrackingReady = auraTrackingReady
+
+    barAuraStackDisplay = barAuraStackConfigured and auraOverrideActive or false
+    if barAuraStackDisplay then
+        button._barAuraStackDisplay = true
+        button._barAuraStackValue = 0
+        button._barAuraStackValueAvailable = true
+        button._barAuraStackMax = CooldownCompanion:GetBarPanelAuraMaxStacks(buttonData)
+        button._barAuraStackMode = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
+    end
+    usesChargeBehavior = UsesChargeBehavior(buttonData) and not barAuraStackDisplay
+    useChargeTextLane = UsesChargeTextLane(buttonData) and not barAuraStackDisplay
+    if button.count and button._countTextLaneStyled ~= useChargeTextLane then
+        if button._isBar then
+            ApplyBarCountTextStyle(button, style)
+        elseif not button._isText then
+            ApplyIconCountTextStyle(button, style)
+        else
+            button._countTextLaneStyled = useChargeTextLane
+        end
+    end
 
     if barAuraStackDisplay then
         button._viewerBar = nil
@@ -2199,12 +2218,25 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if button.auraStackCount and button._barAuraStackDisplay then
         if style.showAuraStackText ~= false and button._auraActive then
             if not preserveBarAuraStackText then
+                local function SetBarAuraStackCountText(value)
+                    if CooldownCompanion:GetBarPanelAuraStackTextFormat(buttonData) == "current_max" then
+                        button.auraStackCount:SetFormattedText("%d / %d", value, button._barAuraStackMax or 1)
+                    else
+                        button.auraStackCount:SetFormattedText("%d", value)
+                    end
+                end
+
                 if barAuraSecretStackValue ~= nil then
-                    button.auraStackCount:SetFormattedText("%d", barAuraSecretStackValue)
+                    SetBarAuraStackCountText(barAuraSecretStackValue)
                 elseif button._barAuraStackValueAvailable and not issecretvalue(button._barAuraStackValue) then
-                    button.auraStackCount:SetFormattedText("%d", button._barAuraStackValue)
+                    SetBarAuraStackCountText(button._barAuraStackValue)
                 elseif button._auraStackText ~= nil then
-                    button.auraStackCount:SetText(button._auraStackText)
+                    local auraStackTextValue = button._auraStackText
+                    if issecretvalue(auraStackTextValue) or tonumber(auraStackTextValue) then
+                        SetBarAuraStackCountText(auraStackTextValue)
+                    else
+                        button.auraStackCount:SetText(auraStackTextValue)
+                    end
                 else
                     button.auraStackCount:SetText("")
                 end

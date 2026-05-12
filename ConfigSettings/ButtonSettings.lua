@@ -775,6 +775,20 @@ local function BuildBarPanelAuraDisplaySection(scroll, buttonData, infoButtons)
     end)
     scroll:AddChild(displayModeDrop)
 
+    local stackTextFormatDrop = AceGUI:Create("Dropdown")
+    stackTextFormatDrop:SetLabel("Stack Text Format")
+    stackTextFormatDrop:SetList({
+        current = "Current Value",
+        current_max = "Current / Max",
+    }, { "current", "current_max" })
+    stackTextFormatDrop:SetValue(CooldownCompanion:GetBarPanelAuraStackTextFormat(buttonData))
+    stackTextFormatDrop:SetFullWidth(true)
+    stackTextFormatDrop:SetCallback("OnValueChanged", function(_, _, value)
+        CooldownCompanion:SetBarPanelAuraStackTextFormat(buttonData, value)
+        RefreshSelectedBarPanelAuraButton()
+    end)
+    scroll:AddChild(stackTextFormatDrop)
+
     if stackDisplayMode == "segmented" or stackDisplayMode == "overlay" then
         local segmentGapSlider = AceGUI:Create("Slider")
         segmentGapSlider:SetLabel("Segment Gap")
