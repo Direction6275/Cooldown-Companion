@@ -111,6 +111,9 @@ local RESOURCE_SPEC_AURA_KEYS = {
     auraUnitExplicit = true,
 }
 
+-- Keep these resource mappings aligned with OtherBars/ResourceBarConstants.lua.
+local RESOURCE_HEALTH = -1
+
 local function CopySpecOverrideWithoutAura(sourceSpecData, targetSpecData)
     local copied = {}
 
@@ -301,8 +304,9 @@ local function CopyResourceSpecOverrides(settings, sourceSpecID, targetSpecID)
         return
     end
 
-    for _, resource in pairs(settings.resources) do
-        if type(resource) == "table" and type(resource.specOverrides) == "table" then
+    for powerType, resource in pairs(settings.resources) do
+        local isHealth = powerType == RESOURCE_HEALTH or tonumber(powerType) == RESOURCE_HEALTH
+        if not isHealth and type(resource) == "table" and type(resource.specOverrides) == "table" then
             local sourceSpecData = GetSpecKeyedTable(resource.specOverrides, sourceSpecID)
             local targetSpecData = GetSpecKeyedTable(resource.specOverrides, targetSpecID)
             local copiedSpecData = CopySpecOverrideWithoutAura(sourceSpecData, targetSpecData)
@@ -318,9 +322,6 @@ local function CopyResourceSpecOverrides(settings, sourceSpecID, targetSpecID)
         end
     end
 end
-
--- Keep these resource mappings aligned with OtherBars/ResourceBarConstants.lua.
-local RESOURCE_HEALTH = -1
 
 local CLASS_RESOURCES_BY_CLASS_ID = {
     [1]  = { 1 },
