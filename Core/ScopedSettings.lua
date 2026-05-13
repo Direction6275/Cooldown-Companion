@@ -724,6 +724,7 @@ local function ComposeCopiedResourceBarSettings(source, target)
                 and key ~= "customAuraBars"
                 and key ~= "customBars"
                 and key ~= "customAuraBarSlots"
+                and key ~= "displayProfiles"
                 and key ~= "layoutOrder"
                 and key ~= "nextCustomBarId" then
                 copied[key] = CloneSettingValue(value)

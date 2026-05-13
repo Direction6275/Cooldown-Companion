@@ -650,7 +650,6 @@ local function AddResourceSpecCopyButton(enableCb, characterCopyButton)
                     end
                     ShowPopupAboveConfig("CDC_CONFIRM_RESOURCE_SPEC_COPY", sourceSpecName, {
                         sourceSpecID = sourceSpecID,
-                        targetSpecID = refreshedSpecID,
                     })
                 end
                 UIDropDownMenu_AddButton(info, level)

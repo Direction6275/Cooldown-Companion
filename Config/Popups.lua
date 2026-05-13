@@ -1397,12 +1397,12 @@ StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {
 }
 
 local function AcceptResourceSpecCopy(self, data)
-    if not (data and data.sourceSpecID and data.targetSpecID) then
+    if not (data and data.sourceSpecID) then
         CooldownCompanion:Print("Copy failed: missing spec context.")
         return
     end
 
-    local ok = CooldownCompanion:CopyResourceBarSpecSettings(data.sourceSpecID, data.targetSpecID)
+    local ok = CooldownCompanion:CopyResourceBarSpecSettings(data.sourceSpecID)
     if not ok then
         CooldownCompanion:Print("Copy failed.")
         return
