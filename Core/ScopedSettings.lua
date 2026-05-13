@@ -277,9 +277,21 @@ local function CopySpecLayoutOrder(settings, sourceSpecID, targetSpecID)
     local targetLayout = GetSpecKeyedTable(settings.layoutOrder, targetSpecID)
     local targetCustomBars = type(targetLayout) == "table" and CloneSettingValue(targetLayout.customBars) or nil
     local targetCustomAuraBarSlots = type(targetLayout) == "table" and CloneSettingValue(targetLayout.customAuraBarSlots) or nil
+    local targetHealthLayout = type(targetLayout) == "table"
+        and GetSpecKeyedTable(targetLayout.resources, RESOURCE_HEALTH)
+        or nil
     ClearSpecKeyedValue(settings.layoutOrder, targetSpecID)
 
     local copiedLayout = type(sourceLayout) == "table" and CopyTable(sourceLayout) or {}
+    if type(copiedLayout.resources) == "table" then
+        ClearSpecKeyedValue(copiedLayout.resources, RESOURCE_HEALTH)
+    end
+    if type(targetHealthLayout) == "table" then
+        if type(copiedLayout.resources) ~= "table" then
+            copiedLayout.resources = {}
+        end
+        copiedLayout.resources[RESOURCE_HEALTH] = CloneSettingValue(targetHealthLayout)
+    end
     copiedLayout.customBars = targetCustomBars
     copiedLayout.customAuraBarSlots = targetCustomAuraBarSlots
 
@@ -684,6 +696,8 @@ local function CopyPreservedResourcePerSpecState(targetResource, copiedResource)
     copiedResource.auraActiveColor = nil
     copiedResource.auraColorTrackingMode = nil
     copiedResource.auraColorMaxStacks = nil
+    copiedResource.auraUnit = nil
+    copiedResource.auraUnitExplicit = nil
 
     if type(targetResource) ~= "table" then
         return copiedResource
@@ -709,6 +723,12 @@ local function CopyPreservedResourcePerSpecState(targetResource, copiedResource)
     end
     if targetResource.auraColorMaxStacks ~= nil then
         copiedResource.auraColorMaxStacks = targetResource.auraColorMaxStacks
+    end
+    if targetResource.auraUnit ~= nil then
+        copiedResource.auraUnit = targetResource.auraUnit
+    end
+    if targetResource.auraUnitExplicit ~= nil then
+        copiedResource.auraUnitExplicit = targetResource.auraUnitExplicit
     end
 
     return copiedResource
