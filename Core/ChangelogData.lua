@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.14",
         "1.13.10",
         "1.13.9",
         "1.13.8",
@@ -31,6 +32,39 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.14"] = {
+            markdown = [[
+## New Features
+
+- **Custom Bars overhaul:** Custom Aura Bars have been rebuilt as Custom Bars in Bars & Frames.
+  - Custom Bars now always attach to the Resource Bars panel stack, keeping them tied to the resource layout while Bar Panels remain the freely movable bar option.
+  - Existing Custom Aura Bar setups migrate into the new Custom Bars model, including saved display settings, colors, sizing, sound alerts, and load conditions.
+- **Spell cooldown Custom Bars:** Custom Bars support spell cooldowns with charge text, recharge colors, ready/cooldown colors, and sound alerts.
+- **Aura tracking for spell Custom Bars:** Spell Custom Bars can track an associated aura alongside the spell cooldown.
+  - Aura Tracking, Spell ID Override, Aura Unit, CDM picking, active aura indicators, pandemic effects, and aura-based visibility rules are available where they apply.
+  - Spell Custom Bars support Active and Stack Count aura tracking, with Continuous, Segmented, and Overlay stack display modes.
+- **Bar Panel aura stack displays:** Bar Panel aura entries can now display tracked auras as stack-count bars instead of only active-duration bars.
+  - Stack displays support Continuous, Segmented, and Overlay modes, plus max-stack color and max-stack indicator controls.
+- **Per-spec Resource Bar customization:** Resource Bar layout, styling, colors, resource text, Health display settings, aura overlays, and attached Cast Bar placement can now differ by specialization.
+- **Focus Exists alpha control:** Alpha settings now include a Focus Exists toggle, allowing frames to become fully visible while a focus target exists.
+
+## Polish | QoL
+
+- **Clearer Resource Bar copy controls:** Resource Bars now separate character-copy and spec-copy actions into distinct badges with clearer tooltips and confirmation dialogs.
+  - Spec-to-spec Resource copies preserve manual or spec-local setup such as Health settings, Custom Bars, and aura overlays.
+- **Panel add-entry helper text:** The panel add-entry box now shows grey helper text when empty, making it clearer that the field accepts spells, items, and IDs.
+- **Folder controls restored:** Folder rows can be selected to edit folder load conditions, while the plus/minus badge remains the dedicated expand/collapse control.
+  - Folder names, filter badges, and collapse controls now reserve space more cleanly in narrow layouts.
+
+## Bug Fixes
+
+- **Segmented resource flicker:** Segmented resource bars should no longer briefly flash the wrong ready color during resource-bar refreshes.
+
+## Performance
+
+- **Reduced duplicate cooldown refresh work:** Cooldown events now avoid repeating the same immediate refresh on the next ticker pass when no newer dirty state arrived.
+]],
+        },
         ["1.13.10"] = {
             markdown = [[
 ## New Features
