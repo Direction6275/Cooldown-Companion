@@ -11,6 +11,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 local LSM = LibStub("LibSharedMedia-3.0")
 local CS = ST._configState
 local IsPassiveOrProc = ST._IsPassiveOrProc
+local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
@@ -107,6 +108,8 @@ local EnsureCustomBarLayout = RB.EnsureCustomBarLayout
 local GetCustomBarLayout = RB.GetCustomBarLayout
 local GetResourceSpecOverrideTable = RB.GetResourceSpecOverrideTable
 local RESOURCE_HEALTH_DISPLAY_KEYS = RB.RESOURCE_HEALTH_DISPLAY_KEYS
+local resourceSpecCopyButton
+local resourceSpecCopyMenu
 
 local function IsHeroSpecProxyCondition(cond)
     return type(cond) == "table"
@@ -573,6 +576,101 @@ end
 
 CS.healthResourceUI = HealthResource
 
+local function AddResourceSpecCopyButton(enableCb, characterCopyButton)
+    local _, initialSpecOrder, currentSpecID = CooldownCompanion:GetResourceBarSpecCopyOptions()
+    if not currentSpecID or #initialSpecOrder == 0 then
+        return
+    end
+
+    local btn = resourceSpecCopyButton
+    if not btn then
+        btn = CreateFrame("Button", nil, enableCb.frame)
+        btn:SetSize(16, 16)
+
+        local icon = btn:CreateTexture(nil, "OVERLAY")
+        icon:SetSize(14, 14)
+        icon:SetPoint("CENTER")
+        icon:SetAtlas("BattleBar-SwapPetIcon", false)
+        icon:SetDesaturated(true)
+        icon:SetVertexColor(0.2, 0.45, 1.0)
+        btn.icon = icon
+
+        resourceSpecCopyButton = btn
+    else
+        btn:SetParent(enableCb.frame)
+    end
+
+    btn:ClearAllPoints()
+    if characterCopyButton then
+        btn:SetPoint("LEFT", characterCopyButton, "RIGHT", 2, 0)
+    else
+        btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
+    end
+    btn:Show()
+
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Copy From Another Spec")
+        GameTooltip:AddLine("Copies Column 2 tab settings from another spec into your current spec.", 1, 1, 1, true)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("What is copied:", 1, 0.82, 0, true)
+        GameTooltip:AddLine("- Styling tab", 1, 1, 1, true)
+        GameTooltip:AddLine("- Layout tab", 1, 1, 1, true)
+        GameTooltip:AddLine("- Colors tab settings that apply to the current spec", 1, 1, 1, true)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("What is not copied:", 1, 0.82, 0, true)
+        GameTooltip:AddLine("- Health settings", 1, 1, 1, true)
+        GameTooltip:AddLine("- Custom Bars", 1, 1, 1, true)
+        GameTooltip:AddLine("- Aura overlays", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    btn:SetScript("OnClick", function()
+        if not resourceSpecCopyMenu then
+            resourceSpecCopyMenu = CreateFrame("Frame", "CDCResourceSpecCopyMenu", UIParent, "UIDropDownMenuTemplate")
+        end
+
+        local specValues, specOrder, refreshedSpecID = CooldownCompanion:GetResourceBarSpecCopyOptions()
+        if not refreshedSpecID or #specOrder == 0 then
+            return
+        end
+
+        UIDropDownMenu_Initialize(resourceSpecCopyMenu, function(self, level)
+            for _, sourceSpecID in ipairs(specOrder) do
+                local sourceSpecName = specValues[sourceSpecID]
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = sourceSpecName
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    if not ShowPopupAboveConfig then
+                        CooldownCompanion:Print("Copy confirmation is unavailable.")
+                        return
+                    end
+                    ShowPopupAboveConfig("CDC_CONFIRM_RESOURCE_SPEC_COPY", sourceSpecName, {
+                        sourceSpecID = sourceSpecID,
+                    })
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end, "MENU")
+
+        resourceSpecCopyMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+        ToggleDropDownMenu(1, nil, resourceSpecCopyMenu, "cursor", 0, 0)
+    end)
+
+    local prevOnRelease = enableCb.events and enableCb.events["OnRelease"]
+    enableCb:SetCallback("OnRelease", function()
+        if prevOnRelease then
+            prevOnRelease(enableCb, "OnRelease")
+        end
+        btn:ClearAllPoints()
+        btn:Hide()
+    end)
+end
+
 local function BuildResourceBarAnchoringPanel(container)
     local db = CooldownCompanion.db.profile
     local settings = CooldownCompanion:GetResourceBarSettings()
@@ -592,11 +690,12 @@ local function BuildResourceBarAnchoringPanel(container)
     end)
     container:AddChild(enableCb)
 
-    CreateCharacterCopyButton(enableCb, "resourceBars", "Resource Bars", function()
+    local characterCopyButton = CreateCharacterCopyButton(enableCb, "resourceBars", "Resource Bars", function()
         CooldownCompanion:EvaluateResourceBars()
         CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:RefreshConfigPanel()
     end)
+    AddResourceSpecCopyButton(enableCb, characterCopyButton)
 
     if not settings.enabled then return end
     if not settings.resources then settings.resources = {} end

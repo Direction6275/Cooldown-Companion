@@ -807,6 +807,30 @@ end
 
 local charCopyButtons = {}
 
+local CHARACTER_COPY_TOOLTIP_DETAILS = {
+    frameAnchoring = {
+        "Copies: enable state, unit-frame addon/custom frame choices, player/target anchors, mirroring, and alpha inheritance.",
+        "Does not copy: Resource Bars, Cast Bar, panels, or panel contents.",
+    },
+    castBar = {
+        "Copies: enable state, anchor/position mode, styling, icon, text, and cast effects.",
+        "Does not copy: Resource Bars, Unit Frames, panels, or panel contents.",
+    },
+    resourceBars = {
+        "Copies broad Resource Bar defaults from another character without replacing this character's spec-specific setup.",
+        "",
+        "What is copied:",
+        "- Enable state and panel anchor target",
+        "- Shared appearance defaults, like texture, text, and default colors",
+        "- Resource options that apply to this class",
+        "",
+        "What is not copied:",
+        "- The current spec's Layout tab or bar order",
+        "- Custom Bars",
+        "- Aura overlays and per-spec resource overrides",
+    },
+}
+
 local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
     local copyValues, copyOrder = CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
     if #copyOrder == 0 then return end
@@ -834,7 +858,20 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Copy " .. label .. " Settings")
-        GameTooltip:AddLine("Copy settings from another character on this profile.", 1, 1, 1, true)
+        local tooltipDetails = CHARACTER_COPY_TOOLTIP_DETAILS[systemKey]
+        if tooltipDetails then
+            for _, line in ipairs(tooltipDetails) do
+                if line == "" then
+                    GameTooltip:AddLine(" ")
+                elseif line == "What is copied:" or line == "What is not copied:" then
+                    GameTooltip:AddLine(line, 1, 0.82, 0, true)
+                else
+                    GameTooltip:AddLine(line, 1, 1, 1, true)
+                end
+            end
+        else
+            GameTooltip:AddLine("Copy settings from another character on this profile.", 1, 1, 1, true)
+        end
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -857,7 +894,7 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
                         CooldownCompanion:Print("Copy confirmation is unavailable.")
                         return
                     end
-                    ShowPopupAboveConfig("CDC_CONFIRM_CHARACTER_SCOPED_COPY", label, {
+                    ShowPopupAboveConfig("CDC_CONFIRM_CHARACTER_SCOPED_COPY", label .. " settings from " .. (vals[charKey] or charKey) .. " to this character", {
                         systemKey = systemKey,
                         systemLabel = label,
                         sourceCharKey = charKey,
@@ -880,6 +917,8 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
         btn:ClearAllPoints()
         btn:Hide()
     end)
+
+    return btn
 end
 
 -- Shared bar texture option builder (used by CastBarPanels and BarModeTabs)

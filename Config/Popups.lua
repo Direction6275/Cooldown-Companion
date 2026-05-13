@@ -1371,7 +1371,7 @@ StaticPopupDialogs["CDC_CONFIRM_PANEL_STYLE_COPY"] = {
 }
 
 StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {
-    text = "Copy selected %s settings from the chosen character to this character?",
+    text = "Copy %s?",
     button1 = "Copy",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -1390,6 +1390,34 @@ StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {
             data.onCopied()
         end
     end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+local function AcceptResourceSpecCopy(self, data)
+    if not (data and data.sourceSpecID) then
+        CooldownCompanion:Print("Copy failed: missing spec context.")
+        return
+    end
+
+    local ok = CooldownCompanion:CopyResourceBarSpecSettings(data.sourceSpecID)
+    if not ok then
+        CooldownCompanion:Print("Copy failed.")
+        return
+    end
+
+    CooldownCompanion:EvaluateResourceBars()
+    CooldownCompanion:UpdateAnchorStacking()
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+StaticPopupDialogs["CDC_CONFIRM_RESOURCE_SPEC_COPY"] = {
+    text = "Copy Resource Column 2 settings from %s?\n\nThis copies only the Styling, Layout, and Colors tabs where those settings apply to the current spec. If that spec is using defaults, those default values are copied. Health settings, Custom Bars, and aura overlays are not copied.",
+    button1 = "Copy",
+    button2 = "Cancel",
+    OnAccept = AcceptResourceSpecCopy,
     timeout = 0,
     whileDead = true,
     hideOnEscape = true,

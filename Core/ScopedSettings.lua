@@ -85,6 +85,57 @@ local function GetSpecKeyedTable(source, specID)
     return nil
 end
 
+local function ClearSpecKeyedValue(source, specID)
+    if type(source) ~= "table" then
+        return
+    end
+
+    source[specID] = nil
+
+    local numericKey = tonumber(specID)
+    if numericKey then
+        source[numericKey] = nil
+    end
+
+    source[tostring(specID)] = nil
+end
+
+local RESOURCE_SPEC_AURA_KEYS = {
+    auraOverlayEnabled = true,
+    auraOverlayEntries = true,
+    auraColorSpellID = true,
+    auraActiveColor = true,
+    auraColorTrackingMode = true,
+    auraColorMaxStacks = true,
+    auraUnit = true,
+    auraUnitExplicit = true,
+}
+
+-- Keep these resource mappings aligned with OtherBars/ResourceBarConstants.lua.
+local RESOURCE_HEALTH = -1
+
+local function CopySpecOverrideWithoutAura(sourceSpecData, targetSpecData)
+    local copied = {}
+
+    if type(sourceSpecData) == "table" then
+        for key, value in pairs(sourceSpecData) do
+            if not RESOURCE_SPEC_AURA_KEYS[key] then
+                copied[key] = CloneSettingValue(value)
+            end
+        end
+    end
+
+    if type(targetSpecData) == "table" then
+        for key, value in pairs(targetSpecData) do
+            if RESOURCE_SPEC_AURA_KEYS[key] then
+                copied[key] = CloneSettingValue(value)
+            end
+        end
+    end
+
+    return next(copied) and copied or nil
+end
+
 local function PreserveTargetCustomBarLayouts(copied, target)
     if type(copied) ~= "table"
         or type(target) ~= "table"
@@ -217,8 +268,72 @@ local function GetCurrentClassSpecInfo()
     return specIDs, currentSpecID
 end
 
--- Keep these resource mappings aligned with OtherBars/ResourceBarConstants.lua.
-local RESOURCE_HEALTH = -1
+local function CopySpecLayoutOrder(settings, sourceSpecID, targetSpecID)
+    if type(settings) ~= "table" or type(settings.layoutOrder) ~= "table" then
+        return
+    end
+
+    local sourceLayout = GetSpecKeyedTable(settings.layoutOrder, sourceSpecID)
+    local targetLayout = GetSpecKeyedTable(settings.layoutOrder, targetSpecID)
+    local targetCustomBars = type(targetLayout) == "table" and CloneSettingValue(targetLayout.customBars) or nil
+    local targetCustomAuraBarSlots = type(targetLayout) == "table" and CloneSettingValue(targetLayout.customAuraBarSlots) or nil
+    local targetHealthLayout = type(targetLayout) == "table"
+        and GetSpecKeyedTable(targetLayout.resources, RESOURCE_HEALTH)
+        or nil
+    ClearSpecKeyedValue(settings.layoutOrder, targetSpecID)
+
+    local copiedLayout = type(sourceLayout) == "table" and CopyTable(sourceLayout) or {}
+    if type(copiedLayout.resources) == "table" then
+        ClearSpecKeyedValue(copiedLayout.resources, RESOURCE_HEALTH)
+    end
+    if type(targetHealthLayout) == "table" then
+        if type(copiedLayout.resources) ~= "table" then
+            copiedLayout.resources = {}
+        end
+        copiedLayout.resources[RESOURCE_HEALTH] = CloneSettingValue(targetHealthLayout)
+    end
+    copiedLayout.customBars = targetCustomBars
+    copiedLayout.customAuraBarSlots = targetCustomAuraBarSlots
+
+    settings.layoutOrder[targetSpecID] = copiedLayout
+end
+
+local function CopySpecDisplayProfile(settings, sourceSpecID, targetSpecID)
+    if type(settings) ~= "table" or type(settings.displayProfiles) ~= "table" then
+        return
+    end
+
+    local sourceProfile = GetSpecKeyedTable(settings.displayProfiles, sourceSpecID)
+    ClearSpecKeyedValue(settings.displayProfiles, targetSpecID)
+
+    if type(sourceProfile) == "table" then
+        settings.displayProfiles[targetSpecID] = CopyTable(sourceProfile)
+    end
+end
+
+local function CopyResourceSpecOverrides(settings, sourceSpecID, targetSpecID)
+    if type(settings) ~= "table" or type(settings.resources) ~= "table" then
+        return
+    end
+
+    for powerType, resource in pairs(settings.resources) do
+        local isHealth = powerType == RESOURCE_HEALTH or tonumber(powerType) == RESOURCE_HEALTH
+        if not isHealth and type(resource) == "table" and type(resource.specOverrides) == "table" then
+            local sourceSpecData = GetSpecKeyedTable(resource.specOverrides, sourceSpecID)
+            local targetSpecData = GetSpecKeyedTable(resource.specOverrides, targetSpecID)
+            local copiedSpecData = CopySpecOverrideWithoutAura(sourceSpecData, targetSpecData)
+
+            ClearSpecKeyedValue(resource.specOverrides, targetSpecID)
+            if copiedSpecData then
+                resource.specOverrides[targetSpecID] = copiedSpecData
+            end
+
+            if not next(resource.specOverrides) then
+                resource.specOverrides = nil
+            end
+        end
+    end
+end
 
 local CLASS_RESOURCES_BY_CLASS_ID = {
     [1]  = { 1 },
@@ -581,6 +696,8 @@ local function CopyPreservedResourcePerSpecState(targetResource, copiedResource)
     copiedResource.auraActiveColor = nil
     copiedResource.auraColorTrackingMode = nil
     copiedResource.auraColorMaxStacks = nil
+    copiedResource.auraUnit = nil
+    copiedResource.auraUnitExplicit = nil
 
     if type(targetResource) ~= "table" then
         return copiedResource
@@ -607,6 +724,12 @@ local function CopyPreservedResourcePerSpecState(targetResource, copiedResource)
     if targetResource.auraColorMaxStacks ~= nil then
         copiedResource.auraColorMaxStacks = targetResource.auraColorMaxStacks
     end
+    if targetResource.auraUnit ~= nil then
+        copiedResource.auraUnit = targetResource.auraUnit
+    end
+    if targetResource.auraUnitExplicit ~= nil then
+        copiedResource.auraUnitExplicit = targetResource.auraUnitExplicit
+    end
 
     return copiedResource
 end
@@ -617,18 +740,16 @@ local function ComposeCopiedResourceBarSettings(source, target)
 
     if type(source) == "table" then
         for key, value in pairs(source) do
-            if key ~= "resources" and key ~= "customAuraBars" and key ~= "customBars" and key ~= "customAuraBarSlots" and key ~= "layoutOrder" then
+            if key ~= "resources"
+                and key ~= "customAuraBars"
+                and key ~= "customBars"
+                and key ~= "customAuraBarSlots"
+                and key ~= "displayProfiles"
+                and key ~= "layoutOrder"
+                and key ~= "nextCustomBarId" then
                 copied[key] = CloneSettingValue(value)
             end
         end
-    end
-
-    if type(source) == "table" and type(source.customAuraBarSlots) == "table" then
-        copied.customAuraBarSlots = CopyTable(source.customAuraBarSlots)
-    end
-
-    if type(source) == "table" and type(source.layoutOrder) == "table" then
-        copied.layoutOrder = CopyTable(source.layoutOrder)
     end
 
     if type(copied.resources) ~= "table" then
@@ -828,6 +949,38 @@ function CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
     return values, order
 end
 
+function CooldownCompanion:GetResourceBarSpecCopyOptions()
+    local _, _, classID = UnitClass("player")
+    if not classID then
+        return {}, {}, nil, nil
+    end
+
+    local currentSpecID
+    local specIndex = C_SpecializationInfo.GetSpecialization()
+    if specIndex then
+        currentSpecID = C_SpecializationInfo.GetSpecializationInfo(specIndex)
+    end
+
+    local values = {}
+    local order = {}
+    local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID) or 0
+    for i = 1, numSpecs do
+        local specID, specName = GetSpecializationInfoForClassID(classID, i)
+        if specID then
+            if specID ~= currentSpecID then
+                values[specID] = specName or ("Spec " .. tostring(specID))
+                order[#order + 1] = specID
+            end
+        end
+    end
+
+    sort(order, function(a, b)
+        return (values[a] or "") < (values[b] or "")
+    end)
+
+    return values, order, currentSpecID
+end
+
 function CooldownCompanion:CopyCharacterScopedSettings(systemKey, sourceCharKey)
     local profile = self.db and self.db.profile
     local currentChar = self.db and self.db.keys and self.db.keys.char
@@ -851,5 +1004,38 @@ function CooldownCompanion:CopyCharacterScopedSettings(systemKey, sourceCharKey)
     NormalizeScopedBarSettings(systemKey, copied)
     SanitizeCopiedOrSeededScopedBarSettings(systemKey, copied)
     store[currentChar] = copied
+    return true
+end
+
+function CooldownCompanion:CopyResourceBarSpecSettings(sourceSpecID, targetSpecID)
+    sourceSpecID = tonumber(sourceSpecID)
+    targetSpecID = tonumber(targetSpecID)
+
+    local allowedSpecIDs, currentSpecID = GetCurrentClassSpecInfo()
+    if not targetSpecID then
+        targetSpecID = currentSpecID
+    end
+
+    if not sourceSpecID
+        or not targetSpecID
+        or sourceSpecID == targetSpecID
+        or type(allowedSpecIDs) ~= "table"
+        or allowedSpecIDs[sourceSpecID] ~= true
+        or allowedSpecIDs[targetSpecID] ~= true then
+        return false, "invalid_spec"
+    end
+
+    local settings = self:GetResourceBarSettings()
+    if type(settings) ~= "table" then
+        return false, "missing_settings"
+    end
+
+    CopySpecLayoutOrder(settings, sourceSpecID, targetSpecID)
+    CopySpecDisplayProfile(settings, sourceSpecID, targetSpecID)
+    CopyResourceSpecOverrides(settings, sourceSpecID, targetSpecID)
+
+    NormalizeScopedBarSettings("resourceBars", settings)
+    SanitizeCopiedOrSeededScopedBarSettings("resourceBars", settings)
+
     return true
 end
