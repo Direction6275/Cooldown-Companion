@@ -260,10 +260,9 @@ local function HideResourceAuraStackSegments(holder)
     end
 end
 
-local function LayoutResourceAuraStackSegments(holder, settings, orientationOverride, reverseFillOverride)
-    if not holder or not holder.auraStackSegments or not holder.segments then return end
+local function GetResourceAuraStackLayoutInputs(holder, settings, orientationOverride, reverseFillOverride)
     local style = GetResourceDisplayStyle(settings)
-    local barTexture = CooldownCompanion:FetchStatusBar(style and style.barTexture or "Solid")
+    local barTextureName = style and style.barTexture or "Solid"
     local borderStyle = style and style.borderStyle or "pixel"
     local borderSize = style and style.borderSize or 1
     local isVertical
@@ -280,6 +279,53 @@ local function LayoutResourceAuraStackSegments(holder, settings, orientationOver
     elseif isVertical then
         reverseFill = IsVerticalFillReversed(settings)
     end
+
+    local baseSeg = holder and holder.segments and holder.segments[1]
+    local baseWidth = baseSeg and baseSeg:GetWidth() or 0
+    local baseHeight = baseSeg and baseSeg:GetHeight() or 0
+    local baseFrameLevel = baseSeg and baseSeg:GetFrameLevel() or 0
+
+    return barTextureName, borderStyle, borderSize, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel
+end
+
+local function UpdateResourceAuraStackLayoutState(holder, count, barTextureName, borderStyle, borderSize, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel)
+    holder._auraStackLayoutCount = count
+    holder._auraStackLayoutTexture = barTextureName
+    holder._auraStackLayoutBorderStyle = borderStyle
+    holder._auraStackLayoutBorderSize = borderSize
+    holder._auraStackLayoutVertical = isVertical
+    holder._auraStackLayoutReverseFill = reverseFill
+    holder._auraStackLayoutBaseWidth = baseWidth
+    holder._auraStackLayoutBaseHeight = baseHeight
+    holder._auraStackLayoutBaseFrameLevel = baseFrameLevel
+end
+
+local function ResourceAuraStackLayoutChanged(holder, settings)
+    local count = holder.auraStackSegments and #holder.auraStackSegments or 0
+    local barTextureName, borderStyle, borderSize, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel =
+        GetResourceAuraStackLayoutInputs(holder, settings)
+
+    if holder._auraStackLayoutCount ~= count
+        or holder._auraStackLayoutTexture ~= barTextureName
+        or holder._auraStackLayoutBorderStyle ~= borderStyle
+        or holder._auraStackLayoutBorderSize ~= borderSize
+        or holder._auraStackLayoutVertical ~= isVertical
+        or holder._auraStackLayoutReverseFill ~= reverseFill
+        or holder._auraStackLayoutBaseWidth ~= baseWidth
+        or holder._auraStackLayoutBaseHeight ~= baseHeight
+        or holder._auraStackLayoutBaseFrameLevel ~= baseFrameLevel then
+        return true
+    end
+
+    return false
+end
+
+local function LayoutResourceAuraStackSegments(holder, settings, orientationOverride, reverseFillOverride)
+    if not holder or not holder.auraStackSegments or not holder.segments then return end
+    local count = #holder.auraStackSegments
+    local barTextureName, borderStyle, borderSize, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel =
+        GetResourceAuraStackLayoutInputs(holder, settings, orientationOverride, reverseFillOverride)
+    local barTexture = CooldownCompanion:FetchStatusBar(barTextureName)
 
     for i, auraSeg in ipairs(holder.auraStackSegments) do
         local baseSeg = holder.segments[i]
@@ -313,6 +359,8 @@ local function LayoutResourceAuraStackSegments(holder, settings, orientationOver
             auraSeg:Hide()
         end
     end
+
+    UpdateResourceAuraStackLayoutState(holder, count, barTextureName, borderStyle, borderSize, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel)
 end
 
 local function EnsureResourceAuraStackSegments(holder, settings)
@@ -336,9 +384,12 @@ local function EnsureResourceAuraStackSegments(holder, settings)
             seg:Hide()
             holder.auraStackSegments[i] = seg
         end
+        holder._auraStackLayoutCount = nil
     end
 
-    LayoutResourceAuraStackSegments(holder, settings)
+    if ResourceAuraStackLayoutChanged(holder, settings) then
+        LayoutResourceAuraStackSegments(holder, settings)
+    end
     return holder.auraStackSegments
 end
 

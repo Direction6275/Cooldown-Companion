@@ -452,6 +452,12 @@ end
 
 local function SetConfigFinderText(text, opts)
     text = type(text) == "string" and text or ""
+    if CS.configSearchText ~= text then
+        CS._configFinderResults = nil
+        CS._configFinderResultsQuery = nil
+        CS._configFinderResultsDb = nil
+        CS._configFinderResultsCharKey = nil
+    end
     CS.configSearchText = text
 
     if opts and opts.syncWidget == false then
@@ -473,6 +479,13 @@ local function ClearConfigFinderText(opts)
     SetConfigFinderText("", opts)
 end
 
+local function InvalidateConfigFinderResults()
+    CS._configFinderResults = nil
+    CS._configFinderResultsQuery = nil
+    CS._configFinderResultsDb = nil
+    CS._configFinderResultsCharKey = nil
+end
+
 local function IsContainerVisibleInConfig(container, charKey)
     if not container then
         return false
@@ -492,6 +505,13 @@ local function BuildConfigFinderResults()
     end
 
     local charKey = CooldownCompanion.db.keys.char
+    if CS._configFinderResults
+        and CS._configFinderResultsQuery == query
+        and CS._configFinderResultsDb == db
+        and CS._configFinderResultsCharKey == charKey then
+        return CS._configFinderResults
+    end
+
     local results = {
         query = query,
         containerMatches = {},
@@ -517,7 +537,7 @@ local function BuildConfigFinderResults()
         local container = containerId and db.groupContainers and db.groupContainers[containerId]
         if IsContainerVisibleInConfig(container, charKey) then
             local panelMatches = ConfigFinderTextMatches(panel.name, query)
-            local entryMatches = {}
+            local entryMatches
 
             for buttonIndex, buttonData in ipairs(panel.buttons or {}) do
                 local entryName = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
@@ -525,6 +545,9 @@ local function BuildConfigFinderResults()
                     or ("Unknown " .. tostring(buttonData.type))
                 local idText = buttonData.id and tostring(buttonData.id) or nil
                 if ConfigFinderTextMatches(entryName, query) or ConfigFinderTextMatches(idText, query) then
+                    if not entryMatches then
+                        entryMatches = {}
+                    end
                     entryMatches[#entryMatches + 1] = {
                         index = buttonIndex,
                         button = buttonData,
@@ -533,10 +556,11 @@ local function BuildConfigFinderResults()
                 end
             end
 
-            if panelMatches or #entryMatches > 0 then
+            local entryMatchCount = entryMatches and #entryMatches or 0
+            if panelMatches or entryMatchCount > 0 then
                 markContainer(containerId)
                 results.totalPanelResults = results.totalPanelResults + 1
-                results.totalEntryResults = results.totalEntryResults + #entryMatches
+                results.totalEntryResults = results.totalEntryResults + entryMatchCount
                 results.panelResults[#results.panelResults + 1] = {
                     containerId = containerId,
                     container = container,
@@ -558,6 +582,10 @@ local function BuildConfigFinderResults()
         return (a.panel and a.panel.order or 0) < (b.panel and b.panel.order or 0)
     end)
 
+    CS._configFinderResults = results
+    CS._configFinderResultsQuery = query
+    CS._configFinderResultsDb = db
+    CS._configFinderResultsCharKey = charKey
     return results
 end
 
@@ -2234,6 +2262,7 @@ ST._IsConfigFinderActive = IsConfigFinderActive
 ST._SetConfigFinderText = SetConfigFinderText
 ST._ClearConfigFinderText = ClearConfigFinderText
 ST._BuildConfigFinderResults = BuildConfigFinderResults
+ST._InvalidateConfigFinderResults = InvalidateConfigFinderResults
 ST._SelectConfigFinderResult = SelectConfigFinderResult
 ST._GetGroupIcon = GetGroupIcon
 ST._GetContainerIcon = GetContainerIcon

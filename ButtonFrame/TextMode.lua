@@ -22,6 +22,7 @@ local math_pi = math.pi
 local string_format = string.format
 local table_concat = table.concat
 local issecretvalue = issecretvalue
+local wipe = wipe
 local C_UnitAuras_GetAuraApplicationDisplayCount = C_UnitAuras.GetAuraApplicationDisplayCount
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
@@ -326,7 +327,13 @@ end
 ------------------------------------------------------------------------
 local function SubstituteTokens(button, segments, style, effectState, secretNameOverride, hasSecretNameOverride)
     local buttonData = button.buttonData
-    local parts = {}
+    local parts = button._textModeParts
+    if parts then
+        wipe(parts)
+    else
+        parts = {}
+        button._textModeParts = parts
+    end
     local secretValue = nil
     local secretColorToken = nil
     local secretStackValue = nil
@@ -396,7 +403,13 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
 
     -- Color override state for {cooldown}...{/cooldown} etc.
     local colorOverride = nil
-    local colorStack = {}
+    local colorStack = button._textModeColorStack
+    if colorStack then
+        wipe(colorStack)
+    else
+        colorStack = {}
+        button._textModeColorStack = colorStack
+    end
 
     for _, seg in ipairs(segments) do
         -- Conditional section handling
@@ -620,8 +633,20 @@ local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverri
         }
 
         -- Single left-to-right pass: build format string and ordered args together
-        local args = {}
-        local resultParts = {}
+        local args = button._textModeSecretArgs
+        if args then
+            wipe(args)
+        else
+            args = {}
+            button._textModeSecretArgs = args
+        end
+        local resultParts = button._textModeSecretParts
+        if resultParts then
+            wipe(resultParts)
+        else
+            resultParts = {}
+            button._textModeSecretParts = resultParts
+        end
         local pos = 1
         while pos <= #fmtStr do
             local bestIdx, bestInfo
@@ -650,6 +675,7 @@ local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverri
 
         local finalFmt = table_concat(resultParts)
         button.textString:SetFormattedText(finalFmt, unpack(args))
+        wipe(args)
     else
         -- Normal path: full per-token coloring via escape sequences
         local baseColor = style.textFontColor or DEFAULT_WHITE

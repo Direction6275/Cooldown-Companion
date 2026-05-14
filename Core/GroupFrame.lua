@@ -16,6 +16,8 @@ local math_max = math.max
 local math_ceil = math.ceil
 local table_insert = table.insert
 local InCombatLockdown = InCombatLockdown
+local select = select
+local wipe = wipe
 
 -- Shared click-through and border helpers from Utils.lua
 local SetFrameClickThrough = ST.SetFrameClickThrough
@@ -313,6 +315,13 @@ local function ResetButtonGlowTransitionState(button)
     end
 end
 
+local function ClearButtonCompactSlotCache(button)
+    if not button then return end
+    button._compactSlotAnchor = nil
+    button._compactSlotX = nil
+    button._compactSlotY = nil
+end
+
 -- Nudger constants
 local NUDGE_BTN_SIZE = 12
 local NUDGE_REPEAT_DELAY = 0.5
@@ -321,15 +330,21 @@ local NUDGE_REPEAT_INTERVAL = 0.05
 local CreatePixelBorders = ST.CreatePixelBorders
 local GetEffectiveTextHeight = ST._GetEffectiveTextHeight
 
+local PropagateFrameStrata
+
+local function PropagateChildFrameStrata(strata, ...)
+    for i = 1, select("#", ...) do
+        PropagateFrameStrata(select(i, ...), strata)
+    end
+end
+
 -- Recursively set frame strata on a frame and all its child frames.
 -- Textures/FontStrings inherit from their parent frame automatically,
 -- but child Frame objects (cooldown widgets, overlay frames, glow containers)
 -- may not follow a parent strata change — so we force it explicitly.
-local function PropagateFrameStrata(frame, strata)
+function PropagateFrameStrata(frame, strata)
     frame:SetFrameStrata(strata)
-    for _, child in pairs({frame:GetChildren()}) do
-        PropagateFrameStrata(child, strata)
-    end
+    PropagateChildFrameStrata(strata, frame:GetChildren())
 end
 
 local function CreateNudger(frame, groupId)
@@ -973,6 +988,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
                 end
             end
 
+            ClearButtonCompactSlotCache(button)
             if isTriggerMode then
                 button:SetPoint("CENTER", frame, "CENTER", 0, 0)
             else
@@ -1125,6 +1141,9 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
     if not frame or not group then return end
 
     if not group.compactLayout then
+        for _, button in ipairs(frame.buttons) do
+            ClearButtonCompactSlotCache(button)
+        end
         frame._layoutDirty = false
         return
     end
@@ -1138,7 +1157,13 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
 
     local maxVis = (group.maxVisibleButtons and group.maxVisibleButtons > 0) and group.maxVisibleButtons or #frame.buttons
 
-    local visibleButtons = {}
+    local visibleButtons = frame._compactVisibleButtons
+    if visibleButtons then
+        wipe(visibleButtons)
+    else
+        visibleButtons = {}
+        frame._compactVisibleButtons = visibleButtons
+    end
     for _, button in ipairs(frame.buttons) do
         local forceVisible = button._forceVisibleByConfig
         local shouldHide = (not forceVisible) and (button._visibilityHidden or #visibleButtons >= maxVis)
@@ -1158,7 +1183,6 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
     local headerH = frame._textHeaderHeight or 0
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
     for visibleIndex, button in ipairs(visibleButtons) do
-        button:ClearAllPoints()
         local row, col = GetCompactSlotForIndex(
             visibleIndex,
             visibleCount,
@@ -1166,7 +1190,17 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
             orientation,
             compactGrowthDirection
         )
-        button:SetPoint(growthAnchor, frame, growthAnchor, xMul * col * (buttonWidth + spacing), yMul * (row * (buttonHeight + spacing) + headerH))
+        local x = xMul * col * (buttonWidth + spacing)
+        local y = yMul * (row * (buttonHeight + spacing) + headerH)
+        if button._compactSlotAnchor ~= growthAnchor
+            or button._compactSlotX ~= x
+            or button._compactSlotY ~= y then
+            button:ClearAllPoints()
+            button:SetPoint(growthAnchor, frame, growthAnchor, x, y)
+            button._compactSlotAnchor = growthAnchor
+            button._compactSlotX = x
+            button._compactSlotY = y
+        end
     end
 
     if frame.visibleButtonCount ~= visibleCount then

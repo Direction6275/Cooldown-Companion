@@ -603,6 +603,7 @@ function CooldownCompanion.HideStandaloneDisplayVisuals(host)
     if host.textFrame then
         host.textFrame:Hide()
     end
+    host._indicatorBaseVisualsReady = nil
 end
 
 function CooldownCompanion.GetTriggerIconDimensions(settings)
@@ -875,6 +876,7 @@ function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
     host._activeTextureSettings = nil
     host._activeTextureGeometry = nil
     host._activeDisplayType = "icon"
+    host._indicatorBaseVisualsReady = nil
     host._triggerTextBaseColor = nil
     host._triggerIconBaseColor = CopyColor(iconTint) or { 1, 1, 1, 1 }
 
@@ -926,6 +928,7 @@ function CooldownCompanion.ApplyTriggerTextVisual(host, settings)
     host._activeTextureSettings = nil
     host._activeTextureGeometry = nil
     host._activeDisplayType = "text"
+    host._indicatorBaseVisualsReady = nil
     host._triggerIconBaseColor = nil
     host._triggerTextBaseColor = CopyColor(textColor) or { 1, 1, 1, 1 }
 
@@ -1026,6 +1029,7 @@ function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, se
             host._activeTextureSettings = settings
             host._activeTextureGeometry = geometry
             host._activeDisplayType = "texture"
+            host._indicatorBaseVisualsReady = nil
             SetTextureIndicatorBaseVisuals(host)
             if isTriggerPanel then
                 self:ApplyTriggerPanelEffects(host, driverButton, group, effectsActive)

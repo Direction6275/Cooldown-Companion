@@ -825,6 +825,18 @@ local function ApplyBarAuraStackVisual(button, stackValue, stackValueAvailable)
 end
 
 -- Lightweight OnUpdate: interpolates bar fill + time text between ticker updates.
+local function SetBarTimeText(button, text)
+    if button._lastBarTimeText ~= text then
+        button._lastBarTimeText = text
+        button.timeText:SetText(text)
+    end
+end
+
+local function SetBarTimeFormattedText(button, fmt, value)
+    button._lastBarTimeText = nil
+    button.timeText:SetFormattedText(fmt, value)
+end
+
 local function UpdateBarFill(button)
     -- Single-bar path
     -- DurationObject percent methods return secret values during combat in 12.0.1,
@@ -858,7 +870,7 @@ local function UpdateBarFill(button)
         if not button._barAuraStackValueSecret then
             ApplyBarAuraStackVisual(button, button._barAuraStackValue, button._barAuraStackValueAvailable == true)
         end
-        button.timeText:SetText("")
+        SetBarTimeText(button, "")
     elseif button._durationObj and not button._barGCDSuppressed then
         ClearBarAuraStackVisual(button)
         onCooldown = true
@@ -944,17 +956,17 @@ local function UpdateBarFill(button)
             -- Secret: pass secret number to C++ SetFormattedText ("%.1f" / "%.0f" format)
             local decimal = button.style.decimalTimers
             if previewRemaining and previewRemaining > 0 then
-                button.timeText:SetText(FormatTime(previewRemaining, decimal))
+                SetBarTimeText(button, FormatTime(previewRemaining, decimal))
             elseif button._durationObj then
                 local remaining = button._durationObj:GetRemainingDuration()
                 if not button._durationObj:HasSecretValues() then
                     if remaining > 0 then
-                        button.timeText:SetText(FormatTime(remaining, decimal))
+                        SetBarTimeText(button, FormatTime(remaining, decimal))
                     else
-                        button.timeText:SetText("")
+                        SetBarTimeText(button, "")
                     end
                 else
-                    button.timeText:SetFormattedText(decimal and "%.1f" or "%.0f", remaining)
+                    SetBarTimeFormattedText(button, decimal and "%.1f" or "%.0f", remaining)
                 end
             elseif button._viewerBar then
                 -- Totem: viewer bar values may be secret (set by Blizzard's internal totem tracking).
@@ -962,12 +974,12 @@ local function UpdateBarFill(button)
                 -- secure code sets it, so the widget reports plain — but the actual
                 -- number returned by GetValue() is a secret wrapper).
                 -- Always use SetFormattedText for secret-safe pass-through.
-                button.timeText:SetFormattedText(decimal and "%.1f" or "%.0f", button._viewerBar:GetValue())
+                SetBarTimeFormattedText(button, decimal and "%.1f" or "%.0f", button._viewerBar:GetValue())
             else
                 if itemRemaining > 0 then
-                    button.timeText:SetText(FormatTime(itemRemaining, decimal))
+                    SetBarTimeText(button, FormatTime(itemRemaining, decimal))
                 else
-                    button.timeText:SetText("")
+                    SetBarTimeText(button, "")
                 end
             end
         end
@@ -980,10 +992,10 @@ local function UpdateBarFill(button)
         end
         if button._barAuraActivePreview or button._conditionalBarAuraActivePreview then
             button.statusBar:SetValue(1)
-            button.timeText:SetText("")
+            SetBarTimeText(button, "")
         elseif button.buttonData.isPassive then
             button.statusBar:SetValue(0)
-            button.timeText:SetText("")
+            SetBarTimeText(button, "")
         else
         button.statusBar:SetValue(1)
         if button.style.showBarReadyText then
@@ -994,9 +1006,9 @@ local function UpdateBarFill(button)
                 local o = button.style.barReadyFontOutline or "OUTLINE"
                 button.timeText:SetFont(f, s, o)
             end
-            button.timeText:SetText(button.style.barReadyText or "Ready")
+            SetBarTimeText(button, button.style.barReadyText or "Ready")
         else
-            button.timeText:SetText("")
+            SetBarTimeText(button, "")
         end
         end
     end

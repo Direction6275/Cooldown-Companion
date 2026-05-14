@@ -119,6 +119,7 @@ local function HideIconFillForHiddenButton(button)
     if not (button and button.iconFill) then return end
     button.iconFill:Hide()
     button.iconFill:SetScript("OnUpdate", nil)
+    button._iconFillOnUpdateInstalled = nil
 end
 
 local function ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)
@@ -1196,7 +1197,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local auraUnit = button._auraUnit or configUnit
 
         local viewerFrame
-        local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+        local cdmEnabled
+        if CooldownCompanion._cooldownUpdatePassActive then
+            cdmEnabled = CooldownCompanion._cdmViewerEnabled == true
+        else
+            cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+        end
 
         -- Viewer-based aura tracking: Blizzard's cooldown viewer frames run
         -- untainted code that matches spell IDs to auras during combat and

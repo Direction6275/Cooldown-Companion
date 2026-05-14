@@ -16,6 +16,7 @@ local type = type
 local UnitExists = UnitExists
 local UnitCanAttack = UnitCanAttack
 local InCombatLockdown = InCombatLockdown
+local C_CVar_GetCVarBool = C_CVar.GetCVarBool
 
 local LOAD_CONDITION_DEFAULTS = {
     raid = false,
@@ -1868,13 +1869,16 @@ function CooldownCompanion:UpdateAllCooldowns()
     self._assistedHighlightHasHostileTarget = hasHostileTarget
 
     -- Cache CDM viewer CVar once per tick (avoids per-button GetCVarBool in ResolveBuffViewerFrameForSpell)
-    self._cdmViewerEnabled = GetCVarBool("cooldownViewerEnabled")
+    self._cdmViewerEnabled = C_CVar_GetCVarBool("cooldownViewerEnabled") == true
+    self._cooldownUpdatePassActive = true
 
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
             frame:UpdateCooldowns()
         end
     end
+
+    self._cooldownUpdatePassActive = nil
 end
 
 function CooldownCompanion:UpdateAllGroupLayouts()

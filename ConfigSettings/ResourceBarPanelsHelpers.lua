@@ -78,22 +78,28 @@ local RefreshResourceAuraUnitForSpell = RB.RefreshResourceAuraUnitForSpell
 -- Aura bar autocomplete cache (spell/aura entries only)
 ------------------------------------------------------------------------
 local auraBarAutocompleteCache = nil
+local auraBarAutocompleteSource = nil
 
 local function IsSharedAuraAutocompleteEntry(entry)
     return type(entry) == "table" and entry.isItem ~= true
 end
 
 local function BuildAuraBarAutocompleteCache()
-    local cache = {}
     local sharedCache = CS.autocompleteCache
         or (ST._BuildAutocompleteCache and ST._BuildAutocompleteCache())
         or {}
+    if auraBarAutocompleteCache and auraBarAutocompleteSource == sharedCache then
+        return auraBarAutocompleteCache
+    end
+
+    local cache = {}
     for _, entry in ipairs(sharedCache) do
         if IsSharedAuraAutocompleteEntry(entry) then
             cache[#cache + 1] = entry
         end
     end
     auraBarAutocompleteCache = cache
+    auraBarAutocompleteSource = sharedCache
     return cache
 end
 

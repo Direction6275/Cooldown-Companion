@@ -2336,26 +2336,31 @@ function CooldownCompanion:MigrateCustomAuraBarsToCustomBars()
         entry.independentVerticalFillDirection = nil
     end
 
-    local function EnsureNextId(settings, entry)
-        local function IdOwnedByOther(customBarId)
-            if type(customBarId) ~= "string" or customBarId == "" or type(settings.customBars) ~= "table" then
-                return false
-            end
-            for _, specBars in pairs(settings.customBars) do
-                if type(specBars) == "table" then
-                    for _, candidate in pairs(specBars) do
-                        if candidate ~= entry
-                            and type(candidate) == "table"
-                            and candidate.customBarId == customBarId then
-                            return true
-                        end
+    local function BuildCustomBarIdOwners(customBars)
+        local owners = {}
+        if type(customBars) ~= "table" then
+            return owners
+        end
+
+        for _, specBars in pairs(customBars) do
+            if type(specBars) == "table" then
+                for _, candidate in pairs(specBars) do
+                    local customBarId = type(candidate) == "table" and candidate.customBarId or nil
+                    if type(customBarId) == "string" and customBarId ~= "" and owners[customBarId] == nil then
+                        owners[customBarId] = candidate
                     end
                 end
             end
-            return false
         end
+        return owners
+    end
 
-        if type(entry.customBarId) == "string" and entry.customBarId ~= "" and not IdOwnedByOther(entry.customBarId) then
+    local function EnsureNextId(settings, entry, customBarIdOwners)
+        local entryId = entry.customBarId
+        if type(entryId) == "string"
+            and entryId ~= ""
+            and (customBarIdOwners[entryId] == nil or customBarIdOwners[entryId] == entry) then
+            customBarIdOwners[entryId] = entry
             return entry.customBarId
         end
         settings.nextCustomBarId = tonumber(settings.nextCustomBarId) or 1
@@ -2363,8 +2368,9 @@ function CooldownCompanion:MigrateCustomAuraBarsToCustomBars()
         repeat
             id = "custom_bar_" .. tostring(settings.nextCustomBarId)
             settings.nextCustomBarId = settings.nextCustomBarId + 1
-        until not IdOwnedByOther(id)
+        until customBarIdOwners[id] == nil
         entry.customBarId = id
+        customBarIdOwners[id] = entry
         return id
     end
 
@@ -2383,6 +2389,7 @@ function CooldownCompanion:MigrateCustomAuraBarsToCustomBars()
         if type(settings.customBars) ~= "table" then
             settings.customBars = {}
         end
+        local customBarIdOwners = BuildCustomBarIdOwners(settings.customBars)
 
         if type(settings.customAuraBars) == "table" then
             for specID, legacyBars in pairs(settings.customAuraBars) do
@@ -2422,7 +2429,7 @@ function CooldownCompanion:MigrateCustomAuraBarsToCustomBars()
                                 NormalizeCustomBarAttachedPlacement(entry)
                                 if HasCustomBarContent(entry) then
                                     entry.entryType = entry.entryType or "aura"
-                                    local id = EnsureNextId(settings, entry)
+                                    local id = EnsureNextId(settings, entry, customBarIdOwners)
                                     specBars[#specBars + 1] = entry
 
                                     if type(layout) == "table" then
@@ -2443,7 +2450,7 @@ function CooldownCompanion:MigrateCustomAuraBarsToCustomBars()
                         for _, entry in pairs(specBars) do
                             if type(entry) == "table" then
                                 entry.entryType = entry.entryType or "aura"
-                                EnsureNextId(settings, entry)
+                                EnsureNextId(settings, entry, customBarIdOwners)
                             end
                         end
                     end
@@ -2474,7 +2481,7 @@ function CooldownCompanion:MigrateCustomAuraBarsToCustomBars()
                         NormalizeCustomBarAttachedPlacement(entry)
                         if HasCustomBarContent(entry) then
                             entry.entryType = entry.entryType or "aura"
-                            EnsureNextId(settings, entry)
+                            EnsureNextId(settings, entry, customBarIdOwners)
                             target[#target + 1] = entry
                         end
                     end
@@ -2486,7 +2493,7 @@ function CooldownCompanion:MigrateCustomAuraBarsToCustomBars()
                         NormalizeCustomBarAttachedPlacement(entry)
                         if HasCustomBarContent(entry) then
                             entry.entryType = entry.entryType or "aura"
-                            EnsureNextId(settings, entry)
+                            EnsureNextId(settings, entry, customBarIdOwners)
                             target[#target + 1] = entry
                         end
                     end

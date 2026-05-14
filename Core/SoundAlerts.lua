@@ -872,6 +872,14 @@ local function DidGainChargeSincePreviousState(state, cooldownActive, currentCha
     return false
 end
 
+local function PlayCustomBarTransitionSound(customBar, eventKey)
+    CooldownCompanion:PlayCustomBarSoundAlertEvent(customBar, eventKey)
+end
+
+local function PlayButtonTransitionSound(buttonData, eventKey)
+    CooldownCompanion:PlayButtonSoundAlertEvent(buttonData, eventKey)
+end
+
 local function UpdateCooldownSoundAlertTransitions(state, enabledEvents, opts)
     local cooldownActive = opts.cooldownActive and true or false
     local auraActive = opts.auraActive and true or false
@@ -893,25 +901,25 @@ local function UpdateCooldownSoundAlertTransitions(state, enabledEvents, opts)
 
     if opts.includeAuraEvents then
         if enabledEvents.onAuraApplied and auraActive and not state._sndPrevAuraActive then
-            opts.play("onAuraApplied")
+            opts.play(opts.playContext, "onAuraApplied")
         end
 
         if enabledEvents.onAuraRemoved and state._sndPrevAuraActive and not auraActive then
-            opts.play("onAuraRemoved")
+            opts.play(opts.playContext, "onAuraRemoved")
         end
     end
 
     if enabledEvents.onCooldown and cooldownActive and not state._sndPrevCooldownActive then
-        opts.play("onCooldown")
+        opts.play(opts.playContext, "onCooldown")
     end
 
     if enabledEvents.available then
         if opts.usesChargeBehavior then
             if DidGainChargeSincePreviousState(state, cooldownActive, currentCharges, chargeRecharging, chargeCooldownStartTime) then
-                opts.play("available")
+                opts.play(opts.playContext, "available")
             end
         elseif state._sndPrevCooldownActive and not cooldownActive then
-            opts.play("available")
+            opts.play(opts.playContext, "available")
         end
     end
 
@@ -947,28 +955,39 @@ function CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, auraActive, coold
             chargeCooldownStartTime = charges.cooldownStartTime
         end
 
-        UpdateCooldownSoundAlertTransitions(barInfo, enabledEvents, {
-            cooldownActive = cooldownActive,
-            auraActive = auraActive,
-            currentCharges = currentCharges,
-            chargeRecharging = chargeRecharging,
-            chargeCooldownStartTime = chargeCooldownStartTime,
-            includeAuraEvents = customBar.auraTracking == true,
-            usesChargeBehavior = cooldownResult and cooldownResult.hasCharges == true,
-            play = function(eventKey)
-                self:PlayCustomBarSoundAlertEvent(customBar, eventKey)
-            end,
-        })
+        local opts = barInfo._sndTransitionOptions
+        if not opts then
+            opts = {}
+            barInfo._sndTransitionOptions = opts
+        end
+        opts.cooldownActive = cooldownActive
+        opts.auraActive = auraActive
+        opts.currentCharges = currentCharges
+        opts.chargeRecharging = chargeRecharging
+        opts.chargeCooldownStartTime = chargeCooldownStartTime
+        opts.includeAuraEvents = customBar.auraTracking == true
+        opts.usesChargeBehavior = cooldownResult and cooldownResult.hasCharges == true
+        opts.play = PlayCustomBarTransitionSound
+        opts.playContext = customBar
+        UpdateCooldownSoundAlertTransitions(barInfo, enabledEvents, opts)
         return
     end
 
-    UpdateCooldownSoundAlertTransitions(barInfo, enabledEvents, {
-        auraActive = auraActive,
-        includeAuraEvents = true,
-        play = function(eventKey)
-            self:PlayCustomBarSoundAlertEvent(customBar, eventKey)
-        end,
-    })
+    local opts = barInfo._sndTransitionOptions
+    if not opts then
+        opts = {}
+        barInfo._sndTransitionOptions = opts
+    end
+    opts.cooldownActive = nil
+    opts.auraActive = auraActive
+    opts.currentCharges = nil
+    opts.chargeRecharging = nil
+    opts.chargeCooldownStartTime = nil
+    opts.includeAuraEvents = true
+    opts.usesChargeBehavior = nil
+    opts.play = PlayCustomBarTransitionSound
+    opts.playContext = customBar
+    UpdateCooldownSoundAlertTransitions(barInfo, enabledEvents, opts)
 end
 
 function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, _isOnGCD, cooldownActive, auraActive, currentCharges, _maxCharges, chargeRecharging, chargeCooldownStartTime)
@@ -990,18 +1009,21 @@ function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, _isO
         return
     end
 
-    UpdateCooldownSoundAlertTransitions(button, enabledEvents, {
-        cooldownActive = cooldownActive,
-        auraActive = auraActive,
-        currentCharges = currentCharges,
-        chargeRecharging = chargeRecharging,
-        chargeCooldownStartTime = chargeCooldownStartTime,
-        includeAuraEvents = true,
-        usesChargeBehavior = UsesChargeBehavior(buttonData),
-        play = function(eventKey)
-            self:PlayButtonSoundAlertEvent(buttonData, eventKey)
-        end,
-    })
+    local opts = button._sndTransitionOptions
+    if not opts then
+        opts = {}
+        button._sndTransitionOptions = opts
+    end
+    opts.cooldownActive = cooldownActive
+    opts.auraActive = auraActive
+    opts.currentCharges = currentCharges
+    opts.chargeRecharging = chargeRecharging
+    opts.chargeCooldownStartTime = chargeCooldownStartTime
+    opts.includeAuraEvents = true
+    opts.usesChargeBehavior = UsesChargeBehavior(buttonData)
+    opts.play = PlayButtonTransitionSound
+    opts.playContext = buttonData
+    UpdateCooldownSoundAlertTransitions(button, enabledEvents, opts)
 end
 
 function CooldownCompanion:UpdateTriggerPanelSoundAlerts(frame, group, triggerMatched)

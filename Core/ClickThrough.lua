@@ -6,7 +6,7 @@
 local ADDON_NAME, ST = ...
 
 local InCombatLockdown = InCombatLockdown
-local ipairs = ipairs
+local select = select
 
 -- Helper function to make a frame click-through
 -- disableClicks: prevent LMB/RMB clicks (allows camera movement pass-through)
@@ -14,8 +14,16 @@ local ipairs = ipairs
 function ST.SetFrameClickThrough(frame, disableClicks, disableMotion)
     if not frame then return end
     local inCombat = InCombatLockdown()
+    local clickState = disableClicks == true
+    local motionState = disableMotion == true
 
-    if disableClicks then
+    if frame._cdcClickThroughClicks == clickState
+        and frame._cdcClickThroughMotion == motionState
+        and (inCombat or frame._cdcClickThroughProtectedApplied == true) then
+        return
+    end
+
+    if clickState then
         -- Disable mouse click interaction for camera pass-through
         -- SetMouseClickEnabled and SetPropagateMouseClicks are protected in combat
         if not inCombat then
@@ -45,7 +53,7 @@ function ST.SetFrameClickThrough(frame, disableClicks, disableMotion)
         end
     end
 
-    if disableMotion then
+    if motionState then
         -- Disable mouse motion (hover) events
         if not inCombat then
             if frame.SetMouseMotionEnabled then
@@ -71,7 +79,7 @@ function ST.SetFrameClickThrough(frame, disableClicks, disableMotion)
     -- EnableMouse must be true if we want motion events (tooltips)
     -- Only fully disable if both clicks and motion are disabled
     if not inCombat then
-        if disableClicks and disableMotion then
+        if clickState and motionState then
             frame:EnableMouse(false)
             if frame.SetHitRectInsets then
                 frame:SetHitRectInsets(10000, 10000, 10000, 10000)
@@ -84,13 +92,21 @@ function ST.SetFrameClickThrough(frame, disableClicks, disableMotion)
             end
         end
     end
+
+    frame._cdcClickThroughClicks = clickState
+    frame._cdcClickThroughMotion = motionState
+    frame._cdcClickThroughProtectedApplied = not inCombat
+end
+
+local function SetChildFramesClickThrough(disableClicks, disableMotion, ...)
+    for i = 1, select("#", ...) do
+        ST.SetFrameClickThroughRecursive(select(i, ...), disableClicks, disableMotion)
+    end
 end
 
 -- Recursively apply click-through to frame and all children
 function ST.SetFrameClickThroughRecursive(frame, disableClicks, disableMotion)
+    if not frame then return end
     ST.SetFrameClickThrough(frame, disableClicks, disableMotion)
-    -- Apply to all child frames
-    for _, child in ipairs({frame:GetChildren()}) do
-        ST.SetFrameClickThroughRecursive(child, disableClicks, disableMotion)
-    end
+    SetChildFramesClickThrough(disableClicks, disableMotion, frame:GetChildren())
 end
