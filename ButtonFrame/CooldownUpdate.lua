@@ -605,7 +605,6 @@ local function ApplyGCDSyncIfRealEndsInside(result, realDurationObj, source)
     result.state = COOLDOWN_STATE_COOLDOWN
     result.source = source
     result.presentationState = COOLDOWN_STATE_GCD
-    result.presentationSource = source
     result.realCooldownShown = true
     result.realDurationObj = realDurationObj
     result.durationObj = gcdDurationObj
@@ -818,7 +817,6 @@ function CooldownCompanion:ApplyRealCooldownContinuity(button, buttonData, coold
 
         if RealCooldownEndsInsideActiveGCD(previousDurationObj) then
             result.presentationState = COOLDOWN_STATE_GCD
-            result.presentationSource = "continuity-gcd-sync"
             result.durationObj = CooldownCompanion._gcdDurationObj
             result.renderDurationObj = CooldownCompanion._gcdDurationObj
             result.gcdSyncUsed = true
@@ -1241,10 +1239,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     button._durationObj = nil
     button._cooldownDeferred = nil
     button._cooldownState = COOLDOWN_STATE_READY
-    button._cooldownPresentationState = COOLDOWN_STATE_READY
-    button._cooldownPresentationSource = nil
-    button._realCooldownDurationObj = nil
-    button._cooldownRenderDurationObj = nil
     button._chargeState = nil
     button._chargeCooldownVisualActive = nil
     button._barAuraStackDisplay = nil
@@ -1979,14 +1973,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 spellRealCooldownShown = spellCooldownResult.realCooldownShown == true
                 isOnGCD = spellCooldownResult.isOnGCD or false
                 button._cooldownState = spellCooldownResult.state or COOLDOWN_STATE_READY
-                button._cooldownPresentationState = spellCooldownResult.presentationState or button._cooldownState
-                button._cooldownPresentationSource = spellCooldownResult.presentationSource
-                button._realCooldownDurationObj = spellCooldownResult.realDurationObj
+                local cooldownPresentationState = spellCooldownResult.presentationState or button._cooldownState
                 local renderDurationObj = spellCooldownResult.renderDurationObj
-                button._cooldownRenderDurationObj = renderDurationObj
                 button._cooldownDeferred = spellCooldownResult.deferred or nil
                 isGCDOnly = button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
-                    and button._cooldownPresentationState == COOLDOWN_STATE_GCD
+                    and cooldownPresentationState == COOLDOWN_STATE_GCD
 
                 if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
                     if renderDurationObj then
@@ -1995,7 +1986,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     else
                         button.cooldown:SetCooldown(0, 0)
                     end
-                elseif button._cooldownPresentationState == COOLDOWN_STATE_GCD then
+                elseif cooldownPresentationState == COOLDOWN_STATE_GCD then
                     if style.showGCDSwipe == true and renderDurationObj then
                         button.cooldown:SetCooldownFromDurationObject(renderDurationObj)
                     else
