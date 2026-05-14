@@ -2122,7 +2122,7 @@ local function ClearCustomBarLayoutById(settings, specID, customBarId)
     end
 end
 
-local function ClearLegacyCustomAuraBarsForSpec(settings, specID)
+local function ClearLegacyCustomAuraBarSeedForSpec(settings, specID)
     if type(settings) ~= "table" or type(settings.customAuraBars) ~= "table" or not specID then
         return
     end
@@ -2142,6 +2142,18 @@ local function ClearLegacyCustomAuraBarsForSpec(settings, specID)
     if type(layout) == "table" then
         layout.customAuraBarSlots = nil
     end
+end
+
+local function DeleteCustomBarById(settings, specID, customBars, customBarId)
+    if not RemoveCustomBarById(customBars, customBarId) then
+        return false
+    end
+
+    ClearCustomBarLayoutById(settings, specID, customBarId)
+    if #customBars == 0 then
+        ClearLegacyCustomAuraBarSeedForSpec(settings, specID)
+    end
+    return true
 end
 
 local function DuplicateCustomBarById(settings, customBars, customBarId)
@@ -2251,11 +2263,7 @@ local function OpenCustomBarRowMenu(customBars, customBarId, entry)
             CloseDropDownMenus()
             local settings = CooldownCompanion:GetResourceBarSettings()
             local specID = GetCurrentConfigSpecID()
-            if RemoveCustomBarById(customBars, customBarId) then
-                ClearCustomBarLayoutById(settings, specID, customBarId)
-                if #customBars == 0 then
-                    ClearLegacyCustomAuraBarsForSpec(settings, specID)
-                end
+            if DeleteCustomBarById(settings, specID, customBars, customBarId) then
                 if CS.selectedCustomBarId == customBarId then
                     ClearCustomBarPreviewState()
                     CS.selectedCustomBarId = nil
