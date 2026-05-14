@@ -2103,6 +2103,47 @@ local function RemoveCustomBarById(customBars, customBarId)
     return false
 end
 
+local function ClearCustomBarLayoutById(settings, specID, customBarId)
+    if type(settings) ~= "table" or type(settings.layoutOrder) ~= "table" or type(customBarId) ~= "string" or not specID then
+        return
+    end
+
+    specID = tonumber(specID) or specID
+    local layout = settings.layoutOrder[specID]
+    if type(layout) ~= "table" then
+        local stringSpecID = tostring(specID)
+        if stringSpecID ~= specID then
+            layout = settings.layoutOrder[stringSpecID]
+        end
+    end
+
+    if type(layout) == "table" and type(layout.customBars) == "table" then
+        layout.customBars[customBarId] = nil
+    end
+end
+
+local function ClearLegacyCustomAuraBarsForSpec(settings, specID)
+    if type(settings) ~= "table" or type(settings.customAuraBars) ~= "table" or not specID then
+        return
+    end
+
+    specID = tonumber(specID) or specID
+    settings.customAuraBars[specID] = nil
+
+    local stringSpecID = tostring(specID)
+    if stringSpecID ~= specID then
+        settings.customAuraBars[stringSpecID] = nil
+    end
+
+    local layout = type(settings.layoutOrder) == "table" and settings.layoutOrder[specID] or nil
+    if type(layout) ~= "table" and stringSpecID ~= specID and type(settings.layoutOrder) == "table" then
+        layout = settings.layoutOrder[stringSpecID]
+    end
+    if type(layout) == "table" then
+        layout.customAuraBarSlots = nil
+    end
+end
+
 local function DuplicateCustomBarById(settings, customBars, customBarId)
     local sourceIndex = FindCustomBarIndexById(customBars, customBarId)
     local sourceEntry = sourceIndex and customBars[sourceIndex]
@@ -2208,10 +2249,18 @@ local function OpenCustomBarRowMenu(customBars, customBarId, entry)
         removeInfo.notCheckable = true
         removeInfo.func = function()
             CloseDropDownMenus()
-            if RemoveCustomBarById(customBars, customBarId) and CS.selectedCustomBarId == customBarId then
-                ClearCustomBarPreviewState()
-                CS.selectedCustomBarId = nil
-                CS.customBarSettingsTab = "appearance"
+            local settings = CooldownCompanion:GetResourceBarSettings()
+            local specID = GetCurrentConfigSpecID()
+            if RemoveCustomBarById(customBars, customBarId) then
+                ClearCustomBarLayoutById(settings, specID, customBarId)
+                if #customBars == 0 then
+                    ClearLegacyCustomAuraBarsForSpec(settings, specID)
+                end
+                if CS.selectedCustomBarId == customBarId then
+                    ClearCustomBarPreviewState()
+                    CS.selectedCustomBarId = nil
+                    CS.customBarSettingsTab = "appearance"
+                end
             end
             ApplyCustomAuraBarPanelChanges({
                 updateAnchors = true,
