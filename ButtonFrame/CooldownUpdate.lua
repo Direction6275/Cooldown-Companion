@@ -1716,7 +1716,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
     button._auraTrackingReady = auraTrackingReady
 
-    barAuraStackDisplay = barAuraStackConfigured and auraOverrideActive or false
+    -- Stack-count aura bars own the bar surface even while the aura is inactive.
+    -- Inactive auras render as zero stacks so segmented/overlay placeholders stay visible.
+    barAuraStackDisplay = barAuraStackConfigured or false
     if barAuraStackDisplay then
         button._barAuraStackDisplay = true
         button._barAuraStackValue = 0
