@@ -26,6 +26,7 @@ local math_rad = math.rad
 local math_sin = math.sin
 local tonumber = tonumber
 local type = type
+local wipe = wipe
 
 local LOCATION_CENTER = AT.LOCATION_CENTER
 local LOCATION_DIMENSIONS = AT.LOCATION_DIMENSIONS
@@ -212,6 +213,7 @@ local function SetTextureIndicatorBaseVisuals(host)
 
         host._indicatorBaseAlpha = baseAlpha
         host._indicatorBaseColor = CopyColor(color) or { 1, 1, 1, 1 }
+        host._indicatorBaseVisualsReady = true
         return
     end
 
@@ -220,6 +222,7 @@ local function SetTextureIndicatorBaseVisuals(host)
         host.iconFrame.icon:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
         host._indicatorBaseAlpha = Clamp(color[4] ~= nil and color[4] or 1, 0, 1)
         host._indicatorBaseColor = color
+        host._indicatorBaseVisualsReady = true
         return
     end
 
@@ -228,6 +231,7 @@ local function SetTextureIndicatorBaseVisuals(host)
         host.textFrame.text:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
         host._indicatorBaseAlpha = Clamp(color[4] ~= nil and color[4] or 1, 0, 1)
         host._indicatorBaseColor = color
+        host._indicatorBaseVisualsReady = true
     end
 end
 
@@ -301,7 +305,9 @@ TextureIndicatorOnUpdate = function(self)
     end
 
     local now = GetTime()
-    SetTextureIndicatorBaseVisuals(self)
+    if not self._indicatorBaseVisualsReady then
+        SetTextureIndicatorBaseVisuals(self)
+    end
     local baseColor = self._indicatorBaseColor or { 1, 1, 1, 1 }
     local baseAlpha = self._indicatorBaseAlpha or 1
 
@@ -713,7 +719,13 @@ local function DoesTriggerPanelMatch(frame)
         return false
     end
 
-    local runtimeButtonsByIndex = {}
+    local runtimeButtonsByIndex = frame._triggerRuntimeButtonsByIndex
+    if runtimeButtonsByIndex then
+        wipe(runtimeButtonsByIndex)
+    else
+        runtimeButtonsByIndex = {}
+        frame._triggerRuntimeButtonsByIndex = runtimeButtonsByIndex
+    end
     for _, button in ipairs(frame.buttons or {}) do
         if button and button.index then
             runtimeButtonsByIndex[button.index] = button
@@ -774,7 +786,13 @@ local function ApplyTextureIndicatorEffects(host, button, group)
         return
     end
 
-    local effectStates = {}
+    local effectStates = host._textureIndicatorEffectStates
+    if effectStates then
+        wipe(effectStates)
+    else
+        effectStates = {}
+        host._textureIndicatorEffectStates = effectStates
+    end
     for _, sectionKey in ipairs(TEXTURE_INDICATOR_SECTION_ORDER) do
         local config = indicators[sectionKey]
         if IsTextureIndicatorSectionActive(button, sectionKey, config) then

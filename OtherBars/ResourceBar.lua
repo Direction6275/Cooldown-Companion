@@ -160,6 +160,7 @@ local customAuraBarActivePreviewTokens = {}
 local customAuraBarPandemicPreviewTokens = {}
 local activeCustomAuraBarActivePreviews = {}
 local activeCustomAuraBarPandemicPreviews = {}
+local segmentedUpdateScratch = { auraActiveCache = {} }
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL = 0.65
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = 3
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = 12.3
@@ -1579,6 +1580,61 @@ end
 -- Update logic: Segmented resources (NOT secret — full Lua logic)
 ------------------------------------------------------------------------
 
+function segmentedUpdateScratch.GetFullSegments(holder)
+    if not holder._fullSegmentsScratch then
+        holder._fullSegmentsScratch = {}
+    else
+        wipe(holder._fullSegmentsScratch)
+    end
+    return holder._fullSegmentsScratch
+end
+
+function segmentedUpdateScratch.ClearValues(holder)
+    for _, seg in ipairs(holder.segments) do
+        seg:SetValue(0)
+    end
+end
+
+function segmentedUpdateScratch.ApplyAuraVisuals(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments)
+    if auraOverrideColor and not useAuraStackMode then
+        for i, seg in ipairs(holder.segments) do
+            if fullSegments[i] then
+                seg:SetStatusBarColor(auraOverrideColor[1], auraOverrideColor[2], auraOverrideColor[3], 1)
+            end
+        end
+    end
+
+    if useAuraStackMode then
+        ApplyResourceAuraStackSegments(holder, settings, auraApplications, auraMaxStacks, auraOverrideColor)
+    else
+        HideResourceAuraStackSegments(holder)
+    end
+end
+
+function segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, currentValue, maxValue, clearText)
+    segmentedUpdateScratch.ApplyAuraVisuals(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments)
+    if clearText then
+        ClearSegmentedText(holder)
+    else
+        SetSegmentedText(holder, currentValue, maxValue)
+    end
+end
+
+function segmentedUpdateScratch.SortRuneData(a, b)
+    if a.ready ~= b.ready then return a.ready end
+    return a.remaining < b.remaining
+end
+
+function segmentedUpdateScratch.GetRuneData(holder)
+    if not holder._runeDataScratch then
+        holder._runeDataScratch = {}
+        for i = 1, 6 do
+            holder._runeDataScratch[i] = {}
+        end
+    end
+    return holder._runeDataScratch
+end
+
 local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
     if not holder or not holder.segments then return end
     if not settings then
@@ -1592,57 +1648,27 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         and auraHasApplications
         and SupportsResourceAuraStackMode(powerType)
     local thresholdEnabled, thresholdValue, thresholdColor = GetSegmentedThresholdConfig(powerType, settings)
-    local fullSegments = {}
-
-    local function FinalizeAuraVisuals()
-        if auraOverrideColor and not useAuraStackMode then
-            for i, seg in ipairs(holder.segments) do
-                if fullSegments[i] then
-                    seg:SetStatusBarColor(auraOverrideColor[1], auraOverrideColor[2], auraOverrideColor[3], 1)
-                end
-            end
-        end
-
-        if useAuraStackMode then
-            ApplyResourceAuraStackSegments(holder, settings, auraApplications, auraMaxStacks, auraOverrideColor)
-        else
-            HideResourceAuraStackSegments(holder)
-        end
-    end
-
-    local function ClearForSecretMath()
-        for _, seg in ipairs(holder.segments) do
-            seg:SetValue(0)
-        end
-    end
-
-    local function FinalizeSegmentedUpdate(currentValue, maxValue, clearText)
-        FinalizeAuraVisuals()
-        if clearText then
-            ClearSegmentedText(holder)
-        else
-            SetSegmentedText(holder, currentValue, maxValue)
-        end
-    end
+    local fullSegments = segmentedUpdateScratch.GetFullSegments(holder)
 
     if powerType == 5 then
         -- DK Runes: sorted by readiness (ready left, longest CD right)
         local now = GetTime()
         local numSegs = math_min(#holder.segments, 6)
-        local runeData = {}
+        local runeData = segmentedUpdateScratch.GetRuneData(holder)
         for i = 1, 6 do
             local start, duration, ready = GetRuneCooldown(i)
             local remaining = 0
             if not ready and duration and duration > 0 then
                 remaining = math_max((start + duration) - now, 0)
             end
-            runeData[i] = { start = start, duration = duration, ready = ready, remaining = remaining }
+            local rune = runeData[i]
+            rune.start = start
+            rune.duration = duration
+            rune.ready = ready
+            rune.remaining = remaining
         end
         -- Sort: ready first, then by ascending remaining time
-        table.sort(runeData, function(a, b)
-            if a.ready ~= b.ready then return a.ready end
-            return a.remaining < b.remaining
-        end)
+        table.sort(runeData, segmentedUpdateScratch.SortRuneData)
         local readyColor, rechargingColor, maxColor = GetResourceColors(5, settings)
         local allReady = true
         local readyCount = 0
@@ -1676,14 +1702,14 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
             end
             runeValueTotal = runeValueTotal + segValue
         end
-        FinalizeSegmentedUpdate(runeValueTotal, numSegs, false)
+        segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, runeValueTotal, numSegs, false)
         return
     end
 
     if powerType == 7 then
         if IsUnitPowerSecret("player", 7) or IsUnitPowerMaxSecret("player", 7) then
-            ClearForSecretMath()
-            FinalizeSegmentedUpdate(nil, nil, true)
+            segmentedUpdateScratch.ClearValues(holder)
+            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
             return
         end
 
@@ -1692,8 +1718,8 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         local rawMax = UnitPowerMax("player", 7, true)
         local max = UnitPowerMax("player", 7)
         if issecretvalue and (issecretvalue(raw) or issecretvalue(rawMax) or issecretvalue(max)) then
-            ClearForSecretMath()
-            FinalizeSegmentedUpdate(nil, nil, true)
+            segmentedUpdateScratch.ClearValues(holder)
+            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
             return
         end
 
@@ -1723,23 +1749,23 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                     end
                 end
             else
-                ClearForSecretMath()
+                segmentedUpdateScratch.ClearValues(holder)
             end
         else
-            ClearForSecretMath()
+            segmentedUpdateScratch.ClearValues(holder)
         end
         if type(displayCurrent) == "number" then
-            FinalizeSegmentedUpdate(displayCurrent, max, false)
+            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, displayCurrent, max, false)
         else
-            FinalizeSegmentedUpdate(nil, nil, true)
+            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
         end
         return
     end
 
     if powerType == 19 then
         if IsUnitPowerSecret("player", 19) or IsUnitPowerMaxSecret("player", 19) then
-            ClearForSecretMath()
-            FinalizeSegmentedUpdate(nil, nil, true)
+            segmentedUpdateScratch.ClearValues(holder)
+            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
             return
         end
 
@@ -1748,8 +1774,8 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         local max = UnitPowerMax("player", 19)
         local partialRaw = UnitPartialPower("player", 19)
         if issecretvalue and (issecretvalue(filled) or issecretvalue(max) or issecretvalue(partialRaw)) then
-            ClearForSecretMath()
-            FinalizeSegmentedUpdate(nil, nil, true)
+            segmentedUpdateScratch.ClearValues(holder)
+            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
             return
         end
 
@@ -1773,23 +1799,23 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
             end
         end
-        FinalizeSegmentedUpdate(displayCurrent, max, false)
+        segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, displayCurrent, max, false)
         return
     end
 
     -- Combo Points: color changes at max, charged coloring for Rogues
     if powerType == 4 then
         if IsUnitPowerSecret("player", 4) or IsUnitPowerMaxSecret("player", 4) then
-            ClearForSecretMath()
-            FinalizeSegmentedUpdate(nil, nil, true)
+            segmentedUpdateScratch.ClearValues(holder)
+            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
             return
         end
 
         local current = UnitPower("player", 4)
         local max = UnitPowerMax("player", 4)
         if issecretvalue and (issecretvalue(current) or issecretvalue(max)) then
-            ClearForSecretMath()
-            FinalizeSegmentedUpdate(nil, nil, true)
+            segmentedUpdateScratch.ClearValues(holder)
+            segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
             return
         end
 
@@ -1818,22 +1844,22 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                 seg:SetValue(0)
             end
         end
-        FinalizeSegmentedUpdate(current, max, false)
+        segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, current, max, false)
         return
     end
 
     -- Generic segmented with max color: HolyPower, Chi, ArcaneCharges
     if IsUnitPowerSecret("player", powerType) or IsUnitPowerMaxSecret("player", powerType) then
-        ClearForSecretMath()
-        FinalizeSegmentedUpdate(nil, nil, true)
+        segmentedUpdateScratch.ClearValues(holder)
+        segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
         return
     end
 
     local current = UnitPower("player", powerType)
     local max = UnitPowerMax("player", powerType)
     if issecretvalue and (issecretvalue(current) or issecretvalue(max)) then
-        ClearForSecretMath()
-        FinalizeSegmentedUpdate(nil, nil, true)
+        segmentedUpdateScratch.ClearValues(holder)
+        segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
         return
     end
     local normalColor, maxColor
@@ -1856,7 +1882,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
             seg:SetValue(0)
         end
     end
-    FinalizeSegmentedUpdate(current, max, false)
+    segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, current, max, false)
 end
 
 ------------------------------------------------------------------------
@@ -3395,7 +3421,8 @@ local function OnUpdate(self, elapsed)
         return
     end
 
-    local auraActiveCache = {}
+    local auraActiveCache = segmentedUpdateScratch.auraActiveCache
+    wipe(auraActiveCache)
 
     for _, barInfo in ipairs(resourceBarFrames) do
         if barInfo.frame and (barInfo.frame:IsShown() or ShouldUpdateHiddenCustomAuraPandemicWake(barInfo)) then

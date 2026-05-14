@@ -103,8 +103,15 @@ local function ApplyIconFillGeometry(button, style)
     end
 
     local orientation = style and style.iconFillOrientation == "horizontal" and "HORIZONTAL" or "VERTICAL"
+    local reverseFill = style and style.iconFillReverse == true or false
+    if button._iconFillOrientation == orientation and button._iconFillReverseFill == reverseFill then
+        return
+    end
+
+    button._iconFillOrientation = orientation
+    button._iconFillReverseFill = reverseFill
     button.iconFill:SetOrientation(orientation)
-    button.iconFill:SetReverseFill(style and style.iconFillReverse == true or false)
+    button.iconFill:SetReverseFill(reverseFill)
 end
 
 local function ResolveIconFillTimerValue(button, elapsedPercent)
@@ -281,11 +288,18 @@ local function HideIconFill(button, style)
     end
 
     button.iconFill:Hide()
-    button.iconFill:SetScript("OnUpdate", nil)
+    if button._iconFillOnUpdateInstalled then
+        button.iconFill:SetScript("OnUpdate", nil)
+        button._iconFillOnUpdateInstalled = nil
+    end
     if button._iconFillActive then
         button._iconFillActive = nil
         button._iconFillMode = nil
         button._iconFillAuraActive = nil
+        button._iconFillColorR = nil
+        button._iconFillColorG = nil
+        button._iconFillColorB = nil
+        button._iconFillColorA = nil
         ApplyDefaultCooldownSwipeStyle(button, style)
     end
 end
@@ -325,10 +339,28 @@ local function UpdateIconFill(button, buttonData, style)
     button._iconFillMode = mode
     button._iconFillAuraActive = (mode == "aura" or mode == "aura_static") or nil
     ApplyIconFillGeometry(button, style)
-    button.iconFill:SetStatusBarColor(color[1], color[2], color[3], color[4])
+    local colorA = color[4]
+    if button._iconFillColorR ~= color[1]
+        or button._iconFillColorG ~= color[2]
+        or button._iconFillColorB ~= color[3]
+        or button._iconFillColorA ~= colorA then
+        button._iconFillColorR = color[1]
+        button._iconFillColorG = color[2]
+        button._iconFillColorB = color[3]
+        button._iconFillColorA = colorA
+        button.iconFill:SetStatusBarColor(color[1], color[2], color[3], colorA)
+    end
     SetIconFillValue(button)
     button.iconFill:Show()
-    button.iconFill:SetScript("OnUpdate", IconFillOnUpdate)
+    if mode == "aura_static" then
+        if button._iconFillOnUpdateInstalled then
+            button.iconFill:SetScript("OnUpdate", nil)
+            button._iconFillOnUpdateInstalled = nil
+        end
+    elseif not button._iconFillOnUpdateInstalled then
+        button.iconFill:SetScript("OnUpdate", IconFillOnUpdate)
+        button._iconFillOnUpdateInstalled = true
+    end
 
     button.cooldown:SetDrawSwipe(false)
     button.cooldown:SetDrawEdge(false)

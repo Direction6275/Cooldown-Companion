@@ -822,7 +822,30 @@ local function GetActiveFlowState()
     return state
 end
 
+local function GetPreviewCacheKey(state)
+    local parts = state._previewCacheKeyParts
+    if not parts then
+        parts = {}
+        state._previewCacheKeyParts = parts
+    end
+    wipe(parts)
+    parts[#parts + 1] = tostring(state.source or "")
+    parts[#parts + 1] = tostring(state.sortMode or "")
+    if state.source == SOURCE_ACTION_BARS then
+        for i = 1, ACTION_BAR_COUNT do
+            parts[#parts + 1] = state.selectedBars and state.selectedBars[i] and "1" or "0"
+        end
+    end
+    return table.concat(parts, ":")
+end
+
 local function BuildPreviewForFlowState(state)
+    local cacheKey = GetPreviewCacheKey(state)
+    if state.preview and state.previewCacheKey == cacheKey then
+        NormalizeSelectionState(state.preview, state.selectedEntries)
+        return state.preview
+    end
+
     local preview
     if state.source == SOURCE_ACTION_BARS then
         preview = BuildActionBarPreview(state.selectedBars)
@@ -833,6 +856,7 @@ local function BuildPreviewForFlowState(state)
     end
     SortPreview(preview, state.sortMode)
     state.preview = preview
+    state.previewCacheKey = cacheKey
     NormalizeSelectionState(preview, state.selectedEntries)
     return preview
 end
@@ -845,6 +869,7 @@ local function AdvanceToReview(state)
     state.step = AUTO_ADD_STEP_REVIEW
     state.selectedEntries = {}
     state.preview = nil
+    state.previewCacheKey = nil
 end
 
 local function RenderStep1(container, state)

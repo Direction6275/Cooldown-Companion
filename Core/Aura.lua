@@ -11,6 +11,7 @@ local CooldownCompanion = ST.Addon
 
 local ipairs = ipairs
 local pairs = pairs
+local select = select
 local wipe = wipe
 local tostring = tostring
 local tonumber = tonumber
@@ -38,6 +39,77 @@ local function IsBuffViewerChild(frame)
     local parent = frame:GetParent()
     local parentName = parent and parent:GetName()
     return BUFF_VIEWER_SET[parentName] == true
+end
+
+local function SetViewerChildrenMouseMotion(enabled, ...)
+    for i = 1, select("#", ...) do
+        local child = select(i, ...)
+        if child then
+            child:SetMouseMotionEnabled(enabled)
+        end
+    end
+end
+
+local function FindMatchingViewerChild(spellID, buffOnly, ...)
+    for i = 1, select("#", ...) do
+        local child = select(i, ...)
+        local info = child and child.cooldownInfo
+        if info and (not buffOnly or IsBuffViewerChild(child)) then
+            if info.spellID == spellID
+               or info.overrideSpellID == spellID
+               or info.overrideTooltipSpellID == spellID then
+                return child
+            end
+            if info.linkedSpellIDs then
+                for _, linkedSpellID in ipairs(info.linkedSpellIDs) do
+                    if linkedSpellID == spellID then
+                        return child
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function AddViewerAuraMapChildren(addon, viewerName, addViewerAuraChild, ...)
+    local isBuffViewer = BUFF_VIEWER_SET[viewerName] == true
+    for i = 1, select("#", ...) do
+        local child = select(i, ...)
+        local info = child and child.cooldownInfo
+        if info then
+            local spellID = info.spellID
+            if spellID then
+                addon.viewerAuraFrames[spellID] = child
+                -- Track all children per base spellID for buff viewers only.
+                -- Duplicate detection is for same-section duplicates (e.g.
+                -- Diabolic Ritual twice in Tracked Buffs), not cross-section
+                -- matches (e.g. Agony in Essential + Buffs).
+                if isBuffViewer then
+                    addViewerAuraChild(spellID, child)
+                end
+            end
+            local override = info.overrideSpellID
+            if override then
+                addon.viewerAuraFrames[override] = child
+            end
+            local tooltipOverride = info.overrideTooltipSpellID
+            if tooltipOverride then
+                addon.viewerAuraFrames[tooltipOverride] = child
+            end
+            if info.linkedSpellIDs then
+                for _, linked in ipairs(info.linkedSpellIDs) do
+                    addon.viewerAuraFrames[linked] = child
+                end
+            end
+            if isBuffViewer then
+                local specificSpellID = info.overrideTooltipSpellID or info.overrideSpellID
+                if specificSpellID and specificSpellID ~= spellID then
+                    addViewerAuraChild(specificSpellID, child)
+                end
+            end
+        end
+    end
 end
 
 local function AddAuraCandidateID(candidateSet, spellID)
@@ -992,22 +1064,9 @@ FindChildInViewers = function(viewerNames, spellID, buffOnly)
     for _, name in ipairs(viewerNames) do
         local viewer = _G[name]
         if viewer then
-            for _, child in pairs({viewer:GetChildren()}) do
-                local info = child.cooldownInfo
-                if info and (not buffOnly or IsBuffViewerChild(child)) then
-                    if info.spellID == spellID
-                       or info.overrideSpellID == spellID
-                       or info.overrideTooltipSpellID == spellID then
-                        return child
-                    end
-                    if info.linkedSpellIDs then
-                        for _, linkedSpellID in ipairs(info.linkedSpellIDs) do
-                            if linkedSpellID == spellID then
-                                return child
-                            end
-                        end
-                    end
-                end
+            local child = FindMatchingViewerChild(spellID, buffOnly, viewer:GetChildren())
+            if child then
+                return child
             end
         end
     end
@@ -1025,9 +1084,7 @@ function CooldownCompanion:ApplyCdmAlpha()
             cdmAlphaGuard[viewer] = nil
             if not InCombatLockdown() then
                 if hidden then
-                    for _, child in pairs({viewer:GetChildren()}) do
-                        child:SetMouseMotionEnabled(false)
-                    end
+                    SetViewerChildrenMouseMotion(false, viewer:GetChildren())
                 else
                     -- Restore tooltip state using Blizzard's own pattern
                     for itemFrame in viewer.itemFramePool:EnumerateActive() do
@@ -1096,41 +1153,7 @@ function CooldownCompanion:BuildViewerAuraMap()
     for _, name in ipairs(VIEWER_NAMES) do
         local viewer = _G[name]
         if viewer then
-            for _, child in pairs({viewer:GetChildren()}) do
-                local info = child.cooldownInfo
-                if info then
-                    local spellID = info.spellID
-                    if spellID then
-                        self.viewerAuraFrames[spellID] = child
-                        -- Track all children per base spellID for buff viewers only.
-                        -- Duplicate detection is for same-section duplicates (e.g.
-                        -- Diabolic Ritual twice in Tracked Buffs), not cross-section
-                        -- matches (e.g. Agony in Essential + Buffs).
-                        if BUFF_VIEWER_SET[name] then
-                            AddViewerAuraChild(spellID, child)
-                        end
-                    end
-                    local override = info.overrideSpellID
-                    if override then
-                        self.viewerAuraFrames[override] = child
-                    end
-                    local tooltipOverride = info.overrideTooltipSpellID
-                    if tooltipOverride then
-                        self.viewerAuraFrames[tooltipOverride] = child
-                    end
-                    if info.linkedSpellIDs then
-                        for _, linked in ipairs(info.linkedSpellIDs) do
-                            self.viewerAuraFrames[linked] = child
-                        end
-                    end
-                    if BUFF_VIEWER_SET[name] then
-                        local specificSpellID = info.overrideTooltipSpellID or info.overrideSpellID
-                        if specificSpellID and specificSpellID ~= spellID then
-                            AddViewerAuraChild(specificSpellID, child)
-                        end
-                    end
-                end
-            end
+            AddViewerAuraMapChildren(self, name, AddViewerAuraChild, viewer:GetChildren())
         end
     end
     -- Ensure tracked buttons can find their viewer child even if
@@ -1198,9 +1221,7 @@ function CooldownCompanion:BuildViewerAuraMap()
         for _, name2 in ipairs(VIEWER_NAMES) do
             local v = _G[name2]
             if v then
-                for _, child in pairs({v:GetChildren()}) do
-                    child:SetMouseMotionEnabled(false)
-                end
+                SetViewerChildrenMouseMotion(false, v:GetChildren())
             end
         end
     end

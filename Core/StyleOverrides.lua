@@ -14,7 +14,17 @@ local CooldownCompanion = ST.Addon
 function CooldownCompanion:GetEffectiveStyle(groupStyle, buttonData)
     if buttonData and buttonData.styleOverrides
        and buttonData.overrideSections and next(buttonData.overrideSections) then
-        return setmetatable(buttonData.styleOverrides, { __index = groupStyle })
+        if buttonData._effectiveStyleGroupStyle ~= groupStyle
+            or buttonData._effectiveStyleOverrides ~= buttonData.styleOverrides then
+            setmetatable(buttonData.styleOverrides, { __index = groupStyle })
+            buttonData._effectiveStyleGroupStyle = groupStyle
+            buttonData._effectiveStyleOverrides = buttonData.styleOverrides
+        end
+        return buttonData.styleOverrides
+    end
+    if buttonData then
+        buttonData._effectiveStyleGroupStyle = nil
+        buttonData._effectiveStyleOverrides = nil
     end
     return groupStyle
 end

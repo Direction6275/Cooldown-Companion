@@ -30,6 +30,7 @@ local IsConfigFinderAvailable = ST._IsConfigFinderAvailable
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local SetConfigFinderText = ST._SetConfigFinderText
 local ClearConfigFinderText = ST._ClearConfigFinderText
+local InvalidateConfigFinderResults = ST._InvalidateConfigFinderResults
 local MaybeAutoStartFirstIconPanelTutorial = ST._MaybeAutoStartFirstIconPanelTutorial
 local StartFirstIconPanelTutorial = ST._StartFirstIconPanelTutorial
 local CancelFirstIconPanelTutorial = ST._CancelFirstIconPanelTutorial
@@ -1962,6 +1963,9 @@ function CooldownCompanion:RefreshConfigPanel()
         ClearConfigFinderText()
     elseif SetConfigFinderText then
         SetConfigFinderText(CS.configSearchText or "")
+    end
+    if InvalidateConfigFinderResults then
+        InvalidateConfigFinderResults()
     end
     if ClearConfigShiftTooltipHover then
         ClearConfigShiftTooltipHover()

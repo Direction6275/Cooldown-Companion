@@ -1869,12 +1869,15 @@ function CooldownCompanion:UpdateAllCooldowns()
 
     -- Cache CDM viewer CVar once per tick (avoids per-button GetCVarBool in ResolveBuffViewerFrameForSpell)
     self._cdmViewerEnabled = GetCVarBool("cooldownViewerEnabled")
+    self._cooldownUpdatePassActive = true
 
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
             frame:UpdateCooldowns()
         end
     end
+
+    self._cooldownUpdatePassActive = nil
 end
 
 function CooldownCompanion:UpdateAllGroupLayouts()
