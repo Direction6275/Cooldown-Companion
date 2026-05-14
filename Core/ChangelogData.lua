@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.14.1",
         "1.14",
         "1.13.10",
         "1.13.9",
@@ -32,6 +33,14 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.14.1"] = {
+            markdown = [[
+## Bug Fixes
+
+- **Bar Panel aura stack displays:** Bar panel entries using Stack Count aura display now keep their segmented or overlay bar layout visible even when the tracked aura is inactive.
+- **Migrated Custom Bars:** Custom Bars migrated from old Custom Aura Bars can now be fully deleted without the final removed entry reappearing afterward.
+]],
+        },
         ["1.14"] = {
             markdown = [[
 ## New Features
