@@ -4,6 +4,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local effectiveStyleCache = setmetatable({}, { __mode = "k" })
 
 ------------------------------------------------------------------------
 -- EFFECTIVE STYLE UTILITIES
@@ -14,17 +15,20 @@ local CooldownCompanion = ST.Addon
 function CooldownCompanion:GetEffectiveStyle(groupStyle, buttonData)
     if buttonData and buttonData.styleOverrides
        and buttonData.overrideSections and next(buttonData.overrideSections) then
-        if buttonData._effectiveStyleGroupStyle ~= groupStyle
-            or buttonData._effectiveStyleOverrides ~= buttonData.styleOverrides then
+        local cache = effectiveStyleCache[buttonData]
+        if not cache then
+            cache = {}
+            effectiveStyleCache[buttonData] = cache
+        end
+        if cache.groupStyle ~= groupStyle or cache.overrides ~= buttonData.styleOverrides then
             setmetatable(buttonData.styleOverrides, { __index = groupStyle })
-            buttonData._effectiveStyleGroupStyle = groupStyle
-            buttonData._effectiveStyleOverrides = buttonData.styleOverrides
+            cache.groupStyle = groupStyle
+            cache.overrides = buttonData.styleOverrides
         end
         return buttonData.styleOverrides
     end
     if buttonData then
-        buttonData._effectiveStyleGroupStyle = nil
-        buttonData._effectiveStyleOverrides = nil
+        effectiveStyleCache[buttonData] = nil
     end
     return groupStyle
 end

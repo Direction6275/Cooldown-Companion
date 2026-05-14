@@ -484,6 +484,7 @@ local function StopTextureColorShift(host)
     end
 
     host._textureColorShiftActive = nil
+    host._indicatorBaseVisualsReady = nil
     RefreshTextureIndicatorUpdater(host)
 end
 

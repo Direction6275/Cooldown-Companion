@@ -119,6 +119,7 @@ local function HideIconFillForHiddenButton(button)
     if not (button and button.iconFill) then return end
     button.iconFill:Hide()
     button.iconFill:SetScript("OnUpdate", nil)
+    button._iconFillOnUpdateInstalled = nil
 end
 
 local function ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)

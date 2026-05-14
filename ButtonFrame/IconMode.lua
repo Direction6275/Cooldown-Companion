@@ -1300,6 +1300,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         ApplyIconFillGeometry(button, style)
         button.iconFill:SetStatusBarTexture(ICON_FILL_TEXTURE)
         button.iconFill:SetScript("OnUpdate", nil)
+        button._iconFillOnUpdateInstalled = nil
         button.iconFill:Hide()
     end
 
