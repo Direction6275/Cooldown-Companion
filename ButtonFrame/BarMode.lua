@@ -1670,6 +1670,10 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._readyGlowMaxChargesSpellID = nil
     button._noCooldown = nil
     button._noCooldownSpellId = nil
+    button._lastOwnSpellCastAt = nil
+    button._lastRealCooldownSpellID = nil
+    button._lastRealCooldownDurationObj = nil
+    button._lastRealCooldownAt = nil
     button._vertexR = nil
     button._vertexG = nil
     button._vertexB = nil
