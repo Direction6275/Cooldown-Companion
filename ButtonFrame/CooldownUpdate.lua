@@ -758,12 +758,22 @@ local function ClearRealCooldownContinuity(button)
     button._lastRealCooldownAt = nil
 end
 
-local function CanHoldRealCooldown(buttonData, cooldownSpellId, noCooldown)
+local function IsCurrentTrackedCooldownSpell(button, buttonData, cooldownSpellId)
+    if cooldownSpellId == buttonData.id then
+        return true
+    end
+
+    local liveOverrideId = button and button._liveOverrideSpellId
+    return liveOverrideId
+        and cooldownSpellId == liveOverrideId
+end
+
+local function CanHoldRealCooldown(button, buttonData, cooldownSpellId, noCooldown)
     return buttonData
         and buttonData.type == "spell"
         and buttonData.isPassive ~= true
         and buttonData.hasCharges ~= true
-        and cooldownSpellId == buttonData.id
+        and IsCurrentTrackedCooldownSpell(button, buttonData, cooldownSpellId)
         and noCooldown ~= true
 end
 
@@ -772,7 +782,7 @@ function CooldownCompanion:ApplyRealCooldownContinuity(button, buttonData, coold
         return result
     end
 
-    if not CanHoldRealCooldown(buttonData, cooldownSpellId, noCooldown) then
+    if not CanHoldRealCooldown(button, buttonData, cooldownSpellId, noCooldown) then
         ClearRealCooldownContinuity(button)
         return result
     end
