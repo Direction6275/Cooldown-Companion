@@ -2156,14 +2156,14 @@ local function DeleteCustomBarById(settings, specID, customBars, customBarId)
     return true
 end
 
-local function DuplicateCustomBarById(settings, customBars, customBarId)
+local function DuplicateCustomBarById(settings, specID, customBars, customBarId)
     local sourceIndex = FindCustomBarIndexById(customBars, customBarId)
     local sourceEntry = sourceIndex and customBars[sourceIndex]
     if type(settings) ~= "table" or type(sourceEntry) ~= "table" then
         return nil
     end
 
-    local sourceLayout = GetCustomBarLayout(settings, nil, sourceEntry, false)
+    local sourceLayout = GetCustomBarLayout(settings, specID, sourceEntry, false)
     local copy = CopyTable(sourceEntry)
     copy.customBarId = nil
 
@@ -2174,7 +2174,7 @@ local function DuplicateCustomBarById(settings, customBars, customBarId)
 
     table.insert(customBars, sourceIndex + 1, copy)
 
-    local targetLayout = EnsureCustomBarLayout(settings, nil, newId, 1000 + sourceIndex + 1)
+    local targetLayout = EnsureCustomBarLayout(settings, specID, newId, 1000 + sourceIndex + 1)
     if type(sourceLayout) == "table" and type(targetLayout) == "table" then
         for key, value in pairs(sourceLayout) do
             targetLayout[key] = CopyTableValue(value)
@@ -2214,7 +2214,7 @@ local function ClearCustomBarPreviewState()
     end
 end
 
-local function OpenCustomBarRowMenu(customBars, customBarId, entry)
+local function OpenCustomBarRowMenu(customBars, specID, customBarId, entry)
     if not CS.customBarContextMenu then
         CS.customBarContextMenu = CreateFrame("Frame", "CDCCustomBarContextMenu", UIParent, "UIDropDownMenuTemplate")
     end
@@ -2243,7 +2243,7 @@ local function OpenCustomBarRowMenu(customBars, customBarId, entry)
         duplicateInfo.notCheckable = true
         duplicateInfo.func = function()
             CloseDropDownMenus()
-            local newId = DuplicateCustomBarById(CooldownCompanion:GetResourceBarSettings(), customBars, customBarId)
+            local newId = DuplicateCustomBarById(CooldownCompanion:GetResourceBarSettings(), specID, customBars, customBarId)
             if newId then
                 ClearCustomBarPreviewState()
                 CS.selectedCustomBarId = newId
@@ -2262,7 +2262,6 @@ local function OpenCustomBarRowMenu(customBars, customBarId, entry)
         removeInfo.func = function()
             CloseDropDownMenus()
             local settings = CooldownCompanion:GetResourceBarSettings()
-            local specID = GetCurrentConfigSpecID()
             if DeleteCustomBarById(settings, specID, customBars, customBarId) then
                 if CS.selectedCustomBarId == customBarId then
                     ClearCustomBarPreviewState()
@@ -2763,6 +2762,7 @@ end
 
 local function BuildCustomBarsListPanel(container)
     local settings = CooldownCompanion:GetResourceBarSettings()
+    local customBarsSpecID = GetCurrentConfigSpecID()
     local customBars = CooldownCompanion:GetSpecCustomAuraBars()
     local selectedId = CS.selectedCustomBarId
     if selectedId and not FindCustomBarIndexById(customBars, selectedId) then
@@ -3029,7 +3029,7 @@ local function BuildCustomBarsListPanel(container)
                 if selectionChanged then
                     CooldownCompanion:RefreshConfigPanel()
                 end
-                OpenCustomBarRowMenu(customBars, customBarId, entry)
+                OpenCustomBarRowMenu(customBars, customBarsSpecID, customBarId, entry)
             elseif mouseButton == "LeftButton" then
                 if CS.selectedCustomBarId == customBarId then
                     ClearCustomBarPreviewState()
