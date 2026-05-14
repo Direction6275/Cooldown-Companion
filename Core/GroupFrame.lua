@@ -315,6 +315,13 @@ local function ResetButtonGlowTransitionState(button)
     end
 end
 
+local function ClearButtonCompactSlotCache(button)
+    if not button then return end
+    button._compactSlotAnchor = nil
+    button._compactSlotX = nil
+    button._compactSlotY = nil
+end
+
 -- Nudger constants
 local NUDGE_BTN_SIZE = 12
 local NUDGE_REPEAT_DELAY = 0.5
@@ -981,6 +988,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
                 end
             end
 
+            ClearButtonCompactSlotCache(button)
             if isTriggerMode then
                 button:SetPoint("CENTER", frame, "CENTER", 0, 0)
             else
@@ -1133,6 +1141,9 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
     if not frame or not group then return end
 
     if not group.compactLayout then
+        for _, button in ipairs(frame.buttons) do
+            ClearButtonCompactSlotCache(button)
+        end
         frame._layoutDirty = false
         return
     end
