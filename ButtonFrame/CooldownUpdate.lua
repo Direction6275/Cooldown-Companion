@@ -68,6 +68,7 @@ local HasCastCountText = CooldownCompanion.HasCastCountText
 local GetCastCountSpellID = CooldownCompanion.GetCastCountSpellID
 local GetConditionalCastCountSpellID = CooldownCompanion.GetConditionalCastCountSpellID
 local TARGET_SWITCH_SAFETY_CAP = 0.60
+local REAL_COOLDOWN_GCD_HOLD_WINDOW = 1.60
 local COOLDOWN_STATE_READY = CooldownLogic.STATE_READY
 local COOLDOWN_STATE_GCD = CooldownLogic.STATE_GCD
 local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
@@ -585,6 +586,8 @@ end
 
 local ProbeActionSlotCooldownForSpell
 
+-- Blizzard-style GCD sync is presentation-only: the real cooldown remains the
+-- canonical state, while the visible sweep may use the longer GCD duration.
 local function ApplyGCDSyncIfRealEndsInside(result, realDurationObj, source)
     if not (result and realDurationObj and result.isOnGCD == true) then
         return false
@@ -594,11 +597,19 @@ local function ApplyGCDSyncIfRealEndsInside(result, realDurationObj, source)
         return false
     end
 
-    result.state = COOLDOWN_STATE_GCD
+    local gcdDurationObj = CooldownCompanion._gcdDurationObj
+    if not gcdDurationObj then
+        return false
+    end
+
+    result.state = COOLDOWN_STATE_COOLDOWN
     result.source = source
-    result.realCooldownShown = false
-    result.durationObj = CooldownCompanion._gcdDurationObj
-    result.renderDurationObj = CooldownCompanion._gcdDurationObj
+    result.presentationState = COOLDOWN_STATE_GCD
+    result.presentationSource = source
+    result.realCooldownShown = true
+    result.realDurationObj = realDurationObj
+    result.durationObj = gcdDurationObj
+    result.renderDurationObj = gcdDurationObj
     result.gcdSyncUsed = true
     return true
 end
@@ -740,6 +751,87 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldo
     return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id, {
         allowActionSlotRealFallback = allowActionSlotRealFallback,
     })
+end
+
+local function ClearRealCooldownContinuity(button)
+    button._lastRealCooldownSpellID = nil
+    button._lastRealCooldownDurationObj = nil
+    button._lastRealCooldownAt = nil
+end
+
+local function CanHoldRealCooldown(buttonData, cooldownSpellId, noCooldown)
+    return buttonData
+        and buttonData.type == "spell"
+        and buttonData.isPassive ~= true
+        and buttonData.hasCharges ~= true
+        and cooldownSpellId == buttonData.id
+        and noCooldown ~= true
+end
+
+function CooldownCompanion:ApplyRealCooldownContinuity(button, buttonData, cooldownSpellId, noCooldown, result, now)
+    if not (button and result and result.fetchOk) then
+        return result
+    end
+
+    if not CanHoldRealCooldown(buttonData, cooldownSpellId, noCooldown) then
+        ClearRealCooldownContinuity(button)
+        return result
+    end
+
+    if result.state == COOLDOWN_STATE_COOLDOWN
+        and result.realCooldownShown == true
+        and result.realDurationObj then
+        button._lastRealCooldownSpellID = cooldownSpellId
+        button._lastRealCooldownDurationObj = result.realDurationObj
+        button._lastRealCooldownAt = now
+        return result
+    end
+
+    if result.state == COOLDOWN_STATE_READY then
+        ClearRealCooldownContinuity(button)
+        return result
+    end
+
+    local previousDurationObj = button._lastRealCooldownDurationObj
+    local previousAt = button._lastRealCooldownAt
+    local canReusePrevious = previousDurationObj
+        and previousAt
+        and button._lastRealCooldownSpellID == cooldownSpellId
+        and now - previousAt <= REAL_COOLDOWN_GCD_HOLD_WINDOW
+    local lastOwnCastAt = button._lastOwnSpellCastAt
+    local castAge = lastOwnCastAt and (now - lastOwnCastAt) or nil
+    local recentlyCastThisSpell = castAge and castAge <= REAL_COOLDOWN_GCD_HOLD_WINDOW
+
+    if canReusePrevious
+        and recentlyCastThisSpell
+        and result.state == COOLDOWN_STATE_GCD
+        and result.source == "spell-gcd"
+        and result.isOnGCD == true
+        and CooldownCompanion._gcdActive == true
+        and DurationObjectShowsCooldown(previousDurationObj) then
+        result.state = COOLDOWN_STATE_COOLDOWN
+        result.source = "held-real-cooldown-over-gcd"
+        result.realCooldownShown = true
+        result.realDurationObj = previousDurationObj
+        result.durationObj = previousDurationObj
+        result.renderDurationObj = previousDurationObj
+
+        if RealCooldownEndsInsideActiveGCD(previousDurationObj) then
+            result.presentationState = COOLDOWN_STATE_GCD
+            result.presentationSource = "continuity-gcd-sync"
+            result.durationObj = CooldownCompanion._gcdDurationObj
+            result.renderDurationObj = CooldownCompanion._gcdDurationObj
+            result.gcdSyncUsed = true
+        end
+
+        return result
+    end
+
+    if result.state == COOLDOWN_STATE_GCD and result.source == "spell-gcd" then
+        ClearRealCooldownContinuity(button)
+    end
+
+    return result
 end
 
 function CooldownCompanion:EvaluateSpellCooldownStateForCustomBar(customBar)
@@ -1149,6 +1241,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     button._durationObj = nil
     button._cooldownDeferred = nil
     button._cooldownState = COOLDOWN_STATE_READY
+    button._cooldownPresentationState = COOLDOWN_STATE_READY
+    button._cooldownPresentationSource = nil
+    button._realCooldownDurationObj = nil
+    button._cooldownRenderDurationObj = nil
     button._chargeState = nil
     button._chargeCooldownVisualActive = nil
     button._barAuraStackDisplay = nil
@@ -1869,15 +1965,28 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if not auraOverrideActive and not barAuraStackDisplay then
         if buttonData.type == "spell" and not buttonData.isPassive then
             spellCooldownResult = EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, button._noCooldown)
+            spellCooldownResult = self:ApplyRealCooldownContinuity(
+                button,
+                buttonData,
+                cooldownSpellId,
+                button._noCooldown,
+                spellCooldownResult,
+                now
+            )
             if spellCooldownResult and spellCooldownResult.fetchOk then
                 spellCooldownInfo = spellCooldownResult.info
                 spellCooldownDuration = spellCooldownResult.durationObj
                 spellRealCooldownShown = spellCooldownResult.realCooldownShown == true
                 isOnGCD = spellCooldownResult.isOnGCD or false
                 button._cooldownState = spellCooldownResult.state or COOLDOWN_STATE_READY
+                button._cooldownPresentationState = spellCooldownResult.presentationState or button._cooldownState
+                button._cooldownPresentationSource = spellCooldownResult.presentationSource
+                button._realCooldownDurationObj = spellCooldownResult.realDurationObj
                 local renderDurationObj = spellCooldownResult.renderDurationObj
+                button._cooldownRenderDurationObj = renderDurationObj
                 button._cooldownDeferred = spellCooldownResult.deferred or nil
-                isGCDOnly = button._cooldownState == COOLDOWN_STATE_GCD
+                isGCDOnly = button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
+                    and button._cooldownPresentationState == COOLDOWN_STATE_GCD
 
                 if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
                     if renderDurationObj then
@@ -1886,7 +1995,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     else
                         button.cooldown:SetCooldown(0, 0)
                     end
-                elseif button._cooldownState == COOLDOWN_STATE_GCD then
+                elseif button._cooldownPresentationState == COOLDOWN_STATE_GCD then
                     if style.showGCDSwipe == true and renderDurationObj then
                         button.cooldown:SetCooldownFromDurationObject(renderDurationObj)
                     else
