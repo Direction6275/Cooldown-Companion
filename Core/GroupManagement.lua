@@ -1390,7 +1390,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 newButton.auraTracking = true
                 newButton.auraIndicatorEnabled = true
                 local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[id]
-                if overrideBuffs then
+                if overrideBuffs and newButton.addedAs ~= "aura" then
                     newButton.auraSpellID = overrideBuffs
                 end
             end

@@ -1303,6 +1303,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         else
             cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
         end
+        local orderedStandaloneAuraIDs
+        if buttonData.addedAs == "aura" then
+            if not button._orderedStandaloneAuraIDs
+                or button._orderedStandaloneAuraIDsRaw ~= buttonData.auraSpellID
+                or button._orderedStandaloneAuraIDsButtonID ~= buttonData.id
+                or button._orderedStandaloneAuraIDsAuraSpellID ~= button._auraSpellID then
+                button._orderedStandaloneAuraIDs = CooldownCompanion:GetOrderedAuraCandidateIDs(buttonData)
+                button._orderedStandaloneAuraIDsRaw = buttonData.auraSpellID
+                button._orderedStandaloneAuraIDsButtonID = buttonData.id
+                button._orderedStandaloneAuraIDsAuraSpellID = button._auraSpellID
+            end
+            orderedStandaloneAuraIDs = button._orderedStandaloneAuraIDs
+        end
 
         -- Viewer-based aura tracking: Blizzard's cooldown viewer frames run
         -- untainted code that matches spell IDs to auras during combat and
@@ -1315,9 +1328,25 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 viewerFrame = allChildren[buttonData.cdmChildSlot]
             end
         end
-        -- Try each override ID (comma-separated), prefer one with active aura.
-        -- Cache parsed IDs on the button to avoid per-tick gmatch allocation.
-        if not viewerFrame and buttonData.auraSpellID then
+        -- Try configured/implicit aura IDs, prefer one with active aura.
+        if not viewerFrame and orderedStandaloneAuraIDs then
+            local firstTrackedFrame
+            for _, numId in ipairs(orderedStandaloneAuraIDs) do
+                local f = CooldownCompanion:ResolveBuffViewerFrameForSpell(numId)
+                if f then
+                    local unit = f.auraDataUnit or auraUnit
+                    if f.auraInstanceID and unit == configUnit
+                        and C_UnitAuras.GetAuraDataByAuraInstanceID(unit, f.auraInstanceID) then
+                        viewerFrame = f
+                        break
+                    elseif not firstTrackedFrame then
+                        firstTrackedFrame = f
+                    end
+                end
+            end
+            viewerFrame = viewerFrame or firstTrackedFrame
+        elseif not viewerFrame and buttonData.auraSpellID then
+            -- Cache parsed IDs on the button to avoid per-tick gmatch allocation.
             local ids = button._parsedAuraIDs
             if not ids or button._parsedAuraIDsRaw ~= buttonData.auraSpellID or button._parsedAuraIDsButtonID ~= buttonData.id then
                 ids = {}
@@ -1482,7 +1511,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
         if canUsePlayerAuraFallback and not auraOverrideActive then
             local auraData
-            if buttonData.auraSpellID then
+            if orderedStandaloneAuraIDs then
+                for _, numId in ipairs(orderedStandaloneAuraIDs) do
+                    auraData = C_UnitAuras.GetPlayerAuraBySpellID(numId)
+                    if auraData then
+                        activeAuraSpellID = numId
+                        activeAuraSpellIDFromFallback = true
+                        break
+                    end
+                end
+            elseif buttonData.auraSpellID then
                 local ids = button._parsedAuraIDs
                 if not ids or button._parsedAuraIDsRaw ~= buttonData.auraSpellID or button._parsedAuraIDsButtonID ~= buttonData.id then
                     ids = {}

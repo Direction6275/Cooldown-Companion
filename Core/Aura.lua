@@ -236,6 +236,111 @@ local function ResolveDirectBuffViewerSpellID(spellID)
     return nil
 end
 
+local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
+    local candidateIDs = {}
+    local orderedCandidateSet = {}
+    local orderedCandidateIDs = {}
+
+    if not (buttonData and buttonData.type == "spell") then
+        return orderedCandidateIDs, candidateIDs, orderedCandidateSet
+    end
+
+    local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
+
+    local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
+    if directAuraID then
+        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, directAuraID)
+    end
+
+    local resolvedAuraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
+    if resolvedAuraId then
+        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, resolvedAuraId)
+    end
+
+    AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.id)
+    AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, baseId)
+
+    return orderedCandidateIDs, candidateIDs, orderedCandidateSet
+end
+
+local function AppendStandaloneFallbackAuraCandidateIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData, rawIDs)
+    local _, originalCandidateSet = BuildStandaloneOriginalAuraCandidateIDs(buttonData)
+    if not rawIDs then
+        return
+    end
+    for id in tostring(rawIDs):gmatch("%d+") do
+        local numericID = tonumber(id)
+        if numericID and not originalCandidateSet[numericID] then
+            AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, numericID)
+        end
+    end
+end
+
+local function BuildStandaloneAuraFallbackSpellIDText(buttonData, rawIDs)
+    local _, originalCandidateSet = BuildStandaloneOriginalAuraCandidateIDs(buttonData)
+    local fallbackIDs = {}
+    local seen = {}
+    if not rawIDs then
+        return nil
+    end
+    for id in tostring(rawIDs):gmatch("%d+") do
+        local numericID = tonumber(id)
+        if numericID and not originalCandidateSet[numericID] and not seen[numericID] then
+            seen[numericID] = true
+            fallbackIDs[#fallbackIDs + 1] = tostring(numericID)
+        end
+    end
+    return #fallbackIDs > 0 and table.concat(fallbackIDs, ",") or nil
+end
+
+local function BuildOrderedAuraCandidateIDs(buttonData)
+    local candidateIDs = {}
+    local orderedCandidateSet = {}
+    local orderedCandidateIDs = {}
+
+    if not (buttonData and buttonData.type == "spell") then
+        return orderedCandidateIDs, candidateIDs, orderedCandidateSet
+    end
+
+    local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
+
+    local function AppendSpellAssociationAuraIDs()
+        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.id)
+        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, baseId)
+
+        local resolvedAuraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
+        if resolvedAuraId then
+            AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, resolvedAuraId)
+        end
+    end
+
+    if buttonData.addedAs == "aura" then
+        local originalAuraIDs = BuildStandaloneOriginalAuraCandidateIDs(buttonData)
+        for _, spellID in ipairs(originalAuraIDs) do
+            AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, spellID)
+        end
+        AppendStandaloneFallbackAuraCandidateIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData, buttonData.auraSpellID)
+    else
+        AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.auraSpellID)
+        AppendSpellAssociationAuraIDs()
+    end
+
+    local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES and CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
+    if overrideBuffs then
+        AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, overrideBuffs)
+    end
+
+    return orderedCandidateIDs, candidateIDs, orderedCandidateSet
+end
+
+function CooldownCompanion:GetOrderedAuraCandidateIDs(buttonData)
+    return BuildOrderedAuraCandidateIDs(buttonData)
+end
+
+function CooldownCompanion:GetStandaloneAuraFallbackSpellIDText(buttonData, rawIDs)
+    return BuildStandaloneAuraFallbackSpellIDText(buttonData, rawIDs or (buttonData and buttonData.auraSpellID))
+end
+
 local function CooldownInfoMatchesCandidateSet(cooldownInfo, candidateSet)
     if type(cooldownInfo) ~= "table" then
         return false
@@ -443,9 +548,13 @@ end
 
 function CooldownCompanion:ResolveAuraSpellID(buttonData)
     if not buttonData.auraTracking then return nil end
-    if buttonData.auraSpellID then
+    if buttonData.addedAs ~= "aura" and buttonData.auraSpellID then
         local first = tostring(buttonData.auraSpellID):match("%d+")
         return first and tonumber(first)
+    end
+    if buttonData.addedAs == "aura" then
+        local orderedCandidateIDs = BuildOrderedAuraCandidateIDs(buttonData)
+        return orderedCandidateIDs[1]
     end
     if buttonData.type == "spell" then
         local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
@@ -552,7 +661,7 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
         return resolvedID
     end
 
-    local explicitAuraID = ResolveSingleSpellID(buttonData.auraSpellID)
+    local explicitAuraID = buttonData.addedAs ~= "aura" and ResolveSingleSpellID(buttonData.auraSpellID) or nil
     if explicitAuraID then
         return explicitAuraID
     end
@@ -622,23 +731,10 @@ function CooldownCompanion:ResolveAuraTrackingAssociationData(buttonData, viewer
     end
 
     local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
-    local candidateIDs = {}
-    local orderedCandidateSet = {}
-    local orderedCandidateIDs = {}
-
-    AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.auraSpellID)
-    AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.id)
-    AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, baseId)
-
+    local orderedCandidateIDs, candidateIDs, orderedCandidateSet = BuildOrderedAuraCandidateIDs(buttonData)
     local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(baseId)
     if resolvedAuraId and resolvedAuraId ~= 0 then
         data.hasAssociatedAura = true
-        AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, resolvedAuraId)
-    end
-
-    local overrideBuffs = self.ABILITY_BUFF_OVERRIDES[buttonData.id]
-    if overrideBuffs then
-        AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, overrideBuffs)
     end
 
     local function MergeCooldownInfo(cooldownInfo)
@@ -761,7 +857,13 @@ function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, sibling
         changed = true
     end
 
-    if not buttonData.auraSpellID then
+    if buttonData.addedAs == "aura" then
+        local fallbackIDs = self:GetStandaloneAuraFallbackSpellIDText(buttonData)
+        if buttonData.auraSpellID ~= fallbackIDs then
+            buttonData.auraSpellID = fallbackIDs
+            changed = true
+        end
+    elseif not buttonData.auraSpellID then
         local inferredAuraSpellID = self:InferConfirmedAuraSpellIDString(buttonData)
         if inferredAuraSpellID then
             buttonData.auraSpellID = inferredAuraSpellID
