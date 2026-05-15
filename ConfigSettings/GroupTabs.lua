@@ -52,6 +52,7 @@ local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
 local AddPreviewToggleButton = ST._AddPreviewToggleButton
 local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
+local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
@@ -2842,6 +2843,10 @@ local function BuildAppearanceTab(container)
 
     -- Compact Mode toggle + Max Visible Buttons slider
     BuildCompactModeControls(container, group, tabInfoButtons)
+
+    if style.showCooldownText or style.showAuraText ~= false then
+        AddDurationFormatDropdown(container, style, refreshStyle)
+    end
 
     -- Border heading
     local borderHeading = AceGUI:Create("Heading")

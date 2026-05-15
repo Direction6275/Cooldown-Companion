@@ -31,6 +31,7 @@ local ApplyEdgePositions = ST._ApplyEdgePositions
 local ApplyIconTexCoord = ST._ApplyIconTexCoord
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
+local GetDurationSecretFormatSpec = CooldownCompanion.GetDurationSecretFormatSpec
 local DEFAULT_BAR_AURA_COLOR = ST._DEFAULT_BAR_AURA_COLOR
 local DEFAULT_BAR_PANDEMIC_COLOR = ST._DEFAULT_BAR_PANDEMIC_COLOR
 local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
@@ -952,21 +953,22 @@ local function UpdateBarFill(button)
                 button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             end
             -- Time text: HasSecretValues() returns a non-secret boolean.
-            -- Non-secret: full FormatTime formatting ("1:30:00", "1:30", "45", etc.)
-            -- Secret: pass secret number to C++ SetFormattedText ("%.1f" / "%.0f" format)
-            local decimal = button.style.decimalTimers
+            -- Non-secret: full duration-format examples ("1:30", "45", "8.7", etc.)
+            -- Secret: pass the secret number through C++ SetFormattedText with the closest specifier.
+            local durationStyle = button.style
+            local secretFormatSpec = GetDurationSecretFormatSpec(durationStyle)
             if previewRemaining and previewRemaining > 0 then
-                SetBarTimeText(button, FormatTime(previewRemaining, decimal))
+                SetBarTimeText(button, FormatTime(previewRemaining, durationStyle))
             elseif button._durationObj then
                 local remaining = button._durationObj:GetRemainingDuration()
                 if not button._durationObj:HasSecretValues() then
                     if remaining > 0 then
-                        SetBarTimeText(button, FormatTime(remaining, decimal))
+                        SetBarTimeText(button, FormatTime(remaining, durationStyle))
                     else
                         SetBarTimeText(button, "")
                     end
                 else
-                    SetBarTimeFormattedText(button, decimal and "%.1f" or "%.0f", remaining)
+                    SetBarTimeFormattedText(button, secretFormatSpec, remaining)
                 end
             elseif button._viewerBar then
                 -- Totem: viewer bar values may be secret (set by Blizzard's internal totem tracking).
@@ -974,10 +976,10 @@ local function UpdateBarFill(button)
                 -- secure code sets it, so the widget reports plain — but the actual
                 -- number returned by GetValue() is a secret wrapper).
                 -- Always use SetFormattedText for secret-safe pass-through.
-                SetBarTimeFormattedText(button, decimal and "%.1f" or "%.0f", button._viewerBar:GetValue())
+                SetBarTimeFormattedText(button, secretFormatSpec, button._viewerBar:GetValue())
             else
                 if itemRemaining > 0 then
-                    SetBarTimeText(button, FormatTime(itemRemaining, decimal))
+                    SetBarTimeText(button, FormatTime(itemRemaining, durationStyle))
                 else
                     SetBarTimeText(button, "")
                 end

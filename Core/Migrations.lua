@@ -121,6 +121,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateSpecColorsToSpecOverrides()
     self:MigrateResourceBarDisplayProfiles()
     self:MigrateCustomAuraBarsToCustomBars()
+    self:MigrateDurationFormatSettings()
     return true
 end
 
@@ -161,6 +162,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile._migratedResourceBarDisplayProfilesV2 = nil
     profile._migratedCustomBarsDynamic = nil
     profile._migratedCustomBarsDynamicV2 = nil
+    profile._migratedDurationFormatSettings = nil
 end
 
 function CooldownCompanion:MigrateGroupOwnership()
@@ -1464,6 +1466,80 @@ function CooldownCompanion:MigrateNewDefaults()
     profile.newDefaultsMigrated = true
 end
 
+local DURATION_FORMAT_CLOCK = "clock"
+local DURATION_FORMAT_DECIMAL_UNDER_60 = "decimal_under_60"
+
+local function MigrateDurationFormatTable(settings)
+    if type(settings) ~= "table" then
+        return
+    end
+
+    local legacyDecimal = rawget(settings, "decimalTimers")
+    if rawget(settings, "durationFormat") == nil and legacyDecimal ~= nil then
+        settings.durationFormat = legacyDecimal and DURATION_FORMAT_DECIMAL_UNDER_60 or DURATION_FORMAT_CLOCK
+    end
+    if legacyDecimal ~= nil then
+        settings.decimalTimers = nil
+    end
+end
+
+local function MigrateDurationFormatForGroup(group)
+    if type(group) ~= "table" then
+        return
+    end
+
+    MigrateDurationFormatTable(group.style)
+end
+
+local function MigrateDurationFormatCustomBars(container)
+    if type(container) ~= "table" then
+        return
+    end
+
+    local function migrateCollection(collection)
+        if type(collection) ~= "table" then
+            return
+        end
+
+        for _, entry in pairs(collection) do
+            MigrateDurationFormatTable(entry)
+            if type(entry) == "table" then
+                for _, nestedEntry in pairs(entry) do
+                    MigrateDurationFormatTable(nestedEntry)
+                end
+            end
+        end
+    end
+
+    migrateCollection(container.customBars)
+    migrateCollection(container.customAuraBars)
+end
+
+function CooldownCompanion:MigrateDurationFormatSettings()
+    local profile = self.db and self.db.profile
+    if not profile or profile._migratedDurationFormatSettings then return end
+
+    MigrateDurationFormatTable(rawget(profile, "globalStyle"))
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            MigrateDurationFormatForGroup(group)
+        end
+    end
+
+    MigrateDurationFormatCustomBars(rawget(profile, "resourceBars"))
+    MigrateDurationFormatCustomBars(rawget(profile, "legacyResourceBarsSeed"))
+
+    local store = rawget(profile, "resourceBarsByChar")
+    if type(store) == "table" then
+        for _, charSettings in pairs(store) do
+            MigrateDurationFormatCustomBars(charSettings)
+        end
+    end
+
+    profile._migratedDurationFormatSettings = true
+end
+
 local ICON_FILL_COOLDOWN_COLOR_DEFAULT = {0.6, 0.13, 0.18, 0.55}
 local ICON_FILL_AURA_COLOR_DEFAULT = {0.2, 1.0, 0.2, 0.55}
 
@@ -2284,6 +2360,7 @@ function CooldownCompanion:MigrateCustomAuraBarsToCustomBars()
         "durationTextFontSize",
         "durationTextFontOutline",
         "durationTextFontColor",
+        "durationFormat",
         "decimalTimers",
         "showStackText",
         "showText",

@@ -118,6 +118,7 @@ local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
 
 -- Shared helper from ButtonFrame/Helpers.lua
 local FormatTime = CooldownCompanion.FormatTime
+local GetDurationSecretFormatSpec = CooldownCompanion.GetDurationSecretFormatSpec
 -- Other ST imports
 local CreateGlowContainer = ST._CreateGlowContainer
 local ShowGlowStyle = ST._ShowGlowStyle
@@ -2205,15 +2206,15 @@ local function UpdateCustomAuraBar(barInfo)
                 local remaining = durationObj:GetRemainingDuration()
                 if not durationObj:HasSecretValues() then
                     if remaining > 0 then
-                        bar.text:SetText(FormatTime(remaining, cabConfig.decimalTimers))
+                        bar.text:SetText(FormatTime(remaining, cabConfig))
                     else
                         bar.text:SetText("")
                     end
                 else
-                    bar.text:SetFormattedText(cabConfig.decimalTimers and "%.1f" or "%.0f", remaining)
+                    bar.text:SetFormattedText(GetDurationSecretFormatSpec(cabConfig), remaining)
                 end
             elseif indicatorPreview then
-                bar.text:SetText(FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig.decimalTimers))
+                bar.text:SetText(FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig))
             else
                 bar.text:SetText("")
             end
@@ -2660,14 +2661,14 @@ function RB.UpdateCustomCooldownBar(barInfo)
             if auraDurationObj then
                 local remaining = auraDurationObj:GetRemainingDuration()
                 if auraDurationObj:HasSecretValues() then
-                    bar.text:SetFormattedText(cabConfig.decimalTimers and "%.1f" or "%.0f", remaining)
+                    bar.text:SetFormattedText(GetDurationSecretFormatSpec(cabConfig), remaining)
                 elseif remaining and remaining > 0 then
-                    bar.text:SetText(FormatTime(remaining, cabConfig.decimalTimers))
+                    bar.text:SetText(FormatTime(remaining, cabConfig))
                 else
                     bar.text:SetText("")
                 end
             elseif auraPreview or pandemicPreview then
-                bar.text:SetText(FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig.decimalTimers))
+                bar.text:SetText(FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig))
             else
                 bar.text:SetText("")
             end
@@ -2705,9 +2706,9 @@ function RB.UpdateCustomCooldownBar(barInfo)
         if cooldownActive and durationObj then
             local remaining = durationObj:GetRemainingDuration()
             if durationObj:HasSecretValues() then
-                bar.text:SetFormattedText(cabConfig.decimalTimers and "%.1f" or "%.0f", remaining)
+                bar.text:SetFormattedText(GetDurationSecretFormatSpec(cabConfig), remaining)
             elseif remaining and remaining > 0 then
-                bar.text:SetText(FormatTime(remaining, cabConfig.decimalTimers))
+                bar.text:SetText(FormatTime(remaining, cabConfig))
             else
                 bar.text:SetText("")
             end
@@ -4788,7 +4789,7 @@ local function ApplyPreviewDataToBar(barInfo, settings)
             if isSpellAuraStackDisplay then
                 barInfo.frame.text:SetText("")
             else
-                barInfo.frame.text:SetText(FormatTime(12.3, cabConfig and cabConfig.decimalTimers))
+                barInfo.frame.text:SetText(FormatTime(12.3, cabConfig))
             end
         end
         if barInfo.frame.stackText and barInfo.frame.stackText:IsShown() then
@@ -4830,7 +4831,7 @@ local function ApplyPreviewDataToBar(barInfo, settings)
             end
         end
         if barInfo.frame.text and barInfo.frame.text:IsShown() then
-            barInfo.frame.text:SetText(FormatTime(12.3, cabConfig and cabConfig.decimalTimers))
+            barInfo.frame.text:SetText(FormatTime(12.3, cabConfig))
         end
         if barInfo.frame.stackText and barInfo.frame.stackText:IsShown() then
             if isActive then

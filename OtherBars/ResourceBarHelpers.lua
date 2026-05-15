@@ -250,6 +250,7 @@ local customBarContentFields = {
     "durationTextFontSize",
     "durationTextFontOutline",
     "durationTextFontColor",
+    "durationFormat",
     "decimalTimers",
     "showStackText",
     "showText",

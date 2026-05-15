@@ -33,6 +33,7 @@ local AddPreviewToggleButton = ST._AddPreviewToggleButton
 local RefreshConfigPanelForPreviewToggle = ST._RefreshConfigPanelForPreviewToggle
 local CleanRecycledEntry = ST._CleanRecycledEntry
 local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
+local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local tabInfoButtons = CS.tabInfoButtons
 
 local function RefreshLayoutOrderPreview()
@@ -3596,21 +3597,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
 
                         AddColorPicker(container, customBars[cabIdx], "durationTextFontColor", "Duration Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars)
 
-                        local decimalCheck = AceGUI:Create("CheckBox")
-                        decimalCheck:SetLabel("Show Decimal Point")
-                        decimalCheck:SetValue(cab.decimalTimers or false)
-                        decimalCheck:SetFullWidth(true)
-                        decimalCheck:SetCallback("OnValueChanged", function(widget, event, val)
-                            customBars[cabIdx].decimalTimers = val or nil
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        container:AddChild(decimalCheck)
-
-                        CreateInfoButton(decimalCheck.frame, decimalCheck.checkbg, "LEFT", "RIGHT", decimalCheck.text:GetStringWidth() + 4, 0, {
-                            "Show Decimal Point",
-                            {"Shows one decimal place on duration text", 1, 1, 1, true},
-                            {"(e.g. \"4.5\" instead of \"5\").", 1, 1, 1, true},
-                        }, decimalCheck)
+                        AddDurationFormatDropdown(container, customBars[cabIdx], cabApplyBars)
                     end
 
                     local stackAdvExpanded = AddAdvancedToggle(stackTextCb, "rbCabStackText_" .. capturedKey, rbCabTextAdvBtns, showStack)
