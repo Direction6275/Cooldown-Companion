@@ -100,7 +100,7 @@ local function GetUnitsSecondsFormatter()
         formatter:SetCanRoundUpLastUnit(false)
         formatter:SetCanRoundUpIntervals(false)
         formatter:SetConvertToLower(true)
-        formatter:SetStripIntervalWhitespace(GetEnumValue("SecondsFormatterIntervalWhitespace", "Preserve", 0))
+        formatter:SetStripIntervalWhitespace(GetEnumValue("SecondsFormatterIntervalWhitespace", "StripIgnoreLocale", 2))
     end
 
     secondsFormatterCache[DURATION_FORMAT_UNITS] = formatter or false

@@ -1502,16 +1502,23 @@ local function MigrateDurationFormatCustomBars(container)
         return
     end
 
-    if type(container.customBars) == "table" then
-        for _, customBar in pairs(container.customBars) do
-            MigrateDurationFormatTable(customBar)
+    local function migrateCollection(collection)
+        if type(collection) ~= "table" then
+            return
+        end
+
+        for _, entry in pairs(collection) do
+            MigrateDurationFormatTable(entry)
+            if type(entry) == "table" then
+                for _, nestedEntry in pairs(entry) do
+                    MigrateDurationFormatTable(nestedEntry)
+                end
+            end
         end
     end
-    if type(container.customAuraBars) == "table" then
-        for _, customBar in pairs(container.customAuraBars) do
-            MigrateDurationFormatTable(customBar)
-        end
-    end
+
+    migrateCollection(container.customBars)
+    migrateCollection(container.customAuraBars)
 end
 
 function CooldownCompanion:MigrateDurationFormatSettings()
