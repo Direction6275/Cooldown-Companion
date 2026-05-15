@@ -344,6 +344,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
     local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
     local viewerFrame = cdmEnabled and CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData) or nil
     local hasViewerFrame = viewerFrame ~= nil
+    local isAuraEntry = buttonData.addedAs == "aura"
     local allowPassiveManualRecovery = options.allowPassiveManualRecovery == true
     local showAuraToggle = options.showAuraToggle == true
     local showAuraIconToggle = options.showAuraIconToggle == true
@@ -355,11 +356,15 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
     if hasViewerFrame and buttonData.auraTracking == nil then
         buttonData.auraTracking = true
         local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
-        if overrideBuffs and not buttonData.auraSpellID then
+        if overrideBuffs and not isAuraEntry and not buttonData.auraSpellID then
             buttonData.auraSpellID = overrideBuffs
         end
         EnsureAuraUnitChoice(buttonData, isHarmful)
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+    end
+
+    if isAuraEntry then
+        buttonData.auraSpellID = CooldownCompanion:GetStandaloneAuraFallbackSpellIDText(buttonData)
     end
 
     local auraStatus = CooldownCompanion:ResolveAuraTrackingConfigStatus(
@@ -371,7 +376,10 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
     local auraFoundButUntracked = auraStatus.state == "associatedAuraNotTracked"
     local auraTrackedButUnavailable = auraStatus.state == "trackedAuraUnavailable"
     local auraInactiveColorCode = auraFoundButUntracked and "|cffffff00" or "|cffff0000"
-    local isAuraEntry = buttonData.addedAs == "aura"
+    local auraIdFieldLabel = isAuraEntry and "Fallback Aura IDs" or "Spell ID Override"
+    local auraIdFieldTooltip = isAuraEntry
+        and "The original aura entry is checked first. Add related buff/debuff spell IDs here as fallbacks for when the original aura is not present. Use commas only when one entry should intentionally watch multiple IDs.\n\nUse \"Pick CDM\" below to visually select a spell from the Cooldown Manager."
+        or "Most spells are tracked automatically, but some abilities apply a buff or debuff with a different spell ID than the ability itself. If tracking isn't working, enter the buff/debuff spell ID here. Use commas only when one entry should intentionally watch multiple IDs.\n\nUse \"Pick CDM\" below to visually select a spell from the Cooldown Manager."
 
     if showHeading then
         local auraHeading = AceGUI:Create("Heading")
@@ -467,7 +475,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
         return
     end
 
-    local allowManualAuraConfig = not buttonData.isPassive or allowPassiveManualRecovery
+    local allowManualAuraConfig = isAuraEntry or not buttonData.isPassive or allowPassiveManualRecovery
 
     local function StartAuraSpellOverridePicker()
         local grp = CS.selectedGroup
@@ -480,9 +488,14 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
                 local groups = CooldownCompanion.db.profile.groups
                 local selectedGroup = groups[grp]
                 if selectedGroup and selectedGroup.buttons and selectedGroup.buttons[btn] then
-                    selectedGroup.buttons[btn].auraSpellID = tostring(spellID)
-                    if selectedGroup.buttons[btn].auraTracking then
-                        EnsureAuraUnitChoice(selectedGroup.buttons[btn], isHarmful)
+                    local selectedButton = selectedGroup.buttons[btn]
+                    if isAuraEntry then
+                        selectedButton.auraSpellID = CooldownCompanion:GetStandaloneAuraFallbackSpellIDText(selectedButton, tostring(spellID))
+                    else
+                        selectedButton.auraSpellID = tostring(spellID)
+                    end
+                    if selectedButton.auraTracking then
+                        EnsureAuraUnitChoice(selectedButton, isHarmful)
                     end
                 end
             end
@@ -496,7 +509,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
         if auraEditBox.editbox.Instructions then
             auraEditBox.editbox.Instructions:Hide()
         end
-        auraEditBox:SetLabel("Spell ID Override")
+        auraEditBox:SetLabel(auraIdFieldLabel)
         auraEditBox:SetText(buttonData.auraSpellID and tostring(buttonData.auraSpellID) or "")
         auraEditBox:SetFullWidth(true)
         auraEditBox:SetCallback("OnEnterPressed", function(widget, _, text)
@@ -510,7 +523,11 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
                     end
                 end
             end
-            buttonData.auraSpellID = text ~= "" and text or nil
+            if isAuraEntry then
+                buttonData.auraSpellID = CooldownCompanion:GetStandaloneAuraFallbackSpellIDText(buttonData, text)
+            else
+                buttonData.auraSpellID = text ~= "" and text or nil
+            end
             if buttonData.auraTracking then
                 EnsureAuraUnitChoice(buttonData, isHarmful)
             end
@@ -520,8 +537,8 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
         scroll:AddChild(auraEditBox)
 
         CreateInfoButton(auraEditBox.frame, auraEditBox.frame, "TOPLEFT", "TOPLEFT", auraEditBox.label:GetStringWidth() + 4, -2, {
-            "Spell ID Override",
-            {"Most spells are tracked automatically, but some abilities apply a buff or debuff with a different spell ID than the ability itself. If tracking isn't working, enter the buff/debuff spell ID here. Use commas only when one entry should intentionally watch multiple IDs.\n\nUse \"Pick CDM\" below to visually select a spell from the Cooldown Manager.", 1, 1, 1, true},
+            auraIdFieldLabel,
+            {auraIdFieldTooltip, 1, 1, 1, true},
         }, infoButtons)
 
         local overrideCdmSpacer = AceGUI:Create("Label")
@@ -599,7 +616,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
         pickCDMBtn:SetCallback("OnEnter", function(widget)
             GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
             GameTooltip:AddLine("Pick from Cooldown Manager")
-            GameTooltip:AddLine("Shows a list of Tracked Buff/Tracked Bar auras currently tracked in the Cooldown Manager. Click one to populate the Spell ID Override.", 1, 1, 1, true)
+            GameTooltip:AddLine("Shows a list of Tracked Buff/Tracked Bar auras currently tracked in the Cooldown Manager. Click one to populate " .. auraIdFieldLabel .. ".", 1, 1, 1, true)
             GameTooltip:Show()
         end)
         pickCDMBtn:SetCallback("OnLeave", function()
@@ -638,7 +655,10 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
         scroll:AddChild(cdmDisabledSpacer)
     elseif auraStatus.state == "noAssociatedAura" then
         local noAuraLabel = AceGUI:Create("Label")
-        SetupWrappedStatusLabel(scroll, noAuraLabel, "|cff888888No associated aura was found for this spell. Use the Spell ID Override above if you want to link it to a specific CDM-trackable aura.|r")
+        local noAuraText = isAuraEntry
+            and "|cff888888No associated aura was found. Add a fallback aura ID above if you want this entry to use another CDM-trackable aura when the original is not present.|r"
+            or "|cff888888No associated aura was found for this spell. Use the Spell ID Override above if you want to link it to a specific CDM-trackable aura.|r"
+        SetupWrappedStatusLabel(scroll, noAuraLabel, noAuraText)
         scroll:AddChild(noAuraLabel)
         local noAuraSpacer = AceGUI:Create("Label")
         noAuraSpacer:SetText(" ")

@@ -48,6 +48,16 @@ local function PlayerHasTrackedAuraForButton(button, buttonData)
         return true
     end
 
+    if buttonData.type == "spell" and buttonData.addedAs == "aura" then
+        local orderedAuraIDs = CooldownCompanion:GetOrderedAuraCandidateIDs(buttonData)
+        for _, spellID in ipairs(orderedAuraIDs) do
+            if C_UnitAuras.GetPlayerAuraBySpellID(spellID) then
+                return true
+            end
+        end
+        return false
+    end
+
     if buttonData.auraSpellID then
         local includesButtonID
         for id in tostring(buttonData.auraSpellID):gmatch("%d+") do

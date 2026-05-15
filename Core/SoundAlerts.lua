@@ -273,21 +273,30 @@ local function BuildAuraSourceSpellIDs(self, buttonData, spellIDOverride)
     local spellIDs = {}
     local seen = {}
 
-    if buttonData and buttonData.auraSpellID then
-        for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
-            AddUniqueSpellID(spellIDs, seen, tonumber(id))
+    if buttonData and buttonData.type == "spell" and buttonData.addedAs == "aura" then
+        local orderedAuraIDs = self.GetOrderedAuraCandidateIDs and self:GetOrderedAuraCandidateIDs(buttonData) or nil
+        if orderedAuraIDs then
+            for _, spellID in ipairs(orderedAuraIDs) do
+                AddUniqueSpellID(spellIDs, seen, spellID)
+            end
         end
-    end
-
-    if buttonData and buttonData.type == "spell" then
-        local auraID = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
-        AddUniqueSpellID(spellIDs, seen, auraID)
-        AddUniqueSpellID(spellIDs, seen, buttonData.id)
-
-        local overrideBuffs = self.ABILITY_BUFF_OVERRIDES and self.ABILITY_BUFF_OVERRIDES[buttonData.id]
-        if overrideBuffs then
-            for id in tostring(overrideBuffs):gmatch("%d+") do
+    elseif buttonData then
+        if buttonData.auraSpellID then
+            for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
                 AddUniqueSpellID(spellIDs, seen, tonumber(id))
+            end
+        end
+
+        if buttonData.type == "spell" then
+            local auraID = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
+            AddUniqueSpellID(spellIDs, seen, auraID)
+            AddUniqueSpellID(spellIDs, seen, buttonData.id)
+
+            local overrideBuffs = self.ABILITY_BUFF_OVERRIDES and self.ABILITY_BUFF_OVERRIDES[buttonData.id]
+            if overrideBuffs then
+                for id in tostring(overrideBuffs):gmatch("%d+") do
+                    AddUniqueSpellID(spellIDs, seen, tonumber(id))
+                end
             end
         end
     end
