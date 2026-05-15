@@ -756,7 +756,6 @@ local function ClearRealCooldownContinuity(button)
     button._lastRealCooldownSpellID = nil
     button._lastRealCooldownDurationObj = nil
     button._lastRealCooldownAt = nil
-    button._lastOwnSpellCastAt = nil
 end
 
 local function MatchesButtonCooldownSpell(button, buttonData, spellID)
