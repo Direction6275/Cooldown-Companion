@@ -505,6 +505,59 @@ local function GetConfiguredAuraUnit(buttonData)
     return buttonData.auraUnit or "player"
 end
 
+local function ViewerFrameHasActiveAuraInstance(viewerFrame, configUnit, auraUnit, barAuraStackConfigured)
+    local unit = viewerFrame.auraDataUnit or auraUnit
+    if not (viewerFrame.auraInstanceID and unit == configUnit) then
+        return false
+    end
+
+    local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, viewerFrame.auraInstanceID)
+    if not auraData then
+        return false
+    end
+
+    return barAuraStackConfigured or C_UnitAuras.GetAuraDuration(unit, viewerFrame.auraInstanceID) ~= nil
+end
+
+local function ViewerFrameHasActiveCooldownWidget(viewerFrame, configUnit, auraUnit, now)
+    local viewerCooldown = viewerFrame.Cooldown
+    if not (viewerFrame.auraDataUnit and viewerCooldown and viewerCooldown:IsShown()) then
+        return false
+    end
+
+    local vUnit = viewerFrame.auraDataUnit or auraUnit
+    if vUnit ~= configUnit then
+        return false
+    end
+
+    local startMs, durMs = viewerCooldown:GetCooldownTimes()
+    if issecretvalue(durMs) then
+        return true
+    end
+
+    return durMs > 0 and (startMs + durMs) > now * 1000
+end
+
+local function ViewerFrameHasActiveAuraProof(viewerFrame, configUnit, auraUnit, now, barAuraStackConfigured)
+    return ViewerFrameHasActiveAuraInstance(viewerFrame, configUnit, auraUnit, barAuraStackConfigured)
+        or ViewerFrameHasActiveCooldownWidget(viewerFrame, configUnit, auraUnit, now)
+end
+
+local function ResolvePreferredStandaloneAuraViewerFrame(candidateIDs, configUnit, auraUnit, now, barAuraStackConfigured)
+    local firstTrackedFrame
+    for _, spellID in ipairs(candidateIDs or {}) do
+        local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
+        if viewerFrame then
+            if ViewerFrameHasActiveAuraProof(viewerFrame, configUnit, auraUnit, now, barAuraStackConfigured) then
+                return viewerFrame, firstTrackedFrame
+            end
+            firstTrackedFrame = firstTrackedFrame or viewerFrame
+        end
+    end
+    return nil, firstTrackedFrame
+end
+CooldownCompanion.ResolvePreferredStandaloneAuraViewerFrame = ResolvePreferredStandaloneAuraViewerFrame
+
 local function DispatchStandaloneTextureVisual(button)
     if not button then
         return
@@ -1304,17 +1357,31 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
         end
         local orderedStandaloneAuraIDs
+        local standaloneOriginalAuraIDs
+        local standaloneFallbackAuraIDs
         if buttonData.addedAs == "aura" then
             if not button._orderedStandaloneAuraIDs
                 or button._orderedStandaloneAuraIDsRaw ~= buttonData.auraSpellID
                 or button._orderedStandaloneAuraIDsButtonID ~= buttonData.id
                 or button._orderedStandaloneAuraIDsAuraSpellID ~= button._auraSpellID then
-                button._orderedStandaloneAuraIDs = CooldownCompanion:GetOrderedAuraCandidateIDs(buttonData)
+                local originalAuraIDs, fallbackAuraIDs = CooldownCompanion:GetStandaloneAuraCandidateGroups(buttonData)
+                local allAuraIDs = {}
+                for _, spellID in ipairs(originalAuraIDs) do
+                    allAuraIDs[#allAuraIDs + 1] = spellID
+                end
+                for _, spellID in ipairs(fallbackAuraIDs) do
+                    allAuraIDs[#allAuraIDs + 1] = spellID
+                end
+                button._standaloneOriginalAuraIDs = originalAuraIDs
+                button._standaloneFallbackAuraIDs = fallbackAuraIDs
+                button._orderedStandaloneAuraIDs = allAuraIDs
                 button._orderedStandaloneAuraIDsRaw = buttonData.auraSpellID
                 button._orderedStandaloneAuraIDsButtonID = buttonData.id
                 button._orderedStandaloneAuraIDsAuraSpellID = button._auraSpellID
             end
             orderedStandaloneAuraIDs = button._orderedStandaloneAuraIDs
+            standaloneOriginalAuraIDs = button._standaloneOriginalAuraIDs
+            standaloneFallbackAuraIDs = button._standaloneFallbackAuraIDs
         end
 
         -- Viewer-based aura tracking: Blizzard's cooldown viewer frames run
@@ -1328,23 +1395,27 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 viewerFrame = allChildren[buttonData.cdmChildSlot]
             end
         end
-        -- Try configured/implicit aura IDs, prefer one with active aura.
+        -- Try standalone aura identity first; visible fallback IDs are only
+        -- considered after original candidates fail all active proofs.
         if not viewerFrame and orderedStandaloneAuraIDs then
-            local firstTrackedFrame
-            for _, numId in ipairs(orderedStandaloneAuraIDs) do
-                local f = CooldownCompanion:ResolveBuffViewerFrameForSpell(numId)
-                if f then
-                    local unit = f.auraDataUnit or auraUnit
-                    if f.auraInstanceID and unit == configUnit
-                        and C_UnitAuras.GetAuraDataByAuraInstanceID(unit, f.auraInstanceID) then
-                        viewerFrame = f
-                        break
-                    elseif not firstTrackedFrame then
-                        firstTrackedFrame = f
-                    end
-                end
+            local originalActiveFrame, firstOriginalFrame = CooldownCompanion.ResolvePreferredStandaloneAuraViewerFrame(
+                standaloneOriginalAuraIDs,
+                configUnit,
+                auraUnit,
+                now,
+                barAuraStackConfigured
+            )
+            viewerFrame = originalActiveFrame
+            if not viewerFrame then
+                local fallbackActiveFrame, firstFallbackFrame = CooldownCompanion.ResolvePreferredStandaloneAuraViewerFrame(
+                    standaloneFallbackAuraIDs,
+                    configUnit,
+                    auraUnit,
+                    now,
+                    barAuraStackConfigured
+                )
+                viewerFrame = fallbackActiveFrame or firstOriginalFrame or firstFallbackFrame
             end
-            viewerFrame = viewerFrame or firstTrackedFrame
         elseif not viewerFrame and buttonData.auraSpellID then
             -- Cache parsed IDs on the button to avoid per-tick gmatch allocation.
             local ids = button._parsedAuraIDs

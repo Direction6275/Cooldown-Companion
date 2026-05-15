@@ -281,6 +281,20 @@ local function AppendStandaloneFallbackAuraCandidateIDs(candidateIDs, orderedCan
     end
 end
 
+local function BuildStandaloneFallbackAuraCandidateIDs(buttonData, rawIDs)
+    local fallbackCandidateIDs = {}
+    local fallbackCandidateSet = {}
+    local fallbackOrderedSet = {}
+    AppendStandaloneFallbackAuraCandidateIDs(
+        fallbackCandidateSet,
+        fallbackOrderedSet,
+        fallbackCandidateIDs,
+        buttonData,
+        rawIDs
+    )
+    return fallbackCandidateIDs, fallbackCandidateSet, fallbackOrderedSet
+end
+
 local function BuildStandaloneAuraFallbackSpellIDText(buttonData, rawIDs)
     local _, originalCandidateSet = BuildStandaloneOriginalAuraCandidateIDs(buttonData)
     local fallbackIDs = {}
@@ -342,6 +356,12 @@ end
 
 function CooldownCompanion:GetOrderedAuraCandidateIDs(buttonData)
     return BuildOrderedAuraCandidateIDs(buttonData)
+end
+
+function CooldownCompanion:GetStandaloneAuraCandidateGroups(buttonData)
+    local originalAuraIDs = BuildStandaloneOriginalAuraCandidateIDs(buttonData)
+    local fallbackAuraIDs = BuildStandaloneFallbackAuraCandidateIDs(buttonData, buttonData and buttonData.auraSpellID)
+    return originalAuraIDs, fallbackAuraIDs
 end
 
 function CooldownCompanion:GetStandaloneAuraFallbackSpellIDText(buttonData, rawIDs)
