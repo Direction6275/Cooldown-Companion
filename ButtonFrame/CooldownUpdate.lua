@@ -538,9 +538,19 @@ local function ViewerFrameHasActiveCooldownWidget(viewerFrame, configUnit, auraU
     return durMs > 0 and (startMs + durMs) > now * 1000
 end
 
+local function ViewerFrameHasActiveTotemDuration(viewerFrame)
+    local totemSlot = viewerFrame.preferredTotemUpdateSlot
+    if not (totemSlot and viewerFrame:IsVisible() and viewerFrame.totemData) then
+        return false
+    end
+
+    return DurationObjectShowsCooldown(GetTotemDuration(totemSlot))
+end
+
 local function ViewerFrameHasActiveAuraProof(viewerFrame, configUnit, auraUnit, now, barAuraStackConfigured)
     return ViewerFrameHasActiveAuraInstance(viewerFrame, configUnit, auraUnit, barAuraStackConfigured)
         or ViewerFrameHasActiveCooldownWidget(viewerFrame, configUnit, auraUnit, now)
+        or ViewerFrameHasActiveTotemDuration(viewerFrame)
 end
 
 local function ResolvePreferredStandaloneAuraViewerFrame(candidateIDs, configUnit, auraUnit, now, barAuraStackConfigured)
