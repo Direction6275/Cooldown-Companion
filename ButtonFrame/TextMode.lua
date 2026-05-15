@@ -37,6 +37,7 @@ local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 -- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local FormatTime = CooldownCompanion.FormatTime
+local GetDurationSecretFormatSpec = CooldownCompanion.GetDurationSecretFormatSpec
 
 -- Pre-defined color constant tables to avoid per-tick allocation.
 -- These are used as fallbacks when style keys are nil (user hasn't customized).
@@ -493,7 +494,7 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
                     end
                     parts[#parts + 1] = WrapColor("%TIME%", colorOverride or cdColor)
                 elseif timeRemaining then
-                    parts[#parts + 1] = WrapColor(FormatTime(timeRemaining, style.decimalTimers), colorOverride or cdColor)
+                    parts[#parts + 1] = WrapColor(FormatTime(timeRemaining, style), colorOverride or cdColor)
                 end
 
             elseif token == "charges" then
@@ -534,7 +535,7 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
                     end
                     parts[#parts + 1] = WrapColor("%AURA%", colorOverride or auraColor)
                 elseif auraHasTimer and auraRemaining then
-                    parts[#parts + 1] = WrapColor(FormatTime(auraRemaining, style.decimalTimers), colorOverride or auraColor)
+                    parts[#parts + 1] = WrapColor(FormatTime(auraRemaining, style), colorOverride or auraColor)
                 end
 
             elseif token == "keybind" then
@@ -554,7 +555,7 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
                         end
                         parts[#parts + 1] = WrapColor("%STATUS%", colorOverride or auraColor)
                     elseif auraRemaining then
-                        parts[#parts + 1] = WrapColor(FormatTime(auraRemaining, style.decimalTimers), colorOverride or auraColor)
+                        parts[#parts + 1] = WrapColor(FormatTime(auraRemaining, style), colorOverride or auraColor)
                     else
                         parts[#parts + 1] = WrapColor("Active", colorOverride or auraColor)
                     end
@@ -567,7 +568,7 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
                     end
                     parts[#parts + 1] = WrapColor("%STATUS%", colorOverride or cdColor)
                 elseif timeRemaining and timeRemaining > 0 then
-                    parts[#parts + 1] = WrapColor(FormatTime(timeRemaining, style.decimalTimers), colorOverride or cdColor)
+                    parts[#parts + 1] = WrapColor(FormatTime(timeRemaining, style), colorOverride or cdColor)
                 elseif button._cooldownDeferred then
                     -- Deferred cooldown: timer hasn't started yet, show cooldown
                     -- color with placeholder instead of "Ready".
@@ -622,8 +623,8 @@ local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverri
         local fmtStr = text
 
         -- Sentinel placeholders and their format specifiers / secret values
-        -- Numeric secrets (cooldown/aura times) use %.1f or %.0f, string secrets (stacks) use %s
-        local timeFmt = style.decimalTimers and "%.1f" or "%.0f"
+        -- Numeric secrets (cooldown/aura times) use the closest pass-through format; string secrets use %s.
+        local timeFmt = GetDurationSecretFormatSpec(style)
         local allPlaceholders = {
             {text = "%TIME%",   val = secretValue,      fmt = timeFmt},
             {text = "%AURA%",   val = secretValue,      fmt = timeFmt},

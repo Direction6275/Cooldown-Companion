@@ -54,6 +54,35 @@ local function RefreshConfigPanelForPreviewToggle()
     return true
 end
 
+local function AddDurationFormatDropdown(container, settings, refreshCallback, opts)
+    if not (container and settings and CooldownCompanion.GetDurationFormatOptions) then
+        return nil
+    end
+
+    local valueSource = settings
+    if opts and type(opts.fallbackStyle) == "table"
+        and settings.durationFormat == nil
+        and settings.decimalTimers == nil then
+        valueSource = opts.fallbackStyle
+    end
+
+    local formatOptions, formatOrder = CooldownCompanion:GetDurationFormatOptions()
+    local durationDrop = AceGUI:Create("Dropdown")
+    durationDrop:SetLabel("Duration Format")
+    durationDrop:SetList(formatOptions, formatOrder)
+    durationDrop:SetValue(CooldownCompanion:GetDurationFormat(valueSource))
+    durationDrop:SetFullWidth(true)
+    durationDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        settings.durationFormat = CooldownCompanion.NormalizeDurationFormat(val)
+        settings.decimalTimers = nil
+        if refreshCallback then
+            refreshCallback()
+        end
+    end)
+    container:AddChild(durationDrop)
+    return durationDrop
+end
+
 local function AddPreviewToggleButton(container, offLabel, isActiveFn, setActiveFn)
     if not (container and isActiveFn and setActiveFn) then
         return nil
@@ -110,10 +139,20 @@ local function AddConditionalPreviewButton(container, label, previewKind, opts)
     end)
 end
 
-local function BuildCooldownTextControls(container, styleTable, refreshCallback)
+local function BuildCooldownTextControls(container, styleTable, refreshCallback, opts)
+    local fallbackStyle = opts and opts.fallbackStyle
+    local showCooldownText = styleTable.showCooldownText
+    if showCooldownText == nil and type(fallbackStyle) == "table" then
+        showCooldownText = fallbackStyle.showCooldownText
+    end
+    local showAuraText = styleTable.showAuraText
+    if showAuraText == nil and type(fallbackStyle) == "table" then
+        showAuraText = fallbackStyle.showAuraText
+    end
+
     local cdTextCb = AceGUI:Create("CheckBox")
     cdTextCb:SetLabel("Show Cooldown Text")
-    cdTextCb:SetValue(styleTable.showCooldownText or false)
+    cdTextCb:SetValue(showCooldownText or false)
     cdTextCb:SetFullWidth(true)
     cdTextCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showCooldownText = val
@@ -122,27 +161,13 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback)
     end)
     container:AddChild(cdTextCb)
 
-    if styleTable.showCooldownText then
+    if showCooldownText or showAuraText ~= false then
+        AddDurationFormatDropdown(container, styleTable, refreshCallback, opts)
+    end
+
+    if showCooldownText then
         AddFontControls(container, styleTable, "cooldown", {}, refreshCallback)
         AddColorPicker(container, styleTable, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshCallback, refreshCallback)
-
-        local decimalCheck = AceGUI:Create("CheckBox")
-        decimalCheck:SetLabel("Show Decimal Point")
-        decimalCheck:SetValue(styleTable.decimalTimers or false)
-        decimalCheck:SetFullWidth(true)
-        decimalCheck:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.decimalTimers = val or nil
-            refreshCallback()
-        end)
-        container:AddChild(decimalCheck)
-
-        CreateInfoButton(decimalCheck.frame, decimalCheck.checkbg, "LEFT", "RIGHT", decimalCheck.text:GetStringWidth() + 4, 0, {
-            "Show Decimal Point",
-            {"Shows one decimal place on duration text", 1, 1, 1, true},
-            {"(e.g. \"4.5\" instead of \"5\").", 1, 1, 1, true},
-            " ",
-            {"Bar and text mode only.", 0.7, 0.7, 0.7, true},
-        }, decimalCheck)
 
         local cdAnchorDrop = AddAnchorDropdown(container, styleTable, "cooldownTextAnchor", "CENTER", refreshCallback)
 
@@ -1269,6 +1294,7 @@ end
 -- EXPORTS
 ------------------------------------------------------------------------
 ST._BuildCooldownTextControls = BuildCooldownTextControls
+ST._AddDurationFormatDropdown = AddDurationFormatDropdown
 ST._AddPreviewToggleButton = AddPreviewToggleButton
 ST._RefreshConfigPanelForPreviewToggle = RefreshConfigPanelForPreviewToggle
 ST._AddConditionalPreviewButton = AddConditionalPreviewButton

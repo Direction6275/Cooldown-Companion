@@ -420,7 +420,7 @@ local defaults = {
             textBorderSize = 0,
             textBorderColor = {0, 0, 0, 1},
             textShadow = false,
-            decimalTimers = false,
+            durationFormat = "clock",
             showTextGroupHeader = false,
             textHeaderFontSize = 12,
             textHeaderFontColor = {1, 1, 1, 1},
@@ -624,7 +624,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     cooldownText = {
         label = "Cooldown Text",
-        keys = {"showCooldownText", "decimalTimers", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
+        keys = {"showCooldownText", "durationFormat", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
         modes = {icons = true, bars = true},
     },
     auraText = {

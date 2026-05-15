@@ -52,6 +52,7 @@ local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 -- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
+local ApplyDurationFormatToCooldown = CooldownCompanion.ApplyDurationFormatToCooldown
 
 -- Pre-defined color constant tables to avoid per-tick allocation.
 -- IMPORTANT: These tables are read-only — never write to their indices.
@@ -535,6 +536,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.cooldown:SetAllPoints(button.icon)
     ApplyDefaultCooldownSwipeStyle(button, style)
     button.cooldown:SetHideCountdownNumbers(false) -- Always allow; visibility controlled via text alpha
+    ApplyDurationFormatToCooldown(button.cooldown, style)
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
     -- Always fully non-interactive: disable both clicks and motion
     SetFrameClickThroughRecursive(button.cooldown, true, true)
@@ -600,6 +602,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         secCd:SetSize(1, 1)
         secCd:SetPoint("CENTER")
         secCd:SetHideCountdownNumbers(false)
+        ApplyDurationFormatToCooldown(secCd, style)
         SetFrameClickThroughRecursive(secCd, true, true)
         button.secondaryCooldown = secCd
 
@@ -1322,6 +1325,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Countdown number visibility is controlled per-tick via SetHideCountdownNumbers
     button.cooldown:SetHideCountdownNumbers(false)
+    ApplyDurationFormatToCooldown(button.cooldown, style)
+    if button.secondaryCooldown then
+        ApplyDurationFormatToCooldown(button.secondaryCooldown, style)
+    end
     ApplyDefaultCooldownSwipeStyle(button, style)
     if button.auraBlizzardCooldown then
         AnchorAuraBlizzardCooldown(button)

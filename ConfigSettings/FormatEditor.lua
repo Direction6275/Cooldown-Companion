@@ -405,7 +405,7 @@ local function PreviewSubstitute(segments, style, mockState)
                 parts[#parts + 1] = WrapPreviewColor(mockState.name or "Fireball", colorOverride or baseColor)
             elseif token == "time" then
                 if timeVal and timeVal > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(FormatTime(timeVal, style.decimalTimers), colorOverride or cdColor)
+                    parts[#parts + 1] = WrapPreviewColor(FormatTime(timeVal, style), colorOverride or cdColor)
                 end
             elseif token == "charges" then
                 if mockState.charges then
@@ -425,7 +425,7 @@ local function PreviewSubstitute(segments, style, mockState)
                 end
             elseif token == "aura" then
                 if auraVal and auraVal > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(FormatTime(auraVal, style.decimalTimers), colorOverride or auraColor)
+                    parts[#parts + 1] = WrapPreviewColor(FormatTime(auraVal, style), colorOverride or auraColor)
                 end
             elseif token == "keybind" then
                 if mockState.keybind and mockState.keybind ~= "" then
@@ -434,14 +434,14 @@ local function PreviewSubstitute(segments, style, mockState)
             elseif token == "status" then
                 if auraActive then
                     if auraVal and auraVal > 0 then
-                        parts[#parts + 1] = WrapPreviewColor(FormatTime(auraVal, style.decimalTimers), colorOverride or auraColor)
+                        parts[#parts + 1] = WrapPreviewColor(FormatTime(auraVal, style), colorOverride or auraColor)
                     else
                         parts[#parts + 1] = WrapPreviewColor("Active", colorOverride or auraColor)
                     end
                 elseif auraOnly then
                     -- Aura-only entries do not have a ready/cooldown fallback.
                 elseif timeVal and timeVal > 0 then
-                    parts[#parts + 1] = WrapPreviewColor(FormatTime(timeVal, style.decimalTimers), colorOverride or cdColor)
+                    parts[#parts + 1] = WrapPreviewColor(FormatTime(timeVal, style), colorOverride or cdColor)
                 else
                     parts[#parts + 1] = WrapPreviewColor(style.textReadyText or "Ready", colorOverride or readyColor)
                 end

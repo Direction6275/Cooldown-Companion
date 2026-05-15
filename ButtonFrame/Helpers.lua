@@ -21,17 +21,169 @@ local DEFAULT_BAR_CHARGE_COLOR = {1.0, 0.82, 0.0, 1.0}
 local HEALTHSTONE_ITEM_ID = 5512
 
 -- Format remaining seconds for time display (shared across bar, text, and preview modes).
-local function FormatTime(seconds, decimal)
+local DURATION_FORMAT_CLOCK = "clock"
+local DURATION_FORMAT_UNITS = "units"
+local DURATION_FORMAT_DECIMAL_UNDER_10 = "decimal_under_10"
+local DURATION_FORMAT_DECIMAL_UNDER_60 = "decimal_under_60"
+
+local DURATION_FORMAT_LABELS = {
+    [DURATION_FORMAT_CLOCK] = "1:30 / 45 / 8",
+    [DURATION_FORMAT_UNITS] = "1m 30s / 45s / 8s",
+    [DURATION_FORMAT_DECIMAL_UNDER_10] = "1:30 / 45 / 8.7",
+    [DURATION_FORMAT_DECIMAL_UNDER_60] = "1:30 / 45.0 / 8.7",
+}
+
+local DURATION_FORMAT_ORDER = {
+    DURATION_FORMAT_CLOCK,
+    DURATION_FORMAT_UNITS,
+    DURATION_FORMAT_DECIMAL_UNDER_10,
+    DURATION_FORMAT_DECIMAL_UNDER_60,
+}
+
+local DURATION_FORMAT_SET = {
+    [DURATION_FORMAT_CLOCK] = true,
+    [DURATION_FORMAT_UNITS] = true,
+    [DURATION_FORMAT_DECIMAL_UNDER_10] = true,
+    [DURATION_FORMAT_DECIMAL_UNDER_60] = true,
+}
+
+CooldownCompanion.DURATION_FORMAT_CLOCK = DURATION_FORMAT_CLOCK
+CooldownCompanion.DURATION_FORMAT_UNITS = DURATION_FORMAT_UNITS
+CooldownCompanion.DURATION_FORMAT_DECIMAL_UNDER_10 = DURATION_FORMAT_DECIMAL_UNDER_10
+CooldownCompanion.DURATION_FORMAT_DECIMAL_UNDER_60 = DURATION_FORMAT_DECIMAL_UNDER_60
+
+local secondsFormatterCache = {}
+
+local function NormalizeDurationFormat(value, decimalTimers)
+    if DURATION_FORMAT_SET[value] then
+        return value
+    end
+    if decimalTimers == true then
+        return DURATION_FORMAT_DECIMAL_UNDER_60
+    end
+    return DURATION_FORMAT_CLOCK
+end
+CooldownCompanion.NormalizeDurationFormat = NormalizeDurationFormat
+
+local function GetDurationFormat(source, decimalTimers)
+    if type(source) == "table" then
+        return NormalizeDurationFormat(source.durationFormat, source.decimalTimers)
+    end
+    return NormalizeDurationFormat(source, decimalTimers)
+end
+CooldownCompanion.GetDurationFormat = GetDurationFormat
+
+function CooldownCompanion:GetDurationFormatOptions()
+    return DURATION_FORMAT_LABELS, DURATION_FORMAT_ORDER
+end
+
+local function GetEnumValue(enumName, valueName, fallback)
+    local enumTable = Enum and Enum[enumName]
+    if enumTable and enumTable[valueName] ~= nil then
+        return enumTable[valueName]
+    end
+    return fallback
+end
+
+local function GetUnitsSecondsFormatter()
+    if secondsFormatterCache[DURATION_FORMAT_UNITS] ~= nil then
+        return secondsFormatterCache[DURATION_FORMAT_UNITS]
+    end
+
+    local formatter
+    if C_StringUtil and C_StringUtil.CreateSecondsFormatter then
+        formatter = C_StringUtil.CreateSecondsFormatter()
+        formatter:SetDefaultAbbreviation(GetEnumValue("SecondsFormatterAbbrevation", "OneLetter", 2))
+        formatter:SetDesiredUnitCount(2)
+        formatter:SetMinInterval(GetEnumValue("SecondsFormatterInterval", "Seconds", 0))
+        formatter:SetMillisecondsThreshold(0)
+        formatter:SetCanRoundUpLastUnit(false)
+        formatter:SetCanRoundUpIntervals(false)
+        formatter:SetConvertToLower(true)
+        formatter:SetStripIntervalWhitespace(GetEnumValue("SecondsFormatterIntervalWhitespace", "Preserve", 0))
+    end
+
+    secondsFormatterCache[DURATION_FORMAT_UNITS] = formatter or false
+    return formatter
+end
+
+local function FormatUnitsTime(seconds)
+    local total = math_floor(seconds)
+    if total >= 3600 then
+        return string_format("%dh %dm", math_floor(total / 3600), math_floor(total / 60) % 60)
+    elseif total >= 60 then
+        return string_format("%dm %ds", math_floor(total / 60), total % 60)
+    elseif total > 0 then
+        return string_format("%ds", total)
+    end
+    return ""
+end
+
+local function FormatTime(seconds, formatOrDecimal)
     if seconds >= 3600 then
+        local formatKey = GetDurationFormat(formatOrDecimal)
+        if formatKey == DURATION_FORMAT_UNITS then
+            return FormatUnitsTime(seconds)
+        end
         return string_format("%d:%02d:%02d", math_floor(seconds / 3600), math_floor(seconds / 60) % 60, math_floor(seconds % 60))
     elseif seconds >= 60 then
+        local formatKey = GetDurationFormat(formatOrDecimal)
+        if formatKey == DURATION_FORMAT_UNITS then
+            return FormatUnitsTime(seconds)
+        end
         return string_format("%d:%02d", math_floor(seconds / 60), math_floor(seconds % 60))
     elseif seconds > 0 then
-        return string_format(decimal and "%.1f" or "%d", decimal and seconds or math_floor(seconds))
+        local formatKey
+        if type(formatOrDecimal) == "boolean" then
+            formatKey = NormalizeDurationFormat(nil, formatOrDecimal)
+        else
+            formatKey = GetDurationFormat(formatOrDecimal)
+        end
+        if formatKey == DURATION_FORMAT_UNITS then
+            return FormatUnitsTime(seconds)
+        elseif formatKey == DURATION_FORMAT_DECIMAL_UNDER_60
+            or (formatKey == DURATION_FORMAT_DECIMAL_UNDER_10 and seconds < 10) then
+            return string_format("%.1f", seconds)
+        end
+        return string_format("%d", math_floor(seconds))
     end
     return ""
 end
 CooldownCompanion.FormatTime = FormatTime
+
+local function GetDurationSecretFormatSpec(source)
+    local formatKey = GetDurationFormat(source)
+    if formatKey == DURATION_FORMAT_DECIMAL_UNDER_60
+        or formatKey == DURATION_FORMAT_DECIMAL_UNDER_10 then
+        return "%.1f"
+    end
+    return "%.0f"
+end
+CooldownCompanion.GetDurationSecretFormatSpec = GetDurationSecretFormatSpec
+
+local function ApplyDurationFormatToCooldown(cooldown, source)
+    if not cooldown then return end
+
+    local formatKey = GetDurationFormat(source)
+    local formatter
+    if formatKey == DURATION_FORMAT_UNITS then
+        formatter = GetUnitsSecondsFormatter()
+    end
+
+    if cooldown.SetCountdownFormatter then
+        cooldown:SetCountdownFormatter(formatter or nil)
+    end
+    if cooldown.SetCountdownMillisecondsThreshold then
+        local threshold = 0
+        if formatKey == DURATION_FORMAT_DECIMAL_UNDER_10 then
+            threshold = 10
+        elseif formatKey == DURATION_FORMAT_DECIMAL_UNDER_60 then
+            threshold = 60
+        end
+        cooldown:SetCountdownMillisecondsThreshold(threshold)
+    end
+end
+CooldownCompanion.ApplyDurationFormatToCooldown = ApplyDurationFormatToCooldown
 
 -- Apply font, size, outline, and text color to a FontString from a style table.
 -- Keys are derived from prefix: e.g. prefix="charge" reads chargeFont, chargeFontSize,

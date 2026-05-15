@@ -21,6 +21,7 @@ local AddColorPicker = ST._AddColorPicker
 local RenderFormatPreview = ST._RenderFormatPreview
 local ParseFormatString = ST._ParseFormatString
 local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
+local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -29,7 +30,7 @@ local TOKEN_HELP_TEXT = table.concat({
     "|cffffffffAvailable Tokens:|r",
     "",
     "|cff00ff00{name}|r  Spell/item display name",
-    "|cff00ff00{time}|r  Cooldown time remaining (1:23, 4.5)",
+    "|cff00ff00{time}|r  Cooldown time remaining",
     "|cff00ff00{charges}|r  Current charges (if spell has charges)",
     "|cff00ff00{maxcharges}|r  Maximum charges (if spell has charges)",
     "|cff00ff00{stacks}|r  Aura stacks or item count",
@@ -164,21 +165,7 @@ local function BuildTextAppearanceTab(container, group, style)
         container:AddChild(spacingSlider)
     end
 
-    local decimalCheck = AceGUI:Create("CheckBox")
-    decimalCheck:SetLabel("Show Decimal Point")
-    decimalCheck:SetValue(style.decimalTimers or false)
-    decimalCheck:SetFullWidth(true)
-    decimalCheck:SetCallback("OnValueChanged", function(widget, event, val)
-        style.decimalTimers = val or nil
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(decimalCheck)
-
-    CreateInfoButton(decimalCheck.frame, decimalCheck.checkbg, "LEFT", "RIGHT", decimalCheck.text:GetStringWidth() + 4, 0, {
-        "Show Decimal Point",
-        {"Shows one decimal place on duration text", 1, 1, 1, true},
-        {"(e.g. \"4.5\" instead of \"5\").", 1, 1, 1, true},
-    }, decimalCheck)
+    AddDurationFormatDropdown(container, style, refreshStyle)
 
     local headerCb = AceGUI:Create("CheckBox")
     headerCb:SetLabel("Show Group Header")
