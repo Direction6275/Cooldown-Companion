@@ -45,6 +45,7 @@ local UpdateLossOfControl = ST._UpdateLossOfControl
 -- Imports from Tracking
 local UpdateIconTint = ST._UpdateIconTint
 local EvaluateDesaturation = ST._EvaluateDesaturation
+local ClearButtonVisualState = ST._ClearButtonVisualState
 
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
@@ -315,8 +316,18 @@ local function UpdateIconFill(button, buttonData, style)
     local cooldownPreview = button._conditionalPreviewDomain == "cooldown"
     local mode
     local color
+    local visualState = button._visualState
 
-    if button._auraActive == true or auraPreview then
+    if visualState and visualState.iconFillActive then
+        mode = visualState.iconFillMode
+        if mode == "aura" or mode == "aura_static" then
+            color = style.iconFillAuraColor or DEFAULT_ICON_FILL_AURA_COLOR
+        else
+            color = style.iconFillCooldownColor or DEFAULT_ICON_FILL_COOLDOWN_COLOR
+        end
+    elseif visualState then
+        mode = nil
+    elseif button._auraActive == true or auraPreview then
         color = style.iconFillAuraColor or DEFAULT_ICON_FILL_AURA_COLOR
         if button._auraHasTimer == false and not auraPreview then
             mode = "aura_static"
@@ -1180,8 +1191,10 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
                and not buttonData.isPassive
                and not button._noCooldown
                and (not style.readyGlowCombatOnly or inCombat)
-               and button._desatCooldownActive == false
-               and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
+               and ((button._visualState and button._visualState.readyGlowEligible == true)
+                    or (not button._visualState
+                        and button._desatCooldownActive == false
+                        and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN))
                and not (procOverlayActive and style.procGlowStyle ~= "none") then
             if style.readyGlowOnlyAtMaxCharges
                and buttonData.type == "spell"
@@ -1231,6 +1244,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button.style = style
 
     -- Invalidate cached widget state so next tick reapplies everything
+    ClearButtonVisualState(button)
     button._desaturated = nil
     button._desatCooldownActive = nil
     button._readyGlowStartTime = nil
@@ -1243,6 +1257,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._lastRealCooldownSpellID = nil
     button._lastRealCooldownDurationObj = nil
     button._lastRealCooldownAt = nil
+    button._lastRealCooldownHoldGCDExpiresAt = nil
     button._vertexR = nil
     button._vertexG = nil
     button._vertexB = nil

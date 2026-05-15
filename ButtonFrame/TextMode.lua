@@ -302,6 +302,9 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
     elseif tokenName == "oor" then
         return button._isOutOfRange == true
     elseif tokenName == "available" then
+        if button._visualState then
+            return button._visualState.ready == true
+        end
         return button._desatCooldownActive ~= true
     elseif tokenName == "incombat" then
         return UnitAffectingCombat("player") == true

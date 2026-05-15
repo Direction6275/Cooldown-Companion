@@ -1492,10 +1492,15 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
             if buttonData and buttonData.type == "spell" then
                 button._noCooldown = nil
                 button._noCooldownSpellId = nil
+                button._visualState = nil
+                button._visualDesaturationReason = nil
+                button._visualTintReason = nil
+                button._visualSuppressedUnusableTintReason = nil
                 button._lastOwnSpellCastAt = nil
                 button._lastRealCooldownSpellID = nil
                 button._lastRealCooldownDurationObj = nil
                 button._lastRealCooldownAt = nil
+                button._lastRealCooldownHoldGCDExpiresAt = nil
                 button._displaySpellId = nil
                 button._liveOverrideSpellId = nil
                 button._lastSpellTexture = nil

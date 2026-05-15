@@ -53,6 +53,7 @@ local UpdateLossOfControl = ST._UpdateLossOfControl
 -- Imports from Tracking
 local UpdateIconTint = ST._UpdateIconTint
 local EvaluateDesaturation = ST._EvaluateDesaturation
+local ClearButtonVisualState = ST._ClearButtonVisualState
 
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
@@ -1063,11 +1064,18 @@ local function UpdateBarDisplay(button)
     local stackSegmentLayerActive = barAuraStackDisplay and button._barAuraStackMode ~= "continuous"
     local isChargeButton = UsesChargeBehavior(button.buttonData) and not barAuraStackDisplay
     local chargeState = button._chargeState
+    local visualState = button._visualState
     local auraTimerActive = barAuraStackDisplay or button._auraActive
         and (button._durationObj or button._viewerBar or button._conditionalPreviewRemaining)
     local onCooldown
     if itemUsesResolvedCooldownState then
         onCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+    elseif visualState and isChargeButton then
+        chargeState = visualState.chargeState
+        onCooldown = chargeState == CHARGE_STATE_MISSING
+            or chargeState == CHARGE_STATE_ZERO
+    elseif visualState then
+        onCooldown = visualState.cooldownState == COOLDOWN_STATE_COOLDOWN
     elseif isChargeButton then
         onCooldown = chargeState == CHARGE_STATE_MISSING
             or chargeState == CHARGE_STATE_ZERO
@@ -1662,6 +1670,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button:SetScript("OnUpdate", BarModeOnUpdate)
 
     -- Invalidate cached state
+    ClearButtonVisualState(button)
     button._desaturated = nil
     button._desatCooldownActive = nil
     button._readyGlowStartTime = nil
@@ -1674,6 +1683,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._lastRealCooldownSpellID = nil
     button._lastRealCooldownDurationObj = nil
     button._lastRealCooldownAt = nil
+    button._lastRealCooldownHoldGCDExpiresAt = nil
     button._vertexR = nil
     button._vertexG = nil
     button._vertexB = nil

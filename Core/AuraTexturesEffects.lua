@@ -572,6 +572,9 @@ local function IsTextureIndicatorSectionActive(button, sectionKey, config)
         if not buttonData or buttonData.isPassive or button._noCooldown then
             return false
         end
+        if button._visualState then
+            return button._visualState.ready == true
+        end
         return button._desatCooldownActive == false
     end
 
@@ -579,6 +582,9 @@ local function IsTextureIndicatorSectionActive(button, sectionKey, config)
         local buttonData = button.buttonData
         if not buttonData or buttonData.isPassive then
             return false
+        end
+        if button._visualState then
+            return button._visualState.unusable == true
         end
         if buttonData.type == "spell" then
             local spellID = button._displaySpellId or buttonData.id
@@ -599,6 +605,9 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
     end
 
     if conditionKey == "cooldownActive" then
+        if button._visualState then
+            return button._visualState.cooldownActive == true
+        end
         return button._desatCooldownActive == true
     end
 

@@ -70,6 +70,7 @@ Core\GroupOperations.lua
 ButtonFrame\Helpers.lua
 ButtonFrame\Glows.lua
 ButtonFrame\Visibility.lua
+ButtonFrame\VisualState.lua
 ButtonFrame\Tracking.lua
 ButtonFrame\IconMode.lua
 ButtonFrame\BarMode.lua

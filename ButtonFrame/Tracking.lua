@@ -166,6 +166,21 @@ end
 -- Icon tinting: out-of-range red > unusable dimming > aura tint > cooldown tint > base tint.
 -- Shared by icon-mode and bar-mode display paths.
 local function UpdateIconTint(button, buttonData, style)
+    local visualState = button and button._visualState
+    if visualState then
+        button._unusableTintActive = visualState.unusableTintActive == true
+        button._visualTintReason = visualState.tintReason
+        local r = visualState.tintR or 1
+        local g = visualState.tintG or 1
+        local b = visualState.tintB or 1
+        local a = visualState.tintA or 1
+        if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b or button._vertexA ~= a then
+            button._vertexR, button._vertexG, button._vertexB, button._vertexA = r, g, b, a
+            button.icon:SetVertexColor(r, g, b, a)
+        end
+        return
+    end
+
     button._unusableTintActive = false
     if buttonData.isPassive then
         local c
@@ -265,6 +280,17 @@ end
 -- equippable-but-not-equipped items always desaturate.
 -- Shared by icon-mode and bar-mode display paths.
 local function EvaluateDesaturation(button, buttonData, style)
+    local visualState = button and button._visualState
+    if visualState then
+        local wantDesat = visualState.desaturated == true
+        button._visualDesaturationReason = visualState.desaturationReason
+        if button._desaturated ~= wantDesat then
+            button._desaturated = wantDesat
+            button.icon:SetDesaturated(wantDesat)
+        end
+        return
+    end
+
     local wantDesat = false
     if button._auraTrackingReady == true then
         if buttonData.isPassive then
