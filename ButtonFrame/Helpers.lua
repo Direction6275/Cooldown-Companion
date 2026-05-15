@@ -156,8 +156,7 @@ CooldownCompanion.FormatTime = FormatTime
 
 local function GetDurationSecretFormatSpec(source)
     local formatKey = GetDurationFormat(source)
-    if formatKey == DURATION_FORMAT_DECIMAL_UNDER_60
-        or formatKey == DURATION_FORMAT_DECIMAL_UNDER_10 then
+    if formatKey == DURATION_FORMAT_DECIMAL_UNDER_60 then
         return "%.1f"
     end
     return "%.0f"
