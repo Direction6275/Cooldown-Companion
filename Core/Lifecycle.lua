@@ -415,9 +415,10 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
         self:ForEachButton(function(button, buttonData)
             if buttonData.type == "spell"
-               and not buttonData.isPassive then
+                and not buttonData.isPassive then
                 local displaySpellID = button._displaySpellId or buttonData.id
                 if spellID == buttonData.id or spellID == displaySpellID then
+                    button._lastOwnSpellCastAt = GetTime()
                     if self.UsesChargeBehavior(buttonData) and buttonData.hasCharges then
                         -- Track charge consumption for restricted-mode color heuristic.
                         -- _chargeRecharging at event time reflects the PRE-cast state:
