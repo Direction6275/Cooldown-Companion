@@ -1254,6 +1254,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._keyPressHighlightActive = nil
     button._displaySpellId = nil
     button._liveOverrideSpellId = nil
+    button._lastRealCooldownSpellID = nil
+    button._lastRealCooldownDurationObj = nil
+    button._lastRealCooldownAt = nil
+    button._lastOwnSpellCastAt = nil
     button._spellOutOfRange = nil
     button._itemCount = nil
     button._auraActive = nil
