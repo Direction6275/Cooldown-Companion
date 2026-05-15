@@ -1028,16 +1028,16 @@ function CooldownCompanion:ApplyRealCooldownContinuity(button, buttonData, coold
         and result.source == "spell-gcd"
         and result.isOnGCD == true
         and CooldownCompanion._gcdActive == true
-        and previousStillShown then
+        and (previousStillShown or gcdBridgeActive) then
         result.continuityDecision = "hold"
         result.state = COOLDOWN_STATE_COOLDOWN
         result.source = "held-real-cooldown-over-gcd"
-        result.realCooldownShown = true
+        result.realCooldownShown = previousStillShown or false
         result.realDurationObj = previousDurationObj
         result.durationObj = previousDurationObj
         result.renderDurationObj = previousDurationObj
 
-        if RealCooldownEndsInsideActiveGCD(previousDurationObj) then
+        if not previousStillShown and gcdBridgeActive then
             result.presentationState = COOLDOWN_STATE_GCD
             result.durationObj = CooldownCompanion._gcdDurationObj
             result.renderDurationObj = CooldownCompanion._gcdDurationObj
