@@ -1489,12 +1489,6 @@ local function MigrateDurationFormatForGroup(group)
     end
 
     MigrateDurationFormatTable(group.style)
-
-    if type(group.buttons) == "table" then
-        for _, buttonData in pairs(group.buttons) do
-            MigrateDurationFormatTable(buttonData and buttonData.styleOverrides)
-        end
-    end
 end
 
 local function MigrateDurationFormatCustomBars(container)

@@ -59,18 +59,11 @@ local function AddDurationFormatDropdown(container, settings, refreshCallback, o
         return nil
     end
 
-    local valueSource = settings
-    if opts and type(opts.fallbackStyle) == "table"
-        and settings.durationFormat == nil
-        and settings.decimalTimers == nil then
-        valueSource = opts.fallbackStyle
-    end
-
     local formatOptions, formatOrder = CooldownCompanion:GetDurationFormatOptions()
     local durationDrop = AceGUI:Create("Dropdown")
     durationDrop:SetLabel("Duration Format")
     durationDrop:SetList(formatOptions, formatOrder)
-    durationDrop:SetValue(CooldownCompanion:GetDurationFormat(valueSource))
+    durationDrop:SetValue(CooldownCompanion.GetDurationFormat(settings))
     durationDrop:SetFullWidth(true)
     durationDrop:SetCallback("OnValueChanged", function(widget, event, val)
         settings.durationFormat = CooldownCompanion.NormalizeDurationFormat(val)
@@ -161,7 +154,7 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback,
     end)
     container:AddChild(cdTextCb)
 
-    if showCooldownText or showAuraText ~= false then
+    if not (opts and opts.isOverride) and (showCooldownText or showAuraText ~= false) then
         AddDurationFormatDropdown(container, styleTable, refreshCallback, opts)
     end
 

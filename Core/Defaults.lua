@@ -624,7 +624,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     cooldownText = {
         label = "Cooldown Text",
-        keys = {"showCooldownText", "durationFormat", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
+        keys = {"showCooldownText", "cooldownFont", "cooldownFontSize", "cooldownFontOutline", "cooldownFontColor", "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset"},
         modes = {icons = true, bars = true},
     },
     auraText = {

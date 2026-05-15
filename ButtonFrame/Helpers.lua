@@ -116,6 +116,9 @@ local function FormatUnitsTime(seconds)
     elseif total > 0 then
         return string_format("%ds", total)
     end
+    if seconds > 0 then
+        return "0s"
+    end
     return ""
 end
 
