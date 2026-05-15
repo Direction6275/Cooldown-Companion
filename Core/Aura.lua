@@ -260,6 +260,11 @@ local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
     AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.id)
     AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, baseId)
 
+    local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES and CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
+    if overrideBuffs then
+        AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, overrideBuffs)
+    end
+
     return orderedCandidateIDs, candidateIDs, orderedCandidateSet
 end
 
@@ -325,7 +330,9 @@ local function BuildOrderedAuraCandidateIDs(buttonData)
         AppendSpellAssociationAuraIDs()
     end
 
-    local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES and CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
+    local overrideBuffs = buttonData.addedAs ~= "aura"
+        and CooldownCompanion.ABILITY_BUFF_OVERRIDES
+        and CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
     if overrideBuffs then
         AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, overrideBuffs)
     end
