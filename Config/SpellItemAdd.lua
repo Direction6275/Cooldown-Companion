@@ -973,10 +973,11 @@ end
 ------------------------------------------------------------------------
 -- Autocomplete: Show results anchored to an edit box widget
 ------------------------------------------------------------------------
-local function ShowAutocompleteResults(results, anchorWidget, onSelect)
+local function ShowAutocompleteResults(results, anchorWidget, onSelect, options)
     local dropdown = GetOrCreateAutocompleteDropdown()
     dropdown._onSelect = onSelect
     dropdown._editbox = anchorWidget.editbox
+    dropdown._requireExactNumericEnter = options and options.requireExactNumericEnter == true
 
     if not results then
         dropdown:Hide()
@@ -1035,7 +1036,7 @@ local function HandleAutocompleteKeyDown(key)
         local editText = autocompleteDropdown._editbox and autocompleteDropdown._editbox:GetText()
         local exactID = editText and editText:match("^%s*(%d+)%s*$")
         exactID = exactID and tonumber(exactID) or nil
-        if exactID then
+        if autocompleteDropdown._requireExactNumericEnter and exactID then
             local exactIndex
             for rowIndex = 1, maxIdx do
                 local row = autocompleteDropdown.rows[rowIndex]

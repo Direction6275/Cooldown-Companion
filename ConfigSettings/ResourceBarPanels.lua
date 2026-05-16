@@ -2931,7 +2931,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
         if text and #text >= 1 and CS.SearchCDMAuraAutocomplete then
             CS.ShowAutocompleteResults(CS.SearchCDMAuraAutocomplete(text), widget, function(entry)
                 CommitCustomBarTrackedAuraEntry(widget, entry)
-            end)
+            end, { requireExactNumericEnter = true })
         else
             CS.HideAutocomplete()
         end

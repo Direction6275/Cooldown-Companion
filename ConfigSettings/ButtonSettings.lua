@@ -903,7 +903,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
             if text and #text >= 1 and CS.SearchCDMAuraAutocomplete then
                 CS.ShowAutocompleteResults(CS.SearchCDMAuraAutocomplete(text), widget, function(entry)
                     CommitAuraTrackingEntry(widget, entry)
-                end)
+                end, { requireExactNumericEnter = true })
             else
                 CS.HideAutocomplete()
             end
