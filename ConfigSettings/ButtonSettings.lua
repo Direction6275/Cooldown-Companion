@@ -708,10 +708,10 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
     local auraFoundButUntracked = auraStatus.state == "associatedAuraNotTracked"
     local auraTrackedButUnavailable = auraStatus.state == "trackedAuraUnavailable"
     local auraInactiveColorCode = auraFoundButUntracked and "|cffffff00" or "|cffff0000"
-    local auraIdFieldLabel = isAuraEntry and "Fallback Aura IDs" or "Spell ID Override"
+    local auraIdFieldLabel = isAuraEntry and "Additional Auras" or "Tracked Auras"
     local auraIdFieldTooltip = isAuraEntry
-        and "The original aura entry is checked first. Search for CDM tracked auras by name, or enter CDM aura spell IDs, to add fallbacks for when the original aura is not present.\n\nUse arrows to set fallback priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select a spell from the Cooldown Manager."
-        or "Most spells are tracked automatically, but some abilities apply a buff or debuff with a different spell ID than the ability itself. If tracking isn't working, search for a CDM tracked aura by name, or enter its CDM aura spell ID.\n\nUse arrows to set override priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select a spell from the Cooldown Manager."
+        and "The original aura is checked first. Add CDM tracked auras here when another aura should also count for this entry.\n\nUse arrows to set additional aura priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select an aura from the Cooldown Manager."
+        or "Most spells are tracked automatically, but some abilities apply a buff or debuff with a different aura ID than the spell itself. Search for CDM tracked auras by name, or enter CDM aura spell IDs, to choose which auras should count for this spell.\n\nUse arrows to set tracked aura priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select an aura from the Cooldown Manager."
 
     if showHeading then
         local auraHeading = AceGUI:Create("Heading")
@@ -1013,8 +1013,8 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
     elseif auraStatus.state == "noAssociatedAura" then
         local noAuraLabel = AceGUI:Create("Label")
         local noAuraText = isAuraEntry
-            and "|cff888888No associated aura was found. Add a fallback aura ID above if you want this entry to use another CDM-trackable aura when the original is not present.|r"
-            or "|cff888888No associated aura was found for this spell. Use the Spell ID Override above if you want to link it to a specific CDM-trackable aura.|r"
+            and "|cff888888No associated aura was found. Add an additional aura above if another CDM-trackable aura should count for this entry.|r"
+            or "|cff888888No associated aura was found for this spell. Use Tracked Auras above to link it to a specific CDM-trackable aura.|r"
         SetupWrappedStatusLabel(scroll, noAuraLabel, noAuraText)
         scroll:AddChild(noAuraLabel)
         local noAuraSpacer = AceGUI:Create("Label")

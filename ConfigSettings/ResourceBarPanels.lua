@@ -2445,7 +2445,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
         "Aura Tracking",
         {isSpellCustomBar and "Shows a tracked buff or debuff on top of this spell Custom Bar." or "Shows the tracked aura's remaining duration or stack state on this Custom Bar.", 1, 1, 1, true},
         " ",
-        {isSpellCustomBar and "This follows the same Aura Tracking model used by spell entries in bar panels." or "Custom Bars keep their tracked aura identity in the entry row. This section shows whether that aura is ready to drive the bar.", 1, 1, 1, true},
+        {isSpellCustomBar and "This follows the same Tracked Auras model used by spell entries in bar panels." or "Custom Bars keep their tracked aura identity in the entry row. This section shows whether that aura is ready to drive the bar.", 1, 1, 1, true},
         " ",
         "Requires:",
         {"- Blizzard Cooldown Manager (CDM) must be enabled.", 1, 1, 1, true},
@@ -2510,7 +2510,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
         if auraEditBox.editbox.Instructions then
             auraEditBox.editbox.Instructions:Hide()
         end
-        auraEditBox:SetLabel("Spell ID Override")
+        auraEditBox:SetLabel("Tracked Aura")
         auraEditBox:SetText(cab.auraSpellID and tostring(cab.auraSpellID) or "")
         auraEditBox:SetFullWidth(true)
         auraEditBox:SetCallback("OnEnterPressed", function(widget, _, text)
@@ -2534,8 +2534,8 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
         container:AddChild(auraEditBox)
 
         CreateInfoButton(auraEditBox.frame, auraEditBox.frame, "TOPLEFT", "TOPLEFT", auraEditBox.label:GetStringWidth() + 4, -2, {
-            "Spell ID Override",
-            {"Most spells are tracked automatically, but some abilities apply a buff or debuff with a different spell ID than the ability itself. If tracking isn't working, enter the buff/debuff spell ID here. Use commas only when one entry should intentionally watch multiple IDs.\n\nUse \"Pick CDM\" below to visually select a spell from the Cooldown Manager.", 1, 1, 1, true},
+            "Tracked Aura",
+            {"Most spells are tracked automatically, but some abilities apply a buff or debuff with a different aura ID than the spell itself. Enter the CDM aura spell ID this Custom Bar should track. Use commas only when one entry should intentionally watch multiple IDs.\n\nUse \"Pick CDM\" below to visually select an aura from the Cooldown Manager.", 1, 1, 1, true},
         }, infoButtons)
 
         AddCustomBarAuraTrackingGap(container)
@@ -2623,7 +2623,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
         pickCDMBtn:SetCallback("OnEnter", function(widget)
             GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
             GameTooltip:AddLine("Pick from Cooldown Manager")
-            GameTooltip:AddLine("Shows a list of Tracked Buff/Tracked Bar auras currently tracked in the Cooldown Manager. Click one to populate the Spell ID Override.", 1, 1, 1, true)
+            GameTooltip:AddLine("Shows a list of Tracked Buff/Tracked Bar auras currently tracked in the Cooldown Manager. Click one to populate the Tracked Aura field.", 1, 1, 1, true)
             GameTooltip:Show()
         end)
         pickCDMBtn:SetCallback("OnLeave", function()
