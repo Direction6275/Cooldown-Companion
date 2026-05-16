@@ -944,7 +944,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
         scroll:AddChild(auraUnitDrop)
         CreateInfoButton(auraUnitDrop.frame, auraUnitDrop.label, "LEFT", "RIGHT", 4, 0, {
             "Aura Unit",
-            {"This controls where the tracked aura is expected to exist. Use Target for debuffs on your target, or Player for buffs/procs on yourself, even if the button's spell is something else.", 1, 1, 1, true},
+            {"This is an entry-wide setting. It controls where every Tracked Aura or Additional Aura on this entry is expected to exist. Use Target for debuffs on your target, or Player for buffs/procs on yourself, even if the button's spell is something else.", 1, 1, 1, true},
         }, infoButtons)
 
         local auraUnitSpacer = AceGUI:Create("Label")

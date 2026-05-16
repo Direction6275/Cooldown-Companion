@@ -1299,6 +1299,15 @@ local function EnsureConfigRowHandlers(entry)
 end
 
 local function CleanRecycledEntry(entry)
+    local function CleanFrameButton(button)
+        if not button then return end
+        button:Hide()
+        button:ClearAllPoints()
+        button:SetScript("OnClick", nil)
+        button:SetScript("OnEnter", nil)
+        button:SetScript("OnLeave", nil)
+    end
+
     if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
     if entry._cdcModeBadgeHitRect then entry._cdcModeBadgeHitRect:Hide() end
     if entry.frame._cdcBadges then
@@ -1328,6 +1337,8 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcPriorityDownBtn then entry.frame._cdcPriorityDownBtn:Hide() end
     if entry.frame._cdcFallbackUpBtn then entry.frame._cdcFallbackUpBtn:Hide() end
     if entry.frame._cdcFallbackDownBtn then entry.frame._cdcFallbackDownBtn:Hide() end
+    CleanFrameButton(entry.frame._cdcCustomBarAuraUpBtn)
+    CleanFrameButton(entry.frame._cdcCustomBarAuraDownBtn)
     if entry.frame._cdcMarkerLeft then entry.frame._cdcMarkerLeft:Hide() end
     if entry.frame._cdcMarkerRight then entry.frame._cdcMarkerRight:Hide() end
     entry._cdcAfterConfigRowLayout = nil

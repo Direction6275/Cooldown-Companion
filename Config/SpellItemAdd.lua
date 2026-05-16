@@ -931,7 +931,7 @@ local function GetOrCreateAutocompleteDropdown()
         -- Name text
         local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         nameText:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-        nameText:SetPoint("RIGHT", row, "RIGHT", -80, 0)
+        nameText:SetPoint("RIGHT", row, "RIGHT", -112, 0)
         nameText:SetJustifyH("LEFT")
         nameText:SetWordWrap(false)
         row.nameText = nameText
@@ -1001,7 +1001,7 @@ local function ShowAutocompleteResults(results, anchorWidget, onSelect)
             row.entry = entry
             row.icon:SetTexture(entry.icon)
             row.nameText:SetText(entry.name)
-            row.categoryText:SetText(entry.category)
+            row.categoryText:SetText(entry.isCDMAura and entry.id and (entry.category .. " " .. tostring(entry.id)) or entry.category)
             row:Show()
         else
             row.entry = nil
@@ -1036,13 +1036,19 @@ local function HandleAutocompleteKeyDown(key)
         local exactID = editText and editText:match("^%s*(%d+)%s*$")
         exactID = exactID and tonumber(exactID) or nil
         if exactID then
+            local exactIndex
             for rowIndex = 1, maxIdx do
                 local row = autocompleteDropdown.rows[rowIndex]
                 if row and row.entry and tonumber(row.entry.id) == exactID then
-                    idx = rowIndex
+                    exactIndex = rowIndex
                     break
                 end
             end
+            if not exactIndex then
+                autocompleteDropdown:Hide()
+                return
+            end
+            idx = exactIndex
         end
         if idx > 0 and autocompleteDropdown.rows[idx] and autocompleteDropdown.rows[idx].entry then
             autocompleteDropdown._enterConsumed = true
