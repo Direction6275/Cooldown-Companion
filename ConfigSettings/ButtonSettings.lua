@@ -561,6 +561,9 @@ local function CreateAuraTrackingIDRow(scroll, buttonData, isAuraEntry, spellID,
     row:SetFontObject(GameFontHighlightSmall)
     row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
     ApplyConfigRowIcon(row, icon, { rightPad = 48 })
+    if BindConfigShiftTooltip then
+        BindConfigShiftTooltip(row, "spell", spellID, row.frame, "ANCHOR_RIGHT")
+    end
     row._cdcAfterConfigRowLayout = function(self)
         local frame = self.frame
         local label = self.label
