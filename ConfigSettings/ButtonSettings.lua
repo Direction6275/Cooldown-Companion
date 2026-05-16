@@ -363,7 +363,7 @@ end
 
 local function BuildAuraTrackingIDError(token, reason)
     if reason == "ambiguous" then
-        return "Multiple CDM auras match " .. token .. ". Pick the specific aura from the dropdown."
+        return "Multiple CDM auras match " .. token .. ". Pick the specific aura from the dropdown, or enter its aura spell ID."
     end
     return token .. " is not a CDM Tracked Buff/Bar aura."
 end

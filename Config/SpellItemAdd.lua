@@ -728,7 +728,7 @@ local function ResolveCDMAuraAutocompleteEntry(text)
         return nil, "empty"
     end
 
-    local numeric = tonumber(cleaned)
+    local numeric = cleaned:match("^%d+$") and tonumber(cleaned) or nil
     local lookup = cleaned:lower()
     local cache = BuildCDMAuraAutocompleteCache()
     local matchedEntry
@@ -1081,6 +1081,5 @@ end
 ST._TryAdd = TryAdd
 ST._TryReceiveCursorDrop = TryReceiveCursorDrop
 ST._BuildAutocompleteCache = BuildAutocompleteCache
-ST._BuildCDMAuraAutocompleteCache = BuildCDMAuraAutocompleteCache
 ST._OnAutocompleteSelect = OnAutocompleteSelect
 ST._SearchAutocomplete = SearchAutocomplete
