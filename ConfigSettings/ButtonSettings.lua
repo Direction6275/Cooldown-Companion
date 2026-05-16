@@ -357,9 +357,90 @@ local function SetAuraTrackingIDList(buttonData, isAuraEntry, ids)
     end
 end
 
-local function AddAuraTrackingIDText(buttonData, isAuraEntry, rawText)
-    local text = tostring(rawText or ""):gsub("%s", "")
+local function AddAuraTrackingID(buttonData, isAuraEntry, spellID)
+    spellID = tonumber(spellID)
+    if not spellID or spellID <= 0 then
+        return false
+    end
+
+    local ids = GetAuraTrackingIDList(buttonData, isAuraEntry)
+    for _, existingID in ipairs(ids) do
+        if existingID == spellID then
+            return false
+        end
+    end
+
+    ids[#ids + 1] = spellID
+    SetAuraTrackingIDList(buttonData, isAuraEntry, ids)
+    return true
+end
+
+local function TrimAuraTrackingIDText(text)
+    return tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function BuildAuraTrackingIDError(token, reason)
+    if reason == "ambiguous" then
+        return "Multiple CDM auras match " .. token .. ". Pick the specific aura from the dropdown, or enter its aura spell ID."
+    end
+    return token .. " is not a CDM Tracked Buff/Bar aura."
+end
+
+local function IsOriginalStandaloneAuraID(buttonData, spellID)
+    spellID = tonumber(spellID)
+    if not spellID or not (buttonData and buttonData.addedAs == "aura") then
+        return false
+    end
+    if not CooldownCompanion.GetStandaloneAuraCandidateGroups then
+        return false
+    end
+
+    local originalAuraIDs = CooldownCompanion:GetStandaloneAuraCandidateGroups(buttonData)
+    for _, originalAuraID in ipairs(originalAuraIDs or {}) do
+        if spellID == tonumber(originalAuraID) then
+            return true
+        end
+    end
+    return false
+end
+
+local function ResolveAuraTrackingIDText(rawText, shouldSkipToken)
+    local text = TrimAuraTrackingIDText(rawText)
     if text == "" then
+        return nil
+    end
+    if not CS.ResolveCDMAuraAutocompleteEntry then
+        return nil, "CDM aura autocomplete is not ready. Try again in a moment."
+    end
+
+    local resolvedIDs = {}
+    for token in text:gmatch("[^,]+") do
+        local cleaned = TrimAuraTrackingIDText(token)
+        if cleaned ~= "" then
+            local skipToken = shouldSkipToken and shouldSkipToken(cleaned)
+            if not skipToken then
+                local entry, reason = CS.ResolveCDMAuraAutocompleteEntry(cleaned)
+                local spellID = entry and tonumber(entry.id)
+                if not spellID or spellID <= 0 then
+                    return nil, BuildAuraTrackingIDError(cleaned, reason)
+                end
+                resolvedIDs[#resolvedIDs + 1] = spellID
+            end
+        end
+    end
+
+    return #resolvedIDs > 0 and resolvedIDs or nil
+end
+
+local function AddAuraTrackingIDText(buttonData, isAuraEntry, rawText)
+    local resolvedIDs, errorText = ResolveAuraTrackingIDText(rawText, isAuraEntry and function(cleaned)
+        local spellID = cleaned:match("^%d+$") and tonumber(cleaned) or nil
+        return IsOriginalStandaloneAuraID(buttonData, spellID)
+    end or nil)
+    if not resolvedIDs then
+        if errorText then
+            CooldownCompanion:Print(errorText)
+        end
         return false
     end
 
@@ -370,12 +451,7 @@ local function AddAuraTrackingIDText(buttonData, isAuraEntry, rawText)
     end
 
     local added = false
-    for token in text:gmatch("[^,]+") do
-        if not token:match("^%d+$") then
-            CooldownCompanion:Print("Invalid spell ID: " .. token)
-            return false
-        end
-        local spellID = tonumber(token)
+    for _, spellID in ipairs(resolvedIDs) do
         if spellID and spellID > 0 and not seen[spellID] then
             seen[spellID] = true
             ids[#ids + 1] = spellID
@@ -527,6 +603,9 @@ local function CreateAuraTrackingIDRow(scroll, buttonData, isAuraEntry, spellID,
     row:SetFontObject(GameFontHighlightSmall)
     row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
     ApplyConfigRowIcon(row, icon, { rightPad = 48 })
+    if BindConfigShiftTooltip then
+        BindConfigShiftTooltip(row, "spell", spellID, row.frame, "ANCHOR_RIGHT")
+    end
     row._cdcAfterConfigRowLayout = function(self)
         local frame = self.frame
         local label = self.label
@@ -671,10 +750,10 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
     local auraFoundButUntracked = auraStatus.state == "associatedAuraNotTracked"
     local auraTrackedButUnavailable = auraStatus.state == "trackedAuraUnavailable"
     local auraInactiveColorCode = auraFoundButUntracked and "|cffffff00" or "|cffff0000"
-    local auraIdFieldLabel = isAuraEntry and "Fallback Aura IDs" or "Spell ID Override"
+    local auraIdFieldLabel = isAuraEntry and "Additional Auras" or "Tracked Auras"
     local auraIdFieldTooltip = isAuraEntry
-        and "The original aura entry is checked first. Add related buff/debuff spell IDs here as fallbacks for when the original aura is not present.\n\nUse arrows to set fallback priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select a spell from the Cooldown Manager."
-        or "Most spells are tracked automatically, but some abilities apply a buff or debuff with a different spell ID than the ability itself. If tracking isn't working, add the buff/debuff spell ID here.\n\nUse arrows to set override priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select a spell from the Cooldown Manager."
+        and "The original aura is checked first. Add CDM tracked auras here when another aura should also count for this entry.\n\nUse arrows to set additional aura priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select an aura from the Cooldown Manager."
+        or "Most spells are tracked automatically, but some abilities apply a buff or debuff with a different aura ID than the spell itself. Search for CDM tracked auras by name, or enter CDM aura spell IDs, to choose which auras should count for this spell.\n\nUse arrows to set tracked aura priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select an aura from the Cooldown Manager."
 
     if showHeading then
         local auraHeading = AceGUI:Create("Heading")
@@ -784,7 +863,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
                 local selectedGroup = groups[grp]
                 if selectedGroup and selectedGroup.buttons and selectedGroup.buttons[btn] then
                     local selectedButton = selectedGroup.buttons[btn]
-                    AddAuraTrackingIDText(selectedButton, isAuraEntry, tostring(spellID))
+                    AddAuraTrackingID(selectedButton, isAuraEntry, spellID)
                     if selectedButton.auraTracking then
                         EnsureAuraUnitChoice(selectedButton, isHarmful)
                     end
@@ -805,7 +884,39 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
         auraEditBox:SetText("")
         auraEditBox:DisableButton(true)
         auraEditBox:SetFullWidth(true)
+        local function CommitAuraTrackingEntry(widget, entry)
+            CS.HideAutocomplete()
+            if not (entry and AddAuraTrackingIDText(buttonData, isAuraEntry, tostring(entry.id))) then
+                return
+            end
+            widget:SetText("")
+            if buttonData.auraTracking then
+                EnsureAuraUnitChoice(buttonData, isHarmful)
+            end
+            RefreshAuraTrackingEntry(CS.selectedGroup)
+        end
+        auraEditBox:SetCallback("OnTextChanged", function(widget, _, text)
+            if CS.browseMode then
+                CS.HideAutocomplete()
+                return
+            end
+            if text and #text >= 1 and CS.SearchCDMAuraAutocomplete then
+                CS.ShowAutocompleteResults(CS.SearchCDMAuraAutocomplete(text), widget, function(entry)
+                    CommitAuraTrackingEntry(widget, entry)
+                end, { requireExactNumericEnter = true })
+            else
+                CS.HideAutocomplete()
+            end
+        end)
         auraEditBox:SetCallback("OnEnterPressed", function(widget, _, text)
+            if CS.browseMode then
+                CS.HideAutocomplete()
+                return
+            end
+            if CS.ConsumeAutocompleteEnter and CS.ConsumeAutocompleteEnter() then
+                return
+            end
+            CS.HideAutocomplete()
             if not AddAuraTrackingIDText(buttonData, isAuraEntry, text) then
                 return
             end
@@ -815,6 +926,9 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
             end
             RefreshAuraTrackingEntry(CS.selectedGroup)
         end)
+        if CS.SetupAutocompleteKeyHandler then
+            CS.SetupAutocompleteKeyHandler(auraEditBox)
+        end
         scroll:AddChild(auraEditBox)
 
         CreateInfoButton(auraEditBox.frame, auraEditBox.frame, "TOPLEFT", "TOPLEFT", auraEditBox.label:GetStringWidth() + 4, -2, {
@@ -854,7 +968,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
         scroll:AddChild(auraUnitDrop)
         CreateInfoButton(auraUnitDrop.frame, auraUnitDrop.label, "LEFT", "RIGHT", 4, 0, {
             "Aura Unit",
-            {"This controls where the tracked aura is expected to exist. Use Target for debuffs on your target, or Player for buffs/procs on yourself, even if the button's spell is something else.", 1, 1, 1, true},
+            {"This is an entry-wide setting. It controls where every Tracked Aura or Additional Aura on this entry is expected to exist. Use Target for debuffs on your target, or Player for buffs/procs on yourself, even if the button's spell is something else.", 1, 1, 1, true},
         }, infoButtons)
 
         local auraUnitSpacer = AceGUI:Create("Label")
@@ -941,8 +1055,8 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
     elseif auraStatus.state == "noAssociatedAura" then
         local noAuraLabel = AceGUI:Create("Label")
         local noAuraText = isAuraEntry
-            and "|cff888888No associated aura was found. Add a fallback aura ID above if you want this entry to use another CDM-trackable aura when the original is not present.|r"
-            or "|cff888888No associated aura was found for this spell. Use the Spell ID Override above if you want to link it to a specific CDM-trackable aura.|r"
+            and "|cff888888No associated aura was found. Add an additional aura above if another CDM-trackable aura should count for this entry.|r"
+            or "|cff888888No associated aura was found for this spell. Use Tracked Auras above to link it to a specific CDM-trackable aura.|r"
         SetupWrappedStatusLabel(scroll, noAuraLabel, noAuraText)
         scroll:AddChild(noAuraLabel)
         local noAuraSpacer = AceGUI:Create("Label")

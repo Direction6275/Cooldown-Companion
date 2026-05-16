@@ -50,7 +50,7 @@ ST._changelogData = {
   - Existing Custom Aura Bar setups migrate into the new Custom Bars model, including saved display settings, colors, sizing, sound alerts, and load conditions.
 - **Spell cooldown Custom Bars:** Custom Bars support spell cooldowns with charge text, recharge colors, ready/cooldown colors, and sound alerts.
 - **Aura tracking for spell Custom Bars:** Spell Custom Bars can track an associated aura alongside the spell cooldown.
-  - Aura Tracking, Spell ID Override, Aura Unit, CDM picking, active aura indicators, pandemic effects, and aura-based visibility rules are available where they apply.
+  - Aura Tracking, Tracked Auras, Additional Auras, Aura Unit, CDM picking, active aura indicators, pandemic effects, and aura-based visibility rules are available where they apply.
   - Spell Custom Bars support Active and Stack Count aura tracking, with Continuous, Segmented, and Overlay stack display modes.
 - **Bar Panel aura stack displays:** Bar Panel aura entries can now display tracked auras as stack-count bars instead of only active-duration bars.
   - Stack displays support Continuous, Segmented, and Overlay modes, plus max-stack color and max-stack indicator controls.

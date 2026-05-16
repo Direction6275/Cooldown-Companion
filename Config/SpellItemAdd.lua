@@ -589,6 +589,7 @@ local function BuildAutocompleteCache()
                                     icon = itemInfo.iconID or 134400,
                                     category = "Tracked Buff",
                                     isItem = false,
+                                    isCDMAura = true,
                                     forceAura = true,
                                 })
                             end
@@ -681,6 +682,7 @@ local function BuildAutocompleteCache()
                                 icon = spellInfo.iconID or 134400,
                                 category = "Cooldown Manager",
                                 isItem = false,
+                                isCDMAura = true,
                                 isPassive = true,
                                 forceAura = true,
                             })
@@ -693,6 +695,69 @@ local function BuildAutocompleteCache()
 
     CS.autocompleteCache = cache
     return cache
+end
+
+local cdmAuraAutocompleteCache = nil
+local cdmAuraAutocompleteSource = nil
+
+local function BuildCDMAuraAutocompleteCache()
+    local sharedCache = CS.autocompleteCache or BuildAutocompleteCache()
+    if cdmAuraAutocompleteCache and cdmAuraAutocompleteSource == sharedCache then
+        return cdmAuraAutocompleteCache
+    end
+
+    local cache = {}
+    for _, entry in ipairs(sharedCache) do
+        if type(entry) == "table" and entry.isCDMAura == true then
+            cache[#cache + 1] = entry
+        end
+    end
+
+    cdmAuraAutocompleteCache = cache
+    cdmAuraAutocompleteSource = sharedCache
+    return cache
+end
+
+local function ResolveCDMAuraAutocompleteEntry(text)
+    if not text then
+        return nil, "empty"
+    end
+
+    local cleaned = tostring(text):gsub("^%s+", ""):gsub("%s+$", "")
+    if cleaned == "" then
+        return nil, "empty"
+    end
+
+    local numeric = cleaned:match("^%d+$") and tonumber(cleaned) or nil
+    local lookup = cleaned:lower()
+    local cache = BuildCDMAuraAutocompleteCache()
+    local matchedEntry
+    local matchedID
+
+    for _, entry in ipairs(cache) do
+        local entryID = tonumber(entry.id)
+        local matches = false
+        if numeric then
+            matches = entryID == numeric
+        else
+            local entryName = type(entry.name) == "string" and entry.name:lower() or nil
+            matches = entry.nameLower == lookup or entryName == lookup
+        end
+
+        if matches then
+            if matchedID and matchedID ~= entryID then
+                return nil, "ambiguous"
+            end
+            matchedEntry = entry
+            matchedID = entryID
+        end
+    end
+
+    if matchedEntry then
+        return matchedEntry
+    end
+
+    return nil, "notFound"
 end
 
 ------------------------------------------------------------------------
@@ -751,6 +816,10 @@ local function SearchAutocompleteInCache(query, cache)
     end
 
     return #results > 0 and results or nil
+end
+
+local function SearchCDMAuraAutocomplete(query)
+    return SearchAutocompleteInCache(query, BuildCDMAuraAutocompleteCache())
 end
 
 local function SearchAutocomplete(query)
@@ -862,7 +931,7 @@ local function GetOrCreateAutocompleteDropdown()
         -- Name text
         local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         nameText:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-        nameText:SetPoint("RIGHT", row, "RIGHT", -80, 0)
+        nameText:SetPoint("RIGHT", row, "RIGHT", -112, 0)
         nameText:SetJustifyH("LEFT")
         nameText:SetWordWrap(false)
         row.nameText = nameText
@@ -904,10 +973,11 @@ end
 ------------------------------------------------------------------------
 -- Autocomplete: Show results anchored to an edit box widget
 ------------------------------------------------------------------------
-local function ShowAutocompleteResults(results, anchorWidget, onSelect)
+local function ShowAutocompleteResults(results, anchorWidget, onSelect, options)
     local dropdown = GetOrCreateAutocompleteDropdown()
     dropdown._onSelect = onSelect
     dropdown._editbox = anchorWidget.editbox
+    dropdown._requireExactNumericEnter = options and options.requireExactNumericEnter == true
 
     if not results then
         dropdown:Hide()
@@ -932,7 +1002,7 @@ local function ShowAutocompleteResults(results, anchorWidget, onSelect)
             row.entry = entry
             row.icon:SetTexture(entry.icon)
             row.nameText:SetText(entry.name)
-            row.categoryText:SetText(entry.category)
+            row.categoryText:SetText(entry.isCDMAura and entry.id and (entry.category .. " " .. tostring(entry.id)) or entry.category)
             row:Show()
         else
             row.entry = nil
@@ -963,6 +1033,24 @@ local function HandleAutocompleteKeyDown(key)
         UpdateAutocompleteHighlight()
     elseif key == "ENTER" then
         local idx = autocompleteDropdown._highlightIndex or 0
+        local editText = autocompleteDropdown._editbox and autocompleteDropdown._editbox:GetText()
+        local exactID = editText and editText:match("^%s*(%d+)%s*$")
+        exactID = exactID and tonumber(exactID) or nil
+        if autocompleteDropdown._requireExactNumericEnter and exactID then
+            local exactIndex
+            for rowIndex = 1, maxIdx do
+                local row = autocompleteDropdown.rows[rowIndex]
+                if row and row.entry and tonumber(row.entry.id) == exactID then
+                    exactIndex = rowIndex
+                    break
+                end
+            end
+            if not exactIndex then
+                autocompleteDropdown:Hide()
+                return
+            end
+            idx = exactIndex
+        end
         if idx > 0 and autocompleteDropdown.rows[idx] and autocompleteDropdown.rows[idx].entry then
             autocompleteDropdown._enterConsumed = true
             if autocompleteDropdown._onSelect then
@@ -989,6 +1077,8 @@ end
 CS.ShowAutocompleteResults = ShowAutocompleteResults
 CS.HideAutocomplete = HideAutocomplete
 CS.SearchAutocompleteInCache = SearchAutocompleteInCache
+CS.SearchCDMAuraAutocomplete = SearchCDMAuraAutocomplete
+CS.ResolveCDMAuraAutocompleteEntry = ResolveCDMAuraAutocompleteEntry
 CS.HandleAutocompleteKeyDown = HandleAutocompleteKeyDown
 CS.ConsumeAutocompleteEnter = ConsumeAutocompleteEnter
 
