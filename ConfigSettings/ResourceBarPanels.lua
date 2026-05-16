@@ -2438,10 +2438,52 @@ local function ResolveCustomBarTrackedAuraText(rawText)
     return #resolvedIDs > 0 and resolvedIDs or nil
 end
 
-local function GetCustomBarTrackedAuraIDList(cab)
+local function BuildCustomBarStandaloneAuraButtonData(cab, spellID, rawAuraSpellID)
+    spellID = tonumber(spellID)
+    if not spellID or IsSpellCustomBarConfig(cab) then
+        return nil
+    end
+
+    return {
+        type = "spell",
+        id = spellID,
+        auraSpellID = rawAuraSpellID,
+        auraTracking = true,
+        addedAs = "aura",
+    }
+end
+
+local function GetCustomBarStandaloneAuraFallbackSpellIDText(cab, spellID, rawAuraSpellID)
+    local buttonData = BuildCustomBarStandaloneAuraButtonData(cab, spellID, rawAuraSpellID)
+    if not buttonData or not CooldownCompanion.GetStandaloneAuraFallbackSpellIDText then
+        return rawAuraSpellID
+    end
+    return CooldownCompanion:GetStandaloneAuraFallbackSpellIDText(buttonData, rawAuraSpellID)
+end
+
+local function IsCustomBarOriginalStandaloneAuraID(cab, spellID, auraID)
+    auraID = tonumber(auraID)
+    local buttonData = auraID and BuildCustomBarStandaloneAuraButtonData(cab, spellID)
+    if not buttonData or not CooldownCompanion.GetStandaloneAuraCandidateGroups then
+        return false
+    end
+
+    local originalAuraIDs = CooldownCompanion:GetStandaloneAuraCandidateGroups(buttonData)
+    for _, originalAuraID in ipairs(originalAuraIDs or {}) do
+        if auraID == tonumber(originalAuraID) then
+            return true
+        end
+    end
+    return false
+end
+
+local function GetCustomBarTrackedAuraIDList(cab, spellID)
     local ids = {}
     local seen = {}
     local rawIDs = cab and cab.auraSpellID
+    rawIDs = IsSpellCustomBarConfig(cab)
+        and rawIDs
+        or GetCustomBarStandaloneAuraFallbackSpellIDText(cab, spellID, rawIDs)
     if rawIDs then
         for id in tostring(rawIDs):gmatch("%d+") do
             local auraID = tonumber(id)
@@ -2465,7 +2507,10 @@ local function SetCustomBarTrackedAuraIDList(cab, spellID, ids)
         end
     end
 
-    cab.auraSpellID = #normalizedIDs > 0 and table.concat(normalizedIDs, ",") or nil
+    local rawText = #normalizedIDs > 0 and table.concat(normalizedIDs, ",") or nil
+    cab.auraSpellID = IsSpellCustomBarConfig(cab)
+        and rawText
+        or GetCustomBarStandaloneAuraFallbackSpellIDText(cab, spellID, rawText)
     EnsureCustomAuraBarAuraUnit(cab, spellID)
 end
 
@@ -2474,8 +2519,11 @@ local function AddCustomBarTrackedAuraID(cab, spellID, auraID)
     if not auraID or auraID <= 0 then
         return false
     end
+    if IsCustomBarOriginalStandaloneAuraID(cab, spellID, auraID) then
+        return false
+    end
 
-    local ids = GetCustomBarTrackedAuraIDList(cab)
+    local ids = GetCustomBarTrackedAuraIDList(cab, spellID)
     for _, existingID in ipairs(ids) do
         if existingID == auraID then
             return false
@@ -2496,7 +2544,7 @@ local function AddCustomBarTrackedAuraIDText(cab, spellID, rawText)
         return false
     end
 
-    local ids = GetCustomBarTrackedAuraIDList(cab)
+    local ids = GetCustomBarTrackedAuraIDList(cab, spellID)
     local seen = {}
     for _, auraID in ipairs(ids) do
         seen[auraID] = true
@@ -2504,7 +2552,7 @@ local function AddCustomBarTrackedAuraIDText(cab, spellID, rawText)
 
     local added = false
     for _, auraID in ipairs(resolvedIDs) do
-        if auraID and auraID > 0 and not seen[auraID] then
+        if auraID and auraID > 0 and not seen[auraID] and not IsCustomBarOriginalStandaloneAuraID(cab, spellID, auraID) then
             seen[auraID] = true
             ids[#ids + 1] = auraID
             added = true
@@ -2518,7 +2566,7 @@ local function AddCustomBarTrackedAuraIDText(cab, spellID, rawText)
 end
 
 local function MoveCustomBarTrackedAuraID(cab, spellID, sourceIndex, targetIndex)
-    local ids = GetCustomBarTrackedAuraIDList(cab)
+    local ids = GetCustomBarTrackedAuraIDList(cab, spellID)
     sourceIndex = tonumber(sourceIndex)
     targetIndex = tonumber(targetIndex)
     if not sourceIndex or not targetIndex or sourceIndex < 1 or sourceIndex > #ids then
@@ -2540,7 +2588,7 @@ local function MoveCustomBarTrackedAuraID(cab, spellID, sourceIndex, targetIndex
 end
 
 local function RemoveCustomBarTrackedAuraID(cab, spellID, rowIndex)
-    local ids = GetCustomBarTrackedAuraIDList(cab)
+    local ids = GetCustomBarTrackedAuraIDList(cab, spellID)
     rowIndex = tonumber(rowIndex)
     if not rowIndex or rowIndex < 1 or rowIndex > #ids then
         return false
@@ -2852,7 +2900,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
     local trackedAuraFieldTooltip = isSpellCustomBar
         and "Most spells are tracked automatically, but some abilities apply a buff or debuff with a different aura ID than the spell itself. Search for CDM tracked auras by name, or enter CDM aura spell IDs, to choose which auras should count for this Custom Bar.\n\nUse arrows to set tracked aura priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select an aura from the Cooldown Manager."
         or "The original aura is checked first. Add CDM tracked auras here when another aura should also count for this Custom Bar.\n\nUse arrows to set additional aura priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select an aura from the Cooldown Manager."
-    local auraIDList = GetCustomBarTrackedAuraIDList(cab)
+    local auraIDList = GetCustomBarTrackedAuraIDList(cab, spellID)
     local auraEditBox = AceGUI:Create("EditBox")
     if auraEditBox.editbox.Instructions then
         auraEditBox.editbox.Instructions:Hide()
