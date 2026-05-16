@@ -2413,7 +2413,7 @@ local function BuildCustomBarTrackedAuraError(token, reason)
     return token .. " is not a CDM Tracked Buff/Bar aura."
 end
 
-local function ResolveCustomBarTrackedAuraText(rawText)
+local function ResolveCustomBarTrackedAuraText(rawText, shouldSkipToken)
     local text = TrimCustomBarTrackedAuraText(rawText)
     if text == "" then
         return nil
@@ -2426,12 +2426,15 @@ local function ResolveCustomBarTrackedAuraText(rawText)
     for token in text:gmatch("[^,]+") do
         local cleaned = TrimCustomBarTrackedAuraText(token)
         if cleaned ~= "" then
-            local entry, reason = CS.ResolveCDMAuraAutocompleteEntry(cleaned)
-            local auraID = entry and tonumber(entry.id)
-            if not auraID or auraID <= 0 then
-                return nil, BuildCustomBarTrackedAuraError(cleaned, reason)
+            local skipToken = shouldSkipToken and shouldSkipToken(cleaned)
+            if not skipToken then
+                local entry, reason = CS.ResolveCDMAuraAutocompleteEntry(cleaned)
+                local auraID = entry and tonumber(entry.id)
+                if not auraID or auraID <= 0 then
+                    return nil, BuildCustomBarTrackedAuraError(cleaned, reason)
+                end
+                resolvedIDs[#resolvedIDs + 1] = auraID
             end
-            resolvedIDs[#resolvedIDs + 1] = auraID
         end
     end
 
@@ -2536,7 +2539,10 @@ local function AddCustomBarTrackedAuraID(cab, spellID, auraID)
 end
 
 local function AddCustomBarTrackedAuraIDText(cab, spellID, rawText)
-    local resolvedIDs, errorText = ResolveCustomBarTrackedAuraText(rawText)
+    local resolvedIDs, errorText = ResolveCustomBarTrackedAuraText(rawText, function(cleaned)
+        local auraID = cleaned:match("^%d+$") and tonumber(cleaned) or nil
+        return IsCustomBarOriginalStandaloneAuraID(cab, spellID, auraID)
+    end)
     if not resolvedIDs then
         if errorText then
             CooldownCompanion:Print(errorText)

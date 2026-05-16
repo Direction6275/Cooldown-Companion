@@ -386,7 +386,25 @@ local function BuildAuraTrackingIDError(token, reason)
     return token .. " is not a CDM Tracked Buff/Bar aura."
 end
 
-local function ResolveAuraTrackingIDText(rawText)
+local function IsOriginalStandaloneAuraID(buttonData, spellID)
+    spellID = tonumber(spellID)
+    if not spellID or not (buttonData and buttonData.addedAs == "aura") then
+        return false
+    end
+    if not CooldownCompanion.GetStandaloneAuraCandidateGroups then
+        return false
+    end
+
+    local originalAuraIDs = CooldownCompanion:GetStandaloneAuraCandidateGroups(buttonData)
+    for _, originalAuraID in ipairs(originalAuraIDs or {}) do
+        if spellID == tonumber(originalAuraID) then
+            return true
+        end
+    end
+    return false
+end
+
+local function ResolveAuraTrackingIDText(rawText, shouldSkipToken)
     local text = TrimAuraTrackingIDText(rawText)
     if text == "" then
         return nil
@@ -399,12 +417,15 @@ local function ResolveAuraTrackingIDText(rawText)
     for token in text:gmatch("[^,]+") do
         local cleaned = TrimAuraTrackingIDText(token)
         if cleaned ~= "" then
-            local entry, reason = CS.ResolveCDMAuraAutocompleteEntry(cleaned)
-            local spellID = entry and tonumber(entry.id)
-            if not spellID or spellID <= 0 then
-                return nil, BuildAuraTrackingIDError(cleaned, reason)
+            local skipToken = shouldSkipToken and shouldSkipToken(cleaned)
+            if not skipToken then
+                local entry, reason = CS.ResolveCDMAuraAutocompleteEntry(cleaned)
+                local spellID = entry and tonumber(entry.id)
+                if not spellID or spellID <= 0 then
+                    return nil, BuildAuraTrackingIDError(cleaned, reason)
+                end
+                resolvedIDs[#resolvedIDs + 1] = spellID
             end
-            resolvedIDs[#resolvedIDs + 1] = spellID
         end
     end
 
@@ -412,7 +433,10 @@ local function ResolveAuraTrackingIDText(rawText)
 end
 
 local function AddAuraTrackingIDText(buttonData, isAuraEntry, rawText)
-    local resolvedIDs, errorText = ResolveAuraTrackingIDText(rawText)
+    local resolvedIDs, errorText = ResolveAuraTrackingIDText(rawText, isAuraEntry and function(cleaned)
+        local spellID = cleaned:match("^%d+$") and tonumber(cleaned) or nil
+        return IsOriginalStandaloneAuraID(buttonData, spellID)
+    end or nil)
     if not resolvedIDs then
         if errorText then
             CooldownCompanion:Print(errorText)

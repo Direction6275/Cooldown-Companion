@@ -2044,7 +2044,9 @@ function RB.RequestCustomBarPresentationRefresh()
     end)
 end
 
-function RB.BuildCustomAuraBarAuraButtonData(cabConfig)
+local CustomAuraBar = {}
+
+function CustomAuraBar.BuildAuraButtonData(cabConfig)
     local spellID = tonumber(cabConfig and cabConfig.spellID)
     if not spellID or (RB.IsSpellCustomBarConfig and RB.IsSpellCustomBarConfig(cabConfig)) then
         return nil, spellID
@@ -2060,9 +2062,10 @@ function RB.BuildCustomAuraBarAuraButtonData(cabConfig)
     }, spellID
 end
 
-function RB.GetCustomAuraBarCandidateIDs(cabConfig, spellID)
+function CustomAuraBar.GetCandidateIDs(cabConfig)
     local buttonData
-    buttonData, spellID = RB.BuildCustomAuraBarAuraButtonData(cabConfig)
+    local spellID
+    buttonData, spellID = CustomAuraBar.BuildAuraButtonData(cabConfig)
     if buttonData and CooldownCompanion.GetOrderedAuraCandidateIDs then
         local orderedCandidateIDs = CooldownCompanion:GetOrderedAuraCandidateIDs(buttonData)
         if orderedCandidateIDs and #orderedCandidateIDs > 0 then
@@ -2073,7 +2076,7 @@ function RB.GetCustomAuraBarCandidateIDs(cabConfig, spellID)
     return spellID and { spellID } or nil
 end
 
-function RB.CustomAuraBarViewerFrameHasAuraForUnit(viewerFrame, configUnit)
+function CustomAuraBar.ViewerFrameHasAuraForUnit(viewerFrame, configUnit)
     local instId = viewerFrame and viewerFrame.auraInstanceID
     if not instId then
         return false
@@ -2084,13 +2087,13 @@ function RB.CustomAuraBarViewerFrameHasAuraForUnit(viewerFrame, configUnit)
         and C_UnitAuras.GetAuraDataByAuraInstanceID(viewerUnit, instId) ~= nil
 end
 
-function RB.ResolveCustomAuraBarViewerFrame(cabConfig, spellID, configUnit)
+function CustomAuraBar.ResolveViewerFrame(cabConfig, configUnit)
     local firstTrackedFrame
-    local candidateIDs = RB.GetCustomAuraBarCandidateIDs(cabConfig, spellID)
+    local candidateIDs = CustomAuraBar.GetCandidateIDs(cabConfig)
     for _, auraID in ipairs(candidateIDs or {}) do
         local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(auraID)
         if viewerFrame then
-            if RB.CustomAuraBarViewerFrameHasAuraForUnit(viewerFrame, configUnit) then
+            if CustomAuraBar.ViewerFrameHasAuraForUnit(viewerFrame, configUnit) then
                 return viewerFrame
             end
             if not firstTrackedFrame then
@@ -2102,8 +2105,8 @@ function RB.ResolveCustomAuraBarViewerFrame(cabConfig, spellID, configUnit)
     return firstTrackedFrame
 end
 
-function RB.ResolveCustomAuraBarPlayerAuraData(cabConfig, spellID)
-    local candidateIDs = RB.GetCustomAuraBarCandidateIDs(cabConfig, spellID)
+function CustomAuraBar.ResolvePlayerAuraData(cabConfig)
+    local candidateIDs = CustomAuraBar.GetCandidateIDs(cabConfig)
     for _, auraID in ipairs(candidateIDs or {}) do
         local auraData = C_UnitAuras.GetPlayerAuraBySpellID(auraID)
         if auraData then
@@ -2132,7 +2135,7 @@ local function UpdateCustomAuraBar(barInfo)
     local pandemicPreview = bar and bar._pandemicPreview
     local indicatorPreview = isActive and (auraPreview or pandemicPreview)
     local configUnit = EnsureCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
-    local viewerFrame = RB.ResolveCustomAuraBarViewerFrame(cabConfig, cabConfig.spellID, configUnit)
+    local viewerFrame = CustomAuraBar.ResolveViewerFrame(cabConfig, configUnit)
     local auraUnit = configUnit
     local instId = viewerFrame and viewerFrame.auraInstanceID
 
@@ -2166,7 +2169,7 @@ local function UpdateCustomAuraBar(barInfo)
     end
 
     if not spellAuraStackDisplay and not auraPresent and configUnit == "player" then
-        local auraData = RB.ResolveCustomAuraBarPlayerAuraData(cabConfig, cabConfig.spellID)
+        local auraData = CustomAuraBar.ResolvePlayerAuraData(cabConfig)
         if auraData then
             instId = auraData.auraInstanceID
             auraUnit = "player"
