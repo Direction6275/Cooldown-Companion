@@ -1032,6 +1032,18 @@ local function HandleAutocompleteKeyDown(key)
         UpdateAutocompleteHighlight()
     elseif key == "ENTER" then
         local idx = autocompleteDropdown._highlightIndex or 0
+        local editText = autocompleteDropdown._editbox and autocompleteDropdown._editbox:GetText()
+        local exactID = editText and editText:match("^%s*(%d+)%s*$")
+        exactID = exactID and tonumber(exactID) or nil
+        if exactID then
+            for rowIndex = 1, maxIdx do
+                local row = autocompleteDropdown.rows[rowIndex]
+                if row and row.entry and tonumber(row.entry.id) == exactID then
+                    idx = rowIndex
+                    break
+                end
+            end
+        end
         if idx > 0 and autocompleteDropdown.rows[idx] and autocompleteDropdown.rows[idx].entry then
             autocompleteDropdown._enterConsumed = true
             if autocompleteDropdown._onSelect then

@@ -357,6 +357,24 @@ local function SetAuraTrackingIDList(buttonData, isAuraEntry, ids)
     end
 end
 
+local function AddAuraTrackingID(buttonData, isAuraEntry, spellID)
+    spellID = tonumber(spellID)
+    if not spellID or spellID <= 0 then
+        return false
+    end
+
+    local ids = GetAuraTrackingIDList(buttonData, isAuraEntry)
+    for _, existingID in ipairs(ids) do
+        if existingID == spellID then
+            return false
+        end
+    end
+
+    ids[#ids + 1] = spellID
+    SetAuraTrackingIDList(buttonData, isAuraEntry, ids)
+    return true
+end
+
 local function TrimAuraTrackingIDText(text)
     return tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
@@ -821,7 +839,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
                 local selectedGroup = groups[grp]
                 if selectedGroup and selectedGroup.buttons and selectedGroup.buttons[btn] then
                     local selectedButton = selectedGroup.buttons[btn]
-                    AddAuraTrackingIDText(selectedButton, isAuraEntry, tostring(spellID))
+                    AddAuraTrackingID(selectedButton, isAuraEntry, spellID)
                     if selectedButton.auraTracking then
                         EnsureAuraUnitChoice(selectedButton, isHarmful)
                     end
