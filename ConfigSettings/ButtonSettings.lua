@@ -357,9 +357,48 @@ local function SetAuraTrackingIDList(buttonData, isAuraEntry, ids)
     end
 end
 
-local function AddAuraTrackingIDText(buttonData, isAuraEntry, rawText)
-    local text = tostring(rawText or ""):gsub("%s", "")
+local function TrimAuraTrackingIDText(text)
+    return tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function BuildAuraTrackingIDError(token, reason)
+    if reason == "ambiguous" then
+        return "Multiple CDM auras match " .. token .. ". Pick the specific aura from the dropdown."
+    end
+    return token .. " is not a CDM Tracked Buff/Bar aura."
+end
+
+local function ResolveAuraTrackingIDText(rawText)
+    local text = TrimAuraTrackingIDText(rawText)
     if text == "" then
+        return nil
+    end
+    if not CS.ResolveCDMAuraAutocompleteEntry then
+        return nil, "CDM aura autocomplete is not ready. Try again in a moment."
+    end
+
+    local resolvedIDs = {}
+    for token in text:gmatch("[^,]+") do
+        local cleaned = TrimAuraTrackingIDText(token)
+        if cleaned ~= "" then
+            local entry, reason = CS.ResolveCDMAuraAutocompleteEntry(cleaned)
+            local spellID = entry and tonumber(entry.id)
+            if not spellID or spellID <= 0 then
+                return nil, BuildAuraTrackingIDError(cleaned, reason)
+            end
+            resolvedIDs[#resolvedIDs + 1] = spellID
+        end
+    end
+
+    return #resolvedIDs > 0 and resolvedIDs or nil
+end
+
+local function AddAuraTrackingIDText(buttonData, isAuraEntry, rawText)
+    local resolvedIDs, errorText = ResolveAuraTrackingIDText(rawText)
+    if not resolvedIDs then
+        if errorText then
+            CooldownCompanion:Print(errorText)
+        end
         return false
     end
 
@@ -370,12 +409,7 @@ local function AddAuraTrackingIDText(buttonData, isAuraEntry, rawText)
     end
 
     local added = false
-    for token in text:gmatch("[^,]+") do
-        if not token:match("^%d+$") then
-            CooldownCompanion:Print("Invalid spell ID: " .. token)
-            return false
-        end
-        local spellID = tonumber(token)
+    for _, spellID in ipairs(resolvedIDs) do
         if spellID and spellID > 0 and not seen[spellID] then
             seen[spellID] = true
             ids[#ids + 1] = spellID
@@ -673,8 +707,8 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
     local auraInactiveColorCode = auraFoundButUntracked and "|cffffff00" or "|cffff0000"
     local auraIdFieldLabel = isAuraEntry and "Fallback Aura IDs" or "Spell ID Override"
     local auraIdFieldTooltip = isAuraEntry
-        and "The original aura entry is checked first. Add related buff/debuff spell IDs here as fallbacks for when the original aura is not present.\n\nUse arrows to set fallback priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select a spell from the Cooldown Manager."
-        or "Most spells are tracked automatically, but some abilities apply a buff or debuff with a different spell ID than the ability itself. If tracking isn't working, add the buff/debuff spell ID here.\n\nUse arrows to set override priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select a spell from the Cooldown Manager."
+        and "The original aura entry is checked first. Search for CDM tracked auras by name, or enter CDM aura spell IDs, to add fallbacks for when the original aura is not present.\n\nUse arrows to set fallback priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select a spell from the Cooldown Manager."
+        or "Most spells are tracked automatically, but some abilities apply a buff or debuff with a different spell ID than the ability itself. If tracking isn't working, search for a CDM tracked aura by name, or enter its CDM aura spell ID.\n\nUse arrows to set override priority. Right-click a row to delete it. Use \"Pick CDM\" below to visually select a spell from the Cooldown Manager."
 
     if showHeading then
         local auraHeading = AceGUI:Create("Heading")
@@ -805,7 +839,39 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
         auraEditBox:SetText("")
         auraEditBox:DisableButton(true)
         auraEditBox:SetFullWidth(true)
+        local function CommitAuraTrackingEntry(widget, entry)
+            CS.HideAutocomplete()
+            if not (entry and AddAuraTrackingIDText(buttonData, isAuraEntry, tostring(entry.id))) then
+                return
+            end
+            widget:SetText("")
+            if buttonData.auraTracking then
+                EnsureAuraUnitChoice(buttonData, isHarmful)
+            end
+            RefreshAuraTrackingEntry(CS.selectedGroup)
+        end
+        auraEditBox:SetCallback("OnTextChanged", function(widget, _, text)
+            if CS.browseMode then
+                CS.HideAutocomplete()
+                return
+            end
+            if text and #text >= 1 and CS.SearchCDMAuraAutocomplete then
+                CS.ShowAutocompleteResults(CS.SearchCDMAuraAutocomplete(text), widget, function(entry)
+                    CommitAuraTrackingEntry(widget, entry)
+                end)
+            else
+                CS.HideAutocomplete()
+            end
+        end)
         auraEditBox:SetCallback("OnEnterPressed", function(widget, _, text)
+            if CS.browseMode then
+                CS.HideAutocomplete()
+                return
+            end
+            if CS.ConsumeAutocompleteEnter and CS.ConsumeAutocompleteEnter() then
+                return
+            end
+            CS.HideAutocomplete()
             if not AddAuraTrackingIDText(buttonData, isAuraEntry, text) then
                 return
             end
@@ -815,6 +881,9 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
             end
             RefreshAuraTrackingEntry(CS.selectedGroup)
         end)
+        if CS.SetupAutocompleteKeyHandler then
+            CS.SetupAutocompleteKeyHandler(auraEditBox)
+        end
         scroll:AddChild(auraEditBox)
 
         CreateInfoButton(auraEditBox.frame, auraEditBox.frame, "TOPLEFT", "TOPLEFT", auraEditBox.label:GetStringWidth() + 4, -2, {

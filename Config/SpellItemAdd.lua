@@ -589,6 +589,7 @@ local function BuildAutocompleteCache()
                                     icon = itemInfo.iconID or 134400,
                                     category = "Tracked Buff",
                                     isItem = false,
+                                    isCDMAura = true,
                                     forceAura = true,
                                 })
                             end
@@ -681,6 +682,7 @@ local function BuildAutocompleteCache()
                                 icon = spellInfo.iconID or 134400,
                                 category = "Cooldown Manager",
                                 isItem = false,
+                                isCDMAura = true,
                                 isPassive = true,
                                 forceAura = true,
                             })
@@ -693,6 +695,69 @@ local function BuildAutocompleteCache()
 
     CS.autocompleteCache = cache
     return cache
+end
+
+local cdmAuraAutocompleteCache = nil
+local cdmAuraAutocompleteSource = nil
+
+local function BuildCDMAuraAutocompleteCache()
+    local sharedCache = CS.autocompleteCache or BuildAutocompleteCache()
+    if cdmAuraAutocompleteCache and cdmAuraAutocompleteSource == sharedCache then
+        return cdmAuraAutocompleteCache
+    end
+
+    local cache = {}
+    for _, entry in ipairs(sharedCache) do
+        if type(entry) == "table" and entry.isCDMAura == true then
+            cache[#cache + 1] = entry
+        end
+    end
+
+    cdmAuraAutocompleteCache = cache
+    cdmAuraAutocompleteSource = sharedCache
+    return cache
+end
+
+local function ResolveCDMAuraAutocompleteEntry(text)
+    if not text then
+        return nil, "empty"
+    end
+
+    local cleaned = tostring(text):gsub("^%s+", ""):gsub("%s+$", "")
+    if cleaned == "" then
+        return nil, "empty"
+    end
+
+    local numeric = tonumber(cleaned)
+    local lookup = cleaned:lower()
+    local cache = BuildCDMAuraAutocompleteCache()
+    local matchedEntry
+    local matchedID
+
+    for _, entry in ipairs(cache) do
+        local entryID = tonumber(entry.id)
+        local matches = false
+        if numeric then
+            matches = entryID == numeric
+        else
+            local entryName = type(entry.name) == "string" and entry.name:lower() or nil
+            matches = entry.nameLower == lookup or entryName == lookup
+        end
+
+        if matches then
+            if matchedID and matchedID ~= entryID then
+                return nil, "ambiguous"
+            end
+            matchedEntry = entry
+            matchedID = entryID
+        end
+    end
+
+    if matchedEntry then
+        return matchedEntry
+    end
+
+    return nil, "notFound"
 end
 
 ------------------------------------------------------------------------
@@ -751,6 +816,10 @@ local function SearchAutocompleteInCache(query, cache)
     end
 
     return #results > 0 and results or nil
+end
+
+local function SearchCDMAuraAutocomplete(query)
+    return SearchAutocompleteInCache(query, BuildCDMAuraAutocompleteCache())
 end
 
 local function SearchAutocomplete(query)
@@ -989,6 +1058,8 @@ end
 CS.ShowAutocompleteResults = ShowAutocompleteResults
 CS.HideAutocomplete = HideAutocomplete
 CS.SearchAutocompleteInCache = SearchAutocompleteInCache
+CS.SearchCDMAuraAutocomplete = SearchCDMAuraAutocomplete
+CS.ResolveCDMAuraAutocompleteEntry = ResolveCDMAuraAutocompleteEntry
 CS.HandleAutocompleteKeyDown = HandleAutocompleteKeyDown
 CS.ConsumeAutocompleteEnter = ConsumeAutocompleteEnter
 
@@ -1010,5 +1081,6 @@ end
 ST._TryAdd = TryAdd
 ST._TryReceiveCursorDrop = TryReceiveCursorDrop
 ST._BuildAutocompleteCache = BuildAutocompleteCache
+ST._BuildCDMAuraAutocompleteCache = BuildCDMAuraAutocompleteCache
 ST._OnAutocompleteSelect = OnAutocompleteSelect
 ST._SearchAutocomplete = SearchAutocomplete
