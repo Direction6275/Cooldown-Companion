@@ -521,12 +521,46 @@ end
 
 local function CreateAuraTrackingIDRow(scroll, buttonData, isAuraEntry, spellID, rowIndex, rowCount)
     local row = AceGUI:Create("InteractiveLabel")
+    local icon = C_Spell.GetSpellTexture(spellID) or 134400
     CleanRecycledEntry(row)
     row:SetText(BuildAuraTrackingIDRowText(spellID, rowIndex))
     row:SetFullWidth(true)
-    row:SetFontObject(GameFontHighlight)
+    row:SetFontObject(GameFontHighlightSmall)
     row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-    ApplyConfigRowIcon(row, C_Spell.GetSpellTexture(spellID) or 134400, { rightPad = 48 })
+    ApplyConfigRowIcon(row, icon, { rightPad = 48 })
+    row._cdcAfterConfigRowLayout = function(self)
+        local frame = self.frame
+        local label = self.label
+        local image = self.image
+        self:SetHeight(22)
+        frame:SetHeight(22)
+        frame.height = 22
+        if image then
+            image:ClearAllPoints()
+            image:SetTexture(icon)
+            image:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            image:SetSize(18, 18)
+            image:SetPoint("LEFT", frame, "LEFT", 2, 0)
+            image:Show()
+        end
+        if label then
+            label:ClearAllPoints()
+            label:SetPoint("LEFT", frame, "LEFT", 24, 0)
+            label:SetPoint("RIGHT", frame, "RIGHT", -48, 0)
+            label:SetJustifyH("LEFT")
+            label:SetJustifyV("MIDDLE")
+            if label.SetWordWrap then
+                label:SetWordWrap(false)
+            end
+            if label.SetNonSpaceWrap then
+                label:SetNonSpaceWrap(false)
+            end
+            if label.SetMaxLines then
+                label:SetMaxLines(1)
+            end
+        end
+    end
+    row:_cdcAfterConfigRowLayout()
     EnsureAuraTrackingIDMoveButtons(row, buttonData, isAuraEntry, rowIndex, rowCount)
     InstallAuraTrackingIDRowMenu(row, buttonData, isAuraEntry, rowIndex)
     scroll:AddChild(row)
@@ -764,10 +798,6 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
 
     if allowManualAuraConfig then
         local auraIDList = GetAuraTrackingIDList(buttonData, isAuraEntry)
-        for index, spellID in ipairs(auraIDList) do
-            CreateAuraTrackingIDRow(scroll, buttonData, isAuraEntry, spellID, index, #auraIDList)
-        end
-
         local auraEditBox = AceGUI:Create("EditBox")
         if auraEditBox.editbox.Instructions then
             auraEditBox.editbox.Instructions:Hide()
@@ -792,6 +822,10 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
             auraIdFieldLabel,
             {auraIdFieldTooltip, 1, 1, 1, true},
         }, infoButtons)
+
+        for index, spellID in ipairs(auraIDList) do
+            CreateAuraTrackingIDRow(scroll, buttonData, isAuraEntry, spellID, index, #auraIDList)
+        end
 
         local overrideCdmSpacer = AceGUI:Create("Label")
         overrideCdmSpacer:SetText(" ")
