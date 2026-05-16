@@ -127,7 +127,7 @@ local function BuildSortedSoundOptionOrder(soundOptions)
     return order
 end
 
-local function ConfigureFallbackMoveButton(button, rotation, tooltipTitle, tooltipBody, disabled, onClick)
+local function ConfigurePriorityMoveButton(button, rotation, tooltipTitle, tooltipBody, disabled, onClick)
     local isDisabled = disabled or CS.browseMode
     button:SetSize(18, 18)
     if button.text then
@@ -423,8 +423,7 @@ local function RemoveAuraTrackingID(buttonData, isAuraEntry, rowIndex)
 end
 
 local function GetAuraTrackingIDDisplayName(spellID)
-    local info = C_Spell.GetSpellInfo(spellID)
-    return info and info.name or C_Spell.GetSpellName(spellID) or ("Spell " .. tostring(spellID))
+    return C_Spell.GetSpellName(spellID) or ("Spell " .. tostring(spellID))
 end
 
 local function BuildAuraTrackingIDRowText(spellID, rowIndex)
@@ -464,21 +463,21 @@ end
 
 local function EnsureAuraTrackingIDMoveButtons(entry, buttonData, isAuraEntry, rowIndex, rowCount)
     local frame = entry.frame
-    local upBtn = frame._cdcFallbackUpBtn
+    local upBtn = frame._cdcPriorityUpBtn
     if not upBtn then
         upBtn = CreateFrame("Button", nil, frame)
-        frame._cdcFallbackUpBtn = upBtn
+        frame._cdcPriorityUpBtn = upBtn
     end
-    local downBtn = frame._cdcFallbackDownBtn
+    local downBtn = frame._cdcPriorityDownBtn
     if not downBtn then
         downBtn = CreateFrame("Button", nil, frame)
-        frame._cdcFallbackDownBtn = downBtn
+        frame._cdcPriorityDownBtn = downBtn
     end
 
     upBtn:ClearAllPoints()
     upBtn:SetPoint("RIGHT", frame, "RIGHT", -24, 0)
     upBtn:SetFrameLevel(frame:GetFrameLevel() + 6)
-    ConfigureFallbackMoveButton(
+    ConfigurePriorityMoveButton(
         upBtn,
         math_pi / 2,
         "Move Up",
@@ -494,7 +493,7 @@ local function EnsureAuraTrackingIDMoveButtons(entry, buttonData, isAuraEntry, r
     downBtn:ClearAllPoints()
     downBtn:SetPoint("RIGHT", frame, "RIGHT", -4, 0)
     downBtn:SetFrameLevel(frame:GetFrameLevel() + 6)
-    ConfigureFallbackMoveButton(
+    ConfigurePriorityMoveButton(
         downBtn,
         -math_pi / 2,
         "Move Down",
@@ -1911,15 +1910,15 @@ end
 
 local function EnsureFallbackMoveButtons(entry, buttonData, rowIndex, isPrimary)
     local frame = entry.frame
-    local upBtn = frame._cdcFallbackUpBtn
+    local upBtn = frame._cdcPriorityUpBtn
     if not upBtn and not isPrimary then
         upBtn = CreateFrame("Button", nil, frame)
-        frame._cdcFallbackUpBtn = upBtn
+        frame._cdcPriorityUpBtn = upBtn
     end
-    local downBtn = frame._cdcFallbackDownBtn
+    local downBtn = frame._cdcPriorityDownBtn
     if not downBtn then
         downBtn = CreateFrame("Button", nil, frame)
-        frame._cdcFallbackDownBtn = downBtn
+        frame._cdcPriorityDownBtn = downBtn
     end
 
     local fallbackIDs = buttonData.itemFallbacks or {}
@@ -1931,7 +1930,7 @@ local function EnsureFallbackMoveButtons(entry, buttonData, rowIndex, isPrimary)
         downBtn:ClearAllPoints()
         downBtn:SetPoint("RIGHT", frame, "RIGHT", -4, 0)
         downBtn:SetFrameLevel(frame:GetFrameLevel() + 6)
-        ConfigureFallbackMoveButton(
+        ConfigurePriorityMoveButton(
             downBtn,
             -math_pi / 2,
             "Move Down",
@@ -1949,7 +1948,7 @@ local function EnsureFallbackMoveButtons(entry, buttonData, rowIndex, isPrimary)
     upBtn:ClearAllPoints()
     upBtn:SetPoint("RIGHT", frame, "RIGHT", -24, 0)
     upBtn:SetFrameLevel(frame:GetFrameLevel() + 6)
-    ConfigureFallbackMoveButton(
+    ConfigurePriorityMoveButton(
         upBtn,
         math_pi / 2,
         "Move Up",
@@ -1965,7 +1964,7 @@ local function EnsureFallbackMoveButtons(entry, buttonData, rowIndex, isPrimary)
     downBtn:ClearAllPoints()
     downBtn:SetPoint("RIGHT", frame, "RIGHT", -4, 0)
     downBtn:SetFrameLevel(frame:GetFrameLevel() + 6)
-    ConfigureFallbackMoveButton(
+    ConfigurePriorityMoveButton(
         downBtn,
         -math_pi / 2,
         "Move Down",
