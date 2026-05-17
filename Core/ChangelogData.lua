@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.14.2",
         "1.14.1",
         "1.14",
         "1.13.10",
@@ -33,6 +34,23 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.14.2"] = {
+            markdown = [[
+## New Features
+
+- **Duration format choices:** Duration text now more formats across cooldown, aura duration, bar, text-mode, and Custom Bar displays.
+- **Tracked and Additional Auras:** Button entries and Custom Bars now use searchable aura picking, ordered aura rows, right-click removal, and Shift-hover spell tooltips for tracked and additional aura IDs.
+- **Standalone aura fallbacks:** Standalone aura entries can watch additional aura IDs while still prioritizing the original aura whenever it is active.
+
+## Polish | QoL
+
+- **Aura setup clarity:** The older override and fallback wording has been replaced with Tracked Auras and Additional Auras, with compact rows that show the spell icon, name, and ID at a glance.
+
+## Bug Fixes
+
+- **Very short cooldowns:** Short real cooldowns under high haste should be less likely to flash as ready while the ability is still recovering behind the active global cooldown.
+]],
+        },
         ["1.14.1"] = {
             markdown = [[
 ## Bug Fixes
