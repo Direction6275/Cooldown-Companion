@@ -6,7 +6,6 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
-local COOLDOWN_STATE_GCD = CooldownLogic.STATE_GCD
 local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
@@ -389,8 +388,6 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
     if auraActive then
         auraRemaining = durationRemaining
         auraIsSecret = durationIsSecret
-    elseif button._cooldownState == COOLDOWN_STATE_GCD then
-        -- Suppress GCD-only cooldowns in text mode (not useful information)
     else
         timeRemaining = durationRemaining
         timeIsSecret = durationIsSecret

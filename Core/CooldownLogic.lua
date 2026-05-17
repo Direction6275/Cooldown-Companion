@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - Core/CooldownLogic
-    Pure helpers for separating real cooldowns from GCD-only cooldown state.
+    Pure helpers for separating real cooldown availability from GCD presentation.
 ]]
 
 local _, ST = ...
@@ -9,6 +9,7 @@ ST = ST or {}
 local CooldownLogic = ST.CooldownLogic or {}
 
 CooldownLogic.STATE_READY = "ready"
+-- Presentation-only legacy label; GCD must not be treated as cooldown availability.
 CooldownLogic.STATE_GCD = "gcd"
 CooldownLogic.STATE_COOLDOWN = "cooldown"
 
@@ -18,7 +19,7 @@ CooldownLogic.CHARGE_STATE_ZERO = "zero"
 
 local COOLDOWN_STATE_PRIORITY = {
     [CooldownLogic.STATE_READY] = 1,
-    [CooldownLogic.STATE_GCD] = 2,
+    [CooldownLogic.STATE_GCD] = 1,
     [CooldownLogic.STATE_COOLDOWN] = 3,
 }
 
