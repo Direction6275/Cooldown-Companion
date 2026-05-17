@@ -221,6 +221,10 @@ local function SetIconFillFromCooldownWidget(button)
         return false
     end
 
+    if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN and button._auraActive ~= true then
+        return false
+    end
+
     local startMs, durMs = button.cooldown:GetCooldownTimes()
     if not (startMs and durMs)
         or issecretvalue(startMs)
@@ -971,7 +975,14 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             and button._chargeCooldownVisualActive ~= true
             and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
 
-        if suppressGCD then
+        local cooldownVisualActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+            or button._auraActive == true
+            or button._conditionalAuraDurationTextPreview == true
+            or button._conditionalPreviewDomain == "cooldown"
+            or button._chargeCooldownVisualActive == true
+            or (isGCDOnly and style.showGCDSwipe == true)
+
+        if suppressGCD or not cooldownVisualActive then
             button.cooldown:Hide()
         else
             button.cooldown:Show()
@@ -1257,10 +1268,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._keyPressHighlightActive = nil
     button._displaySpellId = nil
     button._liveOverrideSpellId = nil
-    button._lastRealCooldownSpellID = nil
-    button._lastRealCooldownDurationObj = nil
-    button._lastRealCooldownAt = nil
-    button._lastOwnSpellCastAt = nil
     button._spellOutOfRange = nil
     button._itemCount = nil
     button._auraActive = nil

@@ -7,7 +7,6 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
 -- Localize frequently-used globals for faster access
-local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
 local pairs = pairs
 local wipe = wipe
@@ -418,7 +417,6 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
                 and not buttonData.isPassive then
                 local displaySpellID = button._displaySpellId or buttonData.id
                 if spellID == buttonData.id or spellID == displaySpellID then
-                    button._lastOwnSpellCastAt = GetTime()
                     if self.UsesChargeBehavior(buttonData) and buttonData.hasCharges then
                         -- Track charge consumption for restricted-mode color heuristic.
                         -- _chargeRecharging at event time reflects the PRE-cast state:
