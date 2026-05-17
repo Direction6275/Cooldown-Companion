@@ -975,7 +975,14 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             and button._chargeCooldownVisualActive ~= true
             and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
 
-        if suppressGCD then
+        local cooldownVisualActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+            or button._auraActive == true
+            or button._conditionalAuraDurationTextPreview == true
+            or button._conditionalPreviewDomain == "cooldown"
+            or button._chargeCooldownVisualActive == true
+            or (isGCDOnly and style.showGCDSwipe == true)
+
+        if suppressGCD or not cooldownVisualActive then
             button.cooldown:Hide()
         else
             button.cooldown:Show()
