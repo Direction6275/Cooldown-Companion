@@ -63,6 +63,7 @@ local defaults = {
                         buttonSize = 36,
                         buttonSpacing = 2,
                         borderSize = 1,
+                        borderRenderMode = "custom",
                         borderColor = {0, 0, 0, 1},
                         backgroundColor = {0, 0, 0, 0.5},
                         orientation = "horizontal", -- "horizontal" or "vertical"
@@ -245,6 +246,7 @@ local defaults = {
             buttonSize = 36,
             buttonSpacing = 2,
             borderSize = 1,
+            borderRenderMode = "custom",
             borderColor = {0, 0, 0, 1},
             cooldownFontSize = 12,
             cooldownFontOutline = "OUTLINE",
@@ -418,6 +420,7 @@ local defaults = {
             textCustomColor = {1, 0.82, 0, 1},
             textBgColor = {0, 0, 0, 0},
             textBorderSize = 0,
+            textBorderRenderMode = "custom",
             textBorderColor = {0, 0, 0, 1},
             textShadow = false,
             durationFormat = "clock",
@@ -443,6 +446,7 @@ local defaults = {
             borderStyle = "pixel",
             borderColor = { 0, 0, 0, 1 },
             borderSize = 1,
+            borderRenderMode = "custom",
             segmentGap = 4,
             hideManaForNonHealer = true,
             resources = {
@@ -559,6 +563,7 @@ local defaults = {
             iconOffsetX = 0,
             iconOffsetY = 0,
             iconBorderSize = 1,
+            iconBorderRenderMode = "custom",
             showSpark = true,
             showSparkTrail = true,
             showInterruptShake = true,
@@ -567,6 +572,7 @@ local defaults = {
             borderStyle = "pixel",
             borderColor = { 0, 0, 0, 1 },
             borderSize = 1,
+            borderRenderMode = "custom",
             showNameText = true,
             nameFont = "Friz Quadrata TT",
             nameFontSize = 10,
@@ -619,7 +625,7 @@ ST.OVERRIDE_SECTIONS = {
     -- Icon Mode — Appearance Tab
     borderSettings = {
         label = "Border",
-        keys = {"borderSize", "borderColor"},
+        keys = {"borderSize", "borderRenderMode", "borderColor"},
         modes = {icons = true, bars = true},
     },
     cooldownText = {
@@ -797,7 +803,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     textBackground = {
         label = "Text Background",
-        keys = {"textBgColor", "textBorderSize", "textBorderColor"},
+        keys = {"textBgColor", "textBorderSize", "textBorderRenderMode", "textBorderColor"},
         modes = {text = true},
     },
 }

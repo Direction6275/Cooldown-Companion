@@ -359,57 +359,21 @@ end
 --- Create or return the pixel border textures for the cast bar
 local function GetPixelBorders(cb)
     if pixelBorders then return pixelBorders end
-    pixelBorders = {}
-    local names = { "TOP", "BOTTOM", "LEFT", "RIGHT" }
-    for _, side in ipairs(names) do
-        local tex = cb:CreateTexture(nil, "OVERLAY", nil, 7)
-        tex:SetColorTexture(0, 0, 0, 1)
-        tex:Hide()
-        pixelBorders[side] = tex
-    end
+    pixelBorders = ST.CreateBorderTextureSet(cb, "OVERLAY", 7)
     return pixelBorders
 end
 
 --- Optional iconFrame + iconOnRight: extends the border to wrap both bar+icon.
-local function ShowPixelBorders(cb, color, size, iconFrame, iconOnRight)
+local function ShowPixelBorders(cb, color, size, renderMode, iconFrame, iconOnRight)
     local borders = GetPixelBorders(cb)
-    local r, g, b, a = color[1], color[2], color[3], color[4]
-    size = size or 1
-
-    for _, tex in pairs(borders) do
-        tex:SetColorTexture(r, g, b, a)
-        tex:Show()
-    end
-
     local leftFrame = (iconFrame and not iconOnRight) and iconFrame or cb
     local rightFrame = (iconFrame and iconOnRight) and iconFrame or cb
-
-    borders.TOP:SetHeight(size)
-    borders.TOP:ClearAllPoints()
-    borders.TOP:SetPoint("TOPLEFT", leftFrame, "TOPLEFT", 0, 0)
-    borders.TOP:SetPoint("TOPRIGHT", rightFrame, "TOPRIGHT", 0, 0)
-
-    borders.BOTTOM:SetHeight(size)
-    borders.BOTTOM:ClearAllPoints()
-    borders.BOTTOM:SetPoint("BOTTOMLEFT", leftFrame, "BOTTOMLEFT", 0, 0)
-    borders.BOTTOM:SetPoint("BOTTOMRIGHT", rightFrame, "BOTTOMRIGHT", 0, 0)
-
-    borders.LEFT:SetWidth(size)
-    borders.LEFT:ClearAllPoints()
-    borders.LEFT:SetPoint("TOPLEFT", leftFrame, "TOPLEFT", 0, -size)
-    borders.LEFT:SetPoint("BOTTOMLEFT", leftFrame, "BOTTOMLEFT", 0, size)
-
-    borders.RIGHT:SetWidth(size)
-    borders.RIGHT:ClearAllPoints()
-    borders.RIGHT:SetPoint("TOPRIGHT", rightFrame, "TOPRIGHT", 0, -size)
-    borders.RIGHT:SetPoint("BOTTOMRIGHT", rightFrame, "BOTTOMRIGHT", 0, size)
+    ST.ApplyBorderTexturesBetween(borders, leftFrame, rightFrame, color, size, renderMode)
 end
 
 local function HidePixelBorders()
     if not pixelBorders then return end
-    for _, tex in pairs(pixelBorders) do
-        tex:Hide()
-    end
+    ST.HideBorderTextures(pixelBorders)
 end
 
 --- Icon pixel borders (inline mode — matches bar border style)
@@ -417,53 +381,18 @@ local iconPixelBorders = nil
 
 local function GetIconPixelBorders(cb)
     if iconPixelBorders then return iconPixelBorders end
-    iconPixelBorders = {}
-    local names = { "TOP", "BOTTOM", "LEFT", "RIGHT" }
-    for _, side in ipairs(names) do
-        local tex = cb:CreateTexture(nil, "OVERLAY", nil, 7)
-        tex:SetColorTexture(0, 0, 0, 1)
-        tex:Hide()
-        iconPixelBorders[side] = tex
-    end
+    iconPixelBorders = ST.CreateBorderTextureSet(cb, "OVERLAY", 7)
     return iconPixelBorders
 end
 
-local function ShowIconPixelBorders(cb, color, size)
+local function ShowIconPixelBorders(cb, color, size, renderMode)
     local borders = GetIconPixelBorders(cb)
-    local r, g, b, a = color[1], color[2], color[3], color[4]
-    size = size or 1
-
-    for _, tex in pairs(borders) do
-        tex:SetColorTexture(r, g, b, a)
-        tex:Show()
-    end
-
-    borders.TOP:SetHeight(size)
-    borders.TOP:ClearAllPoints()
-    borders.TOP:SetPoint("TOPLEFT", cb.Icon, "TOPLEFT", 0, 0)
-    borders.TOP:SetPoint("TOPRIGHT", cb.Icon, "TOPRIGHT", 0, 0)
-
-    borders.BOTTOM:SetHeight(size)
-    borders.BOTTOM:ClearAllPoints()
-    borders.BOTTOM:SetPoint("BOTTOMLEFT", cb.Icon, "BOTTOMLEFT", 0, 0)
-    borders.BOTTOM:SetPoint("BOTTOMRIGHT", cb.Icon, "BOTTOMRIGHT", 0, 0)
-
-    borders.LEFT:SetWidth(size)
-    borders.LEFT:ClearAllPoints()
-    borders.LEFT:SetPoint("TOPLEFT", cb.Icon, "TOPLEFT", 0, -size)
-    borders.LEFT:SetPoint("BOTTOMLEFT", cb.Icon, "BOTTOMLEFT", 0, size)
-
-    borders.RIGHT:SetWidth(size)
-    borders.RIGHT:ClearAllPoints()
-    borders.RIGHT:SetPoint("TOPRIGHT", cb.Icon, "TOPRIGHT", 0, -size)
-    borders.RIGHT:SetPoint("BOTTOMRIGHT", cb.Icon, "BOTTOMRIGHT", 0, size)
+    ST.ApplyBorderTextures(borders, cb.Icon, color, size, renderMode)
 end
 
 local function HideIconPixelBorders()
     if not iconPixelBorders then return end
-    for _, tex in pairs(iconPixelBorders) do
-        tex:Hide()
-    end
+    ST.HideBorderTextures(iconPixelBorders)
 end
 
 --- Fill edge masks: thin opaque strips at the left/right edges of the StatusBar
@@ -915,13 +844,14 @@ local function DeferredReapply()
         if bStyle == "pixel" then
             local bColor = s.borderColor or {0,0,0,1}
             local bSize = s.borderSize or 1
+            local bRenderMode = ST.GetBorderRenderMode(s)
             if s.showIcon and not s.iconOffset then
-                ShowPixelBorders(cb, bColor, bSize, cb.Icon, s.iconFlipSide)
+                ShowPixelBorders(cb, bColor, bSize, bRenderMode, cb.Icon, s.iconFlipSide)
             else
-                ShowPixelBorders(cb, bColor, bSize)
+                ShowPixelBorders(cb, bColor, bSize, bRenderMode)
             end
             if s.showIcon and s.iconOffset then
-                ShowIconPixelBorders(cb, bColor, s.iconBorderSize or 1)
+                ShowIconPixelBorders(cb, bColor, s.iconBorderSize or 1, ST.GetBorderRenderMode(s, "iconBorderRenderMode"))
             else
                 HideIconPixelBorders()
             end
@@ -1297,14 +1227,15 @@ function CooldownCompanion:ApplyCastBarSettings()
             end
             local bColor = settings.borderColor or { 0, 0, 0, 1 }
             local bSize = settings.borderSize or 1
+            local bRenderMode = ST.GetBorderRenderMode(settings)
             if settings.showIcon and not settings.iconOffset then
-                ShowPixelBorders(cb, bColor, bSize, cb.Icon, settings.iconFlipSide)
+                ShowPixelBorders(cb, bColor, bSize, bRenderMode, cb.Icon, settings.iconFlipSide)
             else
-                ShowPixelBorders(cb, bColor, bSize)
+                ShowPixelBorders(cb, bColor, bSize, bRenderMode)
             end
             -- Icon border (offset mode only)
             if settings.showIcon and settings.iconOffset then
-                ShowIconPixelBorders(cb, bColor, settings.iconBorderSize or 1)
+                ShowIconPixelBorders(cb, bColor, settings.iconBorderSize or 1, ST.GetBorderRenderMode(settings, "iconBorderRenderMode"))
             else
                 HideIconPixelBorders()
             end

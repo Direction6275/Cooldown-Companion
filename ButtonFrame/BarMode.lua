@@ -28,6 +28,7 @@ local SetIconAreaPoints = ST._SetIconAreaPoints
 local SetBarAreaPoints = ST._SetBarAreaPoints
 local AnchorBarCountText = ST._AnchorBarCountText
 local ApplyEdgePositions = ST._ApplyEdgePositions
+local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local ApplyIconTexCoord = ST._ApplyIconTexCoord
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
@@ -481,6 +482,7 @@ local function BuildBarAuraStackLayoutKey(button, mode, maxStacks, width, height
         tostring(style.barTexture or "Solid"),
         tostring(style.borderStyle or "pixel"),
         tostring(style.borderSize or ST.DEFAULT_BORDER_SIZE or 1),
+        tostring(ST.GetBorderRenderMode(style)),
         BarAuraColorKey(style.barBgColor),
         BarAuraColorKey(style.borderColor),
         BarAuraColorKey(auraBar and auraBar.thresholdMaxColor),
@@ -540,6 +542,7 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
         or state.barTexture ~= (style.barTexture or "Solid")
         or state.borderStyle ~= (style.borderStyle or "pixel")
         or state.borderSize ~= (style.borderSize or ST.DEFAULT_BORDER_SIZE or 1)
+        or state.borderRenderMode ~= ST.GetBorderRenderMode(style)
         or state.showThreshold ~= showThreshold
         or state.maxStacksGlowEnabled ~= (auraBar and auraBar.maxStacksGlowEnabled == true)
         or state.maxStacksGlowStyle ~= (auraBar and auraBar.maxStacksGlowStyle or nil)
@@ -576,6 +579,7 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
         state.barTexture = style.barTexture or "Solid"
         state.borderStyle = style.borderStyle or "pixel"
         state.borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE or 1
+        state.borderRenderMode = ST.GetBorderRenderMode(style)
         state.showThreshold = showThreshold
         state.maxStacksGlowEnabled = auraBar and auraBar.maxStacksGlowEnabled == true
         state.maxStacksGlowStyle = auraBar and auraBar.maxStacksGlowStyle or nil
@@ -623,6 +627,7 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
     local barTexture = CooldownCompanion:FetchStatusBar(button.style and button.style.barTexture or "Solid")
     local borderStyle = button.style and button.style.borderStyle or "pixel"
     local borderSize = button.style and button.style.borderSize or ST.DEFAULT_BORDER_SIZE or 1
+    local borderRenderMode = ST.GetBorderRenderMode(button.style)
     local layoutKey = BuildBarAuraStackLayoutKey(button, mode, maxStacks, width, height, gap, showThreshold)
     local layoutChanged = button._barAuraStackLayoutKey ~= layoutKey
 
@@ -639,7 +644,7 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
         if showThreshold and RB.EnsureCustomAuraContinuousThresholdOverlay and RB.LayoutCustomAuraContinuousThresholdOverlay then
             RB.EnsureCustomAuraContinuousThresholdOverlay(button.statusBar)
             if layoutChanged then
-                RB.LayoutCustomAuraContinuousThresholdOverlay(button.statusBar, barTexture, borderStyle, borderSize)
+                RB.LayoutCustomAuraContinuousThresholdOverlay(button.statusBar, barTexture, borderStyle, borderSize, borderRenderMode)
             end
             local overlay = button.statusBar.thresholdOverlay
             if overlay then
@@ -723,6 +728,7 @@ local function BuildBarAuraStackIndicatorKey(button, info, glowConfig, mode, max
         tostring(style.barTexture or "Solid"),
         tostring(style.borderStyle or "pixel"),
         tostring(style.borderSize or ST.DEFAULT_BORDER_SIZE or 1),
+        tostring(ST.GetBorderRenderMode(style)),
     }, "|")
 end
 
@@ -790,7 +796,8 @@ local function UpdateBarAuraStackIndicator(button, mode, maxStacks, stackValue, 
             maxStacks,
             CooldownCompanion:FetchStatusBar(button.style and button.style.barTexture or "Solid"),
             button.style and button.style.borderStyle or "pixel",
-            button.style and button.style.borderSize or ST.DEFAULT_BORDER_SIZE or 1
+            button.style and button.style.borderSize or ST.DEFAULT_BORDER_SIZE or 1,
+            ST.GetBorderRenderMode(button.style)
         )
         info._barAuraStackIndicatorKey = indicatorKey
     end
@@ -1313,6 +1320,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local barLength = style.barLength or 180
     local barHeight = style.barHeight or 20
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+    local borderRenderMode = ST.GetBorderRenderMode(style)
     local showIcon = style.showBarIcon ~= false
     local isVertical = style.barFillVertical or false
     local iconReverse = showIcon and (style.barIconReverse or false)
@@ -1345,7 +1353,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     -- Icon
     button.icon = button:CreateTexture(nil, "ARTWORK")
     if showIcon then
-        SetIconAreaPoints(button.icon, button, isVertical, iconReverse, iconSize, borderSize)
+        SetIconAreaPoints(button.icon, button, isVertical, iconReverse, iconSize, ST.GetBorderLayoutSize(button, borderSize, borderRenderMode))
         button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     else
         -- Hidden 1x1 icon (still needed for UpdateButtonIcon)
@@ -1372,7 +1380,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         if not showIcon then tex:Hide() end
         button.iconBorderTextures[i] = tex
     end
-    ApplyEdgePositions(button.iconBorderTextures, button._iconBounds, borderSize)
+    ApplyBorderEdgePositions(button.iconBorderTextures, button._iconBounds, borderSize, borderRenderMode)
 
     -- Bar area bounds (for border positioning separate from icon)
     button._barBounds = CreateFrame("Frame", nil, button)
@@ -1385,7 +1393,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
 
     -- StatusBar
     button.statusBar = CreateFrame("StatusBar", nil, button)
-    SetBarAreaPoints(button.statusBar, button, isVertical, iconReverse, barAreaLeft, barAreaTop, borderSize)
+    SetBarAreaPoints(button.statusBar, button, isVertical, iconReverse, barAreaLeft, barAreaTop, ST.GetBorderLayoutSize(button, borderSize, borderRenderMode))
     if isVertical then
         button.statusBar:SetOrientation("VERTICAL")
     end
@@ -1399,7 +1407,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
 
     -- Dedicated text layer above custom segment holders.
     button.barTextFrame = CreateFrame("Frame", nil, button)
-    SetBarAreaPoints(button.barTextFrame, button, isVertical, iconReverse, barAreaLeft, barAreaTop, borderSize)
+    SetBarAreaPoints(button.barTextFrame, button, isVertical, iconReverse, barAreaLeft, barAreaTop, ST.GetBorderLayoutSize(button, borderSize, borderRenderMode))
     button.barTextFrame:SetFrameLevel(button.statusBar:GetFrameLevel() + 20)
     button.barTextFrame:EnableMouse(false)
 
@@ -1470,7 +1478,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         tex:SetColorTexture(unpack(borderColor))
         button.borderTextures[i] = tex
     end
-    ApplyEdgePositions(button.borderTextures, button._barBounds, borderSize)
+    ApplyBorderEdgePositions(button.borderTextures, button._barBounds, borderSize, borderRenderMode)
 
     -- Loss of control cooldown frame (red swipe over the bar icon)
     button.locCooldown = CreateFrame("Cooldown", button:GetName() .. "LocCooldown", button, "CooldownFrameTemplate")
@@ -1647,6 +1655,8 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local barLength = newStyle.barLength or 180
     local barHeight = newStyle.barHeight or 20
     local borderSize = newStyle.borderSize or ST.DEFAULT_BORDER_SIZE
+    local borderRenderMode = ST.GetBorderRenderMode(newStyle)
+    local borderLayoutSize = ST.GetBorderLayoutSize(button, borderSize, borderRenderMode)
     local showIcon = newStyle.showBarIcon ~= false
     local isVertical = newStyle.barFillVertical or false
     local iconReverse = showIcon and (newStyle.barIconReverse or false)
@@ -1732,7 +1742,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     -- Update icon
     button.icon:ClearAllPoints()
     if showIcon then
-        SetIconAreaPoints(button.icon, button, isVertical, iconReverse, iconSize, borderSize)
+        SetIconAreaPoints(button.icon, button, isVertical, iconReverse, iconSize, borderLayoutSize)
         button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         button.icon:SetAlpha(1)
     else
@@ -1766,7 +1776,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         SetIconAreaPoints(button._iconBounds, button, isVertical, iconReverse, iconSize, 0)
     end
     if button.iconBorderTextures then
-        ApplyEdgePositions(button.iconBorderTextures, button._iconBounds, borderSize)
+        ApplyBorderEdgePositions(button.iconBorderTextures, button._iconBounds, borderSize, borderRenderMode)
         for _, tex in ipairs(button.iconBorderTextures) do
             if showIcon then tex:Show() else tex:Hide() end
         end
@@ -1783,7 +1793,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     end
 
     -- Update status bar
-    SetBarAreaPoints(button.statusBar, button, isVertical, iconReverse, barAreaLeft, barAreaTop, borderSize)
+    SetBarAreaPoints(button.statusBar, button, isVertical, iconReverse, barAreaLeft, barAreaTop, borderLayoutSize)
     if isVertical then
         button.statusBar:SetOrientation("VERTICAL")
     else
@@ -1796,7 +1806,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
 
     if button.barTextFrame then
         button.barTextFrame:ClearAllPoints()
-        SetBarAreaPoints(button.barTextFrame, button, isVertical, iconReverse, barAreaLeft, barAreaTop, borderSize)
+        SetBarAreaPoints(button.barTextFrame, button, isVertical, iconReverse, barAreaLeft, barAreaTop, borderLayoutSize)
         button.barTextFrame:SetFrameLevel(button.statusBar:GetFrameLevel() + 20)
     end
 
@@ -1810,7 +1820,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     -- Update border
     local borderColor = newStyle.borderColor or {0, 0, 0, 1}
     if button.borderTextures then
-        ApplyEdgePositions(button.borderTextures, button._barBounds or button, borderSize)
+        ApplyBorderEdgePositions(button.borderTextures, button._barBounds or button, borderSize, borderRenderMode)
         for _, tex in ipairs(button.borderTextures) do
             tex:SetColorTexture(unpack(borderColor))
             tex:Show()

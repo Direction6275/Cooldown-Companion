@@ -21,6 +21,7 @@ local GetTime = GetTime
 -- Imports from Helpers
 local ApplyStrataOrder = ST._ApplyStrataOrder
 local ApplyEdgePositions = ST._ApplyEdgePositions
+local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local ApplyIconTexCoord = ST._ApplyIconTexCoord
 local FitHighlightFrame = ST._FitHighlightFrame
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
@@ -490,8 +491,10 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Icon
     button.icon = button:CreateTexture(nil, "ARTWORK")
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-    button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
-    button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
+    local borderRenderMode = ST.GetBorderRenderMode(style)
+    local borderLayoutSize = ST.GetBorderLayoutSize(button, borderSize, borderRenderMode)
+    button.icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
+    button.icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
 
     ApplyIconTexCoord(button.icon, width, height)
 
@@ -515,7 +518,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         tex:SetColorTexture(unpack(borderColor))
         button.borderTextures[i] = tex
     end
-    ApplyEdgePositions(button.borderTextures, button, borderSize)
+    ApplyBorderEdgePositions(button.borderTextures, button, borderSize, borderRenderMode)
 
     -- Assisted highlight overlays (multiple styles, all hidden by default)
     button.assistedHighlight = CreateAssistedHighlight(button, style)
@@ -1240,6 +1243,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     end
 
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+    local borderRenderMode = ST.GetBorderRenderMode(style)
+    local borderLayoutSize = ST.GetBorderLayoutSize(button, borderSize, borderRenderMode)
 
     -- Store updated style reference
     button.style = style
@@ -1302,8 +1307,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Update icon position
     button.icon:ClearAllPoints()
-    button.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
-    button.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
+    button.icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
+    button.icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
 
     ApplyIconTexCoord(button.icon, width, height)
 
@@ -1321,7 +1326,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update border textures
     local borderColor = style.borderColor or {0, 0, 0, 1}
     if button.borderTextures then
-        ApplyEdgePositions(button.borderTextures, button, borderSize)
+        ApplyBorderEdgePositions(button.borderTextures, button, borderSize, borderRenderMode)
         for _, tex in ipairs(button.borderTextures) do
             tex:SetColorTexture(unpack(borderColor))
         end

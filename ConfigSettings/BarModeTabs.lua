@@ -22,6 +22,7 @@ local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
+local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
 -- Imports from SectionBuilders.lua
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
@@ -86,16 +87,23 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(heightSlider)
 
-    local borderSlider = AceGUI:Create("Slider")
-    borderSlider:SetLabel("Border Size")
-    borderSlider:SetSliderValues(0, 5, 0.1)
-    borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
-    borderSlider:SetFullWidth(true)
-    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.borderSize = val
+    local renderMode = AddBorderRenderModeDropdown(container, style, "borderRenderMode", function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(borderSlider)
+
+    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+        local borderSlider = AceGUI:Create("Slider")
+        borderSlider:SetLabel("Border Size")
+        borderSlider:SetSliderValues(0, 5, 0.1)
+        borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
+        borderSlider:SetFullWidth(true)
+        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.borderSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(borderSlider)
+    end
 
     if group.buttons and #group.buttons > 1 then
         local spacingSlider = AceGUI:Create("Slider")

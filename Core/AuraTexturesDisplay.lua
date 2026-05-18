@@ -866,6 +866,8 @@ function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
     local iconFrame = CooldownCompanion.EnsureTriggerIconVisual(host)
     local width, height = CooldownCompanion.GetTriggerIconDimensions(settings)
     local borderSize = settings.borderSize or 0
+    local borderRenderMode = ST.GetBorderRenderMode(settings)
+    local borderLayoutSize = ST.GetBorderLayoutSize(iconFrame, borderSize, borderRenderMode)
     local iconTint = settings.iconTintColor or { 1, 1, 1, 1 }
     local backgroundColor = settings.backgroundColor or { 0, 0, 0, 0.5 }
     local borderColor = settings.borderColor or { 0, 0, 0, 1 }
@@ -891,8 +893,8 @@ function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
         backgroundColor[4] ~= nil and backgroundColor[4] or 0.5
     )
     iconFrame.icon:ClearAllPoints()
-    iconFrame.icon:SetPoint("TOPLEFT", borderSize, -borderSize)
-    iconFrame.icon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
+    iconFrame.icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
+    iconFrame.icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
     iconFrame.icon:SetTexture(settings.manualIcon)
     iconFrame.icon:SetVertexColor(
         iconTint[1] or 1,
@@ -910,7 +912,7 @@ function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
             borderColor[4] ~= nil and borderColor[4] or 1
         )
     end
-    ST._ApplyEdgePositions(iconFrame.borderTextures, iconFrame, borderSize)
+    ST._ApplyBorderEdgePositions(iconFrame.borderTextures, iconFrame, borderSize, borderRenderMode)
     iconFrame:Show()
 
     return true

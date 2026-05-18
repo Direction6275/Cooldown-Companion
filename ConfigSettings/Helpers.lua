@@ -1053,6 +1053,31 @@ local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn)
     container:AddChild(ySlider)
 end
 
+local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disabled)
+    key = key or "borderRenderMode"
+
+    local modeDrop = AceGUI:Create("Dropdown")
+    modeDrop:SetLabel("Border Rendering")
+    modeDrop:SetList({
+        [ST.BORDER_RENDER_MODE_CUSTOM] = "Custom Thickness",
+        [ST.BORDER_RENDER_MODE_CRISP] = "Crisp 1 Pixel",
+    }, { ST.BORDER_RENDER_MODE_CUSTOM, ST.BORDER_RENDER_MODE_CRISP })
+    modeDrop:SetValue(ST.GetBorderRenderMode(tbl, key))
+    if modeDrop.SetDisabled then
+        modeDrop:SetDisabled(disabled == true)
+    end
+    modeDrop:SetFullWidth(true)
+    modeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        tbl[key] = ST.GetBorderRenderMode(val)
+        if refreshFn then
+            refreshFn()
+        end
+    end)
+    container:AddChild(modeDrop)
+
+    return ST.GetBorderRenderMode(tbl, key)
+end
+
 -- Expose helpers for other ConfigSettings files
 ST._ColorHeading = ColorHeading
 ST._AttachCollapseButton = AttachCollapseButton
@@ -1316,3 +1341,4 @@ ST._BuildIndependentAnchorTargetRow = BuildIndependentAnchorTargetRow
 
 ST._AddFontControls = AddFontControls
 ST._AddOffsetSliders = AddOffsetSliders
+ST._AddBorderRenderModeDropdown = AddBorderRenderModeDropdown

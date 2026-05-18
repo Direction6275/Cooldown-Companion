@@ -14,6 +14,7 @@ local AddAnchorDropdown = ST._AddAnchorDropdown
 local HookSliderEditBox = ST._HookSliderEditBox
 local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
 local RefreshConfigPanelForPreviewToggle = ST._RefreshConfigPanelForPreviewToggle
+local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
 ------------------------------------------------------------------------
 -- CAST BAR SETTINGS PANEL
@@ -342,16 +343,23 @@ local function BuildCastBarStylingPanel(container)
     if settings.borderStyle == "pixel" then
         AddColorPicker(container, settings, "borderColor", "Border Color", {0, 0, 0, 1}, true, applyCastBar)
 
-        local borderSizeSlider = AceGUI:Create("Slider")
-        borderSizeSlider:SetLabel("Border Size")
-        borderSizeSlider:SetSliderValues(0, 5, 0.1)
-        borderSizeSlider:SetValue(settings.borderSize or 1)
-        borderSizeSlider:SetFullWidth(true)
-        borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            settings.borderSize = val
+        local renderMode = AddBorderRenderModeDropdown(container, settings, "borderRenderMode", function()
             CooldownCompanion:ApplyCastBarSettings()
+            CooldownCompanion:RefreshConfigPanel()
         end)
-        container:AddChild(borderSizeSlider)
+
+        if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+            local borderSizeSlider = AceGUI:Create("Slider")
+            borderSizeSlider:SetLabel("Border Size")
+            borderSizeSlider:SetSliderValues(0, 5, 0.1)
+            borderSizeSlider:SetValue(settings.borderSize or 1)
+            borderSizeSlider:SetFullWidth(true)
+            borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                settings.borderSize = val
+                CooldownCompanion:ApplyCastBarSettings()
+            end)
+            container:AddChild(borderSizeSlider)
+        end
     end
 
     -- ============ Size ============
@@ -448,16 +456,23 @@ local function BuildCastBarStylingPanel(container)
             container:AddChild(iconYSlider)
 
             -- Icon Border Size slider (offset mode only)
-            local iconBorderSlider = AceGUI:Create("Slider")
-            iconBorderSlider:SetLabel("Icon Border Size")
-            iconBorderSlider:SetSliderValues(0, 4, 0.1)
-            iconBorderSlider:SetValue(settings.iconBorderSize or 1)
-            iconBorderSlider:SetFullWidth(true)
-            iconBorderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                settings.iconBorderSize = val
+            local iconRenderMode = AddBorderRenderModeDropdown(container, settings, "iconBorderRenderMode", function()
                 CooldownCompanion:ApplyCastBarSettings()
+                CooldownCompanion:RefreshConfigPanel()
             end)
-            container:AddChild(iconBorderSlider)
+
+            if iconRenderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+                local iconBorderSlider = AceGUI:Create("Slider")
+                iconBorderSlider:SetLabel("Icon Border Size")
+                iconBorderSlider:SetSliderValues(0, 4, 0.1)
+                iconBorderSlider:SetValue(settings.iconBorderSize or 1)
+                iconBorderSlider:SetFullWidth(true)
+                iconBorderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    settings.iconBorderSize = val
+                    CooldownCompanion:ApplyCastBarSettings()
+                end)
+                container:AddChild(iconBorderSlider)
+            end
         end
     end
 

@@ -880,6 +880,7 @@ function CooldownCompanion.NormalizeTriggerIconSettings(settings)
     settings.iconWidth = Clamp(tonumber(settings.iconWidth) or settings.buttonSize, 10, 150)
     settings.iconHeight = Clamp(tonumber(settings.iconHeight) or settings.buttonSize, 10, 150)
     settings.borderSize = Clamp(tonumber(settings.borderSize) or 1, 0, 5)
+    settings.borderRenderMode = ST.GetBorderRenderMode(settings)
     settings.borderColor = CopyColor(settings.borderColor) or { 0, 0, 0, 1 }
     settings.backgroundColor = CopyColor(settings.backgroundColor) or { 0, 0, 0, 0.5 }
     settings.iconTintColor = CopyColor(settings.iconTintColor) or { 1, 1, 1, 1 }
@@ -996,6 +997,7 @@ function CooldownCompanion:GetTriggerPanelIconSettings(groupOrId, createIfMissin
             iconWidth = 36,
             iconHeight = 36,
             borderSize = 1,
+            borderRenderMode = ST.BORDER_RENDER_MODE_CUSTOM,
             borderColor = { 0, 0, 0, 1 },
             backgroundColor = { 0, 0, 0, 0.5 },
             iconTintColor = { 1, 1, 1, 1 },

@@ -25,7 +25,9 @@ local HookSliderEditBox = ST._HookSliderEditBox
 local BuildAlphaControls = ST._BuildAlphaControls
 local OpenTriggerPanelIconPicker = ST._OpenTriggerPanelIconPicker
 local ApplyEdgePositions = ST._ApplyEdgePositions
+local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local ApplyIconTexCoord = ST._ApplyIconTexCoord
+local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local AddScopedLoadConditionToggles = ST._AddScopedLoadConditionToggles
 
 -- Imports from SectionBuilders.lua
@@ -617,6 +619,8 @@ local function BuildTriggerIconAppearanceTab(container, group)
         local height = settings.maintainAspectRatio and (settings.buttonSize or ST.BUTTON_SIZE)
             or (settings.iconHeight or settings.buttonSize or ST.BUTTON_SIZE)
         local borderSize = settings.borderSize or ST.DEFAULT_BORDER_SIZE
+        local borderRenderMode = ST.GetBorderRenderMode(settings)
+        local borderLayoutSize = ST.GetBorderLayoutSize(iconHolder, borderSize, borderRenderMode)
         local bgColor = settings.backgroundColor or { 0, 0, 0, 0.5 }
         local borderColor = settings.borderColor or { 0, 0, 0, 1 }
         local tintColor = settings.iconTintColor or { 1, 1, 1, 1 }
@@ -624,8 +628,8 @@ local function BuildTriggerIconAppearanceTab(container, group)
 
         iconHolder:SetSize(width, height)
         previewIcon:ClearAllPoints()
-        previewIcon:SetPoint("TOPLEFT", borderSize, -borderSize)
-        previewIcon:SetPoint("BOTTOMRIGHT", -borderSize, borderSize)
+        previewIcon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
+        previewIcon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
 
         if hasIcon then
             previewBg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 0.5)
@@ -634,7 +638,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
                 border:SetColorTexture(borderColor[1] or 0, borderColor[2] or 0, borderColor[3] or 0, borderColor[4] ~= nil and borderColor[4] or 1)
                 border:Show()
             end
-            ApplyEdgePositions(previewBorders, iconHolder, borderSize)
+            ApplyBorderEdgePositions(previewBorders, iconHolder, borderSize, borderRenderMode)
             previewIcon:SetTexture(settings.manualIcon)
             previewIcon:SetVertexColor(tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1, tintColor[4] ~= nil and tintColor[4] or 1)
             ApplyIconTexCoord(previewIcon, width, height)
@@ -736,17 +740,24 @@ local function BuildTriggerIconAppearanceTab(container, group)
         container:AddChild(heightSlider)
     end
 
-    local borderSlider = AceGUI:Create("Slider")
-    borderSlider:SetLabel("Border Size")
-    borderSlider:SetSliderValues(0, 5, 0.1)
-    borderSlider:SetValue(settings.borderSize or ST.DEFAULT_BORDER_SIZE)
-    borderSlider:SetFullWidth(true)
-    borderSlider:SetCallback("OnValueChanged", function(_, _, value)
-        settings.borderSize = value
+    local renderMode = AddBorderRenderModeDropdown(container, settings, "borderRenderMode", function()
         RefreshIconPreview()
+        CooldownCompanion:RefreshConfigPanel()
     end)
-    HookSliderEditBox(borderSlider)
-    container:AddChild(borderSlider)
+
+    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+        local borderSlider = AceGUI:Create("Slider")
+        borderSlider:SetLabel("Border Size")
+        borderSlider:SetSliderValues(0, 5, 0.1)
+        borderSlider:SetValue(settings.borderSize or ST.DEFAULT_BORDER_SIZE)
+        borderSlider:SetFullWidth(true)
+        borderSlider:SetCallback("OnValueChanged", function(_, _, value)
+            settings.borderSize = value
+            RefreshIconPreview()
+        end)
+        HookSliderEditBox(borderSlider)
+        container:AddChild(borderSlider)
+    end
 
     AddColorPicker(container, settings, "borderColor", "Border Color", { 0, 0, 0, 1 }, true, RefreshIconPreview, RefreshIconPreview)
     AddColorPicker(container, settings, "iconTintColor", "Base Icon Color", { 1, 1, 1, 1 }, true, RefreshIconPreview, RefreshIconPreview)
@@ -2631,19 +2642,26 @@ local function BuildAppearanceTab(container)
         container:AddChild(hSlider)
     end
 
-    local borderSlider = AceGUI:Create("Slider")
-    borderSlider:SetLabel("Border Size")
-    borderSlider:SetSliderValues(0, 5, 0.1)
-    borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
-    borderSlider:SetFullWidth(true)
-    if group.masqueEnabled then
-        borderSlider:SetDisabled(true)
-    end
-    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.borderSize = val
+    local renderMode = AddBorderRenderModeDropdown(container, style, "borderRenderMode", function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(borderSlider)
+        CooldownCompanion:RefreshConfigPanel()
+    end, group.masqueEnabled)
+
+    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+        local borderSlider = AceGUI:Create("Slider")
+        borderSlider:SetLabel("Border Size")
+        borderSlider:SetSliderValues(0, 5, 0.1)
+        borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
+        borderSlider:SetFullWidth(true)
+        if group.masqueEnabled then
+            borderSlider:SetDisabled(true)
+        end
+        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.borderSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(borderSlider)
+    end
 
     if group.buttons and #group.buttons > 1 then
         local spacingSlider = AceGUI:Create("Slider")
@@ -2960,7 +2978,7 @@ local function BuildAppearanceTab(container)
             {"Uses the Masque addon to apply custom button skins to this group. Configure skins via /masque or the Masque config panel.", 1, 1, 1, true},
             " ",
             {"Overridden Settings:", 1, 0.82, 0},
-            {"Border Size, Border Color, Square Icons (forced on)", 0.7, 0.7, 0.7, true},
+            {"Border Rendering, Border Size, Border Color, Square Icons (forced on)", 0.7, 0.7, 0.7, true},
         }, tabInfoButtons)
         end -- not masqueCollapsed
     end

@@ -16,6 +16,7 @@ local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
+local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
 -- Module-level aliases
 local tabInfoButtons = CS.tabInfoButtons
@@ -285,16 +286,23 @@ local function BuildChargeTextControls(container, styleTable, refreshCallback)
 end
 
 local function BuildBorderControls(container, styleTable, refreshCallback)
-    local borderSlider = AceGUI:Create("Slider")
-    borderSlider:SetLabel("Border Size")
-    borderSlider:SetSliderValues(0, 5, 0.1)
-    borderSlider:SetValue(styleTable.borderSize or ST.DEFAULT_BORDER_SIZE)
-    borderSlider:SetFullWidth(true)
-    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.borderSize = val
+    local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode", function()
         refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(borderSlider)
+
+    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+        local borderSlider = AceGUI:Create("Slider")
+        borderSlider:SetLabel("Border Size")
+        borderSlider:SetSliderValues(0, 5, 0.1)
+        borderSlider:SetValue(styleTable.borderSize or ST.DEFAULT_BORDER_SIZE)
+        borderSlider:SetFullWidth(true)
+        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.borderSize = val
+            refreshCallback()
+        end)
+        container:AddChild(borderSlider)
+    end
 
     AddColorPicker(container, styleTable, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshCallback, refreshCallback)
 end
@@ -1220,16 +1228,23 @@ end
 local function BuildTextBackgroundControls(container, styleTable, refreshCallback)
     AddColorPicker(container, styleTable, "textBgColor", "Background Color", {0, 0, 0, 0}, true, refreshCallback, refreshCallback)
 
-    local borderSlider = AceGUI:Create("Slider")
-    borderSlider:SetLabel("Border Size")
-    borderSlider:SetSliderValues(0, 5, 0.1)
-    borderSlider:SetValue(styleTable.textBorderSize or 0)
-    borderSlider:SetFullWidth(true)
-    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.textBorderSize = val
+    local renderMode = AddBorderRenderModeDropdown(container, styleTable, "textBorderRenderMode", function()
         refreshCallback()
+        CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(borderSlider)
+
+    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+        local borderSlider = AceGUI:Create("Slider")
+        borderSlider:SetLabel("Border Size")
+        borderSlider:SetSliderValues(0, 5, 0.1)
+        borderSlider:SetValue(styleTable.textBorderSize or 0)
+        borderSlider:SetFullWidth(true)
+        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.textBorderSize = val
+            refreshCallback()
+        end)
+        container:AddChild(borderSlider)
+    end
 
     AddColorPicker(container, styleTable, "textBorderColor", "Border Color", {0, 0, 0, 1}, true, refreshCallback, refreshCallback)
 end

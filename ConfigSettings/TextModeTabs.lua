@@ -22,6 +22,7 @@ local RenderFormatPreview = ST._RenderFormatPreview
 local ParseFormatString = ST._ParseFormatString
 local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
+local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -405,16 +406,23 @@ local function BuildTextAppearanceTab(container, group, style)
     if not bgCollapsed then
     AddColorPicker(container, style, "textBgColor", "Background Color", {0, 0, 0, 0}, true, refreshStyle, refreshStyle)
 
-    local borderSlider = AceGUI:Create("Slider")
-    borderSlider:SetLabel("Border Size")
-    borderSlider:SetSliderValues(0, 5, 0.1)
-    borderSlider:SetValue(style.textBorderSize or 0)
-    borderSlider:SetFullWidth(true)
-    borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.textBorderSize = val
+    local renderMode = AddBorderRenderModeDropdown(container, style, "textBorderRenderMode", function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
     end)
-    container:AddChild(borderSlider)
+
+    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+        local borderSlider = AceGUI:Create("Slider")
+        borderSlider:SetLabel("Border Size")
+        borderSlider:SetSliderValues(0, 5, 0.1)
+        borderSlider:SetValue(style.textBorderSize or 0)
+        borderSlider:SetFullWidth(true)
+        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.textBorderSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(borderSlider)
+    end
 
     AddColorPicker(container, style, "textBorderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
 
