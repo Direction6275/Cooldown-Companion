@@ -977,21 +977,20 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
         scroll:AddChild(auraUnitSpacer)
     end
 
-    local cdmToggleBtn = AceGUI:Create("Button")
-    cdmToggleBtn:SetText(cdmEnabled and "Blizzard CDM: |cff00ff00Active|r" or "Blizzard CDM: |cffff0000Inactive|r")
-    cdmToggleBtn:SetFullWidth(true)
-    cdmToggleBtn:SetCallback("OnClick", function()
-        local current = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
-        C_CVar.SetCVar("cooldownViewerEnabled", current and "0" or "1")
-        CooldownCompanion:RefreshConfigPanel()
-        if not current then
+    if not cdmEnabled then
+        local cdmToggleBtn = AceGUI:Create("Button")
+        cdmToggleBtn:SetText("Blizzard CDM: |cffff0000Inactive|r")
+        cdmToggleBtn:SetFullWidth(true)
+        cdmToggleBtn:SetCallback("OnClick", function()
+            C_CVar.SetCVar("cooldownViewerEnabled", "1")
+            CooldownCompanion:RefreshConfigPanel()
             C_Timer.After(0.2, function()
                 CooldownCompanion:BuildViewerAuraMap()
                 CooldownCompanion:RefreshConfigPanel()
             end)
-        end
-    end)
-    scroll:AddChild(cdmToggleBtn)
+        end)
+        scroll:AddChild(cdmToggleBtn)
+    end
 
     local cdmRow = AceGUI:Create("SimpleGroup")
     cdmRow:SetFullWidth(true)
