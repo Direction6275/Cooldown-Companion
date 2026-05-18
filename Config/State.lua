@@ -1150,6 +1150,20 @@ local function BindConfigShiftTooltip(widget, kind, id, owner, anchor)
     return true
 end
 
+local function ResetDefaultLabelWrapping(widget)
+    local label = widget and (widget.label or widget)
+    if not label then return end
+    if label.SetWordWrap then
+        label:SetWordWrap(true)
+    end
+    if label.SetNonSpaceWrap then
+        label:SetNonSpaceWrap(false)
+    end
+    if label.SetMaxLines then
+        label:SetMaxLines(0)
+    end
+end
+
 local function ConfigureWrappedHelperLabel(widget)
     local label = widget and (widget.label or widget)
     if not label then
@@ -1163,6 +1177,23 @@ local function ConfigureWrappedHelperLabel(widget)
     end
     if label.SetMaxLines then
         label:SetMaxLines(0)
+    end
+    local releaseCallbackInstalled = widget
+        and widget.SetCallback
+        and widget.events
+        and widget.events["OnRelease"] == widget._cdcWrappedHelperLabelReleaseCallback
+    if widget and widget.SetCallback and widget.events and not releaseCallbackInstalled then
+        local prevOnRelease = widget.events["OnRelease"]
+        local releaseCallback
+        releaseCallback = function(releasedWidget, event, ...)
+            if prevOnRelease then
+                prevOnRelease(releasedWidget, event, ...)
+            end
+            ResetDefaultLabelWrapping(releasedWidget)
+            releasedWidget._cdcWrappedHelperLabelReleaseCallback = nil
+        end
+        widget._cdcWrappedHelperLabelReleaseCallback = releaseCallback
+        widget:SetCallback("OnRelease", releaseCallback)
     end
     return widget
 end
