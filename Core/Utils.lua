@@ -54,9 +54,7 @@ local function GetBorderSize(size, fallback)
 end
 
 function ST.GetBorderLayoutSize(region, size, mode)
-    if ST.IsCrispBorderRenderMode(mode)
-        and PixelUtil and PixelUtil.GetNearestPixelSize
-        and region and region.GetEffectiveScale then
+    if ST.IsCrispBorderRenderMode(mode) then
         return PixelUtil.GetNearestPixelSize(1, region:GetEffectiveScale(), 1)
     end
     return GetBorderSize(size, 1)
@@ -89,7 +87,7 @@ function ST.HideBorderTextures(textures)
 end
 
 local function ApplyBorderPoint(tex, point, relativeTo, relativePoint, offsetX, offsetY, crisp)
-    if crisp and PixelUtil and PixelUtil.SetPoint then
+    if crisp then
         PixelUtil.SetPoint(
             tex,
             point,

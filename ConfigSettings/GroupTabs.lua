@@ -24,7 +24,6 @@ local AddOffsetSliders = ST._AddOffsetSliders
 local HookSliderEditBox = ST._HookSliderEditBox
 local BuildAlphaControls = ST._BuildAlphaControls
 local OpenTriggerPanelIconPicker = ST._OpenTriggerPanelIconPicker
-local ApplyEdgePositions = ST._ApplyEdgePositions
 local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local ApplyIconTexCoord = ST._ApplyIconTexCoord
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown

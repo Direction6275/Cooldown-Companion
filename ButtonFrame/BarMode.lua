@@ -27,7 +27,6 @@ local InCombatLockdown = InCombatLockdown
 local SetIconAreaPoints = ST._SetIconAreaPoints
 local SetBarAreaPoints = ST._SetBarAreaPoints
 local AnchorBarCountText = ST._AnchorBarCountText
-local ApplyEdgePositions = ST._ApplyEdgePositions
 local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local ApplyIconTexCoord = ST._ApplyIconTexCoord
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
@@ -144,6 +143,7 @@ local function GetBarAuraVisualSettings(button)
     settings.borderStyle = style.borderStyle or "pixel"
     settings.borderColor = style.borderColor or {0, 0, 0, 1}
     settings.borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE or 1
+    settings.borderRenderMode = ST.GetBorderRenderMode(style)
 
     local RB = GetResourceBarVisuals()
     local specID = RB and RB.GetCurrentSpecID and RB.GetCurrentSpecID()
@@ -158,6 +158,7 @@ local function GetBarAuraVisualSettings(button)
         profile.borderStyle = settings.borderStyle
         profile.borderColor = settings.borderColor
         profile.borderSize = settings.borderSize
+        profile.borderRenderMode = settings.borderRenderMode
     end
 
     return settings

@@ -26,7 +26,6 @@ local C_UnitAuras_GetAuraApplicationDisplayCount = C_UnitAuras.GetAuraApplicatio
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
 -- Imports from Helpers
-local ApplyEdgePositions = ST._ApplyEdgePositions
 local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 
 -- Imports from Glows
