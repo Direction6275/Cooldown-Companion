@@ -276,38 +276,7 @@ end
 
 local function ApplyPreviewEdgeBorder(frame, size, color)
     if not (frame and frame.borderTextures) then return end
-    size = math_max(1, math_floor(size or 1))
-    color = color or { 0, 0, 0, 1 }
-
-    local top = frame.borderTextures[1]
-    local bottom = frame.borderTextures[2]
-    local left = frame.borderTextures[3]
-    local right = frame.borderTextures[4]
-
-    top:ClearAllPoints()
-    top:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    top:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-    top:SetHeight(size)
-
-    bottom:ClearAllPoints()
-    bottom:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-    bottom:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    bottom:SetHeight(size)
-
-    left:ClearAllPoints()
-    left:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    left:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-    left:SetWidth(size)
-
-    right:ClearAllPoints()
-    right:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-    right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    right:SetWidth(size)
-
-    for i = 1, 4 do
-        frame.borderTextures[i]:SetColorTexture(color[1] or 0, color[2] or 0, color[3] or 0, color[4] ~= nil and color[4] or 1)
-        frame.borderTextures[i]:Show()
-    end
+    ST.ApplyBorderTextures(frame.borderTextures, frame, color or { 0, 0, 0, 1 }, size or 1, frame._previewBorderRenderMode)
 end
 
 local function HidePreviewEdgeBorder(frame)
@@ -333,9 +302,11 @@ local function StyleMirroredIconFrame(iconFrame, button, group)
     end
 
     local borderSize = GetSourceIconBorderSize(button, style.borderSize or ST.DEFAULT_BORDER_SIZE or 1)
+    local borderRenderMode = ST.GetBorderRenderMode(style)
+    local borderLayoutSize = ST.GetBorderLayoutSize(iconFrame, borderSize, borderRenderMode)
     local bgColor = CloneColor(style.backgroundColor, { 0, 0, 0, 0.5 })
     local borderColor = CloneColor(style.borderColor, { 0, 0, 0, 1 })
-    local showBorder = borderSize > 0 and ((borderColor[4] ~= nil and borderColor[4] > 0) or borderColor[4] == nil)
+    local showBorder = (borderSize > 0 or ST.IsCrispBorderRenderMode(borderRenderMode)) and ((borderColor[4] ~= nil and borderColor[4] > 0) or borderColor[4] == nil)
 
     if button and button.borderTextures then
         local anyShown = false
@@ -351,8 +322,8 @@ local function StyleMirroredIconFrame(iconFrame, button, group)
 
     iconFrame.bg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 1)
     iconFrame.icon:ClearAllPoints()
-    iconFrame.icon:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", borderSize, -borderSize)
-    iconFrame.icon:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -borderSize, borderSize)
+    iconFrame.icon:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", borderLayoutSize, -borderLayoutSize)
+    iconFrame.icon:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
     iconFrame.icon:SetTexture((button and button.icon and button.icon:GetTexture()) or GetLayoutPreviewIcon(button and button.buttonData))
     iconFrame.icon:Show()
     iconFrame.countText:Hide()
@@ -364,6 +335,7 @@ local function StyleMirroredIconFrame(iconFrame, button, group)
     end
 
     if showBorder then
+        iconFrame._previewBorderRenderMode = borderRenderMode
         ApplyPreviewEdgeBorder(iconFrame, borderSize, borderColor)
     else
         HidePreviewEdgeBorder(iconFrame)
@@ -1340,9 +1312,9 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
 
     local borderStyle = settings.borderStyle or "pixel"
     if borderStyle == "pixel" then
-        ApplyPixelBorders(castPreview.pixelBorders, bar, settings.borderColor or { 0, 0, 0, 1 }, settings.borderSize or 1)
+        ApplyPixelBorders(castPreview.pixelBorders, bar, settings.borderColor or { 0, 0, 0, 1 }, settings.borderSize or 1, ST.GetBorderRenderMode(settings))
         if iconFrame:IsShown() and settings.iconOffset then
-            ApplyPixelBorders(castPreview.iconBorders, iconFrame, settings.borderColor or { 0, 0, 0, 1 }, settings.iconBorderSize or 1)
+            ApplyPixelBorders(castPreview.iconBorders, iconFrame, settings.borderColor or { 0, 0, 0, 1 }, settings.iconBorderSize or 1, ST.GetBorderRenderMode(settings, "iconBorderRenderMode"))
         else
             HidePixelBorders(castPreview.iconBorders)
         end

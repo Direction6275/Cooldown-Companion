@@ -1053,6 +1053,66 @@ local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn)
     container:AddChild(ySlider)
 end
 
+local BORDER_THICKNESS_MODE_TOOLTIPS = {
+    [ST.BORDER_RENDER_MODE_CUSTOM] = {
+        "Custom Thickness",
+        "Uses the Border Size slider, including fractional values.",
+    },
+    [ST.BORDER_RENDER_MODE_CRISP] = {
+        "One-pixel",
+        "Uses a stable one-pixel border for your current UI scale.",
+    },
+}
+
+local function AddDropdownItemTooltips(dropdown, tooltipByValue)
+    if not (dropdown and dropdown.pullout and tooltipByValue) then return end
+
+    for _, item in dropdown.pullout:IterateItems() do
+        local value = item.userdata and item.userdata.value
+        local tooltip = tooltipByValue[value]
+        if tooltip then
+            item:SetCallback("OnEnter", function(widget)
+                GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
+                GameTooltip:AddLine(tooltip[1], 1, 0.82, 0, true)
+                GameTooltip:AddLine(tooltip[2], 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            item:SetCallback("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+        end
+    end
+end
+
+local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disabled)
+    key = key or "borderRenderMode"
+
+    local modeDrop = AceGUI:Create("Dropdown")
+    modeDrop:SetLabel("Border Thickness")
+    modeDrop:SetList({
+        [ST.BORDER_RENDER_MODE_CUSTOM] = "Custom Thickness",
+        [ST.BORDER_RENDER_MODE_CRISP] = "One-pixel",
+    }, { ST.BORDER_RENDER_MODE_CUSTOM, ST.BORDER_RENDER_MODE_CRISP })
+    AddDropdownItemTooltips(modeDrop, BORDER_THICKNESS_MODE_TOOLTIPS)
+    modeDrop:SetValue(ST.GetBorderRenderMode(tbl, key))
+    if modeDrop.SetDisabled then
+        modeDrop:SetDisabled(disabled == true)
+    end
+    modeDrop:SetCallback("OnClosed", function()
+        GameTooltip:Hide()
+    end)
+    modeDrop:SetFullWidth(true)
+    modeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        tbl[key] = ST.GetBorderRenderMode(val)
+        if refreshFn then
+            refreshFn()
+        end
+    end)
+    container:AddChild(modeDrop)
+
+    return ST.GetBorderRenderMode(tbl, key)
+end
+
 -- Expose helpers for other ConfigSettings files
 ST._ColorHeading = ColorHeading
 ST._AttachCollapseButton = AttachCollapseButton
@@ -1316,3 +1376,4 @@ ST._BuildIndependentAnchorTargetRow = BuildIndependentAnchorTargetRow
 
 ST._AddFontControls = AddFontControls
 ST._AddOffsetSliders = AddOffsetSliders
+ST._AddBorderRenderModeDropdown = AddBorderRenderModeDropdown

@@ -26,7 +26,7 @@ local C_UnitAuras_GetAuraApplicationDisplayCount = C_UnitAuras.GetAuraApplicatio
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
 -- Imports from Helpers
-local ApplyEdgePositions = ST._ApplyEdgePositions
+local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 
 -- Imports from Glows
 
@@ -748,11 +748,12 @@ local function UpdateTextStyle(button, newStyle)
 
     -- Border
     local borderSize = newStyle.textBorderSize or 0
+    local borderRenderMode = ST.GetBorderRenderMode(newStyle, "textBorderRenderMode")
     local borderColor = newStyle.textBorderColor or {0, 0, 0, 1}
     for i = 1, 4 do
         button.borderTextures[i]:SetColorTexture(unpack(borderColor))
     end
-    ApplyEdgePositions(button.borderTextures, button, borderSize)
+    ApplyBorderEdgePositions(button.borderTextures, button, borderSize, borderRenderMode)
 
     -- Font
     local font = CooldownCompanion:FetchFont(newStyle.textFont or "Friz Quadrata TT")
@@ -775,7 +776,8 @@ local function UpdateTextStyle(button, newStyle)
 
     -- Anchor text within frame respecting border
     button.textString:ClearAllPoints()
-    local inset = (borderSize > 0 and borderSize or 0) + 2
+    local borderLayoutSize = ST.GetBorderLayoutSize(button, borderSize, borderRenderMode)
+    local inset = ((borderSize > 0 or ST.IsCrispBorderRenderMode(borderRenderMode)) and borderLayoutSize or 0) + 2
     button.textString:SetPoint("TOPLEFT", inset, -1)
     button.textString:SetPoint("BOTTOMRIGHT", -inset, 1)
 
@@ -810,6 +812,7 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
 
     -- Border textures
     local borderSize = style.textBorderSize or 0
+    local borderRenderMode = ST.GetBorderRenderMode(style, "textBorderRenderMode")
     local borderColor = style.textBorderColor or {0, 0, 0, 1}
     button.borderTextures = {}
     for i = 1, 4 do
@@ -817,7 +820,7 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
         tex:SetColorTexture(unpack(borderColor))
         button.borderTextures[i] = tex
     end
-    ApplyEdgePositions(button.borderTextures, button, borderSize)
+    ApplyBorderEdgePositions(button.borderTextures, button, borderSize, borderRenderMode)
 
     -- Main text FontString
     button.textString = button:CreateFontString(nil, "OVERLAY")
@@ -840,7 +843,8 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
         button.textString:SetShadowOffset(0, 0)
     end
 
-    local inset = (borderSize > 0 and borderSize or 0) + 2
+    local borderLayoutSize = ST.GetBorderLayoutSize(button, borderSize, borderRenderMode)
+    local inset = ((borderSize > 0 or ST.IsCrispBorderRenderMode(borderRenderMode)) and borderLayoutSize or 0) + 2
     button.textString:SetPoint("TOPLEFT", inset, -1)
     button.textString:SetPoint("BOTTOMRIGHT", -inset, 1)
 

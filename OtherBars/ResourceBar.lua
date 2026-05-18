@@ -1170,15 +1170,15 @@ function HealthBar.LayoutReverseEdgeEffectBar(bar, effectBar)
     end
 end
 
-function HealthBar.LayoutEffectBars(bar, borderStyle, borderSize, config)
+function HealthBar.LayoutEffectBars(bar, borderStyle, borderSize, borderRenderMode, config)
     if not bar then return end
     if bar.healthEffectClip then
         bar.healthEffectClip:SetFrameLevel(bar:GetFrameLevel() + 1)
         bar.healthEffectClip:ClearAllPoints()
         if borderStyle == "pixel" then
-            borderSize = tonumber(borderSize) or 1
-            bar.healthEffectClip:SetPoint("TOPLEFT", bar, "TOPLEFT", borderSize, -borderSize)
-            bar.healthEffectClip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -borderSize, borderSize)
+            local inset = ST.GetBorderLayoutSize(bar, borderSize, borderRenderMode)
+            bar.healthEffectClip:SetPoint("TOPLEFT", bar, "TOPLEFT", inset, -inset)
+            bar.healthEffectClip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -inset, inset)
         else
             bar.healthEffectClip:SetAllPoints(bar)
         end
@@ -3290,12 +3290,13 @@ local function PrepareCustomAuraBar(
         local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
         local borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 })
         local borderSize = GetResourceDisplayValue(settings, "borderSize", 1)
+        local borderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM)
         if borderStyle == "pixel" then
-            ApplyPixelBorders(barInfo.frame.borders, barInfo.frame, borderColor, borderSize)
+            ApplyPixelBorders(barInfo.frame.borders, barInfo.frame, borderColor, borderSize, borderRenderMode)
         else
             HidePixelBorders(barInfo.frame.borders)
         end
-        LayoutCustomAuraContinuousThresholdOverlay(barInfo.frame, barTexture, borderStyle, borderSize)
+        LayoutCustomAuraContinuousThresholdOverlay(barInfo.frame, barTexture, borderStyle, borderSize, borderRenderMode)
         local durationTextFontName = cabConfig.durationTextFont or DEFAULT_RESOURCE_TEXT_FONT
         local durationTextSize = tonumber(cabConfig.durationTextFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
         local durationTextOutline = cabConfig.durationTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE
@@ -3331,8 +3332,9 @@ local function PrepareCustomAuraBar(
             EnsureMaxStacksIndicator(barInfo)
             local indBorderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
             local indBorderSize = GetResourceDisplayValue(settings, "borderSize", 1)
+            local indBorderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM)
             local indBarTexture = CooldownCompanion:FetchStatusBar(GetResourceDisplayValue(settings, "barTexture", "Solid"))
-            LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, indBarTexture, indBorderStyle, indBorderSize)
+            LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, indBarTexture, indBorderStyle, indBorderSize, indBorderRenderMode)
         end
     else
         ClearMaxStacksIndicator(barInfo)
@@ -3706,9 +3708,10 @@ local function StyleContinuousBar(bar, powerType, settings)
     local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
     local borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 })
     local borderSize = GetResourceDisplayValue(settings, "borderSize", 1)
+    local borderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM)
 
     if borderStyle == "pixel" then
-        ApplyPixelBorders(bar.borders, bar, borderColor, borderSize)
+        ApplyPixelBorders(bar.borders, bar, borderColor, borderSize, borderRenderMode)
     else
         HidePixelBorders(bar.borders)
     end
@@ -3787,13 +3790,14 @@ function HealthBar.Style(bar, settings)
     local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
     local borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 })
     local borderSize = GetResourceDisplayValue(settings, "borderSize", 1)
+    local borderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM)
 
     if borderStyle == "pixel" then
-        ApplyPixelBorders(bar.borders, bar, borderColor, borderSize)
+        ApplyPixelBorders(bar.borders, bar, borderColor, borderSize, borderRenderMode)
     else
         HidePixelBorders(bar.borders)
     end
-    HealthBar.LayoutEffectBars(bar, borderStyle, borderSize, resourceConfig)
+    HealthBar.LayoutEffectBars(bar, borderStyle, borderSize, borderRenderMode, resourceConfig)
 
     local textFormat = resourceConfig and resourceConfig.textFormat or "percent"
     if textFormat ~= "percent"

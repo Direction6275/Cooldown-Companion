@@ -645,17 +645,13 @@ local function ApplyStrataOrder(button, order)
     end
 end
 
--- Shared edge anchor spec from Utils.lua
-local EDGE_ANCHOR_SPEC = ST.EDGE_ANCHOR_SPEC
-
 -- Apply edge positions to 4 border/highlight textures using the shared spec
 local function ApplyEdgePositions(textures, button, size)
-    for i, spec in ipairs(EDGE_ANCHOR_SPEC) do
-        local tex = textures[i]
-        tex:ClearAllPoints()
-        tex:SetPoint(spec[1], button, spec[2], spec[5] * size, spec[6] * size)
-        tex:SetPoint(spec[3], button, spec[4], spec[7] * size, spec[8] * size)
-    end
+    ST.PositionBorderTextures(textures, button, size, ST.BORDER_RENDER_MODE_CUSTOM)
+end
+
+local function ApplyBorderEdgePositions(textures, button, size, renderMode)
+    ST.PositionBorderTextures(textures, button, size, renderMode)
 end
 
 -- Apply aspect-ratio-aware texture cropping to an icon.
@@ -726,5 +722,6 @@ ST._SetBarAreaPoints = SetBarAreaPoints
 ST._AnchorBarCountText = AnchorBarCountText
 ST._ApplyStrataOrder = ApplyStrataOrder
 ST._ApplyEdgePositions = ApplyEdgePositions
+ST._ApplyBorderEdgePositions = ApplyBorderEdgePositions
 ST._ApplyIconTexCoord = ApplyIconTexCoord
 ST._FitHighlightFrame = FitHighlightFrame

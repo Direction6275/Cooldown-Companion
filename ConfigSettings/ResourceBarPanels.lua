@@ -1237,17 +1237,24 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     if (displayProfile.borderStyle or settings.borderStyle or "pixel") == "pixel" then
         AddColorPicker(container, displayProfile, "borderColor", "Border Color", { 0, 0, 0, 1 }, true, applyBars)
 
-        local borderSizeSlider = AceGUI:Create("Slider")
-        borderSizeSlider:SetLabel("Border Size")
-        borderSizeSlider:SetSliderValues(0, 4, 0.1)
-        borderSizeSlider:SetValue(displayProfile.borderSize or settings.borderSize or 1)
-        borderSizeSlider:SetIsPercent(false)
-        borderSizeSlider:SetFullWidth(true)
-        borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            displayProfile.borderSize = val
+        local renderMode = ST._AddBorderRenderModeDropdown(container, displayProfile, "borderRenderMode", function()
             CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:RefreshConfigPanel()
         end)
-        container:AddChild(borderSizeSlider)
+
+        if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+            local borderSizeSlider = AceGUI:Create("Slider")
+            borderSizeSlider:SetLabel("Border Size")
+            borderSizeSlider:SetSliderValues(0, 4, 0.1)
+            borderSizeSlider:SetValue(displayProfile.borderSize or settings.borderSize or 1)
+            borderSizeSlider:SetIsPercent(false)
+            borderSizeSlider:SetFullWidth(true)
+            borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                displayProfile.borderSize = val
+                CooldownCompanion:ApplyResourceBars()
+            end)
+            container:AddChild(borderSizeSlider)
+        end
     end
 
     -- ============ Text Section ============

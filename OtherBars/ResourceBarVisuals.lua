@@ -265,6 +265,7 @@ local function GetResourceAuraStackLayoutInputs(holder, settings, orientationOve
     local barTextureName = style and style.barTexture or "Solid"
     local borderStyle = style and style.borderStyle or "pixel"
     local borderSize = style and style.borderSize or 1
+    local borderRenderMode = ST.GetBorderRenderMode(style)
     local isVertical
     if orientationOverride == "vertical" then
         isVertical = true
@@ -285,14 +286,15 @@ local function GetResourceAuraStackLayoutInputs(holder, settings, orientationOve
     local baseHeight = baseSeg and baseSeg:GetHeight() or 0
     local baseFrameLevel = baseSeg and baseSeg:GetFrameLevel() or 0
 
-    return barTextureName, borderStyle, borderSize, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel
+    return barTextureName, borderStyle, borderSize, borderRenderMode, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel
 end
 
-local function UpdateResourceAuraStackLayoutState(holder, count, barTextureName, borderStyle, borderSize, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel)
+local function UpdateResourceAuraStackLayoutState(holder, count, barTextureName, borderStyle, borderSize, borderRenderMode, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel)
     holder._auraStackLayoutCount = count
     holder._auraStackLayoutTexture = barTextureName
     holder._auraStackLayoutBorderStyle = borderStyle
     holder._auraStackLayoutBorderSize = borderSize
+    holder._auraStackLayoutBorderRenderMode = borderRenderMode
     holder._auraStackLayoutVertical = isVertical
     holder._auraStackLayoutReverseFill = reverseFill
     holder._auraStackLayoutBaseWidth = baseWidth
@@ -302,13 +304,14 @@ end
 
 local function ResourceAuraStackLayoutChanged(holder, settings)
     local count = holder.auraStackSegments and #holder.auraStackSegments or 0
-    local barTextureName, borderStyle, borderSize, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel =
+    local barTextureName, borderStyle, borderSize, borderRenderMode, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel =
         GetResourceAuraStackLayoutInputs(holder, settings)
 
     if holder._auraStackLayoutCount ~= count
         or holder._auraStackLayoutTexture ~= barTextureName
         or holder._auraStackLayoutBorderStyle ~= borderStyle
         or holder._auraStackLayoutBorderSize ~= borderSize
+        or holder._auraStackLayoutBorderRenderMode ~= borderRenderMode
         or holder._auraStackLayoutVertical ~= isVertical
         or holder._auraStackLayoutReverseFill ~= reverseFill
         or holder._auraStackLayoutBaseWidth ~= baseWidth
@@ -323,14 +326,14 @@ end
 local function LayoutResourceAuraStackSegments(holder, settings, orientationOverride, reverseFillOverride)
     if not holder or not holder.auraStackSegments or not holder.segments then return end
     local count = #holder.auraStackSegments
-    local barTextureName, borderStyle, borderSize, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel =
+    local barTextureName, borderStyle, borderSize, borderRenderMode, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel =
         GetResourceAuraStackLayoutInputs(holder, settings, orientationOverride, reverseFillOverride)
     local barTexture = CooldownCompanion:FetchStatusBar(barTextureName)
 
     for i, auraSeg in ipairs(holder.auraStackSegments) do
         local baseSeg = holder.segments[i]
         if baseSeg then
-            local inset = (borderStyle == "pixel") and borderSize or 0
+            local inset = (borderStyle == "pixel") and ST.GetBorderLayoutSize(baseSeg, borderSize, borderRenderMode) or 0
             if inset < 0 then inset = 0 end
 
             auraSeg:ClearAllPoints()
@@ -360,7 +363,7 @@ local function LayoutResourceAuraStackSegments(holder, settings, orientationOver
         end
     end
 
-    UpdateResourceAuraStackLayoutState(holder, count, barTextureName, borderStyle, borderSize, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel)
+    UpdateResourceAuraStackLayoutState(holder, count, barTextureName, borderStyle, borderSize, borderRenderMode, isVertical, reverseFill, baseWidth, baseHeight, baseFrameLevel)
 end
 
 local function EnsureResourceAuraStackSegments(holder, settings)
@@ -463,7 +466,8 @@ local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, ma
 
     local style = GetResourceDisplayStyle(settings)
     local borderStyle = style and style.borderStyle or "pixel"
-    local borderSize = (borderStyle == "pixel") and (style and style.borderSize or 1) or 0
+    local borderRenderMode = ST.GetBorderRenderMode(style)
+    local borderSize = (borderStyle == "pixel") and ST.GetBorderLayoutSize(bar, style and style.borderSize or 1, borderRenderMode) or 0
     local width = bar:GetWidth() or 0
     local height = bar:GetHeight() or 0
     if width <= 0 or height <= 0 then
@@ -534,53 +538,15 @@ end
 ------------------------------------------------------------------------
 
 local function CreatePixelBorders(parent)
-    local borders = {}
-    local names = { "TOP", "BOTTOM", "LEFT", "RIGHT" }
-    for _, side in ipairs(names) do
-        local tex = parent:CreateTexture(nil, "OVERLAY", nil, 7)
-        tex:SetColorTexture(0, 0, 0, 1)
-        tex:Hide()
-        borders[side] = tex
-    end
-    return borders
+    return ST.CreateBorderTextureSet(parent, "OVERLAY", 7)
 end
 
-local function ApplyPixelBorders(borders, parent, color, size)
-    if not borders then return end
-    local r, g, b, a = color[1], color[2], color[3], color[4]
-    size = size or 1
-
-    for _, tex in pairs(borders) do
-        tex:SetColorTexture(r, g, b, a)
-        tex:Show()
-    end
-
-    borders.TOP:ClearAllPoints()
-    borders.TOP:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
-    borders.TOP:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
-    borders.TOP:SetHeight(size)
-
-    borders.BOTTOM:ClearAllPoints()
-    borders.BOTTOM:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 0, 0)
-    borders.BOTTOM:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 0)
-    borders.BOTTOM:SetHeight(size)
-
-    borders.LEFT:ClearAllPoints()
-    borders.LEFT:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -size)
-    borders.LEFT:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 0, size)
-    borders.LEFT:SetWidth(size)
-
-    borders.RIGHT:ClearAllPoints()
-    borders.RIGHT:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -size)
-    borders.RIGHT:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, size)
-    borders.RIGHT:SetWidth(size)
+local function ApplyPixelBorders(borders, parent, color, size, renderMode)
+    ST.ApplyBorderTextures(borders, parent, color, size, renderMode)
 end
 
 local function HidePixelBorders(borders)
-    if not borders then return end
-    for _, tex in pairs(borders) do
-        tex:Hide()
-    end
+    ST.HideBorderTextures(borders)
 end
 
 ------------------------------------------------------------------------
@@ -621,7 +587,7 @@ local function EnsureMaxStacksIndicator(barInfo)
     return indicator
 end
 
-local function LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, barTexture, borderStyle, borderSize)
+local function LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, barTexture, borderStyle, borderSize, borderRenderMode)
     local indicator = barInfo._maxStacksIndicator
     if not indicator then return end
 
@@ -636,8 +602,9 @@ local function LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, barTextur
     if style == "pulsingOverlay" then
         indicator:SetFrameLevel(frame:GetFrameLevel() + 3)
         if borderStyle == "pixel" then
-            indicator:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
-            indicator:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize)
+            local inset = ST.GetBorderLayoutSize(frame, borderSize, borderRenderMode)
+            indicator:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)
+            indicator:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset, inset)
         else
             indicator:SetAllPoints(frame)
         end
@@ -756,7 +723,7 @@ local function EnsureCustomAuraOverlayThresholdOverlays(holder, halfSegments)
     end
 end
 
-local function LayoutCustomAuraContinuousThresholdOverlay(bar, barTexture, borderStyle, borderSize)
+local function LayoutCustomAuraContinuousThresholdOverlay(bar, barTexture, borderStyle, borderSize, borderRenderMode)
     if not bar or not bar.thresholdOverlay then return end
     local overlay = bar.thresholdOverlay
     local isVertical = bar._isVertical == true
@@ -767,8 +734,9 @@ local function LayoutCustomAuraContinuousThresholdOverlay(bar, barTexture, borde
     end
     overlay:ClearAllPoints()
     if borderStyle == "pixel" then
-        overlay:SetPoint("TOPLEFT", bar, "TOPLEFT", borderSize, -borderSize)
-        overlay:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -borderSize, borderSize)
+        local inset = ST.GetBorderLayoutSize(bar, borderSize, borderRenderMode)
+        overlay:SetPoint("TOPLEFT", bar, "TOPLEFT", inset, -inset)
+        overlay:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -inset, inset)
     else
         overlay:SetAllPoints(bar)
     end
@@ -869,6 +837,7 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, or
     local borderStyle = style and style.borderStyle or "pixel"
     local borderColor = style and style.borderColor or { 0, 0, 0, 1 }
     local borderSize = style and style.borderSize or 1
+    local borderRenderMode = ST.GetBorderRenderMode(style)
     local isVertical
     if orientationOverride == "vertical" then
         isVertical = true
@@ -933,7 +902,7 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, or
             seg.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
 
             if borderStyle == "pixel" then
-                ApplyPixelBorders(seg.borders, seg, borderColor, borderSize)
+                ApplyPixelBorders(seg.borders, seg, borderColor, borderSize, borderRenderMode)
             else
                 HidePixelBorders(seg.borders)
             end
@@ -942,8 +911,9 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, or
                 local thresholdSeg = holder.thresholdSegments[i]
                 thresholdSeg:ClearAllPoints()
                 if borderStyle == "pixel" then
-                    thresholdSeg:SetPoint("TOPLEFT", seg, "TOPLEFT", borderSize, -borderSize)
-                    thresholdSeg:SetPoint("BOTTOMRIGHT", seg, "BOTTOMRIGHT", -borderSize, borderSize)
+                    local inset = ST.GetBorderLayoutSize(seg, borderSize, borderRenderMode)
+                    thresholdSeg:SetPoint("TOPLEFT", seg, "TOPLEFT", inset, -inset)
+                    thresholdSeg:SetPoint("BOTTOMRIGHT", seg, "BOTTOMRIGHT", -inset, inset)
                 else
                     thresholdSeg:SetAllPoints(seg)
                 end
@@ -1019,6 +989,7 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
     local borderStyle = style and style.borderStyle or "pixel"
     local borderColor = style and style.borderColor or { 0, 0, 0, 1 }
     local borderSize = style and style.borderSize or 1
+    local borderRenderMode = ST.GetBorderRenderMode(style)
     local isVertical
     if orientationOverride == "vertical" then
         isVertical = true
@@ -1074,7 +1045,7 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
         seg.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
 
         if borderStyle == "pixel" then
-            ApplyPixelBorders(seg.borders, seg, borderColor, borderSize)
+            ApplyPixelBorders(seg.borders, seg, borderColor, borderSize, borderRenderMode)
         else
             HidePixelBorders(seg.borders)
         end
@@ -1083,8 +1054,9 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
         local ov = holder.overlaySegments[i]
         ov:ClearAllPoints()
         if borderStyle == "pixel" then
-            ov:SetPoint("TOPLEFT", seg, "TOPLEFT", borderSize, -borderSize)
-            ov:SetPoint("BOTTOMRIGHT", seg, "BOTTOMRIGHT", -borderSize, borderSize)
+            local inset = ST.GetBorderLayoutSize(seg, borderSize, borderRenderMode)
+            ov:SetPoint("TOPLEFT", seg, "TOPLEFT", inset, -inset)
+            ov:SetPoint("BOTTOMRIGHT", seg, "BOTTOMRIGHT", -inset, inset)
         else
             ov:SetAllPoints(seg)
         end
@@ -1096,8 +1068,9 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
             local thresholdSeg = holder.thresholdSegments[i]
             thresholdSeg:ClearAllPoints()
             if borderStyle == "pixel" then
-                thresholdSeg:SetPoint("TOPLEFT", seg, "TOPLEFT", borderSize, -borderSize)
-                thresholdSeg:SetPoint("BOTTOMRIGHT", seg, "BOTTOMRIGHT", -borderSize, borderSize)
+                local inset = ST.GetBorderLayoutSize(seg, borderSize, borderRenderMode)
+                thresholdSeg:SetPoint("TOPLEFT", seg, "TOPLEFT", inset, -inset)
+                thresholdSeg:SetPoint("BOTTOMRIGHT", seg, "BOTTOMRIGHT", -inset, inset)
             else
                 thresholdSeg:SetAllPoints(seg)
             end

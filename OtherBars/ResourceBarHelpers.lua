@@ -44,6 +44,7 @@ local RESOURCE_DISPLAY_PROFILE_KEYS = {
     "borderStyle",
     "borderColor",
     "borderSize",
+    "borderRenderMode",
 }
 
 local RESOURCE_TEXT_DISPLAY_KEYS = {
@@ -832,6 +833,7 @@ local function SeedResourceDisplayProfileFromGlobal(profile, settings)
     if profile.borderStyle == nil then profile.borderStyle = "pixel" end
     if profile.borderColor == nil then profile.borderColor = { 0, 0, 0, 1 } end
     if profile.borderSize == nil then profile.borderSize = 1 end
+    if profile.borderRenderMode == nil then profile.borderRenderMode = ST.BORDER_RENDER_MODE_CUSTOM end
     if profile.classBarBrightness == nil then profile.classBarBrightness = 1.3 end
     return profile
 end
