@@ -108,6 +108,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateTalentConditions()
     self:MigrateChoiceTalentConditions()
     self:MigrateNewDefaults()
+    self:MigrateBorderRenderModeOverrides()
     self:MigrateIconFillTimerDefaults()
     self:MigrateCharacterScopedBarSettings()
     self:MigratePanelAnchorCenter()
@@ -146,6 +147,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     profile.talentConditionsMigrated = nil
     profile.choiceTalentConditionsMigrated = nil
     profile.newDefaultsMigrated = nil
+    profile.borderRenderModeOverridesMigrated = nil
     profile._migratedContainerAnchorsToScreenOffsets = nil
     profile._migratedContainerAlphaToPanel = nil
     profile._migratedContainerHeroTalentStamps = nil
@@ -1464,6 +1466,34 @@ function CooldownCompanion:MigrateNewDefaults()
     end
 
     profile.newDefaultsMigrated = true
+end
+
+function CooldownCompanion:MigrateBorderRenderModeOverrides()
+    local profile = self.db.profile
+    if profile.borderRenderModeOverridesMigrated then return end
+
+    for _, group in pairs(profile.groups) do
+        if group.buttons then
+            for _, bd in ipairs(group.buttons) do
+                if bd.overrideSections then
+                    if bd.overrideSections.borderSettings then
+                        if not bd.styleOverrides then bd.styleOverrides = {} end
+                        if rawget(bd.styleOverrides, "borderRenderMode") == nil then
+                            bd.styleOverrides.borderRenderMode = ST.BORDER_RENDER_MODE_CUSTOM
+                        end
+                    end
+                    if bd.overrideSections.textBackground then
+                        if not bd.styleOverrides then bd.styleOverrides = {} end
+                        if rawget(bd.styleOverrides, "textBorderRenderMode") == nil then
+                            bd.styleOverrides.textBorderRenderMode = ST.BORDER_RENDER_MODE_CUSTOM
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    profile.borderRenderModeOverridesMigrated = true
 end
 
 local DURATION_FORMAT_CLOCK = "clock"

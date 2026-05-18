@@ -53,9 +53,13 @@ local function GetBorderSize(size, fallback)
     return tonumber(size) or fallback or 1
 end
 
+local function GetOnePhysicalPixelSize(region)
+    return PixelUtil.GetNearestPixelSize(0, region:GetEffectiveScale(), 1)
+end
+
 function ST.GetBorderLayoutSize(region, size, mode)
     if ST.IsCrispBorderRenderMode(mode) then
-        return PixelUtil.GetNearestPixelSize(1, region:GetEffectiveScale(), 1)
+        return GetOnePhysicalPixelSize(region)
     end
     return GetBorderSize(size, 1)
 end
@@ -107,11 +111,12 @@ function ST.PositionBorderTexturesBetween(textures, leftFrame, rightFrame, size,
     if not (textures and leftFrame and rightFrame) then return end
 
     local crisp = ST.IsCrispBorderRenderMode(mode)
-    local edgeSize = crisp and 1 or GetBorderSize(size, 1)
+    local customEdgeSize = GetBorderSize(size, 1)
 
     for index, spec in ipairs(ST.EDGE_ANCHOR_SPEC) do
         local tex = GetEdgeTexture(textures, index)
         if tex then
+            local edgeSize = crisp and GetOnePhysicalPixelSize(tex) or customEdgeSize
             local firstFrame, secondFrame
             if index == 1 or index == 2 then
                 firstFrame, secondFrame = leftFrame, rightFrame

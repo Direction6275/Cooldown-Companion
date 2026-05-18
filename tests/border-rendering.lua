@@ -1,9 +1,18 @@
 local ST = {}
 
 PixelUtil = {
+    pixelFactor = 0.5,
     nearestCalls = {},
     pointCalls = {},
 }
+
+function PixelUtil.GetPixelToUIUnitFactor()
+    return PixelUtil.pixelFactor
+end
+
+local function Round(value)
+    return math.floor(value + 0.5)
+end
 
 function PixelUtil.GetNearestPixelSize(uiUnitSize, layoutScale, minPixels)
     table.insert(PixelUtil.nearestCalls, {
@@ -11,21 +20,37 @@ function PixelUtil.GetNearestPixelSize(uiUnitSize, layoutScale, minPixels)
         layoutScale = layoutScale,
         minPixels = minPixels,
     })
-    return 0.5
+    if uiUnitSize == 0 and (not minPixels or minPixels == 0) then
+        return 0
+    end
+
+    local numPixels = Round((uiUnitSize * layoutScale) / PixelUtil.GetPixelToUIUnitFactor())
+    if minPixels then
+        if uiUnitSize < 0 then
+            if numPixels > -minPixels then
+                numPixels = -minPixels
+            end
+        elseif numPixels < minPixels then
+            numPixels = minPixels
+        end
+    end
+    return numPixels * PixelUtil.GetPixelToUIUnitFactor() / layoutScale
 end
 
 function PixelUtil.SetPoint(region, point, relativeTo, relativePoint, offsetX, offsetY, minOffsetXPixels, minOffsetYPixels)
+    local snappedX = PixelUtil.GetNearestPixelSize(offsetX, region:GetEffectiveScale(), minOffsetXPixels)
+    local snappedY = PixelUtil.GetNearestPixelSize(offsetY, region:GetEffectiveScale(), minOffsetYPixels)
     table.insert(PixelUtil.pointCalls, {
         region = region,
         point = point,
         relativeTo = relativeTo,
         relativePoint = relativePoint,
-        offsetX = offsetX,
-        offsetY = offsetY,
+        offsetX = snappedX,
+        offsetY = snappedY,
         minOffsetXPixels = minOffsetXPixels,
         minOffsetYPixels = minOffsetYPixels,
     })
-    region:SetPoint(point, relativeTo, relativePoint, offsetX, offsetY)
+    region:SetPoint(point, relativeTo, relativePoint, snappedX, snappedY)
 end
 
 local function assertEquals(actual, expected, label)
@@ -45,6 +70,10 @@ local function NewTexture()
         shown = false,
         points = {},
         color = nil,
+        scale = 1,
+        GetEffectiveScale = function(self)
+            return self.scale
+        end,
         SetColorTexture = function(self, r, g, b, a)
             self.color = { r, g, b, a }
         end,
@@ -79,6 +108,7 @@ local function NewRegion()
     end
     function region:CreateTexture()
         local texture = NewTexture()
+        texture.scale = self.scale
         table.insert(self.textures, texture)
         return texture
     end
@@ -95,8 +125,13 @@ assertEquals(ST.GetBorderRenderMode({ textBorderRenderMode = ST.BORDER_RENDER_MO
 
 local region = NewRegion()
 assertEquals(ST.GetBorderLayoutSize(region, 2.25, ST.BORDER_RENDER_MODE_CUSTOM), 2.25, "custom layout size uses configured value")
-assertEquals(ST.GetBorderLayoutSize(region, 2.25, ST.BORDER_RENDER_MODE_CRISP), 0.5, "crisp layout size uses PixelUtil")
+assertEquals(ST.GetBorderLayoutSize(region, 2.25, ST.BORDER_RENDER_MODE_CRISP), 0.25, "crisp layout size is one physical pixel")
 assertEquals(PixelUtil.nearestCalls[#PixelUtil.nearestCalls].layoutScale, 2, "crisp layout uses effective scale")
+
+local scaleOneRegion = NewRegion()
+scaleOneRegion.scale = 1
+local crispSize = ST.GetBorderLayoutSize(scaleOneRegion, 2.25, ST.BORDER_RENDER_MODE_CRISP)
+assertEquals(crispSize * scaleOneRegion.scale / PixelUtil.GetPixelToUIUnitFactor(), 1, "scale 1 crisp size is one physical pixel")
 
 local textures = ST.CreateBorderTextureSet(region)
 assertEquals(#textures, 4, "border texture set has numeric entries")
@@ -113,5 +148,6 @@ for index = 1, 4 do
     assertEquals(textures[index].shown, true, "crisp border shows texture " .. index)
 end
 assertTrue(#PixelUtil.pointCalls > 0, "crisp positioning uses PixelUtil.SetPoint")
+assertEquals(PixelUtil.pointCalls[#PixelUtil.pointCalls].offsetY * region.scale / PixelUtil.GetPixelToUIUnitFactor(), 1, "crisp offset is one physical pixel")
 
 print("border rendering helper tests passed")
