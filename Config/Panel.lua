@@ -68,6 +68,7 @@ local CONFIG_FINDER_BUTTON_GAP = 6
 local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
 local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
 local CONFIG_NESTED_INLINE_GROUP_INSET = 20
+local CONFIG_DRAG_ALPHA = 0.40
 
 if not AceGUI:GetLayout(MANUAL_COLUMN_LAYOUT) then
     -- These columns are positioned and sized manually, so their layout should
@@ -545,6 +546,72 @@ local function CreateConfigPanel()
     -- Get the content area (below the title bar)
     local contentFrame = frame.content
 
+    local configDragAlphaFrames = setmetatable({}, { __mode = "k" })
+    local configDragAlphaBeforeMove = setmetatable({}, { __mode = "k" })
+    local configDragAlphaActive = false
+
+    local function SetConfigDragAlphaFrame(targetFrame, active)
+        if not (targetFrame and targetFrame.SetAlpha) then
+            return
+        end
+
+        if active then
+            if configDragAlphaBeforeMove[targetFrame] == nil then
+                configDragAlphaBeforeMove[targetFrame] = targetFrame.GetAlpha and targetFrame:GetAlpha() or 1
+            end
+            targetFrame:SetAlpha(math.min(configDragAlphaBeforeMove[targetFrame] or 1, CONFIG_DRAG_ALPHA))
+        elseif configDragAlphaBeforeMove[targetFrame] ~= nil then
+            targetFrame:SetAlpha(configDragAlphaBeforeMove[targetFrame])
+            configDragAlphaBeforeMove[targetFrame] = nil
+        end
+    end
+
+    CS.RegisterConfigDragAlphaFrame = function(targetFrame)
+        if not targetFrame then
+            return
+        end
+
+        configDragAlphaFrames[targetFrame] = true
+        if configDragAlphaActive then
+            SetConfigDragAlphaFrame(targetFrame, true)
+        end
+    end
+
+    CS.UnregisterConfigDragAlphaFrame = function(targetFrame)
+        if not targetFrame then
+            return
+        end
+
+        SetConfigDragAlphaFrame(targetFrame, false)
+        configDragAlphaFrames[targetFrame] = nil
+    end
+
+    local function SetMainConfigDragAlpha(active)
+        if active then
+            configDragAlphaActive = true
+            SetConfigDragAlphaFrame(content, true)
+            for targetFrame in pairs(configDragAlphaFrames) do
+                SetConfigDragAlphaFrame(targetFrame, true)
+            end
+        else
+            configDragAlphaActive = false
+            SetConfigDragAlphaFrame(content, false)
+            for targetFrame in pairs(configDragAlphaFrames) do
+                SetConfigDragAlphaFrame(targetFrame, false)
+            end
+        end
+    end
+
+    local titleMover = frame.titletext and frame.titletext:GetParent()
+    if titleMover then
+        titleMover:HookScript("OnMouseDown", function()
+            SetMainConfigDragAlpha(true)
+        end)
+        titleMover:HookScript("OnMouseUp", function()
+            SetMainConfigDragAlpha(false)
+        end)
+    end
+
     -- Hide AceGUI's default sizer grips (replaced by custom resize grip below)
     if frame.sizer_se then
         frame.sizer_se:Hide()
@@ -601,6 +668,7 @@ local function CreateConfigPanel()
     -- isCollapsing flag prevents cleanup when collapsing (vs truly closing)
     local isCollapsing = false
     content:HookScript("OnHide", function()
+        SetMainConfigDragAlpha(false)
         if CancelFirstIconPanelTutorial then
             CancelFirstIconPanelTutorial(isCollapsing and "config_collapsed" or "config_hidden")
         end
