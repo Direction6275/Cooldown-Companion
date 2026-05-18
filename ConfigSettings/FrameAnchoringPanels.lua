@@ -224,6 +224,7 @@ local function BuildFrameAnchoringTargetPanel(container)
 
     if not settings.enabled then
         local disabledLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(disabledLabel)
         disabledLabel:SetText("Enable Frame Anchoring in the Player Frame column to configure target settings.")
         disabledLabel:SetFullWidth(true)
         container:AddChild(disabledLabel)
@@ -232,6 +233,7 @@ local function BuildFrameAnchoringTargetPanel(container)
 
     if settings.mirroring then
         local infoLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(infoLabel)
         infoLabel:SetText("Target frame is mirrored from player frame settings.")
         infoLabel:SetFullWidth(true)
         container:AddChild(infoLabel)

@@ -305,6 +305,7 @@ local function SetupWrappedStatusLabel(scroll, label, text, justifyH)
     if contentWidth and contentWidth > 0 then
         label:SetWidth(math.max(1, contentWidth - 20))
     end
+    ST._ConfigureWrappedHelperLabel(label)
     label:SetText(text)
 end
 
@@ -805,6 +806,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
 
     if buttonData.cdmChildSlot then
         local slotLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(slotLabel)
         local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
         local slotChild = allChildren and allChildren[buttonData.cdmChildSlot]
         local oid = slotChild and slotChild.cooldownInfo and slotChild.cooldownInfo.overrideSpellID
@@ -839,6 +841,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
         scroll:AddChild(auraCb)
     elseif showAuraStateLabelWhenToggleHidden then
         local auraStateLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(auraStateLabel)
         auraStateLabel:SetText(auraLabel)
         auraStateLabel:SetFullWidth(true)
         scroll:AddChild(auraStateLabel)
@@ -1348,6 +1351,7 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     local validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData)
     if not validEvents then
         local noEvents = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(noEvents)
         noEvents:SetText("|cff888888No alertable sound events are available for this button under its current entry type, tracking mode, and Blizzard Cooldown Manager mapping.|r")
         noEvents:SetFullWidth(true)
         scroll:AddChild(noEvents)
@@ -1395,6 +1399,7 @@ end
 local function BuildSpellSoundAlertsTab(scroll, buttonData, infoButtons)
     if buttonData.type ~= "spell" then
         local notSpellLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(notSpellLabel)
         notSpellLabel:SetText("|cff888888Sound alerts are available for spell buttons only.|r")
         notSpellLabel:SetFullWidth(true)
         scroll:AddChild(notSpellLabel)
@@ -2163,6 +2168,7 @@ end
 local function BuildItemFallbacksTab(scroll, buttonData, infoButtons)
     if not (buttonData and buttonData.type == "item") then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Fallbacks are available for item entries only.")
         label:SetFullWidth(true)
         scroll:AddChild(label)
@@ -2171,6 +2177,7 @@ local function BuildItemFallbacksTab(scroll, buttonData, infoButtons)
 
     if CooldownCompanion.IsItemEquippable(buttonData) then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Fallbacks are available for non-equippable consumable items only.")
         label:SetFullWidth(true)
         scroll:AddChild(label)

@@ -502,6 +502,7 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
 
     if disabledByMasque then
         local note = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(note)
         note:SetText("|cff888888Unavailable while Masque skinning is enabled for this group.|r")
         note:SetFullWidth(true)
         container:AddChild(note)

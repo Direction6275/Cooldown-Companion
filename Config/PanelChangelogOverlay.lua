@@ -73,6 +73,7 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
 
     local function AddChangelogLabel(text, fontPath, fontSize, fontFlags, color)
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText(text)
         label:SetFullWidth(true)
         label:SetJustifyH("LEFT")

@@ -105,6 +105,7 @@ local function AddInheritedLoadSummary(container, sources, collapsedKey)
     end
 
     local label = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(label)
     label:SetText(table.concat(inherited, "\n"))
     label:SetFullWidth(true)
     container:AddChild(label)
@@ -147,6 +148,7 @@ local function AddScopedLoadConditionToggles(container, opts)
 
     if inheritedAny then
         local inheritedLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(inheritedLabel)
         inheritedLabel:SetText("|cff888888Inherited rules are locked here. You can only add more places to hide this.|r")
         inheritedLabel:SetFullWidth(true)
         container:AddChild(inheritedLabel)
@@ -1314,6 +1316,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             scroll:AddChild(warnSpacer)
 
             local warnLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(warnLabel)
             warnLabel:SetText(auraWarningText)
             warnLabel:SetFullWidth(true)
             scroll:AddChild(warnLabel)
@@ -1361,6 +1364,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 
     if talentCollapsed then
         local summaryLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(summaryLabel)
         if isBatch and hasTalent == nil then
             summaryLabel:SetText("|cff888888Multiple conditions|r")
         elseif hasTalent and condCount > 0 then
@@ -1390,6 +1394,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     -- Condition list display
     if isBatch and hasTalent == nil then
         local mixedLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(mixedLabel)
         mixedLabel:SetText("|cff888888Multiple conditions — pick or clear to unify.|r")
         mixedLabel:SetFullWidth(true)
         scroll:AddChild(mixedLabel)
@@ -1399,6 +1404,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         local currentHeroSubTreeID = CooldownCompanion._currentHeroSpecId
         for _, cond in ipairs(conditions) do
             local condLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(condLabel)
             local displayIcon = not IsHeroSpecProxyCondition(cond)
                 and cond.spellID
                 and C_Spell.GetSpellTexture(cond.spellID)
@@ -1422,6 +1428,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
                 and (not cond.heroSubTreeID or cond.heroSubTreeID == currentHeroSubTreeID)
             if not isBatch and matchesCurrentScope and cache and not cache[cond.nodeID] then
                 local warnLabel = AceGUI:Create("Label")
+                ST._ConfigureWrappedHelperLabel(warnLabel)
                 warnLabel:SetText("|cffff8800  This talent is not in your current active tree, so it behaves as not taken right now.|r")
                 warnLabel:SetFullWidth(true)
                 scroll:AddChild(warnLabel)
@@ -1429,6 +1436,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         end
     else
         local emptyLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(emptyLabel)
         emptyLabel:SetText("|cff888888No talent conditions set.|r")
         emptyLabel:SetFullWidth(true)
         scroll:AddChild(emptyLabel)
@@ -1605,6 +1613,7 @@ local function BuildLoadConditionsTab(container)
     if not specCollapsed then
     if inheritedSpecFilter or inheritedHeroFilter then
         local inheritedLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(inheritedLabel)
         inheritedLabel:SetText("|cff888888Some filters inherited from group settings.|r")
         inheritedLabel:SetFullWidth(true)
         container:AddChild(inheritedLabel)

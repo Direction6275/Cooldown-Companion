@@ -155,6 +155,7 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
     scroll:AddChild(preSpacer)
 
     local fmtPreview = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(fmtPreview)
     fmtPreview:SetText(ST._RenderFormatPreview(effectiveFmt, group.style))
     fmtPreview:SetFullWidth(true)
     fmtPreview:SetFontObject(GameFontHighlight)
@@ -168,6 +169,7 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
 
     if not buttonData.textFormat then
         local defaultNote = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(defaultNote)
         defaultNote:SetText("|cff888888Using group default|r")
         defaultNote:SetFullWidth(true)
         defaultNote:SetFontObject(GameFontHighlightSmall)
@@ -175,6 +177,7 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
     else
         for _, line in ipairs(ST._BuildFormatSummary(effectiveFmt)) do
             local fmtSummary = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(fmtSummary)
             fmtSummary:SetText(line)
             fmtSummary:SetFullWidth(true)
             fmtSummary:SetFontObject(GameFontHighlightSmall)
@@ -240,6 +243,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
     if not buttonData.overrideSections or not next(buttonData.overrideSections) then
         if displayMode ~= "text" then
             local noOverridesLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(noOverridesLabel)
             noOverridesLabel:SetText("|cff888888No appearance overrides are currently set.\n\nAppearance overrides still come from the |A:Crosshair_VehichleCursor_32:0:0|a badge next to panel-level appearance settings while this button is selected.|r")
             noOverridesLabel:SetFullWidth(true)
             scroll:AddChild(noOverridesLabel)

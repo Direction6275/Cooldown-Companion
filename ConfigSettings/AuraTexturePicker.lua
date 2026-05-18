@@ -146,6 +146,7 @@ local function OpenAuraTexturePicker(opts)
     window:AddChild(searchBox)
 
     local statusLabel = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(statusLabel)
     statusLabel:SetFullWidth(true)
     statusLabel:SetFontObject(GameFontHighlightSmall)
     statusLabel:SetText("")
@@ -181,6 +182,7 @@ local function OpenAuraTexturePicker(opts)
     local lastViewportWidth = 0
 
     local selectionLabel = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(selectionLabel)
     selectionLabel:SetFullWidth(true)
     selectionLabel:SetText("Hover a texture to preview it. Click to stage it. Apply saves it.")
     window:AddChild(selectionLabel)

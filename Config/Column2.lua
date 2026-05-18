@@ -431,6 +431,7 @@ local function RenderColumn2NoPanelsState(classColor)
     CS.col2Scroll:AddChild(spacer)
 
     local header = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(header)
     header:SetText("Every entry needs a panel.")
     header:SetFullWidth(true)
     header:SetJustifyH("CENTER")
@@ -444,6 +445,7 @@ local function RenderColumn2NoPanelsState(classColor)
     CS.col2Scroll:AddChild(descSpacer)
 
     local desc = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(desc)
     desc:SetText("Choose a panel type below to get started.")
     desc:SetFullWidth(true)
     desc:SetJustifyH("CENTER")
@@ -483,6 +485,7 @@ local function RenderColumn2NoPanelsState(classColor)
         end
 
         local panelHelp = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(panelHelp)
         panelHelp:SetText("|cffffffff" .. entry.title .. "|r - " .. entry.description)
         panelHelp:SetFullWidth(true)
         panelHelp:SetJustifyH("CENTER")
@@ -503,6 +506,7 @@ local function RenderConfigFinderResults()
     local results = BuildConfigFinderResults and BuildConfigFinderResults()
     if not results or #results.panelResults == 0 then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("|cff888888No matching panels or entries.|r")
         label:SetFullWidth(true)
         CS.col2Scroll:AddChild(label)
@@ -1295,6 +1299,7 @@ local function RefreshColumn2()
 
         if CS.barPanelTab == "frame_anchoring" then
             local label = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(label)
             label:SetText("Unit Frame anchoring has no separate appearance settings.")
             label:SetFullWidth(true)
             col2._barsStylingScroll:AddChild(label)
@@ -1326,6 +1331,7 @@ local function RefreshColumn2()
 
         if not CS.browseContainerId then
             local label = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(label)
             label:SetText("|cff888888Select a group to preview its contents.|r")
             label:SetFullWidth(true)
             CS.col2Scroll:AddChild(label)
@@ -1336,6 +1342,7 @@ local function RefreshColumn2()
         if not db.groupContainers[CS.browseContainerId] then
             CS.browseContainerId = nil
             local label = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(label)
             label:SetText("|cff888888Group no longer exists.|r")
             label:SetFullWidth(true)
             CS.col2Scroll:AddChild(label)
@@ -1797,6 +1804,7 @@ local function RefreshColumn2()
         if not container then
             if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
             local label = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(label)
             label:SetText("Container not found")
             label:SetFullWidth(true)
             CS.col2Scroll:AddChild(label)
@@ -2851,6 +2859,7 @@ local function RefreshColumn2()
     if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
     if not CS.selectedContainer then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Select a group first")
         label:SetFullWidth(true)
         CS.col2Scroll:AddChild(label)

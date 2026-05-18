@@ -171,6 +171,7 @@ local function RenderBrowseMode()
         local chars = CooldownCompanion:EnumerateBrowseCharacters()
         if #chars == 0 then
             local emptyLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(emptyLabel)
             emptyLabel:SetText("|cff888888No other characters have groups on this profile.|r")
             emptyLabel:SetFullWidth(true)
             CS.col1Scroll:AddChild(emptyLabel)
@@ -235,6 +236,7 @@ local function RenderBrowseMode()
         local containers = CooldownCompanion:GetCharacterContainers(CS.browseCharKey)
         if #containers == 0 then
             local emptyLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(emptyLabel)
             emptyLabel:SetText("|cff888888This character has no groups.|r")
             emptyLabel:SetFullWidth(true)
             CS.col1Scroll:AddChild(emptyLabel)
@@ -1980,6 +1982,7 @@ local function RefreshColumn1(preserveDrag)
 
     if searchResults and not next(searchResults.containerMatches) then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("|cff888888No matching groups.|r")
         label:SetFullWidth(true)
         CS.col1Scroll:AddChild(label)

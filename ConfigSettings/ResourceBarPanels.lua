@@ -340,6 +340,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     local specID = GetCurrentConfigSpecID()
     if not specID then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Specialization data loading...")
         label:SetFullWidth(true)
         container:AddChild(label)
@@ -704,6 +705,7 @@ local function BuildResourceBarAnchoringPanel(container)
 
     if not layout then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Specialization data loading...")
         label:SetFullWidth(true)
         container:AddChild(label)
@@ -852,6 +854,7 @@ local function BuildResourceBarPositioningPanel(container)
 
     if not settings.enabled then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Enable Resource Bars to configure positioning.")
         label:SetFullWidth(true)
         container:AddChild(label)
@@ -860,6 +863,7 @@ local function BuildResourceBarPositioningPanel(container)
 
     if not layout then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Specialization data loading...")
         label:SetFullWidth(true)
         container:AddChild(label)
@@ -1148,6 +1152,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
     if not settings.enabled then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Enable Resource Bars to configure styling.")
         label:SetFullWidth(true)
         container:AddChild(label)
@@ -1166,6 +1171,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     local displayProfile = displaySpecID and CS._GetSpecResourceDisplayProfile(settings, displaySpecID) or nil
     if not displaySpecID or not displayProfile then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Specialization data loading...")
         label:SetFullWidth(true)
         container:AddChild(label)
@@ -1483,6 +1489,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
             CS.healthResourceUI.BuildColorControls(container, settings, applyBars)
         elseif mode == "health" then
             local label = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(label)
             label:SetText("Enable Health to configure health colors.")
             label:SetFullWidth(true)
             container:AddChild(label)
@@ -1513,6 +1520,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
     if not _colorSpecID and not colorCollapsed then
         local specUnavailLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(specUnavailLabel)
         specUnavailLabel:SetText("Specialization data not yet available.")
         specUnavailLabel:SetFullWidth(true)
         container:AddChild(specUnavailLabel)
@@ -2326,6 +2334,7 @@ local function BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
     local validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForCustomBar(cab)
     if not validEvents then
         local noEvents = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(noEvents)
         noEvents:SetText("|cff888888No alertable sound events are available for this Custom Bar entry.|r")
         noEvents:SetFullWidth(true)
         container:AddChild(noEvents)
@@ -2356,6 +2365,7 @@ local function BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
     local addScopedLoadConditionToggles = ST._AddScopedLoadConditionToggles
     if type(addScopedLoadConditionToggles) ~= "function" then
         local unavailable = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(unavailable)
         unavailable:SetText("|cff888888Load condition controls are not available yet.|r")
         unavailable:SetFullWidth(true)
         container:AddChild(unavailable)
@@ -3061,6 +3071,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
     AddCustomBarAuraTrackingGap(container)
 
     local statusLabel = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(statusLabel)
     statusLabel:SetText(auraConfigReady and "|cff00ff00Aura tracking is active and ready.|r" or (inactiveColor .. "Aura tracking is not ready.|r"))
     statusLabel:SetFullWidth(true)
     statusLabel:SetJustifyH("CENTER")
@@ -3080,6 +3091,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
 
     if explainText then
         local explainLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(explainLabel)
         explainLabel:SetText(explainText)
         explainLabel:SetFullWidth(true)
         container:AddChild(explainLabel)
@@ -3362,6 +3374,7 @@ local function BuildCustomBarsListPanel(container)
 
     if #customBars == 0 then
         local empty = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(empty)
         empty:SetText("|cff888888No Custom Bars yet.|r")
         empty:SetFullWidth(true)
         container:AddChild(empty)
@@ -3481,6 +3494,7 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
 
     if not cab.spellID then
         local emptyLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(emptyLabel)
         emptyLabel:SetText("|cff888888This Custom Bar has no indicator settings yet.|r")
         emptyLabel:SetFullWidth(true)
         container:AddChild(emptyLabel)
@@ -3735,6 +3749,7 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
 
     if not renderedControls then
         local emptyLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(emptyLabel)
         emptyLabel:SetText("|cff888888This Custom Bar has no indicator settings yet.|r")
         emptyLabel:SetFullWidth(true)
         container:AddChild(emptyLabel)
@@ -3756,6 +3771,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
 
     if not selectedIndex then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Select a Custom Bar to configure it.")
         label:SetFullWidth(true)
         container:AddChild(label)
@@ -4125,6 +4141,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
 
                 if talentCollapsed then
                     local summaryLabel = AceGUI:Create("Label")
+                    ST._ConfigureWrappedHelperLabel(summaryLabel)
                     if condCount > 0 then
                         local firstCond = conditions[1]
                         local displayIcon = not IsHeroSpecProxyCondition(firstCond)
@@ -4156,6 +4173,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     local currentHeroSubTreeID = CooldownCompanion._currentHeroSpecId
                     for _, cond in ipairs(conditions) do
                         local condLabel = AceGUI:Create("Label")
+                        ST._ConfigureWrappedHelperLabel(condLabel)
                         local displayIcon = not IsHeroSpecProxyCondition(cond)
                             and cond.spellID
                             and C_Spell.GetSpellTexture(cond.spellID)
@@ -4179,6 +4197,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                             and (not cond.heroSubTreeID or cond.heroSubTreeID == currentHeroSubTreeID)
                         if matchesCurrentScope and cache and not cache[cond.nodeID] then
                             local warnLabel = AceGUI:Create("Label")
+                            ST._ConfigureWrappedHelperLabel(warnLabel)
                             warnLabel:SetText("|cffff8800  This talent is not in your current active tree, so it behaves as not taken right now.|r")
                             warnLabel:SetFullWidth(true)
                             container:AddChild(warnLabel)
@@ -4186,6 +4205,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     end
                 else
                     local emptyLabel = AceGUI:Create("Label")
+                    ST._ConfigureWrappedHelperLabel(emptyLabel)
                     emptyLabel:SetText("|cff888888No talent conditions set.|r")
                     emptyLabel:SetFullWidth(true)
                     container:AddChild(emptyLabel)
@@ -4257,6 +4277,7 @@ local function BuildLayoutOrderPanel(container)
 
     if not rbSettings or not rbSettings.enabled then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Enable Resource Bars to configure layout.")
         label:SetFullWidth(true)
         container:AddChild(label)
@@ -4266,6 +4287,7 @@ local function BuildLayoutOrderPanel(container)
     local layout = CooldownCompanion:GetSpecLayoutOrder()
     if not layout then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Specialization data loading...")
         label:SetFullWidth(true)
         container:AddChild(label)
@@ -4281,6 +4303,7 @@ local function BuildLayoutOrderPanel(container)
     local layoutSpecID = GetCurrentConfigSpecID()
     if not layoutSpecID then
         local specLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(specLabel)
         specLabel:SetText("Specialization data not yet available.")
         specLabel:SetFullWidth(true)
         container:AddChild(specLabel)
@@ -4321,6 +4344,7 @@ local function BuildLayoutOrderPanel(container)
 
         if #slots == 0 then
             local emptyLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(emptyLabel)
             emptyLabel:SetText("|cff888888No active entries in this section.|r")
             emptyLabel:SetFullWidth(true)
             container:AddChild(emptyLabel)
@@ -4358,6 +4382,7 @@ local function BuildLayoutOrderPanel(container)
             container:AddChild(rowGroup)
 
             local nameLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(nameLabel)
             local c = slot.color
             local coloredText = slot.label
             if c then
@@ -4560,6 +4585,7 @@ local function BuildLayoutOrderPanel(container)
         end
         if #resourceSlots == 0 then
             local label = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(label)
             label:SetText("No active bars to order. Enable resources or Custom Bars first.")
             label:SetFullWidth(true)
             container:AddChild(label)
@@ -4571,6 +4597,7 @@ local function BuildLayoutOrderPanel(container)
 
     if #resourceSlots == 0 and #castSlots == 0 then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("No active bars to order. Enable resources, Custom Bars, or cast bar first.")
         label:SetFullWidth(true)
         container:AddChild(label)
