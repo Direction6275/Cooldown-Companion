@@ -944,6 +944,7 @@ local function RenderStep2(container, state)
     container:AddChild(heading)
 
     local info = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(info)
     info:SetText("Adjust bars to import, then click Next.")
     info:SetFullWidth(true)
     container:AddChild(info)
@@ -1000,6 +1001,7 @@ local function RenderStep2(container, state)
 
     if CountSelectedBars(state.selectedBars) == 0 then
         local warn = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(warn)
         warn:SetText("|cffff5555Select at least one bar to continue.|r")
         warn:SetFullWidth(true)
         container:AddChild(warn)

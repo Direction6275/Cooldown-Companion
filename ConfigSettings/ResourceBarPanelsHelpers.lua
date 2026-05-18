@@ -193,12 +193,14 @@ local function AddCdmAuraReadinessWarning(container, spellID)
     if hasViewerFrame then return end
 
     local statusLabel = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(statusLabel)
     statusLabel:SetText("|cffff0000Aura tracking is not ready.|r")
     statusLabel:SetFullWidth(true)
     statusLabel:SetJustifyH("CENTER")
     container:AddChild(statusLabel)
 
     local explainLabel = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(explainLabel)
     if not cdmEnabled then
         explainLabel:SetText("|cff888888The Cooldown Manager (CDM) is currently disabled. Enable it in Options > Gameplay > Combat > Cooldown Manager to allow reliable aura tracking in combat.|r")
     else
@@ -757,6 +759,7 @@ local function AddResourceAuraEntryFields(container, powerType, resourceName, en
             container:AddChild(auraStackEdit)
 
             local auraStackHint = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(auraStackHint)
             auraStackHint:SetText("|cff888888Stack mode maps aura stacks to a bar proportion (e.g. 1/2 = half bar). Applies only to segmented/overlay resources.|r")
             auraStackHint:SetFullWidth(true)
             container:AddChild(auraStackHint)
@@ -814,6 +817,7 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
     local currentSpecID = GetCurrentConfigSpecID()
     if not currentSpecID then
         local specUnavailLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(specUnavailLabel)
         specUnavailLabel:SetText("Specialization data not yet available.")
         specUnavailLabel:SetFullWidth(true)
         container:AddChild(specUnavailLabel)

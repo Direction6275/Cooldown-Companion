@@ -735,6 +735,7 @@ local function BuildGroupSettingPresetControls(container, group, mode, tabInfoBu
 
     if #presetOrder == 0 then
         local hintLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(hintLabel)
         hintLabel:SetText("|cff888888No presets saved for this group mode yet.|r")
         hintLabel:SetFullWidth(true)
         container:AddChild(hintLabel)

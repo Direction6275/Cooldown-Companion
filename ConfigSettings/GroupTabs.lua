@@ -855,6 +855,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
     container:AddChild(textBox)
 
     local limitLabel = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(limitLabel)
     limitLabel:SetFullWidth(true)
     limitLabel:SetText("Up to " .. maxTextLines .. " lines and " .. maxTextLength .. " total characters.")
     limitLabel:SetColor(0.7, 0.7, 0.7)
@@ -2329,6 +2330,7 @@ local function BuildAppearanceTab(container)
 
         if not buttonData and not isTriggerPanel then
             local emptyLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(emptyLabel)
             emptyLabel:SetFullWidth(true)
             emptyLabel:SetText("|cff888888Add one entry in Column 2 first. The texture browser will open after that.|r")
             container:AddChild(emptyLabel)
@@ -2403,6 +2405,7 @@ local function BuildAppearanceTab(container)
         if not selectionLabel then
             if not isTriggerPanel then
                 local emptyStateLabel = AceGUI:Create("Label")
+                ST._ConfigureWrappedHelperLabel(emptyStateLabel)
                 emptyStateLabel:SetFullWidth(true)
                 emptyStateLabel:SetText("|cff888888Pick a texture to show the rest of the display controls.|r")
                 container:AddChild(emptyStateLabel)
@@ -3171,6 +3174,7 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
 
     if hasFolderSpecs then
         local inheritedLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(inheritedLabel)
         inheritedLabel:SetText("|cff888888Specs set by the parent folder cannot be changed here.|r")
         inheritedLabel:SetFullWidth(true)
         scroll:AddChild(inheritedLabel)

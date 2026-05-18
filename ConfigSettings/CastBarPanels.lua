@@ -183,6 +183,7 @@ local function BuildCastBarPositioningPanel(container)
 
     if not settings.enabled then
         local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Enable Cast Bar Anchoring to configure positioning.")
         label:SetFullWidth(true)
         container:AddChild(label)

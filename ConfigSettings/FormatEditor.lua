@@ -698,6 +698,7 @@ local function OpenFormatEditor(style, groupId, opts)
     -- WARNING LABEL (below editbox, shows validation errors)
     -- ================================================================
     local warningLabel = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(warningLabel)
     warningLabel:SetFullWidth(true)
     warningLabel:SetFontObject(GameFontNormalSmall)
     warningLabel:SetColor(1, 0.4, 0.4)
@@ -738,6 +739,7 @@ local function OpenFormatEditor(style, groupId, opts)
 
         if #mockStates == 0 then
             local emptyLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(emptyLabel)
             emptyLabel:SetFullWidth(true)
             emptyLabel:SetFontObject(GameFontDisableSmall)
             emptyLabel:SetJustifyH("CENTER")
