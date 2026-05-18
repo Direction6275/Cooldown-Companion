@@ -657,6 +657,7 @@ local function AddResourceAuraEntryFields(container, powerType, resourceName, en
         local auraName = GetAuraBarAutocompleteDisplayName(spellID)
         if auraName then
             local auraLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(auraLabel)
             auraLabel:SetText("|cff888888" .. auraName .. "|r")
             auraLabel:SetFullWidth(true)
             container:AddChild(auraLabel)

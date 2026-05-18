@@ -806,6 +806,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
 
     if buttonData.cdmChildSlot then
         local slotLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(slotLabel)
         local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
         local slotChild = allChildren and allChildren[buttonData.cdmChildSlot]
         local oid = slotChild and slotChild.cooldownInfo and slotChild.cooldownInfo.overrideSpellID
@@ -840,6 +841,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
         scroll:AddChild(auraCb)
     elseif showAuraStateLabelWhenToggleHidden then
         local auraStateLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(auraStateLabel)
         auraStateLabel:SetText(auraLabel)
         auraStateLabel:SetFullWidth(true)
         scroll:AddChild(auraStateLabel)

@@ -4141,6 +4141,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
 
                 if talentCollapsed then
                     local summaryLabel = AceGUI:Create("Label")
+                    ST._ConfigureWrappedHelperLabel(summaryLabel)
                     if condCount > 0 then
                         local firstCond = conditions[1]
                         local displayIcon = not IsHeroSpecProxyCondition(firstCond)
@@ -4172,6 +4173,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                     local currentHeroSubTreeID = CooldownCompanion._currentHeroSpecId
                     for _, cond in ipairs(conditions) do
                         local condLabel = AceGUI:Create("Label")
+                        ST._ConfigureWrappedHelperLabel(condLabel)
                         local displayIcon = not IsHeroSpecProxyCondition(cond)
                             and cond.spellID
                             and C_Spell.GetSpellTexture(cond.spellID)
@@ -4380,6 +4382,7 @@ local function BuildLayoutOrderPanel(container)
             container:AddChild(rowGroup)
 
             local nameLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(nameLabel)
             local c = slot.color
             local coloredText = slot.label
             if c then

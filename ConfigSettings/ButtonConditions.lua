@@ -1364,6 +1364,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 
     if talentCollapsed then
         local summaryLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(summaryLabel)
         if isBatch and hasTalent == nil then
             summaryLabel:SetText("|cff888888Multiple conditions|r")
         elseif hasTalent and condCount > 0 then
@@ -1403,6 +1404,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         local currentHeroSubTreeID = CooldownCompanion._currentHeroSpecId
         for _, cond in ipairs(conditions) do
             local condLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(condLabel)
             local displayIcon = not IsHeroSpecProxyCondition(cond)
                 and cond.spellID
                 and C_Spell.GetSpellTexture(cond.spellID)
