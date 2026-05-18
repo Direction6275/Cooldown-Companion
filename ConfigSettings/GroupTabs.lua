@@ -2977,7 +2977,7 @@ local function BuildAppearanceTab(container)
             {"Uses the Masque addon to apply custom button skins to this group. Configure skins via /masque or the Masque config panel.", 1, 1, 1, true},
             " ",
             {"Overridden Settings:", 1, 0.82, 0},
-            {"Border Rendering, Border Size, Border Color, Square Icons (forced on)", 0.7, 0.7, 0.7, true},
+            {"Border Thickness, Border Size, Border Color, Square Icons (forced on)", 0.7, 0.7, 0.7, true},
         }, tabInfoButtons)
         end -- not masqueCollapsed
     end

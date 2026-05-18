@@ -1057,10 +1057,10 @@ local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disab
     key = key or "borderRenderMode"
 
     local modeDrop = AceGUI:Create("Dropdown")
-    modeDrop:SetLabel("Border Rendering")
+    modeDrop:SetLabel("Border Thickness")
     modeDrop:SetList({
         [ST.BORDER_RENDER_MODE_CUSTOM] = "Custom Thickness",
-        [ST.BORDER_RENDER_MODE_CRISP] = "Crisp 1 Pixel",
+        [ST.BORDER_RENDER_MODE_CRISP] = "One-pixel",
     }, { ST.BORDER_RENDER_MODE_CUSTOM, ST.BORDER_RENDER_MODE_CRISP })
     modeDrop:SetValue(ST.GetBorderRenderMode(tbl, key))
     if modeDrop.SetDisabled then
