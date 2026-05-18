@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.14.3",
         "1.14.2",
         "1.14.1",
         "1.14",
@@ -34,6 +35,26 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.14.3"] = {
+            markdown = [[
+## New Features
+
+- **One-pixel border thickness:** Border settings now include a dedicated One-pixel option for icon, bar, text, cast bar, and resource-style borders, while existing Custom Thickness borders and per-button overrides keep their current behavior.
+
+## Polish | QoL
+
+- **Blizzard CDM setup:** Aura Tracking now only shows the Blizzard CDM activation button when Blizzard CDM is disabled, keeping the config free of unnecessary toggles.
+
+## Bug Fixes
+
+- **Config helper text:** Helper, warning, status, and preview text in the config UI should now wrap correctly within the column instead of truncating unpredictably.
+
+## Other
+
+- **Cooldown readiness:** Buttons should no longer look like they are on a real cooldown during global-cooldown-only moments, including desaturation, icon fill, availability text, sound alerts, and hide-on-cooldown behavior.
+  - This is not a normal bug fix: Blizzard's cooldown APIs can briefly expose incomplete or conflicting state during very short, high-haste cooldown windows, so the addon now trusts the current API result instead of adding extra smoothing.
+]],
+        },
         ["1.14.2"] = {
             markdown = [[
 ## New Features
