@@ -548,7 +548,9 @@ local function CreateConfigPanel()
 
     local configDragAlphaFrames = setmetatable({}, { __mode = "k" })
     local configDragAlphaBeforeMove = setmetatable({}, { __mode = "k" })
+    local configDragAlphaHandles = setmetatable({}, { __mode = "k" })
     local configDragAlphaActive = false
+    local SetMainConfigDragAlpha
 
     local function SetConfigDragAlphaFrame(targetFrame, active)
         if not (targetFrame and targetFrame.SetAlpha) then
@@ -566,12 +568,39 @@ local function CreateConfigPanel()
         end
     end
 
+    local function GetConfigDragAlphaHandle(targetFrame)
+        return targetFrame and targetFrame.obj and targetFrame.obj.title
+    end
+
+    local function HookConfigDragAlphaHandle(handle)
+        if not (handle and handle.HookScript) or handle._cdcConfigDragAlphaHooked then
+            return
+        end
+
+        handle._cdcConfigDragAlphaHooked = true
+        handle:HookScript("OnMouseDown", function(self)
+            if configDragAlphaHandles[self] and SetMainConfigDragAlpha then
+                SetMainConfigDragAlpha(true)
+            end
+        end)
+        handle:HookScript("OnMouseUp", function(self)
+            if configDragAlphaHandles[self] and SetMainConfigDragAlpha then
+                SetMainConfigDragAlpha(false)
+            end
+        end)
+    end
+
     CS.RegisterConfigDragAlphaFrame = function(targetFrame)
         if not targetFrame then
             return
         end
 
         configDragAlphaFrames[targetFrame] = true
+        local dragHandle = GetConfigDragAlphaHandle(targetFrame)
+        if dragHandle then
+            configDragAlphaHandles[dragHandle] = true
+            HookConfigDragAlphaHandle(dragHandle)
+        end
         if configDragAlphaActive then
             SetConfigDragAlphaFrame(targetFrame, true)
         end
@@ -582,11 +611,19 @@ local function CreateConfigPanel()
             return
         end
 
-        SetConfigDragAlphaFrame(targetFrame, false)
+        local dragHandle = GetConfigDragAlphaHandle(targetFrame)
+        if dragHandle then
+            configDragAlphaHandles[dragHandle] = nil
+        end
+        if configDragAlphaActive then
+            SetMainConfigDragAlpha(false)
+        else
+            SetConfigDragAlphaFrame(targetFrame, false)
+        end
         configDragAlphaFrames[targetFrame] = nil
     end
 
-    local function SetMainConfigDragAlpha(active)
+    SetMainConfigDragAlpha = function(active)
         if active then
             configDragAlphaActive = true
             SetConfigDragAlphaFrame(content, true)
@@ -604,12 +641,8 @@ local function CreateConfigPanel()
 
     local titleMover = frame.titletext and frame.titletext:GetParent()
     if titleMover then
-        titleMover:HookScript("OnMouseDown", function()
-            SetMainConfigDragAlpha(true)
-        end)
-        titleMover:HookScript("OnMouseUp", function()
-            SetMainConfigDragAlpha(false)
-        end)
+        configDragAlphaHandles[titleMover] = true
+        HookConfigDragAlphaHandle(titleMover)
     end
 
     -- Hide AceGUI's default sizer grips (replaced by custom resize grip below)
