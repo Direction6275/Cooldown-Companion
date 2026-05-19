@@ -1026,6 +1026,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local isGCDOnly = false
     local desatWasActive = button._desatCooldownActive == true
     local conditionalPreview = GetConditionalVisualPreview and GetConditionalVisualPreview(button)
+    local buttonGroup = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
+    local buttonDisplayMode = buttonGroup and (buttonGroup.displayMode or "icons") or "icons"
     ClearConditionalVisualPreviewFields(button)
 
     if UpdateResolvedItemState(button, buttonData) then
@@ -1130,8 +1133,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- GetCooldownTimes() which returns secret values after
     -- SetCooldownFromDurationObject() in 12.0.1.
     -- Save previous aura DurationObject for one-tick grace period on target switch.
-    local prevAuraDurationObj = button._auraActive and button._durationObj or nil
+    local prevAuraDurationObj = button._auraActive and button._auraDurationObj or nil
     button._durationObj = nil
+    button._auraDurationObj = nil
+    button._auraCooldownStart = nil
+    button._auraCooldownDuration = nil
+    button._auraPrimarySwipeActive = nil
     button._cooldownDeferred = nil
     button._cooldownState = COOLDOWN_STATE_READY
     button._chargeState = nil
@@ -1166,8 +1173,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local barAuraSecretStackValue
     local preserveBarAuraStackText
 
-    -- Aura tracking: check for active buff/debuff and override cooldown swipe
+    -- Aura tracking: check for active buff/debuff and decide whether it owns the primary swipe.
     local auraOverrideActive = false
+    local keepSpellCooldownSwipe = buttonData.auraKeepSpellCooldownSwipe == true
+        and buttonData.addedAs ~= "aura"
+        and buttonData.isPassive ~= true
+        and not button._isBar
+        and not button._isText
+        and buttonDisplayMode == "icons"
+    local auraPrimarySwipeAllowed = not keepSpellCooldownSwipe
     local auraHasTimer = button._auraHasTimer == true
     local auraTrackingReady = buttonData.isPassive == true
     -- Capture and clear event-driven removal flag (set by OnUnitAura when
@@ -1316,8 +1330,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         activeAuraSpellIDSourceResolved = true
                         button._viewerBar = nil
                         if durationObj then
-                            button._durationObj = durationObj
-                            button.cooldown:SetCooldownFromDurationObject(durationObj)
+                            button._auraDurationObj = durationObj
+                            if auraPrimarySwipeAllowed then
+                                button._durationObj = durationObj
+                                button.cooldown:SetCooldownFromDurationObject(durationObj)
+                            end
                             auraHasTimer = DurationObjectShowsCooldown(durationObj)
                         else
                             auraHasTimer = false
@@ -1340,7 +1357,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         if durMs > 0 and (startMs + durMs) > now * 1000 then
                             local vUnit = viewerFrame.auraDataUnit or auraUnit
                             if vUnit == configUnit then
-                                button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
+                                local auraStart = startMs / 1000
+                                local auraDuration = durMs / 1000
+                                button._auraCooldownStart = auraStart
+                                button._auraCooldownDuration = auraDuration
+                                if auraPrimarySwipeAllowed then
+                                    button.cooldown:SetCooldown(auraStart, auraDuration)
+                                end
                                 button._auraUnit = vUnit
                                 auraOverrideActive = true
                                 auraHasTimer = true
@@ -1386,8 +1409,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                             scratchCooldown:SetCooldown(0, 0)
                         end
                         if totemActive then
-                            button.cooldown:SetCooldownFromDurationObject(totemDuration)
-                            button._durationObj = totemDuration
+                            button._auraDurationObj = totemDuration
+                            if auraPrimarySwipeAllowed then
+                                button._durationObj = totemDuration
+                                button.cooldown:SetCooldownFromDurationObject(totemDuration)
+                            end
                             auraOverrideActive = true
                             auraHasTimer = true
                             fetchOk = true
@@ -1484,8 +1510,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         activeAuraSpellIDSourceResolved = true
                         button._viewerBar = nil
                         if durationObj then
-                            button._durationObj = durationObj
-                            button.cooldown:SetCooldownFromDurationObject(durationObj)
+                            button._auraDurationObj = durationObj
+                            if auraPrimarySwipeAllowed then
+                                button._durationObj = durationObj
+                                button.cooldown:SetCooldownFromDurationObject(durationObj)
+                            end
                             auraHasTimer = DurationObjectShowsCooldown(durationObj)
                         else
                             auraHasTimer = false
@@ -1520,8 +1549,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         end
                         button._viewerBar = nil
                         if durationObj then
-                            button._durationObj = durationObj
-                            button.cooldown:SetCooldownFromDurationObject(durationObj)
+                            button._auraDurationObj = durationObj
+                            if auraPrimarySwipeAllowed then
+                                button._durationObj = durationObj
+                                button.cooldown:SetCooldownFromDurationObject(durationObj)
+                            end
                             auraHasTimer = DurationObjectShowsCooldown(durationObj)
                         else
                             auraHasTimer = false
@@ -1572,7 +1604,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button._auraGraceStart = now
                 end
                 if now - button._auraGraceStart <= 0.3 or button._targetSwitchAt then
-                    button._durationObj = prevAuraDurationObj
+                    if prevAuraDurationObj then
+                        button._auraDurationObj = prevAuraDurationObj
+                        if auraPrimarySwipeAllowed then
+                            button._durationObj = prevAuraDurationObj
+                            button.cooldown:SetCooldownFromDurationObject(prevAuraDurationObj)
+                        end
+                    end
                     auraOverrideActive = true
                     auraGraceHeld = true
                     PreserveAuraDisplayNameDuringGrace(auraDisplayNameState)
@@ -1587,7 +1625,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         else
             button._auraGraceStart = nil
             if button._targetSwitchAt then
-                if auraOverrideActive and (button._durationObj or barAuraStackConfigured) then
+                if auraOverrideActive and (button._auraDurationObj or button._auraCooldownDuration or button._durationObj or barAuraStackConfigured) then
                     -- Primary path provided fresh aura data: hold complete
                     button._targetSwitchAt = nil
                     button._targetSwitchDataReceived = nil
@@ -1614,7 +1652,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button._targetSwitchAt = nil
                 button._targetSwitchDataReceived = nil
             else
-                button._durationObj = prevAuraDurationObj
+                if prevAuraDurationObj then
+                    button._auraDurationObj = prevAuraDurationObj
+                    if auraPrimarySwipeAllowed then
+                        button._durationObj = prevAuraDurationObj
+                        button.cooldown:SetCooldownFromDurationObject(prevAuraDurationObj)
+                    end
+                end
                 auraOverrideActive = true
                 auraGraceHeld = true
                 PreserveAuraDisplayNameDuringGrace(auraDisplayNameState)
@@ -1762,6 +1806,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         CommitAuraDisplayName(button, buttonData, viewerFrame, auraOverrideActive, auraDisplayNameState)
     end
     button._auraTrackingReady = auraTrackingReady
+    local auraOwnsPrimarySwipe = auraOverrideActive and auraPrimarySwipeAllowed
+    button._auraPrimarySwipeActive = auraOwnsPrimarySwipe or nil
 
     -- Stack-count aura bars own the bar surface even while the aura is inactive.
     -- Inactive auras render as zero stacks so segmented/overlay placeholders stay visible.
@@ -1856,7 +1902,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Probe spell CD during aura override (shared by secondary CD and sound alerts).
-    if auraOverrideActive and not barAuraStackDisplay and buttonData.type == "spell" and not buttonData.isPassive then
+    if auraOwnsPrimarySwipe and not barAuraStackDisplay and buttonData.type == "spell" and not buttonData.isPassive then
         auraProbeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
         if auraProbeInfo and auraProbeInfo.isActive then
             local auraProbeNormalDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
@@ -1871,7 +1917,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Secondary cooldown text display during aura override
-    if auraOverrideActive and not barAuraStackDisplay and button.secondaryCooldown then
+    if auraOwnsPrimarySwipe and not barAuraStackDisplay and button.secondaryCooldown then
         if buttonData.type == "spell" and not buttonData.isPassive then
             if auraProbeInfo then
                 if not auraProbeIsGCDOnly then
@@ -1907,7 +1953,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button.secondaryCooldown:SetCooldown(0, 0)
     end
 
-    if not auraOverrideActive and not barAuraStackDisplay then
+    if not auraOwnsPrimarySwipe and not barAuraStackDisplay then
         if buttonData.type == "spell" and not buttonData.isPassive then
             spellCooldownResult = EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, button._noCooldown)
             if spellCooldownResult and spellCooldownResult.fetchOk then
@@ -1940,7 +1986,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button.cooldown:SetCooldown(0, 0)
                 end
                 fetchOk = true
-            elseif not fetchOk then
+            elseif not fetchOk or auraOverrideActive then
                 button.cooldown:SetCooldown(0, 0)
             end
         elseif buttonData.type == "item" then
@@ -2086,7 +2132,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Charge count tracking: detect whether the main cooldown (0 charges)
     -- is active.  Filter GCD so only real cooldown reads as true.
     -- Item and readable-spell paths are always safe. Restricted-spell fallbacks
-    -- that depend on button.cooldown or isGCDOnly are gated on not auraOverrideActive.
+    -- that depend on button.cooldown or isGCDOnly are gated on aura primary-swipe ownership.
     if usesChargeBehavior then
         -- Default to non-zero each tick; set true only when a current probe confirms zero.
         button._mainCDShown = false
@@ -2118,7 +2164,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 or ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
             if slotProbe.shown ~= nil then
                 button._mainCDShown = slotProbe.realShown == true
-            elseif not auraOverrideActive then
+            elseif not auraOwnsPrimarySwipe then
                 -- No action bar slot found; use the ignoreGCD-backed real cooldown state.
                 if spellCooldownResult and spellCooldownResult.fetchOk then
                     button._mainCDShown = spellCooldownResult.state == COOLDOWN_STATE_COOLDOWN
@@ -2171,7 +2217,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._desatCooldownActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     elseif usesChargeBehavior then
         button._desatCooldownActive = button._chargeState == CHARGE_STATE_ZERO
-    elseif auraOverrideActive and auraProbeInfo then
+    elseif auraOwnsPrimarySwipe and auraProbeInfo then
         button._desatCooldownActive = (auraProbeRealCooldownShown and not auraProbeIsGCDOnly) or false
     else
         button._desatCooldownActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
@@ -2190,13 +2236,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Bar/text mode: charge bars are driven by the recharge DurationObject, not
         -- the main spell CD or GCD. Save and clear the main CD so recharge
         -- timing fully controls bar fill for charge spells.
-        if (button._isBar or button._isText) and not auraOverrideActive and button._chargeDurationObj then
+        if (button._isBar or button._isText) and not auraOwnsPrimarySwipe and button._chargeDurationObj then
             button._durationObj = nil
         end
 
         local normalCooldownDisplayActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
             or (isGCDOnly and style.showGCDSwipe == true)
-        if not auraOverrideActive and button._chargeDurationObj then
+        if not auraOwnsPrimarySwipe and button._chargeDurationObj then
             if not button._isBar and not button._isText then
                 if button._chargeCooldownVisualActive then
                     -- Icon mode: active recharge owns the shared cooldown frame.
@@ -2209,7 +2255,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- Bar/text mode: only set _durationObj if actually recharging
                 button._durationObj = button._chargeDurationObj
             end
-        elseif not button._isBar and not button._isText and not auraOverrideActive then
+        elseif not button._isBar and not button._isText and not auraOwnsPrimarySwipe then
             -- Icon mode fallback: no chargeDurationObj, try fetching one.
             -- Only an active charge DurationObject may replace an existing GCD display.
             local chargeSpellID = cooldownSpellId or buttonData.id
@@ -2342,7 +2388,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if usesChargeBehavior then
                 -- Charge spells: cooldown-active means zero available charges.
                 cooldownActive = button._chargeState == CHARGE_STATE_ZERO
-            elseif auraOverrideActive then
+            elseif auraOwnsPrimarySwipe then
                 -- Aura visuals replace button.cooldown; reuse the shared
                 -- probe computed above (same spell, same tick).
                 if auraProbeInfo then
@@ -2373,7 +2419,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Per-button visibility evaluation (after charge tracking)
     button._procOverlayActive = procOverlayActive
-    EvaluateButtonVisibility(button, buttonData, auraOverrideActive, procOverlayActive)
+    EvaluateButtonVisibility(button, buttonData, auraOverrideActive, procOverlayActive, auraOwnsPrimarySwipe)
     button._rawVisibilityHidden = button._visibilityHidden
     button._rawVisibilityAlphaOverride = button._visibilityAlphaOverride
 

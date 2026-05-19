@@ -726,6 +726,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
     local showAuraStateLabelWhenToggleHidden = options.showAuraStateLabelWhenToggleHidden == true
     local useCollapse = options.useCollapse == true
     local showHeading = options.showHeading ~= false
+    local isIconGroup = group and (group.displayMode or "icons") == "icons"
 
     -- Auto-enable aura tracking for viewer-backed spells.
     if hasViewerFrame and buttonData.auraTracking == nil then
@@ -740,6 +741,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
 
     if isAuraEntry then
         buttonData.auraSpellID = CooldownCompanion:GetStandaloneAuraFallbackSpellIDText(buttonData)
+        buttonData.auraKeepSpellCooldownSwipe = nil
     end
 
     local auraStatus = CooldownCompanion:ResolveAuraTrackingConfigStatus(
@@ -1109,6 +1111,23 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
             "Show Aura Icon",
             {"When enabled, the button icon changes to show the tracked aura's icon while the aura is active. When the aura expires, the normal spell icon is restored.\n\nUseful when the tracked aura has a different icon than the ability itself.", 1, 1, 1, true},
         }, infoButtons)
+
+        if isIconGroup and not isAuraEntry then
+            local keepCooldownSwipeCb = AceGUI:Create("CheckBox")
+            keepCooldownSwipeCb:SetLabel("Keep Spell Cooldown Swipe")
+            keepCooldownSwipeCb:SetValue(buttonData.auraKeepSpellCooldownSwipe == true)
+            keepCooldownSwipeCb:SetFullWidth(true)
+            keepCooldownSwipeCb:SetCallback("OnValueChanged", function(_, _, value)
+                buttonData.auraKeepSpellCooldownSwipe = value and true or nil
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            end)
+            scroll:AddChild(keepCooldownSwipeCb)
+            CreateInfoButton(keepCooldownSwipeCb.frame, keepCooldownSwipeCb.checkbg, "LEFT", "RIGHT",
+                keepCooldownSwipeCb.text:GetStringWidth() + 4, 0, {
+                "Keep Spell Cooldown Swipe",
+                {"When checked, the icon keeps showing the spell's normal cooldown swipe while Aura Tracking is active. The tracked aura can still update aura-facing behavior like the aura icon, glow, visibility, and stack text.\n\nUnchecked keeps the current behavior where the tracked aura duration replaces the normal cooldown swipe.", 1, 1, 1, true},
+            }, infoButtons)
+        end
     end
 end
 
