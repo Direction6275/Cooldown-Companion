@@ -344,7 +344,7 @@ local function UpdateIconFill(button, buttonData, style)
     local mode
     local color
 
-    if button._auraActive == true or auraPreview then
+    if button._auraPrimarySwipeActive == true or auraPreview then
         color = style.iconFillAuraColor or DEFAULT_ICON_FILL_AURA_COLOR
         if button._auraHasTimer == false and not auraPreview then
             mode = "aura_static"
