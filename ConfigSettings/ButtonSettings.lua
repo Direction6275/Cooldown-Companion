@@ -726,7 +726,6 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
     local showAuraStateLabelWhenToggleHidden = options.showAuraStateLabelWhenToggleHidden == true
     local useCollapse = options.useCollapse == true
     local showHeading = options.showHeading ~= false
-    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local isIconGroup = group and (group.displayMode or "icons") == "icons"
 
     -- Auto-enable aura tracking for viewer-backed spells.
