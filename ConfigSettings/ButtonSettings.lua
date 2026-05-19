@@ -741,6 +741,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
 
     if isAuraEntry then
         buttonData.auraSpellID = CooldownCompanion:GetStandaloneAuraFallbackSpellIDText(buttonData)
+        buttonData.auraKeepSpellCooldownSwipe = nil
     end
 
     local auraStatus = CooldownCompanion:ResolveAuraTrackingConfigStatus(
@@ -1111,7 +1112,7 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
             {"When enabled, the button icon changes to show the tracked aura's icon while the aura is active. When the aura expires, the normal spell icon is restored.\n\nUseful when the tracked aura has a different icon than the ability itself.", 1, 1, 1, true},
         }, infoButtons)
 
-        if isIconGroup then
+        if isIconGroup and not isAuraEntry then
             local keepCooldownSwipeCb = AceGUI:Create("CheckBox")
             keepCooldownSwipeCb:SetLabel("Keep Spell Cooldown Swipe")
             keepCooldownSwipeCb:SetValue(buttonData.auraKeepSpellCooldownSwipe == true)
