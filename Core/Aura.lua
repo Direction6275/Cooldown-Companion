@@ -530,6 +530,8 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
             if shouldClear then
                 button._auraInstanceID = nil
                 button._auraActive = false
+                button._auraDurationObj = nil
+                button._auraPrimarySwipeActive = nil
                 button._inPandemic = false
                 button._targetSwitchAt = nil
                 button._targetSwitchDataReceived = nil

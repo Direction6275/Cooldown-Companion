@@ -52,7 +52,11 @@ local BASELINE_FALLBACKS = {
 -- Evaluate per-button visibility rules and set hidden/alpha override state.
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
 -- Fast path: if no toggles are enabled, zero overhead.
-local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, procOverlayActive)
+local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, procOverlayActive, auraOwnsPrimarySwipe)
+    if auraOwnsPrimarySwipe == nil then
+        auraOwnsPrimarySwipe = auraOverrideActive
+    end
+
     -- Fast path: no visibility toggles enabled
     if not buttonData.hideWhileOnCooldown
        and not buttonData.hideWhileNotOnCooldown
@@ -93,7 +97,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         else
-            if button._cooldownState == COOLDOWN_STATE_COOLDOWN and not auraOverrideActive then
+            if button._cooldownState == COOLDOWN_STATE_COOLDOWN and not auraOwnsPrimarySwipe then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         end
@@ -114,7 +118,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         else
-            if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN and not auraOverrideActive then
+            if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN and not auraOwnsPrimarySwipe then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         end

@@ -1498,6 +1498,8 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
                 button._iconDirty = true
                 button._cooldownDeferred = nil
                 button._durationObj = nil
+                button._auraDurationObj = nil
+                button._auraPrimarySwipeActive = nil
                 button._chargeDurationObj = nil
                 button._chargeRecharging = nil
                 button._chargeState = nil

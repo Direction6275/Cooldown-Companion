@@ -260,6 +260,20 @@ local function SetIconFillValue(button)
         return
     end
 
+    if button._iconFillAuraActive then
+        if button._auraDurationObj then
+            button.iconFill:SetValue(ResolveIconFillDurationObjectValue(button, button._auraDurationObj))
+            return
+        end
+
+        if button._auraPrimarySwipeActive == true and SetIconFillFromCooldownWidget(button) then
+            return
+        end
+
+        button.iconFill:SetValue(0)
+        return
+    end
+
     if button._durationObj then
         button.iconFill:SetValue(ResolveIconFillDurationObjectValue(button, button._durationObj))
         return
@@ -382,7 +396,7 @@ local function UpdateBlizzardAuraSwipe(button, style)
 
     local enabled = style.auraUseBlizzardSwipe == true
         and button._iconFillAuraActive ~= true
-        and (button._auraActive == true or button._conditionalAuraDurationTextPreview == true)
+        and (button._auraPrimarySwipeActive == true or button._conditionalAuraDurationTextPreview == true)
         and (button._conditionalAuraDurationTextPreview == true or button._auraHasTimer ~= false)
 
     if not enabled then
@@ -404,7 +418,10 @@ local function UpdateBlizzardAuraSwipe(button, style)
         and button._conditionalPreviewDuration then
         overlay:SetCooldown(button._conditionalPreviewStartTime, button._conditionalPreviewDuration)
         rendered = true
-    elseif button._durationObj then
+    elseif button._auraDurationObj then
+        overlay:SetCooldownFromDurationObject(button._auraDurationObj)
+        rendered = overlay:IsShown()
+    elseif button._auraPrimarySwipeActive == true and button._durationObj then
         overlay:SetCooldownFromDurationObject(button._durationObj)
         rendered = overlay:IsShown()
     else
@@ -682,6 +699,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
     button._auraUnit = buttonData.auraUnit or "player"
     button._auraActive = false
+    button._auraDurationObj = nil
+    button._auraPrimarySwipeActive = nil
     button._auraTrackingReady = buttonData.isPassive == true
     button._showingAuraIcon = false
     button._auraViewerFrame = nil
@@ -979,7 +998,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
 
         local cooldownVisualActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
-            or button._auraActive == true
+            or button._auraPrimarySwipeActive == true
             or button._conditionalAuraDurationTextPreview == true
             or button._conditionalPreviewDomain == "cooldown"
             or button._chargeCooldownVisualActive == true
@@ -1019,7 +1038,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
 
     -- When separate text positions: move primary text to aura anchor during aura, cooldown anchor otherwise
     if button._secondaryCdTextRegion and button._cdTextRegion then
-        local wantAuraPos = button._auraActive == true or button._conditionalAuraDurationTextPreview == true
+        local wantAuraPos = button._auraPrimarySwipeActive == true or button._conditionalAuraDurationTextPreview == true
         if button._cdTextAtAuraPos ~= wantAuraPos then
             button._cdTextAtAuraPos = wantAuraPos
             button._cdTextRegion:ClearAllPoints()
@@ -1042,7 +1061,8 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     if button._cdTextRegion then
         local showText, fontColor, wantFont, wantSize, wantOutline
         local auraTextPreview = button._conditionalAuraDurationTextPreview == true
-        if button._auraActive or auraTextPreview then
+        local auraTextActive = button._auraPrimarySwipeActive == true or auraTextPreview
+        if auraTextActive then
             showText = style.showAuraText ~= false
             fontColor = style.auraTextFontColor or DEFAULT_AURA_TEXT_COLOR
             wantFont = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
@@ -1065,7 +1085,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             local cc = fontColor
             button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             -- Only call SetFont when mode changes to avoid per-tick overhead
-            local mode = (button._auraActive or auraTextPreview) and "aura" or "cd"
+            local mode = auraTextActive and "aura" or "cd"
             if button._cdTextMode ~= mode then
                 button._cdTextMode = mode
                 button._cdTextRegion:SetFont(wantFont, wantSize, wantOutline)
@@ -1082,9 +1102,9 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
-    -- Secondary cooldown text: visible only when aura is active AND a real cooldown is running
+    -- Secondary cooldown text: visible only when aura owns primary text and a real cooldown is running.
     if button._secondaryCdTextRegion then
-        local showSecondary = button._auraActive and button._secondaryCdActive and style.showCooldownText
+        local showSecondary = button._auraPrimarySwipeActive and button._secondaryCdActive and style.showCooldownText
         if showSecondary then
             local cc = style.cooldownFontColor or DEFAULT_WHITE
             button._secondaryCdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
@@ -1276,6 +1296,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._spellOutOfRange = nil
     button._itemCount = nil
     button._auraActive = nil
+    button._auraDurationObj = nil
+    button._auraPrimarySwipeActive = nil
     button._showingAuraIcon = nil
     button._auraViewerFrame = nil
     button._activeAuraSpellID = nil
