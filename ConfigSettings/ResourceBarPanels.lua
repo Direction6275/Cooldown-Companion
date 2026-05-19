@@ -1241,6 +1241,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:RefreshConfigPanel()
         end)
+        local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
         if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
             local borderSizeSlider = AceGUI:Create("Slider")
@@ -1249,7 +1250,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
             borderSizeSlider:SetValue(displayProfile.borderSize or settings.borderSize or 1)
             borderSizeSlider:SetIsPercent(false)
             borderSizeSlider:SetFullWidth(true)
+            borderSizeSlider:SetDisabled(borderThicknessLocked)
             borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                if borderThicknessLocked then return end
                 displayProfile.borderSize = val
                 CooldownCompanion:ApplyResourceBars()
             end)

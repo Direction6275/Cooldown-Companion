@@ -117,16 +117,27 @@ end
 
 local chunk = assert(loadfile("Core/Utils.lua"))
 chunk("CooldownCompanion", ST)
+ST.Addon = { db = { profile = { profileOnePixelBorders = false } } }
 
 assertEquals(ST.GetBorderRenderMode(nil), ST.BORDER_RENDER_MODE_CUSTOM, "nil render mode defaults to custom")
 assertEquals(ST.GetBorderRenderMode("unexpected"), ST.BORDER_RENDER_MODE_CUSTOM, "invalid render mode defaults to custom")
 assertEquals(ST.GetBorderRenderMode(ST.BORDER_RENDER_MODE_CRISP), ST.BORDER_RENDER_MODE_CRISP, "crisp render mode is preserved")
 assertEquals(ST.GetBorderRenderMode({ textBorderRenderMode = ST.BORDER_RENDER_MODE_CRISP }, "textBorderRenderMode"), ST.BORDER_RENDER_MODE_CRISP, "table render mode key is supported")
+assertEquals(ST.GetEffectiveBorderRenderMode(ST.BORDER_RENDER_MODE_CUSTOM, nil, 2), ST.BORDER_RENDER_MODE_CUSTOM, "profile override off preserves custom mode")
+assertEquals(ST.GetEffectiveBorderRenderMode(ST.BORDER_RENDER_MODE_CRISP, nil, 0), ST.BORDER_RENDER_MODE_CRISP, "profile override off preserves crisp mode")
 
 local region = NewRegion()
 assertEquals(ST.GetBorderLayoutSize(region, 2.25, ST.BORDER_RENDER_MODE_CUSTOM), 2.25, "custom layout size uses configured value")
 assertEquals(ST.GetBorderLayoutSize(region, 2.25, ST.BORDER_RENDER_MODE_CRISP), 0.25, "crisp layout size is one physical pixel")
 assertEquals(PixelUtil.nearestCalls[#PixelUtil.nearestCalls].layoutScale, 2, "crisp layout uses effective scale")
+
+ST.Addon.db.profile.profileOnePixelBorders = true
+assertEquals(ST.GetEffectiveBorderRenderMode(ST.BORDER_RENDER_MODE_CUSTOM, nil, 2), ST.BORDER_RENDER_MODE_CRISP, "profile override promotes visible custom mode to crisp")
+assertEquals(ST.GetEffectiveBorderRenderMode(ST.BORDER_RENDER_MODE_CUSTOM, nil, 0), ST.BORDER_RENDER_MODE_CUSTOM, "profile override preserves custom zero-size hidden border")
+assertEquals(ST.GetEffectiveBorderRenderMode(ST.BORDER_RENDER_MODE_CRISP, nil, 0), ST.BORDER_RENDER_MODE_CRISP, "profile override preserves local crisp zero-size visibility")
+assertEquals(ST.GetEffectiveBorderLayoutSize(region, 2.25, ST.BORDER_RENDER_MODE_CUSTOM), 0.25, "profile override uses one physical pixel layout")
+assertEquals(ST.GetEffectiveBorderLayoutSize(region, 0, ST.BORDER_RENDER_MODE_CUSTOM), 0, "profile override keeps custom zero-size layout hidden")
+ST.Addon.db.profile.profileOnePixelBorders = false
 
 local scaleOneRegion = NewRegion()
 scaleOneRegion.scale = 1

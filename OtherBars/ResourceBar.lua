@@ -1176,7 +1176,7 @@ function HealthBar.LayoutEffectBars(bar, borderStyle, borderSize, borderRenderMo
         bar.healthEffectClip:SetFrameLevel(bar:GetFrameLevel() + 1)
         bar.healthEffectClip:ClearAllPoints()
         if borderStyle == "pixel" then
-            local inset = ST.GetBorderLayoutSize(bar, borderSize, borderRenderMode)
+            local inset = ST.GetEffectiveBorderLayoutSize(bar, borderSize, borderRenderMode)
             bar.healthEffectClip:SetPoint("TOPLEFT", bar, "TOPLEFT", inset, -inset)
             bar.healthEffectClip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -inset, inset)
         else

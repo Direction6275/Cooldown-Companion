@@ -651,7 +651,7 @@ local function ApplyEdgePositions(textures, button, size)
 end
 
 local function ApplyBorderEdgePositions(textures, button, size, renderMode)
-    ST.PositionBorderTextures(textures, button, size, renderMode)
+    ST.PositionBorderTextures(textures, button, size, ST.GetEffectiveBorderRenderMode(renderMode, nil, size))
 end
 
 -- Apply aspect-ratio-aware texture cropping to an icon.

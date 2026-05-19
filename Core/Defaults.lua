@@ -26,6 +26,7 @@ local defaults = {
         },
         hideInfoButtons = false,
         escClosesConfig = true,
+        profileOnePixelBorders = false,
         showAdvanced = {},
         autoAddPrefs = {
             lastSource = "actionbars",

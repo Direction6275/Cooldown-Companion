@@ -368,7 +368,7 @@ local function ShowPixelBorders(cb, color, size, renderMode, iconFrame, iconOnRi
     local borders = GetPixelBorders(cb)
     local leftFrame = (iconFrame and not iconOnRight) and iconFrame or cb
     local rightFrame = (iconFrame and iconOnRight) and iconFrame or cb
-    ST.ApplyBorderTexturesBetween(borders, leftFrame, rightFrame, color, size, renderMode)
+    ST.ApplyBorderTexturesBetween(borders, leftFrame, rightFrame, color, size, ST.GetEffectiveBorderRenderMode(renderMode, nil, size))
 end
 
 local function HidePixelBorders()
@@ -387,7 +387,7 @@ end
 
 local function ShowIconPixelBorders(cb, color, size, renderMode)
     local borders = GetIconPixelBorders(cb)
-    ST.ApplyBorderTextures(borders, cb.Icon, color, size, renderMode)
+    ST.ApplyBorderTextures(borders, cb.Icon, color, size, ST.GetEffectiveBorderRenderMode(renderMode, nil, size))
 end
 
 local function HideIconPixelBorders()

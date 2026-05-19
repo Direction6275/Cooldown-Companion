@@ -520,7 +520,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.icon = button:CreateTexture(nil, "ARTWORK")
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
     local borderRenderMode = ST.GetBorderRenderMode(style)
-    local borderLayoutSize = ST.GetBorderLayoutSize(button, borderSize, borderRenderMode)
+    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode)
     button.icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
     button.icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
 
@@ -1277,7 +1277,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
     local borderRenderMode = ST.GetBorderRenderMode(style)
-    local borderLayoutSize = ST.GetBorderLayoutSize(button, borderSize, borderRenderMode)
+    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode)
 
     -- Store updated style reference
     button.style = style

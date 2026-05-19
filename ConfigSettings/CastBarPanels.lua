@@ -347,6 +347,7 @@ local function BuildCastBarStylingPanel(container)
             CooldownCompanion:ApplyCastBarSettings()
             CooldownCompanion:RefreshConfigPanel()
         end)
+        local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
         if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
             local borderSizeSlider = AceGUI:Create("Slider")
@@ -354,7 +355,9 @@ local function BuildCastBarStylingPanel(container)
             borderSizeSlider:SetSliderValues(0, 5, 0.1)
             borderSizeSlider:SetValue(settings.borderSize or 1)
             borderSizeSlider:SetFullWidth(true)
+            borderSizeSlider:SetDisabled(borderThicknessLocked)
             borderSizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                if borderThicknessLocked then return end
                 settings.borderSize = val
                 CooldownCompanion:ApplyCastBarSettings()
             end)
@@ -460,6 +463,7 @@ local function BuildCastBarStylingPanel(container)
                 CooldownCompanion:ApplyCastBarSettings()
                 CooldownCompanion:RefreshConfigPanel()
             end)
+            local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
             if iconRenderMode ~= ST.BORDER_RENDER_MODE_CRISP then
                 local iconBorderSlider = AceGUI:Create("Slider")
@@ -467,7 +471,9 @@ local function BuildCastBarStylingPanel(container)
                 iconBorderSlider:SetSliderValues(0, 4, 0.1)
                 iconBorderSlider:SetValue(settings.iconBorderSize or 1)
                 iconBorderSlider:SetFullWidth(true)
+                iconBorderSlider:SetDisabled(borderThicknessLocked)
                 iconBorderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                    if borderThicknessLocked then return end
                     settings.iconBorderSize = val
                     CooldownCompanion:ApplyCastBarSettings()
                 end)

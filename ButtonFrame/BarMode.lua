@@ -1354,7 +1354,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     -- Icon
     button.icon = button:CreateTexture(nil, "ARTWORK")
     if showIcon then
-        SetIconAreaPoints(button.icon, button, isVertical, iconReverse, iconSize, ST.GetBorderLayoutSize(button, borderSize, borderRenderMode))
+        SetIconAreaPoints(button.icon, button, isVertical, iconReverse, iconSize, ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode))
         button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     else
         -- Hidden 1x1 icon (still needed for UpdateButtonIcon)
@@ -1394,7 +1394,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
 
     -- StatusBar
     button.statusBar = CreateFrame("StatusBar", nil, button)
-    SetBarAreaPoints(button.statusBar, button, isVertical, iconReverse, barAreaLeft, barAreaTop, ST.GetBorderLayoutSize(button, borderSize, borderRenderMode))
+    SetBarAreaPoints(button.statusBar, button, isVertical, iconReverse, barAreaLeft, barAreaTop, ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode))
     if isVertical then
         button.statusBar:SetOrientation("VERTICAL")
     end
@@ -1408,7 +1408,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
 
     -- Dedicated text layer above custom segment holders.
     button.barTextFrame = CreateFrame("Frame", nil, button)
-    SetBarAreaPoints(button.barTextFrame, button, isVertical, iconReverse, barAreaLeft, barAreaTop, ST.GetBorderLayoutSize(button, borderSize, borderRenderMode))
+    SetBarAreaPoints(button.barTextFrame, button, isVertical, iconReverse, barAreaLeft, barAreaTop, ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode))
     button.barTextFrame:SetFrameLevel(button.statusBar:GetFrameLevel() + 20)
     button.barTextFrame:EnableMouse(false)
 
@@ -1661,7 +1661,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local barHeight = newStyle.barHeight or 20
     local borderSize = newStyle.borderSize or ST.DEFAULT_BORDER_SIZE
     local borderRenderMode = ST.GetBorderRenderMode(newStyle)
-    local borderLayoutSize = ST.GetBorderLayoutSize(button, borderSize, borderRenderMode)
+    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode)
     local showIcon = newStyle.showBarIcon ~= false
     local isVertical = newStyle.barFillVertical or false
     local iconReverse = showIcon and (newStyle.barIconReverse or false)

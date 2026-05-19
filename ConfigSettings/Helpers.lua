@@ -1086,6 +1086,7 @@ end
 
 local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disabled)
     key = key or "borderRenderMode"
+    local controlsDisabled = disabled == true or ST.IsBorderThicknessLocked()
 
     local modeDrop = AceGUI:Create("Dropdown")
     modeDrop:SetLabel("Border Thickness")
@@ -1096,13 +1097,14 @@ local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disab
     AddDropdownItemTooltips(modeDrop, BORDER_THICKNESS_MODE_TOOLTIPS)
     modeDrop:SetValue(ST.GetBorderRenderMode(tbl, key))
     if modeDrop.SetDisabled then
-        modeDrop:SetDisabled(disabled == true)
+        modeDrop:SetDisabled(controlsDisabled)
     end
     modeDrop:SetCallback("OnClosed", function()
         GameTooltip:Hide()
     end)
     modeDrop:SetFullWidth(true)
     modeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        if controlsDisabled then return end
         tbl[key] = ST.GetBorderRenderMode(val)
         if refreshFn then
             refreshFn()

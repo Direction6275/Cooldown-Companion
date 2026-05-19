@@ -290,6 +290,7 @@ local function BuildBorderControls(container, styleTable, refreshCallback)
         refreshCallback()
         CooldownCompanion:RefreshConfigPanel()
     end)
+    local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         local borderSlider = AceGUI:Create("Slider")
@@ -297,7 +298,9 @@ local function BuildBorderControls(container, styleTable, refreshCallback)
         borderSlider:SetSliderValues(0, 5, 0.1)
         borderSlider:SetValue(styleTable.borderSize or ST.DEFAULT_BORDER_SIZE)
         borderSlider:SetFullWidth(true)
+        borderSlider:SetDisabled(borderThicknessLocked)
         borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if borderThicknessLocked then return end
             styleTable.borderSize = val
             refreshCallback()
         end)
@@ -1232,6 +1235,7 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
         refreshCallback()
         CooldownCompanion:RefreshConfigPanel()
     end)
+    local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         local borderSlider = AceGUI:Create("Slider")
@@ -1239,7 +1243,9 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
         borderSlider:SetSliderValues(0, 5, 0.1)
         borderSlider:SetValue(styleTable.textBorderSize or 0)
         borderSlider:SetFullWidth(true)
+        borderSlider:SetDisabled(borderThicknessLocked)
         borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if borderThicknessLocked then return end
             styleTable.textBorderSize = val
             refreshCallback()
         end)

@@ -776,8 +776,8 @@ local function UpdateTextStyle(button, newStyle)
 
     -- Anchor text within frame respecting border
     button.textString:ClearAllPoints()
-    local borderLayoutSize = ST.GetBorderLayoutSize(button, borderSize, borderRenderMode)
-    local inset = ((borderSize > 0 or ST.IsCrispBorderRenderMode(borderRenderMode)) and borderLayoutSize or 0) + 2
+    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode)
+    local inset = ((borderSize > 0 or ST.IsEffectiveCrispBorderRenderMode(borderRenderMode, nil, borderSize)) and borderLayoutSize or 0) + 2
     button.textString:SetPoint("TOPLEFT", inset, -1)
     button.textString:SetPoint("BOTTOMRIGHT", -inset, 1)
 
@@ -843,8 +843,8 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
         button.textString:SetShadowOffset(0, 0)
     end
 
-    local borderLayoutSize = ST.GetBorderLayoutSize(button, borderSize, borderRenderMode)
-    local inset = ((borderSize > 0 or ST.IsCrispBorderRenderMode(borderRenderMode)) and borderLayoutSize or 0) + 2
+    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode)
+    local inset = ((borderSize > 0 or ST.IsEffectiveCrispBorderRenderMode(borderRenderMode, nil, borderSize)) and borderLayoutSize or 0) + 2
     button.textString:SetPoint("TOPLEFT", inset, -1)
     button.textString:SetPoint("BOTTOMRIGHT", -inset, 1)
 

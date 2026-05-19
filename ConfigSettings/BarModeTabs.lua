@@ -91,6 +91,7 @@ local function BuildBarAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
+    local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         local borderSlider = AceGUI:Create("Slider")
@@ -98,7 +99,9 @@ local function BuildBarAppearanceTab(container, group, style)
         borderSlider:SetSliderValues(0, 5, 0.1)
         borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
         borderSlider:SetFullWidth(true)
+        borderSlider:SetDisabled(borderThicknessLocked)
         borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if borderThicknessLocked then return end
             style.borderSize = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
