@@ -1133,7 +1133,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- GetCooldownTimes() which returns secret values after
     -- SetCooldownFromDurationObject() in 12.0.1.
     -- Save previous aura DurationObject for one-tick grace period on target switch.
-    local prevAuraDurationObj = button._auraActive and (button._auraDurationObj or button._durationObj) or nil
+    local prevAuraDurationObj = button._auraActive and button._auraDurationObj or nil
     button._durationObj = nil
     button._auraDurationObj = nil
     button._auraCooldownStart = nil
@@ -1176,6 +1176,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Aura tracking: check for active buff/debuff and decide whether it owns the primary swipe.
     local auraOverrideActive = false
     local keepSpellCooldownSwipe = buttonData.auraKeepSpellCooldownSwipe == true
+        and buttonData.addedAs ~= "aura"
         and buttonData.isPassive ~= true
         and not button._isBar
         and not button._isText
