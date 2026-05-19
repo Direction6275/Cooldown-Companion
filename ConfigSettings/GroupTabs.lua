@@ -619,7 +619,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
             or (settings.iconHeight or settings.buttonSize or ST.BUTTON_SIZE)
         local borderSize = settings.borderSize or ST.DEFAULT_BORDER_SIZE
         local borderRenderMode = ST.GetBorderRenderMode(settings)
-        local borderLayoutSize = ST.GetBorderLayoutSize(iconHolder, borderSize, borderRenderMode)
+        local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(iconHolder, borderSize, borderRenderMode)
         local bgColor = settings.backgroundColor or { 0, 0, 0, 0.5 }
         local borderColor = settings.borderColor or { 0, 0, 0, 1 }
         local tintColor = settings.iconTintColor or { 1, 1, 1, 1 }
@@ -743,6 +743,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
         RefreshIconPreview()
         CooldownCompanion:RefreshConfigPanel()
     end)
+    local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         local borderSlider = AceGUI:Create("Slider")
@@ -750,7 +751,9 @@ local function BuildTriggerIconAppearanceTab(container, group)
         borderSlider:SetSliderValues(0, 5, 0.1)
         borderSlider:SetValue(settings.borderSize or ST.DEFAULT_BORDER_SIZE)
         borderSlider:SetFullWidth(true)
+        borderSlider:SetDisabled(borderThicknessLocked)
         borderSlider:SetCallback("OnValueChanged", function(_, _, value)
+            if borderThicknessLocked then return end
             settings.borderSize = value
             RefreshIconPreview()
         end)
@@ -2645,6 +2648,7 @@ local function BuildAppearanceTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end, group.masqueEnabled)
+    local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         local borderSlider = AceGUI:Create("Slider")
@@ -2652,10 +2656,11 @@ local function BuildAppearanceTab(container)
         borderSlider:SetSliderValues(0, 5, 0.1)
         borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
         borderSlider:SetFullWidth(true)
-        if group.masqueEnabled then
+        if borderThicknessLocked then
             borderSlider:SetDisabled(true)
         end
         borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if borderThicknessLocked then return end
             style.borderSize = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)

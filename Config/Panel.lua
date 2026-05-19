@@ -948,6 +948,22 @@ local function CreateConfigPanel()
     end)
     cdmDisplayBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+    local function ApplyOnePixelBorderProfileMode()
+        if CooldownCompanion.RefreshAllGroups then
+            CooldownCompanion:RefreshAllGroups()
+        end
+        if CooldownCompanion.ApplyResourceBars then
+            CooldownCompanion:ApplyResourceBars()
+        end
+        if CooldownCompanion.ApplyCastBarSettings then
+            CooldownCompanion:ApplyCastBarSettings()
+        end
+        if CooldownCompanion.RefreshAllAuraTextureVisuals then
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end
+
     -- Cross-character browse button — between the CDM display toggle and CDM button
     local browseBtn = CreateFrame("Button", nil, content)
     browseBtn:SetSize(16, 16)
@@ -1092,10 +1108,42 @@ local function CreateConfigPanel()
     gearIcon:SetAllPoints()
     gearBtn:SetHighlightTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearBtn:GetHighlightTexture():SetAlpha(0.3)
+    -- Fire on mouse down so a second gear click closes the open dropdown instead of reopening it on mouse up.
+    gearBtn:RegisterForClicks("LeftButtonDown")
     CS.gearButton = gearBtn
 
+    local function IsGearDropdownOpen()
+        local listFrame = _G.DropDownList1
+        return CS.gearDropdownFrame and listFrame and listFrame:IsShown() and listFrame.dropdown == CS.gearDropdownFrame
+    end
+
+    local function HookGearDropdownHide()
+        local listFrame = _G.DropDownList1
+        if not listFrame or CS.gearDropdownHideHooked then return end
+        CS.gearDropdownHideHooked = true
+        listFrame:HookScript("OnHide", function(frame)
+            local currentGearButton = CS.gearButton
+            if frame.dropdown == CS.gearDropdownFrame and currentGearButton and MouseIsOver and MouseIsOver(currentGearButton) then
+                CS.gearDropdownClosedByGearClick = true
+            end
+        end)
+    end
+
     -- Gear dropdown menu
+    gearBtn:SetScript("OnMouseDown", function()
+        CS.gearDropdownWasOpenOnMouseDown = IsGearDropdownOpen()
+    end)
+
     gearBtn:SetScript("OnClick", function()
+        if CS.gearDropdownWasOpenOnMouseDown or CS.gearDropdownClosedByGearClick then
+            CS.gearDropdownWasOpenOnMouseDown = nil
+            CS.gearDropdownClosedByGearClick = nil
+            CloseDropDownMenus()
+            CS.gearDropdownClosedByGearClick = nil
+            return
+        end
+        CS.gearDropdownWasOpenOnMouseDown = nil
+
         if not CS.gearDropdownFrame then
             CS.gearDropdownFrame = CreateFrame("Frame", "CDCGearDropdown", UIParent, "UIDropDownMenuTemplate")
         end
@@ -1131,36 +1179,53 @@ local function CreateConfigPanel()
             UIDropDownMenu_AddButton(info2, level)
 
             local info3 = UIDropDownMenu_CreateInfo()
-            info3.text = "  Generate Bug Report"
-            info3.notCheckable = true
+            info3.text = "  Profile One-pixel Borders"
+            info3.checked = function() return ST.IsProfileOnePixelBordersEnabled() end
+            info3.isNotRadio = true
+            info3.keepShownOnClick = true
+            info3.tooltipTitle = "Profile One-pixel Borders"
+            info3.tooltipText = "Render visible addon borders in this profile at one-pixel thickness. While enabled, all addon border size settings are disabled."
+            info3.tooltipOnButton = true
             info3.func = function()
-                CloseDropDownMenus()
-                ShowPopupAboveConfig("CDC_DIAGNOSTIC_EXPORT")
+                local profile = CooldownCompanion.db and CooldownCompanion.db.profile
+                if not profile then return end
+                profile.profileOnePixelBorders = not profile.profileOnePixelBorders
+                ApplyOnePixelBorderProfileMode()
             end
             UIDropDownMenu_AddButton(info3, level)
 
             local info4 = UIDropDownMenu_CreateInfo()
-            info4.text = "  Replay Tutorial"
+            info4.text = "  Generate Bug Report"
             info4.notCheckable = true
             info4.func = function()
+                CloseDropDownMenus()
+                ShowPopupAboveConfig("CDC_DIAGNOSTIC_EXPORT")
+            end
+            UIDropDownMenu_AddButton(info4, level)
+
+            local info5 = UIDropDownMenu_CreateInfo()
+            info5.text = "  Replay Tutorial"
+            info5.notCheckable = true
+            info5.func = function()
                 CloseDropDownMenus()
                 if StartFirstIconPanelTutorial then
                     StartFirstIconPanelTutorial(true)
                 end
             end
-            UIDropDownMenu_AddButton(info4, level)
+            UIDropDownMenu_AddButton(info5, level)
 
-            local info5 = UIDropDownMenu_CreateInfo()
-            info5.text = "  Join Discord"
-            info5.notCheckable = true
-            info5.func = function()
+            local info6 = UIDropDownMenu_CreateInfo()
+            info6.text = "  Join Discord"
+            info6.notCheckable = true
+            info6.func = function()
                 CloseDropDownMenus()
                 ShowPopupAboveConfig("CDC_DISCORD_INVITE")
             end
-            UIDropDownMenu_AddButton(info5, level)
+            UIDropDownMenu_AddButton(info6, level)
         end, "MENU")
         CS.gearDropdownFrame:SetFrameStrata("FULLSCREEN_DIALOG")
         ToggleDropDownMenu(1, nil, CS.gearDropdownFrame, gearBtn, 0, 0)
+        HookGearDropdownHide()
     end)
 
     -- Mini frame for collapsed state

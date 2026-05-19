@@ -867,7 +867,7 @@ function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
     local width, height = CooldownCompanion.GetTriggerIconDimensions(settings)
     local borderSize = settings.borderSize or 0
     local borderRenderMode = ST.GetBorderRenderMode(settings)
-    local borderLayoutSize = ST.GetBorderLayoutSize(iconFrame, borderSize, borderRenderMode)
+    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(iconFrame, borderSize, borderRenderMode)
     local iconTint = settings.iconTintColor or { 1, 1, 1, 1 }
     local backgroundColor = settings.backgroundColor or { 0, 0, 0, 0.5 }
     local borderColor = settings.borderColor or { 0, 0, 0, 1 }

@@ -333,7 +333,7 @@ local function LayoutResourceAuraStackSegments(holder, settings, orientationOver
     for i, auraSeg in ipairs(holder.auraStackSegments) do
         local baseSeg = holder.segments[i]
         if baseSeg then
-            local inset = (borderStyle == "pixel") and ST.GetBorderLayoutSize(baseSeg, borderSize, borderRenderMode) or 0
+            local inset = (borderStyle == "pixel") and ST.GetEffectiveBorderLayoutSize(baseSeg, borderSize, borderRenderMode) or 0
             if inset < 0 then inset = 0 end
 
             auraSeg:ClearAllPoints()
@@ -467,7 +467,7 @@ local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, ma
     local style = GetResourceDisplayStyle(settings)
     local borderStyle = style and style.borderStyle or "pixel"
     local borderRenderMode = ST.GetBorderRenderMode(style)
-    local borderSize = (borderStyle == "pixel") and ST.GetBorderLayoutSize(bar, style and style.borderSize or 1, borderRenderMode) or 0
+    local borderSize = (borderStyle == "pixel") and ST.GetEffectiveBorderLayoutSize(bar, style and style.borderSize or 1, borderRenderMode) or 0
     local width = bar:GetWidth() or 0
     local height = bar:GetHeight() or 0
     if width <= 0 or height <= 0 then
@@ -542,7 +542,7 @@ local function CreatePixelBorders(parent)
 end
 
 local function ApplyPixelBorders(borders, parent, color, size, renderMode)
-    ST.ApplyBorderTextures(borders, parent, color, size, renderMode)
+    ST.ApplyBorderTextures(borders, parent, color, size, ST.GetEffectiveBorderRenderMode(renderMode, nil, size))
 end
 
 local function HidePixelBorders(borders)
@@ -602,7 +602,7 @@ local function LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, barTextur
     if style == "pulsingOverlay" then
         indicator:SetFrameLevel(frame:GetFrameLevel() + 3)
         if borderStyle == "pixel" then
-            local inset = ST.GetBorderLayoutSize(frame, borderSize, borderRenderMode)
+            local inset = ST.GetEffectiveBorderLayoutSize(frame, borderSize, borderRenderMode)
             indicator:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)
             indicator:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset, inset)
         else
@@ -734,7 +734,7 @@ local function LayoutCustomAuraContinuousThresholdOverlay(bar, barTexture, borde
     end
     overlay:ClearAllPoints()
     if borderStyle == "pixel" then
-        local inset = ST.GetBorderLayoutSize(bar, borderSize, borderRenderMode)
+        local inset = ST.GetEffectiveBorderLayoutSize(bar, borderSize, borderRenderMode)
         overlay:SetPoint("TOPLEFT", bar, "TOPLEFT", inset, -inset)
         overlay:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -inset, inset)
     else
@@ -911,7 +911,7 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, or
                 local thresholdSeg = holder.thresholdSegments[i]
                 thresholdSeg:ClearAllPoints()
                 if borderStyle == "pixel" then
-                    local inset = ST.GetBorderLayoutSize(seg, borderSize, borderRenderMode)
+                    local inset = ST.GetEffectiveBorderLayoutSize(seg, borderSize, borderRenderMode)
                     thresholdSeg:SetPoint("TOPLEFT", seg, "TOPLEFT", inset, -inset)
                     thresholdSeg:SetPoint("BOTTOMRIGHT", seg, "BOTTOMRIGHT", -inset, inset)
                 else
@@ -1054,7 +1054,7 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
         local ov = holder.overlaySegments[i]
         ov:ClearAllPoints()
         if borderStyle == "pixel" then
-            local inset = ST.GetBorderLayoutSize(seg, borderSize, borderRenderMode)
+            local inset = ST.GetEffectiveBorderLayoutSize(seg, borderSize, borderRenderMode)
             ov:SetPoint("TOPLEFT", seg, "TOPLEFT", inset, -inset)
             ov:SetPoint("BOTTOMRIGHT", seg, "BOTTOMRIGHT", -inset, inset)
         else
@@ -1068,7 +1068,7 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
             local thresholdSeg = holder.thresholdSegments[i]
             thresholdSeg:ClearAllPoints()
             if borderStyle == "pixel" then
-                local inset = ST.GetBorderLayoutSize(seg, borderSize, borderRenderMode)
+                local inset = ST.GetEffectiveBorderLayoutSize(seg, borderSize, borderRenderMode)
                 thresholdSeg:SetPoint("TOPLEFT", seg, "TOPLEFT", inset, -inset)
                 thresholdSeg:SetPoint("BOTTOMRIGHT", seg, "BOTTOMRIGHT", -inset, inset)
             else

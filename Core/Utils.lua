@@ -35,6 +35,10 @@ ST.EDGE_ANCHOR_SPEC = {
 
 local BORDER_EDGE_NAMES = { "TOP", "BOTTOM", "LEFT", "RIGHT" }
 
+local function GetBorderSize(size, fallback)
+    return tonumber(size) or fallback or 1
+end
+
 function ST.GetBorderRenderMode(source, key)
     if type(source) == "table" then
         source = source[key or "borderRenderMode"]
@@ -45,12 +49,36 @@ function ST.GetBorderRenderMode(source, key)
     return ST.BORDER_RENDER_MODE_CUSTOM
 end
 
+function ST.IsProfileOnePixelBordersEnabled()
+    local addon = ST.Addon
+    local db = addon and addon.db and addon.db.profile
+    return db and db.profileOnePixelBorders == true
+end
+
+function ST.IsBorderThicknessLocked()
+    return ST.IsProfileOnePixelBordersEnabled()
+end
+
+function ST.GetEffectiveBorderRenderMode(source, key, size)
+    local configuredMode = ST.GetBorderRenderMode(source, key)
+    if not ST.IsProfileOnePixelBordersEnabled() then
+        return configuredMode
+    end
+
+    -- Preserve size-zero hidden borders for existing custom-thickness surfaces.
+    if configuredMode == ST.BORDER_RENDER_MODE_CUSTOM and GetBorderSize(size, 1) <= 0 then
+        return ST.BORDER_RENDER_MODE_CUSTOM
+    end
+
+    return ST.BORDER_RENDER_MODE_CRISP
+end
+
 function ST.IsCrispBorderRenderMode(source, key)
     return ST.GetBorderRenderMode(source, key) == ST.BORDER_RENDER_MODE_CRISP
 end
 
-local function GetBorderSize(size, fallback)
-    return tonumber(size) or fallback or 1
+function ST.IsEffectiveCrispBorderRenderMode(source, key, size)
+    return ST.GetEffectiveBorderRenderMode(source, key, size) == ST.BORDER_RENDER_MODE_CRISP
 end
 
 local function GetOnePhysicalPixelSize(region)
@@ -62,6 +90,10 @@ function ST.GetBorderLayoutSize(region, size, mode)
         return GetOnePhysicalPixelSize(region)
     end
     return GetBorderSize(size, 1)
+end
+
+function ST.GetEffectiveBorderLayoutSize(region, size, source, key)
+    return ST.GetBorderLayoutSize(region, size, ST.GetEffectiveBorderRenderMode(source, key, size))
 end
 
 local function GetEdgeTexture(textures, index)

@@ -276,7 +276,8 @@ end
 
 local function ApplyPreviewEdgeBorder(frame, size, color)
     if not (frame and frame.borderTextures) then return end
-    ST.ApplyBorderTextures(frame.borderTextures, frame, color or { 0, 0, 0, 1 }, size or 1, frame._previewBorderRenderMode)
+    local renderMode = ST.GetEffectiveBorderRenderMode(frame._previewBorderRenderMode, nil, size)
+    ST.ApplyBorderTextures(frame.borderTextures, frame, color or { 0, 0, 0, 1 }, size or 1, renderMode)
 end
 
 local function HidePreviewEdgeBorder(frame)
@@ -303,10 +304,10 @@ local function StyleMirroredIconFrame(iconFrame, button, group)
 
     local borderSize = GetSourceIconBorderSize(button, style.borderSize or ST.DEFAULT_BORDER_SIZE or 1)
     local borderRenderMode = ST.GetBorderRenderMode(style)
-    local borderLayoutSize = ST.GetBorderLayoutSize(iconFrame, borderSize, borderRenderMode)
+    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(iconFrame, borderSize, borderRenderMode)
     local bgColor = CloneColor(style.backgroundColor, { 0, 0, 0, 0.5 })
     local borderColor = CloneColor(style.borderColor, { 0, 0, 0, 1 })
-    local showBorder = (borderSize > 0 or ST.IsCrispBorderRenderMode(borderRenderMode)) and ((borderColor[4] ~= nil and borderColor[4] > 0) or borderColor[4] == nil)
+    local showBorder = (borderSize > 0 or ST.IsEffectiveCrispBorderRenderMode(borderRenderMode, nil, borderSize)) and ((borderColor[4] ~= nil and borderColor[4] > 0) or borderColor[4] == nil)
 
     if button and button.borderTextures then
         local anyShown = false

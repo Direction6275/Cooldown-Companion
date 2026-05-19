@@ -410,6 +410,7 @@ local function BuildTextAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
+    local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         local borderSlider = AceGUI:Create("Slider")
@@ -417,7 +418,9 @@ local function BuildTextAppearanceTab(container, group, style)
         borderSlider:SetSliderValues(0, 5, 0.1)
         borderSlider:SetValue(style.textBorderSize or 0)
         borderSlider:SetFullWidth(true)
+        borderSlider:SetDisabled(borderThicknessLocked)
         borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if borderThicknessLocked then return end
             style.textBorderSize = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
