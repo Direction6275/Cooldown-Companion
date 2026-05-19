@@ -115,6 +115,9 @@ local function OpenAuraTexturePicker(opts)
     window:EnableResize(false)
     pickerWindow = window
     CS.auraTexturePickerWindow = window
+    if CS.RegisterConfigDragAlphaFrame then
+        CS.RegisterConfigDragAlphaFrame(window.frame)
+    end
 
     local configFrame = CS.configFrame
     if configFrame and configFrame.frame and configFrame.frame:IsShown() then
@@ -670,6 +673,9 @@ local function OpenAuraTexturePicker(opts)
         ClearStagedPreview()
         GameTooltip:Hide()
         CleanupRawGrid()
+        if CS.UnregisterConfigDragAlphaFrame then
+            CS.UnregisterConfigDragAlphaFrame(widget.frame)
+        end
         widget._rebind = nil
         widget._refreshEntries = nil
         widget._targetGroupId = nil

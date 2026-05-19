@@ -654,6 +654,9 @@ local function OpenFormatEditor(style, groupId, opts)
     window:PauseLayout()
     formatEditorFrame = window
     CS.formatEditorFrame = window
+    if CS.RegisterConfigDragAlphaFrame then
+        CS.RegisterConfigDragAlphaFrame(window.frame)
+    end
 
     -- Anchor to the right of the config panel
     local configFrame = CS.configFrame
@@ -1104,6 +1107,9 @@ local function OpenFormatEditor(style, groupId, opts)
     window:SetCallback("OnClose", function(widget)
         -- Stop pulse animation
         widget.frame:SetScript("OnUpdate", nil)
+        if CS.UnregisterConfigDragAlphaFrame then
+            CS.UnregisterConfigDragAlphaFrame(widget.frame)
+        end
         -- Release save button (not part of AceGUI layout)
         if widget._saveBtn then
             AceGUI:Release(widget._saveBtn)
