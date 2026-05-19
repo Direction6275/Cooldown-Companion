@@ -488,6 +488,8 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
                             button._inPandemic = false
                             button._durationObj = nil
                             button._auraDurationObj = nil
+                            button._auraCooldownStart = nil
+                            button._auraCooldownDuration = nil
                             button._auraPrimarySwipeActive = nil
                             button.cooldown:SetCooldown(0, 0)
                             button.cooldown:Hide()

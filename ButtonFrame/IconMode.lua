@@ -266,6 +266,14 @@ local function SetIconFillValue(button)
             return
         end
 
+        if button._auraCooldownStart and button._auraCooldownDuration and button._auraCooldownDuration > 0 then
+            local elapsed = GetTime() - button._auraCooldownStart
+            if elapsed < 0 then elapsed = 0 end
+            if elapsed > button._auraCooldownDuration then elapsed = button._auraCooldownDuration end
+            button.iconFill:SetValue(ResolveIconFillTimerValue(button, elapsed / button._auraCooldownDuration))
+            return
+        end
+
         if button._auraPrimarySwipeActive == true and SetIconFillFromCooldownWidget(button) then
             return
         end
@@ -421,6 +429,9 @@ local function UpdateBlizzardAuraSwipe(button, style)
     elseif button._auraDurationObj then
         overlay:SetCooldownFromDurationObject(button._auraDurationObj)
         rendered = overlay:IsShown()
+    elseif button._auraCooldownStart and button._auraCooldownDuration and button._auraCooldownDuration > 0 then
+        overlay:SetCooldown(button._auraCooldownStart, button._auraCooldownDuration)
+        rendered = true
     elseif button._auraPrimarySwipeActive == true and button._durationObj then
         overlay:SetCooldownFromDurationObject(button._durationObj)
         rendered = overlay:IsShown()
@@ -700,6 +711,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button._auraUnit = buttonData.auraUnit or "player"
     button._auraActive = false
     button._auraDurationObj = nil
+    button._auraCooldownStart = nil
+    button._auraCooldownDuration = nil
     button._auraPrimarySwipeActive = nil
     button._auraTrackingReady = buttonData.isPassive == true
     button._showingAuraIcon = false
@@ -1014,7 +1027,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     -- Charge-visual suppression: when toggle is active and charges remain,
     -- hide the swipe fill (dark overlay) but keep the edge visible.
     if UsesChargeBehavior(buttonData) and buttonData.hideCooldownWithCharges
-            and not HasItemFallbacks(buttonData) and not button._auraActive then
+            and not HasItemFallbacks(buttonData) and button._auraPrimarySwipeActive ~= true then
         local hasChargesRemaining = (button._chargeState ~= CHARGE_STATE_ZERO)
         if hasChargesRemaining ~= button._hideCooldownChargesActive then
             button._hideCooldownChargesActive = hasChargesRemaining
@@ -1297,6 +1310,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._itemCount = nil
     button._auraActive = nil
     button._auraDurationObj = nil
+    button._auraCooldownStart = nil
+    button._auraCooldownDuration = nil
     button._auraPrimarySwipeActive = nil
     button._showingAuraIcon = nil
     button._auraViewerFrame = nil

@@ -1136,6 +1136,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local prevAuraDurationObj = button._auraActive and (button._auraDurationObj or button._durationObj) or nil
     button._durationObj = nil
     button._auraDurationObj = nil
+    button._auraCooldownStart = nil
+    button._auraCooldownDuration = nil
     button._auraPrimarySwipeActive = nil
     button._cooldownDeferred = nil
     button._cooldownState = COOLDOWN_STATE_READY
@@ -1354,8 +1356,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                         if durMs > 0 and (startMs + durMs) > now * 1000 then
                             local vUnit = viewerFrame.auraDataUnit or auraUnit
                             if vUnit == configUnit then
+                                local auraStart = startMs / 1000
+                                local auraDuration = durMs / 1000
+                                button._auraCooldownStart = auraStart
+                                button._auraCooldownDuration = auraDuration
                                 if auraPrimarySwipeAllowed then
-                                    button.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
+                                    button.cooldown:SetCooldown(auraStart, auraDuration)
                                 end
                                 button._auraUnit = vUnit
                                 auraOverrideActive = true
@@ -1618,7 +1624,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         else
             button._auraGraceStart = nil
             if button._targetSwitchAt then
-                if auraOverrideActive and (button._auraDurationObj or button._durationObj or barAuraStackConfigured) then
+                if auraOverrideActive and (button._auraDurationObj or button._auraCooldownDuration or button._durationObj or barAuraStackConfigured) then
                     -- Primary path provided fresh aura data: hold complete
                     button._targetSwitchAt = nil
                     button._targetSwitchDataReceived = nil
