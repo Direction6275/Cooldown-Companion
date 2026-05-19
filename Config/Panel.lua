@@ -948,22 +948,6 @@ local function CreateConfigPanel()
     end)
     cdmDisplayBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    local function ApplyOnePixelBorderProfileMode()
-        if CooldownCompanion.RefreshAllGroups then
-            CooldownCompanion:RefreshAllGroups()
-        end
-        if CooldownCompanion.ApplyResourceBars then
-            CooldownCompanion:ApplyResourceBars()
-        end
-        if CooldownCompanion.ApplyCastBarSettings then
-            CooldownCompanion:ApplyCastBarSettings()
-        end
-        if CooldownCompanion.RefreshAllAuraTextureVisuals then
-            CooldownCompanion:RefreshAllAuraTextureVisuals()
-        end
-        CooldownCompanion:RefreshConfigPanel()
-    end
-
     -- Cross-character browse button — between the CDM display toggle and CDM button
     local browseBtn = CreateFrame("Button", nil, content)
     browseBtn:SetSize(16, 16)
@@ -1123,7 +1107,10 @@ local function CreateConfigPanel()
         CS.gearDropdownHideHooked = true
         listFrame:HookScript("OnHide", function(frame)
             local currentGearButton = CS.gearButton
-            if frame.dropdown == CS.gearDropdownFrame and currentGearButton and MouseIsOver and MouseIsOver(currentGearButton) then
+            local gearClickHidden = currentGearButton
+                and MouseIsOver and MouseIsOver(currentGearButton)
+                and IsMouseButtonDown and IsMouseButtonDown("LeftButton")
+            if frame.dropdown == CS.gearDropdownFrame and gearClickHidden then
                 CS.gearDropdownClosedByGearClick = true
             end
         end)
@@ -1184,13 +1171,10 @@ local function CreateConfigPanel()
             info3.isNotRadio = true
             info3.keepShownOnClick = true
             info3.tooltipTitle = "Profile One-pixel Borders"
-            info3.tooltipText = "Render visible addon borders in this profile at one-pixel thickness. While enabled, all addon border size settings are disabled."
+            info3.tooltipText = "Use one-pixel borders for this profile's panels, resource bars, and cast bars. Border size controls for those borders are disabled while this is on."
             info3.tooltipOnButton = true
             info3.func = function()
-                local profile = CooldownCompanion.db and CooldownCompanion.db.profile
-                if not profile then return end
-                profile.profileOnePixelBorders = not profile.profileOnePixelBorders
-                ApplyOnePixelBorderProfileMode()
+                CooldownCompanion:SetProfileOnePixelBordersEnabled(not ST.IsProfileOnePixelBordersEnabled())
             end
             UIDropDownMenu_AddButton(info3, level)
 

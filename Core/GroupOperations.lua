@@ -103,6 +103,34 @@ function CooldownCompanion:RefreshAllMedia()
     self:ApplyCastBarSettings()
 end
 
+function CooldownCompanion:ApplyProfileOnePixelBorderMode(opts)
+    if self.RefreshAllGroups then
+        self:RefreshAllGroups()
+    end
+    if self.ApplyResourceBars then
+        self:ApplyResourceBars()
+    end
+    if self.ApplyCastBarSettings then
+        self:ApplyCastBarSettings()
+    end
+    if self.RefreshAllAuraTextureVisuals then
+        self:RefreshAllAuraTextureVisuals()
+    end
+    if not opts or opts.refreshConfig ~= false then
+        if self.RefreshConfigPanel then
+            self:RefreshConfigPanel()
+        end
+    end
+end
+
+function CooldownCompanion:SetProfileOnePixelBordersEnabled(enabled, opts)
+    local profile = self.db and self.db.profile
+    if not profile then return false end
+    profile.profileOnePixelBorders = enabled == true
+    self:ApplyProfileOnePixelBorderMode(opts)
+    return true
+end
+
 function CooldownCompanion:ClearUnsupportedProfileRuntime()
     if InCombatLockdown() then
         self._pendingUnsupportedLegacyHide = true
