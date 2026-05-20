@@ -30,6 +30,7 @@ local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
 local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
 local AddPreviewToggleButton = ST._AddPreviewToggleButton
+local AddPreviewBadge = ST._AddPreviewBadge
 local RefreshConfigPanelForPreviewToggle = ST._RefreshConfigPanelForPreviewToggle
 local CleanRecycledEntry = ST._CleanRecycledEntry
 local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
@@ -3617,21 +3618,18 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
                 hidePrimaryColorPicker = not isSpellCustomBar,
             })
             BuildBarAuraPulseControls(panel, customBars[cabIdx], cabApplyBars)
-
-            if AddPreviewToggleButton then
-                AddPreviewToggleButton(panel, "Preview Active Aura Effects", function()
-                    return CooldownCompanion:IsCustomAuraBarActivePreviewActive(customBars[cabIdx])
-                end, function(show)
-                    CooldownCompanion:SetCustomAuraBarActivePreview(customBars[cabIdx], show)
-                end)
-            end
         end
 
-        local activeAuraAdvExpanded = AddAdvancedToggle(activeAuraCb, "rbCabActiveAura_" .. capturedKey, infoButtons, activeAuraEnabled, {
+        local _, activeAuraAdvBtn = AddAdvancedToggle(activeAuraCb, "rbCabActiveAura_" .. capturedKey, infoButtons, activeAuraEnabled, {
             title = "Active Aura Indicator Advanced",
             build = BuildCustomBarActiveAuraAdvanced,
         })
-        if not (activeAuraAdvExpanded and activeAuraEnabled) then
+        AddPreviewBadge(activeAuraCb, activeAuraAdvBtn, "Preview Active Aura Effects", function()
+            return CooldownCompanion:IsCustomAuraBarActivePreviewActive(customBars[cabIdx])
+        end, function(show)
+            CooldownCompanion:SetCustomAuraBarActivePreview(customBars[cabIdx], show)
+        end, activeAuraEnabled)
+        if not activeAuraEnabled then
             CooldownCompanion:SetCustomAuraBarActivePreview(customBars[cabIdx], false)
         end
 
@@ -3662,21 +3660,18 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
 
                 BuildPandemicBarControls(panel, customBars[cabIdx], cabApplyBars)
                 BuildPandemicBarPulseControls(panel, customBars[cabIdx], cabApplyBars)
-
-                if AddPreviewToggleButton then
-                    AddPreviewToggleButton(panel, "Preview Pandemic Effects", function()
-                        return CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(customBars[cabIdx])
-                    end, function(show)
-                        CooldownCompanion:SetCustomAuraBarPandemicPreview(customBars[cabIdx], show)
-                    end)
-                end
             end
 
-            local pandemicAdvExpanded = AddAdvancedToggle(pandemicCb, "rbCabPandemic_" .. capturedKey, infoButtons, pandemicEnabled, {
+            local _, pandemicAdvBtn = AddAdvancedToggle(pandemicCb, "rbCabPandemic_" .. capturedKey, infoButtons, pandemicEnabled, {
                 title = "Pandemic Indicator Advanced",
                 build = BuildCustomBarPandemicAdvanced,
             })
-            if not (pandemicAdvExpanded and pandemicEnabled) then
+            AddPreviewBadge(pandemicCb, pandemicAdvBtn, "Preview Pandemic Effects", function()
+                return CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(customBars[cabIdx])
+            end, function(show)
+                CooldownCompanion:SetCustomAuraBarPandemicPreview(customBars[cabIdx], show)
+            end, pandemicEnabled)
+            if not pandemicEnabled then
                 CooldownCompanion:SetCustomAuraBarPandemicPreview(customBars[cabIdx], false)
             end
         else
@@ -3791,30 +3786,27 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
                 end)
                 panel:AddChild(speedSlider)
             end
-
-            if AddPreviewToggleButton then
-                AddPreviewToggleButton(panel, "Preview Indicator", function()
-                    return CS.customBarIndicatorPreviewActive == true and CooldownCompanion:IsResourceBarPreviewActive()
-                end, function(show)
-                    CS.customBarIndicatorPreviewActive = show and true or nil
-                    if show then
-                        CooldownCompanion:StartResourceBarPreview()
-                    else
-                        CooldownCompanion:StopResourceBarPreview()
-                    end
-                end)
-            end
         end
 
-        local glowAdvExpanded, glowAdvBtn = AddAdvancedToggle(glowCb, "rbCabMaxStacksIndicator_" .. capturedKey, infoButtons, cab.maxStacksGlowEnabled == true, {
+        local _, glowAdvBtn = AddAdvancedToggle(glowCb, "rbCabMaxStacksIndicator_" .. capturedKey, infoButtons, cab.maxStacksGlowEnabled == true, {
             title = "Max Stack Indicator Advanced",
             build = BuildMaxStackIndicatorAdvanced,
         })
-        if not glowAdvExpanded and CS.customBarIndicatorPreviewActive and CooldownCompanion:IsResourceBarPreviewActive() then
+        local glowPreviewBtn = AddPreviewBadge(glowCb, glowAdvBtn, "Preview Indicator", function()
+            return CS.customBarIndicatorPreviewActive == true and CooldownCompanion:IsResourceBarPreviewActive()
+        end, function(show)
+            CS.customBarIndicatorPreviewActive = show and true or nil
+            if show then
+                CooldownCompanion:StartResourceBarPreview()
+            else
+                CooldownCompanion:StopResourceBarPreview()
+            end
+        end, cab.maxStacksGlowEnabled == true)
+        if cab.maxStacksGlowEnabled ~= true and CS.customBarIndicatorPreviewActive and CooldownCompanion:IsResourceBarPreviewActive() then
             CooldownCompanion:StopResourceBarPreview()
         end
 
-        CreateInfoButton(glowCb.frame, glowAdvBtn, "LEFT", "RIGHT", 4, 0, {
+        CreateInfoButton(glowCb.frame, glowPreviewBtn or glowAdvBtn, "LEFT", "RIGHT", 4, 0, {
             "Max Stack Indicator",
             {"Due to combat restrictions, individual bar segments cannot be highlighted independently.", 1, 1, 1, true},
             " ",

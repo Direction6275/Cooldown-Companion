@@ -163,6 +163,15 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
             colBtn:Hide()
             colBtn:SetParent(nil)
         end
+        local previewBtn = frame._cdcPreviewBtn
+        if previewBtn then
+            previewBtn:ClearAllPoints()
+            previewBtn:Hide()
+            previewBtn:SetParent(nil)
+            if CS.activePreviewBadgeButton == previewBtn then
+                CS.activePreviewBadgeButton = nil
+            end
+        end
     end)
 
     -- Hide when parent setting is disabled

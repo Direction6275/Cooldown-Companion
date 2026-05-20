@@ -105,6 +105,110 @@ local function AddPreviewToggleButton(container, offLabel, isActiveFn, setActive
     return btn
 end
 
+local function SetPreviewBadgeActive(btn, active)
+    if btn then
+        if not btn._activeHighlight then
+            local activeHighlight = btn:CreateTexture(nil, "BACKGROUND")
+            activeHighlight:SetPoint("TOPLEFT", -1, 1)
+            activeHighlight:SetPoint("BOTTOMRIGHT", 1, -1)
+            activeHighlight:SetColorTexture(0.85, 0.65, 0.0, 0.6)
+            activeHighlight:Hide()
+            btn._activeHighlight = activeHighlight
+        end
+
+        if active then
+            btn._activeHighlight:Show()
+        else
+            btn._activeHighlight:Hide()
+        end
+    end
+
+    if btn and btn._icon then
+        if active then
+            btn._icon:SetVertexColor(1, 0.82, 0, 1)
+        else
+            btn._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
+        end
+    end
+end
+
+local function SetActivePreviewBadgeButton(btn, active)
+    SetPreviewBadgeActive(btn, active)
+
+    if active then
+        local previousBtn = CS.activePreviewBadgeButton
+        if previousBtn and previousBtn ~= btn then
+            SetPreviewBadgeActive(previousBtn, false)
+        end
+        CS.activePreviewBadgeButton = btn
+    elseif CS.activePreviewBadgeButton == btn then
+        CS.activePreviewBadgeButton = nil
+    end
+end
+
+local function AddPreviewBadge(parentWidget, anchorAfterFrame, label, isActiveFn, setActiveFn, enabled)
+    if not enabled
+        or not (parentWidget and parentWidget.frame and parentWidget.checkbg and parentWidget.text)
+        or type(isActiveFn) ~= "function"
+        or type(setActiveFn) ~= "function"
+    then
+        return nil
+    end
+
+    local frame = parentWidget.frame
+    local btn = frame._cdcPreviewBtn
+    if not btn then
+        btn = CreateFrame("Button", nil, frame)
+        btn:SetSize(14, 14)
+        btn._icon = btn:CreateTexture(nil, "ARTWORK")
+        btn._icon:SetSize(13, 13)
+        btn._icon:SetPoint("CENTER")
+        btn._icon:SetAtlas("CreditsScreen-Assets-Buttons-Play", false)
+        frame._cdcPreviewBtn = btn
+    end
+
+    btn:SetParent(frame)
+    btn:ClearAllPoints()
+    if anchorAfterFrame and anchorAfterFrame:IsShown() then
+        btn:SetPoint("LEFT", anchorAfterFrame, "RIGHT", 4, 0)
+    else
+        btn:SetPoint("LEFT", parentWidget.checkbg, "RIGHT", parentWidget.text:GetStringWidth() + 6, 0)
+    end
+    btn:Show()
+    btn._icon:Show()
+
+    SetActivePreviewBadgeButton(btn, isActiveFn())
+    btn:SetScript("OnClick", function()
+        local showPreview = not isActiveFn()
+        if showPreview and CooldownCompanion.ClearAllConfigPreviews then
+            CooldownCompanion:ClearAllConfigPreviews()
+        end
+        setActiveFn(showPreview)
+        SetActivePreviewBadgeButton(btn, isActiveFn())
+    end)
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(label)
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    local advancedBtn = frame._cdcAdvancedBtn
+    if not (advancedBtn and advancedBtn:GetParent() == frame) then
+        parentWidget:SetCallback("OnRelease", function()
+            btn:ClearAllPoints()
+            btn:Hide()
+            btn:SetParent(nil)
+            if CS.activePreviewBadgeButton == btn then
+                CS.activePreviewBadgeButton = nil
+            end
+        end)
+    end
+
+    return btn
+end
+
 local function AddConditionalPreviewButton(container, label, previewKind, opts)
     if not (container and CooldownCompanion.SetConditionalVisualPreviewActive and CooldownCompanion.IsConditionalVisualPreviewActive) then
         return nil
@@ -137,6 +241,40 @@ local function AddConditionalPreviewButton(container, label, previewKind, opts)
             )
         end
     end)
+end
+
+local function AddConditionalPreviewBadge(parentWidget, anchorAfterFrame, label, previewKind, enabled, opts)
+    if not (CooldownCompanion.SetConditionalVisualPreviewActive and CooldownCompanion.IsConditionalVisualPreviewActive) then
+        return nil
+    end
+
+    local function ResolveTarget()
+        local groupId = ResolvePreviewOption(opts and opts.groupId) or CS.selectedGroup
+        local buttonIndex = ResolvePreviewOption(opts and opts.buttonIndex)
+        if opts and opts.requireButton and not buttonIndex then
+            return nil, nil
+        end
+        return groupId, buttonIndex
+    end
+
+    return AddPreviewBadge(parentWidget, anchorAfterFrame, label, function()
+        local groupId, buttonIndex = ResolveTarget()
+        if not groupId then
+            return false
+        end
+        return CooldownCompanion:IsConditionalVisualPreviewActive(groupId, buttonIndex, previewKind)
+    end, function(show)
+        local groupId, buttonIndex = ResolveTarget()
+        if groupId then
+            CooldownCompanion:SetConditionalVisualPreviewActive(
+                groupId,
+                buttonIndex,
+                previewKind,
+                show,
+                opts and opts.sampleState
+            )
+        end
+    end, enabled)
 end
 
 local function BuildCooldownTextControls(container, styleTable, refreshCallback, opts)
@@ -1331,8 +1469,10 @@ end
 ST._BuildCooldownTextControls = BuildCooldownTextControls
 ST._AddDurationFormatDropdown = AddDurationFormatDropdown
 ST._AddPreviewToggleButton = AddPreviewToggleButton
+ST._AddPreviewBadge = AddPreviewBadge
 ST._RefreshConfigPanelForPreviewToggle = RefreshConfigPanelForPreviewToggle
 ST._AddConditionalPreviewButton = AddConditionalPreviewButton
+ST._AddConditionalPreviewBadge = AddConditionalPreviewBadge
 ST._BuildAuraTextControls = BuildAuraTextControls
 ST._BuildAuraStackTextControls = BuildAuraStackTextControls
 ST._BuildKeybindTextControls = BuildKeybindTextControls
