@@ -4,10 +4,10 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 local FALLBACK_PANEL_WIDTH = 330
-local MIN_PANEL_HEIGHT = 220
+local MIN_PANEL_HEIGHT = 105
 local MAX_PANEL_HEIGHT = 610
 local FRAME_CHROME_HEIGHT = 57
-local CONTENT_HEIGHT_PADDING = 24
+local CONTENT_HEIGHT_PADDING = 6
 
 local advancedWindow = nil
 local activeDescriptor = nil
