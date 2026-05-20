@@ -635,6 +635,10 @@ end
 -- OPEN FORMAT EDITOR
 ------------------------------------------------------------------------
 local function OpenFormatEditor(style, groupId, opts)
+    if CS.CloseAdvancedSettingsPanel then
+        CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+    end
+
     -- If already open, bring to front and refresh
     if formatEditorFrame then
         formatEditorFrame:Show()

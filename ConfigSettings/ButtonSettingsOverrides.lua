@@ -134,7 +134,22 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
     fmtHeading:SetFullWidth(true)
     scroll:AddChild(fmtHeading)
 
-    local fmtPreviewAdvExpanded, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "buttonTextFormatPreview", infoButtons)
+    local function BuildFormatOverridePreviewAdvanced(panel)
+        if AddConditionalPreviewButton then
+            local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
+            AddConditionalPreviewButton(panel, "Preview Cooldown State", "cooldown", target)
+            AddConditionalPreviewButton(panel, "Preview Aura Duration Text", "aura_duration_text", target)
+            AddConditionalPreviewButton(panel, "Preview Aura Stack Text", "aura_stack_text", target)
+            AddConditionalPreviewButton(panel, "Preview Pandemic State", "pandemic", target)
+            AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable", target)
+            AddConditionalPreviewButton(panel, "Preview Out of Range State", "out_of_range", target)
+        end
+    end
+
+    local fmtPreviewAdvExpanded, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "buttonTextFormatPreview", infoButtons, nil, {
+        title = "Format Override Advanced",
+        build = BuildFormatOverridePreviewAdvanced,
+    })
     fmtPreviewAdvBtn:SetPoint("LEFT", fmtHeading.label, "RIGHT", 4, 0)
 
     local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtPreviewAdvBtn, "LEFT", "RIGHT", 4, 0, {
@@ -214,15 +229,6 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
         scroll:AddChild(clearBtn)
     end
 
-    if fmtPreviewAdvExpanded and AddConditionalPreviewButton then
-        local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
-        AddConditionalPreviewButton(scroll, "Preview Cooldown State", "cooldown", target)
-        AddConditionalPreviewButton(scroll, "Preview Aura Duration Text", "aura_duration_text", target)
-        AddConditionalPreviewButton(scroll, "Preview Aura Stack Text", "aura_stack_text", target)
-        AddConditionalPreviewButton(scroll, "Preview Pandemic State", "pandemic", target)
-        AddConditionalPreviewButton(scroll, "Preview Unusable State", "unusable", target)
-        AddConditionalPreviewButton(scroll, "Preview Out of Range State", "out_of_range", target)
-    end
 end
 
 local function BuildSingleBarColorControl(key, label, defaultColor)
@@ -365,7 +371,49 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                 local previewAdvExpanded
                 if PREVIEWABLE_OVERRIDE_SECTIONS[sectionId] then
                     local previewAdvBtn
-                    previewAdvExpanded, previewAdvBtn = AddAdvancedToggle(heading, "overridePreview_" .. sectionId, infoButtons)
+                    local function BuildOverridePreviewAdvanced(panel)
+                        if sectionId == "procGlow" and overrides.procGlowStyle ~= "none" then
+                            AddSelectedButtonPreviewToggle(panel, "Preview Proc Glow", "_procGlowPreview", CooldownCompanion.SetProcGlowPreview)
+                        elseif sectionId == "auraIndicator" and overrides.auraGlowStyle ~= "none" then
+                            AddSelectedButtonPreviewToggle(panel, "Preview Aura Glow", "_auraGlowPreview", CooldownCompanion.SetAuraGlowPreview)
+                        elseif sectionId == "pandemicGlow" and GetEffectiveOverrideValue("showPandemicGlow") ~= false then
+                            AddSelectedButtonPreviewToggle(panel, "Preview Pandemic Glow", "_pandemicPreview", CooldownCompanion.SetPandemicPreview)
+                        elseif sectionId == "barActiveAura" then
+                            AddSelectedBarAuraActivePreviewToggle(panel, "Preview Active Aura Effects")
+                        elseif sectionId == "pandemicBar" then
+                            AddSelectedButtonPreviewToggle(panel, "Preview Pandemic Effects", "_pandemicPreview", CooldownCompanion.SetPandemicPreview)
+                        elseif sectionId == "readyGlow" and overrides.readyGlowStyle and overrides.readyGlowStyle ~= "none" then
+                            AddSelectedButtonPreviewToggle(panel, "Preview Ready Glow Style", "_readyGlowPreview", CooldownCompanion.SetReadyGlowPreview)
+                        end
+
+                        if AddConditionalPreviewButton then
+                            local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
+                            if sectionId == "cooldownText" or sectionId == "cooldownSwipe" or sectionId == "desaturation" then
+                                AddConditionalPreviewButton(panel, "Preview Cooldown State", "cooldown", target)
+                            elseif sectionId == "iconFillTimer" and overrides.iconFillEnabled == true and group.masqueEnabled ~= true then
+                                AddConditionalPreviewButton(panel, "Preview Cooldown Fill", "cooldown", target)
+                                AddConditionalPreviewButton(panel, "Preview Aura Fill", "aura_duration_text", target)
+                            elseif sectionId == "auraText" or sectionId == "auraDurationSwipe" then
+                                AddConditionalPreviewButton(panel, "Preview Aura Duration Text", "aura_duration_text", target)
+                            elseif sectionId == "auraStackText" then
+                                AddConditionalPreviewButton(panel, "Preview Aura Stack Text", "aura_stack_text", target)
+                            elseif sectionId == "showOutOfRange" then
+                                AddConditionalPreviewButton(panel, "Preview Out of Range State", "out_of_range", target)
+                            elseif sectionId == "unusableDimming" then
+                                AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable", target)
+                            elseif sectionId == "iconTint" then
+                                AddConditionalPreviewButton(panel, "Preview Cooldown Tint", "cooldown", target)
+                                AddConditionalPreviewButton(panel, "Preview Aura Tint", "aura", target)
+                                AddConditionalPreviewButton(panel, "Preview Unusable Tint", "unusable", target)
+                                AddConditionalPreviewButton(panel, "Preview Out of Range Tint", "out_of_range", target)
+                            end
+                        end
+                    end
+
+                    previewAdvExpanded, previewAdvBtn = AddAdvancedToggle(heading, "overridePreview_" .. sectionId, infoButtons, nil, {
+                        title = sectionDef.label .. " Advanced",
+                        build = BuildOverridePreviewAdvanced,
+                    })
                     previewAdvBtn:SetPoint("LEFT", revertBtn, "RIGHT", 4, 0)
                     heading.right:ClearAllPoints()
                     heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
@@ -499,42 +547,6 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                             masqueEnabled = group.masqueEnabled == true,
                         })
 
-                        if previewAdvExpanded and sectionId == "procGlow" and overrides.procGlowStyle ~= "none" then
-                            AddSelectedButtonPreviewToggle(scroll, "Preview Proc Glow", "_procGlowPreview", CooldownCompanion.SetProcGlowPreview)
-                        elseif previewAdvExpanded and sectionId == "auraIndicator" and overrides.auraGlowStyle ~= "none" then
-                            AddSelectedButtonPreviewToggle(scroll, "Preview Aura Glow", "_auraGlowPreview", CooldownCompanion.SetAuraGlowPreview)
-                        elseif previewAdvExpanded and sectionId == "pandemicGlow" and GetEffectiveOverrideValue("showPandemicGlow") ~= false then
-                            AddSelectedButtonPreviewToggle(scroll, "Preview Pandemic Glow", "_pandemicPreview", CooldownCompanion.SetPandemicPreview)
-                        elseif previewAdvExpanded and sectionId == "barActiveAura" then
-                            AddSelectedBarAuraActivePreviewToggle(scroll, "Preview Active Aura Effects")
-                        elseif previewAdvExpanded and sectionId == "pandemicBar" then
-                            AddSelectedButtonPreviewToggle(scroll, "Preview Pandemic Effects", "_pandemicPreview", CooldownCompanion.SetPandemicPreview)
-                        elseif previewAdvExpanded and sectionId == "readyGlow" and overrides.readyGlowStyle and overrides.readyGlowStyle ~= "none" then
-                            AddSelectedButtonPreviewToggle(scroll, "Preview Ready Glow Style", "_readyGlowPreview", CooldownCompanion.SetReadyGlowPreview)
-                        end
-
-                        if previewAdvExpanded and AddConditionalPreviewButton then
-                            local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
-                            if sectionId == "cooldownText" or sectionId == "cooldownSwipe" or sectionId == "desaturation" then
-                                AddConditionalPreviewButton(scroll, "Preview Cooldown State", "cooldown", target)
-                            elseif sectionId == "iconFillTimer" and overrides.iconFillEnabled == true and group.masqueEnabled ~= true then
-                                AddConditionalPreviewButton(scroll, "Preview Cooldown Fill", "cooldown", target)
-                                AddConditionalPreviewButton(scroll, "Preview Aura Fill", "aura_duration_text", target)
-                            elseif sectionId == "auraText" or sectionId == "auraDurationSwipe" then
-                                AddConditionalPreviewButton(scroll, "Preview Aura Duration Text", "aura_duration_text", target)
-                            elseif sectionId == "auraStackText" then
-                                AddConditionalPreviewButton(scroll, "Preview Aura Stack Text", "aura_stack_text", target)
-                            elseif sectionId == "showOutOfRange" then
-                                AddConditionalPreviewButton(scroll, "Preview Out of Range State", "out_of_range", target)
-                            elseif sectionId == "unusableDimming" then
-                                AddConditionalPreviewButton(scroll, "Preview Unusable State", "unusable", target)
-                            elseif sectionId == "iconTint" then
-                                AddConditionalPreviewButton(scroll, "Preview Cooldown Tint", "cooldown", target)
-                                AddConditionalPreviewButton(scroll, "Preview Aura Tint", "aura", target)
-                                AddConditionalPreviewButton(scroll, "Preview Unusable Tint", "unusable", target)
-                                AddConditionalPreviewButton(scroll, "Preview Out of Range Tint", "out_of_range", target)
-                            end
-                        end
                     end
                 end
             end

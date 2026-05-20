@@ -326,13 +326,21 @@ end
 
 function HealthResource.AddEffectStyleControls(container, checkbox, health, options, applyBars)
     local enabled = health[options.enabledKey] == true
-    local expanded, advBtn = AddAdvancedToggle(checkbox, options.advancedKey, tabInfoButtons, enabled)
+    local function BuildEffectStyleAdvanced(panel)
+        AddColorPicker(panel, health, options.colorKey, options.colorLabel, options.defaultColor, true, applyBars, applyBars)
+        HealthResource.AddEffectTextureDropdown(panel, health, options.textureKey, options.textureLabel, applyBars)
+        if type(options.buildExtra) == "function" then
+            options.buildExtra(panel)
+        end
+    end
+
+    local expanded, advBtn = AddAdvancedToggle(checkbox, options.advancedKey, tabInfoButtons, enabled, {
+        build = BuildEffectStyleAdvanced,
+    })
     if not (enabled and expanded) then
         return expanded, advBtn
     end
 
-    AddColorPicker(container, health, options.colorKey, options.colorLabel, options.defaultColor, true, applyBars, applyBars)
-    HealthResource.AddEffectTextureDropdown(container, health, options.textureKey, options.textureLabel, applyBars)
     return expanded, advBtn
 end
 
@@ -526,6 +534,18 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         colorLabel = "Low Health Alert Color",
         textureLabel = "Low Health Alert Texture",
         defaultColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR,
+        buildExtra = function(panel)
+            local missingHealthOnlyCb = AceGUI:Create("CheckBox")
+            missingHealthOnlyCb:SetLabel("Pulse Missing Health Only")
+            missingHealthOnlyCb:SetValue(health.healthLowHealthAlertMissingHealthOnly == true)
+            missingHealthOnlyCb:SetFullWidth(true)
+            missingHealthOnlyCb:SetCallback("OnValueChanged", function(widget, event, val)
+                health.healthLowHealthAlertMissingHealthOnly = val == true
+                applyBars()
+            end)
+            ApplyCheckboxIndent(missingHealthOnlyCb, 20)
+            panel:AddChild(missingHealthOnlyCb)
+        end,
     }, applyBars)
     local lowHealthAlertInfoAnchor = lowHealthAlertAdvancedBtn
     local lowHealthAlertInfoOffset = 4
@@ -537,19 +557,6 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         "Low Health Alert",
         {"Blizzard sets the low-health threshold to 35%. This cannot be configured.", 1, 1, 1, true},
     }, lowHealthAlertCb)
-    if health.showLowHealthAlert == true and lowHealthAlertAdvancedExpanded then
-        local missingHealthOnlyCb = AceGUI:Create("CheckBox")
-        missingHealthOnlyCb:SetLabel("Pulse Missing Health Only")
-        missingHealthOnlyCb:SetValue(health.healthLowHealthAlertMissingHealthOnly == true)
-        missingHealthOnlyCb:SetFullWidth(true)
-        missingHealthOnlyCb:SetCallback("OnValueChanged", function(widget, event, val)
-            health.healthLowHealthAlertMissingHealthOnly = val == true
-            applyBars()
-        end)
-        ApplyCheckboxIndent(missingHealthOnlyCb, 20)
-        container:AddChild(missingHealthOnlyCb)
-    end
-
     if AddPreviewToggleButton then
         AddPreviewToggleButton(container, "Preview Absorbs", function()
             return CooldownCompanion:IsHealthEffectPreviewActive("absorbs")
@@ -798,8 +805,8 @@ local function BuildResourceBarAnchoringPanel(container)
             container:AddChild(resCb)
 
             if layout.customBarHeights then
-                local advExpanded = AddAdvancedToggle(resCb, "rbHeight_" .. pt, rbHeightAdvBtns, enabled)
-                if advExpanded then
+                local capturedPt = pt
+                local function BuildResourceHeightAdvanced(panel)
                     if type(layout.resources[pt]) ~= "table" then
                         layout.resources[pt] = {}
                     end
@@ -819,7 +826,6 @@ local function BuildResourceBarAnchoringPanel(container)
                         )
                     end
                     resHeightSlider:SetFullWidth(true)
-                    local capturedPt = pt
                     resHeightSlider:SetCallback("OnValueChanged", function(widget, event, val)
                         if not layout.resources[capturedPt] then
                             layout.resources[capturedPt] = {}
@@ -829,8 +835,12 @@ local function BuildResourceBarAnchoringPanel(container)
                         CooldownCompanion:RepositionCastBar()
                         CooldownCompanion:UpdateAnchorStacking()
                     end)
-                    container:AddChild(resHeightSlider)
+                    panel:AddChild(resHeightSlider)
                 end
+                AddAdvancedToggle(resCb, "rbHeight_" .. pt, rbHeightAdvBtns, enabled, {
+                    title = name .. " Height Advanced",
+                    build = BuildResourceHeightAdvanced,
+                })
             end
         end
     end
@@ -1326,8 +1336,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
             end)
             container:AddChild(cb)
 
-            local advExpanded = AddAdvancedToggle(cb, "rbText_" .. capturedPt, rbTextAdvBtns, showTextEnabled)
-            if advExpanded and showTextEnabled then
+            local function BuildResourceTextAdvanced(panel)
                 local textFormatDrop = AceGUI:Create("Dropdown")
                 textFormatDrop:SetLabel("Text Format")
                 local textFormatOptions
@@ -1402,7 +1411,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     end
                     CooldownCompanion:ApplyResourceBars()
                 end)
-                container:AddChild(textFormatDrop)
+                panel:AddChild(textFormatDrop)
 
                 local fontDrop = AceGUI:Create("Dropdown")
                 fontDrop:SetLabel("Font")
@@ -1413,7 +1422,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     resSettings.textFont = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
-                container:AddChild(fontDrop)
+                panel:AddChild(fontDrop)
 
                 local sizeDrop = AceGUI:Create("Slider")
                 sizeDrop:SetLabel("Font Size")
@@ -1424,7 +1433,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     resSettings.textFontSize = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
-                container:AddChild(sizeDrop)
+                panel:AddChild(sizeDrop)
 
                 local outlineDrop = AceGUI:Create("Dropdown")
                 outlineDrop:SetLabel("Outline")
@@ -1435,9 +1444,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     resSettings.textFontOutline = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
-                container:AddChild(outlineDrop)
+                panel:AddChild(outlineDrop)
 
-                AddColorPicker(container, resSettings, "textFontColor", "Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, applyBars)
+                AddColorPicker(panel, resSettings, "textFontColor", "Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, applyBars)
 
                 local textAnchorDrop = AceGUI:Create("Dropdown")
                 textAnchorDrop:SetLabel("Text Anchor")
@@ -1452,7 +1461,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     resSettings.textAnchor = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
-                container:AddChild(textAnchorDrop)
+                panel:AddChild(textAnchorDrop)
 
                 local textXSlider = AceGUI:Create("Slider")
                 textXSlider:SetLabel("Text X Offset")
@@ -1463,7 +1472,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     resSettings.textXOffset = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
-                container:AddChild(textXSlider)
+                panel:AddChild(textXSlider)
 
                 local textYSlider = AceGUI:Create("Slider")
                 textYSlider:SetLabel("Text Y Offset")
@@ -1474,7 +1483,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     resSettings.textYOffset = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
-                container:AddChild(textYSlider)
+                panel:AddChild(textYSlider)
 
                 if HIDE_AT_ZERO_ELIGIBLE[capturedPt] then
                     local hideAtZeroCb = AceGUI:Create("CheckBox")
@@ -1485,9 +1494,14 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         resSettings.hideTextAtZero = val == true
                         CooldownCompanion:ApplyResourceBars()
                     end)
-                    container:AddChild(hideAtZeroCb)
+                    panel:AddChild(hideAtZeroCb)
                 end
             end
+
+            AddAdvancedToggle(cb, "rbText_" .. capturedPt, rbTextAdvBtns, showTextEnabled, {
+                title = name .. " Text Advanced",
+                build = BuildResourceTextAdvanced,
+            })
         end
     end
 
@@ -1743,25 +1757,15 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     thresholdEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
                         local wasEnabled = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdEnabled", false) == true
                         WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdEnabled", val == true)
-                        if val and not wasEnabled then
-                            if type(CooldownCompanion.db.profile.showAdvanced) ~= "table" then
-                                CooldownCompanion.db.profile.showAdvanced = {}
-                            end
-                            CooldownCompanion.db.profile.showAdvanced[thresholdAdvKey] = true
+                        if val and not wasEnabled and CS.QueueAdvancedSettingsPanelOpen then
+                            CS.QueueAdvancedSettingsPanelOpen(thresholdAdvKey)
                         end
                         CooldownCompanion:ApplyResourceBars()
                         C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
                     end)
                     container:AddChild(thresholdEnableCb)
 
-                    local _segEnabled = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdEnabled", false) == true
-                    local thresholdAdvExpanded = AddAdvancedToggle(
-                        thresholdEnableCb,
-                        thresholdAdvKey,
-                        rbThresholdTickAdvBtns,
-                        _segEnabled
-                    )
-                    if _segEnabled and thresholdAdvExpanded then
+                    local function BuildSegmentedThresholdAdvanced(panel)
                         local thresholdEdit = AceGUI:Create("EditBox")
                         if thresholdEdit.editbox.Instructions then thresholdEdit.editbox.Instructions:Hide() end
                         thresholdEdit:SetLabel(resourceName .. " Threshold Value (>=)")
@@ -1786,13 +1790,25 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                             widget:SetText(tostring(parsed))
                             CooldownCompanion:ApplyResourceBars()
                         end)
-                        container:AddChild(thresholdEdit)
+                        panel:AddChild(thresholdEdit)
 
                         local _pSeg = { segThresholdColor = GetSafeRGBConfig(ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdColor", nil), DEFAULT_SEG_THRESHOLD_COLOR) }
-                        AddColorPicker(container, _pSeg, "segThresholdColor", resourceName .. " Threshold Color", DEFAULT_SEG_THRESHOLD_COLOR, false,
+                        AddColorPicker(panel, _pSeg, "segThresholdColor", resourceName .. " Threshold Color", DEFAULT_SEG_THRESHOLD_COLOR, false,
                             function() WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdColor", _pSeg.segThresholdColor); applyBars() end,
                             function() WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdColor", _pSeg.segThresholdColor) end)
                     end
+
+                    local _segEnabled = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdEnabled", false) == true
+                    local thresholdAdvExpanded = AddAdvancedToggle(
+                        thresholdEnableCb,
+                        thresholdAdvKey,
+                        rbThresholdTickAdvBtns,
+                        _segEnabled,
+                        {
+                            title = resourceName .. " Threshold Advanced",
+                            build = BuildSegmentedThresholdAdvanced,
+                        }
+                    )
                 elseif capturedPt ~= 101 and capturedPt ~= healthResourceID then
                     -- Stagger (101) and Health have dedicated coloring; tick markers not applicable
                     local tickAdvKey = "rbTickMarker_" .. capturedPt
@@ -1804,11 +1820,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     tickEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
                         local wasEnabled = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickEnabled", false) == true
                         WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickEnabled", val == true)
-                        if val and not wasEnabled then
-                            if type(CooldownCompanion.db.profile.showAdvanced) ~= "table" then
-                                CooldownCompanion.db.profile.showAdvanced = {}
-                            end
-                            CooldownCompanion.db.profile.showAdvanced[tickAdvKey] = true
+                        if val and not wasEnabled and CS.QueueAdvancedSettingsPanelOpen then
+                            CS.QueueAdvancedSettingsPanelOpen(tickAdvKey)
                         end
                         CooldownCompanion:ApplyResourceBars()
                         C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
@@ -1828,13 +1841,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         ApplyCheckboxIndent(tickCombatCb, 20)
                     end
 
-                    local tickAdvExpanded = AddAdvancedToggle(
-                        tickEnableCb,
-                        tickAdvKey,
-                        rbThresholdTickAdvBtns,
-                        _tickEnabled
-                    )
-                    if _tickEnabled and tickAdvExpanded then
+                    local function BuildTickMarkerAdvanced(panel)
                         local _tickModeRes = { continuousTickMode = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickMode", nil) }
                         local tickMode = GetContinuousTickModeConfig(_tickModeRes)
                         local modeDrop = AceGUI:Create("Dropdown")
@@ -1853,7 +1860,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                             CooldownCompanion:ApplyResourceBars()
                             C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
                         end)
-                        container:AddChild(modeDrop)
+                        panel:AddChild(modeDrop)
 
                         if tickMode == "percent" then
                             local _tickPercentRes = { continuousTickPercent = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickPercent", nil) }
@@ -1867,7 +1874,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                                 WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickPercent", val)
                                 CooldownCompanion:ApplyResourceBars()
                             end)
-                            container:AddChild(percentSlider)
+                            panel:AddChild(percentSlider)
                         else
                             local _tickAbsRes = { continuousTickAbsolute = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickAbsolute", nil) }
                             local absoluteEdit = AceGUI:Create("EditBox")
@@ -1890,13 +1897,13 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                                 widget:SetText(tostring(parsed))
                                 CooldownCompanion:ApplyResourceBars()
                             end)
-                            container:AddChild(absoluteEdit)
+                            panel:AddChild(absoluteEdit)
                         end
 
                         local _tickColorResolved = GetSafeRGBAConfig(ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickColor", nil), DEFAULT_CONTINUOUS_TICK_COLOR)
                         if _tickColorResolved[4] == nil then _tickColorResolved = { _tickColorResolved[1], _tickColorResolved[2], _tickColorResolved[3], 1 } end
                         local _pTick = { continuousTickColor = _tickColorResolved }
-                        AddColorPicker(container, _pTick, "continuousTickColor", resourceName .. " Tick Color", DEFAULT_CONTINUOUS_TICK_COLOR, true,
+                        AddColorPicker(panel, _pTick, "continuousTickColor", resourceName .. " Tick Color", DEFAULT_CONTINUOUS_TICK_COLOR, true,
                             function() WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickColor", _pTick.continuousTickColor); applyBars() end,
                             function() WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickColor", _pTick.continuousTickColor) end)
 
@@ -1910,8 +1917,19 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                             WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickWidth", val)
                             CooldownCompanion:ApplyResourceBars()
                         end)
-                        container:AddChild(tickWidthSlider)
+                        panel:AddChild(tickWidthSlider)
                     end
+
+                    local tickAdvExpanded = AddAdvancedToggle(
+                        tickEnableCb,
+                        tickAdvKey,
+                        rbThresholdTickAdvBtns,
+                        _tickEnabled,
+                        {
+                            title = resourceName .. " Tick Marker Advanced",
+                            build = BuildTickMarkerAdvanced,
+                        }
+                    )
                 end
             end
         end
@@ -3546,8 +3564,7 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
         end)
         container:AddChild(activeAuraCb)
 
-        local activeAuraAdvExpanded = AddAdvancedToggle(activeAuraCb, "rbCabActiveAura_" .. capturedKey, infoButtons, activeAuraEnabled)
-        if activeAuraAdvExpanded and activeAuraEnabled then
+        local function BuildCustomBarActiveAuraAdvanced(panel)
             local activeAuraCombatCb = AceGUI:Create("CheckBox")
             activeAuraCombatCb:SetLabel("Show Only In Combat")
             activeAuraCombatCb:SetValue(cab.auraGlowCombatOnly or false)
@@ -3556,22 +3573,28 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
                 customBars[cabIdx].auraGlowCombatOnly = val
                 CooldownCompanion:ApplyResourceBars()
             end)
-            container:AddChild(activeAuraCombatCb)
+            panel:AddChild(activeAuraCombatCb)
             ApplyCheckboxIndent(activeAuraCombatCb, 20)
 
-            BuildBarActiveAuraControls(container, customBars[cabIdx], cabApplyBars, {
+            BuildBarActiveAuraControls(panel, customBars[cabIdx], cabApplyBars, {
                 hidePrimaryColorPicker = not isSpellCustomBar,
             })
-            BuildBarAuraPulseControls(container, customBars[cabIdx], cabApplyBars)
+            BuildBarAuraPulseControls(panel, customBars[cabIdx], cabApplyBars)
 
             if AddPreviewToggleButton then
-                AddPreviewToggleButton(container, "Preview Active Aura Effects", function()
+                AddPreviewToggleButton(panel, "Preview Active Aura Effects", function()
                     return CooldownCompanion:IsCustomAuraBarActivePreviewActive(customBars[cabIdx])
                 end, function(show)
                     CooldownCompanion:SetCustomAuraBarActivePreview(customBars[cabIdx], show)
                 end)
             end
-        else
+        end
+
+        local activeAuraAdvExpanded = AddAdvancedToggle(activeAuraCb, "rbCabActiveAura_" .. capturedKey, infoButtons, activeAuraEnabled, {
+            title = "Active Aura Indicator Advanced",
+            build = BuildCustomBarActiveAuraAdvanced,
+        })
+        if not (activeAuraAdvExpanded and activeAuraEnabled) then
             CooldownCompanion:SetCustomAuraBarActivePreview(customBars[cabIdx], false)
         end
 
@@ -3589,8 +3612,7 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
             end)
             container:AddChild(pandemicCb)
 
-            local pandemicAdvExpanded = AddAdvancedToggle(pandemicCb, "rbCabPandemic_" .. capturedKey, infoButtons, pandemicEnabled)
-            if pandemicAdvExpanded and pandemicEnabled then
+            local function BuildCustomBarPandemicAdvanced(panel)
                 local pandemicCombatCb = AceGUI:Create("CheckBox")
                 pandemicCombatCb:SetLabel("Show Only In Combat")
                 pandemicCombatCb:SetValue(cab.pandemicGlowCombatOnly or false)
@@ -3599,20 +3621,26 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
                     customBars[cabIdx].pandemicGlowCombatOnly = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
-                container:AddChild(pandemicCombatCb)
+                panel:AddChild(pandemicCombatCb)
                 ApplyCheckboxIndent(pandemicCombatCb, 20)
 
-                BuildPandemicBarControls(container, customBars[cabIdx], cabApplyBars)
-                BuildPandemicBarPulseControls(container, customBars[cabIdx], cabApplyBars)
+                BuildPandemicBarControls(panel, customBars[cabIdx], cabApplyBars)
+                BuildPandemicBarPulseControls(panel, customBars[cabIdx], cabApplyBars)
 
                 if AddPreviewToggleButton then
-                    AddPreviewToggleButton(container, "Preview Pandemic Effects", function()
+                    AddPreviewToggleButton(panel, "Preview Pandemic Effects", function()
                         return CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(customBars[cabIdx])
                     end, function(show)
                         CooldownCompanion:SetCustomAuraBarPandemicPreview(customBars[cabIdx], show)
                     end)
                 end
-            else
+            end
+
+            local pandemicAdvExpanded = AddAdvancedToggle(pandemicCb, "rbCabPandemic_" .. capturedKey, infoButtons, pandemicEnabled, {
+                title = "Pandemic Indicator Advanced",
+                build = BuildCustomBarPandemicAdvanced,
+            })
+            if not (pandemicAdvExpanded and pandemicEnabled) then
                 CooldownCompanion:SetCustomAuraBarPandemicPreview(customBars[cabIdx], false)
             end
         else
@@ -3664,21 +3692,7 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
         end)
         container:AddChild(glowCb)
 
-        local glowAdvExpanded, glowAdvBtn = AddAdvancedToggle(glowCb, "rbCabMaxStacksIndicator_" .. capturedKey, infoButtons, cab.maxStacksGlowEnabled == true)
-        if not glowAdvExpanded and CS.customBarIndicatorPreviewActive and CooldownCompanion:IsResourceBarPreviewActive() then
-            CooldownCompanion:StopResourceBarPreview()
-        end
-
-        CreateInfoButton(glowCb.frame, glowAdvBtn, "LEFT", "RIGHT", 4, 0, {
-            "Max Stack Indicator",
-            {"Due to combat restrictions, individual bar segments cannot be highlighted independently.", 1, 1, 1, true},
-            " ",
-            {"The indicator covers the entire resource bar and appears automatically when your buff reaches its maximum stack count.", 1, 1, 1, true},
-            " ",
-            {"The Pulsing Overlay style is only available for continuous display mode.", 1, 1, 1, true},
-        }, glowCb)
-
-        if glowAdvExpanded and cab.maxStacksGlowEnabled then
+        local function BuildMaxStackIndicatorAdvanced(panel)
             local isContinuousDisplay = (cab.trackingMode == "active") or (cab.displayMode == "continuous")
             local currentStyle = cab.maxStacksGlowStyle or "solidBorder"
             if currentStyle == "pulsingOverlay" and not isContinuousDisplay then
@@ -3711,9 +3725,9 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:RefreshConfigPanel()
             end)
-            container:AddChild(styleDrop)
+            panel:AddChild(styleDrop)
 
-            AddColorPicker(container, customBars[cabIdx], "maxStacksGlowColor", "Indicator Color", {1, 0.84, 0, 0.9}, true,
+            AddColorPicker(panel, customBars[cabIdx], "maxStacksGlowColor", "Indicator Color", {1, 0.84, 0, 0.9}, true,
                 cabApplyBars, cabApplyBars)
 
             if currentStyle ~= "pulsingOverlay" then
@@ -3726,7 +3740,7 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
                     customBars[cabIdx].maxStacksGlowSize = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
-                container:AddChild(sizeSlider)
+                panel:AddChild(sizeSlider)
             end
 
             if currentStyle == "pulsingBorder" or currentStyle == "pulsingOverlay" then
@@ -3739,11 +3753,11 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
                     customBars[cabIdx].maxStacksGlowSpeed = val
                     CooldownCompanion:ApplyResourceBars()
                 end)
-                container:AddChild(speedSlider)
+                panel:AddChild(speedSlider)
             end
 
             if AddPreviewToggleButton then
-                AddPreviewToggleButton(container, "Preview Indicator", function()
+                AddPreviewToggleButton(panel, "Preview Indicator", function()
                     return CS.customBarIndicatorPreviewActive == true and CooldownCompanion:IsResourceBarPreviewActive()
                 end, function(show)
                     CS.customBarIndicatorPreviewActive = show and true or nil
@@ -3755,6 +3769,24 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
                 end)
             end
         end
+
+        local glowAdvExpanded, glowAdvBtn = AddAdvancedToggle(glowCb, "rbCabMaxStacksIndicator_" .. capturedKey, infoButtons, cab.maxStacksGlowEnabled == true, {
+            title = "Max Stack Indicator Advanced",
+            build = BuildMaxStackIndicatorAdvanced,
+        })
+        if not glowAdvExpanded and CS.customBarIndicatorPreviewActive and CooldownCompanion:IsResourceBarPreviewActive() then
+            CooldownCompanion:StopResourceBarPreview()
+        end
+
+        CreateInfoButton(glowCb.frame, glowAdvBtn, "LEFT", "RIGHT", 4, 0, {
+            "Max Stack Indicator",
+            {"Due to combat restrictions, individual bar segments cannot be highlighted independently.", 1, 1, 1, true},
+            " ",
+            {"The indicator covers the entire resource bar and appears automatically when your buff reaches its maximum stack count.", 1, 1, 1, true},
+            " ",
+            {"The Pulsing Overlay style is only available for continuous display mode.", 1, 1, 1, true},
+        }, glowCb)
+
     end
 
     if not renderedControls then
@@ -4010,9 +4042,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
 
                     local showDuration = showDurationControls and cab.showDurationText == true
                     local showStack = (stackVal == true)
-                    local durationAdvExpanded = showDurationControls
-                        and AddAdvancedToggle(durationTextCb, "rbCabDurationText_" .. capturedKey, rbCabTextAdvBtns, showDuration)
-                    if showDurationControls and durationAdvExpanded and showDuration then
+                    local function BuildDurationTextAdvanced(panel)
                         local fontDrop = AceGUI:Create("Dropdown")
                         fontDrop:SetLabel("Duration Font")
                         CS.SetupFontDropdown(fontDrop)
@@ -4022,7 +4052,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                             customBars[cabIdx].durationTextFont = val
                             CooldownCompanion:ApplyResourceBars()
                         end)
-                        container:AddChild(fontDrop)
+                        panel:AddChild(fontDrop)
 
                         local sizeDrop = AceGUI:Create("Slider")
                         sizeDrop:SetLabel("Duration Font Size")
@@ -4033,7 +4063,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                             customBars[cabIdx].durationTextFontSize = val
                             CooldownCompanion:ApplyResourceBars()
                         end)
-                        container:AddChild(sizeDrop)
+                        panel:AddChild(sizeDrop)
 
                         local outlineDrop = AceGUI:Create("Dropdown")
                         outlineDrop:SetLabel("Duration Outline")
@@ -4044,15 +4074,20 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                             customBars[cabIdx].durationTextFontOutline = val
                             CooldownCompanion:ApplyResourceBars()
                         end)
-                        container:AddChild(outlineDrop)
+                        panel:AddChild(outlineDrop)
 
-                        AddColorPicker(container, customBars[cabIdx], "durationTextFontColor", "Duration Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars)
+                        AddColorPicker(panel, customBars[cabIdx], "durationTextFontColor", "Duration Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars)
 
-                        AddDurationFormatDropdown(container, customBars[cabIdx], cabApplyBars)
+                        AddDurationFormatDropdown(panel, customBars[cabIdx], cabApplyBars)
                     end
 
-                    local stackAdvExpanded = AddAdvancedToggle(stackTextCb, "rbCabStackText_" .. capturedKey, rbCabTextAdvBtns, showStack)
-                    if stackAdvExpanded and showStack then
+                    local durationAdvExpanded = showDurationControls
+                        and AddAdvancedToggle(durationTextCb, "rbCabDurationText_" .. capturedKey, rbCabTextAdvBtns, showDuration, {
+                            title = "Duration Text Advanced",
+                            build = BuildDurationTextAdvanced,
+                        })
+
+                    local function BuildStackTextAdvanced(panel)
                         if not isActive then
                             local stackTextFormatDrop = AceGUI:Create("Dropdown")
                             stackTextFormatDrop:SetLabel("Text Format")
@@ -4076,7 +4111,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                                 end
                                 CooldownCompanion:ApplyResourceBars()
                             end)
-                            container:AddChild(stackTextFormatDrop)
+                            panel:AddChild(stackTextFormatDrop)
                         end
 
                         local fontDrop = AceGUI:Create("Dropdown")
@@ -4089,7 +4124,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                             customBars[cabIdx].stackTextFont = val
                             CooldownCompanion:ApplyResourceBars()
                         end)
-                        container:AddChild(fontDrop)
+                        panel:AddChild(fontDrop)
 
                         local sizeDrop = AceGUI:Create("Slider")
                         local stackSizeLabel = isSpellCustomBar and (isStackDisplay and "Aura Stack Font Size" or "Charge Font Size") or "Stack Font Size"
@@ -4101,7 +4136,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                             customBars[cabIdx].stackTextFontSize = val
                             CooldownCompanion:ApplyResourceBars()
                         end)
-                        container:AddChild(sizeDrop)
+                        panel:AddChild(sizeDrop)
 
                         local outlineDrop = AceGUI:Create("Dropdown")
                         local stackOutlineLabel = isSpellCustomBar and (isStackDisplay and "Aura Stack Outline" or "Charge Outline") or "Stack Outline"
@@ -4113,10 +4148,15 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                             customBars[cabIdx].stackTextFontOutline = val
                             CooldownCompanion:ApplyResourceBars()
                         end)
-                        container:AddChild(outlineDrop)
+                        panel:AddChild(outlineDrop)
 
-                        AddColorPicker(container, customBars[cabIdx], "stackTextFontColor", "Stack Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars)
+                        AddColorPicker(panel, customBars[cabIdx], "stackTextFontColor", "Stack Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars)
                     end
+
+                    local stackAdvExpanded = AddAdvancedToggle(stackTextCb, "rbCabStackText_" .. capturedKey, rbCabTextAdvBtns, showStack, {
+                        title = stackTextLabel .. " Advanced",
+                        build = BuildStackTextAdvanced,
+                    })
                 end
 
                 if not isSpellCustomBar or cab.auraTracking == true then

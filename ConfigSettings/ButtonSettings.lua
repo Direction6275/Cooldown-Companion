@@ -1274,17 +1274,7 @@ local function BuildBarPanelAuraDisplaySection(scroll, buttonData, infoButtons)
     end)
     scroll:AddChild(indicatorCb)
 
-    local indicatorAdvExpanded, indicatorAdvBtn = AddAdvancedToggle(indicatorCb, "barPanelAuraMaxStacksIndicator_" .. CS.selectedGroup .. "_" .. CS.selectedButton, infoButtons, auraBar.maxStacksGlowEnabled == true)
-    CreateInfoButton(indicatorCb.frame, indicatorAdvBtn, "LEFT", "RIGHT", 4, 0, {
-        "Max Stack Indicator",
-        {"Due to combat restrictions, individual bar segments cannot be highlighted independently.", 1, 1, 1, true},
-        " ",
-        {"The indicator covers the whole bar entry and appears automatically when the aura reaches its maximum stack count.", 1, 1, 1, true},
-        " ",
-        {"The Pulsing Overlay style is only available for continuous display mode.", 1, 1, 1, true},
-    }, indicatorCb)
-
-    if indicatorAdvExpanded and auraBar.maxStacksGlowEnabled == true then
+    local function BuildMaxStackIndicatorAdvanced(panel)
         local currentStyle = auraBar.maxStacksGlowStyle or "solidBorder"
         local isContinuousDisplay = stackDisplayMode == "continuous"
         if currentStyle == "pulsingOverlay" and not isContinuousDisplay then
@@ -1310,9 +1300,9 @@ local function BuildBarPanelAuraDisplaySection(scroll, buttonData, infoButtons)
             auraBar.maxStacksGlowStyle = value
             RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true, refreshConfig = true })
         end)
-        scroll:AddChild(indicatorStyleDrop)
+        panel:AddChild(indicatorStyleDrop)
 
-        AddColorPicker(scroll, auraBar, "maxStacksGlowColor", "Indicator Color", {1, 0.84, 0, 0.9}, true,
+        AddColorPicker(panel, auraBar, "maxStacksGlowColor", "Indicator Color", {1, 0.84, 0, 0.9}, true,
             function() RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true }) end)
 
         if currentStyle ~= "pulsingOverlay" then
@@ -1325,7 +1315,7 @@ local function BuildBarPanelAuraDisplaySection(scroll, buttonData, infoButtons)
                 auraBar.maxStacksGlowSize = value
                 RefreshSelectedBarPanelAuraButton()
             end)
-            scroll:AddChild(sizeSlider)
+            panel:AddChild(sizeSlider)
         end
 
         if currentStyle == "pulsingBorder" or currentStyle == "pulsingOverlay" then
@@ -1338,9 +1328,23 @@ local function BuildBarPanelAuraDisplaySection(scroll, buttonData, infoButtons)
                 auraBar.maxStacksGlowSpeed = value
                 RefreshSelectedBarPanelAuraButton()
             end)
-            scroll:AddChild(speedSlider)
+            panel:AddChild(speedSlider)
         end
     end
+
+    local indicatorAdvExpanded, indicatorAdvBtn = AddAdvancedToggle(indicatorCb, "barPanelAuraMaxStacksIndicator_" .. CS.selectedGroup .. "_" .. CS.selectedButton, infoButtons, auraBar.maxStacksGlowEnabled == true, {
+        title = "Max Stack Indicator Advanced",
+        build = BuildMaxStackIndicatorAdvanced,
+    })
+    CreateInfoButton(indicatorCb.frame, indicatorAdvBtn, "LEFT", "RIGHT", 4, 0, {
+        "Max Stack Indicator",
+        {"Due to combat restrictions, individual bar segments cannot be highlighted independently.", 1, 1, 1, true},
+        " ",
+        {"The indicator covers the whole bar entry and appears automatically when the aura reaches its maximum stack count.", 1, 1, 1, true},
+        " ",
+        {"The Pulsing Overlay style is only available for continuous display mode.", 1, 1, 1, true},
+    }, indicatorCb)
+
 end
 
 local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)

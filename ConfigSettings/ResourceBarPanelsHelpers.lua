@@ -834,117 +834,120 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
         if not settings.resources[powerType] then settings.resources[powerType] = {} end
         WriteSpecOverrideKey(settings, powerType, currentSpecID, "auraOverlayEnabled", val == true)
 
-        if val then
-            if type(CooldownCompanion.db.profile.showAdvanced) ~= "table" then
-                CooldownCompanion.db.profile.showAdvanced = {}
-            end
-            CooldownCompanion.db.profile.showAdvanced[auraAdvKey] = true
+        if val and CS.QueueAdvancedSettingsPanelOpen then
+            CS.QueueAdvancedSettingsPanelOpen(auraAdvKey)
         end
         CooldownCompanion:ApplyResourceBars()
         C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
     end)
     container:AddChild(enableAuraOverlayCb)
 
+    local function BuildResourceAuraOverlayAdvanced(panel)
+        local entryForSpec = GetResourceAuraEntryConfig(res, currentSpecID)
+
+        AddResourceAuraEntryFields(panel, powerType, resourceName, entryForSpec, {
+            onSpellChanged = function(id)
+                local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
+                if not entry then
+                    return
+                end
+                entry.auraColorSpellID = id
+                if RefreshResourceAuraUnitForSpell then
+                    RefreshResourceAuraUnitForSpell(entry, id)
+                end
+                ClearLegacyResourceAuraFieldsConfig(res)
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+            onAuraUnitChanged = function(val)
+                local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
+                if not entry then
+                    return
+                end
+                if EnsureResourceAuraUnit then
+                    EnsureResourceAuraUnit(entry, entry.auraColorSpellID, val, true)
+                else
+                    entry.auraUnit = val
+                    entry.auraUnitExplicit = true
+                end
+                ClearLegacyResourceAuraFieldsConfig(res)
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+            onColorChanged = function(r, g, b)
+                local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
+                if not entry then
+                    return
+                end
+                entry.auraActiveColor = { r, g, b }
+            end,
+            onColorConfirmed = function(r, g, b)
+                local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
+                if not entry then
+                    return
+                end
+                entry.auraActiveColor = { r, g, b }
+                ClearLegacyResourceAuraFieldsConfig(res)
+                CooldownCompanion:ApplyResourceBars()
+            end,
+            onTrackingChanged = function(val)
+                local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
+                if not entry then
+                    return
+                end
+                entry.auraColorTrackingMode = val
+                if val == "stacks" then
+                    local current = tonumber(entry.auraColorMaxStacks)
+                    if not current or current < 2 then
+                        entry.auraColorMaxStacks = 2
+                    end
+                end
+                ClearLegacyResourceAuraFieldsConfig(res)
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+            onMaxStacksChanged = function(parsed)
+                local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
+                if not entry then
+                    return
+                end
+                entry.auraColorMaxStacks = parsed
+                ClearLegacyResourceAuraFieldsConfig(res)
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        -- Clear Overlay button (only if entry exists)
+        if type(entryForSpec) == "table" then
+            local clearSpacer = AceGUI:Create("Label")
+            clearSpacer:SetText(" ")
+            clearSpacer:SetFullWidth(true)
+            panel:AddChild(clearSpacer)
+
+            local clearBtn = AceGUI:Create("Button")
+            clearBtn:SetText("Clear Overlay")
+            clearBtn:SetFullWidth(true)
+            clearBtn:SetCallback("OnClick", function()
+                ClearResourceAuraEntryConfig(powerType, res, currentSpecID)
+            end)
+            panel:AddChild(clearBtn)
+        end
+    end
+
     local auraAdvExpanded = AddAdvancedToggle(
         enableAuraOverlayCb,
         auraAdvKey,
         auraAdvButtons or tabInfoButtons,
-        auraOverlayEnabled
+        auraOverlayEnabled,
+        {
+            title = resourceName .. " Aura Overlay Advanced",
+            build = BuildResourceAuraOverlayAdvanced,
+        }
     )
 
     if not auraOverlayEnabled or not auraAdvExpanded then
         return
-    end
-
-    local entryForSpec = GetResourceAuraEntryConfig(res, currentSpecID)
-
-    AddResourceAuraEntryFields(container, powerType, resourceName, entryForSpec, {
-        onSpellChanged = function(id)
-            local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
-            if not entry then
-                return
-            end
-            entry.auraColorSpellID = id
-            if RefreshResourceAuraUnitForSpell then
-                RefreshResourceAuraUnitForSpell(entry, id)
-            end
-            ClearLegacyResourceAuraFieldsConfig(res)
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end,
-        onAuraUnitChanged = function(val)
-            local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
-            if not entry then
-                return
-            end
-            if EnsureResourceAuraUnit then
-                EnsureResourceAuraUnit(entry, entry.auraColorSpellID, val, true)
-            else
-                entry.auraUnit = val
-                entry.auraUnitExplicit = true
-            end
-            ClearLegacyResourceAuraFieldsConfig(res)
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end,
-        onColorChanged = function(r, g, b)
-            local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
-            if not entry then
-                return
-            end
-            entry.auraActiveColor = { r, g, b }
-        end,
-        onColorConfirmed = function(r, g, b)
-            local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
-            if not entry then
-                return
-            end
-            entry.auraActiveColor = { r, g, b }
-            ClearLegacyResourceAuraFieldsConfig(res)
-            CooldownCompanion:ApplyResourceBars()
-        end,
-        onTrackingChanged = function(val)
-            local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
-            if not entry then
-                return
-            end
-            entry.auraColorTrackingMode = val
-            if val == "stacks" then
-                local current = tonumber(entry.auraColorMaxStacks)
-                if not current or current < 2 then
-                    entry.auraColorMaxStacks = 2
-                end
-            end
-            ClearLegacyResourceAuraFieldsConfig(res)
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end,
-        onMaxStacksChanged = function(parsed)
-            local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
-            if not entry then
-                return
-            end
-            entry.auraColorMaxStacks = parsed
-            ClearLegacyResourceAuraFieldsConfig(res)
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
-        end,
-    })
-
-    -- Clear Overlay button (only if entry exists)
-    if type(entryForSpec) == "table" then
-        local clearSpacer = AceGUI:Create("Label")
-        clearSpacer:SetText(" ")
-        clearSpacer:SetFullWidth(true)
-        container:AddChild(clearSpacer)
-
-        local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear Overlay")
-        clearBtn:SetFullWidth(true)
-        clearBtn:SetCallback("OnClick", function()
-            ClearResourceAuraEntryConfig(powerType, res, currentSpecID)
-        end)
-        container:AddChild(clearBtn)
     end
 end
 

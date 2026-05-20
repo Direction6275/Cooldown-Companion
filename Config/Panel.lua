@@ -717,6 +717,9 @@ local function CreateConfigPanel()
         if CS.CancelPickAuraTexture then
             CS.CancelPickAuraTexture()
         end
+        if CS.CloseAdvancedSettingsPanel then
+            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+        end
         if not CS.previewToggleRefreshActive then
             CooldownCompanion:ClearAllConfigPreviews()
         end
@@ -2109,6 +2112,8 @@ function CooldownCompanion:RefreshConfigPanel()
     if not CS.configFrame then return end
     if not CS.configFrame.frame:IsShown() then return end
     if CS.talentPickerMode then return end
+    if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
+    CS.configRefreshInProgress = true
     if IsConfigFinderAvailable and not IsConfigFinderAvailable() and ClearConfigFinderText then
         ClearConfigFinderText()
     elseif SetConfigFinderText then
@@ -2230,6 +2235,10 @@ function CooldownCompanion:RefreshConfigPanel()
     end
     if RefreshTutorialPlacement then
         RefreshTutorialPlacement()
+    end
+    CS.configRefreshInProgress = false
+    if CS.RefreshAdvancedSettingsPanel then
+        CS.RefreshAdvancedSettingsPanel()
     end
 
 end

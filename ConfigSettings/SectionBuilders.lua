@@ -1286,10 +1286,7 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback)
 
     local readyColorPicker = AddColorPicker(container, styleTable, "textReadyColor", "Ready Color", {0.2, 1.0, 0.2, 1}, true, refreshCallback, refreshCallback)
 
-    local readyAdvExpanded, readyAdvBtn = AddAdvancedToggle(readyColorPicker, "textReadyText", tabInfoButtons)
-    readyAdvBtn:SetPoint("LEFT", readyColorPicker.colorSwatch, "RIGHT", readyColorPicker.text:GetStringWidth() + 8, 0)
-
-    if readyAdvExpanded then
+    local function BuildReadyTextAdvanced(panel)
         local readyTextBox = AceGUI:Create("EditBox")
         if readyTextBox.editbox.Instructions then readyTextBox.editbox.Instructions:Hide() end
         readyTextBox:SetLabel("Ready Text")
@@ -1299,8 +1296,14 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback)
             styleTable.textReadyText = val
             refreshCallback()
         end)
-        container:AddChild(readyTextBox)
+        panel:AddChild(readyTextBox)
     end
+
+    local readyAdvExpanded, readyAdvBtn = AddAdvancedToggle(readyColorPicker, "textReadyText", tabInfoButtons, nil, {
+        title = "Ready Color Advanced",
+        build = BuildReadyTextAdvanced,
+    })
+    readyAdvBtn:SetPoint("LEFT", readyColorPicker.colorSwatch, "RIGHT", readyColorPicker.text:GetStringWidth() + 8, 0)
 
     AddColorPicker(container, styleTable, "textAuraColor", "Aura Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback)
 end

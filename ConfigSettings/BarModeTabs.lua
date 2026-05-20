@@ -58,7 +58,24 @@ local function BuildBarAppearanceTab(container, group, style)
         CooldownCompanion:RefreshConfigPanel()
     end)
 
-    local barAdvExpanded, barAdvBtn = AddAdvancedToggle(barHeading, "barSettings", tabInfoButtons)
+    local function BuildBarSettingsAdvanced(panel)
+        local updateFreqSlider = AceGUI:Create("Slider")
+        updateFreqSlider:SetLabel("Update Frequency (Hz)")
+        updateFreqSlider:SetSliderValues(10, 60, 0.1)
+        local curInterval = style.barUpdateInterval or 0.025
+        updateFreqSlider:SetValue(math.floor(1 / curInterval + 0.5))
+        updateFreqSlider:SetFullWidth(true)
+        updateFreqSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            style.barUpdateInterval = 1 / val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        panel:AddChild(updateFreqSlider)
+    end
+
+    local barAdvExpanded, barAdvBtn = AddAdvancedToggle(barHeading, "barSettings", tabInfoButtons, nil, {
+        title = "Bar Settings Advanced",
+        build = BuildBarSettingsAdvanced,
+    })
     barAdvBtn:SetPoint("LEFT", collapseBtn, "RIGHT", 4, 0)
     barHeading.right:ClearAllPoints()
     barHeading.right:SetPoint("RIGHT", barHeading.frame, "RIGHT", -3, 0)
@@ -137,19 +154,6 @@ local function BuildBarAppearanceTab(container, group, style)
     local barColorPicker = AddColorPicker(container, style, "barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}, true, refreshStyle, refreshStyle)
     CreateColorPickerPromoteButton(barColorPicker, "barColor", group, style)
 
-    if barAdvExpanded then
-    local updateFreqSlider = AceGUI:Create("Slider")
-    updateFreqSlider:SetLabel("Update Frequency (Hz)")
-    updateFreqSlider:SetSliderValues(10, 60, 0.1)
-    local curInterval = style.barUpdateInterval or 0.025
-    updateFreqSlider:SetValue(math.floor(1 / curInterval + 0.5))
-    updateFreqSlider:SetFullWidth(true)
-    updateFreqSlider:SetCallback("OnValueChanged", function(widget, event, val)
-        style.barUpdateInterval = 1 / val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(updateFreqSlider)
-    end -- barAdvExpanded (update freq)
     end -- not barSettingsCollapsed
 
     -- Contextual color pickers (no heading/collapse/promote)
@@ -179,10 +183,7 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(showIconCb)
 
-    local iconAdvExpanded, iconAdvBtn = AddAdvancedToggle(showIconCb, "barIcon", tabInfoButtons, style.showBarIcon ~= false)
-    CreateCheckboxPromoteButton(showIconCb, iconAdvBtn, "barIcon", group, style)
-
-    if iconAdvExpanded and style.showBarIcon ~= false then
+    local function BuildBarIconAdvanced(panel)
         local flipIconCheck = AceGUI:Create("CheckBox")
         flipIconCheck:SetLabel("Flip Icon Side")
         flipIconCheck:SetValue(style.barIconReverse or false)
@@ -192,7 +193,7 @@ local function BuildBarAppearanceTab(container, group, style)
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end)
-        container:AddChild(flipIconCheck)
+        panel:AddChild(flipIconCheck)
 
         local iconOffsetSlider = AceGUI:Create("Slider")
         iconOffsetSlider:SetLabel("Icon Offset")
@@ -203,7 +204,7 @@ local function BuildBarAppearanceTab(container, group, style)
             style.barIconOffset = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
-        container:AddChild(iconOffsetSlider)
+        panel:AddChild(iconOffsetSlider)
 
         local customIconSizeCb = AceGUI:Create("CheckBox")
         customIconSizeCb:SetLabel("Custom Icon Size")
@@ -214,7 +215,7 @@ local function BuildBarAppearanceTab(container, group, style)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end)
-        container:AddChild(customIconSizeCb)
+        panel:AddChild(customIconSizeCb)
 
         if style.barIconSizeOverride then
             local iconSizeSlider = AceGUI:Create("Slider")
@@ -226,9 +227,15 @@ local function BuildBarAppearanceTab(container, group, style)
                 style.barIconSize = val
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end)
-            container:AddChild(iconSizeSlider)
+            panel:AddChild(iconSizeSlider)
         end
     end
+
+    local iconAdvExpanded, iconAdvBtn = AddAdvancedToggle(showIconCb, "barIcon", tabInfoButtons, style.showBarIcon ~= false, {
+        title = "Bar Icon Advanced",
+        build = BuildBarIconAdvanced,
+    })
+    CreateCheckboxPromoteButton(showIconCb, iconAdvBtn, "barIcon", group, style)
 
     -- Show Name Text toggle
     local showNameCbBasic = AceGUI:Create("CheckBox")
@@ -242,10 +249,7 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(showNameCbBasic)
 
-    local nameAdvExpanded, nameAdvBtn = AddAdvancedToggle(showNameCbBasic, "barNameText", tabInfoButtons, style.showBarNameText ~= false)
-    CreateCheckboxPromoteButton(showNameCbBasic, nameAdvBtn, "barNameText", group, style)
-
-    if nameAdvExpanded and style.showBarNameText ~= false then
+    local function BuildBarNameTextAdvanced(panel)
         local flipNameCheck = AceGUI:Create("CheckBox")
         flipNameCheck:SetLabel("Flip Name Text")
         flipNameCheck:SetValue(style.barNameTextReverse or false)
@@ -254,12 +258,18 @@ local function BuildBarAppearanceTab(container, group, style)
             style.barNameTextReverse = val or nil
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
-        container:AddChild(flipNameCheck)
+        panel:AddChild(flipNameCheck)
 
-        AddFontControls(container, style, "barName", {sizeMin = 6, sizeMax = 24, size = 10}, refreshStyle)
-        AddColorPicker(container, style, "barNameFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddOffsetSliders(container, style, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle)
+        AddFontControls(panel, style, "barName", {sizeMin = 6, sizeMax = 24, size = 10}, refreshStyle)
+        AddColorPicker(panel, style, "barNameFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddOffsetSliders(panel, style, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle)
     end
+
+    local nameAdvExpanded, nameAdvBtn = AddAdvancedToggle(showNameCbBasic, "barNameText", tabInfoButtons, style.showBarNameText ~= false, {
+        title = "Name Text Advanced",
+        build = BuildBarNameTextAdvanced,
+    })
+    CreateCheckboxPromoteButton(showNameCbBasic, nameAdvBtn, "barNameText", group, style)
 
     -- Show Cooldown Text toggle
     local showTimeCbBasic = AceGUI:Create("CheckBox")
@@ -273,10 +283,7 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(showTimeCbBasic)
 
-    local timeAdvExpanded, timeAdvBtn = AddAdvancedToggle(showTimeCbBasic, "barCooldownText", tabInfoButtons, style.showCooldownText)
-    CreateCheckboxPromoteButton(showTimeCbBasic, timeAdvBtn, "cooldownText", group, style)
-
-    if timeAdvExpanded and style.showCooldownText then
+    local function BuildBarCooldownTextAdvanced(panel)
         local flipTimeCheck = AceGUI:Create("CheckBox")
         flipTimeCheck:SetLabel("Flip Time Text")
         flipTimeCheck:SetValue(style.barTimeTextReverse or false)
@@ -285,7 +292,7 @@ local function BuildBarAppearanceTab(container, group, style)
             style.barTimeTextReverse = val or nil
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
-        container:AddChild(flipTimeCheck)
+        panel:AddChild(flipTimeCheck)
 
         -- (?) tooltip for Flip Time Text
         CreateInfoButton(flipTimeCheck.frame, flipTimeCheck.checkbg, "LEFT", "RIGHT", flipTimeCheck.text:GetStringWidth() + 4, 0, {
@@ -293,14 +300,20 @@ local function BuildBarAppearanceTab(container, group, style)
             {"Applies to all time-based text, including cooldown time, aura time, and ready text.", 1, 1, 1, true},
         }, flipTimeCheck)
 
-        AddFontControls(container, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle)
-        AddColorPicker(container, style, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshStyle, refreshStyle)
-        AddOffsetSliders(container, style, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle)
+        AddFontControls(panel, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle)
+        AddColorPicker(panel, style, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshStyle, refreshStyle)
+        AddOffsetSliders(panel, style, "barCdTextOffsetX", "barCdTextOffsetY", {range = 50}, refreshStyle)
 
         if AddConditionalPreviewButton then
-            AddConditionalPreviewButton(container, "Preview Cooldown Text", "cooldown")
+            AddConditionalPreviewButton(panel, "Preview Cooldown Text", "cooldown")
         end
     end
+
+    local timeAdvExpanded, timeAdvBtn = AddAdvancedToggle(showTimeCbBasic, "barCooldownText", tabInfoButtons, style.showCooldownText, {
+        title = "Cooldown Text Advanced",
+        build = BuildBarCooldownTextAdvanced,
+    })
+    CreateCheckboxPromoteButton(showTimeCbBasic, timeAdvBtn, "cooldownText", group, style)
 
     -- Show Charge Text toggle
     local chargeTextCb = AceGUI:Create("CheckBox")
@@ -314,17 +327,20 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(chargeTextCb)
 
-    local chargeAdvExpanded, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "barChargeText", tabInfoButtons, style.showChargeText ~= false)
-    CreateCheckboxPromoteButton(chargeTextCb, chargeAdvBtn, "chargeText", group, style)
-
-    if chargeAdvExpanded and style.showChargeText ~= false then
-        AddFontControls(container, style, "charge", {}, refreshStyle)
-        AddColorPicker(container, style, "chargeFontColor", "Font Color (Max Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddColorPicker(container, style, "chargeFontColorMissing", "Font Color (Missing Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddColorPicker(container, style, "chargeFontColorZero", "Font Color (Zero Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddAnchorDropdown(container, style, "chargeAnchor", "BOTTOMRIGHT", refreshStyle)
-        AddOffsetSliders(container, style, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshStyle)
+    local function BuildBarChargeTextAdvanced(panel)
+        AddFontControls(panel, style, "charge", {}, refreshStyle)
+        AddColorPicker(panel, style, "chargeFontColor", "Font Color (Max Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddColorPicker(panel, style, "chargeFontColorMissing", "Font Color (Missing Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddColorPicker(panel, style, "chargeFontColorZero", "Font Color (Zero Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddAnchorDropdown(panel, style, "chargeAnchor", "BOTTOMRIGHT", refreshStyle)
+        AddOffsetSliders(panel, style, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshStyle)
     end
+
+    local chargeAdvExpanded, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "barChargeText", tabInfoButtons, style.showChargeText ~= false, {
+        title = "Count Text Advanced",
+        build = BuildBarChargeTextAdvanced,
+    })
+    CreateCheckboxPromoteButton(chargeTextCb, chargeAdvBtn, "chargeText", group, style)
 
     -- ================================================================
     -- Aura Duration Text
@@ -340,17 +356,20 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(auraTextCb)
 
-    local barAuraTextAdvExpanded, barAuraTextAdvBtn = AddAdvancedToggle(auraTextCb, "barAuraText", tabInfoButtons, style.showAuraText ~= false)
-    CreateCheckboxPromoteButton(auraTextCb, barAuraTextAdvBtn, "auraText", group, style)
-
-    if barAuraTextAdvExpanded and style.showAuraText ~= false then
-        AddFontControls(container, style, "auraText", {sizeMin = 6, sizeMax = 24}, refreshStyle)
-        AddColorPicker(container, style, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshStyle, refreshStyle)
+    local function BuildBarAuraTextAdvanced(panel)
+        AddFontControls(panel, style, "auraText", {sizeMin = 6, sizeMax = 24}, refreshStyle)
+        AddColorPicker(panel, style, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshStyle, refreshStyle)
 
         if AddConditionalPreviewButton then
-            AddConditionalPreviewButton(container, "Preview Aura Duration Text", "aura_duration_text")
+            AddConditionalPreviewButton(panel, "Preview Aura Duration Text", "aura_duration_text")
         end
-    end -- barAuraTextAdvExpanded
+    end
+
+    local barAuraTextAdvExpanded, barAuraTextAdvBtn = AddAdvancedToggle(auraTextCb, "barAuraText", tabInfoButtons, style.showAuraText ~= false, {
+        title = "Aura Duration Text Advanced",
+        build = BuildBarAuraTextAdvanced,
+    })
+    CreateCheckboxPromoteButton(auraTextCb, barAuraTextAdvBtn, "auraText", group, style)
 
     -- ================================================================
     -- Aura Stack Text
@@ -366,19 +385,22 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(barAuraStackCb)
 
-    local barAuraStackAdvExpanded, barAuraStackAdvBtn = AddAdvancedToggle(barAuraStackCb, "barAuraStackText", tabInfoButtons, style.showAuraStackText ~= false)
-    CreateCheckboxPromoteButton(barAuraStackCb, barAuraStackAdvBtn, "auraStackText", group, style)
-
-    if barAuraStackAdvExpanded and style.showAuraStackText ~= false then
-        AddFontControls(container, style, "auraStack", {}, refreshStyle)
-        AddColorPicker(container, style, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
-        AddAnchorDropdown(container, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle)
-        AddOffsetSliders(container, style, "auraStackXOffset", "auraStackYOffset", {x = 2, y = 2}, refreshStyle)
+    local function BuildBarAuraStackAdvanced(panel)
+        AddFontControls(panel, style, "auraStack", {}, refreshStyle)
+        AddColorPicker(panel, style, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+        AddAnchorDropdown(panel, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle)
+        AddOffsetSliders(panel, style, "auraStackXOffset", "auraStackYOffset", {x = 2, y = 2}, refreshStyle)
 
         if AddConditionalPreviewButton then
-            AddConditionalPreviewButton(container, "Preview Aura Stack Text", "aura_stack_text")
+            AddConditionalPreviewButton(panel, "Preview Aura Stack Text", "aura_stack_text")
         end
-    end -- barAuraStackAdvExpanded
+    end
+
+    local barAuraStackAdvExpanded, barAuraStackAdvBtn = AddAdvancedToggle(barAuraStackCb, "barAuraStackText", tabInfoButtons, style.showAuraStackText ~= false, {
+        title = "Aura Stack Text Advanced",
+        build = BuildBarAuraStackAdvanced,
+    })
+    CreateCheckboxPromoteButton(barAuraStackCb, barAuraStackAdvBtn, "auraStackText", group, style)
 
     -- Show Ready Text toggle
     local showReadyCb = AceGUI:Create("CheckBox")
@@ -392,10 +414,7 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(showReadyCb)
 
-    local readyAdvExpanded, readyAdvBtn = AddAdvancedToggle(showReadyCb, "barReadyText", tabInfoButtons, style.showBarReadyText)
-    CreateCheckboxPromoteButton(showReadyCb, readyAdvBtn, "barReadyText", group, style)
-
-    if readyAdvExpanded and style.showBarReadyText then
+    local function BuildBarReadyTextAdvanced(panel)
         local readyTextBox = AceGUI:Create("EditBox")
         if readyTextBox.editbox.Instructions then readyTextBox.editbox.Instructions:Hide() end
         readyTextBox:SetLabel("Ready Text")
@@ -405,11 +424,17 @@ local function BuildBarAppearanceTab(container, group, style)
             style.barReadyText = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
-        container:AddChild(readyTextBox)
+        panel:AddChild(readyTextBox)
 
-        AddColorPicker(container, style, "barReadyTextColor", "Ready Text Color", {0.2, 1.0, 0.2, 1.0}, true, refreshStyle, refreshStyle)
-        AddFontControls(container, style, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle)
+        AddColorPicker(panel, style, "barReadyTextColor", "Ready Text Color", {0.2, 1.0, 0.2, 1.0}, true, refreshStyle, refreshStyle)
+        AddFontControls(panel, style, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle)
     end
+
+    local readyAdvExpanded, readyAdvBtn = AddAdvancedToggle(showReadyCb, "barReadyText", tabInfoButtons, style.showBarReadyText, {
+        title = "Ready Text Advanced",
+        build = BuildBarReadyTextAdvanced,
+    })
+    CreateCheckboxPromoteButton(showReadyCb, readyAdvBtn, "barReadyText", group, style)
 
     -- Compact Mode toggle + Max Visible Buttons slider
     BuildCompactModeControls(container, group, tabInfoButtons)
@@ -443,39 +468,44 @@ local function BuildBarEffectsTab(container, group, style)
     end)
     container:AddChild(barAuraEnableCb)
 
-    local barAuraAdvExpanded, barAuraAdvBtn = AddAdvancedToggle(barAuraEnableCb, "barActiveAura", tabInfoButtons, style.barAuraEffect ~= "none")
+    local function BuildBarActiveAuraAdvanced(panel)
+        local barAuraCombatCb = AceGUI:Create("CheckBox")
+        barAuraCombatCb:SetLabel("Show Only In Combat")
+        barAuraCombatCb:SetValue(style.auraGlowCombatOnly or false)
+        barAuraCombatCb:SetFullWidth(true)
+        barAuraCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.auraGlowCombatOnly = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        panel:AddChild(barAuraCombatCb)
+        ApplyCheckboxIndent(barAuraCombatCb, 20)
+
+        BuildBarActiveAuraControls(panel, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+
+        BuildBarAuraPulseControls(panel, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+
+        if AddPreviewToggleButton then
+            AddPreviewToggleButton(panel, "Preview Active Aura Effects", function()
+                return CS.selectedGroup and CooldownCompanion:IsBarAuraActivePreviewActive(CS.selectedGroup, nil)
+            end, function(show)
+                if CS.selectedGroup then
+                    CooldownCompanion:SetBarAuraActivePreview(CS.selectedGroup, nil, show)
+                end
+            end)
+        end
+    end
+
+    local barAuraAdvExpanded, barAuraAdvBtn = AddAdvancedToggle(barAuraEnableCb, "barActiveAura", tabInfoButtons, style.barAuraEffect ~= "none", {
+        title = "Active Aura Indicator Advanced",
+        build = BuildBarActiveAuraAdvanced,
+    })
     CreateCheckboxPromoteButton(barAuraEnableCb, barAuraAdvBtn, "barActiveAura", group, style)
 
-    if barAuraAdvExpanded and style.barAuraEffect ~= "none" then
-    local barAuraCombatCb = AceGUI:Create("CheckBox")
-    barAuraCombatCb:SetLabel("Show Only In Combat")
-    barAuraCombatCb:SetValue(style.auraGlowCombatOnly or false)
-    barAuraCombatCb:SetFullWidth(true)
-    barAuraCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.auraGlowCombatOnly = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(barAuraCombatCb)
-    ApplyCheckboxIndent(barAuraCombatCb, 20)
-
-    BuildBarActiveAuraControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-
-    BuildBarAuraPulseControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-
-    if AddPreviewToggleButton then
-        AddPreviewToggleButton(container, "Preview Active Aura Effects", function()
-            return CS.selectedGroup and CooldownCompanion:IsBarAuraActivePreviewActive(CS.selectedGroup, nil)
-        end, function(show)
-            if CS.selectedGroup then
-                CooldownCompanion:SetBarAuraActivePreview(CS.selectedGroup, nil, show)
-            end
-        end)
-    end
-    elseif CS.selectedGroup then
+    if not (barAuraAdvExpanded and style.barAuraEffect ~= "none") and CS.selectedGroup then
         CooldownCompanion:SetBarAuraActivePreview(CS.selectedGroup, nil, false)
     end -- barAuraAdvExpanded
 
@@ -493,39 +523,44 @@ local function BuildBarEffectsTab(container, group, style)
     end)
     container:AddChild(pandemicIndicatorCb)
 
-    local barPandemicAdvExpanded, barPandemicAdvBtn = AddAdvancedToggle(pandemicIndicatorCb, "barPandemicIndicator", tabInfoButtons, style.showPandemicGlow ~= false)
+    local function BuildBarPandemicAdvanced(panel)
+        local barPandemicCombatCb = AceGUI:Create("CheckBox")
+        barPandemicCombatCb:SetLabel("Show Only In Combat")
+        barPandemicCombatCb:SetValue(style.pandemicGlowCombatOnly or false)
+        barPandemicCombatCb:SetFullWidth(true)
+        barPandemicCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.pandemicGlowCombatOnly = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        panel:AddChild(barPandemicCombatCb)
+        ApplyCheckboxIndent(barPandemicCombatCb, 20)
+
+        BuildPandemicBarControls(panel, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+
+        BuildPandemicBarPulseControls(panel, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+
+        if AddPreviewToggleButton then
+            AddPreviewToggleButton(panel, "Preview Pandemic Effects", function()
+                return CS.selectedGroup and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, nil, "_pandemicPreview")
+            end, function(show)
+                if CS.selectedGroup then
+                    CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, show)
+                end
+            end)
+        end
+    end
+
+    local barPandemicAdvExpanded, barPandemicAdvBtn = AddAdvancedToggle(pandemicIndicatorCb, "barPandemicIndicator", tabInfoButtons, style.showPandemicGlow ~= false, {
+        title = "Pandemic Indicator Advanced",
+        build = BuildBarPandemicAdvanced,
+    })
     CreateCheckboxPromoteButton(pandemicIndicatorCb, barPandemicAdvBtn, "pandemicBar", group, style)
 
-    if barPandemicAdvExpanded and style.showPandemicGlow ~= false then
-    local barPandemicCombatCb = AceGUI:Create("CheckBox")
-    barPandemicCombatCb:SetLabel("Show Only In Combat")
-    barPandemicCombatCb:SetValue(style.pandemicGlowCombatOnly or false)
-    barPandemicCombatCb:SetFullWidth(true)
-    barPandemicCombatCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.pandemicGlowCombatOnly = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(barPandemicCombatCb)
-    ApplyCheckboxIndent(barPandemicCombatCb, 20)
-
-    BuildPandemicBarControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-
-    BuildPandemicBarPulseControls(container, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-
-    if AddPreviewToggleButton then
-        AddPreviewToggleButton(container, "Preview Pandemic Effects", function()
-            return CS.selectedGroup and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, nil, "_pandemicPreview")
-        end, function(show)
-            if CS.selectedGroup then
-                CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, show)
-            end
-        end)
-    end
-    elseif CS.selectedGroup then
+    if not (barPandemicAdvExpanded and style.showPandemicGlow ~= false) and CS.selectedGroup then
         CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
     end -- barPandemicAdvExpanded
 
@@ -570,11 +605,17 @@ local function BuildBarEffectsTab(container, group, style)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end)
-        local unusableAdvExpanded, unusableAdvBtn = AddAdvancedToggle(unusableCb, "barUnusableDimming", tabInfoButtons, style.showUnusable)
-        CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
-        if unusableAdvExpanded and style.showUnusable and AddConditionalPreviewButton then
-            AddConditionalPreviewButton(container, "Preview Unusable State", "unusable")
+        local function BuildBarUnusableAdvanced(panel)
+            if AddConditionalPreviewButton then
+                AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable")
+            end
         end
+
+        local unusableAdvExpanded, unusableAdvBtn = AddAdvancedToggle(unusableCb, "barUnusableDimming", tabInfoButtons, style.showUnusable, {
+            title = "Unusable Dimming Advanced",
+            build = BuildBarUnusableAdvanced,
+        })
+        CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
 
         -- Show Tooltips
         local tooltipCb = BuildShowTooltipsControls(container, style, function()
