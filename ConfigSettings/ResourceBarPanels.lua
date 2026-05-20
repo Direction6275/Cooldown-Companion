@@ -297,6 +297,29 @@ function HealthResource.EnsureDisplaySettings(settings, specID)
     return health
 end
 
+local function EnsureResourceSettings(settings, powerType)
+    if type(settings.resources) ~= "table" then
+        settings.resources = {}
+    end
+
+    if powerType == HealthResource.ID then
+        return HealthResource.EnsureSettings(settings)
+    end
+
+    if type(settings.resources[powerType]) ~= "table" then
+        settings.resources[powerType] = {}
+    end
+    return settings.resources[powerType]
+end
+
+local function IsResourceEnabled(settings, powerType)
+    local res = EnsureResourceSettings(settings, powerType)
+    if powerType == HealthResource.ID then
+        return res.enabled == true
+    end
+    return res.enabled ~= false
+end
+
 function HealthResource.AddOpacitySlider(container, health, key, label, defaultValue, applyBars)
     local slider = AceGUI:Create("Slider")
     slider:SetLabel(label)
@@ -772,18 +795,10 @@ local function BuildResourceBarAnchoringPanel(container)
         end
 
         -- Per-resource enable/disable
-        local rbHeightAdvBtns = {}
         local resources = GetConfigActiveResources()
         for _, pt in ipairs(resources) do
             local name = POWER_NAMES[pt] or ("Power " .. pt)
-            if pt == HealthResource.ID then
-                HealthResource.EnsureSettings(settings)
-            elseif not settings.resources[pt] then
-                settings.resources[pt] = {}
-            end
-            local enabled = pt == HealthResource.ID
-                and settings.resources[pt].enabled == true
-                or settings.resources[pt].enabled ~= false
+            local enabled = IsResourceEnabled(settings, pt)
 
             local resCb = AceGUI:Create("CheckBox")
             resCb:SetLabel("Show " .. name)
@@ -802,45 +817,6 @@ local function BuildResourceBarAnchoringPanel(container)
                 CooldownCompanion:RefreshConfigPanel()
             end)
             container:AddChild(resCb)
-
-            if layout.customBarHeights then
-                local capturedPt = pt
-                local function BuildResourceHeightAdvanced(panel)
-                    if type(layout.resources[pt]) ~= "table" then
-                        layout.resources[pt] = {}
-                    end
-                    local resLayout = layout.resources[pt]
-                    local resHeightSlider = AceGUI:Create("Slider")
-                    resHeightSlider:SetLabel(thicknessLabel)
-                    resHeightSlider:SetSliderValues(4, 40, 0.1)
-                    if thicknessField == "barWidth" then
-                        resHeightSlider:SetValue(
-                            resLayout.barWidth or resLayout.barHeight
-                            or layout.barWidth or layout.barHeight or settings.barWidth or settings.barHeight or 12
-                        )
-                    else
-                        resHeightSlider:SetValue(
-                            resLayout.barHeight or resLayout.barWidth
-                            or layout.barHeight or layout.barWidth or settings.barHeight or settings.barWidth or 12
-                        )
-                    end
-                    resHeightSlider:SetFullWidth(true)
-                    resHeightSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        if not layout.resources[capturedPt] then
-                            layout.resources[capturedPt] = {}
-                        end
-                        layout.resources[capturedPt][thicknessField] = val
-                        CooldownCompanion:ApplyResourceBars()
-                        CooldownCompanion:RepositionCastBar()
-                        CooldownCompanion:UpdateAnchorStacking()
-                    end)
-                    panel:AddChild(resHeightSlider)
-                end
-                AddAdvancedToggle(resCb, "rbHeight_" .. pt, rbHeightAdvBtns, enabled, {
-                    title = name .. " Height Advanced",
-                    build = BuildResourceHeightAdvanced,
-                })
-            end
         end
     end
 
@@ -1103,6 +1079,7 @@ end
 local function BuildBarHeightControls(container, settings, layout)
     layout = layout or settings
     local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
+    local customHeightsAdvKey = "customResourceBarHeights"
 
     local hSlider = AceGUI:Create("Slider")
     hSlider:SetLabel(thicknessLabel)
@@ -1140,7 +1117,11 @@ local function BuildBarHeightControls(container, settings, layout)
     customHeightsCb:SetValue(layout.customBarHeights or false)
     customHeightsCb:SetFullWidth(true)
     customHeightsCb:SetCallback("OnValueChanged", function(widget, event, val)
+        local wasEnabled = layout.customBarHeights == true
         layout.customBarHeights = val
+        if val and not wasEnabled and CS.QueueAdvancedSettingsPanelOpen then
+            CS.QueueAdvancedSettingsPanelOpen(customHeightsAdvKey)
+        end
         CooldownCompanion:ApplyResourceBars()
         CooldownCompanion:RepositionCastBar()
         CooldownCompanion:UpdateAnchorStacking()
@@ -1148,9 +1129,67 @@ local function BuildBarHeightControls(container, settings, layout)
     end)
     container:AddChild(customHeightsCb)
 
-    CreateInfoButton(customHeightsCb.frame, customHeightsCb.checkbg, "LEFT", "RIGHT", customHeightsCb.text:GetStringWidth() + 4, 0, {
-        "Custom Resource Bar Heights",
-        {"When enabled, each resource can have its own bar height. Click the advanced settings toggle for a resource in Column 1 to configure its individual height.", 1, 1, 1, true},
+    local function BuildCustomResourceHeightsAdvanced(panel)
+        if type(layout.resources) ~= "table" then
+            layout.resources = {}
+        end
+
+        local resources = GetConfigActiveResources()
+        for _, pt in ipairs(resources) do
+            local capturedPt = pt
+            local name = POWER_NAMES[pt] or ("Power " .. pt)
+            local enabled = IsResourceEnabled(settings, pt)
+            local resLayout = type(layout.resources[capturedPt]) == "table" and layout.resources[capturedPt] or {}
+
+            local resHeightSlider = AceGUI:Create("Slider")
+            resHeightSlider:SetLabel(name .. " " .. thicknessLabel)
+            resHeightSlider:SetSliderValues(4, 40, 0.1)
+            if thicknessField == "barWidth" then
+                resHeightSlider:SetValue(
+                    resLayout.barWidth or resLayout.barHeight
+                    or layout.barWidth or layout.barHeight or settings.barWidth or settings.barHeight or 12
+                )
+            else
+                resHeightSlider:SetValue(
+                    resLayout.barHeight or resLayout.barWidth
+                    or layout.barHeight or layout.barWidth or settings.barHeight or settings.barWidth or 12
+                )
+            end
+            resHeightSlider:SetFullWidth(true)
+            if resHeightSlider.SetDisabled then
+                resHeightSlider:SetDisabled(not enabled)
+            end
+            resHeightSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                if not enabled then
+                    return
+                end
+                if type(layout.resources[capturedPt]) ~= "table" then
+                    layout.resources[capturedPt] = {}
+                end
+                layout.resources[capturedPt][thicknessField] = val
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RepositionCastBar()
+                CooldownCompanion:UpdateAnchorStacking()
+            end)
+            panel:AddChild(resHeightSlider)
+        end
+    end
+
+    local _, customHeightsAdvBtn = AddAdvancedToggle(customHeightsCb, customHeightsAdvKey, tabInfoButtons, layout.customBarHeights == true, {
+        title = customThicknessLabel .. " Advanced",
+        build = BuildCustomResourceHeightsAdvanced,
+    })
+
+    local customHeightsInfoAnchor = customHeightsCb.checkbg
+    local customHeightsInfoOffset = customHeightsCb.text:GetStringWidth() + 4
+    if customHeightsAdvBtn and customHeightsAdvBtn:IsShown() then
+        customHeightsInfoAnchor = customHeightsAdvBtn
+        customHeightsInfoOffset = 4
+    end
+
+    CreateInfoButton(customHeightsCb.frame, customHeightsInfoAnchor, "LEFT", "RIGHT", customHeightsInfoOffset, 0, {
+        customThicknessLabel,
+        {"When enabled, each resource can have its own bar size. Open advanced settings here to configure all resource sizes together.", 1, 1, 1, true},
     }, customHeightsCb)
 end
 

@@ -2098,28 +2098,18 @@ local function BuildEffectsTab(container)
     end, {
         masqueEnabled = group.masqueEnabled == true,
     })
-    local function BuildIconFillAdvanced(panel)
-        if AddConditionalPreviewButton then
-            AddConditionalPreviewButton(panel, "Preview Cooldown Fill", "cooldown")
-            AddConditionalPreviewButton(panel, "Preview Aura Fill", "aura_duration_text")
-        end
-    end
-
-    local iconFillAdvExpanded, iconFillAdvBtn = AddAdvancedToggle(iconFillCb, "iconFillTimerPreview", tabInfoButtons, iconFillTimerActive, {
-        title = "Icon Fill Timer Advanced",
-        build = BuildIconFillAdvanced,
-    })
     local iconFillPromoteBtn
     if not group.masqueEnabled then
-        iconFillPromoteBtn = CreateCheckboxPromoteButton(iconFillCb, iconFillAdvBtn, "iconFillTimer", group, style)
+        iconFillPromoteBtn = CreateCheckboxPromoteButton(iconFillCb, nil, "iconFillTimer", group, style)
+    end
+    if iconFillTimerActive and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Cooldown Fill", "cooldown")
+        AddConditionalPreviewButton(container, "Preview Aura Fill", "aura_duration_text")
     end
     local iconFillInfoAnchor = iconFillCb.checkbg
     local iconFillInfoXOff = iconFillCb.text:GetStringWidth() + 4
     if iconFillPromoteBtn and iconFillPromoteBtn:IsShown() then
         iconFillInfoAnchor = iconFillPromoteBtn
-        iconFillInfoXOff = 4
-    elseif iconFillAdvBtn and iconFillAdvBtn:IsShown() then
-        iconFillInfoAnchor = iconFillAdvBtn
         iconFillInfoXOff = 4
     end
     CreateInfoButton(iconFillCb.frame, iconFillInfoAnchor, "LEFT", "RIGHT", iconFillInfoXOff, 0, {
@@ -2259,17 +2249,10 @@ local function BuildEffectsTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
-    local function BuildOutOfRangeAdvanced(panel)
-        if AddConditionalPreviewButton then
-            AddConditionalPreviewButton(panel, "Preview Out of Range State", "out_of_range")
-        end
+    CreateCheckboxPromoteButton(oorCb, nil, "showOutOfRange", group, style)
+    if style.showOutOfRange and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Out of Range State", "out_of_range")
     end
-
-    local oorAdvExpanded, oorAdvBtn = AddAdvancedToggle(oorCb, "showOutOfRange", tabInfoButtons, style.showOutOfRange, {
-        title = "Out of Range Advanced",
-        build = BuildOutOfRangeAdvanced,
-    })
-    CreateCheckboxPromoteButton(oorCb, oorAdvBtn, "showOutOfRange", group, style)
 
     -- Loss of Control
     local locCb = BuildLossOfControlControls(container, style, function()
@@ -2282,17 +2265,10 @@ local function BuildEffectsTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
-    local function BuildUnusableAdvanced(panel)
-        if AddConditionalPreviewButton then
-            AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable")
-        end
+    CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
+    if style.showUnusable and AddConditionalPreviewButton then
+        AddConditionalPreviewButton(container, "Preview Unusable State", "unusable")
     end
-
-    local unusableAdvExpanded, unusableAdvBtn = AddAdvancedToggle(unusableCb, "unusableDimming", tabInfoButtons, style.showUnusable, {
-        title = "Unusable Dimming Advanced",
-        build = BuildUnusableAdvanced,
-    })
-    CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
 
     -- Show Tooltips
     local tooltipCb = BuildShowTooltipsControls(container, style, function()
