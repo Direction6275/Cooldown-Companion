@@ -42,6 +42,7 @@ local BuildShowOutOfRangeControls = ST._BuildShowOutOfRangeControls
 local BuildShowGCDSwipeControls = ST._BuildShowGCDSwipeControls
 local BuildCooldownSwipeControls = ST._BuildCooldownSwipeControls
 local BuildIconFillTimerControls = ST._BuildIconFillTimerControls
+local BuildIconFillTimerAdvancedControls = ST._BuildIconFillTimerAdvancedControls
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
 local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildIconTintControls = ST._BuildIconTintControls
@@ -51,6 +52,7 @@ local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
 local AddPreviewToggleButton = ST._AddPreviewToggleButton
+local RefreshConfigPanelForPreviewToggle = ST._RefreshConfigPanelForPreviewToggle
 local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
@@ -108,6 +110,78 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     " ",
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
+
+local function SetPreviewBadgeActive(btn, active)
+    if btn and btn._icon then
+        if active then
+            btn._icon:SetVertexColor(1, 0.82, 0, 1)
+        else
+            btn._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
+        end
+    end
+end
+
+local function AddConditionalPreviewBadge(parentWidget, anchorAfterFrame, label, previewKind, enabled)
+    if not enabled
+        or not (parentWidget and parentWidget.frame and parentWidget.checkbg and parentWidget.text)
+        or not (CooldownCompanion.SetConditionalVisualPreviewActive and CooldownCompanion.IsConditionalVisualPreviewActive)
+    then
+        return nil
+    end
+
+    local frame = parentWidget.frame
+    local btn = frame._cdcPreviewBtn
+    if not btn then
+        btn = CreateFrame("Button", nil, frame)
+        btn:SetSize(14, 14)
+        btn._icon = btn:CreateTexture(nil, "ARTWORK")
+        btn._icon:SetSize(13, 13)
+        btn._icon:SetPoint("CENTER")
+        btn._icon:SetAtlas("GM-icon-visible", false)
+        frame._cdcPreviewBtn = btn
+    end
+
+    btn:SetParent(frame)
+    btn:ClearAllPoints()
+    if anchorAfterFrame and anchorAfterFrame:IsShown() then
+        btn:SetPoint("LEFT", anchorAfterFrame, "RIGHT", 4, 0)
+    else
+        btn:SetPoint("LEFT", parentWidget.checkbg, "RIGHT", parentWidget.text:GetStringWidth() + 6, 0)
+    end
+    btn:Show()
+    btn._icon:Show()
+
+    local function IsActive()
+        return CooldownCompanion:IsConditionalVisualPreviewActive(CS.selectedGroup, nil, previewKind)
+    end
+
+    SetPreviewBadgeActive(btn, IsActive())
+    btn:SetScript("OnClick", function()
+        local showPreview = not IsActive()
+        if showPreview and CooldownCompanion.ClearAllConfigPreviews then
+            CooldownCompanion:ClearAllConfigPreviews()
+        end
+        CooldownCompanion:SetConditionalVisualPreviewActive(CS.selectedGroup, nil, previewKind, showPreview)
+        if not (RefreshConfigPanelForPreviewToggle and RefreshConfigPanelForPreviewToggle()) then
+            SetPreviewBadgeActive(btn, IsActive())
+        end
+    end)
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(label)
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    parentWidget:SetCallback("OnRelease", function()
+        btn:ClearAllPoints()
+        btn:Hide()
+        btn:SetParent(nil)
+    end)
+
+    return btn
+end
 
 local function AddIndicatorsHeading(container, text)
     local heading = AceGUI:Create("Heading")
@@ -2097,19 +2171,40 @@ local function BuildEffectsTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end, {
         masqueEnabled = group.masqueEnabled == true,
+        showAdvancedControlsInline = false,
+        onEnabled = function()
+            if CS.QueueAdvancedSettingsPanelOpen then
+                CS.QueueAdvancedSettingsPanelOpen("iconFillTimer")
+            end
+        end,
+    })
+    local function BuildIconFillAdvanced(panel)
+        if BuildIconFillTimerAdvancedControls then
+            BuildIconFillTimerAdvancedControls(panel, style, function()
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end)
+        end
+        if AddConditionalPreviewButton then
+            AddConditionalPreviewButton(panel, "Preview Cooldown Fill", "cooldown")
+            AddConditionalPreviewButton(panel, "Preview Aura Fill", "aura_duration_text")
+        end
+    end
+
+    local _, iconFillAdvBtn = AddAdvancedToggle(iconFillCb, "iconFillTimer", tabInfoButtons, iconFillTimerActive, {
+        title = "Icon Fill Timer Advanced",
+        build = BuildIconFillAdvanced,
     })
     local iconFillPromoteBtn
     if not group.masqueEnabled then
-        iconFillPromoteBtn = CreateCheckboxPromoteButton(iconFillCb, nil, "iconFillTimer", group, style)
-    end
-    if iconFillTimerActive and AddConditionalPreviewButton then
-        AddConditionalPreviewButton(container, "Preview Cooldown Fill", "cooldown")
-        AddConditionalPreviewButton(container, "Preview Aura Fill", "aura_duration_text")
+        iconFillPromoteBtn = CreateCheckboxPromoteButton(iconFillCb, iconFillAdvBtn, "iconFillTimer", group, style)
     end
     local iconFillInfoAnchor = iconFillCb.checkbg
     local iconFillInfoXOff = iconFillCb.text:GetStringWidth() + 4
     if iconFillPromoteBtn and iconFillPromoteBtn:IsShown() then
         iconFillInfoAnchor = iconFillPromoteBtn
+        iconFillInfoXOff = 4
+    elseif iconFillAdvBtn and iconFillAdvBtn:IsShown() then
+        iconFillInfoAnchor = iconFillAdvBtn
         iconFillInfoXOff = 4
     end
     CreateInfoButton(iconFillCb.frame, iconFillInfoAnchor, "LEFT", "RIGHT", iconFillInfoXOff, 0, {
@@ -2249,10 +2344,8 @@ local function BuildEffectsTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
-    CreateCheckboxPromoteButton(oorCb, nil, "showOutOfRange", group, style)
-    if style.showOutOfRange and AddConditionalPreviewButton then
-        AddConditionalPreviewButton(container, "Preview Out of Range State", "out_of_range")
-    end
+    local oorPromoteBtn = CreateCheckboxPromoteButton(oorCb, nil, "showOutOfRange", group, style)
+    AddConditionalPreviewBadge(oorCb, oorPromoteBtn, "Preview Out of Range State", "out_of_range", style.showOutOfRange)
 
     -- Loss of Control
     local locCb = BuildLossOfControlControls(container, style, function()
@@ -2265,10 +2358,8 @@ local function BuildEffectsTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
-    CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
-    if style.showUnusable and AddConditionalPreviewButton then
-        AddConditionalPreviewButton(container, "Preview Unusable State", "unusable")
-    end
+    local unusablePromoteBtn = CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
+    AddConditionalPreviewBadge(unusableCb, unusablePromoteBtn, "Preview Unusable State", "unusable", style.showUnusable)
 
     -- Show Tooltips
     local tooltipCb = BuildShowTooltipsControls(container, style, function()

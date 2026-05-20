@@ -418,6 +418,8 @@ local function IsIconFillTimerEnabled(styleTable, opts)
     return opts and opts.fallbackStyle and opts.fallbackStyle.iconFillEnabled == true
 end
 
+local BuildIconFillTimerAdvancedControls
+
 local function BuildCooldownSwipeControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
@@ -511,6 +513,9 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
     cb:SetCallback("OnValueChanged", function(widget, event, val)
         if disabledByMasque then return end
         styleTable.iconFillEnabled = val == true
+        if styleTable.iconFillEnabled and type(opts.onEnabled) == "function" then
+            opts.onEnabled()
+        end
         refreshCallback()
         CooldownCompanion:UpdateAllCooldowns()
         CooldownCompanion:RefreshConfigPanel()
@@ -526,67 +531,75 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
         return cb
     end
 
-    if styleTable.iconFillEnabled == true then
-        local iconFillOrientation = styleTable.iconFillOrientation == "horizontal" and "horizontal" or "vertical"
-
-        local orientationDrop = AceGUI:Create("Dropdown")
-        orientationDrop:SetLabel("Orientation")
-        orientationDrop:SetList({
-            vertical = "Vertical",
-            horizontal = "Horizontal",
-        }, { "vertical", "horizontal" })
-        orientationDrop:SetValue(iconFillOrientation)
-        orientationDrop:SetFullWidth(true)
-        orientationDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.iconFillOrientation = val == "vertical" and "vertical" or "horizontal"
-            refreshCallback()
-            CooldownCompanion:UpdateAllCooldowns()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(orientationDrop)
-
-        local anchorEdgeDrop = AceGUI:Create("Dropdown")
-        anchorEdgeDrop:SetLabel("Anchor Edge")
-        if iconFillOrientation == "vertical" then
-            anchorEdgeDrop:SetList({
-                default = "Bottom",
-                reverse = "Top",
-            }, { "default", "reverse" })
-        else
-            anchorEdgeDrop:SetList({
-                default = "Left",
-                reverse = "Right",
-            }, { "default", "reverse" })
-        end
-        anchorEdgeDrop:SetValue(styleTable.iconFillReverse == true and "reverse" or "default")
-        anchorEdgeDrop:SetFullWidth(true)
-        anchorEdgeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.iconFillReverse = val == "reverse"
-            refreshCallback()
-            CooldownCompanion:UpdateAllCooldowns()
-        end)
-        container:AddChild(anchorEdgeDrop)
-
-        local timerMotionDrop = AceGUI:Create("Dropdown")
-        timerMotionDrop:SetLabel("Timer Motion")
-        timerMotionDrop:SetList({
-            drain = "Starts Full (Drain)",
-            fill = "Starts Empty (Fill)",
-        }, { "drain", "fill" })
-        timerMotionDrop:SetValue(styleTable.iconFillTimerBehavior == "fill" and "fill" or "drain")
-        timerMotionDrop:SetFullWidth(true)
-        timerMotionDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.iconFillTimerBehavior = val == "drain" and "drain" or "fill"
-            refreshCallback()
-            CooldownCompanion:UpdateAllCooldowns()
-        end)
-        container:AddChild(timerMotionDrop)
-
-        AddColorPicker(container, styleTable, "iconFillCooldownColor", "Cooldown Fill Color", {0.6, 0.13, 0.18, 0.55}, true, refreshCallback, refreshCallback)
-        AddColorPicker(container, styleTable, "iconFillAuraColor", "Aura Fill Color", {0.2, 1.0, 0.2, 0.55}, true, refreshCallback, refreshCallback)
+    if opts.showAdvancedControlsInline ~= false then
+        BuildIconFillTimerAdvancedControls(container, styleTable, refreshCallback)
     end
 
     return cb
+end
+
+BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCallback)
+    if styleTable.iconFillEnabled ~= true then
+        return
+    end
+
+    local iconFillOrientation = styleTable.iconFillOrientation == "horizontal" and "horizontal" or "vertical"
+
+    local orientationDrop = AceGUI:Create("Dropdown")
+    orientationDrop:SetLabel("Orientation")
+    orientationDrop:SetList({
+        vertical = "Vertical",
+        horizontal = "Horizontal",
+    }, { "vertical", "horizontal" })
+    orientationDrop:SetValue(iconFillOrientation)
+    orientationDrop:SetFullWidth(true)
+    orientationDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.iconFillOrientation = val == "vertical" and "vertical" or "horizontal"
+        refreshCallback()
+        CooldownCompanion:UpdateAllCooldowns()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(orientationDrop)
+
+    local anchorEdgeDrop = AceGUI:Create("Dropdown")
+    anchorEdgeDrop:SetLabel("Anchor Edge")
+    if iconFillOrientation == "vertical" then
+        anchorEdgeDrop:SetList({
+            default = "Bottom",
+            reverse = "Top",
+        }, { "default", "reverse" })
+    else
+        anchorEdgeDrop:SetList({
+            default = "Left",
+            reverse = "Right",
+        }, { "default", "reverse" })
+    end
+    anchorEdgeDrop:SetValue(styleTable.iconFillReverse == true and "reverse" or "default")
+    anchorEdgeDrop:SetFullWidth(true)
+    anchorEdgeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.iconFillReverse = val == "reverse"
+        refreshCallback()
+        CooldownCompanion:UpdateAllCooldowns()
+    end)
+    container:AddChild(anchorEdgeDrop)
+
+    local timerMotionDrop = AceGUI:Create("Dropdown")
+    timerMotionDrop:SetLabel("Timer Motion")
+    timerMotionDrop:SetList({
+        drain = "Starts Full (Drain)",
+        fill = "Starts Empty (Fill)",
+    }, { "drain", "fill" })
+    timerMotionDrop:SetValue(styleTable.iconFillTimerBehavior == "fill" and "fill" or "drain")
+    timerMotionDrop:SetFullWidth(true)
+    timerMotionDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.iconFillTimerBehavior = val == "drain" and "drain" or "fill"
+        refreshCallback()
+        CooldownCompanion:UpdateAllCooldowns()
+    end)
+    container:AddChild(timerMotionDrop)
+
+    AddColorPicker(container, styleTable, "iconFillCooldownColor", "Cooldown Fill Color", {0.6, 0.13, 0.18, 0.55}, true, refreshCallback, refreshCallback)
+    AddColorPicker(container, styleTable, "iconFillAuraColor", "Aura Fill Color", {0.2, 1.0, 0.2, 0.55}, true, refreshCallback, refreshCallback)
 end
 
 local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback, opts)
@@ -1332,6 +1345,7 @@ ST._BuildShowOutOfRangeControls = BuildShowOutOfRangeControls
 ST._BuildShowGCDSwipeControls = BuildShowGCDSwipeControls
 ST._BuildCooldownSwipeControls = BuildCooldownSwipeControls
 ST._BuildIconFillTimerControls = BuildIconFillTimerControls
+ST._BuildIconFillTimerAdvancedControls = BuildIconFillTimerAdvancedControls
 ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildLossOfControlControls = BuildLossOfControlControls
 ST._BuildUnusableDimmingControls = BuildUnusableDimmingControls
