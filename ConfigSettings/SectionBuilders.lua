@@ -55,6 +55,12 @@ local function RefreshConfigPanelForPreviewToggle()
     return true
 end
 
+local function ApplyOverrideCheckboxIndent(checkbox, opts)
+    if opts and opts.isOverride then
+        ApplyCheckboxIndent(checkbox, 20)
+    end
+end
+
 local function AddDurationFormatDropdown(container, settings, refreshCallback, opts)
     if not (container and settings and CooldownCompanion.GetDurationFormatOptions) then
         return nil
@@ -439,7 +445,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         refreshCallback()
     end)
     container:AddChild(reverseCb)
-    ApplyCheckboxIndent(reverseCb, 20)
+    ApplyOverrideCheckboxIndent(reverseCb, opts)
 
     local fillCb = AceGUI:Create("CheckBox")
     fillCb:SetLabel("Show Swipe Fill")
@@ -453,7 +459,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(fillCb)
-    ApplyCheckboxIndent(fillCb, 20)
+    ApplyOverrideCheckboxIndent(fillCb, opts)
 
     -- Swipe Fill Opacity (only when fill is visible)
     if styleTable.showCooldownSwipeFill ~= false then
@@ -484,7 +490,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(edgeCb)
-    ApplyCheckboxIndent(edgeCb, 20)
+    ApplyOverrideCheckboxIndent(edgeCb, opts)
 
     -- Swipe Edge Color (only when edge is visible)
     if styleTable.showCooldownSwipeEdge ~= false then
@@ -637,9 +643,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
         refreshCallback()
     end)
     container:AddChild(hostileOnlyCb)
-    if not (opts and opts.isOverride) then
-        ApplyCheckboxIndent(hostileOnlyCb, 20)
-    end
+    ApplyOverrideCheckboxIndent(hostileOnlyCb, opts)
 
     local highlightStyles = {
         blizzard = "Blizzard (Marching Ants)",

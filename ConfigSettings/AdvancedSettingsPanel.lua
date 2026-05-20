@@ -3,8 +3,11 @@ local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
-local PANEL_WIDTH = 430
-local PANEL_HEIGHT = 610
+local FALLBACK_PANEL_WIDTH = 330
+local MIN_PANEL_HEIGHT = 220
+local MAX_PANEL_HEIGHT = 610
+local FRAME_CHROME_HEIGHT = 57
+local CONTENT_HEIGHT_PADDING = 24
 
 local advancedWindow = nil
 local activeDescriptor = nil
@@ -113,6 +116,46 @@ local function AnchorWindowToConfig()
     end
 end
 
+local function GetAdvancedPanelWidth()
+    local configFrame = CS.configFrame
+    local narrowestWidth
+
+    for _, columnKey in ipairs({ "col1", "col2", "col3", "col4" }) do
+        local column = configFrame and configFrame[columnKey]
+        local frame = column and column.frame
+        local visible = frame and (frame:IsVisible() or frame:IsShown())
+        if visible then
+            local width = frame:GetWidth()
+            if width and width > 0 then
+                narrowestWidth = narrowestWidth and math.min(narrowestWidth, width) or width
+            end
+        end
+    end
+
+    return math.floor((narrowestWidth or FALLBACK_PANEL_WIDTH) + 0.5)
+end
+
+local function GetAdvancedPanelHeight(contentHeight)
+    local desiredHeight = (contentHeight or 0) + FRAME_CHROME_HEIGHT + CONTENT_HEIGHT_PADDING
+    return math.min(MAX_PANEL_HEIGHT, math.max(MIN_PANEL_HEIGHT, math.floor(desiredHeight + 0.5)))
+end
+
+local function ResizeAdvancedPanelToContent(scroll)
+    if not advancedWindow then
+        return
+    end
+
+    advancedWindow:SetWidth(GetAdvancedPanelWidth())
+
+    local contentHeight = scroll and scroll.content and scroll.content:GetHeight()
+    advancedWindow:SetHeight(GetAdvancedPanelHeight(contentHeight))
+
+    if advancedWindow.DoLayout then
+        advancedWindow:DoLayout()
+    end
+    AnchorWindowToConfig()
+end
+
 local function BuildWindowContents()
     if not (advancedWindow and activeDescriptor) then
         return
@@ -124,6 +167,7 @@ local function BuildWindowContents()
     refreshingAdvancedPanel = true
     CS.advancedSettingsPanelRefreshing = true
     advancedWindow:SetTitle(activeDescriptor.title or "Advanced Settings")
+    advancedWindow:SetWidth(GetAdvancedPanelWidth())
     advancedWindow:ReleaseChildren()
     if advancedWindow.PauseLayout then
         advancedWindow:PauseLayout()
@@ -161,6 +205,8 @@ local function BuildWindowContents()
     if advancedWindow.DoLayout then
         advancedWindow:DoLayout()
     end
+
+    ResizeAdvancedPanelToContent(scroll)
 
     CS.advancedSettingsPanelRefreshing = false
     refreshingAdvancedPanel = false
@@ -222,8 +268,8 @@ local function OpenAdvancedSettingsPanel(opts)
     if not advancedWindow then
         local window = AceGUI:Create("Window")
         window:SetTitle(descriptor.title or "Advanced Settings")
-        window:SetWidth(PANEL_WIDTH)
-        window:SetHeight(PANEL_HEIGHT)
+        window:SetWidth(GetAdvancedPanelWidth())
+        window:SetHeight(MAX_PANEL_HEIGHT)
         window:SetLayout("Fill")
         window:EnableResize(false)
         window:SetCallback("OnClose", CleanupWindow)

@@ -543,7 +543,6 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
                 health.healthLowHealthAlertMissingHealthOnly = val == true
                 applyBars()
             end)
-            ApplyCheckboxIndent(missingHealthOnlyCb, 20)
             panel:AddChild(missingHealthOnlyCb)
         end,
     }, applyBars)
@@ -3574,7 +3573,6 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
                 CooldownCompanion:ApplyResourceBars()
             end)
             panel:AddChild(activeAuraCombatCb)
-            ApplyCheckboxIndent(activeAuraCombatCb, 20)
 
             BuildBarActiveAuraControls(panel, customBars[cabIdx], cabApplyBars, {
                 hidePrimaryColorPicker = not isSpellCustomBar,
@@ -3622,7 +3620,6 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
                     CooldownCompanion:ApplyResourceBars()
                 end)
                 panel:AddChild(pandemicCombatCb)
-                ApplyCheckboxIndent(pandemicCombatCb, 20)
 
                 BuildPandemicBarControls(panel, customBars[cabIdx], cabApplyBars)
                 BuildPandemicBarPulseControls(panel, customBars[cabIdx], cabApplyBars)

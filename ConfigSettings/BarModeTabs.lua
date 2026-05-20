@@ -17,7 +17,6 @@ local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local GetBarTextureOptions = ST._GetBarTextureOptions
-local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
@@ -478,7 +477,6 @@ local function BuildBarEffectsTab(container, group, style)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         panel:AddChild(barAuraCombatCb)
-        ApplyCheckboxIndent(barAuraCombatCb, 20)
 
         BuildBarActiveAuraControls(panel, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -533,7 +531,6 @@ local function BuildBarEffectsTab(container, group, style)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         panel:AddChild(barPandemicCombatCb)
-        ApplyCheckboxIndent(barPandemicCombatCb, 20)
 
         BuildPandemicBarControls(panel, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)

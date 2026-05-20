@@ -16,7 +16,6 @@ local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
-local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
@@ -1509,7 +1508,6 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
             CooldownCompanion:RefreshAllAuraTextureVisuals()
         end)
         panel:AddChild(combatCb)
-        ApplyCheckboxIndent(combatCb, 20)
 
         if sectionKey == "aura" then
             local invertCb = AceGUI:Create("CheckBox")
@@ -1521,7 +1519,6 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
                 CooldownCompanion:RefreshAllAuraTextureVisuals()
             end)
             panel:AddChild(invertCb)
-            ApplyCheckboxIndent(invertCb, 20)
         end
 
         local effectList, effectOrder = GetTextureIndicatorEffectList(indicators, sectionKey)
@@ -1735,7 +1732,6 @@ local function BuildProcGlowSection(container, group, style)
             UpdateSelectedGroupStyle()
         end)
         panel:AddChild(procCombatCb)
-        ApplyCheckboxIndent(procCombatCb, 20)
 
         BuildProcGlowControls(panel, style, UpdateSelectedGroupStyle)
 
@@ -1786,7 +1782,6 @@ local function BuildAuraGlowSection(container, group, style)
             UpdateSelectedGroupStyle()
         end)
         panel:AddChild(auraCombatCb)
-        ApplyCheckboxIndent(auraCombatCb, 20)
 
         local auraInvertCb = AceGUI:Create("CheckBox")
         auraInvertCb:SetLabel("Show When Missing")
@@ -1797,7 +1792,6 @@ local function BuildAuraGlowSection(container, group, style)
             UpdateSelectedGroupStyle()
         end)
         panel:AddChild(auraInvertCb)
-        ApplyCheckboxIndent(auraInvertCb, 20)
 
         BuildAuraIndicatorControls(panel, style, UpdateSelectedGroupStyle)
 
@@ -1845,7 +1839,6 @@ local function BuildPandemicGlowSection(container, group, style)
             UpdateSelectedGroupStyle()
         end)
         panel:AddChild(pandemicCombatCb)
-        ApplyCheckboxIndent(pandemicCombatCb, 20)
 
         BuildPandemicGlowControls(panel, style, UpdateSelectedGroupStyle)
 
@@ -1893,7 +1886,6 @@ local function BuildReadyGlowSection(container, group, style)
             UpdateSelectedGroupStyle()
         end)
         panel:AddChild(readyCombatCb)
-        ApplyCheckboxIndent(readyCombatCb, 20)
 
         local readyChargesCb = AceGUI:Create("CheckBox")
         readyChargesCb:SetLabel("Glow When Charges Are Capped")
@@ -1912,7 +1904,6 @@ local function BuildReadyGlowSection(container, group, style)
             CooldownCompanion:UpdateAllCooldowns()
         end)
         panel:AddChild(readyChargesCb)
-        ApplyCheckboxIndent(readyChargesCb, 20)
         CreateInfoButton(readyChargesCb.frame, readyChargesCb.checkbg, "LEFT", "RIGHT", readyChargesCb.text:GetStringWidth() + 6, 0, {
             "Glow When Charges Are Capped",
             {"When this toggle is enabled, the glow will only appear for charge based spells when at max charges.", 1, 1, 1, true},
@@ -1936,7 +1927,6 @@ local function BuildReadyGlowSection(container, group, style)
             CooldownCompanion:RefreshConfigPanel()
         end)
         panel:AddChild(readyDurCb)
-        ApplyCheckboxIndent(readyDurCb, 20)
 
         if (style.readyGlowDuration or 0) > 0 then
             local readyDurSlider = AceGUI:Create("Slider")
@@ -2001,7 +1991,6 @@ local function BuildKeyPressHighlightSection(container, group, style)
             UpdateSelectedGroupStyle()
         end)
         panel:AddChild(kphCombatCb)
-        ApplyCheckboxIndent(kphCombatCb, 20)
 
         BuildKeyPressHighlightControls(panel, style, UpdateSelectedGroupStyle)
 
@@ -2091,7 +2080,6 @@ local function BuildEffectsTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         panel:AddChild(assistedCombatCb)
-        ApplyCheckboxIndent(assistedCombatCb, 20)
 
         BuildAssistedHighlightControls(panel, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -2167,7 +2155,6 @@ local function BuildEffectsTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         panel:AddChild(reverseCb)
-        ApplyCheckboxIndent(reverseCb, 20)
 
         -- Show Swipe Fill
         local fillCb = AceGUI:Create("CheckBox")
@@ -2180,7 +2167,6 @@ local function BuildEffectsTab(container)
             CooldownCompanion:RefreshConfigPanel()
         end)
         panel:AddChild(fillCb)
-        ApplyCheckboxIndent(fillCb, 20)
 
         -- Swipe Fill Opacity (only when fill is visible)
         if style.showCooldownSwipeFill ~= false then
@@ -2208,7 +2194,6 @@ local function BuildEffectsTab(container)
             CooldownCompanion:RefreshConfigPanel()
         end)
         panel:AddChild(edgeCb)
-        ApplyCheckboxIndent(edgeCb, 20)
 
         -- Swipe Edge Color (only when edge is visible)
         if style.showCooldownSwipeEdge ~= false then
