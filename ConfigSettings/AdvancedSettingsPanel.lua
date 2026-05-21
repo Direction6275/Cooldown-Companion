@@ -271,7 +271,7 @@ end
 local function CloseAdvancedSettingsPanel()
     queuedOpen = nil
     if advancedWindow then
-        advancedWindow:Fire("OnClose")
+        advancedWindow:Hide()
         return true
     else
         local hadActiveDescriptor = activeDescriptor ~= nil

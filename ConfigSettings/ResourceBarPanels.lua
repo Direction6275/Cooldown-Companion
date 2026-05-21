@@ -1867,7 +1867,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     end)
                     container:AddChild(tickEnableCb)
 
-                    if _tickEnabled then
+                    local function BuildTickMarkerAdvanced(panel)
                         local tickCombatCb = AceGUI:Create("CheckBox")
                         tickCombatCb:SetLabel("Show Only In Combat")
                         tickCombatCb:SetValue(ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", false))
@@ -1876,11 +1876,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                             WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", val == true)
                             CooldownCompanion:ApplyResourceBars()
                         end)
-                        container:AddChild(tickCombatCb)
-                        ApplyCheckboxIndent(tickCombatCb, 20)
-                    end
+                        panel:AddChild(tickCombatCb)
 
-                    local function BuildTickMarkerAdvanced(panel)
                         local _tickModeRes = { continuousTickMode = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickMode", nil) }
                         local tickMode = GetContinuousTickModeConfig(_tickModeRes)
                         local modeDrop = AceGUI:Create("Dropdown")
