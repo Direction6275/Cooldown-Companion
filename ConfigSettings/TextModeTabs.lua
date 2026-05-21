@@ -209,7 +209,21 @@ local function BuildTextAppearanceTab(container, group, style)
         CS.collapsedSections["textappearance_format"] = not CS.collapsedSections["textappearance_format"]
         CooldownCompanion:RefreshConfigPanel()
     end)
-    local fmtPreviewAdvExpanded, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "textFormatPreview", tabInfoButtons)
+    local function BuildFormatPreviewAdvanced(panel)
+        if AddConditionalPreviewButton then
+            AddConditionalPreviewButton(panel, "Preview Cooldown State", "cooldown")
+            AddConditionalPreviewButton(panel, "Preview Aura Duration Text", "aura_duration_text")
+            AddConditionalPreviewButton(panel, "Preview Aura Stack Text", "aura_stack_text")
+            AddConditionalPreviewButton(panel, "Preview Pandemic State", "pandemic")
+            AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable")
+            AddConditionalPreviewButton(panel, "Preview Out of Range State", "out_of_range")
+        end
+    end
+
+    local fmtPreviewAdvExpanded, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "textFormatPreview", tabInfoButtons, nil, {
+        title = "Format String Advanced",
+        build = BuildFormatPreviewAdvanced,
+    })
     fmtPreviewAdvBtn:SetPoint("LEFT", fmtCollapseBtn, "RIGHT", 4, 0)
 
     -- Token reference info button
@@ -280,14 +294,6 @@ local function BuildTextAppearanceTab(container, group, style)
     end)
     container:AddChild(editBtn)
 
-    if fmtPreviewAdvExpanded and AddConditionalPreviewButton then
-        AddConditionalPreviewButton(container, "Preview Cooldown State", "cooldown")
-        AddConditionalPreviewButton(container, "Preview Aura Duration Text", "aura_duration_text")
-        AddConditionalPreviewButton(container, "Preview Aura Stack Text", "aura_stack_text")
-        AddConditionalPreviewButton(container, "Preview Pandemic State", "pandemic")
-        AddConditionalPreviewButton(container, "Preview Unusable State", "unusable")
-        AddConditionalPreviewButton(container, "Preview Out of Range State", "out_of_range")
-    end
     end -- not fmtCollapsed
 
     -- ================================================================

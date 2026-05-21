@@ -99,7 +99,7 @@ local STEP_DATA = {
     },
     panel_settings_intro = {
         title = "Panel Settings",
-        text = "This column is dedicated to editing and styling all entries in a panel. Panel layout, text elements, and indicators are all found here.\n\nImportant:\n\n|A:Crosshair_VehichleCursor_32:14:14|a: Whenever you see the |A:Crosshair_VehichleCursor_32:14:14|a next to a setting, that means you can override a panel-wide setting for a specific entry.\n\n|A:QuestLog-icon-setting:14:14|a: Whenever you see the |A:QuestLog-icon-setting:14:14|a next to a setting, that means you can expand advanced settings for it.",
+        text = "This column is dedicated to editing and styling all entries in a panel. Panel layout, text elements, and indicators are all found here.\n\nImportant:\n\n|A:Crosshair_VehichleCursor_32:14:14|a: Whenever you see the |A:Crosshair_VehichleCursor_32:14:14|a next to a setting, that means you can override a panel-wide setting for a specific entry.\n\n|A:QuestLog-icon-setting:14:14|a: Whenever you see the |A:QuestLog-icon-setting:14:14|a next to a setting, that opens advanced settings for it.",
         anchor = "col4_area",
         placement = "left",
     },

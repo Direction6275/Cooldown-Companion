@@ -213,6 +213,37 @@ local function TintProcGlowFrame(frame, color)
     end
 end
 
+local function PrepareProcGlowLoop(frame, color, resetLoopAlpha)
+    if not frame then return end
+
+    TintProcGlowFrame(frame, color)
+    if frame.ProcAltGlow then
+        frame.ProcAltGlow:Hide()
+    end
+    if frame.ProcStartAnim then
+        frame.ProcStartAnim:Stop()
+    end
+    if frame.ProcStartFlipbook then
+        frame.ProcStartFlipbook:Show()
+        frame.ProcStartFlipbook:SetAlpha(0)
+    end
+    if frame.ProcLoopFlipbook then
+        frame.ProcLoopFlipbook:Show()
+        frame.ProcLoopFlipbook:SetAlpha(resetLoopAlpha and 0 or 1)
+    end
+end
+
+local function PlayProcGlowLoop(frame)
+    if not frame then return end
+    if frame.ProcLoop then
+        if not frame.ProcLoop:IsPlaying() then
+            frame.ProcLoop:Play()
+        end
+    elseif frame.ProcLoopFlipbook then
+        frame.ProcLoopFlipbook:SetAlpha(1)
+    end
+end
+
 -- Hide all glow sub-styles in a container table (solidTextures, procFrame, overlayTexture).
 -- Works for procGlow, auraGlow, barAuraEffect, assistedHighlight, and keyPressHighlight containers.
 -- LCG pixel glow is stopped via StopLibCustomGlow.
@@ -284,18 +315,9 @@ local function ShowGlowStyle(container, style, button, color, params)
         end
     elseif style == "glow" then
         FitHighlightFrame(container.procFrame, button, size or 32)
-        TintProcGlowFrame(container.procFrame, color)
+        PrepareProcGlowLoop(container.procFrame, color, true)
         container.procFrame:Show()
-        -- Skip intro burst, go straight to loop
-        if container.procFrame.ProcStartFlipbook then
-            container.procFrame.ProcStartFlipbook:SetAlpha(0)
-        end
-        if container.procFrame.ProcLoopFlipbook then
-            container.procFrame.ProcLoopFlipbook:SetAlpha(1)
-        end
-        if container.procFrame.ProcLoop then
-            container.procFrame.ProcLoop:Play()
-        end
+        PlayProcGlowLoop(container.procFrame)
     elseif style == "overlay" then
         if container.overlayTexture then
             container.overlayTexture:SetColorTexture(color[1], color[2], color[3], color[4] or defaultAlpha)
@@ -358,6 +380,29 @@ local function IsGlowAnimationAlive(container)
         return true
     end
     -- No recognized sub-style matched — assume dead to force restart.
+    return false
+end
+
+local function TryUpdateGlowStyleInPlace(container, style, button, color, params)
+    if style == "solid" then
+        ApplyEdgePositions(container.solidTextures, button, params.size or 2)
+        for _, tex in ipairs(container.solidTextures) do
+            tex:SetColorTexture(color[1], color[2], color[3], color[4] or params.defaultAlpha or 1)
+            tex:Show()
+        end
+        return true
+    elseif style == "glow" and container.procFrame and container.procFrame:IsShown() then
+        FitHighlightFrame(container.procFrame, button, params.size or 32)
+        PrepareProcGlowLoop(container.procFrame, color, false)
+        container.procFrame:Show()
+        PlayProcGlowLoop(container.procFrame)
+        return true
+    elseif style == "overlay" and container.overlayTexture and container.overlayTexture:IsShown() then
+        container.overlayTexture:SetColorTexture(color[1], color[2], color[3], color[4] or params.defaultAlpha or 1)
+        container.overlayTexture:Show()
+        return true
+    end
+
     return false
 end
 
@@ -548,21 +593,6 @@ local function MakeGlowSetter(cfg)
             return
         end
 
-        -- Update cache
-        button[cActive] = true
-        button[cStyle] = glowStyle
-        button[cR] = color[1]
-        button[cG] = color[2]
-        button[cB] = color[3]
-        button[cA] = ca
-        if cSz then button[cSz] = sz end
-        if cTh then button[cTh] = th end
-        if cSpd then button[cSpd] = spd end
-        if cLn then button[cLn] = ln end
-        if cPandemic then button[cPandemic] = pandemicOverride end
-
-        HideGlowStyles(container)
-
         -- Build opts table (state-change path only, so allocation is OK)
         local opts = { size = sz, key = resolvedLcgKey }
         if fullParams then
@@ -578,6 +608,28 @@ local function MakeGlowSetter(cfg)
             opts.defaultAlpha = optsDefaultAlpha
         end
 
+        local updateInPlace = button[cActive]
+            and button[cStyle] == glowStyle
+            and IsGlowAnimationAlive(container)
+
+        -- Update cache
+        button[cActive] = true
+        button[cStyle] = glowStyle
+        button[cR] = color[1]
+        button[cG] = color[2]
+        button[cB] = color[3]
+        button[cA] = ca
+        if cSz then button[cSz] = sz end
+        if cTh then button[cTh] = th end
+        if cSpd then button[cSpd] = spd end
+        if cLn then button[cLn] = ln end
+        if cPandemic then button[cPandemic] = pandemicOverride end
+
+        if updateInPlace and TryUpdateGlowStyleInPlace(container, glowStyle, button, color, opts) then
+            return
+        end
+
+        HideGlowStyles(container)
         ShowGlowStyle(container, glowStyle, button, color, opts)
     end
 end

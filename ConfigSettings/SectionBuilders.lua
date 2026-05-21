@@ -55,6 +55,43 @@ local function RefreshConfigPanelForPreviewToggle()
     return true
 end
 
+local function IsAdvancedSettingsPanelContainer(container)
+    return container and container._isAdvancedSettingsPanel == true
+end
+
+local ClearActivePreviewBadgeButton
+
+local function RefreshStructuralControls(container)
+    if IsAdvancedSettingsPanelContainer(container) and CS.RefreshAdvancedSettingsPanel then
+        CS.RefreshAdvancedSettingsPanel()
+    elseif CooldownCompanion.RefreshConfigPanel then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function RefreshPreviewToggleButtons(container)
+    local buttons = container and container._previewToggleButtons
+    if type(buttons) ~= "table" then
+        return
+    end
+
+    for _, previewBtn in ipairs(buttons) do
+        if previewBtn and previewBtn._isActiveFn and previewBtn._offLabel then
+            previewBtn:SetText(previewBtn._isActiveFn() and "Preview: ON" or previewBtn._offLabel)
+        end
+    end
+end
+
+local function RefreshActiveAdvancedPreviewToggleButtons()
+    RefreshPreviewToggleButtons({ _previewToggleButtons = CS.advancedSettingsPreviewToggleButtons })
+end
+
+local function ApplyOverrideCheckboxIndent(checkbox, opts)
+    if opts and opts.isOverride then
+        ApplyCheckboxIndent(checkbox, 20)
+    end
+end
+
 local function AddDurationFormatDropdown(container, settings, refreshCallback, opts)
     if not (container and settings and CooldownCompanion.GetDurationFormatOptions) then
         return nil
@@ -85,17 +122,145 @@ local function AddPreviewToggleButton(container, offLabel, isActiveFn, setActive
     local btn = AceGUI:Create("Button")
     btn:SetText(isActiveFn() and "Preview: ON" or offLabel)
     btn:SetFullWidth(true)
+    if IsAdvancedSettingsPanelContainer(container) then
+        container._previewToggleButtons = container._previewToggleButtons or {}
+        CS.advancedSettingsPreviewToggleButtons = container._previewToggleButtons
+        btn._isActiveFn = isActiveFn
+        btn._offLabel = offLabel
+        table.insert(container._previewToggleButtons, btn)
+    end
     btn:SetCallback("OnClick", function()
+        local showPreview = not isActiveFn()
+        if showPreview and CooldownCompanion.ClearAllConfigPreviews then
+            CooldownCompanion:ClearAllConfigPreviews()
+        elseif not showPreview and ClearActivePreviewBadgeButton then
+            ClearActivePreviewBadgeButton()
+        end
+        setActiveFn(showPreview)
+        if IsAdvancedSettingsPanelContainer(container) then
+            RefreshPreviewToggleButtons(container)
+        elseif not RefreshConfigPanelForPreviewToggle() then
+            btn:SetText(isActiveFn() and "Preview: ON" or offLabel)
+        end
+    end)
+    container:AddChild(btn)
+    return btn
+end
+
+local function SetPreviewBadgeActive(btn, active)
+    if btn then
+        if not btn._activeHighlight then
+            local activeHighlight = btn:CreateTexture(nil, "BACKGROUND")
+            activeHighlight:SetPoint("TOPLEFT", -1, 1)
+            activeHighlight:SetPoint("BOTTOMRIGHT", 1, -1)
+            activeHighlight:SetColorTexture(0.85, 0.65, 0.0, 0.6)
+            activeHighlight:Hide()
+            btn._activeHighlight = activeHighlight
+        end
+
+        if active then
+            btn._activeHighlight:Show()
+        else
+            btn._activeHighlight:Hide()
+        end
+    end
+
+    if btn and btn._icon then
+        if active then
+            btn._icon:SetVertexColor(1, 0.82, 0, 1)
+        else
+            btn._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
+        end
+    end
+end
+
+function ClearActivePreviewBadgeButton()
+    local btn = CS.activePreviewBadgeButton
+    if btn then
+        SetPreviewBadgeActive(btn, false)
+    end
+    CS.activePreviewBadgeButton = nil
+end
+
+local function SetActivePreviewBadgeButton(btn, active)
+    SetPreviewBadgeActive(btn, active)
+
+    if active then
+        local previousBtn = CS.activePreviewBadgeButton
+        if previousBtn and previousBtn ~= btn then
+            SetPreviewBadgeActive(previousBtn, false)
+        end
+        CS.activePreviewBadgeButton = btn
+    elseif CS.activePreviewBadgeButton == btn then
+        CS.activePreviewBadgeButton = nil
+    end
+end
+
+local function AddPreviewBadge(parentWidget, anchorAfterFrame, label, isActiveFn, setActiveFn, enabled)
+    local hasCheckboxAnchor = parentWidget and parentWidget.frame and parentWidget.checkbg and parentWidget.text
+    local hasLabelAnchor = parentWidget and parentWidget.frame and parentWidget.label
+    if not enabled
+        or not (hasCheckboxAnchor or hasLabelAnchor)
+        or type(isActiveFn) ~= "function"
+        or type(setActiveFn) ~= "function"
+    then
+        return nil
+    end
+
+    local frame = parentWidget.frame
+    local btn = frame._cdcPreviewBtn
+    if not btn then
+        btn = CreateFrame("Button", nil, frame)
+        btn:SetSize(14, 14)
+        btn._icon = btn:CreateTexture(nil, "ARTWORK")
+        btn._icon:SetSize(13, 13)
+        btn._icon:SetPoint("CENTER")
+        btn._icon:SetAtlas("CreditsScreen-Assets-Buttons-Play", false)
+        frame._cdcPreviewBtn = btn
+    end
+
+    btn:SetParent(frame)
+    btn:ClearAllPoints()
+    if anchorAfterFrame and anchorAfterFrame:IsShown() then
+        btn:SetPoint("LEFT", anchorAfterFrame, "RIGHT", 4, 0)
+    elseif hasCheckboxAnchor then
+        btn:SetPoint("LEFT", parentWidget.checkbg, "RIGHT", parentWidget.text:GetStringWidth() + 6, 0)
+    else
+        btn:SetPoint("LEFT", parentWidget.label, "RIGHT", 4, 0)
+    end
+    btn:Show()
+    btn._icon:Show()
+
+    SetActivePreviewBadgeButton(btn, isActiveFn())
+    btn:SetScript("OnClick", function()
         local showPreview = not isActiveFn()
         if showPreview and CooldownCompanion.ClearAllConfigPreviews then
             CooldownCompanion:ClearAllConfigPreviews()
         end
         setActiveFn(showPreview)
-        if not RefreshConfigPanelForPreviewToggle() then
-            btn:SetText(isActiveFn() and "Preview: ON" or offLabel)
-        end
+        SetActivePreviewBadgeButton(btn, isActiveFn())
+        RefreshActiveAdvancedPreviewToggleButtons()
     end)
-    container:AddChild(btn)
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(label)
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    local advancedBtn = frame._cdcAdvancedBtn
+    if not (advancedBtn and advancedBtn:GetParent() == frame) then
+        parentWidget:SetCallback("OnRelease", function()
+            btn:ClearAllPoints()
+            btn:Hide()
+            btn:SetParent(nil)
+            if CS.activePreviewBadgeButton == btn then
+                CS.activePreviewBadgeButton = nil
+            end
+        end)
+    end
+
     return btn
 end
 
@@ -133,6 +298,40 @@ local function AddConditionalPreviewButton(container, label, previewKind, opts)
     end)
 end
 
+local function AddConditionalPreviewBadge(parentWidget, anchorAfterFrame, label, previewKind, enabled, opts)
+    if not (CooldownCompanion.SetConditionalVisualPreviewActive and CooldownCompanion.IsConditionalVisualPreviewActive) then
+        return nil
+    end
+
+    local function ResolveTarget()
+        local groupId = ResolvePreviewOption(opts and opts.groupId) or CS.selectedGroup
+        local buttonIndex = ResolvePreviewOption(opts and opts.buttonIndex)
+        if opts and opts.requireButton and not buttonIndex then
+            return nil, nil
+        end
+        return groupId, buttonIndex
+    end
+
+    return AddPreviewBadge(parentWidget, anchorAfterFrame, label, function()
+        local groupId, buttonIndex = ResolveTarget()
+        if not groupId then
+            return false
+        end
+        return CooldownCompanion:IsConditionalVisualPreviewActive(groupId, buttonIndex, previewKind)
+    end, function(show)
+        local groupId, buttonIndex = ResolveTarget()
+        if groupId then
+            CooldownCompanion:SetConditionalVisualPreviewActive(
+                groupId,
+                buttonIndex,
+                previewKind,
+                show,
+                opts and opts.sampleState
+            )
+        end
+    end, enabled)
+end
+
 local function BuildCooldownTextControls(container, styleTable, refreshCallback, opts)
     local fallbackStyle = opts and opts.fallbackStyle
     local showCooldownText = styleTable.showCooldownText
@@ -151,7 +350,7 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback,
     cdTextCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showCooldownText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(cdTextCb)
 
@@ -184,7 +383,7 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback)
     auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showAuraText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(auraTextCb)
 
@@ -205,7 +404,7 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback)
         sepPosCb:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable.separateTextPositions = val
             refreshCallback()
-            CooldownCompanion:RefreshConfigPanel()
+            RefreshStructuralControls(container)
         end)
         container:AddChild(sepPosCb)
 
@@ -229,7 +428,7 @@ local function BuildAuraStackTextControls(container, styleTable, refreshCallback
     auraStackCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showAuraStackText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(auraStackCb)
 
@@ -249,7 +448,7 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback)
     kbCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showKeybindText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(kbCb)
 
@@ -271,7 +470,7 @@ local function BuildChargeTextControls(container, styleTable, refreshCallback)
     chargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showChargeText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(chargeTextCb)
 
@@ -288,7 +487,7 @@ end
 local function BuildBorderControls(container, styleTable, refreshCallback)
     local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode", function()
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
@@ -362,7 +561,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
     cdTintCb:SetCallback("OnValueChanged", function(w, e, val)
         styleTable.iconCooldownTintEnabled = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(cdTintCb)
 
@@ -377,7 +576,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
     auraTintCb:SetCallback("OnValueChanged", function(w, e, val)
         styleTable.iconAuraTintEnabled = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(auraTintCb)
 
@@ -412,6 +611,8 @@ local function IsIconFillTimerEnabled(styleTable, opts)
     return opts and opts.fallbackStyle and opts.fallbackStyle.iconFillEnabled == true
 end
 
+local BuildIconFillTimerAdvancedControls
+
 local function BuildCooldownSwipeControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
@@ -439,7 +640,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         refreshCallback()
     end)
     container:AddChild(reverseCb)
-    ApplyCheckboxIndent(reverseCb, 20)
+    ApplyOverrideCheckboxIndent(reverseCb, opts)
 
     local fillCb = AceGUI:Create("CheckBox")
     fillCb:SetLabel("Show Swipe Fill")
@@ -450,10 +651,10 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         if disabledByIconFill then return end
         styleTable.showCooldownSwipeFill = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(fillCb)
-    ApplyCheckboxIndent(fillCb, 20)
+    ApplyOverrideCheckboxIndent(fillCb, opts)
 
     -- Swipe Fill Opacity (only when fill is visible)
     if styleTable.showCooldownSwipeFill ~= false then
@@ -481,10 +682,10 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         if disabledByIconFill then return end
         styleTable.showCooldownSwipeEdge = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(edgeCb)
-    ApplyCheckboxIndent(edgeCb, 20)
+    ApplyOverrideCheckboxIndent(edgeCb, opts)
 
     -- Swipe Edge Color (only when edge is visible)
     if styleTable.showCooldownSwipeEdge ~= false then
@@ -505,6 +706,9 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
     cb:SetCallback("OnValueChanged", function(widget, event, val)
         if disabledByMasque then return end
         styleTable.iconFillEnabled = val == true
+        if styleTable.iconFillEnabled and type(opts.onEnabled) == "function" then
+            opts.onEnabled()
+        end
         refreshCallback()
         CooldownCompanion:UpdateAllCooldowns()
         CooldownCompanion:RefreshConfigPanel()
@@ -520,67 +724,75 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
         return cb
     end
 
-    if styleTable.iconFillEnabled == true then
-        local iconFillOrientation = styleTable.iconFillOrientation == "horizontal" and "horizontal" or "vertical"
-
-        local orientationDrop = AceGUI:Create("Dropdown")
-        orientationDrop:SetLabel("Orientation")
-        orientationDrop:SetList({
-            vertical = "Vertical",
-            horizontal = "Horizontal",
-        }, { "vertical", "horizontal" })
-        orientationDrop:SetValue(iconFillOrientation)
-        orientationDrop:SetFullWidth(true)
-        orientationDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.iconFillOrientation = val == "vertical" and "vertical" or "horizontal"
-            refreshCallback()
-            CooldownCompanion:UpdateAllCooldowns()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(orientationDrop)
-
-        local anchorEdgeDrop = AceGUI:Create("Dropdown")
-        anchorEdgeDrop:SetLabel("Anchor Edge")
-        if iconFillOrientation == "vertical" then
-            anchorEdgeDrop:SetList({
-                default = "Bottom",
-                reverse = "Top",
-            }, { "default", "reverse" })
-        else
-            anchorEdgeDrop:SetList({
-                default = "Left",
-                reverse = "Right",
-            }, { "default", "reverse" })
-        end
-        anchorEdgeDrop:SetValue(styleTable.iconFillReverse == true and "reverse" or "default")
-        anchorEdgeDrop:SetFullWidth(true)
-        anchorEdgeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.iconFillReverse = val == "reverse"
-            refreshCallback()
-            CooldownCompanion:UpdateAllCooldowns()
-        end)
-        container:AddChild(anchorEdgeDrop)
-
-        local timerMotionDrop = AceGUI:Create("Dropdown")
-        timerMotionDrop:SetLabel("Timer Motion")
-        timerMotionDrop:SetList({
-            drain = "Starts Full (Drain)",
-            fill = "Starts Empty (Fill)",
-        }, { "drain", "fill" })
-        timerMotionDrop:SetValue(styleTable.iconFillTimerBehavior == "fill" and "fill" or "drain")
-        timerMotionDrop:SetFullWidth(true)
-        timerMotionDrop:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.iconFillTimerBehavior = val == "drain" and "drain" or "fill"
-            refreshCallback()
-            CooldownCompanion:UpdateAllCooldowns()
-        end)
-        container:AddChild(timerMotionDrop)
-
-        AddColorPicker(container, styleTable, "iconFillCooldownColor", "Cooldown Fill Color", {0.6, 0.13, 0.18, 0.55}, true, refreshCallback, refreshCallback)
-        AddColorPicker(container, styleTable, "iconFillAuraColor", "Aura Fill Color", {0.2, 1.0, 0.2, 0.55}, true, refreshCallback, refreshCallback)
+    if opts.showAdvancedControlsInline ~= false then
+        BuildIconFillTimerAdvancedControls(container, styleTable, refreshCallback)
     end
 
     return cb
+end
+
+BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCallback)
+    if styleTable.iconFillEnabled ~= true then
+        return
+    end
+
+    local iconFillOrientation = styleTable.iconFillOrientation == "horizontal" and "horizontal" or "vertical"
+
+    local orientationDrop = AceGUI:Create("Dropdown")
+    orientationDrop:SetLabel("Orientation")
+    orientationDrop:SetList({
+        vertical = "Vertical",
+        horizontal = "Horizontal",
+    }, { "vertical", "horizontal" })
+    orientationDrop:SetValue(iconFillOrientation)
+    orientationDrop:SetFullWidth(true)
+    orientationDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.iconFillOrientation = val == "vertical" and "vertical" or "horizontal"
+        refreshCallback()
+        CooldownCompanion:UpdateAllCooldowns()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(orientationDrop)
+
+    local anchorEdgeDrop = AceGUI:Create("Dropdown")
+    anchorEdgeDrop:SetLabel("Anchor Edge")
+    if iconFillOrientation == "vertical" then
+        anchorEdgeDrop:SetList({
+            default = "Bottom",
+            reverse = "Top",
+        }, { "default", "reverse" })
+    else
+        anchorEdgeDrop:SetList({
+            default = "Left",
+            reverse = "Right",
+        }, { "default", "reverse" })
+    end
+    anchorEdgeDrop:SetValue(styleTable.iconFillReverse == true and "reverse" or "default")
+    anchorEdgeDrop:SetFullWidth(true)
+    anchorEdgeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.iconFillReverse = val == "reverse"
+        refreshCallback()
+        CooldownCompanion:UpdateAllCooldowns()
+    end)
+    container:AddChild(anchorEdgeDrop)
+
+    local timerMotionDrop = AceGUI:Create("Dropdown")
+    timerMotionDrop:SetLabel("Timer Motion")
+    timerMotionDrop:SetList({
+        drain = "Starts Full (Drain)",
+        fill = "Starts Empty (Fill)",
+    }, { "drain", "fill" })
+    timerMotionDrop:SetValue(styleTable.iconFillTimerBehavior == "fill" and "fill" or "drain")
+    timerMotionDrop:SetFullWidth(true)
+    timerMotionDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.iconFillTimerBehavior = val == "drain" and "drain" or "fill"
+        refreshCallback()
+        CooldownCompanion:UpdateAllCooldowns()
+    end)
+    container:AddChild(timerMotionDrop)
+
+    AddColorPicker(container, styleTable, "iconFillCooldownColor", "Cooldown Fill Color", {0.6, 0.13, 0.18, 0.55}, true, refreshCallback, refreshCallback)
+    AddColorPicker(container, styleTable, "iconFillAuraColor", "Aura Fill Color", {0.2, 1.0, 0.2, 0.55}, true, refreshCallback, refreshCallback)
 end
 
 local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback, opts)
@@ -637,9 +849,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
         refreshCallback()
     end)
     container:AddChild(hostileOnlyCb)
-    if not (opts and opts.isOverride) then
-        ApplyCheckboxIndent(hostileOnlyCb, 20)
-    end
+    ApplyOverrideCheckboxIndent(hostileOnlyCb, opts)
 
     local highlightStyles = {
         blizzard = "Blizzard (Marching Ants)",
@@ -654,7 +864,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
     styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.assistedHighlightStyle = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(styleDrop)
 
@@ -868,7 +1078,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
                 styleTable[cfg.styleKey] = val and cfg.defaultStyle or "none"
             end
             refreshCallback()
-            CooldownCompanion:RefreshConfigPanel()
+            RefreshStructuralControls(container)
         end)
         container:AddChild(enableCb)
 
@@ -906,7 +1116,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
         end
         styleTable[cfg.styleKey] = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(styleDrop)
 
@@ -948,7 +1158,7 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
         enableCb:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[cfg.enableKey] = val
             refreshCallback()
-            CooldownCompanion:RefreshConfigPanel()
+            RefreshStructuralControls(container)
         end)
         container:AddChild(enableCb)
 
@@ -977,7 +1187,14 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
     effectDrop:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable[cfg.effectKey] = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        if val == "none" and IsAdvancedSettingsPanelContainer(container) and CS.CloseAdvancedSettingsPanel then
+            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+            if CooldownCompanion.RefreshConfigPanel then
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        else
+            RefreshStructuralControls(container)
+        end
     end)
     container:AddChild(effectDrop)
 
@@ -1100,7 +1317,7 @@ local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg
     pulseCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable[cfg.pulseKey] = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(pulseCb)
 
@@ -1125,7 +1342,7 @@ local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg
     shiftCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable[cfg.colorShiftKey] = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(shiftCb)
 
@@ -1176,7 +1393,7 @@ local function BuildBarNameTextControls(container, styleTable, refreshCallback)
     showNameCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showBarNameText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(showNameCb)
 
@@ -1204,7 +1421,7 @@ local function BuildBarReadyTextControls(container, styleTable, refreshCallback)
     showReadyCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showBarReadyText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(showReadyCb)
 
@@ -1233,7 +1450,7 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
 
     local renderMode = AddBorderRenderModeDropdown(container, styleTable, "textBorderRenderMode", function()
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
@@ -1286,10 +1503,7 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback)
 
     local readyColorPicker = AddColorPicker(container, styleTable, "textReadyColor", "Ready Color", {0.2, 1.0, 0.2, 1}, true, refreshCallback, refreshCallback)
 
-    local readyAdvExpanded, readyAdvBtn = AddAdvancedToggle(readyColorPicker, "textReadyText", tabInfoButtons)
-    readyAdvBtn:SetPoint("LEFT", readyColorPicker.colorSwatch, "RIGHT", readyColorPicker.text:GetStringWidth() + 8, 0)
-
-    if readyAdvExpanded then
+    local function BuildReadyTextAdvanced(panel)
         local readyTextBox = AceGUI:Create("EditBox")
         if readyTextBox.editbox.Instructions then readyTextBox.editbox.Instructions:Hide() end
         readyTextBox:SetLabel("Ready Text")
@@ -1299,8 +1513,14 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback)
             styleTable.textReadyText = val
             refreshCallback()
         end)
-        container:AddChild(readyTextBox)
+        panel:AddChild(readyTextBox)
     end
+
+    local readyAdvExpanded, readyAdvBtn = AddAdvancedToggle(readyColorPicker, "textReadyText", tabInfoButtons, nil, {
+        title = "Ready Color Advanced",
+        build = BuildReadyTextAdvanced,
+    })
+    readyAdvBtn:SetPoint("LEFT", readyColorPicker.colorSwatch, "RIGHT", readyColorPicker.text:GetStringWidth() + 8, 0)
 
     AddColorPicker(container, styleTable, "textAuraColor", "Aura Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback)
 end
@@ -1311,8 +1531,12 @@ end
 ST._BuildCooldownTextControls = BuildCooldownTextControls
 ST._AddDurationFormatDropdown = AddDurationFormatDropdown
 ST._AddPreviewToggleButton = AddPreviewToggleButton
+ST._AddPreviewBadge = AddPreviewBadge
 ST._RefreshConfigPanelForPreviewToggle = RefreshConfigPanelForPreviewToggle
+ST._ClearActivePreviewBadgeButton = ClearActivePreviewBadgeButton
+ST._RefreshAdvancedSettingsPreviewButtons = RefreshActiveAdvancedPreviewToggleButtons
 ST._AddConditionalPreviewButton = AddConditionalPreviewButton
+ST._AddConditionalPreviewBadge = AddConditionalPreviewBadge
 ST._BuildAuraTextControls = BuildAuraTextControls
 ST._BuildAuraStackTextControls = BuildAuraStackTextControls
 ST._BuildKeybindTextControls = BuildKeybindTextControls
@@ -1325,6 +1549,7 @@ ST._BuildShowOutOfRangeControls = BuildShowOutOfRangeControls
 ST._BuildShowGCDSwipeControls = BuildShowGCDSwipeControls
 ST._BuildCooldownSwipeControls = BuildCooldownSwipeControls
 ST._BuildIconFillTimerControls = BuildIconFillTimerControls
+ST._BuildIconFillTimerAdvancedControls = BuildIconFillTimerAdvancedControls
 ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildLossOfControlControls = BuildLossOfControlControls
 ST._BuildUnusableDimmingControls = BuildUnusableDimmingControls

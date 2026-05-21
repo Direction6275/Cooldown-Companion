@@ -717,6 +717,9 @@ local function CreateConfigPanel()
         if CS.CancelPickAuraTexture then
             CS.CancelPickAuraTexture()
         end
+        if CS.CloseAdvancedSettingsPanel then
+            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+        end
         if not CS.previewToggleRefreshActive then
             CooldownCompanion:ClearAllConfigPreviews()
         end
@@ -1143,14 +1146,22 @@ local function CreateConfigPanel()
             info.func = function()
                 local val = not CooldownCompanion.db.profile.hideInfoButtons
                 CooldownCompanion.db.profile.hideInfoButtons = val
-                for _, btn in ipairs(CS.columnInfoButtons) do
-                    if val then btn:Hide() else btn:Show() end
+                local function applyInfoButtonVisibility(buttons)
+                    if type(buttons) ~= "table" then return end
+                    for _, btn in ipairs(buttons) do
+                        if btn and not btn._isAdvancedToggle then
+                            if val then btn:Hide() else btn:Show() end
+                        end
+                    end
                 end
-                for _, btn in ipairs(CS.tabInfoButtons) do
-                    if val then btn:Hide() else btn:Show() end
-                end
-                for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
-                    if val then btn:Hide() else btn:Show() end
+                for _, buttons in ipairs({
+                    CS.columnInfoButtons,
+                    CS.tabInfoButtons,
+                    CS.customBarInfoButtons,
+                    CS.buttonSettingsInfoButtons,
+                    CS.advancedSettingsInfoButtons,
+                }) do
+                    applyInfoButtonVisibility(buttons)
                 end
             end
             UIDropDownMenu_AddButton(info, level)
@@ -1262,6 +1273,9 @@ local function CreateConfigPanel()
 
     -- Reset collapse state whenever mini frame is hidden (ESC, /cdc toggle, expand)
     miniFrame:SetScript("OnHide", function()
+        if CS.CloseAdvancedSettingsPanel then
+            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+        end
         isMinimized = false
         collapseIcon:SetAtlas("common-icon-minus")
         collapseBtn:SetParent(content)
@@ -1312,6 +1326,9 @@ local function CreateConfigPanel()
         else
             -- Collapse: save main frame position, then show mini frame at collapse button position
             CloseDropDownMenus()
+            if CS.CloseAdvancedSettingsPanel then
+                CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+            end
 
             savedFrameRight = content:GetRight()
             savedFrameTop = content:GetTop()
@@ -1811,7 +1828,9 @@ local function CreateConfigPanel()
         -- Apply hideInfoButtons setting
         if CooldownCompanion.db.profile.hideInfoButtons then
             for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
-                btn:Hide()
+                if btn and not btn._isAdvancedToggle then
+                    btn:Hide()
+                end
             end
         end
     end)
@@ -2109,6 +2128,8 @@ function CooldownCompanion:RefreshConfigPanel()
     if not CS.configFrame then return end
     if not CS.configFrame.frame:IsShown() then return end
     if CS.talentPickerMode then return end
+    if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
+    CS.configRefreshInProgress = true
     if IsConfigFinderAvailable and not IsConfigFinderAvailable() and ClearConfigFinderText then
         ClearConfigFinderText()
     elseif SetConfigFinderText then
@@ -2231,6 +2252,10 @@ function CooldownCompanion:RefreshConfigPanel()
     if RefreshTutorialPlacement then
         RefreshTutorialPlacement()
     end
+    CS.configRefreshInProgress = false
+    if CS.RefreshAdvancedSettingsPanel then
+        CS.RefreshAdvancedSettingsPanel()
+    end
 
 end
 
@@ -2265,6 +2290,9 @@ function CooldownCompanion:ToggleConfig()
     if CS.configFrame._miniFrame and CS.configFrame._miniFrame:IsShown() then
         if CS.configFrame.HideChangelogOverlay then
             CS.configFrame.HideChangelogOverlay()
+        end
+        if CS.CloseAdvancedSettingsPanel then
+            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         end
         CS.configFrame._miniFrame:Hide()
         return

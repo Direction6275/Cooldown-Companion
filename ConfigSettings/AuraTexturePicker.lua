@@ -98,6 +98,10 @@ end
 local function OpenAuraTexturePicker(opts)
     opts = opts or {}
 
+    if CS.CloseAdvancedSettingsPanel then
+        CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+    end
+
     if pickerWindow then
         pickerWindow:Show()
         pickerWindow.frame:Raise()

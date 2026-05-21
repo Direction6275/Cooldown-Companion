@@ -63,13 +63,72 @@ local function AttachCollapseButton(heading, isCollapsed, onClickFn)
     return btn
 end
 
--- Helper: add an inline advanced-toggle button on a parent widget (CheckBox or Heading).
--- Returns isExpanded (boolean) and the button frame reference.
+-- Helper: add an advanced-settings button on a parent widget (CheckBox or Heading).
+-- The button opens the shared side editor when options.build is provided.
 local ADVANCED_TOGGLE_ATLAS = "QuestLog-icon-setting"
 
-local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnabled)
-    local db = CooldownCompanion.db.profile.showAdvanced
-    local isExpanded = db and db[settingKey] or false
+local function GetAdvancedToggleTitle(parentWidget, options)
+    if options and options.title and options.title ~= "" then
+        return options.title
+    end
+
+    local labelText
+    if parentWidget.text and parentWidget.text.GetText then
+        labelText = parentWidget.text:GetText()
+    elseif parentWidget.label and parentWidget.label.GetText then
+        labelText = parentWidget.label:GetText()
+    end
+
+    if labelText and labelText ~= "" then
+        return labelText .. " Advanced"
+    end
+
+    return "Advanced Settings"
+end
+
+local function BuildAdvancedDescriptor(parentWidget, settingKey, options)
+    return {
+        settingKey = settingKey,
+        title = GetAdvancedToggleTitle(parentWidget, options),
+        build = options and options.build,
+        isAvailable = options and options.isAvailable,
+        context = options and options.context,
+        deferBuild = options and options.deferBuild,
+    }
+end
+
+local function SetAdvancedToggleActive(btn, active)
+    if btn and btn._icon then
+        if active then
+            btn._icon:SetVertexColor(1, 0.82, 0, 1)
+        else
+            btn._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
+        end
+    end
+end
+
+local function SetActiveAdvancedSettingsToggleButton(btn)
+    local current = CS.activeAdvancedSettingsToggleButton
+    if current and current ~= btn then
+        SetAdvancedToggleActive(current, false)
+    end
+
+    CS.activeAdvancedSettingsToggleButton = btn
+    SetAdvancedToggleActive(btn, true)
+end
+
+local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnabled, options)
+    local useSidePanel = options and type(options.build) == "function" and CS.OpenAdvancedSettingsPanel
+    local isActive = false
+    if useSidePanel then
+        if CS.ConsumeQueuedAdvancedSettingsPanelOpen then
+            CS.ConsumeQueuedAdvancedSettingsPanelOpen(BuildAdvancedDescriptor(parentWidget, settingKey, options))
+        end
+        isActive = CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(settingKey, options.context) or false
+        if isActive and CS.RebindAdvancedSettingsPanel then
+            CS.RebindAdvancedSettingsPanel(BuildAdvancedDescriptor(parentWidget, settingKey, options))
+        end
+    end
 
     local frame = parentWidget.frame
     local btn = frame._cdcAdvancedBtn
@@ -87,24 +146,50 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     btn:SetParent(frame)
     btn:ClearAllPoints()
     btn._isAdvancedToggle = true
+    btn._advancedSettingKey = settingKey
 
     -- Clean up on widget release (prevent leaking into recycled widgets).
     -- Also covers any collapse button on the same frame, since AddAdvancedToggle
     -- is always called after AttachCollapseButton and overwrites its OnRelease.
     parentWidget:SetCallback("OnRelease", function()
+        local activeSidePanelToggleReleased = useSidePanel and CS.activeAdvancedSettingsToggleButton == btn
+        if activeSidePanelToggleReleased
+            and not CS.configRefreshInProgress
+            and not CS.advancedSettingsPanelRefreshing
+            and CS.CloseAdvancedSettingsPanel
+        then
+            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+        end
+
         btn:ClearAllPoints()
         btn:Hide()
         btn:SetParent(nil)
+        SetAdvancedToggleActive(btn, false)
+        if CS.activeAdvancedSettingsToggleButton == btn then
+            CS.activeAdvancedSettingsToggleButton = nil
+        end
         local colBtn = frame._cdcCollapseBtn
         if colBtn then
             colBtn:ClearAllPoints()
             colBtn:Hide()
             colBtn:SetParent(nil)
         end
+        local previewBtn = frame._cdcPreviewBtn
+        if previewBtn then
+            previewBtn:ClearAllPoints()
+            previewBtn:Hide()
+            previewBtn:SetParent(nil)
+            if CS.activePreviewBadgeButton == previewBtn then
+                CS.activePreviewBadgeButton = nil
+            end
+        end
     end)
 
     -- Hide when parent setting is disabled
     if isEnabled == false then
+        if useSidePanel and isActive and CS.CloseAdvancedSettingsPanel then
+            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+        end
         btn:Hide()
         btn._icon:Hide()
         table.insert(tabInfoBtns, btn)
@@ -120,30 +205,43 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     end
     -- For headings, caller positions manually (use returned btn reference)
 
-    if isExpanded then
-        btn._icon:SetVertexColor(1, 0.82, 0, 1)
-    else
-        btn._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
+    SetAdvancedToggleActive(btn, isActive)
+    if isActive then
+        SetActiveAdvancedSettingsToggleButton(btn)
+    elseif CS.activeAdvancedSettingsToggleButton == btn then
+        CS.activeAdvancedSettingsToggleButton = nil
     end
 
     btn:SetScript("OnClick", function()
-        CooldownCompanion.db.profile.showAdvanced[settingKey] = not isExpanded
-        CooldownCompanion:RefreshConfigPanel()
+        if useSidePanel then
+            if CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(settingKey, options.context) then
+                CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+            else
+                local descriptor = BuildAdvancedDescriptor(parentWidget, settingKey, options)
+                if CS.OpenAdvancedSettingsPanel(descriptor) and btn:GetParent() == frame then
+                    SetActiveAdvancedSettingsToggleButton(btn)
+                end
+            end
+        else
+            CooldownCompanion:RefreshConfigPanel()
+        end
     end)
 
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(isExpanded and "Hide advanced settings" or "Show advanced settings")
+        local active = CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(settingKey, options and options.context)
+        GameTooltip:AddLine(active and "Close advanced settings" or "Open advanced settings")
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     table.insert(tabInfoBtns, btn)
 
-    return isExpanded, btn
+    return isActive, btn
 end
 
 local tabInfoButtons = CS.tabInfoButtons
+CS.SetActiveAdvancedSettingsToggleButton = SetActiveAdvancedSettingsToggleButton
 
 local function GroupSupportsPerButtonOverrides(group)
     return group and (group.displayMode or "icons") ~= "textures"
@@ -451,7 +549,7 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
         GameTooltip:Hide()
     end)
 
-    if cleanup.SetCallback then
+    if cleanup and cleanup.SetCallback then
         -- AceGUI widget: chain OnRelease cleanup so existing handlers (e.g.
         -- collapse/advanced button detach) are preserved.
         local prevOnRelease = cleanup.events and cleanup.events["OnRelease"]
@@ -465,6 +563,13 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
         end)
     else
         -- Array of buttons: insert and apply hideInfoButtons
+        if CS.advancedSettingsPanelRefreshing then
+            CS.advancedSettingsInfoButtons = CS.advancedSettingsInfoButtons or {}
+            cleanup = CS.advancedSettingsInfoButtons
+        end
+        if type(cleanup) ~= "table" then
+            return btn
+        end
         table.insert(cleanup, btn)
         if CooldownCompanion.db.profile.hideInfoButtons then
             btn:Hide()
@@ -602,25 +707,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
     end)
     container:AddChild(compactCb)
 
-    local compactAdvExpanded, compactAdvBtn = AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout)
-
-    -- (?) tooltip for compact mode — anchor shifts when advanced toggle is visible
-    local compactAnchor, compactRelPoint, compactXOff
-    if group.compactLayout then
-        compactAnchor = compactAdvBtn
-        compactRelPoint = "RIGHT"
-        compactXOff = 4
-    else
-        compactAnchor = compactCb.checkbg
-        compactRelPoint = "RIGHT"
-        compactXOff = compactCb.text:GetStringWidth() + 6
-    end
-    CreateInfoButton(compactCb.frame, compactAnchor, "LEFT", compactRelPoint, compactXOff, 0, {
-        "Compact Mode",
-        {"When per-button visibility rules hide a button, shift remaining buttons to fill the gap and resize the group frame to fit visible buttons only.", 1, 1, 1, true},
-    }, tabInfoButtons)
-
-    if compactAdvExpanded and group.compactLayout then
+    local function BuildCompactAdvanced(panel)
         local growthDirectionDrop = AceGUI:Create("Dropdown")
         growthDirectionDrop:SetLabel("Growth Direction")
         growthDirectionDrop:SetList(GetCompactGrowthDirectionLabels(group), {"start", "center", "end"})
@@ -636,7 +723,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
                 end
             end
         end)
-        container:AddChild(growthDirectionDrop)
+        panel:AddChild(growthDirectionDrop)
 
         CreateInfoButton(growthDirectionDrop.frame, growthDirectionDrop.label, "LEFT", "CENTER", growthDirectionDrop.label:GetStringWidth() / 2 + 4, 0, {
             "Growth Direction",
@@ -659,13 +746,34 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
             local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
             if frame then frame._layoutDirty = true end
         end)
-        container:AddChild(maxVisSlider)
+        panel:AddChild(maxVisSlider)
 
         CreateInfoButton(maxVisSlider.frame, maxVisSlider.label, "LEFT", "CENTER", maxVisSlider.label:GetStringWidth() / 2 + 4, 0, {
             "Max Visible Buttons",
             {"Limits how many buttons can appear at once. The first buttons (by group order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true},
         }, tabInfoButtons)
     end
+
+    local compactAdvExpanded, compactAdvBtn = AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout, {
+        title = "Compact Mode Advanced",
+        build = BuildCompactAdvanced,
+    })
+
+    -- (?) tooltip for compact mode — anchor shifts when advanced toggle is visible
+    local compactAnchor, compactRelPoint, compactXOff
+    if group.compactLayout then
+        compactAnchor = compactAdvBtn
+        compactRelPoint = "RIGHT"
+        compactXOff = 4
+    else
+        compactAnchor = compactCb.checkbg
+        compactRelPoint = "RIGHT"
+        compactXOff = compactCb.text:GetStringWidth() + 6
+    end
+    CreateInfoButton(compactCb.frame, compactAnchor, "LEFT", compactRelPoint, compactXOff, 0, {
+        "Compact Mode",
+        {"When per-button visibility rules hide a button, shift remaining buttons to fill the gap and resize the group frame to fit visible buttons only.", 1, 1, 1, true},
+    }, tabInfoButtons)
 end
 
 local function BuildGroupSettingPresetControls(container, group, mode, tabInfoButtons)
