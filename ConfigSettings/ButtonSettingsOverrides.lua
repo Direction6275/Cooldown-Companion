@@ -413,6 +413,9 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                     previewAdvExpanded, previewAdvBtn = AddAdvancedToggle(heading, "overridePreview_" .. sectionId, infoButtons, nil, {
                         title = sectionDef.label .. " Advanced",
                         build = BuildOverridePreviewAdvanced,
+                        isAvailable = function()
+                            return buttonData.overrideSections and buttonData.overrideSections[sectionId]
+                        end,
                     })
                     previewAdvBtn:SetPoint("LEFT", revertBtn, "RIGHT", 4, 0)
                     heading.right:ClearAllPoints()

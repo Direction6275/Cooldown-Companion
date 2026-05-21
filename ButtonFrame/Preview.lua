@@ -1082,4 +1082,10 @@ function CooldownCompanion:ClearAllConfigPreviews()
     if self.StopResourceBarPreview then
         self:StopResourceBarPreview()
     end
+    if ST._ClearActivePreviewBadgeButton then
+        ST._ClearActivePreviewBadgeButton()
+    end
+    if ST._RefreshAdvancedSettingsPreviewButtons then
+        ST._RefreshAdvancedSettingsPreviewButtons()
+    end
 end

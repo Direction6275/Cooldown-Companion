@@ -59,6 +59,8 @@ local function IsAdvancedSettingsPanelContainer(container)
     return container and container._isAdvancedSettingsPanel == true
 end
 
+local ClearActivePreviewBadgeButton
+
 local function RefreshStructuralControls(container)
     if IsAdvancedSettingsPanelContainer(container) and CS.RefreshAdvancedSettingsPanel then
         CS.RefreshAdvancedSettingsPanel()
@@ -78,6 +80,10 @@ local function RefreshPreviewToggleButtons(container)
             previewBtn:SetText(previewBtn._isActiveFn() and "Preview: ON" or previewBtn._offLabel)
         end
     end
+end
+
+local function RefreshActiveAdvancedPreviewToggleButtons()
+    RefreshPreviewToggleButtons({ _previewToggleButtons = CS.advancedSettingsPreviewToggleButtons })
 end
 
 local function ApplyOverrideCheckboxIndent(checkbox, opts)
@@ -118,6 +124,7 @@ local function AddPreviewToggleButton(container, offLabel, isActiveFn, setActive
     btn:SetFullWidth(true)
     if IsAdvancedSettingsPanelContainer(container) then
         container._previewToggleButtons = container._previewToggleButtons or {}
+        CS.advancedSettingsPreviewToggleButtons = container._previewToggleButtons
         btn._isActiveFn = isActiveFn
         btn._offLabel = offLabel
         table.insert(container._previewToggleButtons, btn)
@@ -126,6 +133,8 @@ local function AddPreviewToggleButton(container, offLabel, isActiveFn, setActive
         local showPreview = not isActiveFn()
         if showPreview and CooldownCompanion.ClearAllConfigPreviews then
             CooldownCompanion:ClearAllConfigPreviews()
+        elseif not showPreview and ClearActivePreviewBadgeButton then
+            ClearActivePreviewBadgeButton()
         end
         setActiveFn(showPreview)
         if IsAdvancedSettingsPanelContainer(container) then
@@ -165,6 +174,14 @@ local function SetPreviewBadgeActive(btn, active)
     end
 end
 
+function ClearActivePreviewBadgeButton()
+    local btn = CS.activePreviewBadgeButton
+    if btn then
+        SetPreviewBadgeActive(btn, false)
+    end
+    CS.activePreviewBadgeButton = nil
+end
+
 local function SetActivePreviewBadgeButton(btn, active)
     SetPreviewBadgeActive(btn, active)
 
@@ -180,8 +197,10 @@ local function SetActivePreviewBadgeButton(btn, active)
 end
 
 local function AddPreviewBadge(parentWidget, anchorAfterFrame, label, isActiveFn, setActiveFn, enabled)
+    local hasCheckboxAnchor = parentWidget and parentWidget.frame and parentWidget.checkbg and parentWidget.text
+    local hasLabelAnchor = parentWidget and parentWidget.frame and parentWidget.label
     if not enabled
-        or not (parentWidget and parentWidget.frame and parentWidget.checkbg and parentWidget.text)
+        or not (hasCheckboxAnchor or hasLabelAnchor)
         or type(isActiveFn) ~= "function"
         or type(setActiveFn) ~= "function"
     then
@@ -204,8 +223,10 @@ local function AddPreviewBadge(parentWidget, anchorAfterFrame, label, isActiveFn
     btn:ClearAllPoints()
     if anchorAfterFrame and anchorAfterFrame:IsShown() then
         btn:SetPoint("LEFT", anchorAfterFrame, "RIGHT", 4, 0)
-    else
+    elseif hasCheckboxAnchor then
         btn:SetPoint("LEFT", parentWidget.checkbg, "RIGHT", parentWidget.text:GetStringWidth() + 6, 0)
+    else
+        btn:SetPoint("LEFT", parentWidget.label, "RIGHT", 4, 0)
     end
     btn:Show()
     btn._icon:Show()
@@ -218,6 +239,7 @@ local function AddPreviewBadge(parentWidget, anchorAfterFrame, label, isActiveFn
         end
         setActiveFn(showPreview)
         SetActivePreviewBadgeButton(btn, isActiveFn())
+        RefreshActiveAdvancedPreviewToggleButtons()
     end)
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -1165,7 +1187,14 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
     effectDrop:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable[cfg.effectKey] = val
         refreshCallback()
-        RefreshStructuralControls(container)
+        if val == "none" and IsAdvancedSettingsPanelContainer(container) and CS.CloseAdvancedSettingsPanel then
+            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+            if CooldownCompanion.RefreshConfigPanel then
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        else
+            RefreshStructuralControls(container)
+        end
     end)
     container:AddChild(effectDrop)
 
@@ -1504,6 +1533,8 @@ ST._AddDurationFormatDropdown = AddDurationFormatDropdown
 ST._AddPreviewToggleButton = AddPreviewToggleButton
 ST._AddPreviewBadge = AddPreviewBadge
 ST._RefreshConfigPanelForPreviewToggle = RefreshConfigPanelForPreviewToggle
+ST._ClearActivePreviewBadgeButton = ClearActivePreviewBadgeButton
+ST._RefreshAdvancedSettingsPreviewButtons = RefreshActiveAdvancedPreviewToggleButtons
 ST._AddConditionalPreviewButton = AddConditionalPreviewButton
 ST._AddConditionalPreviewBadge = AddConditionalPreviewBadge
 ST._BuildAuraTextControls = BuildAuraTextControls

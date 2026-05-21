@@ -123,6 +123,7 @@ local function AddIndicatorsHeading(container, text)
     ColorHeading(heading)
     heading:SetFullWidth(true)
     container:AddChild(heading)
+    return heading
 end
 
 -- Imports from BarModeTabs.lua
@@ -1612,17 +1613,10 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
     end
 
     local advKey = "triggerEffect_" .. effectKey
-    local _, advBtn = AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled, {
+    AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled, {
         title = def.label .. " Advanced",
         build = BuildTriggerEffectAdvanced,
     })
-    AddPreviewBadge(enableCb, advBtn, "Preview Effects", function()
-        return CS.selectedGroup and CooldownCompanion:IsTriggerPanelEffectsPreviewActive(CS.selectedGroup)
-    end, function(show)
-        if CS.selectedGroup then
-            CooldownCompanion:SetTriggerPanelEffectsPreview(CS.selectedGroup, show)
-        end
-    end, config.enabled)
 end
 
 local function GetTriggerPanelEffectOrderForDisplayType(group)
@@ -1678,10 +1672,23 @@ local function BuildTriggerEffectsTab(container, group)
     local anyEnabled = false
     local effectOrder = GetTriggerPanelEffectOrderForDisplayType(group)
     for _, effectKey in ipairs(effectOrder) do
-        BuildTriggerPanelEffectSection(container, effects, effectKey)
         if effects[effectKey] and effects[effectKey].enabled then
             anyEnabled = true
+            break
         end
+    end
+
+    local heading = AddIndicatorsHeading(container, "Trigger Panel Effects")
+    AddPreviewBadge(heading, nil, "Preview Effects", function()
+        return CS.selectedGroup and CooldownCompanion:IsTriggerPanelEffectsPreviewActive(CS.selectedGroup)
+    end, function(show)
+        if CS.selectedGroup then
+            CooldownCompanion:SetTriggerPanelEffectsPreview(CS.selectedGroup, show)
+        end
+    end, anyEnabled)
+
+    for _, effectKey in ipairs(effectOrder) do
+        BuildTriggerPanelEffectSection(container, effects, effectKey)
     end
 
     if not anyEnabled and CS.selectedGroup then
