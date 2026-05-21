@@ -13,6 +13,7 @@ local advancedWindow = nil
 local activeDescriptor = nil
 local queuedOpen = nil
 local refreshingAdvancedPanel = false
+CS.advancedSettingsInfoButtons = CS.advancedSettingsInfoButtons or {}
 
 local function BoolValue(value)
     return value == true
@@ -34,10 +35,18 @@ local function SortedKeyString(selection)
 end
 
 local function BuildContext(extra)
+    local group = CS.selectedGroup
+        and CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups
+        and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+
     local context = {
         selectedFolder = CS.selectedFolder,
         selectedContainer = CS.selectedContainer,
         selectedGroup = CS.selectedGroup,
+        selectedGroupDisplayMode = group and (group.displayMode or "icons") or "",
+        selectedGroupTriggerDisplayType = group and group.displayMode == "trigger" and CooldownCompanion.GetTriggerPanelDisplayType and CooldownCompanion:GetTriggerPanelDisplayType(group, false) or "",
         selectedButton = CS.selectedButton,
         selectedButtons = SortedKeyString(CS.selectedButtons),
         selectedPanels = SortedKeyString(CS.selectedPanels),
@@ -99,13 +108,37 @@ local function NormalizeDescriptor(opts)
         settingKey = opts.settingKey,
         title = opts.title or "Advanced Settings",
         build = opts.build,
+        isAvailable = type(opts.isAvailable) == "function" and opts.isAvailable or nil,
+        contextExtra = opts.context,
         context = BuildContext(opts.context),
         deferBuild = opts.deferBuild == true,
     }
 end
 
 local function CurrentContextMatches(descriptor)
-    return descriptor and ContextMatches(descriptor.context, BuildContext())
+    if not descriptor then
+        return false
+    end
+    if descriptor.isAvailable and not descriptor.isAvailable() then
+        return false
+    end
+    return ContextMatches(descriptor.context, BuildContext(descriptor.contextExtra))
+end
+
+local function ClearAdvancedSettingsInfoButtons()
+    local buttons = CS.advancedSettingsInfoButtons
+    if type(buttons) ~= "table" then
+        return
+    end
+
+    for _, btn in ipairs(buttons) do
+        if btn then
+            btn:ClearAllPoints()
+            btn:Hide()
+            btn:SetParent(nil)
+        end
+    end
+    wipe(buttons)
 end
 
 local function AnchorWindowToConfig()
@@ -168,6 +201,7 @@ local function BuildWindowContents()
     CS.advancedSettingsPanelRefreshing = true
     advancedWindow:SetTitle(activeDescriptor.title or "Advanced Settings")
     advancedWindow:SetWidth(GetAdvancedPanelWidth())
+    ClearAdvancedSettingsInfoButtons()
     advancedWindow:ReleaseChildren()
     if advancedWindow.PauseLayout then
         advancedWindow:PauseLayout()
@@ -175,6 +209,7 @@ local function BuildWindowContents()
 
     local scroll = AceGUI:Create("ScrollFrame")
     scroll:SetLayout("List")
+    scroll._isAdvancedSettingsPanel = true
     if scroll.PauseLayout then
         scroll:PauseLayout()
     end
@@ -182,7 +217,7 @@ local function BuildWindowContents()
     activeDescriptor.build(scroll, activeDescriptor)
 
     if CooldownCompanion.db.profile.hideInfoButtons then
-        for _, buttons in ipairs({ CS.tabInfoButtons, CS.customBarInfoButtons, CS.buttonSettingsInfoButtons }) do
+        for _, buttons in ipairs({ CS.tabInfoButtons, CS.customBarInfoButtons, CS.buttonSettingsInfoButtons, CS.advancedSettingsInfoButtons }) do
             if type(buttons) == "table" then
                 for _, btn in ipairs(buttons) do
                     if btn and not btn._isAdvancedToggle then
@@ -217,6 +252,7 @@ local function CleanupWindow(widget)
         CS.UnregisterConfigDragAlphaFrame(widget.frame)
     end
 
+    ClearAdvancedSettingsInfoButtons()
     widget:ReleaseChildren()
     AceGUI:Release(widget)
     advancedWindow = nil
@@ -229,6 +265,7 @@ local function CleanupWindow(widget)
 end
 
 local function CloseAdvancedSettingsPanel()
+    queuedOpen = nil
     if advancedWindow then
         advancedWindow:Fire("OnClose")
         return true
@@ -342,7 +379,7 @@ local function ConsumeQueuedAdvancedSettingsPanelOpen(opts)
     end
 
     queuedOpen = nil
-    return OpenAdvancedSettingsPanel(descriptor)
+    return OpenAdvancedSettingsPanel(opts)
 end
 
 local function RefreshAdvancedSettingsPanel()
@@ -368,7 +405,6 @@ local function IsAdvancedSettingsPanelOpen(settingKey, extraContext)
     return ContextMatches(activeDescriptor.context, BuildContext(extraContext))
 end
 
-CS.BuildAdvancedSettingsContext = BuildContext
 CS.OpenAdvancedSettingsPanel = OpenAdvancedSettingsPanel
 CS.CloseAdvancedSettingsPanel = CloseAdvancedSettingsPanel
 CS.RefreshAdvancedSettingsPanel = RefreshAdvancedSettingsPanel

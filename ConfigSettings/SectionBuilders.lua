@@ -55,6 +55,31 @@ local function RefreshConfigPanelForPreviewToggle()
     return true
 end
 
+local function IsAdvancedSettingsPanelContainer(container)
+    return container and container._isAdvancedSettingsPanel == true
+end
+
+local function RefreshStructuralControls(container)
+    if IsAdvancedSettingsPanelContainer(container) and CS.RefreshAdvancedSettingsPanel then
+        CS.RefreshAdvancedSettingsPanel()
+    elseif CooldownCompanion.RefreshConfigPanel then
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function RefreshPreviewToggleButtons(container)
+    local buttons = container and container._previewToggleButtons
+    if type(buttons) ~= "table" then
+        return
+    end
+
+    for _, previewBtn in ipairs(buttons) do
+        if previewBtn and previewBtn._isActiveFn and previewBtn._offLabel then
+            previewBtn:SetText(previewBtn._isActiveFn() and "Preview: ON" or previewBtn._offLabel)
+        end
+    end
+end
+
 local function ApplyOverrideCheckboxIndent(checkbox, opts)
     if opts and opts.isOverride then
         ApplyCheckboxIndent(checkbox, 20)
@@ -91,13 +116,21 @@ local function AddPreviewToggleButton(container, offLabel, isActiveFn, setActive
     local btn = AceGUI:Create("Button")
     btn:SetText(isActiveFn() and "Preview: ON" or offLabel)
     btn:SetFullWidth(true)
+    if IsAdvancedSettingsPanelContainer(container) then
+        container._previewToggleButtons = container._previewToggleButtons or {}
+        btn._isActiveFn = isActiveFn
+        btn._offLabel = offLabel
+        table.insert(container._previewToggleButtons, btn)
+    end
     btn:SetCallback("OnClick", function()
         local showPreview = not isActiveFn()
         if showPreview and CooldownCompanion.ClearAllConfigPreviews then
             CooldownCompanion:ClearAllConfigPreviews()
         end
         setActiveFn(showPreview)
-        if not RefreshConfigPanelForPreviewToggle() then
+        if IsAdvancedSettingsPanelContainer(container) then
+            RefreshPreviewToggleButtons(container)
+        elseif not RefreshConfigPanelForPreviewToggle() then
             btn:SetText(isActiveFn() and "Preview: ON" or offLabel)
         end
     end)
@@ -295,7 +328,7 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback,
     cdTextCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showCooldownText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(cdTextCb)
 
@@ -328,7 +361,7 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback)
     auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showAuraText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(auraTextCb)
 
@@ -349,7 +382,7 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback)
         sepPosCb:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable.separateTextPositions = val
             refreshCallback()
-            CooldownCompanion:RefreshConfigPanel()
+            RefreshStructuralControls(container)
         end)
         container:AddChild(sepPosCb)
 
@@ -373,7 +406,7 @@ local function BuildAuraStackTextControls(container, styleTable, refreshCallback
     auraStackCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showAuraStackText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(auraStackCb)
 
@@ -393,7 +426,7 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback)
     kbCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showKeybindText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(kbCb)
 
@@ -415,7 +448,7 @@ local function BuildChargeTextControls(container, styleTable, refreshCallback)
     chargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showChargeText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(chargeTextCb)
 
@@ -432,7 +465,7 @@ end
 local function BuildBorderControls(container, styleTable, refreshCallback)
     local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode", function()
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
@@ -506,7 +539,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
     cdTintCb:SetCallback("OnValueChanged", function(w, e, val)
         styleTable.iconCooldownTintEnabled = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(cdTintCb)
 
@@ -521,7 +554,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
     auraTintCb:SetCallback("OnValueChanged", function(w, e, val)
         styleTable.iconAuraTintEnabled = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(auraTintCb)
 
@@ -596,7 +629,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         if disabledByIconFill then return end
         styleTable.showCooldownSwipeFill = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(fillCb)
     ApplyOverrideCheckboxIndent(fillCb, opts)
@@ -627,7 +660,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         if disabledByIconFill then return end
         styleTable.showCooldownSwipeEdge = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(edgeCb)
     ApplyOverrideCheckboxIndent(edgeCb, opts)
@@ -695,7 +728,7 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
         styleTable.iconFillOrientation = val == "vertical" and "vertical" or "horizontal"
         refreshCallback()
         CooldownCompanion:UpdateAllCooldowns()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(orientationDrop)
 
@@ -809,7 +842,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
     styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.assistedHighlightStyle = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(styleDrop)
 
@@ -1023,7 +1056,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
                 styleTable[cfg.styleKey] = val and cfg.defaultStyle or "none"
             end
             refreshCallback()
-            CooldownCompanion:RefreshConfigPanel()
+            RefreshStructuralControls(container)
         end)
         container:AddChild(enableCb)
 
@@ -1061,7 +1094,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
         end
         styleTable[cfg.styleKey] = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(styleDrop)
 
@@ -1103,7 +1136,7 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
         enableCb:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[cfg.enableKey] = val
             refreshCallback()
-            CooldownCompanion:RefreshConfigPanel()
+            RefreshStructuralControls(container)
         end)
         container:AddChild(enableCb)
 
@@ -1132,7 +1165,7 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
     effectDrop:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable[cfg.effectKey] = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(effectDrop)
 
@@ -1255,7 +1288,7 @@ local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg
     pulseCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable[cfg.pulseKey] = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(pulseCb)
 
@@ -1280,7 +1313,7 @@ local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg
     shiftCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable[cfg.colorShiftKey] = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(shiftCb)
 
@@ -1331,7 +1364,7 @@ local function BuildBarNameTextControls(container, styleTable, refreshCallback)
     showNameCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showBarNameText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(showNameCb)
 
@@ -1359,7 +1392,7 @@ local function BuildBarReadyTextControls(container, styleTable, refreshCallback)
     showReadyCb:SetCallback("OnValueChanged", function(widget, event, val)
         styleTable.showBarReadyText = val
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(showReadyCb)
 
@@ -1388,7 +1421,7 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
 
     local renderMode = AddBorderRenderModeDropdown(container, styleTable, "textBorderRenderMode", function()
         refreshCallback()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container)
     end)
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 

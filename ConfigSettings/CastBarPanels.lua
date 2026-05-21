@@ -433,7 +433,9 @@ local function BuildCastBarStylingPanel(container)
         -- Icon Border Size slider (offset mode only)
         local iconRenderMode = AddBorderRenderModeDropdown(panel, settings, "iconBorderRenderMode", function()
             CooldownCompanion:ApplyCastBarSettings()
-            CooldownCompanion:RefreshConfigPanel()
+            if CS.RefreshAdvancedSettingsPanel then
+                CS.RefreshAdvancedSettingsPanel()
+            end
         end)
         local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
@@ -473,14 +475,15 @@ local function BuildCastBarStylingPanel(container)
         iconOffsetCb:SetCallback("OnValueChanged", function(widget, event, val)
             settings.iconOffset = val
             CooldownCompanion:ApplyCastBarSettings()
-            CooldownCompanion:RefreshConfigPanel()
+            if CS.RefreshAdvancedSettingsPanel then
+                CS.RefreshAdvancedSettingsPanel()
+            end
         end)
         panel:AddChild(iconOffsetCb)
 
-        AddAdvancedToggle(iconOffsetCb, "castbarIconOffset", cbAdvBtns, settings.iconOffset or false, {
-            title = "Icon Offset Advanced",
-            build = BuildIconOffsetAdvanced,
-        })
+        if settings.iconOffset then
+            BuildIconOffsetAdvanced(panel)
+        end
     end
 
     AddAdvancedToggle(iconCb, "castbarIcon", cbAdvBtns, settings.showIcon ~= false, {

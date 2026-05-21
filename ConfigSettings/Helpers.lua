@@ -91,7 +91,9 @@ local function BuildAdvancedDescriptor(parentWidget, settingKey, options)
         settingKey = settingKey,
         title = GetAdvancedToggleTitle(parentWidget, options),
         build = options and options.build,
+        isAvailable = options and options.isAvailable,
         context = options and options.context,
+        deferBuild = options and options.deferBuild,
     }
 end
 
@@ -150,6 +152,15 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     -- Also covers any collapse button on the same frame, since AddAdvancedToggle
     -- is always called after AttachCollapseButton and overwrites its OnRelease.
     parentWidget:SetCallback("OnRelease", function()
+        local activeSidePanelToggleReleased = useSidePanel and CS.activeAdvancedSettingsToggleButton == btn
+        if activeSidePanelToggleReleased
+            and not CS.configRefreshInProgress
+            and not CS.advancedSettingsPanelRefreshing
+            and CS.CloseAdvancedSettingsPanel
+        then
+            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+        end
+
         btn:ClearAllPoints()
         btn:Hide()
         btn:SetParent(nil)
@@ -207,7 +218,7 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
                 CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
             else
                 local descriptor = BuildAdvancedDescriptor(parentWidget, settingKey, options)
-                if CS.OpenAdvancedSettingsPanel(descriptor) then
+                if CS.OpenAdvancedSettingsPanel(descriptor) and btn:GetParent() == frame then
                     SetActiveAdvancedSettingsToggleButton(btn)
                 end
             end
@@ -538,7 +549,7 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
         GameTooltip:Hide()
     end)
 
-    if cleanup.SetCallback then
+    if cleanup and cleanup.SetCallback then
         -- AceGUI widget: chain OnRelease cleanup so existing handlers (e.g.
         -- collapse/advanced button detach) are preserved.
         local prevOnRelease = cleanup.events and cleanup.events["OnRelease"]
@@ -552,6 +563,13 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
         end)
     else
         -- Array of buttons: insert and apply hideInfoButtons
+        if CS.advancedSettingsPanelRefreshing then
+            CS.advancedSettingsInfoButtons = CS.advancedSettingsInfoButtons or {}
+            cleanup = CS.advancedSettingsInfoButtons
+        end
+        if type(cleanup) ~= "table" then
+            return btn
+        end
         table.insert(cleanup, btn)
         if CooldownCompanion.db.profile.hideInfoButtons then
             btn:Hide()
@@ -756,10 +774,6 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
         "Compact Mode",
         {"When per-button visibility rules hide a button, shift remaining buttons to fill the gap and resize the group frame to fit visible buttons only.", 1, 1, 1, true},
     }, tabInfoButtons)
-
-    if not (compactAdvExpanded and group.compactLayout) then
-        return
-    end
 end
 
 local function BuildGroupSettingPresetControls(container, group, mode, tabInfoButtons)

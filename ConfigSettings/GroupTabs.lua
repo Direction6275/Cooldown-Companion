@@ -111,6 +111,12 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
 
+local function RefreshActiveAdvancedSettingsPanel()
+    if CS.RefreshAdvancedSettingsPanel then
+        CS.RefreshAdvancedSettingsPanel()
+    end
+end
+
 local function AddIndicatorsHeading(container, text)
     local heading = AceGUI:Create("Heading")
     heading:SetText(text)
@@ -1606,7 +1612,7 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
     end
 
     local advKey = "triggerEffect_" .. effectKey
-    local advExpanded, advBtn = AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled, {
+    local _, advBtn = AddAdvancedToggle(enableCb, advKey, tabInfoButtons, config.enabled, {
         title = def.label .. " Advanced",
         build = BuildTriggerEffectAdvanced,
     })
@@ -1617,7 +1623,6 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
             CooldownCompanion:SetTriggerPanelEffectsPreview(CS.selectedGroup, show)
         end
     end, config.enabled)
-    return advExpanded and config.enabled
 end
 
 local function GetTriggerPanelEffectOrderForDisplayType(group)
@@ -1671,19 +1676,15 @@ local function BuildTriggerEffectsTab(container, group)
     end
 
     local anyEnabled = false
-    local anyAdvancedExpanded = false
     local effectOrder = GetTriggerPanelEffectOrderForDisplayType(group)
     for _, effectKey in ipairs(effectOrder) do
-        local sectionAdvancedExpanded = BuildTriggerPanelEffectSection(container, effects, effectKey)
+        BuildTriggerPanelEffectSection(container, effects, effectKey)
         if effects[effectKey] and effects[effectKey].enabled then
             anyEnabled = true
         end
-        if sectionAdvancedExpanded then
-            anyAdvancedExpanded = true
-        end
     end
 
-    if not (anyEnabled and anyAdvancedExpanded) and CS.selectedGroup then
+    if not anyEnabled and CS.selectedGroup then
         CooldownCompanion:SetTriggerPanelEffectsPreview(CS.selectedGroup, false)
     end
 end
@@ -1917,7 +1918,7 @@ local function BuildReadyGlowSection(container, group, style)
                 end
             end
             CooldownCompanion:UpdateAllCooldowns()
-            CooldownCompanion:RefreshConfigPanel()
+            RefreshActiveAdvancedSettingsPanel()
         end)
         panel:AddChild(readyDurCb)
 
@@ -2164,7 +2165,7 @@ local function BuildEffectsTab(container)
         fillCb:SetCallback("OnValueChanged", function(widget, event, val)
             style.showCooldownSwipeFill = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            RefreshActiveAdvancedSettingsPanel()
         end)
         panel:AddChild(fillCb)
 
@@ -2191,7 +2192,7 @@ local function BuildEffectsTab(container)
         edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
             style.showCooldownSwipeEdge = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            RefreshActiveAdvancedSettingsPanel()
         end)
         panel:AddChild(edgeCb)
 
@@ -2786,7 +2787,7 @@ local function BuildAppearanceTab(container)
         sepPosCb:SetCallback("OnValueChanged", function(widget, event, val)
             style.separateTextPositions = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            RefreshActiveAdvancedSettingsPanel()
         end)
         panel:AddChild(sepPosCb)
 

@@ -1897,7 +1897,11 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                             end
                             WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickMode", val)
                             CooldownCompanion:ApplyResourceBars()
-                            C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
+                            C_Timer.After(0, function()
+                                if CS.RefreshAdvancedSettingsPanel then
+                                    CS.RefreshAdvancedSettingsPanel()
+                                end
+                            end)
                         end)
                         panel:AddChild(modeDrop)
 
@@ -3754,7 +3758,9 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
             styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
                 customBars[cabIdx].maxStacksGlowStyle = val
                 CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:RefreshConfigPanel()
+                if CS.RefreshAdvancedSettingsPanel then
+                    CS.RefreshAdvancedSettingsPanel()
+                end
             end)
             panel:AddChild(styleDrop)
 
