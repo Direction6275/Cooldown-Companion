@@ -1828,7 +1828,9 @@ local function CreateConfigPanel()
         -- Apply hideInfoButtons setting
         if CooldownCompanion.db.profile.hideInfoButtons then
             for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
-                btn:Hide()
+                if btn and not btn._isAdvancedToggle then
+                    btn:Hide()
+                end
             end
         end
     end)
