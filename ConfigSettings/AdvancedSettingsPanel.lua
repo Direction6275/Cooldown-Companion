@@ -51,6 +51,8 @@ local function BuildContext(extra)
         selectedButtons = SortedKeyString(CS.selectedButtons),
         selectedPanels = SortedKeyString(CS.selectedPanels),
         selectedGroups = SortedKeyString(CS.selectedGroups),
+        currentSpecId = CooldownCompanion._currentSpecId,
+        currentHeroSpecId = CooldownCompanion._currentHeroSpecId,
         selectedTab = CS.selectedTab,
         buttonSettingsTab = CS.buttonSettingsTab,
         panelSettingsTab = CS.panelSettingsTab,
