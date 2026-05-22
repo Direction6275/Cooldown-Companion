@@ -92,6 +92,9 @@ Config\Pickers.lua
 Config\TalentPicker.lua
 Config\SpellItemAdd.lua
 Config\AutoImport.lua
+Config\DragReorderTargets.lua
+Config\DragReorderPreview.lua
+Config\DragReorderLifecycle.lua
 Config\DragReorder.lua
 Config\Column1.lua
 Config\Column2.lua
