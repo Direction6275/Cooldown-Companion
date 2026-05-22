@@ -290,16 +290,6 @@ local function IsConfiguredCustomBar(cab)
         )
 end
 
-local function HasConfiguredCustomBars(specBars)
-    if type(specBars) ~= "table" then return false end
-    for _, entry in pairs(specBars) do
-        if HasCustomBarContent(entry) then
-            return true
-        end
-    end
-    return false
-end
-
 local function GetCustomBarEntryType(cab)
     if type(cab) == "table" and cab.entryType == "spell" then
         return "spell"
@@ -351,6 +341,111 @@ local function NormalizeCustomBarAttachedPlacement(cab)
     cab.independentVerticalFillDirection = nil
 end
 
+local function NormalizeCustomBarSpecID(specID)
+    local numericSpecID = tonumber(specID)
+    if numericSpecID and numericSpecID > 0 then
+        return numericSpecID
+    end
+    return nil
+end
+
+local function IsCustomBarsSharedStore(customBars)
+    return type(customBars) == "table"
+        and (type(customBars.entries) == "table" or type(customBars.order) == "table")
+end
+
+local function NormalizeCustomBarSpecMembership(entry)
+    if type(entry) ~= "table" then
+        return {}
+    end
+
+    local normalized = {}
+    if type(entry.specs) == "table" then
+        for key, value in pairs(entry.specs) do
+            if value == true then
+                local specID = NormalizeCustomBarSpecID(key)
+                if specID then normalized[specID] = true end
+            elseif type(value) == "number" or type(value) == "string" then
+                local specID = NormalizeCustomBarSpecID(value)
+                if specID then normalized[specID] = true end
+            end
+        end
+    end
+
+    local legacySpecID = NormalizeCustomBarSpecID(entry.specID or entry.spec or entry.sourceSpecID)
+    if legacySpecID then
+        normalized[legacySpecID] = true
+    end
+
+    entry.specs = normalized
+    entry.specID = nil
+    entry.spec = nil
+    entry.sourceSpecID = nil
+    return normalized
+end
+
+local function CustomBarHasSpec(entry, specID)
+    specID = NormalizeCustomBarSpecID(specID)
+    if type(entry) ~= "table" or not specID then
+        return false
+    end
+    local specs = NormalizeCustomBarSpecMembership(entry)
+    if not next(specs) then
+        return true
+    end
+    return specs[specID] == true
+end
+
+local function CustomBarHasSpecFilters(entry)
+    return type(entry) == "table" and next(NormalizeCustomBarSpecMembership(entry)) ~= nil
+end
+
+local function CustomBarHasExplicitSpec(entry, specID)
+    specID = NormalizeCustomBarSpecID(specID)
+    if type(entry) ~= "table" or not specID then
+        return false
+    end
+    return NormalizeCustomBarSpecMembership(entry)[specID] == true
+end
+
+local function SetCustomBarSpecMembership(entry, specID, enabled)
+    specID = NormalizeCustomBarSpecID(specID)
+    if type(entry) ~= "table" or not specID then
+        return false
+    end
+    NormalizeCustomBarSpecMembership(entry)[specID] = enabled == true or nil
+    return true
+end
+
+local function ForEachCustomBarSpec(entry, callback)
+    if type(entry) ~= "table" or type(callback) ~= "function" then
+        return
+    end
+    local specIDs = {}
+    for specID in pairs(NormalizeCustomBarSpecMembership(entry)) do
+        specIDs[#specIDs + 1] = specID
+    end
+    table.sort(specIDs, function(a, b) return tostring(a) < tostring(b) end)
+    for _, specID in ipairs(specIDs) do
+        callback(specID)
+    end
+end
+
+local function AddCustomBarOrder(store, customBarId)
+    if type(store) ~= "table" or type(customBarId) ~= "string" or customBarId == "" then
+        return
+    end
+    if type(store.order) ~= "table" then
+        store.order = {}
+    end
+    for _, existingId in ipairs(store.order) do
+        if existingId == customBarId then
+            return
+        end
+    end
+    store.order[#store.order + 1] = customBarId
+end
+
 local function CustomBarIdOwnedByOther(settings, customBarId, owner)
     if type(settings) ~= "table"
         or type(settings.customBars) ~= "table"
@@ -359,14 +454,15 @@ local function CustomBarIdOwnedByOther(settings, customBarId, owner)
         return false
     end
 
-    for _, specBars in pairs(settings.customBars) do
-        if type(specBars) == "table" then
-            for _, entry in pairs(specBars) do
-                if entry ~= owner
-                    and type(entry) == "table"
-                    and entry.customBarId == customBarId then
-                    return true
-                end
+    local entries = IsCustomBarsSharedStore(settings.customBars)
+        and type(settings.customBars.entries) == "table"
+        and settings.customBars.entries
+        or {}
+    for key, entry in pairs(entries) do
+        if entry ~= owner and type(entry) == "table" then
+            local entryId = type(key) == "string" and key or entry.customBarId
+            if entryId == customBarId or entry.customBarId == customBarId then
+                return true
             end
         end
     end
@@ -431,114 +527,628 @@ local function GetCustomBarLayout(settings, specID, entry, create)
     return layout.customBars[customBarId]
 end
 
-local function MigrateLegacyCustomAuraBars(settings, specID, target)
-    specID = tonumber(specID) or specID
-    local legacyBySpec = type(settings.customAuraBars) == "table" and settings.customAuraBars or nil
-    local legacyBars = legacyBySpec and (legacyBySpec[specID] or legacyBySpec[tostring(specID)])
-    if type(legacyBars) ~= "table" then
-        return
+local function EnsureSharedCustomBarsStore(settings)
+    if type(settings) ~= "table" then
+        return nil
     end
 
-    local numericSlots = {}
-    for slotIdx in pairs(legacyBars) do
-        if tonumber(slotIdx) then
-            numericSlots[#numericSlots + 1] = tonumber(slotIdx)
+    local store = IsCustomBarsSharedStore(settings.customBars)
+        and settings.customBars
+        or { entries = {}, order = {} }
+    local legacyCustomBars = not IsCustomBarsSharedStore(settings.customBars) and settings.customBars or nil
+
+    store.entries = type(store.entries) == "table" and store.entries or {}
+    store.order = type(store.order) == "table" and store.order or {}
+    settings.customBars = store
+
+    local function addEntryForSpec(entry, specID, fallbackOrder)
+        if not (specID and IsConfiguredCustomBar(entry)) then
+            return
+        end
+        NormalizeCustomBarAttachedPlacement(entry)
+        if not HasCustomBarContent(entry) then
+            return
+        end
+        NormalizeCustomBarEntryType(entry)
+        SetCustomBarSpecMembership(entry, specID, true)
+        local id = EnsureCustomBarId(settings, entry)
+        if id then
+            store.entries[id] = entry
+            AddCustomBarOrder(store, id)
+            EnsureCustomBarLayout(settings, specID, id, fallbackOrder)
         end
     end
-    table.sort(numericSlots)
 
-    local layout = GetSpecLayoutOrder and GetSpecLayoutOrder(settings, specID)
-    for _, slotIdx in ipairs(numericSlots) do
-        local cab = legacyBars[slotIdx] or legacyBars[tostring(slotIdx)]
-        if IsConfiguredCustomBar(cab) then
-            local entry = CopyTable(cab)
-            NormalizeCustomBarAttachedPlacement(entry)
-            if HasCustomBarContent(entry) then
-                entry.entryType = "aura"
-                local id = EnsureCustomBarId(settings, entry)
-                target[#target + 1] = entry
+    local function addLegacyCustomBarsForSpec(specID, specBars)
+        specID = NormalizeCustomBarSpecID(specID)
+        if not (specID and type(specBars) == "table") then
+            return
+        end
 
-                local legacyLayout = layout
-                    and type(layout.customAuraBarSlots) == "table"
-                    and layout.customAuraBarSlots[slotIdx]
-                if type(legacyLayout) == "table" and id then
-                    if type(layout.customBars) ~= "table" then
-                        layout.customBars = {}
+        local numericKeys = {}
+        for key in pairs(specBars) do
+            if type(key) == "number" then
+                numericKeys[#numericKeys + 1] = key
+            end
+        end
+        table.sort(numericKeys)
+
+        local seen = {}
+        for index, key in ipairs(numericKeys) do
+            addEntryForSpec(specBars[key], specID, 1000 + index)
+            seen[key] = true
+        end
+        for key, entry in pairs(specBars) do
+            if not seen[key] then
+                addEntryForSpec(entry, specID, 1000 + #store.order + 1)
+            end
+        end
+    end
+
+    if type(legacyCustomBars) == "table" then
+        local specIDs = {}
+        for specID in pairs(legacyCustomBars) do
+            specIDs[#specIDs + 1] = specID
+        end
+        table.sort(specIDs, function(a, b) return tostring(a) < tostring(b) end)
+        for _, specID in ipairs(specIDs) do
+            addLegacyCustomBarsForSpec(specID, legacyCustomBars[specID])
+        end
+    end
+
+    if type(settings.customAuraBars) == "table" then
+        local legacySpecIDs = {}
+        for specID in pairs(settings.customAuraBars) do
+            legacySpecIDs[#legacySpecIDs + 1] = specID
+        end
+        table.sort(legacySpecIDs, function(a, b) return tostring(a) < tostring(b) end)
+
+        for _, legacySpecID in ipairs(legacySpecIDs) do
+            local specID = NormalizeCustomBarSpecID(legacySpecID)
+            local legacyBars = settings.customAuraBars[legacySpecID]
+            local layout = specID and GetSpecLayoutOrder and GetSpecLayoutOrder(settings, specID) or nil
+            local numericSlots = {}
+            if specID and type(legacyBars) == "table" then
+                for slotIdx in pairs(legacyBars) do
+                    if tonumber(slotIdx) then
+                        numericSlots[#numericSlots + 1] = tonumber(slotIdx)
                     end
-                    layout.customBars[id] = CopyTable(legacyLayout)
-                else
-                    EnsureCustomBarLayout(settings, specID, id, 1000 + #target)
+                end
+            end
+            table.sort(numericSlots)
+
+            for _, slotIdx in ipairs(numericSlots) do
+                local cab = legacyBars[slotIdx] or legacyBars[tostring(slotIdx)]
+                if IsConfiguredCustomBar(cab) then
+                    local customBarId = type(cab.customBarId) == "string" and cab.customBarId or nil
+                    local entry = customBarId and store.entries[customBarId] or nil
+                    local isNewEntry = type(entry) ~= "table"
+                    if isNewEntry then
+                        entry = CopyTable(cab)
+                        NormalizeCustomBarAttachedPlacement(entry)
+                        entry.entryType = "aura"
+                    end
+                    if HasCustomBarContent(entry) then
+                        SetCustomBarSpecMembership(entry, specID, true)
+                        local id = EnsureCustomBarId(settings, entry)
+                        if id then
+                            if isNewEntry then
+                                store.entries[id] = entry
+                                AddCustomBarOrder(store, id)
+                            end
+                            local legacyLayout = type(layout) == "table"
+                                and type(layout.customAuraBarSlots) == "table"
+                                and layout.customAuraBarSlots[slotIdx]
+                                or nil
+                            if type(layout) == "table" then
+                                if type(layout.customBars) ~= "table" then
+                                    layout.customBars = {}
+                                end
+                                if type(layout.customBars[id]) ~= "table" then
+                                    layout.customBars[id] = type(legacyLayout) == "table"
+                                        and CopyTable(legacyLayout)
+                                        or { position = "below", order = 1000 + #store.order }
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            settings.customAuraBars[legacySpecID] = nil
+            local numericSpecID = tonumber(legacySpecID)
+            if numericSpecID then
+                settings.customAuraBars[numericSpecID] = nil
+            end
+            local stringSpecID = specID and tostring(specID) or nil
+            if stringSpecID then
+                settings.customAuraBars[stringSpecID] = nil
+            end
+        end
+    end
+
+    return store
+end
+
+local function NormalizeSharedCustomBars(settings)
+    local store = EnsureSharedCustomBarsStore(settings)
+    if type(store) ~= "table" then
+        return { entries = {}, order = {} }
+    end
+
+    local compactOrder = {}
+    local seenIds = {}
+    local function normalizeEntry(entry, fallbackSpecID)
+        if not IsConfiguredCustomBar(entry) then
+            return nil
+        end
+        NormalizeCustomBarAttachedPlacement(entry)
+        if not HasCustomBarContent(entry) then
+            return nil
+        end
+        NormalizeCustomBarEntryType(entry)
+        if fallbackSpecID and not next(NormalizeCustomBarSpecMembership(entry)) then
+            SetCustomBarSpecMembership(entry, fallbackSpecID, true)
+        else
+            NormalizeCustomBarSpecMembership(entry)
+        end
+        local id = EnsureCustomBarId(settings, entry)
+        if not id then
+            return nil
+        end
+        store.entries[id] = entry
+        if not seenIds[id] then
+            compactOrder[#compactOrder + 1] = id
+            seenIds[id] = true
+        end
+        return id
+    end
+
+    for _, id in ipairs(store.order) do
+        local entry = store.entries[id]
+        if type(entry) == "table" then
+            normalizeEntry(entry)
+        end
+    end
+
+    for _, entry in pairs(store.entries) do
+        local id = type(entry) == "table" and entry.customBarId or nil
+        if type(id) == "string" and not seenIds[id] then
+            normalizeEntry(entry)
+        end
+    end
+
+    wipe(store.order)
+    for _, id in ipairs(compactOrder) do
+        store.order[#store.order + 1] = id
+    end
+    return store
+end
+
+local function NormalizeCustomBars(settings, specID)
+    specID = NormalizeCustomBarSpecID(specID)
+    local store = NormalizeSharedCustomBars(settings)
+
+    local specBars = {}
+    for _, id in ipairs(store.order) do
+        local entry = store.entries[id]
+        if CustomBarHasSpec(entry, specID) then
+            specBars[#specBars + 1] = entry
+            EnsureCustomBarLayout(settings, specID, id, 1000 + #specBars)
+        end
+    end
+    return specBars
+end
+
+local function GetAllCustomBars(settings)
+    local store = NormalizeSharedCustomBars(settings)
+    local bars = {}
+    for _, id in ipairs(store.order) do
+        local entry = store.entries[id]
+        if type(entry) == "table" then
+            bars[#bars + 1] = entry
+        end
+    end
+    return bars
+end
+
+local function FindCustomBarById(settings, customBarId)
+    if type(customBarId) ~= "string" or customBarId == "" then
+        return nil
+    end
+    return NormalizeSharedCustomBars(settings).entries[customBarId]
+end
+
+local function AddCustomBar(settings, entry, specID, fallbackOrder)
+    if type(settings) ~= "table" or type(entry) ~= "table" then
+        return nil
+    end
+    specID = NormalizeCustomBarSpecID(specID) or GetCurrentSpecID()
+    if not specID then
+        return nil
+    end
+    local store = NormalizeSharedCustomBars(settings)
+    NormalizeCustomBarAttachedPlacement(entry)
+    NormalizeCustomBarEntryType(entry)
+    NormalizeCustomBarSpecMembership(entry)
+    local id = EnsureCustomBarId(settings, entry)
+    if not id then
+        return nil
+    end
+    store.entries[id] = entry
+    AddCustomBarOrder(store, id)
+    EnsureCustomBarLayout(settings, specID, id, fallbackOrder or (1000 + #store.order))
+    return id, entry
+end
+
+local function CopyCustomBarLayoutValues(targetLayout, sourceLayout, incrementOrder)
+    if type(targetLayout) ~= "table" or type(sourceLayout) ~= "table" then
+        return
+    end
+    wipe(targetLayout)
+    for key, value in pairs(sourceLayout) do
+        targetLayout[key] = type(value) == "table" and CopyTable(value) or value
+    end
+    if incrementOrder and sourceLayout.order ~= nil then
+        targetLayout.order = (tonumber(sourceLayout.order) or 1000) + 1
+    end
+    if incrementOrder and sourceLayout.verticalOrder ~= nil then
+        targetLayout.verticalOrder = (tonumber(sourceLayout.verticalOrder) or 1000) + 1
+    end
+end
+
+local function FindCustomBarLayoutToCopy(settings, entry, targetSpecID, preferredSpecID)
+    targetSpecID = NormalizeCustomBarSpecID(targetSpecID)
+    local function copyFromSpec(specID)
+        specID = NormalizeCustomBarSpecID(specID)
+        if not specID or specID == targetSpecID then
+            return nil
+        end
+        local layout = GetCustomBarLayout(settings, specID, entry, false)
+        return type(layout) == "table" and CopyTable(layout) or nil
+    end
+
+    local copiedLayout = copyFromSpec(preferredSpecID)
+    if copiedLayout then
+        return copiedLayout
+    end
+
+    local specIDs = {}
+    ForEachCustomBarSpec(entry, function(specID)
+        specID = NormalizeCustomBarSpecID(specID)
+        if specID and specID ~= targetSpecID then
+            specIDs[#specIDs + 1] = specID
+        end
+    end)
+    table.sort(specIDs, function(a, b) return tostring(a) < tostring(b) end)
+    for _, specID in ipairs(specIDs) do
+        copiedLayout = copyFromSpec(specID)
+        if copiedLayout then
+            return copiedLayout
+        end
+    end
+
+    local customBarId = type(entry) == "table" and entry.customBarId or nil
+    local layoutOrder = type(settings) == "table" and settings.layoutOrder or nil
+    if type(customBarId) == "string" and type(layoutOrder) == "table" then
+        wipe(specIDs)
+        for specID, layout in pairs(layoutOrder) do
+            if type(layout) == "table"
+                and type(layout.customBars) == "table"
+                and type(layout.customBars[customBarId]) == "table" then
+                specID = NormalizeCustomBarSpecID(specID)
+                if specID and specID ~= targetSpecID then
+                    specIDs[#specIDs + 1] = specID
+                end
+            end
+        end
+        table.sort(specIDs, function(a, b) return tostring(a) < tostring(b) end)
+        for _, specID in ipairs(specIDs) do
+            copiedLayout = copyFromSpec(specID)
+            if copiedLayout then
+                return copiedLayout
+            end
+        end
+    end
+
+    return nil
+end
+
+local function AddCustomBarToSpec(settings, entry, specID, sourceSpecID)
+    if type(settings) ~= "table" or type(entry) ~= "table" then
+        return false
+    end
+    specID = NormalizeCustomBarSpecID(specID)
+    if not specID then
+        return false
+    end
+    local id = EnsureCustomBarId(settings, entry)
+    if not id then
+        return false
+    end
+    local targetLayoutExists = GetCustomBarLayout(settings, specID, entry, false) ~= nil
+    local copiedLayout = not targetLayoutExists and FindCustomBarLayoutToCopy(settings, entry, specID, sourceSpecID) or nil
+    SetCustomBarSpecMembership(entry, specID, true)
+    local targetLayout = EnsureCustomBarLayout(settings, specID, id, 1000)
+    if not targetLayoutExists and type(copiedLayout) == "table" and type(targetLayout) == "table" then
+        CopyCustomBarLayoutValues(targetLayout, copiedLayout)
+    end
+    return true
+end
+
+local function RemoveCustomBarFromSpec(settings, entry, specID)
+    if type(settings) ~= "table" or type(entry) ~= "table" then
+        return false
+    end
+    specID = NormalizeCustomBarSpecID(specID)
+    if not specID then
+        return false
+    end
+    SetCustomBarSpecMembership(entry, specID, false)
+    if not CustomBarHasSpecFilters(entry) then
+        return true
+    end
+
+    local customBarId = entry.customBarId
+    local layout = type(settings.layoutOrder) == "table"
+        and (settings.layoutOrder[specID] or settings.layoutOrder[tostring(specID)])
+        or nil
+    if type(layout) == "table" and type(layout.customBars) == "table" and type(customBarId) == "string" then
+        layout.customBars[customBarId] = nil
+    end
+    return true
+end
+
+local function DeleteCustomBar(settings, customBarId)
+    if type(settings) ~= "table" or type(customBarId) ~= "string" or customBarId == "" then
+        return false
+    end
+    local store = NormalizeSharedCustomBars(settings)
+    local entry = store.entries[customBarId]
+    if type(entry) ~= "table" then
+        return false
+    end
+    store.entries[customBarId] = nil
+    for index = #store.order, 1, -1 do
+        if store.order[index] == customBarId then
+            table.remove(store.order, index)
+        end
+    end
+    if type(settings.layoutOrder) == "table" then
+        for _, layout in pairs(settings.layoutOrder) do
+            if type(layout) == "table" and type(layout.customBars) == "table" then
+                layout.customBars[customBarId] = nil
+            end
+        end
+    end
+    return true
+end
+
+local function CollectCustomBarSpecIDs(entry)
+    local specIDs = {}
+    ForEachCustomBarSpec(entry, function(specID)
+        specIDs[#specIDs + 1] = specID
+    end)
+    return specIDs
+end
+
+local function CollectCustomBarLayoutSpecIDs(settings, customBarId)
+    local specIDs = {}
+    local seen = {}
+    local layoutOrder = type(settings) == "table" and settings.layoutOrder or nil
+    if type(layoutOrder) ~= "table" or type(customBarId) ~= "string" then
+        return specIDs
+    end
+    for specID, layout in pairs(layoutOrder) do
+        if type(layout) == "table"
+            and type(layout.customBars) == "table"
+            and type(layout.customBars[customBarId]) == "table" then
+            local normalizedSpecID = NormalizeCustomBarSpecID(specID)
+            if normalizedSpecID and not seen[normalizedSpecID] then
+                specIDs[#specIDs + 1] = normalizedSpecID
+                seen[normalizedSpecID] = true
+            end
+        end
+    end
+    table.sort(specIDs, function(a, b) return tostring(a) < tostring(b) end)
+    return specIDs
+end
+
+local function DuplicateCustomBar(settings, sourceEntry, specID, fallbackOrder)
+    if type(settings) ~= "table" or type(sourceEntry) ~= "table" then
+        return nil
+    end
+
+    local sourceId = type(sourceEntry.customBarId) == "string" and sourceEntry.customBarId or nil
+    local sourceSpecIDs = CollectCustomBarSpecIDs(sourceEntry)
+    local layoutSeedSpecID = sourceSpecIDs[1] or NormalizeCustomBarSpecID(specID) or GetCurrentSpecID()
+    if not layoutSeedSpecID then
+        return nil
+    end
+
+    local copy = CopyTable(sourceEntry)
+    copy.customBarId = nil
+
+    local newId = AddCustomBar(settings, copy, layoutSeedSpecID, fallbackOrder)
+    if not newId then
+        return nil
+    end
+
+    local layoutSpecIDs, seenLayoutSpecs = {}, {}
+    local function addLayoutSpec(layoutSpecID)
+        if layoutSpecID and not seenLayoutSpecs[layoutSpecID] then
+            layoutSpecIDs[#layoutSpecIDs + 1] = layoutSpecID
+            seenLayoutSpecs[layoutSpecID] = true
+        end
+    end
+    for _, layoutSpecID in ipairs(sourceSpecIDs) do
+        addLayoutSpec(layoutSpecID)
+    end
+    if sourceId then
+        for _, layoutSpecID in ipairs(CollectCustomBarLayoutSpecIDs(settings, sourceId)) do
+            addLayoutSpec(layoutSpecID)
+        end
+    end
+
+    for _, layoutSpecID in ipairs(layoutSpecIDs) do
+        local sourceLayout = GetCustomBarLayout(settings, layoutSpecID, sourceEntry, false)
+        if type(sourceLayout) == "table" then
+            local targetLayout = EnsureCustomBarLayout(settings, layoutSpecID, newId, fallbackOrder)
+            CopyCustomBarLayoutValues(targetLayout, sourceLayout, true)
+        end
+    end
+
+    return newId, copy
+end
+
+local function CollectPayloadLayoutSpecIDs(payload, customBarId)
+    local specIDs = {}
+    local seen = {}
+    local layouts = type(payload) == "table" and payload.layouts or nil
+    if type(layouts) ~= "table" or type(customBarId) ~= "string" then
+        return specIDs
+    end
+    for specID, specLayouts in pairs(layouts) do
+        if type(specLayouts) == "table" and type(specLayouts[customBarId]) == "table" then
+            local normalizedSpecID = NormalizeCustomBarSpecID(specID)
+            if normalizedSpecID and not seen[normalizedSpecID] then
+                specIDs[#specIDs + 1] = normalizedSpecID
+                seen[normalizedSpecID] = true
+            end
+        end
+    end
+    table.sort(specIDs, function(a, b) return tostring(a) < tostring(b) end)
+    return specIDs
+end
+
+local function BuildCustomBarsExportPayload(settings, entries)
+    if type(settings) ~= "table" or type(entries) ~= "table" then
+        return nil
+    end
+
+    local _, classFilename, classID = UnitClass("player")
+    local payload = {
+        type = "customBars",
+        version = 1,
+        classID = classID,
+        classFilename = classFilename,
+        bars = {},
+        layouts = {},
+    }
+
+    for _, entry in ipairs(entries) do
+        if type(entry) == "table" then
+            local id = EnsureCustomBarId(settings, entry)
+            if id then
+                local exportedEntry = CopyTable(entry)
+                exportedEntry.customBarId = id
+                payload.bars[#payload.bars + 1] = exportedEntry
+
+                local layoutSpecIDs = {}
+                local seenLayoutSpecs = {}
+                for _, specID in ipairs(CollectCustomBarSpecIDs(entry)) do
+                    layoutSpecIDs[#layoutSpecIDs + 1] = specID
+                    seenLayoutSpecs[specID] = true
+                end
+                for _, specID in ipairs(CollectCustomBarLayoutSpecIDs(settings, id)) do
+                    if not seenLayoutSpecs[specID] then
+                        layoutSpecIDs[#layoutSpecIDs + 1] = specID
+                        seenLayoutSpecs[specID] = true
+                    end
+                end
+
+                for _, specID in ipairs(layoutSpecIDs) do
+                    local layout = GetCustomBarLayout(settings, specID, entry, false)
+                    if type(layout) == "table" then
+                        if type(payload.layouts[specID]) ~= "table" then
+                            payload.layouts[specID] = {}
+                        end
+                        payload.layouts[specID][id] = CopyTable(layout)
+                    end
                 end
             end
         end
     end
+
+    if #payload.bars == 0 then
+        return nil
+    end
+    return payload
 end
 
-local function NormalizeCustomBars(settings, specID)
-    if type(settings.customBars) ~= "table" then
-        settings.customBars = {}
+local function ImportCustomBarsPayload(settings, payload)
+    if type(settings) ~= "table" or type(payload) ~= "table" or payload.type ~= "customBars" then
+        return false, "Import failed: this is not a Custom Bars export."
     end
 
-    specID = tonumber(specID) or specID
-    local stringSpecID = tostring(specID)
-    local specBars = settings.customBars[specID]
-    if type(specBars) ~= "table" and stringSpecID ~= specID and type(settings.customBars[stringSpecID]) == "table" then
-        specBars = settings.customBars[stringSpecID]
-        settings.customBars[specID] = specBars
-        settings.customBars[stringSpecID] = nil
+    local _, classFilename, classID = UnitClass("player")
+    if payload.classID and payload.classID ~= classID then
+        return false, "Import failed: Custom Bars can only be imported on the same class."
+    end
+    if payload.classFilename and classFilename and payload.classFilename ~= classFilename then
+        return false, "Import failed: Custom Bars can only be imported on the same class."
+    end
+    if type(payload.bars) ~= "table" or #payload.bars == 0 then
+        return false, "Import failed: no Custom Bars were found."
     end
 
-    if type(specBars) ~= "table" then
-        specBars = {}
-        settings.customBars[specID] = specBars
-    end
-
-    if not HasConfiguredCustomBars(specBars) then
-        MigrateLegacyCustomAuraBars(settings, specID, specBars)
-    end
-
-    local compact = {}
-    local numericKeys = {}
-    for key in pairs(specBars) do
-        if type(key) == "number" then
-            numericKeys[#numericKeys + 1] = key
-        end
-    end
-    table.sort(numericKeys)
-
-    local seen = {}
-    for _, key in ipairs(numericKeys) do
-        local entry = specBars[key]
-        if IsConfiguredCustomBar(entry) then
-            NormalizeCustomBarAttachedPlacement(entry)
-            if HasCustomBarContent(entry) then
-                NormalizeCustomBarEntryType(entry)
-                local id = EnsureCustomBarId(settings, entry)
-                EnsureCustomBarLayout(settings, specID, id, 1000 + #compact + 1)
-                compact[#compact + 1] = entry
+    local importedCount = 0
+    local importedSpecs = {}
+    for _, exportedEntry in ipairs(payload.bars) do
+        if IsConfiguredCustomBar(exportedEntry) then
+            local oldId = exportedEntry.customBarId
+            local specIDs = CollectCustomBarSpecIDs(exportedEntry)
+            local firstSpecID = specIDs[1] or GetCurrentSpecID()
+            if firstSpecID then
+                local entry = CopyTable(exportedEntry)
+                entry.customBarId = nil
+                entry.specs = nil
+                local newId = AddCustomBar(settings, entry, firstSpecID)
+                if newId then
+                    importedCount = importedCount + 1
+                    importedSpecs[firstSpecID] = true
+                    local layoutSpecIDs = CollectPayloadLayoutSpecIDs(payload, oldId)
+                    local pendingLayoutSpecs = {}
+                    for _, specID in ipairs(layoutSpecIDs) do
+                        pendingLayoutSpecs[specID] = true
+                    end
+                    for _, specID in ipairs(specIDs) do
+                        importedSpecs[specID] = true
+                        AddCustomBarToSpec(settings, entry, specID, firstSpecID)
+                        local exportedLayout = type(payload.layouts) == "table"
+                            and type(payload.layouts[specID]) == "table"
+                            and payload.layouts[specID][oldId]
+                            or nil
+                        local targetLayout = EnsureCustomBarLayout(settings, specID, newId, 1000)
+                        CopyCustomBarLayoutValues(targetLayout, exportedLayout)
+                        pendingLayoutSpecs[specID] = nil
+                    end
+                    for _, specID in ipairs(layoutSpecIDs) do
+                        if pendingLayoutSpecs[specID] then
+                            importedSpecs[specID] = true
+                            local exportedLayout = type(payload.layouts) == "table"
+                                and type(payload.layouts[specID]) == "table"
+                                and payload.layouts[specID][oldId]
+                                or nil
+                            local targetLayout = EnsureCustomBarLayout(settings, specID, newId, 1000)
+                            CopyCustomBarLayoutValues(targetLayout, exportedLayout)
+                        end
+                    end
+                end
             end
         end
-        seen[key] = true
     end
 
-    for key, entry in pairs(specBars) do
-        if not seen[key] and IsConfiguredCustomBar(entry) then
-            NormalizeCustomBarAttachedPlacement(entry)
-            if HasCustomBarContent(entry) then
-                NormalizeCustomBarEntryType(entry)
-                local id = EnsureCustomBarId(settings, entry)
-                EnsureCustomBarLayout(settings, specID, id, 1000 + #compact + 1)
-                compact[#compact + 1] = entry
-            end
-        end
+    if importedCount == 0 then
+        return false, "Import failed: no valid Custom Bars were found."
     end
 
-    wipe(specBars)
-    for index, entry in ipairs(compact) do
-        specBars[index] = entry
+    local specCount = 0
+    for _ in pairs(importedSpecs) do
+        specCount = specCount + 1
     end
-    settings.customBars[specID] = specBars
-    return specBars
+    return true, "Imported " .. importedCount .. " Custom Bar" .. (importedCount == 1 and "" or "s")
+        .. " across " .. specCount .. " spec" .. (specCount == 1 and "" or "s") .. "."
 end
 
 local function GetSpecCustomAuraBars(settings)
@@ -761,8 +1371,15 @@ local function SeedResourceLayoutFromGlobal(layout, settings, cbSettings, specID
         end
     end
 
-    if specID and type(settings.customBars) == "table" and type(settings.customBars[specID]) == "table" then
-        for _, cab in pairs(settings.customBars[specID]) do
+    if specID and IsCustomBarsSharedStore(settings.customBars) then
+        local specBars = {}
+        local entries = type(settings.customBars.entries) == "table" and settings.customBars.entries or {}
+        for _, cab in pairs(entries) do
+            if CustomBarHasSpec(cab, specID) then
+                specBars[#specBars + 1] = cab
+            end
+        end
+        for _, cab in pairs(specBars or {}) do
             local customBarId = type(cab) == "table" and cab.customBarId
             if type(customBarId) == "string" and (cab.barHeight ~= nil or cab.barWidth ~= nil) then
                 if type(layout.customBars[customBarId]) ~= "table" then layout.customBars[customBarId] = {} end
@@ -1325,6 +1942,21 @@ RB.GetAnchorGroupFrame = GetAnchorGroupFrame
 RB.GetCurrentSpecID = GetCurrentSpecID
 RB.GetPlayerClassID = GetPlayerClassID
 RB.GetSpecCustomAuraBars = GetSpecCustomAuraBars
+RB.NormalizeCustomBars = NormalizeCustomBars
+RB.GetAllCustomBars = GetAllCustomBars
+RB.FindCustomBarById = FindCustomBarById
+RB.AddCustomBar = AddCustomBar
+RB.DuplicateCustomBar = DuplicateCustomBar
+RB.DeleteCustomBar = DeleteCustomBar
+RB.CustomBarHasSpec = CustomBarHasSpec
+RB.CustomBarHasSpecFilters = CustomBarHasSpecFilters
+RB.CustomBarHasExplicitSpec = CustomBarHasExplicitSpec
+RB.SetCustomBarSpecMembership = SetCustomBarSpecMembership
+RB.AddCustomBarToSpec = AddCustomBarToSpec
+RB.RemoveCustomBarFromSpec = RemoveCustomBarFromSpec
+RB.NormalizeCustomBarSpecMembership = NormalizeCustomBarSpecMembership
+RB.BuildCustomBarsExportPayload = BuildCustomBarsExportPayload
+RB.ImportCustomBarsPayload = ImportCustomBarsPayload
 RB.EnsureCustomBarId = EnsureCustomBarId
 RB.GetCustomBarLayout = GetCustomBarLayout
 RB.EnsureCustomBarLayout = EnsureCustomBarLayout

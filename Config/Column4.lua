@@ -33,8 +33,12 @@ local function FindSelectedCustomBar()
         return nil
     end
 
-    local customBars = CooldownCompanion:GetSpecCustomAuraBars()
-    for _, entry in ipairs(customBars or {}) do
+    local settings = CooldownCompanion:GetResourceBarSettings()
+    if ST._RB and ST._RB.FindCustomBarById then
+        return ST._RB.FindCustomBarById(settings, CS.selectedCustomBarId)
+    end
+
+    for _, entry in ipairs(CooldownCompanion:GetSpecCustomAuraBars() or {}) do
         if type(entry) == "table" and entry.customBarId == CS.selectedCustomBarId then
             return entry
         end
@@ -63,6 +67,99 @@ end
 local function GetCustomBarDetailScrollKey()
     if not CS.selectedCustomBarId then return nil end
     return tostring(CS.selectedCustomBarId) .. ":" .. tostring(CS.customBarSettingsTab or "appearance")
+end
+
+local function ShowCustomBarMultiSelect(container, selectedIds, selectedEntries)
+    if container.placeholderLabel then
+        container.placeholderLabel:Hide()
+    end
+    if container.customBarEntryTabGroup then
+        container.customBarEntryTabGroup.frame:Hide()
+    end
+    if container.customBarsDetailScroll then
+        container.customBarsDetailScroll.frame:Hide()
+    end
+    if container.layoutOrderHost then
+        container.layoutOrderHost:Hide()
+    end
+    if not container.customBarsMultiSelectScroll then
+        local scroll = AceGUI:Create("ScrollFrame")
+        scroll:SetLayout("List")
+        scroll.frame:SetParent(container)
+        container.customBarsMultiSelectScroll = scroll
+    end
+    local scroll = container.customBarsMultiSelectScroll
+    scroll.frame:SetParent(container)
+    scroll.frame:ClearAllPoints()
+    scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+    scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+    scroll:ReleaseChildren()
+    scroll.frame:Show()
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(#selectedEntries .. " Custom Bars Selected")
+    heading:SetFullWidth(true)
+    scroll:AddChild(heading)
+
+    local function AddSpacer()
+        local sp = AceGUI:Create("Label")
+        sp:SetText(" ")
+        sp:SetFullWidth(true)
+        local f, _, fl = sp.label:GetFont()
+        sp:SetFont(f, 3, fl or "")
+        scroll:AddChild(sp)
+    end
+
+    local anyDisabled = false
+    for _, entry in ipairs(selectedEntries) do
+        if entry.enabled ~= true then
+            anyDisabled = true
+            break
+        end
+    end
+
+    local enableBtn = AceGUI:Create("Button")
+    enableBtn:SetText(anyDisabled and "Enable Selected" or "Disable Selected")
+    enableBtn:SetFullWidth(true)
+    enableBtn:SetCallback("OnClick", function()
+        for _, entry in ipairs(selectedEntries) do
+            entry.enabled = anyDisabled and true or false
+            if entry.enabled and not entry.trackingMode then
+                entry.trackingMode = "active"
+            end
+        end
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(enableBtn)
+
+    AddSpacer()
+
+    local exportBtn = AceGUI:Create("Button")
+    exportBtn:SetText("Export Selected")
+    exportBtn:SetFullWidth(true)
+    exportBtn:SetCallback("OnClick", function()
+        local settings = CooldownCompanion:GetResourceBarSettings()
+        local payload = ST._RB.BuildCustomBarsExportPayload and ST._RB.BuildCustomBarsExportPayload(settings, selectedEntries)
+        local exportString = payload and ST._EncodeExportData and ST._EncodeExportData(payload)
+        if exportString then
+            CS.ShowPopupAboveConfig("CDC_EXPORT_CUSTOM_BARS", nil, { exportString = exportString })
+        else
+            CooldownCompanion:Print("Export failed: Custom Bar data was unavailable.")
+        end
+    end)
+    scroll:AddChild(exportBtn)
+
+    AddSpacer()
+
+    local deleteBtn = AceGUI:Create("Button")
+    deleteBtn:SetText("Delete Selected")
+    deleteBtn:SetFullWidth(true)
+    deleteBtn:SetCallback("OnClick", function()
+        CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_CUSTOM_BARS", #selectedIds, { ids = selectedIds })
+    end)
+    scroll:AddChild(deleteBtn)
 end
 
 local function RefreshColumn4(container)
@@ -94,8 +191,28 @@ local function RefreshColumn4(container)
         if container.customBarsDetailScroll then
             container.customBarsDetailScroll.frame:Hide()
         end
+        if container.customBarsMultiSelectScroll then
+            container.customBarsMultiSelectScroll.frame:Hide()
+        end
         if container.customBarEntryTabGroup then
             container.customBarEntryTabGroup.frame:Hide()
+        end
+        local selectedCustomBarIds = {}
+        local selectedCustomBarEntries = {}
+        local settings = CooldownCompanion:GetResourceBarSettings()
+        for customBarId in pairs(CS.selectedCustomBars) do
+            local entry = ST._RB.FindCustomBarById and ST._RB.FindCustomBarById(settings, customBarId)
+            if entry then
+                selectedCustomBarIds[#selectedCustomBarIds + 1] = customBarId
+                selectedCustomBarEntries[#selectedCustomBarEntries + 1] = entry
+            else
+                CS.selectedCustomBars[customBarId] = nil
+            end
+        end
+        table.sort(selectedCustomBarIds)
+        if #selectedCustomBarEntries >= 2 then
+            ShowCustomBarMultiSelect(container, selectedCustomBarIds, selectedCustomBarEntries)
+            return
         end
         if CS.selectedCustomBarId then
             if container.layoutOrderHost then
@@ -147,6 +264,9 @@ local function RefreshColumn4(container)
                 end
 
                 local tabGroup = container.customBarEntryTabGroup
+                if container.customBarsMultiSelectScroll then
+                    container.customBarsMultiSelectScroll.frame:Hide()
+                end
                 tabGroup.frame:ClearAllPoints()
                 tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
                 tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
@@ -181,6 +301,9 @@ local function RefreshColumn4(container)
         if container.customBarsDetailScroll then
             container.customBarsDetailScroll.frame:Hide()
         end
+        if container.customBarsMultiSelectScroll then
+            container.customBarsMultiSelectScroll.frame:Hide()
+        end
         if not CS.selectedCustomBarId then
             -- Fall through to Layout & Order when the selected Custom Bar was removed.
         else
@@ -203,6 +326,9 @@ local function RefreshColumn4(container)
     end
     if container.customBarsDetailScroll then
         container.customBarsDetailScroll.frame:Hide()
+    end
+    if container.customBarsMultiSelectScroll then
+        container.customBarsMultiSelectScroll.frame:Hide()
     end
     if container.customBarEntryTabGroup then
         container.customBarEntryTabGroup.frame:Hide()

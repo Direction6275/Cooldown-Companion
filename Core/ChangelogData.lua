@@ -40,6 +40,8 @@ ST._changelogData = {
 ## New Features
 
 - **One-pixel border thickness:** Border settings now include a dedicated One-pixel option for icon, bar, text, cast bar, and resource-style borders, while existing Custom Thickness borders and per-button overrides keep their current behavior.
+- **Spec-aware Custom Bars:** Custom Bars now show Loaded and Inactive Specs sections, include quick spec badges, and can be imported or exported without being tied to a whole profile.
+- **Custom Bar multiselect:** Multiple Custom Bars can now be enabled, disabled, exported, or deleted together from the Bars & Frames config.
 
 ## Polish | QoL
 

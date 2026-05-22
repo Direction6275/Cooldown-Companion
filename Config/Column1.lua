@@ -53,6 +53,7 @@ local function ClearSelection()
     CS.selectedButton = nil
     wipe(CS.selectedButtons)
     wipe(CS.selectedPanels)
+    wipe(CS.selectedCustomBars)
 end
 
 local function TrimGroupName(name)

@@ -4484,6 +4484,12 @@ end
 
 function CooldownCompanion:SetCustomAuraBarActivePreview(cabConfig, show)
     if not cabConfig then return end
+    if show then
+        local specID = RB.GetCurrentSpecID and RB.GetCurrentSpecID()
+        if not (specID and RB.CustomBarHasSpec and RB.CustomBarHasSpec(cabConfig, specID)) then
+            show = nil
+        end
+    end
     customAuraBarActivePreviewTokens[cabConfig] = (customAuraBarActivePreviewTokens[cabConfig] or 0) + 1
     activeCustomAuraBarActivePreviews[cabConfig] = show or nil
     RefreshCustomAuraBarPreviewState(cabConfig, "_barAuraActivePreview", show)
@@ -4496,6 +4502,12 @@ end
 
 function CooldownCompanion:SetCustomAuraBarPandemicPreview(cabConfig, show)
     if not cabConfig then return end
+    if show then
+        local specID = RB.GetCurrentSpecID and RB.GetCurrentSpecID()
+        if not (specID and RB.CustomBarHasSpec and RB.CustomBarHasSpec(cabConfig, specID)) then
+            show = nil
+        end
+    end
     customAuraBarPandemicPreviewTokens[cabConfig] = (customAuraBarPandemicPreviewTokens[cabConfig] or 0) + 1
     activeCustomAuraBarPandemicPreviews[cabConfig] = show or nil
     RefreshCustomAuraBarPreviewState(cabConfig, "_pandemicPreview", show)

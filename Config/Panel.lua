@@ -64,7 +64,7 @@ end
 
 local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
 local CONFIG_FINDER_BOX_HEIGHT = 28
-local CONFIG_FINDER_BUTTON_GAP = 6
+local CONFIG_FINDER_BUTTON_GAP = 3
 local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
 local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
 local CONFIG_NESTED_INLINE_GROUP_INSET = 20
@@ -103,15 +103,7 @@ local function GetLayoutOrderColumnTitle()
 end
 
 local function GetCustomBarsColumnTitle()
-    local specIdx = C_SpecializationInfo.GetSpecialization()
-    if not specIdx then
-        return "Custom Bars"
-    end
-    local _, specName = C_SpecializationInfo.GetSpecializationInfo(specIdx)
-    if not specName or specName == "" then
-        return "Custom Bars"
-    end
-    return "Custom Bars: " .. GetClassColoredText(specName)
+    return "Custom Bars"
 end
 
 local function CountSelections(selectionSet)
@@ -1601,7 +1593,7 @@ local function CreateConfigPanel()
     -- Info button next to Column 3 title
     local bsInfoBtn = CreateFrame("Button", nil, col3.frame)
     bsInfoBtn:SetSize(16, 16)
-    bsInfoBtn:SetPoint("LEFT", col3.titletext, "RIGHT", -2, 0)
+    bsInfoBtn:SetPoint("TOPRIGHT", col3.frame, "TOPRIGHT", -8, -4)
     local bsInfoIcon = bsInfoBtn:CreateTexture(nil, "OVERLAY")
     bsInfoIcon:SetSize(12, 12)
     bsInfoIcon:SetPoint("CENTER")
@@ -1610,9 +1602,11 @@ local function CreateConfigPanel()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if CS.resourceBarPanelActive then
             GameTooltip:AddLine("Custom Bars")
-            GameTooltip:AddLine("Track buffs or debuffs as resource-style bars.", 1, 1, 1)
+            GameTooltip:AddLine("Create and manage resource-style bars across all specs.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Entries are configured per-spec.", 1, 1, 1)
+            GameTooltip:AddLine("Loaded shows bars available to the current spec; Inactive Specs shows bars filtered to other specs.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("No spec filter means the bar applies to every spec.", 1, 1, 1, true)
         elseif CS.autoAddFlowActive then
             GameTooltip:AddLine("Auto Add")
             GameTooltip:AddLine("Guided import flow for Action Bars, Spellbook, and CDM Auras.", 1, 1, 1, true)
