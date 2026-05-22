@@ -100,6 +100,44 @@ local function ClearSpecKeyedValue(source, specID)
     source[tostring(specID)] = nil
 end
 
+local function IsSharedCustomBarsStore(customBars)
+    return type(customBars) == "table"
+        and (type(customBars.entries) == "table" or type(customBars.order) == "table")
+end
+
+local function NormalizeCustomBarSpecID(specID)
+    local numericSpecID = tonumber(specID)
+    if numericSpecID and numericSpecID > 0 then
+        return numericSpecID
+    end
+    return nil
+end
+
+local function ForEachSharedCustomBarSpec(entry, callback)
+    if type(entry) ~= "table" or type(callback) ~= "function" then
+        return
+    end
+    if type(entry.specs) == "table" then
+        for key, value in pairs(entry.specs) do
+            if value == true then
+                local specID = NormalizeCustomBarSpecID(key)
+                if specID then
+                    callback(specID)
+                end
+            elseif type(value) == "number" or type(value) == "string" then
+                local specID = NormalizeCustomBarSpecID(value)
+                if specID then
+                    callback(specID)
+                end
+            end
+        end
+    end
+    local legacySpecID = NormalizeCustomBarSpecID(entry.specID or entry.spec or entry.sourceSpecID)
+    if legacySpecID then
+        callback(legacySpecID)
+    end
+end
+
 local RESOURCE_SPEC_AURA_KEYS = {
     auraOverlayEnabled = true,
     auraOverlayEntries = true,
@@ -155,27 +193,57 @@ local function PreserveTargetCustomBarLayouts(copied, target)
     end
 
     local targetLayoutOrder = type(target.layoutOrder) == "table" and target.layoutOrder or nil
-    for specID, targetSpecBars in pairs(target.customBars) do
-        if type(targetSpecBars) == "table" then
-            local targetLayout = GetSpecKeyedTable(targetLayoutOrder, specID)
-            local copiedLayout = GetSpecKeyedTable(copied.layoutOrder, specID)
-            if not copiedLayout then
-                copiedLayout = type(targetLayout) == "table" and CopyTable(targetLayout) or {}
-                copied.layoutOrder[specID] = copiedLayout
-            end
-
+    local function preserveLayout(specID, customBarId)
+        if type(customBarId) ~= "string" or customBarId == "" then
+            return
+        end
+        local targetLayout = GetSpecKeyedTable(targetLayoutOrder, specID)
+        local copiedLayout = GetSpecKeyedTable(copied.layoutOrder, specID)
+        if not copiedLayout then
+            copiedLayout = type(targetLayout) == "table" and CopyTable(targetLayout) or {}
+            copied.layoutOrder[specID] = copiedLayout
+        end
+        if type(copiedLayout.customBars) ~= "table" then
             copiedLayout.customBars = {}
+        end
 
-            local targetCustomBarLayouts = type(targetLayout) == "table" and targetLayout.customBars or nil
-            for _, entry in pairs(targetSpecBars) do
-                local customBarId = type(entry) == "table" and entry.customBarId or nil
-                if type(customBarId) == "string" and customBarId ~= "" then
-                    local targetCustomBarLayout = type(targetCustomBarLayouts) == "table"
-                        and targetCustomBarLayouts[customBarId]
-                        or nil
-                    if type(targetCustomBarLayout) == "table" then
-                        copiedLayout.customBars[customBarId] = CopyTable(targetCustomBarLayout)
+        local targetCustomBarLayouts = type(targetLayout) == "table" and targetLayout.customBars or nil
+        local targetCustomBarLayout = type(targetCustomBarLayouts) == "table"
+            and targetCustomBarLayouts[customBarId]
+            or nil
+        if type(targetCustomBarLayout) == "table" then
+            copiedLayout.customBars[customBarId] = CopyTable(targetCustomBarLayout)
+        end
+    end
+
+    if IsSharedCustomBarsStore(target.customBars) then
+        local entries = type(target.customBars.entries) == "table" and target.customBars.entries or {}
+        for _, entry in pairs(entries) do
+            local customBarId = type(entry) == "table" and entry.customBarId or nil
+            local sawSpec = false
+            ForEachSharedCustomBarSpec(entry, function(specID)
+                sawSpec = true
+                preserveLayout(specID, customBarId)
+            end)
+            if not sawSpec and type(targetLayoutOrder) == "table" then
+                for specID, layout in pairs(targetLayoutOrder) do
+                    if type(layout) == "table"
+                        and type(layout.customBars) == "table"
+                        and type(layout.customBars[customBarId]) == "table" then
+                        preserveLayout(specID, customBarId)
                     end
+                end
+            end
+        end
+    else
+        for specID, targetSpecBars in pairs(target.customBars) do
+            if type(targetSpecBars) == "table" then
+                local copiedLayout = GetSpecKeyedTable(copied.layoutOrder, specID)
+                if copiedLayout then
+                    copiedLayout.customBars = {}
+                end
+                for _, entry in pairs(targetSpecBars) do
+                    preserveLayout(specID, type(entry) == "table" and entry.customBarId or nil)
                 end
             end
         end
@@ -579,13 +647,51 @@ local function NormalizeCustomAuraBarsForCurrentClass(settings)
     end
 
     local filtered = {}
-    for key, specBars in pairs(barsBySpec) do
-        local numericSpecID = tonumber(key)
-        if type(specBars) == "table" and (
-            numericSpecID == 0
-            or (numericSpecID and allowedSpecIDs[numericSpecID])
-        ) then
-            filtered[numericSpecID or key] = CopyTable(specBars)
+    if IsSharedCustomBarsStore(barsBySpec) then
+        filtered.entries = {}
+        filtered.order = {}
+        local entries = type(barsBySpec.entries) == "table" and barsBySpec.entries or {}
+        local included = {}
+        for key, entry in pairs(entries) do
+            if type(entry) == "table" then
+                local copiedEntry = CopyTable(entry)
+                local normalizedSpecs = {}
+                local sawSpec = false
+                ForEachSharedCustomBarSpec(copiedEntry, function(specID)
+                    sawSpec = true
+                    if allowedSpecIDs[specID] then
+                        normalizedSpecs[specID] = true
+                    end
+                end)
+                if not sawSpec or next(normalizedSpecs) then
+                    copiedEntry.specs = normalizedSpecs
+                    local customBarId = type(copiedEntry.customBarId) == "string" and copiedEntry.customBarId or key
+                    if type(customBarId) == "string" and customBarId ~= "" then
+                        filtered.entries[customBarId] = copiedEntry
+                        included[customBarId] = true
+                    end
+                end
+            end
+        end
+        if type(barsBySpec.order) == "table" then
+            for _, customBarId in ipairs(barsBySpec.order) do
+                if included[customBarId] then
+                    filtered.order[#filtered.order + 1] = customBarId
+                    included[customBarId] = nil
+                end
+            end
+        end
+        for customBarId in pairs(included) do
+            filtered.order[#filtered.order + 1] = customBarId
+        end
+    else
+        for key, specBars in pairs(barsBySpec) do
+            local numericSpecID = tonumber(key)
+            if type(specBars) == "table" and (
+                numericSpecID and allowedSpecIDs[numericSpecID]
+            ) then
+                filtered[numericSpecID or key] = CopyTable(specBars)
+            end
         end
     end
 
@@ -640,22 +746,33 @@ local function SanitizeResourceBarAnchors(settings)
     end
 
     local ensureCustomAuraBarAuraUnit = GetEnsureCustomAuraBarAuraUnit()
-    for _, specBars in pairs(customBarsBySpec) do
-        if type(specBars) == "table" then
-            for _, customAuraBar in pairs(specBars) do
-                if type(customAuraBar) == "table" then
-                    customAuraBar.independentAnchorEnabled = nil
-                    customAuraBar.independentLocked = nil
-                    customAuraBar.independentAnchorTargetMode = nil
-                    customAuraBar.independentAnchorFrameName = nil
-                    customAuraBar.independentAnchorGroupId = nil
-                    customAuraBar.independentAnchor = nil
-                    customAuraBar.independentSize = nil
-                    customAuraBar.independentOrientation = nil
-                    customAuraBar.independentVerticalFillDirection = nil
-                    if ensureCustomAuraBarAuraUnit then
-                        ensureCustomAuraBarAuraUnit(customAuraBar, customAuraBar.spellID)
-                    end
+    local function sanitizeCustomBar(customAuraBar)
+        if type(customAuraBar) == "table" then
+            customAuraBar.independentAnchorEnabled = nil
+            customAuraBar.independentLocked = nil
+            customAuraBar.independentAnchorTargetMode = nil
+            customAuraBar.independentAnchorFrameName = nil
+            customAuraBar.independentAnchorGroupId = nil
+            customAuraBar.independentAnchor = nil
+            customAuraBar.independentSize = nil
+            customAuraBar.independentOrientation = nil
+            customAuraBar.independentVerticalFillDirection = nil
+            if ensureCustomAuraBarAuraUnit then
+                ensureCustomAuraBarAuraUnit(customAuraBar, customAuraBar.spellID)
+            end
+        end
+    end
+
+    if IsSharedCustomBarsStore(customBarsBySpec) then
+        local entries = type(customBarsBySpec.entries) == "table" and customBarsBySpec.entries or {}
+        for _, customAuraBar in pairs(entries) do
+            sanitizeCustomBar(customAuraBar)
+        end
+    else
+        for _, specBars in pairs(customBarsBySpec) do
+            if type(specBars) == "table" then
+                for _, customAuraBar in pairs(specBars) do
+                    sanitizeCustomBar(customAuraBar)
                 end
             end
         end

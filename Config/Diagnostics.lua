@@ -151,7 +151,8 @@ local function BuildDiagnosticSnapshot()
     -- Build spec name cache for all referenced spec IDs
     local specNameCache = {}
     local function cacheSpecName(sid)
-        if sid and not specNameCache[sid] then
+        sid = tonumber(sid)
+        if sid and sid ~= 0 and not specNameCache[sid] then
             specNameCache[sid] = GetSpecializationNameForSpecID(sid)
         end
     end
@@ -175,8 +176,24 @@ local function BuildDiagnosticSnapshot()
             local customBars = type(resourceSettings) == "table"
                 and (type(resourceSettings.customBars) == "table" and resourceSettings.customBars or resourceSettings.customAuraBars)
             if type(customBars) == "table" then
-                for sid in pairs(customBars) do
-                    if sid ~= 0 then cacheSpecName(sid) end
+                if type(customBars.entries) == "table" or type(customBars.order) == "table" then
+                    local entries = type(customBars.entries) == "table" and customBars.entries or {}
+                    for _, entry in pairs(entries) do
+                        if type(entry) == "table" then
+                            cacheSpecsFromTable(entry.specs)
+                            cacheSpecName(entry.specID or entry.spec or entry.sourceSpecID)
+                        end
+                    end
+                    local layoutOrder = type(resourceSettings.layoutOrder) == "table" and resourceSettings.layoutOrder or {}
+                    for sid, layout in pairs(layoutOrder) do
+                        if type(layout) == "table" and type(layout.customBars) == "table" and next(layout.customBars) then
+                            cacheSpecName(sid)
+                        end
+                    end
+                else
+                    for sid in pairs(customBars) do
+                        cacheSpecName(sid)
+                    end
                 end
             end
         end
@@ -748,21 +765,50 @@ local function FormatDiagnosticAsText(diag)
             for _ in pairs(customBars) do hasAny = true; break end
             if hasAny then
                 add("  customBars:")
-                local specIds = {}
-                for sid in pairs(customBars) do specIds[#specIds + 1] = sid end
-                table.sort(specIds, function(a, b) return tostring(a) < tostring(b) end)
-                for _, sid in ipairs(specIds) do
-                    local sName = sid == 0 and "Default" or specNames[sid]
-                    local entryLabel = sName
-                        and ("[%s] (%s)"):format(tostring(sid), sName)
-                        or ("[%s]"):format(tostring(sid))
-                    add(("    %s"):format(entryLabel))
-                    local specBars = customBars[sid]
-                    local slots = {}
-                    for slot in pairs(specBars) do slots[#slots + 1] = slot end
-                    table.sort(slots, function(a, b) return tostring(a) < tostring(b) end)
-                    for _, slot in ipairs(slots) do
-                        add(("      %s: %s"):format(tostring(slot), dumpCustomBarKV(specBars[slot])))
+                if type(customBars.entries) == "table" or type(customBars.order) == "table" then
+                    local entries = type(customBars.entries) == "table" and customBars.entries or {}
+                    local orderedIds = {}
+                    local seenIds = {}
+                    if type(customBars.order) == "table" then
+                        for _, customBarId in ipairs(customBars.order) do
+                            if type(customBarId) == "string" and type(entries[customBarId]) == "table" then
+                                orderedIds[#orderedIds + 1] = customBarId
+                                seenIds[customBarId] = true
+                            end
+                        end
+                    end
+                    local remainingIds = {}
+                    for customBarId, entry in pairs(entries) do
+                        if type(customBarId) == "string" and type(entry) == "table" and not seenIds[customBarId] then
+                            remainingIds[#remainingIds + 1] = customBarId
+                        end
+                    end
+                    table.sort(remainingIds)
+                    for _, customBarId in ipairs(remainingIds) do
+                        orderedIds[#orderedIds + 1] = customBarId
+                    end
+                    for _, customBarId in ipairs(orderedIds) do
+                        add(("    [%s] %s"):format(customBarId, dumpCustomBarKV(entries[customBarId])))
+                    end
+                else
+                    local specIds = {}
+                    for sid in pairs(customBars) do specIds[#specIds + 1] = sid end
+                    table.sort(specIds, function(a, b) return tostring(a) < tostring(b) end)
+                    for _, sid in ipairs(specIds) do
+                        local sName = specNames[sid]
+                        local entryLabel = sName
+                            and ("[%s] (%s)"):format(tostring(sid), sName)
+                            or ("[%s]"):format(tostring(sid))
+                        add(("    %s"):format(entryLabel))
+                        local specBars = customBars[sid]
+                        if type(specBars) == "table" then
+                            local slots = {}
+                            for slot in pairs(specBars) do slots[#slots + 1] = slot end
+                            table.sort(slots, function(a, b) return tostring(a) < tostring(b) end)
+                            for _, slot in ipairs(slots) do
+                                add(("      %s: %s"):format(tostring(slot), dumpCustomBarKV(specBars[slot])))
+                            end
+                        end
                     end
                 end
             end

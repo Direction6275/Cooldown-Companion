@@ -431,9 +431,13 @@ local function DecodeProfileImport(popup)
         CooldownCompanion:Print("Import failed: invalid data.")
         return nil
     end
-    -- Reject group/folder exports pasted into the profile import dialog
+    -- Reject narrower exports pasted into the profile import dialog
     if data.type then
-        CooldownCompanion:Print("This is a group/folder export. Use the group Import button.")
+        if data.type == "customBars" then
+            CooldownCompanion:Print("This is a Custom Bars export. Use the Custom Bars Import button.")
+        else
+            CooldownCompanion:Print("This is a group/folder export. Use the group Import button.")
+        end
         return nil
     end
     -- Structural validation: a CDC profile must have groups or globalStyle,
@@ -501,19 +505,20 @@ local function ApplyProfileImport(data)
             end
         end
     end
-
     -- Rename foreign characters to class-based placeholders.
     -- A "foreign" character is one whose createdBy doesn't match any
     -- character in the importer's own characterInfo.
     local importerCharInfo = db.global.characterInfo or {}
     local foreignKeys = {}
-    local function markForeign(entity, checkGlobal)
-        local cb = entity.createdBy
+    local function markForeignCharKey(cb)
         if not cb or cb == charKey then return end
-        if checkGlobal and entity.isGlobal then return end
         if not importerCharInfo[cb] and not foreignKeys[cb] then
             foreignKeys[cb] = true
         end
+    end
+    local function markForeign(entity, checkGlobal)
+        if checkGlobal and entity.isGlobal then return end
+        markForeignCharKey(entity.createdBy)
     end
     for _, group in pairs(db.profile.groups or {}) do markForeign(group, true) end
     for _, container in pairs(db.profile.groupContainers or {}) do markForeign(container, true) end
@@ -754,6 +759,32 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_GROUPS"] = {
                 CooldownCompanion:DeleteGroup(gid)
             end
             ResetConfigSelection(true)
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DELETE_SELECTED_CUSTOM_BARS"] = {
+    text = "Delete %d selected Custom Bars?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        local rb = ST._RB
+        local settings = CooldownCompanion:GetResourceBarSettings()
+        if data and type(data.ids) == "table" and rb and rb.DeleteCustomBar then
+            for _, customBarId in ipairs(data.ids) do
+                rb.DeleteCustomBar(settings, customBarId)
+            end
+            CS.selectedCustomBarId = nil
+            CS.customBarSpecExpandedId = nil
+            wipe(CS.selectedCustomBars)
+            CooldownCompanion:ClearAllCustomAuraBarPreviews()
+            CooldownCompanion:ApplyResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
             CooldownCompanion:RefreshConfigPanel()
         end
     end,
@@ -1223,6 +1254,92 @@ StaticPopupDialogs["CDC_IMPORT_GROUP"] = {
         local text = self:GetText()
         if text == "" then return end
         local ok = ImportGroupData(text)
+        if ok then
+            self:GetParent():Hide()
+        end
+    end,
+    EditBoxOnEscapePressed = function(self)
+        self:GetParent():Hide()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+local function ImportCustomBarsData(text)
+    local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
+    if not preparedText then
+        return false
+    end
+    if isLegacyImport then
+        CooldownCompanion:NotifyLegacySupportCutoff("custom bars import")
+        return false
+    end
+    if #compactText > 100000 then
+        CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
+        return false
+    end
+
+    local success, data = DecodeSharedPayload(preparedText)
+    if not success then
+        CooldownCompanion:Print("Import failed: invalid data.")
+        return false
+    end
+    if type(data) ~= "table" or data.type ~= "customBars" then
+        CooldownCompanion:Print("Import failed: this is not a Custom Bars export.")
+        return false
+    end
+
+    local rb = ST._RB
+    local settings = CooldownCompanion:GetResourceBarSettings()
+    local ok, message
+    if rb and rb.ImportCustomBarsPayload then
+        ok, message = rb.ImportCustomBarsPayload(settings, data)
+    end
+    if not ok then
+        CooldownCompanion:Print(message or "Import failed.")
+        return false
+    end
+
+    CooldownCompanion:Print(message)
+    CooldownCompanion:ApplyResourceBars()
+    CooldownCompanion:UpdateAnchorStacking()
+    CooldownCompanion:RefreshConfigPanel()
+    return true
+end
+
+StaticPopupDialogs["CDC_EXPORT_CUSTOM_BARS"] = {
+    text = "Export Custom Bars string (Ctrl+C to copy):",
+    button1 = "Close",
+    hasEditBox = true,
+    OnShow = function(self)
+        if self.data and self.data.exportString then
+            self.EditBox:SetText(self.data.exportString)
+            self.EditBox:HighlightText()
+            self.EditBox:SetFocus()
+        end
+    end,
+    EditBoxOnEscapePressed = function(self)
+        self:GetParent():Hide()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_IMPORT_CUSTOM_BARS"] = {
+    text = "Paste Custom Bars import string (Ctrl+V to paste):",
+    button1 = "Close",
+    hasEditBox = true,
+    OnShow = function(self)
+        self.EditBox:SetFocus()
+    end,
+    EditBoxOnTextChanged = function(self)
+        local text = self:GetText()
+        if text == "" then return end
+        local ok = ImportCustomBarsData(text)
         if ok then
             self:GetParent():Hide()
         end

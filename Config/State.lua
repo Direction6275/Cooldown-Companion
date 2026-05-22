@@ -126,6 +126,7 @@ ST._configState = {
     selectedButtons = {},
     selectedPanels = {},         -- multi-selected panel IDs (within a container)
     selectedGroups = {},         -- multi-selected container IDs
+    selectedCustomBars = {},     -- multi-selected custom bar IDs
     selectedTab = "appearance",
     selectedContainerTab = "general",
     buttonSettingsTab = "settings",
@@ -232,6 +233,7 @@ ST._configState = {
     resourceAuraOverlayDrafts = {},
     customBarSettingsTab = "appearance",
     selectedCustomBarId = nil,
+    customBarSpecExpandedId = nil,
     customBarIndicatorPreviewActive = nil,
     groupPresetSelection = {
         icons = nil,
@@ -596,6 +598,7 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
     wipe(CS.selectedButtons)
+    wipe(CS.selectedCustomBars)
     CS.selectedFolder = nil
     CS.selectedContainer = containerId
     CS.selectedGroup = panelId
@@ -2129,13 +2132,16 @@ local function ResetConfigSelection(full)
     CS.selectedFolder = nil
     CS.selectedButton = nil
     CS.selectedCustomBarId = nil
+    CS.customBarSpecExpandedId = nil
     CS.customBarSettingsTab = "appearance"
     wipe(CS.selectedButtons)
     wipe(CS.selectedPanels)
+    wipe(CS.selectedCustomBars)
     if full then
         CS.selectedContainer = nil
         CS.selectedGroup = nil
         wipe(CS.selectedGroups)
+        wipe(CS.selectedCustomBars)
         CS.addingToPanelId = nil
         -- Exit browse mode on full reset
         CS.browseMode = false
