@@ -105,6 +105,9 @@ ConfigSettings\SectionBuilders.lua
 ConfigSettings\CastBarPanels.lua
 ConfigSettings\ResourceBarPanelsHelpers.lua
 ConfigSettings\ResourceBarLayoutOrderPreview.lua
+ConfigSettings\ResourceBarPanelsResource.lua
+ConfigSettings\ResourceBarPanelsCustomBars.lua
+ConfigSettings\ResourceBarPanelsLayoutOrder.lua
 ConfigSettings\ResourceBarPanels.lua
 ConfigSettings\FrameAnchoringPanels.lua
 ConfigSettings\AuraTexturePicker.lua
