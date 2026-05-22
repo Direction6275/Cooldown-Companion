@@ -81,6 +81,10 @@ OtherBars\ResourceBarConstants.lua
 OtherBars\ResourceBarHelpers.lua
 OtherBars\CastBar.lua
 OtherBars\ResourceBarVisuals.lua
+OtherBars\ResourceBarHealth.lua
+OtherBars\ResourceBarCustomBars.lua
+OtherBars\ResourceBarPreview.lua
+OtherBars\ResourceBarLifecycle.lua
 OtherBars\ResourceBar.lua
 Core\FrameAnchoring.lua
 Config\State.lua

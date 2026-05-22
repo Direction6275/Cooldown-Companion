@@ -1,0 +1,282 @@
+--[[
+    CooldownCompanion - ResourceBarLifecycle
+    Resource bar event registration, hooks, and initialization.
+]]
+
+local ADDON_NAME, ST = ...
+local CooldownCompanion = ST.Addon
+
+local math_abs = math.abs
+
+local RB = ST._RB
+
+function RB.CreateResourceBarLifecycleModule(deps)
+    local resourceBarFrames = deps.resourceBarFrames
+    local GetResourceBarSettings = deps.GetResourceBarSettings or RB.GetResourceBarSettings
+    local GetSpecLayoutOrder = deps.GetSpecLayoutOrder or RB.GetSpecLayoutOrder
+    local GetEffectiveAnchorGroupId = deps.GetEffectiveAnchorGroupId or RB.GetEffectiveAnchorGroupId
+    local GetResourcePrimaryLength = deps.GetResourcePrimaryLength or RB.GetResourcePrimaryLength
+    local GetResolvedCustomAuraBarAuraUnit = deps.GetResolvedCustomAuraBarAuraUnit or RB.GetResolvedCustomAuraBarAuraUnit
+    local GetLastAppliedPrimaryLength = deps.GetLastAppliedPrimaryLength
+    local UpdateMWMaxStacks = deps.UpdateMWMaxStacks
+    local RefreshEventDrivenCustomAuraBarsForUnit = deps.RefreshEventDrivenCustomAuraBarsForUnit
+    local hooksInstalled = false
+    local eventFrame = nil
+    local pendingSpecChange = false
+
+    ------------------------------------------------------------------------
+    -- Event handling (must be defined before Apply/Revert which call these)
+    ------------------------------------------------------------------------
+
+    -- Lifecycle events: always registered while the feature is enabled.
+    -- These trigger full re-evaluation (not just re-apply) so the bars
+    -- come back after a form change that temporarily hides them.
+    local lifecycleFrame = nil
+
+    local function EnableLifecycleEvents()
+        if not lifecycleFrame then
+            lifecycleFrame = CreateFrame("Frame")
+            lifecycleFrame:SetScript("OnEvent", function(self, event, ...)
+                if event == "UPDATE_SHAPESHIFT_FORM" then
+                    CooldownCompanion:EvaluateResourceBars()
+                    CooldownCompanion:UpdateAnchorStacking()
+                elseif event == "ACTIVE_TALENT_GROUP_CHANGED"
+                    or event == "PLAYER_SPECIALIZATION_CHANGED" then
+                    if not pendingSpecChange then
+                        pendingSpecChange = true
+                        C_Timer.After(0.5, function()
+                            pendingSpecChange = false
+                            local rebuilt = UpdateMWMaxStacks()
+                            if not rebuilt then
+                                CooldownCompanion:EvaluateResourceBars()
+                            end
+                            CooldownCompanion:RepositionCastBar()
+                            CooldownCompanion:UpdateAnchorStacking()
+                        end)
+                    end
+                elseif event == "PLAYER_TALENT_UPDATE"
+                    or event == "TRAIT_CONFIG_UPDATED" then
+                    UpdateMWMaxStacks()
+                end
+            end)
+        end
+        lifecycleFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+        lifecycleFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
+        lifecycleFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+        lifecycleFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
+        lifecycleFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+    end
+
+    local function DisableLifecycleEvents()
+        if not lifecycleFrame then return end
+        lifecycleFrame:UnregisterAllEvents()
+        pendingSpecChange = false
+    end
+
+    -- Update events: only registered while bars are applied.
+    local function EnableEventFrame()
+        if not eventFrame then
+            eventFrame = CreateFrame("Frame")
+            eventFrame:SetScript("OnEvent", function(self, event, ...)
+                if event == "UNIT_MAXPOWER" or event == "UNIT_MAXHEALTH" then
+                    local unit = ...
+                    if unit == "player" then
+                        CooldownCompanion:ApplyResourceBars()
+                    end
+                elseif event == "UNIT_AURA" then
+                    local unit, updateInfo = ...
+                    if unit ~= "player" and unit ~= "target" then return end
+                    if not updateInfo then return end
+
+                    local removedIDs = updateInfo.removedAuraInstanceIDs
+                    local updatedIDs = updateInfo.updatedAuraInstanceIDs
+                    local hasAuraChange = updateInfo.isFullUpdate or updateInfo.addedAuras or removedIDs or updatedIDs
+                    if hasAuraChange then
+                        RefreshEventDrivenCustomAuraBarsForUnit(unit)
+                    end
+                    if not removedIDs and not updatedIDs then return end
+
+                    for _, barInfo in ipairs(resourceBarFrames) do
+                        local bar = barInfo and barInfo.frame
+                        local cabConfig = barInfo and barInfo.cabConfig
+                        if barInfo
+                            and ((barInfo.barType == "custom_continuous"
+                                    and cabConfig and cabConfig.trackingMode == "active")
+                                or (barInfo.barType == "custom_cooldown"
+                                    and cabConfig and cabConfig.auraTracking == true))
+                            and bar and bar._auraInstanceID and bar._auraUnit == unit then
+                            if removedIDs then
+                                for _, instId in ipairs(removedIDs) do
+                                    if bar._auraInstanceID == instId then
+                                        bar._auraActive = nil
+                                        bar._auraInstanceID = nil
+                                        bar._auraUnit = nil
+                                        bar._inPandemic = nil
+                                        bar._pandemicGraceStart = nil
+                                        break
+                                    end
+                                end
+                            end
+                            if updatedIDs and bar._auraInstanceID then
+                                for _, instId in ipairs(updatedIDs) do
+                                    if bar._auraInstanceID == instId then
+                                        bar._inPandemic = nil
+                                        bar._pandemicGraceStart = nil
+                                        bar._pandemicGraceSuppressed = true
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                elseif event == "PLAYER_TARGET_CHANGED" then
+                    for _, barInfo in ipairs(resourceBarFrames) do
+                        local bar = barInfo and barInfo.frame
+                        local cabConfig = barInfo and barInfo.cabConfig
+                        if barInfo
+                            and ((barInfo.barType == "custom_continuous"
+                                    and cabConfig and cabConfig.trackingMode == "active")
+                                or (barInfo.barType == "custom_cooldown"
+                                    and cabConfig and cabConfig.auraTracking == true))
+                            and bar and GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID) == "target" then
+                            bar._auraActive = nil
+                            bar._auraInstanceID = nil
+                            bar._auraUnit = nil
+                            bar._inPandemic = nil
+                            bar._pandemicGraceStart = nil
+                            bar._pandemicGraceSuppressed = nil
+                        end
+                    end
+                    RefreshEventDrivenCustomAuraBarsForUnit("target")
+                end
+            end)
+        end
+        eventFrame:RegisterUnitEvent("UNIT_MAXPOWER", "player")
+        -- UNIT_MAXHEALTH: stagger bar max is health-based; only matters for Brewmaster
+        -- but RegisterUnitEvent with "player" filter has negligible overhead for others
+        eventFrame:RegisterUnitEvent("UNIT_MAXHEALTH", "player")
+        eventFrame:RegisterUnitEvent("UNIT_AURA", "player", "target")
+        eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+    end
+
+    local function DisableEventFrame()
+        if not eventFrame then return end
+        eventFrame:UnregisterAllEvents()
+    end
+
+
+    ------------------------------------------------------------------------
+    -- Hook installation (same pattern as CastBar)
+    ------------------------------------------------------------------------
+
+    local function InstallHooks()
+        if hooksInstalled then return end
+        hooksInstalled = true
+
+        -- When anchor group refreshes — re-evaluate
+        hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
+            local s = GetResourceBarSettings()
+            if s and s.enabled then
+                C_Timer.After(0, function()
+                    CooldownCompanion:EvaluateResourceBars()
+                end)
+            end
+        end)
+
+        local function QueueResourceBarReevaluate()
+            C_Timer.After(0.1, function()
+                CooldownCompanion:EvaluateResourceBars()
+            end)
+        end
+
+        -- When all groups refresh — re-evaluate
+        hooksecurefunc(CooldownCompanion, "RefreshAllGroups", function()
+            QueueResourceBarReevaluate()
+        end)
+
+        -- Visibility-only refresh path (zone/resting/pet-battle transitions)
+        -- still needs resource bar anchoring re-evaluation.
+        hooksecurefunc(CooldownCompanion, "RefreshAllGroupsVisibilityOnly", function()
+            QueueResourceBarReevaluate()
+        end)
+
+        -- When compact layout changes visible buttons — re-apply if primary length changed
+        hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
+            local s = GetResourceBarSettings()
+            if not s or not s.enabled then return end
+            local layout = GetSpecLayoutOrder(s)
+            if layout and layout.independentAnchorEnabled then return end  -- independent stack: width not tied to group
+            local anchorGroupId = GetEffectiveAnchorGroupId(s)
+            if anchorGroupId ~= groupId then return end
+            local groupFrame = CooldownCompanion.groupFrames[groupId]
+            if not groupFrame or not GetLastAppliedPrimaryLength() then return end
+            local newLength = GetResourcePrimaryLength(groupFrame, s)
+            if math_abs(newLength - GetLastAppliedPrimaryLength()) < 0.1 then
+                return
+            end
+            CooldownCompanion:ApplyResourceBars()
+        end)
+
+        -- When icon size / spacing / buttons-per-row changes — re-apply if primary length changed
+        hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId)
+            local s = GetResourceBarSettings()
+            if not s or not s.enabled then return end
+            local layout = GetSpecLayoutOrder(s)
+            if layout and layout.independentAnchorEnabled then return end  -- independent stack: width not tied to group
+            local anchorGroupId = GetEffectiveAnchorGroupId(s)
+            if anchorGroupId ~= groupId then return end
+            local groupFrame = CooldownCompanion.groupFrames[groupId]
+            if not groupFrame or not GetLastAppliedPrimaryLength() then return end
+            local newLength = GetResourcePrimaryLength(groupFrame, s)
+            if math_abs(newLength - GetLastAppliedPrimaryLength()) < 0.1 then
+                return
+            end
+            CooldownCompanion:ApplyResourceBars()
+        end)
+
+        local function QueueResourceBarApply()
+            C_Timer.After(0, function()
+                local settings = GetResourceBarSettings()
+                if settings and settings.enabled then
+                    CooldownCompanion:ApplyResourceBars()
+                end
+            end)
+        end
+
+        -- Re-apply when config visibility changes so independent drag state updates.
+        hooksecurefunc(CooldownCompanion, "ToggleConfig", function()
+            QueueResourceBarApply()
+        end)
+
+        -- Re-apply when switching between Buttons and Bars modes.
+        if ST and ST._SetConfigPrimaryMode then
+            hooksecurefunc(ST, "_SetConfigPrimaryMode", function()
+                QueueResourceBarApply()
+            end)
+        end
+    end
+
+    ------------------------------------------------------------------------
+    -- Initialization
+    ------------------------------------------------------------------------
+
+    local initFrame = CreateFrame("Frame")
+    initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    initFrame:SetScript("OnEvent", function(self, event)
+        self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+
+        C_Timer.After(0.5, function()
+            UpdateMWMaxStacks()
+            InstallHooks()
+            CooldownCompanion:EvaluateResourceBars()
+        end)
+    end)
+
+
+    return {
+        EnableLifecycleEvents = EnableLifecycleEvents,
+        DisableLifecycleEvents = DisableLifecycleEvents,
+        EnableEventFrame = EnableEventFrame,
+        DisableEventFrame = DisableEventFrame,
+    }
+end
