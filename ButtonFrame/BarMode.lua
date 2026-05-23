@@ -38,6 +38,7 @@ local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
 
 -- Imports from VisualState
 local ClearButtonVisualState = ST._ClearButtonVisualState
+local AreButtonVisualStateSnapshotsEnabled = ST._AreButtonVisualStateSnapshotsEnabled
 
 -- Pre-defined color constant tables to avoid per-tick allocation.
 -- IMPORTANT: These tables are read-only — never write to their indices.
@@ -90,6 +91,74 @@ local function SetBarIconTooltipScripts(button, enable)
         iconBounds:SetScript("OnEnter", nil)
         iconBounds:SetScript("OnLeave", nil)
     end
+end
+
+local function ShouldStoreBarVisualState()
+    return type(AreButtonVisualStateSnapshotsEnabled) == "function"
+        and AreButtonVisualStateSnapshotsEnabled() == true
+end
+
+local function EnsureBarVisualTable(button, fieldName)
+    local target = button[fieldName]
+    if target then
+        wipe(target)
+    else
+        target = {}
+        button[fieldName] = target
+    end
+    return target
+end
+
+local function ClearBarVisualState(button)
+    if button then
+        button._barVisualIntent = nil
+        button._barVisualApplied = nil
+    end
+end
+
+local function CopyColor(target, prefix, color)
+    target[prefix .. "R"] = color and color[1] or nil
+    target[prefix .. "G"] = color and color[2] or nil
+    target[prefix .. "B"] = color and color[3] or nil
+    target[prefix .. "A"] = color and color[4] or nil
+end
+
+local function StoreBarDisplayVisualState(button, details)
+    local intent = EnsureBarVisualTable(button, "_barVisualIntent")
+    intent.available = true
+    intent.domain = details.domain
+    intent.onCooldown = details.onCooldown == true
+    intent.chargeState = details.chargeState
+    intent.colorReason = details.colorReason
+    intent.auraColorReason = details.auraColorReason
+    intent.auraEffectActive = details.auraEffectActive == true
+    intent.auraEffectReason = details.auraEffectReason
+    intent.pulseActive = details.pulseMode ~= nil
+    intent.pulseMode = details.pulseMode
+    intent.colorShiftActive = details.colorShiftMode ~= nil
+    intent.colorShiftMode = details.colorShiftMode
+    intent.stackDisplay = details.stackDisplay == true
+    intent.stackMode = details.stackMode
+    intent.stackSegmentLayerActive = details.stackSegmentLayerActive == true
+    intent.gcdSuppressed = button._barGCDSuppressed == true
+    CopyColor(intent, "color", details.color)
+    CopyColor(intent, "colorShiftBase", details.colorShiftBaseColor)
+    CopyColor(intent, "colorShiftTarget", details.colorShiftTargetColor)
+
+    local applied = EnsureBarVisualTable(button, "_barVisualApplied")
+    applied.available = true
+    applied.colorReason = details.colorReason
+    applied.auraColorActive = button._barAuraColor ~= nil
+    applied.auraEffectActive = button._barAuraEffectActive == true
+    applied.pulseActive = button._barPulseActive == true
+    applied.pulseMode = details.pulseMode
+    applied.colorShiftActive = button._barColorShiftActive == true
+    applied.colorShiftMode = details.colorShiftMode
+    applied.stackVisualActive = button._barAuraStackVisualActive == true
+    applied.stackMode = button._barAuraStackVisualMode or details.stackMode
+    applied.baseFillHidden = button._barAuraBaseFillHidden == true
+    applied.gcdSuppressed = button._barGCDSuppressed == true
+    CopyColor(applied, "color", details.color)
 end
 
 local function ResolveConditionalPreviewRemaining(button)
@@ -1067,6 +1136,10 @@ end
 -- Bar fill + time text are handled by the per-button OnUpdate for smooth interpolation.
 local function UpdateBarDisplay(button)
     local style = button.style
+    local shouldStoreBarVisualState = ShouldStoreBarVisualState()
+    if not shouldStoreBarVisualState and (button._barVisualIntent or button._barVisualApplied) then
+        ClearBarVisualState(button)
+    end
 
     -- "On cooldown" for bar color/ready text follows canonical state.
     -- _durationObj may also hold aura/totem timing and must not imply cooldown.
@@ -1104,11 +1177,14 @@ local function UpdateBarDisplay(button)
     -- Bar color: switch between ready, cooldown, and partial charge colors.
     -- Aura-tracked buttons always use the base bar color (aura color override handles active state).
     local wantCdColor
+    local cdColorReason
     if onCooldown and not button.buttonData.isPassive then
         if isChargeButton and chargeState == CHARGE_STATE_MISSING then
             wantCdColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
+            cdColorReason = "charge"
         else
             wantCdColor = style.barCooldownColor
+            cdColorReason = "cooldown"
         end
     end
     if button._barCdColor ~= wantCdColor then
@@ -1131,19 +1207,24 @@ local function UpdateBarDisplay(button)
 
     -- Bar aura color: override bar fill when aura is active (pandemic overrides aura color)
     local wantAuraColor
+    local auraColorReason
     if barAuraStackDisplay then
         wantAuraColor = nil
     elseif button._pandemicPreview or button._conditionalPreviewKind == "pandemic" then
         wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
+        auraColorReason = "pandemic"
     elseif button._barAuraActivePreview or button._conditionalBarAuraActivePreview then
         wantAuraColor = (button.style and button.style.barAuraColor) or DEFAULT_BAR_AURA_COLOR
+        auraColorReason = "aura"
     elseif button._auraActive then
         if button._inPandemic and style.showPandemicGlow ~= false
            and (not style.pandemicGlowCombatOnly or inCombat) then
             wantAuraColor = (button.style and button.style.barPandemicColor) or DEFAULT_BAR_PANDEMIC_COLOR
+            auraColorReason = "pandemic"
         elseif barAuraVisualsEnabled
                and (not style.auraGlowCombatOnly or inCombat) then
             wantAuraColor = (button.style and button.style.barAuraColor) or DEFAULT_BAR_AURA_COLOR
+            auraColorReason = "aura"
         end
     end
     if button._barAuraColor ~= wantAuraColor then
@@ -1179,6 +1260,10 @@ local function UpdateBarDisplay(button)
         or button._pandemicPreview
         or (button._auraActive and (barAuraEffectPandemic
             or (barAuraVisualsEnabled and (not style.auraGlowCombatOnly or inCombat))))
+    local auraEffectReason
+    if barAuraEffectShow then
+        auraEffectReason = barAuraEffectPandemic and "pandemic" or "aura"
+    end
     SetBarAuraEffect(button, barAuraEffectShow, barAuraEffectPandemic or false)
 
     -- Bar indicator effects: alpha pulse, color shift
@@ -1236,6 +1321,31 @@ local function UpdateBarDisplay(button)
     end
     if stackSegmentLayerActive then
         HideBarAuraBaseFill(button)
+    end
+
+    if shouldStoreBarVisualState then
+        local colorReason = barAuraStackDisplay and "stack"
+            or auraColorReason
+            or cdColorReason
+            or "ready"
+        local color = wantAuraColor or wantCdColor or style.barColor or DEFAULT_BAR_COLOR
+        StoreBarDisplayVisualState(button, {
+            domain = colorReason,
+            onCooldown = onCooldown,
+            chargeState = chargeState,
+            colorReason = colorReason,
+            auraColorReason = auraColorReason,
+            color = color,
+            auraEffectActive = button._barAuraEffectActive == true,
+            auraEffectReason = button._barAuraEffectActive == true and auraEffectReason or nil,
+            pulseMode = wantPulse,
+            colorShiftMode = wantColorShift,
+            colorShiftBaseColor = button._barCSBaseColor,
+            colorShiftTargetColor = button._barCSShiftColor,
+            stackDisplay = barAuraStackDisplay,
+            stackMode = button._barAuraStackMode,
+            stackSegmentLayerActive = stackSegmentLayerActive,
+        })
     end
 
     -- Keep the cooldown widget hidden — SetCooldown auto-shows it
