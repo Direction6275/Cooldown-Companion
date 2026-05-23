@@ -257,6 +257,71 @@ local function UpdateIconTint(button, buttonData, style)
     end
 end
 
+local function ResolveDesaturationIntent(button, buttonData, style, target)
+    target = target or {}
+    target.active = false
+    target.reason = nil
+
+    if type(button) ~= "table" or type(buttonData) ~= "table" then
+        return target
+    end
+
+    style = style or {}
+
+    if button._auraTrackingReady == true then
+        if buttonData.isPassive then
+            if buttonData.neverDesaturate then
+                target.active = false
+            elseif buttonData.invertAuraDesaturationLogic then
+                target.active = button._auraActive == true
+                if target.active then
+                    target.reason = "passive-aura-active-inverted"
+                end
+            else
+                target.active = not button._auraActive
+                if target.active then
+                    target.reason = "passive-aura-missing"
+                end
+            end
+        else
+            target.active = buttonData.desaturateWhileAuraNotActive and not button._auraActive or false
+            if target.active then
+                target.reason = "aura-missing"
+            end
+        end
+        if not target.active and not button._auraActive
+            and style.desaturateOnCooldown and button._desatCooldownActive then
+            target.active = true
+            target.reason = "cooldown"
+        end
+    elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges
+        or buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
+        if style.desaturateOnCooldown and button._desatCooldownActive then
+            target.active = true
+            target.reason = "cooldown"
+        end
+        if not target.active and buttonData.desaturateWhileZeroCharges
+                and not CooldownCompanion.HasItemFallbacks(buttonData)
+                and button._chargeState == CHARGE_STATE_ZERO then
+            target.active = true
+            target.reason = "zero-charges"
+        end
+        local itemUseCount = CooldownCompanion.HasItemFallbacks(buttonData)
+            and button._resolvedItemAvailableQuantity
+            or button._itemCount
+        if not target.active and buttonData.desaturateWhileZeroStacks and (itemUseCount or 0) == 0 then
+            target.active = true
+            target.reason = "zero-stacks"
+        end
+    end
+    if not target.active and button._isEquippableNotEquipped then
+        target.active = true
+        target.reason = "not-equipped"
+    end
+
+    return target
+end
+
 -- Icon desaturation: aura-tracked buttons desaturate when aura absent
 -- (passive entries can invert this via invertAuraDesaturationLogic,
 -- disable it entirely via neverDesaturate;
@@ -265,46 +330,17 @@ end
 -- equippable-but-not-equipped items always desaturate.
 -- Shared by icon-mode and bar-mode display paths.
 local function EvaluateDesaturation(button, buttonData, style)
-    local wantDesat = false
-    if button._auraTrackingReady == true then
-        if buttonData.isPassive then
-            if buttonData.neverDesaturate then
-                wantDesat = false
-            elseif buttonData.invertAuraDesaturationLogic then
-                wantDesat = button._auraActive == true
-            else
-                wantDesat = not button._auraActive
-            end
-        else
-            wantDesat = buttonData.desaturateWhileAuraNotActive and not button._auraActive
-        end
-        if not wantDesat and not button._auraActive
-            and style.desaturateOnCooldown and button._desatCooldownActive then
-            wantDesat = true
-        end
-    elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges
-        or buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
-        if style.desaturateOnCooldown and button._desatCooldownActive then
-            wantDesat = true
-        end
-        if not wantDesat and buttonData.desaturateWhileZeroCharges
-                and not CooldownCompanion.HasItemFallbacks(buttonData)
-                and button._chargeState == CHARGE_STATE_ZERO then
-            wantDesat = true
-        end
-        local itemUseCount = CooldownCompanion.HasItemFallbacks(buttonData)
-            and button._resolvedItemAvailableQuantity
-            or button._itemCount
-        if not wantDesat and buttonData.desaturateWhileZeroStacks and (itemUseCount or 0) == 0 then
-            wantDesat = true
-        end
+    local intent = button._desaturationIntent
+    if type(intent) ~= "table" then
+        intent = {}
+        button._desaturationIntent = intent
     end
-    if not wantDesat and button._isEquippableNotEquipped then
-        wantDesat = true
-    end
-    if button._desaturated ~= wantDesat then
-        button._desaturated = wantDesat
-        button.icon:SetDesaturated(wantDesat)
+
+    ResolveDesaturationIntent(button, buttonData, style, intent)
+
+    if button._desaturated ~= intent.active then
+        button._desaturated = intent.active
+        button.icon:SetDesaturated(intent.active)
     end
 end
 
@@ -313,4 +349,6 @@ ST._UpdateChargeTracking = UpdateChargeTracking
 ST._UpdateDisplayCountTracking = UpdateDisplayCountTracking
 ST._UpdateItemChargeTracking = UpdateItemChargeTracking
 ST._UpdateIconTint = UpdateIconTint
+ST._ResolveDesaturationIntent = ResolveDesaturationIntent
+ST._ResolveIconDesaturationIntent = ResolveDesaturationIntent
 ST._EvaluateDesaturation = EvaluateDesaturation

@@ -30,6 +30,7 @@ local HasItemFallbacks = CooldownCompanion.HasItemFallbacks
 
 -- Imports from VisualState
 local ClearButtonVisualState = ST._ClearButtonVisualState
+local ResolveIconDesaturationIntent = ST._ResolveIconDesaturationIntent
 
 -- Imports from Glows
 local CreateGlowContainer = ST._CreateGlowContainer
@@ -1001,6 +1002,26 @@ function CooldownCompanion:UpdateButtonIcon(button)
     end
 end
 
+local function ApplyIconDesaturationIntent(button, buttonData, style)
+    if type(ResolveIconDesaturationIntent) ~= "function" then
+        EvaluateDesaturation(button, buttonData, style)
+        return
+    end
+
+    local intent = button._iconDesaturationIntent
+    if type(intent) ~= "table" then
+        intent = {}
+        button._iconDesaturationIntent = intent
+    end
+
+    ResolveIconDesaturationIntent(button, buttonData, style, intent)
+
+    if button._desaturated ~= intent.active then
+        button._desaturated = intent.active
+        button.icon:SetDesaturated(intent.active)
+    end
+end
+
 -- Update icon-mode visuals: GCD suppression, cooldown text, desaturation, and vertex color.
 local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
     -- GCD suppression (isOnGCD is NeverSecret, always readable)
@@ -1134,7 +1155,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
-    EvaluateDesaturation(button, buttonData, style)
+    ApplyIconDesaturationIntent(button, buttonData, style)
 
     UpdateIconTint(button, buttonData, style)
 end
@@ -1290,6 +1311,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Invalidate cached widget state so next tick reapplies everything
     button._desaturated = nil
+    button._iconDesaturationIntent = nil
     button._desatCooldownActive = nil
     button._readyGlowStartTime = nil
     button._readyGlowMaxChargesStartTime = nil

@@ -121,6 +121,8 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     local charges = state.charges or {}
     local visibility = state.visibility or {}
     local desaturation = state.desaturation or {}
+    local icon = state.icon or {}
+    local iconDesaturation = icon.desaturation or {}
     local tint = state.tint or {}
     local iconFill = state.iconFill or {}
     local ready = state.ready or {}
@@ -157,6 +159,8 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     }
     row.visuals = {
         desaturationActive = desaturation.active,
+        desaturationIntentActive = iconDesaturation.active,
+        desaturationIntentReason = iconDesaturation.reason,
         desaturationApplied = desaturation.applied,
         desaturationReason = desaturation.reason,
         tintActive = tint.unusableActive,
@@ -194,6 +198,9 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     CompareValue(row, "visibility.hidden", visibility.hidden, IsTrue(button._visibilityHidden))
     CompareValue(row, "visibility.alphaOverride", visibility.alphaOverride, button._visibilityAlphaOverride)
     CompareValue(row, "visibility.lastAlpha", visibility.lastAlpha, button._lastVisAlpha)
+    if row.displayMode == "icons" and row.phase == "post-dispatch" and visibility.hidden ~= true then
+        CompareValue(row, "desaturation.intent", iconDesaturation.active, IsTrue(button._desaturated))
+    end
     CompareValue(row, "desaturation.applied", desaturation.applied, IsTrue(button._desaturated))
     CompareValue(row, "tint.unusableActive", tint.unusableActive, IsTrue(button._unusableTintActive))
     CompareValue(row, "tint.r", tint.r, button._vertexR)

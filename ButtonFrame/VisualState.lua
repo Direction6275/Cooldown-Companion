@@ -5,6 +5,7 @@ local STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
+local ResolveIconDesaturationIntent = ST._ResolveIconDesaturationIntent
 
 local function IsTrue(value)
     return value == true
@@ -111,6 +112,7 @@ local function RefreshButtonVisualState(button, context)
     local chargeZero = button._chargeState == CHARGE_STATE_ZERO
     local readyEligible = IsReadyEligible(button, buttonData, cooldownActive)
     local textureReady = IsTextureReady(button, buttonData)
+    local iconDesaturationIntent = ResolveIconDesaturationIntent(button, buttonData, style)
 
     state.version = 1
     state.phase = context.phase
@@ -187,6 +189,14 @@ local function RefreshButtonVisualState(button, context)
     desaturation.active = state.cooldownVisualActive
     desaturation.applied = IsTrue(button._desaturated)
     desaturation.reason = ResolveDesaturationReason(button, cooldownActive, chargeZero)
+    desaturation.intentActive = IsTrue(iconDesaturationIntent.active)
+    desaturation.intentReason = iconDesaturationIntent.reason
+
+    local icon = EnsureSection(state, "icon")
+    local iconDesaturation = EnsureSection(icon, "desaturation")
+    iconDesaturation.active = IsTrue(iconDesaturationIntent.active)
+    iconDesaturation.reason = iconDesaturationIntent.reason
+    iconDesaturation.applied = IsTrue(button._desaturated)
 
     local tint = EnsureSection(state, "tint")
     tint.unusableActive = IsTrue(button._unusableTintActive)
