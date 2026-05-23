@@ -163,33 +163,54 @@ local function UpdateItemChargeTracking(button, buttonData)
     end
 end
 
+local function SetTintIntent(target, active, reason, unusableActive, r, g, b, a)
+    target.active = active == true
+    target.reason = reason
+    target.unusableActive = unusableActive == true
+    target.r = r
+    target.g = g
+    target.b = b
+    target.a = a
+    return target
+end
+
 -- Icon tinting: out-of-range red > unusable dimming > aura tint > cooldown tint > base tint.
--- Shared by icon-mode and bar-mode display paths.
-local function UpdateIconTint(button, buttonData, style)
-    button._unusableTintActive = false
+-- This resolver may read range/usability APIs; call it only from the normal tint update path.
+local function ResolveIconTintIntent(button, buttonData, style, target)
+    target = target or {}
+    if type(button) ~= "table" or type(buttonData) ~= "table" then
+        return SetTintIntent(target, false, nil, false, 1, 1, 1, 1)
+    end
+
+    style = style or {}
+
     if buttonData.isPassive then
         local c
-        if style.iconAuraTintEnabled and buttonData.auraTracking and button._auraActive then
+        local reason = "base"
+        if style.iconAuraTintEnabled and buttonData.auraTracking and button._auraActive and style.iconAuraTintColor then
             c = style.iconAuraTintColor
+            reason = "aura"
         end
         c = c or style.iconTintColor
         local r, g, b, a = c and c[1] or 1, c and c[2] or 1, c and c[3] or 1, c and c[4] or 1
-        if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b or button._vertexA ~= a then
-            button._vertexR, button._vertexG, button._vertexB, button._vertexA = r, g, b, a
-            button.icon:SetVertexColor(r, g, b, a)
-        end
-        return
+        return SetTintIntent(target, reason ~= "base", reason, false, r, g, b, a)
     end
+
     local bc = style.iconTintColor
     local r, g, b, a = 1, 1, 1, bc and bc[4] or 1
+    local reason = "base"
     local stateOverride = false
+    local unusableActive = false
+
     if style.showOutOfRange then
         if button._conditionalOutOfRangePreview then
             r, g, b = 1, 0.2, 0.2
+            reason = "out-of-range-preview"
             stateOverride = true
         elseif buttonData.type == "spell" then
             if button._spellOutOfRange then
                 r, g, b = 1, 0.2, 0.2
+                reason = "out-of-range"
                 stateOverride = true
             end
         elseif buttonData.type == "item" then
@@ -201,26 +222,30 @@ local function UpdateIconTint(button, buttonData, style)
                 -- inRange is nil when no target or item has no range; only tint on explicit false
                 if inRange == false then
                     r, g, b = 1, 0.2, 0.2
+                    reason = "out-of-range"
                     stateOverride = true
                 end
             end
         end
     end
+
     if not stateOverride and style.showUnusable then
         local uc = style.iconUnusableTintColor
         if button._conditionalUnusablePreview then
             r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
             a = uc and uc[4] or a
+            reason = "unusable-preview"
             stateOverride = true
-            button._unusableTintActive = true
+            unusableActive = true
         elseif buttonData.type == "spell" then
             local spellID = button._displaySpellId or buttonData.id
             local isUsable = C_Spell.IsSpellUsable(spellID)
             if not isUsable then
                 r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
                 a = uc and uc[4] or a
+                reason = "unusable"
                 stateOverride = true
-                button._unusableTintActive = true
+                unusableActive = true
             end
         elseif buttonData.type == "item" then
             local itemID = button._resolvedItemId or buttonData.id
@@ -228,29 +253,47 @@ local function UpdateIconTint(button, buttonData, style)
             if not usable then
                 r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
                 a = uc and uc[4] or a
+                reason = "unusable"
                 stateOverride = true
-                button._unusableTintActive = true
+                unusableActive = true
             end
         end
     end
-    -- Apply user-configured icon tint when no state override is active
+
+    -- Apply user-configured icon tint when no state override is active.
     if not stateOverride then
         if style.iconAuraTintEnabled and buttonData.auraTracking and button._auraActive then
             local c = style.iconAuraTintColor
             if c then
                 r, g, b, a = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
             end
+            reason = "aura"
         elseif style.iconCooldownTintEnabled and button._desatCooldownActive then
             local c = style.iconCooldownTintColor
             if c then
                 r, g, b, a = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
             end
-        else
-            if bc then
-                r, g, b, a = bc[1] or 1, bc[2] or 1, bc[3] or 1, bc[4] or 1
-            end
+            reason = "cooldown"
+        elseif bc then
+            r, g, b, a = bc[1] or 1, bc[2] or 1, bc[3] or 1, bc[4] or 1
         end
     end
+
+    return SetTintIntent(target, reason ~= "base", reason, unusableActive, r, g, b, a)
+end
+
+-- Shared by icon-mode and bar-mode display paths.
+local function UpdateIconTint(button, buttonData, style)
+    local intent = button._iconTintIntent
+    if type(intent) ~= "table" then
+        intent = {}
+        button._iconTintIntent = intent
+    end
+
+    ResolveIconTintIntent(button, buttonData, style, intent)
+
+    local r, g, b, a = intent.r, intent.g, intent.b, intent.a
+    button._unusableTintActive = intent.unusableActive == true
     if button._vertexR ~= r or button._vertexG ~= g or button._vertexB ~= b or button._vertexA ~= a then
         button._vertexR, button._vertexG, button._vertexB, button._vertexA = r, g, b, a
         button.icon:SetVertexColor(r, g, b, a)
@@ -349,6 +392,7 @@ ST._UpdateChargeTracking = UpdateChargeTracking
 ST._UpdateDisplayCountTracking = UpdateDisplayCountTracking
 ST._UpdateItemChargeTracking = UpdateItemChargeTracking
 ST._UpdateIconTint = UpdateIconTint
+ST._ResolveIconTintIntent = ResolveIconTintIntent
 ST._ResolveDesaturationIntent = ResolveDesaturationIntent
 ST._ResolveIconDesaturationIntent = ResolveDesaturationIntent
 ST._EvaluateDesaturation = EvaluateDesaturation

@@ -113,6 +113,8 @@ local function RefreshButtonVisualState(button, context)
     local readyEligible = IsReadyEligible(button, buttonData, cooldownActive)
     local textureReady = IsTextureReady(button, buttonData)
     local iconDesaturationIntent = ResolveIconDesaturationIntent(button, buttonData, style)
+    local iconTintIntent = button._iconTintIntent
+    local hasIconTintIntent = type(iconTintIntent) == "table"
 
     state.version = 1
     state.phase = context.phase
@@ -205,6 +207,14 @@ local function RefreshButtonVisualState(button, context)
     tint.b = button._vertexB
     tint.a = button._vertexA
     tint.hasVertex = button._vertexR ~= nil or button._vertexG ~= nil or button._vertexB ~= nil or button._vertexA ~= nil
+    tint.intentAvailable = hasIconTintIntent
+    tint.intentActive = hasIconTintIntent and IsTrue(iconTintIntent.active) or false
+    tint.intentReason = hasIconTintIntent and iconTintIntent.reason or nil
+    tint.intentUnusableActive = hasIconTintIntent and IsTrue(iconTintIntent.unusableActive) or false
+    tint.intentR = hasIconTintIntent and iconTintIntent.r or nil
+    tint.intentG = hasIconTintIntent and iconTintIntent.g or nil
+    tint.intentB = hasIconTintIntent and iconTintIntent.b or nil
+    tint.intentA = hasIconTintIntent and iconTintIntent.a or nil
 
     local iconFill = EnsureSection(state, "iconFill")
     iconFill.active = IsTrue(button._iconFillActive)

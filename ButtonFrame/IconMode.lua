@@ -1312,6 +1312,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Invalidate cached widget state so next tick reapplies everything
     button._desaturated = nil
     button._iconDesaturationIntent = nil
+    button._iconTintIntent = nil
     button._desatCooldownActive = nil
     button._readyGlowStartTime = nil
     button._readyGlowMaxChargesStartTime = nil
