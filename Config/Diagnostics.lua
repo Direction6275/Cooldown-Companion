@@ -15,6 +15,8 @@ local PrepareSharedImportText = ST._PrepareSharedImportText
 -- File-local state
 local decodedDiagnostic = nil
 local diagnosticDecodeFrame = nil
+local DIAGNOSTIC_REPORT_BUG_REPORT = "bugReport"
+local DIAGNOSTIC_REPORT_FULL_DUMP = "fullDump"
 
 local function RejectUnsupportedImportPayload(data, dataLabel)
     if CooldownCompanion.IsUnsupportedImportPayload and CooldownCompanion:IsUnsupportedImportPayload(data) then
@@ -33,9 +35,197 @@ local RESOURCE_NAMES = {
     [18] = "Pain", [19] = "Essence", [100] = "Maelstrom Weapon",
 }
 
-local function BuildDiagnosticSnapshot()
+local function CountTableEntries(t)
+    if type(t) ~= "table" then return 0 end
+    local count = 0
+    for _ in pairs(t) do
+        count = count + 1
+    end
+    return count
+end
+
+local function SortedSelectionString(selection)
+    if type(selection) ~= "table" then
+        return ""
+    end
+
+    local keys = {}
+    for key, selected in pairs(selection) do
+        if selected then
+            keys[#keys + 1] = tostring(key)
+        end
+    end
+    table.sort(keys)
+    return table.concat(keys, ",")
+end
+
+local function SummarizeButton(button)
+    if type(button) ~= "table" then return nil end
+
+    return {
+        type = button.type,
+        id = button.id,
+        name = button.name,
+        auraTracking = button.auraTracking == true,
+        auraUnit = button.auraUnit,
+        hideWhenInactive = button.hideWhenInactive == true,
+        loadConditionCount = CountTableEntries(button.loadConditions),
+        overrideCount = CountTableEntries(button.styleOverrides),
+    }
+end
+
+local function SummarizePanel(panelId, panel)
+    if type(panel) ~= "table" then return nil end
+
+    return {
+        id = panelId,
+        name = panel.name,
+        displayMode = panel.displayMode or "icons",
+        parentContainerId = panel.parentContainerId,
+        buttonCount = type(panel.buttons) == "table" and #panel.buttons or 0,
+        specCount = CountTableEntries(panel.specs),
+        heroTalentCount = CountTableEntries(panel.heroTalents),
+        loadConditionCount = CountTableEntries(panel.loadConditions),
+        masqueEnabled = panel.masqueEnabled == true,
+        compactLayout = panel.compactLayout == true,
+        maxVisibleButtons = panel.maxVisibleButtons,
+    }
+end
+
+local function SummarizeContainer(containerId, container)
+    if type(container) ~= "table" then return nil end
+
+    return {
+        id = containerId,
+        name = container.name,
+        enabled = container.enabled ~= false,
+        locked = container.locked ~= false,
+        folderId = container.folderId,
+        specCount = CountTableEntries(container.specs),
+        heroTalentCount = CountTableEntries(container.heroTalents),
+        loadConditionCount = CountTableEntries(container.loadConditions),
+    }
+end
+
+local function GetFrameShown(frameStates, id)
+    if type(frameStates) ~= "table" or id == nil then
+        return nil
+    end
+
+    local state = frameStates[tostring(id)]
+    if type(state) ~= "table" then
+        return nil
+    end
+
+    return state.shown == true
+end
+
+local function IncrementCount(counts, key)
+    key = tostring(key or "unknown")
+    counts[key] = (counts[key] or 0) + 1
+end
+
+local function BuildProfileShapeSummary(profile)
+    local shape = {
+        panelModes = {},
+        buttonTypes = {},
+    }
+
+    local groups = type(profile) == "table" and profile.groups or nil
+    if type(groups) ~= "table" then
+        return shape
+    end
+
+    for _, group in pairs(groups) do
+        if type(group) == "table" then
+            IncrementCount(shape.panelModes, group.displayMode or "icons")
+
+            if type(group.buttons) == "table" then
+                for _, button in ipairs(group.buttons) do
+                    if type(button) == "table" then
+                        IncrementCount(shape.buttonTypes, button.type)
+                    end
+                end
+            end
+        end
+    end
+
+    return shape
+end
+
+local function BuildConfigDiagnosticSummary(profile, groupFrameStates, containerFrameStates)
+    local groups = type(profile) == "table" and profile.groups or nil
+    local containers = type(profile) == "table" and profile.groupContainers or nil
+    local selectedContainerId = CS and CS.selectedContainer or nil
+    local selectedPanelId = CS and CS.selectedGroup or nil
+    local selectedButtonIndex = CS and CS.selectedButton or nil
+    local selectedPanel = groups and selectedPanelId and groups[selectedPanelId] or nil
+    local selectedButton = selectedPanel and selectedPanel.buttons and selectedButtonIndex and selectedPanel.buttons[selectedButtonIndex] or nil
+
+    local visiblePanels = {}
+    local visiblePanelCount = 0
+    if groups and type(groupFrameStates) == "table" then
+        local ids = {}
+        for id, state in pairs(groupFrameStates) do
+            if type(state) == "table" and state.shown then
+                ids[#ids + 1] = tonumber(id) or id
+            end
+        end
+        table.sort(ids, function(a, b) return tostring(a) < tostring(b) end)
+        visiblePanelCount = #ids
+        for _, panelId in ipairs(ids) do
+            if #visiblePanels >= 12 then
+                break
+            end
+            local panelSummary = SummarizePanel(panelId, groups[panelId])
+            if panelSummary then
+                visiblePanels[#visiblePanels + 1] = panelSummary
+            end
+        end
+    end
+
+    return {
+        selectedFolder = CS and CS.selectedFolder or nil,
+        selectedContainer = selectedContainerId,
+        selectedGroup = selectedPanelId,
+        selectedButton = selectedButtonIndex,
+        selectedTab = CS and CS.selectedTab or nil,
+        selectedContainerTab = CS and CS.selectedContainerTab or nil,
+        buttonSettingsTab = CS and CS.buttonSettingsTab or nil,
+        panelSettingsTab = CS and CS.panelSettingsTab or nil,
+        resourceBarPanelActive = CS and CS.resourceBarPanelActive == true,
+        barPanelTab = CS and CS.barPanelTab or nil,
+        resourceStylingTab = CS and CS.resourceStylingTab or nil,
+        castBarStylingTab = CS and CS.castBarStylingTab or nil,
+        customBarSettingsTab = CS and CS.customBarSettingsTab or nil,
+        selectedCustomBarId = CS and CS.selectedCustomBarId or nil,
+        selectedButtons = CS and SortedSelectionString(CS.selectedButtons) or "",
+        selectedPanels = CS and SortedSelectionString(CS.selectedPanels) or "",
+        selectedGroups = CS and SortedSelectionString(CS.selectedGroups) or "",
+        selectedCustomBars = CS and SortedSelectionString(CS.selectedCustomBars) or "",
+        browseMode = CS and CS.browseMode == true,
+        browseCharKey = CS and CS.browseCharKey or nil,
+        selectedContainerSummary = SummarizeContainer(selectedContainerId, containers and selectedContainerId and containers[selectedContainerId] or nil),
+        selectedPanelSummary = SummarizePanel(selectedPanelId, selectedPanel),
+        selectedButtonSummary = SummarizeButton(selectedButton),
+        selectedContainerFrameShown = GetFrameShown(containerFrameStates, selectedContainerId),
+        selectedPanelFrameShown = GetFrameShown(groupFrameStates, selectedPanelId),
+        visiblePanels = visiblePanels,
+        visiblePanelCount = visiblePanelCount,
+        visiblePanelsTruncated = visiblePanelCount > #visiblePanels,
+        profileShape = BuildProfileShapeSummary(profile),
+    }
+end
+
+local function BuildDiagnosticSnapshot(options)
+    options = type(options) == "table" and options or {}
+    local reportKind = options.reportKind or DIAGNOSTIC_REPORT_FULL_DUMP
+    local includeProfile = options.includeProfile ~= false
     local db = CooldownCompanion.db
-    local snapshot = { _v = 2 }
+    local snapshot = {
+        _v = 2,
+        reportKind = reportKind,
+    }
 
     -- Meta
     local _, classFilename, classID = UnitClass("player")
@@ -164,6 +354,8 @@ local function BuildDiagnosticSnapshot()
         loadedAddons = loadedAddons,
     }
 
+    snapshot.config = BuildConfigDiagnosticSummary(db.profile, groupFrameStates, containerFrameStates)
+
     -- Build spec name cache for all referenced spec IDs
     local specNameCache = {}
     local function cacheSpecName(sid)
@@ -216,13 +408,315 @@ local function BuildDiagnosticSnapshot()
     end
     snapshot.meta.specNameCache = specNameCache
 
-    -- Profile (full copy, same as profile export)
-    snapshot.profile = db.profile
+    if includeProfile then
+        -- Profile (full copy, same as profile export)
+        snapshot.profile = db.profile
+    end
 
     return snapshot
 end
 
+local function FormatIDList(t)
+    if not t or #t == 0 then return "none" end
+    local parts = {}
+    for _, v in ipairs(t) do parts[#parts + 1] = tostring(v) end
+    return table.concat(parts, ", ")
+end
+
+local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
+    if not visualStateDiagnostics then
+        return
+    end
+
+    local vsd = visualStateDiagnostics
+    add("Visual State Diagnostics:")
+    add(("  rows=%s mismatched=%s missing=%s refreshedFrames=%s cap=%s restored=%s"):format(
+        tostring(vsd.rowCount or 0),
+        tostring(vsd.mismatchCount or 0),
+        tostring(vsd.missingSnapshots or 0),
+        tostring(vsd.refreshedFrames or 0),
+        tostring(vsd.maxRows or "?"),
+        tostring(vsd.captureRestored)
+    ))
+    if vsd.reason then
+        add("  reason=" .. tostring(vsd.reason))
+    end
+    if vsd.truncated then
+        add("  truncated=true")
+    end
+    if type(vsd.rows) == "table" and #vsd.rows > 0 then
+        for _, row in ipairs(vsd.rows) do
+            local parts = {
+                ("[%s:%s]"):format(tostring(row.groupId or "?"), tostring(row.buttonIndex or "?")),
+                tostring(row.displayMode or "?"),
+                tostring(row.buttonType or "?") .. ":" .. tostring(row.buttonId or "?"),
+                "phase=" .. tostring(row.phase or "nil"),
+            }
+            if row.cooldown then
+                parts[#parts + 1] = "cd=" .. tostring(row.cooldown.state or "nil")
+                parts[#parts + 1] = "visual=" .. tostring(row.cooldown.visualActive)
+            end
+            if row.visibility then
+                parts[#parts + 1] = "hidden=" .. tostring(row.visibility.hidden)
+                if row.visibility.alphaOverride ~= nil then
+                    parts[#parts + 1] = "alpha=" .. tostring(row.visibility.alphaOverride)
+                end
+            end
+            if row.visuals then
+                parts[#parts + 1] = "desat=" .. tostring(row.visuals.desaturationApplied)
+                parts[#parts + 1] = "tint=" .. tostring(row.visuals.tintActive)
+                parts[#parts + 1] = "fill=" .. tostring(row.visuals.iconFillActive)
+            end
+            if type(row.mismatches) == "table" and #row.mismatches > 0 then
+                parts[#parts + 1] = "mismatch=" .. table.concat(row.mismatches, ",")
+            elseif row.missingSnapshot then
+                parts[#parts + 1] = "snapshot=missing"
+            else
+                parts[#parts + 1] = "match=ok"
+            end
+            add("  " .. table.concat(parts, " "))
+        end
+    end
+end
+
+local function FormatCountMap(counts)
+    if type(counts) ~= "table" then
+        return "none"
+    end
+
+    local keys = {}
+    for key in pairs(counts) do
+        keys[#keys + 1] = key
+    end
+    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+
+    if #keys == 0 then
+        return "none"
+    end
+
+    local parts = {}
+    for _, key in ipairs(keys) do
+        parts[#parts + 1] = tostring(key) .. "=" .. tostring(counts[key])
+    end
+    return table.concat(parts, " ")
+end
+
+local function FormatRelevantAddonList(loadedAddons)
+    if type(loadedAddons) ~= "table" then
+        return "none"
+    end
+
+    local relevantNames = {
+        ["!BugGrabber"] = true,
+        AddonProfiler = true,
+        Bartender4 = true,
+        BugSack = true,
+        CC_DevBridge = true,
+        Clicked = true,
+        Dominos = true,
+        ElvUI = true,
+        Masque = true,
+        OmniCC = true,
+        Plater = true,
+        Platynator = true,
+        WeakAuras = true,
+    }
+    local found = {}
+    for _, addon in ipairs(loadedAddons) do
+        local name = addon and addon.name
+        if relevantNames[name] then
+            found[#found + 1] = name .. " v" .. tostring(addon.version or "?")
+        end
+    end
+    table.sort(found)
+
+    if #found == 0 then
+        return "none"
+    end
+    return table.concat(found, ", ")
+end
+
+local function AddAgentDebugSignals(add, diag)
+    local r = diag.runtime or {}
+    local c = diag.config or {}
+    local shape = c.profileShape or {}
+    local vsd = r.visualStateDiagnostics
+
+    add("--- Agent Debug Signals ---")
+    add("Profile Shape: panelModes=" .. FormatCountMap(shape.panelModes)
+        .. " | buttonTypes=" .. FormatCountMap(shape.buttonTypes))
+
+    if not c.selectedFolder
+        and not c.selectedContainer
+        and not c.selectedGroup
+        and not c.selectedButton
+        and not c.selectedCustomBarId then
+        add("Selection Signal: no active config selection captured; select the broken group, panel, entry, or Custom Bar first if possible.")
+    else
+        add("Selection Signal: active selection captured.")
+    end
+
+    if vsd then
+        add(("Visual-State Signal: mismatched=%s missing=%s restored=%s truncated=%s"):format(
+            tostring(vsd.mismatchCount or 0),
+            tostring(vsd.missingSnapshots or 0),
+            tostring(vsd.captureRestored),
+            tostring(vsd.truncated == true)
+        ))
+    else
+        add("Visual-State Signal: unavailable")
+    end
+
+    add("Relevant Addons: " .. FormatRelevantAddonList(r.loadedAddons))
+    add("Escalation: use Full Dump only when exact profile data or importable reproduction is needed.")
+end
+
+local function FormatDiagnosticBugReportAsText(diag)
+    local lines = {}
+    local function add(s) lines[#lines + 1] = s end
+    local m = diag.meta or {}
+    local r = diag.runtime or {}
+    local c = diag.config or {}
+
+    add(("=== CDC BUG REPORT (v%s) ==="):format(tostring(diag._v or "?")))
+    add(("Addon: %s | WoW: %s (%s) | Locale: %s"):format(
+        tostring(m.addonVersion or "?"), tostring(m.buildVersion or "?"),
+        tostring(m.interfaceVersion or "?"), tostring(m.locale or "?")))
+    add(("Character: %s - %s | %s %s (class:%s spec:%s)"):format(
+        tostring(m.charName or "?"), tostring(m.realmName or "?"),
+        tostring(m.specName or "?"), tostring(m.className or "?"),
+        tostring(m.classID or "?"), tostring(m.specID or "?")))
+    add(("Instance: %s | Resting: %s | CDM Hidden: %s"):format(
+        tostring(m.instanceType or "?"), tostring(r.isResting), tostring(r.cdmHidden)))
+    add(("Timestamp: %s"):format(tostring(m.timestamp or "?")))
+    add(("Containers: %s | Panels: %s | Total Buttons: %s"):format(
+        tostring(m.containerCount or "?"), tostring(m.groupCount or "?"), tostring(m.totalButtons or "?")))
+
+    add("")
+    AddAgentDebugSignals(add, diag)
+
+    add("")
+    add("--- Current Config Context ---")
+    add(("Selection: folder=%s group=%s panel=%s button=%s customBar=%s"):format(
+        tostring(c.selectedFolder or "nil"),
+        tostring(c.selectedContainer or "nil"),
+        tostring(c.selectedGroup or "nil"),
+        tostring(c.selectedButton or "nil"),
+        tostring(c.selectedCustomBarId or "nil")))
+    add(("Tabs: selected=%s container=%s panel=%s button=%s resource=%s customBar=%s"):format(
+        tostring(c.selectedTab or "nil"),
+        tostring(c.selectedContainerTab or "nil"),
+        tostring(c.panelSettingsTab or "nil"),
+        tostring(c.buttonSettingsTab or "nil"),
+        tostring(c.resourceStylingTab or "nil"),
+        tostring(c.customBarSettingsTab or "nil")))
+    if c.selectedButtons ~= "" or c.selectedPanels ~= "" or c.selectedGroups ~= "" or c.selectedCustomBars ~= "" then
+        add(("Multi-select: buttons=%s panels=%s groups=%s customBars=%s"):format(
+            c.selectedButtons ~= "" and c.selectedButtons or "none",
+            c.selectedPanels ~= "" and c.selectedPanels or "none",
+            c.selectedGroups ~= "" and c.selectedGroups or "none",
+            c.selectedCustomBars ~= "" and c.selectedCustomBars or "none"))
+    end
+    if c.browseMode then
+        add("Browse Mode: " .. tostring(c.browseCharKey or "unknown"))
+    end
+    if c.selectedContainerSummary then
+        local container = c.selectedContainerSummary
+        add(("Selected Group: [%s] %q enabled=%s locked=%s specs=%s heroTalents=%s loadConditions=%s shown=%s"):format(
+            tostring(container.id or "?"),
+            tostring(container.name or "?"),
+            tostring(container.enabled),
+            tostring(container.locked),
+            tostring(container.specCount or 0),
+            tostring(container.heroTalentCount or 0),
+            tostring(container.loadConditionCount or 0),
+            tostring(c.selectedContainerFrameShown)))
+    end
+    if c.selectedPanelSummary then
+        local panel = c.selectedPanelSummary
+        add(("Selected Panel: [%s] %q mode=%s buttons=%s parent=%s specs=%s heroTalents=%s loadConditions=%s shown=%s"):format(
+            tostring(panel.id or "?"),
+            tostring(panel.name or "?"),
+            tostring(panel.displayMode or "?"),
+            tostring(panel.buttonCount or 0),
+            tostring(panel.parentContainerId or "nil"),
+            tostring(panel.specCount or 0),
+            tostring(panel.heroTalentCount or 0),
+            tostring(panel.loadConditionCount or 0),
+            tostring(c.selectedPanelFrameShown)))
+    end
+    if c.selectedButtonSummary then
+        local button = c.selectedButtonSummary
+        add(("Selected Entry: %s:%s %q auraTracking=%s auraUnit=%s hideWhenInactive=%s loadConditions=%s overrides=%s"):format(
+            tostring(button.type or "?"),
+            tostring(button.id or "?"),
+            tostring(button.name or "?"),
+            tostring(button.auraTracking),
+            tostring(button.auraUnit or "nil"),
+            tostring(button.hideWhenInactive),
+            tostring(button.loadConditionCount or 0),
+            tostring(button.overrideCount or 0)))
+    end
+    if type(c.visiblePanels) == "table" then
+        add(("Visible Panels: %s%s"):format(
+            tostring(c.visiblePanelCount or #c.visiblePanels),
+            c.visiblePanelsTruncated and " (truncated)" or ""))
+        for _, panel in ipairs(c.visiblePanels) do
+            add(("  [%s] %q mode=%s buttons=%s parent=%s"):format(
+                tostring(panel.id or "?"),
+                tostring(panel.name or "?"),
+                tostring(panel.displayMode or "?"),
+                tostring(panel.buttonCount or 0),
+                tostring(panel.parentContainerId or "nil")))
+        end
+    end
+
+    add("")
+    add("--- Runtime ---")
+    add(("Cached Spec ID: %s | Hero Spec ID: %s"):format(
+        tostring(r.currentSpecId or "nil"), tostring(r.currentHeroSpecId or "nil")))
+    add(("Assisted Spell: %s"):format(tostring(r.assistedSpellID or "none")))
+    add(("Viewer Aura Spells: %s"):format(FormatIDList(r.viewerAuraSpells)))
+    add(("Proc Overlay Spells: %s"):format(FormatIDList(r.procOverlaySpells)))
+    add(("Range Check Spells: %s"):format(FormatIDList(r.rangeCheckSpells)))
+
+    if r.resourceBarRuntime and #r.resourceBarRuntime > 0 then
+        add("Resource Bar Runtime:")
+        for _, entry in ipairs(r.resourceBarRuntime) do
+            local parts = {
+                ("[%s]"):format(tostring(entry.index or "?")),
+                tostring(entry.barType or "unknown"),
+                "powerType=" .. tostring(entry.powerType or "nil"),
+                entry.shown and "shown" or "hidden",
+            }
+            if entry.spellID then
+                parts[#parts + 1] = "spellID=" .. tostring(entry.spellID)
+            end
+            if entry.hideWhenInactive then
+                parts[#parts + 1] = "hideWhenInactive=true"
+            end
+            add("  " .. table.concat(parts, " "))
+        end
+    end
+
+    AddVisualStateDiagnosticsLines(add, r.visualStateDiagnostics)
+
+    add("")
+    add("--- Loaded Addons (" .. tostring(r.loadedAddons and #r.loadedAddons or 0) .. ") ---")
+    if r.loadedAddons and #r.loadedAddons > 0 then
+        for _, addon in ipairs(r.loadedAddons) do
+            add(("  %s (v%s)"):format(addon.name, addon.version or "?"))
+        end
+    end
+
+    return table.concat(lines, "\n")
+end
+
 local function FormatDiagnosticAsText(diag)
+    if diag and diag.reportKind == DIAGNOSTIC_REPORT_BUG_REPORT and not diag.profile then
+        return FormatDiagnosticBugReportAsText(diag)
+    end
+
     local lines = {}
     local function add(s) lines[#lines + 1] = s end
 
@@ -346,7 +840,8 @@ local function FormatDiagnosticAsText(diag)
     end
 
     -- Header
-    add(("=== CDC BUG REPORT (v%s) ==="):format(tostring(diag._v or "?")))
+    local reportTitle = diag.reportKind == DIAGNOSTIC_REPORT_FULL_DUMP and "CDC FULL DUMP" or "CDC BUG REPORT"
+    add(("=== %s (v%s) ==="):format(reportTitle, tostring(diag._v or "?")))
     add(("Addon: %s | WoW: %s (%s) | Locale: %s"):format(
         tostring(m.addonVersion or "?"), tostring(m.buildVersion or "?"),
         tostring(m.interfaceVersion or "?"), tostring(m.locale or "?")))
@@ -367,16 +862,9 @@ local function FormatDiagnosticAsText(diag)
         tostring(r.currentSpecId or "nil"), tostring(r.currentHeroSpecId or "nil")))
     add(("Assisted Spell: %s"):format(tostring(r.assistedSpellID or "none")))
 
-    local function formatIDList(t)
-        if not t or #t == 0 then return "none" end
-        local parts = {}
-        for _, v in ipairs(t) do parts[#parts + 1] = tostring(v) end
-        return table.concat(parts, ", ")
-    end
-
-    add(("Viewer Aura Spells: %s"):format(formatIDList(r.viewerAuraSpells)))
-    add(("Proc Overlay Spells: %s"):format(formatIDList(r.procOverlaySpells)))
-    add(("Range Check Spells: %s"):format(formatIDList(r.rangeCheckSpells)))
+    add(("Viewer Aura Spells: %s"):format(FormatIDList(r.viewerAuraSpells)))
+    add(("Proc Overlay Spells: %s"):format(FormatIDList(r.procOverlaySpells)))
+    add(("Range Check Spells: %s"):format(FormatIDList(r.rangeCheckSpells)))
 
     if r.groupFrameStates then
         local parts = {}
@@ -423,57 +911,7 @@ local function FormatDiagnosticAsText(diag)
         end
     end
 
-    if r.visualStateDiagnostics then
-        local vsd = r.visualStateDiagnostics
-        add("Visual State Diagnostics:")
-        add(("  rows=%s mismatched=%s missing=%s refreshedFrames=%s cap=%s restored=%s"):format(
-            tostring(vsd.rowCount or 0),
-            tostring(vsd.mismatchCount or 0),
-            tostring(vsd.missingSnapshots or 0),
-            tostring(vsd.refreshedFrames or 0),
-            tostring(vsd.maxRows or "?"),
-            tostring(vsd.captureRestored)
-        ))
-        if vsd.reason then
-            add("  reason=" .. tostring(vsd.reason))
-        end
-        if vsd.truncated then
-            add("  truncated=true")
-        end
-        if type(vsd.rows) == "table" and #vsd.rows > 0 then
-            for _, row in ipairs(vsd.rows) do
-                local parts = {
-                    ("[%s:%s]"):format(tostring(row.groupId or "?"), tostring(row.buttonIndex or "?")),
-                    tostring(row.displayMode or "?"),
-                    tostring(row.buttonType or "?") .. ":" .. tostring(row.buttonId or "?"),
-                    "phase=" .. tostring(row.phase or "nil"),
-                }
-                if row.cooldown then
-                    parts[#parts + 1] = "cd=" .. tostring(row.cooldown.state or "nil")
-                    parts[#parts + 1] = "visual=" .. tostring(row.cooldown.visualActive)
-                end
-                if row.visibility then
-                    parts[#parts + 1] = "hidden=" .. tostring(row.visibility.hidden)
-                    if row.visibility.alphaOverride ~= nil then
-                        parts[#parts + 1] = "alpha=" .. tostring(row.visibility.alphaOverride)
-                    end
-                end
-                if row.visuals then
-                    parts[#parts + 1] = "desat=" .. tostring(row.visuals.desaturationApplied)
-                    parts[#parts + 1] = "tint=" .. tostring(row.visuals.tintActive)
-                    parts[#parts + 1] = "fill=" .. tostring(row.visuals.iconFillActive)
-                end
-                if type(row.mismatches) == "table" and #row.mismatches > 0 then
-                    parts[#parts + 1] = "mismatch=" .. table.concat(row.mismatches, ",")
-                elseif row.missingSnapshot then
-                    parts[#parts + 1] = "snapshot=missing"
-                else
-                    parts[#parts + 1] = "match=ok"
-                end
-                add("  " .. table.concat(parts, " "))
-            end
-        end
-    end
+    AddVisualStateDiagnosticsLines(add, r.visualStateDiagnostics)
 
     -- Loaded Addons
     add("")
@@ -1068,15 +1506,41 @@ local function FormatDiagnosticAsText(diag)
     return table.concat(lines, "\n")
 end
 
-StaticPopupDialogs["CDC_DIAGNOSTIC_EXPORT"] = {
+local function SetDiagnosticExportText(popup, options)
+    local snapshot = BuildDiagnosticSnapshot(options)
+    popup.EditBox:SetText("CDCdiag:" .. EncodeSharedPayload(snapshot, "diagnostic"))
+    popup.EditBox:HighlightText()
+    popup.EditBox:SetFocus()
+end
+
+StaticPopupDialogs["CDC_DIAGNOSTIC_BUG_REPORT"] = {
     text = "Bug report string (Ctrl+C to copy, paste in Discord):",
     button1 = "Close",
     hasEditBox = true,
     OnShow = function(self)
-        local snapshot = BuildDiagnosticSnapshot()
-        self.EditBox:SetText("CDCdiag:" .. EncodeSharedPayload(snapshot, "diagnostic"))
-        self.EditBox:HighlightText()
-        self.EditBox:SetFocus()
+        SetDiagnosticExportText(self, {
+            reportKind = DIAGNOSTIC_REPORT_BUG_REPORT,
+            includeProfile = false,
+        })
+    end,
+    EditBoxOnEscapePressed = function(self)
+        self:GetParent():Hide()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["CDC_DIAGNOSTIC_FULL_DUMP"] = {
+    text = "Full diagnostic dump (Ctrl+C to copy; includes your full profile):",
+    button1 = "Close",
+    hasEditBox = true,
+    OnShow = function(self)
+        SetDiagnosticExportText(self, {
+            reportKind = DIAGNOSTIC_REPORT_FULL_DUMP,
+            includeProfile = true,
+        })
     end,
     EditBoxOnEscapePressed = function(self)
         self:GetParent():Hide()
