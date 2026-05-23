@@ -5,7 +5,6 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local CS = ST._configState
 
 local math_floor = math.floor
 local math_min = math.min
@@ -318,8 +317,9 @@ function RB.CreateResourceBarPreviewModule(deps)
     end
 
     function CooldownCompanion:StopResourceBarPreview()
-        if CS then
-            CS.customBarIndicatorPreviewActive = nil
+        local state = ST._configState
+        if state then
+            state.customBarIndicatorPreviewActive = nil
         end
         if not GetPreviewActive() then return end
         SetPreviewActive(false)

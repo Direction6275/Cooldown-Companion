@@ -16,7 +16,6 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local CS = ST._configState
 
 local math_floor = math.floor
 local math_min = math.min

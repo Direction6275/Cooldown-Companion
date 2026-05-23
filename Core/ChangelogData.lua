@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.15",
         "1.14.3",
         "1.14.2",
         "1.14.1",
@@ -35,13 +36,34 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.15"] = {
+            markdown = [[
+## New Features
+
+- **Custom Bars import and export:** Custom Bars can now be imported and exported directly from the Custom Bars settings, including single bars, selected bars, or all Custom Bars.
+- **Spec-aware Custom Bars:** Custom Bars now show as Loaded for the active spec or under Inactive Specs for other specs, with spec icon badges and spec filters to control where each bar belongs.
+- **Custom Bars batch actions:** Multi-select actions now work for Custom Bars, including enable/disable, export, and delete.
+- **Aura tracking cooldown display:** Aura-tracked icon buttons now have an opt-in Keep Spell Cooldown Swipe setting, letting the spell's own cooldown stay visible while the tracked aura still controls aura icon, glow, visibility, and stack behavior.
+- **Profile-wide one-pixel borders:** A new Profile One-pixel Borders option in the config gear menu makes panel, resource bar, and cast bar borders render at one-pixel thickness without overwriting each saved border setting.
+
+## Polish | QoL
+
+- **Advanced settings side panel:** Gear buttons beside enabled config settings now open a focused Advanced Settings editor on the right instead of expanding extra controls inline.
+- **Cleaner config previews:** Many preview actions now appear as compact play badges beside their setting, keeping dense config sections easier to scan.
+- **Config drag visibility:** The main config window and attached tools now fade while being dragged, making it easier to see the game world and addon layout behind them.
+
+## Profile Compatibility
+
+- **1.15 import checkpoint:** Existing local profiles still open and migrate normally, while newly exported profiles, groups, folders, Custom Bars, and diagnostic strings now include a 1.15 compatibility marker.
+- **Older import strings:** Import strings created before the 1.15 checkpoint are now rejected with recovery guidance instead of relying on very old import paths indefinitely.
+- **Future migration cleanup:** 1.15 is the bridge release for older local profiles. Open your existing profiles in 1.15 before later cleanup releases remove older migration support.
+]],
+        },
         ["1.14.3"] = {
             markdown = [[
 ## New Features
 
 - **One-pixel border thickness:** Border settings now include a dedicated One-pixel option for icon, bar, text, cast bar, and resource-style borders, while existing Custom Thickness borders and per-button overrides keep their current behavior.
-- **Spec-aware Custom Bars:** Custom Bars now show Loaded and Inactive Specs sections, include quick spec badges, and can be imported or exported without being tied to a whole profile.
-- **Custom Bar multiselect:** Multiple Custom Bars can now be enabled, disabled, exported, or deleted together from the Bars & Frames config.
 
 ## Polish | QoL
 
