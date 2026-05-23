@@ -1,11 +1,15 @@
 local ADDON_NAME, ST = ...
 
+local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic or {}
 local STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local ResolveIconDesaturationIntent = ST._ResolveIconDesaturationIntent
+local DEFAULT_ICON_FILL_COOLDOWN_COLOR = {0.6, 0.13, 0.18, 0.55}
+local DEFAULT_ICON_FILL_AURA_COLOR = {0.2, 1.0, 0.2, 0.55}
+local UsesChargeBehavior = CooldownCompanion and CooldownCompanion.UsesChargeBehavior
 
 local function IsTrue(value)
     return value == true
@@ -18,6 +22,117 @@ local function EnsureSection(parent, key)
         parent[key] = section
     end
     return section
+end
+
+local function UsesIconFillChargeBehavior(buttonData)
+    if type(UsesChargeBehavior) == "function" then
+        return UsesChargeBehavior(buttonData)
+    end
+    return buttonData and buttonData.hasCharges == true
+end
+
+local function GetButtonGroup(button)
+    local groupId = button and button._groupId
+    return groupId
+        and CooldownCompanion and CooldownCompanion.db and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups
+        and CooldownCompanion.db.profile.groups[groupId]
+end
+
+local function SetIconFillIntent(target, available, active, reason, mode, color, auraActive, static)
+    target.available = available == true
+    target.active = active == true
+    target.reason = reason
+    target.mode = mode
+    target.auraActive = auraActive == true
+    target.static = static == true
+    target.usesOnUpdate = target.active and target.static ~= true or false
+    target.suppressCooldownSwipe = target.active
+    target.suppressAuraBlizzardSwipe = target.auraActive
+    target.r = color and color[1] or nil
+    target.g = color and color[2] or nil
+    target.b = color and color[3] or nil
+    target.a = color and color[4] or nil
+    return target
+end
+
+local function ResolveIconFillIntent(button, buttonData, style, target)
+    target = target or {}
+
+    if type(button) ~= "table" or type(buttonData) ~= "table" then
+        return SetIconFillIntent(target, false, false, "invalid")
+    end
+
+    style = style or {}
+
+    if not button.iconFill then
+        return SetIconFillIntent(target, false, false, "missing-widget")
+    end
+
+    if style.iconFillEnabled ~= true then
+        return SetIconFillIntent(target, false, false, "disabled")
+    end
+
+    local group = GetButtonGroup(button)
+    if group then
+        if (group.displayMode or "icons") ~= "icons" then
+            return SetIconFillIntent(target, false, false, "non-icon-mode")
+        end
+        if group.masqueEnabled == true then
+            return SetIconFillIntent(target, false, false, "masque-disabled")
+        end
+    end
+
+    local auraPreview = button._conditionalAuraPreview == true
+        or button._conditionalAuraDurationTextPreview == true
+    local cooldownPreview = button._conditionalPreviewDomain == "cooldown"
+
+    if button._auraPrimarySwipeActive == true or auraPreview then
+        local mode = "aura"
+        local reason = "aura"
+        local static = false
+        if button._auraHasTimer == false and not auraPreview then
+            mode = "aura_static"
+            reason = "aura-static"
+            static = true
+        end
+        return SetIconFillIntent(
+            target,
+            true,
+            true,
+            reason,
+            mode,
+            style.iconFillAuraColor or DEFAULT_ICON_FILL_AURA_COLOR,
+            true,
+            static
+        )
+    end
+
+    local cooldownReason
+    if cooldownPreview then
+        cooldownReason = "cooldown-preview"
+    elseif button._cooldownState == STATE_COOLDOWN then
+        cooldownReason = "cooldown"
+    elseif UsesIconFillChargeBehavior(buttonData)
+        and button._chargeRecharging == true
+        and button._hideCooldownChargesActive ~= true then
+        cooldownReason = "charge-recharge"
+    end
+
+    if cooldownReason then
+        return SetIconFillIntent(
+            target,
+            true,
+            true,
+            cooldownReason,
+            "cooldown",
+            style.iconFillCooldownColor or DEFAULT_ICON_FILL_COOLDOWN_COLOR,
+            false,
+            false
+        )
+    end
+
+    return SetIconFillIntent(target, true, false, "inactive")
 end
 
 ST._buttonVisualStateSnapshotsEnabled = ST._buttonVisualStateSnapshotsEnabled == true
@@ -115,6 +230,8 @@ local function RefreshButtonVisualState(button, context)
     local iconDesaturationIntent = ResolveIconDesaturationIntent(button, buttonData, style)
     local iconTintIntent = button._iconTintIntent
     local hasIconTintIntent = type(iconTintIntent) == "table"
+    local iconFillIntent = button._iconFillIntent
+    local hasIconFillIntent = type(iconFillIntent) == "table"
 
     state.version = 1
     state.phase = context.phase
@@ -221,6 +338,24 @@ local function RefreshButtonVisualState(button, context)
     iconFill.mode = button._iconFillMode
     iconFill.auraActive = IsTrue(button._iconFillAuraActive)
     iconFill.onUpdateInstalled = IsTrue(button._iconFillOnUpdateInstalled)
+    iconFill.r = button._iconFillColorR
+    iconFill.g = button._iconFillColorG
+    iconFill.b = button._iconFillColorB
+    iconFill.a = button._iconFillColorA
+    iconFill.intentAvailable = hasIconFillIntent
+    iconFill.intentFillAvailable = hasIconFillIntent and IsTrue(iconFillIntent.available) or false
+    iconFill.intentActive = hasIconFillIntent and IsTrue(iconFillIntent.active) or false
+    iconFill.intentMode = hasIconFillIntent and iconFillIntent.mode or nil
+    iconFill.intentReason = hasIconFillIntent and iconFillIntent.reason or nil
+    iconFill.intentAuraActive = hasIconFillIntent and IsTrue(iconFillIntent.auraActive) or false
+    iconFill.intentStatic = hasIconFillIntent and IsTrue(iconFillIntent.static) or false
+    iconFill.intentUsesOnUpdate = hasIconFillIntent and IsTrue(iconFillIntent.usesOnUpdate) or false
+    iconFill.intentSuppressCooldownSwipe = hasIconFillIntent and IsTrue(iconFillIntent.suppressCooldownSwipe) or false
+    iconFill.intentSuppressAuraBlizzardSwipe = hasIconFillIntent and IsTrue(iconFillIntent.suppressAuraBlizzardSwipe) or false
+    iconFill.intentR = hasIconFillIntent and iconFillIntent.r or nil
+    iconFill.intentG = hasIconFillIntent and iconFillIntent.g or nil
+    iconFill.intentB = hasIconFillIntent and iconFillIntent.b or nil
+    iconFill.intentA = hasIconFillIntent and iconFillIntent.a or nil
 
     local ready = EnsureSection(state, "ready")
     ready.eligible = readyEligible
@@ -274,3 +409,4 @@ ST._RefreshButtonVisualState = RefreshButtonVisualState
 ST._ClearButtonVisualState = ClearButtonVisualState
 ST._SetButtonVisualStateSnapshotsEnabled = SetButtonVisualStateSnapshotsEnabled
 ST._AreButtonVisualStateSnapshotsEnabled = AreButtonVisualStateSnapshotsEnabled
+ST._ResolveIconFillIntent = ResolveIconFillIntent

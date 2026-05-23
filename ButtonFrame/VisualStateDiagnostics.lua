@@ -185,6 +185,26 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         tintA = tint.a,
         iconFillActive = iconFill.active,
         iconFillMode = iconFill.mode,
+        iconFillAuraActive = iconFill.auraActive,
+        iconFillOnUpdateInstalled = iconFill.onUpdateInstalled,
+        iconFillR = iconFill.r,
+        iconFillG = iconFill.g,
+        iconFillB = iconFill.b,
+        iconFillA = iconFill.a,
+        iconFillIntentAvailable = iconFill.intentAvailable,
+        iconFillIntentFillAvailable = iconFill.intentFillAvailable,
+        iconFillIntentActive = iconFill.intentActive,
+        iconFillIntentMode = iconFill.intentMode,
+        iconFillIntentReason = iconFill.intentReason,
+        iconFillIntentAuraActive = iconFill.intentAuraActive,
+        iconFillIntentStatic = iconFill.intentStatic,
+        iconFillIntentUsesOnUpdate = iconFill.intentUsesOnUpdate,
+        iconFillIntentSuppressCooldownSwipe = iconFill.intentSuppressCooldownSwipe,
+        iconFillIntentSuppressAuraBlizzardSwipe = iconFill.intentSuppressAuraBlizzardSwipe,
+        iconFillIntentR = iconFill.intentR,
+        iconFillIntentG = iconFill.intentG,
+        iconFillIntentB = iconFill.intentB,
+        iconFillIntentA = iconFill.intentA,
         readyEligible = ready.eligible,
         readyGlowActive = ready.glowActive,
         procGlowActive = glows.procActive,
@@ -234,6 +254,20 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     end
     CompareValue(row, "iconFill.active", iconFill.active, IsTrue(button._iconFillActive))
     CompareValue(row, "iconFill.mode", iconFill.mode, button._iconFillMode)
+    CompareValue(row, "iconFill.auraActive", iconFill.auraActive, IsTrue(button._iconFillAuraActive))
+    CompareValue(row, "iconFill.onUpdateInstalled", iconFill.onUpdateInstalled, IsTrue(button._iconFillOnUpdateInstalled))
+    if compareVisibleIconIntent and iconFill.intentAvailable == true then
+        CompareValue(row, "iconFill.intent.active", iconFill.intentActive, iconFill.active)
+        CompareValue(row, "iconFill.intent.mode", iconFill.intentMode, iconFill.mode)
+        CompareValue(row, "iconFill.intent.auraActive", iconFill.intentAuraActive, iconFill.auraActive)
+        CompareValue(row, "iconFill.intent.usesOnUpdate", iconFill.intentUsesOnUpdate, iconFill.onUpdateInstalled)
+        if iconFill.intentActive == true then
+            CompareValue(row, "iconFill.intent.r", iconFill.intentR, iconFill.r)
+            CompareValue(row, "iconFill.intent.g", iconFill.intentG, iconFill.g)
+            CompareValue(row, "iconFill.intent.b", iconFill.intentB, iconFill.b)
+            CompareValue(row, "iconFill.intent.a", iconFill.intentA, iconFill.a)
+        end
+    end
     CompareValue(row, "ready.glowActive", ready.glowActive, IsTrue(button._readyGlowActive))
     CompareValue(row, "glows.procActive", glows.procActive, IsTrue(button._procGlowActive))
     CompareValue(row, "glows.auraActive", glows.auraActive, IsTrue(button._auraGlowActive))
