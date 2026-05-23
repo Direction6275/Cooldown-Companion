@@ -28,6 +28,9 @@ local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 -- Imports from Helpers
 local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 
+-- Imports from VisualState
+local ClearButtonVisualState = ST._ClearButtonVisualState
+
 -- Imports from Glows
 
 -- Shared click-through helpers from Utils.lua
@@ -742,6 +745,9 @@ end
 ------------------------------------------------------------------------
 local function UpdateTextStyle(button, newStyle)
     button.style = newStyle
+    if ClearButtonVisualState then
+        ClearButtonVisualState(button)
+    end
     -- Background
     local bgColor = newStyle.textBgColor or {0, 0, 0, 0}
     button.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])

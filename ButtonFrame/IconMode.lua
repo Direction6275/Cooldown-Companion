@@ -28,6 +28,9 @@ local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
 local HasItemFallbacks = CooldownCompanion.HasItemFallbacks
 
+-- Imports from VisualState
+local ClearButtonVisualState = ST._ClearButtonVisualState
+
 -- Imports from Glows
 local CreateGlowContainer = ST._CreateGlowContainer
 local CreateAssistedHighlight = ST._CreateAssistedHighlight
@@ -1281,6 +1284,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Store updated style reference
     button.style = style
+    if ClearButtonVisualState then
+        ClearButtonVisualState(button)
+    end
 
     -- Invalidate cached widget state so next tick reapplies everything
     button._desaturated = nil

@@ -75,6 +75,24 @@ local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
+function CooldownCompanion:ShouldRefreshButtonVisualStateSnapshot()
+    local isEnabled = ST._AreButtonVisualStateSnapshotsEnabled
+    return isEnabled and isEnabled() == true
+end
+
+function CooldownCompanion:RefreshButtonVisualStateSnapshot(button, context, phase)
+    if not CooldownCompanion:ShouldRefreshButtonVisualStateSnapshot() then
+        return nil
+    end
+
+    local refresh = ST._RefreshButtonVisualState
+    if refresh and context then
+        context.phase = phase
+        return refresh(button, context)
+    end
+    return nil
+end
+
 local function ClearConditionalVisualPreviewFields(button)
     if button._conditionalAuraPreview then
         local buttonData = button.buttonData
@@ -2447,6 +2465,26 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
     button._forceVisibleByConfig = ((forceVisibleByConfig or forceVisibleByUnlockPreview or forceVisibleByPreview) and not isTriggerPanel) or nil
 
+    local visualStateContext
+    local shouldCaptureVisualState = CooldownCompanion:ShouldRefreshButtonVisualStateSnapshot()
+    if shouldCaptureVisualState then
+        visualStateContext = button._visualStateContext
+        if type(visualStateContext) ~= "table" then
+            visualStateContext = {}
+            button._visualStateContext = visualStateContext
+        end
+        visualStateContext.displayMode = buttonDisplayMode
+        visualStateContext.isOnGCD = isOnGCD
+        visualStateContext.isGCDOnly = isGCDOnly
+        visualStateContext.cooldownSource = spellCooldownResult and spellCooldownResult.source
+        visualStateContext.presentationState = spellCooldownResult and (spellCooldownResult.presentationState or spellCooldownResult.state) or button._cooldownState
+        visualStateContext.cooldownSpellId = cooldownSpellId
+        visualStateContext.auraOwnsPrimarySwipe = auraOwnsPrimarySwipe
+        visualStateContext.auraOverrideActive = auraOverrideActive
+        visualStateContext.forceVisibleByConfig = forceVisibleByConfig
+        visualStateContext.forceVisibleByPreview = forceVisibleByPreview
+        visualStateContext.forceVisibleByUnlockPreview = forceVisibleByUnlockPreview
+    end
     -- Track visibility/force-visible state changes for compact layout reflow.
     local visibilityChanged = button._visibilityHidden ~= button._prevVisibilityHidden
     if visibilityChanged then
@@ -2472,6 +2510,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button._lastVisAlpha = 0
             end
             DispatchStandaloneTextureVisual(button)
+            if shouldCaptureVisualState then
+                CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
+            end
             return  -- Skip all visual updates
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -2489,6 +2530,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button.cooldown:Hide()
             HideIconFillForHiddenButton(button)
             DispatchStandaloneTextureVisual(button)
+            if shouldCaptureVisualState then
+                CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
+            end
             return  -- Skip visual updates for hidden buttons
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -2553,5 +2597,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
         UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         DispatchStandaloneTextureVisual(button)
+    end
+    if shouldCaptureVisualState then
+        CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
     end
 end

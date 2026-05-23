@@ -36,6 +36,9 @@ local DEFAULT_BAR_AURA_COLOR = ST._DEFAULT_BAR_AURA_COLOR
 local DEFAULT_BAR_PANDEMIC_COLOR = ST._DEFAULT_BAR_PANDEMIC_COLOR
 local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
 
+-- Imports from VisualState
+local ClearButtonVisualState = ST._ClearButtonVisualState
+
 -- Pre-defined color constant tables to avoid per-tick allocation.
 -- IMPORTANT: These tables are read-only — never write to their indices.
 local DEFAULT_WHITE = {1, 1, 1, 1}
@@ -1671,6 +1674,9 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local barAreaTop = showIcon and (iconSize + iconOffset) or 0
 
     button.style = newStyle
+    if ClearButtonVisualState then
+        ClearButtonVisualState(button)
+    end
     button._isVertical = isVertical
 
     -- Update bar fill OnUpdate interval

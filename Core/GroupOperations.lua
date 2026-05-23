@@ -18,6 +18,13 @@ local UnitCanAttack = UnitCanAttack
 local InCombatLockdown = InCombatLockdown
 local C_CVar_GetCVarBool = C_CVar.GetCVarBool
 
+local function ClearButtonVisualState(button)
+    local clear = ST._ClearButtonVisualState
+    if clear then
+        clear(button)
+    end
+end
+
 local LOAD_CONDITION_DEFAULTS = {
     raid = false,
     dungeon = false,
@@ -1537,6 +1544,7 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
                 button._chargeCountReadable = nil
                 button._zeroChargesConfirmed = nil
                 button._displayCountZeroUsabilityFallback = nil
+                ClearButtonVisualState(button)
             end
         end
     end
