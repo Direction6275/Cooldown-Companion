@@ -151,6 +151,9 @@ function CooldownCompanion:IsUnsupportedImportPayload(payload)
     if type(payload) ~= "table" then
         return false
     end
+    if payload._cdcUnsupportedCompactFormat then
+        return true
+    end
     return self:IsUnsupportedLegacyProfile(payload) or not self:HasSupportedImportCheckpoint(payload)
 end
 
