@@ -201,10 +201,91 @@ local function IsTextureReady(button, buttonData)
     return button._desatCooldownActive == false
 end
 
+local function CopyTextVisualState(button, text, context)
+    local preservedSecretTextRender = IsTrue(context and context.preserveSecretTextRender)
+    local isTextSnapshot = (context and context.displayMode == "text") or button._isText == true
+    local textSidecarsAreFresh = isTextSnapshot
+        and context
+        and context.phase == "post-dispatch"
+        and not preservedSecretTextRender
+    local intent = textSidecarsAreFresh and button._textVisualIntent or nil
+    local hasIntent = type(intent) == "table"
+    text.preservedSecretTextRender = preservedSecretTextRender
+    text.intentAvailable = hasIntent
+    if hasIntent then
+        text.domain = intent.domain
+        text.available = intent.available
+        text.unusable = intent.unusable
+        text.outOfRange = intent.outOfRange
+        text.auraActive = intent.auraActive
+        text.auraHasTimer = intent.auraHasTimer
+        text.timePresent = intent.timePresent
+        text.auraTimePresent = intent.auraTimePresent
+        text.cooldownDeferred = intent.cooldownDeferred
+        text.chargeState = intent.chargeState
+        text.currentCharges = intent.currentCharges
+        text.maxCharges = intent.maxCharges
+        text.stackSource = intent.stackSource
+        text.stackPresent = intent.stackPresent
+        text.stackSecret = intent.stackSecret
+        text.secretDuration = intent.secretDuration
+        text.secretDurationToken = intent.secretDurationToken
+        text.secretStack = intent.secretStack
+        text.secretName = intent.secretName
+        text.hasText = intent.hasText
+        text.pulseActive = intent.pulseActive
+    else
+        text.domain = nil
+        text.available = not button._desatCooldownActive
+        text.unusable = IsTrue(button._isUnusable)
+        text.outOfRange = IsTrue(button._isOutOfRange)
+        text.auraActive = IsTrue(button._auraActive)
+        text.auraHasTimer = IsTrue(button._auraHasTimer)
+        text.timePresent = nil
+        text.auraTimePresent = nil
+        text.cooldownDeferred = IsTrue(button._cooldownDeferred)
+        text.chargeState = button._chargeState
+        text.currentCharges = button._currentReadableCharges
+        text.maxCharges = nil
+        text.stackSource = nil
+        text.stackPresent = nil
+        text.stackSecret = nil
+        text.secretDuration = nil
+        text.secretDurationToken = nil
+        text.secretStack = nil
+        text.secretName = nil
+        text.hasText = nil
+        text.pulseActive = nil
+    end
+
+    local applied = textSidecarsAreFresh and button._textVisualApplied or nil
+    local hasApplied = type(applied) == "table"
+    text.appliedAvailable = hasApplied
+    if hasApplied then
+        text.appliedWritePath = applied.writePath
+        text.appliedHasText = applied.hasText
+        text.appliedSecretDuration = applied.secretDuration
+        text.appliedSecretStack = applied.secretStack
+        text.appliedSecretName = applied.secretName
+        text.appliedPulseActive = applied.pulseActive
+        text.appliedAlpha = applied.alpha
+    else
+        text.appliedWritePath = nil
+        text.appliedHasText = nil
+        text.appliedSecretDuration = nil
+        text.appliedSecretStack = nil
+        text.appliedSecretName = nil
+        text.appliedPulseActive = nil
+        text.appliedAlpha = nil
+    end
+end
+
 local function ClearButtonVisualState(button)
     if button then
         button._visualState = nil
         button._visualStateContext = nil
+        button._textVisualIntent = nil
+        button._textVisualApplied = nil
     end
 end
 
@@ -373,10 +454,7 @@ local function RefreshButtonVisualState(button, context)
     glows.barColorShiftActive = IsTrue(button._barColorShiftActive)
 
     local text = EnsureSection(state, "text")
-    text.available = not state.cooldownVisualActive
-    text.unusable = IsTrue(button._isUnusable)
-    text.outOfRange = IsTrue(button._isOutOfRange)
-    text.chargeState = button._chargeState
+    CopyTextVisualState(button, text, context)
     text.durationObj = button._durationObj
 
     local textureEffects = EnsureSection(state, "textureEffects")
