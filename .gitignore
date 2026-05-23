@@ -12,3 +12,4 @@ agent-reference/
 .local-tools/
 scripts/
 docs/
+tests/
