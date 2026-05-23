@@ -125,6 +125,13 @@ local function BuildDiagnosticSnapshot()
         resourceBarRuntime = CooldownCompanion:GetResourceBarRuntimeDebugInfo()
     end
 
+    local visualStateDiagnostics = nil
+    if CooldownCompanion.CaptureButtonVisualStateDiagnostics then
+        visualStateDiagnostics = CooldownCompanion:CaptureButtonVisualStateDiagnostics({
+            maxRows = 16,
+        })
+    end
+
     local loadedAddons = {}
     for i = 1, C_AddOns.GetNumAddOns() do
         local name, title, _, loadable, reason, security = C_AddOns.GetAddOnInfo(i)
@@ -153,6 +160,7 @@ local function BuildDiagnosticSnapshot()
         groupFrameStates = groupFrameStates,
         containerFrameStates = containerFrameStates,
         resourceBarRuntime = resourceBarRuntime,
+        visualStateDiagnostics = visualStateDiagnostics,
         loadedAddons = loadedAddons,
     }
 
@@ -412,6 +420,58 @@ local function FormatDiagnosticAsText(diag)
                 parts[#parts + 1] = "hideWhenInactive=true"
             end
             add("  " .. table.concat(parts, " "))
+        end
+    end
+
+    if r.visualStateDiagnostics then
+        local vsd = r.visualStateDiagnostics
+        add("Visual State Diagnostics:")
+        add(("  rows=%s mismatched=%s missing=%s refreshedFrames=%s cap=%s restored=%s"):format(
+            tostring(vsd.rowCount or 0),
+            tostring(vsd.mismatchCount or 0),
+            tostring(vsd.missingSnapshots or 0),
+            tostring(vsd.refreshedFrames or 0),
+            tostring(vsd.maxRows or "?"),
+            tostring(vsd.captureRestored)
+        ))
+        if vsd.reason then
+            add("  reason=" .. tostring(vsd.reason))
+        end
+        if vsd.truncated then
+            add("  truncated=true")
+        end
+        if type(vsd.rows) == "table" and #vsd.rows > 0 then
+            for _, row in ipairs(vsd.rows) do
+                local parts = {
+                    ("[%s:%s]"):format(tostring(row.groupId or "?"), tostring(row.buttonIndex or "?")),
+                    tostring(row.displayMode or "?"),
+                    tostring(row.buttonType or "?") .. ":" .. tostring(row.buttonId or "?"),
+                    "phase=" .. tostring(row.phase or "nil"),
+                }
+                if row.cooldown then
+                    parts[#parts + 1] = "cd=" .. tostring(row.cooldown.state or "nil")
+                    parts[#parts + 1] = "visual=" .. tostring(row.cooldown.visualActive)
+                end
+                if row.visibility then
+                    parts[#parts + 1] = "hidden=" .. tostring(row.visibility.hidden)
+                    if row.visibility.alphaOverride ~= nil then
+                        parts[#parts + 1] = "alpha=" .. tostring(row.visibility.alphaOverride)
+                    end
+                end
+                if row.visuals then
+                    parts[#parts + 1] = "desat=" .. tostring(row.visuals.desaturationApplied)
+                    parts[#parts + 1] = "tint=" .. tostring(row.visuals.tintActive)
+                    parts[#parts + 1] = "fill=" .. tostring(row.visuals.iconFillActive)
+                end
+                if type(row.mismatches) == "table" and #row.mismatches > 0 then
+                    parts[#parts + 1] = "mismatch=" .. table.concat(row.mismatches, ",")
+                elseif row.missingSnapshot then
+                    parts[#parts + 1] = "snapshot=missing"
+                else
+                    parts[#parts + 1] = "match=ok"
+                end
+                add("  " .. table.concat(parts, " "))
+            end
         end
     end
 
