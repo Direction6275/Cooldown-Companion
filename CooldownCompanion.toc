@@ -63,6 +63,10 @@ Core\Aura.lua
 Core\EventHandlers.lua
 Core\Masque.lua
 Core\GroupManagement.lua
+Core\MigrationsLegacy.lua
+Core\MigrationsGroups.lua
+Core\MigrationsButtonSettings.lua
+Core\MigrationsResourceBars.lua
 Core\Migrations.lua
 Core\AlphaFade.lua
 Core\Keybinds.lua
