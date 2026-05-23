@@ -127,6 +127,7 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     local iconFill = state.iconFill or {}
     local ready = state.ready or {}
     local glows = state.glows or {}
+    local bar = state.bar or {}
     local text = state.text or {}
     local textureEffects = state.textureEffects or {}
     local tintActive
@@ -209,6 +210,32 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         readyGlowActive = ready.glowActive,
         procGlowActive = glows.procActive,
         auraGlowActive = glows.auraActive,
+    }
+    row.bar = {
+        intentAvailable = bar.intentAvailable,
+        appliedAvailable = bar.appliedAvailable,
+        domain = bar.domain,
+        onCooldown = bar.onCooldown,
+        chargeState = bar.chargeState,
+        colorReason = bar.colorReason,
+        appliedColorReason = bar.appliedColorReason,
+        auraColorReason = bar.auraColorReason,
+        auraEffectActive = bar.auraEffectActive,
+        appliedAuraEffectActive = bar.appliedAuraEffectActive,
+        auraEffectReason = bar.auraEffectReason,
+        pulseActive = bar.pulseActive,
+        appliedPulseActive = bar.appliedPulseActive,
+        pulseMode = bar.pulseMode,
+        colorShiftActive = bar.colorShiftActive,
+        appliedColorShiftActive = bar.appliedColorShiftActive,
+        colorShiftMode = bar.colorShiftMode,
+        stackDisplay = bar.stackDisplay,
+        stackMode = bar.stackMode,
+        appliedStackVisualActive = bar.appliedStackVisualActive,
+        appliedStackMode = bar.appliedStackMode,
+        appliedBaseFillHidden = bar.appliedBaseFillHidden,
+        gcdSuppressed = bar.gcdSuppressed,
+        appliedGcdSuppressed = bar.appliedGcdSuppressed,
     }
     row.text = {
         preservedSecretTextRender = text.preservedSecretTextRender,
@@ -304,6 +331,26 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     local compareVisibleTextIntent = row.displayMode == "text"
         and row.phase == "post-dispatch"
         and visibility.hidden ~= true
+    local compareVisibleBarIntent = row.displayMode == "bars"
+        and row.phase == "post-dispatch"
+        and visibility.hidden ~= true
+    if compareVisibleBarIntent then
+        if bar.intentAvailable ~= true then
+            AddMismatch(row, "bar.intent.missing")
+        elseif bar.appliedAvailable ~= true then
+            AddMismatch(row, "bar.applied.missing")
+        else
+            CompareValue(row, "bar.appliedAuraEffectActive", bar.appliedAuraEffectActive, IsTrue(button._barAuraEffectActive))
+            CompareValue(row, "bar.appliedPulseActive", bar.appliedPulseActive, IsTrue(button._barPulseActive))
+            CompareValue(row, "bar.appliedColorShiftActive", bar.appliedColorShiftActive, IsTrue(button._barColorShiftActive))
+            CompareValue(row, "bar.appliedGcdSuppressed", bar.appliedGcdSuppressed, IsTrue(button._barGCDSuppressed))
+            CompareValue(row, "bar.colorReason", bar.appliedColorReason, bar.colorReason)
+            CompareValue(row, "bar.auraEffectActive", bar.appliedAuraEffectActive, bar.auraEffectActive)
+            CompareValue(row, "bar.pulseActive", bar.appliedPulseActive, bar.pulseActive)
+            CompareValue(row, "bar.colorShiftActive", bar.appliedColorShiftActive, bar.colorShiftActive)
+            CompareValue(row, "bar.gcdSuppressed", bar.appliedGcdSuppressed, bar.gcdSuppressed)
+        end
+    end
     local preservedSecretTextWithoutFreshSidecars = text.preservedSecretTextRender == true
         and (text.intentAvailable ~= true or text.appliedAvailable ~= true)
     if compareVisibleTextIntent and not preservedSecretTextWithoutFreshSidecars then

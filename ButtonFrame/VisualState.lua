@@ -280,12 +280,120 @@ local function CopyTextVisualState(button, text, context)
     end
 end
 
+local function CopyBarVisualState(button, bar, context)
+    local isBarSnapshot = (context and context.displayMode == "bars") or button._isBar == true
+    local barSidecarsAreFresh = isBarSnapshot
+        and context
+        and context.phase == "post-dispatch"
+        and not IsTrue(button._visibilityHidden)
+    local intent = barSidecarsAreFresh and button._barVisualIntent or nil
+    local hasIntent = type(intent) == "table"
+
+    bar.intentAvailable = hasIntent
+    if hasIntent then
+        bar.domain = intent.domain
+        bar.onCooldown = intent.onCooldown
+        bar.chargeState = intent.chargeState
+        bar.colorReason = intent.colorReason
+        bar.auraColorReason = intent.auraColorReason
+        bar.auraEffectActive = intent.auraEffectActive
+        bar.auraEffectReason = intent.auraEffectReason
+        bar.pulseActive = intent.pulseActive
+        bar.pulseMode = intent.pulseMode
+        bar.colorShiftActive = intent.colorShiftActive
+        bar.colorShiftMode = intent.colorShiftMode
+        bar.stackDisplay = intent.stackDisplay
+        bar.stackMode = intent.stackMode
+        bar.stackSegmentLayerActive = intent.stackSegmentLayerActive
+        bar.gcdSuppressed = intent.gcdSuppressed
+        bar.colorR = intent.colorR
+        bar.colorG = intent.colorG
+        bar.colorB = intent.colorB
+        bar.colorA = intent.colorA
+        bar.colorShiftBaseR = intent.colorShiftBaseR
+        bar.colorShiftBaseG = intent.colorShiftBaseG
+        bar.colorShiftBaseB = intent.colorShiftBaseB
+        bar.colorShiftBaseA = intent.colorShiftBaseA
+        bar.colorShiftTargetR = intent.colorShiftTargetR
+        bar.colorShiftTargetG = intent.colorShiftTargetG
+        bar.colorShiftTargetB = intent.colorShiftTargetB
+        bar.colorShiftTargetA = intent.colorShiftTargetA
+    else
+        bar.domain = IsTrue(button._barAuraStackDisplay) and "stack" or nil
+        bar.onCooldown = nil
+        bar.chargeState = button._chargeState
+        bar.colorReason = nil
+        bar.auraColorReason = nil
+        bar.auraEffectActive = nil
+        bar.auraEffectReason = nil
+        bar.pulseActive = nil
+        bar.pulseMode = nil
+        bar.colorShiftActive = nil
+        bar.colorShiftMode = nil
+        bar.stackDisplay = IsTrue(button._barAuraStackDisplay)
+        bar.stackMode = button._barAuraStackMode
+        bar.stackSegmentLayerActive = nil
+        bar.gcdSuppressed = IsTrue(button._barGCDSuppressed)
+        bar.colorR = nil
+        bar.colorG = nil
+        bar.colorB = nil
+        bar.colorA = nil
+        bar.colorShiftBaseR = nil
+        bar.colorShiftBaseG = nil
+        bar.colorShiftBaseB = nil
+        bar.colorShiftBaseA = nil
+        bar.colorShiftTargetR = nil
+        bar.colorShiftTargetG = nil
+        bar.colorShiftTargetB = nil
+        bar.colorShiftTargetA = nil
+    end
+
+    local applied = barSidecarsAreFresh and button._barVisualApplied or nil
+    local hasApplied = type(applied) == "table"
+    bar.appliedAvailable = hasApplied
+    if hasApplied then
+        bar.appliedColorReason = applied.colorReason
+        bar.appliedAuraColorActive = applied.auraColorActive
+        bar.appliedAuraEffectActive = applied.auraEffectActive
+        bar.appliedPulseActive = applied.pulseActive
+        bar.appliedPulseMode = applied.pulseMode
+        bar.appliedColorShiftActive = applied.colorShiftActive
+        bar.appliedColorShiftMode = applied.colorShiftMode
+        bar.appliedStackVisualActive = applied.stackVisualActive
+        bar.appliedStackMode = applied.stackMode
+        bar.appliedBaseFillHidden = applied.baseFillHidden
+        bar.appliedGcdSuppressed = applied.gcdSuppressed
+        bar.appliedColorR = applied.colorR
+        bar.appliedColorG = applied.colorG
+        bar.appliedColorB = applied.colorB
+        bar.appliedColorA = applied.colorA
+    else
+        bar.appliedColorReason = nil
+        bar.appliedAuraColorActive = nil
+        bar.appliedAuraEffectActive = nil
+        bar.appliedPulseActive = nil
+        bar.appliedPulseMode = nil
+        bar.appliedColorShiftActive = nil
+        bar.appliedColorShiftMode = nil
+        bar.appliedStackVisualActive = IsTrue(button._barAuraStackVisualActive)
+        bar.appliedStackMode = button._barAuraStackVisualMode
+        bar.appliedBaseFillHidden = IsTrue(button._barAuraBaseFillHidden)
+        bar.appliedGcdSuppressed = IsTrue(button._barGCDSuppressed)
+        bar.appliedColorR = nil
+        bar.appliedColorG = nil
+        bar.appliedColorB = nil
+        bar.appliedColorA = nil
+    end
+end
+
 local function ClearButtonVisualState(button)
     if button then
         button._visualState = nil
         button._visualStateContext = nil
         button._textVisualIntent = nil
         button._textVisualApplied = nil
+        button._barVisualIntent = nil
+        button._barVisualApplied = nil
     end
 end
 
@@ -452,6 +560,9 @@ local function RefreshButtonVisualState(button, context)
     glows.barAuraEffectActive = IsTrue(button._barAuraEffectActive)
     glows.barPulseActive = IsTrue(button._barPulseActive)
     glows.barColorShiftActive = IsTrue(button._barColorShiftActive)
+
+    local bar = EnsureSection(state, "bar")
+    CopyBarVisualState(button, bar, context)
 
     local text = EnsureSection(state, "text")
     CopyTextVisualState(button, text, context)

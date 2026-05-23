@@ -476,6 +476,31 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
                     parts[#parts + 1] = "fillReason=" .. tostring(row.visuals.iconFillIntentReason)
                 end
             end
+            local hasBarSignals = row.bar and (row.bar.intentAvailable == true
+                or row.bar.stackDisplay == true
+                or row.bar.gcdSuppressed == true
+                or (row.displayMode == "bars" and row.phase == "post-dispatch"))
+            if hasBarSignals then
+                parts[#parts + 1] = "bar=" .. tostring(row.bar.domain or "missing")
+                if row.bar.colorReason then
+                    parts[#parts + 1] = "barColor=" .. tostring(row.bar.colorReason)
+                end
+                if row.bar.auraEffectActive then
+                    parts[#parts + 1] = "barEffect=" .. tostring(row.bar.auraEffectReason or "aura")
+                end
+                if row.bar.pulseActive then
+                    parts[#parts + 1] = "barPulse=" .. tostring(row.bar.pulseMode or true)
+                end
+                if row.bar.colorShiftActive then
+                    parts[#parts + 1] = "barShift=" .. tostring(row.bar.colorShiftMode or true)
+                end
+                if row.bar.stackDisplay then
+                    parts[#parts + 1] = "barStack=" .. tostring(row.bar.stackMode or "default")
+                end
+                if row.bar.gcdSuppressed then
+                    parts[#parts + 1] = "barGCDSuppressed=true"
+                end
+            end
             if row.text and (row.displayMode == "text" or row.text.intentAvailable == true) then
                 local textDomain = row.text.domain
                 if not textDomain and row.text.preservedSecretTextRender == true then
