@@ -13,8 +13,40 @@ local type = type
 local next = next
 local rawget = rawget
 
-local LEGACY_SUPPORT_FLOOR_VERSION = "1.10"
-local LEGACY_UNSUPPORTED_MAX_VERSION = "1.9"
+local IMPORT_CHECKPOINT_KEY = "_cdcImportCheckpoint"
+local IMPORT_CHECKPOINT_VERSION = "1.15"
+local LEGACY_SUPPORT_FLOOR_VERSION = IMPORT_CHECKPOINT_VERSION
+local LEGACY_UNSUPPORTED_MAX_VERSION = "1.14"
+
+local function CompareVersion(left, right)
+    left = tostring(left or "")
+    right = tostring(right or "")
+
+    local leftParts = {}
+    for part in left:gmatch("%d+") do
+        leftParts[#leftParts + 1] = tonumber(part) or 0
+    end
+
+    local rightParts = {}
+    for part in right:gmatch("%d+") do
+        rightParts[#rightParts + 1] = tonumber(part) or 0
+    end
+
+    if #leftParts == 0 or #rightParts == 0 then
+        return nil
+    end
+
+    local maxParts = math.max(#leftParts, #rightParts)
+    for index = 1, maxParts do
+        local leftPart = leftParts[index] or 0
+        local rightPart = rightParts[index] or 0
+        if leftPart ~= rightPart then
+            return leftPart < rightPart and -1 or 1
+        end
+    end
+
+    return 0
+end
 
 local function LooksLikeProfilePayload(profile)
     return rawget(profile, "groups") ~= nil
@@ -47,12 +79,44 @@ function CooldownCompanion:IsUnsupportedLegacyProfile(profile)
         and not next(containers)
 end
 
+function CooldownCompanion:StampImportCheckpoint(payload)
+    if type(payload) == "table" then
+        payload[IMPORT_CHECKPOINT_KEY] = IMPORT_CHECKPOINT_VERSION
+    end
+    return payload
+end
+
+function CooldownCompanion:StampExportPayloadCheckpoint(payload, exportKind)
+    self:StampImportCheckpoint(payload)
+    if exportKind == "diagnostic" and type(payload) == "table" and type(payload.profile) == "table" then
+        self:StampImportCheckpoint(payload.profile)
+    end
+    return payload
+end
+
+function CooldownCompanion:HasSupportedImportCheckpoint(payload)
+    if type(payload) ~= "table" then
+        return false
+    end
+
+    local comparison = CompareVersion(payload[IMPORT_CHECKPOINT_KEY], IMPORT_CHECKPOINT_VERSION)
+    return comparison ~= nil and comparison >= 0
+end
+
+function CooldownCompanion:IsUnsupportedImportPayload(payload)
+    if type(payload) ~= "table" then
+        return false
+    end
+    return self:IsUnsupportedLegacyProfile(payload) or not self:HasSupportedImportCheckpoint(payload)
+end
+
 function CooldownCompanion:GetLegacySupportCutoffMessage(dataLabel)
     dataLabel = dataLabel or "data"
-    return ("This build supports Cooldown Companion %s and newer. This %s appears to come from %s or older. Use an older addon version first if you need to recover it."):format(
+    return ("This build supports Cooldown Companion %s and newer data. This %s appears to come from %s or older. To recover it, load or import it with an older addon version, then export it again after it has been opened by %s."):format(
         LEGACY_SUPPORT_FLOOR_VERSION,
         dataLabel,
-        LEGACY_UNSUPPORTED_MAX_VERSION
+        LEGACY_UNSUPPORTED_MAX_VERSION,
+        LEGACY_SUPPORT_FLOOR_VERSION
     )
 end
 
@@ -123,6 +187,7 @@ function CooldownCompanion:RunAllMigrations()
     self:MigrateResourceBarDisplayProfiles()
     self:MigrateCustomAuraBarsToCustomBars()
     self:MigrateDurationFormatSettings()
+    self:StampImportCheckpoint(self.db and self.db.profile)
     return true
 end
 

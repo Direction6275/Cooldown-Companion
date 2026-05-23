@@ -16,6 +16,14 @@ local PrepareSharedImportText = ST._PrepareSharedImportText
 local decodedDiagnostic = nil
 local diagnosticDecodeFrame = nil
 
+local function RejectUnsupportedImportPayload(data, dataLabel)
+    if CooldownCompanion.IsUnsupportedImportPayload and CooldownCompanion:IsUnsupportedImportPayload(data) then
+        CooldownCompanion:NotifyLegacySupportCutoff(dataLabel)
+        return true
+    end
+    return false
+end
+
 local RESOURCE_NAMES = {
     [0] = "Mana", [1] = "Rage", [2] = "Focus", [3] = "Energy",
     [4] = "Combo Points", [5] = "Runes", [6] = "Runic Power",
@@ -1025,8 +1033,7 @@ StaticPopupDialogs["CDC_DIAGNOSTIC_IMPORT_CONFIRM"] = {
     button2 = "Cancel",
     OnAccept = function()
         if decodedDiagnostic and decodedDiagnostic.profile then
-            if CooldownCompanion:IsUnsupportedLegacyProfile(decodedDiagnostic.profile) then
-                CooldownCompanion:NotifyLegacySupportCutoff("diagnostic profile")
+            if RejectUnsupportedImportPayload(decodedDiagnostic.profile, "diagnostic profile") then
                 return
             end
             local db = CooldownCompanion.db
@@ -1131,6 +1138,11 @@ local function OpenDiagnosticDecodePanel()
         local success, data = DecodeSharedPayload(preparedText)
         if not success or type(data) ~= "table" then
             outputBox:SetText("Error: Failed to deserialize.")
+            return
+        end
+        if RejectUnsupportedImportPayload(data, "diagnostic string") then
+            decodedDiagnostic = nil
+            outputBox:SetText("")
             return
         end
         decodedDiagnostic = data

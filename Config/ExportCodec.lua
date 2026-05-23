@@ -1023,6 +1023,10 @@ local function EncodeSharedPayload(payload, exportKind)
     local exportData = CopyTable(payload)
     local formatVersion = CURRENT_COMPACT_FORMAT_VALUE
 
+    if CooldownCompanion.StampExportPayloadCheckpoint then
+        CooldownCompanion:StampExportPayloadCheckpoint(exportData, exportKind)
+    end
+
     if exportKind == "profile" then
         exportData = CompactProfile(exportData, formatVersion)
     elseif exportKind == "diagnostic" then

@@ -27,6 +27,14 @@ local function TrimPopupText(text)
     return (text:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
+local function RejectUnsupportedImportPayload(data, dataLabel)
+    if CooldownCompanion.IsUnsupportedImportPayload and CooldownCompanion:IsUnsupportedImportPayload(data) then
+        CooldownCompanion:NotifyLegacySupportCutoff(dataLabel)
+        return true
+    end
+    return false
+end
+
 local function ShowPopupOverConfig(which, textArg1, data)
     local showFn = (CS and CS.ShowPopupAboveConfig) or ST._ShowPopupAboveConfig
     if showFn then
@@ -431,6 +439,9 @@ local function DecodeProfileImport(popup)
         CooldownCompanion:Print("Import failed: invalid data.")
         return nil
     end
+    if RejectUnsupportedImportPayload(data, "profile import") then
+        return nil
+    end
     -- Reject narrower exports pasted into the profile import dialog
     if data.type then
         if data.type == "customBars" then
@@ -451,8 +462,7 @@ local function DecodeProfileImport(popup)
         CooldownCompanion:Print("Import failed: profile data is malformed.")
         return nil
     end
-    if CooldownCompanion:IsUnsupportedLegacyProfile(data) then
-        CooldownCompanion:NotifyLegacySupportCutoff("profile import")
+    if RejectUnsupportedImportPayload(data, "profile import") then
         return nil
     end
     return data
@@ -463,8 +473,7 @@ end
 -- their original createdBy so they appear in the browse-other-characters
 -- module instead of being flattened into the current character.
 local function ApplyProfileImport(data)
-    if CooldownCompanion:IsUnsupportedLegacyProfile(data) then
-        CooldownCompanion:NotifyLegacySupportCutoff("profile import")
+    if RejectUnsupportedImportPayload(data, "profile import") then
         return false
     end
 
@@ -1100,6 +1109,9 @@ local function ImportGroupData(text)
     if not success or type(data) ~= "table" then
         return false
     end
+    if RejectUnsupportedImportPayload(data, "group import") then
+        return false
+    end
 
     -- Reject profile exports (no type field)
     if not data.type then
@@ -1287,7 +1299,13 @@ local function ImportCustomBarsData(text)
         return false
     end
     if type(data) ~= "table" or data.type ~= "customBars" then
+        if RejectUnsupportedImportPayload(data, "custom bars import") then
+            return false
+        end
         CooldownCompanion:Print("Import failed: this is not a Custom Bars export.")
+        return false
+    end
+    if RejectUnsupportedImportPayload(data, "custom bars import") then
         return false
     end
 
