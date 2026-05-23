@@ -1184,31 +1184,46 @@ local function CreateConfigPanel()
             local info4 = UIDropDownMenu_CreateInfo()
             info4.text = "  Generate Bug Report"
             info4.notCheckable = true
+            info4.tooltipTitle = "Generate Bug Report"
+            info4.tooltipText = "Creates a compact support report with the most useful current runtime and config details. If possible, select the broken group, panel, or entry before generating it."
+            info4.tooltipOnButton = true
             info4.func = function()
                 CloseDropDownMenus()
-                ShowPopupAboveConfig("CDC_DIAGNOSTIC_EXPORT")
+                ShowPopupAboveConfig("CDC_DIAGNOSTIC_BUG_REPORT")
             end
             UIDropDownMenu_AddButton(info4, level)
 
             local info5 = UIDropDownMenu_CreateInfo()
-            info5.text = "  Replay Tutorial"
+            info5.text = "  Generate Full Dump"
             info5.notCheckable = true
+            info5.tooltipTitle = "Generate Full Dump"
+            info5.tooltipText = "Creates a full diagnostic string with the entire profile included. Use this only when a compact bug report is not enough."
+            info5.tooltipOnButton = true
             info5.func = function()
+                CloseDropDownMenus()
+                ShowPopupAboveConfig("CDC_DIAGNOSTIC_FULL_DUMP")
+            end
+            UIDropDownMenu_AddButton(info5, level)
+
+            local info6 = UIDropDownMenu_CreateInfo()
+            info6.text = "  Replay Tutorial"
+            info6.notCheckable = true
+            info6.func = function()
                 CloseDropDownMenus()
                 if StartFirstIconPanelTutorial then
                     StartFirstIconPanelTutorial(true)
                 end
             end
-            UIDropDownMenu_AddButton(info5, level)
+            UIDropDownMenu_AddButton(info6, level)
 
-            local info6 = UIDropDownMenu_CreateInfo()
-            info6.text = "  Join Discord"
-            info6.notCheckable = true
-            info6.func = function()
+            local info7 = UIDropDownMenu_CreateInfo()
+            info7.text = "  Join Discord"
+            info7.notCheckable = true
+            info7.func = function()
                 CloseDropDownMenus()
                 ShowPopupAboveConfig("CDC_DISCORD_INVITE")
             end
-            UIDropDownMenu_AddButton(info6, level)
+            UIDropDownMenu_AddButton(info7, level)
         end, "MENU")
         CS.gearDropdownFrame:SetFrameStrata("FULLSCREEN_DIALOG")
         ToggleDropDownMenu(1, nil, CS.gearDropdownFrame, gearBtn, 0, 0)

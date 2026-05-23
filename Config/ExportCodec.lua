@@ -999,6 +999,10 @@ local function RehydrateCompactPayload(data, formatVersion)
         return data
     end
 
+    if data.reportKind == "bugReport" then
+        return data
+    end
+
     if data.profile and type(data.profile) == "table" then
         data.profile = RehydrateProfile(data.profile, formatVersion)
         return NormalizeTextureLibraryPayload(data)
