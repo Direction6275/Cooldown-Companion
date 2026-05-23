@@ -5,10 +5,6 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
-local Masque = CooldownCompanion.Masque
-
-local pairs = pairs
-local ipairs = ipairs
 local type = type
 local next = next
 local rawget = rawget
@@ -62,8 +58,61 @@ local function LooksLikeProfilePayload(profile)
         or rawget(profile, "frameAnchoring") ~= nil
 end
 
-function CooldownCompanion:IsUnsupportedLegacyProfile(profile)
+local function HasSupportedCheckpoint(payload)
+    if type(payload) ~= "table" then
+        return false
+    end
+
+    local comparison = CompareVersion(payload[IMPORT_CHECKPOINT_KEY], IMPORT_CHECKPOINT_VERSION)
+    return comparison ~= nil and comparison >= 0
+end
+
+local function GetSavedVariablesProfile(savedVariables, defaultProfile)
+    if type(savedVariables) ~= "table" then
+        return nil
+    end
+
+    if defaultProfile == true then
+        defaultProfile = "Default"
+    end
+
+    local charName = UnitName and UnitName("player")
+    local realmName = GetRealmName and GetRealmName()
+    local charKey = charName and realmName and (charName .. " - " .. realmName)
+    local profileKey = type(savedVariables.profileKeys) == "table"
+        and charKey
+        and savedVariables.profileKeys[charKey]
+        or defaultProfile
+        or charKey
+
+    return type(savedVariables.profiles) == "table" and profileKey and savedVariables.profiles[profileKey] or nil
+end
+
+function CooldownCompanion:InspectSavedProfileCheckpoint(savedVariables, defaultProfile)
+    local state = {
+        hadSavedVariables = type(savedVariables) == "table",
+        profileExisted = false,
+        profileLookedLikePayload = false,
+        profileHadSupportedCheckpoint = false,
+    }
+
+    local profile = GetSavedVariablesProfile(savedVariables, defaultProfile)
+    if type(profile) ~= "table" then
+        return state
+    end
+
+    state.profileExisted = true
+    state.profileLookedLikePayload = LooksLikeProfilePayload(profile)
+    state.profileHadSupportedCheckpoint = HasSupportedCheckpoint(profile)
+    return state
+end
+
+function CooldownCompanion:IsUnsupportedLegacyProfile(profile, allowMissingCheckpoint)
     if type(profile) ~= "table" then return false end
+
+    if LooksLikeProfilePayload(profile) and not HasSupportedCheckpoint(profile) then
+        return not allowMissingCheckpoint
+    end
 
     local groups = profile.groups
     local containers = profile.groupContainers
@@ -95,12 +144,7 @@ function CooldownCompanion:StampExportPayloadCheckpoint(payload, exportKind)
 end
 
 function CooldownCompanion:HasSupportedImportCheckpoint(payload)
-    if type(payload) ~= "table" then
-        return false
-    end
-
-    local comparison = CompareVersion(payload[IMPORT_CHECKPOINT_KEY], IMPORT_CHECKPOINT_VERSION)
-    return comparison ~= nil and comparison >= 0
+    return HasSupportedCheckpoint(payload)
 end
 
 function CooldownCompanion:IsUnsupportedImportPayload(payload)
@@ -124,11 +168,20 @@ function CooldownCompanion:NotifyLegacySupportCutoff(dataLabel)
     self:Print(self:GetLegacySupportCutoffMessage(dataLabel))
 end
 
--- Consolidated entry point: runs all migrations in the correct order.
--- Called from OnEnable, OnProfileChanged, OnProfileCopied, OnProfileReset,
--- and after profile import to ensure every profile is fully migrated.
+-- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles
+-- that are allowed to continue. Add new post-1.15 migrations here in order.
 function CooldownCompanion:RunAllMigrations()
-    if self:IsUnsupportedLegacyProfile(self.db and self.db.profile) then
+    local checkpointState = self._savedProfileCheckpointState
+    local allowMissingCheckpoint = self._allowMissingMigrationCheckpointOnce
+        or (checkpointState and (
+            not checkpointState.hadSavedVariables
+            or not checkpointState.profileExisted
+            or not checkpointState.profileLookedLikePayload
+        ))
+    self._allowMissingMigrationCheckpointOnce = nil
+    self._savedProfileCheckpointState = nil
+
+    if self:IsUnsupportedLegacyProfile(self.db and self.db.profile, allowMissingCheckpoint) then
         self._unsupportedLegacyProfile = true
         if not self._unsupportedLegacyProfileNotified then
             self:NotifyLegacySupportCutoff("profile")
@@ -141,94 +194,11 @@ function CooldownCompanion:RunAllMigrations()
     self._unsupportedLegacyProfileNotified = nil
     self._pendingUnsupportedLegacyHide = nil
 
-    self:MigrateGroupOwnership()
-    self:MigrateFolderOwnership()
-    self:MigrateOrphanedGroups()
-    self:MigrateAlphaSystem()
-    self:MigrateDisplayMode()
-    self:MigrateMasqueField()
-    self:MigrateRemoveBarChargeOldFields()
-    self:MigrateVisibility()
-    self:MigrateStandaloneAuraMetadata()
-    self:MigrateAddedAsClassification()
-    self:MigrateInvertAuraDesaturationLogic()
-    self:MigrateFolders()
-    self:MigrateFolderSpecFilters()
-    self:MigrateContainerHeroTalentStamps()
-    self:ReverseMigrateMW()
-    self:MigrateCustomAuraBarsToSpecKeyed()
-    self:MigrateLSMNames()
-    self:MigrateChargeTextToGroupStyle()
-    self:MigrateProcGlowToStyleOverrides()
-    self:MigrateGlowSettingsToGroupStyle()
-    self:MigrateAuraIndicatorToGroupStyle()
-    self:MigrateAssistedHighlightHostileTargetOnly()
-    self:MigrateBarOrdering()
-    self:MigrateRemoveAuraDurationCache()
-    self:MigrateResourceBarYOffset()
-    self:MigrateLegacyCastBarYOffsetField()
-    self:MigrateResourceAuraOverlayEntries()
-    self:MigrateMaxStacksGlowStyles()
-    self:MigrateTalentConditions()
-    self:MigrateChoiceTalentConditions()
-    self:MigrateNewDefaults()
-    self:MigrateBorderRenderModeOverrides()
-    self:MigrateIconFillTimerDefaults()
-    self:MigrateCharacterScopedBarSettings()
-    self:MigratePanelAnchorCenter()
-    self:MigrateContainerAnchorsToScreenOffsets()
-    self:MigrateContainerAlphaToPanel()
-    self:MigrateStrataOrderExpansion()
-    self:MigrateCustomAuraBarSlots5()
-    self:MigrateLayoutOrderToSpecKeyed()
-    self:MigrateResourceBarExpandedSpecLayouts()
-    self:MigrateBaseSpellResolution()
-    self:MigrateSpecColorsToSpecOverrides()
-    self:MigrateResourceBarDisplayProfiles()
-    self:MigrateCustomAuraBarsToCustomBars()
-    self:MigrateDurationFormatSettings()
     self:StampImportCheckpoint(self.db and self.db.profile)
     return true
 end
 
--- Clear all migration sentinel flags so migrations re-evaluate the actual data.
--- Called before RunAllMigrations() after profile/group/diagnostic import to ensure
--- sentinel flags (from the imported data or prior profile state) don't suppress
--- migrations that need to run on the freshly imported data.
 function CooldownCompanion:ClearMigrationSentinels()
-    local profile = self.db.profile
-    profile.lsmMigrated = nil
-    profile.chargeTextMigrated = nil
-    profile.procGlowOverrideMigrated = nil
-    profile.glowSettingsMigrated = nil
-    profile.auraIndicatorMigrated = nil
-    profile.assistedHighlightHostileTargetOnlyMigrated = nil
-    profile.addedAsClassificationMigrated = nil
-    profile.addedAsClassificationV2Migrated = nil
-    profile.standaloneAuraMetadataMigrated = nil
-    profile.standaloneAuraLinkMetadataMigrated = nil
-    profile.standaloneAuraMetadataV2Migrated = nil
-    profile.invertAuraDesaturationLogicMigrated = nil
-    profile.talentConditionsMigrated = nil
-    profile.choiceTalentConditionsMigrated = nil
-    profile.newDefaultsMigrated = nil
-    profile.borderRenderModeOverridesMigrated = nil
-    profile._migratedContainerAnchorsToScreenOffsets = nil
-    profile._migratedContainerAlphaToPanel = nil
-    profile._migratedContainerHeroTalentStamps = nil
-    profile._migratedPanelAnchorCenter = nil
-    profile._migratedStrataOrder6 = nil
-    profile._migratedCustomAuraSlots5 = nil
-    profile._migratedCustomAuraSlots5v2 = nil
-    profile._migratedBaseSpells = nil
-    profile._migratedIconFillTimerDefaults = nil
-    profile._migratedLayoutOrder = nil
-    profile._migratedResourceBarExpandedSpecLayouts = nil
-    profile._migratedSpecOverrides = nil
-    profile._migratedResourceBarDisplayProfiles = nil
-    profile._migratedResourceBarDisplayProfilesV2 = nil
-    profile._migratedCustomBarsDynamic = nil
-    profile._migratedCustomBarsDynamicV2 = nil
-    profile._migratedDurationFormatSettings = nil
+    -- Kept as the import hook for future post-1.15 migrations.
 end
 

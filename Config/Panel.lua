@@ -2342,8 +2342,12 @@ function CooldownCompanion:SetupConfig()
     AceConfigDialog:AddToBlizOptions(ADDON_NAME, "Cooldown Companion")
 
     -- Profile callbacks to refresh on profile change
-    self.db.RegisterCallback(self, "OnProfileChanged", function()
+    self.db.RegisterCallback(self, "OnProfileChanged", function(db, profileName)
         ResetConfigForProfileChange()
+        local rawProfile = db and db.sv and type(db.sv.profiles) == "table" and db.sv.profiles[profileName]
+        if type(rawProfile) ~= "table" or next(rawProfile) == nil then
+            CooldownCompanion._allowMissingMigrationCheckpointOnce = true
+        end
         if not CooldownCompanion:RunAllMigrations() then
             CooldownCompanion:ClearUnsupportedProfileRuntime()
             if CS.configFrame and CS.configFrame.frame:IsShown() then
@@ -2404,6 +2408,7 @@ function CooldownCompanion:SetupConfig()
     end)
     self.db.RegisterCallback(self, "OnProfileReset", function()
         ResetConfigForProfileChange()
+        CooldownCompanion._allowMissingMigrationCheckpointOnce = true
         if not CooldownCompanion:RunAllMigrations() then
             CooldownCompanion:ClearUnsupportedProfileRuntime()
             if CS.configFrame and CS.configFrame.frame:IsShown() then

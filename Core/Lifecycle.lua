@@ -49,6 +49,9 @@ ST._cdmAlphaGuard = cdmAlphaGuard
 
 function CooldownCompanion:OnInitialize()
     self._hadSavedVariables = type(_G.CooldownCompanionDB) == "table"
+    if self.InspectSavedProfileCheckpoint then
+        self._savedProfileCheckpointState = self:InspectSavedProfileCheckpoint(_G.CooldownCompanionDB, true)
+    end
 
     -- Initialize database
     self.db = LibStub("AceDB-3.0"):New("CooldownCompanionDB", defaults, true)
