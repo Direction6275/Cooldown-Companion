@@ -25,7 +25,6 @@ ignore:
   - README.md
   - LICENSE.txt
   - LICENSE.md
-  - tests
   - .github
   - CLAUDE.md
   - .claude
