@@ -465,6 +465,9 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
             if row.visuals then
                 parts[#parts + 1] = "desat=" .. tostring(row.visuals.desaturationApplied)
                 parts[#parts + 1] = "tint=" .. tostring(row.visuals.tintActive)
+                if row.visuals.tintIntentReason and row.visuals.tintIntentReason ~= "base" then
+                    parts[#parts + 1] = "tintReason=" .. tostring(row.visuals.tintIntentReason)
+                end
                 parts[#parts + 1] = "fill=" .. tostring(row.visuals.iconFillActive)
             end
             if type(row.mismatches) == "table" and #row.mismatches > 0 then
