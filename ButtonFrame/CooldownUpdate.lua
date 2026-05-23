@@ -50,6 +50,7 @@ local ApplyIconCountTextStyle = ST._ApplyIconCountTextStyle
 local UpdateIconModeVisuals = ST._UpdateIconModeVisuals
 local UpdateIconModeGlows = ST._UpdateIconModeGlows
 local CacheButtonBindingKeys = ST._CacheButtonBindingKeys
+local ClearIconFillVisualState = ST._ClearIconFillVisualState
 
 -- Imports from BarMode
 local ApplyBarCountTextStyle = ST._ApplyBarCountTextStyle
@@ -134,10 +135,18 @@ local function ClearConditionalVisualPreviewFields(button)
 end
 
 local function HideIconFillForHiddenButton(button)
+    if type(ClearIconFillVisualState) == "function" then
+        ClearIconFillVisualState(button, button and button.style, nil, true)
+        return
+    end
     if not (button and button.iconFill) then return end
     button.iconFill:Hide()
     button.iconFill:SetScript("OnUpdate", nil)
     button._iconFillOnUpdateInstalled = nil
+    button._iconFillActive = nil
+    button._iconFillMode = nil
+    button._iconFillAuraActive = nil
+    button._iconFillIntent = nil
 end
 
 local function ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)

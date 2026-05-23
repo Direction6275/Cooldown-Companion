@@ -469,6 +469,12 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
                     parts[#parts + 1] = "tintReason=" .. tostring(row.visuals.tintIntentReason)
                 end
                 parts[#parts + 1] = "fill=" .. tostring(row.visuals.iconFillActive)
+                if row.visuals.iconFillIntentMode then
+                    parts[#parts + 1] = "fillMode=" .. tostring(row.visuals.iconFillIntentMode)
+                end
+                if row.visuals.iconFillIntentReason and row.visuals.iconFillIntentReason ~= "inactive" then
+                    parts[#parts + 1] = "fillReason=" .. tostring(row.visuals.iconFillIntentReason)
+                end
             end
             if type(row.mismatches) == "table" and #row.mismatches > 0 then
                 parts[#parts + 1] = "mismatch=" .. table.concat(row.mismatches, ",")

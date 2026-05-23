@@ -31,6 +31,7 @@ local HasItemFallbacks = CooldownCompanion.HasItemFallbacks
 -- Imports from VisualState
 local ClearButtonVisualState = ST._ClearButtonVisualState
 local ResolveIconDesaturationIntent = ST._ResolveIconDesaturationIntent
+local ResolveIconFillIntent = ST._ResolveIconFillIntent
 
 -- Imports from Glows
 local CreateGlowContainer = ST._CreateGlowContainer
@@ -63,8 +64,6 @@ local ApplyDurationFormatToCooldown = CooldownCompanion.ApplyDurationFormatToCoo
 -- IMPORTANT: These tables are read-only — never write to their indices.
 local DEFAULT_WHITE = {1, 1, 1, 1}
 local DEFAULT_AURA_TEXT_COLOR = {0, 0.925, 1, 1}
-local DEFAULT_ICON_FILL_COOLDOWN_COLOR = {0.6, 0.13, 0.18, 0.55}
-local DEFAULT_ICON_FILL_AURA_COLOR = {0.2, 1.0, 0.2, 0.55}
 local ICON_FILL_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 local BLIZZARD_AURA_SWIPE_TEXTURE = "Interface\\HUD\\UI-HUD-CoolDownManager-Icon-Swipe"
 local BLIZZARD_AURA_SWIPE_R = 1
@@ -173,27 +172,6 @@ local function HideBlizzardAuraSwipe(button, style)
             ApplyDefaultCooldownSwipeStyle(button, style)
         end
     end
-end
-
-local function IsIconFillAvailable(button, style)
-    if not (button and button.iconFill and style and style.iconFillEnabled == true) then
-        return false
-    end
-
-    local group = button._groupId
-        and CooldownCompanion.db and CooldownCompanion.db.profile
-        and CooldownCompanion.db.profile.groups
-        and CooldownCompanion.db.profile.groups[button._groupId]
-    if group then
-        if (group.displayMode or "icons") ~= "icons" then
-            return false
-        end
-        if group.masqueEnabled == true then
-            return false
-        end
-    end
-
-    return true
 end
 
 local function ResolveIconFillPreviewRemaining(button)
@@ -314,77 +292,80 @@ local function IconFillOnUpdate(self)
     SetIconFillValue(self._owner)
 end
 
-local function HideIconFill(button, style)
-    if not (button and button.iconFill) then
+local function ClearIconFillVisualState(button, style, preserveIntent, forceClearScript)
+    if not button then
         return
     end
 
-    button.iconFill:Hide()
-    if button._iconFillOnUpdateInstalled then
-        button.iconFill:SetScript("OnUpdate", nil)
-        button._iconFillOnUpdateInstalled = nil
+    local wasActive = button._iconFillActive == true
+    if button.iconFill then
+        button.iconFill:Hide()
+        if forceClearScript == true or button._iconFillOnUpdateInstalled then
+            button.iconFill:SetScript("OnUpdate", nil)
+        end
     end
-    if button._iconFillActive then
-        button._iconFillActive = nil
-        button._iconFillMode = nil
-        button._iconFillAuraActive = nil
-        button._iconFillColorR = nil
-        button._iconFillColorG = nil
-        button._iconFillColorB = nil
-        button._iconFillColorA = nil
+
+    button._iconFillOnUpdateInstalled = nil
+    button._iconFillActive = nil
+    button._iconFillMode = nil
+    button._iconFillAuraActive = nil
+    button._iconFillColorR = nil
+    button._iconFillColorG = nil
+    button._iconFillColorB = nil
+    button._iconFillColorA = nil
+    if not preserveIntent then
+        button._iconFillIntent = nil
+    end
+
+    if wasActive then
         ApplyDefaultCooldownSwipeStyle(button, style)
     end
 end
 
+local function HideIconFill(button, style, preserveIntent)
+    ClearIconFillVisualState(button, style, preserveIntent)
+end
+
 local function UpdateIconFill(button, buttonData, style)
-    if not IsIconFillAvailable(button, style) then
+    if type(ResolveIconFillIntent) ~= "function" then
         HideIconFill(button, style)
         return
     end
 
-    local auraPreview = button._conditionalAuraPreview == true
-        or button._conditionalAuraDurationTextPreview == true
-    local cooldownPreview = button._conditionalPreviewDomain == "cooldown"
-    local mode
-    local color
-
-    if button._auraPrimarySwipeActive == true or auraPreview then
-        color = style.iconFillAuraColor or DEFAULT_ICON_FILL_AURA_COLOR
-        if button._auraHasTimer == false and not auraPreview then
-            mode = "aura_static"
-        else
-            mode = "aura"
-        end
-    elseif cooldownPreview
-        or button._cooldownState == COOLDOWN_STATE_COOLDOWN
-        or (UsesChargeBehavior(buttonData) and button._chargeRecharging == true and button._hideCooldownChargesActive ~= true) then
-        mode = "cooldown"
-        color = style.iconFillCooldownColor or DEFAULT_ICON_FILL_COOLDOWN_COLOR
+    local intent = button._iconFillIntent
+    if type(intent) ~= "table" then
+        intent = {}
+        button._iconFillIntent = intent
     end
 
-    if not mode then
-        HideIconFill(button, style)
+    ResolveIconFillIntent(button, buttonData, style, intent)
+    if intent.active ~= true or not intent.mode then
+        HideIconFill(button, style, true)
         return
     end
 
+    local mode = intent.mode
     button._iconFillActive = true
     button._iconFillMode = mode
-    button._iconFillAuraActive = (mode == "aura" or mode == "aura_static") or nil
+    button._iconFillAuraActive = intent.auraActive == true or nil
     ApplyIconFillGeometry(button, style)
-    local colorA = color[4]
-    if button._iconFillColorR ~= color[1]
-        or button._iconFillColorG ~= color[2]
-        or button._iconFillColorB ~= color[3]
+    local r = intent.r or 1
+    local g = intent.g or 1
+    local b = intent.b or 1
+    local colorA = intent.a or 1
+    if button._iconFillColorR ~= r
+        or button._iconFillColorG ~= g
+        or button._iconFillColorB ~= b
         or button._iconFillColorA ~= colorA then
-        button._iconFillColorR = color[1]
-        button._iconFillColorG = color[2]
-        button._iconFillColorB = color[3]
+        button._iconFillColorR = r
+        button._iconFillColorG = g
+        button._iconFillColorB = b
         button._iconFillColorA = colorA
-        button.iconFill:SetStatusBarColor(color[1], color[2], color[3], colorA)
+        button.iconFill:SetStatusBarColor(r, g, b, colorA)
     end
     SetIconFillValue(button)
     button.iconFill:Show()
-    if mode == "aura_static" then
+    if intent.usesOnUpdate ~= true then
         if button._iconFillOnUpdateInstalled then
             button.iconFill:SetScript("OnUpdate", nil)
             button._iconFillOnUpdateInstalled = nil
@@ -394,9 +375,11 @@ local function UpdateIconFill(button, buttonData, style)
         button._iconFillOnUpdateInstalled = true
     end
 
-    button.cooldown:SetDrawSwipe(false)
-    button.cooldown:SetDrawEdge(false)
-    if button._iconFillAuraActive then
+    if intent.suppressCooldownSwipe == true and button.cooldown then
+        button.cooldown:SetDrawSwipe(false)
+        button.cooldown:SetDrawEdge(false)
+    end
+    if intent.suppressAuraBlizzardSwipe == true then
         HideBlizzardAuraSwipe(button, style)
     end
 end
@@ -1313,6 +1296,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._desaturated = nil
     button._iconDesaturationIntent = nil
     button._iconTintIntent = nil
+    button._iconFillIntent = nil
     button._desatCooldownActive = nil
     button._readyGlowStartTime = nil
     button._readyGlowMaxChargesStartTime = nil
@@ -1363,6 +1347,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._iconFillActive = nil
     button._iconFillMode = nil
     button._iconFillAuraActive = nil
+    button._iconFillColorR = nil
+    button._iconFillColorG = nil
+    button._iconFillColorB = nil
+    button._iconFillColorA = nil
     if button.auraStackCount then button.auraStackCount:SetText("") end
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
@@ -1671,3 +1659,4 @@ end)
 ST._UpdateIconModeVisuals = UpdateIconModeVisuals
 ST._UpdateIconModeGlows = UpdateIconModeGlows
 ST._ApplyIconCountTextStyle = ApplyCountTextStyle
+ST._ClearIconFillVisualState = ClearIconFillVisualState
