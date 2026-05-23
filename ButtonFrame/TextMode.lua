@@ -30,6 +30,7 @@ local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 
 -- Imports from VisualState
 local ClearButtonVisualState = ST._ClearButtonVisualState
+local AreButtonVisualStateSnapshotsEnabled = ST._AreButtonVisualStateSnapshotsEnabled
 
 -- Imports from Glows
 
@@ -270,6 +271,109 @@ local function ResolveTextModeStackDisplay(button)
     return nil, nil
 end
 
+local function ClearTextVisualState(button)
+    if button then
+        button._textVisualIntent = nil
+        button._textVisualApplied = nil
+    end
+end
+
+local function ShouldStoreTextVisualState()
+    return type(AreButtonVisualStateSnapshotsEnabled) == "function"
+        and AreButtonVisualStateSnapshotsEnabled() == true
+end
+
+local function EnsureTextVisualTable(button, fieldName)
+    local target = button[fieldName]
+    if target then
+        wipe(target)
+    else
+        target = {}
+        button[fieldName] = target
+    end
+    return target
+end
+
+local function ResolveTextIntentDomain(button, auraOnlyEntry, auraActive, auraHasTimer, timeRemaining, timeIsSecret, auraRemaining, auraIsSecret)
+    if auraActive then
+        if auraHasTimer and (auraIsSecret or auraRemaining ~= nil) then
+            return "aura-timer"
+        end
+        return "aura-active"
+    end
+
+    if auraOnlyEntry then
+        return "aura-only"
+    end
+
+    if timeIsSecret or (timeRemaining and timeRemaining > 0) then
+        return "cooldown"
+    end
+
+    if button._cooldownDeferred == true then
+        return "deferred"
+    end
+
+    return "ready"
+end
+
+local function StoreTextVisualIntent(button, details)
+    local intent = EnsureTextVisualTable(button, "_textVisualIntent")
+    intent.domain = ResolveTextIntentDomain(
+        button,
+        details.auraOnlyEntry,
+        details.auraActive,
+        details.auraHasTimer,
+        details.timeRemaining,
+        details.timeIsSecret,
+        details.auraRemaining,
+        details.auraIsSecret
+    )
+    intent.available = button._desatCooldownActive ~= true
+    intent.unusable = button._isUnusable == true
+    intent.outOfRange = button._isOutOfRange == true
+    intent.auraActive = details.auraActive == true
+    intent.auraHasTimer = details.auraHasTimer == true
+    intent.timePresent = details.timeIsSecret == true or (details.timeRemaining ~= nil and details.timeRemaining > 0)
+    intent.auraTimePresent = details.auraIsSecret == true or (details.auraRemaining ~= nil and details.auraRemaining > 0)
+    intent.cooldownDeferred = button._cooldownDeferred == true
+    intent.chargeState = button._chargeState
+    intent.currentCharges = details.currentCharges
+    intent.maxCharges = details.maxCharges
+    intent.stackSource = details.stackDisplayKind
+    intent.stackPresent = details.stackDisplayKind ~= nil
+    intent.stackSecret = details.stackDisplayKind ~= nil and issecretvalue(details.stackDisplayText) == true
+    intent.secretDuration = details.secretValue ~= nil
+    intent.secretDurationToken = details.secretColorToken
+    intent.secretStack = details.secretStackValue ~= nil
+    intent.secretName = details.hasSecretNameValue == true
+    intent.hasText = details.text ~= nil and details.text ~= ""
+    intent.pulseActive = details.effectState and details.effectState.pulseActive == true or false
+    return intent
+end
+
+local function StoreTextVisualApplied(button, writePath, text, secretValue, secretStackValue, hasSecretNameValue)
+    local applied = EnsureTextVisualTable(button, "_textVisualApplied")
+    applied.available = true
+    applied.writePath = writePath
+    applied.hasText = text ~= nil and text ~= ""
+    applied.secretDuration = secretValue ~= nil
+    applied.secretStack = secretStackValue ~= nil
+    applied.secretName = hasSecretNameValue == true
+    return applied
+end
+
+local function UpdateTextVisualAppliedPulse(button)
+    local applied = button and button._textVisualApplied
+    if type(applied) ~= "table" then
+        return
+    end
+
+    local es = button._effectState
+    applied.pulseActive = es and es.pulseActive == true or false
+    applied.alpha = applied.pulseActive and es.pulseAlpha or 1.0
+end
+
 ------------------------------------------------------------------------
 -- EVALUATE TOKEN PRESENCE
 -- Returns true if the given token would produce non-empty output.
@@ -328,7 +432,7 @@ end
 -- Builds the final display string from pre-parsed segments.
 -- Returns: displayText, secretValue, secretColorToken, secretStackValue, secretNameValue, hasSecretNameValue
 ------------------------------------------------------------------------
-local function SubstituteTokens(button, segments, style, effectState, secretNameOverride, hasSecretNameOverride)
+local function SubstituteTokens(button, segments, style, effectState, secretNameOverride, hasSecretNameOverride, shouldStoreTextVisualState)
     local buttonData = button.buttonData
     local parts = button._textModeParts
     if parts then
@@ -593,7 +697,30 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
         end
     end
 
-    return table_concat(parts), secretValue, secretColorToken, secretStackValue, secretNameValue, hasSecretNameValue
+    local text = table_concat(parts)
+    if shouldStoreTextVisualState then
+        StoreTextVisualIntent(button, {
+            auraOnlyEntry = auraOnlyEntry,
+            auraActive = auraActive,
+            auraHasTimer = auraHasTimer,
+            timeRemaining = timeRemaining,
+            timeIsSecret = timeIsSecret,
+            auraRemaining = auraRemaining,
+            auraIsSecret = auraIsSecret,
+            currentCharges = currentCharges,
+            maxCharges = maxCharges,
+            stackDisplayKind = stackDisplayKind,
+            stackDisplayText = stackDisplayText,
+            secretValue = secretValue,
+            secretColorToken = secretColorToken,
+            secretStackValue = secretStackValue,
+            hasSecretNameValue = hasSecretNameValue,
+            text = text,
+            effectState = effectState,
+        })
+    end
+
+    return text, secretValue, secretColorToken, secretStackValue, secretNameValue, hasSecretNameValue
 end
 
 ------------------------------------------------------------------------
@@ -602,7 +729,14 @@ end
 ------------------------------------------------------------------------
 local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverride)
     local style = button.style
-    if not style or not button._textSegments then return end
+    if not style or not button._textSegments then
+        ClearTextVisualState(button)
+        return
+    end
+    local shouldStoreTextVisualState = ShouldStoreTextVisualState()
+    if not shouldStoreTextVisualState then
+        ClearTextVisualState(button)
+    end
 
     -- Reset pulse content flag before substitution
     local es = button._effectState
@@ -610,7 +744,7 @@ local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverri
         es.pulseActive = false
     end
 
-    local text, secretValue, secretColorToken, secretStackValue, secretNameValue, hasSecretNameValue = SubstituteTokens(button, button._textSegments, style, es, secretNameOverride, hasSecretNameOverride)
+    local text, secretValue, secretColorToken, secretStackValue, secretNameValue, hasSecretNameValue = SubstituteTokens(button, button._textSegments, style, es, secretNameOverride, hasSecretNameOverride, shouldStoreTextVisualState)
     button._textSecretNameActive = hasSecretNameValue == true
 
     if secretValue or secretStackValue or hasSecretNameValue then
@@ -676,12 +810,18 @@ local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverri
 
         local finalFmt = table_concat(resultParts)
         button.textString:SetFormattedText(finalFmt, unpack(args))
+        if shouldStoreTextVisualState then
+            StoreTextVisualApplied(button, "formatted", text, secretValue, secretStackValue, hasSecretNameValue)
+        end
         wipe(args)
     else
         -- Normal path: full per-token coloring via escape sequences
         local baseColor = style.textFontColor or DEFAULT_WHITE
         button.textString:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
         button.textString:SetText(text)
+        if shouldStoreTextVisualState then
+            StoreTextVisualApplied(button, "text", text, secretValue, secretStackValue, hasSecretNameValue)
+        end
     end
 
     -- Apply pulse alpha effect to the FontString
@@ -691,6 +831,9 @@ local function UpdateTextDisplay(button, secretNameOverride, hasSecretNameOverri
         else
             button.textString:SetAlpha(1.0)
         end
+    end
+    if shouldStoreTextVisualState then
+        UpdateTextVisualAppliedPulse(button)
     end
 
 end
@@ -714,6 +857,11 @@ local function EffectOnUpdate(self, elapsed)
             self.textString:SetAlpha(es.pulseAlpha)
         else
             self.textString:SetAlpha(1.0)
+        end
+        if ShouldStoreTextVisualState() then
+            UpdateTextVisualAppliedPulse(self)
+        else
+            ClearTextVisualState(self)
         end
         return
     end
@@ -748,6 +896,7 @@ local function UpdateTextStyle(button, newStyle)
     if ClearButtonVisualState then
         ClearButtonVisualState(button)
     end
+    ClearTextVisualState(button)
     -- Background
     local bgColor = newStyle.textBgColor or {0, 0, 0, 0}
     button.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
@@ -955,6 +1104,7 @@ end
 ------------------------------------------------------------------------
 ST._UpdateTextDisplay = UpdateTextDisplay
 ST._UpdateTextStyle = UpdateTextStyle
+ST._ClearTextVisualState = ClearTextVisualState
 ST._ParseFormatString = ParseFormatString
 ST._HasAnyEffects = HasAnyEffects
 ST._GetEffectiveTextHeight = GetEffectiveTextHeight

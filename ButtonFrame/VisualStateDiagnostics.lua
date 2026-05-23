@@ -211,10 +211,37 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         auraGlowActive = glows.auraActive,
     }
     row.text = {
+        preservedSecretTextRender = text.preservedSecretTextRender,
+        intentAvailable = text.intentAvailable,
+        appliedAvailable = text.appliedAvailable,
+        domain = text.domain,
         available = text.available,
         unusable = text.unusable,
         outOfRange = text.outOfRange,
+        auraActive = text.auraActive,
+        auraHasTimer = text.auraHasTimer,
+        timePresent = text.timePresent,
+        auraTimePresent = text.auraTimePresent,
+        cooldownDeferred = text.cooldownDeferred,
         chargeState = text.chargeState,
+        currentCharges = text.currentCharges,
+        maxCharges = text.maxCharges,
+        stackSource = text.stackSource,
+        stackPresent = text.stackPresent,
+        stackSecret = text.stackSecret,
+        secretDuration = text.secretDuration,
+        secretDurationToken = text.secretDurationToken,
+        secretStack = text.secretStack,
+        secretName = text.secretName,
+        hasText = text.hasText,
+        pulseActive = text.pulseActive,
+        appliedWritePath = text.appliedWritePath,
+        appliedHasText = text.appliedHasText,
+        appliedSecretDuration = text.appliedSecretDuration,
+        appliedSecretStack = text.appliedSecretStack,
+        appliedSecretName = text.appliedSecretName,
+        appliedPulseActive = text.appliedPulseActive,
+        appliedAlpha = text.appliedAlpha,
         durationObj = text.durationObj ~= nil,
     }
     row.textureEffects = {
@@ -274,6 +301,28 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     CompareValue(row, "text.unusable", text.unusable, IsTrue(button._isUnusable))
     CompareValue(row, "text.outOfRange", text.outOfRange, IsTrue(button._isOutOfRange))
     CompareValue(row, "text.durationObj", text.durationObj ~= nil, button._durationObj ~= nil)
+    local compareVisibleTextIntent = row.displayMode == "text"
+        and row.phase == "post-dispatch"
+        and visibility.hidden ~= true
+    local preservedSecretTextWithoutFreshSidecars = text.preservedSecretTextRender == true
+        and (text.intentAvailable ~= true or text.appliedAvailable ~= true)
+    if compareVisibleTextIntent and not preservedSecretTextWithoutFreshSidecars then
+        if text.intentAvailable ~= true then
+            AddMismatch(row, "text.intent.missing")
+        elseif text.appliedAvailable ~= true then
+            AddMismatch(row, "text.applied.missing")
+        else
+            local expectedWritePath = (text.secretDuration == true or text.secretStack == true or text.secretName == true)
+                and "formatted"
+                or "text"
+            CompareValue(row, "text.writePath", text.appliedWritePath, expectedWritePath)
+            CompareValue(row, "text.hasText", text.appliedHasText, text.hasText)
+            CompareValue(row, "text.secretDuration", text.appliedSecretDuration, text.secretDuration)
+            CompareValue(row, "text.secretStack", text.appliedSecretStack, text.secretStack)
+            CompareValue(row, "text.secretName", text.appliedSecretName, text.secretName)
+            CompareValue(row, "text.pulseActive", text.appliedPulseActive, text.pulseActive)
+        end
+    end
     CompareValue(row, "textureEffects.cooldownActive", textureEffects.cooldownActive, IsTrue(button._desatCooldownActive))
     CompareValue(row, "textureEffects.chargeState", textureEffects.chargeState, button._chargeState)
     CompareValue(row, "textureEffects.procActive", textureEffects.procActive, IsTrue(button._procOverlayActive))

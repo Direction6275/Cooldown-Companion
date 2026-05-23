@@ -476,6 +476,35 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
                     parts[#parts + 1] = "fillReason=" .. tostring(row.visuals.iconFillIntentReason)
                 end
             end
+            if row.text and (row.displayMode == "text" or row.text.intentAvailable == true) then
+                local textDomain = row.text.domain
+                if not textDomain and row.text.preservedSecretTextRender == true then
+                    textDomain = "preserved-secret"
+                end
+                parts[#parts + 1] = "text=" .. tostring(textDomain or "missing")
+                if row.text.appliedWritePath then
+                    parts[#parts + 1] = "textWrite=" .. tostring(row.text.appliedWritePath)
+                end
+                if row.text.stackSource then
+                    parts[#parts + 1] = "stack=" .. tostring(row.text.stackSource)
+                end
+                if row.text.secretDuration or row.text.secretStack or row.text.secretName then
+                    local secretParts = {}
+                    if row.text.secretDuration then
+                        secretParts[#secretParts + 1] = tostring(row.text.secretDurationToken or "duration")
+                    end
+                    if row.text.secretStack then
+                        secretParts[#secretParts + 1] = "stack"
+                    end
+                    if row.text.secretName then
+                        secretParts[#secretParts + 1] = "name"
+                    end
+                    parts[#parts + 1] = "textSecret=" .. table.concat(secretParts, "+")
+                end
+                if row.text.pulseActive then
+                    parts[#parts + 1] = "pulse=true"
+                end
+            end
             if type(row.mismatches) == "table" and #row.mismatches > 0 then
                 parts[#parts + 1] = "mismatch=" .. table.concat(row.mismatches, ",")
             elseif row.missingSnapshot then

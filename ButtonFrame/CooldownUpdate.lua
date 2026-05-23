@@ -2493,6 +2493,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         visualStateContext.forceVisibleByConfig = forceVisibleByConfig
         visualStateContext.forceVisibleByPreview = forceVisibleByPreview
         visualStateContext.forceVisibleByUnlockPreview = forceVisibleByUnlockPreview
+        visualStateContext.preserveSecretTextRender = auraDisplayNameState and auraDisplayNameState.preserveSecretTextRender == true
     end
     -- Track visibility/force-visible state changes for compact layout reflow.
     local visibilityChanged = button._visibilityHidden ~= button._prevVisibilityHidden
