@@ -322,6 +322,13 @@ local function BuildDiagnosticSnapshot(options)
         })
     end
 
+    local otherBarsVisualStateDiagnostics = nil
+    if CooldownCompanion.CaptureOtherBarsVisualStateDiagnostics then
+        otherBarsVisualStateDiagnostics = CooldownCompanion:CaptureOtherBarsVisualStateDiagnostics({
+            maxRows = 16,
+        })
+    end
+
     local loadedAddons = {}
     for i = 1, C_AddOns.GetNumAddOns() do
         local name, title, _, loadable, reason, security = C_AddOns.GetAddOnInfo(i)
@@ -351,6 +358,7 @@ local function BuildDiagnosticSnapshot(options)
         containerFrameStates = containerFrameStates,
         resourceBarRuntime = resourceBarRuntime,
         visualStateDiagnostics = visualStateDiagnostics,
+        otherBarsVisualStateDiagnostics = otherBarsVisualStateDiagnostics,
         loadedAddons = loadedAddons,
     }
 
@@ -658,6 +666,160 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
     end
 end
 
+local function AddOtherBarsVisualStateDiagnosticsLines(add, diagnostics)
+    if not diagnostics then
+        return
+    end
+
+    add("OtherBars Visual State Diagnostics:")
+    add(("  rows=%s mismatched=%s missing=%s refreshedRows=%s cap=%s restored=%s"):format(
+        tostring(diagnostics.rowCount or 0),
+        tostring(diagnostics.mismatchCount or 0),
+        tostring(diagnostics.missingStates or 0),
+        tostring(diagnostics.refreshedRows or 0),
+        tostring(diagnostics.maxRows or "?"),
+        tostring(diagnostics.captureRestored)
+    ))
+    if diagnostics.truncated then
+        add("  truncated=true")
+    end
+    local stack = diagnostics.stack
+    if type(stack) == "table" then
+        add(("  stack applied=%s preview=%s independent=%s orientation=%s bars=%s"):format(
+            tostring(stack.applied),
+            tostring(stack.previewActive),
+            tostring(stack.independentStack),
+            tostring(stack.orientation or "nil"),
+            tostring(stack.barCount or 0)
+        ))
+    end
+
+    if type(diagnostics.rows) ~= "table" or #diagnostics.rows == 0 then
+        return
+    end
+
+    for _, row in ipairs(diagnostics.rows) do
+        local parts = {
+            ("[%s]"):format(tostring(row.index or "?")),
+            tostring(row.rowKind or "?"),
+            tostring(row.barType or "unknown"),
+            "phase=" .. tostring(row.phase or "nil"),
+            row.shown and "shown" or "hidden",
+        }
+        if row.powerType ~= nil then
+            parts[#parts + 1] = "powerType=" .. tostring(row.powerType)
+        end
+        if row.customBarId ~= nil then
+            parts[#parts + 1] = "customBar=" .. tostring(row.customBarId)
+        end
+        if row.spellID ~= nil then
+            parts[#parts + 1] = "spellID=" .. tostring(row.spellID)
+        end
+        local visibility = row.visibility
+        if type(visibility) == "table" and visibility.reason then
+            parts[#parts + 1] = "visibilityReason=" .. tostring(visibility.reason)
+        end
+        local resource = row.resource
+        if type(resource) == "table" then
+            if resource.domain then
+                parts[#parts + 1] = "resource=" .. tostring(resource.domain)
+            end
+            if resource.valuePath then
+                parts[#parts + 1] = "value=" .. tostring(resource.valuePath)
+            end
+            if resource.colorReason then
+                parts[#parts + 1] = "color=" .. tostring(resource.colorReason)
+            end
+            if resource.thresholdActive then
+                parts[#parts + 1] = "threshold=true"
+            end
+            if resource.auraOverride then
+                parts[#parts + 1] = "auraOverride=true"
+            end
+            if resource.auraStackMode then
+                parts[#parts + 1] = "auraStacks=true"
+            end
+        end
+        local health = row.health
+        if type(health) == "table" then
+            if health.valuePath then
+                parts[#parts + 1] = "health=" .. tostring(health.valuePath)
+            end
+            if health.fillColor then
+                parts[#parts + 1] = "fillColor=" .. tostring(health.fillColor)
+            end
+            if health.backgroundColor then
+                parts[#parts + 1] = "bgColor=" .. tostring(health.backgroundColor)
+            end
+        end
+        local custom = row.custom
+        if type(custom) == "table" then
+            if custom.display then
+                parts[#parts + 1] = "customDisplay=" .. tostring(custom.display)
+            end
+            if custom.auraPresent ~= nil then
+                parts[#parts + 1] = "aura=" .. tostring(custom.auraPresent)
+            end
+            if custom.auraSource then
+                parts[#parts + 1] = "auraSource=" .. tostring(custom.auraSource)
+            end
+            if custom.cooldownState then
+                parts[#parts + 1] = "cooldown=" .. tostring(custom.cooldownState)
+            end
+            if custom.inPandemic then
+                parts[#parts + 1] = "pandemic=true"
+            end
+            if custom.valuePath then
+                parts[#parts + 1] = "value=" .. tostring(custom.valuePath)
+            end
+        end
+        local text = row.text
+        if type(text) == "table" then
+            if text.writePath then
+                parts[#parts + 1] = "text=" .. tostring(text.writePath)
+            elseif text.shown ~= nil then
+                parts[#parts + 1] = "textShown=" .. tostring(text.shown)
+            end
+            if text.format then
+                parts[#parts + 1] = "textFormat=" .. tostring(text.format)
+            end
+            if text.durationSecret then
+                parts[#parts + 1] = "textSecret=duration"
+            end
+            if text.durationShown ~= nil then
+                parts[#parts + 1] = "durationText=" .. tostring(text.durationShown)
+            end
+            if text.stackShown ~= nil then
+                parts[#parts + 1] = "stackText=" .. tostring(text.stackShown)
+            end
+        end
+        local effects = row.effects
+        if type(effects) == "table" then
+            local effectParts = {}
+            if effects.lowHealthAlert then effectParts[#effectParts + 1] = "lowHealth" end
+            if effects.incomingHeals then effectParts[#effectParts + 1] = "incoming" end
+            if effects.absorbs then effectParts[#effectParts + 1] = "absorb" end
+            if effects.absorbOverflow then effectParts[#effectParts + 1] = "overflow" end
+            if effects.healAbsorbs then effectParts[#effectParts + 1] = "healAbsorb" end
+            if effects.auraActive then effectParts[#effectParts + 1] = "aura" end
+            if effects.pandemic then effectParts[#effectParts + 1] = "pandemic" end
+            if effects.pulse then effectParts[#effectParts + 1] = "pulse" end
+            if effects.colorShift then effectParts[#effectParts + 1] = "colorShift" end
+            if #effectParts > 0 then
+                parts[#parts + 1] = "effects=" .. table.concat(effectParts, "+")
+            end
+        end
+        if type(row.mismatches) == "table" and #row.mismatches > 0 then
+            parts[#parts + 1] = "mismatch=" .. table.concat(row.mismatches, ",")
+        elseif row.missingState then
+            parts[#parts + 1] = "state=missing"
+        else
+            parts[#parts + 1] = "match=ok"
+        end
+        add("  " .. table.concat(parts, " "))
+    end
+end
+
 local function FormatCountMap(counts)
     if type(counts) ~= "table" then
         return "none"
@@ -720,6 +882,7 @@ local function AddAgentDebugSignals(add, diag)
     local c = diag.config or {}
     local shape = c.profileShape or {}
     local vsd = r.visualStateDiagnostics
+    local obvsd = r.otherBarsVisualStateDiagnostics
 
     add("--- Agent Debug Signals ---")
     add("Profile Shape: panelModes=" .. FormatCountMap(shape.panelModes)
@@ -744,6 +907,14 @@ local function AddAgentDebugSignals(add, diag)
         ))
     else
         add("Visual-State Signal: unavailable")
+    end
+    if obvsd then
+        add(("OtherBars Signal: mismatched=%s missing=%s restored=%s truncated=%s"):format(
+            tostring(obvsd.mismatchCount or 0),
+            tostring(obvsd.missingStates or 0),
+            tostring(obvsd.captureRestored),
+            tostring(obvsd.truncated == true)
+        ))
     end
 
     add("Relevant Addons: " .. FormatRelevantAddonList(r.loadedAddons))
@@ -879,6 +1050,7 @@ local function FormatDiagnosticBugReportAsText(diag)
     end
 
     AddVisualStateDiagnosticsLines(add, r.visualStateDiagnostics)
+    AddOtherBarsVisualStateDiagnosticsLines(add, r.otherBarsVisualStateDiagnostics)
 
     add("")
     add("--- Loaded Addons (" .. tostring(r.loadedAddons and #r.loadedAddons or 0) .. ") ---")
@@ -1091,6 +1263,7 @@ local function FormatDiagnosticAsText(diag)
     end
 
     AddVisualStateDiagnosticsLines(add, r.visualStateDiagnostics)
+    AddOtherBarsVisualStateDiagnosticsLines(add, r.otherBarsVisualStateDiagnostics)
 
     -- Loaded Addons
     add("")

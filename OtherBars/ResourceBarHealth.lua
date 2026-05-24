@@ -27,8 +27,68 @@ local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
 local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local ApplyPixelBorders = RB.ApplyPixelBorders
 local HidePixelBorders = RB.HidePixelBorders
+local StoreOtherBarsVisualState = RB.StoreOtherBarsVisualState
+local AreOtherBarsVisualStateCaptureEnabled = RB.AreOtherBarsVisualStateCaptureEnabled
 
 local HEALTH_EFFECT_JOIN_OVERLAP = 1
+local HealthBar
+local HEALTH_EFFECTS
+
+local function ShouldCaptureOtherBarsVisualState()
+    return type(AreOtherBarsVisualStateCaptureEnabled) == "function"
+        and AreOtherBarsVisualStateCaptureEnabled() == true
+end
+
+local function IsFrameShown(frame)
+    return frame and type(frame.IsShown) == "function" and frame:IsShown() == true or false
+end
+
+local function StoreHealthVisualState(bar, config, maxHealth, currentHealthIsSecret, maxHealthIsSecret)
+    if type(StoreOtherBarsVisualState) ~= "function" or not ShouldCaptureOtherBarsVisualState() then
+        return
+    end
+
+    local textFormat = bar.text and bar.text:IsShown() and bar._textFormat or nil
+    local healthValueIsSecret = currentHealthIsSecret == true or maxHealthIsSecret == true
+    local healthState = {
+        valuePath = healthValueIsSecret and "secret-safe" or "plain",
+        fillColor = HealthBar.IsFillGradientEnabled(config) and "gradient" or "static",
+        backgroundColor = HealthBar.IsBackgroundGradientEnabled(config) and "gradient" or "static",
+    }
+    if not maxHealthIsSecret then
+        healthState.maxAvailable = maxHealth ~= nil
+    end
+
+    StoreOtherBarsVisualState(bar, {
+        phase = "post-dispatch",
+        rowKind = "health",
+        identity = {
+            barType = "health_continuous",
+            powerType = RESOURCE_HEALTH,
+        },
+        visibility = {
+            shown = IsFrameShown(bar),
+            mode = IsFrameShown(bar) and "shown" or "hidden",
+        },
+        health = healthState,
+        text = {
+            shown = textFormat ~= nil,
+            writePath = textFormat and "formatted" or nil,
+            format = textFormat,
+        },
+        effects = {
+            lowHealthAlert = bar.lowHealthAlertBar and bar.lowHealthAlertBar:IsShown() == true or false,
+            incomingHeals = bar.incomingHealBar and bar.incomingHealBar:IsShown() == true or false,
+            absorbs = bar.absorbBar and bar.absorbBar:IsShown() == true or false,
+            absorbOverflow = bar.absorbOverflowBar and bar.absorbOverflowBar:IsShown() == true or false,
+            healAbsorbs = bar.healAbsorbBar and bar.healAbsorbBar:IsShown() == true or false,
+            preview = HEALTH_EFFECTS.preview.lowHealthAlert == true
+                or HEALTH_EFFECTS.preview.incomingHeals == true
+                or HEALTH_EFFECTS.preview.absorbs == true
+                or HEALTH_EFFECTS.preview.healAbsorbs == true,
+        },
+    })
+end
 
 local function EnsureNonNilNumber(value)
     if type(value) == "nil" then
@@ -37,8 +97,8 @@ local function EnsureNonNilNumber(value)
     return value
 end
 
-local HealthBar = {}
-local HEALTH_EFFECTS = {
+HealthBar = {}
+HEALTH_EFFECTS = {
     texture = RB.DEFAULT_HEALTH_EFFECT_TEXTURE or "Solid",
     incomingHealColor = RB.DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
     absorbColor = RB.DEFAULT_HEALTH_ABSORB_COLOR,
@@ -688,6 +748,7 @@ function HealthBar.Update(bar, settings)
 
     local currentHealth = UnitHealth("player")
     local maxHealth = UnitHealthMax("player")
+    local currentHealthIsSecret = issecretvalue and issecretvalue(currentHealth)
     local maxHealthIsSecret = issecretvalue and issecretvalue(maxHealth)
     if not maxHealthIsSecret and (not maxHealth or maxHealth < 1) then
         maxHealth = 1
@@ -724,6 +785,8 @@ function HealthBar.Update(bar, settings)
             bar.text:SetFormattedText("%.0f%%", UnitHealthPercent("player", true, PERCENT_SCALE_CURVE))
         end
     end
+
+    StoreHealthVisualState(bar, config, maxHealth, currentHealthIsSecret, maxHealthIsSecret)
 end
 
 function HealthBar.Style(bar, settings)
