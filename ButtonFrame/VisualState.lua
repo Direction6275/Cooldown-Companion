@@ -522,6 +522,142 @@ local function CopyTriggerVisualState(button, trigger)
     trigger.available = trigger.row ~= nil or trigger.panel ~= nil
 end
 
+local function CopyTextureDisplayVisualState(button, texture)
+    ClearTable(texture)
+
+    local intent = button._textureDisplayIntent
+    local hasIntent = type(intent) == "table"
+    texture.intentAvailable = hasIntent
+    if hasIntent then
+        texture.displayType = intent.displayType
+        texture.hasSettings = intent.hasSettings == true
+        texture.showDisplay = intent.showDisplay == true
+        texture.reason = intent.reason
+        texture.isEditing = intent.isEditing == true
+        texture.isConfigForceVisible = intent.isConfigForceVisible == true
+        texture.isUnlocked = intent.isUnlocked == true
+        texture.isGroupedPreview = intent.isGroupedPreview == true
+        texture.hasPreviewSelection = intent.hasPreviewSelection == true
+        texture.bypassModuleAlpha = intent.bypassModuleAlpha == true
+    else
+        texture.displayType = nil
+        texture.hasSettings = false
+        texture.showDisplay = false
+        texture.reason = nil
+        texture.isEditing = false
+        texture.isConfigForceVisible = false
+        texture.isUnlocked = false
+        texture.isGroupedPreview = false
+        texture.hasPreviewSelection = false
+        texture.bypassModuleAlpha = false
+    end
+
+    local applied = button._textureDisplayApplied
+    local hasApplied = type(applied) == "table"
+    texture.appliedAvailable = hasApplied
+    if hasApplied then
+        texture.appliedRendered = applied.rendered == true
+        texture.appliedShown = applied.shown == true
+        texture.appliedDisplayType = applied.displayType
+        texture.appliedAlpha = applied.alpha
+        texture.appliedDriverAlpha = applied.driverAlpha
+        texture.appliedHasSavedDisplay = applied.hasSavedDisplay == true
+        texture.appliedDragEnabled = applied.dragEnabled == true
+        texture.appliedWrapperManaged = applied.wrapperManaged == true
+    else
+        texture.appliedRendered = false
+        texture.appliedShown = false
+        texture.appliedDisplayType = nil
+        texture.appliedAlpha = nil
+        texture.appliedDriverAlpha = nil
+        texture.appliedHasSavedDisplay = false
+        texture.appliedDragEnabled = false
+        texture.appliedWrapperManaged = false
+    end
+end
+
+local function CopyTextureEffectSections(sourceSections)
+    if type(sourceSections) ~= "table" then
+        return nil
+    end
+
+    local sections = {}
+    local hasSections = false
+    for key, source in pairs(sourceSections) do
+        if type(source) == "table" then
+            sections[key] = {
+                enabled = source.enabled == true,
+                active = source.active == true,
+                reason = source.reason,
+                preview = source.preview == true,
+                effectType = source.effectType,
+                normalizedEffectType = source.normalizedEffectType,
+                combatOnly = source.combatOnly == true,
+                invert = source.invert == true,
+            }
+            hasSections = true
+        end
+    end
+
+    return hasSections and sections or nil
+end
+
+local function CopyTextureEffectsVisualState(button, textureEffects)
+    local intent = button._textureEffectIntent
+    local hasIntent = type(intent) == "table"
+    textureEffects.intentAvailable = hasIntent
+    if hasIntent then
+        textureEffects.hasIndicators = intent.hasIndicators == true
+        textureEffects.freezeGeometryWhileUnlocked = intent.freezeGeometryWhileUnlocked == true
+        textureEffects.pulseActive = intent.pulseActive == true
+        textureEffects.pulseSection = intent.pulseSection
+        textureEffects.colorShiftActive = intent.colorShiftActive == true
+        textureEffects.colorShiftSection = intent.colorShiftSection
+        textureEffects.shrinkExpandActive = intent.shrinkExpandActive == true
+        textureEffects.shrinkExpandSection = intent.shrinkExpandSection
+        textureEffects.bounceActive = intent.bounceActive == true
+        textureEffects.bounceSection = intent.bounceSection
+        textureEffects.sections = CopyTextureEffectSections(intent.sections)
+    else
+        textureEffects.hasIndicators = false
+        textureEffects.freezeGeometryWhileUnlocked = false
+        textureEffects.pulseActive = false
+        textureEffects.pulseSection = nil
+        textureEffects.colorShiftActive = false
+        textureEffects.colorShiftSection = nil
+        textureEffects.shrinkExpandActive = false
+        textureEffects.shrinkExpandSection = nil
+        textureEffects.bounceActive = false
+        textureEffects.bounceSection = nil
+        textureEffects.sections = nil
+    end
+
+    local applied = button._textureEffectApplied
+    local hasApplied = type(applied) == "table"
+    textureEffects.appliedAvailable = hasApplied
+    if hasApplied then
+        textureEffects.appliedPulseActive = applied.pulseActive == true
+        textureEffects.appliedPulseSection = applied.pulseSection
+        textureEffects.appliedColorShiftActive = applied.colorShiftActive == true
+        textureEffects.appliedColorShiftSection = applied.colorShiftSection
+        textureEffects.appliedShrinkExpandActive = applied.shrinkExpandActive == true
+        textureEffects.appliedShrinkExpandSection = applied.shrinkExpandSection
+        textureEffects.appliedBounceActive = applied.bounceActive == true
+        textureEffects.appliedBounceSection = applied.bounceSection
+        textureEffects.appliedFreezeGeometryWhileUnlocked = applied.freezeGeometryWhileUnlocked == true
+    else
+        textureEffects.appliedPulseActive = false
+        textureEffects.appliedPulseSection = nil
+        textureEffects.appliedColorShiftActive = false
+        textureEffects.appliedColorShiftSection = nil
+        textureEffects.appliedShrinkExpandActive = false
+        textureEffects.appliedShrinkExpandSection = nil
+        textureEffects.appliedBounceActive = false
+        textureEffects.appliedBounceSection = nil
+        textureEffects.appliedFreezeGeometryWhileUnlocked = false
+    end
+end
+
 local function ClearButtonVisualState(button)
     if button then
         button._visualState = nil
@@ -530,6 +666,10 @@ local function ClearButtonVisualState(button)
         button._textVisualApplied = nil
         button._barVisualIntent = nil
         button._barVisualApplied = nil
+        button._textureDisplayIntent = nil
+        button._textureDisplayApplied = nil
+        button._textureEffectIntent = nil
+        button._textureEffectApplied = nil
         button._triggerVisualRow = nil
         button._triggerVisualPanel = nil
     end
@@ -718,11 +858,15 @@ local function RefreshButtonVisualState(button, context)
     CopyTextVisualState(button, text, context)
     text.durationObj = button._durationObj
 
+    local texture = EnsureSection(state, "texture")
+    CopyTextureDisplayVisualState(button, texture)
+
     local textureEffects = EnsureSection(state, "textureEffects")
     textureEffects.ready = textureReady
     textureEffects.cooldownActive = state.cooldownVisualActive
     textureEffects.chargeState = button._chargeState
     textureEffects.procActive = IsTrue(button._procOverlayActive)
+    CopyTextureEffectsVisualState(button, textureEffects)
 
     local trigger = EnsureSection(state, "trigger")
     CopyTriggerVisualState(button, trigger)

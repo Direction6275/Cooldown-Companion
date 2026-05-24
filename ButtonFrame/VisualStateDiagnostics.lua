@@ -139,6 +139,7 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     local glows = state.glows or {}
     local bar = state.bar or {}
     local text = state.text or {}
+    local texture = state.texture or {}
     local textureEffects = state.textureEffects or {}
     local trigger = state.trigger or {}
     local tintActive
@@ -296,11 +297,55 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         appliedAlpha = text.appliedAlpha,
         durationObj = text.durationObj ~= nil,
     }
+    row.texture = {
+        intentAvailable = texture.intentAvailable,
+        appliedAvailable = texture.appliedAvailable,
+        displayType = texture.displayType,
+        hasSettings = texture.hasSettings,
+        showDisplay = texture.showDisplay,
+        reason = texture.reason,
+        isEditing = texture.isEditing,
+        isConfigForceVisible = texture.isConfigForceVisible,
+        isUnlocked = texture.isUnlocked,
+        isGroupedPreview = texture.isGroupedPreview,
+        hasPreviewSelection = texture.hasPreviewSelection,
+        bypassModuleAlpha = texture.bypassModuleAlpha,
+        appliedRendered = texture.appliedRendered,
+        appliedShown = texture.appliedShown,
+        appliedDisplayType = texture.appliedDisplayType,
+        appliedAlpha = texture.appliedAlpha,
+        appliedDriverAlpha = texture.appliedDriverAlpha,
+        appliedHasSavedDisplay = texture.appliedHasSavedDisplay,
+        appliedDragEnabled = texture.appliedDragEnabled,
+        appliedWrapperManaged = texture.appliedWrapperManaged,
+    }
     row.textureEffects = {
         ready = textureEffects.ready,
         cooldownActive = textureEffects.cooldownActive,
         chargeState = textureEffects.chargeState,
         procActive = textureEffects.procActive,
+        intentAvailable = textureEffects.intentAvailable,
+        appliedAvailable = textureEffects.appliedAvailable,
+        hasIndicators = textureEffects.hasIndicators,
+        freezeGeometryWhileUnlocked = textureEffects.freezeGeometryWhileUnlocked,
+        pulseActive = textureEffects.pulseActive,
+        pulseSection = textureEffects.pulseSection,
+        colorShiftActive = textureEffects.colorShiftActive,
+        colorShiftSection = textureEffects.colorShiftSection,
+        shrinkExpandActive = textureEffects.shrinkExpandActive,
+        shrinkExpandSection = textureEffects.shrinkExpandSection,
+        bounceActive = textureEffects.bounceActive,
+        bounceSection = textureEffects.bounceSection,
+        appliedPulseActive = textureEffects.appliedPulseActive,
+        appliedPulseSection = textureEffects.appliedPulseSection,
+        appliedColorShiftActive = textureEffects.appliedColorShiftActive,
+        appliedColorShiftSection = textureEffects.appliedColorShiftSection,
+        appliedShrinkExpandActive = textureEffects.appliedShrinkExpandActive,
+        appliedShrinkExpandSection = textureEffects.appliedShrinkExpandSection,
+        appliedBounceActive = textureEffects.appliedBounceActive,
+        appliedBounceSection = textureEffects.appliedBounceSection,
+        appliedFreezeGeometryWhileUnlocked = textureEffects.appliedFreezeGeometryWhileUnlocked,
+        sections = textureEffects.sections,
     }
     if trigger.available == true then
         row.trigger = {
@@ -413,9 +458,42 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
             CompareValue(row, "text.pulseActive", text.appliedPulseActive, text.pulseActive)
         end
     end
+    local compareTextureIntent = row.displayMode == "textures"
+        and (row.phase == "post-dispatch" or row.phase == "hidden")
+    if compareTextureIntent then
+        if texture.intentAvailable ~= true then
+            AddMismatch(row, "texture.intent.missing")
+        elseif texture.appliedAvailable ~= true then
+            AddMismatch(row, "texture.applied.missing")
+        else
+            local liveIntent = button._textureDisplayIntent
+            local liveApplied = button._textureDisplayApplied
+            CompareValue(row, "texture.reason", texture.reason, liveIntent and liveIntent.reason)
+            CompareValue(row, "texture.showDisplay", texture.showDisplay, liveIntent and liveIntent.showDisplay == true)
+            CompareValue(row, "texture.appliedRendered", texture.appliedRendered, liveApplied and liveApplied.rendered == true)
+            CompareValue(row, "texture.appliedShown", texture.appliedShown, liveApplied and liveApplied.shown == true)
+            if texture.appliedRendered == true then
+                CompareValue(row, "texture.displayType", texture.appliedDisplayType, texture.displayType)
+            end
+        end
+    end
     CompareValue(row, "textureEffects.cooldownActive", textureEffects.cooldownActive, IsTrue(button._desatCooldownActive))
     CompareValue(row, "textureEffects.chargeState", textureEffects.chargeState, button._chargeState)
     CompareValue(row, "textureEffects.procActive", textureEffects.procActive, IsTrue(button._procOverlayActive))
+    local compareTextureEffects = row.displayMode == "textures"
+        and texture.appliedRendered == true
+    if compareTextureEffects then
+        if textureEffects.intentAvailable ~= true then
+            AddMismatch(row, "textureEffects.intent.missing")
+        elseif textureEffects.appliedAvailable ~= true then
+            AddMismatch(row, "textureEffects.applied.missing")
+        else
+            CompareValue(row, "textureEffects.pulseActive", textureEffects.appliedPulseActive, textureEffects.pulseActive)
+            CompareValue(row, "textureEffects.colorShiftActive", textureEffects.appliedColorShiftActive, textureEffects.colorShiftActive)
+            CompareValue(row, "textureEffects.shrinkExpandActive", textureEffects.appliedShrinkExpandActive, textureEffects.shrinkExpandActive)
+            CompareValue(row, "textureEffects.bounceActive", textureEffects.appliedBounceActive, textureEffects.bounceActive)
+        end
+    end
     if trigger.available == true then
         local triggerRow = trigger.row
         local liveTriggerRow = button._triggerVisualRow

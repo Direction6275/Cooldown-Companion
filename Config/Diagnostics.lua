@@ -570,6 +570,38 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
                     parts[#parts + 1] = "pulse=true"
                 end
             end
+            if row.texture and (row.displayMode == "textures" or row.texture.intentAvailable == true) then
+                local textureStatus = row.texture.appliedRendered and "shown" or "hidden"
+                if row.texture.reason == "render-failed" then
+                    textureStatus = "render-failed"
+                end
+                parts[#parts + 1] = "texture=" .. textureStatus
+                if row.texture.reason then
+                    parts[#parts + 1] = "textureReason=" .. tostring(row.texture.reason)
+                end
+                if row.texture.appliedDisplayType then
+                    parts[#parts + 1] = "textureDisplay=" .. tostring(row.texture.appliedDisplayType)
+                end
+                if row.texture.appliedAlpha ~= nil then
+                    parts[#parts + 1] = "textureAlpha=" .. tostring(row.texture.appliedAlpha)
+                end
+            end
+            if row.textureEffects and (row.displayMode == "textures" or row.textureEffects.intentAvailable == true) then
+                local effects = {}
+                if row.textureEffects.pulseActive then
+                    effects[#effects + 1] = "pulse"
+                end
+                if row.textureEffects.colorShiftActive then
+                    effects[#effects + 1] = "colorShift"
+                end
+                if row.textureEffects.shrinkExpandActive then
+                    effects[#effects + 1] = "shrinkExpand"
+                end
+                if row.textureEffects.bounceActive then
+                    effects[#effects + 1] = "bounce"
+                end
+                parts[#parts + 1] = "textureEffects=" .. (#effects > 0 and table.concat(effects, "+") or "none")
+            end
             if row.trigger then
                 local panel = row.trigger.panel
                 if type(panel) == "table" then
