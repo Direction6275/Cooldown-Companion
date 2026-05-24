@@ -523,6 +523,55 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
                 if row.visuals.iconFillIntentReason and row.visuals.iconFillIntentReason ~= "inactive" then
                     parts[#parts + 1] = "fillReason=" .. tostring(row.visuals.iconFillIntentReason)
                 end
+                local showGlowDiagnostics = row.displayMode == "icons" and row.phase == "post-dispatch"
+                if showGlowDiagnostics then
+                    local procGlowReason = row.visuals.procGlowReason
+                    if row.visuals.procGlowActive
+                        or row.visuals.procGlowPreview
+                        or row.visuals.procGlowCombatSuppressed then
+                        parts[#parts + 1] = "procGlow=" .. tostring(row.visuals.procGlowActive)
+                        if procGlowReason then
+                            parts[#parts + 1] = "procGlowReason=" .. tostring(procGlowReason)
+                        end
+                    end
+                    local auraGlowReason = row.visuals.auraGlowReason
+                    if row.visuals.auraGlowActive
+                        or row.visuals.auraGlowPandemicIntent
+                        or row.visuals.auraGlowPreview
+                        or row.visuals.auraGlowCombatSuppressed
+                        or auraGlowReason == "target-missing" then
+                        parts[#parts + 1] = "auraGlow=" .. tostring(row.visuals.auraGlowActive)
+                        if row.visuals.auraGlowPandemicIntent or row.visuals.auraGlowPandemicApplied then
+                            parts[#parts + 1] = "pandemicGlow=true"
+                        end
+                        if auraGlowReason then
+                            parts[#parts + 1] = "auraGlowReason=" .. tostring(auraGlowReason)
+                        end
+                    end
+                    local readyGlowReason = row.visuals.readyGlowReason
+                    if row.visuals.readyGlowActive
+                        or row.visuals.readyGlowPreview
+                        or row.visuals.readyGlowCombatSuppressed
+                        or row.visuals.readyGlowSuppressedByProc
+                        or row.visuals.readyGlowAuraSuppressed
+                        or row.visuals.readyGlowMaxCharges
+                        or readyGlowReason == "duration-window" then
+                        parts[#parts + 1] = "readyGlow=" .. tostring(row.visuals.readyGlowActive)
+                        if readyGlowReason then
+                            parts[#parts + 1] = "readyGlowReason=" .. tostring(readyGlowReason)
+                        end
+                        if row.visuals.readyGlowSuppressedByProc then
+                            parts[#parts + 1] = "readySuppressed=proc"
+                        elseif row.visuals.readyGlowAuraSuppressed then
+                            parts[#parts + 1] = "readySuppressed=aura"
+                        elseif row.visuals.readyGlowCombatSuppressed then
+                            parts[#parts + 1] = "readySuppressed=combat"
+                        end
+                        if row.visuals.readyGlowMaxCharges then
+                            parts[#parts + 1] = "readyMaxCharges=true"
+                        end
+                    end
+                end
             end
             local hasBarSignals = row.bar and (row.bar.intentAvailable == true
                 or row.bar.stackDisplay == true

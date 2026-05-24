@@ -11,6 +11,9 @@ local GetButtonVisibilityReasonNames = ST._GetButtonVisibilityReasonNames
 local DEFAULT_ICON_FILL_COOLDOWN_COLOR = {0.6, 0.13, 0.18, 0.55}
 local DEFAULT_ICON_FILL_AURA_COLOR = {0.2, 1.0, 0.2, 0.55}
 local UsesChargeBehavior = CooldownCompanion and CooldownCompanion.UsesChargeBehavior
+local InCombatLockdown = InCombatLockdown
+local GetTime = GetTime
+local UnitExists = UnitExists
 
 local function IsTrue(value)
     return value == true
@@ -82,6 +85,303 @@ local function SetIconFillIntent(target, available, active, reason, mode, color,
     target.g = color and color[2] or nil
     target.b = color and color[3] or nil
     target.a = color and color[4] or nil
+    return target
+end
+
+local function SetGlowIntent(section, available, active, reason)
+    section.available = available == true
+    section.active = active == true
+    section.reason = reason
+    section.preview = false
+    section.combatOnly = false
+    section.combatSuppressed = false
+    section.procOverlayActive = false
+    section.suppressedByProc = false
+    section.auraIndicatorEnabled = false
+    section.invert = false
+    section.pandemic = false
+    section.targetRequired = false
+    section.targetExists = nil
+    section.maxCharges = false
+    section.durationWindow = false
+    section.duration = nil
+    section.startTime = nil
+    section.cooldownSuppressed = false
+    section.auraSuppressed = false
+    return section
+end
+
+local function EnsureGlowSection(target, key)
+    local section = target[key]
+    if type(section) ~= "table" then
+        section = {}
+        target[key] = section
+    end
+    return section
+end
+
+local function IsReadyGlowMaxChargeEligible(buttonData)
+    return buttonData
+        and buttonData.type == "spell"
+        and buttonData.hasCharges == true
+        and not buttonData._hasDisplayCount
+end
+
+local function IsReadyGlowAtMaxCharges(button, buttonData)
+    if not (button and IsReadyGlowMaxChargeEligible(buttonData)) then
+        return false
+    end
+
+    return button._chargeState == CHARGE_STATE_FULL
+end
+
+local function GetTargetExists(options)
+    if options and options.targetExists ~= nil then
+        return options.targetExists == true
+    end
+    if type(UnitExists) == "function" then
+        return UnitExists("target") == true
+    end
+    return false
+end
+
+local function GetResolverCombatState(options)
+    if options and options.inCombat ~= nil then
+        return options.inCombat == true
+    end
+    if type(InCombatLockdown) == "function" then
+        return InCombatLockdown() == true
+    end
+    return false
+end
+
+local function GetResolverTime(options)
+    if options and type(options.now) == "number" then
+        return options.now
+    end
+    if type(GetTime) == "function" then
+        return GetTime()
+    end
+    return 0
+end
+
+local function ResolveAuraIndicatorEnabled(buttonData, style)
+    local auraIndicatorEnabled = buttonData and buttonData.auraIndicatorEnabled and true or false
+    if buttonData
+       and buttonData.overrideSections
+       and buttonData.overrideSections.auraIndicator
+       and style.auraGlowStyle == "none" then
+        auraIndicatorEnabled = false
+    end
+    return auraIndicatorEnabled
+end
+
+local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActive, target, options)
+    target = target or {}
+    style = style or {}
+
+    local proc = EnsureGlowSection(target, "proc")
+    local aura = EnsureGlowSection(target, "aura")
+    local ready = EnsureGlowSection(target, "ready")
+    local inCombat = GetResolverCombatState(options)
+    local now
+    local isSpell = buttonData and buttonData.type == "spell"
+    local isPassive = buttonData and buttonData.isPassive == true
+    local procOverlayShown = procOverlayActive == true
+
+    if type(button) ~= "table" or type(buttonData) ~= "table" then
+        SetGlowIntent(proc, false, false, "invalid")
+        SetGlowIntent(aura, false, false, "invalid")
+        SetGlowIntent(ready, false, false, "invalid")
+        return target
+    end
+
+    if not button.procGlow then
+        SetGlowIntent(proc, false, false, "missing-widget")
+        proc.procOverlayActive = procOverlayShown
+    elseif button._procGlowPreview == true then
+        SetGlowIntent(proc, true, true, "preview")
+        proc.preview = true
+        proc.procOverlayActive = procOverlayShown
+    elseif style.procGlowStyle == "none" then
+        SetGlowIntent(proc, true, false, "disabled")
+        proc.procOverlayActive = procOverlayShown
+    elseif not isSpell then
+        SetGlowIntent(proc, true, false, "not-spell")
+        proc.procOverlayActive = procOverlayShown
+    elseif isPassive then
+        SetGlowIntent(proc, true, false, "passive")
+        proc.procOverlayActive = procOverlayShown
+    elseif button._auraTrackingReady == true then
+        SetGlowIntent(proc, true, false, "aura-tracking")
+        proc.procOverlayActive = procOverlayShown
+    elseif style.procGlowCombatOnly and not inCombat then
+        SetGlowIntent(proc, true, false, "combat-only")
+        proc.combatOnly = true
+        proc.combatSuppressed = true
+        proc.procOverlayActive = procOverlayShown
+    elseif procOverlayShown then
+        SetGlowIntent(proc, true, true, "proc")
+        proc.procOverlayActive = true
+    else
+        SetGlowIntent(proc, true, false, "inactive")
+    end
+
+    local auraIndicatorEnabled = ResolveAuraIndicatorEnabled(buttonData, style)
+    local auraCombatOnly = style.auraGlowCombatOnly
+    local pandemicCombatOnly = style.pandemicGlowCombatOnly
+    local targetExists
+
+    if not button.auraGlow then
+        SetGlowIntent(aura, false, false, "missing-widget")
+        aura.auraIndicatorEnabled = auraIndicatorEnabled
+    elseif button._pandemicPreview == true then
+        SetGlowIntent(aura, true, true, "pandemic-preview")
+        aura.preview = true
+        aura.pandemic = true
+        aura.auraIndicatorEnabled = auraIndicatorEnabled
+    elseif button._auraGlowPreview == true then
+        SetGlowIntent(aura, true, true, "preview")
+        aura.preview = true
+        aura.auraIndicatorEnabled = auraIndicatorEnabled
+    elseif style.auraGlowInvert then
+        if button._auraTrackingReady == true and button._auraSpellID and not button._auraActive then
+            if auraIndicatorEnabled or style.auraGlowStyle ~= "none" then
+                if auraCombatOnly and not inCombat then
+                    SetGlowIntent(aura, true, false, "combat-only")
+                    aura.combatOnly = true
+                    aura.combatSuppressed = true
+                    aura.invert = true
+                    aura.auraIndicatorEnabled = auraIndicatorEnabled
+                else
+                    targetExists = button._auraUnit ~= "target" or GetTargetExists(options)
+                    SetGlowIntent(
+                        aura,
+                        true,
+                        targetExists,
+                        targetExists and "aura-missing" or "target-missing"
+                    )
+                    aura.invert = true
+                    aura.targetRequired = button._auraUnit == "target"
+                    aura.targetExists = targetExists
+                    aura.auraIndicatorEnabled = auraIndicatorEnabled
+                end
+            else
+                SetGlowIntent(aura, true, false, "disabled")
+                aura.invert = true
+                aura.auraIndicatorEnabled = auraIndicatorEnabled
+            end
+        elseif button._auraActive and button._inPandemic and style.showPandemicGlow ~= false then
+            SetGlowIntent(
+                aura,
+                true,
+                not (pandemicCombatOnly and not inCombat),
+                pandemicCombatOnly and not inCombat and "pandemic-combat-only" or "pandemic"
+            )
+            aura.pandemic = true
+            aura.combatOnly = pandemicCombatOnly and true or false
+            aura.combatSuppressed = pandemicCombatOnly and not inCombat
+            aura.invert = true
+            aura.auraIndicatorEnabled = auraIndicatorEnabled
+        else
+            SetGlowIntent(aura, true, false, "inactive")
+            aura.invert = true
+            aura.auraIndicatorEnabled = auraIndicatorEnabled
+        end
+    elseif button._auraActive then
+        if button._inPandemic and style.showPandemicGlow ~= false
+            and not (pandemicCombatOnly and not inCombat) then
+            SetGlowIntent(
+                aura,
+                true,
+                true,
+                "pandemic"
+            )
+            aura.pandemic = true
+            aura.combatOnly = pandemicCombatOnly and true or false
+            aura.combatSuppressed = false
+            aura.auraIndicatorEnabled = auraIndicatorEnabled
+        elseif auraIndicatorEnabled or style.auraGlowStyle ~= "none" then
+            SetGlowIntent(
+                aura,
+                true,
+                not (auraCombatOnly and not inCombat),
+                auraCombatOnly and not inCombat and "combat-only" or "aura"
+            )
+            aura.combatOnly = auraCombatOnly and true or false
+            aura.combatSuppressed = auraCombatOnly and not inCombat
+            aura.auraIndicatorEnabled = auraIndicatorEnabled
+        else
+            SetGlowIntent(aura, true, false, "disabled")
+            aura.auraIndicatorEnabled = auraIndicatorEnabled
+        end
+    else
+        SetGlowIntent(aura, true, false, "aura-missing")
+        aura.auraIndicatorEnabled = auraIndicatorEnabled
+    end
+
+    local procSuppressesReady = procOverlayShown and style.procGlowStyle ~= "none"
+    local auraSuppressesReady = button._auraTrackingReady == true and button._auraActive == true
+    if not button.readyGlow then
+        SetGlowIntent(ready, false, false, "missing-widget")
+    elseif button._readyGlowPreview == true then
+        SetGlowIntent(ready, true, true, "preview")
+        ready.preview = true
+    elseif not style.readyGlowStyle or style.readyGlowStyle == "none" then
+        SetGlowIntent(ready, true, false, "disabled")
+    elseif isPassive then
+        SetGlowIntent(ready, true, false, "passive")
+    elseif button._noCooldown then
+        SetGlowIntent(ready, true, false, "no-cooldown")
+    elseif style.readyGlowCombatOnly and not inCombat then
+        SetGlowIntent(ready, true, false, "combat-only")
+        ready.combatOnly = true
+        ready.combatSuppressed = true
+    elseif button._desatCooldownActive ~= false or button._cooldownState == STATE_COOLDOWN then
+        SetGlowIntent(ready, true, false, "cooldown")
+        ready.cooldownSuppressed = true
+    elseif auraSuppressesReady then
+        SetGlowIntent(ready, true, false, "aura-active")
+        ready.auraSuppressed = true
+    elseif procSuppressesReady then
+        SetGlowIntent(ready, true, false, "proc")
+        ready.suppressedByProc = true
+        ready.procOverlayActive = true
+    elseif style.readyGlowOnlyAtMaxCharges and IsReadyGlowMaxChargeEligible(buttonData) then
+        local dur = style.readyGlowDuration or 0
+        if IsReadyGlowAtMaxCharges(button, buttonData) then
+            if dur > 0 then
+                now = now or GetResolverTime(options)
+                local startTime = button._readyGlowMaxChargesStartTime
+                local inWindow = startTime ~= nil and (now - startTime) <= dur
+                SetGlowIntent(ready, true, inWindow, inWindow and "max-charges" or "duration-window")
+                ready.maxCharges = true
+                ready.durationWindow = true
+                ready.duration = dur
+                ready.startTime = startTime
+            else
+                SetGlowIntent(ready, true, true, "max-charges")
+                ready.maxCharges = true
+            end
+        else
+            SetGlowIntent(ready, true, false, "not-max-charges")
+            ready.maxCharges = true
+        end
+    else
+        local dur = style.readyGlowDuration or 0
+        if dur > 0 then
+            now = now or GetResolverTime(options)
+            local startTime = button._readyGlowStartTime
+            local inWindow = startTime ~= nil and (now - startTime) <= dur
+            SetGlowIntent(ready, true, inWindow, inWindow and "ready" or "duration-window")
+            ready.durationWindow = true
+            ready.duration = dur
+            ready.startTime = startTime
+        else
+            SetGlowIntent(ready, true, true, "ready")
+        end
+    end
+
     return target
 end
 
@@ -664,6 +964,7 @@ local function ClearButtonVisualState(button)
         button._visualStateContext = nil
         button._textVisualIntent = nil
         button._textVisualApplied = nil
+        button._iconGlowIntent = nil
         button._barVisualIntent = nil
         button._barVisualApplied = nil
         button._textureDisplayIntent = nil
@@ -699,6 +1000,8 @@ local function RefreshButtonVisualState(button, context)
     local hasIconTintIntent = type(iconTintIntent) == "table"
     local iconFillIntent = button._iconFillIntent
     local hasIconFillIntent = type(iconFillIntent) == "table"
+    local iconGlowIntent = button._iconGlowIntent
+    local hasIconGlowIntent = type(iconGlowIntent) == "table"
 
     state.version = 1
     state.phase = context.phase
@@ -843,6 +1146,63 @@ local function RefreshButtonVisualState(button, context)
     ready.maxChargesActive = IsTrue(button._readyGlowMaxChargesActive)
 
     local glows = EnsureSection(state, "glows")
+    glows.intentAvailable = hasIconGlowIntent
+    if hasIconGlowIntent then
+        local procIntent = iconGlowIntent.proc or {}
+        glows.procIntentAvailable = procIntent.available == true
+        glows.procIntentActive = procIntent.active == true
+        glows.procReason = procIntent.reason
+        glows.procPreview = procIntent.preview == true
+        glows.procCombatSuppressed = procIntent.combatSuppressed == true
+        glows.procOverlayActive = procIntent.procOverlayActive == true
+
+        local auraIntent = iconGlowIntent.aura or {}
+        glows.auraIntentAvailable = auraIntent.available == true
+        glows.auraIntentActive = auraIntent.active == true
+        glows.auraReason = auraIntent.reason
+        glows.auraPreview = auraIntent.preview == true
+        glows.auraCombatSuppressed = auraIntent.combatSuppressed == true
+        glows.auraPandemicIntent = auraIntent.pandemic == true
+        glows.auraInvert = auraIntent.invert == true
+        glows.auraTargetRequired = auraIntent.targetRequired == true
+        glows.auraTargetExists = auraIntent.targetExists
+
+        local readyIntent = iconGlowIntent.ready or {}
+        glows.readyIntentAvailable = readyIntent.available == true
+        glows.readyIntentActive = readyIntent.active == true
+        glows.readyReason = readyIntent.reason
+        glows.readyPreview = readyIntent.preview == true
+        glows.readyCombatSuppressed = readyIntent.combatSuppressed == true
+        glows.readySuppressedByProc = readyIntent.suppressedByProc == true
+        glows.readyAuraSuppressed = readyIntent.auraSuppressed == true
+        glows.readyMaxCharges = readyIntent.maxCharges == true
+        glows.readyDurationWindow = readyIntent.durationWindow == true
+    else
+        glows.procIntentAvailable = nil
+        glows.procIntentActive = nil
+        glows.procReason = nil
+        glows.procPreview = nil
+        glows.procCombatSuppressed = nil
+        glows.procOverlayActive = nil
+        glows.auraIntentAvailable = nil
+        glows.auraIntentActive = nil
+        glows.auraReason = nil
+        glows.auraPreview = nil
+        glows.auraCombatSuppressed = nil
+        glows.auraPandemicIntent = nil
+        glows.auraInvert = nil
+        glows.auraTargetRequired = nil
+        glows.auraTargetExists = nil
+        glows.readyIntentAvailable = nil
+        glows.readyIntentActive = nil
+        glows.readyReason = nil
+        glows.readyPreview = nil
+        glows.readyCombatSuppressed = nil
+        glows.readySuppressedByProc = nil
+        glows.readyAuraSuppressed = nil
+        glows.readyMaxCharges = nil
+        glows.readyDurationWindow = nil
+    end
     glows.procActive = IsTrue(button._procGlowActive)
     glows.auraActive = IsTrue(button._auraGlowActive)
     glows.auraPandemic = IsTrue(button._auraGlowPandemic)
@@ -896,3 +1256,4 @@ ST._ClearButtonVisualState = ClearButtonVisualState
 ST._SetButtonVisualStateSnapshotsEnabled = SetButtonVisualStateSnapshotsEnabled
 ST._AreButtonVisualStateSnapshotsEnabled = AreButtonVisualStateSnapshotsEnabled
 ST._ResolveIconFillIntent = ResolveIconFillIntent
+ST._ResolveIconGlowIntent = ResolveIconGlowIntent
