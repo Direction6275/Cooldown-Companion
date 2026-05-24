@@ -316,7 +316,6 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         appliedSecretName = text.appliedSecretName,
         appliedPulseActive = text.appliedPulseActive,
         appliedAlpha = text.appliedAlpha,
-        durationObj = text.durationObj ~= nil,
     }
     row.texture = {
         intentAvailable = texture.intentAvailable,
@@ -442,9 +441,6 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         end
         CompareValue(row, "glows.ready.intent", glows.readyIntentActive, glows.readyActive)
     end
-    CompareValue(row, "text.unusable", text.unusable, IsTrue(button._isUnusable))
-    CompareValue(row, "text.outOfRange", text.outOfRange, IsTrue(button._isOutOfRange))
-    CompareValue(row, "text.durationObj", text.durationObj ~= nil, button._durationObj ~= nil)
     local compareVisibleTextIntent = row.displayMode == "text"
         and row.phase == "post-dispatch"
         and visibility.hidden ~= true
@@ -457,10 +453,6 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         elseif bar.appliedAvailable ~= true then
             AddMismatch(row, "bar.applied.missing")
         else
-            CompareValue(row, "bar.appliedAuraEffectActive", bar.appliedAuraEffectActive, IsTrue(button._barAuraEffectActive))
-            CompareValue(row, "bar.appliedPulseActive", bar.appliedPulseActive, IsTrue(button._barPulseActive))
-            CompareValue(row, "bar.appliedColorShiftActive", bar.appliedColorShiftActive, IsTrue(button._barColorShiftActive))
-            CompareValue(row, "bar.appliedGcdSuppressed", bar.appliedGcdSuppressed, IsTrue(button._barGCDSuppressed))
             CompareValue(row, "bar.colorReason", bar.appliedColorReason, bar.colorReason)
             CompareValue(row, "bar.auraEffectActive", bar.appliedAuraEffectActive, bar.auraEffectActive)
             CompareValue(row, "bar.pulseActive", bar.appliedPulseActive, bar.pulseActive)

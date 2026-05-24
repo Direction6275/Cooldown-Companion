@@ -125,7 +125,6 @@ end
 
 local function StoreBarDisplayVisualState(button, details)
     local intent = EnsureBarVisualTable(button, "_barVisualIntent")
-    intent.available = true
     intent.domain = details.domain
     intent.onCooldown = details.onCooldown == true
     intent.chargeState = details.chargeState
@@ -146,7 +145,6 @@ local function StoreBarDisplayVisualState(button, details)
     CopyColor(intent, "colorShiftTarget", details.colorShiftTargetColor)
 
     local applied = EnsureBarVisualTable(button, "_barVisualApplied")
-    applied.available = true
     applied.colorReason = details.colorReason
     applied.auraColorActive = button._barAuraColor ~= nil
     applied.auraEffectActive = button._barAuraEffectActive == true

@@ -354,7 +354,6 @@ end
 
 local function StoreTextVisualApplied(button, writePath, text, secretValue, secretStackValue, hasSecretNameValue)
     local applied = EnsureTextVisualTable(button, "_textVisualApplied")
-    applied.available = true
     applied.writePath = writePath
     applied.hasText = text ~= nil and text ~= ""
     applied.secretDuration = secretValue ~= nil
@@ -1104,7 +1103,6 @@ end
 ------------------------------------------------------------------------
 ST._UpdateTextDisplay = UpdateTextDisplay
 ST._UpdateTextStyle = UpdateTextStyle
-ST._ClearTextVisualState = ClearTextVisualState
 ST._ParseFormatString = ParseFormatString
 ST._HasAnyEffects = HasAnyEffects
 ST._GetEffectiveTextHeight = GetEffectiveTextHeight
