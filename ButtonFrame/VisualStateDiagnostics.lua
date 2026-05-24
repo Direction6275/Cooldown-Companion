@@ -140,6 +140,7 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     local bar = state.bar or {}
     local text = state.text or {}
     local textureEffects = state.textureEffects or {}
+    local trigger = state.trigger or {}
     local tintActive
     if tint.intentAvailable == true then
         tintActive = IsTrue(tint.intentActive)
@@ -301,6 +302,12 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         chargeState = textureEffects.chargeState,
         procActive = textureEffects.procActive,
     }
+    if trigger.available == true then
+        row.trigger = {
+            row = trigger.row,
+            panel = trigger.panel,
+        }
+    end
 
     CompareValue(row, "cooldown.state", cooldown.state, button._cooldownState)
     CompareValue(row, "cooldown.active", cooldown.active, button._cooldownState == STATE_COOLDOWN)
@@ -409,6 +416,25 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     CompareValue(row, "textureEffects.cooldownActive", textureEffects.cooldownActive, IsTrue(button._desatCooldownActive))
     CompareValue(row, "textureEffects.chargeState", textureEffects.chargeState, button._chargeState)
     CompareValue(row, "textureEffects.procActive", textureEffects.procActive, IsTrue(button._procOverlayActive))
+    if trigger.available == true then
+        local triggerRow = trigger.row
+        local liveTriggerRow = button._triggerVisualRow
+        if type(triggerRow) == "table" then
+            CompareValue(row, "trigger.row.index", triggerRow.rowIndex, liveTriggerRow and liveTriggerRow.rowIndex)
+            CompareValue(row, "trigger.row.reason", triggerRow.reason, liveTriggerRow and liveTriggerRow.reason)
+            CompareValue(row, "trigger.row.matched", triggerRow.matched, liveTriggerRow and liveTriggerRow.matched == true)
+        end
+
+        local triggerPanel = trigger.panel
+        local liveTriggerPanel = button._triggerVisualPanel
+        if type(triggerPanel) == "table" then
+            CompareValue(row, "trigger.panel.matched", triggerPanel.matched, liveTriggerPanel and liveTriggerPanel.matched == true)
+            CompareValue(row, "trigger.panel.showDisplay", triggerPanel.showDisplay, liveTriggerPanel and liveTriggerPanel.showDisplay == true)
+            CompareValue(row, "trigger.panel.displayReason", triggerPanel.displayReason, liveTriggerPanel and liveTriggerPanel.displayReason)
+            CompareValue(row, "trigger.panel.effectsActive", triggerPanel.effectsActive, liveTriggerPanel and liveTriggerPanel.effectsActive == true)
+            CompareValue(row, "trigger.panel.soundVisible", triggerPanel.soundVisible, liveTriggerPanel and liveTriggerPanel.soundVisible == true)
+        end
+    end
 
     return row
 end
