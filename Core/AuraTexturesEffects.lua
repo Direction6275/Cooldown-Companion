@@ -54,51 +54,6 @@ local GetStretchMultiplier = AT.GetStretchMultiplier
 local RotateOffset = AT.RotateOffset
 local ResolveGroup = AT.ResolveGroup
 
-local function ShouldCaptureButtonVisualState()
-    local isEnabled = ST._AreButtonVisualStateSnapshotsEnabled
-    return type(isEnabled) == "function" and isEnabled() == true
-end
-
-local function ClearTriggerVisualRows(runtimeButtons)
-    if type(runtimeButtons) ~= "table" then
-        return
-    end
-
-    for _, button in ipairs(runtimeButtons) do
-        if type(button) == "table" then
-            button._triggerVisualRow = nil
-            button._triggerVisualPanel = nil
-        end
-    end
-end
-
-local function AssignTriggerVisualPanel(frame, panelState)
-    if frame then
-        frame._triggerVisualPanel = panelState
-    end
-
-    local runtimeButtons = frame and frame.buttons
-    if type(runtimeButtons) ~= "table" then
-        return
-    end
-
-    for _, button in ipairs(runtimeButtons) do
-        if type(button) == "table" then
-            button._triggerVisualPanel = panelState
-        end
-    end
-end
-
-local function FinishTriggerPanelMatch(frame, panelState, matched, reason)
-    if panelState then
-        panelState.matched = matched == true
-        panelState.reason = reason
-        panelState.matchReason = reason
-        AssignTriggerVisualPanel(frame, panelState)
-    end
-    return matched == true
-end
-
 local function ApplyTextureSource(texture, settings)
     local resolvedSourceType, resolvedSourceValue = CooldownCompanion:ResolveAuraTextureAsset(
         settings.sourceType,
@@ -566,26 +521,6 @@ local function StopAllTextureIndicatorEffects(host)
     SetTextureIndicatorBaseVisuals(host)
 end
 
-local function SetTextureEffectFlag(target, effectType, sectionKey, active)
-    if not target or not effectType then
-        return
-    end
-
-    if effectType == TEXTURE_INDICATOR_EFFECT_PULSE then
-        target.pulseActive = active == true
-        target.pulseSection = active and sectionKey or nil
-    elseif effectType == TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT then
-        target.colorShiftActive = active == true
-        target.colorShiftSection = active and sectionKey or nil
-    elseif effectType == TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND then
-        target.shrinkExpandActive = active == true
-        target.shrinkExpandSection = active and sectionKey or nil
-    elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE then
-        target.bounceActive = active == true
-        target.bounceSection = active and sectionKey or nil
-    end
-end
-
 local function FinishTextureIndicatorSectionState(target, active, reason, preview, effectType)
     if target then
         target.active = active == true
@@ -808,23 +743,15 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
     return false
 end
 
-local function DoesTriggerPanelMatch(frame, captureDetails)
+local function DoesTriggerPanelMatch(frame)
     if not frame then
         return false
     end
 
     local group = frame.groupId and ResolveGroup(frame.groupId) or nil
     local configuredRows = group and group.buttons
-    captureDetails = captureDetails == true or ShouldCaptureButtonVisualState()
-    local panelState
-    if captureDetails then
-        panelState = {
-            rowCount = type(configuredRows) == "table" and #configuredRows or 0,
-            rows = {},
-        }
-    end
     if type(configuredRows) ~= "table" or #configuredRows == 0 then
-        return FinishTriggerPanelMatch(frame, panelState, false, "missing-config")
+        return false
     end
 
     local runtimeButtonsByIndex = frame._triggerRuntimeButtonsByIndex
@@ -839,79 +766,29 @@ local function DoesTriggerPanelMatch(frame, captureDetails)
             runtimeButtonsByIndex[button.index] = button
         end
     end
-    if panelState then
-        panelState.runtimeRowCount = type(frame.buttons) == "table" and #frame.buttons or 0
-        ClearTriggerVisualRows(frame.buttons)
-    end
 
     local activeRowCount = 0
-    local function finish(matched, reason)
-        if panelState then
-            panelState.activeRowCount = activeRowCount
-        end
-        return FinishTriggerPanelMatch(frame, panelState, matched, reason)
-    end
-
     for rowIndex, buttonData in ipairs(configuredRows) do
-        local rowState
-        if panelState then
-            rowState = {
-                rowIndex = rowIndex,
-                enabled = type(buttonData) == "table" and buttonData.enabled ~= false or false,
-            }
-            panelState.rows[#panelState.rows + 1] = rowState
-        end
-
         if type(buttonData) ~= "table" then
-            if rowState then
-                rowState.matched = false
-                rowState.reason = "invalid-row"
-            end
-            return finish(false, "invalid-row")
+            return false
         end
 
-        if buttonData.enabled == false then
-            if rowState then
-                rowState.skipped = true
-                rowState.reason = "disabled"
-            end
-        else
+        if buttonData.enabled ~= false then
             local clauses = CooldownCompanion:GetTriggerConditionClauses(buttonData)
             activeRowCount = activeRowCount + 1
-            if rowState then
-                rowState.active = true
-                rowState.conditionCount = #clauses
-            end
-
             if #clauses == 0 then
-                if rowState then
-                    rowState.matched = false
-                    rowState.reason = "no-conditions"
-                end
-                return finish(false, "no-conditions")
+                return false
             end
 
             local runtimeButton = runtimeButtonsByIndex[rowIndex]
             if not runtimeButton then
-                if rowState then
-                    rowState.matched = false
-                    rowState.reason = "missing-runtime"
-                end
-                return finish(false, "missing-runtime")
-            end
-            if rowState then
-                rowState.hasRuntime = true
-                runtimeButton._triggerVisualRow = rowState
+                return false
             end
 
             for _, clause in ipairs(clauses) do
                 local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
                 if not conditionKey then
-                    if rowState then
-                        rowState.matched = false
-                        rowState.reason = "invalid-condition"
-                    end
-                    return finish(false, "invalid-condition")
+                    return false
                 end
 
                 local actualState = EvaluateTriggerRowCondition(runtimeButton, conditionKey)
@@ -925,43 +802,14 @@ local function DoesTriggerPanelMatch(frame, captureDetails)
                     conditionMatched = actualState == expectedState
                 end
 
-                if rowState then
-                    local conditions = rowState.conditions
-                    if type(conditions) ~= "table" then
-                        conditions = {}
-                        rowState.conditions = conditions
-                    end
-                    conditions[#conditions + 1] = {
-                        key = conditionKey,
-                        expected = expectedState,
-                        actual = actualState,
-                        matched = conditionMatched,
-                    }
-                end
-
                 if not conditionMatched then
-                    if rowState then
-                        rowState.matched = false
-                        rowState.reason = "condition-mismatch"
-                        rowState.failedConditionKey = conditionKey
-                        rowState.expected = expectedState
-                        rowState.actual = actualState
-                    end
-                    return finish(false, "condition-mismatch")
+                    return false
                 end
-            end
-
-            if rowState then
-                rowState.matched = true
-                rowState.reason = "matched"
             end
         end
     end
 
-    return finish(
-        activeRowCount > 0,
-        activeRowCount > 0 and "matched" or "no-active-rows"
-    )
+    return activeRowCount > 0
 end
 
 local function ApplyTextureIndicatorEffects(host, button, group)
@@ -969,36 +817,13 @@ local function ApplyTextureIndicatorEffects(host, button, group)
         return
     end
 
-    local captureVisualState = ShouldCaptureButtonVisualState()
     local freezeGeometryWhileUnlocked = group.locked == false
-    local intentState
-    local appliedState
-    local effectSources
-    if captureVisualState then
-        intentState = {
-            hasIndicators = false,
-            freezeGeometryWhileUnlocked = freezeGeometryWhileUnlocked,
-            sections = {},
-        }
-        appliedState = {
-            freezeGeometryWhileUnlocked = freezeGeometryWhileUnlocked,
-        }
-        effectSources = {}
-    end
 
     local indicators = CooldownCompanion:GetTexturePanelIndicatorSettings(group)
     if not indicators then
         StopAllTextureIndicatorEffects(host)
-        if captureVisualState then
-            button._textureEffectIntent = intentState
-            button._textureEffectApplied = appliedState
-        end
         return
     end
-    if intentState then
-        intentState.hasIndicators = true
-    end
-
     local effectStates = host._textureIndicatorEffectStates
     if effectStates then
         wipe(effectStates)
@@ -1008,28 +833,12 @@ local function ApplyTextureIndicatorEffects(host, button, group)
     end
     for _, sectionKey in ipairs(TEXTURE_INDICATOR_SECTION_ORDER) do
         local config = indicators[sectionKey]
-        local sectionTarget = intentState and {} or nil
-        local active, effectType, sectionState = ResolveTextureIndicatorSectionState(button, sectionKey, config, sectionTarget)
-        if intentState and sectionState then
-            intentState.sections[sectionKey] = sectionState
-        end
+        local active, effectType = ResolveTextureIndicatorSectionState(button, sectionKey, config)
         if active then
             if effectType and effectType ~= TEXTURE_INDICATOR_EFFECT_NONE and not effectStates[effectType] then
                 effectStates[effectType] = config
-                if effectSources then
-                    effectSources[effectType] = sectionKey
-                end
             end
         end
-    end
-
-    if intentState then
-        SetTextureEffectFlag(intentState, TEXTURE_INDICATOR_EFFECT_PULSE, effectSources[TEXTURE_INDICATOR_EFFECT_PULSE], effectStates[TEXTURE_INDICATOR_EFFECT_PULSE] ~= nil)
-        SetTextureEffectFlag(intentState, TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT, effectSources[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT], effectStates[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT] ~= nil)
-        SetTextureEffectFlag(intentState, TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND, effectSources[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND], (not freezeGeometryWhileUnlocked) and effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND] ~= nil)
-        SetTextureEffectFlag(intentState, TEXTURE_INDICATOR_EFFECT_BOUNCE, effectSources[TEXTURE_INDICATOR_EFFECT_BOUNCE], (not freezeGeometryWhileUnlocked) and effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE] ~= nil)
-        intentState.shrinkExpandSuppressedByUnlock = freezeGeometryWhileUnlocked and effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND] ~= nil or false
-        intentState.bounceSuppressedByUnlock = freezeGeometryWhileUnlocked and effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE] ~= nil or false
     end
 
     local bounceAmplitude = math_max(
@@ -1067,14 +876,6 @@ local function ApplyTextureIndicatorEffects(host, button, group)
         StopTextureColorShift(host)
     end
 
-    if appliedState then
-        SetTextureEffectFlag(appliedState, TEXTURE_INDICATOR_EFFECT_PULSE, effectSources[TEXTURE_INDICATOR_EFFECT_PULSE], effectStates[TEXTURE_INDICATOR_EFFECT_PULSE] ~= nil)
-        SetTextureEffectFlag(appliedState, TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT, effectSources[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT], colorShift ~= nil)
-        SetTextureEffectFlag(appliedState, TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND, effectSources[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND], (not freezeGeometryWhileUnlocked) and effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND] ~= nil)
-        SetTextureEffectFlag(appliedState, TEXTURE_INDICATOR_EFFECT_BOUNCE, effectSources[TEXTURE_INDICATOR_EFFECT_BOUNCE], (not freezeGeometryWhileUnlocked) and effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE] ~= nil)
-        button._textureEffectIntent = intentState
-        button._textureEffectApplied = appliedState
-    end
 end
 
 function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effectsActive)

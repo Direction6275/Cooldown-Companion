@@ -156,74 +156,6 @@ local activeCustomAuraBarPandemicPreviews = {}
 local segmentedUpdateScratch = { auraActiveCache = {} }
 local HealthBar = RB.HealthBar
 local HEALTH_EFFECTS = RB.HealthEffects
-local StoreOtherBarsVisualState = RB.StoreOtherBarsVisualState
-local ClearOtherBarsVisualState = RB.ClearOtherBarsVisualState
-local SetOtherBarsVisualStateCaptureEnabled = RB.SetOtherBarsVisualStateCaptureEnabled
-local AreOtherBarsVisualStateCaptureEnabled = RB.AreOtherBarsVisualStateCaptureEnabled
-local CollectOtherBarsVisualStateDiagnostics = RB.CollectOtherBarsVisualStateDiagnostics
-local ClearCapturedOtherBarsVisualStates = RB.ClearCapturedOtherBarsVisualStates
-
-local function ShouldCaptureOtherBarsVisualState()
-    return type(AreOtherBarsVisualStateCaptureEnabled) == "function"
-        and AreOtherBarsVisualStateCaptureEnabled() == true
-end
-
-local function IsFrameShown(frame)
-    return frame and type(frame.IsShown) == "function" and frame:IsShown() == true or false
-end
-
-local function StoreResourceBarVisualState(frame, barType, powerType, details)
-    if type(StoreOtherBarsVisualState) ~= "function" or not frame then
-        return
-    end
-    details = details or {}
-    details.rowKind = barType == "health_continuous" and "health" or "resource"
-    details.identity = {
-        barType = barType,
-        powerType = powerType,
-    }
-    details.visibility = details.visibility or {
-        shown = IsFrameShown(frame),
-        mode = IsFrameShown(frame) and "shown" or "hidden",
-    }
-    StoreOtherBarsVisualState(frame, details)
-end
-
-local function StoreSegmentedResourceVisualState(
-    holder,
-    powerType,
-    useAuraStackMode,
-    auraOverrideColor,
-    domain,
-    currentValue,
-    maxValue,
-    colorReason,
-    thresholdActive,
-    clearText
-)
-    if not ShouldCaptureOtherBarsVisualState() then
-        return
-    end
-
-    StoreResourceBarVisualState(holder, "segmented", powerType, {
-        phase = "post-dispatch",
-        resource = {
-            domain = domain or "segmented",
-            valuePath = clearText and "secret-safe" or "plain",
-            current = currentValue,
-            max = maxValue,
-            segments = holder and holder.segments and #holder.segments or nil,
-            colorReason = colorReason or (useAuraStackMode and "aura-stacks" or (auraOverrideColor and "aura" or "resource")),
-            thresholdActive = thresholdActive == true,
-            auraOverride = auraOverrideColor ~= nil,
-            auraStackMode = useAuraStackMode == true,
-        },
-        text = {
-            shown = holder and holder.text and holder.text:IsShown() == true or false,
-            writePath = clearText and "cleared" or "segmented",
-        },
-    })
-end
 
 local function HasCustomAuraBarAuraVisuals(cabConfig)
     return cabConfig and (cabConfig.barAuraEffect or "none") ~= "none"
@@ -495,9 +427,6 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     frame._parsedCustomBarAuraIDsRaw = nil
     frame._parsedCustomBarAuraIDsSpellID = nil
     frame._parsedCustomBarAuraIDsIncludeSpellID = nil
-    if type(ClearOtherBarsVisualState) == "function" then
-        ClearOtherBarsVisualState(frame)
-    end
     frame:SetAlpha(1)
 end
 
@@ -883,24 +812,6 @@ local function UpdateContinuousBar(bar, powerType, settings, auraActiveCache)
         end
     end
 
-    if ShouldCaptureOtherBarsVisualState() then
-        local textFormat = bar.text and bar.text:IsShown() and bar._textFormat or nil
-        StoreResourceBarVisualState(bar, "continuous", powerType, {
-            phase = "post-dispatch",
-            resource = {
-                domain = "power",
-                valuePath = (IsUnitPowerSecret("player", powerType) or maxPowerIsSecret) and "secret-safe" or "plain",
-                colorReason = auraOverrideColor and "aura" or "resource",
-                tickMarker = bar.tickMarker and bar.tickMarker:IsShown() == true or false,
-            },
-            text = {
-                shown = textFormat ~= nil,
-                writePath = textFormat and "formatted" or nil,
-                format = textFormat,
-            },
-        })
-    end
-
 end
 
 ------------------------------------------------------------------------
@@ -958,30 +869,6 @@ local function UpdateStaggerBar(bar, settings)
                 bar.text:SetFormattedText("%d / %d", staggerAmount, maxHealth)
             end
         end
-    end
-    if ShouldCaptureOtherBarsVisualState() then
-        local textFormat = bar.text and bar.text:IsShown() and bar._textFormat or nil
-        local colorReason = "stagger-low"
-        if isSecret then
-            colorReason = "secret-safe"
-        elseif percent and percent >= 60 then
-            colorReason = "stagger-high"
-        elseif percent and percent >= 30 then
-            colorReason = "stagger-medium"
-        end
-        StoreResourceBarVisualState(bar, "stagger_continuous", 101, {
-            phase = "post-dispatch",
-            resource = {
-                domain = "stagger",
-                valuePath = isSecret and "secret-safe" or "plain",
-                colorReason = colorReason,
-            },
-            text = {
-                shown = textFormat ~= nil,
-                writePath = textFormat and (isSecret and "hidden-secret" or "formatted") or nil,
-                format = textFormat,
-            },
-        })
     end
 end
 
@@ -1112,7 +999,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
             runeValueTotal = runeValueTotal + segValue
         end
         segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, runeValueTotal, numSegs, false)
-        StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "runes", readyCount, numSegs, allReady and "max" or (thresholdActive and "threshold" or "ready"), thresholdActive, false)
         return
     end
 
@@ -1120,7 +1006,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         if IsUnitPowerSecret("player", 7) or IsUnitPowerMaxSecret("player", 7) then
             segmentedUpdateScratch.ClearValues(holder)
             segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
-            StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "soul-shards", nil, nil, "secret-safe", false, true)
             return
         end
 
@@ -1131,7 +1016,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         if issecretvalue and (issecretvalue(raw) or issecretvalue(rawMax) or issecretvalue(max)) then
             segmentedUpdateScratch.ClearValues(holder)
             segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
-            StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "soul-shards", nil, nil, "secret-safe", false, true)
             return
         end
 
@@ -1168,10 +1052,8 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         end
         if type(displayCurrent) == "number" then
             segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, displayCurrent, max, false)
-            StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "soul-shards", displayCurrent, max, nil, false, false)
         else
             segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
-            StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "soul-shards", nil, nil, "empty", false, true)
         end
         return
     end
@@ -1180,7 +1062,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         if IsUnitPowerSecret("player", 19) or IsUnitPowerMaxSecret("player", 19) then
             segmentedUpdateScratch.ClearValues(holder)
             segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
-            StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "essence", nil, nil, "secret-safe", false, true)
             return
         end
 
@@ -1191,7 +1072,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         if issecretvalue and (issecretvalue(filled) or issecretvalue(max) or issecretvalue(partialRaw)) then
             segmentedUpdateScratch.ClearValues(holder)
             segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
-            StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "essence", nil, nil, "secret-safe", false, true)
             return
         end
 
@@ -1216,7 +1096,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
             end
         end
         segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, displayCurrent, max, false)
-        StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "essence", displayCurrent, max, isMax and "max" or (thresholdActive and "threshold" or "ready"), thresholdActive, false)
         return
     end
 
@@ -1225,7 +1104,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         if IsUnitPowerSecret("player", 4) or IsUnitPowerMaxSecret("player", 4) then
             segmentedUpdateScratch.ClearValues(holder)
             segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
-            StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "combo-points", nil, nil, "secret-safe", false, true)
             return
         end
 
@@ -1234,7 +1112,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         if issecretvalue and (issecretvalue(current) or issecretvalue(max)) then
             segmentedUpdateScratch.ClearValues(holder)
             segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
-            StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "combo-points", nil, nil, "secret-safe", false, true)
             return
         end
 
@@ -1264,7 +1141,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
             end
         end
         segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, current, max, false)
-        StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "combo-points", current, max, isMax and "max" or (thresholdActive and "threshold" or "ready"), thresholdActive, false)
         return
     end
 
@@ -1272,7 +1148,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
     if IsUnitPowerSecret("player", powerType) or IsUnitPowerMaxSecret("player", powerType) then
         segmentedUpdateScratch.ClearValues(holder)
         segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
-        StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "segmented", nil, nil, "secret-safe", false, true)
         return
     end
 
@@ -1281,7 +1156,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
     if issecretvalue and (issecretvalue(current) or issecretvalue(max)) then
         segmentedUpdateScratch.ClearValues(holder)
         segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, nil, nil, true)
-        StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "segmented", nil, nil, "secret-safe", false, true)
         return
     end
     local normalColor, maxColor
@@ -1305,7 +1179,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         end
     end
     segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, current, max, false)
-    StoreSegmentedResourceVisualState(holder, powerType, useAuraStackMode, auraOverrideColor, "segmented", current, max, isMax and "max" or (thresholdActive and "threshold" or "ready"), thresholdActive, false)
 end
 
 ------------------------------------------------------------------------
@@ -1339,21 +1212,6 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
         end
         HideResourceAuraStackSegments(holder)
         ClearSegmentedText(holder)
-        if ShouldCaptureOtherBarsVisualState() then
-            StoreResourceBarVisualState(holder, "mw_segmented", RESOURCE_MAELSTROM_WEAPON, {
-                phase = "post-dispatch",
-                resource = {
-                    domain = "maelstrom-weapon",
-                    valuePath = "secret-safe",
-                    colorReason = "secret-safe",
-                    segments = holder.segments and #holder.segments or nil,
-                },
-                text = {
-                    shown = holder.text and holder.text:IsShown() == true or false,
-                    writePath = "cleared",
-                },
-            })
-        end
         return
     end
 
@@ -1410,26 +1268,6 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
     end
 
     SetSegmentedText(holder, stacks, mwMaxStacks)
-    if ShouldCaptureOtherBarsVisualState() then
-        StoreResourceBarVisualState(holder, "mw_segmented", RESOURCE_MAELSTROM_WEAPON, {
-            phase = "post-dispatch",
-            resource = {
-                domain = "maelstrom-weapon",
-                valuePath = "plain",
-                current = stacks,
-                max = mwMaxStacks,
-                segments = holder.segments and #holder.segments or nil,
-                colorReason = isMax and "max" or (thresholdActive and "threshold" or (useAuraStackMode and "aura-stacks" or (auraOverrideColor and "aura" or "resource"))),
-                thresholdActive = thresholdActive == true,
-                auraStackMode = useAuraStackMode == true,
-                overlay = true,
-            },
-            text = {
-                shown = holder.text and holder.text:IsShown() == true or false,
-                writePath = "segmented",
-            },
-        })
-    end
 end
 
 ------------------------------------------------------------------------
@@ -1463,7 +1301,6 @@ local RefreshEventDrivenCustomAuraBarsForUnit = customBarsModule.RefreshEventDri
 local FinalizeAppliedBarVisibility = customBarsModule.FinalizeAppliedBarVisibility
 local HideUnusedResourceBarFrames = customBarsModule.HideUnusedResourceBarFrames
 local PrepareCustomAuraBar = customBarsModule.PrepareCustomAuraBar
-local CaptureCustomBarVisualState = customBarsModule.CaptureCustomBarVisualState
 
 ------------------------------------------------------------------------
 -- Relayout: reposition bars within their containers by visibility/order
@@ -2592,222 +2429,6 @@ function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
         info[#info + 1] = entry
     end
     return info
-end
-
-local function StoreHiddenOtherBarsVisualState(barInfo, reason)
-    if not (barInfo and barInfo.frame) or not ShouldCaptureOtherBarsVisualState() then
-        return
-    end
-
-    local rowKind = barInfo.cabConfig and "custom"
-        or (barInfo.barType == "health_continuous" and "health" or "resource")
-    StoreOtherBarsVisualState(barInfo.frame, {
-        phase = "hidden",
-        rowKind = rowKind,
-        identity = {
-            barType = barInfo.barType,
-            powerType = barInfo.powerType,
-            customBarId = barInfo.customBarId,
-        },
-        visibility = {
-            shown = false,
-            mode = "hidden",
-            reason = reason or "frame-hidden",
-        },
-        custom = barInfo.cabConfig and {
-            spellID = tonumber(barInfo.cabConfig.spellID) or barInfo.cabConfig.spellID,
-            trackingMode = barInfo.cabConfig.trackingMode,
-            auraTracking = barInfo.cabConfig.auraTracking == true,
-            hideWhenInactive = barInfo.cabConfig.hideWhenInactive == true,
-            hideWhileAuraActive = barInfo.cabConfig.hideWhileAuraActive == true,
-        } or nil,
-    })
-end
-
-local function StorePreviewOtherBarsVisualState(barInfo)
-    if not (barInfo and barInfo.frame) or not ShouldCaptureOtherBarsVisualState() then
-        return
-    end
-
-    local rowKind = barInfo.cabConfig and "custom"
-        or (barInfo.barType == "health_continuous" and "health" or "resource")
-    StoreOtherBarsVisualState(barInfo.frame, {
-        phase = "preview",
-        rowKind = rowKind,
-        identity = {
-            barType = barInfo.barType,
-            powerType = barInfo.powerType,
-            customBarId = barInfo.customBarId,
-        },
-        visibility = {
-            shown = barInfo.frame:IsShown() == true,
-            mode = barInfo.frame:IsShown() and "shown" or "hidden",
-            reason = "preview",
-        },
-        resource = rowKind == "resource" and {
-            domain = "preview",
-            valuePath = "preview",
-            colorReason = "preview",
-        } or nil,
-        health = rowKind == "health" and {
-            valuePath = "preview",
-            fillColor = "preview",
-            backgroundColor = "preview",
-        } or nil,
-        custom = rowKind == "custom" and {
-            display = barInfo.barType,
-            spellID = barInfo.cabConfig and (tonumber(barInfo.cabConfig.spellID) or barInfo.cabConfig.spellID) or nil,
-            valuePath = "preview",
-        } or nil,
-    })
-end
-
-local function StorePassiveCustomOtherBarsVisualState(barInfo)
-    if not (barInfo and barInfo.frame and barInfo.cabConfig) or not ShouldCaptureOtherBarsVisualState() then
-        return
-    end
-
-    local frame = barInfo.frame
-    local shown = frame:IsShown() == true
-    StoreOtherBarsVisualState(frame, {
-        phase = shown and "passive" or "hidden",
-        rowKind = "custom",
-        identity = {
-            barType = barInfo.barType,
-            powerType = barInfo.powerType,
-            customBarId = barInfo.customBarId,
-        },
-        visibility = {
-            shown = shown,
-            mode = shown and "shown" or "hidden",
-            reason = shown and "passive-custom-capture" or "frame-hidden",
-        },
-        custom = {
-            display = barInfo.barType,
-            spellID = tonumber(barInfo.cabConfig.spellID) or barInfo.cabConfig.spellID,
-            trackingMode = barInfo.cabConfig.trackingMode,
-            auraTracking = barInfo.cabConfig.auraTracking == true,
-            hideWhenInactive = barInfo.cabConfig.hideWhenInactive == true,
-            hideWhileAuraActive = barInfo.cabConfig.hideWhileAuraActive == true,
-        },
-        text = {
-            durationShown = frame.text and frame.text:IsShown() == true or false,
-            stackShown = frame.stackText and frame.stackText:IsShown() == true or false,
-        },
-        effects = {
-            auraActive = frame._auraActive == true,
-            pandemic = frame._inPandemic == true,
-            pulse = frame._barPulseActive == true,
-            colorShift = frame._barColorShiftActive == true,
-            maxStacksIndicator = barInfo._maxStacksIndicator ~= nil,
-        },
-    })
-end
-
-local function RefreshOtherBarsVisualStateDiagnostics()
-    local settings = GetResourceBarSettings()
-    local auraActiveCache = segmentedUpdateScratch.auraActiveCache
-    wipe(auraActiveCache)
-
-    if isPreviewActive and ApplyPreviewData then
-        ApplyPreviewData()
-    end
-
-    local refreshed = 0
-    for _, barInfo in ipairs(resourceBarFrames) do
-        local frame = barInfo and barInfo.frame
-        if frame then
-            if type(ClearOtherBarsVisualState) == "function" then
-                ClearOtherBarsVisualState(frame)
-            end
-
-            local shown = frame:IsShown() == true
-            if isPreviewActive then
-                StorePreviewOtherBarsVisualState(barInfo)
-            elseif barInfo.barType == "continuous" and shown then
-                UpdateContinuousBar(frame, barInfo.powerType, settings, auraActiveCache)
-            elseif barInfo.barType == "health_continuous" and shown then
-                HealthBar.Update(frame, settings)
-            elseif barInfo.barType == "segmented" and shown then
-                UpdateSegmentedBar(frame, barInfo.powerType, settings, auraActiveCache)
-            elseif barInfo.barType == "mw_segmented" and shown then
-                UpdateMaelstromWeaponBar(frame, settings, auraActiveCache)
-            elseif barInfo.barType == "stagger_continuous" and shown then
-                UpdateStaggerBar(frame, settings)
-            elseif barInfo.barType == "custom_cooldown" then
-                if not (CaptureCustomBarVisualState and CaptureCustomBarVisualState(barInfo)) then
-                    StorePassiveCustomOtherBarsVisualState(barInfo)
-                end
-            elseif barInfo.barType == "custom_continuous"
-                or barInfo.barType == "custom_segmented"
-                or barInfo.barType == "custom_overlay" then
-                if not (CaptureCustomBarVisualState and CaptureCustomBarVisualState(barInfo)) then
-                    StorePassiveCustomOtherBarsVisualState(barInfo)
-                end
-            end
-
-            if not frame._otherBarsVisualState then
-                StoreHiddenOtherBarsVisualState(barInfo, shown and "no-capture-sidecar" or "frame-hidden")
-            end
-            if frame._otherBarsVisualState then
-                refreshed = refreshed + 1
-            end
-        end
-    end
-
-    return refreshed
-end
-
-local function BuildOtherBarsDiagnosticStackState()
-    return {
-        applied = isApplied == true,
-        previewActive = isPreviewActive == true,
-        independentStack = lastAppliedIndependentStack == true,
-        orientation = lastAppliedOrientation,
-        layoutDirty = layoutDirty == true,
-        barCount = #resourceBarFrames,
-    }
-end
-
-function CooldownCompanion:CollectOtherBarsVisualStateDiagnostics(options)
-    if type(CollectOtherBarsVisualStateDiagnostics) ~= "function" then
-        return nil
-    end
-    options = options or {}
-    options.resourceBarFrames = resourceBarFrames
-    options.stack = options.stack or BuildOtherBarsDiagnosticStackState()
-    return CollectOtherBarsVisualStateDiagnostics(self, options)
-end
-
-function CooldownCompanion:CaptureOtherBarsVisualStateDiagnostics(options)
-    if type(SetOtherBarsVisualStateCaptureEnabled) ~= "function"
-        or type(AreOtherBarsVisualStateCaptureEnabled) ~= "function"
-        or type(CollectOtherBarsVisualStateDiagnostics) ~= "function" then
-        return nil
-    end
-
-    options = options or {}
-    local wasEnabled = AreOtherBarsVisualStateCaptureEnabled()
-    SetOtherBarsVisualStateCaptureEnabled(true)
-
-    local refreshed = 0
-    if isApplied or isPreviewActive then
-        refreshed = RefreshOtherBarsVisualStateDiagnostics()
-        options.resourceBarFrames = resourceBarFrames
-    else
-        options.resourceBarFrames = {}
-    end
-    options.refreshedRows = refreshed
-    options.stack = options.stack or BuildOtherBarsDiagnosticStackState()
-    local result = CollectOtherBarsVisualStateDiagnostics(self, options)
-    result.captureWasEnabled = wasEnabled
-    if not wasEnabled and options.preserveSnapshots ~= true and type(ClearCapturedOtherBarsVisualStates) == "function" then
-        result.clearedStates = ClearCapturedOtherBarsVisualStates(resourceBarFrames)
-    end
-
-    SetOtherBarsVisualStateCaptureEnabled(wasEnabled)
-    result.captureRestored = AreOtherBarsVisualStateCaptureEnabled() == wasEnabled
-    return result
 end
 
 ------------------------------------------------------------------------

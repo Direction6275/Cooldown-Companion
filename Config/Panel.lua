@@ -1193,18 +1193,6 @@ local function CreateConfigPanel()
             end
             UIDropDownMenu_AddButton(info4, level)
 
-            local info5 = UIDropDownMenu_CreateInfo()
-            info5.text = "  Generate Full Dump"
-            info5.notCheckable = true
-            info5.tooltipTitle = "Generate Full Dump"
-            info5.tooltipText = "Creates a full diagnostic string with the entire profile included. Use this only when a compact bug report is not enough."
-            info5.tooltipOnButton = true
-            info5.func = function()
-                CloseDropDownMenus()
-                ShowPopupAboveConfig("CDC_DIAGNOSTIC_FULL_DUMP")
-            end
-            UIDropDownMenu_AddButton(info5, level)
-
             local info6 = UIDropDownMenu_CreateInfo()
             info6.text = "  Replay Tutorial"
             info6.notCheckable = true

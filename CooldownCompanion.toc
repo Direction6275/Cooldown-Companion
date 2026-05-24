@@ -83,7 +83,6 @@ OtherBars\ResourceBarConstants.lua
 OtherBars\ResourceBarHelpers.lua
 OtherBars\CastBar.lua
 OtherBars\ResourceBarVisuals.lua
-OtherBars\ResourceBarVisualState.lua
 OtherBars\ResourceBarHealth.lua
 OtherBars\ResourceBarCustomBars.lua
 OtherBars\ResourceBarPreview.lua
