@@ -1185,7 +1185,7 @@ local function CreateConfigPanel()
             info4.text = "  Generate Bug Report"
             info4.notCheckable = true
             info4.tooltipTitle = "Generate Bug Report"
-            info4.tooltipText = "Creates a compact support report with the most useful current runtime and config details. If possible, select the broken group, panel, or entry before generating it."
+            info4.tooltipText = "Creates a support report with current runtime details and a compact profile export. If possible, select the broken group, panel, or entry before generating it."
             info4.tooltipOnButton = true
             info4.func = function()
                 CloseDropDownMenus()

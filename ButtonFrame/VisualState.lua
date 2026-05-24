@@ -578,15 +578,6 @@ local function CopyBarVisualState(button, bar, context)
     CopyFieldMap(bar, hasApplied and applied or nil, BAR_APPLIED_FIELDS)
 end
 
-local function ClearTable(tbl)
-    if type(tbl) ~= "table" then
-        return
-    end
-    for key in pairs(tbl) do
-        tbl[key] = nil
-    end
-end
-
 local function ClearButtonVisualState(button)
     if button then
         button._visualState = nil

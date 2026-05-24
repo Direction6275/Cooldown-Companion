@@ -25,15 +25,6 @@ local function RejectUnsupportedImportPayload(data, dataLabel)
     return false
 end
 
-local RESOURCE_NAMES = {
-    [0] = "Mana", [1] = "Rage", [2] = "Focus", [3] = "Energy",
-    [4] = "Combo Points", [5] = "Runes", [6] = "Runic Power",
-    [7] = "Soul Shards", [8] = "Lunar Power", [9] = "Holy Power",
-    [10] = "Alternate", [11] = "Maelstrom", [12] = "Chi",
-    [13] = "Insanity", [16] = "Arcane Charges", [17] = "Fury",
-    [18] = "Pain", [19] = "Essence", [100] = "Maelstrom Weapon",
-}
-
 local function CountTableEntries(t)
     if type(t) ~= "table" then return 0 end
     local count = 0
@@ -842,7 +833,7 @@ local function SetDiagnosticExportText(popup)
 end
 
 StaticPopupDialogs["CDC_DIAGNOSTIC_BUG_REPORT"] = {
-    text = "Bug report string (Ctrl+C to copy, paste in Discord):",
+    text = "Bug report string with compact profile export (Ctrl+C to copy, paste in Discord):",
     button1 = "Close",
     hasEditBox = true,
     OnShow = function(self)
