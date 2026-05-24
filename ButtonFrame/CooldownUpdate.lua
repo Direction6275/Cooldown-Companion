@@ -2449,6 +2449,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     EvaluateButtonVisibility(button, buttonData, auraOverrideActive, procOverlayActive, auraOwnsPrimarySwipe)
     button._rawVisibilityHidden = button._visibilityHidden
     button._rawVisibilityAlphaOverride = button._visibilityAlphaOverride
+    button._rawVisibilityReasonBits = button._visibilityReasonBits
+    button._rawVisibilityReasonMode = button._visibilityReasonMode
 
     local group = button._groupId and CooldownCompanion.db.profile.groups[button._groupId]
     local isTriggerPanel = group and group.displayMode == "trigger"
@@ -2457,9 +2459,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         and CooldownCompanion.IsContainerUnlockPreviewActive
         and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
         and not isTriggerPanel
+    local visibilityOverrideSource
     if isTriggerPanel then
         button._visibilityHidden = true
         button._visibilityAlphaOverride = 0
+        visibilityOverrideSource = "trigger"
     end
 
     -- Config panel QOL: selected buttons in column 2 are always fully visible.
@@ -2468,11 +2472,23 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if forceVisibleByUnlockPreview or forceVisibleByPreview then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = 1
+        visibilityOverrideSource = forceVisibleByUnlockPreview and "unlock-preview" or "conditional-preview"
     elseif forceVisibleByConfig and not isTriggerPanel then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = 1
+        visibilityOverrideSource = "config"
     end
     button._forceVisibleByConfig = ((forceVisibleByConfig or forceVisibleByUnlockPreview or forceVisibleByPreview) and not isTriggerPanel) or nil
+    if button._visibilityHidden == true then
+        button._visibilityFinalMode = "hidden"
+    elseif button._visibilityAlphaOverride ~= nil and button._visibilityAlphaOverride ~= 1 then
+        button._visibilityFinalMode = "dimmed"
+    else
+        button._visibilityFinalMode = "visible"
+    end
+    button._visibilityOverrideSource = visibilityOverrideSource
+    button._visibilityTriggerSuppressed = visibilityOverrideSource == "trigger" or nil
+    button._visibilityCompactLayout = group and group.compactLayout == true or nil
 
     local visualStateContext
     local shouldCaptureVisualState = CooldownCompanion:ShouldRefreshButtonVisualStateSnapshot()

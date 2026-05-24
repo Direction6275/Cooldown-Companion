@@ -7,6 +7,7 @@ local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local ResolveIconDesaturationIntent = ST._ResolveIconDesaturationIntent
+local GetButtonVisibilityReasonNames = ST._GetButtonVisibilityReasonNames
 local DEFAULT_ICON_FILL_COOLDOWN_COLOR = {0.6, 0.13, 0.18, 0.55}
 local DEFAULT_ICON_FILL_AURA_COLOR = {0.2, 1.0, 0.2, 0.55}
 local UsesChargeBehavior = CooldownCompanion and CooldownCompanion.UsesChargeBehavior
@@ -22,6 +23,34 @@ local function EnsureSection(parent, key)
         parent[key] = section
     end
     return section
+end
+
+local function ResolveVisibilityMode(hidden, alphaOverride)
+    if IsTrue(hidden) then
+        return "hidden"
+    end
+    if alphaOverride ~= nil and alphaOverride ~= 1 then
+        return "dimmed"
+    end
+    return "visible"
+end
+
+local function CopyVisibilityReasonNames(visibility, reasonBits)
+    if type(GetButtonVisibilityReasonNames) ~= "function" then
+        visibility.reasonNames = nil
+        return
+    end
+
+    local names = visibility.reasonNames
+    if type(names) ~= "table" then
+        names = {}
+        visibility.reasonNames = names
+    end
+
+    GetButtonVisibilityReasonNames(reasonBits, names)
+    if #names == 0 then
+        visibility.reasonNames = nil
+    end
 end
 
 local function UsesIconFillChargeBehavior(buttonData)
@@ -477,13 +506,25 @@ local function RefreshButtonVisualState(button, context)
     visibility.alphaOverride = button._visibilityAlphaOverride
     visibility.rawHidden = IsTrue(button._rawVisibilityHidden)
     visibility.rawAlphaOverride = button._rawVisibilityAlphaOverride
+    visibility.rawReasonBits = button._rawVisibilityReasonBits
+    visibility.rawReasonMode = button._rawVisibilityReasonMode
     visibility.reasonBits = button._visibilityReasonBits
     visibility.reasonMode = button._visibilityReasonMode
+    visibility.mode = button._visibilityFinalMode
+        or ResolveVisibilityMode(button._visibilityHidden, button._visibilityAlphaOverride)
+    visibility.rawMode = button._rawVisibilityReasonMode
+        or ResolveVisibilityMode(button._rawVisibilityHidden, button._rawVisibilityAlphaOverride)
+    visibility.overrideSource = button._visibilityOverrideSource
+    visibility.triggerSuppressed = IsTrue(button._visibilityTriggerSuppressed)
+    visibility.compactLayout = IsTrue(button._visibilityCompactLayout)
     visibility.forceVisible = IsTrue(button._forceVisibleByConfig)
     visibility.forceVisibleByConfig = IsTrue(context.forceVisibleByConfig)
     visibility.forceVisibleByPreview = IsTrue(context.forceVisibleByPreview)
     visibility.forceVisibleByUnlockPreview = IsTrue(context.forceVisibleByUnlockPreview)
     visibility.lastAlpha = button._lastVisAlpha
+    visibility.appliedAlpha = button._lastVisAlpha
+    visibility.hiddenPhase = context.phase == "hidden"
+    CopyVisibilityReasonNames(visibility, button._rawVisibilityReasonBits or button._visibilityReasonBits)
 
     local usability = EnsureSection(state, "usability")
     usability.spellOutOfRange = IsTrue(button._spellOutOfRange)
