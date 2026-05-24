@@ -28,6 +28,108 @@ local function EnsureSection(parent, key)
     return section
 end
 
+local function CopyFieldList(target, source, fields)
+    for _, fieldName in ipairs(fields) do
+        local value = nil
+        if source then
+            value = source[fieldName]
+        end
+        target[fieldName] = value
+    end
+end
+
+local function CopyFieldMap(target, source, fieldMap)
+    for targetField, sourceField in pairs(fieldMap) do
+        local value = nil
+        if source then
+            value = source[sourceField]
+        end
+        target[targetField] = value
+    end
+end
+
+local TEXT_INTENT_FIELDS = {
+    "domain",
+    "available",
+    "unusable",
+    "outOfRange",
+    "auraActive",
+    "auraHasTimer",
+    "timePresent",
+    "auraTimePresent",
+    "cooldownDeferred",
+    "chargeState",
+    "currentCharges",
+    "maxCharges",
+    "stackSource",
+    "stackPresent",
+    "stackSecret",
+    "secretDuration",
+    "secretDurationToken",
+    "secretStack",
+    "secretName",
+    "hasText",
+    "pulseActive",
+}
+
+local TEXT_APPLIED_FIELDS = {
+    appliedWritePath = "writePath",
+    appliedHasText = "hasText",
+    appliedSecretDuration = "secretDuration",
+    appliedSecretStack = "secretStack",
+    appliedSecretName = "secretName",
+    appliedPulseActive = "pulseActive",
+    appliedAlpha = "alpha",
+}
+
+local BAR_INTENT_FIELDS = {
+    "domain",
+    "onCooldown",
+    "chargeState",
+    "colorReason",
+    "auraColorReason",
+    "auraEffectActive",
+    "auraEffectReason",
+    "pulseActive",
+    "pulseMode",
+    "colorShiftActive",
+    "colorShiftMode",
+    "stackDisplay",
+    "stackMode",
+    "stackSegmentLayerActive",
+    "gcdSuppressed",
+    "colorR",
+    "colorG",
+    "colorB",
+    "colorA",
+    "colorShiftBaseR",
+    "colorShiftBaseG",
+    "colorShiftBaseB",
+    "colorShiftBaseA",
+    "colorShiftTargetR",
+    "colorShiftTargetG",
+    "colorShiftTargetB",
+    "colorShiftTargetA",
+}
+
+local BAR_APPLIED_FIELDS = {
+    appliedColorReason = "colorReason",
+    appliedAuraColorActive = "auraColorActive",
+    appliedAuraEffectActive = "auraEffectActive",
+    appliedPulseActive = "pulseActive",
+    appliedPulseMode = "pulseMode",
+    appliedColorShiftActive = "colorShiftActive",
+    appliedColorShiftMode = "colorShiftMode",
+    appliedStackVisualActive = "stackVisualActive",
+    appliedStackMode = "stackMode",
+    appliedBaseFillHidden = "baseFillHidden",
+    appliedGcdSuppressed = "gcdSuppressed",
+    appliedColorR = "colorR",
+    appliedColorG = "colorG",
+    appliedColorB = "colorB",
+    appliedColorA = "colorA",
+}
+
 local function ResolveVisibilityMode(hidden, alphaOverride)
     if IsTrue(hidden) then
         return "hidden"
@@ -541,72 +643,22 @@ local function CopyTextVisualState(button, text, context)
     local hasIntent = type(intent) == "table"
     text.preservedSecretTextRender = preservedSecretTextRender
     text.intentAvailable = hasIntent
-    if hasIntent then
-        text.domain = intent.domain
-        text.available = intent.available
-        text.unusable = intent.unusable
-        text.outOfRange = intent.outOfRange
-        text.auraActive = intent.auraActive
-        text.auraHasTimer = intent.auraHasTimer
-        text.timePresent = intent.timePresent
-        text.auraTimePresent = intent.auraTimePresent
-        text.cooldownDeferred = intent.cooldownDeferred
-        text.chargeState = intent.chargeState
-        text.currentCharges = intent.currentCharges
-        text.maxCharges = intent.maxCharges
-        text.stackSource = intent.stackSource
-        text.stackPresent = intent.stackPresent
-        text.stackSecret = intent.stackSecret
-        text.secretDuration = intent.secretDuration
-        text.secretDurationToken = intent.secretDurationToken
-        text.secretStack = intent.secretStack
-        text.secretName = intent.secretName
-        text.hasText = intent.hasText
-        text.pulseActive = intent.pulseActive
-    else
-        text.domain = nil
+    CopyFieldList(text, hasIntent and intent or nil, TEXT_INTENT_FIELDS)
+    if not hasIntent then
         text.available = not button._desatCooldownActive
         text.unusable = IsTrue(button._isUnusable)
         text.outOfRange = IsTrue(button._isOutOfRange)
         text.auraActive = IsTrue(button._auraActive)
         text.auraHasTimer = IsTrue(button._auraHasTimer)
-        text.timePresent = nil
-        text.auraTimePresent = nil
         text.cooldownDeferred = IsTrue(button._cooldownDeferred)
         text.chargeState = button._chargeState
         text.currentCharges = button._currentReadableCharges
-        text.maxCharges = nil
-        text.stackSource = nil
-        text.stackPresent = nil
-        text.stackSecret = nil
-        text.secretDuration = nil
-        text.secretDurationToken = nil
-        text.secretStack = nil
-        text.secretName = nil
-        text.hasText = nil
-        text.pulseActive = nil
     end
 
     local applied = textSidecarsAreFresh and button._textVisualApplied or nil
     local hasApplied = type(applied) == "table"
     text.appliedAvailable = hasApplied
-    if hasApplied then
-        text.appliedWritePath = applied.writePath
-        text.appliedHasText = applied.hasText
-        text.appliedSecretDuration = applied.secretDuration
-        text.appliedSecretStack = applied.secretStack
-        text.appliedSecretName = applied.secretName
-        text.appliedPulseActive = applied.pulseActive
-        text.appliedAlpha = applied.alpha
-    else
-        text.appliedWritePath = nil
-        text.appliedHasText = nil
-        text.appliedSecretDuration = nil
-        text.appliedSecretStack = nil
-        text.appliedSecretName = nil
-        text.appliedPulseActive = nil
-        text.appliedAlpha = nil
-    end
+    CopyFieldMap(text, hasApplied and applied or nil, TEXT_APPLIED_FIELDS)
 end
 
 local function CopyBarVisualState(button, bar, context)
@@ -619,99 +671,24 @@ local function CopyBarVisualState(button, bar, context)
     local hasIntent = type(intent) == "table"
 
     bar.intentAvailable = hasIntent
-    if hasIntent then
-        bar.domain = intent.domain
-        bar.onCooldown = intent.onCooldown
-        bar.chargeState = intent.chargeState
-        bar.colorReason = intent.colorReason
-        bar.auraColorReason = intent.auraColorReason
-        bar.auraEffectActive = intent.auraEffectActive
-        bar.auraEffectReason = intent.auraEffectReason
-        bar.pulseActive = intent.pulseActive
-        bar.pulseMode = intent.pulseMode
-        bar.colorShiftActive = intent.colorShiftActive
-        bar.colorShiftMode = intent.colorShiftMode
-        bar.stackDisplay = intent.stackDisplay
-        bar.stackMode = intent.stackMode
-        bar.stackSegmentLayerActive = intent.stackSegmentLayerActive
-        bar.gcdSuppressed = intent.gcdSuppressed
-        bar.colorR = intent.colorR
-        bar.colorG = intent.colorG
-        bar.colorB = intent.colorB
-        bar.colorA = intent.colorA
-        bar.colorShiftBaseR = intent.colorShiftBaseR
-        bar.colorShiftBaseG = intent.colorShiftBaseG
-        bar.colorShiftBaseB = intent.colorShiftBaseB
-        bar.colorShiftBaseA = intent.colorShiftBaseA
-        bar.colorShiftTargetR = intent.colorShiftTargetR
-        bar.colorShiftTargetG = intent.colorShiftTargetG
-        bar.colorShiftTargetB = intent.colorShiftTargetB
-        bar.colorShiftTargetA = intent.colorShiftTargetA
-    else
+    CopyFieldList(bar, hasIntent and intent or nil, BAR_INTENT_FIELDS)
+    if not hasIntent then
         bar.domain = IsTrue(button._barAuraStackDisplay) and "stack" or nil
-        bar.onCooldown = nil
         bar.chargeState = button._chargeState
-        bar.colorReason = nil
-        bar.auraColorReason = nil
-        bar.auraEffectActive = nil
-        bar.auraEffectReason = nil
-        bar.pulseActive = nil
-        bar.pulseMode = nil
-        bar.colorShiftActive = nil
-        bar.colorShiftMode = nil
         bar.stackDisplay = IsTrue(button._barAuraStackDisplay)
         bar.stackMode = button._barAuraStackMode
-        bar.stackSegmentLayerActive = nil
         bar.gcdSuppressed = IsTrue(button._barGCDSuppressed)
-        bar.colorR = nil
-        bar.colorG = nil
-        bar.colorB = nil
-        bar.colorA = nil
-        bar.colorShiftBaseR = nil
-        bar.colorShiftBaseG = nil
-        bar.colorShiftBaseB = nil
-        bar.colorShiftBaseA = nil
-        bar.colorShiftTargetR = nil
-        bar.colorShiftTargetG = nil
-        bar.colorShiftTargetB = nil
-        bar.colorShiftTargetA = nil
     end
 
     local applied = barSidecarsAreFresh and button._barVisualApplied or nil
     local hasApplied = type(applied) == "table"
     bar.appliedAvailable = hasApplied
-    if hasApplied then
-        bar.appliedColorReason = applied.colorReason
-        bar.appliedAuraColorActive = applied.auraColorActive
-        bar.appliedAuraEffectActive = applied.auraEffectActive
-        bar.appliedPulseActive = applied.pulseActive
-        bar.appliedPulseMode = applied.pulseMode
-        bar.appliedColorShiftActive = applied.colorShiftActive
-        bar.appliedColorShiftMode = applied.colorShiftMode
-        bar.appliedStackVisualActive = applied.stackVisualActive
-        bar.appliedStackMode = applied.stackMode
-        bar.appliedBaseFillHidden = applied.baseFillHidden
-        bar.appliedGcdSuppressed = applied.gcdSuppressed
-        bar.appliedColorR = applied.colorR
-        bar.appliedColorG = applied.colorG
-        bar.appliedColorB = applied.colorB
-        bar.appliedColorA = applied.colorA
-    else
-        bar.appliedColorReason = nil
-        bar.appliedAuraColorActive = nil
-        bar.appliedAuraEffectActive = nil
-        bar.appliedPulseActive = nil
-        bar.appliedPulseMode = nil
-        bar.appliedColorShiftActive = nil
-        bar.appliedColorShiftMode = nil
+    CopyFieldMap(bar, hasApplied and applied or nil, BAR_APPLIED_FIELDS)
+    if not hasApplied then
         bar.appliedStackVisualActive = IsTrue(button._barAuraStackVisualActive)
         bar.appliedStackMode = button._barAuraStackVisualMode
         bar.appliedBaseFillHidden = IsTrue(button._barAuraBaseFillHidden)
         bar.appliedGcdSuppressed = IsTrue(button._barGCDSuppressed)
-        bar.appliedColorR = nil
-        bar.appliedColorG = nil
-        bar.appliedColorB = nil
-        bar.appliedColorA = nil
     end
 end
 
