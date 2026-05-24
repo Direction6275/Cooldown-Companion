@@ -2499,16 +2499,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._visualStateContext = visualStateContext
         end
         visualStateContext.displayMode = buttonDisplayMode
-        visualStateContext.isOnGCD = isOnGCD
-        visualStateContext.isGCDOnly = isGCDOnly
-        visualStateContext.cooldownSource = spellCooldownResult and spellCooldownResult.source
-        visualStateContext.presentationState = spellCooldownResult and (spellCooldownResult.presentationState or spellCooldownResult.state) or button._cooldownState
-        visualStateContext.cooldownSpellId = cooldownSpellId
-        visualStateContext.auraOwnsPrimarySwipe = auraOwnsPrimarySwipe
-        visualStateContext.auraOverrideActive = auraOverrideActive
-        visualStateContext.forceVisibleByConfig = forceVisibleByConfig
-        visualStateContext.forceVisibleByPreview = forceVisibleByPreview
-        visualStateContext.forceVisibleByUnlockPreview = forceVisibleByUnlockPreview
         visualStateContext.preserveSecretTextRender = auraDisplayNameState and auraDisplayNameState.preserveSecretTextRender == true
     end
     -- Track visibility/force-visible state changes for compact layout reflow.

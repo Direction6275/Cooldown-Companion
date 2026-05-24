@@ -34,186 +34,6 @@ local StopAllTextureIndicatorEffects = AT.StopAllTextureIndicatorEffects
 local ApplyTextureIndicatorEffects = AT.ApplyTextureIndicatorEffects
 local DoesTriggerPanelMatch = AT.DoesTriggerPanelMatch
 
-local function ShouldCaptureButtonVisualState()
-    local isEnabled = ST._AreButtonVisualStateSnapshotsEnabled
-    return type(isEnabled) == "function" and isEnabled() == true
-end
-
-local function ClearTriggerPanelVisualState(frame)
-    if not frame then
-        return
-    end
-
-    frame._triggerVisualPanel = nil
-    if type(frame.buttons) ~= "table" then
-        return
-    end
-
-    for _, button in ipairs(frame.buttons) do
-        if type(button) == "table" then
-            button._triggerVisualRow = nil
-            button._triggerVisualPanel = nil
-        end
-    end
-end
-
-local function ClearTexturePanelVisualState(button)
-    if not button then
-        return
-    end
-
-    button._textureDisplayIntent = nil
-    button._textureDisplayApplied = nil
-    button._textureEffectIntent = nil
-    button._textureEffectApplied = nil
-end
-
-local function IsShown(frame)
-    return frame and type(frame.IsShown) == "function" and frame:IsShown() == true or false
-end
-
-local function ResolveTriggerDisplayReason(state, settings, rendered)
-    if not settings then
-        return "missing-settings"
-    end
-    if not state or state.showDisplay ~= true then
-        return state and state.triggerMatched and "matched-hidden" or "unmatched"
-    end
-    if rendered == false then
-        return "render-failed"
-    end
-    if state.triggerMatched then
-        return "matched"
-    end
-    if state.hasTriggerEffectPreview then
-        return "effect-preview"
-    end
-    if state.isEditing then
-        return "editing"
-    end
-    if state.isUnlocked then
-        return state.isGroupedPreview and "container-preview" or "unlocked"
-    end
-    return "shown"
-end
-
-local function ResolveTextureDisplayReason(state, settings, rendered)
-    if not settings then
-        return "missing-settings"
-    end
-    if not state or state.showDisplay ~= true then
-        return "hidden"
-    end
-    if rendered == false then
-        return "render-failed"
-    end
-    if state.hasPreviewSelection then
-        return "preview"
-    end
-    if state.isEditing then
-        return "editing"
-    end
-    if state.isConfigForceVisible then
-        return "config-force"
-    end
-    if state.isUnlocked then
-        return state.isGroupedPreview and "container-preview" or "unlocked"
-    end
-    return "runtime"
-end
-
-local function CaptureTriggerDisplayVisualState(frame, driverButton, group, displayType, settings, visibilityState, rendered)
-    if not (driverButton and group and group.displayMode == "trigger" and ShouldCaptureButtonVisualState()) then
-        return
-    end
-
-    local panelState = driverButton._triggerVisualPanel
-    if type(panelState) ~= "table" then
-        panelState = frame and frame._triggerVisualPanel or {}
-    end
-
-    panelState.displayType = displayType
-    panelState.hasSettings = settings ~= nil
-    panelState.showDisplay = visibilityState and visibilityState.showDisplay == true
-    panelState.triggerMatched = visibilityState and visibilityState.triggerMatched == true
-    panelState.hasTriggerEffectPreview = visibilityState and visibilityState.hasTriggerEffectPreview == true
-    panelState.isEditing = visibilityState and visibilityState.isEditing == true
-    panelState.isUnlocked = visibilityState and visibilityState.isUnlocked == true
-    panelState.isGroupedPreview = visibilityState and visibilityState.isGroupedPreview == true
-    panelState.effectsActive = panelState.triggerMatched or panelState.hasTriggerEffectPreview
-    panelState.soundVisible = visibilityState and visibilityState.triggerSoundVisible == true
-    panelState.rendered = rendered == true
-    panelState.displayReason = ResolveTriggerDisplayReason(visibilityState, settings, rendered)
-    panelState.forceReason = nil
-    if panelState.showDisplay and not panelState.triggerMatched then
-        panelState.forceReason = panelState.hasTriggerEffectPreview and "effect-preview"
-            or panelState.isEditing and "editing"
-            or panelState.isUnlocked and (panelState.isGroupedPreview and "container-preview" or "unlocked")
-            or nil
-    end
-
-    if frame then
-        frame._triggerVisualPanel = panelState
-        if type(frame.buttons) == "table" then
-            for _, button in ipairs(frame.buttons) do
-                if type(button) == "table" then
-                    button._triggerVisualPanel = panelState
-                end
-            end
-        end
-    end
-end
-
-local function CaptureTextureDisplayVisualState(driverButton, group, displayType, settings, visibilityState, rendered, host)
-    if not (driverButton and group and group.displayMode == "textures" and ShouldCaptureButtonVisualState()) then
-        return
-    end
-
-    driverButton._textureDisplayIntent = {
-        displayType = displayType,
-        hasSettings = settings ~= nil,
-        showDisplay = visibilityState and visibilityState.showDisplay == true,
-        reason = ResolveTextureDisplayReason(visibilityState, settings, rendered),
-        isEditing = visibilityState and visibilityState.isEditing == true,
-        isConfigForceVisible = visibilityState and visibilityState.isConfigForceVisible == true,
-        isUnlocked = visibilityState and visibilityState.isUnlocked == true,
-        isGroupedPreview = visibilityState and visibilityState.isGroupedPreview == true,
-        hasPreviewSelection = visibilityState and visibilityState.hasPreviewSelection == true,
-        bypassModuleAlpha = visibilityState and visibilityState.bypassModuleAlpha == true,
-    }
-
-    driverButton._textureDisplayApplied = {
-        rendered = rendered == true,
-        shown = IsShown(host),
-        displayType = host and host._activeDisplayType or nil,
-        alpha = host and type(host.GetAlpha) == "function" and host:GetAlpha() or nil,
-        driverAlpha = driverButton._lastVisAlpha,
-        hasSavedDisplay = host and host._hasSavedDisplay == true,
-        dragEnabled = host and host._dragEnabled == true,
-        wrapperManaged = host and host._wrapperManaged == true,
-    }
-end
-
-local function RefreshTriggerPanelVisualSnapshots(frame)
-    if not (frame and ShouldCaptureButtonVisualState()) then
-        return
-    end
-
-    local refresh = ST._RefreshButtonVisualState
-    if type(refresh) ~= "function" or type(frame.buttons) ~= "table" then
-        return
-    end
-
-    for _, button in ipairs(frame.buttons) do
-        local context = type(button) == "table" and button._visualStateContext or nil
-        if type(context) == "table" then
-            context.displayMode = "trigger"
-            context.phase = context.phase or "hidden"
-            refresh(button, context)
-        end
-    end
-end
-
 local NUDGE_BTN_SIZE = 12
 local NUDGE_GAP = 2
 local NUDGE_REPEAT_DELAY = 0.5
@@ -876,8 +696,6 @@ local function GetTexturePanelLayoutPreviewAlpha(button)
 end
 
 function CooldownCompanion:HideAuraTextureVisual(button)
-    ClearTexturePanelVisualState(button)
-
     local alphaModuleId = button and GetTexturePanelAlphaModuleId(button._groupId) or nil
     if alphaModuleId then
         self:UnregisterModuleAlpha(alphaModuleId, true)
@@ -1151,10 +969,6 @@ end
 function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, driverButton, displayType, settings, isTriggerPanel)
     local groupedPreviewFrame = GetGroupedPreviewContainerFrame(group, driverButton and driverButton._groupId)
     local combatForcedLock = self._combatForcedLock == true
-    local captureTriggerDetails = isTriggerPanel and ShouldCaptureButtonVisualState()
-    if captureTriggerDetails then
-        ClearTriggerPanelVisualState(frame)
-    end
     local state = {
         isEditing = IsStandaloneTextureEditingButton(driverButton),
         isConfigForceVisible = (not isTriggerPanel) and IsTexturePanelConfigForceVisible(driverButton),
@@ -1163,7 +977,7 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
         isUnlocked = not combatForcedLock and group and (group.locked == false or groupedPreviewFrame ~= nil),
         hasPreviewSelection = displayType == "texture" and type(driverButton._auraTexturePreviewSelection) == "table",
         hasTriggerEffectPreview = isTriggerPanel and driverButton._triggerEffectsPreview == true,
-        triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame, captureTriggerDetails) or false,
+        triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false,
         showDisplay = false,
     }
 
@@ -1539,10 +1353,6 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     local displayType, settings = CooldownCompanion.ResolveActiveStandaloneDisplay(driverButton)
     local visibilityState = self:GetStandaloneDisplayVisibilityState(group, frame, driverButton, displayType, settings, isTriggerPanel)
 
-    if isTriggerPanel then
-        CaptureTriggerDisplayVisualState(frame, driverButton, group, displayType, settings, visibilityState, false)
-    end
-
     if isTriggerPanel and self.UpdateTriggerPanelSoundAlerts then
         self:UpdateTriggerPanelSoundAlerts(frame, group, visibilityState.triggerSoundVisible)
     end
@@ -1552,12 +1362,6 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         if driverButton:GetAlpha() ~= 0 then
             driverButton:SetAlpha(0)
             driverButton._lastVisAlpha = 0
-        end
-        if not isTriggerPanel then
-            CaptureTextureDisplayVisualState(driverButton, group, displayType, settings, visibilityState, false, driverButton.auraTextureHost)
-        end
-        if isTriggerPanel then
-            RefreshTriggerPanelVisualSnapshots(frame)
         end
         return
     end
@@ -1579,23 +1383,10 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
             driverButton:SetAlpha(0)
             driverButton._lastVisAlpha = 0
         end
-        if not isTriggerPanel then
-            CaptureTextureDisplayVisualState(driverButton, group, displayType, settings, visibilityState, false, driverButton.auraTextureHost)
-        end
-        if isTriggerPanel then
-            CaptureTriggerDisplayVisualState(frame, driverButton, group, displayType, settings, visibilityState, false)
-            RefreshTriggerPanelVisualSnapshots(frame)
-        end
         return
     end
 
     self:FinalizeStandaloneDisplay(host, frame, driverButton, group, settings, displayType, isTriggerPanel, visibilityState)
-    if isTriggerPanel then
-        CaptureTriggerDisplayVisualState(frame, driverButton, group, displayType, settings, visibilityState, true)
-        RefreshTriggerPanelVisualSnapshots(frame)
-    else
-        CaptureTextureDisplayVisualState(driverButton, group, displayType, settings, visibilityState, true, host)
-    end
 end
 
 function CooldownCompanion:RefreshAllAuraTextureVisuals()

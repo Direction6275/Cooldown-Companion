@@ -42,109 +42,9 @@ local CreateSegmentedBar = RB.CreateSegmentedBar
 local LayoutSegments = RB.LayoutSegments
 local CreateOverlayBar = RB.CreateOverlayBar
 local LayoutOverlaySegments = RB.LayoutOverlaySegments
-local StoreOtherBarsVisualState = RB.StoreOtherBarsVisualState
-local AreOtherBarsVisualStateCaptureEnabled = RB.AreOtherBarsVisualStateCaptureEnabled
 
 local FormatTime = CooldownCompanion.FormatTime
 local GetDurationSecretFormatSpec = CooldownCompanion.GetDurationSecretFormatSpec
-
-local function ShouldCaptureOtherBarsVisualState()
-    return type(AreOtherBarsVisualStateCaptureEnabled) == "function"
-        and AreOtherBarsVisualStateCaptureEnabled() == true
-end
-
-local function IsFrameShown(frame)
-    return frame and type(frame.IsShown) == "function" and frame:IsShown() == true or false
-end
-
-local function StoreCustomBarVisualState(barInfo, details)
-    if type(StoreOtherBarsVisualState) ~= "function" or not ShouldCaptureOtherBarsVisualState() then
-        return
-    end
-    if not (barInfo and barInfo.frame) then
-        return
-    end
-
-    local cabConfig = barInfo.cabConfig
-    details = details or {}
-    details.rowKind = "custom"
-    details.identity = {
-        barType = barInfo.barType,
-        powerType = barInfo.powerType,
-        customBarId = barInfo.customBarId,
-    }
-    details.visibility = details.visibility or {
-        shown = IsFrameShown(barInfo.frame),
-        mode = IsFrameShown(barInfo.frame) and "shown" or "hidden",
-    }
-    if cabConfig then
-        details.custom = details.custom or {}
-        details.custom.spellID = tonumber(cabConfig.spellID) or cabConfig.spellID
-        details.custom.trackingMode = cabConfig.trackingMode
-        details.custom.auraTracking = cabConfig.auraTracking == true
-        details.custom.hideWhenInactive = cabConfig.hideWhenInactive == true
-        details.custom.hideWhileAuraActive = cabConfig.hideWhileAuraActive == true
-    end
-
-    StoreOtherBarsVisualState(barInfo.frame, details)
-end
-
-local function StoreCustomCooldownVisualState(
-    barInfo,
-    bar,
-    cooldownResult,
-    chargeState,
-    cooldownActive,
-    auraState,
-    auraPresent,
-    configUnit,
-    inPandemic,
-    renderAuraState,
-    durationObj,
-    phase,
-    visibilityReason,
-    displayMode,
-    visibilityOverride
-)
-    if not ShouldCaptureOtherBarsVisualState() then
-        return
-    end
-
-    local durationSecret = durationObj and durationObj.HasSecretValues and durationObj:HasSecretValues() or false
-    local auraDurationObj = auraState and auraState.durationObj
-    local auraDurationSecret = auraDurationObj and auraDurationObj.HasSecretValues and auraDurationObj:HasSecretValues() or false
-    StoreCustomBarVisualState(barInfo, {
-        phase = phase or "post-dispatch",
-        visibility = visibilityOverride or {
-            shown = IsFrameShown(bar),
-            mode = IsFrameShown(bar) and "shown" or "hidden",
-            reason = visibilityReason,
-        },
-        custom = {
-            display = displayMode or (renderAuraState and "aura" or "cooldown"),
-            auraPresent = auraPresent == true,
-            auraUnit = auraState and auraState.auraUnit or configUnit,
-            auraSource = auraState and auraState.viewerFrame and "viewer" or (auraPresent and "player-fallback" or "none"),
-            inPandemic = inPandemic == true,
-            cooldownActive = cooldownActive == true,
-            cooldownState = cooldownResult and cooldownResult.state,
-            chargeState = chargeState,
-            valuePath = (durationSecret or auraDurationSecret) and "secret-safe" or "plain",
-        },
-        text = {
-            durationShown = bar and bar.text and bar.text:IsShown() == true or false,
-            stackShown = bar and bar.stackText and bar.stackText:IsShown() == true or false,
-            durationSecret = durationSecret or auraDurationSecret,
-        },
-        effects = {
-            auraActive = bar and bar._auraActive == true or false,
-            pandemic = bar and bar._inPandemic == true or false,
-            pulse = bar and bar._barPulseActive == true or false,
-            colorShift = bar and bar._barColorShiftActive == true or false,
-            maxStacksIndicator = barInfo and barInfo._maxStacksIndicator ~= nil or false,
-        },
-    })
-end
 
 function RB.CreateResourceBarCustomBarsModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
@@ -403,21 +303,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if CooldownCompanion.UpdateCustomBarSoundAlerts then
                 CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, false)
             end
-            if ShouldCaptureOtherBarsVisualState() then
-                StoreCustomBarVisualState(barInfo, {
-                    phase = "hidden",
-                    visibility = {
-                        shown = IsFrameShown(barInfo.frame),
-                        mode = IsFrameShown(barInfo.frame) and "shown" or "hidden",
-                        reason = "spell-aura-stack-missing",
-                    },
-                    custom = {
-                        auraPresent = false,
-                        auraSource = "spell-stack",
-                        ready = false,
-                    },
-                })
-            end
             RB.RequestCustomBarPresentationRefresh()
             return
         end
@@ -464,22 +349,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if not shouldShow then
                 if isActive then
                     UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, false)
-                end
-                if ShouldCaptureOtherBarsVisualState() then
-                    StoreCustomBarVisualState(barInfo, {
-                        phase = "hidden",
-                        visibility = {
-                            shown = false,
-                            mode = "hidden",
-                            reason = cabConfig.hideWhenInactive and "hide-when-inactive" or "hide-while-aura-active",
-                        },
-                        custom = {
-                            auraPresent = auraPresent == true,
-                            auraUnit = auraUnit,
-                            inPandemic = inPandemic == true,
-                            spellAuraStackDisplay = spellAuraStackDisplay == true,
-                        },
-                    })
                 end
                 return
             end
@@ -612,38 +481,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         -- Max stacks indicator: SetValue drives visibility via C-level clamping
         if cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
             barInfo._maxStacksIndicator:SetValue(auraPresent and applications or 0)
-        end
-        if ShouldCaptureOtherBarsVisualState() then
-            local stackValuesAreSecret = issecretvalue
-                and (issecretvalue(stacks) or issecretvalue(applications))
-            StoreCustomBarVisualState(barInfo, {
-                phase = "post-dispatch",
-                custom = {
-                    display = barInfo.barType,
-                    auraPresent = auraPresent == true,
-                    auraUnit = auraUnit,
-                    auraSource = viewerFrame and "viewer" or (auraPresent and "player-fallback" or "none"),
-                    inPandemic = inPandemic == true,
-                    spellAuraStackDisplay = spellAuraStackDisplay == true,
-                    valuePath = (stackValuesAreSecret
-                        or (durationObj and durationObj.HasSecretValues and durationObj:HasSecretValues())) and "secret-safe" or "plain",
-                    maxStacks = maxStacks,
-                    thresholdActive = thresholdEnabled == true,
-                    stackValue = stackValuesAreSecret and "secret-safe" or (auraPresent and "present" or "none"),
-                },
-                text = {
-                    durationShown = barInfo.frame.text and barInfo.frame.text:IsShown() == true or false,
-                    stackShown = barInfo.frame.stackText and barInfo.frame.stackText:IsShown() == true or false,
-                    durationSecret = durationObj and durationObj.HasSecretValues and durationObj:HasSecretValues() or false,
-                },
-                effects = {
-                    auraActive = barInfo.frame._auraActive == true,
-                    pandemic = barInfo.frame._inPandemic == true,
-                    pulse = barInfo.frame._barPulseActive == true,
-                    colorShift = barInfo.frame._barColorShiftActive == true,
-                    maxStacksIndicator = barInfo._maxStacksIndicator ~= nil,
-                },
-            })
         end
     end
 
@@ -963,7 +800,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if not shouldShow then
                 ClearSpellCustomBarAuraRuntimeState(barInfo)
                 UpdateSpellCustomBarSounds(auraPresent)
-                StoreCustomCooldownVisualState(barInfo, bar, cooldownResult, chargeState, cooldownActive, auraState, auraPresent, configUnit, inPandemic, renderAuraState, durationObj, "hidden", cabConfig.hideWhenInactive and "hide-when-inactive" or "hide-while-aura-active", "hidden")
                 return
             end
         elseif (cabConfig.hideWhenInactive or cabConfig.hideWhileAuraActive)
@@ -974,7 +810,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         if spellAuraStackDisplay and auraPresent then
             UpdateSpellCustomBarSounds(true)
-            StoreCustomCooldownVisualState(barInfo, bar, cooldownResult, chargeState, cooldownActive, auraState, auraPresent, configUnit, inPandemic, renderAuraState, durationObj, "post-dispatch", "spell-aura-stack-display", "aura-stack")
             RB.RequestCustomBarPresentationRefresh()
             return
         end
@@ -1032,7 +867,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
 
             UpdateSpellCustomBarSounds(auraPresent)
-            StoreCustomCooldownVisualState(barInfo, bar, cooldownResult, chargeState, cooldownActive, auraState, auraPresent, configUnit, inPandemic, renderAuraState, durationObj, "post-dispatch", nil, "aura")
             return
         end
 
@@ -1075,244 +909,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
 
         UpdateSpellCustomBarSounds(false)
-        StoreCustomCooldownVisualState(barInfo, bar, cooldownResult, chargeState, cooldownActive, auraState, auraPresent, configUnit, inPandemic, renderAuraState, durationObj, "post-dispatch", nil, "cooldown")
-    end
-
-    local function CaptureCurrentCustomAuraVisualState(barInfo)
-        local cabConfig = barInfo and barInfo.cabConfig
-        local frame = barInfo and barInfo.frame
-        if not (cabConfig and cabConfig.spellID and frame) then
-            return false
-        end
-
-        local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
-        local auraState = spellAuraStackDisplay and RB.ResolveSpellCustomBarAuraState and RB.ResolveSpellCustomBarAuraState(barInfo) or nil
-        local stacks = 0
-        local applications = 0
-        local auraPresent = false
-        local durationObj
-        local isActive = cabConfig.trackingMode == "active"
-        local useDrain = isActive
-        local needsDuration = (useDrain or cabConfig.showDurationText) and not spellAuraStackDisplay
-        local bar = barInfo.barType == "custom_continuous" and frame or nil
-        local auraPreview = bar and bar._barAuraActivePreview
-        local pandemicPreview = bar and bar._pandemicPreview
-        local indicatorPreview = isActive and (auraPreview or pandemicPreview)
-        local configUnit = GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
-        local viewerFrame = CustomAuraBar.ResolveViewerFrame(cabConfig, configUnit)
-        local auraUnit = configUnit
-        local instId = viewerFrame and viewerFrame.auraInstanceID
-
-        if spellAuraStackDisplay then
-            configUnit = (auraState and auraState.configUnit) or configUnit
-            viewerFrame = auraState and auraState.viewerFrame or nil
-            if auraState and auraState.ready == true and auraState.auraPresent == true and auraState.auraData then
-                auraPresent = true
-                instId = auraState.auraInstanceID
-                auraUnit = auraState.auraUnit or configUnit
-                applications = auraState.auraData.applications or 0
-                stacks = applications
-            end
-        elseif instId then
-            local viewerUnit = viewerFrame.auraDataUnit or configUnit
-            if viewerUnit == configUnit then
-                local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(configUnit, instId)
-                if auraData then
-                    auraPresent = true
-                    applications = auraData.applications or 0
-                    stacks = isActive and 1 or applications
-                    auraUnit = configUnit
-                    if needsDuration then
-                        durationObj = C_UnitAuras.GetAuraDuration(configUnit, instId)
-                    end
-                end
-            end
-        end
-
-        if not spellAuraStackDisplay and not auraPresent and configUnit == "player" then
-            local auraData = CustomAuraBar.ResolvePlayerAuraData(cabConfig)
-            if auraData then
-                instId = auraData.auraInstanceID
-                auraUnit = "player"
-                auraPresent = true
-                applications = auraData.applications or 0
-                stacks = isActive and 1 or applications
-                if needsDuration and instId then
-                    durationObj = C_UnitAuras.GetAuraDuration("player", instId)
-                end
-            end
-        end
-
-        if spellAuraStackDisplay and not auraPresent and not GetPreviewActive() then
-            local shown = IsFrameShown(frame)
-            StoreCustomBarVisualState(barInfo, {
-                phase = "hidden",
-                visibility = {
-                    shown = shown,
-                    mode = shown and "shown" or "hidden",
-                    reason = "spell-aura-stack-missing",
-                },
-                custom = {
-                    display = barInfo.barType,
-                    auraPresent = false,
-                    auraSource = "spell-stack",
-                    ready = false,
-                },
-            })
-            return true
-        end
-
-        if indicatorPreview and not auraPresent then
-            auraPresent = true
-            applications = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
-            stacks = 1
-        end
-
-        local inPandemic = PeekCustomBarPandemicState(frame, configUnit, auraPresent, viewerFrame, pandemicPreview)
-        local shouldShow, hasVisibilityRule = ResolveCustomAuraVisibility(cabConfig, auraPresent, inPandemic, auraPreview, pandemicPreview)
-        if spellAuraStackDisplay and auraState and auraState.ready ~= true then
-            hasVisibilityRule = false
-            shouldShow = true
-        end
-
-        local visibilityReason = nil
-        if hasVisibilityRule and not shouldShow then
-            visibilityReason = GetCustomAuraVisibilityReason(cabConfig)
-        end
-
-        local maxStacks = cabConfig.maxStacks or 1
-        local thresholdEnabled = (not spellAuraStackDisplay) and IsCustomAuraMaxThresholdEnabled(cabConfig)
-        local stackValuesAreSecret = issecretvalue
-            and (issecretvalue(stacks) or issecretvalue(applications))
-        local durationSecret = durationObj and durationObj.HasSecretValues and durationObj:HasSecretValues() or false
-        StoreCustomBarVisualState(barInfo, {
-            phase = shouldShow and "post-dispatch" or "hidden",
-            visibility = {
-                shown = shouldShow == true,
-                mode = shouldShow and "shown" or "hidden",
-                reason = visibilityReason,
-            },
-            custom = {
-                display = barInfo.barType,
-                auraPresent = auraPresent == true,
-                auraUnit = auraUnit,
-                auraSource = viewerFrame and "viewer" or (auraPresent and "player-fallback" or "none"),
-                inPandemic = inPandemic == true,
-                spellAuraStackDisplay = spellAuraStackDisplay == true,
-                valuePath = (stackValuesAreSecret or durationSecret) and "secret-safe" or "plain",
-                maxStacks = maxStacks,
-                thresholdActive = thresholdEnabled == true,
-                stackValue = stackValuesAreSecret and "secret-safe" or (auraPresent and "present" or "none"),
-            },
-            text = {
-                durationShown = frame.text and frame.text:IsShown() == true or false,
-                stackShown = frame.stackText and frame.stackText:IsShown() == true or false,
-                durationSecret = durationSecret,
-            },
-            effects = {
-                auraActive = frame._auraActive == true,
-                pandemic = frame._inPandemic == true,
-                pulse = frame._barPulseActive == true,
-                colorShift = frame._barColorShiftActive == true,
-                maxStacksIndicator = barInfo._maxStacksIndicator ~= nil,
-            },
-        })
-        return true
-    end
-
-    local function CaptureCurrentCustomCooldownVisualState(barInfo)
-        local cabConfig = barInfo and barInfo.cabConfig
-        local bar = barInfo and barInfo.frame
-        if not (cabConfig and cabConfig.spellID and bar) then
-            return false
-        end
-
-        local cooldownResult = CooldownCompanion.EvaluateSpellCooldownStateForCustomBar
-            and CooldownCompanion:EvaluateSpellCooldownStateForCustomBar(cabConfig)
-        local durationObj = cooldownResult and cooldownResult.renderDurationObj
-        local cooldownActive = cooldownResult
-            and cooldownResult.state == ST.CooldownLogic.STATE_COOLDOWN
-        local auraState = RB.ResolveSpellCustomBarAuraState(barInfo)
-        local auraPresent = auraState and auraState.ready == true and auraState.auraPresent == true
-        local auraPreview = bar._barAuraActivePreview == true
-        local pandemicPreview = bar._pandemicPreview == true
-        local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
-        local renderAuraState = cabConfig.auraTracking == true
-            and not spellAuraStackDisplay
-            and (auraPresent or auraPreview or pandemicPreview)
-        local chargeState = cooldownResult and cooldownResult.chargeState
-        local configUnit = (auraState and auraState.configUnit)
-            or GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
-        local inPandemic = PeekCustomBarPandemicState(
-            bar,
-            configUnit,
-            auraPresent,
-            auraState and auraState.viewerFrame,
-            pandemicPreview
-        )
-        local shouldShow = IsFrameShown(bar)
-        local visibilityReason = nil
-
-        if auraState
-            and auraState.ready == true
-            and (cabConfig.hideWhenInactive or cabConfig.hideWhileAuraActive) then
-            shouldShow = ResolveCustomAuraVisibility(cabConfig, auraPresent, inPandemic, auraPreview, pandemicPreview)
-            if not shouldShow then
-                visibilityReason = GetCustomAuraVisibilityReason(cabConfig)
-            end
-        elseif cabConfig.hideWhenInactive or cabConfig.hideWhileAuraActive then
-            shouldShow = true
-        end
-
-        local displayMode = "cooldown"
-        if not shouldShow then
-            displayMode = "hidden"
-        elseif spellAuraStackDisplay and auraPresent then
-            displayMode = "aura-stack"
-            visibilityReason = "spell-aura-stack-display"
-        elseif renderAuraState then
-            displayMode = "aura"
-        end
-
-        StoreCustomCooldownVisualState(
-            barInfo,
-            bar,
-            cooldownResult,
-            chargeState,
-            cooldownActive,
-            auraState,
-            auraPresent,
-            configUnit,
-            inPandemic,
-            renderAuraState,
-            durationObj,
-            shouldShow and "post-dispatch" or "hidden",
-            visibilityReason,
-            displayMode,
-            {
-                shown = shouldShow == true,
-                mode = shouldShow and "shown" or "hidden",
-                reason = visibilityReason,
-            }
-        )
-        return true
-    end
-
-    local function CaptureCustomBarVisualState(barInfo)
-        if not ShouldCaptureOtherBarsVisualState() then
-            return false
-        end
-        if not (barInfo and barInfo.frame and barInfo.cabConfig) then
-            return false
-        end
-        if barInfo.barType == "custom_cooldown" then
-            return CaptureCurrentCustomCooldownVisualState(barInfo)
-        elseif barInfo.barType == "custom_continuous"
-            or barInfo.barType == "custom_segmented"
-            or barInfo.barType == "custom_overlay" then
-            return CaptureCurrentCustomAuraVisualState(barInfo)
-        end
-        return false
     end
 
     local function GetHiddenCustomAuraWakeUnit(cabConfig)
@@ -1883,6 +1479,5 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         FinalizeAppliedBarVisibility = FinalizeAppliedBarVisibility,
         HideUnusedResourceBarFrames = HideUnusedResourceBarFrames,
         PrepareCustomAuraBar = PrepareCustomAuraBar,
-        CaptureCustomBarVisualState = CaptureCustomBarVisualState,
     }
 end

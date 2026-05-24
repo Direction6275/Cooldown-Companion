@@ -116,18 +116,9 @@ local function ClearBarVisualState(button)
     end
 end
 
-local function CopyColor(target, prefix, color)
-    target[prefix .. "R"] = color and color[1] or nil
-    target[prefix .. "G"] = color and color[2] or nil
-    target[prefix .. "B"] = color and color[3] or nil
-    target[prefix .. "A"] = color and color[4] or nil
-end
-
 local function StoreBarDisplayVisualState(button, details)
     local intent = EnsureBarVisualTable(button, "_barVisualIntent")
     intent.domain = details.domain
-    intent.onCooldown = details.onCooldown == true
-    intent.chargeState = details.chargeState
     intent.colorReason = details.colorReason
     intent.auraColorReason = details.auraColorReason
     intent.auraEffectActive = details.auraEffectActive == true
@@ -138,25 +129,14 @@ local function StoreBarDisplayVisualState(button, details)
     intent.colorShiftMode = details.colorShiftMode
     intent.stackDisplay = details.stackDisplay == true
     intent.stackMode = details.stackMode
-    intent.stackSegmentLayerActive = details.stackSegmentLayerActive == true
     intent.gcdSuppressed = button._barGCDSuppressed == true
-    CopyColor(intent, "color", details.color)
-    CopyColor(intent, "colorShiftBase", details.colorShiftBaseColor)
-    CopyColor(intent, "colorShiftTarget", details.colorShiftTargetColor)
 
     local applied = EnsureBarVisualTable(button, "_barVisualApplied")
     applied.colorReason = details.colorReason
-    applied.auraColorActive = button._barAuraColor ~= nil
     applied.auraEffectActive = button._barAuraEffectActive == true
     applied.pulseActive = button._barPulseActive == true
-    applied.pulseMode = details.pulseMode
     applied.colorShiftActive = button._barColorShiftActive == true
-    applied.colorShiftMode = details.colorShiftMode
-    applied.stackVisualActive = button._barAuraStackVisualActive == true
-    applied.stackMode = button._barAuraStackVisualMode or details.stackMode
-    applied.baseFillHidden = button._barAuraBaseFillHidden == true
     applied.gcdSuppressed = button._barGCDSuppressed == true
-    CopyColor(applied, "color", details.color)
 end
 
 local function ResolveConditionalPreviewRemaining(button)

@@ -329,20 +329,7 @@ local function StoreTextVisualIntent(button, details)
         details.auraRemaining,
         details.auraIsSecret
     )
-    intent.available = button._desatCooldownActive ~= true
-    intent.unusable = button._isUnusable == true
-    intent.outOfRange = button._isOutOfRange == true
-    intent.auraActive = details.auraActive == true
-    intent.auraHasTimer = details.auraHasTimer == true
-    intent.timePresent = details.timeIsSecret == true or (details.timeRemaining ~= nil and details.timeRemaining > 0)
-    intent.auraTimePresent = details.auraIsSecret == true or (details.auraRemaining ~= nil and details.auraRemaining > 0)
-    intent.cooldownDeferred = button._cooldownDeferred == true
-    intent.chargeState = button._chargeState
-    intent.currentCharges = details.currentCharges
-    intent.maxCharges = details.maxCharges
     intent.stackSource = details.stackDisplayKind
-    intent.stackPresent = details.stackDisplayKind ~= nil
-    intent.stackSecret = details.stackDisplayKind ~= nil and issecretvalue(details.stackDisplayText) == true
     intent.secretDuration = details.secretValue ~= nil
     intent.secretDurationToken = details.secretColorToken
     intent.secretStack = details.secretStackValue ~= nil
@@ -370,7 +357,6 @@ local function UpdateTextVisualAppliedPulse(button)
 
     local es = button._effectState
     applied.pulseActive = es and es.pulseActive == true or false
-    applied.alpha = applied.pulseActive and es.pulseAlpha or 1.0
 end
 
 ------------------------------------------------------------------------
