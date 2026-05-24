@@ -1193,7 +1193,6 @@ local function RefreshButtonVisualState(button, context)
 
     local text = EnsureSection(state, "text")
     CopyTextVisualState(button, text, context)
-    text.durationObj = button._durationObj
 
     local texture = EnsureSection(state, "texture")
     CopyTextureDisplayVisualState(button, texture)
