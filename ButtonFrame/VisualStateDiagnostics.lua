@@ -236,6 +236,27 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         readyGlowActive = ready.glowActive,
         procGlowActive = glows.procActive,
         auraGlowActive = glows.auraActive,
+        glowIntentAvailable = glows.intentAvailable,
+        procGlowIntentActive = glows.procIntentActive,
+        procGlowReason = glows.procReason,
+        procGlowPreview = glows.procPreview,
+        procGlowCombatSuppressed = glows.procCombatSuppressed,
+        procGlowOverlayActive = glows.procOverlayActive,
+        auraGlowIntentActive = glows.auraIntentActive,
+        auraGlowReason = glows.auraReason,
+        auraGlowPreview = glows.auraPreview,
+        auraGlowCombatSuppressed = glows.auraCombatSuppressed,
+        auraGlowPandemicIntent = glows.auraPandemicIntent,
+        auraGlowPandemicApplied = glows.auraPandemic,
+        auraGlowInvert = glows.auraInvert,
+        readyGlowIntentActive = glows.readyIntentActive,
+        readyGlowReason = glows.readyReason,
+        readyGlowPreview = glows.readyPreview,
+        readyGlowCombatSuppressed = glows.readyCombatSuppressed,
+        readyGlowSuppressedByProc = glows.readySuppressedByProc,
+        readyGlowAuraSuppressed = glows.readyAuraSuppressed,
+        readyGlowMaxCharges = glows.readyMaxCharges,
+        readyGlowDurationWindow = glows.readyDurationWindow,
     }
     row.bar = {
         intentAvailable = bar.intentAvailable,
@@ -413,6 +434,14 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     CompareValue(row, "ready.glowActive", ready.glowActive, IsTrue(button._readyGlowActive))
     CompareValue(row, "glows.procActive", glows.procActive, IsTrue(button._procGlowActive))
     CompareValue(row, "glows.auraActive", glows.auraActive, IsTrue(button._auraGlowActive))
+    if compareVisibleIconIntent and glows.intentAvailable == true then
+        CompareValue(row, "glows.proc.intent", glows.procIntentActive, glows.procActive)
+        CompareValue(row, "glows.aura.intent", glows.auraIntentActive, glows.auraActive)
+        if glows.auraIntentActive == true or glows.auraActive == true then
+            CompareValue(row, "glows.aura.pandemic", glows.auraPandemicIntent, glows.auraPandemic)
+        end
+        CompareValue(row, "glows.ready.intent", glows.readyIntentActive, glows.readyActive)
+    end
     CompareValue(row, "text.unusable", text.unusable, IsTrue(button._isUnusable))
     CompareValue(row, "text.outOfRange", text.outOfRange, IsTrue(button._isOutOfRange))
     CompareValue(row, "text.durationObj", text.durationObj ~= nil, button._durationObj ~= nil)

@@ -7,14 +7,12 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
 local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
-local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
 local pairs = pairs
 local ipairs = ipairs
 local unpack = unpack
-local UnitExists = UnitExists
 local InCombatLockdown = InCombatLockdown
 local GetTime = GetTime
 
@@ -32,6 +30,7 @@ local HasItemFallbacks = CooldownCompanion.HasItemFallbacks
 local ClearButtonVisualState = ST._ClearButtonVisualState
 local ResolveIconDesaturationIntent = ST._ResolveIconDesaturationIntent
 local ResolveIconFillIntent = ST._ResolveIconFillIntent
+local ResolveIconGlowIntent = ST._ResolveIconGlowIntent
 
 -- Imports from Glows
 local CreateGlowContainer = ST._CreateGlowContainer
@@ -439,18 +438,6 @@ local function UpdateBlizzardAuraSwipe(button, style)
     else
         HideBlizzardAuraSwipe(button, style)
     end
-end
-
-local function IsReadyGlowAtMaxCharges(button, buttonData)
-    if not (button and buttonData) then
-        return false
-    end
-
-    if buttonData.type ~= "spell" or buttonData.hasCharges ~= true or buttonData._hasDisplayCount then
-        return false
-    end
-
-    return button._chargeState == CHARGE_STATE_FULL
 end
 
 local function ApplyCountTextStyle(button, style)
@@ -1167,103 +1154,35 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         SetAssistedHighlight(button, showHighlight)
     end
 
+    local glowIntent
+    if type(ResolveIconGlowIntent) == "function" then
+        glowIntent = button._iconGlowIntent
+        if type(glowIntent) ~= "table" then
+            glowIntent = {}
+            button._iconGlowIntent = glowIntent
+        end
+        ResolveIconGlowIntent(button, buttonData, style, procOverlayActive, glowIntent, {
+            inCombat = inCombat,
+        })
+    end
+
     -- Proc glow (spell activation overlay)
     if button.procGlow then
-        local showProc = false
-        if button._procGlowPreview then
-            showProc = true
-        elseif style.procGlowStyle ~= "none" and buttonData.type == "spell"
-               and not buttonData.isPassive and not (button._auraTrackingReady == true)
-               and (not style.procGlowCombatOnly or inCombat) then
-            showProc = procOverlayActive and true or false
-        end
+        local showProc = glowIntent and glowIntent.proc and glowIntent.proc.active == true
         SetProcGlow(button, showProc)
     end
 
     -- Aura active glow indicator
     if button.auraGlow then
-        local showAuraGlow = false
-        local pandemicOverride = false
-        local auraIndicatorEnabled = buttonData.auraIndicatorEnabled
-        -- Allow per-button override sections to explicitly disable aura glow,
-        -- even when legacy per-button enable flags are set.
-        if buttonData.overrideSections
-           and buttonData.overrideSections.auraIndicator
-           and style.auraGlowStyle == "none" then
-            auraIndicatorEnabled = false
-        end
-        if button._pandemicPreview then
-            showAuraGlow = true
-            pandemicOverride = true
-        elseif button._auraGlowPreview then
-            showAuraGlow = true
-        elseif style.auraGlowInvert then
-            -- Invert mode: show glow when tracked aura is MISSING
-            if button._auraTrackingReady == true and button._auraSpellID and not button._auraActive then
-                if (auraIndicatorEnabled or style.auraGlowStyle ~= "none")
-                   and (not style.auraGlowCombatOnly or inCombat) then
-                    if button._auraUnit == "target" then
-                        if UnitExists("target") then
-                            showAuraGlow = true
-                        end
-                    else
-                        showAuraGlow = true
-                    end
-                end
-            elseif button._auraActive and button._inPandemic and style.showPandemicGlow ~= false
-                   and (not style.pandemicGlowCombatOnly or inCombat) then
-                showAuraGlow = true
-                pandemicOverride = true
-            end
-        elseif button._auraActive then
-            if button._inPandemic and style.showPandemicGlow ~= false
-               and (not style.pandemicGlowCombatOnly or inCombat) then
-                showAuraGlow = true
-                pandemicOverride = true
-            elseif (auraIndicatorEnabled or style.auraGlowStyle ~= "none")
-                   and (not style.auraGlowCombatOnly or inCombat) then
-                showAuraGlow = true
-            end
-        end
+        local auraIntent = glowIntent and glowIntent.aura
+        local showAuraGlow = auraIntent and auraIntent.active == true
+        local pandemicOverride = auraIntent and auraIntent.pandemic == true or false
         SetAuraGlow(button, showAuraGlow, pandemicOverride)
     end
 
     -- Ready glow (glow while off cooldown)
     if button.readyGlow then
-        local showReady = false
-        if button._readyGlowPreview then
-            showReady = true
-        elseif style.readyGlowStyle and style.readyGlowStyle ~= "none"
-               and not buttonData.isPassive
-               and not button._noCooldown
-               and (not style.readyGlowCombatOnly or inCombat)
-               and button._desatCooldownActive == false
-               and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
-               and not (procOverlayActive and style.procGlowStyle ~= "none") then
-            if style.readyGlowOnlyAtMaxCharges
-               and buttonData.type == "spell"
-               and buttonData.hasCharges == true
-               and not buttonData._hasDisplayCount then
-                local dur = style.readyGlowDuration or 0
-
-                if IsReadyGlowAtMaxCharges(button, buttonData) then
-                    if dur > 0 then
-                        showReady = button._readyGlowMaxChargesStartTime ~= nil
-                            and (GetTime() - button._readyGlowMaxChargesStartTime) <= dur
-                    else
-                        showReady = true
-                    end
-                end
-            else
-                local dur = style.readyGlowDuration or 0
-                if dur > 0 then
-                    showReady = button._readyGlowStartTime ~= nil
-                        and (GetTime() - button._readyGlowStartTime) <= dur
-                else
-                    showReady = true
-                end
-            end
-        end
+        local showReady = glowIntent and glowIntent.ready and glowIntent.ready.active == true
         SetReadyGlow(button, showReady)
     end
 end
@@ -1297,6 +1216,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._iconDesaturationIntent = nil
     button._iconTintIntent = nil
     button._iconFillIntent = nil
+    button._iconGlowIntent = nil
     button._desatCooldownActive = nil
     button._readyGlowStartTime = nil
     button._readyGlowMaxChargesStartTime = nil
