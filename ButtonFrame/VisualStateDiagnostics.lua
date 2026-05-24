@@ -17,6 +17,16 @@ local function IsFrameShown(frame)
     return frame ~= nil
 end
 
+local function ResolveVisibilityMode(hidden, alphaOverride)
+    if IsTrue(hidden) then
+        return "hidden"
+    end
+    if alphaOverride ~= nil and alphaOverride ~= 1 then
+        return "dimmed"
+    end
+    return "visible"
+end
+
 local function AddMismatch(row, key)
     local mismatches = row.mismatches
     if type(mismatches) ~= "table" then
@@ -160,9 +170,23 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         alphaOverride = visibility.alphaOverride,
         rawHidden = visibility.rawHidden,
         rawAlphaOverride = visibility.rawAlphaOverride,
+        rawReasonBits = visibility.rawReasonBits,
+        rawReasonMode = visibility.rawReasonMode,
         reasonBits = visibility.reasonBits,
         reasonMode = visibility.reasonMode,
+        reasonNames = visibility.reasonNames,
+        mode = visibility.mode,
+        rawMode = visibility.rawMode,
+        overrideSource = visibility.overrideSource,
+        triggerSuppressed = visibility.triggerSuppressed,
+        compactLayout = visibility.compactLayout,
+        forceVisible = visibility.forceVisible,
+        forceVisibleByConfig = visibility.forceVisibleByConfig,
+        forceVisibleByPreview = visibility.forceVisibleByPreview,
+        forceVisibleByUnlockPreview = visibility.forceVisibleByUnlockPreview,
+        hiddenPhase = visibility.hiddenPhase,
         lastAlpha = visibility.lastAlpha,
+        appliedAlpha = visibility.appliedAlpha,
     }
     row.visuals = {
         desaturationActive = desaturation.active,
@@ -286,7 +310,19 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     CompareValue(row, "charges.state", charges.state, button._chargeState)
     CompareValue(row, "visibility.hidden", visibility.hidden, IsTrue(button._visibilityHidden))
     CompareValue(row, "visibility.alphaOverride", visibility.alphaOverride, button._visibilityAlphaOverride)
+    CompareValue(row, "visibility.rawHidden", visibility.rawHidden, IsTrue(button._rawVisibilityHidden))
+    CompareValue(row, "visibility.rawAlphaOverride", visibility.rawAlphaOverride, button._rawVisibilityAlphaOverride)
+    CompareValue(row, "visibility.rawReasonBits", visibility.rawReasonBits, button._rawVisibilityReasonBits)
+    CompareValue(row, "visibility.rawReasonMode", visibility.rawReasonMode, button._rawVisibilityReasonMode)
+    CompareValue(row, "visibility.reasonBits", visibility.reasonBits, button._visibilityReasonBits)
+    CompareValue(row, "visibility.reasonMode", visibility.reasonMode, button._visibilityReasonMode)
+    CompareValue(row, "visibility.mode", visibility.mode, button._visibilityFinalMode or ResolveVisibilityMode(button._visibilityHidden, button._visibilityAlphaOverride))
+    CompareValue(row, "visibility.rawMode", visibility.rawMode, button._rawVisibilityReasonMode or ResolveVisibilityMode(button._rawVisibilityHidden, button._rawVisibilityAlphaOverride))
+    CompareValue(row, "visibility.overrideSource", visibility.overrideSource, button._visibilityOverrideSource)
+    CompareValue(row, "visibility.triggerSuppressed", visibility.triggerSuppressed, IsTrue(button._visibilityTriggerSuppressed))
+    CompareValue(row, "visibility.compactLayout", visibility.compactLayout, IsTrue(button._visibilityCompactLayout))
     CompareValue(row, "visibility.lastAlpha", visibility.lastAlpha, button._lastVisAlpha)
+    CompareValue(row, "visibility.appliedAlpha", visibility.appliedAlpha, button._lastVisAlpha)
     local compareVisibleIconIntent = row.displayMode == "icons"
         and row.phase == "post-dispatch"
         and visibility.hidden ~= true

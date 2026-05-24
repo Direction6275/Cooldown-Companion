@@ -18,6 +18,9 @@ local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
 local bit_band = bit.band
 local bit_bor  = bit.bor
+local ipairs = ipairs
+local tonumber = tonumber
+local type = type
 
 -- Bitmask constants for hide reasons
 local HIDE_ON_COOLDOWN      = 0x001
@@ -29,6 +32,18 @@ local HIDE_ZERO_CHARGES     = 0x020
 local HIDE_ZERO_STACKS      = 0x040
 local HIDE_NOT_EQUIPPED     = 0x080
 local HIDE_UNUSABLE         = 0x100
+
+local HIDE_REASON_NAMES = {
+    { bit = HIDE_ON_COOLDOWN,      name = "on-cooldown" },
+    { bit = HIDE_NOT_ON_COOLDOWN,  name = "not-on-cooldown" },
+    { bit = HIDE_AURA_NOT_ACTIVE,  name = "aura-missing" },
+    { bit = HIDE_AURA_ACTIVE,      name = "aura-active" },
+    { bit = HIDE_NO_PROC,          name = "no-proc" },
+    { bit = HIDE_ZERO_CHARGES,     name = "zero-charges" },
+    { bit = HIDE_ZERO_STACKS,      name = "zero-stacks" },
+    { bit = HIDE_NOT_EQUIPPED,     name = "not-equipped" },
+    { bit = HIDE_UNUSABLE,         name = "unusable" },
+}
 
 -- Baseline alpha fallback descriptors: each entry maps a hide reason bit
 -- to the buttonData config key that enables "dim instead of hide" when
@@ -48,6 +63,32 @@ local BASELINE_FALLBACKS = {
     { bit = HIDE_NO_PROC,         key = "useBaselineAlphaFallbackNoProc" },
     { bit = HIDE_UNUSABLE,        key = "useBaselineAlphaFallbackUnusable" },
 }
+
+local function ClearArray(tbl)
+    if type(tbl) == "table" then
+        for i = #tbl, 1, -1 do
+            tbl[i] = nil
+        end
+    end
+end
+
+local function GetButtonVisibilityReasonNames(reasonBits, target)
+    target = target or {}
+    ClearArray(target)
+
+    reasonBits = tonumber(reasonBits) or 0
+    if reasonBits == 0 then
+        return target
+    end
+
+    for _, entry in ipairs(HIDE_REASON_NAMES) do
+        if bit_band(reasonBits, entry.bit) ~= 0 then
+            target[#target + 1] = entry.name
+        end
+    end
+
+    return target
+end
 
 -- Evaluate per-button visibility rules and set hidden/alpha override state.
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
@@ -230,4 +271,5 @@ end
 
 -- Exports
 ST._EvaluateButtonVisibility = EvaluateButtonVisibility
+ST._GetButtonVisibilityReasonNames = GetButtonVisibilityReasonNames
 ST._UpdateLossOfControl = UpdateLossOfControl

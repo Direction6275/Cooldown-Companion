@@ -457,9 +457,22 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
                 parts[#parts + 1] = "visual=" .. tostring(row.cooldown.visualActive)
             end
             if row.visibility then
+                parts[#parts + 1] = "visibility=" .. tostring(row.visibility.mode or (row.visibility.hidden and "hidden" or "visible"))
                 parts[#parts + 1] = "hidden=" .. tostring(row.visibility.hidden)
                 if row.visibility.alphaOverride ~= nil then
                     parts[#parts + 1] = "alpha=" .. tostring(row.visibility.alphaOverride)
+                end
+                if row.visibility.rawMode and row.visibility.rawMode ~= row.visibility.mode then
+                    parts[#parts + 1] = "rawVisibility=" .. tostring(row.visibility.rawMode)
+                end
+                if row.visibility.overrideSource then
+                    parts[#parts + 1] = "override=" .. tostring(row.visibility.overrideSource)
+                end
+                if type(row.visibility.reasonNames) == "table" and #row.visibility.reasonNames > 0 then
+                    parts[#parts + 1] = "visibilityReason=" .. table.concat(row.visibility.reasonNames, "+")
+                end
+                if row.visibility.triggerSuppressed then
+                    parts[#parts + 1] = "triggerSuppressed=true"
                 end
             end
             if row.visuals then
