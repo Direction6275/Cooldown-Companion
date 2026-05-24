@@ -423,6 +423,33 @@ local function FormatIDList(t)
     return table.concat(parts, ", ")
 end
 
+local function IsTriggerFailureRow(row)
+    return type(row) == "table"
+        and row.enabled ~= false
+        and row.skipped ~= true
+        and row.matched ~= true
+end
+
+local function FindTriggerFailure(trigger)
+    if type(trigger) ~= "table" then
+        return nil
+    end
+
+    if IsTriggerFailureRow(trigger.row) then
+        return trigger.row
+    end
+
+    local panel = trigger.panel
+    if type(panel) == "table" and type(panel.rows) == "table" then
+        for _, row in ipairs(panel.rows) do
+            if IsTriggerFailureRow(row) then
+                return row
+            end
+        end
+    end
+    return nil
+end
+
 local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
     if not visualStateDiagnostics then
         return
@@ -541,6 +568,50 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
                 end
                 if row.text.pulseActive then
                     parts[#parts + 1] = "pulse=true"
+                end
+            end
+            if row.trigger then
+                local panel = row.trigger.panel
+                if type(panel) == "table" then
+                    parts[#parts + 1] = "trigger=" .. (panel.showDisplay and "shown" or "hidden")
+                    parts[#parts + 1] = "triggerMatch=" .. tostring(panel.matched)
+                    if panel.displayType then
+                        parts[#parts + 1] = "triggerDisplay=" .. tostring(panel.displayType)
+                    end
+                    if panel.displayReason then
+                        parts[#parts + 1] = "triggerReason=" .. tostring(panel.displayReason)
+                    elseif panel.matchReason then
+                        parts[#parts + 1] = "triggerReason=" .. tostring(panel.matchReason)
+                    end
+                    if panel.forceReason then
+                        parts[#parts + 1] = "triggerForced=" .. tostring(panel.forceReason)
+                    end
+                    if panel.effectsActive then
+                        parts[#parts + 1] = "triggerEffects=true"
+                    end
+                    if panel.soundVisible then
+                        parts[#parts + 1] = "triggerSound=true"
+                    end
+                end
+                local triggerRow = row.trigger.row
+                if type(triggerRow) == "table" then
+                    parts[#parts + 1] = ("triggerRow=%s:%s"):format(
+                        tostring(triggerRow.rowIndex or "?"),
+                        tostring(triggerRow.reason or (triggerRow.matched and "matched" or "unknown"))
+                    )
+                end
+                local failedTriggerRow = FindTriggerFailure(row.trigger)
+                if failedTriggerRow then
+                    local failed = tostring(failedTriggerRow.rowIndex or "?") .. ":" .. tostring(failedTriggerRow.reason or "failed")
+                    if failedTriggerRow.failedConditionKey then
+                        failed = failed .. ":" .. tostring(failedTriggerRow.failedConditionKey)
+                    end
+                    if failedTriggerRow.expected ~= nil or failedTriggerRow.actual ~= nil then
+                        failed = failed
+                            .. "(expected=" .. tostring(failedTriggerRow.expected)
+                            .. ",actual=" .. tostring(failedTriggerRow.actual) .. ")"
+                    end
+                    parts[#parts + 1] = "triggerFail=" .. failed
                 end
             end
             if type(row.mismatches) == "table" and #row.mismatches > 0 then

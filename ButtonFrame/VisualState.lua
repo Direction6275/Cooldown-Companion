@@ -415,6 +415,113 @@ local function CopyBarVisualState(button, bar, context)
     end
 end
 
+local function ClearTable(tbl)
+    if type(tbl) ~= "table" then
+        return
+    end
+    for key in pairs(tbl) do
+        tbl[key] = nil
+    end
+end
+
+local function CopyTriggerConditionList(sourceConditions, target)
+    if type(sourceConditions) ~= "table" or #sourceConditions == 0 then
+        target.conditions = nil
+        return
+    end
+
+    local conditions = {}
+    for index, condition in ipairs(sourceConditions) do
+        conditions[index] = {
+            key = condition.key,
+            expected = condition.expected,
+            actual = condition.actual,
+            matched = condition.matched == true,
+        }
+    end
+    target.conditions = conditions
+end
+
+local function CopyTriggerRowState(source, target)
+    if type(source) ~= "table" then
+        return
+    end
+
+    target.rowIndex = source.rowIndex
+    target.enabled = source.enabled == true
+    target.active = source.active == true
+    target.skipped = source.skipped == true
+    target.hasRuntime = source.hasRuntime == true
+    target.conditionCount = source.conditionCount
+    target.matched = source.matched == true
+    target.reason = source.reason
+    target.failedConditionKey = source.failedConditionKey
+    target.expected = source.expected
+    target.actual = source.actual
+    CopyTriggerConditionList(source.conditions, target)
+end
+
+local function CopyTriggerPanelRows(sourceRows, target)
+    if type(sourceRows) ~= "table" or #sourceRows == 0 then
+        target.rows = nil
+        return
+    end
+
+    local rows = {}
+    for index, sourceRow in ipairs(sourceRows) do
+        local row = {}
+        CopyTriggerRowState(sourceRow, row)
+        rows[index] = row
+    end
+    target.rows = rows
+end
+
+local function CopyTriggerPanelState(source, target)
+    if type(source) ~= "table" then
+        return
+    end
+
+    target.rowCount = source.rowCount
+    target.runtimeRowCount = source.runtimeRowCount
+    target.activeRowCount = source.activeRowCount
+    target.matched = source.matched == true
+    target.matchReason = source.matchReason or source.reason
+    target.displayType = source.displayType
+    target.hasSettings = source.hasSettings == true
+    target.showDisplay = source.showDisplay == true
+    target.triggerMatched = source.triggerMatched == true
+    target.hasTriggerEffectPreview = source.hasTriggerEffectPreview == true
+    target.isEditing = source.isEditing == true
+    target.isUnlocked = source.isUnlocked == true
+    target.isGroupedPreview = source.isGroupedPreview == true
+    target.effectsActive = source.effectsActive == true
+    target.soundVisible = source.soundVisible == true
+    target.rendered = source.rendered == true
+    target.displayReason = source.displayReason
+    target.forceReason = source.forceReason
+    CopyTriggerPanelRows(source.rows, target)
+end
+
+local function CopyTriggerVisualState(button, trigger)
+    ClearTable(trigger)
+
+    local rowSource = button._triggerVisualRow
+    if type(rowSource) == "table" then
+        local row = {}
+        CopyTriggerRowState(rowSource, row)
+        trigger.row = row
+    end
+
+    local panelSource = button._triggerVisualPanel
+    if type(panelSource) == "table" then
+        local panel = {}
+        CopyTriggerPanelState(panelSource, panel)
+        trigger.panel = panel
+    end
+
+    trigger.available = trigger.row ~= nil or trigger.panel ~= nil
+end
+
 local function ClearButtonVisualState(button)
     if button then
         button._visualState = nil
@@ -423,6 +530,8 @@ local function ClearButtonVisualState(button)
         button._textVisualApplied = nil
         button._barVisualIntent = nil
         button._barVisualApplied = nil
+        button._triggerVisualRow = nil
+        button._triggerVisualPanel = nil
     end
 end
 
@@ -614,6 +723,9 @@ local function RefreshButtonVisualState(button, context)
     textureEffects.cooldownActive = state.cooldownVisualActive
     textureEffects.chargeState = button._chargeState
     textureEffects.procActive = IsTrue(button._procOverlayActive)
+
+    local trigger = EnsureSection(state, "trigger")
+    CopyTriggerVisualState(button, trigger)
 
     local applied = EnsureSection(state, "applied")
     applied.desaturated = IsTrue(button._desaturated)

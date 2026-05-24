@@ -54,6 +54,51 @@ local GetStretchMultiplier = AT.GetStretchMultiplier
 local RotateOffset = AT.RotateOffset
 local ResolveGroup = AT.ResolveGroup
 
+local function ShouldCaptureTriggerPanelVisualState()
+    local isEnabled = ST._AreButtonVisualStateSnapshotsEnabled
+    return type(isEnabled) == "function" and isEnabled() == true
+end
+
+local function ClearTriggerVisualRows(runtimeButtons)
+    if type(runtimeButtons) ~= "table" then
+        return
+    end
+
+    for _, button in ipairs(runtimeButtons) do
+        if type(button) == "table" then
+            button._triggerVisualRow = nil
+            button._triggerVisualPanel = nil
+        end
+    end
+end
+
+local function AssignTriggerVisualPanel(frame, panelState)
+    if frame then
+        frame._triggerVisualPanel = panelState
+    end
+
+    local runtimeButtons = frame and frame.buttons
+    if type(runtimeButtons) ~= "table" then
+        return
+    end
+
+    for _, button in ipairs(runtimeButtons) do
+        if type(button) == "table" then
+            button._triggerVisualPanel = panelState
+        end
+    end
+end
+
+local function FinishTriggerPanelMatch(frame, panelState, matched, reason)
+    if panelState then
+        panelState.matched = matched == true
+        panelState.reason = reason
+        panelState.matchReason = reason
+        AssignTriggerVisualPanel(frame, panelState)
+    end
+    return matched == true
+end
+
 local function ApplyTextureSource(texture, settings)
     local resolvedSourceType, resolvedSourceValue = CooldownCompanion:ResolveAuraTextureAsset(
         settings.sourceType,
@@ -709,15 +754,23 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
     return false
 end
 
-local function DoesTriggerPanelMatch(frame)
+local function DoesTriggerPanelMatch(frame, captureDetails)
     if not frame then
         return false
     end
 
     local group = frame.groupId and ResolveGroup(frame.groupId) or nil
     local configuredRows = group and group.buttons
+    captureDetails = captureDetails == true or ShouldCaptureTriggerPanelVisualState()
+    local panelState
+    if captureDetails then
+        panelState = {
+            rowCount = type(configuredRows) == "table" and #configuredRows or 0,
+            rows = {},
+        }
+    end
     if type(configuredRows) ~= "table" or #configuredRows == 0 then
-        return false
+        return FinishTriggerPanelMatch(frame, panelState, false, "missing-config")
     end
 
     local runtimeButtonsByIndex = frame._triggerRuntimeButtonsByIndex
@@ -732,48 +785,129 @@ local function DoesTriggerPanelMatch(frame)
             runtimeButtonsByIndex[button.index] = button
         end
     end
+    if panelState then
+        panelState.runtimeRowCount = type(frame.buttons) == "table" and #frame.buttons or 0
+        ClearTriggerVisualRows(frame.buttons)
+    end
 
     local activeRowCount = 0
+    local function finish(matched, reason)
+        if panelState then
+            panelState.activeRowCount = activeRowCount
+        end
+        return FinishTriggerPanelMatch(frame, panelState, matched, reason)
+    end
+
     for rowIndex, buttonData in ipairs(configuredRows) do
-        if type(buttonData) ~= "table" then
-            return false
+        local rowState
+        if panelState then
+            rowState = {
+                rowIndex = rowIndex,
+                enabled = type(buttonData) == "table" and buttonData.enabled ~= false or false,
+            }
+            panelState.rows[#panelState.rows + 1] = rowState
         end
 
-        if buttonData.enabled ~= false then
+        if type(buttonData) ~= "table" then
+            if rowState then
+                rowState.matched = false
+                rowState.reason = "invalid-row"
+            end
+            return finish(false, "invalid-row")
+        end
+
+        if buttonData.enabled == false then
+            if rowState then
+                rowState.skipped = true
+                rowState.reason = "disabled"
+            end
+        else
             local clauses = CooldownCompanion:GetTriggerConditionClauses(buttonData)
-            if #clauses == 0 then
-                return false
+            activeRowCount = activeRowCount + 1
+            if rowState then
+                rowState.active = true
+                rowState.conditionCount = #clauses
             end
 
-            activeRowCount = activeRowCount + 1
+            if #clauses == 0 then
+                if rowState then
+                    rowState.matched = false
+                    rowState.reason = "no-conditions"
+                end
+                return finish(false, "no-conditions")
+            end
+
             local runtimeButton = runtimeButtonsByIndex[rowIndex]
             if not runtimeButton then
-                return false
+                if rowState then
+                    rowState.matched = false
+                    rowState.reason = "missing-runtime"
+                end
+                return finish(false, "missing-runtime")
+            end
+            if rowState then
+                rowState.hasRuntime = true
+                runtimeButton._triggerVisualRow = rowState
             end
 
             for _, clause in ipairs(clauses) do
                 local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
                 if not conditionKey then
-                    return false
+                    if rowState then
+                        rowState.matched = false
+                        rowState.reason = "invalid-condition"
+                    end
+                    return finish(false, "invalid-condition")
                 end
 
                 local actualState = EvaluateTriggerRowCondition(runtimeButton, conditionKey)
+                local expectedState
+                local conditionMatched
                 if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
-                    local expected = clause.expected ~= false
-                    if actualState ~= expected then
-                        return false
-                    end
+                    expectedState = clause.expected ~= false
+                    conditionMatched = actualState == expectedState
                 else
-                    local expectedState = NormalizeTriggerStateKey(conditionKey, clause.state)
-                    if actualState ~= expectedState then
-                        return false
-                    end
+                    expectedState = NormalizeTriggerStateKey(conditionKey, clause.state)
+                    conditionMatched = actualState == expectedState
                 end
+
+                if rowState then
+                    local conditions = rowState.conditions
+                    if type(conditions) ~= "table" then
+                        conditions = {}
+                        rowState.conditions = conditions
+                    end
+                    conditions[#conditions + 1] = {
+                        key = conditionKey,
+                        expected = expectedState,
+                        actual = actualState,
+                        matched = conditionMatched,
+                    }
+                end
+
+                if not conditionMatched then
+                    if rowState then
+                        rowState.matched = false
+                        rowState.reason = "condition-mismatch"
+                        rowState.failedConditionKey = conditionKey
+                        rowState.expected = expectedState
+                        rowState.actual = actualState
+                    end
+                    return finish(false, "condition-mismatch")
+                end
+            end
+
+            if rowState then
+                rowState.matched = true
+                rowState.reason = "matched"
             end
         end
     end
 
-    return activeRowCount > 0
+    return finish(
+        activeRowCount > 0,
+        activeRowCount > 0 and "matched" or "no-active-rows"
+    )
 end
 
 local function ApplyTextureIndicatorEffects(host, button, group)
