@@ -54,7 +54,7 @@ local GetStretchMultiplier = AT.GetStretchMultiplier
 local RotateOffset = AT.RotateOffset
 local ResolveGroup = AT.ResolveGroup
 
-local function ShouldCaptureTriggerPanelVisualState()
+local function ShouldCaptureButtonVisualState()
     local isEnabled = ST._AreButtonVisualStateSnapshotsEnabled
     return type(isEnabled) == "function" and isEnabled() == true
 end
@@ -566,76 +566,130 @@ local function StopAllTextureIndicatorEffects(host)
     SetTextureIndicatorBaseVisuals(host)
 end
 
-local function IsTextureIndicatorSectionActive(button, sectionKey, config)
-    if not button or type(config) ~= "table" or not config.enabled then
-        return false
+local function SetTextureEffectFlag(target, effectType, sectionKey, active)
+    if not target or not effectType then
+        return
     end
 
-    if sectionKey == "proc" and button._textureProcPreview then
-        return true
+    if effectType == TEXTURE_INDICATOR_EFFECT_PULSE then
+        target.pulseActive = active == true
+        target.pulseSection = active and sectionKey or nil
+    elseif effectType == TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT then
+        target.colorShiftActive = active == true
+        target.colorShiftSection = active and sectionKey or nil
+    elseif effectType == TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND then
+        target.shrinkExpandActive = active == true
+        target.shrinkExpandSection = active and sectionKey or nil
+    elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE then
+        target.bounceActive = active == true
+        target.bounceSection = active and sectionKey or nil
     end
-    if sectionKey == "aura" and button._textureAuraPreview then
-        return true
+end
+
+local function FinishTextureIndicatorSectionState(target, active, reason, preview, effectType)
+    if target then
+        target.active = active == true
+        target.reason = reason
+        if preview ~= nil then
+            target.preview = preview == true
+        end
     end
-    if sectionKey == "pandemic" and button._texturePandemicPreview then
-        return true
+    return active == true, effectType, target
+end
+
+local function ResolveTextureIndicatorSectionState(button, sectionKey, config, target)
+    local hasTarget = type(target) == "table"
+    local hasConfig = type(config) == "table"
+    local effectType = hasConfig and NormalizeTextureIndicatorEffect(config.effectType) or nil
+    if hasTarget then
+        target.enabled = hasConfig and config.enabled == true
+        target.effectType = hasConfig and config.effectType or nil
+        target.normalizedEffectType = effectType
+        target.combatOnly = hasConfig and config.combatOnly == true
+        target.invert = hasConfig and config.invert == true
+        target.preview = false
+        target.active = false
+        target.reason = nil
     end
-    if sectionKey == "ready" and button._textureReadyPreview then
-        return true
+
+    if not button then
+        return FinishTextureIndicatorSectionState(target, false, "missing-button", nil, effectType)
     end
-    if sectionKey == "unusable" and button._textureUnusablePreview then
-        return true
+    if not hasConfig then
+        return FinishTextureIndicatorSectionState(target, false, "missing-config", nil, effectType)
+    end
+    if config.enabled ~= true then
+        return FinishTextureIndicatorSectionState(target, false, "disabled", nil, effectType)
+    end
+
+    local previewActive = (sectionKey == "proc" and button._textureProcPreview)
+        or (sectionKey == "aura" and button._textureAuraPreview)
+        or (sectionKey == "pandemic" and button._texturePandemicPreview)
+        or (sectionKey == "ready" and button._textureReadyPreview)
+        or (sectionKey == "unusable" and button._textureUnusablePreview)
+    if previewActive then
+        return FinishTextureIndicatorSectionState(target, true, "preview", true, effectType)
     end
 
     if config.combatOnly and not InCombatLockdown() then
-        return false
+        return FinishTextureIndicatorSectionState(target, false, "out-of-combat", nil, effectType)
     end
 
     if sectionKey == "proc" then
-        return button._procOverlayActive == true
+        local active = button._procOverlayActive == true
+        return FinishTextureIndicatorSectionState(target, active, active and "proc-active" or "proc-inactive", nil, effectType)
     end
 
     if sectionKey == "aura" then
         if button._auraTrackingReady ~= true or not button._auraSpellID then
-            return false
+            return FinishTextureIndicatorSectionState(target, false, "aura-missing", nil, effectType)
         end
         if config.invert then
             if button._auraUnit == "target" and not UnitExists("target") then
-                return false
+                return FinishTextureIndicatorSectionState(target, false, "missing-target", nil, effectType)
             end
-            return button._auraActive ~= true
+            local active = button._auraActive ~= true
+            return FinishTextureIndicatorSectionState(target, active, active and "aura-inactive" or "aura-active", nil, effectType)
         end
-        return button._auraActive == true
+        local active = button._auraActive == true
+        return FinishTextureIndicatorSectionState(target, active, active and "aura-active" or "aura-inactive", nil, effectType)
     end
 
     if sectionKey == "pandemic" then
-        return button._auraActive == true and button._inPandemic == true
+        local active = button._auraActive == true and button._inPandemic == true
+        return FinishTextureIndicatorSectionState(target, active, active and "pandemic" or "inactive", nil, effectType)
     end
 
     if sectionKey == "ready" then
         local buttonData = button.buttonData
         if not buttonData or buttonData.isPassive or button._noCooldown then
-            return false
+            local reason = not buttonData and "missing-button-data"
+                or buttonData.isPassive and "passive"
+                or "no-cooldown"
+            return FinishTextureIndicatorSectionState(target, false, reason, nil, effectType)
         end
-        return button._desatCooldownActive == false
+        local active = button._desatCooldownActive == false
+        return FinishTextureIndicatorSectionState(target, active, active and "ready" or "not-ready", nil, effectType)
     end
 
     if sectionKey == "unusable" then
         local buttonData = button.buttonData
         if not buttonData or buttonData.isPassive then
-            return false
+            return FinishTextureIndicatorSectionState(target, false, not buttonData and "missing-button-data" or "passive", nil, effectType)
         end
         if buttonData.type == "spell" then
             local spellID = button._displaySpellId or buttonData.id
-            return not C_Spell_IsSpellUsable(spellID)
+            local active = not C_Spell_IsSpellUsable(spellID)
+            return FinishTextureIndicatorSectionState(target, active, active and "unusable" or "usable", nil, effectType)
         end
         if buttonData.type == "item" or buttonData.type == "equipitem" then
-            return not C_Item_IsUsableItem(button._resolvedItemId or buttonData.id)
+            local active = not C_Item_IsUsableItem(button._resolvedItemId or buttonData.id)
+            return FinishTextureIndicatorSectionState(target, active, active and "unusable" or "usable", nil, effectType)
         end
-        return false
+        return FinishTextureIndicatorSectionState(target, false, "unsupported-type", nil, effectType)
     end
 
-    return false
+    return FinishTextureIndicatorSectionState(target, false, "unknown-section", nil, effectType)
 end
 
 local function EvaluateTriggerRowCondition(button, conditionKey)
@@ -761,7 +815,7 @@ local function DoesTriggerPanelMatch(frame, captureDetails)
 
     local group = frame.groupId and ResolveGroup(frame.groupId) or nil
     local configuredRows = group and group.buttons
-    captureDetails = captureDetails == true or ShouldCaptureTriggerPanelVisualState()
+    captureDetails = captureDetails == true or ShouldCaptureButtonVisualState()
     local panelState
     if captureDetails then
         panelState = {
@@ -915,10 +969,34 @@ local function ApplyTextureIndicatorEffects(host, button, group)
         return
     end
 
+    local captureVisualState = ShouldCaptureButtonVisualState()
+    local freezeGeometryWhileUnlocked = group.locked == false
+    local intentState
+    local appliedState
+    local effectSources
+    if captureVisualState then
+        intentState = {
+            hasIndicators = false,
+            freezeGeometryWhileUnlocked = freezeGeometryWhileUnlocked,
+            sections = {},
+        }
+        appliedState = {
+            freezeGeometryWhileUnlocked = freezeGeometryWhileUnlocked,
+        }
+        effectSources = {}
+    end
+
     local indicators = CooldownCompanion:GetTexturePanelIndicatorSettings(group)
     if not indicators then
         StopAllTextureIndicatorEffects(host)
+        if captureVisualState then
+            button._textureEffectIntent = intentState
+            button._textureEffectApplied = appliedState
+        end
         return
+    end
+    if intentState then
+        intentState.hasIndicators = true
     end
 
     local effectStates = host._textureIndicatorEffectStates
@@ -930,15 +1008,30 @@ local function ApplyTextureIndicatorEffects(host, button, group)
     end
     for _, sectionKey in ipairs(TEXTURE_INDICATOR_SECTION_ORDER) do
         local config = indicators[sectionKey]
-        if IsTextureIndicatorSectionActive(button, sectionKey, config) then
-            local effectType = NormalizeTextureIndicatorEffect(config.effectType)
-            if effectType ~= TEXTURE_INDICATOR_EFFECT_NONE and not effectStates[effectType] then
+        local sectionTarget = intentState and {} or nil
+        local active, effectType, sectionState = ResolveTextureIndicatorSectionState(button, sectionKey, config, sectionTarget)
+        if intentState and sectionState then
+            intentState.sections[sectionKey] = sectionState
+        end
+        if active then
+            if effectType and effectType ~= TEXTURE_INDICATOR_EFFECT_NONE and not effectStates[effectType] then
                 effectStates[effectType] = config
+                if effectSources then
+                    effectSources[effectType] = sectionKey
+                end
             end
         end
     end
 
-    local freezeGeometryWhileUnlocked = group.locked == false
+    if intentState then
+        SetTextureEffectFlag(intentState, TEXTURE_INDICATOR_EFFECT_PULSE, effectSources[TEXTURE_INDICATOR_EFFECT_PULSE], effectStates[TEXTURE_INDICATOR_EFFECT_PULSE] ~= nil)
+        SetTextureEffectFlag(intentState, TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT, effectSources[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT], effectStates[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT] ~= nil)
+        SetTextureEffectFlag(intentState, TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND, effectSources[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND], (not freezeGeometryWhileUnlocked) and effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND] ~= nil)
+        SetTextureEffectFlag(intentState, TEXTURE_INDICATOR_EFFECT_BOUNCE, effectSources[TEXTURE_INDICATOR_EFFECT_BOUNCE], (not freezeGeometryWhileUnlocked) and effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE] ~= nil)
+        intentState.shrinkExpandSuppressedByUnlock = freezeGeometryWhileUnlocked and effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND] ~= nil or false
+        intentState.bounceSuppressedByUnlock = freezeGeometryWhileUnlocked and effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE] ~= nil or false
+    end
+
     local bounceAmplitude = math_max(
         6,
         math_min(
@@ -972,6 +1065,15 @@ local function ApplyTextureIndicatorEffects(host, button, group)
         StartTextureColorShift(host, colorShift.color, colorShift.speed)
     else
         StopTextureColorShift(host)
+    end
+
+    if appliedState then
+        SetTextureEffectFlag(appliedState, TEXTURE_INDICATOR_EFFECT_PULSE, effectSources[TEXTURE_INDICATOR_EFFECT_PULSE], effectStates[TEXTURE_INDICATOR_EFFECT_PULSE] ~= nil)
+        SetTextureEffectFlag(appliedState, TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT, effectSources[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT], colorShift ~= nil)
+        SetTextureEffectFlag(appliedState, TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND, effectSources[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND], (not freezeGeometryWhileUnlocked) and effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND] ~= nil)
+        SetTextureEffectFlag(appliedState, TEXTURE_INDICATOR_EFFECT_BOUNCE, effectSources[TEXTURE_INDICATOR_EFFECT_BOUNCE], (not freezeGeometryWhileUnlocked) and effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE] ~= nil)
+        button._textureEffectIntent = intentState
+        button._textureEffectApplied = appliedState
     end
 end
 
