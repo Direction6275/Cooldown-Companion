@@ -11,6 +11,8 @@ local AceGUI = LibStub("AceGUI-3.0")
 
 -- Imports from earlier Config/ files
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
+local SetConfigCustomBarSettingsTab = ST._SetConfigCustomBarSettingsTab
+local PruneConfigCustomBarSelection = ST._PruneConfigCustomBarSelection
 
 ------------------------------------------------------------------------
 -- COLUMN 4: Group / Panel Settings Column
@@ -28,22 +30,29 @@ local function ClearInfoButtons(buttons)
     wipe(buttons)
 end
 
-local function FindSelectedCustomBar()
-    if not CS.selectedCustomBarId or not CooldownCompanion.GetSpecCustomAuraBars then
+local function FindCustomBarById(settings, customBarId)
+    if not customBarId then
         return nil
     end
 
-    local settings = CooldownCompanion:GetResourceBarSettings()
     if ST._RB and ST._RB.FindCustomBarById then
-        return ST._RB.FindCustomBarById(settings, CS.selectedCustomBarId)
+        return ST._RB.FindCustomBarById(settings, customBarId)
+    end
+
+    if not CooldownCompanion.GetSpecCustomAuraBars then
+        return nil
     end
 
     for _, entry in ipairs(CooldownCompanion:GetSpecCustomAuraBars() or {}) do
-        if type(entry) == "table" and entry.customBarId == CS.selectedCustomBarId then
+        if type(entry) == "table" and entry.customBarId == customBarId then
             return entry
         end
     end
     return nil
+end
+
+local function FindSelectedCustomBar()
+    return FindCustomBarById(CooldownCompanion:GetResourceBarSettings(), CS.selectedCustomBarId)
 end
 
 local function GetCustomBarEntryTabs(entry)
@@ -239,14 +248,14 @@ local function RefreshColumn4(container)
             local selectedCustomBarIds = {}
             local selectedCustomBarEntries = {}
             local settings = CooldownCompanion:GetResourceBarSettings()
+            local function CustomBarExists(customBarId)
+                return FindCustomBarById(settings, customBarId) ~= nil
+            end
+            PruneConfigCustomBarSelection(CustomBarExists, true)
             for customBarId in pairs(CS.selectedCustomBars) do
-                local entry = ST._RB.FindCustomBarById and ST._RB.FindCustomBarById(settings, customBarId)
-                if entry then
-                    selectedCustomBarIds[#selectedCustomBarIds + 1] = customBarId
-                    selectedCustomBarEntries[#selectedCustomBarEntries + 1] = entry
-                else
-                    CS.selectedCustomBars[customBarId] = nil
-                end
+                local entry = FindCustomBarById(settings, customBarId)
+                selectedCustomBarIds[#selectedCustomBarIds + 1] = customBarId
+                selectedCustomBarEntries[#selectedCustomBarEntries + 1] = entry
             end
             table.sort(selectedCustomBarIds)
             if #selectedCustomBarEntries >= 2 then
@@ -260,18 +269,17 @@ local function RefreshColumn4(container)
 
                 local selectedEntry = FindSelectedCustomBar()
                 if not selectedEntry then
-                    CS.selectedCustomBarId = nil
-                    CS.customBarSettingsTab = "appearance"
+                    PruneConfigCustomBarSelection(CustomBarExists, true)
                 else
                     if CS.customBarSettingsTab == "settings"
                         or CS.customBarSettingsTab == "layout"
                         or CS.customBarSettingsTab == "anchor"
                         or CS.customBarSettingsTab == "alpha"
                     then
-                        CS.customBarSettingsTab = "appearance"
+                        SetConfigCustomBarSettingsTab("appearance")
                     end
                     if not IsCustomBarEntryTabAllowed(selectedEntry, CS.customBarSettingsTab) then
-                        CS.customBarSettingsTab = "appearance"
+                        SetConfigCustomBarSettingsTab("appearance")
                     end
 
                     if not container.customBarEntryTabGroup then
@@ -279,15 +287,7 @@ local function RefreshColumn4(container)
                         tabGroup:SetLayout("Fill")
                         tabGroup.frame:SetParent(container)
                         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
-                            CS.customBarSettingsTab = tab or "appearance"
-                            if CS.customBarSettingsTab ~= "indicators" then
-                                if CooldownCompanion.ClearAllCustomAuraBarPreviews then
-                                    CooldownCompanion:ClearAllCustomAuraBarPreviews()
-                                end
-                                if CS.customBarIndicatorPreviewActive and CooldownCompanion.StopResourceBarPreview then
-                                    CooldownCompanion:StopResourceBarPreview()
-                                end
-                            end
+                            SetConfigCustomBarSettingsTab(tab, true)
                             ClearInfoButtons(CS.customBarInfoButtons)
                             widget:ReleaseChildren()
 
