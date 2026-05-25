@@ -512,7 +512,11 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
                     if fresh.isGlobal then
                         fresh.anchorEligible = not fresh.anchorEligible or nil
                     else
-                        fresh.anchorEligible = fresh.anchorEligible ~= false and false or nil
+                        if fresh.anchorEligible ~= false then
+                            fresh.anchorEligible = false
+                        else
+                            fresh.anchorEligible = nil
+                        end
                     end
                     CooldownCompanion:EvaluateResourceBars()
                     CooldownCompanion:UpdateAnchorStacking()
