@@ -9,6 +9,11 @@ local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
 local ResetConfigSelection = ST._ResetConfigSelection
+local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
+local ClearConfigPanelSelection = ST._ClearConfigPanelSelection
+local ClearConfigContainerSelection = ST._ClearConfigContainerSelection
+local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
+local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
 local EncodeSharedPayload = ST._EncodeSharedPayload
 local DecodeSharedPayload = ST._DecodeSharedPayload
 local PrepareSharedImportText = ST._PrepareSharedImportText
@@ -80,16 +85,11 @@ StaticPopupDialogs["CDC_DELETE_GROUP"] = {
             CooldownCompanion:DeleteGroup(id)
             if data.containerId then
                 if CS.selectedContainer == id then
-                    CS.selectedContainer = nil
-                    CS.selectedGroup = nil
-                    CS.selectedButton = nil
-                    wipe(CS.selectedButtons)
+                    ClearConfigContainerSelection()
                 end
             else
                 if CS.selectedGroup == id then
-                    CS.selectedGroup = nil
-                    CS.selectedButton = nil
-                    wipe(CS.selectedButtons)
+                    ClearConfigPanelSelection()
                 end
             end
             CS.selectedGroups[id] = nil
@@ -111,7 +111,7 @@ StaticPopupDialogs["CDC_DELETE_PANEL"] = {
         CooldownCompanion:ClearAllConfigPreviews()
         CooldownCompanion:DeletePanel(data.containerId, data.panelId)
         if CS.selectedGroup == data.panelId then
-            CS.selectedGroup = nil
+            ClearConfigPanelSelection()
         end
         if CS.addingToPanelId == data.panelId then
             CS.addingToPanelId = nil
@@ -220,8 +220,8 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_PANELS"] = {
             for _, pid in ipairs(data.panelIds) do
                 CooldownCompanion:DeletePanel(data.containerId, pid)
             end
-            wipe(CS.selectedPanels)
-            CS.selectedGroup = nil
+            ClearConfigPanelMultiSelection()
+            ClearConfigPanelSelection()
             CooldownCompanion:RefreshConfigPanel()
         end
     end,
@@ -714,8 +714,7 @@ StaticPopupDialogs["CDC_CROSS_PANEL_STRIP_OVERRIDES"] = {
             ST._StripButtonOverrides(buttonData)
             CooldownCompanion:RefreshGroupFrame(data.sourcePanelId)
             CooldownCompanion:RefreshGroupFrame(data.targetPanelId)
-            CS.selectedButton = nil
-            wipe(CS.selectedButtons)
+            ClearConfigButtonSelection()
             CooldownCompanion:RefreshConfigPanel()
         end
     end,
@@ -791,10 +790,7 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_CUSTOM_BARS"] = {
             for _, customBarId in ipairs(data.ids) do
                 rb.DeleteCustomBar(settings, customBarId)
             end
-            CS.selectedCustomBarId = nil
-            CS.customBarSpecExpandedId = nil
-            wipe(CS.selectedCustomBars)
-            CooldownCompanion:ClearAllCustomAuraBarPreviews()
+            ClearConfigCustomBarSelection(true, { clearExpanded = true })
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:UpdateAnchorStacking()
             CooldownCompanion:RefreshConfigPanel()
@@ -883,9 +879,7 @@ StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
             if CS.selectedGroup then
                 local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
                 if not group then
-                    CS.selectedGroup = nil
-                    CS.selectedButton = nil
-                    wipe(CS.selectedButtons)
+                    ClearConfigPanelSelection()
                 end
             end
             for gid in pairs(CS.selectedGroups) do

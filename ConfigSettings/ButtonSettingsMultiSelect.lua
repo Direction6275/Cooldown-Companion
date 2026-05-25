@@ -7,6 +7,8 @@ local ColorHeading = ST._ColorHeading
 local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
+local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
+local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 
 local function GroupUsesTriggerPanelEntries(group)
     return group and group.displayMode == "trigger"
@@ -46,8 +48,7 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
             table.insert(sourceGroup.buttons, idx + 1, copy)
         end
         CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-        CS.selectedButton = nil
-        wipe(CS.selectedButtons)
+        ClearConfigButtonSelection()
         CooldownCompanion:RefreshConfigPanel()
     end)
     scroll:AddChild(dupBtn)
@@ -119,8 +120,7 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                         end
                         CooldownCompanion:RefreshGroupFrame(groupEntry.id)
                         CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                        CS.selectedButton = nil
-                        wipe(CS.selectedButtons)
+                        ClearConfigButtonSelection()
                         CooldownCompanion:RefreshConfigPanel()
                         CloseDropDownMenus()
                     end
@@ -149,8 +149,7 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                         end
                         CooldownCompanion:RefreshGroupFrame(groupEntry.id)
                         CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                        CS.selectedButton = nil
-                        wipe(CS.selectedButtons)
+                        ClearConfigButtonSelection()
                         CooldownCompanion:RefreshConfigPanel()
                         CloseDropDownMenus()
                     end
@@ -280,7 +279,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
         for _, pid in ipairs(multiPanelIds) do
             CooldownCompanion:DuplicatePanel(containerId, pid)
         end
-        wipe(CS.selectedPanels)
+        ClearConfigPanelMultiSelection()
         CooldownCompanion:RefreshConfigPanel()
     end)
     scroll:AddChild(dupBtn)
@@ -354,8 +353,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
                             for _, pid in ipairs(multiPanelIds) do
                                 CooldownCompanion:MovePanel(pid, container.id)
                             end
-                            wipe(CS.selectedPanels)
-                            CS.selectedContainer = container.id
+                            ClearConfigPanelMultiSelection({ selectContainerId = container.id })
                             CooldownCompanion:RefreshConfigPanel()
                         end
                         UIDropDownMenu_AddButton(info, level)
@@ -379,8 +377,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
                             for _, pid in ipairs(multiPanelIds) do
                                 CooldownCompanion:MovePanel(pid, container.id)
                             end
-                            wipe(CS.selectedPanels)
-                            CS.selectedContainer = container.id
+                            ClearConfigPanelMultiSelection({ selectContainerId = container.id })
                             CooldownCompanion:RefreshConfigPanel()
                         end
                         UIDropDownMenu_AddButton(info, level)

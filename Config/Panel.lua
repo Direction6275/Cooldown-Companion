@@ -13,6 +13,7 @@ local AceConfigDialog = LibStub("AceConfigDialog-3.0")
 
 -- Imports from earlier Config/ files
 local ResetConfigSelection = ST._ResetConfigSelection
+local ClearConfigPrimarySelection = ST._ClearConfigPrimarySelection
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local COLUMN_PADDING = ST._COLUMN_PADDING
 local BuildAutocompleteCache = ST._BuildAutocompleteCache
@@ -489,7 +490,6 @@ local function ResetConfigForProfileChange()
     ResetConfigSelection(true)
     wipe(CS.collapsedFolders)
     wipe(CS.collapsedPanels)
-    CS.selectedCustomBarId = nil
     wipe(CS.resourceAuraOverlayDrafts)
     if ClearConfigFinderText then
         ClearConfigFinderText()
@@ -1012,17 +1012,10 @@ local function CreateConfigPanel()
         if CS.resourceBarPanelActive then
             SetPrimaryMode("buttons", { skipRefresh = true })
         end
-        CooldownCompanion:ClearAllConfigPreviews()
         CS.browseMode = true
         CS.browseCharKey = nil
         CS.browseContainerId = nil
-        CS.selectedFolder = nil
-        CS.selectedContainer = nil
-        CS.selectedGroup = nil
-        CS.selectedButton = nil
-        wipe(CS.selectedButtons)
-        wipe(CS.selectedPanels)
-        wipe(CS.selectedGroups)
+        ClearConfigPrimarySelection()
         CooldownCompanion:RefreshConfigPanel()
     end)
     browseBtn:SetScript("OnEnter", function(self)
