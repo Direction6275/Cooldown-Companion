@@ -2493,6 +2493,85 @@ local function SelectConfigButtonPanel(panelId, opts)
     end
 end
 
+local function ClearConfigCustomBarPreviewState()
+    if CooldownCompanion.ClearAllCustomAuraBarPreviews then
+        CooldownCompanion:ClearAllCustomAuraBarPreviews()
+    end
+    if CS.customBarIndicatorPreviewActive and CooldownCompanion.StopResourceBarPreview then
+        CooldownCompanion:StopResourceBarPreview()
+    end
+end
+
+local function SetConfigCustomBarSettingsTab(tab, clearPreviewOnNonIndicator)
+    CS.customBarSettingsTab = tab or "appearance"
+    if clearPreviewOnNonIndicator and CS.customBarSettingsTab ~= "indicators" then
+        ClearConfigCustomBarPreviewState()
+    end
+end
+
+local function ClearConfigCustomBarSelection(clearPreview)
+    if clearPreview then
+        ClearConfigCustomBarPreviewState()
+    end
+    CS.selectedCustomBarId = nil
+    wipe(CS.selectedCustomBars)
+    SetConfigCustomBarSettingsTab("appearance")
+end
+
+local function SelectConfigCustomBar(customBarId, opts)
+    local selectionChanged = CS.selectedCustomBarId ~= customBarId
+    if opts and opts.toggle and not selectionChanged then
+        ClearConfigCustomBarSelection(opts.clearPreview)
+        return true
+    end
+
+    if selectionChanged and opts and opts.clearPreview then
+        ClearConfigCustomBarPreviewState()
+    end
+    CS.selectedCustomBarId = customBarId
+    if opts and opts.resetTab then
+        SetConfigCustomBarSettingsTab("appearance")
+    end
+    wipe(CS.selectedCustomBars)
+    if opts and opts.clearButtonMulti then
+        wipe(CS.selectedButtons)
+    end
+    return selectionChanged
+end
+
+local function ToggleConfigCustomBarMultiSelect(customBarId)
+    if CS.selectedCustomBars[customBarId] then
+        CS.selectedCustomBars[customBarId] = nil
+    else
+        CS.selectedCustomBars[customBarId] = true
+    end
+    if CS.selectedCustomBarId and not CS.selectedCustomBars[CS.selectedCustomBarId] and next(CS.selectedCustomBars) then
+        CS.selectedCustomBars[CS.selectedCustomBarId] = true
+    end
+    ClearConfigCustomBarPreviewState()
+end
+
+local function PruneConfigCustomBarSelection(customBarExists, resetTab)
+    if type(customBarExists) ~= "function" then
+        return
+    end
+
+    if CS.selectedCustomBarId and not customBarExists(CS.selectedCustomBarId) then
+        CS.selectedCustomBarId = nil
+        if resetTab then
+            SetConfigCustomBarSettingsTab("appearance")
+        end
+    end
+    if CS.customBarSpecExpandedId and not customBarExists(CS.customBarSpecExpandedId) then
+        CS.customBarSpecExpandedId = nil
+    end
+    for customBarId in pairs(CS.selectedCustomBars) do
+        if not customBarExists(customBarId) then
+            CS.selectedCustomBars[customBarId] = nil
+        end
+    end
+end
+
 local function ResetConfigSelection(full)
     if full and ST._CancelAutoAddFlow then
         ST._CancelAutoAddFlow()
@@ -2732,6 +2811,12 @@ ST._SelectConfigPanel = SelectConfigPanel
 ST._ToggleConfigPanelMultiSelect = ToggleConfigPanelMultiSelect
 ST._SelectConfigButton = SelectConfigButton
 ST._SelectConfigButtonPanel = SelectConfigButtonPanel
+ST._ClearConfigCustomBarPreviewState = ClearConfigCustomBarPreviewState
+ST._SetConfigCustomBarSettingsTab = SetConfigCustomBarSettingsTab
+ST._ClearConfigCustomBarSelection = ClearConfigCustomBarSelection
+ST._SelectConfigCustomBar = SelectConfigCustomBar
+ST._ToggleConfigCustomBarMultiSelect = ToggleConfigCustomBarMultiSelect
+ST._PruneConfigCustomBarSelection = PruneConfigCustomBarSelection
 ST._ResetConfigSelection = ResetConfigSelection
 ST._SetConfigPrimaryMode = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs
