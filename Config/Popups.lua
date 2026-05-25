@@ -591,6 +591,9 @@ local function ApplyProfileImport(data)
 
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:RefreshAllGroups()
+    if CooldownCompanion.EvaluateBarsAndFramesRuntime then
+        CooldownCompanion:EvaluateBarsAndFramesRuntime("profile-import")
+    end
     return true
 end
 

@@ -1545,8 +1545,21 @@ local function BuildCustomBarVisibilityRulesSection(container, customBars, captu
     }, infoButtons)
 end
 
+local function AddResourceBarsDisabledLabel(container, text)
+    local label = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(label)
+    label:SetText(text)
+    label:SetFullWidth(true)
+    container:AddChild(label)
+end
+
 local function BuildCustomBarsListPanel(container)
     local settings = CooldownCompanion:GetResourceBarSettings()
+    if not (settings and settings.enabled) then
+        AddResourceBarsDisabledLabel(container, "Enable Resource Bars to configure Custom Bars.")
+        return
+    end
+
     local customBarsSpecID = GetCurrentConfigSpecID()
     local customBars = RB.GetAllCustomBars and RB.GetAllCustomBars(settings) or CooldownCompanion:GetSpecCustomAuraBars()
     local selectedId = CS.selectedCustomBarId
@@ -2279,6 +2292,11 @@ end
 
 local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     local settings = CooldownCompanion:GetResourceBarSettings()
+    if not (settings and settings.enabled) then
+        AddResourceBarsDisabledLabel(container, "Enable Resource Bars to configure Custom Bar settings.")
+        return
+    end
+
     local customBars = RB.GetAllCustomBars and RB.GetAllCustomBars(settings) or CooldownCompanion:GetSpecCustomAuraBars()
     local rbCabTextAdvBtns = {}
     local selectedIndex = FindCustomBarIndexById(customBars, customBarId)

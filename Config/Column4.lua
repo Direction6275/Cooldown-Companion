@@ -69,19 +69,75 @@ local function GetCustomBarDetailScrollKey()
     return tostring(CS.selectedCustomBarId) .. ":" .. tostring(CS.customBarSettingsTab or "appearance")
 end
 
+local function AreResourceBarsConfigEnabled()
+    local settings = CooldownCompanion:GetResourceBarSettings()
+    return type(settings) == "table" and settings.enabled == true
+end
+
+local function AreCastBarsConfigEnabled()
+    local settings = CooldownCompanion:GetCastBarSettings()
+    return type(settings) == "table" and settings.enabled == true
+end
+
+local function HideWidgetFrame(widget)
+    if widget and widget.frame then
+        widget.frame:Hide()
+    end
+end
+
+local function HideFrame(frame)
+    if frame then
+        frame:Hide()
+    end
+end
+
+local function HideLayoutOrderDisabledScroll(container)
+    HideWidgetFrame(container.layoutOrderDisabledScroll)
+end
+
+local function HideResourceBarPanelSurfaces(container)
+    HideFrame(container.placeholderLabel)
+    HideWidgetFrame(container.tabGroup)
+    HideWidgetFrame(container.containerTabGroup)
+    HideWidgetFrame(container.folderTabGroup)
+    HideWidgetFrame(container.customAuraScroll)
+    HideWidgetFrame(container.layoutOrderScroll)
+    HideWidgetFrame(container.customBarsDetailScroll)
+    HideWidgetFrame(container.customBarsMultiSelectScroll)
+    HideWidgetFrame(container.customBarEntryTabGroup)
+    HideFrame(container.layoutOrderHost)
+end
+
+local function ShowLayoutOrderDisabledScroll(container)
+    HideResourceBarPanelSurfaces(container)
+
+    if not container.layoutOrderDisabledScroll then
+        local scroll = AceGUI:Create("ScrollFrame")
+        scroll:SetLayout("List")
+        scroll.frame:SetParent(container)
+        container.layoutOrderDisabledScroll = scroll
+    end
+
+    local scroll = container.layoutOrderDisabledScroll
+    scroll.frame:SetParent(container)
+    scroll.frame:ClearAllPoints()
+    scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+    scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+    scroll:ReleaseChildren()
+    scroll.frame:Show()
+
+    local label = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(label)
+    label:SetText("Enable Resource Bars or Cast Bar to configure layout.")
+    label:SetFullWidth(true)
+    scroll:AddChild(label)
+end
+
 local function ShowCustomBarMultiSelect(container, selectedIds, selectedEntries)
-    if container.placeholderLabel then
-        container.placeholderLabel:Hide()
-    end
-    if container.customBarEntryTabGroup then
-        container.customBarEntryTabGroup.frame:Hide()
-    end
-    if container.customBarsDetailScroll then
-        container.customBarsDetailScroll.frame:Hide()
-    end
-    if container.layoutOrderHost then
-        container.layoutOrderHost:Hide()
-    end
+    HideFrame(container.placeholderLabel)
+    HideWidgetFrame(container.customBarEntryTabGroup)
+    HideWidgetFrame(container.customBarsDetailScroll)
+    HideFrame(container.layoutOrderHost)
     if not container.customBarsMultiSelectScroll then
         local scroll = AceGUI:Create("ScrollFrame")
         scroll:SetLayout("List")
@@ -167,148 +223,125 @@ local function RefreshColumn4(container)
     if container._browsePlaceholder then
         container._browsePlaceholder:Hide()
     end
+    HideLayoutOrderDisabledScroll(container)
 
     -- Resource Bar panel mode: show selected Custom Bar settings, or Layout & Order.
     if CS.resourceBarPanelActive then
-        if container.placeholderLabel then
-            container.placeholderLabel:Hide()
-        end
-        if container.tabGroup then
-            container.tabGroup.frame:Hide()
-        end
-        if container.containerTabGroup then
-            container.containerTabGroup.frame:Hide()
-        end
-        if container.folderTabGroup then
-            container.folderTabGroup.frame:Hide()
-        end
-        if container.customAuraScroll then
-            container.customAuraScroll.frame:Hide()
-        end
-        if container.layoutOrderScroll then
-            container.layoutOrderScroll.frame:Hide()
-        end
-        if container.customBarsDetailScroll then
-            container.customBarsDetailScroll.frame:Hide()
-        end
-        if container.customBarsMultiSelectScroll then
-            container.customBarsMultiSelectScroll.frame:Hide()
-        end
-        if container.customBarEntryTabGroup then
-            container.customBarEntryTabGroup.frame:Hide()
-        end
-        local selectedCustomBarIds = {}
-        local selectedCustomBarEntries = {}
-        local settings = CooldownCompanion:GetResourceBarSettings()
-        for customBarId in pairs(CS.selectedCustomBars) do
-            local entry = ST._RB.FindCustomBarById and ST._RB.FindCustomBarById(settings, customBarId)
-            if entry then
-                selectedCustomBarIds[#selectedCustomBarIds + 1] = customBarId
-                selectedCustomBarEntries[#selectedCustomBarEntries + 1] = entry
-            else
-                CS.selectedCustomBars[customBarId] = nil
-            end
-        end
-        table.sort(selectedCustomBarIds)
-        if #selectedCustomBarEntries >= 2 then
-            ShowCustomBarMultiSelect(container, selectedCustomBarIds, selectedCustomBarEntries)
+        HideResourceBarPanelSurfaces(container)
+        local resourceBarsEnabled = AreResourceBarsConfigEnabled()
+        local castBarsEnabled = AreCastBarsConfigEnabled()
+        if not (resourceBarsEnabled or castBarsEnabled) then
+            ShowLayoutOrderDisabledScroll(container)
             return
         end
-        if CS.selectedCustomBarId then
-            if container.layoutOrderHost then
-                container.layoutOrderHost:Hide()
+
+        if resourceBarsEnabled then
+            local selectedCustomBarIds = {}
+            local selectedCustomBarEntries = {}
+            local settings = CooldownCompanion:GetResourceBarSettings()
+            for customBarId in pairs(CS.selectedCustomBars) do
+                local entry = ST._RB.FindCustomBarById and ST._RB.FindCustomBarById(settings, customBarId)
+                if entry then
+                    selectedCustomBarIds[#selectedCustomBarIds + 1] = customBarId
+                    selectedCustomBarEntries[#selectedCustomBarEntries + 1] = entry
+                else
+                    CS.selectedCustomBars[customBarId] = nil
+                end
             end
-
-            local selectedEntry = FindSelectedCustomBar()
-            if not selectedEntry then
-                CS.selectedCustomBarId = nil
-                CS.customBarSettingsTab = "appearance"
-            else
-                if CS.customBarSettingsTab == "settings"
-                    or CS.customBarSettingsTab == "layout"
-                    or CS.customBarSettingsTab == "anchor"
-                    or CS.customBarSettingsTab == "alpha"
-                then
-                    CS.customBarSettingsTab = "appearance"
-                end
-                if not IsCustomBarEntryTabAllowed(selectedEntry, CS.customBarSettingsTab) then
-                    CS.customBarSettingsTab = "appearance"
+            table.sort(selectedCustomBarIds)
+            if #selectedCustomBarEntries >= 2 then
+                ShowCustomBarMultiSelect(container, selectedCustomBarIds, selectedCustomBarEntries)
+                return
+            end
+            if CS.selectedCustomBarId then
+                if container.layoutOrderHost then
+                    container.layoutOrderHost:Hide()
                 end
 
-                if not container.customBarEntryTabGroup then
-                    local tabGroup = AceGUI:Create("TabGroup")
-                    tabGroup:SetLayout("Fill")
-                    tabGroup.frame:SetParent(container)
-                    tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
-                        CS.customBarSettingsTab = tab or "appearance"
-                        if CS.customBarSettingsTab ~= "indicators" then
-                            if CooldownCompanion.ClearAllCustomAuraBarPreviews then
-                                CooldownCompanion:ClearAllCustomAuraBarPreviews()
+                local selectedEntry = FindSelectedCustomBar()
+                if not selectedEntry then
+                    CS.selectedCustomBarId = nil
+                    CS.customBarSettingsTab = "appearance"
+                else
+                    if CS.customBarSettingsTab == "settings"
+                        or CS.customBarSettingsTab == "layout"
+                        or CS.customBarSettingsTab == "anchor"
+                        or CS.customBarSettingsTab == "alpha"
+                    then
+                        CS.customBarSettingsTab = "appearance"
+                    end
+                    if not IsCustomBarEntryTabAllowed(selectedEntry, CS.customBarSettingsTab) then
+                        CS.customBarSettingsTab = "appearance"
+                    end
+
+                    if not container.customBarEntryTabGroup then
+                        local tabGroup = AceGUI:Create("TabGroup")
+                        tabGroup:SetLayout("Fill")
+                        tabGroup.frame:SetParent(container)
+                        tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+                            CS.customBarSettingsTab = tab or "appearance"
+                            if CS.customBarSettingsTab ~= "indicators" then
+                                if CooldownCompanion.ClearAllCustomAuraBarPreviews then
+                                    CooldownCompanion:ClearAllCustomAuraBarPreviews()
+                                end
+                                if CS.customBarIndicatorPreviewActive and CooldownCompanion.StopResourceBarPreview then
+                                    CooldownCompanion:StopResourceBarPreview()
+                                end
                             end
-                            if CS.customBarIndicatorPreviewActive and CooldownCompanion.StopResourceBarPreview then
-                                CooldownCompanion:StopResourceBarPreview()
-                            end
+                            ClearInfoButtons(CS.customBarInfoButtons)
+                            widget:ReleaseChildren()
+
+                            local scroll = AceGUI:Create("ScrollFrame")
+                            scroll:SetLayout("List")
+                            widget:AddChild(scroll)
+                            container.customBarsDetailScroll = scroll
+                            CS.customBarSettingsScroll = scroll
+                            container._customBarDetailScrollKey = GetCustomBarDetailScrollKey()
+                            ST._BuildCustomAuraBarPanel(scroll, CS.selectedCustomBarId, CS.customBarSettingsTab)
+                        end)
+                        container.customBarEntryTabGroup = tabGroup
+                    end
+
+                    local tabGroup = container.customBarEntryTabGroup
+                    HideWidgetFrame(container.customBarsMultiSelectScroll)
+                    tabGroup.frame:ClearAllPoints()
+                    tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+                    tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+                    tabGroup:SetTabs(GetCustomBarEntryTabs(selectedEntry))
+                    tabGroup.frame:Show()
+
+                    local savedOffset, savedScrollvalue
+                    local currentScrollKey = GetCustomBarDetailScrollKey()
+                    if container.customBarsDetailScroll and container._customBarDetailScrollKey == currentScrollKey then
+                        local state = container.customBarsDetailScroll.status or container.customBarsDetailScroll.localstatus
+                        if state and state.offset and state.offset > 0 then
+                            savedOffset = state.offset
+                            savedScrollvalue = state.scrollvalue
                         end
-                        ClearInfoButtons(CS.customBarInfoButtons)
-                        widget:ReleaseChildren()
-
-                        local scroll = AceGUI:Create("ScrollFrame")
-                        scroll:SetLayout("List")
-                        widget:AddChild(scroll)
-                        container.customBarsDetailScroll = scroll
-                        CS.customBarSettingsScroll = scroll
-                        container._customBarDetailScrollKey = GetCustomBarDetailScrollKey()
-                        ST._BuildCustomAuraBarPanel(scroll, CS.selectedCustomBarId, CS.customBarSettingsTab)
-                    end)
-                    container.customBarEntryTabGroup = tabGroup
-                end
-
-                local tabGroup = container.customBarEntryTabGroup
-                if container.customBarsMultiSelectScroll then
-                    container.customBarsMultiSelectScroll.frame:Hide()
-                end
-                tabGroup.frame:ClearAllPoints()
-                tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
-                tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
-                tabGroup:SetTabs(GetCustomBarEntryTabs(selectedEntry))
-                tabGroup.frame:Show()
-
-                local savedOffset, savedScrollvalue
-                local currentScrollKey = GetCustomBarDetailScrollKey()
-                if container.customBarsDetailScroll and container._customBarDetailScrollKey == currentScrollKey then
-                    local state = container.customBarsDetailScroll.status or container.customBarsDetailScroll.localstatus
-                    if state and state.offset and state.offset > 0 then
-                        savedOffset = state.offset
-                        savedScrollvalue = state.scrollvalue
                     end
-                end
 
-                tabGroup:SelectTab(CS.customBarSettingsTab or "appearance")
+                    tabGroup:SelectTab(CS.customBarSettingsTab or "appearance")
 
-                if savedOffset and container.customBarsDetailScroll then
-                    local state = container.customBarsDetailScroll.status or container.customBarsDetailScroll.localstatus
-                    if state then
-                        state.offset = savedOffset
-                        state.scrollvalue = savedScrollvalue
+                    if savedOffset and container.customBarsDetailScroll then
+                        local state = container.customBarsDetailScroll.status or container.customBarsDetailScroll.localstatus
+                        if state then
+                            state.offset = savedOffset
+                            state.scrollvalue = savedScrollvalue
+                        end
                     end
+                    return
                 end
+            end
+            HideWidgetFrame(container.customBarEntryTabGroup)
+            HideWidgetFrame(container.customBarsDetailScroll)
+            HideWidgetFrame(container.customBarsMultiSelectScroll)
+            if not CS.selectedCustomBarId then
+                -- Fall through to Layout & Order when the selected Custom Bar was removed.
+            else
                 return
             end
         end
-        if container.customBarEntryTabGroup then
-            container.customBarEntryTabGroup.frame:Hide()
-        end
-        if container.customBarsDetailScroll then
-            container.customBarsDetailScroll.frame:Hide()
-        end
-        if container.customBarsMultiSelectScroll then
-            container.customBarsMultiSelectScroll.frame:Hide()
-        end
-        if not CS.selectedCustomBarId then
-            -- Fall through to Layout & Order when the selected Custom Bar was removed.
-        else
-            return
-        end
+
         if not container.layoutOrderHost then
             local host = CreateFrame("Frame", nil, container)
             host:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)

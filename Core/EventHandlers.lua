@@ -107,10 +107,9 @@ function CooldownCompanion:RefreshSpellAvailabilityState(opts)
     self:RefreshConfigPanel()
 
     if opts.applyResourceBars then
-        self:ApplyResourceBars()
-        self:UpdateAnchorStacking()
+        self:EvaluateBarsAndFramesRuntime("spell-availability-apply")
     elseif opts.evaluateResourceBars then
-        self:EvaluateResourceBars()
+        self:EvaluateBarsAndFramesRuntime("spell-availability-evaluate")
     end
 
     if opts.rebuildViewerMap then
@@ -366,8 +365,7 @@ end
 function CooldownCompanion:OnRestingChanged()
     self._isResting = IsResting()
     self:RefreshAllGroupsVisibilityOnly()
-    self:EvaluateResourceBars()
-    self:UpdateAnchorStacking()
+    self:EvaluateBarsAndFramesRuntime("resting-changed")
     self:RefreshConfigPanel()
 end
 
@@ -382,16 +380,14 @@ end
 function CooldownCompanion:OnPetBattleStart()
     self._inPetBattle = true
     self:RefreshAllGroupsVisibilityOnly()
-    self:EvaluateResourceBars()
-    self:UpdateAnchorStacking()
+    self:EvaluateBarsAndFramesRuntime("pet-battle-start")
     self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:OnPetBattleEnd()
     self._inPetBattle = false
     self:RefreshAllGroupsVisibilityOnly()
-    self:EvaluateResourceBars()
-    self:UpdateAnchorStacking()
+    self:EvaluateBarsAndFramesRuntime("pet-battle-end")
     self:RefreshConfigPanel()
 end
 
@@ -401,8 +397,7 @@ function CooldownCompanion:OnVehicleUIChanged(event, unit)
         or C_ActionBar.HasVehicleActionBar()
         or C_ActionBar.HasOverrideActionBar()
     self:RefreshAllGroupsVisibilityOnly()
-    self:EvaluateResourceBars()
-    self:UpdateAnchorStacking()
+    self:EvaluateBarsAndFramesRuntime("vehicle-ui-changed")
     self:RefreshConfigPanel()
 end
 
@@ -548,8 +543,7 @@ function CooldownCompanion:OnActionBarLayoutChanged()
         or C_ActionBar.HasOverrideActionBar()
     if self._inVehicleUI ~= wasInVehicleUI then
         self:RefreshAllGroupsVisibilityOnly()
-        self:EvaluateResourceBars()
-        self:UpdateAnchorStacking()
+        self:EvaluateBarsAndFramesRuntime("actionbar-layout-vehicle-state")
     end
 end
 
@@ -559,11 +553,14 @@ end
 local pendingStackUpdate = false
 
 function CooldownCompanion:UpdateAnchorStacking()
+    local enabled, flags = self:RefreshBarsAndFramesRuntimeGate("anchor-stacking-check")
+    if not enabled or not (flags.resourceBars or flags.castBar) then
+        return
+    end
     if pendingStackUpdate then return end
     pendingStackUpdate = true
     C_Timer.After(0, function()
         pendingStackUpdate = false
-        CooldownCompanion:EvaluateResourceBars()
-        CooldownCompanion:EvaluateCastBar()
+        CooldownCompanion:EvaluateBarsAndFramesStackingRuntime("anchor-stacking")
     end)
 end

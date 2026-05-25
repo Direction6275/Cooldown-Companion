@@ -2017,7 +2017,10 @@ function ST._BuildLayoutOrderPreviewPanel(container)
     preview.rbSettings = CooldownCompanion:GetResourceBarSettings()
     preview.cbSettings = CooldownCompanion:GetCastBarSettings()
     local layout = CooldownCompanion:GetSpecLayoutOrder()
-    preview.isVerticalLayout = preview.rbSettings and IsResourceBarVerticalConfig(preview.rbSettings, layout) or false
+    preview.isVerticalLayout = preview.rbSettings
+        and preview.rbSettings.enabled == true
+        and IsResourceBarVerticalConfig(preview.rbSettings, layout)
+        or false
 
     ResetPreviewState(preview)
     preview.layout = layout
@@ -2025,8 +2028,16 @@ function ST._BuildLayoutOrderPreviewPanel(container)
 
     local rbSettings = preview.rbSettings
     local cbSettings = preview.cbSettings
-    local supportsAttachedResourceBars = rbSettings and not (layout and IsTruthyConfigFlag(layout.independentAnchorEnabled))
-    local hasAttachedCastBar = cbSettings and cbSettings.enabled and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled)
+    local resourceBarsEnabled = rbSettings and rbSettings.enabled == true
+    local castBarEnabled = cbSettings and cbSettings.enabled == true
+    if not (resourceBarsEnabled or castBarEnabled) then
+        SetPreviewMessage(preview, "Enable Resource Bars or Cast Bar to configure layout.")
+        FinalizePreviewState(preview)
+        return
+    end
+
+    local supportsAttachedResourceBars = resourceBarsEnabled and not (layout and IsTruthyConfigFlag(layout.independentAnchorEnabled))
+    local hasAttachedCastBar = castBarEnabled and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled)
     if not supportsAttachedResourceBars and not hasAttachedCastBar then
         SetPreviewMessage(preview, "These settings apply only when Resource Bars or Cast Bar are anchored to a panel.")
         FinalizePreviewState(preview)

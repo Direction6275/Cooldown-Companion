@@ -106,19 +106,15 @@ function CooldownCompanion:RefreshAllMedia()
     end
 
     self:RefreshAllGroups()
-    self:ApplyResourceBars()
-    self:ApplyCastBarSettings()
+    self:EvaluateBarsAndFramesRuntime("shared-media")
 end
 
 function CooldownCompanion:ApplyProfileOnePixelBorderMode(opts)
     if self.RefreshAllGroups then
         self:RefreshAllGroups()
     end
-    if self.ApplyResourceBars then
-        self:ApplyResourceBars()
-    end
-    if self.ApplyCastBarSettings then
-        self:ApplyCastBarSettings()
+    if self.EvaluateBarsAndFramesRuntime then
+        self:EvaluateBarsAndFramesRuntime("profile-border-mode")
     end
     if self.RefreshAllAuraTextureVisuals then
         self:RefreshAllAuraTextureVisuals()

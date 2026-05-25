@@ -302,6 +302,11 @@ local function BuildDiagnosticSnapshot()
         resourceBarRuntime = CooldownCompanion:GetResourceBarRuntimeDebugInfo()
     end
 
+    local barsAndFramesRuntime = nil
+    if CooldownCompanion.GetBarsAndFramesRuntimeDebugInfo then
+        barsAndFramesRuntime = CooldownCompanion:GetBarsAndFramesRuntimeDebugInfo()
+    end
+
     local visualStateDiagnostics = nil
     if CooldownCompanion.CaptureButtonVisualStateDiagnostics then
         visualStateDiagnostics = CooldownCompanion:CaptureButtonVisualStateDiagnostics({
@@ -336,6 +341,7 @@ local function BuildDiagnosticSnapshot()
         rangeCheckSpells = rangeCheckSpells,
         groupFrameStates = groupFrameStates,
         containerFrameStates = containerFrameStates,
+        barsAndFramesRuntime = barsAndFramesRuntime,
         resourceBarRuntime = resourceBarRuntime,
         visualStateDiagnostics = visualStateDiagnostics,
         loadedAddons = loadedAddons,
@@ -611,6 +617,59 @@ local function FormatCountMap(counts)
     return table.concat(parts, " ")
 end
 
+local function FormatBool(value)
+    return tostring(value == true)
+end
+
+local function AddBarsAndFramesRuntimeLines(add, barsAndFramesRuntime)
+    local baf = barsAndFramesRuntime
+    if not baf then
+        return
+    end
+
+    add(("Bars & Frames Runtime: enabled=%s generation=%s reason=%s"):format(
+        FormatBool(baf.enabled),
+        tostring(baf.generation or 0),
+        tostring(baf.lastReason or "nil")
+    ))
+    add(("  Flags: resourceBars=%s castBar=%s frameAnchoring=%s"):format(
+        FormatBool(baf.flags and baf.flags.resourceBars),
+        FormatBool(baf.flags and baf.flags.castBar),
+        FormatBool(baf.flags and baf.flags.frameAnchoring)
+    ))
+    local counters = baf.counters or {}
+    add(("  Counters: refresh=%s evaluate=%s skipped=%s activate=%s deactivate=%s work=%s"):format(
+        tostring(counters.refresh or 0),
+        tostring(counters.evaluate or 0),
+        tostring(counters.skippedEvaluate or 0),
+        tostring(counters.activate or 0),
+        tostring(counters.deactivate or 0),
+        FormatCountMap(counters.work)
+    ))
+    local rb = baf.resourceBars or {}
+    add(("  Resource Bars: applied=%s onUpdate=%s lifecycleEvents=%s updateEvents=%s hooks=%s activeBars=%s"):format(
+        FormatBool(rb.applied),
+        FormatBool(rb.onUpdateActive),
+        FormatBool(rb.lifecycleEventsActive),
+        FormatBool(rb.updateEventsActive),
+        FormatBool(rb.hooksInstalled),
+        tostring(rb.activeBarCount or 0)
+    ))
+    local cb = baf.castBar or {}
+    add(("  Cast Bar: applied=%s castEvents=%s hooks=%s"):format(
+        FormatBool(cb.applied),
+        FormatBool(cb.castEventsActive),
+        FormatBool(cb.hooksInstalled)
+    ))
+    local fa = baf.frameAnchoring or {}
+    add(("  Frame Anchoring: applied=%s alphaSync=%s pendingCombat=%s hooks=%s"):format(
+        FormatBool(fa.applied),
+        FormatBool(fa.alphaSyncActive),
+        FormatBool(fa.pendingCombatReevaluate),
+        FormatBool(fa.hooksInstalled)
+    ))
+end
+
 local function FormatRelevantAddonList(loadedAddons)
     if type(loadedAddons) ~= "table" then
         return "none"
@@ -675,6 +734,12 @@ local function AddAgentDebugSignals(add, diag)
         ))
     else
         add("Visual-State Signal: unavailable")
+    end
+    if r.barsAndFramesRuntime then
+        add(("Bars & Frames Runtime: enabled=%s flags=%s"):format(
+            FormatBool(r.barsAndFramesRuntime.enabled),
+            FormatCountMap(r.barsAndFramesRuntime.flags)
+        ))
     end
     add("Relevant Addons: " .. FormatRelevantAddonList(r.loadedAddons))
     add("Profile Attachment: compact profile included in this bug report string.")
@@ -789,6 +854,8 @@ local function FormatDiagnosticBugReportAsText(diag)
     add(("Proc Overlay Spells: %s"):format(FormatIDList(r.procOverlaySpells)))
     add(("Range Check Spells: %s"):format(FormatIDList(r.rangeCheckSpells)))
 
+    AddBarsAndFramesRuntimeLines(add, r.barsAndFramesRuntime)
+
     if r.resourceBarRuntime and #r.resourceBarRuntime > 0 then
         add("Resource Bar Runtime:")
         for _, entry in ipairs(r.resourceBarRuntime) do
@@ -899,6 +966,9 @@ StaticPopupDialogs["CDC_DIAGNOSTIC_IMPORT_CONFIRM"] = {
             end
             CooldownCompanion:RefreshConfigPanel()
             CooldownCompanion:RefreshAllGroups()
+            if CooldownCompanion.EvaluateBarsAndFramesRuntime then
+                CooldownCompanion:EvaluateBarsAndFramesRuntime("diagnostic-profile-import")
+            end
             CooldownCompanion:Print("Diagnostic profile imported.")
         end
     end,

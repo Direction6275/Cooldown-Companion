@@ -198,7 +198,8 @@ end
 
 local function GetColumn4HeaderMode(selection)
     if CS.resourceBarPanelActive then
-        if CS.selectedCustomBarId then
+        local resourceBarSettings = CooldownCompanion:GetResourceBarSettings()
+        if resourceBarSettings and resourceBarSettings.enabled == true and CS.selectedCustomBarId then
             return "custom_bar"
         end
         return "layout_order"
@@ -2366,6 +2367,9 @@ function CooldownCompanion:SetupConfig()
             self:RefreshConfigPanel()
         end
         self:RefreshAllGroups()
+        if self.EvaluateBarsAndFramesRuntime then
+            self:EvaluateBarsAndFramesRuntime("profile-changed")
+        end
     end)
     self.db.RegisterCallback(self, "OnProfileCopied", function()
         ResetConfigForProfileChange()
@@ -2411,6 +2415,9 @@ function CooldownCompanion:SetupConfig()
             self:RefreshConfigPanel()
         end
         self:RefreshAllGroups()
+        if self.EvaluateBarsAndFramesRuntime then
+            self:EvaluateBarsAndFramesRuntime("profile-copied")
+        end
     end)
     self.db.RegisterCallback(self, "OnProfileReset", function()
         ResetConfigForProfileChange()
@@ -2427,6 +2434,9 @@ function CooldownCompanion:SetupConfig()
             self:RefreshConfigPanel()
         end
         self:RefreshAllGroups()
+        if self.EvaluateBarsAndFramesRuntime then
+            self:EvaluateBarsAndFramesRuntime("profile-reset")
+        end
     end)
     self.db.RegisterCallback(self, "OnProfileDeleted", function()
         if CS.configFrame and CS.configFrame.frame:IsShown() then

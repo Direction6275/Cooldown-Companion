@@ -22,7 +22,10 @@ function RB.CreateResourceBarLifecycleModule(deps)
     local RefreshEventDrivenCustomAuraBarsForUnit = deps.RefreshEventDrivenCustomAuraBarsForUnit
     local hooksInstalled = false
     local eventFrame = nil
+    local eventFrameEnabled = false
     local pendingSpecChange = false
+    local lifecycleEventsEnabled = false
+    local InstallHooks
 
     ------------------------------------------------------------------------
     -- Event handling (must be defined before Apply/Revert which call these)
@@ -34,9 +37,12 @@ function RB.CreateResourceBarLifecycleModule(deps)
     local lifecycleFrame = nil
 
     local function EnableLifecycleEvents()
+        if lifecycleEventsEnabled then return end
+        InstallHooks()
         if not lifecycleFrame then
             lifecycleFrame = CreateFrame("Frame")
             lifecycleFrame:SetScript("OnEvent", function(self, event, ...)
+                if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
                 if event == "UPDATE_SHAPESHIFT_FORM" then
                     CooldownCompanion:EvaluateResourceBars()
                     CooldownCompanion:UpdateAnchorStacking()
@@ -45,6 +51,10 @@ function RB.CreateResourceBarLifecycleModule(deps)
                     if not pendingSpecChange then
                         pendingSpecChange = true
                         C_Timer.After(0.5, function()
+                            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then
+                                pendingSpecChange = false
+                                return
+                            end
                             pendingSpecChange = false
                             local rebuilt = UpdateMWMaxStacks()
                             if not rebuilt then
@@ -65,19 +75,23 @@ function RB.CreateResourceBarLifecycleModule(deps)
         lifecycleFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
         lifecycleFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
         lifecycleFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+        lifecycleEventsEnabled = true
     end
 
     local function DisableLifecycleEvents()
         if not lifecycleFrame then return end
         lifecycleFrame:UnregisterAllEvents()
         pendingSpecChange = false
+        lifecycleEventsEnabled = false
     end
 
     -- Update events: only registered while bars are applied.
     local function EnableEventFrame()
+        if eventFrameEnabled then return end
         if not eventFrame then
             eventFrame = CreateFrame("Frame")
             eventFrame:SetScript("OnEvent", function(self, event, ...)
+                if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
                 if event == "UNIT_MAXPOWER" or event == "UNIT_MAXHEALTH" then
                     local unit = ...
                     if unit == "player" then
@@ -157,11 +171,13 @@ function RB.CreateResourceBarLifecycleModule(deps)
         eventFrame:RegisterUnitEvent("UNIT_MAXHEALTH", "player")
         eventFrame:RegisterUnitEvent("UNIT_AURA", "player", "target")
         eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+        eventFrameEnabled = true
     end
 
     local function DisableEventFrame()
         if not eventFrame then return end
         eventFrame:UnregisterAllEvents()
+        eventFrameEnabled = false
     end
 
 
@@ -169,15 +185,17 @@ function RB.CreateResourceBarLifecycleModule(deps)
     -- Hook installation (same pattern as CastBar)
     ------------------------------------------------------------------------
 
-    local function InstallHooks()
+    InstallHooks = function()
         if hooksInstalled then return end
         hooksInstalled = true
 
         -- When anchor group refreshes — re-evaluate
         hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
+            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
             local s = GetResourceBarSettings()
             if s and s.enabled then
                 C_Timer.After(0, function()
+                    if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
                     CooldownCompanion:EvaluateResourceBars()
                 end)
             end
@@ -185,23 +203,25 @@ function RB.CreateResourceBarLifecycleModule(deps)
 
         local function QueueResourceBarReevaluate()
             C_Timer.After(0.1, function()
+                if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
                 CooldownCompanion:EvaluateResourceBars()
             end)
         end
 
         -- When all groups refresh — re-evaluate
         hooksecurefunc(CooldownCompanion, "RefreshAllGroups", function()
+            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
             QueueResourceBarReevaluate()
         end)
 
         -- Visibility-only refresh path (zone/resting/pet-battle transitions)
         -- still needs resource bar anchoring re-evaluation.
         hooksecurefunc(CooldownCompanion, "RefreshAllGroupsVisibilityOnly", function()
+            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
             QueueResourceBarReevaluate()
         end)
 
-        -- When compact layout changes visible buttons — re-apply if primary length changed
-        hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
+        local function ReapplyIfPrimaryLengthChanged(groupId)
             local s = GetResourceBarSettings()
             if not s or not s.enabled then return end
             local layout = GetSpecLayoutOrder(s)
@@ -209,33 +229,30 @@ function RB.CreateResourceBarLifecycleModule(deps)
             local anchorGroupId = GetEffectiveAnchorGroupId(s)
             if anchorGroupId ~= groupId then return end
             local groupFrame = CooldownCompanion.groupFrames[groupId]
-            if not groupFrame or not GetLastAppliedPrimaryLength() then return end
+            local lastLength = GetLastAppliedPrimaryLength()
+            if not groupFrame or not lastLength then return end
             local newLength = GetResourcePrimaryLength(groupFrame, s)
-            if math_abs(newLength - GetLastAppliedPrimaryLength()) < 0.1 then
+            if math_abs(newLength - lastLength) < 0.1 then
                 return
             end
             CooldownCompanion:ApplyResourceBars()
+        end
+
+        -- When compact layout changes visible buttons — re-apply if primary length changed
+        hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
+            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
+            ReapplyIfPrimaryLengthChanged(groupId)
         end)
 
         -- When icon size / spacing / buttons-per-row changes — re-apply if primary length changed
         hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId)
-            local s = GetResourceBarSettings()
-            if not s or not s.enabled then return end
-            local layout = GetSpecLayoutOrder(s)
-            if layout and layout.independentAnchorEnabled then return end  -- independent stack: width not tied to group
-            local anchorGroupId = GetEffectiveAnchorGroupId(s)
-            if anchorGroupId ~= groupId then return end
-            local groupFrame = CooldownCompanion.groupFrames[groupId]
-            if not groupFrame or not GetLastAppliedPrimaryLength() then return end
-            local newLength = GetResourcePrimaryLength(groupFrame, s)
-            if math_abs(newLength - GetLastAppliedPrimaryLength()) < 0.1 then
-                return
-            end
-            CooldownCompanion:ApplyResourceBars()
+            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
+            ReapplyIfPrimaryLengthChanged(groupId)
         end)
 
         local function QueueResourceBarApply()
             C_Timer.After(0, function()
+                if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
                 local settings = GetResourceBarSettings()
                 if settings and settings.enabled then
                     CooldownCompanion:ApplyResourceBars()
@@ -245,12 +262,14 @@ function RB.CreateResourceBarLifecycleModule(deps)
 
         -- Re-apply when config visibility changes so independent drag state updates.
         hooksecurefunc(CooldownCompanion, "ToggleConfig", function()
+            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
             QueueResourceBarApply()
         end)
 
         -- Re-apply when switching between Buttons and Bars modes.
         if ST and ST._SetConfigPrimaryMode then
             hooksecurefunc(ST, "_SetConfigPrimaryMode", function()
+                if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
                 QueueResourceBarApply()
             end)
         end
@@ -266,9 +285,7 @@ function RB.CreateResourceBarLifecycleModule(deps)
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
 
         C_Timer.After(0.5, function()
-            UpdateMWMaxStacks()
-            InstallHooks()
-            CooldownCompanion:EvaluateResourceBars()
+            CooldownCompanion:EvaluateBarsAndFramesRuntime("resource-init")
         end)
     end)
 
@@ -278,5 +295,12 @@ function RB.CreateResourceBarLifecycleModule(deps)
         DisableLifecycleEvents = DisableLifecycleEvents,
         EnableEventFrame = EnableEventFrame,
         DisableEventFrame = DisableEventFrame,
+        GetDebugInfo = function()
+            return {
+                hooksInstalled = hooksInstalled == true,
+                lifecycleEventsActive = lifecycleEventsEnabled == true,
+                updateEventsActive = eventFrameEnabled == true,
+            }
+        end,
     }
 end
