@@ -38,23 +38,13 @@ local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
-local ClearConfigFinderText = ST._ClearConfigFinderText
+local ClearConfigPrimarySelection = ST._ClearConfigPrimarySelection
+local SelectConfigFolder = ST._SelectConfigFolder
+local SelectConfigContainer = ST._SelectConfigContainer
+local ToggleConfigContainerMultiSelect = ST._ToggleConfigContainerMultiSelect
+local SelectConfigPanel = ST._SelectConfigPanel
 
 local GenerateGroupName
-
-------------------------------------------------------------------------
--- Clear all selection state (container, panel, button, multi-select)
-------------------------------------------------------------------------
-local function ClearSelection()
-    CooldownCompanion:ClearAllConfigPreviews()
-    CS.selectedFolder = nil
-    CS.selectedContainer = nil
-    CS.selectedGroup = nil
-    CS.selectedButton = nil
-    wipe(CS.selectedButtons)
-    wipe(CS.selectedPanels)
-    wipe(CS.selectedCustomBars)
-end
 
 local function TrimGroupName(name)
     if name == nil then return "" end
@@ -159,7 +149,7 @@ local function RenderBrowseMode()
             CS.browseMode = false
             CS.browseCharKey = nil
             CS.browseContainerId = nil
-            ClearSelection()
+            ClearConfigPrimarySelection()
             CooldownCompanion:RefreshConfigPanel()
         end)
         CS.col1Scroll:AddChild(backBtn)
@@ -197,7 +187,7 @@ local function RenderBrowseMode()
             entry:SetCallback("OnClick", function()
                 CS.browseCharKey = charInfo.charKey
                 CS.browseContainerId = nil
-                ClearSelection()
+                ClearConfigPrimarySelection()
                 CooldownCompanion:RefreshConfigPanel()
             end)
             CS.col1Scroll:AddChild(entry)
@@ -214,7 +204,7 @@ local function RenderBrowseMode()
         backBtn:SetCallback("OnClick", function()
             CS.browseCharKey = nil
             CS.browseContainerId = nil
-            ClearSelection()
+            ClearConfigPrimarySelection()
             CooldownCompanion:RefreshConfigPanel()
         end)
         CS.col1Scroll:AddChild(backBtn)
@@ -274,18 +264,13 @@ local function RenderBrowseMode()
             -- Left-click: select for preview; Right-click: copy context menu
             entry.frame:SetScript("OnMouseUp", function(self, button)
                 if button == "LeftButton" then
-                    CooldownCompanion:ClearAllConfigPreviews()
                     if CS.browseContainerId == containerId then
                         CS.browseContainerId = nil
-                        CS.selectedContainer = nil
+                        SelectConfigContainer(nil, { keepContainerMulti = true })
                     else
                         CS.browseContainerId = containerId
-                        CS.selectedContainer = containerId
+                        SelectConfigContainer(containerId, { keepContainerMulti = true })
                     end
-                    CS.selectedGroup = nil
-                    CS.selectedButton = nil
-                    wipe(CS.selectedButtons)
-                    wipe(CS.selectedPanels)
                     CooldownCompanion:RefreshConfigPanel()
                 elseif button == "RightButton" then
                     -- Verify source still exists
@@ -302,12 +287,10 @@ local function RenderBrowseMode()
                             if not db.groupContainers[containerId] then return end
                             local newId = CooldownCompanion:CopyContainerFromBrowse(containerId)
                             if newId then
-                                CooldownCompanion:ClearAllConfigPreviews()
                                 CS.browseMode = false
                                 CS.browseCharKey = nil
                                 CS.browseContainerId = nil
-                                CS.selectedContainer = newId
-                                CS.selectedGroup = nil
+                                SelectConfigContainer(newId)
                                 CooldownCompanion:RefreshConfigPanel()
                                 CooldownCompanion:Print("Group copied successfully.")
                             end
@@ -462,9 +445,7 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
                 CloseDropDownMenus()
                 local newContainerId = CooldownCompanion:DuplicateGroup(containerId)
                 if newContainerId then
-                    CooldownCompanion:ClearAllConfigPreviews()
-                    CS.selectedContainer = newContainerId
-                    CS.selectedGroup = nil
+                    SelectConfigContainer(newContainerId)
                     CooldownCompanion:RefreshConfigPanel()
                 end
             end
@@ -616,9 +597,10 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
                     CloseDropDownMenus()
                     local newPanelId = CooldownCompanion:CreatePanel(containerId, targetMode)
                     if newPanelId then
-                        CooldownCompanion:ClearAllConfigPreviews()
-                        CS.selectedContainer = containerId
-                        CS.selectedGroup = newPanelId
+                        SelectConfigPanel(newPanelId, {
+                            containerId = containerId,
+                            keepPanelMulti = true,
+                        })
                         CS.addingToPanelId = newPanelId
                         CS.pendingEditBoxFocus = true
                         CooldownCompanion:RefreshConfigPanel()
@@ -655,11 +637,7 @@ local function ShowFolderContextMenu(db, folderId, folder)
             CloseDropDownMenus()
             local containerId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
             CooldownCompanion:MoveGroupToFolder(containerId, folderId)
-            CooldownCompanion:ClearAllConfigPreviews()
-            CS.selectedContainer = containerId
-            CS.selectedGroup = nil
-            CS.selectedButton = nil
-            wipe(CS.selectedButtons)
+            SelectConfigContainer(containerId)
             CooldownCompanion:RefreshConfigPanel()
         end
         UIDropDownMenu_AddButton(info, level)
@@ -823,11 +801,7 @@ local function PopulateColumn1ButtonBar()
     newGroupBtn:SetText("New Group")
     newGroupBtn:SetCallback("OnClick", function()
         local containerId, groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
-        CooldownCompanion:ClearAllConfigPreviews()
-        CS.selectedContainer = containerId
-        CS.selectedGroup = nil
-        CS.selectedButton = nil
-        wipe(CS.selectedButtons)
+        SelectConfigContainer(containerId)
         CooldownCompanion:RefreshConfigPanel()
         if NotifyTutorialAction then
             NotifyTutorialAction("group_created", {
@@ -1282,17 +1256,7 @@ local function RefreshColumn1(preserveDrag)
             if CS.dragState and CS.dragState.phase == "active" then return end
             if button == "LeftButton" then
                 if searchResults then
-                    CooldownCompanion:ClearAllConfigPreviews()
-                    wipe(CS.selectedGroups)
-                    wipe(CS.selectedPanels)
-                    wipe(CS.selectedButtons)
-                    CS.selectedFolder = nil
-                    CS.selectedContainer = containerId
-                    CS.selectedGroup = nil
-                    CS.selectedButton = nil
-                    if ClearConfigFinderText then
-                        ClearConfigFinderText()
-                    end
+                    SelectConfigContainer(containerId, { clearFinder = true })
                     CooldownCompanion:RefreshConfigPanel()
                     return
                 end
@@ -1307,38 +1271,12 @@ local function RefreshColumn1(preserveDrag)
                     return
                 elseif IsControlKeyDown() then
                     -- Ctrl+click: toggle multi-select (container IDs)
-                    if CS.selectedGroups[containerId] then
-                        CS.selectedGroups[containerId] = nil
-                    else
-                        CS.selectedGroups[containerId] = true
-                    end
-                    if CS.selectedContainer and not CS.selectedGroups[CS.selectedContainer] and next(CS.selectedGroups) then
-                        CS.selectedGroups[CS.selectedContainer] = true
-                    end
-                    CS.selectedFolder = nil
-                    ClearSelection()
+                    ToggleConfigContainerMultiSelect(containerId)
                     CooldownCompanion:RefreshConfigPanel()
                     return
                 end
                 -- Normal click: toggle-through selection, clear multi-select
-                CooldownCompanion:ClearAllConfigPreviews()
-                wipe(CS.selectedGroups)
-                CS.selectedFolder = nil
-                if CS.selectedContainer == containerId then
-                    if CS.selectedGroup then
-                        -- First re-click: clear panel selection (return to container settings)
-                        CS.selectedGroup = nil
-                    else
-                        -- Second re-click: deselect container entirely
-                        CS.selectedContainer = nil
-                    end
-                else
-                    CS.selectedContainer = containerId
-                    CS.selectedGroup = nil
-                end
-                CS.selectedButton = nil
-                wipe(CS.selectedButtons)
-                wipe(CS.selectedPanels)
+                SelectConfigContainer(containerId, { toggle = true })
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
                 ShowContainerContextMenu(db, charKey, containerId, container)
@@ -1683,14 +1621,7 @@ local function RefreshColumn1(preserveDrag)
                     CooldownCompanion:RefreshConfigPanel()
                     return
                 end
-                CooldownCompanion:ClearAllConfigPreviews()
-                CS.selectedFolder = folderId
-                CS.selectedContainer = nil
-                CS.selectedGroup = nil
-                CS.selectedButton = nil
-                wipe(CS.selectedGroups)
-                wipe(CS.selectedPanels)
-                wipe(CS.selectedButtons)
+                SelectConfigFolder(folderId)
                 CooldownCompanion:RefreshConfigPanel()
             elseif button == "MiddleButton" then
                 -- Lock/unlock all containers in this folder

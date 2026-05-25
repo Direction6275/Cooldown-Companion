@@ -2342,6 +2342,157 @@ end
 -- Shared selection / spec helpers (consumed by Popups, Panel, Column*, DragReorder)
 ------------------------------------------------------------------------
 
+local function ClearSelectedButton()
+    CS.selectedButton = nil
+    wipe(CS.selectedButtons)
+end
+
+local function ClearConfigPrimarySelection()
+    CooldownCompanion:ClearAllConfigPreviews()
+    CS.selectedFolder = nil
+    CS.selectedContainer = nil
+    CS.selectedGroup = nil
+    ClearSelectedButton()
+    wipe(CS.selectedPanels)
+    wipe(CS.selectedCustomBars)
+end
+
+local function SelectConfigFolder(folderId)
+    CooldownCompanion:ClearAllConfigPreviews()
+    CS.selectedFolder = folderId
+    CS.selectedContainer = nil
+    CS.selectedGroup = nil
+    ClearSelectedButton()
+    wipe(CS.selectedGroups)
+    wipe(CS.selectedPanels)
+end
+
+local function SelectConfigContainer(containerId, opts)
+    CooldownCompanion:ClearAllConfigPreviews()
+    if not (opts and opts.keepContainerMulti) then
+        wipe(CS.selectedGroups)
+    end
+    CS.selectedFolder = nil
+
+    if opts and opts.toggle and CS.selectedContainer == containerId then
+        if CS.selectedGroup then
+            CS.selectedGroup = nil
+        else
+            CS.selectedContainer = nil
+        end
+    else
+        CS.selectedContainer = containerId
+        CS.selectedGroup = nil
+    end
+
+    ClearSelectedButton()
+    wipe(CS.selectedPanels)
+    if opts and opts.clearFinder then
+        ClearConfigFinderText()
+    end
+end
+
+local function ToggleConfigContainerMultiSelect(containerId)
+    CooldownCompanion:ClearAllConfigPreviews()
+    if CS.selectedGroups[containerId] then
+        CS.selectedGroups[containerId] = nil
+    else
+        CS.selectedGroups[containerId] = true
+    end
+    if CS.selectedContainer and not CS.selectedGroups[CS.selectedContainer] and next(CS.selectedGroups) then
+        CS.selectedGroups[CS.selectedContainer] = true
+    end
+
+    CS.selectedFolder = nil
+    CS.selectedContainer = nil
+    CS.selectedGroup = nil
+    ClearSelectedButton()
+    wipe(CS.selectedPanels)
+    wipe(CS.selectedCustomBars)
+end
+
+local function SelectConfigPanel(panelId, opts)
+    CooldownCompanion:ClearAllConfigPreviews()
+    if opts and opts.containerId ~= nil then
+        CS.selectedContainer = opts.containerId
+    end
+    if not (opts and opts.keepPanelMulti) then
+        wipe(CS.selectedPanels)
+    end
+
+    if opts and opts.toggle and CS.selectedGroup == panelId and not CS.selectedButton then
+        CS.selectedGroup = nil
+    else
+        CS.selectedGroup = panelId
+    end
+
+    ClearSelectedButton()
+end
+
+local function ToggleConfigPanelMultiSelect(panelId)
+    CooldownCompanion:ClearAllConfigPreviews()
+    if CS.selectedPanels[panelId] then
+        CS.selectedPanels[panelId] = nil
+    else
+        CS.selectedPanels[panelId] = true
+    end
+    if CS.selectedGroup and not CS.selectedPanels[CS.selectedGroup] and next(CS.selectedPanels) then
+        CS.selectedPanels[CS.selectedGroup] = true
+    end
+
+    CS.selectedGroup = nil
+    ClearSelectedButton()
+    CS.addingToPanelId = nil
+end
+
+local function SelectConfigButton(panelId, buttonIndex, opts)
+    local panelChanged = CS.selectedGroup ~= panelId
+    if opts and opts.containerId ~= nil then
+        CS.selectedContainer = opts.containerId
+    end
+    if panelChanged then
+        CS.selectedGroup = panelId
+        ClearSelectedButton()
+    end
+    if not (opts and opts.keepPanelMulti) then
+        wipe(CS.selectedPanels)
+    end
+
+    if opts and opts.multi then
+        if CS.selectedButtons[buttonIndex] then
+            CS.selectedButtons[buttonIndex] = nil
+        else
+            CS.selectedButtons[buttonIndex] = true
+        end
+        if CS.selectedButton and not CS.selectedButtons[CS.selectedButton] and next(CS.selectedButtons) then
+            CS.selectedButtons[CS.selectedButton] = true
+        end
+        CS.selectedButton = nil
+    else
+        wipe(CS.selectedButtons)
+        if opts and opts.force then
+            CS.selectedButton = buttonIndex
+        elseif not panelChanged and CS.selectedButton == buttonIndex then
+            CS.selectedButton = nil
+        else
+            CS.selectedButton = buttonIndex
+        end
+    end
+
+    CooldownCompanion:ClearAllConfigPreviews()
+end
+
+local function SelectConfigButtonPanel(panelId, opts)
+    if CS.selectedGroup ~= panelId then
+        CooldownCompanion:ClearAllConfigPreviews()
+        CS.selectedGroup = panelId
+        ClearSelectedButton()
+    end
+    if opts and opts.clearPanelMulti then
+        wipe(CS.selectedPanels)
+    end
+end
+
 local function ResetConfigSelection(full)
     if full and ST._CancelAutoAddFlow then
         ST._CancelAutoAddFlow()
@@ -2573,6 +2724,14 @@ ST._BUTTON_SPACING = BUTTON_SPACING
 ST._PROFILE_BAR_HEIGHT = PROFILE_BAR_HEIGHT
 ST._BuildHeroTalentSubTreeCheckboxes = BuildHeroTalentSubTreeCheckboxes
 ST._ApplyCheckboxIndent = ApplyCheckboxIndent
+ST._ClearConfigPrimarySelection = ClearConfigPrimarySelection
+ST._SelectConfigFolder = SelectConfigFolder
+ST._SelectConfigContainer = SelectConfigContainer
+ST._ToggleConfigContainerMultiSelect = ToggleConfigContainerMultiSelect
+ST._SelectConfigPanel = SelectConfigPanel
+ST._ToggleConfigPanelMultiSelect = ToggleConfigPanelMultiSelect
+ST._SelectConfigButton = SelectConfigButton
+ST._SelectConfigButtonPanel = SelectConfigButtonPanel
 ST._ResetConfigSelection = ResetConfigSelection
 ST._SetConfigPrimaryMode = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs
