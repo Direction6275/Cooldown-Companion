@@ -9,6 +9,10 @@ local CS = ST._configState
 local CreateGlowContainer = ST._CreateGlowContainer
 local ShowGlowStyle = ST._ShowGlowStyle
 local HideGlowStyles = ST._HideGlowStyles
+local ResetConfigSelection = ST._ResetConfigSelection
+local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
+local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
+local ClearConfigContainerMultiSelection = ST._ClearConfigContainerMultiSelection
 
 local pairs = pairs
 local next = next
@@ -429,25 +433,13 @@ local function NormalizeTutorialContext()
     if CS.talentPickerMode and CooldownCompanion.CloseTalentPicker then
         CooldownCompanion:CloseTalentPicker()
     end
-    if ST._CancelAutoAddFlow then
-        ST._CancelAutoAddFlow()
-    end
 
     CloseDropDownMenus()
     if CS.HideAutocomplete then
         CS.HideAutocomplete()
     end
 
-    CS.browseMode = false
-    CS.browseCharKey = nil
-    CS.browseContainerId = nil
-    CS.selectedContainer = nil
-    CS.selectedGroup = nil
-    CS.selectedButton = nil
-    wipe(CS.selectedButtons)
-    wipe(CS.selectedPanels)
-    wipe(CS.selectedGroups)
-    CS.addingToPanelId = nil
+    ResetConfigSelection(true)
     CS.newInput = ""
     CS.pendingEditBoxFocus = false
 
@@ -787,18 +779,16 @@ local function NotifyTutorialAction(action, payload)
 
     if action == "group_created" and (runtime.step == "welcome" or runtime.step == "groups_column_intro" or runtime.step == "create_group") then
         runtime.createdGroup = true
-        CS.selectedButton = nil
-        wipe(CS.selectedButtons)
-        wipe(CS.selectedPanels)
-        wipe(CS.selectedGroups)
+        ClearConfigButtonSelection()
+        ClearConfigPanelMultiSelection()
+        ClearConfigContainerMultiSelection()
         AdvanceStep("panels_column_intro")
     elseif action == "panel_created" and (runtime.step == "panels_column_intro" or runtime.step == "create_panel") then
         if payload and payload.displayMode == "icons" then
             runtime.createdPanel = true
-            CS.selectedButton = nil
-            wipe(CS.selectedButtons)
-            wipe(CS.selectedPanels)
-            wipe(CS.selectedGroups)
+            ClearConfigButtonSelection()
+            ClearConfigPanelMultiSelection()
+            ClearConfigContainerMultiSelection()
             AdvanceStep("panel_area_intro")
         end
     elseif action == "inline_add_succeeded" and (runtime.step == "panel_area_intro" or runtime.step == "add_one_spell") then

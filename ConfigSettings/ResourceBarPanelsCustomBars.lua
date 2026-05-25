@@ -12,6 +12,11 @@ local LSM = LibStub("LibSharedMedia-3.0")
 local CS = ST._configState
 local IsPassiveOrProc = ST._IsPassiveOrProc
 local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
+local ClearCustomBarPreviewState = ST._ClearConfigCustomBarPreviewState
+local SelectConfigCustomBar = ST._SelectConfigCustomBar
+local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
+local ToggleConfigCustomBarMultiSelect = ST._ToggleConfigCustomBarMultiSelect
+local PruneConfigCustomBarSelection = ST._PruneConfigCustomBarSelection
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
@@ -209,8 +214,6 @@ local function FindCustomBarIndexById(customBars, customBarId)
     end
     return nil
 end
-
-local ClearCustomBarPreviewState
 
 local function EnsureCustomBarRowTextBadge(frame, key)
     local badge = frame[key]
@@ -543,13 +546,6 @@ local function HideCustomBarRowDecorations(frame)
     end
 end
 
-ClearCustomBarPreviewState = function()
-    CooldownCompanion:ClearAllCustomAuraBarPreviews()
-    if CS.customBarIndicatorPreviewActive then
-        CooldownCompanion:StopResourceBarPreview()
-    end
-end
-
 local function OpenCustomBarRowMenu(customBars, specID, customBarId, entry)
     if not CS.customBarContextMenu then
         CS.customBarContextMenu = CreateFrame("Frame", "CDCCustomBarContextMenu", UIParent, "UIDropDownMenuTemplate")
@@ -581,9 +577,10 @@ local function OpenCustomBarRowMenu(customBars, specID, customBarId, entry)
             CloseDropDownMenus()
             local newId = DuplicateCustomBarById(CooldownCompanion:GetResourceBarSettings(), specID, customBars, customBarId)
             if newId then
-                ClearCustomBarPreviewState()
-                CS.selectedCustomBarId = newId
-                CS.customBarSettingsTab = "appearance"
+                SelectConfigCustomBar(newId, {
+                    clearPreview = true,
+                    resetTab = true,
+                })
             end
             ApplyCustomAuraBarPanelChanges({
                 updateAnchors = true,
@@ -616,9 +613,7 @@ local function OpenCustomBarRowMenu(customBars, specID, customBarId, entry)
             local settings = CooldownCompanion:GetResourceBarSettings()
             if DeleteCustomBarById(settings, specID, customBars, customBarId) then
                 if CS.selectedCustomBarId == customBarId then
-                    ClearCustomBarPreviewState()
-                    CS.selectedCustomBarId = nil
-                    CS.customBarSettingsTab = "appearance"
+                    ClearConfigCustomBarSelection(true)
                 end
                 if CS.customBarSpecExpandedId == customBarId then
                     CS.customBarSpecExpandedId = nil
@@ -1562,19 +1557,10 @@ local function BuildCustomBarsListPanel(container)
 
     local customBarsSpecID = GetCurrentConfigSpecID()
     local customBars = RB.GetAllCustomBars and RB.GetAllCustomBars(settings) or CooldownCompanion:GetSpecCustomAuraBars()
+    PruneConfigCustomBarSelection(function(customBarId)
+        return FindCustomBarIndexById(customBars, customBarId) ~= nil
+    end)
     local selectedId = CS.selectedCustomBarId
-    if selectedId and not FindCustomBarIndexById(customBars, selectedId) then
-        CS.selectedCustomBarId = nil
-        selectedId = nil
-    end
-    if CS.customBarSpecExpandedId and not FindCustomBarIndexById(customBars, CS.customBarSpecExpandedId) then
-        CS.customBarSpecExpandedId = nil
-    end
-    for customBarId in pairs(CS.selectedCustomBars) do
-        if not FindCustomBarIndexById(customBars, customBarId) then
-            CS.selectedCustomBars[customBarId] = nil
-        end
-    end
 
     local addBox = AceGUI:Create("EditBox")
     if addBox.editbox.Instructions then addBox.editbox.Instructions:Hide() end
@@ -1667,8 +1653,7 @@ local function BuildCustomBarsListPanel(container)
             customBars[#customBars + 1] = entry
             EnsureCustomBarLayout(settings, nil, id, 1000 + #customBars)
         end
-        wipe(CS.selectedCustomBars)
-        CS.selectedCustomBarId = id
+        SelectConfigCustomBar(id)
         ApplyCustomAuraBarPanelChanges({
             updateAnchors = true,
             refreshConfig = true,
@@ -1956,43 +1941,25 @@ local function BuildCustomBarsListPanel(container)
                 return
             end
             if mouseButton == "RightButton" then
-                local selectionChanged = CS.selectedCustomBarId ~= customBarId
-                if selectionChanged then
-                    ClearCustomBarPreviewState()
-                end
-                CS.selectedCustomBarId = customBarId
-                wipe(CS.selectedButtons)
-                wipe(CS.selectedCustomBars)
+                local selectionChanged = SelectConfigCustomBar(customBarId, {
+                    clearPreview = true,
+                    clearButtonMulti = true,
+                })
                 if selectionChanged then
                     CooldownCompanion:RefreshConfigPanel()
                 end
                 OpenCustomBarRowMenu(customBars, customBarsSpecID, customBarId, entry)
             elseif mouseButton == "LeftButton" then
                 if IsControlKeyDown and IsControlKeyDown() then
-                    if CS.selectedCustomBars[customBarId] then
-                        CS.selectedCustomBars[customBarId] = nil
-                    else
-                        CS.selectedCustomBars[customBarId] = true
-                    end
-                    if CS.selectedCustomBarId and not CS.selectedCustomBars[CS.selectedCustomBarId] and next(CS.selectedCustomBars) then
-                        CS.selectedCustomBars[CS.selectedCustomBarId] = true
-                    end
-                    ClearCustomBarPreviewState()
+                    ToggleConfigCustomBarMultiSelect(customBarId)
                     CooldownCompanion:RefreshConfigPanel()
                     return
                 end
 
-                wipe(CS.selectedCustomBars)
-                if CS.selectedCustomBarId == customBarId then
-                    ClearCustomBarPreviewState()
-                    CS.selectedCustomBarId = nil
-                    CS.customBarSettingsTab = "appearance"
-                else
-                    if CS.selectedCustomBarId ~= customBarId then
-                        ClearCustomBarPreviewState()
-                    end
-                    CS.selectedCustomBarId = customBarId
-                end
+                SelectConfigCustomBar(customBarId, {
+                    clearPreview = true,
+                    toggle = true,
+                })
                 CooldownCompanion:RefreshConfigPanel()
             end
         end)

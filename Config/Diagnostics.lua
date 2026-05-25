@@ -11,6 +11,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 local EncodeSharedPayload = ST._EncodeSharedPayload
 local DecodeSharedPayload = ST._DecodeSharedPayload
 local PrepareSharedImportText = ST._PrepareSharedImportText
+local ResetConfigSelection = ST._ResetConfigSelection
 
 -- File-local state
 local decodedDiagnostic = nil
@@ -929,10 +930,7 @@ StaticPopupDialogs["CDC_DIAGNOSTIC_IMPORT_CONFIRM"] = {
             for k, v in pairs(decodedDiagnostic.profile) do
                 db.profile[k] = v
             end
-            CS.selectedGroup = nil
-            CS.selectedButton = nil
-            wipe(CS.selectedButtons)
-            wipe(CS.selectedGroups)
+            ResetConfigSelection(true)
             -- Remap only the exporter's own entities to the importer's character.
             -- Other characters' entities keep their original createdBy so they
             -- appear in the browse-other-characters module instead of being

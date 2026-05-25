@@ -16,30 +16,29 @@ local ShouldSuppressSpellbookEntry = ST._ShouldSuppressSpellbookEntry
 local GetButtonIcon = ST._GetButtonIcon
 local CDM_VIEWER_NAMES = ST._CDM_VIEWER_NAMES
 local NotifyTutorialAction = ST._NotifyTutorialAction
+local SelectConfigPanel = ST._SelectConfigPanel
+local SelectConfigButton = ST._SelectConfigButton
 
 -- After a successful add, set selection state to the new button so the
 -- next RefreshConfigPanel shows its settings in Column 3.
 -- Precondition: CS.selectedContainer is already set by the caller's
 -- panel/container selection flow.
 local function SelectNewButton(panelId, buttonIndex)
-    CooldownCompanion:ClearAllConfigPreviews()
-
     local group = panelId and CooldownCompanion.db
         and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups
         and CooldownCompanion.db.profile.groups[panelId]
     if group and group.displayMode == "textures" then
-        CS.selectedGroup = panelId
-        CS.selectedButton = nil
-        wipe(CS.selectedButtons)
+        SelectConfigPanel(panelId)
         CS.addingToPanelId = nil
         CS.pendingTexturePickerOpen = panelId
         return
     end
-    if not buttonIndex then return end
-    CS.selectedGroup = panelId
-    CS.selectedButton = buttonIndex
-    wipe(CS.selectedButtons)
+    if not buttonIndex then
+        CooldownCompanion:ClearAllConfigPreviews()
+        return
+    end
+    SelectConfigButton(panelId, buttonIndex, { force = true })
 end
 
 local function IsTexturePanelTarget(groupId)
