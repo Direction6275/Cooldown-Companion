@@ -50,6 +50,7 @@ local ApplyIconCountTextStyle = ST._ApplyIconCountTextStyle
 local UpdateIconModeVisuals = ST._UpdateIconModeVisuals
 local UpdateIconModeGlows = ST._UpdateIconModeGlows
 local CacheButtonBindingKeys = ST._CacheButtonBindingKeys
+local ClearIconFillVisualState = ST._ClearIconFillVisualState
 
 -- Imports from BarMode
 local ApplyBarCountTextStyle = ST._ApplyBarCountTextStyle
@@ -74,6 +75,24 @@ local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
 local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
+
+function CooldownCompanion:ShouldRefreshButtonVisualStateSnapshot()
+    local isEnabled = ST._AreButtonVisualStateSnapshotsEnabled
+    return isEnabled and isEnabled() == true
+end
+
+function CooldownCompanion:RefreshButtonVisualStateSnapshot(button, context, phase)
+    if not CooldownCompanion:ShouldRefreshButtonVisualStateSnapshot() then
+        return nil
+    end
+
+    local refresh = ST._RefreshButtonVisualState
+    if refresh and context then
+        context.phase = phase
+        return refresh(button, context)
+    end
+    return nil
+end
 
 local function ClearConditionalVisualPreviewFields(button)
     if button._conditionalAuraPreview then
@@ -116,10 +135,18 @@ local function ClearConditionalVisualPreviewFields(button)
 end
 
 local function HideIconFillForHiddenButton(button)
+    if type(ClearIconFillVisualState) == "function" then
+        ClearIconFillVisualState(button, button and button.style, nil, true)
+        return
+    end
     if not (button and button.iconFill) then return end
     button.iconFill:Hide()
     button.iconFill:SetScript("OnUpdate", nil)
     button._iconFillOnUpdateInstalled = nil
+    button._iconFillActive = nil
+    button._iconFillMode = nil
+    button._iconFillAuraActive = nil
+    button._iconFillIntent = nil
 end
 
 local function ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)
@@ -2422,6 +2449,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     EvaluateButtonVisibility(button, buttonData, auraOverrideActive, procOverlayActive, auraOwnsPrimarySwipe)
     button._rawVisibilityHidden = button._visibilityHidden
     button._rawVisibilityAlphaOverride = button._visibilityAlphaOverride
+    button._rawVisibilityReasonBits = button._visibilityReasonBits
+    button._rawVisibilityReasonMode = button._visibilityReasonMode
 
     local group = button._groupId and CooldownCompanion.db.profile.groups[button._groupId]
     local isTriggerPanel = group and group.displayMode == "trigger"
@@ -2430,9 +2459,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         and CooldownCompanion.IsContainerUnlockPreviewActive
         and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
         and not isTriggerPanel
+    local visibilityOverrideSource
     if isTriggerPanel then
         button._visibilityHidden = true
         button._visibilityAlphaOverride = 0
+        visibilityOverrideSource = "trigger"
     end
 
     -- Config panel QOL: selected buttons in column 2 are always fully visible.
@@ -2441,12 +2472,35 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if forceVisibleByUnlockPreview or forceVisibleByPreview then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = 1
+        visibilityOverrideSource = forceVisibleByUnlockPreview and "unlock-preview" or "conditional-preview"
     elseif forceVisibleByConfig and not isTriggerPanel then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = 1
+        visibilityOverrideSource = "config"
     end
     button._forceVisibleByConfig = ((forceVisibleByConfig or forceVisibleByUnlockPreview or forceVisibleByPreview) and not isTriggerPanel) or nil
+    if button._visibilityHidden == true then
+        button._visibilityFinalMode = "hidden"
+    elseif button._visibilityAlphaOverride ~= nil and button._visibilityAlphaOverride ~= 1 then
+        button._visibilityFinalMode = "dimmed"
+    else
+        button._visibilityFinalMode = "visible"
+    end
+    button._visibilityOverrideSource = visibilityOverrideSource
+    button._visibilityTriggerSuppressed = visibilityOverrideSource == "trigger" or nil
+    button._visibilityCompactLayout = group and group.compactLayout == true or nil
 
+    local visualStateContext
+    local shouldCaptureVisualState = CooldownCompanion:ShouldRefreshButtonVisualStateSnapshot()
+    if shouldCaptureVisualState then
+        visualStateContext = button._visualStateContext
+        if type(visualStateContext) ~= "table" then
+            visualStateContext = {}
+            button._visualStateContext = visualStateContext
+        end
+        visualStateContext.displayMode = buttonDisplayMode
+        visualStateContext.preserveSecretTextRender = auraDisplayNameState and auraDisplayNameState.preserveSecretTextRender == true
+    end
     -- Track visibility/force-visible state changes for compact layout reflow.
     local visibilityChanged = button._visibilityHidden ~= button._prevVisibilityHidden
     if visibilityChanged then
@@ -2472,6 +2526,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button._lastVisAlpha = 0
             end
             DispatchStandaloneTextureVisual(button)
+            if shouldCaptureVisualState then
+                CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
+            end
             return  -- Skip all visual updates
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -2489,6 +2546,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button.cooldown:Hide()
             HideIconFillForHiddenButton(button)
             DispatchStandaloneTextureVisual(button)
+            if shouldCaptureVisualState then
+                CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
+            end
             return  -- Skip visual updates for hidden buttons
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -2553,5 +2613,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
         UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         DispatchStandaloneTextureVisual(button)
+    end
+    if shouldCaptureVisualState then
+        CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
     end
 end

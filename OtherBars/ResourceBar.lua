@@ -156,6 +156,7 @@ local activeCustomAuraBarPandemicPreviews = {}
 local segmentedUpdateScratch = { auraActiveCache = {} }
 local HealthBar = RB.HealthBar
 local HEALTH_EFFECTS = RB.HealthEffects
+
 local function HasCustomAuraBarAuraVisuals(cabConfig)
     return cabConfig and (cabConfig.barAuraEffect or "none") ~= "none"
 end

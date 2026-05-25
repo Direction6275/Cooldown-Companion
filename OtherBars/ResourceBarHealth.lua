@@ -29,6 +29,8 @@ local ApplyPixelBorders = RB.ApplyPixelBorders
 local HidePixelBorders = RB.HidePixelBorders
 
 local HEALTH_EFFECT_JOIN_OVERLAP = 1
+local HealthBar
+local HEALTH_EFFECTS
 
 local function EnsureNonNilNumber(value)
     if type(value) == "nil" then
@@ -37,8 +39,8 @@ local function EnsureNonNilNumber(value)
     return value
 end
 
-local HealthBar = {}
-local HEALTH_EFFECTS = {
+HealthBar = {}
+HEALTH_EFFECTS = {
     texture = RB.DEFAULT_HEALTH_EFFECT_TEXTURE or "Solid",
     incomingHealColor = RB.DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
     absorbColor = RB.DEFAULT_HEALTH_ABSORB_COLOR,
@@ -724,6 +726,7 @@ function HealthBar.Update(bar, settings)
             bar.text:SetFormattedText("%.0f%%", UnitHealthPercent("player", true, PERCENT_SCALE_CURVE))
         end
     end
+
 end
 
 function HealthBar.Style(bar, settings)

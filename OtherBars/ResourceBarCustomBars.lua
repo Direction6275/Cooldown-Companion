@@ -99,6 +99,28 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         return false
     end
 
+    local function PeekCustomBarPandemicState(frame, configUnit, auraPresent, viewerFrame, pandemicPreview)
+        if not frame then
+            return false
+        end
+        if pandemicPreview then
+            return true
+        end
+        if configUnit == "target" and auraPresent and viewerFrame then
+            if frame._pandemicGraceSuppressed then
+                return false
+            end
+            local pi = viewerFrame.PandemicIcon
+            if pi and pi:IsVisible() then
+                return true
+            end
+            if frame._inPandemic then
+                return true
+            end
+        end
+        return false
+    end
+
     local function ResolveCustomAuraVisibility(cabConfig, auraPresent, inPandemic, auraPreview, pandemicPreview)
         if not (cabConfig and (cabConfig.hideWhenInactive or cabConfig.hideWhileAuraActive)) then
             return true, false
@@ -114,6 +136,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             or pandemicPreview
 
         return shouldShow, true
+    end
+
+    local function GetCustomAuraVisibilityReason(cabConfig)
+        return cabConfig and cabConfig.hideWhenInactive
+            and "hide-when-inactive"
+            or "hide-while-aura-active"
     end
 
     function RB.RequestCustomBarPresentationRefresh()

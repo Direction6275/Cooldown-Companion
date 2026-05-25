@@ -1004,6 +1004,10 @@ local function RehydrateCompactPayload(data, formatVersion)
         return NormalizeTextureLibraryPayload(data)
     end
 
+    if data.reportKind == "bugReport" then
+        return data
+    end
+
     if data.type then
         return RehydrateEntityPayload(data, formatVersion)
     end
