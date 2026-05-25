@@ -2347,6 +2347,31 @@ local function ClearSelectedButton()
     wipe(CS.selectedButtons)
 end
 
+local function ClearConfigButtonSelection()
+    ClearSelectedButton()
+end
+
+local function ClearConfigPanelSelection()
+    CS.selectedGroup = nil
+    ClearSelectedButton()
+end
+
+local function ClearConfigContainerSelection()
+    CS.selectedContainer = nil
+    ClearConfigPanelSelection()
+end
+
+local function ClearConfigPanelMultiSelection(opts)
+    wipe(CS.selectedPanels)
+    if opts and opts.selectContainerId ~= nil then
+        CS.selectedContainer = opts.selectContainerId
+    end
+end
+
+local function ClearConfigContainerMultiSelection()
+    wipe(CS.selectedGroups)
+end
+
 local function ClearConfigPrimarySelection()
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedFolder = nil
@@ -2354,6 +2379,7 @@ local function ClearConfigPrimarySelection()
     CS.selectedGroup = nil
     ClearSelectedButton()
     wipe(CS.selectedPanels)
+    wipe(CS.selectedGroups)
     wipe(CS.selectedCustomBars)
 end
 
@@ -2509,11 +2535,14 @@ local function SetConfigCustomBarSettingsTab(tab, clearPreviewOnNonIndicator)
     end
 end
 
-local function ClearConfigCustomBarSelection(clearPreview)
+local function ClearConfigCustomBarSelection(clearPreview, opts)
     if clearPreview then
         ClearConfigCustomBarPreviewState()
     end
     CS.selectedCustomBarId = nil
+    if opts and opts.clearExpanded then
+        CS.customBarSpecExpandedId = nil
+    end
     wipe(CS.selectedCustomBars)
     SetConfigCustomBarSettingsTab("appearance")
 end
@@ -2803,6 +2832,11 @@ ST._BUTTON_SPACING = BUTTON_SPACING
 ST._PROFILE_BAR_HEIGHT = PROFILE_BAR_HEIGHT
 ST._BuildHeroTalentSubTreeCheckboxes = BuildHeroTalentSubTreeCheckboxes
 ST._ApplyCheckboxIndent = ApplyCheckboxIndent
+ST._ClearConfigButtonSelection = ClearConfigButtonSelection
+ST._ClearConfigPanelSelection = ClearConfigPanelSelection
+ST._ClearConfigContainerSelection = ClearConfigContainerSelection
+ST._ClearConfigPanelMultiSelection = ClearConfigPanelMultiSelection
+ST._ClearConfigContainerMultiSelection = ClearConfigContainerMultiSelection
 ST._ClearConfigPrimarySelection = ClearConfigPrimarySelection
 ST._SelectConfigFolder = SelectConfigFolder
 ST._SelectConfigContainer = SelectConfigContainer

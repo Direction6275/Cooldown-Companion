@@ -12,6 +12,8 @@ ST._DragReorder = DR
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
 local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
+local SelectConfigPanel = ST._SelectConfigPanel
+local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 
 local DRAG_THRESHOLD = 8
 local PREVIEW_MODE_PANEL_COMPACT = DR.PREVIEW_MODE_PANEL_COMPACT
@@ -570,11 +572,7 @@ local function FinishPanelDrag(state)
     local dropTarget = state.dropTarget
     local changed = dropTarget and not IsPanelReorderNoOp(state.sourcePanelId, dropTarget.targetIndex, state.panelDropTargets)
     if changed then
-        CooldownCompanion:ClearAllConfigPreviews()
-        wipe(CS.selectedPanels)
-        CS.selectedGroup = state.sourcePanelId
-        CS.selectedButton = nil
-        wipe(CS.selectedButtons)
+        SelectConfigPanel(state.sourcePanelId)
         PerformPanelReorder(state.sourcePanelId, dropTarget.targetIndex, state.panelDropTargets)
         for _, entry in ipairs(state.panelDropTargets) do
             CooldownCompanion:RefreshGroupFrame(entry.panelId)
@@ -615,8 +613,7 @@ local function FinishButtonDrag(state)
         CooldownCompanion:RefreshGroupFrame(state.groupId)
     end
     CooldownCompanion:ClearAllConfigPreviews()
-    CS.selectedButton = nil
-    wipe(CS.selectedButtons)
+    ClearConfigButtonSelection()
     CooldownCompanion:RefreshConfigPanel()
 end
 
