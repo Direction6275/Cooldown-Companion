@@ -73,6 +73,36 @@ local function ClearFolderFiltersForUnglobal(folderId)
     end
 end
 
+local function PruneDeletedFolderSelection(folderId)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if not db then return end
+
+    if CS.selectedFolder == folderId then
+        CS.selectedFolder = nil
+    end
+
+    if CS.selectedContainer and not (db.groupContainers and db.groupContainers[CS.selectedContainer]) then
+        ClearConfigContainerSelection()
+    elseif CS.selectedGroup and not (db.groups and db.groups[CS.selectedGroup]) then
+        ClearConfigPanelSelection()
+    end
+
+    if CS.addingToPanelId and not (db.groups and db.groups[CS.addingToPanelId]) then
+        CS.addingToPanelId = nil
+    end
+
+    for containerId in pairs(CS.selectedGroups) do
+        if not (db.groupContainers and db.groupContainers[containerId]) then
+            CS.selectedGroups[containerId] = nil
+        end
+    end
+    for panelId in pairs(CS.selectedPanels) do
+        if not (db.groups and db.groups[panelId]) then
+            CS.selectedPanels[panelId] = nil
+        end
+    end
+end
+
 StaticPopupDialogs["CDC_DELETE_GROUP"] = {
     text = "Are you sure you want to delete group '%s'?",
     button1 = "Delete",
@@ -873,20 +903,7 @@ StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
         if data and data.folderId then
             CooldownCompanion:ClearAllConfigPreviews()
             CooldownCompanion:DeleteFolder(data.folderId)
-            if CS.selectedFolder == data.folderId then
-                CS.selectedFolder = nil
-            end
-            if CS.selectedGroup then
-                local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-                if not group then
-                    ClearConfigPanelSelection()
-                end
-            end
-            for gid in pairs(CS.selectedGroups) do
-                if not CooldownCompanion.db.profile.groups[gid] then
-                    CS.selectedGroups[gid] = nil
-                end
-            end
+            PruneDeletedFolderSelection(data.folderId)
             CooldownCompanion:RefreshConfigPanel()
         end
     end,
