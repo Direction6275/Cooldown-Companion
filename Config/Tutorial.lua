@@ -9,6 +9,7 @@ local CS = ST._configState
 local CreateGlowContainer = ST._CreateGlowContainer
 local ShowGlowStyle = ST._ShowGlowStyle
 local HideGlowStyles = ST._HideGlowStyles
+local ResetConfigSelection = ST._ResetConfigSelection
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 local ClearConfigContainerMultiSelection = ST._ClearConfigContainerMultiSelection
@@ -432,25 +433,13 @@ local function NormalizeTutorialContext()
     if CS.talentPickerMode and CooldownCompanion.CloseTalentPicker then
         CooldownCompanion:CloseTalentPicker()
     end
-    if ST._CancelAutoAddFlow then
-        ST._CancelAutoAddFlow()
-    end
 
     CloseDropDownMenus()
     if CS.HideAutocomplete then
         CS.HideAutocomplete()
     end
 
-    CS.browseMode = false
-    CS.browseCharKey = nil
-    CS.browseContainerId = nil
-    CS.selectedContainer = nil
-    CS.selectedGroup = nil
-    CS.selectedButton = nil
-    wipe(CS.selectedButtons)
-    wipe(CS.selectedPanels)
-    wipe(CS.selectedGroups)
-    CS.addingToPanelId = nil
+    ResetConfigSelection(true)
     CS.newInput = ""
     CS.pendingEditBoxFocus = false
 

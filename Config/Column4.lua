@@ -11,6 +11,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 
 -- Imports from earlier Config/ files
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
+local ResetConfigSelection = ST._ResetConfigSelection
 local SetConfigCustomBarSettingsTab = ST._SetConfigCustomBarSettingsTab
 local PruneConfigCustomBarSelection = ST._PruneConfigCustomBarSelection
 
@@ -666,18 +667,8 @@ local function RefreshProfileBar(bar)
     profileDrop:SetValue(currentProfile)
     profileDrop:SetWidth(150)
     profileDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        CooldownCompanion:ClearAllConfigPreviews()
         db:SetProfile(val)
-        CS.selectedFolder = nil
-        CS.selectedContainer = nil
-        CS.selectedGroup = nil
-        CS.selectedButton = nil
-        wipe(CS.selectedButtons)
-        wipe(CS.selectedGroups)
-        -- Exit browse mode on profile switch
-        CS.browseMode = false
-        CS.browseCharKey = nil
-        CS.browseContainerId = nil
+        ResetConfigSelection(true)
         CooldownCompanion:RefreshConfigPanel()
         CooldownCompanion:RefreshAllGroups()
     end)

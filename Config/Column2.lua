@@ -38,6 +38,7 @@ local NotifyTutorialAction = ST._NotifyTutorialAction
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
 local SelectConfigFinderResult = ST._SelectConfigFinderResult
+local SelectConfigContainer = ST._SelectConfigContainer
 local SelectConfigPanel = ST._SelectConfigPanel
 local ToggleConfigPanelMultiSelect = ST._ToggleConfigPanelMultiSelect
 local SelectConfigButton = ST._SelectConfigButton
@@ -271,12 +272,7 @@ local function FinalizeCreatedPanel(newPanelId, displayMode, opts)
         CooldownCompanion:RefreshGroupFrame(newPanelId)
     end
 
-    CooldownCompanion:ClearAllConfigPreviews()
-    CS.selectedGroup = newPanelId
-    if opts and opts.clearSelection then
-        CS.selectedButton = nil
-        wipe(CS.selectedButtons)
-    end
+    SelectConfigPanel(newPanelId)
     CS.addingToPanelId = newPanelId
     CS.pendingEditBoxFocus = true
     CooldownCompanion:RefreshConfigPanel()
@@ -333,7 +329,6 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
         "Icon Panel",
         function()
             CreatePanelInSelectedContainer("icons", {
-                clearSelection = true,
                 notifyTutorial = true,
             })
         end,
@@ -383,9 +378,7 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
             AddPanelTypeMenuTooltip(info, "textures")
             info.func = function()
                 CloseDropDownMenus()
-                CreatePanelInSelectedContainer("textures", {
-                    clearSelection = true,
-                })
+                CreatePanelInSelectedContainer("textures")
             end
             UIDropDownMenu_AddButton(info, level)
 
@@ -395,9 +388,7 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
             AddPanelTypeMenuTooltip(info, "trigger")
             info.func = function()
                 CloseDropDownMenus()
-                CreatePanelInSelectedContainer("trigger", {
-                    clearSelection = true,
-                })
+                CreatePanelInSelectedContainer("trigger")
             end
             UIDropDownMenu_AddButton(info, level)
         end, "MENU")
@@ -1527,8 +1518,7 @@ local function RefreshColumn2()
                             CS.browseMode = false
                             CS.browseCharKey = nil
                             CS.browseContainerId = nil
-                            CS.selectedContainer = newCid
-                            CS.selectedGroup = newGid
+                            SelectConfigPanel(newGid, { containerId = newCid })
                             CooldownCompanion:RefreshConfigPanel()
                             CooldownCompanion:Print("Panel copied as new group.")
                         end
@@ -1565,8 +1555,7 @@ local function RefreshColumn2()
                                 CS.browseMode = false
                                 CS.browseCharKey = nil
                                 CS.browseContainerId = nil
-                                CS.selectedContainer = targetId
-                                CS.selectedGroup = newGid
+                                SelectConfigPanel(newGid, { containerId = targetId })
                                 CooldownCompanion:RefreshConfigPanel()
                                 CooldownCompanion:Print("Panel copied into " .. target.name .. ".")
                             end
@@ -1599,8 +1588,7 @@ local function RefreshColumn2()
                 CS.browseMode = false
                 CS.browseCharKey = nil
                 CS.browseContainerId = nil
-                CS.selectedContainer = newId
-                CS.selectedGroup = nil
+                SelectConfigContainer(newId)
                 CooldownCompanion:RefreshConfigPanel()
                 CooldownCompanion:Print("Group copied successfully.")
             end
@@ -2216,9 +2204,7 @@ local function RefreshColumn2()
                                         if CooldownCompanion:ChangePanelDisplayMode(ctxPanelId, targetMode) then
                                             if targetMode == "textures" then
                                                 CS.pendingTexturePickerOpen = ctxPanelId
-                                                CS.selectedGroup = ctxPanelId
-                                                CS.selectedButton = nil
-                                                wipe(CS.selectedButtons)
+                                                SelectConfigPanel(ctxPanelId)
                                             end
                                             CooldownCompanion:RefreshConfigPanel()
                                         end
@@ -2234,8 +2220,7 @@ local function RefreshColumn2()
                                 CloseDropDownMenus()
                                 local newPanelId = CooldownCompanion:DuplicatePanel(ctxContainerId, ctxPanelId)
                                 if newPanelId then
-                                    CooldownCompanion:ClearAllConfigPreviews()
-                                    CS.selectedGroup = newPanelId
+                                    SelectConfigPanel(newPanelId)
                                     CooldownCompanion:RefreshConfigPanel()
                                 end
                             end
@@ -2378,15 +2363,10 @@ local function RefreshColumn2()
                                     info.notCheckable = true
                                     info.func = function()
                                         CloseDropDownMenus()
-                                        local _, sourceDeleted = CooldownCompanion:MovePanel(ctxPanelId, c.id)
-                                        CooldownCompanion:ClearAllConfigPreviews()
-                                        if sourceDeleted then
-                                            CS.selectedContainer = c.id
+                                        if CooldownCompanion:MovePanel(ctxPanelId, c.id) then
+                                            SelectConfigPanel(ctxPanelId, { containerId = c.id })
+                                            CooldownCompanion:RefreshConfigPanel()
                                         end
-                                        CS.selectedGroup = ctxPanelId
-                                        CS.selectedButton = nil
-                                        wipe(CS.selectedButtons)
-                                        CooldownCompanion:RefreshConfigPanel()
                                     end
                                     UIDropDownMenu_AddButton(info, level)
                                 end
@@ -2406,15 +2386,10 @@ local function RefreshColumn2()
                                     info.notCheckable = true
                                     info.func = function()
                                         CloseDropDownMenus()
-                                        local _, sourceDeleted = CooldownCompanion:MovePanel(ctxPanelId, c.id)
-                                        CooldownCompanion:ClearAllConfigPreviews()
-                                        if sourceDeleted then
-                                            CS.selectedContainer = c.id
+                                        if CooldownCompanion:MovePanel(ctxPanelId, c.id) then
+                                            SelectConfigPanel(ctxPanelId, { containerId = c.id })
+                                            CooldownCompanion:RefreshConfigPanel()
                                         end
-                                        CS.selectedGroup = ctxPanelId
-                                        CS.selectedButton = nil
-                                        wipe(CS.selectedButtons)
-                                        CooldownCompanion:RefreshConfigPanel()
                                     end
                                     UIDropDownMenu_AddButton(info, level)
                                 end
