@@ -78,6 +78,7 @@ ButtonFrame\IconMode.lua
 ButtonFrame\BarMode.lua
 ButtonFrame\TextMode.lua
 ButtonFrame\Preview.lua
+ButtonFrame\EntryRuntime.lua
 ButtonFrame\CooldownUpdate.lua
 Core\GroupFrame.lua
 OtherBars\ResourceBarConstants.lua
