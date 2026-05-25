@@ -6,6 +6,7 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
+local HasTooltipCooldown = ST.HasTooltipCooldown
 
 local ipairs = ipairs
 local tonumber = tonumber
@@ -45,7 +46,7 @@ local function GetConfiguredAuraUnit(buttonData)
 end
 EntryRuntime.GetConfiguredAuraUnit = GetConfiguredAuraUnit
 
-local function ViewerFrameHasActiveAuraInstance(viewerFrame, configUnit, auraUnit, barAuraStackConfigured)
+local function ViewerFrameHasActiveAuraInstance(viewerFrame, configUnit, auraUnit, allowDurationlessAuraInstance)
     local unit = viewerFrame.auraDataUnit or auraUnit
     if not (viewerFrame.auraInstanceID and unit == configUnit) then
         return false
@@ -56,7 +57,7 @@ local function ViewerFrameHasActiveAuraInstance(viewerFrame, configUnit, auraUni
         return false
     end
 
-    return barAuraStackConfigured or C_UnitAuras.GetAuraDuration(unit, viewerFrame.auraInstanceID) ~= nil
+    return allowDurationlessAuraInstance or C_UnitAuras.GetAuraDuration(unit, viewerFrame.auraInstanceID) ~= nil
 end
 
 local function ViewerFrameHasActiveCooldownWidget(viewerFrame, configUnit, auraUnit, now)
@@ -87,18 +88,18 @@ local function ViewerFrameHasActiveTotemDuration(viewerFrame)
     return DurationObjectShowsCooldown(GetTotemDuration(totemSlot))
 end
 
-local function ViewerFrameHasActiveAuraProof(viewerFrame, configUnit, auraUnit, now, barAuraStackConfigured)
-    return ViewerFrameHasActiveAuraInstance(viewerFrame, configUnit, auraUnit, barAuraStackConfigured)
+local function ViewerFrameHasActiveAuraProof(viewerFrame, configUnit, auraUnit, now, allowDurationlessAuraInstance)
+    return ViewerFrameHasActiveAuraInstance(viewerFrame, configUnit, auraUnit, allowDurationlessAuraInstance)
         or ViewerFrameHasActiveCooldownWidget(viewerFrame, configUnit, auraUnit, now)
         or ViewerFrameHasActiveTotemDuration(viewerFrame)
 end
 
-local function ResolvePreferredStandaloneAuraViewerFrame(candidateIDs, configUnit, auraUnit, now, barAuraStackConfigured)
+local function ResolvePreferredAuraViewerFrame(candidateIDs, configUnit, auraUnit, now, allowDurationlessAuraInstance)
     local firstTrackedFrame
     for _, spellID in ipairs(candidateIDs or {}) do
         local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
         if viewerFrame then
-            if ViewerFrameHasActiveAuraProof(viewerFrame, configUnit, auraUnit, now, barAuraStackConfigured) then
+            if ViewerFrameHasActiveAuraProof(viewerFrame, configUnit, auraUnit, now, allowDurationlessAuraInstance) then
                 return viewerFrame, firstTrackedFrame
             end
             firstTrackedFrame = firstTrackedFrame or viewerFrame
@@ -106,10 +107,11 @@ local function ResolvePreferredStandaloneAuraViewerFrame(candidateIDs, configUni
     end
     return nil, firstTrackedFrame
 end
-EntryRuntime.ResolvePreferredStandaloneAuraViewerFrame = ResolvePreferredStandaloneAuraViewerFrame
-CooldownCompanion.ResolvePreferredStandaloneAuraViewerFrame = ResolvePreferredStandaloneAuraViewerFrame
+EntryRuntime.ResolvePreferredAuraViewerFrame = ResolvePreferredAuraViewerFrame
+EntryRuntime.ResolvePreferredStandaloneAuraViewerFrame = ResolvePreferredAuraViewerFrame
+CooldownCompanion.ResolvePreferredStandaloneAuraViewerFrame = ResolvePreferredAuraViewerFrame
 
-local function ResolveTrackedAuraViewerFrame(owner, buttonData, auraSpellID, configUnit, auraUnit, now, barAuraStackConfigured)
+local function ResolveTrackedAuraViewerFrame(owner, buttonData, auraSpellID, configUnit, auraUnit, now, allowDurationlessAuraInstance)
     local viewerFrame
     local cdmEnabled
     if CooldownCompanion._cooldownUpdatePassActive then
@@ -154,21 +156,21 @@ local function ResolveTrackedAuraViewerFrame(owner, buttonData, auraSpellID, con
     end
 
     if not viewerFrame and orderedStandaloneAuraIDs then
-        local originalActiveFrame, firstOriginalFrame = ResolvePreferredStandaloneAuraViewerFrame(
+        local originalActiveFrame, firstOriginalFrame = ResolvePreferredAuraViewerFrame(
             standaloneOriginalAuraIDs,
             configUnit,
             auraUnit,
             now,
-            barAuraStackConfigured
+            allowDurationlessAuraInstance
         )
         viewerFrame = originalActiveFrame
         if not viewerFrame then
-            local fallbackActiveFrame, firstFallbackFrame = ResolvePreferredStandaloneAuraViewerFrame(
+            local fallbackActiveFrame, firstFallbackFrame = ResolvePreferredAuraViewerFrame(
                 standaloneFallbackAuraIDs,
                 configUnit,
                 auraUnit,
                 now,
-                barAuraStackConfigured
+                allowDurationlessAuraInstance
             )
             viewerFrame = fallbackActiveFrame or firstOriginalFrame or firstFallbackFrame
         end
@@ -188,17 +190,14 @@ local function ResolveTrackedAuraViewerFrame(owner, buttonData, auraSpellID, con
             owner._parsedAuraIDsRaw = buttonData.auraSpellID
             owner._parsedAuraIDsButtonID = buttonData.id
         end
-        for _, numId in ipairs(ids) do
-            local f = CooldownCompanion:ResolveBuffViewerFrameForSpell(numId)
-            if f then
-                if f.auraInstanceID then
-                    viewerFrame = f
-                    break
-                elseif not viewerFrame then
-                    viewerFrame = f
-                end
-            end
-        end
+        local activeFrame, firstTrackedFrame = ResolvePreferredAuraViewerFrame(
+            ids,
+            configUnit,
+            auraUnit,
+            now,
+            allowDurationlessAuraInstance
+        )
+        viewerFrame = activeFrame or firstTrackedFrame
     end
 
     if not viewerFrame then
@@ -456,6 +455,175 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldo
 end
 EntryRuntime.EvaluateButtonSpellCooldown = EvaluateButtonSpellCooldown
 
+local function ResolveSpellCooldownSecrecy(owner, spellID)
+    if not (spellID and C_Secrets and C_Secrets.GetSpellCooldownSecrecy) then
+        return owner and owner._cooldownSecrecy or nil
+    end
+
+    if owner then
+        if owner._cooldownSecrecy == nil or owner._cooldownSecrecySpellID ~= spellID then
+            owner._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(spellID)
+            owner._cooldownSecrecySpellID = spellID
+        end
+        return owner._cooldownSecrecy
+    end
+
+    return C_Secrets.GetSpellCooldownSecrecy(spellID)
+end
+
+local function IsNoCooldownSpell(spellID)
+    local baseCd = GetSpellBaseCooldown(spellID)
+    return (not baseCd or baseCd == 0)
+        and not (HasTooltipCooldown and HasTooltipCooldown(spellID))
+end
+
+local function ResolveNoCooldownState(owner, spellID, hasCharges)
+    if hasCharges then
+        if owner then
+            owner._noCooldown = false
+            owner._noCooldownSpellId = nil
+        end
+        return false
+    end
+
+    if not spellID then
+        return false
+    end
+
+    if owner and owner._noCooldown ~= nil and owner._noCooldownSpellId == spellID then
+        return owner._noCooldown == true
+    end
+
+    local noCooldown = IsNoCooldownSpell(spellID)
+    if owner then
+        owner._noCooldownSpellId = spellID
+        owner._noCooldown = noCooldown
+    end
+    return noCooldown
+end
+
+local function ClearOwnerChargeState(owner)
+    if not owner then return end
+    owner._customCooldownHasCharges = nil
+    owner._currentReadableCharges = nil
+    owner._chargeCountReadable = nil
+    owner._zeroChargesConfirmed = nil
+    owner._chargeDurationObj = nil
+    owner._chargeRecharging = nil
+    owner._mainCDShown = nil
+    owner._chargeState = nil
+    owner._chargesSpent = nil
+end
+
+local function SyncCustomBarChargeMetadata(customBar, charges, maxCharges)
+    if not customBar then return end
+
+    if maxCharges and maxCharges > 1 then
+        if customBar.hasCharges ~= true then
+            customBar.hasCharges = true
+        end
+        if customBar.maxCharges ~= maxCharges then
+            customBar.maxCharges = maxCharges
+        end
+    elseif charges then
+        if customBar.hasCharges ~= nil then
+            customBar.hasCharges = nil
+        end
+        if customBar.maxCharges ~= maxCharges then
+            customBar.maxCharges = maxCharges
+        end
+    else
+        if customBar.hasCharges ~= nil then
+            customBar.hasCharges = nil
+        end
+        if customBar.maxCharges ~= nil then
+            customBar.maxCharges = nil
+        end
+    end
+end
+
+local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpellID, charges, maxCharges)
+    result.hasCharges = true
+    result.maxCharges = maxCharges
+    result.charges = charges
+
+    local currentCharges
+    if charges and charges.currentCharges ~= nil and not issecretvalue(charges.currentCharges) then
+        currentCharges = charges.currentCharges
+        result.currentCharges = currentCharges
+    elseif C_Spell.GetSpellDisplayCount then
+        result.chargeDisplayCount = C_Spell.GetSpellDisplayCount(cooldownSpellID)
+    end
+
+    local chargeDurationObj = C_Spell.GetSpellChargeDuration(cooldownSpellID)
+    local chargeRecharging = DurationObjectShowsCooldown(chargeDurationObj)
+    result.chargeDurationObj = chargeDurationObj
+    result.chargeRecharging = chargeRecharging or false
+
+    if owner then
+        owner._customCooldownHasCharges = true
+        owner._currentReadableCharges = currentCharges
+        owner._chargeCountReadable = currentCharges ~= nil
+        owner._chargeDurationObj = chargeDurationObj
+        owner._chargeRecharging = result.chargeRecharging
+    end
+
+    local mainCDShown = false
+    if currentCharges ~= nil then
+        mainCDShown = currentCharges <= 0
+    else
+        local slotProbe = result.slotProbe or ProbeActionSlotCooldownForSpell(baseSpellID, cooldownSpellID)
+        result.chargeSlotProbe = slotProbe
+        if slotProbe.shown ~= nil then
+            mainCDShown = slotProbe.realShown == true
+        elseif result.fetchOk then
+            mainCDShown = result.state == COOLDOWN_STATE_COOLDOWN
+        end
+    end
+
+    if owner then
+        owner._mainCDShown = mainCDShown
+        if result.chargeRecharging and not owner._chargesSpent then
+            owner._chargesSpent = maxCharges or 0
+        end
+    end
+
+    local zeroConfirmed = mainCDShown == true
+    if zeroConfirmed and currentCharges == nil and owner then
+        local spent = owner._chargesSpent
+        if maxCharges and maxCharges > 1 and spent and spent < maxCharges then
+            zeroConfirmed = false
+        end
+    end
+
+    if currentCharges ~= nil then
+        if currentCharges <= 0 then
+            result.chargeState = CHARGE_STATE_ZERO
+        elseif currentCharges >= maxCharges then
+            result.chargeState = CHARGE_STATE_FULL
+        else
+            result.chargeState = CHARGE_STATE_MISSING
+        end
+    elseif zeroConfirmed then
+        result.chargeState = CHARGE_STATE_ZERO
+    elseif result.chargeRecharging then
+        result.chargeState = CHARGE_STATE_MISSING
+    elseif result.chargeRecharging == false then
+        result.chargeState = CHARGE_STATE_FULL
+    end
+
+    if owner then
+        owner._zeroChargesConfirmed = zeroConfirmed
+        owner._chargeState = result.chargeState
+    end
+
+    if result.chargeRecharging then
+        result.state = COOLDOWN_STATE_COOLDOWN
+        result.source = "spell-charge-recharge"
+        result.renderDurationObj = chargeDurationObj
+    end
+end
+
 function EntryRuntime.ApplyBarAuraStackState(
     button,
     auraOverrideActive,
@@ -533,72 +701,46 @@ function EntryRuntime.ApplyBarAuraStackState(
     return barAuraSecretStackValue, preserveBarAuraStackText
 end
 
-function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar)
+function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     local spellID = tonumber(customBar and customBar.spellID)
-    local result
     if not spellID then
         return EvaluateSpellCooldownLane(nil, 0, nil)
     end
+    owner = owner or customBar
 
     local cooldownSpellID = C_Spell.GetOverrideSpell(spellID)
     if not cooldownSpellID or cooldownSpellID == 0 then
         cooldownSpellID = spellID
     end
 
-    if C_Secrets and C_Secrets.GetSpellCooldownSecrecy
-        and (customBar._cooldownSecrecy == nil or customBar._cooldownSecrecySpellID ~= cooldownSpellID) then
-        customBar._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(cooldownSpellID)
-        customBar._cooldownSecrecySpellID = cooldownSpellID
+    if owner then
+        owner._customCooldownBaseSpellID = spellID
+        owner._customCooldownSpellID = cooldownSpellID
     end
 
     local charges = C_Spell.GetSpellCharges(cooldownSpellID)
     local maxCharges = charges and tonumber(charges.maxCharges)
-    if maxCharges and maxCharges > 1 then
-        customBar.hasCharges = true
-        customBar.maxCharges = maxCharges
-    elseif charges then
-        customBar.hasCharges = nil
-        customBar.maxCharges = maxCharges
-    elseif not charges then
-        customBar.hasCharges = nil
-    end
+    SyncCustomBarChargeMetadata(customBar, charges, maxCharges)
+    local hasCharges = (maxCharges or 0) > 1
+    local secrecy = ResolveSpellCooldownSecrecy(owner, cooldownSpellID)
+    local noCooldown = ResolveNoCooldownState(owner, cooldownSpellID, hasCharges)
 
-    result = EvaluateSpellCooldownLane(cooldownSpellID, customBar._cooldownSecrecy, spellID, {
-        allowActionSlotRealFallback = customBar.hasCharges ~= true and cooldownSpellID == spellID,
+    local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, {
+        allowActionSlotRealFallback = not hasCharges and cooldownSpellID == spellID and noCooldown ~= true,
     })
     result.baseSpellID = spellID
     result.cooldownSpellID = cooldownSpellID
+    result.noCooldown = noCooldown or nil
 
-    if customBar.hasCharges == true and maxCharges and maxCharges > 1 then
-        result.hasCharges = true
-        result.maxCharges = maxCharges
-        result.charges = charges
-
-        if charges and charges.currentCharges ~= nil and not issecretvalue(charges.currentCharges) then
-            result.currentCharges = charges.currentCharges
-            if result.currentCharges <= 0 then
-                result.chargeState = CHARGE_STATE_ZERO
-            elseif result.currentCharges >= maxCharges then
-                result.chargeState = CHARGE_STATE_FULL
-            else
-                result.chargeState = CHARGE_STATE_MISSING
-            end
-        end
-
-        local chargeDurationObj = C_Spell.GetSpellChargeDuration(cooldownSpellID)
-        local chargeRecharging = DurationObjectShowsCooldown(chargeDurationObj)
-        result.chargeDurationObj = chargeDurationObj
-        result.chargeRecharging = chargeRecharging or false
-        if chargeRecharging then
-            result.state = COOLDOWN_STATE_COOLDOWN
-            result.source = "spell-charge-recharge"
-            result.renderDurationObj = chargeDurationObj
-        end
+    if hasCharges then
+        ApplyCustomBarChargeState(owner, result, spellID, cooldownSpellID, charges, maxCharges)
+    else
+        ClearOwnerChargeState(owner)
     end
 
     return result
 end
 
-function CooldownCompanion:EvaluateSpellCooldownStateForCustomBar(customBar)
-    return EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar)
+function CooldownCompanion:EvaluateSpellCooldownStateForCustomBar(customBar, owner)
+    return EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
 end

@@ -428,6 +428,25 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     frame._parsedCustomBarAuraIDsRaw = nil
     frame._parsedCustomBarAuraIDsSpellID = nil
     frame._parsedCustomBarAuraIDsIncludeSpellID = nil
+    frame._parsedAuraIDs = nil
+    frame._parsedAuraIDsRaw = nil
+    frame._parsedAuraIDsButtonID = nil
+    frame._parsedAuraIDsIncludeButtonID = nil
+    frame._customCooldownBaseSpellID = nil
+    frame._customCooldownSpellID = nil
+    frame._customCooldownHasCharges = nil
+    frame._cooldownSecrecy = nil
+    frame._cooldownSecrecySpellID = nil
+    frame._noCooldown = nil
+    frame._noCooldownSpellId = nil
+    frame._currentReadableCharges = nil
+    frame._chargeCountReadable = nil
+    frame._zeroChargesConfirmed = nil
+    frame._chargeDurationObj = nil
+    frame._chargeRecharging = nil
+    frame._mainCDShown = nil
+    frame._chargeState = nil
+    frame._chargesSpent = nil
     frame:SetAlpha(1)
 end
 

@@ -5,6 +5,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local EntryRuntime = ST.EntryRuntime
 
 local math_floor = math.floor
 local GetTime = GetTime
@@ -557,36 +558,21 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         return resolvedAuraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(resolvedAuraSpellID) or nil
     end
 
-    local function ViewerFrameHasAuraForUnit(viewerFrame, configUnit)
-        local instId = viewerFrame and viewerFrame.auraInstanceID
-        if not instId then
-            return false
-        end
-
-        local viewerUnit = viewerFrame.auraDataUnit or configUnit
-        return viewerUnit == configUnit
-            and C_UnitAuras.GetAuraDataByAuraInstanceID(viewerUnit, instId) ~= nil
-    end
-
-    local function ResolveSpellCustomBarAuraViewerFrame(bar, cabConfig, spellID, buttonData, configUnit)
-        if cabConfig and cabConfig.auraSpellID then
-            local ids = GetSpellCustomBarParsedAuraIDs(bar, cabConfig, spellID)
-            local firstTrackedFrame
-            if ids then
-                for _, auraID in ipairs(ids) do
-                    local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(auraID)
-                    if viewerFrame then
-                        if ViewerFrameHasAuraForUnit(viewerFrame, configUnit) then
-                            return viewerFrame
-                        end
-                        if not firstTrackedFrame then
-                            firstTrackedFrame = viewerFrame
-                        end
-                    end
-                end
-            end
-            if firstTrackedFrame then
-                return firstTrackedFrame
+    local function ResolveSpellCustomBarAuraViewerFrame(bar, buttonData, configUnit, resolvedAuraSpellID)
+        if EntryRuntime and EntryRuntime.ResolveTrackedAuraViewerFrame then
+            local auraUnit = bar and bar._auraUnit or configUnit
+            local allowDurationlessAuraInstance = true
+            local viewerFrame = EntryRuntime.ResolveTrackedAuraViewerFrame(
+                bar,
+                buttonData,
+                resolvedAuraSpellID,
+                configUnit,
+                auraUnit,
+                GetTime(),
+                allowDurationlessAuraInstance
+            )
+            if viewerFrame then
+                return viewerFrame
             end
         end
 
@@ -626,7 +612,8 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
         local configUnit = buttonData.auraUnit or "player"
-        local viewerFrame = ResolveSpellCustomBarAuraViewerFrame(bar, cabConfig, spellID, buttonData, configUnit)
+        local resolvedAuraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
+        local viewerFrame = ResolveSpellCustomBarAuraViewerFrame(bar, buttonData, configUnit, resolvedAuraSpellID)
         if not CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame) then
             return {
                 ready = false,
@@ -636,7 +623,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             }
         end
 
-        local resolvedAuraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
         local auraData
         local durationObj
         local auraUnit = configUnit
@@ -708,8 +694,22 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         local currentCharges = cooldownResult and cooldownResult.currentCharges
         local maxCharges = cooldownResult and cooldownResult.maxCharges
-        if currentCharges and maxCharges and maxCharges > 1 then
+        if currentCharges ~= nil and maxCharges and maxCharges > 1 then
             bar.stackText:SetFormattedText("%d / %d", currentCharges, maxCharges)
+        elseif cooldownResult and cooldownResult.chargeDisplayCount ~= nil then
+            local displayCount = cooldownResult.chargeDisplayCount
+            if issecretvalue and issecretvalue(displayCount) then
+                bar.stackText:SetText(displayCount)
+            else
+                local numericCount = tonumber(displayCount)
+                if numericCount and maxCharges and maxCharges > 1 then
+                    bar.stackText:SetFormattedText("%d / %d", numericCount, maxCharges)
+                elseif displayCount and displayCount ~= "" then
+                    bar.stackText:SetText(displayCount)
+                else
+                    bar.stackText:SetText("")
+                end
+            end
         else
             bar.stackText:SetText("")
         end
@@ -739,7 +739,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         if not (cabConfig and cabConfig.spellID and bar) then return end
 
         local cooldownResult = CooldownCompanion.EvaluateSpellCooldownStateForCustomBar
-            and CooldownCompanion:EvaluateSpellCooldownStateForCustomBar(cabConfig)
+            and CooldownCompanion:EvaluateSpellCooldownStateForCustomBar(cabConfig, bar)
         local durationObj = cooldownResult and cooldownResult.renderDurationObj
         local cooldownActive = cooldownResult
             and cooldownResult.state == ST.CooldownLogic.STATE_COOLDOWN
@@ -909,6 +909,38 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
 
         UpdateSpellCustomBarSounds(false)
+    end
+
+    function CooldownCompanion:RecordCustomBarSpellCast(spellID)
+        if not spellID then return end
+
+        for _, barInfo in ipairs(resourceBarFrames) do
+            local bar = barInfo and barInfo.frame
+            local cabConfig = barInfo and barInfo.cabConfig
+            if barInfo
+                and barInfo.barType == "custom_cooldown"
+                and bar
+                and cabConfig
+                and cabConfig.entryType == "spell"
+            then
+                local baseSpellID = tonumber(cabConfig.spellID)
+                local runtimeSpellID = baseSpellID and C_Spell.GetOverrideSpell(baseSpellID)
+                if not runtimeSpellID or runtimeSpellID == 0 then
+                    runtimeSpellID = baseSpellID
+                end
+
+                local charges = runtimeSpellID and C_Spell.GetSpellCharges(runtimeSpellID)
+                local maxCharges = charges and tonumber(charges.maxCharges)
+                if (maxCharges or 0) > 1
+                    and (spellID == baseSpellID or spellID == runtimeSpellID) then
+                    if not bar._chargeRecharging then
+                        bar._chargesSpent = 1
+                    else
+                        bar._chargesSpent = (bar._chargesSpent or 0) + 1
+                    end
+                end
+            end
+        end
     end
 
     local function GetHiddenCustomAuraWakeUnit(cabConfig)
