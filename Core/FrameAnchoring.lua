@@ -33,6 +33,7 @@ local pendingReevaluate = false
 local rapidAlphaSyncUntil = 0
 local alphaHookGuards = setmetatable({}, { __mode = "k" })
 local alphaSetHooksInstalled = setmetatable({}, { __mode = "k" })
+local InstallHooks
 
 -- Combat deferral: any positioning attempt during combat is coalesced into a
 -- single full re-evaluation once PLAYER_REGEN_ENABLED fires.
@@ -132,6 +133,7 @@ local function ResyncInheritedUnitFrameAlpha()
 end
 
 local function QueueInheritedUnitFrameAlphaResync()
+    if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
     local latest = GetFrameAnchoringSettings()
     if not (isApplied and latest and latest.enabled and latest.inheritAlpha) then return end
 
@@ -143,6 +145,7 @@ local function QueueInheritedUnitFrameAlphaResync()
 
     ResyncInheritedUnitFrameAlpha()
     C_Timer.After(0, function()
+        if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
         ResyncInheritedUnitFrameAlpha()
     end)
 end
@@ -275,7 +278,18 @@ end
 -- Apply
 ------------------------------------------------------------------------
 
-function CooldownCompanion:ApplyFrameAnchoring()
+function CooldownCompanion:ApplyFrameAnchoring(opts)
+    opts = opts or {}
+    if not opts.skipRuntimeGate
+        and self.RefreshBarsAndFramesRuntimeFeatureGate
+        and not self:RefreshBarsAndFramesRuntimeFeatureGate("frameAnchoring", "frame-anchoring-apply") then
+        self:RevertFrameAnchoring()
+        return
+    end
+    if self.RecordBarsAndFramesRuntimeWork then
+        self:RecordBarsAndFramesRuntimeWork("frameApply")
+    end
+
     if InCombatLockdown() then
         DeferForCombat()
         return
@@ -286,6 +300,7 @@ function CooldownCompanion:ApplyFrameAnchoring()
         self:RevertFrameAnchoring()
         return
     end
+    InstallHooks()
 
     local groupId = GetEffectiveAnchorGroupId(settings)
     if not groupId then
@@ -466,7 +481,18 @@ end
 -- Evaluate
 ------------------------------------------------------------------------
 
-function CooldownCompanion:EvaluateFrameAnchoring()
+function CooldownCompanion:EvaluateFrameAnchoring(opts)
+    opts = opts or {}
+    if not opts.skipRuntimeGate
+        and self.RefreshBarsAndFramesRuntimeFeatureGate
+        and not self:RefreshBarsAndFramesRuntimeFeatureGate("frameAnchoring", opts.reason or "frame-anchoring-evaluate") then
+        self:RevertFrameAnchoring()
+        return
+    end
+    if self.RecordBarsAndFramesRuntimeWork then
+        self:RecordBarsAndFramesRuntimeWork("frameEvaluate")
+    end
+
     if InCombatLockdown() then
         DeferForCombat()
         return
@@ -477,22 +503,34 @@ function CooldownCompanion:EvaluateFrameAnchoring()
         self:RevertFrameAnchoring()
         return
     end
-    self:ApplyFrameAnchoring()
+    InstallHooks()
+    self:ApplyFrameAnchoring({ skipRuntimeGate = true })
+end
+
+function CooldownCompanion:GetFrameAnchoringRuntimeDebugInfo()
+    return {
+        applied = isApplied == true,
+        hooksInstalled = hooksInstalled == true,
+        alphaSyncActive = alphaSyncFrame and alphaSyncFrame:GetScript("OnUpdate") ~= nil or false,
+        pendingCombatReevaluate = pendingReevaluate == true,
+    }
 end
 
 ------------------------------------------------------------------------
 -- Hooks (same pattern as CastBar / ResourceBar)
 ------------------------------------------------------------------------
 
-local function InstallHooks()
+InstallHooks = function()
     if hooksInstalled then return end
     hooksInstalled = true
 
     -- When anchor group refreshes — re-evaluate
     hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
+        if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
         local s = GetFrameAnchoringSettings()
         if s and s.enabled then
             C_Timer.After(0, function()
+                if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
                 CooldownCompanion:EvaluateFrameAnchoring()
             end)
         end
@@ -500,22 +538,26 @@ local function InstallHooks()
 
     local function QueueFrameAnchoringReevaluate()
         C_Timer.After(0.1, function()
+            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
             CooldownCompanion:EvaluateFrameAnchoring()
         end)
     end
 
     -- When all groups refresh — re-evaluate
     hooksecurefunc(CooldownCompanion, "RefreshAllGroups", function()
+        if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
         QueueFrameAnchoringReevaluate()
     end)
 
     -- Visibility-only refresh path (zone/resting/pet-battle transitions)
     -- still needs unit-frame anchoring re-evaluation.
     hooksecurefunc(CooldownCompanion, "RefreshAllGroupsVisibilityOnly", function()
+        if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
         QueueFrameAnchoringReevaluate()
     end)
 
     hooksecurefunc(CooldownCompanion, "OnTargetChanged", function()
+        if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
         local s = GetFrameAnchoringSettings()
         if not (isApplied and s and s.enabled and s.inheritAlpha) then return end
         QueueInheritedUnitFrameAlphaResync()
@@ -532,7 +574,6 @@ initFrame:SetScript("OnEvent", function(self, event)
     self:UnregisterEvent("PLAYER_ENTERING_WORLD")
 
     C_Timer.After(0.5, function()
-        InstallHooks()
-        CooldownCompanion:EvaluateFrameAnchoring()
+        CooldownCompanion:EvaluateFrameAnchoring({ reason = "frame-anchoring-init" })
     end)
 end)

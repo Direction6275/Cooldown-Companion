@@ -156,6 +156,7 @@ local activeCustomAuraBarPandemicPreviews = {}
 local segmentedUpdateScratch = { auraActiveCache = {} }
 local HealthBar = RB.HealthBar
 local HEALTH_EFFECTS = RB.HealthEffects
+local lifecycleModule = nil
 
 local function HasCustomAuraBarAuraVisuals(cabConfig)
     return cabConfig and (cabConfig.barAuraEffect or "none") ~= "none"
@@ -763,12 +764,12 @@ end
 
 --- Update cached MW max stacks based on Raging Maelstrom talent (OOC only — talents can't change in combat).
 --- Returns true if the max changed (and bars were rebuilt), false otherwise.
-local function UpdateMWMaxStacks()
+local function UpdateMWMaxStacks(applyOpts)
     local hasRagingMaelstrom = C_SpellBook.IsSpellKnown(RAGING_MAELSTROM_SPELL_ID, Enum.SpellBookSpellBank.Player)
     local newMax = hasRagingMaelstrom and 10 or 5
     if mwMaxStacks ~= newMax then
         mwMaxStacks = newMax
-        CooldownCompanion:ApplyResourceBars()  -- segment count changed, rebuild
+        CooldownCompanion:ApplyResourceBars(applyOpts)  -- segment count changed, rebuild
         return true
     end
     return false
@@ -1670,10 +1671,21 @@ RB.StyleHealthBar = HealthBar.Style
 RB.StyleSegmentedText = StyleSegmentedText
 RB.StyleSegmentedBar = StyleSegmentedBar
 
-function CooldownCompanion:ApplyResourceBars()
+function CooldownCompanion:ApplyResourceBars(opts)
+    opts = opts or {}
+    if not opts.skipRuntimeGate
+        and self.RefreshBarsAndFramesRuntimeFeatureGate
+        and not self:RefreshBarsAndFramesRuntimeFeatureGate("resourceBars", "resource-apply") then
+        self:RevertResourceBars()
+        return
+    end
+    if self.RecordBarsAndFramesRuntimeWork then
+        self:RecordBarsAndFramesRuntimeWork("resourceApply")
+    end
+
     local settings = GetResourceBarSettings()
     if not settings or not settings.enabled then
-        self:RevertResourceBars()
+        self:DisableResourceBarRuntime()
         return
     end
 
@@ -2180,6 +2192,12 @@ function CooldownCompanion:RevertResourceBars()
     activeResources = {}
 end
 
+function CooldownCompanion:DisableResourceBarRuntime()
+    self._resourceBarsNeedsMWMaxRefresh = true
+    DisableLifecycleEvents()
+    self:RevertResourceBars()
+end
+
 function CooldownCompanion:GetSpecCustomAuraBars()
     local settings = GetResourceBarSettings()
     if not settings then return {} end
@@ -2431,24 +2449,54 @@ function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
     return info
 end
 
+function CooldownCompanion:GetResourceBarRuntimeState()
+    local lifecycleDebug = lifecycleModule and lifecycleModule.GetDebugInfo and lifecycleModule.GetDebugInfo() or {}
+    return {
+        applied = isApplied == true,
+        onUpdateActive = onUpdateFrame and onUpdateFrame:GetScript("OnUpdate") ~= nil or false,
+        alphaSyncActive = alphaSyncFrame and alphaSyncFrame:GetScript("OnUpdate") ~= nil or false,
+        lifecycleEventsActive = lifecycleDebug.lifecycleEventsActive == true,
+        updateEventsActive = lifecycleDebug.updateEventsActive == true,
+        hooksInstalled = lifecycleDebug.hooksInstalled == true,
+        activeBarCount = #activeResources,
+    }
+end
+
 ------------------------------------------------------------------------
 -- Evaluate: central decision point
 ------------------------------------------------------------------------
 
-function CooldownCompanion:EvaluateResourceBars()
+function CooldownCompanion:EvaluateResourceBars(opts)
+    opts = opts or {}
+    if not opts.skipRuntimeGate
+        and self.RefreshBarsAndFramesRuntimeFeatureGate
+        and not self:RefreshBarsAndFramesRuntimeFeatureGate("resourceBars", opts.reason or "resource-evaluate") then
+        self:DisableResourceBarRuntime()
+        return
+    end
+    if self.RecordBarsAndFramesRuntimeWork then
+        self:RecordBarsAndFramesRuntimeWork("resourceEvaluate")
+    end
+
     if self._unsupportedLegacyProfile then
-        self:RevertResourceBars()
+        self:DisableResourceBarRuntime()
         return
     end
 
     local settings = GetResourceBarSettings()
     if not settings or not settings.enabled then
-        DisableLifecycleEvents()
-        self:RevertResourceBars()
+        self:DisableResourceBarRuntime()
         return
     end
+    local rebuilt = false
+    if self._resourceBarsNeedsMWMaxRefresh ~= false then
+        self._resourceBarsNeedsMWMaxRefresh = false
+        rebuilt = UpdateMWMaxStacks({ skipRuntimeGate = true })
+    end
     EnableLifecycleEvents()
-    self:ApplyResourceBars()
+    if not rebuilt then
+        self:ApplyResourceBars({ skipRuntimeGate = true })
+    end
 end
 
 -- Returns the last visible resource/custom aura bar on `side` with order < upToOrder.
@@ -2502,7 +2550,7 @@ ApplyPreviewData = previewModule.ApplyPreviewData
 -- Hook installation and initialization
 ------------------------------------------------------------------------
 
-local lifecycleModule = RB.CreateResourceBarLifecycleModule({
+lifecycleModule = RB.CreateResourceBarLifecycleModule({
     resourceBarFrames = resourceBarFrames,
     GetResourceBarSettings = GetResourceBarSettings,
     GetSpecLayoutOrder = GetSpecLayoutOrder,

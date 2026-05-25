@@ -36,10 +36,12 @@ local isApplied = false
 local pixelBorders = nil
 local hooksInstalled = false
 local castEventFrame = nil
+local castEventFrameEnabled = false
 local fillMaskLeft, fillMaskRight = nil, nil
 local isPreviewActive = false
 local originalFXSizes = nil
 local independentMoverFrame = nil
+local InstallHooks
 
 ------------------------------------------------------------------------
 -- Helpers
@@ -889,6 +891,7 @@ local function DeferredReapply()
 end
 
 local function ScheduleReapply()
+    if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
     if pendingReapply then return end
     if not isApplied then return end
     pendingReapply = true
@@ -912,6 +915,7 @@ local function EnsureCastEventFrame()
 end
 
 local function EnableCastEventFrame()
+    if castEventFrameEnabled then return end
     EnsureCastEventFrame()
     castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_START", "player")
     castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_STOP", "player")
@@ -923,12 +927,14 @@ local function EnableCastEventFrame()
     castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_DELAYED", "player")
     castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_UPDATE", "player")
     castEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_EMPOWER_UPDATE", "player")
+    castEventFrameEnabled = true
 end
 
 local function DisableCastEventFrame()
     if not castEventFrame then return end
     castEventFrame:UnregisterAllEvents()
     pendingReapply = false
+    castEventFrameEnabled = false
 end
 
 ------------------------------------------------------------------------
@@ -1065,12 +1071,24 @@ end
 -- Apply: reposition and restyle the cast bar
 -- CRITICAL: only C-level widget methods — NO Lua property writes to cb
 ------------------------------------------------------------------------
-function CooldownCompanion:ApplyCastBarSettings()
+function CooldownCompanion:ApplyCastBarSettings(opts)
+    opts = opts or {}
+    if not opts.skipRuntimeGate
+        and self.RefreshBarsAndFramesRuntimeFeatureGate
+        and not self:RefreshBarsAndFramesRuntimeFeatureGate("castBar", "castbar-apply") then
+        self:RevertCastBar()
+        return
+    end
+    if self.RecordBarsAndFramesRuntimeWork then
+        self:RecordBarsAndFramesRuntimeWork("castApply")
+    end
+
     local settings = GetCastBarSettings()
     if not settings or not settings.enabled then
         self:RevertCastBar()
         return
     end
+    InstallHooks()
 
     local isIndependent = settings.independentAnchorEnabled == true
     local groupId, groupFrame
@@ -1374,7 +1392,18 @@ end
 ------------------------------------------------------------------------
 -- Evaluate: central decision point
 ------------------------------------------------------------------------
-function CooldownCompanion:EvaluateCastBar()
+function CooldownCompanion:EvaluateCastBar(opts)
+    opts = opts or {}
+    if not opts.skipRuntimeGate
+        and self.RefreshBarsAndFramesRuntimeFeatureGate
+        and not self:RefreshBarsAndFramesRuntimeFeatureGate("castBar", opts.reason or "castbar-evaluate") then
+        self:RevertCastBar()
+        return
+    end
+    if self.RecordBarsAndFramesRuntimeWork then
+        self:RecordBarsAndFramesRuntimeWork("castEvaluate")
+    end
+
     if self._unsupportedLegacyProfile then
         self:RevertCastBar()
         return
@@ -1385,7 +1414,16 @@ function CooldownCompanion:EvaluateCastBar()
         self:RevertCastBar()
         return
     end
-    self:ApplyCastBarSettings()
+    InstallHooks()
+    self:ApplyCastBarSettings({ skipRuntimeGate = true })
+end
+
+function CooldownCompanion:GetCastBarRuntimeDebugInfo()
+    return {
+        applied = isApplied == true,
+        hooksInstalled = hooksInstalled == true,
+        castEventsActive = castEventFrameEnabled == true,
+    }
 end
 
 ------------------------------------------------------------------------
@@ -1484,15 +1522,17 @@ end
 -- always safe since they are not Blizzard secure handlers.
 ------------------------------------------------------------------------
 
-local function InstallHooks()
+InstallHooks = function()
     if not hooksInstalled then
         hooksInstalled = true
 
         -- When SetLook is called by Blizzard (EditMode, PlayerFrame attach/detach),
         -- re-apply our settings after it finishes.
         hooksecurefunc(PlayerCastingBarFrame, "SetLook", function()
+            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
             if isApplied then
                 C_Timer.After(0, function()
+                    if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
                     local s = GetCastBarSettings()
                     if s and s.enabled then
                         CooldownCompanion:ApplyCastBarSettings()
@@ -1503,9 +1543,11 @@ local function InstallHooks()
 
         -- When anchor group refreshes (visibility changes) — re-evaluate
         hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
+            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
             local s = GetCastBarSettings()
             if s and s.enabled then
                 C_Timer.After(0, function()
+                    if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
                     CooldownCompanion:EvaluateCastBar()
                 end)
             end
@@ -1513,23 +1555,27 @@ local function InstallHooks()
 
         local function QueueCastBarReevaluate()
             C_Timer.After(0.1, function()
+                if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
                 CooldownCompanion:EvaluateCastBar()
             end)
         end
 
         -- When all groups refresh (profile switch, zone change) — re-evaluate
         hooksecurefunc(CooldownCompanion, "RefreshAllGroups", function()
+            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
             QueueCastBarReevaluate()
         end)
 
         -- Visibility-only refresh path (zone/resting/pet-battle transitions)
         -- still needs cast bar anchoring re-evaluation.
         hooksecurefunc(CooldownCompanion, "RefreshAllGroupsVisibilityOnly", function()
+            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
             QueueCastBarReevaluate()
         end)
 
         -- Shared handler: re-apply FX scaling when anchor group width changes
         local function ReapplyFXFromHook(groupId)
+            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
             local s = GetCastBarSettings()
             if not s or not s.enabled then return end
             if s.independentAnchorEnabled then return end  -- independent: width not tied to group
@@ -1571,7 +1617,6 @@ initFrame:SetScript("OnEvent", function(self, event)
 
     -- Delay to ensure group frames are created first
     C_Timer.After(0.5, function()
-        InstallHooks()
-        CooldownCompanion:EvaluateCastBar()
+        CooldownCompanion:EvaluateCastBar({ reason = "castbar-init" })
     end)
 end)
