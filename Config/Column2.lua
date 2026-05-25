@@ -38,6 +38,10 @@ local NotifyTutorialAction = ST._NotifyTutorialAction
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
 local SelectConfigFinderResult = ST._SelectConfigFinderResult
+local SelectConfigPanel = ST._SelectConfigPanel
+local ToggleConfigPanelMultiSelect = ST._ToggleConfigPanelMultiSelect
+local SelectConfigButton = ST._SelectConfigButton
+local SelectConfigButtonPanel = ST._SelectConfigButtonPanel
 
 local IsTriggerPanelGroup
 
@@ -1434,11 +1438,7 @@ local function RefreshColumn2()
             end
             header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
             header:SetCallback("OnClick", function()
-                CooldownCompanion:ClearAllConfigPreviews()
-                CS.selectedContainer = CS.browseContainerId
-                CS.selectedGroup = panelGroupId
-                CS.selectedButton = nil
-                wipe(CS.selectedButtons)
+                SelectConfigPanel(panelGroupId, { containerId = CS.browseContainerId })
                 CooldownCompanion:RefreshConfigPanel()
             end)
             panelContainer:AddChild(header)
@@ -1472,11 +1472,10 @@ local function RefreshColumn2()
                     end
                     local capturedIndex = buttonIndex
                     entry:SetCallback("OnClick", function()
-                        CooldownCompanion:ClearAllConfigPreviews()
-                        CS.selectedContainer = CS.browseContainerId
-                        CS.selectedGroup = panelGroupId
-                        CS.selectedButton = capturedIndex
-                        wipe(CS.selectedButtons)
+                        SelectConfigButton(panelGroupId, capturedIndex, {
+                            containerId = CS.browseContainerId,
+                            force = true,
+                        })
                         CooldownCompanion:RefreshConfigPanel()
                     end)
                     panelContainer:AddChild(entry)
@@ -2131,32 +2130,12 @@ local function RefreshColumn2()
                         end
 
                         if IsControlKeyDown() then
-                            CooldownCompanion:ClearAllConfigPreviews()
-                            if CS.selectedPanels[panelId] then
-                                CS.selectedPanels[panelId] = nil
-                            else
-                                CS.selectedPanels[panelId] = true
-                            end
-                            if CS.selectedGroup and not CS.selectedPanels[CS.selectedGroup] and next(CS.selectedPanels) then
-                                CS.selectedPanels[CS.selectedGroup] = true
-                            end
-                            CS.selectedGroup = nil
-                            CS.selectedButton = nil
-                            wipe(CS.selectedButtons)
-                            CS.addingToPanelId = nil
+                            ToggleConfigPanelMultiSelect(panelId)
                             CooldownCompanion:RefreshConfigPanel()
                             return
                         end
 
-                        wipe(CS.selectedPanels)
-                        CooldownCompanion:ClearAllConfigPreviews()
-                        if CS.selectedGroup == panelId and not CS.selectedButton then
-                            CS.selectedGroup = nil
-                        else
-                            CS.selectedGroup = panelId
-                        end
-                        CS.selectedButton = nil
-                        wipe(CS.selectedButtons)
+                        SelectConfigPanel(panelId, { toggle = true })
                         CooldownCompanion:RefreshConfigPanel()
                         return
                     elseif mouseButton == "MiddleButton" then
@@ -2472,10 +2451,7 @@ local function RefreshColumn2()
                         CS.addingToPanelId = nil
                     else
                         CS.addingToPanelId = addBtnPanelId
-                        CooldownCompanion:ClearAllConfigPreviews()
-                        CS.selectedGroup = addBtnPanelId
-                        CS.selectedButton = nil
-                        wipe(CS.selectedButtons)
+                        SelectConfigPanel(addBtnPanelId, { keepPanelMulti = true })
                         CS.collapsedPanels[addBtnPanelId] = nil
                         CS.pendingEditBoxFocus = true
                     end
@@ -2665,43 +2641,11 @@ local function RefreshColumn2()
                         end
                         if mouseButton == "LeftButton" then
                             -- Auto-select this button's panel
-                            local panelChanged = CS.selectedGroup ~= btnPanelId
-                            if panelChanged then
-                                CS.selectedGroup = btnPanelId
-                                CS.selectedButton = nil
-                                wipe(CS.selectedButtons)
-                            end
-                            wipe(CS.selectedPanels)
-
-                            if IsControlKeyDown() then
-                                if CS.selectedButtons[btnIndex] then
-                                    CS.selectedButtons[btnIndex] = nil
-                                else
-                                    CS.selectedButtons[btnIndex] = true
-                                end
-                                if CS.selectedButton and not CS.selectedButtons[CS.selectedButton] and next(CS.selectedButtons) then
-                                    CS.selectedButtons[CS.selectedButton] = true
-                                end
-                                CS.selectedButton = nil
-                            else
-                                wipe(CS.selectedButtons)
-                                if not panelChanged and CS.selectedButton == btnIndex then
-                                    CS.selectedButton = nil
-                                else
-                                    CS.selectedButton = btnIndex
-                                end
-                            end
-                            CooldownCompanion:ClearAllConfigPreviews()
+                            SelectConfigButton(btnPanelId, btnIndex, { multi = IsControlKeyDown() })
                             CooldownCompanion:RefreshConfigPanel()
                         elseif mouseButton == "RightButton" then
                             -- Auto-select panel on right-click too
-                            if CS.selectedGroup ~= btnPanelId then
-                                CooldownCompanion:ClearAllConfigPreviews()
-                                CS.selectedGroup = btnPanelId
-                                CS.selectedButton = nil
-                                wipe(CS.selectedButtons)
-                            end
-                            wipe(CS.selectedPanels)
+                            SelectConfigButtonPanel(btnPanelId, { clearPanelMulti = true })
                             if not CS.buttonContextMenu then
                                 CS.buttonContextMenu = CreateFrame("Frame", "CDCButtonContextMenu", UIParent, "UIDropDownMenuTemplate")
                             end
@@ -2794,12 +2738,7 @@ local function RefreshColumn2()
                             CS.buttonContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
                             ToggleDropDownMenu(1, nil, CS.buttonContextMenu, "cursor", 0, 0)
                         elseif mouseButton == "MiddleButton" then
-                            if CS.selectedGroup ~= btnPanelId then
-                                CooldownCompanion:ClearAllConfigPreviews()
-                                CS.selectedGroup = btnPanelId
-                                CS.selectedButton = nil
-                                wipe(CS.selectedButtons)
-                            end
+                            SelectConfigButtonPanel(btnPanelId)
                             if not CS.moveMenuFrame then
                                 CS.moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
                             end
