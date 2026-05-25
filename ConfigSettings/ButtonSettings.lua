@@ -180,6 +180,7 @@ local function ResetSoundPreviewRow(item)
         previewBtn._cdcGroup = nil
         previewBtn._cdcSoundValue = nil
         previewBtn:ClearAllPoints()
+        previewBtn:SetParent(nil)
     end
 
     item.text:ClearAllPoints()
@@ -187,19 +188,35 @@ local function ResetSoundPreviewRow(item)
     item.text:SetPoint("BOTTOMRIGHT", item.frame, "BOTTOMRIGHT", SOUND_PREVIEW_TEXT_RIGHT_OFFSET, 0)
 end
 
-local function ConfigureSoundPreviewRow(item, buttonData, group)
-    if not (item and item.frame and item.text) then return end
+local function EnsureSoundPreviewRowCleanup(item)
+    if not (item and item.SetCallback) then return end
 
-    if not item._cdcSoundPreviewCleanupInstalled then
-        item._cdcSoundPreviewCleanupInstalled = true
-        local prevOnRelease = item.events and item.events["OnRelease"]
-        item:SetCallback("OnRelease", function(widget, event)
+    local releaseCallback = item._cdcSoundPreviewReleaseCallback
+    if not releaseCallback then
+        releaseCallback = function(widget, event)
+            local prevOnRelease = widget._cdcSoundPreviewWrappedOnRelease
+            widget._cdcSoundPreviewWrappedOnRelease = nil
+            ResetSoundPreviewRow(widget)
             if prevOnRelease then
                 prevOnRelease(widget, event)
             end
-            ResetSoundPreviewRow(widget)
-        end)
+        end
+        item._cdcSoundPreviewReleaseCallback = releaseCallback
     end
+
+    local currentOnRelease = item.events and item.events["OnRelease"]
+    if currentOnRelease == releaseCallback then
+        return
+    end
+
+    item._cdcSoundPreviewWrappedOnRelease = currentOnRelease
+    item:SetCallback("OnRelease", releaseCallback)
+end
+
+local function ConfigureSoundPreviewRow(item, buttonData, group)
+    if not (item and item.frame and item.text) then return end
+
+    EnsureSoundPreviewRowCleanup(item)
 
     local previewBtn = item._cdcSoundPreviewBtn
     if not previewBtn then

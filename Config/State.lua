@@ -166,6 +166,8 @@ ST._configState = {
     folderContextMenu = nil,
     folderIconPickerFrame = nil,
     buttonIconPickerFrame = nil,
+    triggerPanelIconPickerFrame = nil,
+    containerIconPickerFrame = nil,
     panelContextMenu = nil,
     col2PanelTypeMenu = nil,
     charCopyMenu = nil,
@@ -626,6 +628,16 @@ local function IsValidIconTexture(iconTexture)
     return iconType == "number" or iconType == "string"
 end
 
+local function ApplyConfigIconPickerSelection(spec, context, iconTexture)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local entity = db and spec and spec.validateContext and spec.validateContext(context, db)
+    if entity and IsValidIconTexture(iconTexture) and spec and spec.applySelection then
+        spec.applySelection(iconTexture, entity, context, db)
+        return true
+    end
+    return false
+end
+
 ------------------------------------------------------------------------
 -- Helper: Get icon for a container (from its first panel's first button)
 ------------------------------------------------------------------------
@@ -724,6 +736,165 @@ end
 ------------------------------------------------------------------------
 -- Shared icon picker helpers
 ------------------------------------------------------------------------
+local STANDALONE_ICON_BROWSER_ADDON = "IconBrowser"
+local CONFIG_ICON_PICKER_CACHE_KEYS = {
+    "folderIconPickerFrame",
+    "buttonIconPickerFrame",
+    "triggerPanelIconPickerFrame",
+    "containerIconPickerFrame",
+}
+
+local function GetStandaloneIconBrowserAPI()
+    local api = LRPMediaIconBrowserAPI
+    if api and type(api.CreateBrowser) == "function" then
+        return api
+    end
+
+    if not C_AddOns or not C_AddOns.GetAddOnInfo or not C_AddOns.IsAddOnLoaded or not C_AddOns.LoadAddOn then
+        return nil
+    end
+
+    local addOnName, _, _, loadable, reason = C_AddOns.GetAddOnInfo(STANDALONE_ICON_BROWSER_ADDON)
+    if not addOnName or (not loadable and reason ~= "DEMAND_LOADED") then
+        return nil
+    end
+
+    local loadedOrLoading, loaded = C_AddOns.IsAddOnLoaded(STANDALONE_ICON_BROWSER_ADDON)
+    if loadedOrLoading and not loaded then
+        return nil
+    end
+
+    if not loaded then
+        loaded = C_AddOns.LoadAddOn(STANDALONE_ICON_BROWSER_ADDON)
+        if not loaded then
+            return nil
+        end
+    end
+
+    api = LRPMediaIconBrowserAPI
+    if api and type(api.CreateBrowser) == "function" then
+        return api
+    end
+
+    return nil
+end
+
+local function HideConfigIconPickerFrames()
+    for _, cacheKey in ipairs(CONFIG_ICON_PICKER_CACHE_KEYS) do
+        local frame = CS[cacheKey]
+        if frame and frame.IsShown and frame:IsShown() then
+            frame:Hide()
+        end
+    end
+end
+
+local function SetConfigIconPickerBrowserMode(frame, browser)
+    if browser then
+        frame._cdcIconBrowserActive = true
+        frame.IconSelector:Hide()
+        frame.IconSelector:SetAlpha(0)
+        frame.BorderBox.IconDragArea:Hide()
+        frame.BorderBox.IconDragArea:SetAlpha(0)
+        frame.BorderBox.IconTypeDropdown:Hide()
+        frame.BorderBox.IconTypeDropdown:SetAlpha(0)
+        browser:Show()
+        return
+    end
+
+    frame._cdcIconBrowserActive = nil
+    if frame._cdcIconBrowser then
+        frame._cdcIconBrowser:Hide()
+    end
+    frame.BorderBox.IconDragArea:SetAlpha(1)
+    frame.IconSelector:SetAlpha(1)
+    frame.IconSelector:Show()
+    frame.BorderBox.IconTypeDropdown:SetAlpha(1)
+    frame.BorderBox.IconTypeDropdown:Show()
+end
+
+local function CloseConfigIconPicker()
+    HideConfigIconPickerFrames()
+end
+
+local function ResetConfigIconBrowser(browser)
+    if browser.OnFilterDropdownResetClicked then
+        browser:OnFilterDropdownResetClicked()
+    end
+end
+
+local function SetConfigIconBrowserSelectedText(frame)
+    local selectedText = frame
+        and frame.BorderBox
+        and frame.BorderBox.SelectedIconArea
+        and frame.BorderBox.SelectedIconArea.SelectedIconText
+    local description = selectedText and selectedText.SelectedIconDescription
+    if description then
+        description:SetText(ICON_SELECTION_CLICK)
+        description:SetFontObject(GameFontHighlightSmall)
+        if selectedText.Layout then
+            selectedText:Layout()
+        end
+        return
+    end
+
+    if frame and frame.SetSelectedIconText then
+        frame:SetSelectedIconText()
+    end
+end
+
+local function EnsureConfigIconBrowser(frame)
+    if frame._cdcIconBrowser then
+        return frame._cdcIconBrowser
+    end
+
+    local api = GetStandaloneIconBrowserAPI()
+    if not api then
+        return nil
+    end
+
+    local browser = api.CreateBrowser(frame.BorderBox, frame.BorderBox.SelectedIconArea, 474, 330, function(iconTexture)
+        if not IsValidIconTexture(iconTexture) then
+            return
+        end
+        frame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(iconTexture)
+        SetConfigIconBrowserSelectedText(frame)
+        frame.BorderBox.OkayButton:Enable()
+    end)
+
+    if not browser then
+        return nil
+    end
+
+    browser:ClearAllPoints()
+    browser:SetPoint("TOPLEFT", frame.IconSelector, "TOPLEFT", 0, 0)
+    browser:SetPoint("BOTTOMRIGHT", frame.IconSelector, "BOTTOMRIGHT", 0, 0)
+    browser:SetFrameStrata("FULLSCREEN_DIALOG")
+    browser:SetFrameLevel(frame.IconSelector:GetFrameLevel() + 1)
+
+    frame._cdcIconBrowser = browser
+    return browser
+end
+
+local function OpenConfigIconBrowser(frame, currentIcon)
+    if InCombatLockdown and InCombatLockdown() then
+        return false
+    end
+
+    local browser = EnsureConfigIconBrowser(frame)
+    if not browser then
+        return false
+    end
+
+    ResetConfigIconBrowser(browser)
+    browser.selectedFile = IsValidIconTexture(currentIcon) and currentIcon or nil
+    if browser.selectionModel and browser.selectionModel.SetSelectedFileID then
+        browser.selectionModel:SetSelectedFileID(browser.selectedFile)
+    end
+
+    SetConfigIconPickerBrowserMode(frame, browser)
+    return true
+end
+
 local function EnsureConfigIconPickerFrame(spec)
     if CS[spec.cacheKey] then
         return CS[spec.cacheKey]
@@ -764,6 +935,7 @@ local function EnsureConfigIconPickerFrame(spec)
 
     function frame:OnHide()
         IconSelectorPopupFrameTemplateMixin.OnHide(self)
+        SetConfigIconPickerBrowserMode(self, nil)
         if self.iconDataProvider then
             self.iconDataProvider:Release()
             self.iconDataProvider = nil
@@ -776,15 +948,18 @@ local function EnsureConfigIconPickerFrame(spec)
         end
     end
 
+    function frame:OnEvent(event, ...)
+        IconSelectorPopupFrameTemplateMixin.OnEvent(self, event, ...)
+        if self._cdcIconBrowserActive and self._cdcIconBrowser then
+            SetConfigIconPickerBrowserMode(self, self._cdcIconBrowser)
+        end
+    end
+
     function frame:OkayButton_OnClick()
         local iconTexture = self.BorderBox.SelectedIconArea.SelectedIconButton:GetIconTexture()
-        local db = CooldownCompanion.db and CooldownCompanion.db.profile
         local spec = self._cdcPickerSpec
         local context = self._cdcPickerContext
-        local entity = db and spec and spec.validateContext and spec.validateContext(context, db)
-        if entity and IsValidIconTexture(iconTexture) and spec and spec.applySelection then
-            spec.applySelection(iconTexture, entity, context, db)
-        end
+        ApplyConfigIconPickerSelection(spec, context, iconTexture)
         IconSelectorPopupFrameTemplateMixin.OkayButton_OnClick(self)
     end
 
@@ -803,6 +978,8 @@ local function OpenConfigIconPicker(spec, context)
         return false
     end
 
+    HideConfigIconPickerFrames()
+
     local pickerFrame = EnsureConfigIconPickerFrame(spec)
     if not pickerFrame then
         CooldownCompanion:Print(spec.unavailableMessage)
@@ -817,12 +994,31 @@ local function OpenConfigIconPicker(spec, context)
         pickerFrame.iconDataProvider:Release()
         pickerFrame.iconDataProvider = nil
     end
+    pickerFrame.iconDataProvider = CreateAndInitFromMixin(IconDataProviderMixin, IconDataProviderExtraType.None)
 
     pickerFrame._cdcPickerContext = context
-    pickerFrame.iconDataProvider = CreateAndInitFromMixin(IconDataProviderMixin, IconDataProviderExtraType.None)
-    pickerFrame:SetIconFilter(IconSelectorPopupFrameIconFilterTypes.All)
-
     local currentIcon = spec.getCurrentIcon and spec.getCurrentIcon(entity, context, db)
+    if IsValidIconTexture(currentIcon) then
+        pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(currentIcon)
+        pickerFrame:SetSelectedIconText()
+        pickerFrame.BorderBox.OkayButton:Enable()
+    else
+        pickerFrame.BorderBox.SelectedIconArea.SelectedIconButton:SetIconTexture(nil)
+        pickerFrame:SetSelectedIconText()
+        pickerFrame.BorderBox.OkayButton:Disable()
+    end
+
+    if OpenConfigIconBrowser(pickerFrame, currentIcon) then
+        if IsValidIconTexture(currentIcon) then
+            SetConfigIconBrowserSelectedText(pickerFrame)
+        end
+        pickerFrame:Show()
+        SetConfigIconPickerBrowserMode(pickerFrame, pickerFrame._cdcIconBrowser)
+        return true
+    end
+
+    SetConfigIconPickerBrowserMode(pickerFrame, nil)
+    pickerFrame:SetIconFilter(IconSelectorPopupFrameIconFilterTypes.All)
 
     local selectedIndex = currentIcon and pickerFrame:GetIndexOfIcon(currentIcon) or nil
 
@@ -857,18 +1053,39 @@ local function OpenConfigIconPicker(spec, context)
     return true
 end
 
-local function ConfigureButtonIconPickerFrame(frame)
+local function StartConfigIconPickerMoving(self)
+    local frame = self._cdcMovableFrame or self
+    frame:StartMoving()
+end
+
+local function StopConfigIconPickerMoving(self)
+    local frame = self._cdcMovableFrame or self
+    frame:StopMovingOrSizing()
+end
+
+local function AttachConfigIconPickerDragScripts(region, frame)
+    if not region then
+        return
+    end
+
+    region._cdcMovableFrame = frame
+    region:EnableMouse(true)
+    region:RegisterForDrag("LeftButton")
+    region:SetScript("OnDragStart", StartConfigIconPickerMoving)
+    region:SetScript("OnDragStop", StopConfigIconPickerMoving)
+end
+
+local function ConfigureMovableIconPickerFrame(frame)
     frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    AttachConfigIconPickerDragScripts(frame, frame)
+    AttachConfigIconPickerDragScripts(frame.BorderBox, frame)
 end
 
 local FOLDER_ICON_PICKER_SPEC = {
     cacheKey = "folderIconPickerFrame",
     frameName = "CDCFolderIconPickerFrame",
     unavailableMessage = "Folder icon picker is unavailable on this client build.",
+    configureFrame = ConfigureMovableIconPickerFrame,
     validateContext = function(context, db)
         local folderId = context and context.folderId
         return db and db.folders and db.folders[folderId]
@@ -893,7 +1110,7 @@ local BUTTON_ICON_PICKER_SPEC = {
     cacheKey = "buttonIconPickerFrame",
     frameName = "CDCButtonIconPickerFrame",
     unavailableMessage = "Icon picker is unavailable on this client build.",
-    configureFrame = ConfigureButtonIconPickerFrame,
+    configureFrame = ConfigureMovableIconPickerFrame,
     validateContext = function(context, db)
         local groupId = context and context.groupId
         local buttonIndex = context and context.buttonIndex
@@ -921,7 +1138,7 @@ local TRIGGER_PANEL_ICON_PICKER_SPEC = {
     cacheKey = "triggerPanelIconPickerFrame",
     frameName = "CDCTriggerPanelIconPickerFrame",
     unavailableMessage = "Icon picker is unavailable on this client build.",
-    configureFrame = ConfigureButtonIconPickerFrame,
+    configureFrame = ConfigureMovableIconPickerFrame,
     validateContext = function(context, db)
         local groupId = context and context.groupId
         local group = db and db.groups and db.groups[groupId]
@@ -953,6 +1170,7 @@ local CONTAINER_ICON_PICKER_SPEC = {
     cacheKey = "containerIconPickerFrame",
     frameName = "CDCContainerIconPickerFrame",
     unavailableMessage = "Icon picker is unavailable on this client build.",
+    configureFrame = ConfigureMovableIconPickerFrame,
     validateContext = function(context, db)
         local containerId = context and context.containerId
         return db and db.groupContainers and db.groupContainers[containerId]
@@ -2340,6 +2558,7 @@ ST._OpenFolderIconPicker = OpenFolderIconPicker
 ST._OpenButtonIconPicker = OpenButtonIconPicker
 ST._OpenTriggerPanelIconPicker = OpenTriggerPanelIconPicker
 ST._OpenContainerIconPicker = OpenContainerIconPicker
+ST._CloseConfigIconPicker = CloseConfigIconPicker
 ST._IsValidIconTexture = IsValidIconTexture
 ST._GenerateFolderName = GenerateFolderName
 ST._ShowPopupAboveConfig = ShowPopupAboveConfig

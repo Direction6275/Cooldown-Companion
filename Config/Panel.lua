@@ -709,6 +709,9 @@ local function CreateConfigPanel()
         if CS.CancelPickAuraTexture then
             CS.CancelPickAuraTexture()
         end
+        if ST._CloseConfigIconPicker then
+            ST._CloseConfigIconPicker()
+        end
         if CS.CloseAdvancedSettingsPanel then
             CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         end

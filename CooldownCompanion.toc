@@ -7,7 +7,7 @@
 ## X-Wago-ID: 4N2kWd6L
 ## SavedVariables: CooldownCompanionDB
 ## IconTexture: Interface\AddOns\CooldownCompanion\Media\cdcminimap.tga
-## OptionalDeps: Ace3, LibSharedMedia-3.0, LibDeflate, LibCustomGlow-1.0, LibDataBroker-1.1, LibDBIcon-1.0, Masque
+## OptionalDeps: Ace3, LibSharedMedia-3.0, LibDeflate, LibCustomGlow-1.0, LibDataBroker-1.1, LibDBIcon-1.0, Masque, IconBrowser
 
 #@no-lib-strip@
 # Libraries - LibStub must be first
