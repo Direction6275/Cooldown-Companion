@@ -8,6 +8,8 @@ local CooldownCompanion = ST.Addon
 local EntryRuntime = ST.EntryRuntime
 
 local math_floor = math.floor
+local math_max = math.max
+local math_min = math.min
 local GetTime = GetTime
 local issecretvalue = issecretvalue
 
@@ -20,6 +22,36 @@ local DEFAULT_RESOURCE_TEXT_COLOR = RB.DEFAULT_RESOURCE_TEXT_COLOR
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL = 0.65
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = 3
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = 12.3
+
+local function IsSecretValue(value)
+    return issecretvalue and issecretvalue(value)
+end
+
+local function GetReadableApplicationCount(value)
+    if value == nil or IsSecretValue(value) then
+        return nil
+    end
+    return tonumber(value)
+end
+
+local function SetApplicationStackText(fontString, value, maxStacks, stackTextFormat)
+    if IsSecretValue(value) then
+        fontString:SetText(value)
+        return
+    end
+
+    local numericValue = tonumber(value)
+    if not numericValue then
+        fontString:SetText("")
+        return
+    end
+
+    if stackTextFormat == "current" then
+        fontString:SetFormattedText("%d", numericValue)
+    else
+        fontString:SetFormattedText("%d / %d", numericValue, maxStacks)
+    end
+end
 
 local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
 local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
@@ -54,6 +86,8 @@ function RB.CreateResourceBarCustomBarsModule(deps)
     local RelayoutResourceStack = deps.RelayoutResourceStack
     local ClearStaleRecycledBarRuntimeState = deps.ClearStaleRecycledBarRuntimeState
     local ClearCustomAuraBarIndicatorState = deps.ClearCustomAuraBarIndicatorState
+    local ClearCustomAuraBarIndicatorVisualState = deps.ClearCustomAuraBarIndicatorVisualState
+        or ClearCustomAuraBarIndicatorState
     local UpdateCustomAuraBarIndicatorVisuals = deps.UpdateCustomAuraBarIndicatorVisuals
     local ApplyCustomAuraBarPreviewState = deps.ApplyCustomAuraBarPreviewState
     local customAuraWakeRetryFrame = nil
@@ -236,11 +270,19 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         -- Read aura data from viewer frame (applications may be secret in combat)
         local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
+        local isSpellCustomBar = RB.IsSpellCustomBarConfig and RB.IsSpellCustomBarConfig(cabConfig)
+        local useSharedStandaloneAuraState = not spellAuraStackDisplay
+            and not isSpellCustomBar
+            and EntryRuntime
+            and EntryRuntime.EvaluateTrackedAuraState
         local auraState = spellAuraStackDisplay and RB.ResolveSpellCustomBarAuraState and RB.ResolveSpellCustomBarAuraState(barInfo) or nil
         local stacks = 0
-        local applications = 0
+        local applications
+        local readableApplications
         local auraPresent = false
         local durationObj
+        local auraCooldownStart
+        local auraCooldownDuration
         local isActive = cabConfig.trackingMode == "active"
         local useDrain = isActive
         local needsDuration = (useDrain or cabConfig.showDurationText) and not spellAuraStackDisplay
@@ -249,19 +291,59 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local pandemicPreview = bar and bar._pandemicPreview
         local indicatorPreview = isActive and (auraPreview or pandemicPreview)
         local configUnit = EnsureCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
-        local viewerFrame = CustomAuraBar.ResolveViewerFrame(cabConfig, configUnit)
+        local viewerFrame
         local auraUnit = configUnit
-        local instId = viewerFrame and viewerFrame.auraInstanceID
+        local instId
 
-        if spellAuraStackDisplay then
+        if useSharedStandaloneAuraState then
+            local buttonData, spellID = CustomAuraBar.BuildAuraButtonData(cabConfig)
+            if buttonData and spellID then
+                configUnit = buttonData.auraUnit or configUnit
+                auraState = EntryRuntime.EvaluateTrackedAuraState(barInfo.frame, buttonData, spellID, {
+                    configUnit = configUnit,
+                    allowDurationlessAuraInstance = true,
+                    allowPlayerAuraFallbackWithoutReady = true,
+                })
+                viewerFrame = auraState and auraState.viewerFrame or nil
+                instId = auraState and auraState.auraInstanceID or nil
+            end
+        else
+            viewerFrame = CustomAuraBar.ResolveViewerFrame(cabConfig, configUnit)
+            instId = viewerFrame and viewerFrame.auraInstanceID
+        end
+
+        if auraState then
             configUnit = (auraState and auraState.configUnit) or configUnit
             viewerFrame = auraState and auraState.viewerFrame or nil
-            if auraState and auraState.ready == true and auraState.auraPresent == true and auraState.auraData then
+            if auraState and auraState.auraPresent == true then
                 auraPresent = true
                 instId = auraState.auraInstanceID
+                if instId == nil and auraState.auraGraceHeld and barInfo.frame then
+                    instId = barInfo.frame._auraInstanceID
+                end
                 auraUnit = auraState.auraUnit or configUnit
-                applications = auraState.auraData.applications or 0
-                stacks = applications
+                local stateApplications = auraState.auraApplications
+                if stateApplications == nil and auraState.auraData then
+                    stateApplications = auraState.auraData.applications
+                end
+                if stateApplications == nil
+                    and auraState.auraGraceHeld
+                    and barInfo.frame then
+                    stateApplications = barInfo.frame._customAuraStackValue
+                        or barInfo.frame._customAuraApplicationsValue
+                end
+                applications = stateApplications
+                readableApplications = GetReadableApplicationCount(applications)
+                if isActive then
+                    stacks = 1
+                elseif applications ~= nil then
+                    stacks = applications
+                else
+                    stacks = 0
+                end
+                durationObj = auraState.durationObj
+                auraCooldownStart = auraState.auraCooldownStart
+                auraCooldownDuration = auraState.auraCooldownDuration
             end
         elseif instId then
             local viewerUnit = viewerFrame.auraDataUnit or configUnit
@@ -269,11 +351,14 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                 local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(configUnit, instId)
                 if auraData then
                     auraPresent = true
-                    applications = auraData.applications or 0
+                    applications = auraData.applications
+                    readableApplications = GetReadableApplicationCount(applications)
                     if isActive then
                         stacks = 1
-                    else
+                    elseif applications ~= nil then
                         stacks = applications
+                    else
+                        stacks = 0
                     end
                     if needsDuration then
                         durationObj = C_UnitAuras.GetAuraDuration(configUnit, instId)
@@ -282,17 +367,20 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
         end
 
-        if not spellAuraStackDisplay and not auraPresent and configUnit == "player" then
+        if not useSharedStandaloneAuraState and not spellAuraStackDisplay and not auraPresent and configUnit == "player" then
             local auraData = CustomAuraBar.ResolvePlayerAuraData(cabConfig)
             if auraData then
                 instId = auraData.auraInstanceID
                 auraUnit = "player"
                 auraPresent = true
-                applications = auraData.applications or 0
+                applications = auraData.applications
+                readableApplications = GetReadableApplicationCount(applications)
                 if isActive then
                     stacks = 1
-                else
+                elseif applications ~= nil then
                     stacks = applications
+                else
+                    stacks = 0
                 end
                 if needsDuration and instId then
                     durationObj = C_UnitAuras.GetAuraDuration("player", instId)
@@ -301,6 +389,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
 
         if spellAuraStackDisplay and not auraPresent and not GetPreviewActive() then
+            if barInfo.frame then
+                barInfo.frame._customAuraStackValue = nil
+                barInfo.frame._customAuraApplicationsValue = nil
+            end
             if CooldownCompanion.UpdateCustomBarSoundAlerts then
                 CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, false)
             end
@@ -312,6 +404,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         if indicatorPreview and not auraPresent then
             auraPresent = true
             applications = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
+            readableApplications = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
             stacks = 1
         end
 
@@ -348,8 +441,14 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                 MarkLayoutDirty()
             end
             if not shouldShow then
+                if barInfo.frame then
+                    if not auraPresent then
+                        barInfo.frame._customAuraStackValue = nil
+                        barInfo.frame._customAuraApplicationsValue = nil
+                    end
+                end
                 if isActive then
-                    UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, false)
+                    ClearCustomAuraBarIndicatorVisualState(barInfo, false)
                 end
                 return
             end
@@ -364,6 +463,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                 bar:SetMinMaxValues(0, 1)
                 if durationObj then
                     bar:SetValue(durationObj:GetRemainingPercent())  -- secret-safe, 1->0 drain
+                elseif auraCooldownStart and auraCooldownDuration and auraCooldownDuration > 0 then
+                    local remaining = auraCooldownStart + auraCooldownDuration - GetTime()
+                    bar:SetValue(math_max(0, math_min(1, remaining / auraCooldownDuration)))
                 elseif indicatorPreview then
                     bar:SetValue(CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL)
                 else
@@ -399,6 +501,13 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                     else
                         bar.text:SetFormattedText(GetDurationSecretFormatSpec(cabConfig), remaining)
                     end
+                elseif auraCooldownStart and auraCooldownDuration and auraCooldownDuration > 0 then
+                    local remaining = auraCooldownStart + auraCooldownDuration - GetTime()
+                    if remaining > 0 then
+                        bar.text:SetText(FormatTime(remaining, cabConfig))
+                    else
+                        bar.text:SetText("")
+                    end
                 elseif indicatorPreview then
                     bar.text:SetText(FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig))
                 else
@@ -410,14 +519,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if bar.stackText and bar.stackText:IsShown() then
                 if auraPresent then
                     if isActive then
-                        bar.stackText:SetFormattedText("%d", applications)
+                        SetApplicationStackText(bar.stackText, applications, maxStacks, "current")
                     else
                         local stackTextFormat = NormalizeCustomAuraStackTextFormat(cabConfig.stackTextFormat)
-                        if stackTextFormat == "current" then
-                            bar.stackText:SetFormattedText("%d", stacks)
-                        else
-                            bar.stackText:SetFormattedText("%d / %d", stacks, maxStacks)
-                        end
+                        SetApplicationStackText(bar.stackText, stacks, maxStacks, stackTextFormat)
                     end
                 else
                     bar.stackText:SetText("")
@@ -427,7 +532,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if isActive then
                 UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPresent)
             else
-                ClearCustomAuraBarIndicatorState(barInfo, true)
+                ClearCustomAuraBarIndicatorVisualState(barInfo, true)
             end
 
         elseif barInfo.barType == "custom_segmented" then
@@ -479,9 +584,19 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
         end
 
+        if barInfo.frame then
+            if auraPresent and applications ~= nil then
+                barInfo.frame._customAuraStackValue = applications
+                barInfo.frame._customAuraApplicationsValue = readableApplications
+            elseif not auraPresent or not (auraState and auraState.auraGraceHeld) then
+                barInfo.frame._customAuraStackValue = nil
+                barInfo.frame._customAuraApplicationsValue = nil
+            end
+        end
+
         -- Max stacks indicator: SetValue drives visibility via C-level clamping
         if cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
-            barInfo._maxStacksIndicator:SetValue(auraPresent and applications or 0)
+            barInfo._maxStacksIndicator:SetValue((auraPresent and applications ~= nil) and applications or 0)
         end
     end
 

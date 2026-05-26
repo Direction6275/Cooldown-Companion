@@ -193,6 +193,22 @@ local function IsCustomBarAuraIndicatorFrame(barInfo)
         or barInfo.barType == "custom_cooldown"
 end
 
+local function ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags)
+    if not IsCustomBarAuraIndicatorFrame(barInfo) then
+        return
+    end
+
+    local bar = barInfo and barInfo.frame
+    if not bar then return end
+
+    if clearPreviewFlags then
+        bar._barAuraActivePreview = nil
+        bar._pandemicPreview = nil
+    end
+
+    ResetCustomAuraBarIndicatorVisuals(bar, barInfo.cabConfig)
+end
+
 local function ClearCustomAuraBarIndicatorState(barInfo, clearPreviewFlags)
     if not IsCustomBarAuraIndicatorFrame(barInfo) then
         return
@@ -204,16 +220,21 @@ local function ClearCustomAuraBarIndicatorState(barInfo, clearPreviewFlags)
     bar._auraActive = nil
     bar._inPandemic = nil
     bar._auraInstanceID = nil
+    bar._auraDurationObj = nil
+    bar._auraCooldownStart = nil
+    bar._auraCooldownDuration = nil
+    bar._auraHasTimer = nil
     bar._auraUnit = nil
+    bar._auraEventRemoved = nil
+    bar._auraGraceStart = nil
+    bar._targetSwitchAt = nil
+    bar._targetSwitchDataReceived = nil
+    bar._customAuraStackValue = nil
+    bar._customAuraApplicationsValue = nil
     bar._pandemicGraceStart = nil
     bar._pandemicGraceSuppressed = nil
 
-    if clearPreviewFlags then
-        bar._barAuraActivePreview = nil
-        bar._pandemicPreview = nil
-    end
-
-    ResetCustomAuraBarIndicatorVisuals(bar, barInfo.cabConfig)
+    ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags)
 end
 
 local function ApplyCustomAuraBarPreviewState(barInfo)
@@ -266,7 +287,7 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
     if not cabConfig
         or (isSpellCustomCooldown and cabConfig.auraTracking ~= true)
         or (not isSpellCustomCooldown and cabConfig.trackingMode ~= "active") then
-        ClearCustomAuraBarIndicatorState(barInfo, false)
+        ClearCustomAuraBarIndicatorVisualState(barInfo, false)
         return
     end
 
@@ -420,7 +441,17 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     frame._cdcIndependentLastAlpha = nil
     frame._auraActive = nil
     frame._auraInstanceID = nil
+    frame._auraDurationObj = nil
+    frame._auraCooldownStart = nil
+    frame._auraCooldownDuration = nil
+    frame._auraHasTimer = nil
     frame._auraUnit = nil
+    frame._auraEventRemoved = nil
+    frame._auraGraceStart = nil
+    frame._targetSwitchAt = nil
+    frame._targetSwitchDataReceived = nil
+    frame._customAuraStackValue = nil
+    frame._customAuraApplicationsValue = nil
     frame._inPandemic = nil
     frame._pandemicGraceStart = nil
     frame._pandemicGraceSuppressed = nil
@@ -1311,6 +1342,7 @@ local customBarsModule = RB.CreateResourceBarCustomBarsModule({
     end,
     ClearStaleRecycledBarRuntimeState = ClearStaleRecycledBarRuntimeState,
     ClearCustomAuraBarIndicatorState = ClearCustomAuraBarIndicatorState,
+    ClearCustomAuraBarIndicatorVisualState = ClearCustomAuraBarIndicatorVisualState,
     UpdateCustomAuraBarIndicatorVisuals = UpdateCustomAuraBarIndicatorVisuals,
     ApplyCustomAuraBarPreviewState = ApplyCustomAuraBarPreviewState,
 })
@@ -2562,6 +2594,7 @@ local previewModule = RB.CreateResourceBarPreviewModule({
     GetResourceBarSettings = GetResourceBarSettings,
     ApplySegmentedPreviewColors = ApplySegmentedPreviewColors,
     ClearCustomAuraBarIndicatorState = ClearCustomAuraBarIndicatorState,
+    ClearCustomAuraBarIndicatorVisualState = ClearCustomAuraBarIndicatorVisualState,
 })
 ApplyPreviewData = previewModule.ApplyPreviewData
 
