@@ -10,7 +10,7 @@ local CreateRevertButton = ST._CreateRevertButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
-local HasTooltipCooldown = ST.HasTooltipCooldown
+local IsNoCooldownSpellID = ST.IsNoCooldownSpell
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
@@ -344,8 +344,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
 
     local isNoCooldownSpell = false
     if buttonData.type == "spell" and not buttonData.isPassive and not UsesChargeBehavior(buttonData) then
-        local baseCd = GetSpellBaseCooldown(buttonData.id)
-        isNoCooldownSpell = (not baseCd or baseCd == 0) and not HasTooltipCooldown(buttonData.id)
+        isNoCooldownSpell = IsNoCooldownSpellID(buttonData.id)
     end
 
     for _, sectionId in ipairs(sectionOrder) do

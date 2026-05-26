@@ -6,6 +6,8 @@
 local ADDON_NAME, ST = ...
 
 local ipairs = ipairs
+local tonumber = tonumber
+local issecretvalue = issecretvalue
 
 --------------------------------------------------------------------------------
 -- Spell Resolution
@@ -109,6 +111,26 @@ function ST.HasTooltipCooldown(spellId)
     end
 
     return lastNoneLine ~= nil and lastNoneLine.rightText ~= nil and lastNoneLine.rightText ~= ""
+end
+
+-- Returns true when the charge API exposes cooldown-bearing data, including
+-- single-charge spells whose base cooldown can report as zero.
+function ST.HasChargeCooldownInfo(spellId)
+    if not spellId then return false end
+    local charges = C_Spell.GetSpellCharges(spellId)
+    local maxCharges = charges and charges.maxCharges
+    if maxCharges and not (issecretvalue and issecretvalue(maxCharges)) then
+        return (tonumber(maxCharges) or 0) > 0
+    end
+    return false
+end
+
+-- Returns true if the spell has no real cooldown surface (GCD-only).
+function ST.IsNoCooldownSpell(spellId)
+    local baseCd = GetSpellBaseCooldown(spellId)
+    return (not baseCd or baseCd == 0)
+        and not ST.HasTooltipCooldown(spellId)
+        and not ST.HasChargeCooldownInfo(spellId)
 end
 
 -- Returns true if the spell tooltip contains a UsageRequirement line
