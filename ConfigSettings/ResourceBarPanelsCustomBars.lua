@@ -1319,7 +1319,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
 
     AddCustomBarAuraTrackingGap(container)
 
-    if isSpellCustomBar then
+    if isSpellCustomBar or spellID then
         if not (cab.auraUnit == "player" or cab.auraUnit == "target") then
             resolvedAuraUnit = EnsureCustomAuraBarAuraUnit(cab, spellID)
         end

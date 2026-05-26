@@ -16,6 +16,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local EntryRuntime = ST.EntryRuntime
 
 local math_floor = math.floor
 local math_min = math.min
@@ -193,6 +194,22 @@ local function IsCustomBarAuraIndicatorFrame(barInfo)
         or barInfo.barType == "custom_cooldown"
 end
 
+local function ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags)
+    if not IsCustomBarAuraIndicatorFrame(barInfo) then
+        return
+    end
+
+    local bar = barInfo and barInfo.frame
+    if not bar then return end
+
+    if clearPreviewFlags then
+        bar._barAuraActivePreview = nil
+        bar._pandemicPreview = nil
+    end
+
+    ResetCustomAuraBarIndicatorVisuals(bar, barInfo.cabConfig)
+end
+
 local function ClearCustomAuraBarIndicatorState(barInfo, clearPreviewFlags)
     if not IsCustomBarAuraIndicatorFrame(barInfo) then
         return
@@ -201,19 +218,9 @@ local function ClearCustomAuraBarIndicatorState(barInfo, clearPreviewFlags)
     local bar = barInfo and barInfo.frame
     if not bar then return end
 
-    bar._auraActive = nil
-    bar._inPandemic = nil
-    bar._auraInstanceID = nil
-    bar._auraUnit = nil
-    bar._pandemicGraceStart = nil
-    bar._pandemicGraceSuppressed = nil
+    EntryRuntime.ClearTrackedAuraOwnerState(bar, nil, { clearCustomAuraStacks = true })
 
-    if clearPreviewFlags then
-        bar._barAuraActivePreview = nil
-        bar._pandemicPreview = nil
-    end
-
-    ResetCustomAuraBarIndicatorVisuals(bar, barInfo.cabConfig)
+    ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags)
 end
 
 local function ApplyCustomAuraBarPreviewState(barInfo)
@@ -266,7 +273,7 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
     if not cabConfig
         or (isSpellCustomCooldown and cabConfig.auraTracking ~= true)
         or (not isSpellCustomCooldown and cabConfig.trackingMode ~= "active") then
-        ClearCustomAuraBarIndicatorState(barInfo, false)
+        ClearCustomAuraBarIndicatorVisualState(barInfo, false)
         return
     end
 
@@ -418,16 +425,26 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     end
     frame._cdcIndependentAlphaTarget = nil
     frame._cdcIndependentLastAlpha = nil
-    frame._auraActive = nil
-    frame._auraInstanceID = nil
-    frame._auraUnit = nil
-    frame._inPandemic = nil
-    frame._pandemicGraceStart = nil
-    frame._pandemicGraceSuppressed = nil
-    frame._parsedCustomBarAuraIDs = nil
-    frame._parsedCustomBarAuraIDsRaw = nil
-    frame._parsedCustomBarAuraIDsSpellID = nil
-    frame._parsedCustomBarAuraIDsIncludeSpellID = nil
+    EntryRuntime.ClearTrackedAuraOwnerState(frame, nil, { clearCustomAuraStacks = true })
+    frame._parsedAuraIDs = nil
+    frame._parsedAuraIDsRaw = nil
+    frame._parsedAuraIDsButtonID = nil
+    frame._parsedAuraIDsIncludeButtonID = nil
+    frame._customCooldownBaseSpellID = nil
+    frame._customCooldownSpellID = nil
+    frame._customCooldownHasCharges = nil
+    frame._cooldownSecrecy = nil
+    frame._cooldownSecrecySpellID = nil
+    frame._noCooldown = nil
+    frame._noCooldownSpellId = nil
+    frame._currentReadableCharges = nil
+    frame._chargeCountReadable = nil
+    frame._zeroChargesConfirmed = nil
+    frame._chargeDurationObj = nil
+    frame._chargeRecharging = nil
+    frame._mainCDShown = nil
+    frame._chargeState = nil
+    frame._chargesSpent = nil
     frame:SetAlpha(1)
 end
 
@@ -1292,6 +1309,7 @@ local customBarsModule = RB.CreateResourceBarCustomBarsModule({
     end,
     ClearStaleRecycledBarRuntimeState = ClearStaleRecycledBarRuntimeState,
     ClearCustomAuraBarIndicatorState = ClearCustomAuraBarIndicatorState,
+    ClearCustomAuraBarIndicatorVisualState = ClearCustomAuraBarIndicatorVisualState,
     UpdateCustomAuraBarIndicatorVisuals = UpdateCustomAuraBarIndicatorVisuals,
     ApplyCustomAuraBarPreviewState = ApplyCustomAuraBarPreviewState,
 })
@@ -1988,7 +2006,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         barInfo._order = orderList[idx]
         barInfo._effectiveThickness = effectiveThickness
 
-        FinalizeAppliedBarVisibility(barInfo, powerType, isPreviewActive)
+        FinalizeAppliedBarVisibility(barInfo, isPreviewActive)
     end
 
     activeResources = filtered
@@ -2543,6 +2561,7 @@ local previewModule = RB.CreateResourceBarPreviewModule({
     GetResourceBarSettings = GetResourceBarSettings,
     ApplySegmentedPreviewColors = ApplySegmentedPreviewColors,
     ClearCustomAuraBarIndicatorState = ClearCustomAuraBarIndicatorState,
+    ClearCustomAuraBarIndicatorVisualState = ClearCustomAuraBarIndicatorVisualState,
 })
 ApplyPreviewData = previewModule.ApplyPreviewData
 

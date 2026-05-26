@@ -5,6 +5,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local EntryRuntime = ST.EntryRuntime
 
 local math_abs = math.abs
 
@@ -26,6 +27,22 @@ function RB.CreateResourceBarLifecycleModule(deps)
     local pendingSpecChange = false
     local lifecycleEventsEnabled = false
     local InstallHooks
+
+    local function IsCustomBarAuraRuntimeTracked(barInfo, cabConfig)
+        if not (barInfo and cabConfig) then return false end
+        return barInfo.barType == "custom_continuous"
+            or barInfo.barType == "custom_segmented"
+            or barInfo.barType == "custom_overlay"
+            or (barInfo.barType == "custom_cooldown"
+                and cabConfig.auraTracking == true)
+    end
+
+    local function ClearCustomBarAuraRuntime(bar, configUnit)
+        EntryRuntime.ClearTrackedAuraOwnerState(bar, configUnit, {
+            useFalseState = true,
+            clearCustomAuraStacks = true,
+        })
+    end
 
     ------------------------------------------------------------------------
     -- Event handling (must be defined before Apply/Revert which call these)
@@ -105,63 +122,67 @@ function RB.CreateResourceBarLifecycleModule(deps)
                     local removedIDs = updateInfo.removedAuraInstanceIDs
                     local updatedIDs = updateInfo.updatedAuraInstanceIDs
                     local hasAuraChange = updateInfo.isFullUpdate or updateInfo.addedAuras or removedIDs or updatedIDs
-                    if hasAuraChange then
-                        RefreshEventDrivenCustomAuraBarsForUnit(unit)
-                    end
-                    if not removedIDs and not updatedIDs then return end
+                    local targetSwitchDataReceived = false
 
-                    for _, barInfo in ipairs(resourceBarFrames) do
-                        local bar = barInfo and barInfo.frame
-                        local cabConfig = barInfo and barInfo.cabConfig
-                        if barInfo
-                            and ((barInfo.barType == "custom_continuous"
-                                    and cabConfig and cabConfig.trackingMode == "active")
-                                or (barInfo.barType == "custom_cooldown"
-                                    and cabConfig and cabConfig.auraTracking == true))
-                            and bar and bar._auraInstanceID and bar._auraUnit == unit then
-                            if removedIDs then
-                                for _, instId in ipairs(removedIDs) do
-                                    if bar._auraInstanceID == instId then
-                                        bar._auraActive = nil
-                                        bar._auraInstanceID = nil
-                                        bar._auraUnit = nil
-                                        bar._inPandemic = nil
-                                        bar._pandemicGraceStart = nil
-                                        break
+                    if removedIDs or updatedIDs or unit == "target" then
+                        for _, barInfo in ipairs(resourceBarFrames) do
+                            local bar = barInfo and barInfo.frame
+                            local cabConfig = barInfo and barInfo.cabConfig
+                            local configUnit = cabConfig and GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
+                            if IsCustomBarAuraRuntimeTracked(barInfo, cabConfig)
+                                and bar
+                                and (bar._auraUnit == unit or configUnit == unit) then
+                                if removedIDs and bar._auraInstanceID and bar._auraUnit == unit then
+                                    for _, instId in ipairs(removedIDs) do
+                                        if bar._auraInstanceID == instId then
+                                            ClearCustomBarAuraRuntime(bar, configUnit)
+                                            bar._auraEventRemoved = true
+                                            break
+                                        end
                                     end
                                 end
-                            end
-                            if updatedIDs and bar._auraInstanceID then
-                                for _, instId in ipairs(updatedIDs) do
-                                    if bar._auraInstanceID == instId then
-                                        bar._inPandemic = nil
-                                        bar._pandemicGraceStart = nil
-                                        bar._pandemicGraceSuppressed = true
-                                        break
+                                if updatedIDs and bar._auraInstanceID and bar._auraUnit == unit then
+                                    for _, instId in ipairs(updatedIDs) do
+                                        if bar._auraInstanceID == instId then
+                                            bar._inPandemic = false
+                                            bar._pandemicGraceStart = nil
+                                            bar._pandemicGraceSuppressed = true
+                                            break
+                                        end
                                     end
+                                end
+                                if unit == "target" and bar._targetSwitchAt then
+                                    bar._targetSwitchDataReceived = true
+                                    targetSwitchDataReceived = true
                                 end
                             end
                         end
                     end
+                    if hasAuraChange or targetSwitchDataReceived then
+                        RefreshEventDrivenCustomAuraBarsForUnit(unit)
+                    end
                 elseif event == "PLAYER_TARGET_CHANGED" then
+                    local hasTarget = UnitExists("target")
+                    local now = GetTime()
                     for _, barInfo in ipairs(resourceBarFrames) do
                         local bar = barInfo and barInfo.frame
                         local cabConfig = barInfo and barInfo.cabConfig
-                        if barInfo
-                            and ((barInfo.barType == "custom_continuous"
-                                    and cabConfig and cabConfig.trackingMode == "active")
-                                or (barInfo.barType == "custom_cooldown"
-                                    and cabConfig and cabConfig.auraTracking == true))
-                            and bar and GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID) == "target" then
-                            bar._auraActive = nil
-                            bar._auraInstanceID = nil
-                            bar._auraUnit = nil
-                            bar._inPandemic = nil
-                            bar._pandemicGraceStart = nil
-                            bar._pandemicGraceSuppressed = nil
+                        if IsCustomBarAuraRuntimeTracked(barInfo, cabConfig)
+                            and bar
+                            and GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID) == "target" then
+                            if hasTarget then
+                                EntryRuntime.StartTrackedAuraTargetSwitch(bar, now, "target")
+                            else
+                                ClearCustomBarAuraRuntime(bar, "target")
+                            end
                         end
                     end
                     RefreshEventDrivenCustomAuraBarsForUnit("target")
+                elseif event == "UNIT_TARGET" then
+                    local unitToken = ...
+                    if unitToken == "player" then
+                        RefreshEventDrivenCustomAuraBarsForUnit("target")
+                    end
                 end
             end)
         end
@@ -170,6 +191,7 @@ function RB.CreateResourceBarLifecycleModule(deps)
         -- but RegisterUnitEvent with "player" filter has negligible overhead for others
         eventFrame:RegisterUnitEvent("UNIT_MAXHEALTH", "player")
         eventFrame:RegisterUnitEvent("UNIT_AURA", "player", "target")
+        eventFrame:RegisterUnitEvent("UNIT_TARGET", "player")
         eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
         eventFrameEnabled = true
     end

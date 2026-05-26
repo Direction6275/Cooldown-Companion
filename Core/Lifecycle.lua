@@ -5,6 +5,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local EntryRuntime = ST.EntryRuntime
 
 -- Localize frequently-used globals for faster access
 local InCombatLockdown = InCombatLockdown
@@ -425,15 +426,14 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
                         -- _chargeRecharging at event time reflects the PRE-cast state:
                         --   false = casting from full charges → reset to 1
                         --   true  = already recharging → increment
-                        if not button._chargeRecharging then
-                            button._chargesSpent = 1
-                        else
-                            button._chargesSpent = (button._chargesSpent or 0) + 1
-                        end
+                        EntryRuntime.RecordChargeSpent(button)
                     end
                 end
             end
         end)
+        if self.RecordCustomBarSpellCast then
+            self:RecordCustomBarSpellCast(spellID)
+        end
         self:UpdateAllCooldowns()
     end
 end
