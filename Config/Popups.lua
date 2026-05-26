@@ -17,6 +17,7 @@ local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
 local EncodeSharedPayload = ST._EncodeSharedPayload
 local DecodeSharedPayload = ST._DecodeSharedPayload
 local PrepareSharedImportText = ST._PrepareSharedImportText
+local ApplyFullProfileImport = ST._ApplyFullProfileImport
 
 -- Check whether a profile name already exists (case-exact match).
 local function ProfileNameExists(name)
@@ -498,133 +499,16 @@ local function DecodeProfileImport(popup)
     return data
 end
 
--- Applies a decoded profile import, remapping only the exporter's own
--- entities to the current character. Other characters' entities keep
--- their original createdBy so they appear in the browse-other-characters
--- module instead of being flattened into the current character.
 local function ApplyProfileImport(data)
-    if RejectUnsupportedImportPayload(data, "profile import") then
+    if not ApplyFullProfileImport then
         return false
     end
 
-    local db = CooldownCompanion.db
-    local exporterCharKey = data._exporterCharKey
-    local exportedCharInfo = data._characterInfo
-    data._exporterCharKey = nil
-    data._characterInfo = nil
-
-    -- True replace: wipe existing profile before applying import.
-    -- AceDB metatable survives wipe, supplying defaults for missing keys.
-    wipe(db.profile)
-    for k, v in pairs(data) do
-        db.profile[k] = v
-    end
-    ResetConfigSelection(true)
-
-    -- Remap only the exporter's own entities to the importer's character.
-    local charKey = db.keys.char
-    if db.profile.groups then
-        for _, group in pairs(db.profile.groups) do
-            if not group.isGlobal and (exporterCharKey == nil or group.createdBy == exporterCharKey) then
-                group.createdBy = charKey
-            end
-        end
-    end
-    if db.profile.groupContainers then
-        for _, container in pairs(db.profile.groupContainers) do
-            if not container.isGlobal and (exporterCharKey == nil or container.createdBy == exporterCharKey) then
-                container.createdBy = charKey
-            end
-        end
-    end
-    if db.profile.folders then
-        for _, folder in pairs(db.profile.folders) do
-            if folder.section == "char" and (exporterCharKey == nil or folder.createdBy == exporterCharKey) then
-                folder.createdBy = charKey
-            end
-        end
-    end
-    -- Rename foreign characters to class-based placeholders.
-    -- A "foreign" character is one whose createdBy doesn't match any
-    -- character in the importer's own characterInfo.
-    local importerCharInfo = db.global.characterInfo or {}
-    local foreignKeys = {}
-    local function markForeignCharKey(cb)
-        if not cb or cb == charKey then return end
-        if not importerCharInfo[cb] and not foreignKeys[cb] then
-            foreignKeys[cb] = true
-        end
-    end
-    local function markForeign(entity, checkGlobal)
-        if checkGlobal and entity.isGlobal then return end
-        markForeignCharKey(entity.createdBy)
-    end
-    for _, group in pairs(db.profile.groups or {}) do markForeign(group, true) end
-    for _, container in pairs(db.profile.groupContainers or {}) do markForeign(container, true) end
-    for _, folder in pairs(db.profile.folders or {}) do
-        if folder.section == "char" then markForeign(folder, false) end
-    end
-
-    if next(foreignKeys) then
-        -- Count characters per class for numbering
-        local classCounts = {}
-        local classEntries = {}
-        for foreignKey in pairs(foreignKeys) do
-            local info = exportedCharInfo and exportedCharInfo[foreignKey]
-            local classID = info and info.classID
-            local className = classID and GetClassInfo(classID) or "Character"
-            classCounts[className] = (classCounts[className] or 0) + 1
-            classEntries[foreignKey] = { className = className, classFilename = info and info.classFilename, classID = classID }
-        end
-
-        -- Build rename map: old createdBy → placeholder name
-        local renames = {}
-        local classCounters = {}
-        for foreignKey in pairs(foreignKeys) do
-            local entry = classEntries[foreignKey]
-            local placeholder
-            if classCounts[entry.className] == 1 then
-                placeholder = entry.className
-            else
-                classCounters[entry.className] = (classCounters[entry.className] or 0) + 1
-                placeholder = entry.className .. " " .. classCounters[entry.className]
-            end
-            renames[foreignKey] = placeholder
-            -- Register in characterInfo so browse module shows correct class icon/color
-            if entry.classFilename and entry.classID then
-                importerCharInfo[placeholder] = { classFilename = entry.classFilename, classID = entry.classID }
-            end
-        end
-
-        -- Apply renames across all entity types
-        for _, group in pairs(db.profile.groups or {}) do
-            if group.createdBy and renames[group.createdBy] then
-                group.createdBy = renames[group.createdBy]
-            end
-        end
-        for _, container in pairs(db.profile.groupContainers or {}) do
-            if container.createdBy and renames[container.createdBy] then
-                container.createdBy = renames[container.createdBy]
-            end
-        end
-        for _, folder in pairs(db.profile.folders or {}) do
-            if folder.createdBy and renames[folder.createdBy] then
-                folder.createdBy = renames[folder.createdBy]
-            end
-        end
-    end
-
-    CooldownCompanion:ClearMigrationSentinels()
-    if not CooldownCompanion:RunAllMigrations() then
-        return false
-    end
-
-    CooldownCompanion:RefreshConfigPanel()
-    CooldownCompanion:RefreshAllGroups()
-    if CooldownCompanion.EvaluateBarsAndFramesRuntime then
-        CooldownCompanion:EvaluateBarsAndFramesRuntime("profile-import")
-    end
-    return true
+    return ApplyFullProfileImport(data, {
+        dataLabel = "profile import",
+        runtimeReason = "profile-import",
+        renameForeignCharacters = true,
+    })
 end
 
 StaticPopupDialogs["CDC_CONFIRM_PROFILE_IMPORT"] = {
