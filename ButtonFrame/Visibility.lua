@@ -90,14 +90,6 @@ local function GetButtonVisibilityReasonNames(reasonBits, target)
     return target
 end
 
-local function IsNoCooldownForVisibility(button)
-    if not (button and button._noCooldown == true) then
-        return false
-    end
-
-    return button._baseNoCooldown ~= false
-end
-
 -- Evaluate per-button visibility rules and set hidden/alpha override state.
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
 -- Fast path: if no toggles are enabled, zero overhead.
@@ -129,10 +121,9 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     local barAuraStackDisplay = button._barAuraStackDisplay == true
     local itemUsesResolvedCooldownState = buttonData.type == "item"
         and button._resolvedItemQuantityKind == "stacks"
-    local noCooldownForVisibility = IsNoCooldownForVisibility(button)
 
     -- Check hideWhileOnCooldown (skip for no-CD spells — always "not on CD")
-    if buttonData.hideWhileOnCooldown and not noCooldownForVisibility and not barAuraStackDisplay then
+    if buttonData.hideWhileOnCooldown and not button._noCooldown and not barAuraStackDisplay then
         if itemUsesResolvedCooldownState then
             if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
@@ -154,7 +145,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     end
 
     -- Check hideWhileNotOnCooldown (skip for no-CD spells — would permanently hide)
-    if buttonData.hideWhileNotOnCooldown and not noCooldownForVisibility and not barAuraStackDisplay then
+    if buttonData.hideWhileNotOnCooldown and not button._noCooldown and not barAuraStackDisplay then
         if itemUsesResolvedCooldownState then
             if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)

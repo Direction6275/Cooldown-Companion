@@ -1224,8 +1224,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._readyGlowMaxChargesSpellID = nil
     button._noCooldown = nil
     button._noCooldownSpellId = nil
-    button._baseNoCooldown = nil
-    button._baseNoCooldownSpellId = nil
     button._vertexR = nil
     button._vertexG = nil
     button._vertexB = nil
