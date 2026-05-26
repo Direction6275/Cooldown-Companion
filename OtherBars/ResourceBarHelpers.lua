@@ -1195,12 +1195,12 @@ local function GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID)
         resolvedSpellID = cabConfig.spellID
     end
 
-    if type(cabConfig) == "table" and (cabConfig.entryType == nil or cabConfig.entryType == "aura") then
-        return GetDefaultCustomAuraUnit(resolvedSpellID)
-    end
-
     if type(cabConfig) == "table" and HasExplicitCustomAuraBarAuraUnit(cabConfig) then
         return cabConfig.auraUnit
+    end
+
+    if type(cabConfig) == "table" and (cabConfig.entryType == nil or cabConfig.entryType == "aura") then
+        return GetDefaultCustomAuraUnit(resolvedSpellID)
     end
 
     return GetDefaultSpellCustomBarAuraUnit(cabConfig, resolvedSpellID)
@@ -1213,13 +1213,6 @@ local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit, explicit)
     end
 
     if type(cabConfig) == "table" then
-        if cabConfig.entryType == nil or cabConfig.entryType == "aura" then
-            local resolvedUnit = GetDefaultCustomAuraUnit(resolvedSpellID)
-            cabConfig.auraUnit = resolvedUnit
-            cabConfig.auraUnitExplicit = nil
-            return resolvedUnit
-        end
-
         local wasExplicit = HasExplicitCustomAuraBarAuraUnit(cabConfig)
         local resolvedUnit = IsValidCustomAuraUnit(unit) and unit
             or GetResolvedCustomAuraBarAuraUnit(cabConfig, resolvedSpellID)

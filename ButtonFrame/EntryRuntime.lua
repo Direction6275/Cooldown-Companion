@@ -13,6 +13,7 @@ local tonumber = tonumber
 local tostring = tostring
 local wipe = wipe
 local issecretvalue = issecretvalue
+local GetTime = GetTime
 
 local COOLDOWN_STATE_READY = CooldownLogic.STATE_READY
 local COOLDOWN_STATE_GCD = CooldownLogic.STATE_GCD
@@ -20,6 +21,7 @@ local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
 local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
+local TARGET_SWITCH_SAFETY_CAP = 0.60
 
 local EntryRuntime = ST.EntryRuntime or {}
 ST.EntryRuntime = EntryRuntime
@@ -72,8 +74,11 @@ local function ViewerFrameHasActiveCooldownWidget(viewerFrame, configUnit, auraU
     end
 
     local startMs, durMs = viewerCooldown:GetCooldownTimes()
-    if issecretvalue(durMs) then
+    if issecretvalue(startMs) or issecretvalue(durMs) then
         return true
+    end
+    if not startMs or not durMs then
+        return false
     end
 
     return durMs > 0 and (startMs + durMs) > now * 1000
@@ -217,6 +222,344 @@ local function ResolveTrackedAuraViewerFrame(owner, buttonData, auraSpellID, con
     return viewerFrame, cdmEnabled, orderedStandaloneAuraIDs
 end
 EntryRuntime.ResolveTrackedAuraViewerFrame = ResolveTrackedAuraViewerFrame
+
+local function ResolvePlayerAuraData(owner, buttonData, auraSpellID, orderedStandaloneAuraIDs)
+    local auraData
+    local activeAuraSpellID
+    local activeAuraSpellIDFromFallback
+
+    if orderedStandaloneAuraIDs then
+        for _, spellID in ipairs(orderedStandaloneAuraIDs) do
+            auraData = C_UnitAuras.GetPlayerAuraBySpellID(spellID)
+            if auraData then
+                activeAuraSpellID = spellID
+                activeAuraSpellIDFromFallback = true
+                break
+            end
+        end
+    elseif buttonData.auraSpellID then
+        local ids = owner._parsedAuraIDs
+        if not ids or owner._parsedAuraIDsRaw ~= buttonData.auraSpellID or owner._parsedAuraIDsButtonID ~= buttonData.id then
+            ids = {}
+            owner._parsedAuraIDsIncludeButtonID = nil
+            for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
+                local spellID = tonumber(id)
+                ids[#ids + 1] = spellID
+                if spellID == buttonData.id then
+                    owner._parsedAuraIDsIncludeButtonID = true
+                end
+            end
+            owner._parsedAuraIDs = ids
+            owner._parsedAuraIDsRaw = buttonData.auraSpellID
+            owner._parsedAuraIDsButtonID = buttonData.id
+        end
+        for _, spellID in ipairs(ids) do
+            auraData = C_UnitAuras.GetPlayerAuraBySpellID(spellID)
+            if auraData then
+                activeAuraSpellID = spellID
+                activeAuraSpellIDFromFallback = true
+                break
+            end
+        end
+        if not auraData and not owner._parsedAuraIDsIncludeButtonID then
+            local baseId = C_Spell.GetBaseSpell(buttonData.id)
+            local fallbackId = baseId and baseId ~= auraSpellID and baseId or nil
+            auraData = fallbackId and C_UnitAuras.GetPlayerAuraBySpellID(fallbackId)
+            if auraData then
+                activeAuraSpellID = fallbackId
+                activeAuraSpellIDFromFallback = true
+            end
+        end
+    else
+        local baseId = C_Spell.GetBaseSpell(buttonData.id)
+        local fallbackId = baseId and baseId ~= auraSpellID and baseId or nil
+        auraData = fallbackId and C_UnitAuras.GetPlayerAuraBySpellID(fallbackId)
+        if auraData then
+            activeAuraSpellID = fallbackId
+            activeAuraSpellIDFromFallback = true
+        end
+        if not auraData then
+            auraData = C_UnitAuras.GetPlayerAuraBySpellID(auraSpellID)
+            if auraData then
+                activeAuraSpellID = auraSpellID
+                activeAuraSpellIDFromFallback = true
+            end
+        end
+    end
+
+    return auraData, activeAuraSpellID, activeAuraSpellIDFromFallback
+end
+
+local function GetReadableAuraSpellID(auraData)
+    local spellID = auraData and auraData.spellId
+    if spellID and not issecretvalue(spellID) then
+        return spellID
+    end
+    return nil
+end
+
+local function CommitTrackedAuraOwnerState(owner, state)
+    if not owner then return end
+
+    if state.auraPresent then
+        owner._auraActive = true
+        owner._auraHasTimer = state.auraHasTimer == true
+        owner._auraDurationObj = state.durationObj
+        owner._auraCooldownStart = state.auraCooldownStart
+        owner._auraCooldownDuration = state.auraCooldownDuration
+        if state.auraGraceHeld ~= true then
+            owner._auraInstanceID = state.auraInstanceID
+            owner._auraUnit = state.auraUnit
+        elseif not owner._auraUnit then
+            owner._auraUnit = state.auraUnit
+        end
+        if owner._targetSwitchAt
+            and state.auraGraceHeld ~= true
+            and (state.durationObj or state.auraCooldownDuration or state.allowDurationlessAuraInstance) then
+            owner._targetSwitchAt = nil
+            owner._targetSwitchDataReceived = nil
+        end
+    else
+        owner._auraActive = false
+        owner._auraHasTimer = false
+        owner._auraDurationObj = nil
+        owner._auraCooldownStart = nil
+        owner._auraCooldownDuration = nil
+        owner._auraInstanceID = nil
+        owner._auraUnit = state.configUnit
+        owner._activeAuraSpellID = nil
+        owner._activeAuraSpellIDFromFallback = nil
+        if owner._targetSwitchAt and not state.wasAuraActive then
+            owner._targetSwitchAt = nil
+            owner._targetSwitchDataReceived = nil
+        end
+    end
+end
+
+function EntryRuntime.EvaluateTrackedAuraState(owner, buttonData, auraSpellID, options)
+    owner = owner or {}
+    options = options or {}
+    local now = options.now or GetTime()
+    local configUnit = options.configUnit or GetConfiguredAuraUnit(buttonData)
+    local auraUnit = owner._auraUnit or configUnit
+    local allowDurationlessAuraInstance = options.allowDurationlessAuraInstance == true
+    local allowPlayerAuraFallbackWithoutReady = options.allowPlayerAuraFallbackWithoutReady == true
+    local mutateOwner = options.mutateOwner ~= false
+    local prevAuraDurationObj = owner._auraActive and owner._auraDurationObj or nil
+    local wasAuraActive = owner._auraActive == true
+    local auraEventRemoved = owner._auraEventRemoved
+    owner._auraEventRemoved = nil
+
+    local viewerFrame, cdmEnabled, orderedStandaloneAuraIDs = ResolveTrackedAuraViewerFrame(
+        owner,
+        buttonData,
+        auraSpellID,
+        configUnit,
+        auraUnit,
+        now,
+        allowDurationlessAuraInstance
+    )
+    local ready = CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame)
+
+    local auraData
+    local durationObj
+    local auraPresent = false
+    local auraHasTimer = owner._auraHasTimer == true
+    local auraApplications
+    local auraInstanceID
+    local activeAuraSpellID
+    local activeAuraSpellIDFromFallback
+    local auraCooldownStart
+    local auraCooldownDuration
+
+    if ready and viewerFrame and (auraUnit == "player" or auraUnit == "target") then
+        local viewerInstId = viewerFrame.auraInstanceID
+        if viewerInstId then
+            local unit = viewerFrame.auraDataUnit or auraUnit
+            if unit == configUnit then
+                auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, viewerInstId)
+                durationObj = C_UnitAuras.GetAuraDuration(unit, viewerInstId)
+                if auraData and (durationObj or allowDurationlessAuraInstance) then
+                    auraApplications = auraData.applications
+                    activeAuraSpellID = GetReadableAuraSpellID(auraData)
+                    auraInstanceID = viewerInstId
+                    auraUnit = unit
+                    auraPresent = true
+                    auraHasTimer = durationObj and DurationObjectShowsCooldown(durationObj) or false
+                end
+            end
+        else
+            local viewerCooldown = viewerFrame.Cooldown
+            if viewerFrame.auraDataUnit and viewerCooldown and viewerCooldown:IsShown() then
+                local vUnit = viewerFrame.auraDataUnit or auraUnit
+                if vUnit == configUnit then
+                    local startMs, durMs = viewerCooldown:GetCooldownTimes()
+                    if issecretvalue(startMs) or issecretvalue(durMs) then
+                        auraUnit = vUnit
+                        auraPresent = true
+                    elseif startMs and durMs and durMs > 0 and (startMs + durMs) > now * 1000 then
+                        auraCooldownStart = startMs / 1000
+                        auraCooldownDuration = durMs / 1000
+                        auraUnit = vUnit
+                        auraPresent = true
+                        auraHasTimer = true
+                    end
+                end
+                auraInstanceID = nil
+            end
+
+            if not auraPresent then
+                local totemSlot = viewerFrame.preferredTotemUpdateSlot
+                if totemSlot and viewerFrame:IsVisible() and viewerFrame.totemData then
+                    local totemDuration = GetTotemDuration(totemSlot)
+                    if totemDuration and DurationObjectShowsCooldown(totemDuration) then
+                        durationObj = totemDuration
+                        auraPresent = true
+                        auraHasTimer = true
+                        auraInstanceID = nil
+                    end
+                end
+            end
+        end
+    end
+
+    local canUsePlayerAuraFallback = configUnit == "player"
+        and (ready or allowPlayerAuraFallbackWithoutReady)
+    if canUsePlayerAuraFallback and not auraPresent then
+        auraData, activeAuraSpellID, activeAuraSpellIDFromFallback =
+            ResolvePlayerAuraData(owner, buttonData, auraSpellID, orderedStandaloneAuraIDs)
+        local instId = auraData and auraData.auraInstanceID
+        if instId and not issecretvalue(instId) then
+            durationObj = C_UnitAuras.GetAuraDuration("player", instId)
+            if durationObj or allowDurationlessAuraInstance then
+                auraApplications = auraData.applications
+                activeAuraSpellID = activeAuraSpellID or GetReadableAuraSpellID(auraData)
+                auraInstanceID = instId
+                auraUnit = "player"
+                auraPresent = true
+                auraHasTimer = durationObj and DurationObjectShowsCooldown(durationObj) or false
+            end
+        end
+    end
+
+    if canUsePlayerAuraFallback and not auraPresent and owner._auraInstanceID then
+        local cachedUnit = owner._auraUnit or configUnit
+        if cachedUnit == configUnit then
+            auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(cachedUnit, owner._auraInstanceID)
+            if auraData then
+                durationObj = C_UnitAuras.GetAuraDuration(cachedUnit, owner._auraInstanceID)
+                if durationObj or allowDurationlessAuraInstance then
+                    auraApplications = auraData.applications
+                    activeAuraSpellID = GetReadableAuraSpellID(auraData)
+                    activeAuraSpellIDFromFallback = activeAuraSpellID and true or nil
+                    auraInstanceID = owner._auraInstanceID
+                    auraUnit = cachedUnit
+                    auraPresent = true
+                    auraHasTimer = durationObj and DurationObjectShowsCooldown(durationObj) or false
+                end
+            end
+        end
+    end
+
+    local auraGraceHeld = false
+    if not auraPresent and wasAuraActive and prevAuraDurationObj and buttonData.isPassive ~= true then
+        local expired = false
+        if auraEventRemoved then
+            expired = true
+        elseif owner._targetSwitchAt then
+            if viewerFrame and not viewerFrame.auraInstanceID then
+                expired = true
+            elseif owner._targetSwitchDataReceived then
+                expired = true
+            else
+                expired = (now - owner._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
+            end
+        elseif prevAuraDurationObj.HasSecretValues and not prevAuraDurationObj:HasSecretValues()
+            and prevAuraDurationObj.GetRemainingDuration then
+            expired = prevAuraDurationObj:GetRemainingDuration() <= 0
+        end
+        if not expired then
+            if not owner._auraGraceStart then
+                owner._auraGraceStart = now
+            end
+            if now - owner._auraGraceStart <= 0.3 or owner._targetSwitchAt then
+                durationObj = prevAuraDurationObj
+                auraPresent = true
+                auraGraceHeld = true
+            else
+                owner._auraGraceStart = nil
+            end
+        else
+            owner._auraGraceStart = nil
+            owner._targetSwitchAt = nil
+            owner._targetSwitchDataReceived = nil
+        end
+    else
+        owner._auraGraceStart = nil
+        if owner._targetSwitchAt then
+            if auraPresent and (durationObj or auraCooldownDuration or allowDurationlessAuraInstance) then
+                owner._targetSwitchAt = nil
+                owner._targetSwitchDataReceived = nil
+            elseif not wasAuraActive then
+                owner._targetSwitchAt = nil
+                owner._targetSwitchDataReceived = nil
+            end
+        end
+    end
+
+    if not auraPresent and owner._targetSwitchAt and wasAuraActive then
+        local catchAllExpired
+        if viewerFrame and not viewerFrame.auraInstanceID then
+            catchAllExpired = true
+        elseif owner._targetSwitchDataReceived then
+            catchAllExpired = true
+        else
+            catchAllExpired = (now - owner._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
+        end
+        if catchAllExpired then
+            owner._targetSwitchAt = nil
+            owner._targetSwitchDataReceived = nil
+        else
+            if prevAuraDurationObj then
+                durationObj = prevAuraDurationObj
+            end
+            auraPresent = true
+            auraGraceHeld = true
+        end
+    end
+
+    local state = {
+        ready = ready == true,
+        auraPresent = auraPresent == true,
+        auraTrackingReady = ready == true,
+        cdmEnabled = cdmEnabled == true,
+        auraData = auraPresent and auraData or nil,
+        auraApplications = auraPresent and auraApplications or nil,
+        auraInstanceID = auraPresent and auraInstanceID or nil,
+        auraUnit = auraPresent and auraUnit or configUnit,
+        configUnit = configUnit,
+        viewerFrame = viewerFrame,
+        durationObj = auraPresent and durationObj or nil,
+        auraCooldownStart = auraPresent and auraCooldownStart or nil,
+        auraCooldownDuration = auraPresent and auraCooldownDuration or nil,
+        auraHasTimer = auraPresent and auraHasTimer == true or false,
+        auraGraceHeld = auraGraceHeld == true,
+        activeAuraSpellID = activeAuraSpellID,
+        activeAuraSpellIDFromFallback = activeAuraSpellIDFromFallback,
+        allowDurationlessAuraInstance = allowDurationlessAuraInstance,
+        wasAuraActive = wasAuraActive,
+    }
+
+    if mutateOwner then
+        CommitTrackedAuraOwnerState(owner, state)
+    end
+
+    return state
+end
+
+function CooldownCompanion:EvaluateTrackedAuraState(owner, buttonData, auraSpellID, options)
+    return EntryRuntime.EvaluateTrackedAuraState(owner, buttonData, auraSpellID, options)
+end
 
 local function IsSpellCooldownDeferred(info)
     if not info or info.isEnabled ~= false or info.isActive == true then
