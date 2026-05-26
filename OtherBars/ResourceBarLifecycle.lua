@@ -5,6 +5,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local EntryRuntime = ST.EntryRuntime
 
 local math_abs = math.abs
 
@@ -33,27 +34,14 @@ function RB.CreateResourceBarLifecycleModule(deps)
             or barInfo.barType == "custom_segmented"
             or barInfo.barType == "custom_overlay"
             or (barInfo.barType == "custom_cooldown"
-                and cabConfig and cabConfig.auraTracking == true)
+                and cabConfig.auraTracking == true)
     end
 
     local function ClearCustomBarAuraRuntime(bar, configUnit)
-        if not bar then return end
-        bar._auraActive = false
-        bar._auraInstanceID = nil
-        bar._auraDurationObj = nil
-        bar._auraCooldownStart = nil
-        bar._auraCooldownDuration = nil
-        bar._auraHasTimer = false
-        bar._auraUnit = configUnit
-        bar._auraGraceStart = nil
-        bar._inPandemic = false
-        bar._pandemicGraceStart = nil
-        bar._pandemicGraceSuppressed = nil
-        bar._targetSwitchAt = nil
-        bar._targetSwitchDataReceived = nil
-        bar._auraEventRemoved = nil
-        bar._customAuraStackValue = nil
-        bar._customAuraApplicationsValue = nil
+        EntryRuntime.ClearTrackedAuraOwnerState(bar, configUnit, {
+            useFalseState = true,
+            clearCustomAuraStacks = true,
+        })
     end
 
     ------------------------------------------------------------------------
@@ -183,13 +171,7 @@ function RB.CreateResourceBarLifecycleModule(deps)
                             and bar
                             and GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID) == "target" then
                             if hasTarget then
-                                bar._auraInstanceID = nil
-                                bar._inPandemic = false
-                                bar._pandemicGraceStart = nil
-                                bar._pandemicGraceSuppressed = nil
-                                bar._targetSwitchAt = now
-                                bar._targetSwitchDataReceived = nil
-                                bar._auraUnit = "target"
+                                EntryRuntime.StartTrackedAuraTargetSwitch(bar, now, "target")
                             else
                                 ClearCustomBarAuraRuntime(bar, "target")
                             end

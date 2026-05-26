@@ -7,6 +7,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local EntryRuntime = ST.EntryRuntime
 
 
 local ipairs = ipairs
@@ -528,16 +529,8 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
                 shouldClear = true
             end
             if shouldClear then
-                button._auraInstanceID = nil
-                button._auraActive = false
-                button._auraDurationObj = nil
-                button._auraCooldownStart = nil
-                button._auraCooldownDuration = nil
+                EntryRuntime.ClearTrackedAuraOwnerState(button, configUnit, { useFalseState = true })
                 button._auraPrimarySwipeActive = nil
-                button._inPandemic = false
-                button._targetSwitchAt = nil
-                button._targetSwitchDataReceived = nil
-                button._auraUnit = configUnit
             end
         end
     end)
@@ -560,11 +553,7 @@ function CooldownCompanion:OnTargetChanged()
             local isTarget = button._auraUnit == "target"
                 or configUnit == "target"
             if isTarget then
-                button._auraInstanceID = nil
-                button._inPandemic = false
-                button._targetSwitchAt = now
-                button._targetSwitchDataReceived = nil
-                button._auraUnit = "target"
+                EntryRuntime.StartTrackedAuraTargetSwitch(button, now, "target")
             end
         end
     end)

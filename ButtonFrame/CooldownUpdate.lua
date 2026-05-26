@@ -68,7 +68,6 @@ local ResolveItemFallback = CooldownCompanion.ResolveItemFallback
 local HasCastCountText = CooldownCompanion.HasCastCountText
 local GetCastCountSpellID = CooldownCompanion.GetCastCountSpellID
 local GetConditionalCastCountSpellID = CooldownCompanion.GetConditionalCastCountSpellID
-local TARGET_SWITCH_SAFETY_CAP = 0.60
 local COOLDOWN_STATE_READY = CooldownLogic.STATE_READY
 local COOLDOWN_STATE_GCD = CooldownLogic.STATE_GCD
 local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
@@ -371,13 +370,6 @@ local function RecordAuraDisplayName(state, auraData)
         state.readableName = auraName
         state.nameApplied = true
         return true
-    end
-end
-
-local function GetReadableAuraSpellID(auraData)
-    local spellID = auraData and auraData.spellId
-    if spellID and not issecretvalue(spellID) then
-        return spellID
     end
 end
 
@@ -764,7 +756,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- GetCooldownTimes() which returns secret values after
     -- SetCooldownFromDurationObject() in 12.0.1.
     -- Save previous aura DurationObject for one-tick grace period on target switch.
-    local prevAuraDurationObj = button._auraActive and button._auraDurationObj or nil
+    local wasAuraActive = button._auraActive == true
+    local prevAuraDurationObj = wasAuraActive and button._auraDurationObj or nil
     button._durationObj = nil
     button._auraDurationObj = nil
     button._auraCooldownStart = nil
@@ -794,9 +787,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local auraProbeNormalCooldownShown = false
     local auraProbeRealCooldownShown = false
     local auraDisplayNameState
-    local activeAuraSpellID
-    local activeAuraSpellIDSourceResolved = false
-    local activeAuraSpellIDFromFallback = false
     local previousActiveAuraSpellID = button._activeAuraSpellID
     local previousActiveAuraSpellIDFromFallback = button._activeAuraSpellIDFromFallback == true
     local auraApplications
@@ -815,397 +805,45 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local auraPrimarySwipeAllowed = not keepSpellCooldownSwipe
     local auraHasTimer = button._auraHasTimer == true
     local auraTrackingReady = buttonData.isPassive == true
-    -- Capture and clear event-driven removal flag (set by OnUnitAura when
-    -- removedAuraInstanceIDs confirms the aura is gone).  Used to bypass the
-    -- grace hold, which otherwise can't detect expiry in combat (secret values).
-    local auraEventRemoved = button._auraEventRemoved
-    button._auraEventRemoved = nil
     if buttonData.auraTracking and button._auraSpellID then
         auraDisplayNameState = CreateAuraDisplayNameState(button)
         button._auraDisplayName = nil
-        local configUnit = EntryRuntime.GetConfiguredAuraUnit(buttonData)
-        local auraUnit = button._auraUnit or configUnit
-
-        -- Viewer-based aura tracking: Blizzard's cooldown viewer frames run
-        -- untainted code that matches spell IDs to auras during combat and
-        -- stores auraInstanceID + auraDataUnit as plain readable properties.
-        -- Requires the Blizzard Cooldown Manager to be visible with this spell.
-        local viewerFrame, cdmEnabled, orderedStandaloneAuraIDs = EntryRuntime.ResolveTrackedAuraViewerFrame(
+        local auraState = EntryRuntime.EvaluateTrackedAuraState(
             button,
             buttonData,
             button._auraSpellID,
-            configUnit,
-            auraUnit,
-            now,
-            barAuraStackConfigured
+            {
+                now = now,
+                allowDurationlessAuraInstance = barAuraStackConfigured,
+                previousAuraDurationObj = prevAuraDurationObj,
+                wasAuraActive = wasAuraActive,
+            }
         )
-        auraTrackingReady = CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame)
-        if auraTrackingReady and not auraOverrideActive and viewerFrame and (auraUnit == "player" or auraUnit == "target") then
-            local viewerInstId = viewerFrame.auraInstanceID
-            if viewerInstId then
-                local unit = viewerFrame.auraDataUnit or auraUnit
-                -- Gate on unit compatibility: CDM's GetAuraData() checks player
-                -- auras first, so auraDataUnit can incorrectly be "player" for a
-                -- viewer child that tracks a target debuff.  Reject the mismatch
-                -- so target-debuff buttons don't display random player buff durations.
-                if unit == configUnit then
-                    -- Cross-validate: confirm the aura instance actually exists
-                    -- on the claimed unit.  Stack-count displays may not have a
-                    -- duration object, but still need the validated applications.
-                    local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, viewerInstId)
-                    local durationObj = C_UnitAuras.GetAuraDuration(unit, viewerInstId)
-                    if auraData and (durationObj or barAuraStackConfigured) then
-                        auraApplications = auraData.applications
-                        RecordAuraDisplayName(auraDisplayNameState, auraData)
-                        activeAuraSpellID = GetReadableAuraSpellID(auraData)
-                        activeAuraSpellIDSourceResolved = true
-                        button._viewerBar = nil
-                        if durationObj then
-                            button._auraDurationObj = durationObj
-                            if auraPrimarySwipeAllowed then
-                                button._durationObj = durationObj
-                                button.cooldown:SetCooldownFromDurationObject(durationObj)
-                            end
-                            auraHasTimer = EntryRuntime.DurationObjectShowsCooldown(durationObj)
-                        else
-                            auraHasTimer = false
-                        end
-                        button._auraInstanceID = viewerInstId
-                        button._auraUnit = unit
-                        auraOverrideActive = true
-                        fetchOk = true
-                    end
-                end
-            else
-                -- No auraInstanceID — fall back to reading the viewer's cooldown widget.
-                -- Covers spells where the viewer tracks the buff duration internally
-                -- (auraDataUnit set by GetAuraData) but doesn't expose auraInstanceID.
-                local viewerCooldown = viewerFrame.Cooldown
-                if viewerFrame.auraDataUnit and viewerCooldown and viewerCooldown:IsShown() then
-                    local startMs, durMs = viewerCooldown:GetCooldownTimes()
-                    if not issecretvalue(durMs) then
-                        -- Plain values: safe to do ms->s arithmetic
-                        if durMs > 0 and (startMs + durMs) > now * 1000 then
-                            local vUnit = viewerFrame.auraDataUnit or auraUnit
-                            if vUnit == configUnit then
-                                local auraStart = startMs / 1000
-                                local auraDuration = durMs / 1000
-                                button._auraCooldownStart = auraStart
-                                button._auraCooldownDuration = auraDuration
-                                if auraPrimarySwipeAllowed then
-                                    button.cooldown:SetCooldown(auraStart, auraDuration)
-                                end
-                                button._auraUnit = vUnit
-                                auraOverrideActive = true
-                                auraHasTimer = true
-                                fetchOk = true
-                            end
-                        end
-                    else
-                        -- Secret values: can't convert ms->s. Mark aura active;
-                        -- grace period covers continuity from previous tick's display.
-                        -- (HasSecretValues() on viewer widgets is unreliable when
-                        -- Blizzard secure code set the values — check the returned
-                        -- value directly with issecretvalue() instead.)
-                        local vUnit = viewerFrame.auraDataUnit or auraUnit
-                        if vUnit == configUnit then
-                            button._auraUnit = vUnit
-                            auraOverrideActive = true
-                            fetchOk = true
-                        end
-                    end
-                    if button._auraInstanceID then
-                        button._auraInstanceID = nil
-                    end
-                end
-                -- Fallback 2: GetTotemDuration for totem/summoning spells
-                -- (TrackedBar category). Returns a LuaDurationObject.
-                -- GetTotemDuration is a global (not C_Totem-namespaced).
-                -- Read preferredTotemUpdateSlot directly from the viewer
-                -- frame (plain number set by CDM) rather than caching it,
-                -- since the slot may not be populated at BuildViewerAuraMap time.
-                -- Guard: viewerFrame.totemData is non-nil only when CDM has
-                -- validated that the totem slot still contains this child's
-                -- spell (GetPreferredTotemSlotInfo checks spellID).  Without
-                -- this, a stale preferredTotemUpdateSlot causes CC to read a
-                -- different spell's totem duration after slot reuse.
-                if not auraOverrideActive then
-                    local totemSlot = viewerFrame.preferredTotemUpdateSlot
-                    if totemSlot and viewerFrame:IsVisible() and viewerFrame.totemData then
-                        local totemDuration = GetTotemDuration(totemSlot)
-                        local totemActive = false
-                        if totemDuration then
-                            totemActive = EntryRuntime.DurationObjectShowsCooldown(totemDuration)
-                        end
-                        if totemActive then
-                            button._auraDurationObj = totemDuration
-                            if auraPrimarySwipeAllowed then
-                                button._durationObj = totemDuration
-                                button.cooldown:SetCooldownFromDurationObject(totemDuration)
-                            end
-                            auraOverrideActive = true
-                            auraHasTimer = true
-                            fetchOk = true
-                            -- Bar mode: cache viewer's StatusBar for bar fill pass-through
-                            if button._isBar and viewerFrame.Bar then
-                                button._viewerBar = viewerFrame.Bar
-                            end
-                            if button._auraInstanceID then
-                                button._auraInstanceID = nil
-                            end
-                        else
-                            if button._isBar then
-                                button._viewerBar = nil
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        -- Fallback: direct GetPlayerAuraBySpellID for player-tracked auras when
-        -- the viewer path has no auraInstanceID (form-variant spells like
-        -- Stampeding Roar where the CDM can't match the buff across shapeshifts).
-        local canUsePlayerAuraFallback = auraTrackingReady and configUnit == "player"
+        local viewerFrame = auraState.viewerFrame
+        auraTrackingReady = auraState.auraTrackingReady == true
+        auraOverrideActive = auraState.auraPresent == true
+        auraApplications = auraState.auraApplications
+        auraGraceHeld = auraState.auraGraceHeld == true
+        auraHasTimer = auraState.auraHasTimer == true
+        button._viewerBar = auraState.viewerBar
 
-        if canUsePlayerAuraFallback and not auraOverrideActive then
-            local auraData
-            if orderedStandaloneAuraIDs then
-                for _, numId in ipairs(orderedStandaloneAuraIDs) do
-                    auraData = C_UnitAuras.GetPlayerAuraBySpellID(numId)
-                    if auraData then
-                        activeAuraSpellID = numId
-                        activeAuraSpellIDFromFallback = true
-                        break
-                    end
-                end
-            elseif buttonData.auraSpellID then
-                local ids = button._parsedAuraIDs
-                if not ids or button._parsedAuraIDsRaw ~= buttonData.auraSpellID or button._parsedAuraIDsButtonID ~= buttonData.id then
-                    ids = {}
-                    button._parsedAuraIDsIncludeButtonID = nil
-                    for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
-                        local numId = tonumber(id)
-                        ids[#ids + 1] = numId
-                        if numId == buttonData.id then
-                            button._parsedAuraIDsIncludeButtonID = true
-                        end
-                    end
-                    button._parsedAuraIDs = ids
-                    button._parsedAuraIDsRaw = buttonData.auraSpellID
-                    button._parsedAuraIDsButtonID = buttonData.id
-                end
-                for _, numId in ipairs(ids) do
-                    auraData = C_UnitAuras.GetPlayerAuraBySpellID(numId)
-                    if auraData then
-                        activeAuraSpellID = numId
-                        activeAuraSpellIDFromFallback = true
-                        break
-                    end
-                end
-                if not auraData and not button._parsedAuraIDsIncludeButtonID then
-                    local baseId = C_Spell.GetBaseSpell(buttonData.id)
-                    local fallbackId = baseId and baseId ~= button._auraSpellID and baseId or nil
-                    auraData = fallbackId and C_UnitAuras.GetPlayerAuraBySpellID(fallbackId)
-                    if auraData then
-                        activeAuraSpellID = fallbackId
-                        activeAuraSpellIDFromFallback = true
-                    end
-                end
-            else
-                local baseId = C_Spell.GetBaseSpell(buttonData.id)
-                -- Try base spell first for implicit form-variant spells where the buff is applied as base.
-                local fallbackId = baseId and baseId ~= button._auraSpellID and baseId or nil
-                auraData = fallbackId and C_UnitAuras.GetPlayerAuraBySpellID(fallbackId)
-                if auraData then
-                    activeAuraSpellID = fallbackId
-                    activeAuraSpellIDFromFallback = true
-                end
-                if not auraData then
-                    auraData = C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID)
-                    if auraData then
-                        activeAuraSpellID = button._auraSpellID
-                        activeAuraSpellIDFromFallback = true
-                    end
-                end
-            end
-            if auraData then
-                auraApplications = auraData.applications
-                local instId = auraData.auraInstanceID
-                if instId and not issecretvalue(instId) then
-                    local durationObj = C_UnitAuras.GetAuraDuration("player", instId)
-                    if durationObj or barAuraStackConfigured then
-                        RecordAuraDisplayName(auraDisplayNameState, auraData)
-                        activeAuraSpellID = activeAuraSpellID or GetReadableAuraSpellID(auraData)
-                        activeAuraSpellIDSourceResolved = true
-                        button._viewerBar = nil
-                        if durationObj then
-                            button._auraDurationObj = durationObj
-                            if auraPrimarySwipeAllowed then
-                                button._durationObj = durationObj
-                                button.cooldown:SetCooldownFromDurationObject(durationObj)
-                            end
-                            auraHasTimer = EntryRuntime.DurationObjectShowsCooldown(durationObj)
-                        else
-                            auraHasTimer = false
-                        end
-                        button._auraInstanceID = instId
-                        button._auraUnit = "player"
-                        auraOverrideActive = true
-                        fetchOk = true
-                    end
-                end
-            end
+        if auraState.auraData then
+            RecordAuraDisplayName(auraDisplayNameState, auraState.auraData)
+        elseif auraGraceHeld then
+            PreserveAuraDisplayNameDuringGrace(auraDisplayNameState)
         end
-        -- Cached instance ID fallback: when the viewer and GetPlayerAuraBySpellID
-        -- both fail (restricted combat + form-variant spells), the previously-cached
-        -- _auraInstanceID may still be valid.  GetAuraDuration works in restricted
-        -- combat and the instance ID persists until OnUnitAura removal clears it.
-        -- Target-debuff tracking intentionally skips this fallback because a stale
-        -- target auraInstanceID can survive brief viewer churn and show ghost time.
-        if canUsePlayerAuraFallback and not auraOverrideActive and button._auraInstanceID then
-            local cachedUnit = button._auraUnit or configUnit
-            if cachedUnit == configUnit then
-                local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(cachedUnit, button._auraInstanceID)
-                if auraData then
-                    auraApplications = auraData.applications
-                    local durationObj = C_UnitAuras.GetAuraDuration(cachedUnit, button._auraInstanceID)
-                    if durationObj or barAuraStackConfigured then
-                        RecordAuraDisplayName(auraDisplayNameState, auraData)
-                        activeAuraSpellID = GetReadableAuraSpellID(auraData)
-                        if activeAuraSpellID then
-                            activeAuraSpellIDSourceResolved = true
-                            activeAuraSpellIDFromFallback = true
-                        end
-                        button._viewerBar = nil
-                        if durationObj then
-                            button._auraDurationObj = durationObj
-                            if auraPrimarySwipeAllowed then
-                                button._durationObj = durationObj
-                                button.cooldown:SetCooldownFromDurationObject(durationObj)
-                            end
-                            auraHasTimer = EntryRuntime.DurationObjectShowsCooldown(durationObj)
-                        else
-                            auraHasTimer = false
-                        end
-                        button._auraUnit = cachedUnit
-                        auraOverrideActive = true
-                        fetchOk = true
-                    end
-                end
-            end
-        end
-        -- Grace period: if aura data is momentarily unavailable but we had an
-        -- active aura DurationObject last tick, keep aura state alive.
-        -- Restoring _durationObj preserves bar fill, color, and time text.
-        -- Target-switch path: holds until UNIT_AURA confirms data received
-        -- (debuff absent on new target) or primary path provides fresh data.
-        -- Player path: DurationObject expiry + time-based grace window.
-        if not auraOverrideActive and button._auraActive
-           and prevAuraDurationObj and not buttonData.isPassive then
-            local expired = false
-            if auraEventRemoved then
-                -- Server confirmed aura removal via UNIT_AURA
-                -- removedAuraInstanceIDs — bypass grace hold entirely.
-                -- Without this, combat secret values prevent
-                -- GetRemainingDuration() from detecting expiry, causing
-                -- a ~0.3s ghost hold on every aura-tracked proc consumed.
-                expired = true
-            elseif button._targetSwitchAt then
-                -- CDM processes UNIT_TARGET before PLAYER_TARGET_CHANGED,
-                -- so the viewer frame already reflects the new target.
-                -- If CDM has no auraInstanceID, the debuff is confirmed
-                -- absent on the new target — expire immediately.
-                -- Ghost auras from stale instance IDs are prevented by the
-                -- cross-validation (GetAuraDataByAuraInstanceID) in the
-                -- viewer path, so this nil check is safe.
-                if viewerFrame and not viewerFrame.auraInstanceID then
-                    expired = true
-                elseif button._targetSwitchDataReceived then
-                    expired = true
-                else
-                    expired = (now - button._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
-                end
-            elseif not prevAuraDurationObj:HasSecretValues() then
-                expired = prevAuraDurationObj:GetRemainingDuration() <= 0
-            end
-            if not expired then
-                if not button._auraGraceStart then
-                    button._auraGraceStart = now
-                end
-                if now - button._auraGraceStart <= 0.3 or button._targetSwitchAt then
-                    if prevAuraDurationObj then
-                        button._auraDurationObj = prevAuraDurationObj
-                        if auraPrimarySwipeAllowed then
-                            button._durationObj = prevAuraDurationObj
-                            button.cooldown:SetCooldownFromDurationObject(prevAuraDurationObj)
-                        end
-                    end
-                    auraOverrideActive = true
-                    auraGraceHeld = true
-                    PreserveAuraDisplayNameDuringGrace(auraDisplayNameState)
-                else
-                    button._auraGraceStart = nil
-                end
-            else
-                button._auraGraceStart = nil
-                button._targetSwitchAt = nil
-                button._targetSwitchDataReceived = nil
-            end
-        else
-            button._auraGraceStart = nil
-            if button._targetSwitchAt then
-                if auraOverrideActive and (button._auraDurationObj or button._auraCooldownDuration or button._durationObj or barAuraStackConfigured) then
-                    -- Primary path provided fresh aura data: hold complete
-                    button._targetSwitchAt = nil
-                    button._targetSwitchDataReceived = nil
-                elseif not button._auraActive then
-                    -- Safety: _auraActive already false, clear stale hold
-                    button._targetSwitchAt = nil
-                    button._targetSwitchDataReceived = nil
-                end
-            end
-        end
-        -- Target-switch hold catch-all: preserve _auraActive for buttons
-        -- without a previous DurationObject (tracked via fallback path only)
-        if not auraOverrideActive and button._targetSwitchAt and button._auraActive then
-            local catchAllExpired
-            -- Same expiry logic as the grace period hold above.
-            if viewerFrame and not viewerFrame.auraInstanceID then
-                catchAllExpired = true
-            elseif button._targetSwitchDataReceived then
-                catchAllExpired = true
-            else
-                catchAllExpired = (now - button._targetSwitchAt) > TARGET_SWITCH_SAFETY_CAP
-            end
-            if catchAllExpired then
-                button._targetSwitchAt = nil
-                button._targetSwitchDataReceived = nil
-            else
-                if prevAuraDurationObj then
-                    button._auraDurationObj = prevAuraDurationObj
-                    if auraPrimarySwipeAllowed then
-                        button._durationObj = prevAuraDurationObj
-                        button.cooldown:SetCooldownFromDurationObject(prevAuraDurationObj)
-                    end
-                end
-                auraOverrideActive = true
-                auraGraceHeld = true
-                PreserveAuraDisplayNameDuringGrace(auraDisplayNameState)
-            end
-        end
-        button._auraActive = auraOverrideActive
+
         if auraOverrideActive then
-            button._auraHasTimer = auraHasTimer
-            button._activeAuraSpellID = activeAuraSpellID or button._activeAuraSpellID
-            if activeAuraSpellIDSourceResolved then
-                button._activeAuraSpellIDFromFallback = activeAuraSpellIDFromFallback or nil
+            if auraState.durationObj then
+                button._auraDurationObj = auraState.durationObj
+                if auraPrimarySwipeAllowed then
+                    button._durationObj = auraState.durationObj
+                    button.cooldown:SetCooldownFromDurationObject(auraState.durationObj)
+                end
+            elseif auraState.auraCooldownStart and auraState.auraCooldownDuration and auraPrimarySwipeAllowed then
+                button.cooldown:SetCooldown(auraState.auraCooldownStart, auraState.auraCooldownDuration)
             end
-        end
-        if not auraOverrideActive then
-            button._auraInstanceID = nil
-            button._auraUnit = configUnit
-            button._activeAuraSpellID = nil
-            button._activeAuraSpellIDFromFallback = nil
+            fetchOk = true
         end
 
         -- Viewer icon change detection: for passive aura-tracked buttons, the
@@ -1281,55 +919,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
 
-        -- Pandemic window check: read Blizzard's PandemicIcon from the viewer frame.
-        -- Blizzard calculates the exact per-spell pandemic window internally and
-        -- shows/hides PandemicIcon accordingly.  Use IsVisible() so that a
-        -- PandemicIcon whose parent viewer item was hidden (e.g. aura expired
-        -- before OnUpdate could clean it up) is not treated as active.
-        -- Grace window: PandemicIcon lives on a pool-managed CDM child frame.
-        -- During RefreshLayout, child frames are recycled and re-acquired,
-        -- which briefly invalidates the viewerFrame reference resolved from
-        -- the aura map.  During this window viewerFrame.PandemicIcon may be
-        -- nil or stale, so hold pandemic state for a fixed wall-clock duration
-        -- (0.3s) to absorb brief dropouts.  Time-based rather than tick-based
-        -- so that rapid UNIT_AURA-driven UpdateAllCooldowns() calls during
-        -- heavy combat don't burn through the grace window prematurely.
-        -- Genuine pandemic end sets _inPandemic = false via event handlers
-        -- (Aura.lua aura removal / target switch), causing the grace guard
-        -- to fail on the next evaluation.  Aura reapplication (pandemic
-        -- refresh) sets _pandemicGraceSuppressed, bypassing the grace hold
-        -- entirely so pandemic clears immediately on refresh.
-        local inPandemic = false
-        if button._pandemicPreview then
-            inPandemic = true
-        -- Pandemic detection: style-level (Show Pandemic Glow) OR per-button visibility toggle.
-        elseif auraOverrideActive and (style.showPandemicGlow ~= false or buttonData.hideAuraActiveExceptPandemic) and viewerFrame then
-            local pi = viewerFrame.PandemicIcon
-            if button._pandemicGraceSuppressed then
-                -- Aura was just refreshed (pandemic recast).  Clear pandemic
-                -- immediately regardless of PandemicIcon visibility — CDM may
-                -- not have run its OnUpdate yet, leaving PandemicIcon stale.
-                button._pandemicGraceSuppressed = nil
-                button._pandemicGraceStart = nil
-                -- inPandemic stays false
-            elseif pi and pi:IsVisible() then
-                inPandemic = true
-                button._pandemicGraceStart = nil
-            elseif button._inPandemic then
-                -- Grace hold: absorbs brief CDM RefreshLayout recycling dropouts.
-                -- Time-based rather than tick-based so rapid UNIT_AURA-driven
-                -- UpdateAllCooldowns() calls don't burn through the window.
-                if not button._pandemicGraceStart then
-                    button._pandemicGraceStart = now
-                end
-                if now - button._pandemicGraceStart <= 0.3 then
-                    inPandemic = true
-                else
-                    button._pandemicGraceStart = nil
-                end
-            end
-        end
-        button._inPandemic = inPandemic
+        button._inPandemic = EntryRuntime.ResolveAuraPandemicState(button, viewerFrame, {
+            now = now,
+            enabled = auraOverrideActive and (style.showPandemicGlow ~= false or buttonData.hideAuraActiveExceptPandemic),
+            previewActive = button._pandemicPreview == true,
+        })
 
         -- Pass through aura display names while keeping icon writes owned by UpdateButtonIcon.
         CommitAuraDisplayName(button, buttonData, viewerFrame, auraOverrideActive, auraDisplayNameState)
@@ -1794,25 +1388,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if button.auraStackCount and button._barAuraStackDisplay then
         if style.showAuraStackText ~= false and button._auraActive then
             if not preserveBarAuraStackText then
-                local function SetBarAuraStackCountText(value)
-                    if CooldownCompanion:GetBarPanelAuraStackTextFormat(buttonData) == "current_max" then
-                        button.auraStackCount:SetFormattedText("%d / %d", value, button._barAuraStackMax or 1)
-                    else
-                        button.auraStackCount:SetFormattedText("%d", value)
-                    end
-                end
+                local stackTextFormat = CooldownCompanion:GetBarPanelAuraStackTextFormat(buttonData)
 
                 if barAuraSecretStackValue ~= nil then
-                    SetBarAuraStackCountText(barAuraSecretStackValue)
+                    EntryRuntime.SetAuraStackCountText(button.auraStackCount, barAuraSecretStackValue, button._barAuraStackMax, stackTextFormat)
                 elseif button._barAuraStackValueAvailable and not issecretvalue(button._barAuraStackValue) then
-                    SetBarAuraStackCountText(button._barAuraStackValue)
+                    EntryRuntime.SetAuraStackCountText(button.auraStackCount, button._barAuraStackValue, button._barAuraStackMax, stackTextFormat)
                 elseif button._auraStackText ~= nil then
-                    local auraStackTextValue = button._auraStackText
-                    if issecretvalue(auraStackTextValue) or tonumber(auraStackTextValue) then
-                        SetBarAuraStackCountText(auraStackTextValue)
-                    else
-                        button.auraStackCount:SetText(auraStackTextValue)
-                    end
+                    EntryRuntime.SetAuraStackCountText(button.auraStackCount, button._auraStackText, button._barAuraStackMax, stackTextFormat)
                 else
                     button.auraStackCount:SetText("")
                 end

@@ -46,6 +46,7 @@ Core\SpellQueries.lua
 Core\CooldownLogic.lua
 Core\Utils.lua
 Core\Init.lua
+Core\EntryRuntime.lua
 Core\Defaults.lua
 Core\SpellActivationOverlayData.lua
 Core\AuraTextures.lua
@@ -78,7 +79,6 @@ ButtonFrame\IconMode.lua
 ButtonFrame\BarMode.lua
 ButtonFrame\TextMode.lua
 ButtonFrame\Preview.lua
-ButtonFrame\EntryRuntime.lua
 ButtonFrame\CooldownUpdate.lua
 Core\GroupFrame.lua
 OtherBars\ResourceBarConstants.lua
