@@ -16,6 +16,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local EntryRuntime = ST.EntryRuntime
 
 local math_floor = math.floor
 local math_min = math.min
@@ -217,22 +218,7 @@ local function ClearCustomAuraBarIndicatorState(barInfo, clearPreviewFlags)
     local bar = barInfo and barInfo.frame
     if not bar then return end
 
-    bar._auraActive = nil
-    bar._inPandemic = nil
-    bar._auraInstanceID = nil
-    bar._auraDurationObj = nil
-    bar._auraCooldownStart = nil
-    bar._auraCooldownDuration = nil
-    bar._auraHasTimer = nil
-    bar._auraUnit = nil
-    bar._auraEventRemoved = nil
-    bar._auraGraceStart = nil
-    bar._targetSwitchAt = nil
-    bar._targetSwitchDataReceived = nil
-    bar._customAuraStackValue = nil
-    bar._customAuraApplicationsValue = nil
-    bar._pandemicGraceStart = nil
-    bar._pandemicGraceSuppressed = nil
+    EntryRuntime.ClearTrackedAuraOwnerState(bar, nil, { clearCustomAuraStacks = true })
 
     ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags)
 end
@@ -439,26 +425,7 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     end
     frame._cdcIndependentAlphaTarget = nil
     frame._cdcIndependentLastAlpha = nil
-    frame._auraActive = nil
-    frame._auraInstanceID = nil
-    frame._auraDurationObj = nil
-    frame._auraCooldownStart = nil
-    frame._auraCooldownDuration = nil
-    frame._auraHasTimer = nil
-    frame._auraUnit = nil
-    frame._auraEventRemoved = nil
-    frame._auraGraceStart = nil
-    frame._targetSwitchAt = nil
-    frame._targetSwitchDataReceived = nil
-    frame._customAuraStackValue = nil
-    frame._customAuraApplicationsValue = nil
-    frame._inPandemic = nil
-    frame._pandemicGraceStart = nil
-    frame._pandemicGraceSuppressed = nil
-    frame._parsedCustomBarAuraIDs = nil
-    frame._parsedCustomBarAuraIDsRaw = nil
-    frame._parsedCustomBarAuraIDsSpellID = nil
-    frame._parsedCustomBarAuraIDsIncludeSpellID = nil
+    EntryRuntime.ClearTrackedAuraOwnerState(frame, nil, { clearCustomAuraStacks = true })
     frame._parsedAuraIDs = nil
     frame._parsedAuraIDsRaw = nil
     frame._parsedAuraIDsButtonID = nil
@@ -2039,7 +2006,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         barInfo._order = orderList[idx]
         barInfo._effectiveThickness = effectiveThickness
 
-        FinalizeAppliedBarVisibility(barInfo, powerType, isPreviewActive)
+        FinalizeAppliedBarVisibility(barInfo, isPreviewActive)
     end
 
     activeResources = filtered
