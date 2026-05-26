@@ -95,7 +95,7 @@ local function IsNoCooldownForVisibility(button)
         return false
     end
 
-    return button._baseNoCooldown ~= false
+    return button._baseNoCooldown == true
 end
 
 -- Evaluate per-button visibility rules and set hidden/alpha override state.

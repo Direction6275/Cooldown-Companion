@@ -940,10 +940,20 @@ local function ResolveSpellCooldownSecrecy(owner, spellID)
     return C_Secrets.GetSpellCooldownSecrecy(spellID)
 end
 
+local function HasChargeCooldownInfo(spellID)
+    local charges = C_Spell.GetSpellCharges(spellID)
+    local maxCharges = charges and charges.maxCharges
+    if maxCharges and not issecretvalue(maxCharges) then
+        return (tonumber(maxCharges) or 0) > 0
+    end
+    return false
+end
+
 local function IsNoCooldownSpell(spellID)
     local baseCd = GetSpellBaseCooldown(spellID)
     return (not baseCd or baseCd == 0)
         and not (HasTooltipCooldown and HasTooltipCooldown(spellID))
+        and not HasChargeCooldownInfo(spellID)
 end
 
 local function ResolveNoCooldownState(owner, spellID, hasCharges)
