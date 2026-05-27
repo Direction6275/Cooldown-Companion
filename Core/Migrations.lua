@@ -129,6 +129,7 @@ function CooldownCompanion:IsUnsupportedLegacyProfile(profile, allowMissingCheck
 
     return type(groups) == "table"
         and next(groups) ~= nil
+        and hasContainerTable
         and not next(containers)
 end
 
