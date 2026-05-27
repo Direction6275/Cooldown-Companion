@@ -15,7 +15,7 @@ local AttachCollapseButton = ST._AttachCollapseButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
-local HasTooltipCooldown = ST.HasTooltipCooldown
+local IsNoCooldownSpellID = ST.IsNoCooldownSpell
 local HasUsageRequirement = ST.HasUsageRequirement
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local HasItemFallbacks = CooldownCompanion.HasItemFallbacks
@@ -265,8 +265,7 @@ end
 -- Returns true if a button has no real cooldown (GCD-only spell)
 local function IsNoCooldownSpell(bd)
     if not bd or bd.type ~= "spell" or bd.isPassive or UsesChargeBehavior(bd) then return false end
-    local baseCd = GetSpellBaseCooldown(bd.id)
-    return (not baseCd or baseCd == 0) and not HasTooltipCooldown(bd.id)
+    return IsNoCooldownSpellID(bd.id)
 end
 
 -- Returns true if all selected buttons are no-cooldown spells

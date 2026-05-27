@@ -35,7 +35,7 @@ local InCombatLockdown = InCombatLockdown
 local UnitCanAttack = UnitCanAttack
 
 -- Imports from Utils
-local HasTooltipCooldown = ST.HasTooltipCooldown
+local IsNoCooldownSpell = ST.IsNoCooldownSpell
 
 -- Imports from Preview
 local GetConditionalVisualPreview = ST._GetConditionalVisualPreview
@@ -729,15 +729,22 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Lazy-cache no-cooldown detection for spells (GCD-only, no real CD).
     -- Tie the cache to the displayed spell so replacements do not inherit the
     -- base spell's cooldown classification.
+    -- Keep the base classification too, so temporary no-CD overrides do not
+    -- bypass cooldown visibility rules for a real cooldown entry.
     if buttonData.type == "spell" and not buttonData.isPassive and not usesChargeBehavior then
+        if button._baseNoCooldown == nil or button._baseNoCooldownSpellId ~= buttonData.id then
+            button._baseNoCooldownSpellId = buttonData.id
+            button._baseNoCooldown = IsNoCooldownSpell(buttonData.id)
+        end
         if button._noCooldown == nil or button._noCooldownSpellId ~= cooldownSpellId then
             button._noCooldownSpellId = cooldownSpellId
-            local baseCd = GetSpellBaseCooldown(cooldownSpellId)
-            button._noCooldown = (not baseCd or baseCd == 0) and not HasTooltipCooldown(cooldownSpellId)
+            button._noCooldown = IsNoCooldownSpell(cooldownSpellId)
         end
     else
         button._noCooldown = false
         button._noCooldownSpellId = nil
+        button._baseNoCooldown = nil
+        button._baseNoCooldownSpellId = nil
     end
 
     -- Proc state: event-driven table lookup (base spell + current displayed override).

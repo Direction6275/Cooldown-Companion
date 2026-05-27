@@ -6,7 +6,7 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
-local HasTooltipCooldown = ST.HasTooltipCooldown
+local IsNoCooldownSpell = ST.IsNoCooldownSpell
 
 local ipairs = ipairs
 local tonumber = tonumber
@@ -938,12 +938,6 @@ local function ResolveSpellCooldownSecrecy(owner, spellID)
     end
 
     return C_Secrets.GetSpellCooldownSecrecy(spellID)
-end
-
-local function IsNoCooldownSpell(spellID)
-    local baseCd = GetSpellBaseCooldown(spellID)
-    return (not baseCd or baseCd == 0)
-        and not (HasTooltipCooldown and HasTooltipCooldown(spellID))
 end
 
 local function ResolveNoCooldownState(owner, spellID, hasCharges)
