@@ -45,6 +45,10 @@ local function CompareVersion(left, right)
 end
 
 local function LooksLikeProfilePayload(profile)
+    if type(profile) ~= "table" or rawget(profile, "type") ~= nil then
+        return false
+    end
+
     return rawget(profile, "groups") ~= nil
         or rawget(profile, "groupContainers") ~= nil
         or rawget(profile, "globalStyle") ~= nil
