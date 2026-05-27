@@ -1593,7 +1593,7 @@ local function CreateConfigPanel()
     -- Info button next to Column 3 title
     local bsInfoBtn = CreateFrame("Button", nil, col3.frame)
     bsInfoBtn:SetSize(16, 16)
-    bsInfoBtn:SetPoint("TOPRIGHT", col3.frame, "TOPRIGHT", -8, -4)
+    bsInfoBtn:SetPoint("LEFT", col3.titletext, "RIGHT", -2, 0)
     local bsInfoIcon = bsInfoBtn:CreateTexture(nil, "OVERLAY")
     bsInfoIcon:SetSize(12, 12)
     bsInfoIcon:SetPoint("CENTER")
