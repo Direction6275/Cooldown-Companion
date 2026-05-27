@@ -96,6 +96,7 @@ Config\Tutorial.lua
 Config\ExportCodec.lua
 Config\ProfileImport.lua
 Config\Popups.lua
+Config\ImportReview.lua
 Config\Diagnostics.lua
 Config\Pickers.lua
 Config\TalentPicker.lua

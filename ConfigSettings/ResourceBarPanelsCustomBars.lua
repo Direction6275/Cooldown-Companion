@@ -12,6 +12,7 @@ local LSM = LibStub("LibSharedMedia-3.0")
 local CS = ST._configState
 local IsPassiveOrProc = ST._IsPassiveOrProc
 local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
+local OpenImportReviewWindow = ST._OpenImportReviewWindow
 local ClearCustomBarPreviewState = ST._ClearConfigCustomBarPreviewState
 local SelectConfigCustomBar = ST._SelectConfigCustomBar
 local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
@@ -1733,7 +1734,7 @@ local function BuildCustomBarsListPanel(container)
     local importBtn = AceGUI:Create("Button")
     importBtn:SetText("Import")
     importBtn:SetCallback("OnClick", function()
-        ShowPopupAboveConfig("CDC_IMPORT_CUSTOM_BARS")
+        OpenImportReviewWindow()
     end)
     actionControls:AddChild(importBtn)
 
