@@ -11,7 +11,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 local EncodeSharedPayload = ST._EncodeSharedPayload
 local DecodeSharedPayload = ST._DecodeSharedPayload
 local PrepareSharedImportText = ST._PrepareSharedImportText
-local ResetConfigSelection = ST._ResetConfigSelection
+local ApplyFullProfileImport = ST._ApplyFullProfileImport
 
 -- File-local state
 local decodedDiagnostic = nil
@@ -922,52 +922,15 @@ StaticPopupDialogs["CDC_DIAGNOSTIC_IMPORT_CONFIRM"] = {
     button2 = "Cancel",
     OnAccept = function()
         if decodedDiagnostic and decodedDiagnostic.profile then
-            if RejectUnsupportedImportPayload(decodedDiagnostic.profile, "diagnostic profile") then
-                return
+            local imported = ApplyFullProfileImport and ApplyFullProfileImport(decodedDiagnostic.profile, {
+                dataLabel = "diagnostic profile",
+                exporterCharKey = decodedDiagnostic.meta and decodedDiagnostic.meta.charKey,
+                runtimeReason = "diagnostic-profile-import",
+                renameForeignCharacters = false,
+            })
+            if imported then
+                CooldownCompanion:Print("Diagnostic profile imported.")
             end
-            local db = CooldownCompanion.db
-            wipe(db.profile)
-            for k, v in pairs(decodedDiagnostic.profile) do
-                db.profile[k] = v
-            end
-            ResetConfigSelection(true)
-            -- Remap only the exporter's own entities to the importer's character.
-            -- Other characters' entities keep their original createdBy so they
-            -- appear in the browse-other-characters module instead of being
-            -- flattened into the current character.
-            local charKey = db.keys.char
-            local exporterCharKey = decodedDiagnostic.meta and decodedDiagnostic.meta.charKey
-            if db.profile.groups then
-                for _, group in pairs(db.profile.groups) do
-                    if not group.isGlobal and (exporterCharKey == nil or group.createdBy == exporterCharKey) then
-                        group.createdBy = charKey
-                    end
-                end
-            end
-            if db.profile.groupContainers then
-                for _, container in pairs(db.profile.groupContainers) do
-                    if not container.isGlobal and (exporterCharKey == nil or container.createdBy == exporterCharKey) then
-                        container.createdBy = charKey
-                    end
-                end
-            end
-            if db.profile.folders then
-                for _, folder in pairs(db.profile.folders) do
-                    if folder.section == "char" and (exporterCharKey == nil or folder.createdBy == exporterCharKey) then
-                        folder.createdBy = charKey
-                    end
-                end
-            end
-            CooldownCompanion:ClearMigrationSentinels()
-            if not CooldownCompanion:RunAllMigrations() then
-                return
-            end
-            CooldownCompanion:RefreshConfigPanel()
-            CooldownCompanion:RefreshAllGroups()
-            if CooldownCompanion.EvaluateBarsAndFramesRuntime then
-                CooldownCompanion:EvaluateBarsAndFramesRuntime("diagnostic-profile-import")
-            end
-            CooldownCompanion:Print("Diagnostic profile imported.")
         end
     end,
     timeout = 0,

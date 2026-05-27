@@ -94,6 +94,7 @@ Core\FrameAnchoring.lua
 Config\State.lua
 Config\Tutorial.lua
 Config\ExportCodec.lua
+Config\ProfileImport.lua
 Config\Popups.lua
 Config\Diagnostics.lua
 Config\Pickers.lua
