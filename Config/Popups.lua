@@ -511,6 +511,8 @@ local function ApplyProfileImport(data)
     })
 end
 
+ST._ApplyProfileImportData = ApplyProfileImport
+
 StaticPopupDialogs["CDC_CONFIRM_PROFILE_IMPORT"] = {
     text = "This will overwrite your current profile. Continue?",
     button1 = "Import",
@@ -984,27 +986,8 @@ local function RemapImportedPanelAnchors(db, importState, preserveOwnContainerRe
     end
 end
 
-local function ImportGroupData(text)
-    if not text or text == "" then return false end
-    local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
-    if not preparedText then return false end
-    if isLegacyImport then
-        CooldownCompanion:NotifyLegacySupportCutoff("import string")
-        return false
-    end
-    if #compactText > MAX_IMPORT_LENGTH then
-        CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
-        return false
-    end
-
-    if compactText:sub(1, 8) == "CDCdiag:" then
-        CooldownCompanion:Print("This is a bug report string, not a group export.")
-        return false
-    end
-
-    local success, data = DecodeSharedPayload(preparedText)
-
-    if not success or type(data) ~= "table" then
+local function ApplyGroupImportData(data)
+    if type(data) ~= "table" then
         return false
     end
     if RejectUnsupportedImportPayload(data, "group import") then
@@ -1133,6 +1116,35 @@ local function ImportGroupData(text)
     return true
 end
 
+ST._ApplyGroupImportData = ApplyGroupImportData
+
+local function ImportGroupData(text)
+    if not text or text == "" then return false end
+    local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
+    if not preparedText then return false end
+    if isLegacyImport then
+        CooldownCompanion:NotifyLegacySupportCutoff("import string")
+        return false
+    end
+    if #compactText > MAX_IMPORT_LENGTH then
+        CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
+        return false
+    end
+
+    if compactText:sub(1, 8) == "CDCdiag:" then
+        CooldownCompanion:Print("This is a bug report string, not a group export.")
+        return false
+    end
+
+    local success, data = DecodeSharedPayload(preparedText)
+
+    if not success or type(data) ~= "table" then
+        return false
+    end
+
+    return ApplyGroupImportData(data)
+end
+
 StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
     text = "Export string (Ctrl+C to copy):",
     button1 = "Close",
@@ -1177,25 +1189,7 @@ StaticPopupDialogs["CDC_IMPORT_GROUP"] = {
     preferredIndex = 3,
 }
 
-local function ImportCustomBarsData(text)
-    local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
-    if not preparedText then
-        return false
-    end
-    if isLegacyImport then
-        CooldownCompanion:NotifyLegacySupportCutoff("custom bars import")
-        return false
-    end
-    if #compactText > 100000 then
-        CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
-        return false
-    end
-
-    local success, data = DecodeSharedPayload(preparedText)
-    if not success then
-        CooldownCompanion:Print("Import failed: invalid data.")
-        return false
-    end
+local function ApplyCustomBarsImportData(data)
     if type(data) ~= "table" or data.type ~= "customBars" then
         if RejectUnsupportedImportPayload(data, "custom bars import") then
             return false
@@ -1223,6 +1217,31 @@ local function ImportCustomBarsData(text)
     CooldownCompanion:UpdateAnchorStacking()
     CooldownCompanion:RefreshConfigPanel()
     return true
+end
+
+ST._ApplyCustomBarsImportData = ApplyCustomBarsImportData
+
+local function ImportCustomBarsData(text)
+    local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
+    if not preparedText then
+        return false
+    end
+    if isLegacyImport then
+        CooldownCompanion:NotifyLegacySupportCutoff("custom bars import")
+        return false
+    end
+    if #compactText > 100000 then
+        CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
+        return false
+    end
+
+    local success, data = DecodeSharedPayload(preparedText)
+    if not success then
+        CooldownCompanion:Print("Import failed: invalid data.")
+        return false
+    end
+
+    return ApplyCustomBarsImportData(data)
 end
 
 StaticPopupDialogs["CDC_EXPORT_CUSTOM_BARS"] = {
