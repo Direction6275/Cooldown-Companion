@@ -146,7 +146,7 @@ local function ClassLabel(info)
 end
 
 local function ResolveOwnerKey(entity, defaultOwnerKey)
-    if type(entity) ~= "table" or entity.isGlobal then
+    if type(entity) ~= "table" or entity.isGlobal or entity.section == "global" then
         return nil
     end
     if type(entity.createdBy) == "string" and entity.createdBy ~= "" then
