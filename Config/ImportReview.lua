@@ -105,6 +105,25 @@ local function GetDiagnosticMeta(diagnostic)
     return nil
 end
 
+local function BuildDiagnosticSourceCharacterInfo(meta)
+    if type(meta) ~= "table" or type(meta.charKey) ~= "string" or meta.charKey == "" then
+        return nil
+    end
+
+    local classFilename = meta.classFilename or meta.className
+    local classID = tonumber(meta.classID)
+    if not classFilename and not classID then
+        return nil
+    end
+
+    return {
+        [meta.charKey] = {
+            classFilename = classFilename,
+            classID = classID,
+        },
+    }
+end
+
 local function GetPayloadDataLabel(data, isDiagnostic)
     if isDiagnostic or (type(data) == "table" and data.reportKind == "bugReport") then
         return "diagnostic string"
@@ -323,6 +342,7 @@ local function ClassifyDiagnosticPayload(data)
     local meta = GetDiagnosticMeta(data)
     local pieces = BuildProfileImportPiecesReview and BuildProfileImportPiecesReview(data.profile, {
         exporterCharKey = meta and meta.charKey,
+        sourceCharacterInfo = BuildDiagnosticSourceCharacterInfo(meta),
     }) or nil
     local lines = BuildProfileSummaryLines(data.profile, "Diagnostic profile attachment",
         pieces and pieces.customBarCount)
