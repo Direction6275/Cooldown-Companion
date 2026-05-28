@@ -419,7 +419,7 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
 }
 
 StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
-    text = "Export string (Ctrl+C to copy):",
+    text = "Profile backup string (Ctrl+C to copy):",
     button1 = "Close",
     hasEditBox = true,
     OnShow = function(self)
@@ -514,15 +514,15 @@ end
 ST._ApplyProfileImportData = ApplyProfileImport
 
 StaticPopupDialogs["CDC_CONFIRM_PROFILE_IMPORT"] = {
-    text = "This will overwrite your current profile. Continue?",
-    button1 = "Import",
+    text = "Restore this profile backup? Your current profile will be overwritten.",
+    button1 = "Restore",
     button2 = "Cancel",
     OnAccept = function()
         if pendingProfileImport then
             local imported = ApplyProfileImport(pendingProfileImport)
             pendingProfileImport = nil
             if imported then
-                CooldownCompanion:Print("Profile imported.")
+                CooldownCompanion:Print("Profile backup restored.")
             end
         end
     end,
@@ -536,8 +536,8 @@ StaticPopupDialogs["CDC_CONFIRM_PROFILE_IMPORT"] = {
 }
 
 StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
-    text = "Paste import string:",
-    button1 = "Import",
+    text = "Paste profile backup string:",
+    button1 = "Restore",
     button2 = "Cancel",
     hasEditBox = true,
     OnAccept = function(self)
