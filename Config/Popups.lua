@@ -15,9 +15,6 @@ local ClearConfigContainerSelection = ST._ClearConfigContainerSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
 local EncodeSharedPayload = ST._EncodeSharedPayload
-local DecodeSharedPayload = ST._DecodeSharedPayload
-local PrepareSharedImportText = ST._PrepareSharedImportText
-local ApplyFullProfileImport = ST._ApplyFullProfileImport
 
 -- Check whether a profile name already exists (case-exact match).
 local function ProfileNameExists(name)
@@ -440,129 +437,6 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
     preferredIndex = 3,
 }
 
--- Decodes and validates a profile import string. Returns the decoded data
--- table on success, or nil on failure (prints error to chat).
-local pendingProfileImport = nil
-local MAX_IMPORT_LENGTH = 500000
-
-local function DecodeProfileImport(popup)
-    local text = popup.EditBox:GetText()
-    if not text or text == "" then return nil end
-    local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
-    if not preparedText then return nil end
-
-    if isLegacyImport then
-        CooldownCompanion:NotifyLegacySupportCutoff("profile import")
-        return nil
-    end
-
-    if #compactText > MAX_IMPORT_LENGTH then
-        CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
-        return nil
-    end
-
-    if compactText:sub(1, 8) == "CDCdiag:" then
-        CooldownCompanion:Print("This is a bug report string, not a profile export.")
-        return nil
-    end
-    local success, data = DecodeSharedPayload(preparedText)
-    if not (success and type(data) == "table") then
-        CooldownCompanion:Print("Import failed: invalid data.")
-        return nil
-    end
-    if RejectUnsupportedImportPayload(data, "profile import") then
-        return nil
-    end
-    -- Reject narrower exports pasted into the profile import dialog
-    if data.type then
-        if data.type == "customBars" then
-            CooldownCompanion:Print("This is a Custom Bars export. Use the Custom Bars Import button.")
-        else
-            CooldownCompanion:Print("This is a group/folder export. Use the group Import button.")
-        end
-        return nil
-    end
-    -- Structural validation: a CDC profile must have groups or globalStyle,
-    -- and critical fields must be the correct type if present
-    if not data.groups and not data.globalStyle then
-        CooldownCompanion:Print("Import failed: data does not appear to be a Cooldown Companion profile.")
-        return nil
-    end
-    if (data.groups and type(data.groups) ~= "table")
-       or (data.globalStyle and type(data.globalStyle) ~= "table") then
-        CooldownCompanion:Print("Import failed: profile data is malformed.")
-        return nil
-    end
-    if RejectUnsupportedImportPayload(data, "profile import") then
-        return nil
-    end
-    return data
-end
-
-local function ApplyProfileImport(data)
-    if not ApplyFullProfileImport then
-        return false
-    end
-
-    return ApplyFullProfileImport(data, {
-        dataLabel = "profile import",
-        runtimeReason = "profile-import",
-        renameForeignCharacters = true,
-    })
-end
-
-ST._ApplyProfileImportData = ApplyProfileImport
-
-StaticPopupDialogs["CDC_CONFIRM_PROFILE_IMPORT"] = {
-    text = "Restore this profile backup? Your current profile will be overwritten.",
-    button1 = "Restore",
-    button2 = "Cancel",
-    OnAccept = function()
-        if pendingProfileImport then
-            local imported = ApplyProfileImport(pendingProfileImport)
-            pendingProfileImport = nil
-            if imported then
-                CooldownCompanion:Print("Profile backup restored.")
-            end
-        end
-    end,
-    OnCancel = function()
-        pendingProfileImport = nil
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
-    text = "Paste profile backup string:",
-    button1 = "Restore",
-    button2 = "Cancel",
-    hasEditBox = true,
-    OnAccept = function(self)
-        local data = DecodeProfileImport(self)
-        if not data then return true end -- suppress auto-hide on failure
-        pendingProfileImport = data
-        ShowPopupOverConfig("CDC_CONFIRM_PROFILE_IMPORT")
-    end,
-    EditBoxOnEnterPressed = function(self)
-        local parent = self:GetParent()
-        local data = DecodeProfileImport(parent)
-        if not data then return end
-        pendingProfileImport = data
-        parent:Hide()
-        ShowPopupOverConfig("CDC_CONFIRM_PROFILE_IMPORT")
-    end,
-    OnShow = function(self)
-        self.EditBox:SetFocus()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
 StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
     text = "This will remove all spec filters and turn '%s' into a group for your current character. Continue?",
     button1 = "Continue",
@@ -800,7 +674,7 @@ StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
 }
 
 ------------------------------------------------------------------------
--- Group/Folder Export/Import
+-- Group/Folder Export and Apply
 ------------------------------------------------------------------------
 
 local function BuildGroupExportData(group)
@@ -1031,9 +905,8 @@ local function ApplyGroupImportData(data)
         return false
     end
 
-    -- Reject profile exports (no type field)
     if not data.type then
-        CooldownCompanion:Print("This is a profile export. Use the profile Import button.")
+        CooldownCompanion:Print("Import failed: this is a profile backup, not a group, folder, or panel export.")
         return false
     end
 
@@ -1164,33 +1037,6 @@ end
 
 ST._ApplyGroupImportData = ApplyGroupImportData
 
-local function ImportGroupData(text)
-    if not text or text == "" then return false end
-    local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
-    if not preparedText then return false end
-    if isLegacyImport then
-        CooldownCompanion:NotifyLegacySupportCutoff("import string")
-        return false
-    end
-    if #compactText > MAX_IMPORT_LENGTH then
-        CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
-        return false
-    end
-
-    if compactText:sub(1, 8) == "CDCdiag:" then
-        CooldownCompanion:Print("This is a bug report string, not a group export.")
-        return false
-    end
-
-    local success, data = DecodeSharedPayload(preparedText)
-
-    if not success or type(data) ~= "table" then
-        return false
-    end
-
-    return ApplyGroupImportData(data)
-end
-
 StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
     text = "Export string (Ctrl+C to copy):",
     button1 = "Close",
@@ -1200,30 +1046,6 @@ StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
             self.EditBox:SetText(self.data.exportString)
             self.EditBox:HighlightText()
             self.EditBox:SetFocus()
-        end
-    end,
-    EditBoxOnEscapePressed = function(self)
-        self:GetParent():Hide()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-StaticPopupDialogs["CDC_IMPORT_GROUP"] = {
-    text = "Paste import string (Ctrl+V to paste):",
-    button1 = "Close",
-    hasEditBox = true,
-    OnShow = function(self)
-        self.EditBox:SetFocus()
-    end,
-    EditBoxOnTextChanged = function(self)
-        local text = self:GetText()
-        if text == "" then return end
-        local ok = ImportGroupData(text)
-        if ok then
-            self:GetParent():Hide()
         end
     end,
     EditBoxOnEscapePressed = function(self)
@@ -1269,29 +1091,6 @@ end
 
 ST._ApplyCustomBarsImportData = ApplyCustomBarsImportData
 
-local function ImportCustomBarsData(text)
-    local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
-    if not preparedText then
-        return false
-    end
-    if isLegacyImport then
-        CooldownCompanion:NotifyLegacySupportCutoff("custom bars import")
-        return false
-    end
-    if #compactText > 100000 then
-        CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
-        return false
-    end
-
-    local success, data = DecodeSharedPayload(preparedText)
-    if not success then
-        CooldownCompanion:Print("Import failed: invalid data.")
-        return false
-    end
-
-    return ApplyCustomBarsImportData(data)
-end
-
 StaticPopupDialogs["CDC_EXPORT_CUSTOM_BARS"] = {
     text = "Export Custom Bars string (Ctrl+C to copy):",
     button1 = "Close",
@@ -1301,30 +1100,6 @@ StaticPopupDialogs["CDC_EXPORT_CUSTOM_BARS"] = {
             self.EditBox:SetText(self.data.exportString)
             self.EditBox:HighlightText()
             self.EditBox:SetFocus()
-        end
-    end,
-    EditBoxOnEscapePressed = function(self)
-        self:GetParent():Hide()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-StaticPopupDialogs["CDC_IMPORT_CUSTOM_BARS"] = {
-    text = "Paste Custom Bars import string (Ctrl+V to paste):",
-    button1 = "Close",
-    hasEditBox = true,
-    OnShow = function(self)
-        self.EditBox:SetFocus()
-    end,
-    EditBoxOnTextChanged = function(self)
-        local text = self:GetText()
-        if text == "" then return end
-        local ok = ImportCustomBarsData(text)
-        if ok then
-            self:GetParent():Hide()
         end
     end,
     EditBoxOnEscapePressed = function(self)

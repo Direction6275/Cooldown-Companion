@@ -11,7 +11,6 @@ local AceGUI = LibStub("AceGUI-3.0")
 
 -- Imports from earlier Config/ files
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
-local OpenImportReviewWindow = ST._OpenImportReviewWindow
 local ResetConfigSelection = ST._ResetConfigSelection
 local SetConfigCustomBarSettingsTab = ST._SetConfigCustomBarSettingsTab
 local PruneConfigCustomBarSelection = ST._PruneConfigCustomBarSelection
@@ -729,10 +728,6 @@ local function RefreshProfileBar(bar)
 
     AddBarButton("Export Backup", function()
         ShowPopupAboveConfig("CDC_EXPORT_PROFILE")
-    end)
-
-    AddBarButton("Import Backup", function()
-        OpenImportReviewWindow()
     end)
 
     -- Keep widening while text truncates so skin/font variations don't clip labels.

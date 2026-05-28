@@ -11,10 +11,8 @@ local AceGUI = LibStub("AceGUI-3.0")
 local EncodeSharedPayload = ST._EncodeSharedPayload
 local DecodeSharedPayload = ST._DecodeSharedPayload
 local PrepareSharedImportText = ST._PrepareSharedImportText
-local ApplyFullProfileImport = ST._ApplyFullProfileImport
 
 -- File-local state
-local decodedDiagnostic = nil
 local diagnosticDecodeFrame = nil
 local DIAGNOSTIC_REPORT_BUG_REPORT = "bugReport"
 
@@ -916,29 +914,6 @@ StaticPopupDialogs["CDC_DIAGNOSTIC_BUG_REPORT"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CDC_DIAGNOSTIC_IMPORT_CONFIRM"] = {
-    text = "Import this bug report's profile into your addon? Your current profile will be overwritten.",
-    button1 = "Import",
-    button2 = "Cancel",
-    OnAccept = function()
-        if decodedDiagnostic and decodedDiagnostic.profile then
-            local imported = ApplyFullProfileImport and ApplyFullProfileImport(decodedDiagnostic.profile, {
-                dataLabel = "diagnostic profile",
-                exporterCharKey = decodedDiagnostic.meta and decodedDiagnostic.meta.charKey,
-                runtimeReason = "diagnostic-profile-import",
-                renameForeignCharacters = false,
-            })
-            if imported then
-                CooldownCompanion:Print("Diagnostic profile imported.")
-            end
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
 local function OpenDiagnosticDecodePanel()
     if diagnosticDecodeFrame then
         diagnosticDecodeFrame:Show()
@@ -977,12 +952,12 @@ local function OpenDiagnosticDecodePanel()
         if not text or text == "" then return end
         local preparedText, compactText = PrepareSharedImportText(text)
         if not preparedText then return end
+        outputBox.canCopyDiagnosticText = nil
         if compactText:sub(1, 8) == "CDCdiag:" then
             preparedText = compactText:sub(9)
             compactText = preparedText
         end
         if compactText:sub(1, 2) == "^1" then
-            decodedDiagnostic = nil
             outputBox:SetText("")
             CooldownCompanion:NotifyLegacySupportCutoff("diagnostic string")
             return
@@ -993,11 +968,10 @@ local function OpenDiagnosticDecodePanel()
             return
         end
         if RejectUnsupportedImportPayload(data, "diagnostic string") then
-            decodedDiagnostic = nil
             outputBox:SetText("")
             return
         end
-        decodedDiagnostic = data
+        outputBox.canCopyDiagnosticText = true
         outputBox:SetText(FormatDiagnosticAsText(data))
     end)
     btnGroup:AddChild(decodeBtn)
@@ -1006,23 +980,11 @@ local function OpenDiagnosticDecodePanel()
     copyBtn:SetText("Copy as Text")
     copyBtn:SetWidth(120)
     copyBtn:SetCallback("OnClick", function()
-        if not decodedDiagnostic then return end
+        if not outputBox.canCopyDiagnosticText then return end
         outputBox.editBox:HighlightText()
         outputBox.editBox:SetFocus()
     end)
     btnGroup:AddChild(copyBtn)
-
-    local importBtn = AceGUI:Create("Button")
-    importBtn:SetText("Import Profile")
-    importBtn:SetWidth(120)
-    importBtn:SetCallback("OnClick", function()
-        if not decodedDiagnostic or not decodedDiagnostic.profile then
-            CooldownCompanion:Print("No diagnostic data to import.")
-            return
-        end
-        StaticPopup_Show("CDC_DIAGNOSTIC_IMPORT_CONFIRM")
-    end)
-    btnGroup:AddChild(importBtn)
 
     frame:AddChild(btnGroup)
     frame:AddChild(outputBox)
@@ -1030,7 +992,6 @@ local function OpenDiagnosticDecodePanel()
     frame:SetCallback("OnClose", function(widget)
         AceGUI:Release(widget)
         diagnosticDecodeFrame = nil
-        decodedDiagnostic = nil
     end)
 end
 
