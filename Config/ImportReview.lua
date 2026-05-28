@@ -14,12 +14,27 @@ local ApplyProfileImportData = ST._ApplyProfileImportData
 local ApplyGroupImportData = ST._ApplyGroupImportData
 local ApplyCustomBarsImportData = ST._ApplyCustomBarsImportData
 local ApplyFullProfileImport = ST._ApplyFullProfileImport
+local BuildProfileImportPiecesReview = ST._BuildProfileImportPiecesReview
+local RecountProfileImportPiecesSelection = ST._RecountProfileImportPiecesSelection
+local SetProfileImportPieceSelected = ST._SetProfileImportPieceSelected
+local ApplyProfileImportPieces = ST._ApplyProfileImportPieces
 local CS = ST._configState
 
 local MAX_IMPORT_LENGTH = 500000
 local MAX_CUSTOM_BARS_IMPORT_LENGTH = 100000
 local DIAGNOSTIC_PREFIX = "CDCdiag:"
 local IMPORT_REVIEW_CONFIRM_POPUP = "CDC_IMPORT_REVIEW_CONFIRM"
+local IMPORT_TEXT_LINES = 8
+local IMPORT_TEXT_HEIGHT = 160
+local IMPORT_REVIEW_HEIGHT = 220
+local IMPORT_ACTION_HEIGHT = 30
+local IMPORT_WINDOW_WIDTH = 640
+local IMPORT_WINDOW_HEIGHT = 500
+local IMPORT_MODE_LABELS = {
+    selected = "Import selected pieces",
+    restore = "Restore backup",
+}
+local IMPORT_MODE_ORDER = { "selected", "restore" }
 
 local importReviewFrame = nil
 local activeReview = nil
@@ -178,6 +193,92 @@ local function BuildProfileSummaryLines(profile, heading)
     return lines
 end
 
+local function IsProfileReviewKind(review)
+    return review and (review.kind == "profile" or review.kind == "diagnostic")
+end
+
+local function ReviewUsesSelectedPieces(review)
+    return IsProfileReviewKind(review) and review.mode == "selected"
+end
+
+local function RecountSelectedPieces(review)
+    if not (review and review.pieces) then
+        return 0
+    end
+    if RecountProfileImportPiecesSelection then
+        return RecountProfileImportPiecesSelection(review.pieces)
+    end
+    local selected = 0
+    for _, row in ipairs(review.pieces.rows or {}) do
+        if row.eligible and row.selected then
+            selected = selected + 1
+        end
+    end
+    review.pieces.selectedCount = selected
+    return selected
+end
+
+local function BuildSelectedPiecesSummaryLines(review)
+    local pieces = review and review.pieces or nil
+    local lines = {}
+    AddLine(lines, review.kind == "diagnostic" and "Diagnostic selected pieces" or "Profile selected pieces")
+    AddLine(lines, "Only pieces compatible with your current class are shown.")
+    AddLine(lines, FormatCount("Importable pieces", pieces and pieces.eligibleCount or 0))
+    AddLine(lines, FormatCount("Selected pieces", RecountSelectedPieces(review)))
+    if pieces and pieces.disabledCount and pieces.disabledCount > 0 then
+        AddLine(lines, FormatCount("Hidden incompatible pieces", pieces.disabledCount))
+    end
+    if pieces and pieces.customBarCount and pieces.customBarCount > 0 then
+        AddLine(lines, "Custom Bars: " .. tostring(pieces.customBarCount) .. " (not selectable yet)")
+    end
+    return lines
+end
+
+local function GetProfileImportDisclaimer(review)
+    if not IsProfileReviewKind(review) then
+        return nil
+    end
+    if ReviewUsesSelectedPieces(review) then
+        return "|cffffd100Selected Pieces:|r Best for sharing setups. "
+            .. "Only pieces compatible with your current class are shown."
+    end
+    if review.kind == "diagnostic" then
+        return "|cffffd100Diagnostic Restore:|r For bug-report reproduction.\n"
+            .. "|cffff6666This replaces your current profile. For sharing, import selected pieces or export groups, folders, or panels.|r"
+    end
+    return "|cffffd100Restore Backup:|r For your own backups.\n"
+        .. "|cffff6666This replaces your current profile and may include character data from the exporter. "
+        .. "For sharing, import selected pieces or export groups, folders, or panels.|r"
+end
+
+local function GetReviewAcceptText(review)
+    if ReviewUsesSelectedPieces(review) then
+        return "Import Selected"
+    end
+    return review and review.acceptText or "Import"
+end
+
+local function CanApplyReview(review)
+    if not review then
+        return false
+    end
+    if ReviewUsesSelectedPieces(review) then
+        return RecountSelectedPieces(review) > 0
+    end
+    return true
+end
+
+local function ReviewIsDestructive(review)
+    return review and review.destructive and not ReviewUsesSelectedPieces(review)
+end
+
+local function DefaultProfileImportMode(pieces)
+    if type(pieces) == "table" and (tonumber(pieces.eligibleCount) or 0) > 0 then
+        return "selected"
+    end
+    return "restore"
+end
+
 local function BuildCustomBarsSummaryLines(data)
     local lines = {
         "Custom Bars export",
@@ -232,16 +333,23 @@ local function ClassifyProfilePayload(data)
         return validation
     end
 
-    return BuildReview("profile", data, "Profile Restore", "Restore Profile",
-        BuildProfileSummaryLines(data, "Full profile export"), {
+    local pieces = BuildProfileImportPiecesReview and BuildProfileImportPiecesReview(data, {
+        exporterCharKey = data._exporterCharKey,
+    }) or nil
+
+    return BuildReview("profile", data, "Profile Backup", "Restore Backup",
+        BuildProfileSummaryLines(data, "Profile backup export"), {
         destructive = true,
-        warning = "This will replace your current profile.",
+        mode = DefaultProfileImportMode(pieces),
+        pieces = pieces,
+        warning = "This replaces your current profile.",
     })
 end
 
 local function ClassifyDiagnosticPayload(data)
     if type(data.profile) ~= "table" then
-        return BuildError("diagnostic_without_profile", "This diagnostic string does not include an importable profile.")
+        return BuildError("diagnostic_without_profile",
+            "This diagnostic string does not include an importable profile.")
     end
     if IsUnsupportedPayload(data.profile) then
         return BuildLegacyError("diagnostic profile")
@@ -257,11 +365,17 @@ local function ClassifyDiagnosticPayload(data)
         table.insert(lines, 2, "Source: " .. tostring(meta.charName))
     end
 
-    return BuildReview("diagnostic", data.profile, "Diagnostic Profile Restore",
-        "Restore Diagnostic Profile", lines, {
+    local pieces = BuildProfileImportPiecesReview and BuildProfileImportPiecesReview(data.profile, {
+        exporterCharKey = meta and meta.charKey,
+    }) or nil
+
+    return BuildReview("diagnostic", data.profile, "Diagnostic Restore",
+        "Restore Diagnostic", lines, {
         diagnostic = data,
         destructive = true,
-        warning = "This will replace your current profile with the bug report profile.",
+        mode = "restore",
+        pieces = pieces,
+        warning = "This replaces your current profile with the bug report profile.",
     })
 end
 
@@ -352,14 +466,30 @@ function CooldownCompanion:ApplyReviewedImport(review)
     end
 
     if review.kind == "profile" then
+        if ReviewUsesSelectedPieces(review) then
+            local imported = ApplyProfileImportPieces and ApplyProfileImportPieces(review.data, review.pieces)
+            if imported then
+                self:Print("Profile pieces imported.")
+            end
+            return imported == true
+        end
+
         local imported = ApplyProfileImportData and ApplyProfileImportData(review.data)
         if imported then
-            self:Print("Profile imported.")
+            self:Print("Profile backup restored.")
         end
         return imported == true
     end
 
     if review.kind == "diagnostic" then
+        if ReviewUsesSelectedPieces(review) then
+            local imported = ApplyProfileImportPieces and ApplyProfileImportPieces(review.data, review.pieces)
+            if imported then
+                self:Print("Diagnostic profile pieces imported.")
+            end
+            return imported == true
+        end
+
         local diagnostic = review.diagnostic
         local meta = GetDiagnosticMeta(diagnostic)
         local imported = ApplyFullProfileImport and ApplyFullProfileImport(review.data, {
@@ -369,7 +499,7 @@ function CooldownCompanion:ApplyReviewedImport(review)
             renameForeignCharacters = false,
         })
         if imported then
-            self:Print("Diagnostic profile imported.")
+            self:Print("Diagnostic profile restored.")
         end
         return imported == true
     end
@@ -401,6 +531,21 @@ local function AddButton(group, text, width)
     return button
 end
 
+local function RelayoutImportWindow(frame, reviewScroll, ...)
+    for i = 1, select("#", ...) do
+        local group = select(i, ...)
+        if group and group.DoLayout then
+            group:DoLayout()
+        end
+    end
+    if reviewScroll and reviewScroll.DoLayout then
+        reviewScroll:DoLayout()
+    end
+    if frame and frame.DoLayout then
+        frame:DoLayout()
+    end
+end
+
 local function CloseImportReviewFrame(widget)
     activeReview = nil
     if pendingReviewImport and pendingReviewImport.frame == widget then
@@ -427,13 +572,13 @@ end
 
 local function GetDestructiveConfirmText(review)
     if review and review.kind == "diagnostic" then
-        return "Restore this bug report profile? Your current profile will be overwritten."
+        return "Restore this diagnostic profile? Your current profile will be overwritten."
     end
-    return "Restore this profile? Your current profile will be overwritten."
+    return "Restore this profile backup? Your current profile will be overwritten."
 end
 
 local function ConfirmOrApplyReview(review, frame)
-    if review.destructive then
+    if ReviewIsDestructive(review) then
         pendingReviewImport = {
             review = review,
             frame = frame,
@@ -467,12 +612,105 @@ StaticPopupDialogs[IMPORT_REVIEW_CONFIRM_POPUP] = {
 
 local function FormatReviewText(review)
     local lines = {}
-    AddLine(lines, review.title and "|cffffd100" .. review.title .. "|r")
-    AddLine(lines, review.warning and "|cffff6666" .. review.warning .. "|r")
-    for _, line in ipairs(review.summaryLines or {}) do
+    local title = review.title
+    local warning = review.warning
+    local summaryLines = review.summaryLines
+    if ReviewUsesSelectedPieces(review) then
+        title = review.kind == "diagnostic" and "Diagnostic Profile Pieces" or "Profile Pieces Import"
+        warning = nil
+        summaryLines = BuildSelectedPiecesSummaryLines(review)
+    end
+
+    AddLine(lines, title and "|cffffd100" .. title .. "|r")
+    AddLine(lines, warning and "|cffff6666" .. warning .. "|r")
+    for _, line in ipairs(summaryLines or {}) do
         AddLine(lines, line)
     end
     return table.concat(lines, "\n")
+end
+
+local function ReleaseChildren(group)
+    if not group then
+        return
+    end
+    if group.ReleaseChildren then
+        group:ReleaseChildren()
+    else
+        group.children = {}
+    end
+end
+
+local function RenderModeControl(group, review, refresh)
+    ReleaseChildren(group)
+    if not (IsProfileReviewKind(review) and review.pieces) then
+        return
+    end
+
+    local modeDrop = AceGUI:Create("Dropdown")
+    modeDrop:SetLabel("Import mode:")
+    modeDrop:SetList(IMPORT_MODE_LABELS, IMPORT_MODE_ORDER)
+    modeDrop:SetValue(review.mode or "restore")
+    modeDrop:SetWidth(260)
+    modeDrop:SetCallback("OnValueChanged", function(widget, event, value)
+        review.mode = value == "selected" and "selected" or "restore"
+        refresh()
+    end)
+    group:AddChild(modeDrop)
+end
+
+local function RenderPieceRows(group, review, refresh)
+    ReleaseChildren(group)
+    if not ReviewUsesSelectedPieces(review) then
+        return
+    end
+
+    local pieces = review.pieces
+    local rows = type(pieces) == "table" and type(pieces.rows) == "table" and pieces.rows or nil
+    if not rows then
+        local emptyLabel = AceGUI:Create("Label")
+        ConfigureWrappedLabel(emptyLabel)
+        emptyLabel:SetText("|cff888888No profile pieces are available for selected import.|r")
+        group:AddChild(emptyLabel)
+        return
+    end
+
+    local visibleRows = 0
+    for _, row in ipairs(rows) do
+        if row.eligible then
+            visibleRows = visibleRows + 1
+            local cb = AceGUI:Create("CheckBox")
+            cb:SetFullWidth(true)
+            cb:SetLabel(row.label or "Profile piece")
+            cb:SetValue(row.selected == true)
+            cb:SetCallback("OnValueChanged", function(widget, event, value)
+                if SetProfileImportPieceSelected then
+                    SetProfileImportPieceSelected(pieces, row, value == true)
+                else
+                    row.selected = value == true
+                    row.userChanged = true
+                end
+                refresh()
+            end)
+            group:AddChild(cb)
+        end
+    end
+
+    if visibleRows == 0 then
+        local emptyLabel = AceGUI:Create("Label")
+        ConfigureWrappedLabel(emptyLabel)
+        emptyLabel:SetText("|cff888888No pieces compatible with your current class are available.|r")
+        group:AddChild(emptyLabel)
+    end
+
+    if pieces.customBarCount and pieces.customBarCount > 0 then
+        local customBarsLabel = AceGUI:Create("Label")
+        ConfigureWrappedLabel(customBarsLabel)
+        customBarsLabel:SetText(
+            "|cff888888Custom Bars found in this profile are not selectable "
+            .. "yet.|r"
+        )
+        group:AddChild(customBarsLabel)
+    end
 end
 
 local function ShowImportReviewWindow(context)
@@ -483,39 +721,86 @@ local function ShowImportReviewWindow(context)
 
     local frame = AceGUI:Create("Window")
     frame:SetTitle("Import")
-    frame:SetWidth(560)
-    frame:SetHeight(430)
+    frame:SetWidth(IMPORT_WINDOW_WIDTH)
+    frame:SetHeight(IMPORT_WINDOW_HEIGHT)
     frame:SetLayout("List")
     importReviewFrame = frame
     activeReview = nil
 
+    local pasteGroup = AceGUI:Create("SimpleGroup")
+    pasteGroup:SetFullWidth(true)
+    pasteGroup:SetHeight(IMPORT_TEXT_HEIGHT)
+    pasteGroup.noAutoHeight = true
+    pasteGroup:SetLayout("Fill")
+    frame:AddChild(pasteGroup)
+
     local inputBox = AceGUI:Create("MultiLineEditBox")
     inputBox:SetLabel("Paste import string:")
-    inputBox:SetFullWidth(true)
-    inputBox:SetNumLines(8)
-    inputBox.button:Hide()
-    frame:AddChild(inputBox)
+    inputBox:SetNumLines(IMPORT_TEXT_LINES)
+    inputBox:DisableButton(true)
+    pasteGroup:AddChild(inputBox)
+
+    local reviewScroll = AceGUI:Create("ScrollFrame")
+    reviewScroll:SetFullWidth(true)
+    reviewScroll:SetHeight(IMPORT_REVIEW_HEIGHT)
+    reviewScroll:SetLayout("List")
+    frame:AddChild(reviewScroll)
+
+    local modeGroup = AceGUI:Create("SimpleGroup")
+    modeGroup:SetFullWidth(true)
+    modeGroup:SetLayout("Flow")
+    reviewScroll:AddChild(modeGroup)
+
+    local disclaimerLabel = AceGUI:Create("Label")
+    ConfigureWrappedLabel(disclaimerLabel)
+    if disclaimerLabel.SetFontObject and GameFontNormal then
+        disclaimerLabel:SetFontObject(GameFontNormal)
+    end
+    disclaimerLabel:SetText("")
+    reviewScroll:AddChild(disclaimerLabel)
 
     local statusLabel = AceGUI:Create("Label")
     ConfigureWrappedLabel(statusLabel)
     statusLabel:SetText("|cff888888No import string reviewed.|r")
-    frame:AddChild(statusLabel)
+    reviewScroll:AddChild(statusLabel)
+
+    local pieceGroup = AceGUI:Create("SimpleGroup")
+    pieceGroup:SetFullWidth(true)
+    pieceGroup:SetLayout("List")
+    reviewScroll:AddChild(pieceGroup)
 
     local buttonGroup = AceGUI:Create("SimpleGroup")
     buttonGroup:SetFullWidth(true)
+    buttonGroup:SetHeight(IMPORT_ACTION_HEIGHT)
+    buttonGroup.noAutoHeight = true
     buttonGroup:SetLayout("Flow")
 
-    local reviewButton = AddButton(buttonGroup, "Review", 120)
-    local acceptButton = AddButton(buttonGroup, "Import", 180)
+    local acceptButton = AddButton(buttonGroup, "Import", 220)
     acceptButton:SetDisabled(true)
     local cancelButton = AddButton(buttonGroup, "Cancel", 120)
 
     frame:AddChild(buttonGroup)
 
+    local function RefreshPresentation()
+        RenderModeControl(modeGroup, activeReview, RefreshPresentation)
+        RenderPieceRows(pieceGroup, activeReview, RefreshPresentation)
+        acceptButton:SetText(GetReviewAcceptText(activeReview))
+        acceptButton:SetDisabled(not CanApplyReview(activeReview))
+        disclaimerLabel:SetText(GetProfileImportDisclaimer(activeReview) or "")
+        if activeReview then
+            statusLabel:SetText(FormatReviewText(activeReview))
+        end
+        RelayoutImportWindow(frame, reviewScroll, modeGroup, pieceGroup)
+    end
+
     local function ClearReview()
         activeReview = nil
         acceptButton:SetDisabled(true)
         acceptButton:SetText("Import")
+        disclaimerLabel:SetText("")
+        ReleaseChildren(modeGroup)
+        ReleaseChildren(pieceGroup)
+        RelayoutImportWindow(frame, reviewScroll, modeGroup, pieceGroup)
     end
 
     local function ReviewInput()
@@ -523,17 +808,18 @@ local function ShowImportReviewWindow(context)
         if not review.ok then
             ClearReview()
             statusLabel:SetText("|cffff6666" .. (review.message or "Import failed.") .. "|r")
+            RelayoutImportWindow(frame, reviewScroll, modeGroup, pieceGroup)
             return
         end
 
         activeReview = review
-        acceptButton:SetText(review.acceptText or "Import")
-        acceptButton:SetDisabled(false)
-        statusLabel:SetText(FormatReviewText(review))
+        if reviewScroll.SetScroll then
+            reviewScroll:SetScroll(0)
+        end
+        RefreshPresentation()
     end
 
     inputBox:SetCallback("OnTextChanged", ReviewInput)
-    reviewButton:SetCallback("OnClick", ReviewInput)
     acceptButton:SetCallback("OnClick", function()
         if not activeReview then
             ReviewInput()
