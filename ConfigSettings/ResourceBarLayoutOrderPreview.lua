@@ -499,6 +499,18 @@ local function BuildPreviewIconEntries(visibleButtons)
     return entries
 end
 
+local function GetPreviewButtonSize(button, fallbackWidth, fallbackHeight)
+    local width = fallbackWidth
+    local height = fallbackHeight
+    if button and type(button.GetWidth) == "function" then
+        width = button:GetWidth() or width
+    end
+    if button and type(button.GetHeight) == "function" then
+        height = button:GetHeight() or height
+    end
+    return width, height
+end
+
 local function GetConfiguredPreviewIconSize(group)
     local style = group and group.style or {}
 
@@ -556,9 +568,8 @@ local function BuildSourcePanelData(groupId, group, visibleButtons, frame)
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING or 4
     local sampleButton = frame and visibleButtons[1]
     local iconWidth, iconHeight = GetConfiguredPreviewIconSize(group)
-    if sampleButton and sampleButton.GetWidth and sampleButton.GetHeight then
-        iconWidth = sampleButton:GetWidth() or iconWidth
-        iconHeight = sampleButton:GetHeight() or iconHeight
+    if sampleButton then
+        iconWidth, iconHeight = GetPreviewButtonSize(sampleButton, iconWidth, iconHeight)
     end
     local previewIcons = BuildPreviewIconEntries(visibleButtons)
     local previewCount = #previewIcons
@@ -1394,8 +1405,7 @@ local function RenderMirroredPanel(preview, parent, panelData)
     for index, entry in ipairs(panelData.previewIcons or {}) do
         local iconFrame = AcquireIcon(preview, frame)
         local button = entry.button or entry.templateButton
-        local buttonWidth = (button and button:GetWidth()) or panelData.iconWidth
-        local buttonHeight = (button and button:GetHeight()) or panelData.iconHeight
+        local buttonWidth, buttonHeight = GetPreviewButtonSize(button, panelData.iconWidth, panelData.iconHeight)
         iconFrame:SetSize(buttonWidth, buttonHeight)
 
         local row

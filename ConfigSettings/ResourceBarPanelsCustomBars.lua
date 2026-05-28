@@ -12,6 +12,7 @@ local LSM = LibStub("LibSharedMedia-3.0")
 local CS = ST._configState
 local IsPassiveOrProc = ST._IsPassiveOrProc
 local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
+local OpenImportReviewWindow = ST._OpenImportReviewWindow
 local ClearCustomBarPreviewState = ST._ClearConfigCustomBarPreviewState
 local SelectConfigCustomBar = ST._SelectConfigCustomBar
 local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
@@ -1730,6 +1731,13 @@ local function BuildCustomBarsListPanel(container)
     actionControls:SetLayout("CDC_MANUAL")
     actionControls:AddChild(addBox)
 
+    local importBtn = AceGUI:Create("Button")
+    importBtn:SetText("Import")
+    importBtn:SetCallback("OnClick", function()
+        OpenImportReviewWindow()
+    end)
+    actionControls:AddChild(importBtn)
+
     local exportAllBtn = AceGUI:Create("Button")
     exportAllBtn:SetText("Export All")
     exportAllBtn:SetCallback("OnClick", function()
@@ -1750,9 +1758,16 @@ local function BuildCustomBarsListPanel(container)
         addBox.frame:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
         addBox.frame:SetWidth(width)
         addBox.frame:SetHeight(28)
+        local gap = 3
+        local importWidth = math.floor((width - gap) / 2)
+        local exportWidth = width - gap - importWidth
+        importBtn.frame:ClearAllPoints()
+        importBtn.frame:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -31)
+        importBtn.frame:SetWidth(importWidth)
+        importBtn.frame:SetHeight(28)
         exportAllBtn.frame:ClearAllPoints()
-        exportAllBtn.frame:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -31)
-        exportAllBtn.frame:SetWidth(width)
+        exportAllBtn.frame:SetPoint("LEFT", importBtn.frame, "RIGHT", gap, 0)
+        exportAllBtn.frame:SetWidth(exportWidth)
         exportAllBtn.frame:SetHeight(28)
     end
     local originalActionControlsOnWidthSet = actionControls.OnWidthSet
