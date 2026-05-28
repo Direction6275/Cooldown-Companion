@@ -10,7 +10,6 @@ local AceGUI = LibStub("AceGUI-3.0")
 
 local PrepareSharedImportText = ST._PrepareSharedImportText
 local DecodeSharedPayload = ST._DecodeSharedPayload
-local ApplyProfileImportData = ST._ApplyProfileImportData
 local ApplyGroupImportData = ST._ApplyGroupImportData
 local ApplyCustomBarsImportData = ST._ApplyCustomBarsImportData
 local ApplyFullProfileImport = ST._ApplyFullProfileImport
@@ -48,17 +47,6 @@ local function CountPairs(tbl)
         end
     end
     return count
-end
-
-local function CountListOrPairs(tbl)
-    if type(tbl) ~= "table" then
-        return 0
-    end
-    local count = #tbl
-    if count > 0 then
-        return count
-    end
-    return CountPairs(tbl)
 end
 
 local function AddLine(lines, text)
@@ -117,6 +105,25 @@ local function GetDiagnosticMeta(diagnostic)
     return nil
 end
 
+local function BuildDiagnosticSourceCharacterInfo(meta)
+    if type(meta) ~= "table" or type(meta.charKey) ~= "string" or meta.charKey == "" then
+        return nil
+    end
+
+    local classFilename = meta.classFilename or meta.className
+    local classID = tonumber(meta.classID)
+    if not classFilename and not classID then
+        return nil
+    end
+
+    return {
+        [meta.charKey] = {
+            classFilename = classFilename,
+            classID = classID,
+        },
+    }
+end
+
 local function GetPayloadDataLabel(data, isDiagnostic)
     if isDiagnostic or (type(data) == "table" and data.reportKind == "bugReport") then
         return "diagnostic string"
@@ -142,41 +149,14 @@ local function CountContainerPanels(containers)
     return panelCount
 end
 
-local function CountProfileCustomBars(profile)
-    local count = 0
-    local stores = type(profile) == "table" and profile.resourceBarsByChar or nil
-    if type(stores) ~= "table" then
-        return count
-    end
-
-    for _, settings in pairs(stores) do
-        local customBars = type(settings) == "table"
-            and (settings.customBars or settings.customAuraBars)
-            or nil
-        if type(customBars) == "table" then
-            if type(customBars.entries) == "table" then
-                count = count + CountListOrPairs(customBars.entries)
-            elseif type(customBars.order) == "table" then
-                count = count + CountListOrPairs(customBars.order)
-            else
-                for _, specBars in pairs(customBars) do
-                    count = count + CountListOrPairs(specBars)
-                end
-            end
-        end
-    end
-
-    return count
-end
-
-local function BuildProfileSummaryLines(profile, heading)
+local function BuildProfileSummaryLines(profile, heading, customBarCount)
     local lines = {}
     AddLine(lines, heading or "Full profile")
     AddLine(lines, FormatCount("Groups", CountPairs(profile and profile.groupContainers)))
     AddLine(lines, FormatCount("Panels", CountPairs(profile and profile.groups)))
     AddLine(lines, FormatCount("Folders", CountPairs(profile and profile.folders)))
 
-    local customBarCount = CountProfileCustomBars(profile)
+    customBarCount = customBarCount or 0
     if customBarCount > 0 then
         AddLine(lines, FormatCount("Custom Bars", customBarCount))
     end
@@ -218,13 +198,13 @@ local function RecountSelectedPieces(review)
     return selected
 end
 
-local function BuildSelectedPiecesSummaryLines(review)
+local function BuildSelectedPiecesSummaryLines(review, selectedCount)
     local pieces = review and review.pieces or nil
     local lines = {}
     AddLine(lines, review.kind == "diagnostic" and "Diagnostic selected pieces" or "Profile selected pieces")
     AddLine(lines, "Only pieces compatible with your current class are shown.")
     AddLine(lines, FormatCount("Importable pieces", pieces and pieces.eligibleCount or 0))
-    AddLine(lines, FormatCount("Selected pieces", RecountSelectedPieces(review)))
+    AddLine(lines, FormatCount("Selected pieces", selectedCount or RecountSelectedPieces(review)))
     if pieces and pieces.disabledCount and pieces.disabledCount > 0 then
         AddLine(lines, FormatCount("Hidden incompatible pieces", pieces.disabledCount))
     end
@@ -258,12 +238,12 @@ local function GetReviewAcceptText(review)
     return review and review.acceptText or "Import"
 end
 
-local function CanApplyReview(review)
+local function CanApplyReview(review, selectedCount)
     if not review then
         return false
     end
     if ReviewUsesSelectedPieces(review) then
-        return RecountSelectedPieces(review) > 0
+        return (selectedCount or RecountSelectedPieces(review)) > 0
     end
     return true
 end
@@ -338,7 +318,7 @@ local function ClassifyProfilePayload(data)
     }) or nil
 
     return BuildReview("profile", data, "Profile Backup", "Restore Backup",
-        BuildProfileSummaryLines(data, "Profile backup export"), {
+        BuildProfileSummaryLines(data, "Profile backup export", pieces and pieces.customBarCount), {
         destructive = true,
         mode = DefaultProfileImportMode(pieces),
         pieces = pieces,
@@ -359,15 +339,16 @@ local function ClassifyDiagnosticPayload(data)
         return validation
     end
 
-    local lines = BuildProfileSummaryLines(data.profile, "Diagnostic profile attachment")
     local meta = GetDiagnosticMeta(data)
+    local pieces = BuildProfileImportPiecesReview and BuildProfileImportPiecesReview(data.profile, {
+        exporterCharKey = meta and meta.charKey,
+        sourceCharacterInfo = BuildDiagnosticSourceCharacterInfo(meta),
+    }) or nil
+    local lines = BuildProfileSummaryLines(data.profile, "Diagnostic profile attachment",
+        pieces and pieces.customBarCount)
     if meta and meta.charName then
         table.insert(lines, 2, "Source: " .. tostring(meta.charName))
     end
-
-    local pieces = BuildProfileImportPiecesReview and BuildProfileImportPiecesReview(data.profile, {
-        exporterCharKey = meta and meta.charKey,
-    }) or nil
 
     return BuildReview("diagnostic", data.profile, "Diagnostic Restore",
         "Restore Diagnostic", lines, {
@@ -465,41 +446,28 @@ function CooldownCompanion:ApplyReviewedImport(review)
         return false
     end
 
-    if review.kind == "profile" then
+    if review.kind == "profile" or review.kind == "diagnostic" then
         if ReviewUsesSelectedPieces(review) then
-            local imported = ApplyProfileImportPieces and ApplyProfileImportPieces(review.data, review.pieces)
-            if imported then
-                self:Print("Profile pieces imported.")
-            end
-            return imported == true
+            return ApplyProfileImportPieces and ApplyProfileImportPieces(review.data, review.pieces) == true
         end
 
-        local imported = ApplyProfileImportData and ApplyProfileImportData(review.data)
+        local options = {
+            dataLabel = "profile import",
+            runtimeReason = "profile-import",
+            renameForeignCharacters = true,
+        }
+        local successMessage = "Profile backup restored."
+        if review.kind == "diagnostic" then
+            local meta = GetDiagnosticMeta(review.diagnostic)
+            options.dataLabel = "diagnostic profile"
+            options.exporterCharKey = meta and meta.charKey
+            options.runtimeReason = "diagnostic-profile-import"
+            options.renameForeignCharacters = false
+            successMessage = "Diagnostic profile restored."
+        end
+        local imported = ApplyFullProfileImport and ApplyFullProfileImport(review.data, options)
         if imported then
-            self:Print("Profile backup restored.")
-        end
-        return imported == true
-    end
-
-    if review.kind == "diagnostic" then
-        if ReviewUsesSelectedPieces(review) then
-            local imported = ApplyProfileImportPieces and ApplyProfileImportPieces(review.data, review.pieces)
-            if imported then
-                self:Print("Diagnostic profile pieces imported.")
-            end
-            return imported == true
-        end
-
-        local diagnostic = review.diagnostic
-        local meta = GetDiagnosticMeta(diagnostic)
-        local imported = ApplyFullProfileImport and ApplyFullProfileImport(review.data, {
-            dataLabel = "diagnostic profile",
-            exporterCharKey = meta and meta.charKey,
-            runtimeReason = "diagnostic-profile-import",
-            renameForeignCharacters = false,
-        })
-        if imported then
-            self:Print("Diagnostic profile restored.")
+            self:Print(successMessage)
         end
         return imported == true
     end
@@ -610,7 +578,7 @@ StaticPopupDialogs[IMPORT_REVIEW_CONFIRM_POPUP] = {
     preferredIndex = 3,
 }
 
-local function FormatReviewText(review)
+local function FormatReviewText(review, selectedCount)
     local lines = {}
     local title = review.title
     local warning = review.warning
@@ -618,7 +586,7 @@ local function FormatReviewText(review)
     if ReviewUsesSelectedPieces(review) then
         title = review.kind == "diagnostic" and "Diagnostic Profile Pieces" or "Profile Pieces Import"
         warning = nil
-        summaryLines = BuildSelectedPiecesSummaryLines(review)
+        summaryLines = BuildSelectedPiecesSummaryLines(review, selectedCount)
     end
 
     AddLine(lines, title and "|cffffd100" .. title .. "|r")
@@ -775,11 +743,12 @@ local function ShowImportReviewWindow(context)
     local function RefreshPresentation()
         RenderModeControl(modeGroup, activeReview, RefreshPresentation)
         RenderPieceRows(pieceGroup, activeReview, RefreshPresentation)
+        local selectedCount = ReviewUsesSelectedPieces(activeReview) and RecountSelectedPieces(activeReview) or nil
         acceptButton:SetText(GetReviewAcceptText(activeReview))
-        acceptButton:SetDisabled(not CanApplyReview(activeReview))
+        acceptButton:SetDisabled(not CanApplyReview(activeReview, selectedCount))
         disclaimerLabel:SetText(GetProfileImportDisclaimer(activeReview) or "")
         if activeReview then
-            statusLabel:SetText(FormatReviewText(activeReview))
+            statusLabel:SetText(FormatReviewText(activeReview, selectedCount))
         end
         RelayoutImportWindow(frame, reviewScroll, modeGroup, pieceGroup)
     end

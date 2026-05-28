@@ -311,12 +311,16 @@ local function GetCurrentCharInfo()
     return charKey, info
 end
 
-local function GetOwnerInfo(profile, ownerKey)
+local function GetOwnerInfo(profile, ownerKey, sourceCharacterInfo)
     if type(ownerKey) ~= "string" or ownerKey == "" then
         return nil
     end
+    local info = type(sourceCharacterInfo) == "table" and sourceCharacterInfo[ownerKey] or nil
+    if info then
+        return info
+    end
     local exported = type(profile) == "table" and profile._characterInfo or nil
-    local info = type(exported) == "table" and exported[ownerKey] or nil
+    info = type(exported) == "table" and exported[ownerKey] or nil
     if info then
         return info
     end
@@ -356,12 +360,12 @@ local function ResolveOwnerKey(entity, defaultOwnerKey)
     return defaultOwnerKey
 end
 
-local function BuildEligibility(profile, ownerKey, currentCharKey, currentInfo)
+local function BuildEligibility(profile, ownerKey, currentCharKey, currentInfo, sourceCharacterInfo)
     if not ownerKey or ownerKey == currentCharKey then
         return true, true, nil
     end
 
-    local ownerInfo = GetOwnerInfo(profile, ownerKey)
+    local ownerInfo = GetOwnerInfo(profile, ownerKey, sourceCharacterInfo)
     local matches = ClassesMatch(currentInfo, ownerInfo)
     if matches == false then
         return false, false, ClassLabel(ownerInfo) .. " content"
@@ -397,14 +401,21 @@ local function RowLabel(prefix, name, detail, reason)
     return text
 end
 
-local function BuildPanelInfos(profile, defaultOwnerKey, currentCharKey, currentInfo)
+local function BuildPanelInfos(profile, defaultOwnerKey, currentCharKey, currentInfo, sourceCharacterInfo)
     local panelsByContainer = {}
     local panelInfos = {}
     for panelId, panel in pairs(TableOrEmpty(profile.groups)) do
         if type(panel) == "table" then
             local containerKey = NormalizeKey(panel.parentContainerId)
+            local ownerExplicit = type(panel.createdBy) == "string" and panel.createdBy ~= ""
             local ownerKey = ResolveOwnerKey(panel, defaultOwnerKey)
-            local eligible, selected, reason = BuildEligibility(profile, ownerKey, currentCharKey, currentInfo)
+            local eligible, selected, reason = BuildEligibility(
+                profile,
+                ownerKey,
+                currentCharKey,
+                currentInfo,
+                sourceCharacterInfo
+            )
             local info = {
                 kind = "panel",
                 sourceId = panelId,
@@ -414,6 +425,7 @@ local function BuildPanelInfos(profile, defaultOwnerKey, currentCharKey, current
                 name = panel.name,
                 order = panel.order,
                 ownerKey = ownerKey,
+                ownerExplicit = ownerExplicit,
                 eligible = eligible and containerKey ~= nil,
                 selected = (eligible and selected and containerKey ~= nil) or false,
                 disabledReason = (not containerKey and "Missing parent group") or (not eligible and reason or nil),
@@ -433,7 +445,7 @@ local function BuildPanelInfos(profile, defaultOwnerKey, currentCharKey, current
     return panelInfos, panelsByContainer
 end
 
-local function BuildContainerInfos(profile, panelsByContainer, defaultOwnerKey, currentCharKey, currentInfo)
+local function BuildContainerInfos(profile, panelsByContainer, defaultOwnerKey, currentCharKey, currentInfo, sourceCharacterInfo)
     local containerInfos = {}
     local byKey = {}
     local byFolder = {}
@@ -441,7 +453,13 @@ local function BuildContainerInfos(profile, panelsByContainer, defaultOwnerKey, 
         if type(container) == "table" then
             local key = NormalizeKey(containerId)
             local ownerKey = ResolveOwnerKey(container, defaultOwnerKey)
-            local eligible, selected, reason = BuildEligibility(profile, ownerKey, currentCharKey, currentInfo)
+            local eligible, selected, reason = BuildEligibility(
+                profile,
+                ownerKey,
+                currentCharKey,
+                currentInfo,
+                sourceCharacterInfo
+            )
             local panels = panelsByContainer[key] or {}
             local panelCount = #panels
             local detail = tostring(panelCount) .. " panel" .. (panelCount == 1 and "" or "s")
@@ -476,13 +494,19 @@ local function BuildContainerInfos(profile, panelsByContainer, defaultOwnerKey, 
     return containerInfos, byKey, byFolder
 end
 
-local function BuildFolderInfos(profile, containersByFolder, defaultOwnerKey, currentCharKey, currentInfo)
+local function BuildFolderInfos(profile, containersByFolder, defaultOwnerKey, currentCharKey, currentInfo, sourceCharacterInfo)
     local folderInfos = {}
     for folderId, folder in pairs(TableOrEmpty(profile.folders)) do
         if type(folder) == "table" then
             local key = NormalizeKey(folderId)
             local ownerKey = ResolveOwnerKey(folder, defaultOwnerKey)
-            local eligible, selected, reason = BuildEligibility(profile, ownerKey, currentCharKey, currentInfo)
+            local eligible, selected, reason = BuildEligibility(
+                profile,
+                ownerKey,
+                currentCharKey,
+                currentInfo,
+                sourceCharacterInfo
+            )
             local containers = containersByFolder[key] or {}
             local panelCount = 0
             for _, containerInfo in ipairs(containers) do
@@ -516,10 +540,20 @@ local function InheritPanelContainerEligibility(panelInfos, containersByKey)
     for _, panelInfo in ipairs(panelInfos) do
         local containerInfo = containersByKey[panelInfo.parentContainerKey]
         if containerInfo then
-            panelInfo.eligible = containerInfo.eligible
-            panelInfo.selected = containerInfo.eligible and containerInfo.selected or false
-            panelInfo.disabledReason = containerInfo.disabledReason
-            panelInfo.note = containerInfo.note
+            if not panelInfo.ownerExplicit then
+                panelInfo.eligible = containerInfo.eligible
+                panelInfo.selected = containerInfo.eligible and containerInfo.selected or false
+                panelInfo.disabledReason = containerInfo.disabledReason
+                panelInfo.note = containerInfo.note
+            else
+                local panelEligible = panelInfo.eligible == true
+                panelInfo.eligible = panelEligible and containerInfo.eligible == true
+                panelInfo.selected = panelInfo.eligible and panelInfo.selected and containerInfo.selected or false
+                if panelEligible and not containerInfo.eligible then
+                    panelInfo.disabledReason = containerInfo.disabledReason
+                    panelInfo.note = containerInfo.note
+                end
+            end
         end
     end
 end
@@ -550,7 +584,8 @@ local function AddCustomBarInfo(infos, profile, settings, sourceStoreKey, entryK
         profile,
         ownerKey,
         options.currentCharKey,
-        options.currentInfo
+        options.currentInfo,
+        options.sourceCharacterInfo
     )
     local rawId = type(entry.customBarId) == "string" and entry.customBarId ~= "" and entry.customBarId
         or (type(entryKey) == "string" and entryKey or nil)
@@ -612,6 +647,7 @@ local function AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey,
                 AddCustomBarInfo(infos, profile, settings, sourceStoreKey, customBarId, entry, {
                     currentCharKey = options.currentCharKey,
                     currentInfo = options.currentInfo,
+                    sourceCharacterInfo = options.sourceCharacterInfo,
                     infoByRawId = options.infoByRawId,
                     order = order,
                 })
@@ -624,6 +660,7 @@ local function AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey,
             AddCustomBarInfo(infos, profile, settings, sourceStoreKey, entryKey, entry, {
                 currentCharKey = options.currentCharKey,
                 currentInfo = options.currentInfo,
+                sourceCharacterInfo = options.sourceCharacterInfo,
                 infoByRawId = options.infoByRawId,
                 order = order,
             })
@@ -644,6 +681,7 @@ local function AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreK
                     AddCustomBarInfo(infos, profile, settings, sourceStoreKey, entryKey, entry, {
                         currentCharKey = options.currentCharKey,
                         currentInfo = options.currentInfo,
+                        sourceCharacterInfo = options.sourceCharacterInfo,
                         fallbackSpecID = specID,
                         infoByRawId = options.infoByRawId,
                         legacyAuraSlots = options.legacyAuraSlots,
@@ -655,7 +693,7 @@ local function AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreK
     end
 end
 
-local function BuildCustomBarInfos(profile, currentCharKey, currentInfo)
+local function BuildCustomBarInfos(profile, currentCharKey, currentInfo, sourceCharacterInfo)
     local infos = {}
     local stores = type(profile) == "table" and profile.resourceBarsByChar or nil
     if type(stores) ~= "table" then
@@ -670,12 +708,14 @@ local function BuildCustomBarInfos(profile, currentCharKey, currentInfo)
                 AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey, customBars, {
                     currentCharKey = currentCharKey,
                     currentInfo = currentInfo,
+                    sourceCharacterInfo = sourceCharacterInfo,
                     infoByRawId = infoByRawId,
                 })
             elseif type(customBars) == "table" then
                 AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreKey, customBars, {
                     currentCharKey = currentCharKey,
                     currentInfo = currentInfo,
+                    sourceCharacterInfo = sourceCharacterInfo,
                     infoByRawId = infoByRawId,
                 })
             end
@@ -683,6 +723,7 @@ local function BuildCustomBarInfos(profile, currentCharKey, currentInfo)
                 AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreKey, settings.customAuraBars, {
                     currentCharKey = currentCharKey,
                     currentInfo = currentInfo,
+                    sourceCharacterInfo = sourceCharacterInfo,
                     infoByRawId = infoByRawId,
                     legacyAuraSlots = true,
                 })
@@ -711,16 +752,21 @@ function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
     local currentCharKey, currentInfo = GetCurrentCharInfo()
     currentCharKey = options.currentCharKey or currentCharKey
     currentInfo = options.currentCharInfo or currentInfo
+    local sourceCharacterInfo = options.sourceCharacterInfo
     local defaultOwnerKey = options.exporterCharKey
         or (type(profile) == "table" and profile._exporterCharKey)
 
-    local panelInfos, panelsByContainer = BuildPanelInfos(profile, defaultOwnerKey, currentCharKey, currentInfo)
+    local panelInfos, panelsByContainer = BuildPanelInfos(
+        profile, defaultOwnerKey, currentCharKey, currentInfo, sourceCharacterInfo
+    )
     local containerInfos, containersByKey, containersByFolder = BuildContainerInfos(
-        profile, panelsByContainer, defaultOwnerKey, currentCharKey, currentInfo
+        profile, panelsByContainer, defaultOwnerKey, currentCharKey, currentInfo, sourceCharacterInfo
     )
     InheritPanelContainerEligibility(panelInfos, containersByKey)
-    local folderInfos = BuildFolderInfos(profile, containersByFolder, defaultOwnerKey, currentCharKey, currentInfo)
-    local customBarInfos = BuildCustomBarInfos(profile, currentCharKey, currentInfo)
+    local folderInfos = BuildFolderInfos(
+        profile, containersByFolder, defaultOwnerKey, currentCharKey, currentInfo, sourceCharacterInfo
+    )
+    local customBarInfos = BuildCustomBarInfos(profile, currentCharKey, currentInfo, sourceCharacterInfo)
 
     local model = {
         rows = {},
