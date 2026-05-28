@@ -8,8 +8,26 @@ local CooldownCompanion = ST.Addon
 
 local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
+local ApplyCustomBarsImportData = ST._ApplyCustomBarsImportData
 
 local EMPTY_TABLE = {}
+local CUSTOM_BAR_CONTENT_FIELDS = {
+    "name",
+    "spellID",
+    "auraSpellID",
+    "resourceKey",
+    "width",
+    "height",
+    "texture",
+    "barColor",
+    "backgroundColor",
+    "borderColor",
+    "textColor",
+    "durationFormat",
+    "trackingMode",
+    "auraTracking",
+    "enabled",
+}
 
 local function TableOrEmpty(value)
     return type(value) == "table" and value or EMPTY_TABLE
@@ -25,17 +43,6 @@ local function CountPairs(tbl)
     return count
 end
 
-local function CountListOrPairs(tbl)
-    if type(tbl) ~= "table" then
-        return 0
-    end
-    local count = #tbl
-    if count > 0 then
-        return count
-    end
-    return CountPairs(tbl)
-end
-
 local function NormalizeKey(value)
     if value == nil then
         return nil
@@ -45,6 +52,14 @@ end
 
 local function NumericId(value)
     return tonumber(value) or value
+end
+
+local function NumericSpecId(value)
+    local specID = tonumber(value)
+    if specID and specID > 0 then
+        return specID
+    end
+    return nil
 end
 
 local function DeepCopy(value)
@@ -82,31 +97,211 @@ local function CopyContainerForImport(container)
     return data
 end
 
-local function CountProfileCustomBars(profile)
-    local count = 0
-    local stores = type(profile) == "table" and profile.resourceBarsByChar or nil
-    if type(stores) ~= "table" then
-        return count
-    end
+local function IsSharedCustomBarsStore(customBars)
+    return type(customBars) == "table"
+        and (type(customBars.entries) == "table" or type(customBars.order) == "table")
+end
 
-    for _, settings in pairs(stores) do
-        local customBars = type(settings) == "table"
-            and (settings.customBars or settings.customAuraBars)
-            or nil
-        if type(customBars) == "table" then
-            if type(customBars.entries) == "table" then
-                count = count + CountListOrPairs(customBars.entries)
-            elseif type(customBars.order) == "table" then
-                count = count + CountListOrPairs(customBars.order)
-            else
-                for _, specBars in pairs(customBars) do
-                    count = count + CountListOrPairs(specBars)
+local function IsConfiguredCustomBar(entry)
+    local rb = ST._RB
+    if rb and rb.IsConfiguredCustomBar then
+        return rb.IsConfiguredCustomBar(entry) == true
+    end
+    if type(entry) ~= "table" then
+        return false
+    end
+    if entry.entryType ~= nil or entry.independentAnchorEnabled ~= nil then
+        return true
+    end
+    for _, field in ipairs(CUSTOM_BAR_CONTENT_FIELDS) do
+        if entry[field] ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
+local function AddSpec(specs, specID)
+    specID = NumericSpecId(specID)
+    if specID then
+        specs[specID] = true
+    end
+end
+
+local function CopySpecSet(specs)
+    local copy = {}
+    if type(specs) == "table" then
+        for specID, enabled in pairs(specs) do
+            if enabled == true then
+                copy[specID] = true
+            end
+        end
+    end
+    return copy
+end
+
+local function CountSpecSet(...)
+    local seen = {}
+    for i = 1, select("#", ...) do
+        local specs = select(i, ...)
+        if type(specs) == "table" then
+            for specID, enabled in pairs(specs) do
+                if enabled == true then
+                    seen[specID] = true
                 end
             end
         end
     end
+    return CountPairs(seen)
+end
 
-    return count
+local function MergeSpecSet(target, source)
+    if type(target) ~= "table" or type(source) ~= "table" then
+        return
+    end
+    for specID, enabled in pairs(source) do
+        if enabled == true then
+            target[specID] = true
+        end
+    end
+end
+
+local function SortedKeys(tbl)
+    local keys = {}
+    if type(tbl) == "table" then
+        for key in pairs(tbl) do
+            keys[#keys + 1] = key
+        end
+    end
+    table.sort(keys, function(a, b)
+        local numA = tonumber(a)
+        local numB = tonumber(b)
+        if numA and numB and numA ~= numB then
+            return numA < numB
+        end
+        if numA and not numB then
+            return true
+        end
+        if numB and not numA then
+            return false
+        end
+        local strA = tostring(a)
+        local strB = tostring(b)
+        if strA ~= strB then
+            return strA < strB
+        end
+        return type(a) < type(b)
+    end)
+    return keys
+end
+
+local function CollectEntrySpecs(entry, fallbackSpecID)
+    local specs = {}
+    if type(entry) == "table" then
+        if type(entry.specs) == "table" then
+            for key, value in pairs(entry.specs) do
+                if value == true then
+                    AddSpec(specs, key)
+                elseif type(value) == "number" or type(value) == "string" then
+                    AddSpec(specs, value)
+                end
+            end
+        end
+        AddSpec(specs, entry.specID or entry.spec or entry.sourceSpecID)
+    end
+    AddSpec(specs, fallbackSpecID)
+    return specs
+end
+
+local function CollectCustomBarLayouts(settings, customBarId)
+    local layouts = {}
+    local layoutOrder = type(settings) == "table" and settings.layoutOrder or nil
+    if type(layoutOrder) ~= "table" or customBarId == nil then
+        return layouts
+    end
+    for specID, layout in pairs(layoutOrder) do
+        local normalizedSpecID = NumericSpecId(specID)
+        local customBars = type(layout) == "table" and layout.customBars or nil
+        local customBarLayout = type(customBars) == "table"
+            and (customBars[customBarId] or customBars[tostring(customBarId)])
+            or nil
+        if normalizedSpecID and type(customBarLayout) == "table" then
+            layouts[normalizedSpecID] = CopyForExport(customBarLayout)
+        end
+    end
+    return layouts
+end
+
+local function CollectLegacyCustomAuraBarSlotLayouts(settings, specID, slotKey)
+    local layouts = {}
+    specID = NumericSpecId(specID)
+    if not specID or slotKey == nil then
+        return layouts
+    end
+
+    local layoutOrder = type(settings) == "table" and settings.layoutOrder or nil
+    local layout = type(layoutOrder) == "table"
+        and (layoutOrder[specID] or layoutOrder[tostring(specID)])
+        or nil
+    local slots = type(layout) == "table" and layout.customAuraBarSlots or nil
+    local slotLayout = type(slots) == "table"
+        and (slots[slotKey] or slots[tonumber(slotKey)] or slots[tostring(slotKey)])
+        or nil
+    if type(slotLayout) == "table" then
+        layouts[specID] = CopyForExport(slotLayout)
+    end
+    return layouts
+end
+
+local function MergeLayouts(targetLayouts, targetSpecs, sourceLayouts)
+    if type(targetLayouts) ~= "table" or type(sourceLayouts) ~= "table" then
+        return
+    end
+    for specID, layout in pairs(sourceLayouts) do
+        if type(layout) == "table" then
+            if type(targetLayouts[specID]) ~= "table" then
+                targetLayouts[specID] = CopyForExport(layout)
+            end
+            if type(targetSpecs) == "table" then
+                targetSpecs[specID] = true
+            end
+        end
+    end
+end
+
+local function ShortOwnerLabel(ownerKey)
+    if type(ownerKey) ~= "string" or ownerKey == "" then
+        return nil
+    end
+    return ownerKey:match("^([^%-]+)") or ownerKey
+end
+
+local function MakeCustomBarPayloadId(index)
+    return "profileCustomBar" .. tostring(index)
+end
+
+local function CustomBarName(entry)
+    if type(entry) ~= "table" then
+        return "Custom Bar"
+    end
+    return entry.name or entry.label or entry.spellName or entry.auraName or "Custom Bar"
+end
+
+local function CustomBarDetail(info, includeSource)
+    local specCount = CountSpecSet(info.specs, info.layoutSpecs)
+    local parts = {}
+    if specCount == 0 then
+        parts[#parts + 1] = "All specs"
+    else
+        parts[#parts + 1] = tostring(specCount) .. " spec" .. (specCount == 1 and "" or "s")
+    end
+    if includeSource then
+        local source = ShortOwnerLabel(info.sourceStoreKey)
+        if source then
+            parts[#parts + 1] = source
+        end
+    end
+    return table.concat(parts, ", ")
 end
 
 local function GetCurrentCharInfo()
@@ -345,6 +540,169 @@ local function AddRows(model, infos, prefix)
     end
 end
 
+local function AddCustomBarInfo(infos, profile, settings, sourceStoreKey, entryKey, entry, options)
+    if type(entry) ~= "table" or not IsConfiguredCustomBar(entry) then
+        return
+    end
+    options = options or {}
+    local ownerKey = sourceStoreKey
+    local eligible, selected, reason = BuildEligibility(
+        profile,
+        ownerKey,
+        options.currentCharKey,
+        options.currentInfo
+    )
+    local rawId = type(entry.customBarId) == "string" and entry.customBarId ~= "" and entry.customBarId
+        or (type(entryKey) == "string" and entryKey or nil)
+    local specs = CollectEntrySpecs(entry, options.fallbackSpecID)
+    local layouts = CollectCustomBarLayouts(settings, rawId)
+    if options.legacyAuraSlots then
+        MergeLayouts(layouts, nil, CollectLegacyCustomAuraBarSlotLayouts(
+            settings,
+            options.fallbackSpecID,
+            entryKey
+        ))
+    end
+    local existing = rawId and options.infoByRawId and options.infoByRawId[rawId]
+    if existing then
+        MergeSpecSet(existing.specs, specs)
+        MergeLayouts(existing.layouts, existing.layoutSpecs, layouts)
+        return existing
+    end
+    local layoutSpecs = {}
+    for specID in pairs(layouts) do
+        layoutSpecs[specID] = true
+    end
+    local info = {
+        kind = "customBar",
+        sourceId = MakeCustomBarPayloadId(#infos + 1),
+        sourceStoreKey = sourceStoreKey,
+        sourceEntryKey = entryKey,
+        rawCustomBarId = rawId,
+        customBar = entry,
+        name = CustomBarName(entry),
+        order = options.order,
+        ownerKey = ownerKey,
+        eligible = eligible,
+        selected = eligible and selected or false,
+        disabledReason = not eligible and reason or nil,
+        note = eligible and reason or nil,
+        specs = specs,
+        layoutSpecs = layoutSpecs,
+        layouts = layouts,
+    }
+    info.sourceKey = "customBar:" .. info.sourceId
+    infos[#infos + 1] = info
+    if rawId and options.infoByRawId then
+        options.infoByRawId[rawId] = info
+    end
+    return info
+end
+
+local function AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey, customBars, options)
+    local entries = type(customBars.entries) == "table" and customBars.entries or EMPTY_TABLE
+    local seen = {}
+    local order = 0
+    if type(customBars.order) == "table" then
+        for _, customBarId in ipairs(customBars.order) do
+            local entry = entries[customBarId]
+            if type(entry) == "table" then
+                seen[customBarId] = true
+                order = order + 1
+                AddCustomBarInfo(infos, profile, settings, sourceStoreKey, customBarId, entry, {
+                    currentCharKey = options.currentCharKey,
+                    currentInfo = options.currentInfo,
+                    infoByRawId = options.infoByRawId,
+                    order = order,
+                })
+            end
+        end
+    end
+    for entryKey, entry in pairs(entries) do
+        if not seen[entryKey] then
+            order = order + 1
+            AddCustomBarInfo(infos, profile, settings, sourceStoreKey, entryKey, entry, {
+                currentCharKey = options.currentCharKey,
+                currentInfo = options.currentInfo,
+                infoByRawId = options.infoByRawId,
+                order = order,
+            })
+        end
+    end
+end
+
+local function AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreKey, customBars, options)
+    local order = 0
+    for _, specKey in ipairs(SortedKeys(customBars)) do
+        local specBars = customBars[specKey]
+        local specID = NumericSpecId(specKey)
+        if specID and type(specBars) == "table" then
+            for _, entryKey in ipairs(SortedKeys(specBars)) do
+                local entry = specBars[entryKey]
+                if type(entry) == "table" then
+                    order = order + 1
+                    AddCustomBarInfo(infos, profile, settings, sourceStoreKey, entryKey, entry, {
+                        currentCharKey = options.currentCharKey,
+                        currentInfo = options.currentInfo,
+                        fallbackSpecID = specID,
+                        infoByRawId = options.infoByRawId,
+                        legacyAuraSlots = options.legacyAuraSlots,
+                        order = order,
+                    })
+                end
+            end
+        end
+    end
+end
+
+local function BuildCustomBarInfos(profile, currentCharKey, currentInfo)
+    local infos = {}
+    local stores = type(profile) == "table" and profile.resourceBarsByChar or nil
+    if type(stores) ~= "table" then
+        return infos
+    end
+
+    for sourceStoreKey, settings in pairs(stores) do
+        if type(settings) == "table" then
+            local infoByRawId = {}
+            local customBars = settings.customBars
+            if IsSharedCustomBarsStore(customBars) then
+                AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey, customBars, {
+                    currentCharKey = currentCharKey,
+                    currentInfo = currentInfo,
+                    infoByRawId = infoByRawId,
+                })
+            elseif type(customBars) == "table" then
+                AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreKey, customBars, {
+                    currentCharKey = currentCharKey,
+                    currentInfo = currentInfo,
+                    infoByRawId = infoByRawId,
+                })
+            end
+            if type(settings.customAuraBars) == "table" then
+                AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreKey, settings.customAuraBars, {
+                    currentCharKey = currentCharKey,
+                    currentInfo = currentInfo,
+                    infoByRawId = infoByRawId,
+                    legacyAuraSlots = true,
+                })
+            end
+        end
+    end
+
+    local sourceStores = {}
+    for _, info in ipairs(infos) do
+        sourceStores[info.sourceStoreKey] = true
+    end
+    local includeSource = CountPairs(sourceStores) > 1
+    for _, info in ipairs(infos) do
+        info.detail = CustomBarDetail(info, includeSource)
+        info.label = RowLabel("Custom Bar", info.name, info.detail, info.disabledReason or info.note)
+    end
+    table.sort(infos, SortByOrderNameId)
+    return infos
+end
+
 function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
     if type(profile) ~= "table" then
         profile = {}
@@ -362,23 +720,28 @@ function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
     )
     InheritPanelContainerEligibility(panelInfos, containersByKey)
     local folderInfos = BuildFolderInfos(profile, containersByFolder, defaultOwnerKey, currentCharKey, currentInfo)
+    local customBarInfos = BuildCustomBarInfos(profile, currentCharKey, currentInfo)
 
     local model = {
         rows = {},
         folders = folderInfos,
         containers = containerInfos,
         panels = panelInfos,
+        customBars = customBarInfos,
         containersByKey = containersByKey,
         panelsByContainer = panelsByContainer,
+        currentClassID = currentInfo and currentInfo.classID,
+        currentClassFilename = currentInfo and currentInfo.classFilename,
         eligibleCount = 0,
         selectedCount = 0,
         disabledCount = 0,
-        customBarCount = CountProfileCustomBars(profile),
+        customBarCount = #customBarInfos,
     }
 
     AddRows(model, folderInfos, "Folder")
     AddRows(model, containerInfos, "Group")
     AddRows(model, panelInfos, "Panel")
+    AddRows(model, customBarInfos, "Custom Bar")
     return model
 end
 
@@ -399,7 +762,7 @@ local function RecountSelection(model)
 end
 
 local function SelectionSets(model)
-    local folders, containers, panels = {}, {}, {}
+    local folders, containers, panels, customBars = {}, {}, {}, {}
     local deselectedContainers, deselectedPanels = {}, {}
     for _, row in ipairs(model.rows or {}) do
         if row.eligible then
@@ -410,6 +773,8 @@ local function SelectionSets(model)
                     containers[row.sourceKey] = true
                 elseif row.kind == "panel" then
                     panels[row.sourceKey] = true
+                elseif row.kind == "customBar" then
+                    customBars[row.sourceKey] = true
                 end
             elseif row.userChanged then
                 if row.kind == "container" then
@@ -420,7 +785,7 @@ local function SelectionSets(model)
             end
         end
     end
-    return folders, containers, panels, deselectedContainers, deselectedPanels
+    return folders, containers, panels, customBars, deselectedContainers, deselectedPanels
 end
 
 local function EligiblePanels(containerInfo, selectedPanels, deselectedPanels, includeAll)
@@ -502,6 +867,51 @@ local function FinishImportBatch(batchToken, remapAnchors)
     end
 end
 
+local function BuildSelectedCustomBarsPayload(model, selectedCustomBars)
+    if type(model) ~= "table" or type(selectedCustomBars) ~= "table" then
+        return nil
+    end
+    local payload = {
+        type = "customBars",
+        version = 1,
+        classID = model.currentClassID,
+        classFilename = model.currentClassFilename,
+        bars = {},
+        layouts = {},
+    }
+    for _, info in ipairs(model.customBars or {}) do
+        if info.eligible and selectedCustomBars[info.sourceKey] then
+            local payloadId = info.sourceId
+            local entry = CopyForExport(info.customBar)
+            entry.customBarId = payloadId
+            entry.specs = CopySpecSet(info.specs)
+            entry.specID = nil
+            entry.spec = nil
+            entry.sourceSpecID = nil
+            payload.bars[#payload.bars + 1] = entry
+            for specID, layout in pairs(info.layouts or {}) do
+                if type(layout) == "table" then
+                    payload.layouts[specID] = payload.layouts[specID] or {}
+                    payload.layouts[specID][payloadId] = CopyForExport(layout)
+                end
+            end
+        end
+    end
+    if #payload.bars == 0 then
+        return nil
+    end
+    return payload
+end
+
+local function ApplyCustomBarsPayload(profile, payload)
+    if not (ApplyCustomBarsImportData and payload) then
+        return false
+    end
+    return ApplyCustomBarsImportData(AddCheckpoint(payload, profile), {
+        silentSuccess = true,
+    }) == true
+end
+
 local function SetChildSelection(row, selected)
     if not (row and row.eligible) then
         return
@@ -543,7 +953,7 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
         return false
     end
 
-    local selectedFolders, selectedContainers, selectedPanels, deselectedContainers, deselectedPanels = SelectionSets(model)
+    local selectedFolders, selectedContainers, selectedPanels, selectedCustomBars, deselectedContainers, deselectedPanels = SelectionSets(model)
     local importedContainers = {}
     local batchToken = BeginImportBatch()
     local applied = false
@@ -598,6 +1008,15 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
         }, batchToken)
         applied = ok or applied
         failed = failed or not ok
+    end
+
+    local selectedCustomBarsPayload = BuildSelectedCustomBarsPayload(model, selectedCustomBars)
+    if selectedCustomBarsPayload then
+        local ok = ApplyCustomBarsPayload(profile, selectedCustomBarsPayload)
+        applied = ok or applied
+        failed = failed or not ok
+    elseif CountPairs(selectedCustomBars) > 0 then
+        failed = true
     end
 
     FinishImportBatch(batchToken, applied)

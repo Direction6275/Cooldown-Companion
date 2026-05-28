@@ -1235,7 +1235,7 @@ StaticPopupDialogs["CDC_IMPORT_GROUP"] = {
     preferredIndex = 3,
 }
 
-local function ApplyCustomBarsImportData(data)
+local function ApplyCustomBarsImportData(data, options)
     if type(data) ~= "table" or data.type ~= "customBars" then
         if RejectUnsupportedImportPayload(data, "custom bars import") then
             return false
@@ -1258,7 +1258,9 @@ local function ApplyCustomBarsImportData(data)
         return false
     end
 
-    CooldownCompanion:Print(message)
+    if not (options and options.silentSuccess) then
+        CooldownCompanion:Print(message)
+    end
     CooldownCompanion:ApplyResourceBars()
     CooldownCompanion:UpdateAnchorStacking()
     CooldownCompanion:RefreshConfigPanel()

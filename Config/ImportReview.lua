@@ -229,7 +229,7 @@ local function BuildSelectedPiecesSummaryLines(review)
         AddLine(lines, FormatCount("Hidden incompatible pieces", pieces.disabledCount))
     end
     if pieces and pieces.customBarCount and pieces.customBarCount > 0 then
-        AddLine(lines, "Custom Bars: " .. tostring(pieces.customBarCount) .. " (not selectable yet)")
+        AddLine(lines, FormatCount("Custom Bars", pieces.customBarCount))
     end
     return lines
 end
@@ -702,15 +702,6 @@ local function RenderPieceRows(group, review, refresh)
         group:AddChild(emptyLabel)
     end
 
-    if pieces.customBarCount and pieces.customBarCount > 0 then
-        local customBarsLabel = AceGUI:Create("Label")
-        ConfigureWrappedLabel(customBarsLabel)
-        customBarsLabel:SetText(
-            "|cff888888Custom Bars found in this profile are not selectable "
-            .. "yet.|r"
-        )
-        group:AddChild(customBarsLabel)
-    end
 end
 
 local function ShowImportReviewWindow(context)
