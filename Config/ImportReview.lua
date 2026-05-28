@@ -16,6 +16,7 @@ local ApplyCustomBarsImportData = ST._ApplyCustomBarsImportData
 local ApplyFullProfileImport = ST._ApplyFullProfileImport
 local BuildProfileImportPiecesReview = ST._BuildProfileImportPiecesReview
 local RecountProfileImportPiecesSelection = ST._RecountProfileImportPiecesSelection
+local SetProfileImportPieceSelected = ST._SetProfileImportPieceSelected
 local ApplyProfileImportPieces = ST._ApplyProfileImportPieces
 local CS = ST._configState
 
@@ -682,7 +683,12 @@ local function RenderPieceRows(group, review, refresh)
             cb:SetLabel(row.label or "Profile piece")
             cb:SetValue(row.selected == true)
             cb:SetCallback("OnValueChanged", function(widget, event, value)
-                row.selected = value == true
+                if SetProfileImportPieceSelected then
+                    SetProfileImportPieceSelected(pieces, row, value == true)
+                else
+                    row.selected = value == true
+                    row.userChanged = true
+                end
                 refresh()
             end)
             group:AddChild(cb)

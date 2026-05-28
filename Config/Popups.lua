@@ -883,8 +883,8 @@ local function CreateImportedPanel(db, containerId, panelIndex, srcPanel, import
     importState.panelCount = importState.panelCount + 1
 end
 
-local function ImportContainerEntries(db, entries, charKey, folderId)
-    local importState = {
+local function NewGroupImportState()
+    return {
         containerIdMap = {},
         importedContainerIds = {},
         groupIdMap = {},
@@ -892,6 +892,13 @@ local function ImportContainerEntries(db, entries, charKey, folderId)
         containerCount = 0,
         panelCount = 0,
     }
+end
+
+local function ImportContainerEntries(db, entries, charKey, folderId, importState)
+    importState = importState or NewGroupImportState()
+    local firstContainerIndex = #importState.importedContainerIds + 1
+    local startContainerCount = importState.containerCount
+    local startPanelCount = importState.panelCount
 
     for _, entry in ipairs(entries) do
         local containerId = db.nextContainerId
@@ -922,7 +929,10 @@ local function ImportContainerEntries(db, entries, charKey, folderId)
         importState.containerCount = importState.containerCount + 1
     end
 
-    return importState
+    return importState,
+        importState.containerCount - startContainerCount,
+        importState.panelCount - startPanelCount,
+        importState.importedContainerIds[firstContainerIndex]
 end
 
 local function RemapImportedContainerAnchors(db, importState, preserveContainerRefs)
@@ -986,10 +996,37 @@ local function RemapImportedPanelAnchors(db, importState, preserveOwnContainerRe
     end
 end
 
+local activeGroupImportBatches = setmetatable({}, { __mode = "k" })
+local activeGroupImportPayloads = setmetatable({}, { __mode = "k" })
+
+ST._BeginGroupImportBatch = function()
+    local token = {}
+    activeGroupImportBatches[token] = NewGroupImportState()
+    return token
+end
+
+ST._FinishGroupImportBatch = function(token, remapAnchors)
+    local importState = activeGroupImportBatches[token]
+    activeGroupImportBatches[token] = nil
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if remapAnchors and type(db) == "table" and type(importState) == "table" then
+        RemapImportedContainerAnchors(db, importState, true)
+        RemapImportedPanelAnchors(db, importState)
+    end
+end
+
+ST._AttachGroupImportBatch = function(payload, token)
+    if type(payload) == "table" and activeGroupImportBatches[token] then
+        activeGroupImportPayloads[payload] = token
+    end
+end
+
 local function ApplyGroupImportData(data)
     if type(data) ~= "table" then
         return false
     end
+    local batchToken = activeGroupImportPayloads[data]
+    activeGroupImportPayloads[data] = nil
     if RejectUnsupportedImportPayload(data, "group import") then
         return false
     end
@@ -1002,6 +1039,8 @@ local function ApplyGroupImportData(data)
 
     local db = CooldownCompanion.db.profile
     local charKey = CooldownCompanion.db.keys.char
+    local sharedImportState = batchToken and activeGroupImportBatches[batchToken] or nil
+    local deferAnchorRemap = sharedImportState ~= nil
 
     if data.type == "group" and data.group then
         CooldownCompanion:NotifyLegacySupportCutoff("group import")
@@ -1012,10 +1051,12 @@ local function ApplyGroupImportData(data)
         return false
 
     elseif data.type == "containers" and data.containers then
-        local importState = ImportContainerEntries(db, data.containers, charKey, nil)
-        RemapImportedContainerAnchors(db, importState, true)
-        RemapImportedPanelAnchors(db, importState)
-        CooldownCompanion:Print("Imported " .. importState.containerCount .. " groups.")
+        local importState, containerCount = ImportContainerEntries(db, data.containers, charKey, nil, sharedImportState)
+        if not deferAnchorRemap then
+            RemapImportedContainerAnchors(db, importState, true)
+            RemapImportedPanelAnchors(db, importState)
+        end
+        CooldownCompanion:Print("Imported " .. containerCount .. " groups.")
 
     elseif data.type == "folder" and data.folder then
         if data.groups then
@@ -1082,24 +1123,29 @@ local function ApplyGroupImportData(data)
         }
         local count = 0
         if data.containers then
-            local importState = ImportContainerEntries(db, data.containers, charKey, folderId)
-            RemapImportedContainerAnchors(db, importState, true)
-            RemapImportedPanelAnchors(db, importState)
-            count = importState.panelCount
+            local importState, _, panelCount = ImportContainerEntries(
+                db, data.containers, charKey, folderId, sharedImportState
+            )
+            if not deferAnchorRemap then
+                RemapImportedContainerAnchors(db, importState, true)
+                RemapImportedPanelAnchors(db, importState)
+            end
+            count = panelCount
         end
         CooldownCompanion:Print("Imported folder: " .. (data.folder.name or "Unnamed") .. " (" .. count .. " groups)")
 
     elseif data.type == "container" and data.container and data.panels then
-        local importState = ImportContainerEntries(db, {{
+        local importState, _, panelCount, containerId = ImportContainerEntries(db, {{
             container = data.container,
             panels = data.panels,
             _originalContainerId = data._originalContainerId,
-        }}, charKey, nil)
-        local containerId = importState.importedContainerIds[1]
+        }}, charKey, nil, sharedImportState)
         local container = db.groupContainers[containerId]
-        RemapImportedContainerAnchors(db, importState, false)
-        RemapImportedPanelAnchors(db, importState, true)
-        CooldownCompanion:Print("Imported group: " .. ((container and container.name) or "Unnamed") .. " (" .. importState.panelCount .. " panels)")
+        if not deferAnchorRemap then
+            RemapImportedContainerAnchors(db, importState, false)
+            RemapImportedPanelAnchors(db, importState, true)
+        end
+        CooldownCompanion:Print("Imported group: " .. ((container and container.name) or "Unnamed") .. " (" .. panelCount .. " panels)")
 
     else
         CooldownCompanion:Print("Import failed: unrecognized export type.")

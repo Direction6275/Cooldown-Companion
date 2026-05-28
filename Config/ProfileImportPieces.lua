@@ -9,6 +9,12 @@ local CooldownCompanion = ST.Addon
 local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
 
+local EMPTY_TABLE = {}
+
+local function TableOrEmpty(value)
+    return type(value) == "table" and value or EMPTY_TABLE
+end
+
 local function CountPairs(tbl)
     local count = 0
     if type(tbl) == "table" then
@@ -199,7 +205,7 @@ end
 local function BuildPanelInfos(profile, defaultOwnerKey, currentCharKey, currentInfo)
     local panelsByContainer = {}
     local panelInfos = {}
-    for panelId, panel in pairs(profile.groups or {}) do
+    for panelId, panel in pairs(TableOrEmpty(profile.groups)) do
         if type(panel) == "table" then
             local containerKey = NormalizeKey(panel.parentContainerId)
             local ownerKey = ResolveOwnerKey(panel, defaultOwnerKey)
@@ -236,7 +242,7 @@ local function BuildContainerInfos(profile, panelsByContainer, defaultOwnerKey, 
     local containerInfos = {}
     local byKey = {}
     local byFolder = {}
-    for containerId, container in pairs(profile.groupContainers or {}) do
+    for containerId, container in pairs(TableOrEmpty(profile.groupContainers)) do
         if type(container) == "table" then
             local key = NormalizeKey(containerId)
             local ownerKey = ResolveOwnerKey(container, defaultOwnerKey)
@@ -277,7 +283,7 @@ end
 
 local function BuildFolderInfos(profile, containersByFolder, defaultOwnerKey, currentCharKey, currentInfo)
     local folderInfos = {}
-    for folderId, folder in pairs(profile.folders or {}) do
+    for folderId, folder in pairs(TableOrEmpty(profile.folders)) do
         if type(folder) == "table" then
             local key = NormalizeKey(folderId)
             local ownerKey = ResolveOwnerKey(folder, defaultOwnerKey)
@@ -394,24 +400,36 @@ end
 
 local function SelectionSets(model)
     local folders, containers, panels = {}, {}, {}
+    local deselectedContainers, deselectedPanels = {}, {}
     for _, row in ipairs(model.rows or {}) do
-        if row.eligible and row.selected then
-            if row.kind == "folder" then
-                folders[row.sourceKey] = true
-            elseif row.kind == "container" then
-                containers[row.sourceKey] = true
-            elseif row.kind == "panel" then
-                panels[row.sourceKey] = true
+        if row.eligible then
+            if row.selected then
+                if row.kind == "folder" then
+                    folders[row.sourceKey] = true
+                elseif row.kind == "container" then
+                    containers[row.sourceKey] = true
+                elseif row.kind == "panel" then
+                    panels[row.sourceKey] = true
+                end
+            elseif row.userChanged then
+                if row.kind == "container" then
+                    deselectedContainers[row.sourceKey] = true
+                elseif row.kind == "panel" then
+                    deselectedPanels[row.sourceKey] = true
+                end
             end
         end
     end
-    return folders, containers, panels
+    return folders, containers, panels, deselectedContainers, deselectedPanels
 end
 
-local function EligiblePanels(containerInfo, selectedPanels, includeAll)
+local function EligiblePanels(containerInfo, selectedPanels, deselectedPanels, includeAll)
     local panels = {}
     for _, panelInfo in ipairs(containerInfo.panels) do
-        if panelInfo.eligible and (includeAll or selectedPanels[panelInfo.sourceKey]) then
+        if panelInfo.eligible and (
+            selectedPanels[panelInfo.sourceKey]
+                or (includeAll and not deselectedPanels[panelInfo.sourceKey])
+        ) then
             local panel = CopyGroupForImport(panelInfo.panel)
             panel._originalGroupId = NumericId(panelInfo.sourceId)
             panels[#panels + 1] = panel
@@ -420,11 +438,11 @@ local function EligiblePanels(containerInfo, selectedPanels, includeAll)
     return panels
 end
 
-local function BuildContainerEntry(containerInfo, selectedPanels, includeAll)
+local function BuildContainerEntry(containerInfo, selectedPanels, deselectedPanels, includeAll)
     if not (containerInfo and containerInfo.eligible) then
         return nil
     end
-    local panels = EligiblePanels(containerInfo, selectedPanels, includeAll)
+    local panels = EligiblePanels(containerInfo, selectedPanels, deselectedPanels, includeAll)
     return {
         container = CopyContainerForImport(containerInfo.container),
         panels = panels,
@@ -432,11 +450,11 @@ local function BuildContainerEntry(containerInfo, selectedPanels, includeAll)
     }
 end
 
-local function AddContainerEntry(entries, containerInfo, selectedPanels, includeAll, importedContainers)
+local function AddContainerEntry(entries, containerInfo, selectedPanels, deselectedPanels, includeAll, importedContainers)
     if not (containerInfo and containerInfo.sourceKey and not importedContainers[containerInfo.sourceKey]) then
         return
     end
-    local entry = BuildContainerEntry(containerInfo, selectedPanels, includeAll)
+    local entry = BuildContainerEntry(containerInfo, selectedPanels, deselectedPanels, includeAll)
     if entry then
         importedContainers[containerInfo.sourceKey] = true
         entries[#entries + 1] = entry
@@ -455,6 +473,65 @@ local function AddCheckpoint(payload, profile)
     return payload
 end
 
+local function ContainerHasSelectedPanel(containerInfo, selectedPanels)
+    for _, panelInfo in ipairs(containerInfo.panels or {}) do
+        if selectedPanels[panelInfo.sourceKey] then
+            return true
+        end
+    end
+    return false
+end
+
+local function BeginImportBatch()
+    local begin = ST._BeginGroupImportBatch
+    return begin and begin() or nil
+end
+
+local function ApplyProfilePiecePayload(profile, payload, batchToken)
+    local attach = ST._AttachGroupImportBatch
+    if attach and batchToken then
+        attach(payload, batchToken)
+    end
+    return ApplyPayload(AddCheckpoint(payload, profile))
+end
+
+local function FinishImportBatch(batchToken, remapAnchors)
+    local finish = ST._FinishGroupImportBatch
+    if finish and batchToken then
+        finish(batchToken, remapAnchors == true)
+    end
+end
+
+local function SetChildSelection(row, selected)
+    if not (row and row.eligible) then
+        return
+    end
+    row.selected = selected == true
+    row.userChanged = nil
+end
+
+local function SetProfileImportPieceSelected(model, row, selected)
+    if type(row) ~= "table" then
+        return
+    end
+    local enabled = selected == true
+    row.selected = enabled
+    row.userChanged = true
+    if row.kind == "folder" then
+        for _, containerInfo in ipairs(row.containers or {}) do
+            SetChildSelection(containerInfo, enabled)
+            for _, panelInfo in ipairs(containerInfo.panels or {}) do
+                SetChildSelection(panelInfo, enabled)
+            end
+        end
+    elseif row.kind == "container" then
+        for _, panelInfo in ipairs(row.panels or {}) do
+            SetChildSelection(panelInfo, enabled)
+        end
+    end
+    RecountSelection(model)
+end
+
 function CooldownCompanion:ApplyProfileImportPieces(profile, model)
     if type(profile) ~= "table" or type(model) ~= "table" then
         return false
@@ -466,8 +543,9 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
         return false
     end
 
-    local selectedFolders, selectedContainers, selectedPanels = SelectionSets(model)
+    local selectedFolders, selectedContainers, selectedPanels, deselectedContainers, deselectedPanels = SelectionSets(model)
     local importedContainers = {}
+    local batchToken = BeginImportBatch()
     local applied = false
     local failed = false
 
@@ -475,15 +553,25 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
         if selectedFolders[folderInfo.sourceKey] and folderInfo.eligible then
             local entries = {}
             for _, containerInfo in ipairs(folderInfo.containers or {}) do
-                if selectedContainers[containerInfo.sourceKey] then
-                    AddContainerEntry(entries, containerInfo, selectedPanels, false, importedContainers)
+                local hasSelectedPanel = ContainerHasSelectedPanel(containerInfo, selectedPanels)
+                local includeAll = selectedContainers[containerInfo.sourceKey]
+                    or not deselectedContainers[containerInfo.sourceKey]
+                if includeAll or hasSelectedPanel then
+                    AddContainerEntry(
+                        entries,
+                        containerInfo,
+                        selectedPanels,
+                        deselectedPanels,
+                        includeAll,
+                        importedContainers
+                    )
                 end
             end
-            local ok = ApplyPayload(AddCheckpoint({
+            local ok = ApplyProfilePiecePayload(profile, {
                 type = "folder",
                 folder = CopyForExport(folderInfo.folder),
                 containers = entries,
-            }, profile))
+            }, batchToken)
             applied = ok or applied
             failed = failed or not ok
         end
@@ -492,24 +580,31 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
     local looseEntries = {}
     for _, containerInfo in ipairs(model.containers or {}) do
         if selectedContainers[containerInfo.sourceKey] then
-            AddContainerEntry(looseEntries, containerInfo, selectedPanels, false, importedContainers)
+            AddContainerEntry(looseEntries, containerInfo, selectedPanels, deselectedPanels, true, importedContainers)
         end
     end
 
     for _, panelInfo in ipairs(model.panels or {}) do
         local containerInfo = model.containersByKey and model.containersByKey[panelInfo.parentContainerKey]
         if selectedPanels[panelInfo.sourceKey] then
-            AddContainerEntry(looseEntries, containerInfo, selectedPanels, false, importedContainers)
+            AddContainerEntry(looseEntries, containerInfo, selectedPanels, deselectedPanels, false, importedContainers)
         end
     end
 
     if #looseEntries > 0 then
-        local ok = ApplyPayload(AddCheckpoint({
+        local ok = ApplyProfilePiecePayload(profile, {
             type = "containers",
             containers = looseEntries,
-        }, profile))
+        }, batchToken)
         applied = ok or applied
         failed = failed or not ok
+    end
+
+    FinishImportBatch(batchToken, applied)
+    if applied then
+        if self.RefreshAllGroups then
+            self:RefreshAllGroups()
+        end
     end
 
     if applied and not failed then
@@ -528,6 +623,7 @@ ST._BuildProfileImportPiecesReview = function(profile, options)
 end
 
 ST._RecountProfileImportPiecesSelection = RecountSelection
+ST._SetProfileImportPieceSelected = SetProfileImportPieceSelected
 
 ST._ApplyProfileImportPieces = function(profile, model)
     return CooldownCompanion:ApplyProfileImportPieces(profile, model)
