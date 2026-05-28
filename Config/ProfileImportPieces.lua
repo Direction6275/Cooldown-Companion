@@ -166,7 +166,7 @@ local function BuildEligibility(profile, ownerKey, currentCharKey, currentInfo)
         return false, false, ClassLabel(ownerInfo) .. " content"
     end
     if matches == nil then
-        return true, false, "Source class unknown"
+        return false, false, "Source class unknown"
     end
     return true, true, nil
 end
@@ -479,15 +479,13 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
                     AddContainerEntry(entries, containerInfo, selectedPanels, false, importedContainers)
                 end
             end
-            if #entries > 0 then
-                local ok = ApplyPayload(AddCheckpoint({
-                    type = "folder",
-                    folder = CopyForExport(folderInfo.folder),
-                    containers = entries,
-                }, profile))
-                applied = ok or applied
-                failed = failed or not ok
-            end
+            local ok = ApplyPayload(AddCheckpoint({
+                type = "folder",
+                folder = CopyForExport(folderInfo.folder),
+                containers = entries,
+            }, profile))
+            applied = ok or applied
+            failed = failed or not ok
         end
     end
 

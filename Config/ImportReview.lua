@@ -701,7 +701,7 @@ local function RenderPieceRows(group, review, refresh)
         ConfigureWrappedLabel(customBarsLabel)
         customBarsLabel:SetText(
             "|cff888888Custom Bars found in this profile are not selectable "
-            .. "until the next import/export PR.|r"
+            .. "yet.|r"
         )
         group:AddChild(customBarsLabel)
     end
