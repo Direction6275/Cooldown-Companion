@@ -155,6 +155,46 @@ local function CountSpecSet(...)
     return CountPairs(seen)
 end
 
+local function MergeSpecSet(target, source)
+    if type(target) ~= "table" or type(source) ~= "table" then
+        return
+    end
+    for specID, enabled in pairs(source) do
+        if enabled == true then
+            target[specID] = true
+        end
+    end
+end
+
+local function SortedKeys(tbl)
+    local keys = {}
+    if type(tbl) == "table" then
+        for key in pairs(tbl) do
+            keys[#keys + 1] = key
+        end
+    end
+    table.sort(keys, function(a, b)
+        local numA = tonumber(a)
+        local numB = tonumber(b)
+        if numA and numB and numA ~= numB then
+            return numA < numB
+        end
+        if numA and not numB then
+            return true
+        end
+        if numB and not numA then
+            return false
+        end
+        local strA = tostring(a)
+        local strB = tostring(b)
+        if strA ~= strB then
+            return strA < strB
+        end
+        return type(a) < type(b)
+    end)
+    return keys
+end
+
 local function CollectEntrySpecs(entry, fallbackSpecID)
     local specs = {}
     if type(entry) == "table" then
@@ -190,6 +230,43 @@ local function CollectCustomBarLayouts(settings, customBarId)
         end
     end
     return layouts
+end
+
+local function CollectLegacyCustomAuraBarSlotLayouts(settings, specID, slotKey)
+    local layouts = {}
+    specID = NumericSpecId(specID)
+    if not specID or slotKey == nil then
+        return layouts
+    end
+
+    local layoutOrder = type(settings) == "table" and settings.layoutOrder or nil
+    local layout = type(layoutOrder) == "table"
+        and (layoutOrder[specID] or layoutOrder[tostring(specID)])
+        or nil
+    local slots = type(layout) == "table" and layout.customAuraBarSlots or nil
+    local slotLayout = type(slots) == "table"
+        and (slots[slotKey] or slots[tonumber(slotKey)] or slots[tostring(slotKey)])
+        or nil
+    if type(slotLayout) == "table" then
+        layouts[specID] = CopyForExport(slotLayout)
+    end
+    return layouts
+end
+
+local function MergeLayouts(targetLayouts, targetSpecs, sourceLayouts)
+    if type(targetLayouts) ~= "table" or type(sourceLayouts) ~= "table" then
+        return
+    end
+    for specID, layout in pairs(sourceLayouts) do
+        if type(layout) == "table" then
+            if type(targetLayouts[specID]) ~= "table" then
+                targetLayouts[specID] = CopyForExport(layout)
+            end
+            if type(targetSpecs) == "table" then
+                targetSpecs[specID] = true
+            end
+        end
+    end
 end
 
 local function ShortOwnerLabel(ownerKey)
@@ -479,6 +556,19 @@ local function AddCustomBarInfo(infos, profile, settings, sourceStoreKey, entryK
         or (type(entryKey) == "string" and entryKey or nil)
     local specs = CollectEntrySpecs(entry, options.fallbackSpecID)
     local layouts = CollectCustomBarLayouts(settings, rawId)
+    if options.legacyAuraSlots then
+        MergeLayouts(layouts, nil, CollectLegacyCustomAuraBarSlotLayouts(
+            settings,
+            options.fallbackSpecID,
+            entryKey
+        ))
+    end
+    local existing = rawId and options.infoByRawId and options.infoByRawId[rawId]
+    if existing then
+        MergeSpecSet(existing.specs, specs)
+        MergeLayouts(existing.layouts, existing.layoutSpecs, layouts)
+        return existing
+    end
     local layoutSpecs = {}
     for specID in pairs(layouts) do
         layoutSpecs[specID] = true
@@ -503,6 +593,10 @@ local function AddCustomBarInfo(infos, profile, settings, sourceStoreKey, entryK
     }
     info.sourceKey = "customBar:" .. info.sourceId
     infos[#infos + 1] = info
+    if rawId and options.infoByRawId then
+        options.infoByRawId[rawId] = info
+    end
+    return info
 end
 
 local function AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey, customBars, options)
@@ -518,6 +612,7 @@ local function AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey,
                 AddCustomBarInfo(infos, profile, settings, sourceStoreKey, customBarId, entry, {
                     currentCharKey = options.currentCharKey,
                     currentInfo = options.currentInfo,
+                    infoByRawId = options.infoByRawId,
                     order = order,
                 })
             end
@@ -529,6 +624,7 @@ local function AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey,
             AddCustomBarInfo(infos, profile, settings, sourceStoreKey, entryKey, entry, {
                 currentCharKey = options.currentCharKey,
                 currentInfo = options.currentInfo,
+                infoByRawId = options.infoByRawId,
                 order = order,
             })
         end
@@ -536,16 +632,24 @@ local function AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey,
 end
 
 local function AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreKey, customBars, options)
-    for specKey, specBars in pairs(TableOrEmpty(customBars)) do
+    local order = 0
+    for _, specKey in ipairs(SortedKeys(customBars)) do
+        local specBars = customBars[specKey]
         local specID = NumericSpecId(specKey)
         if specID and type(specBars) == "table" then
-            for index, entry in ipairs(specBars) do
-                AddCustomBarInfo(infos, profile, settings, sourceStoreKey, index, entry, {
-                    currentCharKey = options.currentCharKey,
-                    currentInfo = options.currentInfo,
-                    fallbackSpecID = specID,
-                    order = index,
-                })
+            for _, entryKey in ipairs(SortedKeys(specBars)) do
+                local entry = specBars[entryKey]
+                if type(entry) == "table" then
+                    order = order + 1
+                    AddCustomBarInfo(infos, profile, settings, sourceStoreKey, entryKey, entry, {
+                        currentCharKey = options.currentCharKey,
+                        currentInfo = options.currentInfo,
+                        fallbackSpecID = specID,
+                        infoByRawId = options.infoByRawId,
+                        legacyAuraSlots = options.legacyAuraSlots,
+                        order = order,
+                    })
+                end
             end
         end
     end
@@ -560,16 +664,27 @@ local function BuildCustomBarInfos(profile, currentCharKey, currentInfo)
 
     for sourceStoreKey, settings in pairs(stores) do
         if type(settings) == "table" then
-            local customBars = settings.customBars or settings.customAuraBars
+            local infoByRawId = {}
+            local customBars = settings.customBars
             if IsSharedCustomBarsStore(customBars) then
                 AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey, customBars, {
                     currentCharKey = currentCharKey,
                     currentInfo = currentInfo,
+                    infoByRawId = infoByRawId,
                 })
             elseif type(customBars) == "table" then
                 AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreKey, customBars, {
                     currentCharKey = currentCharKey,
                     currentInfo = currentInfo,
+                    infoByRawId = infoByRawId,
+                })
+            end
+            if type(settings.customAuraBars) == "table" then
+                AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreKey, settings.customAuraBars, {
+                    currentCharKey = currentCharKey,
+                    currentInfo = currentInfo,
+                    infoByRawId = infoByRawId,
+                    legacyAuraSlots = true,
                 })
             end
         end
