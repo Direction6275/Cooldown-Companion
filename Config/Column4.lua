@@ -731,7 +731,7 @@ local function RefreshProfileBar(bar)
         ShowPopupAboveConfig("CDC_EXPORT_PROFILE")
     end)
 
-    AddBarButton("Import", function()
+    AddBarButton("Import Backup", function()
         OpenImportReviewWindow()
     end)
 
