@@ -24,7 +24,11 @@ local MAX_CUSTOM_BARS_IMPORT_LENGTH = 100000
 local DIAGNOSTIC_PREFIX = "CDCdiag:"
 local IMPORT_REVIEW_CONFIRM_POPUP = "CDC_IMPORT_REVIEW_CONFIRM"
 local IMPORT_TEXT_LINES = 8
-local IMPORT_TEXT_HEIGHT = 150
+local IMPORT_TEXT_HEIGHT = 160
+local IMPORT_REVIEW_HEIGHT = 220
+local IMPORT_ACTION_HEIGHT = 30
+local IMPORT_WINDOW_WIDTH = 640
+local IMPORT_WINDOW_HEIGHT = 500
 local IMPORT_MODE_LABELS = {
     restore = "Restore full profile",
     selected = "Import selected pieces",
@@ -501,6 +505,21 @@ local function AddButton(group, text, width)
     return button
 end
 
+local function RelayoutImportWindow(frame, reviewScroll, ...)
+    for i = 1, select("#", ...) do
+        local group = select(i, ...)
+        if group and group.DoLayout then
+            group:DoLayout()
+        end
+    end
+    if reviewScroll and reviewScroll.DoLayout then
+        reviewScroll:DoLayout()
+    end
+    if frame and frame.DoLayout then
+        frame:DoLayout()
+    end
+end
+
 local function CloseImportReviewFrame(widget)
     activeReview = nil
     if pendingReviewImport and pendingReviewImport.frame == widget then
@@ -660,8 +679,8 @@ local function ShowImportReviewWindow(context)
 
     local frame = AceGUI:Create("Window")
     frame:SetTitle("Import")
-    frame:SetWidth(560)
-    frame:SetHeight(430)
+    frame:SetWidth(IMPORT_WINDOW_WIDTH)
+    frame:SetHeight(IMPORT_WINDOW_HEIGHT)
     frame:SetLayout("List")
     importReviewFrame = frame
     activeReview = nil
@@ -679,28 +698,31 @@ local function ShowImportReviewWindow(context)
     inputBox:DisableButton(true)
     pasteGroup:AddChild(inputBox)
 
-    local reviewGroup = AceGUI:Create("SimpleGroup")
-    reviewGroup:SetFullWidth(true)
-    reviewGroup:SetLayout("List")
-    frame:AddChild(reviewGroup)
+    local reviewScroll = AceGUI:Create("ScrollFrame")
+    reviewScroll:SetFullWidth(true)
+    reviewScroll:SetHeight(IMPORT_REVIEW_HEIGHT)
+    reviewScroll:SetLayout("List")
+    frame:AddChild(reviewScroll)
 
     local modeGroup = AceGUI:Create("SimpleGroup")
     modeGroup:SetFullWidth(true)
     modeGroup:SetLayout("Flow")
-    reviewGroup:AddChild(modeGroup)
+    reviewScroll:AddChild(modeGroup)
 
     local statusLabel = AceGUI:Create("Label")
     ConfigureWrappedLabel(statusLabel)
     statusLabel:SetText("|cff888888No import string reviewed.|r")
-    reviewGroup:AddChild(statusLabel)
+    reviewScroll:AddChild(statusLabel)
 
     local pieceGroup = AceGUI:Create("SimpleGroup")
     pieceGroup:SetFullWidth(true)
     pieceGroup:SetLayout("List")
-    reviewGroup:AddChild(pieceGroup)
+    reviewScroll:AddChild(pieceGroup)
 
     local buttonGroup = AceGUI:Create("SimpleGroup")
     buttonGroup:SetFullWidth(true)
+    buttonGroup:SetHeight(IMPORT_ACTION_HEIGHT)
+    buttonGroup.noAutoHeight = true
     buttonGroup:SetLayout("Flow")
 
     local acceptButton = AddButton(buttonGroup, "Import", 220)
@@ -717,6 +739,7 @@ local function ShowImportReviewWindow(context)
         if activeReview then
             statusLabel:SetText(FormatReviewText(activeReview))
         end
+        RelayoutImportWindow(frame, reviewScroll, modeGroup, pieceGroup)
     end
 
     local function ClearReview()
@@ -725,6 +748,7 @@ local function ShowImportReviewWindow(context)
         acceptButton:SetText("Import")
         ReleaseChildren(modeGroup)
         ReleaseChildren(pieceGroup)
+        RelayoutImportWindow(frame, reviewScroll, modeGroup, pieceGroup)
     end
 
     local function ReviewInput()
@@ -732,10 +756,14 @@ local function ShowImportReviewWindow(context)
         if not review.ok then
             ClearReview()
             statusLabel:SetText("|cffff6666" .. (review.message or "Import failed.") .. "|r")
+            RelayoutImportWindow(frame, reviewScroll, modeGroup, pieceGroup)
             return
         end
 
         activeReview = review
+        if reviewScroll.SetScroll then
+            reviewScroll:SetScroll(0)
+        end
         RefreshPresentation()
     end
 
