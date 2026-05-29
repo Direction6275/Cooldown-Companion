@@ -1152,6 +1152,9 @@ local function CreateConfigPanel()
                 }) do
                     applyInfoButtonVisibility(buttons)
                 end
+                if ST.RefreshRuntimeInfoButtonVisibility then
+                    ST.RefreshRuntimeInfoButtonVisibility()
+                end
             end
             UIDropDownMenu_AddButton(info, level)
 

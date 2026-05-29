@@ -337,9 +337,11 @@ function CooldownCompanion:BeginCombatForcedLock()
         frame._combatForcedHidden = not active or nil
         SuppressFrameVisibilityForCombat(frame.dragHandle)
         SuppressFrameVisibilityForCombat(frame.coordLabel)
+        SuppressFrameVisibilityForCombat(frame.dragHelpButton)
         SuppressFrameVisibilityForCombat(frame.nudger)
         ForceCombatMouseLock(frame)
         ForceCombatMouseLock(frame.dragHandle)
+        ForceCombatMouseLock(frame.dragHelpButton)
         ForceCombatMouseLock(frame.nudger)
         for _, button in ipairs(frame.buttons or {}) do
             local host = button and button.auraTextureHost or nil
@@ -352,9 +354,12 @@ function CooldownCompanion:BeginCombatForcedLock()
                     host._isDragging = nil
                 end
                 host._dragEnabled = false
+                ForceCombatMouseLock(host)
                 SuppressFrameVisibilityForCombat(host.dragHandle)
                 SuppressFrameVisibilityForCombat(host.coordLabel)
+                SuppressFrameVisibilityForCombat(host.dragHelpButton)
                 SuppressFrameVisibilityForCombat(host.nudger)
+                ForceCombatMouseLock(host.dragHelpButton)
                 if host.auraTextureOutlineFill then
                     host.auraTextureOutlineFill:Hide()
                 end
@@ -410,11 +415,13 @@ function CooldownCompanion:EndCombatForcedLock()
         frame._combatForcedHidden = nil
         RestoreFrameVisibilityAfterCombat(frame.dragHandle)
         RestoreFrameVisibilityAfterCombat(frame.coordLabel)
+        RestoreFrameVisibilityAfterCombat(frame.dragHelpButton)
         RestoreFrameVisibilityAfterCombat(frame.nudger)
         for _, button in ipairs(frame.buttons or {}) do
             local host = button and button.auraTextureHost or nil
             RestoreFrameVisibilityAfterCombat(host and host.dragHandle or nil)
             RestoreFrameVisibilityAfterCombat(host and host.coordLabel or nil)
+            RestoreFrameVisibilityAfterCombat(host and host.dragHelpButton or nil)
             RestoreFrameVisibilityAfterCombat(host and host.nudger or nil)
         end
     end
@@ -2000,7 +2007,9 @@ function CooldownCompanion:LockAllFrames()
     for groupId, frame in pairs(self.groupFrames) do
         if frame then
             self:UpdateGroupClickthrough(groupId)
-            if frame.dragHandle then
+            if self.SetGroupDragControlsShown then
+                self:SetGroupDragControlsShown(frame, false)
+            elseif frame.dragHandle then
                 frame.dragHandle:Hide()
             end
         end
@@ -2021,10 +2030,10 @@ function CooldownCompanion:UnlockAllFrames()
             self:UpdateGroupClickthrough(groupId)
             local group = self.db.profile.groups[groupId]
             local panelUnlocked = group and group.locked == false and not self._combatForcedLock
-            if frame.dragHandle then
-                if panelUnlocked then
-                    frame.dragHandle:Show()
-                end
+            if panelUnlocked and self.SetGroupDragControlsShown then
+                self:SetGroupDragControlsShown(frame, true)
+            elseif panelUnlocked and frame.dragHandle then
+                frame.dragHandle:Show()
             end
             if panelUnlocked then
                 frame:SetAlpha(1)

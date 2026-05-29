@@ -87,9 +87,6 @@ end
 ------------------------------------------------------------------------
 
 local CAST_NUDGE_BTN_SIZE = RB.INDEPENDENT_NUDGE_BTN_SIZE
-local CAST_NUDGE_REPEAT_DELAY = RB.INDEPENDENT_NUDGE_REPEAT_DELAY
-local CAST_NUDGE_REPEAT_INTERVAL = RB.INDEPENDENT_NUDGE_REPEAT_INTERVAL
-local CancelCastBarNudgeTimers = RB.CancelNudgeTimers
 local ClampCastBarDimension = function(value, fallback) return RB.ClampIndependentDimension(value, fallback, 20) end
 local RoundToTenths = RB.RoundToTenths
 local GetAnchorOffset = RB.GetAnchorOffset
@@ -229,17 +226,12 @@ local function CreateCastBarMoverFrame()
         btn:SetScript("OnEnter", function(self) self.arrow:SetVertexColor(1, 1, 1, 1) end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            CancelCastBarNudgeTimers(self)
             SaveIndependentCastBarAnchor(true)
         end)
         btn:SetScript("OnMouseDown", function(self)
             DoNudge()
-            self._cdcNudgeDelayTimer = C_Timer.NewTimer(CAST_NUDGE_REPEAT_DELAY, function()
-                self._cdcNudgeTicker = C_Timer.NewTicker(CAST_NUDGE_REPEAT_INTERVAL, DoNudge)
-            end)
         end)
         btn:SetScript("OnMouseUp", function(self)
-            CancelCastBarNudgeTimers(self)
             SaveIndependentCastBarAnchor(true)
         end)
 
@@ -314,9 +306,6 @@ UpdateIndependentCastBarDragState = function(settings)
         if frame._nudger._cdcButtons then
             for _, btn in ipairs(frame._nudger._cdcButtons) do
                 btn:EnableMouse(unlocked or false)
-                if not unlocked then
-                    CancelCastBarNudgeTimers(btn)
-                end
             end
         end
     end
@@ -343,11 +332,6 @@ local function HideIndependentCastBarMover()
     end
     if independentMoverFrame._nudger then
         independentMoverFrame._nudger:Hide()
-        if independentMoverFrame._nudger._cdcButtons then
-            for _, btn in ipairs(independentMoverFrame._nudger._cdcButtons) do
-                CancelCastBarNudgeTimers(btn)
-            end
-        end
     end
     if independentMoverFrame._coordLabel then
         independentMoverFrame._coordLabel:Hide()

@@ -1906,18 +1906,6 @@ local function IsBarsConfigActive()
     return configFrame and configFrame.frame and configFrame.frame:IsShown() == true
 end
 
-local function CancelNudgeTimers(button)
-    if not button then return end
-    if button._cdcNudgeDelayTimer then
-        button._cdcNudgeDelayTimer:Cancel()
-        button._cdcNudgeDelayTimer = nil
-    end
-    if button._cdcNudgeTicker then
-        button._cdcNudgeTicker:Cancel()
-        button._cdcNudgeTicker = nil
-    end
-end
-
 ------------------------------------------------------------------------
 -- Add all helpers to ST._RB
 ------------------------------------------------------------------------
@@ -1982,7 +1970,6 @@ RB.GetAnchorOffset = GetAnchorOffset
 RB.RoundToTenths = RoundToTenths
 RB.ClampIndependentDimension = ClampIndependentDimension
 RB.IsBarsConfigActive = IsBarsConfigActive
-RB.CancelNudgeTimers = CancelNudgeTimers
 RB.IsTruthyConfigFlag = IsTruthyConfigFlag
 RB.NormalizeCustomAuraStackTextFormat = NormalizeCustomAuraStackTextFormat
 RB.IsHealerSpec = IsHealerSpec
