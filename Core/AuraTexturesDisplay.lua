@@ -528,6 +528,7 @@ local function EnsureAuraTextureHost(button)
     host:SetMovable(true)
     host:SetClampedToScreen(true)
     host:EnableMouse(false)
+    host:RegisterForDrag("LeftButton")
     host:Hide()
     host._ownerButton = button
 
@@ -1161,7 +1162,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         and hasSavedDisplay
         and (not visibilityState.isGroupedPreview or isGroupedPreviewSelected)
     host._wrapperManaged = visibilityState.isGroupedPreview or nil
-    host:EnableMouse(false)
+    host:EnableMouse(host._dragEnabled == true and not visibilityState.isGroupedPreview)
     SetAuraTextureOutlineShown(host, visibilityState.isGroupedPreview and (isGroupedPreviewSelected or isGroupedPreviewHovered) or false)
     if host.dragHandle and host.coordLabel then
         host.dragHandle.text:SetText(group and group.name or "Texture Panel")
