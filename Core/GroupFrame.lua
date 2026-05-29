@@ -16,6 +16,7 @@ local math_max = math.max
 local math_ceil = math.ceil
 local table_insert = table.insert
 local InCombatLockdown = InCombatLockdown
+local GetCursorPosition = GetCursorPosition
 local select = select
 local wipe = wipe
 
@@ -23,6 +24,29 @@ local wipe = wipe
 local SetFrameClickThrough = ST.SetFrameClickThrough
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 local HideGlowStyles = ST._HideGlowStyles
+
+local CURSOR_ANCHOR_TARGET = "CooldownCompanionCursor"
+local CURSOR_ANCHOR_POINT = "BOTTOMLEFT"
+local CURSOR_ANCHOR_RELATIVE_POINT = "CENTER"
+local CURSOR_ANCHOR_X = 16
+local CURSOR_ANCHOR_Y = 16
+
+ST.CURSOR_ANCHOR_TARGET = CURSOR_ANCHOR_TARGET
+ST.CURSOR_ANCHOR_BADGE_ATLAS = "cursor_openhand_64"
+
+local function IsCursorAnchor(anchor)
+    return type(anchor) == "table" and anchor.relativeTo == CURSOR_ANCHOR_TARGET
+end
+
+local function BuildDefaultCursorAnchor()
+    return {
+        point = CURSOR_ANCHOR_POINT,
+        relativeTo = CURSOR_ANCHOR_TARGET,
+        relativePoint = CURSOR_ANCHOR_RELATIVE_POINT,
+        x = CURSOR_ANCHOR_X,
+        y = CURSOR_ANCHOR_Y,
+    }
+end
 
 -- Return the container frame name for a panel, or nil if not a panel.
 local function GetPanelContainerFrameName(groupId)
@@ -48,6 +72,9 @@ local function GetContainerState(groupId)
     end
 
     if group.parentContainerId then
+        if IsCursorAnchor(group.anchor) then
+            return true, group.baselineAlpha or 1
+        end
         -- Panel: own lock state (nil/true = locked, false = unlocked), panel's own alpha
         return group.locked ~= false, group.baselineAlpha or 1
     end
@@ -192,6 +219,9 @@ local function ResolveSafeAnchorTarget(self, sourceId, sourceKind, relativeTo)
     if not relativeTo or relativeTo == "UIParent" then
         return nil, "ui-parent"
     end
+    if relativeTo == CURSOR_ANCHOR_TARGET then
+        return nil, "cursor"
+    end
 
     local relativeFrame = _G[relativeTo]
     if not relativeFrame then
@@ -203,6 +233,27 @@ local function ResolveSafeAnchorTarget(self, sourceId, sourceKind, relativeTo)
     end
 
     return relativeFrame, "ok"
+end
+
+function CooldownCompanion:GetCursorAnchorTargetName()
+    return CURSOR_ANCHOR_TARGET
+end
+
+function CooldownCompanion:GetDefaultCursorPanelAnchor()
+    return BuildDefaultCursorAnchor()
+end
+
+function CooldownCompanion:IsCursorAnchor(anchor)
+    return IsCursorAnchor(anchor)
+end
+
+function CooldownCompanion:IsGroupCursorAnchored(groupOrId)
+    local group = groupOrId
+    if type(groupOrId) ~= "table" then
+        local profile = self.db and self.db.profile
+        group = profile and profile.groups and profile.groups[groupOrId]
+    end
+    return IsCursorAnchor(group and group.anchor)
 end
 
 function CooldownCompanion:GetContainerAnchorTargetState(containerId, relativeTo)
@@ -498,6 +549,145 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     end
 end
 
+local function GetCursorPositionInUIParentSpace(self)
+    if not (GetCursorPosition and UIParent) then
+        return nil, nil
+    end
+
+    local cursorX, cursorY = GetCursorPosition()
+    if not (cursorX and cursorY) then
+        return nil, nil
+    end
+
+    local scale = UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or 1
+    if scale and scale > 0 then
+        cursorX = cursorX / scale
+        cursorY = cursorY / scale
+    end
+
+    self._cursorAnchorLastX = cursorX
+    self._cursorAnchorLastY = cursorY
+    return cursorX, cursorY
+end
+
+local function GetFallbackCursorPosition(self)
+    local x, y = self._cursorAnchorLastX, self._cursorAnchorLastY
+    if x and y then
+        return x, y
+    end
+
+    if UIParent and UIParent.GetSize then
+        local width, height = UIParent:GetSize()
+        if width and height then
+            return width / 2, height / 2
+        end
+    end
+
+    return 0, 0
+end
+
+local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, resetSized)
+    if not (frame and anchor) then
+        return false
+    end
+    if InCombatLockdown() and frame.IsProtected and frame:IsProtected() then
+        frame._anchorDirty = true
+        return false
+    end
+
+    frame._anchorDirty = nil
+    if resetSized then
+        frame._hasBeenSized = false
+    end
+
+    if frame.alphaSyncFrame then
+        frame.alphaSyncFrame:SetScript("OnUpdate", nil)
+    end
+    frame.anchoredToParent = nil
+
+    if not (cursorX and cursorY) then
+        cursorX, cursorY = GetCursorPositionInUIParentSpace(self)
+    end
+    if not (cursorX and cursorY) then
+        cursorX, cursorY = GetFallbackCursorPosition(self)
+    end
+
+    local x = anchor.x or CURSOR_ANCHOR_X
+    local y = anchor.y or CURSOR_ANCHOR_Y
+    frame:ClearAllPoints()
+    frame:SetPoint(anchor.point or CURSOR_ANCHOR_POINT, UIParent, "BOTTOMLEFT", cursorX + x, cursorY + y)
+    UpdateCoordLabel(frame, x, y)
+    return true
+end
+
+local function GetCursorAnchoredStandaloneHost(frame, group)
+    if not (frame and group and (group.displayMode == "textures" or group.displayMode == "trigger")) then
+        return nil
+    end
+
+    local button = frame.buttons and frame.buttons[1] or nil
+    return button and button.auraTextureHost or nil
+end
+
+function CooldownCompanion:AnchorFrameToCursor(frame, anchor, cursorX, cursorY)
+    return ApplyCursorAnchorPosition(self, frame, anchor or BuildDefaultCursorAnchor(), cursorX, cursorY)
+end
+
+function CooldownCompanion:UpdateCursorAnchoredFrames()
+    local profile = self.db and self.db.profile
+    local groups = profile and profile.groups
+    if not groups then
+        return
+    end
+
+    local cursorX, cursorY = GetCursorPositionInUIParentSpace(self)
+    if not (cursorX and cursorY) then
+        cursorX, cursorY = GetFallbackCursorPosition(self)
+    end
+
+    for groupId, group in pairs(groups) do
+        if IsCursorAnchor(group.anchor) then
+            local frame = self.groupFrames and self.groupFrames[groupId] or nil
+            if frame and frame:IsShown() then
+                ApplyCursorAnchorPosition(self, frame, group.anchor, cursorX, cursorY)
+                local host = GetCursorAnchoredStandaloneHost(frame, group)
+                if host and host:IsShown() then
+                    ApplyCursorAnchorPosition(self, host, group.anchor, cursorX, cursorY)
+                end
+            end
+        end
+    end
+end
+
+function CooldownCompanion:RefreshCursorAnchorTicker()
+    if not self._cursorAnchorTicker then
+        self._cursorAnchorTicker = CreateFrame("Frame")
+    end
+
+    local active = false
+    local profile = self.db and self.db.profile
+    local groups = profile and profile.groups
+    if groups and self.groupFrames then
+        for groupId, group in pairs(groups) do
+            local frame = self.groupFrames[groupId]
+            if IsCursorAnchor(group.anchor) and frame and frame:IsShown() then
+                active = true
+                break
+            end
+        end
+    end
+
+    if active then
+        self._cursorAnchorTicker:SetScript("OnUpdate", function()
+            CooldownCompanion:UpdateCursorAnchoredFrames()
+        end)
+        self._cursorAnchorTicker:Show()
+    else
+        self._cursorAnchorTicker:SetScript("OnUpdate", nil)
+        self._cursorAnchorTicker:Hide()
+    end
+end
+
 function CooldownCompanion:CreateGroupFrame(groupId)
     -- Return existing frame to prevent duplicates (SharedMedia callbacks
     -- can trigger RefreshAllMedia before OnEnable's CreateAllGroupFrames)
@@ -567,12 +757,17 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.coordLabel.text:SetPoint("CENTER")
     frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
 
-    self:SetGroupDragControlsShown(frame, (not isLocked) and #group.buttons > 0 and not isTextureMode)
+    local isCursorAnchored = IsCursorAnchor(group.anchor)
+    self:SetGroupDragControlsShown(frame, (not isLocked) and #group.buttons > 0 and not isTextureMode and not isCursorAnchored)
 
     -- Drag scripts (check lock state at drag time)
     frame:SetScript("OnDragStart", function(self)
         local locked = GetContainerState(self.groupId)
         local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(self.groupId)
+        local dragGroup = CooldownCompanion.db.profile.groups[self.groupId]
+        if dragGroup and IsCursorAnchor(dragGroup.anchor) then
+            return
+        end
         if CooldownCompanion._combatForcedLock then
             return
         elseif previewActive then
@@ -615,6 +810,10 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.dragHandle:SetScript("OnDragStart", function()
         local locked = GetContainerState(groupId)
         local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(groupId)
+        local dragGroup = CooldownCompanion.db.profile.groups[groupId]
+        if dragGroup and IsCursorAnchor(dragGroup.anchor) then
+            return
+        end
         if CooldownCompanion._combatForcedLock then
             return
         elseif previewActive then
@@ -689,6 +888,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         frame:Hide()
     end
 
+    self:RefreshCursorAnchorTicker()
+
     return frame
 end
 
@@ -699,6 +900,15 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
         frame._anchorDirty = true
         return
     end
+
+    if IsCursorAnchor(anchor) then
+        ApplyCursorAnchorPosition(self, frame, anchor, nil, nil, true)
+        if self.RefreshCursorAnchorTicker then
+            self:RefreshCursorAnchorTicker()
+        end
+        return
+    end
+
     frame._anchorDirty = nil
     frame:ClearAllPoints()
 
@@ -823,6 +1033,9 @@ function CooldownCompanion:SaveGroupPosition(groupId)
     local group = self.db.profile.groups[groupId]
 
     if not frame or not group then return end
+    if IsCursorAnchor(group.anchor) then
+        return
+    end
 
     -- Get the screen-space center of our frame
     local cx, cy = frame:GetCenter()
@@ -1311,6 +1524,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     -- Update drag handle text and lock state
     local hasButtons = #group.buttons > 0
     local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isCursorAnchored = IsCursorAnchor(group.anchor)
     local containerPreviewActive = group.parentContainerId and self:IsContainerUnlockPreviewActive(group.parentContainerId)
     local selectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
     if frame.dragHandle and frame.dragHandle.text then
@@ -1320,6 +1534,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         frame,
         hasButtons
             and not isTextureMode
+            and not isCursorAnchored
             and ((containerPreviewActive and selectedInContainer) or (not containerPreviewActive and not isLocked))
     )
     self:UpdateGroupClickthrough(groupId)
@@ -1364,6 +1579,9 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
     if group.parentContainerId and self.RefreshContainerWrapper then
         self:RefreshContainerWrapper(group.parentContainerId)
+    end
+    if self.RefreshCursorAnchorTicker then
+        self:RefreshCursorAnchorTicker()
     end
 end
 
@@ -1413,6 +1631,43 @@ function CooldownCompanion:WouldCreateCircularAnchor(sourceId, targetId, targetK
     return false
 end
 
+function CooldownCompanion:GetDirectPanelAnchorDependents(groupId)
+    local groups = self.db and self.db.profile and self.db.profile.groups
+    if not groups then return {} end
+
+    local targetFrameName = "CooldownCompanionGroup" .. tostring(groupId)
+    local dependents = {}
+    for dependentId, dependentGroup in pairs(groups) do
+        if dependentId ~= groupId
+            and dependentGroup
+            and dependentGroup.parentContainerId
+            and dependentGroup.anchor
+            and dependentGroup.anchor.relativeTo == targetFrameName then
+            dependents[#dependents + 1] = {
+                id = dependentId,
+                name = dependentGroup.name or ("Panel " .. dependentId),
+            }
+        end
+    end
+    return dependents
+end
+
+local function FormatDependentAnchorNames(dependents)
+    local names = {}
+    for _, dependent in ipairs(dependents or {}) do
+        names[#names + 1] = dependent.name
+        if #names >= 3 then
+            break
+        end
+    end
+
+    local text = table.concat(names, ", ")
+    if dependents and #dependents > #names then
+        text = text .. ", +" .. tostring(#dependents - #names) .. " more"
+    end
+    return text
+end
+
 function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
     local group = self.db.profile.groups[groupId]
     local frame = self.groupFrames[groupId]
@@ -1426,10 +1681,35 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         return false
     end
 
+    if targetFrameName == CURSOR_ANCHOR_TARGET then
+        if not group.parentContainerId then
+            self:Print("Only panels can anchor to the cursor.")
+            return false
+        end
+
+        local dependents = self:GetDirectPanelAnchorDependents(groupId)
+        if #dependents > 0 then
+            self:Print("Cannot anchor to Cursor while other panels anchor to this panel: " .. FormatDependentAnchorNames(dependents) .. ".")
+            return false
+        end
+
+        group.anchor = BuildDefaultCursorAnchor()
+        group.locked = nil
+        self:AnchorGroupFrame(frame, group.anchor)
+        self:SetGroupDragControlsShown(frame, false)
+        self:UpdateGroupClickthrough(groupId)
+        self:RefreshCursorAnchorTicker()
+        return true
+    end
+
     -- Block circular anchor chains (check both group and container targets)
     local tgId = targetFrameName and targetFrameName:match("^CooldownCompanionGroup(%d+)$")
     if tgId then
         tgId = tonumber(tgId)
+        if tgId and self:IsGroupCursorAnchored(tgId) then
+            self:Print("Panels anchored to the cursor cannot be anchor targets. Choose Cursor directly instead.")
+            return false
+        end
         if tgId and self:WouldCreateCircularAnchor(groupId, tgId) then
             self:Print("Cannot anchor: would create a circular reference.")
             return false
@@ -1466,6 +1746,7 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         -- If not forceCenter, keep current anchor settings (just relativeTo changes)
         group.anchor.relativeTo = "UIParent"
         self:AnchorGroupFrame(frame, group.anchor, forceCenter)
+        self:RefreshCursorAnchorTicker()
         return true
     end
 
@@ -1491,6 +1772,7 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
             y = 0,
         }
         self:AnchorGroupFrame(frame, group.anchor)
+        self:RefreshCursorAnchorTicker()
         return true
     end
 
@@ -1503,6 +1785,7 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
     }
 
     self:AnchorGroupFrame(frame, group.anchor)
+    self:RefreshCursorAnchorTicker()
     return true
 end
 
@@ -1535,15 +1818,16 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
 
     local isLocked = GetContainerState(groupId)
     local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isCursorAnchored = IsCursorAnchor(group.anchor)
     local containerPreviewActive = group.parentContainerId and self:IsContainerUnlockPreviewActive(group.parentContainerId)
     local isSelectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
 
-    SyncGroupControlLevels(frame, isSelectedInContainer and not isTextureMode)
+    SyncGroupControlLevels(frame, isSelectedInContainer and not isTextureMode and not isCursorAnchored)
 
     if containerPreviewActive then
         SetFrameClickThrough(frame, true, true)
         if frame.dragHandle then
-            if isSelectedInContainer and not isTextureMode then
+            if isSelectedInContainer and not isTextureMode and not isCursorAnchored then
                 SetFrameClickThrough(frame.dragHandle, false, false)
                 frame.dragHandle:EnableMouse(true)
                 frame.dragHandle:RegisterForDrag("LeftButton")
@@ -1553,7 +1837,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
             end
         end
         if frame.nudger then
-            if isSelectedInContainer and not isTextureMode then
+            if isSelectedInContainer and not isTextureMode and not isCursorAnchored then
                 SetFrameClickThrough(frame.nudger, false, false)
                 frame.nudger:EnableMouse(true)
             else
@@ -1567,7 +1851,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     -- Texture panels also keep the backing group frame non-interactive while
     -- unlocked, because dragging and hovering are handled by the separate
     -- visible texture host instead of the hidden 1x1 anchor frame.
-    if isLocked or isTextureMode then
+    if isLocked or isTextureMode or isCursorAnchored then
         SetFrameClickThrough(frame, true, true)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, true, true)
@@ -1910,6 +2194,9 @@ function CooldownCompanion:StartContainerPreviewMemberDrag(containerId, groupId)
     end
 
     self:SelectContainerPanel(containerId, groupId)
+    if IsCursorAnchor(group.anchor) then
+        return false
+    end
     self:StartContainerMemberPreviewTracking(containerId, groupId)
 
     if group.displayMode == "textures" or group.displayMode == "trigger" then
@@ -2211,11 +2498,12 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         local groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
         local isSelected = selectedGroupId == groupId and previewedGroupIds[groupId]
         local isStandaloneDisplay = group and (group.displayMode == "textures" or group.displayMode == "trigger")
+        local isCursorAnchored = group and IsCursorAnchor(group.anchor)
 
         if groupFrame and not isStandaloneDisplay then
-            SyncGroupControlLevels(groupFrame, isSelected)
+            SyncGroupControlLevels(groupFrame, isSelected and not isCursorAnchored)
             if self:IsContainerUnlockPreviewActive(containerId) then
-                self:SetGroupDragControlsShown(groupFrame, isSelected)
+                self:SetGroupDragControlsShown(groupFrame, isSelected and not isCursorAnchored)
             end
             self:UpdateGroupClickthrough(groupId)
         elseif isStandaloneDisplay and self.UpdateGroupedStandalonePreviewSelection then

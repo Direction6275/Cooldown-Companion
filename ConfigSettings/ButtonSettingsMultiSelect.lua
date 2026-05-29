@@ -250,7 +250,9 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
     local anyUnlocked = false
     for _, pid in ipairs(multiPanelIds) do
         local panel = db.groups[pid]
-        if panel and panel.locked == false then
+        if panel
+            and panel.locked == false
+            and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
             anyUnlocked = true
             break
         end
@@ -261,7 +263,8 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
     lockBtn:SetCallback("OnClick", function()
         for _, pid in ipairs(multiPanelIds) do
             local panel = db.groups[pid]
-            if panel then
+            if panel
+                and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
                 panel.locked = anyUnlocked and nil or false
                 CooldownCompanion:RefreshGroupFrame(pid)
             end

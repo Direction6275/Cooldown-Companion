@@ -934,39 +934,106 @@ local function BuildLayoutTab(container)
         local isTriggerPanel = group.displayMode == "trigger"
         local positionHeadingText = isTriggerPanel and "Trigger Display Position" or "Texture Position"
         local anchorLabel = isTriggerPanel and "Display Point" or "Texture Point"
+        local defaultFrame = group.parentContainerId and ("CooldownCompanionContainer" .. group.parentContainerId) or "UIParent"
+        local cursorAnchorTarget = CooldownCompanion.GetCursorAnchorTargetName
+            and CooldownCompanion:GetCursorAnchorTargetName()
+            or ST.CURSOR_ANCHOR_TARGET
+            or "CooldownCompanionCursor"
+        local isCursorAnchor = CooldownCompanion.IsCursorAnchor
+            and CooldownCompanion:IsCursorAnchor(group.anchor)
+            or false
 
         local function RefreshTextureVisual()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
         end
 
+        local function RefreshCursorAnchor()
+            local frame = CooldownCompanion.groupFrames[textureGroupId]
+            if frame then
+                CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
+            end
+            RefreshTextureVisual()
+        end
+
+        local anchorTargetDrop = AceGUI:Create("Dropdown")
+        anchorTargetDrop:SetLabel("Anchor Target")
+        anchorTargetDrop:SetList({
+            default = "Screen",
+            cursor = "Cursor",
+        }, { "default", "cursor" })
+        anchorTargetDrop:SetValue(isCursorAnchor and "cursor" or "default")
+        anchorTargetDrop:SetFullWidth(true)
+        anchorTargetDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            if val == "cursor" then
+                if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, cursorAnchorTarget) then
+                    CooldownCompanion:RefreshConfigPanel()
+                else
+                    widget:SetValue(isCursorAnchor and "cursor" or "default")
+                end
+            elseif val == "default" then
+                CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, true)
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        end)
+        container:AddChild(anchorTargetDrop)
+
         local heading = AceGUI:Create("Heading")
-        heading:SetText(positionHeadingText)
+        heading:SetText(isCursorAnchor and "Cursor Position" or positionHeadingText)
         ColorHeading(heading)
         heading:SetFullWidth(true)
         container:AddChild(heading)
 
-        AddAnchorDropdown(container, settings, "point", "CENTER", RefreshTextureVisual, anchorLabel)
-        AddAnchorDropdown(container, settings, "relativePoint", "CENTER", RefreshTextureVisual, "Screen Point")
-        AddOffsetSliders(container, settings, "x", "y", {
-            x = 0,
-            y = 0,
-            range = 2000,
-            step = 1,
-        }, RefreshTextureVisual)
+        if isCursorAnchor then
+            AddAnchorDropdown(container, group.anchor, "point", "BOTTOMLEFT", RefreshCursorAnchor, "Panel Point")
+            group.anchor.relativePoint = "CENTER"
+            AddOffsetSliders(container, group.anchor, "x", "y", {
+                x = 16,
+                y = 16,
+                range = 2000,
+                step = 1,
+            }, RefreshCursorAnchor)
 
-        local resetBtn = AceGUI:Create("Button")
-        resetBtn:SetText("Reset Position")
-        resetBtn:SetFullWidth(true)
-        resetBtn:SetCallback("OnClick", function()
-            settings.point = "CENTER"
-            settings.relativePoint = "CENTER"
-            settings.relativeTo = "UIParent"
-            settings.x = 0
-            settings.y = 0
-            CooldownCompanion:RefreshAllAuraTextureVisuals()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        container:AddChild(resetBtn)
+            local resetBtn = AceGUI:Create("Button")
+            resetBtn:SetText("Reset Position")
+            resetBtn:SetFullWidth(true)
+            resetBtn:SetCallback("OnClick", function()
+                group.anchor = CooldownCompanion.GetDefaultCursorPanelAnchor
+                    and CooldownCompanion:GetDefaultCursorPanelAnchor()
+                    or {
+                        point = "BOTTOMLEFT",
+                        relativeTo = cursorAnchorTarget,
+                        relativePoint = "CENTER",
+                        x = 16,
+                        y = 16,
+                    }
+                RefreshCursorAnchor()
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            container:AddChild(resetBtn)
+        else
+            AddAnchorDropdown(container, settings, "point", "CENTER", RefreshTextureVisual, anchorLabel)
+            AddAnchorDropdown(container, settings, "relativePoint", "CENTER", RefreshTextureVisual, "Screen Point")
+            AddOffsetSliders(container, settings, "x", "y", {
+                x = 0,
+                y = 0,
+                range = 2000,
+                step = 1,
+            }, RefreshTextureVisual)
+
+            local resetBtn = AceGUI:Create("Button")
+            resetBtn:SetText("Reset Position")
+            resetBtn:SetFullWidth(true)
+            resetBtn:SetCallback("OnClick", function()
+                settings.point = "CENTER"
+                settings.relativePoint = "CENTER"
+                settings.relativeTo = "UIParent"
+                settings.x = 0
+                settings.y = 0
+                CooldownCompanion:RefreshAllAuraTextureVisuals()
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            container:AddChild(resetBtn)
+        end
 
         BuildAlphaControls(container, group, function()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -1019,10 +1086,81 @@ local function BuildLayoutTab(container)
     local panelContainerFrame = isPanel and ("CooldownCompanionContainer" .. group.parentContainerId) or nil
     anchorBox:SetLabel("Anchor to Frame")
     local currentAnchor = group.anchor.relativeTo
+    local rawAnchor = currentAnchor
+    local cursorAnchorTarget = CooldownCompanion.GetCursorAnchorTargetName
+        and CooldownCompanion:GetCursorAnchorTargetName()
+        or ST.CURSOR_ANCHOR_TARGET
+        or "CooldownCompanionCursor"
+    local isCursorAnchor = isPanel
+        and CooldownCompanion.IsCursorAnchor
+        and CooldownCompanion:IsCursorAnchor(group.anchor)
+        or false
+    local defaultFrame = isPanel and panelContainerFrame or "UIParent"
+    local rawAnchorGroupId = type(rawAnchor) == "string"
+        and rawAnchor:match("^CooldownCompanionGroup(%d+)$")
+        or nil
+    local targetMode
+    if isCursorAnchor then
+        targetMode = "cursor"
+    elseif rawAnchorGroupId and isPanel then
+        targetMode = "panel"
+    elseif rawAnchor == nil or rawAnchor == "UIParent" or (isPanel and rawAnchor == panelContainerFrame) then
+        targetMode = "default"
+    else
+        targetMode = "frame"
+    end
+    CS.layoutAnchorTargetMode = CS.layoutAnchorTargetMode or {}
+    local preferredTargetMode = CS.layoutAnchorTargetMode[CS.selectedGroup]
+    if (targetMode == "default" or targetMode == "cursor")
+        and (preferredTargetMode == "frame" or (isPanel and preferredTargetMode == "panel")) then
+        targetMode = preferredTargetMode
+    end
+    CS.layoutAnchorTargetMode[CS.selectedGroup] = targetMode
+
+    local anchorTargetDrop = AceGUI:Create("Dropdown")
+    anchorTargetDrop:SetLabel("Anchor Target")
+    local anchorTargetList = {
+        default = isPanel and "Default Container" or "Screen",
+        frame = "Frame",
+    }
+    local anchorTargetOrder = { "default" }
+    if isPanel then
+        anchorTargetList.cursor = "Cursor"
+        anchorTargetList.panel = "Panel"
+        table.insert(anchorTargetOrder, "cursor")
+        table.insert(anchorTargetOrder, "panel")
+    end
+    table.insert(anchorTargetOrder, "frame")
+    anchorTargetDrop:SetList(anchorTargetList, anchorTargetOrder)
+    anchorTargetDrop:SetValue(targetMode)
+    anchorTargetDrop:SetFullWidth(true)
+    anchorTargetDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        if val == targetMode then return end
+        if val == "default" then
+            CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
+            local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= defaultFrame
+            CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, wasAnchored)
+            CooldownCompanion:RefreshConfigPanel()
+        elseif val == "cursor" then
+            CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
+            if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, cursorAnchorTarget) then
+                CooldownCompanion:RefreshConfigPanel()
+            else
+                widget:SetValue(targetMode)
+            end
+        elseif val == "frame" or val == "panel" then
+            CS.layoutAnchorTargetMode[CS.selectedGroup] = val
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end)
+    container:AddChild(anchorTargetDrop)
+
     if currentAnchor == "UIParent" then currentAnchor = "" end
     if isPanel and currentAnchor == panelContainerFrame then currentAnchor = "" end
+    if isCursorAnchor then currentAnchor = "" end
     anchorBox:SetText(currentAnchor)
     anchorBox:SetRelativeWidth(0.68)
+    anchorBox:SetDisabled(targetMode ~= "frame")
     anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
         local defaultFrame = isPanel and panelContainerFrame or "UIParent"
         local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= defaultFrame
@@ -1044,6 +1182,7 @@ local function BuildLayoutTab(container)
     local pickBtn = AceGUI:Create("Button")
     pickBtn:SetText("Pick")
     pickBtn:SetRelativeWidth(0.24)
+    pickBtn:SetDisabled(targetMode ~= "frame")
     pickBtn:SetCallback("OnClick", function()
         local grp = CS.selectedGroup
         CS.StartPickFrame(function(name)
@@ -1081,6 +1220,7 @@ local function BuildLayoutTab(container)
     panelAnchorDrop:SetLabel("Anchor to Panel")
     CooldownCompanion:PopulatePanelAnchorTargetDropdown(panelAnchorDrop, CS.selectedGroup)
     panelAnchorDrop:SetFullWidth(true)
+    panelAnchorDrop:SetDisabled(targetMode ~= "panel")
     local currentAnchorGroupId = type(currentAnchor) == "string"
         and currentAnchor:match("^CooldownCompanionGroup(%d+)$")
         or nil
@@ -1112,8 +1252,12 @@ local function BuildLayoutTab(container)
         end
     end
 
-    AddAnchorDropdown(container, group.anchor, "point", "CENTER", refreshGroupAnchor, "Anchor Point")
-    AddAnchorDropdown(container, group.anchor, "relativePoint", "CENTER", refreshGroupAnchor, "Relative Point")
+    AddAnchorDropdown(container, group.anchor, "point", targetMode == "cursor" and "BOTTOMLEFT" or "CENTER", refreshGroupAnchor, "Anchor Point")
+    if targetMode == "cursor" then
+        group.anchor.relativePoint = "CENTER"
+    else
+        AddAnchorDropdown(container, group.anchor, "relativePoint", "CENTER", refreshGroupAnchor, "Relative Point")
+    end
 
     -- X Offset
     local xSlider = AceGUI:Create("Slider")

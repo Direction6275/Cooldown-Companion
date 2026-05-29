@@ -61,6 +61,8 @@ local OVERRIDE_BADGE_ICON_SIZE = 12
 local ROW_BADGE_SPACING = 2
 local ROW_BADGE_RIGHT_PAD = 4
 local TEXTURE_PANEL_HEADER_BADGE_ATLAS = "UI-HUD-MicroMenu-Communities-Icon-Notification"
+local CURSOR_PANEL_HEADER_BADGE_ATLAS = ST.CURSOR_ANCHOR_BADGE_ATLAS or "cursor_openhand_64"
+local CURSOR_PANEL_HEADER_BADGE_COLOR = { 1, 0.82, 0.12, 1 }
 local TRIGGER_PANEL_BADGE_COLOR = { 1.0, 0.18, 0.78 }
 local PANEL_TYPE_TOOLTIPS = {
     icons = {
@@ -193,6 +195,36 @@ local function ConfigureGenericRenameBadge(header, panel, panelId, rightOffset)
     badge:Show()
 
     return rightOffset + 18
+end
+
+local function ConfigureCursorAnchorBadge(header, panel, rightOffset)
+    local badge = header.frame._cdcCursorAnchorBadge
+    if not badge then
+        badge = header.frame:CreateTexture(nil, "OVERLAY")
+        header.frame._cdcCursorAnchorBadge = badge
+    end
+
+    badge:SetSize(16, 16)
+    badge:ClearAllPoints()
+    badge:SetPoint("LEFT", header.label, "CENTER", rightOffset, 0)
+
+    if CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel) then
+        badge:SetAtlas(CURSOR_PANEL_HEADER_BADGE_ATLAS, false)
+        if badge.SetDesaturated then
+            badge:SetDesaturated(false)
+        end
+        badge:SetVertexColor(
+            CURSOR_PANEL_HEADER_BADGE_COLOR[1],
+            CURSOR_PANEL_HEADER_BADGE_COLOR[2],
+            CURSOR_PANEL_HEADER_BADGE_COLOR[3],
+            CURSOR_PANEL_HEADER_BADGE_COLOR[4]
+        )
+        badge:Show()
+        return rightOffset + 18
+    end
+
+    badge:Hide()
+    return rightOffset
 end
 
 local function ConfigurePanelTypeBadge(header, displayMode, textWidth)
@@ -1941,6 +1973,10 @@ local function RefreshColumn2()
                 header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
                 local rightOffset = (textW / 2) + 4
+                local isCursorAnchoredPanel = CooldownCompanion.IsGroupCursorAnchored
+                    and CooldownCompanion:IsGroupCursorAnchored(panel)
+                    or false
+                rightOffset = ConfigureCursorAnchorBadge(header, panel, rightOffset)
                 rightOffset = ConfigureGenericRenameBadge(header, panel, panelId, rightOffset)
 
                 -- Anchor unlock badge (shown when panel is individually unlocked)
@@ -1952,7 +1988,7 @@ local function RefreshColumn2()
                 anchorBadge:SetSize(16, 16)
                 anchorBadge:ClearAllPoints()
                 anchorBadge:SetPoint("LEFT", header.label, "CENTER", rightOffset, 0)
-                if panel.locked == false then
+                if panel.locked == false and not isCursorAnchoredPanel then
                     anchorBadge:SetAtlas("ShipMissionIcon-Training-Map", false)
                     anchorBadge:Show()
                     rightOffset = rightOffset + 22
@@ -2127,6 +2163,10 @@ local function RefreshColumn2()
                         CooldownCompanion:RefreshConfigPanel()
                         return
                     elseif mouseButton == "MiddleButton" then
+                        if CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel) then
+                            CooldownCompanion:Print("Cursor-anchored panels are positioned from Layout and cannot be unlocked.")
+                            return
+                        end
                         if panel.locked == false then
                             panel.locked = nil
                             CooldownCompanion:Print(panel.name .. " locked.")
@@ -2170,22 +2210,24 @@ local function RefreshColumn2()
                             UIDropDownMenu_AddButton(info, level)
 
                             -- Lock / Unlock panel anchor
-                            info = UIDropDownMenu_CreateInfo()
-                            info.text = ctxPanel.locked == false and "Lock Anchor" or "Unlock Anchor"
-                            info.notCheckable = true
-                            info.func = function()
-                                CloseDropDownMenus()
-                                if ctxPanel.locked == false then
-                                    ctxPanel.locked = nil
-                                    CooldownCompanion:Print(ctxPanel.name .. " locked.")
-                                else
-                                    ctxPanel.locked = false
-                                    CooldownCompanion:Print(ctxPanel.name .. " unlocked. Drag to reposition.")
+                            if not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(ctxPanel)) then
+                                info = UIDropDownMenu_CreateInfo()
+                                info.text = ctxPanel.locked == false and "Lock Anchor" or "Unlock Anchor"
+                                info.notCheckable = true
+                                info.func = function()
+                                    CloseDropDownMenus()
+                                    if ctxPanel.locked == false then
+                                        ctxPanel.locked = nil
+                                        CooldownCompanion:Print(ctxPanel.name .. " locked.")
+                                    else
+                                        ctxPanel.locked = false
+                                        CooldownCompanion:Print(ctxPanel.name .. " unlocked. Drag to reposition.")
+                                    end
+                                    CooldownCompanion:RefreshGroupFrame(ctxPanelId)
+                                    CooldownCompanion:RefreshConfigPanel()
                                 end
-                                CooldownCompanion:RefreshGroupFrame(ctxPanelId)
-                                CooldownCompanion:RefreshConfigPanel()
+                                UIDropDownMenu_AddButton(info, level)
                             end
-                            UIDropDownMenu_AddButton(info, level)
 
                             local switchModes = {
                                 { mode = "icons", label = "Icons" },

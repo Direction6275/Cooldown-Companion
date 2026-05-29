@@ -258,6 +258,10 @@ local function BeginTextureHostDrag(host)
     if CooldownCompanion._combatForcedLock or not (host and host._dragEnabled) then
         return false
     end
+    local owner = host._ownerButton
+    if owner and CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(owner._groupId) then
+        return false
+    end
 
     host._dragCancelPending = nil
     host._isDragging = true
@@ -1004,12 +1008,13 @@ end
 function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, driverButton, displayType, settings, isTriggerPanel)
     local groupedPreviewFrame = GetGroupedPreviewContainerFrame(group, driverButton and driverButton._groupId)
     local combatForcedLock = self._combatForcedLock == true
+    local isCursorAnchored = self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group)
     local state = {
         isEditing = IsStandaloneTextureEditingButton(driverButton),
         isConfigForceVisible = (not isTriggerPanel) and IsTexturePanelConfigForceVisible(driverButton),
         isGroupedPreview = groupedPreviewFrame ~= nil,
         groupedPreviewFrame = groupedPreviewFrame,
-        isUnlocked = not combatForcedLock and group and (group.locked == false or groupedPreviewFrame ~= nil),
+        isUnlocked = not isCursorAnchored and not combatForcedLock and group and (group.locked == false or groupedPreviewFrame ~= nil),
         hasPreviewSelection = displayType == "texture" and type(driverButton._auraTexturePreviewSelection) == "table",
         hasTriggerEffectPreview = isTriggerPanel and driverButton._triggerEffectsPreview == true,
         triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false,
@@ -1107,28 +1112,33 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     }
 
     if not host._isDragging then
-        local currentPoint, currentRelativeFrame, _, currentX, currentY = host:GetPoint(1)
-        host:ClearAllPoints()
-        local groupedPreviewFrame = visibilityState and visibilityState.groupedPreviewFrame or nil
-        if groupedPreviewFrame then
-            local preserveRelativeOffset = host._wrapperManaged
-                and currentRelativeFrame == groupedPreviewFrame
-                and currentX ~= nil
-                and currentY ~= nil
-                and groupedPreviewFrame._dragInProgress == true
-            if preserveRelativeOffset then
-                host:SetPoint(currentPoint or sharedSettings.point or "CENTER", groupedPreviewFrame, "CENTER", currentX, currentY)
-            else
-                local screenAnchorX, screenAnchorY, point = GetStandaloneScreenAnchorPoint(sharedSettings)
-                local containerX, containerY = groupedPreviewFrame:GetCenter()
-                if screenAnchorX and screenAnchorY and containerX and containerY then
-                    host:SetPoint(point or sharedSettings.point or "CENTER", groupedPreviewFrame, "CENTER", screenAnchorX - containerX, screenAnchorY - containerY)
-                else
-                    host:SetPoint(sharedSettings.point, UIParent, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
-                end
-            end
+        local isCursorAnchored = self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group)
+        if isCursorAnchored and self.AnchorFrameToCursor then
+            self:AnchorFrameToCursor(host, group.anchor)
         else
-            host:SetPoint(sharedSettings.point, UIParent, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
+            local currentPoint, currentRelativeFrame, _, currentX, currentY = host:GetPoint(1)
+            host:ClearAllPoints()
+            local groupedPreviewFrame = visibilityState and visibilityState.groupedPreviewFrame or nil
+            if groupedPreviewFrame then
+                local preserveRelativeOffset = host._wrapperManaged
+                    and currentRelativeFrame == groupedPreviewFrame
+                    and currentX ~= nil
+                    and currentY ~= nil
+                    and groupedPreviewFrame._dragInProgress == true
+                if preserveRelativeOffset then
+                    host:SetPoint(currentPoint or sharedSettings.point or "CENTER", groupedPreviewFrame, "CENTER", currentX, currentY)
+                else
+                    local screenAnchorX, screenAnchorY, point = GetStandaloneScreenAnchorPoint(sharedSettings)
+                    local containerX, containerY = groupedPreviewFrame:GetCenter()
+                    if screenAnchorX and screenAnchorY and containerX and containerY then
+                        host:SetPoint(point or sharedSettings.point or "CENTER", groupedPreviewFrame, "CENTER", screenAnchorX - containerX, screenAnchorY - containerY)
+                    else
+                        host:SetPoint(sharedSettings.point, UIParent, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
+                    end
+                end
+            else
+                host:SetPoint(sharedSettings.point, UIParent, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
+            end
         end
     end
     host:Show()
@@ -1253,6 +1263,7 @@ function CooldownCompanion:UpdateGroupedStandalonePreviewSelection(groupId)
     local isSelected = self.IsContainerPanelSelected and self:IsContainerPanelSelected(group.parentContainerId, groupId) or false
     local isHovered = self.IsContainerPanelHovered and self:IsContainerPanelHovered(group.parentContainerId, groupId) or false
     local showControls = isSelected and host._hasSavedDisplay == true
+        and not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group))
 
     host._dragEnabled = showControls
     SyncAuraTextureControlLevels(host, showControls)
@@ -1275,6 +1286,9 @@ end
 function CooldownCompanion:StartGroupedStandalonePreviewHostDrag(groupId, containerId)
     local group = groupId and ResolveGroup(groupId) or nil
     if self._combatForcedLock or not (group and group.parentContainerId == containerId) then
+        return false
+    end
+    if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
         return false
     end
 
