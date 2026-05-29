@@ -726,12 +726,8 @@ local function RefreshProfileBar(bar)
         end
     end)
 
-    AddBarButton("Export", function()
+    AddBarButton("Export Backup", function()
         ShowPopupAboveConfig("CDC_EXPORT_PROFILE")
-    end)
-
-    AddBarButton("Import", function()
-        ShowPopupAboveConfig("CDC_IMPORT_PROFILE")
     end)
 
     -- Keep widening while text truncates so skin/font variations don't clip labels.

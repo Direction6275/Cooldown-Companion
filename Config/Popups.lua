@@ -15,8 +15,6 @@ local ClearConfigContainerSelection = ST._ClearConfigContainerSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
 local EncodeSharedPayload = ST._EncodeSharedPayload
-local DecodeSharedPayload = ST._DecodeSharedPayload
-local PrepareSharedImportText = ST._PrepareSharedImportText
 
 -- Check whether a profile name already exists (case-exact match).
 local function ProfileNameExists(name)
@@ -418,7 +416,7 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
 }
 
 StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
-    text = "Export string (Ctrl+C to copy):",
+    text = "Profile backup string (Ctrl+C to copy):",
     button1 = "Close",
     hasEditBox = true,
     OnShow = function(self)
@@ -432,244 +430,6 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
     end,
     EditBoxOnEscapePressed = function(self)
         self:GetParent():Hide()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
--- Decodes and validates a profile import string. Returns the decoded data
--- table on success, or nil on failure (prints error to chat).
-local pendingProfileImport = nil
-local MAX_IMPORT_LENGTH = 500000
-
-local function DecodeProfileImport(popup)
-    local text = popup.EditBox:GetText()
-    if not text or text == "" then return nil end
-    local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
-    if not preparedText then return nil end
-
-    if isLegacyImport then
-        CooldownCompanion:NotifyLegacySupportCutoff("profile import")
-        return nil
-    end
-
-    if #compactText > MAX_IMPORT_LENGTH then
-        CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
-        return nil
-    end
-
-    if compactText:sub(1, 8) == "CDCdiag:" then
-        CooldownCompanion:Print("This is a bug report string, not a profile export.")
-        return nil
-    end
-    local success, data = DecodeSharedPayload(preparedText)
-    if not (success and type(data) == "table") then
-        CooldownCompanion:Print("Import failed: invalid data.")
-        return nil
-    end
-    if RejectUnsupportedImportPayload(data, "profile import") then
-        return nil
-    end
-    -- Reject narrower exports pasted into the profile import dialog
-    if data.type then
-        if data.type == "customBars" then
-            CooldownCompanion:Print("This is a Custom Bars export. Use the Custom Bars Import button.")
-        else
-            CooldownCompanion:Print("This is a group/folder export. Use the group Import button.")
-        end
-        return nil
-    end
-    -- Structural validation: a CDC profile must have groups or globalStyle,
-    -- and critical fields must be the correct type if present
-    if not data.groups and not data.globalStyle then
-        CooldownCompanion:Print("Import failed: data does not appear to be a Cooldown Companion profile.")
-        return nil
-    end
-    if (data.groups and type(data.groups) ~= "table")
-       or (data.globalStyle and type(data.globalStyle) ~= "table") then
-        CooldownCompanion:Print("Import failed: profile data is malformed.")
-        return nil
-    end
-    if RejectUnsupportedImportPayload(data, "profile import") then
-        return nil
-    end
-    return data
-end
-
--- Applies a decoded profile import, remapping only the exporter's own
--- entities to the current character. Other characters' entities keep
--- their original createdBy so they appear in the browse-other-characters
--- module instead of being flattened into the current character.
-local function ApplyProfileImport(data)
-    if RejectUnsupportedImportPayload(data, "profile import") then
-        return false
-    end
-
-    local db = CooldownCompanion.db
-    local exporterCharKey = data._exporterCharKey
-    local exportedCharInfo = data._characterInfo
-    data._exporterCharKey = nil
-    data._characterInfo = nil
-
-    -- True replace: wipe existing profile before applying import.
-    -- AceDB metatable survives wipe, supplying defaults for missing keys.
-    wipe(db.profile)
-    for k, v in pairs(data) do
-        db.profile[k] = v
-    end
-    ResetConfigSelection(true)
-
-    -- Remap only the exporter's own entities to the importer's character.
-    local charKey = db.keys.char
-    if db.profile.groups then
-        for _, group in pairs(db.profile.groups) do
-            if not group.isGlobal and (exporterCharKey == nil or group.createdBy == exporterCharKey) then
-                group.createdBy = charKey
-            end
-        end
-    end
-    if db.profile.groupContainers then
-        for _, container in pairs(db.profile.groupContainers) do
-            if not container.isGlobal and (exporterCharKey == nil or container.createdBy == exporterCharKey) then
-                container.createdBy = charKey
-            end
-        end
-    end
-    if db.profile.folders then
-        for _, folder in pairs(db.profile.folders) do
-            if folder.section == "char" and (exporterCharKey == nil or folder.createdBy == exporterCharKey) then
-                folder.createdBy = charKey
-            end
-        end
-    end
-    -- Rename foreign characters to class-based placeholders.
-    -- A "foreign" character is one whose createdBy doesn't match any
-    -- character in the importer's own characterInfo.
-    local importerCharInfo = db.global.characterInfo or {}
-    local foreignKeys = {}
-    local function markForeignCharKey(cb)
-        if not cb or cb == charKey then return end
-        if not importerCharInfo[cb] and not foreignKeys[cb] then
-            foreignKeys[cb] = true
-        end
-    end
-    local function markForeign(entity, checkGlobal)
-        if checkGlobal and entity.isGlobal then return end
-        markForeignCharKey(entity.createdBy)
-    end
-    for _, group in pairs(db.profile.groups or {}) do markForeign(group, true) end
-    for _, container in pairs(db.profile.groupContainers or {}) do markForeign(container, true) end
-    for _, folder in pairs(db.profile.folders or {}) do
-        if folder.section == "char" then markForeign(folder, false) end
-    end
-
-    if next(foreignKeys) then
-        -- Count characters per class for numbering
-        local classCounts = {}
-        local classEntries = {}
-        for foreignKey in pairs(foreignKeys) do
-            local info = exportedCharInfo and exportedCharInfo[foreignKey]
-            local classID = info and info.classID
-            local className = classID and GetClassInfo(classID) or "Character"
-            classCounts[className] = (classCounts[className] or 0) + 1
-            classEntries[foreignKey] = { className = className, classFilename = info and info.classFilename, classID = classID }
-        end
-
-        -- Build rename map: old createdBy → placeholder name
-        local renames = {}
-        local classCounters = {}
-        for foreignKey in pairs(foreignKeys) do
-            local entry = classEntries[foreignKey]
-            local placeholder
-            if classCounts[entry.className] == 1 then
-                placeholder = entry.className
-            else
-                classCounters[entry.className] = (classCounters[entry.className] or 0) + 1
-                placeholder = entry.className .. " " .. classCounters[entry.className]
-            end
-            renames[foreignKey] = placeholder
-            -- Register in characterInfo so browse module shows correct class icon/color
-            if entry.classFilename and entry.classID then
-                importerCharInfo[placeholder] = { classFilename = entry.classFilename, classID = entry.classID }
-            end
-        end
-
-        -- Apply renames across all entity types
-        for _, group in pairs(db.profile.groups or {}) do
-            if group.createdBy and renames[group.createdBy] then
-                group.createdBy = renames[group.createdBy]
-            end
-        end
-        for _, container in pairs(db.profile.groupContainers or {}) do
-            if container.createdBy and renames[container.createdBy] then
-                container.createdBy = renames[container.createdBy]
-            end
-        end
-        for _, folder in pairs(db.profile.folders or {}) do
-            if folder.createdBy and renames[folder.createdBy] then
-                folder.createdBy = renames[folder.createdBy]
-            end
-        end
-    end
-
-    CooldownCompanion:ClearMigrationSentinels()
-    if not CooldownCompanion:RunAllMigrations() then
-        return false
-    end
-
-    CooldownCompanion:RefreshConfigPanel()
-    CooldownCompanion:RefreshAllGroups()
-    if CooldownCompanion.EvaluateBarsAndFramesRuntime then
-        CooldownCompanion:EvaluateBarsAndFramesRuntime("profile-import")
-    end
-    return true
-end
-
-StaticPopupDialogs["CDC_CONFIRM_PROFILE_IMPORT"] = {
-    text = "This will overwrite your current profile. Continue?",
-    button1 = "Import",
-    button2 = "Cancel",
-    OnAccept = function()
-        if pendingProfileImport then
-            local imported = ApplyProfileImport(pendingProfileImport)
-            pendingProfileImport = nil
-            if imported then
-                CooldownCompanion:Print("Profile imported.")
-            end
-        end
-    end,
-    OnCancel = function()
-        pendingProfileImport = nil
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-StaticPopupDialogs["CDC_IMPORT_PROFILE"] = {
-    text = "Paste import string:",
-    button1 = "Import",
-    button2 = "Cancel",
-    hasEditBox = true,
-    OnAccept = function(self)
-        local data = DecodeProfileImport(self)
-        if not data then return true end -- suppress auto-hide on failure
-        pendingProfileImport = data
-        ShowPopupOverConfig("CDC_CONFIRM_PROFILE_IMPORT")
-    end,
-    EditBoxOnEnterPressed = function(self)
-        local parent = self:GetParent()
-        local data = DecodeProfileImport(parent)
-        if not data then return end
-        pendingProfileImport = data
-        parent:Hide()
-        ShowPopupOverConfig("CDC_CONFIRM_PROFILE_IMPORT")
-    end,
-    OnShow = function(self)
-        self.EditBox:SetFocus()
     end,
     timeout = 0,
     whileDead = true,
@@ -914,7 +674,7 @@ StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
 }
 
 ------------------------------------------------------------------------
--- Group/Folder Export/Import
+-- Group/Folder Export and Apply
 ------------------------------------------------------------------------
 
 local function BuildGroupExportData(group)
@@ -997,8 +757,8 @@ local function CreateImportedPanel(db, containerId, panelIndex, srcPanel, import
     importState.panelCount = importState.panelCount + 1
 end
 
-local function ImportContainerEntries(db, entries, charKey, folderId)
-    local importState = {
+local function NewGroupImportState()
+    return {
         containerIdMap = {},
         importedContainerIds = {},
         groupIdMap = {},
@@ -1006,6 +766,13 @@ local function ImportContainerEntries(db, entries, charKey, folderId)
         containerCount = 0,
         panelCount = 0,
     }
+end
+
+local function ImportContainerEntries(db, entries, charKey, folderId, importState)
+    importState = importState or NewGroupImportState()
+    local firstContainerIndex = #importState.importedContainerIds + 1
+    local startContainerCount = importState.containerCount
+    local startPanelCount = importState.panelCount
 
     for _, entry in ipairs(entries) do
         local containerId = db.nextContainerId
@@ -1036,7 +803,10 @@ local function ImportContainerEntries(db, entries, charKey, folderId)
         importState.containerCount = importState.containerCount + 1
     end
 
-    return importState
+    return importState,
+        importState.containerCount - startContainerCount,
+        importState.panelCount - startPanelCount,
+        importState.importedContainerIds[firstContainerIndex]
 end
 
 local function RemapImportedContainerAnchors(db, importState, preserveContainerRefs)
@@ -1100,41 +870,50 @@ local function RemapImportedPanelAnchors(db, importState, preserveOwnContainerRe
     end
 end
 
-local function ImportGroupData(text)
-    if not text or text == "" then return false end
-    local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
-    if not preparedText then return false end
-    if isLegacyImport then
-        CooldownCompanion:NotifyLegacySupportCutoff("import string")
-        return false
-    end
-    if #compactText > MAX_IMPORT_LENGTH then
-        CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
-        return false
-    end
+local activeGroupImportBatches = setmetatable({}, { __mode = "k" })
+local activeGroupImportPayloads = setmetatable({}, { __mode = "k" })
 
-    if compactText:sub(1, 8) == "CDCdiag:" then
-        CooldownCompanion:Print("This is a bug report string, not a group export.")
+ST._BeginGroupImportBatch = function()
+    local token = {}
+    activeGroupImportBatches[token] = NewGroupImportState()
+    return token
+end
+
+ST._FinishGroupImportBatch = function(token, remapAnchors)
+    local importState = activeGroupImportBatches[token]
+    activeGroupImportBatches[token] = nil
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if remapAnchors and type(db) == "table" and type(importState) == "table" then
+        RemapImportedContainerAnchors(db, importState, true)
+        RemapImportedPanelAnchors(db, importState)
+    end
+end
+
+ST._AttachGroupImportBatch = function(payload, token)
+    if type(payload) == "table" and activeGroupImportBatches[token] then
+        activeGroupImportPayloads[payload] = token
+    end
+end
+
+local function ApplyGroupImportData(data)
+    if type(data) ~= "table" then
         return false
     end
-
-    local success, data = DecodeSharedPayload(preparedText)
-
-    if not success or type(data) ~= "table" then
-        return false
-    end
+    local batchToken = activeGroupImportPayloads[data]
+    activeGroupImportPayloads[data] = nil
     if RejectUnsupportedImportPayload(data, "group import") then
         return false
     end
 
-    -- Reject profile exports (no type field)
     if not data.type then
-        CooldownCompanion:Print("This is a profile export. Use the profile Import button.")
+        CooldownCompanion:Print("Import failed: this is a profile backup, not a group, folder, or panel export.")
         return false
     end
 
     local db = CooldownCompanion.db.profile
     local charKey = CooldownCompanion.db.keys.char
+    local sharedImportState = batchToken and activeGroupImportBatches[batchToken] or nil
+    local deferAnchorRemap = sharedImportState ~= nil
 
     if data.type == "group" and data.group then
         CooldownCompanion:NotifyLegacySupportCutoff("group import")
@@ -1145,10 +924,12 @@ local function ImportGroupData(text)
         return false
 
     elseif data.type == "containers" and data.containers then
-        local importState = ImportContainerEntries(db, data.containers, charKey, nil)
-        RemapImportedContainerAnchors(db, importState, true)
-        RemapImportedPanelAnchors(db, importState)
-        CooldownCompanion:Print("Imported " .. importState.containerCount .. " groups.")
+        local importState, containerCount = ImportContainerEntries(db, data.containers, charKey, nil, sharedImportState)
+        if not deferAnchorRemap then
+            RemapImportedContainerAnchors(db, importState, true)
+            RemapImportedPanelAnchors(db, importState)
+        end
+        CooldownCompanion:Print("Imported " .. containerCount .. " groups.")
 
     elseif data.type == "folder" and data.folder then
         if data.groups then
@@ -1215,24 +996,29 @@ local function ImportGroupData(text)
         }
         local count = 0
         if data.containers then
-            local importState = ImportContainerEntries(db, data.containers, charKey, folderId)
-            RemapImportedContainerAnchors(db, importState, true)
-            RemapImportedPanelAnchors(db, importState)
-            count = importState.panelCount
+            local importState, _, panelCount = ImportContainerEntries(
+                db, data.containers, charKey, folderId, sharedImportState
+            )
+            if not deferAnchorRemap then
+                RemapImportedContainerAnchors(db, importState, true)
+                RemapImportedPanelAnchors(db, importState)
+            end
+            count = panelCount
         end
         CooldownCompanion:Print("Imported folder: " .. (data.folder.name or "Unnamed") .. " (" .. count .. " groups)")
 
     elseif data.type == "container" and data.container and data.panels then
-        local importState = ImportContainerEntries(db, {{
+        local importState, _, panelCount, containerId = ImportContainerEntries(db, {{
             container = data.container,
             panels = data.panels,
             _originalContainerId = data._originalContainerId,
-        }}, charKey, nil)
-        local containerId = importState.importedContainerIds[1]
+        }}, charKey, nil, sharedImportState)
         local container = db.groupContainers[containerId]
-        RemapImportedContainerAnchors(db, importState, false)
-        RemapImportedPanelAnchors(db, importState, true)
-        CooldownCompanion:Print("Imported group: " .. ((container and container.name) or "Unnamed") .. " (" .. importState.panelCount .. " panels)")
+        if not deferAnchorRemap then
+            RemapImportedContainerAnchors(db, importState, false)
+            RemapImportedPanelAnchors(db, importState, true)
+        end
+        CooldownCompanion:Print("Imported group: " .. ((container and container.name) or "Unnamed") .. " (" .. panelCount .. " panels)")
 
     else
         CooldownCompanion:Print("Import failed: unrecognized export type.")
@@ -1248,6 +1034,8 @@ local function ImportGroupData(text)
     CooldownCompanion:RefreshAllGroups()
     return true
 end
+
+ST._ApplyGroupImportData = ApplyGroupImportData
 
 StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
     text = "Export string (Ctrl+C to copy):",
@@ -1269,49 +1057,7 @@ StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CDC_IMPORT_GROUP"] = {
-    text = "Paste import string (Ctrl+V to paste):",
-    button1 = "Close",
-    hasEditBox = true,
-    OnShow = function(self)
-        self.EditBox:SetFocus()
-    end,
-    EditBoxOnTextChanged = function(self)
-        local text = self:GetText()
-        if text == "" then return end
-        local ok = ImportGroupData(text)
-        if ok then
-            self:GetParent():Hide()
-        end
-    end,
-    EditBoxOnEscapePressed = function(self)
-        self:GetParent():Hide()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-local function ImportCustomBarsData(text)
-    local preparedText, compactText, isLegacyImport = PrepareSharedImportText(text)
-    if not preparedText then
-        return false
-    end
-    if isLegacyImport then
-        CooldownCompanion:NotifyLegacySupportCutoff("custom bars import")
-        return false
-    end
-    if #compactText > 100000 then
-        CooldownCompanion:Print("Import string too large (" .. #compactText .. " characters).")
-        return false
-    end
-
-    local success, data = DecodeSharedPayload(preparedText)
-    if not success then
-        CooldownCompanion:Print("Import failed: invalid data.")
-        return false
-    end
+local function ApplyCustomBarsImportData(data, options)
     if type(data) ~= "table" or data.type ~= "customBars" then
         if RejectUnsupportedImportPayload(data, "custom bars import") then
             return false
@@ -1334,12 +1080,16 @@ local function ImportCustomBarsData(text)
         return false
     end
 
-    CooldownCompanion:Print(message)
+    if not (options and options.silentSuccess) then
+        CooldownCompanion:Print(message)
+    end
     CooldownCompanion:ApplyResourceBars()
     CooldownCompanion:UpdateAnchorStacking()
     CooldownCompanion:RefreshConfigPanel()
     return true
 end
+
+ST._ApplyCustomBarsImportData = ApplyCustomBarsImportData
 
 StaticPopupDialogs["CDC_EXPORT_CUSTOM_BARS"] = {
     text = "Export Custom Bars string (Ctrl+C to copy):",
@@ -1350,30 +1100,6 @@ StaticPopupDialogs["CDC_EXPORT_CUSTOM_BARS"] = {
             self.EditBox:SetText(self.data.exportString)
             self.EditBox:HighlightText()
             self.EditBox:SetFocus()
-        end
-    end,
-    EditBoxOnEscapePressed = function(self)
-        self:GetParent():Hide()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-StaticPopupDialogs["CDC_IMPORT_CUSTOM_BARS"] = {
-    text = "Paste Custom Bars import string (Ctrl+V to paste):",
-    button1 = "Close",
-    hasEditBox = true,
-    OnShow = function(self)
-        self.EditBox:SetFocus()
-    end,
-    EditBoxOnTextChanged = function(self)
-        local text = self:GetText()
-        if text == "" then return end
-        local ok = ImportCustomBarsData(text)
-        if ok then
-            self:GetParent():Hide()
         end
     end,
     EditBoxOnEscapePressed = function(self)

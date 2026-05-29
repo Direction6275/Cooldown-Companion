@@ -11,10 +11,8 @@ local AceGUI = LibStub("AceGUI-3.0")
 local EncodeSharedPayload = ST._EncodeSharedPayload
 local DecodeSharedPayload = ST._DecodeSharedPayload
 local PrepareSharedImportText = ST._PrepareSharedImportText
-local ResetConfigSelection = ST._ResetConfigSelection
 
 -- File-local state
-local decodedDiagnostic = nil
 local diagnosticDecodeFrame = nil
 local DIAGNOSTIC_REPORT_BUG_REPORT = "bugReport"
 
@@ -916,66 +914,6 @@ StaticPopupDialogs["CDC_DIAGNOSTIC_BUG_REPORT"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CDC_DIAGNOSTIC_IMPORT_CONFIRM"] = {
-    text = "Import this bug report's profile into your addon? Your current profile will be overwritten.",
-    button1 = "Import",
-    button2 = "Cancel",
-    OnAccept = function()
-        if decodedDiagnostic and decodedDiagnostic.profile then
-            if RejectUnsupportedImportPayload(decodedDiagnostic.profile, "diagnostic profile") then
-                return
-            end
-            local db = CooldownCompanion.db
-            wipe(db.profile)
-            for k, v in pairs(decodedDiagnostic.profile) do
-                db.profile[k] = v
-            end
-            ResetConfigSelection(true)
-            -- Remap only the exporter's own entities to the importer's character.
-            -- Other characters' entities keep their original createdBy so they
-            -- appear in the browse-other-characters module instead of being
-            -- flattened into the current character.
-            local charKey = db.keys.char
-            local exporterCharKey = decodedDiagnostic.meta and decodedDiagnostic.meta.charKey
-            if db.profile.groups then
-                for _, group in pairs(db.profile.groups) do
-                    if not group.isGlobal and (exporterCharKey == nil or group.createdBy == exporterCharKey) then
-                        group.createdBy = charKey
-                    end
-                end
-            end
-            if db.profile.groupContainers then
-                for _, container in pairs(db.profile.groupContainers) do
-                    if not container.isGlobal and (exporterCharKey == nil or container.createdBy == exporterCharKey) then
-                        container.createdBy = charKey
-                    end
-                end
-            end
-            if db.profile.folders then
-                for _, folder in pairs(db.profile.folders) do
-                    if folder.section == "char" and (exporterCharKey == nil or folder.createdBy == exporterCharKey) then
-                        folder.createdBy = charKey
-                    end
-                end
-            end
-            CooldownCompanion:ClearMigrationSentinels()
-            if not CooldownCompanion:RunAllMigrations() then
-                return
-            end
-            CooldownCompanion:RefreshConfigPanel()
-            CooldownCompanion:RefreshAllGroups()
-            if CooldownCompanion.EvaluateBarsAndFramesRuntime then
-                CooldownCompanion:EvaluateBarsAndFramesRuntime("diagnostic-profile-import")
-            end
-            CooldownCompanion:Print("Diagnostic profile imported.")
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
 local function OpenDiagnosticDecodePanel()
     if diagnosticDecodeFrame then
         diagnosticDecodeFrame:Show()
@@ -1014,12 +952,12 @@ local function OpenDiagnosticDecodePanel()
         if not text or text == "" then return end
         local preparedText, compactText = PrepareSharedImportText(text)
         if not preparedText then return end
+        outputBox.canCopyDiagnosticText = nil
         if compactText:sub(1, 8) == "CDCdiag:" then
             preparedText = compactText:sub(9)
             compactText = preparedText
         end
         if compactText:sub(1, 2) == "^1" then
-            decodedDiagnostic = nil
             outputBox:SetText("")
             CooldownCompanion:NotifyLegacySupportCutoff("diagnostic string")
             return
@@ -1030,11 +968,10 @@ local function OpenDiagnosticDecodePanel()
             return
         end
         if RejectUnsupportedImportPayload(data, "diagnostic string") then
-            decodedDiagnostic = nil
             outputBox:SetText("")
             return
         end
-        decodedDiagnostic = data
+        outputBox.canCopyDiagnosticText = true
         outputBox:SetText(FormatDiagnosticAsText(data))
     end)
     btnGroup:AddChild(decodeBtn)
@@ -1043,23 +980,11 @@ local function OpenDiagnosticDecodePanel()
     copyBtn:SetText("Copy as Text")
     copyBtn:SetWidth(120)
     copyBtn:SetCallback("OnClick", function()
-        if not decodedDiagnostic then return end
+        if not outputBox.canCopyDiagnosticText then return end
         outputBox.editBox:HighlightText()
         outputBox.editBox:SetFocus()
     end)
     btnGroup:AddChild(copyBtn)
-
-    local importBtn = AceGUI:Create("Button")
-    importBtn:SetText("Import Profile")
-    importBtn:SetWidth(120)
-    importBtn:SetCallback("OnClick", function()
-        if not decodedDiagnostic or not decodedDiagnostic.profile then
-            CooldownCompanion:Print("No diagnostic data to import.")
-            return
-        end
-        StaticPopup_Show("CDC_DIAGNOSTIC_IMPORT_CONFIRM")
-    end)
-    btnGroup:AddChild(importBtn)
 
     frame:AddChild(btnGroup)
     frame:AddChild(outputBox)
@@ -1067,7 +992,6 @@ local function OpenDiagnosticDecodePanel()
     frame:SetCallback("OnClose", function(widget)
         AceGUI:Release(widget)
         diagnosticDecodeFrame = nil
-        decodedDiagnostic = nil
     end)
 end
 

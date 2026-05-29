@@ -26,6 +26,7 @@ local OpenContainerIconPicker = ST._OpenContainerIconPicker
 local IsValidIconTexture = ST._IsValidIconTexture
 local GenerateFolderName = ST._GenerateFolderName
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
+local OpenImportReviewWindow = ST._OpenImportReviewWindow
 local CancelDrag = ST._CancelDrag
 local StartDragTracking = ST._StartDragTracking
 local GetScaledCursorPosition = ST._GetScaledCursorPosition
@@ -838,7 +839,7 @@ local function PopulateColumn1ButtonBar()
     local importBtn = AceGUI:Create("Button")
     importBtn:SetText("Import")
     importBtn:SetCallback("OnClick", function()
-        ShowPopupAboveConfig("CDC_IMPORT_GROUP")
+        OpenImportReviewWindow()
     end)
     importBtn.frame:SetParent(CS.col1ButtonBar)
     importBtn.frame:ClearAllPoints()
