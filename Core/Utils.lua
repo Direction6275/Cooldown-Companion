@@ -6,6 +6,8 @@
 local ADDON_NAME, ST = ...
 
 local string_format = string.format
+local ipairs = ipairs
+local pairs = pairs
 local tonumber = tonumber
 local type = type
 
@@ -214,6 +216,66 @@ function ST.CreatePixelBorders(frame, r, g, b, a)
     ST.ApplyBorderTextures(textures, frame, { r or 0, g or 0, b or 0, a or 1 }, 1, ST.BORDER_RENDER_MODE_CRISP)
     frame.borderTextures = textures
     return textures
+end
+
+--------------------------------------------------------------------------------
+-- Runtime Info Buttons
+--------------------------------------------------------------------------------
+
+local runtimeInfoButtons = setmetatable({}, { __mode = "v" })
+
+function ST.AreInfoButtonsHidden()
+    local addon = ST.Addon
+    local profile = addon and addon.db and addon.db.profile
+    return profile and profile.hideInfoButtons == true
+end
+
+function ST.SetRuntimeInfoButtonShown(button, shown)
+    if not button then
+        return
+    end
+
+    button._cdcDesiredShown = shown == true
+    button:SetShown(button._cdcDesiredShown and not ST.AreInfoButtonsHidden())
+end
+
+function ST.RefreshRuntimeInfoButtonVisibility()
+    for _, button in pairs(runtimeInfoButtons) do
+        ST.SetRuntimeInfoButtonShown(button, button and button._cdcDesiredShown)
+    end
+end
+
+function ST.CreateRuntimeInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRelPoint, xOff, yOff, buildTooltip)
+    local button = CreateFrame("Button", nil, parentFrame)
+    button:SetSize(16, 16)
+    button:SetPoint(anchorPoint, anchorFrame, anchorRelPoint, xOff, yOff)
+    if parentFrame.GetFrameStrata and button.SetFrameStrata then
+        button:SetFrameStrata(parentFrame:GetFrameStrata())
+    end
+    if parentFrame.GetFrameLevel and button.SetFrameLevel then
+        button:SetFrameLevel((parentFrame:GetFrameLevel() or 1) + 1)
+    end
+
+    local icon = button:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(12, 12)
+    icon:SetPoint("CENTER")
+    icon:SetAtlas("QuestRepeatableTurnin")
+    button.icon = icon
+
+    button:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if type(buildTooltip) == "function" then
+            buildTooltip(GameTooltip, self)
+        end
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    runtimeInfoButtons[#runtimeInfoButtons + 1] = button
+    ST.SetRuntimeInfoButtonShown(button, false)
+    return button
 end
 
 --------------------------------------------------------------------------------

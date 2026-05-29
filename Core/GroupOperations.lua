@@ -2000,7 +2000,9 @@ function CooldownCompanion:LockAllFrames()
     for groupId, frame in pairs(self.groupFrames) do
         if frame then
             self:UpdateGroupClickthrough(groupId)
-            if frame.dragHandle then
+            if self.SetGroupDragControlsShown then
+                self:SetGroupDragControlsShown(frame, false)
+            elseif frame.dragHandle then
                 frame.dragHandle:Hide()
             end
         end
@@ -2021,10 +2023,10 @@ function CooldownCompanion:UnlockAllFrames()
             self:UpdateGroupClickthrough(groupId)
             local group = self.db.profile.groups[groupId]
             local panelUnlocked = group and group.locked == false and not self._combatForcedLock
-            if frame.dragHandle then
-                if panelUnlocked then
-                    frame.dragHandle:Show()
-                end
+            if panelUnlocked and self.SetGroupDragControlsShown then
+                self:SetGroupDragControlsShown(frame, true)
+            elseif panelUnlocked and frame.dragHandle then
+                frame.dragHandle:Show()
             end
             if panelUnlocked then
                 frame:SetAlpha(1)

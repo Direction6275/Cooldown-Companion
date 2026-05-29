@@ -324,8 +324,6 @@ end
 
 -- Nudger constants
 local NUDGE_BTN_SIZE = 12
-local NUDGE_REPEAT_DELAY = 0.5
-local NUDGE_REPEAT_INTERVAL = 0.05
 
 local CreatePixelBorders = ST.CreatePixelBorders
 local GetEffectiveTextHeight = ST._GetEffectiveTextHeight
@@ -387,15 +385,6 @@ local function CreateNudger(frame, groupId)
         end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            -- Cancel any hold-to-repeat timers
-            if self.nudgeDelayTimer then
-                self.nudgeDelayTimer:Cancel()
-                self.nudgeDelayTimer = nil
-            end
-            if self.nudgeTicker then
-                self.nudgeTicker:Cancel()
-                self.nudgeTicker = nil
-            end
             CooldownCompanion:SaveGroupPosition(groupId)
         end)
 
@@ -418,28 +407,46 @@ local function CreateNudger(frame, groupId)
 
         btn:SetScript("OnMouseDown", function(self)
             DoNudge()
-            -- Start hold-to-repeat after delay
-            self.nudgeDelayTimer = C_Timer.NewTimer(NUDGE_REPEAT_DELAY, function()
-                self.nudgeTicker = C_Timer.NewTicker(NUDGE_REPEAT_INTERVAL, function()
-                    DoNudge()
-                end)
-            end)
         end)
 
         btn:SetScript("OnMouseUp", function(self)
-            if self.nudgeDelayTimer then
-                self.nudgeDelayTimer:Cancel()
-                self.nudgeDelayTimer = nil
-            end
-            if self.nudgeTicker then
-                self.nudgeTicker:Cancel()
-                self.nudgeTicker = nil
-            end
             CooldownCompanion:SaveGroupPosition(groupId)
         end)
     end
 
     return nudger
+end
+
+local function AddPanelDragHelpTooltipLines(tooltip, isContainerPreview)
+    tooltip:AddLine("Panel Controls")
+    tooltip:AddLine("Drag anywhere on the panel to move it.", 1, 1, 1, false)
+    tooltip:AddLine(" ")
+    tooltip:AddLine("Use the arrow pad to nudge by 1 pixel.", 1, 1, 1, false)
+    tooltip:AddLine(" ")
+    if not isContainerPreview then
+        tooltip:AddLine("Middle-click the header to lock this panel.", 1, 1, 1, false)
+        tooltip:AddLine(" ")
+    end
+    tooltip:AddLine("Position coordinates are shown below while unlocked.", 1, 1, 1, false)
+end
+
+local function CreatePanelDragHelpButton(frame, groupId)
+    if not (frame and frame.dragHandle and ST.CreateRuntimeInfoButton) then
+        return nil
+    end
+
+    return ST.CreateRuntimeInfoButton(
+        frame.dragHandle,
+        frame.dragHandle,
+        "RIGHT",
+        "RIGHT",
+        -4,
+        0,
+        function(tooltip)
+            local previewActive = GetContainerPreviewSelectionState(groupId)
+            AddPanelDragHelpTooltipLines(tooltip, previewActive)
+        end
+    )
 end
 
 local function SyncGroupControlLevels(frame, raiseAboveWrapper)
@@ -458,6 +465,10 @@ local function SyncGroupControlLevels(frame, raiseAboveWrapper)
         frame.coordLabel:SetFrameStrata(strata)
         frame.coordLabel:SetFrameLevel(baseLevel + 1)
     end
+    if frame.dragHelpButton then
+        frame.dragHelpButton:SetFrameStrata(strata)
+        frame.dragHelpButton:SetFrameLevel(baseLevel + 2)
+    end
     if frame.nudger then
         frame.nudger:SetFrameStrata(strata)
         frame.nudger:SetFrameLevel(baseLevel + 5)
@@ -465,6 +476,25 @@ local function SyncGroupControlLevels(frame, raiseAboveWrapper)
             btn:SetFrameStrata(strata)
             btn:SetFrameLevel(baseLevel + 6 + buttonIndex)
         end
+    end
+end
+
+function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
+    if not frame then
+        return
+    end
+
+    if frame.dragHandle then
+        frame.dragHandle:SetShown(shown)
+    end
+    if frame.coordLabel then
+        frame.coordLabel:SetShown(shown)
+    end
+    if ST.SetRuntimeInfoButtonShown then
+        ST.SetRuntimeInfoButtonShown(frame.dragHelpButton, shown)
+    end
+    if frame.nudger then
+        frame.nudger:SetShown(shown)
     end
 end
 
@@ -523,6 +553,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
 
     -- Pixel nudger (parented to dragHandle, inherits show/hide)
     frame.nudger = CreateNudger(frame, groupId)
+    frame.dragHelpButton = CreatePanelDragHelpButton(frame, groupId)
 
     -- Coordinate label (parented to dragHandle so it hides when locked)
     frame.coordLabel = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
@@ -537,7 +568,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
 
     if isLocked or #group.buttons == 0 or isTextureMode then
-        frame.dragHandle:Hide()
+        self:SetGroupDragControlsShown(frame, false)
     end
 
     -- Drag scripts (check lock state at drag time)
@@ -1284,22 +1315,15 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
     local containerPreviewActive = group.parentContainerId and self:IsContainerUnlockPreviewActive(group.parentContainerId)
     local selectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
-    if frame.dragHandle then
-        if frame.dragHandle.text then
-            frame.dragHandle.text:SetText(group.name)
-        end
-        if containerPreviewActive then
-            if selectedInContainer and hasButtons and not isTextureMode then
-                frame.dragHandle:Show()
-            else
-                frame.dragHandle:Hide()
-            end
-        elseif isLocked or not hasButtons or isTextureMode then
-            frame.dragHandle:Hide()
-        else
-            frame.dragHandle:Show()
-        end
+    if frame.dragHandle and frame.dragHandle.text then
+        frame.dragHandle.text:SetText(group.name)
     end
+    self:SetGroupDragControlsShown(
+        frame,
+        hasButtons
+            and not isTextureMode
+            and ((containerPreviewActive and selectedInContainer) or (not containerPreviewActive and not isLocked))
+    )
     self:UpdateGroupClickthrough(groupId)
 
     -- Update visibility — unload if disabled, no buttons, wrong spec/hero, wrong character, or load conditions
@@ -2192,12 +2216,8 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
 
         if groupFrame and not isStandaloneDisplay then
             SyncGroupControlLevels(groupFrame, isSelected)
-            if groupFrame.dragHandle then
-                if isSelected then
-                    groupFrame.dragHandle:Show()
-                elseif self:IsContainerUnlockPreviewActive(containerId) then
-                    groupFrame.dragHandle:Hide()
-                end
+            if self:IsContainerUnlockPreviewActive(containerId) then
+                self:SetGroupDragControlsShown(groupFrame, isSelected)
             end
             self:UpdateGroupClickthrough(groupId)
         elseif isStandaloneDisplay and self.UpdateGroupedStandalonePreviewSelection then
@@ -2258,14 +2278,6 @@ local function CreateContainerNudger(frame, containerId)
         end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            if self.nudgeDelayTimer then
-                self.nudgeDelayTimer:Cancel()
-                self.nudgeDelayTimer = nil
-            end
-            if self.nudgeTicker then
-                self.nudgeTicker:Cancel()
-                self.nudgeTicker = nil
-            end
             CooldownCompanion:SaveContainerPosition(containerId)
         end)
 
@@ -2294,22 +2306,9 @@ local function CreateContainerNudger(frame, containerId)
 
         btn:SetScript("OnMouseDown", function(self)
             DoNudge()
-            self.nudgeDelayTimer = C_Timer.NewTimer(NUDGE_REPEAT_DELAY, function()
-                self.nudgeTicker = C_Timer.NewTicker(NUDGE_REPEAT_INTERVAL, function()
-                    DoNudge()
-                end)
-            end)
         end)
 
         btn:SetScript("OnMouseUp", function(self)
-            if self.nudgeDelayTimer then
-                self.nudgeDelayTimer:Cancel()
-                self.nudgeDelayTimer = nil
-            end
-            if self.nudgeTicker then
-                self.nudgeTicker:Cancel()
-                self.nudgeTicker = nil
-            end
             CooldownCompanion:SaveContainerPosition(containerId)
         end)
     end

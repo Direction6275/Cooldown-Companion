@@ -36,8 +36,6 @@ local DoesTriggerPanelMatch = AT.DoesTriggerPanelMatch
 
 local NUDGE_BTN_SIZE = 12
 local NUDGE_GAP = 2
-local NUDGE_REPEAT_DELAY = 0.5
-local NUDGE_REPEAT_INTERVAL = 0.05
 
 local function CreateAuraTextureOutline(host)
     local fill = host:CreateTexture(nil, "OVERLAY")
@@ -365,40 +363,60 @@ local function EnsureAuraTextureNudger(host)
         end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            if self.nudgeDelayTimer then
-                self.nudgeDelayTimer:Cancel()
-                self.nudgeDelayTimer = nil
-            end
-            if self.nudgeTicker then
-                self.nudgeTicker:Cancel()
-                self.nudgeTicker = nil
-            end
             SaveTextureHostPosition(host)
         end)
 
         btn:SetScript("OnMouseDown", function(self)
             DoNudge(dir.dx, dir.dy)
-            self.nudgeDelayTimer = C_Timer.NewTimer(NUDGE_REPEAT_DELAY, function()
-                self.nudgeTicker = C_Timer.NewTicker(NUDGE_REPEAT_INTERVAL, function()
-                    DoNudge(dir.dx, dir.dy)
-                end)
-            end)
         end)
 
         btn:SetScript("OnMouseUp", function(self)
-            if self.nudgeDelayTimer then
-                self.nudgeDelayTimer:Cancel()
-                self.nudgeDelayTimer = nil
-            end
-            if self.nudgeTicker then
-                self.nudgeTicker:Cancel()
-                self.nudgeTicker = nil
-            end
             SaveTextureHostPosition(host)
         end)
     end
 
     host.nudger = nudger
+end
+
+local function AddTexturePanelDragHelpTooltipLines(tooltip, isGroupedPreview)
+    tooltip:AddLine("Panel Controls")
+    tooltip:AddLine("Drag anywhere on the panel to move it.", 1, 1, 1, false)
+    tooltip:AddLine(" ")
+    tooltip:AddLine("Use the arrow pad to nudge by 1 pixel.", 1, 1, 1, false)
+    tooltip:AddLine(" ")
+    if not isGroupedPreview then
+        tooltip:AddLine("Middle-click the header to lock this panel.", 1, 1, 1, false)
+        tooltip:AddLine(" ")
+    end
+    tooltip:AddLine("Position coordinates are shown below while unlocked.", 1, 1, 1, false)
+end
+
+local function IsTextureHostGroupedPreviewActive(host)
+    local owner = host and host._ownerButton or nil
+    local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
+    return group
+        and group.parentContainerId
+        and CooldownCompanion.IsContainerUnlockPreviewActive
+        and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
+        or false
+end
+
+local function CreateAuraTextureDragHelpButton(host, dragHandle)
+    if not (host and dragHandle and ST.CreateRuntimeInfoButton) then
+        return nil
+    end
+
+    return ST.CreateRuntimeInfoButton(
+        dragHandle,
+        dragHandle,
+        "RIGHT",
+        "RIGHT",
+        -4,
+        0,
+        function(tooltip)
+            AddTexturePanelDragHelpTooltipLines(tooltip, IsTextureHostGroupedPreviewActive(host))
+        end
+    )
 end
 
 local function EnsureAuraTextureDragHandle(host)
@@ -420,6 +438,8 @@ local function EnsureAuraTextureDragHandle(host)
     text:SetPoint("CENTER")
     text:SetTextColor(1, 1, 1, 1)
     dragHandle.text = text
+
+    host.dragHelpButton = CreateAuraTextureDragHelpButton(host, dragHandle)
 
     local coordLabel = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
     coordLabel:SetHeight(15)
@@ -484,6 +504,10 @@ local function SyncAuraTextureControlLevels(host, raiseAboveWrapper)
     if host.coordLabel then
         host.coordLabel:SetFrameStrata(strata)
         host.coordLabel:SetFrameLevel(baseLevel + 6)
+    end
+    if host.dragHelpButton then
+        host.dragHelpButton:SetFrameStrata(strata)
+        host.dragHelpButton:SetFrameLevel(baseLevel + 7)
     end
     if host.nudger then
         host.nudger:SetFrameStrata(strata)
@@ -726,17 +750,10 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     if host.coordLabel then
         host.coordLabel:Hide()
     end
+    if ST.SetRuntimeInfoButtonShown then
+        ST.SetRuntimeInfoButtonShown(host.dragHelpButton, false)
+    end
     if host.nudger then
-        for _, btn in ipairs(host.nudger.buttons or {}) do
-            if btn.nudgeDelayTimer then
-                btn.nudgeDelayTimer:Cancel()
-                btn.nudgeDelayTimer = nil
-            end
-            if btn.nudgeTicker then
-                btn.nudgeTicker:Cancel()
-                btn.nudgeTicker = nil
-            end
-        end
         host.nudger:Hide()
     end
     host:Hide()
@@ -1175,6 +1192,9 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         SyncAuraTextureControlLevels(host, visibilityState.isGroupedPreview and isGroupedPreviewSelected)
         host.dragHandle:SetShown(showHeader)
         host.coordLabel:SetShown(showHeader)
+        if ST.SetRuntimeInfoButtonShown then
+            ST.SetRuntimeInfoButtonShown(host.dragHelpButton, showHeader)
+        end
         if host.nudger then
             host.nudger:SetShown(showHeader)
         end
@@ -1225,6 +1245,9 @@ function CooldownCompanion:UpdateGroupedStandalonePreviewSelection(groupId)
     end
     if host.coordLabel then
         host.coordLabel:SetShown(showControls)
+    end
+    if ST.SetRuntimeInfoButtonShown then
+        ST.SetRuntimeInfoButtonShown(host.dragHelpButton, showControls)
     end
     if host.nudger then
         host.nudger:SetShown(showControls)
