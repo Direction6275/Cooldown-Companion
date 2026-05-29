@@ -5,6 +5,7 @@
 
 local ADDON_NAME, ST = ...
 
+local InCombatLockdown = InCombatLockdown
 local string_format = string.format
 local ipairs = ipairs
 local pairs = pairs
@@ -236,7 +237,19 @@ function ST.SetRuntimeInfoButtonShown(button, shown)
     end
 
     button._cdcDesiredShown = shown == true
-    button:SetShown(button._cdcDesiredShown and not ST.AreInfoButtonsHidden())
+    local visible = button._cdcDesiredShown and not ST.AreInfoButtonsHidden()
+    button:SetShown(visible)
+    if not InCombatLockdown or not InCombatLockdown() then
+        if button.EnableMouse then
+            button:EnableMouse(visible)
+        end
+        if button.SetMouseClickEnabled then
+            button:SetMouseClickEnabled(visible)
+        end
+        if button.SetMouseMotionEnabled then
+            button:SetMouseMotionEnabled(visible)
+        end
+    end
 end
 
 function ST.RefreshRuntimeInfoButtonVisibility()

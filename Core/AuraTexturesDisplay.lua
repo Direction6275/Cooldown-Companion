@@ -286,6 +286,23 @@ local function FinishTextureHostDrag(host)
     return true
 end
 
+local function SetTextureHostMouseEnabled(host, enabled)
+    if not host then
+        return
+    end
+
+    local enable = enabled == true
+    host:EnableMouse(enable)
+    if not InCombatLockdown or not InCombatLockdown() then
+        if host.SetMouseClickEnabled then
+            host:SetMouseClickEnabled(enable)
+        end
+        if host.SetMouseMotionEnabled then
+            host:SetMouseMotionEnabled(enable)
+        end
+    end
+end
+
 local function EnsureAuraTextureNudger(host)
     if host.nudger then
         return
@@ -527,7 +544,7 @@ local function EnsureAuraTextureHost(button)
     local host = CreateFrame("Frame", nil, UIParent)
     host:SetMovable(true)
     host:SetClampedToScreen(true)
-    host:EnableMouse(false)
+    SetTextureHostMouseEnabled(host, false)
     host:RegisterForDrag("LeftButton")
     host:Hide()
     host._ownerButton = button
@@ -742,7 +759,7 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     host._activeTextureGeometry = nil
     host._dragEnabled = nil
     host._wrapperManaged = nil
-    host:EnableMouse(false)
+    SetTextureHostMouseEnabled(host, false)
     host:SetAlpha(1)
     SetAuraTextureOutlineShown(host, false)
     if host.dragHandle then
@@ -1162,7 +1179,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         and hasSavedDisplay
         and (not visibilityState.isGroupedPreview or isGroupedPreviewSelected)
     host._wrapperManaged = visibilityState.isGroupedPreview or nil
-    host:EnableMouse(host._dragEnabled == true and not visibilityState.isGroupedPreview)
+    SetTextureHostMouseEnabled(host, host._dragEnabled == true and not visibilityState.isGroupedPreview)
     SetAuraTextureOutlineShown(host, visibilityState.isGroupedPreview and (isGroupedPreviewSelected or isGroupedPreviewHovered) or false)
     if host.dragHandle and host.coordLabel then
         host.dragHandle.text:SetText(group and group.name or "Texture Panel")

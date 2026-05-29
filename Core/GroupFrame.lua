@@ -567,9 +567,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.coordLabel.text:SetPoint("CENTER")
     frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
 
-    if isLocked or #group.buttons == 0 or isTextureMode then
-        self:SetGroupDragControlsShown(frame, false)
-    end
+    self:SetGroupDragControlsShown(frame, (not isLocked) and #group.buttons > 0 and not isTextureMode)
 
     -- Drag scripts (check lock state at drag time)
     frame:SetScript("OnDragStart", function(self)
