@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.16",
         "1.15",
         "1.14.3",
         "1.14.2",
@@ -36,6 +37,37 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.16"] = {
+            markdown = [[
+## New Features
+
+- **Reviewable imports and profile backups:** Imports now open one review flow for profile backups, groups, panels, folders, Custom Bars, and diagnostic profile strings before anything is applied.
+- **Selected-piece profile imports:** Profile backups can restore the full profile or import selected current-class pieces, so players can pull useful panels, groups, folders, and Custom Bars from a backup without replacing everything.
+- **Custom Bar cooldown and aura parity:** Custom Bars now follow the same cooldown, charge, global cooldown, and aura tracking behavior as regular bar panels, including player/target aura tracking, target switching, stacks, expiry, pandemic display, and Hide When Inactive.
+- **Aura Unit for Custom Bars:** Aura Custom Bars can manually track Player or Target auras, matching standalone aura entries elsewhere in the addon.
+- **Optional IconBrowser support:** Settings icon pickers can use IconBrowser for folder, button, trigger-panel, and container icons when it is installed, while the native picker remains the fallback.
+
+## Polish | QoL
+
+- **Clearer import reviews:** The import review window is easier to read over the game background, with larger shadowed review text, clearer spacing, and action buttons that stay attached to the bottom while resizing.
+- **More consistent visuals:** Cooldown, aura, charge, visibility, glow, text, texture, trigger-panel, resource bar, custom bar, and health-bar visuals should line up more reliably across the addon.
+- **More useful Bug Reports:** Bug Reports now include clearer display context, reasons something may be hidden, and compact profile data, making support reports easier to understand.
+
+## Bug Fixes
+
+- **Spell override visibility:** Cooldown icons set to hide while not on cooldown should stay hidden during temporary spell override states, including (eg Downpour), while still appearing when their saved spell is actually on cooldown.
+- **Character auto-anchoring exclusions:** Character-only groups excluded from auto-anchoring now stay excluded, so auto-anchored resource bars, cast bars, and unit frames can move to the next eligible icon panel.
+- **Cleaner picker cleanup:** Icon picker windows and sound preview dropdown rows clean up after themselves more reliably.
+
+## Performance
+
+- **Disabled Bars & Frames stay cold:** Resource Bars, Cast Bar anchoring, and Frame Anchoring now stop their ongoing background work when those features are disabled, reducing addon work for players who do not use them.
+
+## Profile Compatibility
+
+- **1.15 checkpoint required:** Cooldown Companion now requires profiles and import strings to have passed through the 1.15 compatibility checkpoint. Older profiles and very old compact import strings now show recovery guidance instead of trying outdated migrations.
+]],
+        },
         ["1.15"] = {
             markdown = [[
 ## New Features
