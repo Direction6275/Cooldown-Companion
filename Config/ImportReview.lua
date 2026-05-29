@@ -25,19 +25,94 @@ local DIAGNOSTIC_PREFIX = "CDCdiag:"
 local IMPORT_REVIEW_CONFIRM_POPUP = "CDC_IMPORT_REVIEW_CONFIRM"
 local IMPORT_TEXT_LINES = 8
 local IMPORT_TEXT_HEIGHT = 160
-local IMPORT_REVIEW_HEIGHT = 220
 local IMPORT_ACTION_HEIGHT = 30
 local IMPORT_WINDOW_WIDTH = 640
 local IMPORT_WINDOW_HEIGHT = 500
+local ACE_WINDOW_DEFAULT_MIN_WIDTH = 240
+local ACE_WINDOW_DEFAULT_MIN_HEIGHT = 240
+local IMPORT_WINDOW_MIN_WIDTH = 420
+local IMPORT_WINDOW_MIN_HEIGHT = 380
+local IMPORT_LAYOUT = "CDC_IMPORT_REVIEW"
+local IMPORT_LAYOUT_GAP = 8
+local IMPORT_REVIEW_MIN_HEIGHT = 110
+local IMPORT_REVIEW_FONT_SIZE = 14
+local IMPORT_REVIEW_SHADOW_ALPHA = 0.9
+local IMPORT_REVIEW_SHADOW_X = 1
+local IMPORT_REVIEW_SHADOW_Y = -1
+local IMPORT_REVIEW_SECTION_GAP = 10
+local IMPORT_REVIEW_COLLAPSED_GAP = 1
 local IMPORT_MODE_LABELS = {
     selected = "Import selected pieces",
     restore = "Restore backup",
 }
 local IMPORT_MODE_ORDER = { "selected", "restore" }
 
+if not AceGUI:GetLayout(IMPORT_LAYOUT) then
+    local function LayoutImportBand(group, width, height)
+        if not group then
+            return nil
+        end
+
+        group:SetWidth(width)
+        group:SetHeight(height)
+        group.frame:ClearAllPoints()
+        group.frame:Show()
+        if group.DoLayout then
+            group:DoLayout()
+        end
+        return group.frame
+    end
+
+    AceGUI:RegisterLayout(IMPORT_LAYOUT, function(content, children)
+        local width = content.width or content:GetWidth() or 0
+        local height = content.height or content:GetHeight() or 0
+        local pasteGroup = children[1]
+        local reviewScroll = children[2]
+        local buttonGroup = children[3]
+        local reviewHeight = height - IMPORT_TEXT_HEIGHT - IMPORT_ACTION_HEIGHT - (IMPORT_LAYOUT_GAP * 2)
+
+        if reviewHeight < IMPORT_REVIEW_MIN_HEIGHT then
+            reviewHeight = IMPORT_REVIEW_MIN_HEIGHT
+        end
+
+        local pasteFrame = LayoutImportBand(pasteGroup, width, IMPORT_TEXT_HEIGHT)
+        if pasteFrame then
+            pasteFrame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+            pasteFrame:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+        end
+
+        local buttonFrame = LayoutImportBand(buttonGroup, width, IMPORT_ACTION_HEIGHT)
+        if buttonFrame then
+            buttonFrame:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0)
+            buttonFrame:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+        end
+
+        if reviewScroll then
+            reviewScroll:SetWidth(width)
+            reviewScroll:SetHeight(reviewHeight)
+            reviewScroll.frame:ClearAllPoints()
+            if pasteFrame then
+                reviewScroll.frame:SetPoint("TOPLEFT", pasteFrame, "BOTTOMLEFT", 0, -IMPORT_LAYOUT_GAP)
+            else
+                reviewScroll.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+            end
+            if buttonFrame then
+                reviewScroll.frame:SetPoint("BOTTOMRIGHT", buttonFrame, "TOPRIGHT", 0, IMPORT_LAYOUT_GAP)
+            else
+                reviewScroll.frame:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+            end
+            reviewScroll.frame:Show()
+            if reviewScroll.DoLayout then
+                reviewScroll:DoLayout()
+            end
+        end
+    end)
+end
+
 local importReviewFrame = nil
 local activeReview = nil
 local pendingReviewImport = nil
+local importReviewFontObject = nil
 
 local function CountPairs(tbl)
     local count = 0
@@ -491,24 +566,77 @@ local function ConfigureWrappedLabel(label)
     label:SetFullWidth(true)
 end
 
-local function AddButton(group, text, width)
+local function GetImportReviewFontObject()
+    if importReviewFontObject then
+        return importReviewFontObject
+    end
+    if not CreateFont then
+        return GameFontHighlight
+    end
+
+    local fontObject = _G and _G.CooldownCompanionImportReviewTextFont
+    if not fontObject then
+        fontObject = CreateFont("CooldownCompanionImportReviewTextFont")
+    end
+    if fontObject.CopyFontObject and GameFontHighlight then
+        fontObject:CopyFontObject(GameFontHighlight)
+    end
+    if fontObject.SetFont and GameFontHighlight and GameFontHighlight.GetFont then
+        local fontPath, _, fontFlags = GameFontHighlight:GetFont()
+        if fontPath then
+            fontObject:SetFont(fontPath, IMPORT_REVIEW_FONT_SIZE, fontFlags or "")
+        end
+    end
+    if fontObject.SetShadowColor then
+        fontObject:SetShadowColor(0, 0, 0, IMPORT_REVIEW_SHADOW_ALPHA)
+    end
+    if fontObject.SetShadowOffset then
+        fontObject:SetShadowOffset(IMPORT_REVIEW_SHADOW_X, IMPORT_REVIEW_SHADOW_Y)
+    end
+
+    importReviewFontObject = fontObject
+    return importReviewFontObject
+end
+
+local function ConfigureImportReviewTextLabel(widget)
+    ConfigureWrappedLabel(widget)
+    local fontObject = GetImportReviewFontObject()
+    if widget.SetFontObject and fontObject then
+        widget:SetFontObject(fontObject)
+    end
+end
+
+local function AddVerticalSpacer(group)
+    local spacer = AceGUI:Create("SimpleGroup")
+    spacer:SetFullWidth(true)
+    spacer:SetHeight(IMPORT_REVIEW_COLLAPSED_GAP)
+    spacer.noAutoHeight = true
+    spacer:SetLayout("Fill")
+    group:AddChild(spacer)
+    return spacer
+end
+
+local function SetSpacerHeight(spacer, height)
+    if spacer and spacer.SetHeight then
+        spacer:SetHeight(height or IMPORT_REVIEW_COLLAPSED_GAP)
+    end
+end
+
+local function AddFooterButton(group, text)
     local button = AceGUI:Create("Button")
     button:SetText(text)
-    button:SetWidth(width)
+    button:SetRelativeWidth(0.5)
     group:AddChild(button)
     return button
 end
 
-local function RelayoutImportWindow(frame, reviewScroll, ...)
-    for i = 1, select("#", ...) do
-        local group = select(i, ...)
-        if group and group.DoLayout then
-            group:DoLayout()
-        end
+local function SetWindowResizeBounds(widget, minWidth, minHeight)
+    if widget and widget.frame and widget.frame.SetResizeBounds then
+        widget.frame:SetResizeBounds(minWidth, minHeight)
     end
-    if reviewScroll and reviewScroll.DoLayout then
-        reviewScroll:DoLayout()
-    end
+end
+
+local function RelayoutImportWindow(frame)
     if frame and frame.DoLayout then
         frame:DoLayout()
     end
@@ -526,6 +654,7 @@ local function CloseImportReviewFrame(widget)
         importReviewFrame = nil
     end
     if widget then
+        SetWindowResizeBounds(widget, ACE_WINDOW_DEFAULT_MIN_WIDTH, ACE_WINDOW_DEFAULT_MIN_HEIGHT)
         AceGUI:Release(widget)
     end
 end
@@ -682,7 +811,8 @@ local function ShowImportReviewWindow(context)
     frame:SetTitle("Import")
     frame:SetWidth(IMPORT_WINDOW_WIDTH)
     frame:SetHeight(IMPORT_WINDOW_HEIGHT)
-    frame:SetLayout("List")
+    SetWindowResizeBounds(frame, IMPORT_WINDOW_MIN_WIDTH, IMPORT_WINDOW_MIN_HEIGHT)
+    frame:SetLayout(IMPORT_LAYOUT)
     importReviewFrame = frame
     activeReview = nil
 
@@ -701,7 +831,7 @@ local function ShowImportReviewWindow(context)
 
     local reviewScroll = AceGUI:Create("ScrollFrame")
     reviewScroll:SetFullWidth(true)
-    reviewScroll:SetHeight(IMPORT_REVIEW_HEIGHT)
+    reviewScroll:SetHeight(IMPORT_REVIEW_MIN_HEIGHT)
     reviewScroll:SetLayout("List")
     frame:AddChild(reviewScroll)
 
@@ -718,10 +848,14 @@ local function ShowImportReviewWindow(context)
     disclaimerLabel:SetText("")
     reviewScroll:AddChild(disclaimerLabel)
 
+    local summaryTopSpacer = AddVerticalSpacer(reviewScroll)
+
     local statusLabel = AceGUI:Create("Label")
-    ConfigureWrappedLabel(statusLabel)
+    ConfigureImportReviewTextLabel(statusLabel)
     statusLabel:SetText("|cff888888No import string reviewed.|r")
     reviewScroll:AddChild(statusLabel)
+
+    local summaryBottomSpacer = AddVerticalSpacer(reviewScroll)
 
     local pieceGroup = AceGUI:Create("SimpleGroup")
     pieceGroup:SetFullWidth(true)
@@ -734,9 +868,9 @@ local function ShowImportReviewWindow(context)
     buttonGroup.noAutoHeight = true
     buttonGroup:SetLayout("Flow")
 
-    local acceptButton = AddButton(buttonGroup, "Import", 220)
+    local acceptButton = AddFooterButton(buttonGroup, "Import")
     acceptButton:SetDisabled(true)
-    local cancelButton = AddButton(buttonGroup, "Cancel", 120)
+    local cancelButton = AddFooterButton(buttonGroup, "Cancel")
 
     frame:AddChild(buttonGroup)
 
@@ -744,31 +878,39 @@ local function ShowImportReviewWindow(context)
         RenderModeControl(modeGroup, activeReview, RefreshPresentation)
         RenderPieceRows(pieceGroup, activeReview, RefreshPresentation)
         local selectedCount = ReviewUsesSelectedPieces(activeReview) and RecountSelectedPieces(activeReview) or nil
+        local disclaimerText = GetProfileImportDisclaimer(activeReview) or ""
         acceptButton:SetText(GetReviewAcceptText(activeReview))
         acceptButton:SetDisabled(not CanApplyReview(activeReview, selectedCount))
-        disclaimerLabel:SetText(GetProfileImportDisclaimer(activeReview) or "")
+        disclaimerLabel:SetText(disclaimerText)
+        SetSpacerHeight(summaryTopSpacer, disclaimerText ~= "" and IMPORT_REVIEW_SECTION_GAP
+            or IMPORT_REVIEW_COLLAPSED_GAP)
+        SetSpacerHeight(summaryBottomSpacer, ReviewUsesSelectedPieces(activeReview) and IMPORT_REVIEW_SECTION_GAP
+            or IMPORT_REVIEW_COLLAPSED_GAP)
         if activeReview then
             statusLabel:SetText(FormatReviewText(activeReview, selectedCount))
         end
-        RelayoutImportWindow(frame, reviewScroll, modeGroup, pieceGroup)
+        RelayoutImportWindow(frame)
     end
 
-    local function ClearReview()
+    local function ClearReview(statusText)
         activeReview = nil
         acceptButton:SetDisabled(true)
         acceptButton:SetText("Import")
         disclaimerLabel:SetText("")
+        SetSpacerHeight(summaryTopSpacer, IMPORT_REVIEW_COLLAPSED_GAP)
+        SetSpacerHeight(summaryBottomSpacer, IMPORT_REVIEW_COLLAPSED_GAP)
         ReleaseChildren(modeGroup)
         ReleaseChildren(pieceGroup)
-        RelayoutImportWindow(frame, reviewScroll, modeGroup, pieceGroup)
+        if statusText then
+            statusLabel:SetText(statusText)
+        end
+        RelayoutImportWindow(frame)
     end
 
     local function ReviewInput()
         local review = CooldownCompanion:ClassifyImportReviewText(inputBox:GetText())
         if not review.ok then
-            ClearReview()
-            statusLabel:SetText("|cffff6666" .. (review.message or "Import failed.") .. "|r")
-            RelayoutImportWindow(frame, reviewScroll, modeGroup, pieceGroup)
+            ClearReview("|cffff6666" .. (review.message or "Import failed.") .. "|r")
             return
         end
 
