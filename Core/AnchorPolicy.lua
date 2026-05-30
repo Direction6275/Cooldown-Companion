@@ -298,22 +298,21 @@ local function SanitizeScopedExternalAnchors(profile, targetIsCursorRoot)
     end)
 end
 
-local function AddDependent(dependents, kind, name)
+local function AddDependent(dependents, name)
     dependents[#dependents + 1] = {
-        kind = kind,
         name = name,
     }
 end
 
-local function AddAnchorDependent(dependents, anchor, targetFrameName, kind, name)
+local function AddAnchorDependent(dependents, anchor, targetFrameName, name)
     if type(anchor) == "table" and anchor.relativeTo == targetFrameName then
-        AddDependent(dependents, kind, name)
+        AddDependent(dependents, name)
     end
 end
 
-local function AddFrameNameDependent(dependents, frameName, targetFrameName, kind, name)
+local function AddFrameNameDependent(dependents, frameName, targetFrameName, name)
     if frameName == targetFrameName then
-        AddDependent(dependents, kind, name)
+        AddDependent(dependents, name)
     end
 end
 
@@ -321,7 +320,7 @@ local function AddResourceBarDependents(dependents, settings, targetFrameName, n
     if type(settings) ~= "table" then
         return
     end
-    AddAnchorDependent(dependents, settings.independentAnchor, targetFrameName, "resourceBar", name)
+    AddAnchorDependent(dependents, settings.independentAnchor, targetFrameName, name)
     local layoutOrder = settings.layoutOrder
     if type(layoutOrder) == "table" then
         for layoutId, layout in pairs(layoutOrder) do
@@ -329,7 +328,6 @@ local function AddResourceBarDependents(dependents, settings, targetFrameName, n
                 dependents,
                 type(layout) == "table" and layout.independentAnchor or nil,
                 targetFrameName,
-                "resourceBarLayout",
                 name .. " Layout " .. tostring(layoutId)
             )
         end
@@ -340,15 +338,15 @@ local function AddCastBarDependents(dependents, settings, targetFrameName, name)
     if type(settings) ~= "table" then
         return
     end
-    AddAnchorDependent(dependents, settings.independentAnchor, targetFrameName, "castBar", name)
+    AddAnchorDependent(dependents, settings.independentAnchor, targetFrameName, name)
 end
 
 local function AddFrameAnchoringDependents(dependents, settings, targetFrameName, name)
     if type(settings) ~= "table" then
         return
     end
-    AddFrameNameDependent(dependents, settings.customPlayerFrame, targetFrameName, "frameAnchoring", name .. " Player")
-    AddFrameNameDependent(dependents, settings.customTargetFrame, targetFrameName, "frameAnchoring", name .. " Target")
+    AddFrameNameDependent(dependents, settings.customPlayerFrame, targetFrameName, name .. " Player")
+    AddFrameNameDependent(dependents, settings.customTargetFrame, targetFrameName, name .. " Target")
 end
 
 function CooldownCompanion:GetCursorAnchorTargetName()

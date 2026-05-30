@@ -2186,8 +2186,6 @@ function CooldownCompanion:GetDirectAnchorDependents(groupId, panelOnly)
             and dependentGroup.anchor.relativeTo == targetFrameName
             and (not panelOnly or dependentGroup.parentContainerId) then
             dependents[#dependents + 1] = {
-                id = dependentId,
-                kind = dependentGroup.parentContainerId and "panel" or "group",
                 name = dependentGroup.name or ((dependentGroup.parentContainerId and "Panel " or "Group ") .. dependentId),
             }
         end
@@ -2199,8 +2197,6 @@ function CooldownCompanion:GetDirectAnchorDependents(groupId, panelOnly)
                 and container.anchor
                 and container.anchor.relativeTo == targetFrameName then
                 dependents[#dependents + 1] = {
-                    id = containerId,
-                    kind = "container",
                     name = container.name or ("Group " .. containerId),
                 }
             end
