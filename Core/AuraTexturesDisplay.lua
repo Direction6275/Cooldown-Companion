@@ -1009,9 +1009,14 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
     local groupedPreviewFrame = GetGroupedPreviewContainerFrame(group, driverButton and driverButton._groupId)
     local combatForcedLock = self._combatForcedLock == true
     local isCursorAnchored = self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group)
+    local isCursorLayoutPreview = driverButton
+        and self.IsCursorAnchorLayoutPreviewGroupActive
+        and self:IsCursorAnchorLayoutPreviewGroupActive(driverButton._groupId)
+        or false
     local state = {
         isEditing = IsStandaloneTextureEditingButton(driverButton),
         isConfigForceVisible = (not isTriggerPanel) and IsTexturePanelConfigForceVisible(driverButton),
+        isCursorLayoutPreview = isCursorLayoutPreview,
         isGroupedPreview = groupedPreviewFrame ~= nil,
         groupedPreviewFrame = groupedPreviewFrame,
         isUnlocked = not isCursorAnchored and not combatForcedLock and group and (group.locked == false or groupedPreviewFrame ~= nil),
@@ -1023,6 +1028,8 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
 
     if settings then
         if state.hasPreviewSelection then
+            state.showDisplay = true
+        elseif state.isCursorLayoutPreview then
             state.showDisplay = true
         elseif isTriggerPanel then
             state.showDisplay = state.triggerMatched or state.hasTriggerEffectPreview or state.isEditing or state.isUnlocked
@@ -1041,7 +1048,11 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
     end
 
     state.triggerSoundVisible = settings ~= nil and state.triggerMatched and state.showDisplay
-    state.bypassModuleAlpha = state.hasPreviewSelection or state.isEditing or state.isConfigForceVisible or state.isUnlocked
+    state.bypassModuleAlpha = state.hasPreviewSelection
+        or state.isEditing
+        or state.isConfigForceVisible
+        or state.isCursorLayoutPreview
+        or state.isUnlocked
     return state
 end
 
