@@ -1098,7 +1098,6 @@ local function BuildLayoutTab(container)
     local isPanel = group.parentContainerId ~= nil
     local panelContainerFrame = isPanel and ("CooldownCompanionContainer" .. group.parentContainerId) or nil
     local currentAnchor = group.anchor.relativeTo
-    local rawAnchor = currentAnchor
     local cursorAnchorTarget = CooldownCompanion.GetCursorAnchorTargetName
         and CooldownCompanion:GetCursorAnchorTargetName()
         or ST.CURSOR_ANCHOR_TARGET
@@ -1108,15 +1107,15 @@ local function BuildLayoutTab(container)
         and CooldownCompanion:IsCursorAnchor(group.anchor)
         or false
     local defaultFrame = isPanel and panelContainerFrame or "UIParent"
-    local rawAnchorGroupId = type(rawAnchor) == "string"
-        and rawAnchor:match("^CooldownCompanionGroup(%d+)$")
+    local currentAnchorGroupId = type(currentAnchor) == "string"
+        and currentAnchor:match("^CooldownCompanionGroup(%d+)$")
         or nil
     local targetMode
     if isCursorAnchor then
         targetMode = "cursor"
-    elseif rawAnchorGroupId and isPanel then
+    elseif currentAnchorGroupId and isPanel then
         targetMode = "panel"
-    elseif rawAnchor == nil or rawAnchor == "UIParent" or (isPanel and rawAnchor == panelContainerFrame) then
+    elseif currentAnchor == nil or currentAnchor == "UIParent" or (isPanel and currentAnchor == panelContainerFrame) then
         targetMode = "group"
     else
         targetMode = "frame"
@@ -1174,9 +1173,6 @@ local function BuildLayoutTab(container)
     end)
     container:AddChild(anchorTargetDrop)
 
-    local currentAnchorGroupId = type(currentAnchor) == "string"
-        and currentAnchor:match("^CooldownCompanionGroup(%d+)$")
-        or nil
     if targetMode == "frame" then
         -- ================================================================
         -- Anchor to Frame (editbox + pick button row)

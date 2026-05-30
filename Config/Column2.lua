@@ -62,7 +62,6 @@ local ROW_BADGE_SPACING = 2
 local ROW_BADGE_RIGHT_PAD = 4
 local TEXTURE_PANEL_HEADER_BADGE_ATLAS = "UI-HUD-MicroMenu-Communities-Icon-Notification"
 local CURSOR_PANEL_HEADER_BADGE_ATLAS = "cursor_cast_32"
-local CURSOR_PANEL_HEADER_BADGE_COLOR = { 1, 1, 1, 1 }
 local PANEL_HEADER_TYPE_BADGE_GAP = 2
 local TRIGGER_PANEL_BADGE_COLOR = { 1.0, 0.18, 0.78 }
 local PANEL_TYPE_TOOLTIPS = {
@@ -222,7 +221,7 @@ local function ConfigureGenericRenameBadge(header, panel, panelId, rightOffset)
     return rightOffset + 18
 end
 
-local function ConfigureCursorAnchorBadge(header, panel, rightOffset)
+local function ConfigureCursorAnchorBadge(header, panel)
     local badge = header.frame._cdcCursorAnchorBadge
     if not badge then
         badge = CreateFrame("Button", nil, header.frame)
@@ -255,18 +254,12 @@ local function ConfigureCursorAnchorBadge(header, panel, rightOffset)
         if badge.icon.SetDesaturated then
             badge.icon:SetDesaturated(false)
         end
-        badge.icon:SetVertexColor(
-            CURSOR_PANEL_HEADER_BADGE_COLOR[1],
-            CURSOR_PANEL_HEADER_BADGE_COLOR[2],
-            CURSOR_PANEL_HEADER_BADGE_COLOR[3],
-            CURSOR_PANEL_HEADER_BADGE_COLOR[4]
-        )
+        badge.icon:SetVertexColor(1, 1, 1, 1)
         badge:Show()
-        return rightOffset
+        return
     end
 
     badge:Hide()
-    return rightOffset
 end
 
 local function ConfigureInlinePanelTypeBadgeTarget(header, displayMode, textWidth)
@@ -2022,7 +2015,7 @@ local function RefreshColumn2()
                 local isCursorAnchoredPanel = CooldownCompanion.IsGroupCursorAnchored
                     and CooldownCompanion:IsGroupCursorAnchored(panel)
                     or false
-                rightOffset = ConfigureCursorAnchorBadge(header, panel, rightOffset)
+                ConfigureCursorAnchorBadge(header, panel)
                 rightOffset = ConfigureGenericRenameBadge(header, panel, panelId, rightOffset)
 
                 -- Anchor unlock badge (shown when panel is individually unlocked)

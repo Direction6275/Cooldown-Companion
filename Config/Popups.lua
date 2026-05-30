@@ -738,13 +738,11 @@ local function GetRemappedImportedGroupAnchorTarget(importState, sourceGroupId, 
     local targetGroupId = importState.groupIdMap[sourceGroupId]
     if targetGroupId then
         local targetFrameName = "CooldownCompanionGroup" .. targetGroupId
-        local ok, reason = CooldownCompanion:ValidateAddonFrameAnchorTarget(targetFrameName, options)
-        if ok then
-            return targetFrameName, "ok"
+        if CooldownCompanion:ValidateAddonFrameAnchorTarget(targetFrameName, options) then
+            return targetFrameName
         end
-        return nil, reason
     end
-    return nil, "missing"
+    return nil
 end
 
 local function CreateImportedPanel(db, containerId, panelIndex, srcPanel, importState)

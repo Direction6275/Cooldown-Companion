@@ -16,8 +16,6 @@ local DEFAULT_CURSOR_ANCHOR = {
 }
 
 ST.CURSOR_ANCHOR_TARGET = CURSOR_ANCHOR_TARGET
-CooldownCompanion.CURSOR_ANCHOR_TARGET = CURSOR_ANCHOR_TARGET
-
 local PANEL_ANCHOR_DOMAINS = {
     panel = true,
     ["panel-target"] = true,
@@ -138,7 +136,16 @@ local function AddonAnchorFrameReachesCursorRoot(profile, kind, id, visited)
     elseif kind == "container" then
         node = profile and profile.groupContainers and profile.groupContainers[id]
     end
-    if not (node and type(node.anchor) == "table") then
+    if not node then
+        return false
+    end
+    local anchor = node.anchor
+    local relativeTo
+    if type(anchor) == "table" then
+        relativeTo = anchor.relativeTo
+    elseif type(anchor) == "string" then
+        relativeTo = anchor
+    else
         return false
     end
 
@@ -149,7 +156,6 @@ local function AddonAnchorFrameReachesCursorRoot(profile, kind, id, visited)
     end
     visited[visitKey] = true
 
-    local relativeTo = node.anchor.relativeTo
     if relativeTo == CURSOR_ANCHOR_TARGET then
         return true
     end
