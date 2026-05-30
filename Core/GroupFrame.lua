@@ -545,7 +545,17 @@ local function CreateNudger(frame, groupId)
     return nudger
 end
 
-local function AddPanelDragHelpTooltipLines(tooltip, isContainerPreview)
+local function AddPanelDragHelpTooltipLines(tooltip, isContainerPreview, isCursorPreview)
+    if isCursorPreview then
+        tooltip:AddLine("Cursor Offset")
+        tooltip:AddLine("Drag this panel to set its saved offset from the dummy cursor.", 1, 1, 1, true)
+        tooltip:AddLine(" ")
+        tooltip:AddLine("Use the arrow pad to nudge the saved cursor offset by 1 pixel.", 1, 1, 1, true)
+        tooltip:AddLine(" ")
+        tooltip:AddLine("Position coordinates are shown below while editing.", 1, 1, 1, false)
+        return
+    end
+
     tooltip:AddLine("Panel Controls")
     tooltip:AddLine("Drag anywhere on the panel to move it.", 1, 1, 1, false)
     tooltip:AddLine(" ")
@@ -572,7 +582,10 @@ local function CreatePanelDragHelpButton(frame, groupId)
         0,
         function(tooltip)
             local previewActive = GetContainerPreviewSelectionState(groupId)
-            AddPanelDragHelpTooltipLines(tooltip, previewActive)
+            local cursorPreviewActive = CooldownCompanion.IsCursorAnchorLayoutPreviewSelected
+                and CooldownCompanion:IsCursorAnchorLayoutPreviewSelected(groupId)
+                or false
+            AddPanelDragHelpTooltipLines(tooltip, previewActive, cursorPreviewActive)
         end
     )
 end
@@ -908,6 +921,21 @@ local function EndCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId, cance
     return true
 end
 
+local function ResetCursorAnchorLayoutPreviewPosition(self)
+    local preview = self._cursorAnchorLayoutPreview
+    local frame = preview and preview.frame or nil
+    if not frame then
+        return false
+    end
+
+    frame:ClearAllPoints()
+    frame:SetPoint("TOP", UIParent, "TOP", 0, CURSOR_LAYOUT_PREVIEW_TOP_OFFSET)
+    preview.hasCustomPosition = nil
+    preview.hasDefaultPosition = true
+    self:UpdateCursorAnchoredFrames()
+    return true
+end
+
 local function EnsureCursorAnchorLayoutPreview(self)
     local preview = self._cursorAnchorLayoutPreview
     if preview and preview.frame then
@@ -967,7 +995,9 @@ local function EnsureCursorAnchorLayoutPreview(self)
     end)
 
     local label = labelFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    label:SetPoint("CENTER", labelFrame, "CENTER", -6, 0)
+    label:SetPoint("LEFT", labelFrame, "LEFT", 6, 0)
+    label:SetPoint("RIGHT", labelFrame, "RIGHT", -39, 0)
+    label:SetJustifyH("CENTER")
     label:SetText("Dummy Cursor")
     label:SetTextColor(
         CURSOR_LAYOUT_PREVIEW_TINT[1],
@@ -976,6 +1006,31 @@ local function EnsureCursorAnchorLayoutPreview(self)
         CURSOR_LAYOUT_PREVIEW_TINT[4]
     )
     labelFrame.label = label
+
+    local resetButton = CreateFrame("Button", nil, labelFrame)
+    resetButton:SetSize(16, 16)
+    resetButton:SetPoint("RIGHT", labelFrame, "RIGHT", -20, 0)
+    resetButton:SetFrameStrata("TOOLTIP")
+    resetButton:SetFrameLevel(903)
+    resetButton.icon = resetButton:CreateTexture(nil, "OVERLAY")
+    resetButton.icon:SetSize(12, 12)
+    resetButton.icon:SetPoint("CENTER")
+    resetButton.icon:SetAtlas("UI-RefreshButton", false)
+    resetButton.icon:SetVertexColor(0.75, 0.95, 1, 0.95)
+    resetButton:SetScript("OnEnter", function(self)
+        self.icon:SetVertexColor(1, 1, 1, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Reset Dummy Cursor")
+        GameTooltip:AddLine("Returns this preview cursor to its default top-center position for this session.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    resetButton:SetScript("OnLeave", function(self)
+        self.icon:SetVertexColor(0.75, 0.95, 1, 0.95)
+        GameTooltip:Hide()
+    end)
+    resetButton:SetScript("OnClick", function()
+        ResetCursorAnchorLayoutPreviewPosition(CooldownCompanion)
+    end)
 
     local helpButton
     if ST.CreateRuntimeInfoButton then
@@ -1001,6 +1056,7 @@ local function EnsureCursorAnchorLayoutPreview(self)
         dragFrame = dragFrame,
         helpButton = helpButton,
         labelFrame = labelFrame,
+        resetButton = resetButton,
         texture = texture,
     }
     self._cursorAnchorLayoutPreview = preview
@@ -1027,6 +1083,9 @@ function CooldownCompanion:ShowCursorAnchorLayoutPreview(groupId)
     end
     if ST.SetRuntimeInfoButtonShown then
         ST.SetRuntimeInfoButtonShown(preview.helpButton, true)
+    end
+    if preview.resetButton then
+        preview.resetButton:Show()
     end
     frame:Show()
     ApplyCursorAnchorLayoutPreviewGroupStates(self, previousActiveGroupIds, activeGroupIds)
@@ -1056,6 +1115,9 @@ function CooldownCompanion:ClearCursorAnchorLayoutPreview()
     end
     if preview.labelFrame then
         preview.labelFrame:SetScript("OnUpdate", nil)
+    end
+    if preview.resetButton then
+        preview.resetButton:Hide()
     end
     if ST.SetRuntimeInfoButtonShown then
         ST.SetRuntimeInfoButtonShown(preview.helpButton, false)

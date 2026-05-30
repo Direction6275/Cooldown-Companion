@@ -2167,7 +2167,7 @@ local function RefreshColumn2()
                         return
                     elseif mouseButton == "MiddleButton" then
                         if CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel) then
-                            CooldownCompanion:Print("Cursor-anchored panels are positioned from Layout and cannot be unlocked.")
+                            CooldownCompanion:Print("Cursor-anchored panels are edited from Layout.")
                             return
                         end
                         if panel.locked == false then

@@ -984,7 +984,7 @@ local function BuildLayoutTab(container)
         container:AddChild(anchorTargetDrop)
 
         local heading = AceGUI:Create("Heading")
-        heading:SetText(isCursorAnchor and "Cursor Position" or positionHeadingText)
+        heading:SetText(isCursorAnchor and "Cursor Offset" or positionHeadingText)
         ColorHeading(heading)
         heading:SetFullWidth(true)
         container:AddChild(heading)
@@ -1000,7 +1000,7 @@ local function BuildLayoutTab(container)
             }, RefreshCursorAnchor)
 
             local resetBtn = AceGUI:Create("Button")
-            resetBtn:SetText("Reset Position")
+            resetBtn:SetText("Reset Cursor Offset")
             resetBtn:SetFullWidth(true)
             resetBtn:SetCallback("OnClick", function()
                 group.anchor = CooldownCompanion.GetDefaultCursorPanelAnchor
@@ -1253,6 +1253,14 @@ local function BuildLayoutTab(container)
             end
         end)
         container:AddChild(panelAnchorDrop)
+    end
+
+    if targetMode == "cursor" then
+        local heading = AceGUI:Create("Heading")
+        heading:SetText("Cursor Offset")
+        ColorHeading(heading)
+        heading:SetFullWidth(true)
+        container:AddChild(heading)
     end
 
     -- Anchor Point / Relative Point dropdowns
