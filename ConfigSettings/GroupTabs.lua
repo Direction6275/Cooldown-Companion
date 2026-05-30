@@ -942,6 +942,12 @@ local function BuildLayoutTab(container)
         local isCursorAnchor = CooldownCompanion.IsCursorAnchor
             and CooldownCompanion:IsCursorAnchor(group.anchor)
             or false
+        local canUseCursorAnchor = CooldownCompanion.CanGroupUseCursorAnchor
+            and CooldownCompanion:CanGroupUseCursorAnchor(group)
+            or group.parentContainerId ~= nil
+        if isCursorAnchor and not canUseCursorAnchor then
+            isCursorAnchor = false
+        end
 
         local function RefreshTextureVisual()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -963,14 +969,24 @@ local function BuildLayoutTab(container)
 
         local anchorTargetDrop = AceGUI:Create("Dropdown")
         anchorTargetDrop:SetLabel("Anchor Target")
-        anchorTargetDrop:SetList({
-            group = "Group",
-            cursor = "Cursor",
-        }, { "group", "cursor" })
+        if canUseCursorAnchor then
+            anchorTargetDrop:SetList({
+                group = "Group",
+                cursor = "Cursor",
+            }, { "group", "cursor" })
+        else
+            anchorTargetDrop:SetList({
+                group = group.parentContainerId and "Group" or "Screen",
+            }, { "group" })
+        end
         anchorTargetDrop:SetValue(isCursorAnchor and "cursor" or "group")
         anchorTargetDrop:SetFullWidth(true)
         anchorTargetDrop:SetCallback("OnValueChanged", function(widget, event, val)
             if val == "cursor" then
+                if not canUseCursorAnchor then
+                    widget:SetValue("group")
+                    return
+                end
                 if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, cursorAnchorTarget) then
                     CooldownCompanion:RefreshConfigPanel()
                 else

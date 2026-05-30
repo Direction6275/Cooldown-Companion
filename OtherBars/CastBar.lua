@@ -121,7 +121,7 @@ local function SaveIndependentCastBarAnchor(refreshConfig)
     local fw, fh = frame:GetSize()
     local relFrame = UIParent
     if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
-        relFrame = _G[anchor.relativeTo] or UIParent
+        relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
     end
     local tcx, tcy = relFrame:GetCenter()
     local tw, th = relFrame:GetSize()
@@ -1085,7 +1085,7 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
         local width = settings.independentWidth
         local relFrame = UIParent
         if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
-            relFrame = _G[anchor.relativeTo] or UIParent
+            relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
         end
         independentMoverFrame:ClearAllPoints()
         independentMoverFrame:SetPoint(anchor.point, relFrame, anchor.relativePoint, anchor.x, anchor.y)

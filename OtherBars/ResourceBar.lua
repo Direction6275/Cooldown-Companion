@@ -482,7 +482,7 @@ local function SaveIndependentStackAnchor(refreshConfig)
     local fw, fh = frame:GetSize()
     local relFrame = UIParent
     if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
-        relFrame = _G[anchor.relativeTo] or UIParent
+        relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
     end
     local tcx, tcy = relFrame:GetCenter()
     local tw, th = relFrame:GetSize()
@@ -2007,7 +2007,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         local anchor = layout.independentAnchor
         local relFrame = UIParent
         if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
-            relFrame = _G[anchor.relativeTo] or UIParent
+            relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
         end
         independentWrapperFrame:ClearAllPoints()
         independentWrapperFrame:SetPoint(anchor.point, relFrame, anchor.relativePoint, anchor.x, anchor.y)

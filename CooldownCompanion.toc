@@ -46,6 +46,7 @@ Core\SpellQueries.lua
 Core\CooldownLogic.lua
 Core\Utils.lua
 Core\Init.lua
+Core\AnchorPolicy.lua
 Core\EntryRuntime.lua
 Core\Defaults.lua
 Core\SpellActivationOverlayData.lua

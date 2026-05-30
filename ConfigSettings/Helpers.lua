@@ -587,6 +587,16 @@ local function ResetIndependentAnchorToParent(anchor)
     anchor.y = 0
 end
 
+local function ValidateIndependentAnchorTarget(frameName)
+    local options = { domain = "external" }
+    local ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(frameName, options)
+    if not ok then
+        CooldownCompanion:PrintInvalidAnchorTargetReason(frameName, options)
+        return false
+    end
+    return true
+end
+
 local function BuildIndependentAnchorTargetRow(container, anchor, applyFn)
     local anchorRow = AceGUI:Create("SimpleGroup")
     anchorRow:SetFullWidth(true)
@@ -618,6 +628,10 @@ local function BuildIndependentAnchorTargetRow(container, anchor, applyFn)
                 CooldownCompanion:RefreshConfigPanel()
                 return
             end
+            if not ValidateIndependentAnchorTarget(text) then
+                CooldownCompanion:RefreshConfigPanel()
+                return
+            end
             anchor.relativeTo = text
         end
         applyFn()
@@ -634,6 +648,10 @@ local function BuildIndependentAnchorTargetRow(container, anchor, applyFn)
                 CS.configFrame.frame:Show()
             end
             if name then
+                if not ValidateIndependentAnchorTarget(name) then
+                    CooldownCompanion:RefreshConfigPanel()
+                    return
+                end
                 anchor.point = "TOPLEFT"
                 anchor.relativeTo = name
                 anchor.relativePoint = "BOTTOMLEFT"
@@ -642,7 +660,7 @@ local function BuildIndependentAnchorTargetRow(container, anchor, applyFn)
                 applyFn()
             end
             CooldownCompanion:RefreshConfigPanel()
-        end)
+        end, nil, { domain = "external" })
     end)
     anchorRow:AddChild(pickBtn)
     container:AddChild(anchorRow)

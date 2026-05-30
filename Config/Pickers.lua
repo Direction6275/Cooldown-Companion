@@ -16,6 +16,7 @@ local math_max = math.max
 local pickFrameOverlay = nil
 local pickFrameCallback = nil
 local pickFrameSourceGroupId = nil
+local pickFrameOptions = nil
 local pickCDMOverlay = nil
 local pickCDMCallback = nil
 local pickAuraTextureOverlay = nil
@@ -268,26 +269,25 @@ end
 ------------------------------------------------------------------------
 -- Helper: Check if frame name belongs to this addon (should be excluded)
 ------------------------------------------------------------------------
+local function GetPickFrameAnchorOptions()
+    return {
+        domain = pickFrameOptions and pickFrameOptions.domain or (pickFrameSourceGroupId and "panel" or "external"),
+        sourceGroupId = pickFrameSourceGroupId,
+    }
+end
+
 local function IsAddonFrame(name)
     if not name or type(name) ~= "string" then return true end
-    -- Allow group frames through selectively (exclude self and circular chains)
-    if name:find("^CooldownCompanionGroup%d+$") then
-        local groupId = tonumber(name:match("^CooldownCompanionGroup(%d+)$"))
-        if groupId and pickFrameSourceGroupId then
-            if groupId == pickFrameSourceGroupId then return true end
-            if CooldownCompanion:WouldCreateCircularAnchor(pickFrameSourceGroupId, groupId) then return true end
+
+    if name:find("^CooldownCompanion") then
+        local kind = CooldownCompanion:ParseAddonAnchorFrameName(name)
+        if kind == "group" or kind == "container" then
+            local ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(name, GetPickFrameAnchorOptions())
+            return not ok
         end
-        return false
-    -- Allow container frames through selectively (exclude circular chains)
-    elseif name:find("^CooldownCompanionContainer%d+$") then
-        local containerId = tonumber(name:match("^CooldownCompanionContainer(%d+)$"))
-        if containerId and pickFrameSourceGroupId then
-            if CooldownCompanion:WouldCreateCircularAnchor(pickFrameSourceGroupId, containerId, "container") then return true end
-        end
-        return false
-    elseif name:find("^CooldownCompanion") then
         return true
     end
+
     if name == "WorldFrame" then return true end
     -- Exclude the config panel itself (AceGUI frames)
     if CS.configFrame and CS.configFrame.frame and CS.configFrame.frame:GetName() == name then return true end
@@ -366,14 +366,16 @@ local function FinishPickFrame(name)
     local cb = pickFrameCallback
     pickFrameCallback = nil
     pickFrameSourceGroupId = nil
+    pickFrameOptions = nil
     if cb then
         cb(name)
     end
 end
 
-local function StartPickFrame(callback, sourceGroupId)
+local function StartPickFrame(callback, sourceGroupId, options)
     pickFrameCallback = callback
     pickFrameSourceGroupId = sourceGroupId
+    pickFrameOptions = options
 
     -- Create overlay lazily
     if not pickFrameOverlay then

@@ -76,8 +76,13 @@ local function IsAddonAnchorFrameName(frameName)
     if type(frameName) ~= "string" then
         return false
     end
+    if CooldownCompanion.GetAddonAnchorTargetInfo then
+        local info = CooldownCompanion:GetAddonAnchorTargetInfo(frameName)
+        return info and (info.kind == "container" or info.kind == "group" or info.kind == "cursor") or false
+    end
     return frameName:match("^CooldownCompanionContainer%d+$") ~= nil
         or frameName:match("^CooldownCompanionGroup%d+$") ~= nil
+        or frameName == "CooldownCompanionCursor"
 end
 
 function CooldownCompanion:NormalizeContainerAnchor(anchor, resolveAddonFrames)
@@ -233,7 +238,7 @@ local function SyncGroupAnchorFromTexturePanelSettings(self, group)
         return
     end
 
-    if self.IsCursorAnchor and self:IsCursorAnchor(group.anchor) then
+    if self:IsCursorAnchor(group.anchor) then
         return
     end
 

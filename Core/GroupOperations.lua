@@ -929,7 +929,11 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
     if not group.parentContainerId then return false end
-    if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then return false end
+    if self.CanGroupBeExternalAnchorTarget then
+        if not self:CanGroupBeExternalAnchorTarget(groupId) then return false end
+    elseif self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
+        return false
+    end
     if group.displayMode ~= "icons" then return false end
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end
@@ -948,9 +952,13 @@ end
 function CooldownCompanion:IsGroupAvailableForPanelAnchorTarget(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
-    if not group.parentContainerId then return false end
-    if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then return false end
-    if group.displayMode == "textures" or group.displayMode == "trigger" then return false end
+    if self.CanGroupBePanelAnchorTarget then
+        if not self:CanGroupBePanelAnchorTarget(groupId) then return false end
+    else
+        if not group.parentContainerId then return false end
+        if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then return false end
+        if group.displayMode == "textures" or group.displayMode == "trigger" then return false end
+    end
 
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end

@@ -29,6 +29,33 @@ local UNIT_FRAME_OPTIONS = {
 }
 local UNIT_FRAME_ORDER = { "", "blizzard", "uuf", "elvui", "msuf", "custom" }
 
+local function ValidateCustomUnitFrameName(frameName)
+    if not frameName or frameName == "" then
+        return true
+    end
+    if not _G[frameName] then
+        CooldownCompanion:Print("Frame '" .. frameName .. "' not found.")
+        return false
+    end
+    local options = { domain = "external" }
+    local ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(frameName, options)
+    if not ok then
+        CooldownCompanion:PrintInvalidAnchorTargetReason(frameName, options)
+        return false
+    end
+    return true
+end
+
+local function SetCustomUnitFrameName(settings, key, frameName)
+    frameName = frameName or ""
+    if frameName ~= "" and not ValidateCustomUnitFrameName(frameName) then
+        return false
+    end
+    settings[key] = frameName
+    CooldownCompanion:EvaluateFrameAnchoring()
+    return true
+end
+
 local function BuildFrameAnchoringPlayerPanel(container)
     local db = CooldownCompanion.db.profile
     local settings = CooldownCompanion:GetFrameAnchoringSettings()
@@ -77,8 +104,9 @@ local function BuildFrameAnchoringPlayerPanel(container)
         playerEdit:SetText(settings.customPlayerFrame or "")
         playerEdit:SetRelativeWidth(0.68)
         playerEdit:SetCallback("OnEnterPressed", function(widget, event, text)
-            settings.customPlayerFrame = text
-            CooldownCompanion:EvaluateFrameAnchoring()
+            if not SetCustomUnitFrameName(settings, "customPlayerFrame", text) then
+                CooldownCompanion:RefreshConfigPanel()
+            end
         end)
         playerRow:AddChild(playerEdit)
 
@@ -91,11 +119,10 @@ local function BuildFrameAnchoringPlayerPanel(container)
                     CS.configFrame.frame:Show()
                 end
                 if name then
-                    settings.customPlayerFrame = name
-                    CooldownCompanion:EvaluateFrameAnchoring()
+                    SetCustomUnitFrameName(settings, "customPlayerFrame", name)
                 end
                 CooldownCompanion:RefreshConfigPanel()
-            end)
+            end, nil, { domain = "external" })
         end)
         playerRow:AddChild(playerPickBtn)
 
@@ -111,8 +138,9 @@ local function BuildFrameAnchoringPlayerPanel(container)
         targetEdit:SetText(settings.customTargetFrame or "")
         targetEdit:SetRelativeWidth(0.68)
         targetEdit:SetCallback("OnEnterPressed", function(widget, event, text)
-            settings.customTargetFrame = text
-            CooldownCompanion:EvaluateFrameAnchoring()
+            if not SetCustomUnitFrameName(settings, "customTargetFrame", text) then
+                CooldownCompanion:RefreshConfigPanel()
+            end
         end)
         targetRow:AddChild(targetEdit)
 
@@ -125,11 +153,10 @@ local function BuildFrameAnchoringPlayerPanel(container)
                     CS.configFrame.frame:Show()
                 end
                 if name then
-                    settings.customTargetFrame = name
-                    CooldownCompanion:EvaluateFrameAnchoring()
+                    SetCustomUnitFrameName(settings, "customTargetFrame", name)
                 end
                 CooldownCompanion:RefreshConfigPanel()
-            end)
+            end, nil, { domain = "external" })
         end)
         targetRow:AddChild(targetPickBtn)
 
