@@ -225,10 +225,24 @@ end
 local function ConfigureCursorAnchorBadge(header, panel, rightOffset)
     local badge = header.frame._cdcCursorAnchorBadge
     if not badge then
-        badge = header.frame:CreateTexture(nil, "OVERLAY")
+        badge = CreateFrame("Button", nil, header.frame)
+        badge:SetPropagateMouseClicks(true)
+        badge:SetPropagateMouseMotion(true)
+        badge.icon = badge:CreateTexture(nil, "OVERLAY")
+        badge.icon:SetAllPoints()
+        badge:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Cursor Anchored", 1, 0.82, 0, true)
+            GameTooltip:AddLine("This panel is anchored to the cursor.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        badge:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
         header.frame._cdcCursorAnchorBadge = badge
     end
 
+    badge:SetFrameLevel(header.frame:GetFrameLevel() + 25)
     badge:SetSize(16, 16)
     badge:ClearAllPoints()
 
@@ -237,11 +251,11 @@ local function ConfigureCursorAnchorBadge(header, panel, rightOffset)
         and CooldownCompanion.IsGroupCursorAnchored
         and CooldownCompanion:IsGroupCursorAnchored(panel) then
         badge:SetPoint("LEFT", header.frame, "LEFT", 4, 0)
-        badge:SetAtlas(CURSOR_PANEL_HEADER_BADGE_ATLAS, false)
-        if badge.SetDesaturated then
-            badge:SetDesaturated(false)
+        badge.icon:SetAtlas(CURSOR_PANEL_HEADER_BADGE_ATLAS, false)
+        if badge.icon.SetDesaturated then
+            badge.icon:SetDesaturated(false)
         end
-        badge:SetVertexColor(
+        badge.icon:SetVertexColor(
             CURSOR_PANEL_HEADER_BADGE_COLOR[1],
             CURSOR_PANEL_HEADER_BADGE_COLOR[2],
             CURSOR_PANEL_HEADER_BADGE_COLOR[3],
