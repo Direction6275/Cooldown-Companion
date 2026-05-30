@@ -306,7 +306,8 @@ end
 --------------------------------------------------------------------------------
 
 -- Returns true when a group/panel frame should be at full alpha because it
--- (or its parent container) is selected in the Config panel.
+-- (or its parent container) is selected in the Config panel, or because it is
+-- part of an active cursor Layout preview.
 -- Used by: alpha fade system, alpha sync ticker, button force-visible.
 function ST.IsGroupConfigSelected(groupId)
     local CS = ST._configState
@@ -314,6 +315,13 @@ function ST.IsGroupConfigSelected(groupId)
     local configFrame = CS.configFrame
     if not configFrame or not configFrame.frame or not configFrame.frame:IsShown() then
         return false
+    end
+
+    local addon = ST.Addon
+    if addon
+        and addon.IsCursorAnchorLayoutPreviewGroupActive
+        and addon:IsCursorAnchorLayoutPreviewGroupActive(groupId) then
+        return true
     end
 
     -- Direct panel/group selection
@@ -356,6 +364,13 @@ function ST.IsConfigButtonForceVisible(button)
     local configFrame = CS.configFrame
     if not configFrame or not configFrame.frame or not configFrame.frame:IsShown() then
         return false
+    end
+
+    local addon = ST.Addon
+    if addon
+        and addon.IsCursorAnchorLayoutPreviewGroupActive
+        and addon:IsCursorAnchorLayoutPreviewGroupActive(groupId) then
+        return true
     end
 
     -- Single-selected panel: check for individual button selection

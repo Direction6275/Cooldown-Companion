@@ -733,6 +733,18 @@ local function AnchorImportedContainerFrame(containerId, anchor)
     end
 end
 
+local function GetRemappedImportedGroupAnchorTarget(importState, sourceGroupId, options)
+    options = options or {}
+    local targetGroupId = importState.groupIdMap[sourceGroupId]
+    if targetGroupId then
+        local targetFrameName = "CooldownCompanionGroup" .. targetGroupId
+        if CooldownCompanion:ValidateAddonFrameAnchorTarget(targetFrameName, options) then
+            return targetFrameName
+        end
+    end
+    return nil
+end
+
 local function CreateImportedPanel(db, containerId, panelIndex, srcPanel, importState)
     local groupId = db.nextGroupId
     db.nextGroupId = groupId + 1
@@ -815,24 +827,32 @@ local function RemapImportedContainerAnchors(db, importState, preserveContainerR
         if container and container.anchor then
             local rt = container.anchor.relativeTo
             if rt then
-                local refOldId = tonumber(rt:match("^CooldownCompanionContainer(%d+)$"))
-                if refOldId then
-                    local remappedId = preserveContainerRefs and importState.containerIdMap[refOldId] or nil
-                    if remappedId then
-                        container.anchor.relativeTo = "CooldownCompanionContainer" .. remappedId
-                    else
-                        container.anchor = BuildImportedRootAnchor()
-                    end
+                if CooldownCompanion:IsCursorAnchor(rt) then
+                    container.anchor = BuildImportedRootAnchor()
                     AnchorImportedContainerFrame(newId, container.anchor)
                 else
-                    local groupRef = tonumber(rt:match("^CooldownCompanionGroup(%d+)$"))
-                    if groupRef then
-                        if importState.groupIdMap[groupRef] then
-                            container.anchor.relativeTo = "CooldownCompanionGroup" .. importState.groupIdMap[groupRef]
+                    local refOldId = tonumber(rt:match("^CooldownCompanionContainer(%d+)$"))
+                    if refOldId then
+                        local remappedId = preserveContainerRefs and importState.containerIdMap[refOldId] or nil
+                        if remappedId then
+                            container.anchor.relativeTo = "CooldownCompanionContainer" .. remappedId
                         else
                             container.anchor = BuildImportedRootAnchor()
                         end
                         AnchorImportedContainerFrame(newId, container.anchor)
+                    else
+                        local groupRef = tonumber(rt:match("^CooldownCompanionGroup(%d+)$"))
+                        if groupRef then
+                            local targetFrameName = GetRemappedImportedGroupAnchorTarget(importState, groupRef, {
+                                domain = "external",
+                            })
+                            if targetFrameName then
+                                container.anchor.relativeTo = targetFrameName
+                            else
+                                container.anchor = BuildImportedRootAnchor()
+                            end
+                            AnchorImportedContainerFrame(newId, container.anchor)
+                        end
                     end
                 end
             end
@@ -858,8 +878,12 @@ local function RemapImportedPanelAnchors(db, importState, preserveOwnContainerRe
                 else
                     local groupRef = tonumber(rt:match("^CooldownCompanionGroup(%d+)$"))
                     if groupRef then
-                        if importState.groupIdMap[groupRef] then
-                            panel.anchor.relativeTo = "CooldownCompanionGroup" .. importState.groupIdMap[groupRef]
+                        local targetFrameName = GetRemappedImportedGroupAnchorTarget(importState, groupRef, {
+                            domain = "panel-import",
+                            sourceGroupId = newGid,
+                        })
+                        if targetFrameName then
+                            panel.anchor.relativeTo = targetFrameName
                         else
                             panel.anchor = BuildImportedRootAnchor("CooldownCompanionContainer" .. panel.parentContainerId)
                         end
@@ -886,6 +910,9 @@ ST._FinishGroupImportBatch = function(token, remapAnchors)
     if remapAnchors and type(db) == "table" and type(importState) == "table" then
         RemapImportedContainerAnchors(db, importState, true)
         RemapImportedPanelAnchors(db, importState)
+        if CooldownCompanion.SanitizeCursorAnchorPolicy then
+            CooldownCompanion:SanitizeCursorAnchorPolicy(db)
+        end
     end
 end
 
@@ -1026,7 +1053,13 @@ local function ApplyGroupImportData(data)
     end
 
     CooldownCompanion:ClearMigrationSentinels()
-    if not CooldownCompanion:RunAllMigrations() then
+    local previousDeferCursorAnchorPolicySanitizer = CooldownCompanion._deferCursorAnchorPolicySanitizer
+    if deferAnchorRemap then
+        CooldownCompanion._deferCursorAnchorPolicySanitizer = true
+    end
+    local migrationsOk = CooldownCompanion:RunAllMigrations()
+    CooldownCompanion._deferCursorAnchorPolicySanitizer = previousDeferCursorAnchorPolicySanitizer
+    if not migrationsOk then
         return false
     end
 

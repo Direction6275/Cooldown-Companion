@@ -308,6 +308,7 @@ function CooldownCompanion:BeginCombatForcedLock()
     for groupId, group in pairs(self.db.profile.groups or {}) do
         if group
             and group.locked == false
+            and not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group))
             and self:IsGroupVisibleToCurrentChar(groupId)
         then
             snapshot.groups[groupId] = true
@@ -928,6 +929,11 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
     if not group.parentContainerId then return false end
+    if self.CanGroupBeExternalAnchorTarget then
+        if not self:CanGroupBeExternalAnchorTarget(groupId) then return false end
+    elseif self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
+        return false
+    end
     if group.displayMode ~= "icons" then return false end
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end
@@ -946,8 +952,13 @@ end
 function CooldownCompanion:IsGroupAvailableForPanelAnchorTarget(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
-    if not group.parentContainerId then return false end
-    if group.displayMode == "textures" or group.displayMode == "trigger" then return false end
+    if self.CanGroupBePanelAnchorTarget then
+        if not self:CanGroupBePanelAnchorTarget(groupId) then return false end
+    else
+        if not group.parentContainerId then return false end
+        if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then return false end
+        if group.displayMode == "textures" or group.displayMode == "trigger" then return false end
+    end
 
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end
@@ -1678,6 +1689,9 @@ function CooldownCompanion:RefreshAllGroups()
     if self.RefreshAllContainerWrappers then
         self:RefreshAllContainerWrappers()
     end
+    if self.RefreshCursorAnchorTicker then
+        self:RefreshCursorAnchorTicker()
+    end
 end
 
 -- Refresh only frame-level visibility/load-state without rebuilding buttons.
@@ -1750,7 +1764,9 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                     -- Resolve locked from container (panels defer to container lock)
                     local container = self:GetParentContainer(group)
                     local isLocked
-                    if container then
+                    if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
+                        isLocked = true
+                    elseif container then
                         isLocked = container.locked ~= false
                     else
                         isLocked = group.locked
@@ -1786,6 +1802,9 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     self:FinalizeContainerAnchorsToScreenOffsets()
     if self.RefreshAllContainerWrappers then
         self:RefreshAllContainerWrappers()
+    end
+    if self.RefreshCursorAnchorTicker then
+        self:RefreshCursorAnchorTicker()
     end
 end
 
@@ -1841,6 +1860,9 @@ function CooldownCompanion:UnloadGroup(groupId)
     self._dormantFrames = self._dormantFrames or {}
     self._dormantFrames[groupId] = frame
     self.groupFrames[groupId] = nil
+    if self.RefreshCursorAnchorTicker then
+        self:RefreshCursorAnchorTicker()
+    end
 end
 
 -- Recover a dormant frame: restore it to groupFrames, re-enable button
@@ -2029,7 +2051,10 @@ function CooldownCompanion:UnlockAllFrames()
         if frame then
             self:UpdateGroupClickthrough(groupId)
             local group = self.db.profile.groups[groupId]
-            local panelUnlocked = group and group.locked == false and not self._combatForcedLock
+            local panelUnlocked = group
+                and group.locked == false
+                and not self._combatForcedLock
+                and not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group))
             if panelUnlocked and self.SetGroupDragControlsShown then
                 self:SetGroupDragControlsShown(frame, true)
             elseif panelUnlocked and frame.dragHandle then

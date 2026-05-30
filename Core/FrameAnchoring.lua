@@ -187,6 +187,19 @@ local function AutoDetectUnitFrameAddon()
     return "blizzard"
 end
 
+local function ResolveCustomUnitFrame(frameName)
+    if not frameName or frameName == "" then
+        return nil
+    end
+    local ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(frameName, {
+        domain = "external",
+    })
+    if not ok then
+        return nil
+    end
+    return _G[frameName]
+end
+
 --- Resolve the actual player and target frame references.
 local function GetUnitFrames(settings)
     local addon = settings.unitFrameAddon
@@ -199,12 +212,8 @@ local function GetUnitFrames(settings)
     if addon == "custom" then
         local pName = settings.customPlayerFrame
         local tName = settings.customTargetFrame
-        if pName and pName ~= "" then
-            playerFrame = _G[pName]
-        end
-        if tName and tName ~= "" then
-            targetFrame = _G[tName]
-        end
+        playerFrame = ResolveCustomUnitFrame(pName)
+        targetFrame = ResolveCustomUnitFrame(tName)
     elseif addon == "msuf" then
         local unitFrames = _G["MSUF_UnitFrames"]
         playerFrame = _G["MSUF_player"] or (unitFrames and unitFrames.player)

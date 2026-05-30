@@ -220,6 +220,16 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
         self.alphaState[groupId] = state
     end
 
+    local cursorPreviewActive = self.IsCursorAnchorLayoutPreviewGroupActive
+        and self:IsCursorAnchorLayoutPreviewGroupActive(groupId)
+    if cursorPreviewActive then
+        locked = false
+    elseif not locked
+        and self.IsGroupCursorAnchored
+        and self:IsGroupCursorAnchored(group) then
+        locked = true
+    end
+
     -- Force 100% alpha while group is unlocked for easier positioning
     if not locked then
         frame._naturalAlpha = nil
@@ -259,7 +269,8 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
     local forceFull, forceHidden, baseline = EvaluateDesiredAlpha(group, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
 
     -- Mouseover check (geometric, works even when click-through)
-    if not forceFull and group.forceAlphaMouseover then
+    local ignoreSelfMouseover = CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(group)
+    if not forceFull and group.forceAlphaMouseover and not ignoreSelfMouseover then
         local isHovering = frame:IsMouseOver()
         if isHovering then
             forceFull = true
@@ -310,7 +321,8 @@ function CooldownCompanion:UpdateModuleAlpha(moduleId, config, frames, now, inCo
     local forceFull, forceHidden, baseline = EvaluateDesiredAlpha(config, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
 
     -- Mouseover check across all frames
-    if not forceFull and config.forceAlphaMouseover then
+    local ignoreModuleSelfMouseover = self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(config)
+    if not forceFull and config.forceAlphaMouseover and not ignoreModuleSelfMouseover then
         local isHovering = false
         for i = 1, #frames do
             local f = frames[i]

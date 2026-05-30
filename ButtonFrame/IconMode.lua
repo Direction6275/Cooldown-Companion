@@ -54,6 +54,13 @@ local EvaluateDesaturation = ST._EvaluateDesaturation
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
+local function IsCursorAnchoredButton(button)
+    return button
+        and CooldownCompanion.IsGroupCursorAnchored
+        and CooldownCompanion:IsGroupCursorAnchored(button._groupId)
+        or false
+end
+
 -- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
@@ -727,7 +734,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on
-    local showTooltips = style.showTooltips == true
+    local showTooltips = style.showTooltips == true and not IsCursorAnchoredButton(button)
     local disableClicks = true
     local disableMotion = not showTooltips
 
@@ -1438,7 +1445,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips are on
-    local showTooltips = style.showTooltips == true
+    local showTooltips = style.showTooltips == true and not IsCursorAnchoredButton(button)
     local disableClicks = true
     local disableMotion = not showTooltips
 
