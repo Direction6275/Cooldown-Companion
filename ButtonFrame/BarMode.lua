@@ -62,6 +62,13 @@ local EvaluateDesaturation = ST._EvaluateDesaturation
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
+local function IsCursorAnchoredButton(button)
+    return button
+        and CooldownCompanion.IsGroupCursorAnchored
+        and CooldownCompanion:IsGroupCursorAnchored(button._groupId)
+        or false
+end
+
 -- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local FormatTime = CooldownCompanion.FormatTime
@@ -1711,7 +1718,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     end
 
     -- Click-through
-    local showTooltips = style.showTooltips == true
+    local showTooltips = style.showTooltips == true and not IsCursorAnchoredButton(button)
     local iconTooltips = showTooltips and showIcon
 
     -- Disable hover on the full bar; tooltip hover is icon-only via _iconBounds.
@@ -2036,7 +2043,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     end
 
     -- Update click-through
-    local showTooltips = newStyle.showTooltips == true
+    local showTooltips = newStyle.showTooltips == true and not IsCursorAnchoredButton(button)
     local iconTooltips = showTooltips and showIcon
 
     -- Disable hover on the full bar; tooltip hover is icon-only via _iconBounds.

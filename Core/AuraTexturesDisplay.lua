@@ -36,8 +36,6 @@ local DoesTriggerPanelMatch = AT.DoesTriggerPanelMatch
 
 local NUDGE_BTN_SIZE = 12
 local NUDGE_GAP = 2
-local NUDGE_REPEAT_DELAY = 0.5
-local NUDGE_REPEAT_INTERVAL = 0.05
 
 local function CreateAuraTextureOutline(host)
     local fill = host:CreateTexture(nil, "OVERLAY")
@@ -260,6 +258,10 @@ local function BeginTextureHostDrag(host)
     if CooldownCompanion._combatForcedLock or not (host and host._dragEnabled) then
         return false
     end
+    local owner = host._ownerButton
+    if owner and CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(owner._groupId) then
+        return false
+    end
 
     host._dragCancelPending = nil
     host._isDragging = true
@@ -286,6 +288,23 @@ local function FinishTextureHostDrag(host)
 
     SaveTextureHostPosition(host)
     return true
+end
+
+local function SetTextureHostMouseEnabled(host, enabled)
+    if not host then
+        return
+    end
+
+    local enable = enabled == true
+    host:EnableMouse(enable)
+    if not InCombatLockdown or not InCombatLockdown() then
+        if host.SetMouseClickEnabled then
+            host:SetMouseClickEnabled(enable)
+        end
+        if host.SetMouseMotionEnabled then
+            host:SetMouseMotionEnabled(enable)
+        end
+    end
 end
 
 local function EnsureAuraTextureNudger(host)
@@ -365,40 +384,60 @@ local function EnsureAuraTextureNudger(host)
         end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            if self.nudgeDelayTimer then
-                self.nudgeDelayTimer:Cancel()
-                self.nudgeDelayTimer = nil
-            end
-            if self.nudgeTicker then
-                self.nudgeTicker:Cancel()
-                self.nudgeTicker = nil
-            end
             SaveTextureHostPosition(host)
         end)
 
         btn:SetScript("OnMouseDown", function(self)
             DoNudge(dir.dx, dir.dy)
-            self.nudgeDelayTimer = C_Timer.NewTimer(NUDGE_REPEAT_DELAY, function()
-                self.nudgeTicker = C_Timer.NewTicker(NUDGE_REPEAT_INTERVAL, function()
-                    DoNudge(dir.dx, dir.dy)
-                end)
-            end)
         end)
 
         btn:SetScript("OnMouseUp", function(self)
-            if self.nudgeDelayTimer then
-                self.nudgeDelayTimer:Cancel()
-                self.nudgeDelayTimer = nil
-            end
-            if self.nudgeTicker then
-                self.nudgeTicker:Cancel()
-                self.nudgeTicker = nil
-            end
             SaveTextureHostPosition(host)
         end)
     end
 
     host.nudger = nudger
+end
+
+local function AddTexturePanelDragHelpTooltipLines(tooltip, isGroupedPreview)
+    tooltip:AddLine("Panel Controls")
+    tooltip:AddLine("Drag anywhere on the panel to move it.", 1, 1, 1, false)
+    tooltip:AddLine(" ")
+    tooltip:AddLine("Use the arrow pad to nudge by 1 pixel.", 1, 1, 1, false)
+    tooltip:AddLine(" ")
+    if not isGroupedPreview then
+        tooltip:AddLine("Middle-click the header to lock this panel.", 1, 1, 1, false)
+        tooltip:AddLine(" ")
+    end
+    tooltip:AddLine("Position coordinates are shown below while unlocked.", 1, 1, 1, false)
+end
+
+local function IsTextureHostGroupedPreviewActive(host)
+    local owner = host and host._ownerButton or nil
+    local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
+    return group
+        and group.parentContainerId
+        and CooldownCompanion.IsContainerUnlockPreviewActive
+        and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
+        or false
+end
+
+local function CreateAuraTextureDragHelpButton(host, dragHandle)
+    if not (host and dragHandle and ST.CreateRuntimeInfoButton) then
+        return nil
+    end
+
+    return ST.CreateRuntimeInfoButton(
+        dragHandle,
+        dragHandle,
+        "RIGHT",
+        "RIGHT",
+        -4,
+        0,
+        function(tooltip)
+            AddTexturePanelDragHelpTooltipLines(tooltip, IsTextureHostGroupedPreviewActive(host))
+        end
+    )
 end
 
 local function EnsureAuraTextureDragHandle(host)
@@ -420,6 +459,8 @@ local function EnsureAuraTextureDragHandle(host)
     text:SetPoint("CENTER")
     text:SetTextColor(1, 1, 1, 1)
     dragHandle.text = text
+
+    host.dragHelpButton = CreateAuraTextureDragHelpButton(host, dragHandle)
 
     local coordLabel = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
     coordLabel:SetHeight(15)
@@ -485,6 +526,10 @@ local function SyncAuraTextureControlLevels(host, raiseAboveWrapper)
         host.coordLabel:SetFrameStrata(strata)
         host.coordLabel:SetFrameLevel(baseLevel + 6)
     end
+    if host.dragHelpButton then
+        host.dragHelpButton:SetFrameStrata(strata)
+        host.dragHelpButton:SetFrameLevel(baseLevel + 7)
+    end
     if host.nudger then
         host.nudger:SetFrameStrata(strata)
         host.nudger:SetFrameLevel(baseLevel + 10)
@@ -503,7 +548,8 @@ local function EnsureAuraTextureHost(button)
     local host = CreateFrame("Frame", nil, UIParent)
     host:SetMovable(true)
     host:SetClampedToScreen(true)
-    host:EnableMouse(false)
+    SetTextureHostMouseEnabled(host, false)
+    host:RegisterForDrag("LeftButton")
     host:Hide()
     host._ownerButton = button
 
@@ -717,7 +763,7 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     host._activeTextureGeometry = nil
     host._dragEnabled = nil
     host._wrapperManaged = nil
-    host:EnableMouse(false)
+    SetTextureHostMouseEnabled(host, false)
     host:SetAlpha(1)
     SetAuraTextureOutlineShown(host, false)
     if host.dragHandle then
@@ -726,17 +772,10 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     if host.coordLabel then
         host.coordLabel:Hide()
     end
+    if ST.SetRuntimeInfoButtonShown then
+        ST.SetRuntimeInfoButtonShown(host.dragHelpButton, false)
+    end
     if host.nudger then
-        for _, btn in ipairs(host.nudger.buttons or {}) do
-            if btn.nudgeDelayTimer then
-                btn.nudgeDelayTimer:Cancel()
-                btn.nudgeDelayTimer = nil
-            end
-            if btn.nudgeTicker then
-                btn.nudgeTicker:Cancel()
-                btn.nudgeTicker = nil
-            end
-        end
         host.nudger:Hide()
     end
     host:Hide()
@@ -969,12 +1008,18 @@ end
 function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, driverButton, displayType, settings, isTriggerPanel)
     local groupedPreviewFrame = GetGroupedPreviewContainerFrame(group, driverButton and driverButton._groupId)
     local combatForcedLock = self._combatForcedLock == true
+    local isCursorAnchored = self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group)
+    local isCursorLayoutPreview = driverButton
+        and self.IsCursorAnchorLayoutPreviewGroupActive
+        and self:IsCursorAnchorLayoutPreviewGroupActive(driverButton._groupId)
+        or false
     local state = {
         isEditing = IsStandaloneTextureEditingButton(driverButton),
         isConfigForceVisible = (not isTriggerPanel) and IsTexturePanelConfigForceVisible(driverButton),
+        isCursorLayoutPreview = isCursorLayoutPreview,
         isGroupedPreview = groupedPreviewFrame ~= nil,
         groupedPreviewFrame = groupedPreviewFrame,
-        isUnlocked = not combatForcedLock and group and (group.locked == false or groupedPreviewFrame ~= nil),
+        isUnlocked = not isCursorAnchored and not combatForcedLock and group and (group.locked == false or groupedPreviewFrame ~= nil),
         hasPreviewSelection = displayType == "texture" and type(driverButton._auraTexturePreviewSelection) == "table",
         hasTriggerEffectPreview = isTriggerPanel and driverButton._triggerEffectsPreview == true,
         triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false,
@@ -983,6 +1028,8 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
 
     if settings then
         if state.hasPreviewSelection then
+            state.showDisplay = true
+        elseif state.isCursorLayoutPreview then
             state.showDisplay = true
         elseif isTriggerPanel then
             state.showDisplay = state.triggerMatched or state.hasTriggerEffectPreview or state.isEditing or state.isUnlocked
@@ -1001,7 +1048,11 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
     end
 
     state.triggerSoundVisible = settings ~= nil and state.triggerMatched and state.showDisplay
-    state.bypassModuleAlpha = state.hasPreviewSelection or state.isEditing or state.isConfigForceVisible or state.isUnlocked
+    state.bypassModuleAlpha = state.hasPreviewSelection
+        or state.isEditing
+        or state.isConfigForceVisible
+        or state.isCursorLayoutPreview
+        or state.isUnlocked
     return state
 end
 
@@ -1072,28 +1123,33 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     }
 
     if not host._isDragging then
-        local currentPoint, currentRelativeFrame, _, currentX, currentY = host:GetPoint(1)
-        host:ClearAllPoints()
-        local groupedPreviewFrame = visibilityState and visibilityState.groupedPreviewFrame or nil
-        if groupedPreviewFrame then
-            local preserveRelativeOffset = host._wrapperManaged
-                and currentRelativeFrame == groupedPreviewFrame
-                and currentX ~= nil
-                and currentY ~= nil
-                and groupedPreviewFrame._dragInProgress == true
-            if preserveRelativeOffset then
-                host:SetPoint(currentPoint or sharedSettings.point or "CENTER", groupedPreviewFrame, "CENTER", currentX, currentY)
-            else
-                local screenAnchorX, screenAnchorY, point = GetStandaloneScreenAnchorPoint(sharedSettings)
-                local containerX, containerY = groupedPreviewFrame:GetCenter()
-                if screenAnchorX and screenAnchorY and containerX and containerY then
-                    host:SetPoint(point or sharedSettings.point or "CENTER", groupedPreviewFrame, "CENTER", screenAnchorX - containerX, screenAnchorY - containerY)
-                else
-                    host:SetPoint(sharedSettings.point, UIParent, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
-                end
-            end
+        local isCursorAnchored = self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group)
+        if isCursorAnchored and self.AnchorFrameToCursor then
+            self:AnchorFrameToCursor(host, group.anchor)
         else
-            host:SetPoint(sharedSettings.point, UIParent, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
+            local currentPoint, currentRelativeFrame, _, currentX, currentY = host:GetPoint(1)
+            host:ClearAllPoints()
+            local groupedPreviewFrame = visibilityState and visibilityState.groupedPreviewFrame or nil
+            if groupedPreviewFrame then
+                local preserveRelativeOffset = host._wrapperManaged
+                    and currentRelativeFrame == groupedPreviewFrame
+                    and currentX ~= nil
+                    and currentY ~= nil
+                    and groupedPreviewFrame._dragInProgress == true
+                if preserveRelativeOffset then
+                    host:SetPoint(currentPoint or sharedSettings.point or "CENTER", groupedPreviewFrame, "CENTER", currentX, currentY)
+                else
+                    local screenAnchorX, screenAnchorY, point = GetStandaloneScreenAnchorPoint(sharedSettings)
+                    local containerX, containerY = groupedPreviewFrame:GetCenter()
+                    if screenAnchorX and screenAnchorY and containerX and containerY then
+                        host:SetPoint(point or sharedSettings.point or "CENTER", groupedPreviewFrame, "CENTER", screenAnchorX - containerX, screenAnchorY - containerY)
+                    else
+                        host:SetPoint(sharedSettings.point, UIParent, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
+                    end
+                end
+            else
+                host:SetPoint(sharedSettings.point, UIParent, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
+            end
         end
     end
     host:Show()
@@ -1144,7 +1200,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         and hasSavedDisplay
         and (not visibilityState.isGroupedPreview or isGroupedPreviewSelected)
     host._wrapperManaged = visibilityState.isGroupedPreview or nil
-    host:EnableMouse(false)
+    SetTextureHostMouseEnabled(host, host._dragEnabled == true and not visibilityState.isGroupedPreview)
     SetAuraTextureOutlineShown(host, visibilityState.isGroupedPreview and (isGroupedPreviewSelected or isGroupedPreviewHovered) or false)
     if host.dragHandle and host.coordLabel then
         host.dragHandle.text:SetText(group and group.name or "Texture Panel")
@@ -1175,6 +1231,9 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         SyncAuraTextureControlLevels(host, visibilityState.isGroupedPreview and isGroupedPreviewSelected)
         host.dragHandle:SetShown(showHeader)
         host.coordLabel:SetShown(showHeader)
+        if ST.SetRuntimeInfoButtonShown then
+            ST.SetRuntimeInfoButtonShown(host.dragHelpButton, showHeader)
+        end
         if host.nudger then
             host.nudger:SetShown(showHeader)
         end
@@ -1215,6 +1274,7 @@ function CooldownCompanion:UpdateGroupedStandalonePreviewSelection(groupId)
     local isSelected = self.IsContainerPanelSelected and self:IsContainerPanelSelected(group.parentContainerId, groupId) or false
     local isHovered = self.IsContainerPanelHovered and self:IsContainerPanelHovered(group.parentContainerId, groupId) or false
     local showControls = isSelected and host._hasSavedDisplay == true
+        and not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group))
 
     host._dragEnabled = showControls
     SyncAuraTextureControlLevels(host, showControls)
@@ -1226,6 +1286,9 @@ function CooldownCompanion:UpdateGroupedStandalonePreviewSelection(groupId)
     if host.coordLabel then
         host.coordLabel:SetShown(showControls)
     end
+    if ST.SetRuntimeInfoButtonShown then
+        ST.SetRuntimeInfoButtonShown(host.dragHelpButton, showControls)
+    end
     if host.nudger then
         host.nudger:SetShown(showControls)
     end
@@ -1234,6 +1297,9 @@ end
 function CooldownCompanion:StartGroupedStandalonePreviewHostDrag(groupId, containerId)
     local group = groupId and ResolveGroup(groupId) or nil
     if self._combatForcedLock or not (group and group.parentContainerId == containerId) then
+        return false
+    end
+    if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
         return false
     end
 

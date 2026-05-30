@@ -203,6 +203,9 @@ function CooldownCompanion:RunAllMigrations()
     self._pendingUnsupportedLegacyHide = nil
 
     self:StampImportCheckpoint(self.db and self.db.profile)
+    if self.SanitizeCursorAnchorPolicy and not self._deferCursorAnchorPolicySanitizer then
+        self:SanitizeCursorAnchorPolicy(self.db and self.db.profile)
+    end
     return true
 end
 

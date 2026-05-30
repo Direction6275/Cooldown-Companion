@@ -16,6 +16,7 @@ local math_max = math.max
 local math_ceil = math.ceil
 local table_insert = table.insert
 local InCombatLockdown = InCombatLockdown
+local GetCursorPosition = GetCursorPosition
 local select = select
 local wipe = wipe
 
@@ -23,6 +24,27 @@ local wipe = wipe
 local SetFrameClickThrough = ST.SetFrameClickThrough
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 local HideGlowStyles = ST._HideGlowStyles
+
+local CURSOR_ANCHOR_TARGET = CooldownCompanion:GetCursorAnchorTargetName()
+local DEFAULT_CURSOR_ANCHOR = CooldownCompanion:GetDefaultCursorPanelAnchor()
+local CURSOR_ANCHOR_POINT = DEFAULT_CURSOR_ANCHOR.point or "BOTTOMLEFT"
+local CURSOR_ANCHOR_RELATIVE_POINT = DEFAULT_CURSOR_ANCHOR.relativePoint or "CENTER"
+local CURSOR_ANCHOR_X = DEFAULT_CURSOR_ANCHOR.x or 16
+local CURSOR_ANCHOR_Y = DEFAULT_CURSOR_ANCHOR.y or 16
+local CURSOR_LAYOUT_PREVIEW_ATLAS = "cursor_point_128"
+local CURSOR_LAYOUT_PREVIEW_SIZE = 48
+local CURSOR_LAYOUT_PREVIEW_LABEL_WIDTH = 118
+local CURSOR_LAYOUT_PREVIEW_LABEL_HEIGHT = 18
+local CURSOR_LAYOUT_PREVIEW_TOP_OFFSET = -120
+local CURSOR_LAYOUT_PREVIEW_TINT = { 0.35, 0.92, 1, 1 }
+
+local function IsCursorAnchor(anchor)
+    return CooldownCompanion:IsCursorAnchor(anchor)
+end
+
+local function BuildDefaultCursorAnchor()
+    return CooldownCompanion:GetDefaultCursorPanelAnchor()
+end
 
 -- Return the container frame name for a panel, or nil if not a panel.
 local function GetPanelContainerFrameName(groupId)
@@ -48,6 +70,9 @@ local function GetContainerState(groupId)
     end
 
     if group.parentContainerId then
+        if IsCursorAnchor(group.anchor) then
+            return true, group.baselineAlpha or 1
+        end
         -- Panel: own lock state (nil/true = locked, false = unlocked), panel's own alpha
         return group.locked ~= false, group.baselineAlpha or 1
     end
@@ -81,6 +106,44 @@ local function UpdateCoordLabel(frame, x, y)
     if frame.coordLabel then
         frame.coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x, y))
     end
+end
+
+local function PreviewMapContains(map, groupId)
+    if not map then
+        return false
+    end
+    if map[groupId] then
+        return true
+    end
+    local numericId = tonumber(groupId)
+    if numericId and map[numericId] then
+        return true
+    end
+    local stringId = tostring(groupId)
+    return stringId and map[stringId] == true or false
+end
+
+local function GroupIdsEqual(left, right)
+    if left == right then
+        return true
+    end
+    if left == nil or right == nil then
+        return false
+    end
+    return tostring(left) == tostring(right)
+end
+
+local function IsCursorAnchorLayoutPreviewGroupActive(self, groupId)
+    local preview = self and self._cursorAnchorLayoutPreview
+    return preview and PreviewMapContains(preview.activeGroupIds, groupId) or false
+end
+
+local function IsCursorAnchorLayoutPreviewSelected(self, groupId)
+    local preview = self and self._cursorAnchorLayoutPreview
+    return preview
+        and preview.selectedGroupId == groupId
+        and PreviewMapContains(preview.activeGroupIds, groupId)
+        or false
 end
 
 local function GetAnchorOffset(point, width, height)
@@ -144,17 +207,7 @@ local function ApplyUnsafeAnchorVisualFallback(frame, anchor, relativeFrame)
 end
 
 local function ParseAddonAnchorFrameName(frameName)
-    if type(frameName) ~= "string" then return nil end
-
-    local groupId = frameName:match("^CooldownCompanionGroup(%d+)$")
-    if groupId then
-        return "group", tonumber(groupId)
-    end
-
-    local containerId = frameName:match("^CooldownCompanionContainer(%d+)$")
-    if containerId then
-        return "container", tonumber(containerId)
-    end
+    return CooldownCompanion:ParseAddonAnchorFrameName(frameName)
 end
 
 local function WouldFrameDependencyCreateCircularAnchor(self, sourceId, sourceKind, targetFrame, visited, depth)
@@ -192,6 +245,29 @@ local function ResolveSafeAnchorTarget(self, sourceId, sourceKind, relativeTo)
     if not relativeTo or relativeTo == "UIParent" then
         return nil, "ui-parent"
     end
+    if relativeTo == CURSOR_ANCHOR_TARGET then
+        return nil, "cursor"
+    end
+    local validationOptions
+    if sourceKind == "container" then
+        validationOptions = {
+            domain = "container",
+            sourceGroupId = sourceId,
+            sourceKind = "container",
+        }
+    elseif self.GetGroupAnchorValidationOptions then
+        validationOptions = self:GetGroupAnchorValidationOptions(sourceId)
+    else
+        validationOptions = {
+            domain = "panel",
+            sourceGroupId = sourceId,
+            sourceKind = "group",
+        }
+    end
+    local ok, reason = self:ValidateAddonFrameAnchorTarget(relativeTo, validationOptions)
+    if not ok then
+        return nil, reason
+    end
 
     local relativeFrame = _G[relativeTo]
     if not relativeFrame then
@@ -203,6 +279,14 @@ local function ResolveSafeAnchorTarget(self, sourceId, sourceKind, relativeTo)
     end
 
     return relativeFrame, "ok"
+end
+
+function CooldownCompanion:IsCursorAnchorLayoutPreviewGroupActive(groupId)
+    return IsCursorAnchorLayoutPreviewGroupActive(self, groupId)
+end
+
+function CooldownCompanion:IsCursorAnchorLayoutPreviewSelected(groupId)
+    return IsCursorAnchorLayoutPreviewSelected(self, groupId)
 end
 
 function CooldownCompanion:GetContainerAnchorTargetState(containerId, relativeTo)
@@ -324,8 +408,6 @@ end
 
 -- Nudger constants
 local NUDGE_BTN_SIZE = 12
-local NUDGE_REPEAT_DELAY = 0.5
-local NUDGE_REPEAT_INTERVAL = 0.05
 
 local CreatePixelBorders = ST.CreatePixelBorders
 local GetEffectiveTextHeight = ST._GetEffectiveTextHeight
@@ -367,6 +449,14 @@ local function CreateNudger(frame, groupId)
         { atlas = "common-dropdown-icon-next", rotation = 0,            anchor = "LEFT",   dx =  1, dy =  0, ox = NUDGE_GAP,  oy = 0 },          -- right
     }
 
+    local function IsCursorPreviewNudge()
+        local group = CooldownCompanion.db.profile.groups[groupId]
+        return group
+            and IsCursorAnchor(group.anchor)
+            and IsCursorAnchorLayoutPreviewSelected(CooldownCompanion, groupId)
+            or false
+    end
+
     for _, dir in ipairs(directions) do
         local btn = CreateFrame("Button", nil, nudger)
         nudger.buttons[#nudger.buttons + 1] = btn
@@ -387,16 +477,9 @@ local function CreateNudger(frame, groupId)
         end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            -- Cancel any hold-to-repeat timers
-            if self.nudgeDelayTimer then
-                self.nudgeDelayTimer:Cancel()
-                self.nudgeDelayTimer = nil
+            if not IsCursorPreviewNudge() then
+                CooldownCompanion:SaveGroupPosition(groupId)
             end
-            if self.nudgeTicker then
-                self.nudgeTicker:Cancel()
-                self.nudgeTicker = nil
-            end
-            CooldownCompanion:SaveGroupPosition(groupId)
         end)
 
         local function DoNudge()
@@ -404,6 +487,18 @@ local function CreateNudger(frame, groupId)
             if not group then return end
             local gFrame = CooldownCompanion.groupFrames[groupId]
             if gFrame then
+                if IsCursorAnchor(group.anchor)
+                    and IsCursorAnchorLayoutPreviewSelected(CooldownCompanion, groupId) then
+                    group.anchor.x = math_floor(((group.anchor.x or CURSOR_ANCHOR_X) + dir.dx) * 10 + 0.5) / 10
+                    group.anchor.y = math_floor(((group.anchor.y or CURSOR_ANCHOR_Y) + dir.dy) * 10 + 0.5) / 10
+                    CooldownCompanion:AnchorGroupFrame(gFrame, group.anchor)
+                    UpdateCoordLabel(gFrame, group.anchor.x, group.anchor.y)
+                    if CooldownCompanion.UpdateCursorAnchoredFrames then
+                        CooldownCompanion:UpdateCursorAnchoredFrames()
+                    end
+                    return
+                end
+
                 gFrame:AdjustPointsOffset(dir.dx, dir.dy)
                 -- Read the actual frame position so display stays in sync
                 local _, _, _, x, y = gFrame:GetPoint()
@@ -418,28 +513,61 @@ local function CreateNudger(frame, groupId)
 
         btn:SetScript("OnMouseDown", function(self)
             DoNudge()
-            -- Start hold-to-repeat after delay
-            self.nudgeDelayTimer = C_Timer.NewTimer(NUDGE_REPEAT_DELAY, function()
-                self.nudgeTicker = C_Timer.NewTicker(NUDGE_REPEAT_INTERVAL, function()
-                    DoNudge()
-                end)
-            end)
         end)
 
         btn:SetScript("OnMouseUp", function(self)
-            if self.nudgeDelayTimer then
-                self.nudgeDelayTimer:Cancel()
-                self.nudgeDelayTimer = nil
+            if not IsCursorPreviewNudge() then
+                CooldownCompanion:SaveGroupPosition(groupId)
             end
-            if self.nudgeTicker then
-                self.nudgeTicker:Cancel()
-                self.nudgeTicker = nil
-            end
-            CooldownCompanion:SaveGroupPosition(groupId)
         end)
     end
 
     return nudger
+end
+
+local function AddPanelDragHelpTooltipLines(tooltip, isContainerPreview, isCursorPreview)
+    if isCursorPreview then
+        tooltip:AddLine("Cursor Offset")
+        tooltip:AddLine("Drag this panel to set its saved offset from the dummy cursor.", 1, 1, 1, true)
+        tooltip:AddLine(" ")
+        tooltip:AddLine("Use the arrow pad to nudge the saved cursor offset by 1 pixel.", 1, 1, 1, true)
+        tooltip:AddLine(" ")
+        tooltip:AddLine("Position coordinates are shown below while editing.", 1, 1, 1, false)
+        return
+    end
+
+    tooltip:AddLine("Panel Controls")
+    tooltip:AddLine("Drag anywhere on the panel to move it.", 1, 1, 1, false)
+    tooltip:AddLine(" ")
+    tooltip:AddLine("Use the arrow pad to nudge by 1 pixel.", 1, 1, 1, false)
+    tooltip:AddLine(" ")
+    if not isContainerPreview then
+        tooltip:AddLine("Middle-click the header to lock this panel.", 1, 1, 1, false)
+        tooltip:AddLine(" ")
+    end
+    tooltip:AddLine("Position coordinates are shown below while unlocked.", 1, 1, 1, false)
+end
+
+local function CreatePanelDragHelpButton(frame, groupId)
+    if not (frame and frame.dragHandle and ST.CreateRuntimeInfoButton) then
+        return nil
+    end
+
+    return ST.CreateRuntimeInfoButton(
+        frame.dragHandle,
+        frame.dragHandle,
+        "RIGHT",
+        "RIGHT",
+        -4,
+        0,
+        function(tooltip)
+            local previewActive = GetContainerPreviewSelectionState(groupId)
+            local cursorPreviewActive = CooldownCompanion.IsCursorAnchorLayoutPreviewSelected
+                and CooldownCompanion:IsCursorAnchorLayoutPreviewSelected(groupId)
+                or false
+            AddPanelDragHelpTooltipLines(tooltip, previewActive, cursorPreviewActive)
+        end
+    )
 end
 
 local function SyncGroupControlLevels(frame, raiseAboveWrapper)
@@ -458,6 +586,10 @@ local function SyncGroupControlLevels(frame, raiseAboveWrapper)
         frame.coordLabel:SetFrameStrata(strata)
         frame.coordLabel:SetFrameLevel(baseLevel + 1)
     end
+    if frame.dragHelpButton then
+        frame.dragHelpButton:SetFrameStrata(strata)
+        frame.dragHelpButton:SetFrameLevel(baseLevel + 2)
+    end
     if frame.nudger then
         frame.nudger:SetFrameStrata(strata)
         frame.nudger:SetFrameLevel(baseLevel + 5)
@@ -465,6 +597,590 @@ local function SyncGroupControlLevels(frame, raiseAboveWrapper)
             btn:SetFrameStrata(strata)
             btn:SetFrameLevel(baseLevel + 6 + buttonIndex)
         end
+    end
+end
+
+function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
+    if not frame then
+        return
+    end
+
+    if frame.dragHandle then
+        frame.dragHandle:SetShown(shown)
+    end
+    if frame.coordLabel then
+        frame.coordLabel:SetShown(shown)
+    end
+    if ST.SetRuntimeInfoButtonShown then
+        ST.SetRuntimeInfoButtonShown(frame.dragHelpButton, shown)
+    end
+    if frame.nudger then
+        frame.nudger:SetShown(shown)
+    end
+end
+
+local function GetCursorPositionInUIParentSpace(self)
+    if not (GetCursorPosition and UIParent) then
+        return nil, nil
+    end
+
+    local cursorX, cursorY = GetCursorPosition()
+    if not (cursorX and cursorY) then
+        return nil, nil
+    end
+
+    local scale = UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or 1
+    if scale and scale > 0 then
+        cursorX = cursorX / scale
+        cursorY = cursorY / scale
+    end
+
+    self._cursorAnchorLastX = cursorX
+    self._cursorAnchorLastY = cursorY
+    return cursorX, cursorY
+end
+
+local function GetFallbackCursorPosition(self)
+    local x, y = self._cursorAnchorLastX, self._cursorAnchorLastY
+    if x and y then
+        return x, y
+    end
+
+    if UIParent and UIParent.GetSize then
+        local width, height = UIParent:GetSize()
+        if width and height then
+            return width / 2, height / 2
+        end
+    end
+
+    return 0, 0
+end
+
+local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, resetSized)
+    if not (frame and anchor) then
+        return false
+    end
+    if InCombatLockdown() and frame.IsProtected and frame:IsProtected() then
+        frame._anchorDirty = true
+        return false
+    end
+
+    frame._anchorDirty = nil
+    if resetSized then
+        frame._hasBeenSized = false
+    end
+
+    if frame.alphaSyncFrame then
+        frame.alphaSyncFrame:SetScript("OnUpdate", nil)
+    end
+    frame.anchoredToParent = nil
+
+    if not (cursorX and cursorY) then
+        cursorX, cursorY = GetCursorPositionInUIParentSpace(self)
+    end
+    if not (cursorX and cursorY) then
+        cursorX, cursorY = GetFallbackCursorPosition(self)
+    end
+
+    local x = anchor.x or CURSOR_ANCHOR_X
+    local y = anchor.y or CURSOR_ANCHOR_Y
+    frame:ClearAllPoints()
+    frame:SetPoint(anchor.point or CURSOR_ANCHOR_POINT, UIParent, "BOTTOMLEFT", cursorX + x, cursorY + y)
+    UpdateCoordLabel(frame, x, y)
+    return true
+end
+
+local function GetCursorAnchoredStandaloneHost(frame, group)
+    if not (frame and group and (group.displayMode == "textures" or group.displayMode == "trigger")) then
+        return nil
+    end
+
+    local button = frame.buttons and frame.buttons[1] or nil
+    return button and button.auraTextureHost or nil
+end
+
+local function GetCursorAnchorLayoutPreviewPosition(self, groupId)
+    local preview = self._cursorAnchorLayoutPreview
+    local frame = preview and preview.frame or nil
+    if IsCursorAnchorLayoutPreviewGroupActive(self, groupId) and frame and frame:IsShown() then
+        return frame:GetCenter()
+    end
+    return nil, nil
+end
+
+local function BuildCursorAnchorLayoutPreviewGroupMap(self)
+    local activeGroupIds = {}
+    local profile = self.db and self.db.profile
+    local groups = profile and profile.groups
+    if not groups then
+        return activeGroupIds
+    end
+
+    for groupId, group in pairs(groups) do
+        if IsCursorAnchor(group.anchor)
+            and (not self.CanGroupUseCursorAnchor or self:CanGroupUseCursorAnchor(group))
+            and self:IsGroupActive(groupId, {
+                group = group,
+                checkCharVisibility = true,
+                checkLoadConditions = true,
+                requireButtons = true,
+            }) then
+            activeGroupIds[groupId] = true
+        end
+    end
+
+    return activeGroupIds
+end
+
+local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
+    local frame = self.groupFrames and self.groupFrames[groupId] or nil
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+    if active and not frame and group and not InCombatLockdown() then
+        frame = self:CreateGroupFrame(groupId)
+    end
+    if not (frame and group) then
+        return
+    end
+
+    local selected = active and IsCursorAnchorLayoutPreviewSelected(self, groupId)
+    local isStandaloneDisplay = group.displayMode == "textures" or group.displayMode == "trigger"
+
+    if active then
+        if not (InCombatLockdown() and frame:IsProtected()) then
+            frame:Show()
+        end
+        frame:SetAlpha(1)
+    else
+        local isActive = self:IsGroupActive(groupId, {
+            group = group,
+            checkCharVisibility = true,
+            checkLoadConditions = true,
+            requireButtons = true,
+        })
+        if not isActive and not (InCombatLockdown() and frame:IsProtected()) then
+            frame:Hide()
+        else
+            local alphaState = self.alphaState and self.alphaState[groupId]
+            if alphaState and alphaState.currentAlpha then
+                frame:SetAlpha(alphaState.currentAlpha)
+            end
+        end
+    end
+
+    if frame.UpdateCooldowns then
+        frame:UpdateCooldowns()
+    end
+    if group.compactLayout and self.UpdateGroupLayout then
+        self:UpdateGroupLayout(groupId)
+    end
+
+    self:SetGroupDragControlsShown(frame, selected and not isStandaloneDisplay)
+    if selected then
+        UpdateCoordLabel(frame, group.anchor.x or CURSOR_ANCHOR_X, group.anchor.y or CURSOR_ANCHOR_Y)
+    end
+    self:UpdateGroupClickthrough(groupId)
+end
+
+local function ApplyCursorAnchorLayoutPreviewGroupStates(self, previousGroupIds, activeGroupIds)
+    local visited = {}
+    if previousGroupIds then
+        for groupId in pairs(previousGroupIds) do
+            visited[groupId] = true
+            SetCursorAnchorLayoutPreviewGroupState(self, groupId, activeGroupIds and activeGroupIds[groupId] == true)
+        end
+    end
+    if activeGroupIds then
+        for groupId in pairs(activeGroupIds) do
+            if not visited[groupId] then
+                SetCursorAnchorLayoutPreviewGroupState(self, groupId, true)
+            end
+        end
+    end
+end
+
+local function BeginCursorLayoutPreviewDrag(ownerFrame, dragRegion)
+    ownerFrame._dragInProgress = true
+    dragRegion:SetScript("OnUpdate", function()
+        CooldownCompanion:UpdateCursorAnchoredFrames()
+    end)
+    ownerFrame:StartMoving()
+end
+
+local function EndCursorLayoutPreviewDrag(ownerFrame, dragRegion)
+    dragRegion:SetScript("OnUpdate", nil)
+    ownerFrame._dragInProgress = nil
+    ownerFrame:StopMovingOrSizing()
+    local activePreview = CooldownCompanion._cursorAnchorLayoutPreview
+    if activePreview then
+        activePreview.hasCustomPosition = true
+        activePreview.hasDefaultPosition = nil
+    end
+    CooldownCompanion:UpdateCursorAnchoredFrames()
+end
+
+local function SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId)
+    local preview = self._cursorAnchorLayoutPreview
+    local frame = self.groupFrames and self.groupFrames[groupId] or nil
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+    if not (preview and frame and group and IsCursorAnchor(group.anchor)) then
+        return false
+    end
+    if not IsCursorAnchorLayoutPreviewSelected(self, groupId) then
+        return false
+    end
+
+    local cursorX, cursorY = GetCursorAnchorLayoutPreviewPosition(self, groupId)
+    local frameCenterX, frameCenterY = frame:GetCenter()
+    local frameWidth, frameHeight = GetFrameSizeInUIParentSpace(frame)
+    if not (cursorX and cursorY and frameCenterX and frameCenterY and frameWidth and frameHeight) then
+        self:UpdateCursorAnchoredFrames()
+        return false
+    end
+
+    local point = group.anchor.point or CURSOR_ANCHOR_POINT
+    local anchorOffsetX, anchorOffsetY = GetAnchorOffset(point, frameWidth, frameHeight)
+    local newX = math_floor(((frameCenterX + anchorOffsetX) - cursorX) * 10 + 0.5) / 10
+    local newY = math_floor(((frameCenterY + anchorOffsetY) - cursorY) * 10 + 0.5) / 10
+
+    group.anchor.point = point
+    group.anchor.relativeTo = CURSOR_ANCHOR_TARGET
+    group.anchor.relativePoint = CURSOR_ANCHOR_RELATIVE_POINT
+    group.anchor.x = newX
+    group.anchor.y = newY
+
+    ApplyCursorAnchorPosition(self, frame, group.anchor, cursorX, cursorY)
+    UpdateCoordLabel(frame, newX, newY)
+    self:RefreshConfigPanel()
+    self:UpdateCursorAnchoredFrames()
+    return true
+end
+
+local function BeginCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId)
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+    if not (frame and group and IsCursorAnchor(group.anchor)) then
+        return false
+    end
+    if group.displayMode == "textures" or group.displayMode == "trigger" then
+        return false
+    end
+    if not IsCursorAnchorLayoutPreviewSelected(self, groupId) then
+        return false
+    end
+    if self._combatForcedLock or (InCombatLockdown() and frame.IsProtected and frame:IsProtected()) then
+        return false
+    end
+
+    local preview = self._cursorAnchorLayoutPreview
+    if preview then
+        preview.draggedGroupId = groupId
+    end
+    frame._dragCancelPending = nil
+    frame._dragInProgress = true
+    frame:StartMoving()
+    return true
+end
+
+local function EndCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId, cancelSave)
+    local preview = self._cursorAnchorLayoutPreview
+    if preview and GroupIdsEqual(preview.draggedGroupId, groupId) then
+        preview.draggedGroupId = nil
+    end
+    if frame then
+        frame._dragCancelPending = nil
+        frame._dragInProgress = nil
+        if not (InCombatLockdown() and frame.IsProtected and frame:IsProtected()) then
+            frame:StopMovingOrSizing()
+        end
+    end
+    if cancelSave then
+        self:UpdateCursorAnchoredFrames()
+        return true
+    end
+    if not SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId) then
+        self:UpdateCursorAnchoredFrames()
+    end
+    return true
+end
+
+local function ResetCursorAnchorLayoutPreviewPosition(self)
+    local preview = self._cursorAnchorLayoutPreview
+    local frame = preview and preview.frame or nil
+    if not frame then
+        return false
+    end
+
+    frame:ClearAllPoints()
+    frame:SetPoint("TOP", UIParent, "TOP", 0, CURSOR_LAYOUT_PREVIEW_TOP_OFFSET)
+    preview.hasCustomPosition = nil
+    preview.hasDefaultPosition = true
+    self:UpdateCursorAnchoredFrames()
+    return true
+end
+
+local function EnsureCursorAnchorLayoutPreview(self)
+    local preview = self._cursorAnchorLayoutPreview
+    if preview and preview.frame then
+        return preview
+    end
+
+    local frame = CreateFrame("Frame", nil, UIParent)
+    frame:SetSize(1, 1)
+    frame:SetFrameStrata("TOOLTIP")
+    frame:SetFrameLevel(900)
+    frame:SetMovable(true)
+    frame:SetClampedToScreen(true)
+    frame:EnableMouse(false)
+    frame:Hide()
+
+    local dragFrame = CreateFrame("Frame", nil, frame)
+    dragFrame:SetSize(CURSOR_LAYOUT_PREVIEW_SIZE, CURSOR_LAYOUT_PREVIEW_SIZE)
+    dragFrame:SetPoint("TOPLEFT", frame, "CENTER", -4, 4)
+    dragFrame:SetFrameStrata("TOOLTIP")
+    dragFrame:SetFrameLevel(901)
+    dragFrame:EnableMouse(true)
+    dragFrame:RegisterForDrag("LeftButton")
+    dragFrame:SetScript("OnDragStart", function(self)
+        BeginCursorLayoutPreviewDrag(frame, self)
+    end)
+    dragFrame:SetScript("OnDragStop", function(self)
+        EndCursorLayoutPreviewDrag(frame, self)
+    end)
+
+    local texture = dragFrame:CreateTexture(nil, "OVERLAY")
+    texture:SetAtlas(CURSOR_LAYOUT_PREVIEW_ATLAS, false)
+    texture:SetSize(CURSOR_LAYOUT_PREVIEW_SIZE, CURSOR_LAYOUT_PREVIEW_SIZE)
+    texture:SetAllPoints(dragFrame)
+    texture:SetVertexColor(
+        CURSOR_LAYOUT_PREVIEW_TINT[1],
+        CURSOR_LAYOUT_PREVIEW_TINT[2],
+        CURSOR_LAYOUT_PREVIEW_TINT[3],
+        CURSOR_LAYOUT_PREVIEW_TINT[4]
+    )
+    texture:Show()
+
+    local labelFrame = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    labelFrame:SetSize(CURSOR_LAYOUT_PREVIEW_LABEL_WIDTH, CURSOR_LAYOUT_PREVIEW_LABEL_HEIGHT)
+    labelFrame:SetPoint("TOP", dragFrame, "BOTTOM", 0, -2)
+    labelFrame:SetFrameStrata("TOOLTIP")
+    labelFrame:SetFrameLevel(902)
+    labelFrame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    labelFrame:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    CreatePixelBorders(labelFrame)
+    labelFrame:EnableMouse(true)
+    labelFrame:RegisterForDrag("LeftButton")
+    labelFrame:SetScript("OnDragStart", function(self)
+        BeginCursorLayoutPreviewDrag(frame, self)
+    end)
+    labelFrame:SetScript("OnDragStop", function(self)
+        EndCursorLayoutPreviewDrag(frame, self)
+    end)
+
+    local label = labelFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("LEFT", labelFrame, "LEFT", 6, 0)
+    label:SetPoint("RIGHT", labelFrame, "RIGHT", -39, 0)
+    label:SetJustifyH("CENTER")
+    label:SetText("Dummy Cursor")
+    label:SetTextColor(
+        CURSOR_LAYOUT_PREVIEW_TINT[1],
+        CURSOR_LAYOUT_PREVIEW_TINT[2],
+        CURSOR_LAYOUT_PREVIEW_TINT[3],
+        CURSOR_LAYOUT_PREVIEW_TINT[4]
+    )
+    labelFrame.label = label
+
+    local resetButton = CreateFrame("Button", nil, labelFrame)
+    resetButton:SetSize(16, 16)
+    resetButton:SetPoint("RIGHT", labelFrame, "RIGHT", -20, 0)
+    resetButton:SetFrameStrata("TOOLTIP")
+    resetButton:SetFrameLevel(903)
+    resetButton.icon = resetButton:CreateTexture(nil, "OVERLAY")
+    resetButton.icon:SetSize(12, 12)
+    resetButton.icon:SetPoint("CENTER")
+    resetButton.icon:SetAtlas("UI-RefreshButton", false)
+    resetButton.icon:SetVertexColor(0.75, 0.95, 1, 0.95)
+    resetButton:SetScript("OnEnter", function(self)
+        self.icon:SetVertexColor(1, 1, 1, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Reset Dummy Cursor")
+        GameTooltip:AddLine("Returns this preview cursor to its default top-center position for this session.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    resetButton:SetScript("OnLeave", function(self)
+        self.icon:SetVertexColor(0.75, 0.95, 1, 0.95)
+        GameTooltip:Hide()
+    end)
+    resetButton:SetScript("OnClick", function()
+        ResetCursorAnchorLayoutPreviewPosition(CooldownCompanion)
+    end)
+
+    local helpButton
+    if ST.CreateRuntimeInfoButton then
+        helpButton = ST.CreateRuntimeInfoButton(
+            labelFrame,
+            labelFrame,
+            "RIGHT",
+            "RIGHT",
+            -3,
+            0,
+            function(tooltip)
+                tooltip:AddLine("Dummy Cursor")
+                tooltip:AddLine("Drag this preview cursor to position active cursor panels without using your live cursor.", 1, 1, 1, true)
+            end
+        )
+        if ST.SetRuntimeInfoButtonShown then
+            ST.SetRuntimeInfoButtonShown(helpButton, true)
+        end
+    end
+
+    preview = {
+        frame = frame,
+        dragFrame = dragFrame,
+        helpButton = helpButton,
+        labelFrame = labelFrame,
+        resetButton = resetButton,
+        texture = texture,
+    }
+    self._cursorAnchorLayoutPreview = preview
+    return preview
+end
+
+function CooldownCompanion:ShowCursorAnchorLayoutPreview(groupId)
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+    if not (group and IsCursorAnchor(group.anchor)) then
+        self:ClearCursorAnchorLayoutPreview()
+        return
+    end
+
+    local preview = EnsureCursorAnchorLayoutPreview(self)
+    local frame = preview.frame
+    local previousActiveGroupIds = preview.activeGroupIds
+    local activeGroupIds = BuildCursorAnchorLayoutPreviewGroupMap(self)
+    preview.selectedGroupId = groupId
+    preview.activeGroupIds = activeGroupIds
+    if not preview.hasCustomPosition and not preview.hasDefaultPosition then
+        frame:ClearAllPoints()
+        frame:SetPoint("TOP", UIParent, "TOP", 0, CURSOR_LAYOUT_PREVIEW_TOP_OFFSET)
+        preview.hasDefaultPosition = true
+    end
+    if ST.SetRuntimeInfoButtonShown then
+        ST.SetRuntimeInfoButtonShown(preview.helpButton, true)
+    end
+    if preview.resetButton then
+        preview.resetButton:Show()
+    end
+    frame:Show()
+    ApplyCursorAnchorLayoutPreviewGroupStates(self, previousActiveGroupIds, activeGroupIds)
+    if self.RefreshCursorAnchorTicker then
+        self:RefreshCursorAnchorTicker()
+    end
+    self:UpdateCursorAnchoredFrames()
+end
+
+function CooldownCompanion:ClearCursorAnchorLayoutPreview()
+    local preview = self._cursorAnchorLayoutPreview
+    if not preview then
+        return
+    end
+
+    local activeGroupIds = preview.activeGroupIds
+    preview.selectedGroupId = nil
+    preview.activeGroupIds = nil
+    preview.draggedGroupId = nil
+    if preview.frame then
+        preview.frame._dragInProgress = nil
+        preview.frame:StopMovingOrSizing()
+        preview.frame:Hide()
+    end
+    if preview.dragFrame then
+        preview.dragFrame:SetScript("OnUpdate", nil)
+    end
+    if preview.labelFrame then
+        preview.labelFrame:SetScript("OnUpdate", nil)
+    end
+    if preview.resetButton then
+        preview.resetButton:Hide()
+    end
+    if ST.SetRuntimeInfoButtonShown then
+        ST.SetRuntimeInfoButtonShown(preview.helpButton, false)
+    end
+
+    ApplyCursorAnchorLayoutPreviewGroupStates(self, activeGroupIds, nil)
+    if self.RefreshCursorAnchorTicker then
+        self:RefreshCursorAnchorTicker()
+    end
+    self:UpdateCursorAnchoredFrames()
+end
+
+function CooldownCompanion:AnchorFrameToCursor(frame, anchor, cursorX, cursorY)
+    local previewGroupId = frame and (frame.groupId or (frame._ownerButton and frame._ownerButton._groupId)) or nil
+    if not (cursorX and cursorY) then
+        cursorX, cursorY = GetCursorAnchorLayoutPreviewPosition(self, previewGroupId)
+    end
+    return ApplyCursorAnchorPosition(self, frame, anchor or BuildDefaultCursorAnchor(), cursorX, cursorY)
+end
+
+function CooldownCompanion:UpdateCursorAnchoredFrames()
+    local profile = self.db and self.db.profile
+    local groups = profile and profile.groups
+    if not groups then
+        return
+    end
+
+    local cursorX, cursorY = GetCursorPositionInUIParentSpace(self)
+    if not (cursorX and cursorY) then
+        cursorX, cursorY = GetFallbackCursorPosition(self)
+    end
+
+    local preview = self._cursorAnchorLayoutPreview
+    local draggedGroupId = preview and preview.draggedGroupId or nil
+
+    for groupId, group in pairs(groups) do
+        if IsCursorAnchor(group.anchor)
+            and (not self.CanGroupUseCursorAnchor or self:CanGroupUseCursorAnchor(group)) then
+            local frame = self.groupFrames and self.groupFrames[groupId] or nil
+            if frame and frame:IsShown() and not GroupIdsEqual(draggedGroupId, groupId) then
+                local previewX, previewY = GetCursorAnchorLayoutPreviewPosition(self, groupId)
+                local anchorX = previewX or cursorX
+                local anchorY = previewY or cursorY
+                ApplyCursorAnchorPosition(self, frame, group.anchor, anchorX, anchorY)
+                local host = GetCursorAnchoredStandaloneHost(frame, group)
+                if host and host:IsShown() then
+                    ApplyCursorAnchorPosition(self, host, group.anchor, anchorX, anchorY)
+                end
+            end
+        end
+    end
+end
+
+function CooldownCompanion:RefreshCursorAnchorTicker()
+    if not self._cursorAnchorTicker then
+        self._cursorAnchorTicker = CreateFrame("Frame")
+    end
+
+    local active = false
+    local profile = self.db and self.db.profile
+    local groups = profile and profile.groups
+    if groups and self.groupFrames then
+        for groupId, group in pairs(groups) do
+            local frame = self.groupFrames[groupId]
+            if IsCursorAnchor(group.anchor)
+                and (not self.CanGroupUseCursorAnchor or self:CanGroupUseCursorAnchor(group))
+                and frame
+                and frame:IsShown() then
+                active = true
+                break
+            end
+        end
+    end
+
+    if active then
+        self._cursorAnchorTicker:SetScript("OnUpdate", function()
+            CooldownCompanion:UpdateCursorAnchoredFrames()
+        end)
+        self._cursorAnchorTicker:Show()
+    else
+        self._cursorAnchorTicker:SetScript("OnUpdate", nil)
+        self._cursorAnchorTicker:Hide()
     end
 end
 
@@ -523,6 +1239,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
 
     -- Pixel nudger (parented to dragHandle, inherits show/hide)
     frame.nudger = CreateNudger(frame, groupId)
+    frame.dragHelpButton = CreatePanelDragHelpButton(frame, groupId)
 
     -- Coordinate label (parented to dragHandle so it hides when locked)
     frame.coordLabel = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
@@ -536,14 +1253,18 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.coordLabel.text:SetPoint("CENTER")
     frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
 
-    if isLocked or #group.buttons == 0 or isTextureMode then
-        frame.dragHandle:Hide()
-    end
+    local isCursorAnchored = IsCursorAnchor(group.anchor)
+    self:SetGroupDragControlsShown(frame, (not isLocked) and #group.buttons > 0 and not isTextureMode and not isCursorAnchored)
 
     -- Drag scripts (check lock state at drag time)
     frame:SetScript("OnDragStart", function(self)
         local locked = GetContainerState(self.groupId)
         local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(self.groupId)
+        local dragGroup = CooldownCompanion.db.profile.groups[self.groupId]
+        if dragGroup and IsCursorAnchor(dragGroup.anchor) then
+            BeginCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, self, self.groupId)
+            return
+        end
         if CooldownCompanion._combatForcedLock then
             return
         elseif previewActive then
@@ -564,6 +1285,13 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     end)
 
     frame:SetScript("OnDragStop", function(self)
+        local dragGroup = CooldownCompanion.db.profile.groups[self.groupId]
+        if dragGroup and IsCursorAnchor(dragGroup.anchor) then
+            local cancelSave = self._dragCancelPending == true or CooldownCompanion._combatForcedLock
+            EndCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, self, self.groupId, cancelSave)
+            return
+        end
+
         local _, selectedInContainer, containerId = GetContainerPreviewSelectionState(self.groupId)
         local cancelSave = self._dragCancelPending == true or CooldownCompanion._combatForcedLock
         self._dragCancelPending = nil
@@ -586,6 +1314,11 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.dragHandle:SetScript("OnDragStart", function()
         local locked = GetContainerState(groupId)
         local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(groupId)
+        local dragGroup = CooldownCompanion.db.profile.groups[groupId]
+        if dragGroup and IsCursorAnchor(dragGroup.anchor) then
+            BeginCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, frame, groupId)
+            return
+        end
         if CooldownCompanion._combatForcedLock then
             return
         elseif previewActive then
@@ -605,6 +1338,13 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         end
     end)
     frame.dragHandle:SetScript("OnDragStop", function()
+        local dragGroup = CooldownCompanion.db.profile.groups[groupId]
+        if dragGroup and IsCursorAnchor(dragGroup.anchor) then
+            local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
+            EndCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, frame, groupId, cancelSave)
+            return
+        end
+
         local _, selectedInContainer, containerId = GetContainerPreviewSelectionState(groupId)
         local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
         frame._dragCancelPending = nil
@@ -660,6 +1400,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         frame:Hide()
     end
 
+    self:RefreshCursorAnchorTicker()
+
     return frame
 end
 
@@ -670,6 +1412,36 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
         frame._anchorDirty = true
         return
     end
+
+    if IsCursorAnchor(anchor) then
+        local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[frame.groupId]
+        local canUseCursorAnchor = group and group.parentContainerId ~= nil
+        if self.CanGroupUseCursorAnchor then
+            canUseCursorAnchor = self:CanGroupUseCursorAnchor(group)
+        end
+        if not canUseCursorAnchor then
+            frame._anchorDirty = nil
+            frame:ClearAllPoints()
+            frame._hasBeenSized = false
+            if frame.alphaSyncFrame then
+                frame.alphaSyncFrame:SetScript("OnUpdate", nil)
+            end
+            frame.anchoredToParent = nil
+            frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+            UpdateCoordLabel(frame, 0, 0)
+            if self.RefreshCursorAnchorTicker then
+                self:RefreshCursorAnchorTicker()
+            end
+            return
+        end
+        local cursorX, cursorY = GetCursorAnchorLayoutPreviewPosition(self, frame.groupId)
+        ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, true)
+        if self.RefreshCursorAnchorTicker then
+            self:RefreshCursorAnchorTicker()
+        end
+        return
+    end
+
     frame._anchorDirty = nil
     frame:ClearAllPoints()
 
@@ -794,6 +1566,9 @@ function CooldownCompanion:SaveGroupPosition(groupId)
     local group = self.db.profile.groups[groupId]
 
     if not frame or not group then return end
+    if IsCursorAnchor(group.anchor) then
+        return
+    end
 
     -- Get the screen-space center of our frame
     local cx, cy = frame:GetCenter()
@@ -1282,24 +2057,27 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     -- Update drag handle text and lock state
     local hasButtons = #group.buttons > 0
     local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isCursorAnchored = IsCursorAnchor(group.anchor)
+    local isCursorLayoutPreviewSelected = isCursorAnchored
+        and IsCursorAnchorLayoutPreviewSelected(self, groupId)
+        or false
     local containerPreviewActive = group.parentContainerId and self:IsContainerUnlockPreviewActive(group.parentContainerId)
     local selectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
-    if frame.dragHandle then
-        if frame.dragHandle.text then
-            frame.dragHandle.text:SetText(group.name)
-        end
-        if containerPreviewActive then
-            if selectedInContainer and hasButtons and not isTextureMode then
-                frame.dragHandle:Show()
-            else
-                frame.dragHandle:Hide()
-            end
-        elseif isLocked or not hasButtons or isTextureMode then
-            frame.dragHandle:Hide()
-        else
-            frame.dragHandle:Show()
-        end
+    if frame.dragHandle and frame.dragHandle.text then
+        frame.dragHandle.text:SetText(group.name)
     end
+    self:SetGroupDragControlsShown(
+        frame,
+        hasButtons
+            and not isTextureMode
+            and (
+                isCursorLayoutPreviewSelected
+                or (
+                    not isCursorAnchored
+                    and ((containerPreviewActive and selectedInContainer) or (not containerPreviewActive and not isLocked))
+                )
+            )
+    )
     self:UpdateGroupClickthrough(groupId)
 
     -- Update visibility — unload if disabled, no buttons, wrong spec/hero, wrong character, or load conditions
@@ -1318,7 +2096,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
             frame:Show()
         end
         -- Force 100% alpha while unlocked for easier positioning
-        if containerPreviewActive or not isLocked then
+        if IsCursorAnchorLayoutPreviewGroupActive(self, groupId) or containerPreviewActive or not isLocked then
             frame:SetAlpha(1)
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
         else
@@ -1342,6 +2120,9 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
     if group.parentContainerId and self.RefreshContainerWrapper then
         self:RefreshContainerWrapper(group.parentContainerId)
+    end
+    if self.RefreshCursorAnchorTicker then
+        self:RefreshCursorAnchorTicker()
     end
 end
 
@@ -1391,11 +2172,86 @@ function CooldownCompanion:WouldCreateCircularAnchor(sourceId, targetId, targetK
     return false
 end
 
+function CooldownCompanion:GetDirectAnchorDependents(groupId, panelOnly)
+    local profile = self.db and self.db.profile
+    local groups = profile and profile.groups
+    if not groups then return {} end
+
+    local targetFrameName = "CooldownCompanionGroup" .. tostring(groupId)
+    local dependents = {}
+    for dependentId, dependentGroup in pairs(groups) do
+        if dependentId ~= groupId
+            and dependentGroup
+            and dependentGroup.anchor
+            and dependentGroup.anchor.relativeTo == targetFrameName
+            and (not panelOnly or dependentGroup.parentContainerId) then
+            dependents[#dependents + 1] = {
+                name = dependentGroup.name or ((dependentGroup.parentContainerId and "Panel " or "Group ") .. dependentId),
+            }
+        end
+    end
+
+    if not panelOnly then
+        for containerId, container in pairs(profile.groupContainers or {}) do
+            if container
+                and container.anchor
+                and container.anchor.relativeTo == targetFrameName then
+                dependents[#dependents + 1] = {
+                    name = container.name or ("Group " .. containerId),
+                }
+            end
+        end
+    end
+
+    return dependents
+end
+
+local function FormatDependentAnchorNames(dependents)
+    local names = {}
+    for _, dependent in ipairs(dependents or {}) do
+        names[#names + 1] = dependent.name
+        if #names >= 3 then
+            break
+        end
+    end
+
+    local text = table.concat(names, ", ")
+    if dependents and #dependents > #names then
+        text = text .. ", +" .. tostring(#dependents - #names) .. " more"
+    end
+    return text
+end
+
+local function RefreshGroupAnchorInteractionState(self, groupId, frame, group)
+    if frame and group and frame.buttons then
+        local groupStyle = group.style or {}
+        for _, button in ipairs(frame.buttons) do
+            if button.UpdateStyle then
+                local effectiveStyle = self:GetEffectiveStyle(groupStyle, button.buttonData)
+                button:UpdateStyle(effectiveStyle)
+            end
+        end
+    end
+    if self.UpdateGroupClickthrough then
+        self:UpdateGroupClickthrough(groupId)
+    end
+end
+
+local function FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnchored)
+    self:AnchorGroupFrame(frame, group.anchor)
+    RefreshGroupAnchorInteractionState(self, groupId, frame, group)
+    self:RefreshCursorAnchorTicker()
+    if (wasCursorAnchored or IsCursorAnchor(group.anchor)) and self.EvaluateBarsAndFramesRuntime then
+        self:EvaluateBarsAndFramesRuntime("cursor-anchor-changed")
+    end
+end
+
 function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
     local group = self.db.profile.groups[groupId]
     local frame = self.groupFrames[groupId]
 
     if not group or not frame then return false end
+    local wasCursorAnchored = IsCursorAnchor(group.anchor)
 
     -- Block self-anchoring
     local selfFrameName = "CooldownCompanionGroup" .. groupId
@@ -1404,22 +2260,41 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         return false
     end
 
-    -- Block circular anchor chains (check both group and container targets)
-    local tgId = targetFrameName and targetFrameName:match("^CooldownCompanionGroup(%d+)$")
-    if tgId then
-        tgId = tonumber(tgId)
-        if tgId and self:WouldCreateCircularAnchor(groupId, tgId) then
-            self:Print("Cannot anchor: would create a circular reference.")
+    if targetFrameName == CURSOR_ANCHOR_TARGET then
+        if not (self.CanGroupUseCursorAnchor and self:CanGroupUseCursorAnchor(group)) then
+            self:Print("Only panels can anchor to the cursor.")
             return false
         end
+
+        local dependents = self:GetDirectAnchorDependents(groupId)
+        if self.GetExternalAnchorDependents then
+            for _, dependent in ipairs(self:GetExternalAnchorDependents(groupId)) do
+                dependents[#dependents + 1] = dependent
+            end
+        end
+        if #dependents > 0 then
+            self:Print("Cannot anchor to Cursor while other panels, groups, bars, or frames anchor to this panel: " .. FormatDependentAnchorNames(dependents) .. ".")
+            return false
+        end
+
+        group.anchor = BuildDefaultCursorAnchor()
+        group.locked = nil
+        FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnchored)
+        self:SetGroupDragControlsShown(frame, false)
+        return true
     end
-    local tcId = targetFrameName and targetFrameName:match("^CooldownCompanionContainer(%d+)$")
-    if tcId then
-        tcId = tonumber(tcId)
-        if tcId and self:WouldCreateCircularAnchor(groupId, tcId, "container") then
-            self:Print("Cannot anchor: would create a circular reference.")
-            return false
-        end
+
+    local validationOptions = self.GetGroupAnchorValidationOptions
+        and self:GetGroupAnchorValidationOptions(groupId)
+        or {
+            domain = "panel",
+            sourceGroupId = groupId,
+            sourceKind = "group",
+        }
+    local targetOk = self:ValidateAddonFrameAnchorTarget(targetFrameName, validationOptions)
+    if not targetOk then
+        self:Print(self:GetInvalidAnchorTargetReason(targetFrameName, validationOptions))
+        return false
     end
 
     -- Panels: redirect UIParent to their container frame
@@ -1444,6 +2319,11 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         -- If not forceCenter, keep current anchor settings (just relativeTo changes)
         group.anchor.relativeTo = "UIParent"
         self:AnchorGroupFrame(frame, group.anchor, forceCenter)
+        RefreshGroupAnchorInteractionState(self, groupId, frame, group)
+        self:RefreshCursorAnchorTicker()
+        if wasCursorAnchored and self.EvaluateBarsAndFramesRuntime then
+            self:EvaluateBarsAndFramesRuntime("cursor-anchor-changed")
+        end
         return true
     end
 
@@ -1468,7 +2348,7 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
             x = 0,
             y = 0,
         }
-        self:AnchorGroupFrame(frame, group.anchor)
+        FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnchored)
         return true
     end
 
@@ -1480,7 +2360,7 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         y = -5,
     }
 
-    self:AnchorGroupFrame(frame, group.anchor)
+    FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnchored)
     return true
 end
 
@@ -1513,15 +2393,38 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
 
     local isLocked = GetContainerState(groupId)
     local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isCursorAnchored = IsCursorAnchor(group.anchor)
+    local isCursorLayoutPreviewSelected = isCursorAnchored
+        and IsCursorAnchorLayoutPreviewSelected(self, groupId)
+        or false
     local containerPreviewActive = group.parentContainerId and self:IsContainerUnlockPreviewActive(group.parentContainerId)
     local isSelectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
 
-    SyncGroupControlLevels(frame, isSelectedInContainer and not isTextureMode)
+    SyncGroupControlLevels(
+        frame,
+        (isCursorLayoutPreviewSelected or (isSelectedInContainer and not isCursorAnchored)) and not isTextureMode
+    )
+
+    if isCursorLayoutPreviewSelected and not isTextureMode then
+        SetFrameClickThrough(frame, false, false)
+        frame:RegisterForDrag("LeftButton")
+        if frame.dragHandle then
+            SetFrameClickThrough(frame.dragHandle, false, false)
+            frame.dragHandle:EnableMouse(true)
+            frame.dragHandle:RegisterForDrag("LeftButton")
+            frame.dragHandle:SetScript("OnMouseUp", nil)
+        end
+        if frame.nudger then
+            SetFrameClickThrough(frame.nudger, false, false)
+            frame.nudger:EnableMouse(true)
+        end
+        return
+    end
 
     if containerPreviewActive then
         SetFrameClickThrough(frame, true, true)
         if frame.dragHandle then
-            if isSelectedInContainer and not isTextureMode then
+            if isSelectedInContainer and not isTextureMode and not isCursorAnchored then
                 SetFrameClickThrough(frame.dragHandle, false, false)
                 frame.dragHandle:EnableMouse(true)
                 frame.dragHandle:RegisterForDrag("LeftButton")
@@ -1531,7 +2434,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
             end
         end
         if frame.nudger then
-            if isSelectedInContainer and not isTextureMode then
+            if isSelectedInContainer and not isTextureMode and not isCursorAnchored then
                 SetFrameClickThrough(frame.nudger, false, false)
                 frame.nudger:EnableMouse(true)
             else
@@ -1545,7 +2448,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     -- Texture panels also keep the backing group frame non-interactive while
     -- unlocked, because dragging and hovering are handled by the separate
     -- visible texture host instead of the hidden 1x1 anchor frame.
-    if isLocked or isTextureMode then
+    if isLocked or isTextureMode or isCursorAnchored then
         SetFrameClickThrough(frame, true, true)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, true, true)
@@ -1888,6 +2791,9 @@ function CooldownCompanion:StartContainerPreviewMemberDrag(containerId, groupId)
     end
 
     self:SelectContainerPanel(containerId, groupId)
+    if IsCursorAnchor(group.anchor) then
+        return false
+    end
     self:StartContainerMemberPreviewTracking(containerId, groupId)
 
     if group.displayMode == "textures" or group.displayMode == "trigger" then
@@ -2189,15 +3095,12 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         local groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
         local isSelected = selectedGroupId == groupId and previewedGroupIds[groupId]
         local isStandaloneDisplay = group and (group.displayMode == "textures" or group.displayMode == "trigger")
+        local isCursorAnchored = group and IsCursorAnchor(group.anchor)
 
         if groupFrame and not isStandaloneDisplay then
-            SyncGroupControlLevels(groupFrame, isSelected)
-            if groupFrame.dragHandle then
-                if isSelected then
-                    groupFrame.dragHandle:Show()
-                elseif self:IsContainerUnlockPreviewActive(containerId) then
-                    groupFrame.dragHandle:Hide()
-                end
+            SyncGroupControlLevels(groupFrame, isSelected and not isCursorAnchored)
+            if self:IsContainerUnlockPreviewActive(containerId) then
+                self:SetGroupDragControlsShown(groupFrame, isSelected and not isCursorAnchored)
             end
             self:UpdateGroupClickthrough(groupId)
         elseif isStandaloneDisplay and self.UpdateGroupedStandalonePreviewSelection then
@@ -2258,14 +3161,6 @@ local function CreateContainerNudger(frame, containerId)
         end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            if self.nudgeDelayTimer then
-                self.nudgeDelayTimer:Cancel()
-                self.nudgeDelayTimer = nil
-            end
-            if self.nudgeTicker then
-                self.nudgeTicker:Cancel()
-                self.nudgeTicker = nil
-            end
             CooldownCompanion:SaveContainerPosition(containerId)
         end)
 
@@ -2294,22 +3189,9 @@ local function CreateContainerNudger(frame, containerId)
 
         btn:SetScript("OnMouseDown", function(self)
             DoNudge()
-            self.nudgeDelayTimer = C_Timer.NewTimer(NUDGE_REPEAT_DELAY, function()
-                self.nudgeTicker = C_Timer.NewTicker(NUDGE_REPEAT_INTERVAL, function()
-                    DoNudge()
-                end)
-            end)
         end)
 
         btn:SetScript("OnMouseUp", function(self)
-            if self.nudgeDelayTimer then
-                self.nudgeDelayTimer:Cancel()
-                self.nudgeDelayTimer = nil
-            end
-            if self.nudgeTicker then
-                self.nudgeTicker:Cancel()
-                self.nudgeTicker = nil
-            end
             CooldownCompanion:SaveContainerPosition(containerId)
         end)
     end

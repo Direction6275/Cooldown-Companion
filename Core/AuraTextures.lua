@@ -66,10 +66,6 @@ local FILTER_FAVORITES = "favorites"
 local FILTER_OTHER = "other"
 local DEFAULT_TEXTURE_SIZE = 128
 local UI_PARENT_NAME = "UIParent"
-local NUDGE_BTN_SIZE = 12
-local NUDGE_GAP = 2
-local NUDGE_REPEAT_DELAY = 0.5
-local NUDGE_REPEAT_INTERVAL = 0.05
 
 local LOCATION_LABELS = {
     [LOCATION_CENTER] = "Center",

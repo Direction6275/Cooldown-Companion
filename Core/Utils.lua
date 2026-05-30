@@ -5,7 +5,10 @@
 
 local ADDON_NAME, ST = ...
 
+local InCombatLockdown = InCombatLockdown
 local string_format = string.format
+local ipairs = ipairs
+local pairs = pairs
 local tonumber = tonumber
 local type = type
 
@@ -217,6 +220,78 @@ function ST.CreatePixelBorders(frame, r, g, b, a)
 end
 
 --------------------------------------------------------------------------------
+-- Runtime Info Buttons
+--------------------------------------------------------------------------------
+
+local runtimeInfoButtons = setmetatable({}, { __mode = "v" })
+
+function ST.AreInfoButtonsHidden()
+    local addon = ST.Addon
+    local profile = addon and addon.db and addon.db.profile
+    return profile and profile.hideInfoButtons == true
+end
+
+function ST.SetRuntimeInfoButtonShown(button, shown)
+    if not button then
+        return
+    end
+
+    button._cdcDesiredShown = shown == true
+    local visible = button._cdcDesiredShown and not ST.AreInfoButtonsHidden()
+    button:SetShown(visible)
+    if not InCombatLockdown or not InCombatLockdown() then
+        if button.EnableMouse then
+            button:EnableMouse(visible)
+        end
+        if button.SetMouseClickEnabled then
+            button:SetMouseClickEnabled(visible)
+        end
+        if button.SetMouseMotionEnabled then
+            button:SetMouseMotionEnabled(visible)
+        end
+    end
+end
+
+function ST.RefreshRuntimeInfoButtonVisibility()
+    for _, button in pairs(runtimeInfoButtons) do
+        ST.SetRuntimeInfoButtonShown(button, button and button._cdcDesiredShown)
+    end
+end
+
+function ST.CreateRuntimeInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRelPoint, xOff, yOff, buildTooltip)
+    local button = CreateFrame("Button", nil, parentFrame)
+    button:SetSize(16, 16)
+    button:SetPoint(anchorPoint, anchorFrame, anchorRelPoint, xOff, yOff)
+    if parentFrame.GetFrameStrata and button.SetFrameStrata then
+        button:SetFrameStrata(parentFrame:GetFrameStrata())
+    end
+    if parentFrame.GetFrameLevel and button.SetFrameLevel then
+        button:SetFrameLevel((parentFrame:GetFrameLevel() or 1) + 1)
+    end
+
+    local icon = button:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(12, 12)
+    icon:SetPoint("CENTER")
+    icon:SetAtlas("QuestRepeatableTurnin")
+    button.icon = icon
+
+    button:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if type(buildTooltip) == "function" then
+            buildTooltip(GameTooltip, self)
+        end
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    runtimeInfoButtons[#runtimeInfoButtons + 1] = button
+    ST.SetRuntimeInfoButtonShown(button, false)
+    return button
+end
+
+--------------------------------------------------------------------------------
 -- Color Utilities
 --------------------------------------------------------------------------------
 
@@ -231,7 +306,8 @@ end
 --------------------------------------------------------------------------------
 
 -- Returns true when a group/panel frame should be at full alpha because it
--- (or its parent container) is selected in the Config panel.
+-- (or its parent container) is selected in the Config panel, or because it is
+-- part of an active cursor Layout preview.
 -- Used by: alpha fade system, alpha sync ticker, button force-visible.
 function ST.IsGroupConfigSelected(groupId)
     local CS = ST._configState
@@ -239,6 +315,13 @@ function ST.IsGroupConfigSelected(groupId)
     local configFrame = CS.configFrame
     if not configFrame or not configFrame.frame or not configFrame.frame:IsShown() then
         return false
+    end
+
+    local addon = ST.Addon
+    if addon
+        and addon.IsCursorAnchorLayoutPreviewGroupActive
+        and addon:IsCursorAnchorLayoutPreviewGroupActive(groupId) then
+        return true
     end
 
     -- Direct panel/group selection
@@ -281,6 +364,13 @@ function ST.IsConfigButtonForceVisible(button)
     local configFrame = CS.configFrame
     if not configFrame or not configFrame.frame or not configFrame.frame:IsShown() then
         return false
+    end
+
+    local addon = ST.Addon
+    if addon
+        and addon.IsCursorAnchorLayoutPreviewGroupActive
+        and addon:IsCursorAnchorLayoutPreviewGroupActive(groupId) then
+        return true
     end
 
     -- Single-selected panel: check for individual button selection

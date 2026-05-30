@@ -1597,6 +1597,7 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcCollapseBtn then entry.frame._cdcCollapseBtn:Hide() end
     if entry.frame._cdcAddBtn then entry.frame._cdcAddBtn:Hide() end
     if entry.frame._cdcGenericRenameBadge then entry.frame._cdcGenericRenameBadge:Hide() end
+    if entry.frame._cdcCursorAnchorBadge then entry.frame._cdcCursorAnchorBadge:Hide() end
     if entry.frame._cdcAnchorBadge then entry.frame._cdcAnchorBadge:Hide() end
     if entry.frame._cdcHeaderDisabledBadge then entry.frame._cdcHeaderDisabledBadge:Hide() end
     if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end
@@ -1746,7 +1747,8 @@ local function SetupGroupRowIndicators(entry, group)
         AddAtlasBadge("GM-icon-visibleDis-pressed")
     end
     -- Unlocked (lock icon)
-    if group.locked == false then
+    if group.locked == false
+        and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(group)) then
         AddAtlasBadge("ShipMissionIcon-Training-Map")
     end
     -- Look up folder data for per-badge filtering: badges that exist at the

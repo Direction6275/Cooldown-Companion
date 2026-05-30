@@ -322,6 +322,9 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
     if self.RunAllMigrations and not self:RunAllMigrations() then
         return false
     end
+    if self.SanitizeCursorAnchorPolicy then
+        self:SanitizeCursorAnchorPolicy(db.profile)
+    end
 
     if self.RefreshConfigPanel then
         self:RefreshConfigPanel()

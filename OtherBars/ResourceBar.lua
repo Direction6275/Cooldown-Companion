@@ -47,10 +47,7 @@ local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
 local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
 local DEFAULT_RESOURCE_TEXT_COLOR = RB.DEFAULT_RESOURCE_TEXT_COLOR
 local INDEPENDENT_NUDGE_BTN_SIZE = RB.INDEPENDENT_NUDGE_BTN_SIZE
-local INDEPENDENT_NUDGE_REPEAT_DELAY = RB.INDEPENDENT_NUDGE_REPEAT_DELAY
-local INDEPENDENT_NUDGE_REPEAT_INTERVAL = RB.INDEPENDENT_NUDGE_REPEAT_INTERVAL
 local IsBarsConfigActive = RB.IsBarsConfigActive
-local CancelNudgeTimers = RB.CancelNudgeTimers
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
 local POWER_ATLAS_INFO = RB.POWER_ATLAS_INFO
 local RESOURCE_COLOR_DEFS = RB.RESOURCE_COLOR_DEFS
@@ -412,7 +409,6 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     if frame._cdcIndependentNudger then
         if frame._cdcIndependentNudger._cdcButtons then
             for _, btn in ipairs(frame._cdcIndependentNudger._cdcButtons) do
-                CancelNudgeTimers(btn)
                 btn:EnableMouse(false)
             end
         end
@@ -486,7 +482,7 @@ local function SaveIndependentStackAnchor(refreshConfig)
     local fw, fh = frame:GetSize()
     local relFrame = UIParent
     if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
-        relFrame = _G[anchor.relativeTo] or UIParent
+        relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
     end
     local tcx, tcy = relFrame:GetCenter()
     local tw, th = relFrame:GetSize()
@@ -592,17 +588,12 @@ local function CreateIndependentWrapperFrame()
         btn:SetScript("OnEnter", function(self) self.arrow:SetVertexColor(1, 1, 1, 1) end)
         btn:SetScript("OnLeave", function(self)
             self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            CancelNudgeTimers(self)
             SaveIndependentStackAnchor(true)
         end)
         btn:SetScript("OnMouseDown", function(self)
             DoNudge()
-            self._cdcNudgeDelayTimer = C_Timer.NewTimer(INDEPENDENT_NUDGE_REPEAT_DELAY, function()
-                self._cdcNudgeTicker = C_Timer.NewTicker(INDEPENDENT_NUDGE_REPEAT_INTERVAL, DoNudge)
-            end)
         end)
         btn:SetScript("OnMouseUp", function(self)
-            CancelNudgeTimers(self)
             SaveIndependentStackAnchor(true)
         end)
 
@@ -680,9 +671,6 @@ UpdateIndependentStackDragState = function(settings, placementSettings)
         if frame._nudger._cdcButtons then
             for _, btn in ipairs(frame._nudger._cdcButtons) do
                 btn:EnableMouse(unlocked or false)
-                if not unlocked then
-                    CancelNudgeTimers(btn)
-                end
             end
         end
     end
@@ -709,11 +697,6 @@ local function HideIndependentWrapperFrame()
     end
     if independentWrapperFrame._nudger then
         independentWrapperFrame._nudger:Hide()
-        if independentWrapperFrame._nudger._cdcButtons then
-            for _, btn in ipairs(independentWrapperFrame._nudger._cdcButtons) do
-                CancelNudgeTimers(btn)
-            end
-        end
     end
     if independentWrapperFrame._coordLabel then
         independentWrapperFrame._coordLabel:Hide()
@@ -2024,7 +2007,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         local anchor = layout.independentAnchor
         local relFrame = UIParent
         if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
-            relFrame = _G[anchor.relativeTo] or UIParent
+            relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
         end
         independentWrapperFrame:ClearAllPoints()
         independentWrapperFrame:SetPoint(anchor.point, relFrame, anchor.relativePoint, anchor.x, anchor.y)

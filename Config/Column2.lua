@@ -61,6 +61,8 @@ local OVERRIDE_BADGE_ICON_SIZE = 12
 local ROW_BADGE_SPACING = 2
 local ROW_BADGE_RIGHT_PAD = 4
 local TEXTURE_PANEL_HEADER_BADGE_ATLAS = "UI-HUD-MicroMenu-Communities-Icon-Notification"
+local CURSOR_PANEL_HEADER_BADGE_ATLAS = "cursor_cast_32"
+local PANEL_HEADER_TYPE_BADGE_GAP = 2
 local TRIGGER_PANEL_BADGE_COLOR = { 1.0, 0.18, 0.78 }
 local PANEL_TYPE_TOOLTIPS = {
     icons = {
@@ -110,6 +112,30 @@ local function AddPanelTypeMenuTooltip(info, displayMode)
     info.tooltipTitle = tooltip.title
     info.tooltipText = tooltip.description
     info.tooltipOnButton = true
+end
+
+local function GetPanelTypeBadgeAtlas(displayMode)
+    if displayMode == "bars" then
+        return "CreditsScreen-Assets-Buttons-Pause"
+    elseif displayMode == "text" then
+        return "poi-workorders"
+    elseif displayMode == "textures" or displayMode == "trigger" then
+        return TEXTURE_PANEL_HEADER_BADGE_ATLAS
+    end
+
+    return "UI-QuestPoi-QuestNumber-SuperTracked"
+end
+
+local function BuildPanelHeaderText(panel, panelId, buttonCount, countColor)
+    local panelName = panel and panel.name
+    if not panelName or panelName == "" then
+        panelName = panelId and ("Panel " .. tostring(panelId)) or "Panel"
+    end
+
+    return "|A:" .. GetPanelTypeBadgeAtlas(panel and panel.displayMode) .. ":" ..
+        tostring(ROW_BADGE_SIZE) .. ":" .. tostring(ROW_BADGE_SIZE) .. "|a " ..
+        panelName .. " |cff" .. (countColor or "666666") .. "(" ..
+        tostring(buttonCount or 0) .. ")|r"
 end
 
 local function EnsurePanelTypeTooltipTarget(header)
@@ -195,6 +221,60 @@ local function ConfigureGenericRenameBadge(header, panel, panelId, rightOffset)
     return rightOffset + 18
 end
 
+local function ConfigureCursorAnchorBadge(header, panel)
+    local badge = header.frame._cdcCursorAnchorBadge
+    if not badge then
+        badge = CreateFrame("Button", nil, header.frame)
+        badge:SetPropagateMouseClicks(true)
+        badge:SetPropagateMouseMotion(true)
+        badge.icon = badge:CreateTexture(nil, "OVERLAY")
+        badge.icon:SetAllPoints()
+        badge:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Cursor Anchored", 1, 0.82, 0, true)
+            GameTooltip:AddLine("This panel is anchored to the cursor.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        badge:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        header.frame._cdcCursorAnchorBadge = badge
+    end
+
+    badge:SetFrameLevel(header.frame:GetFrameLevel() + 25)
+    badge:SetSize(16, 16)
+    badge:ClearAllPoints()
+
+    if panel
+        and panel.parentContainerId
+        and CooldownCompanion.IsGroupCursorAnchored
+        and CooldownCompanion:IsGroupCursorAnchored(panel) then
+        badge:SetPoint("LEFT", header.frame, "LEFT", 4, 0)
+        badge.icon:SetAtlas(CURSOR_PANEL_HEADER_BADGE_ATLAS, false)
+        if badge.icon.SetDesaturated then
+            badge.icon:SetDesaturated(false)
+        end
+        badge.icon:SetVertexColor(1, 1, 1, 1)
+        badge:Show()
+        return
+    end
+
+    badge:Hide()
+end
+
+local function ConfigureInlinePanelTypeBadgeTarget(header, displayMode, textWidth)
+    if header._cdcModeBadge then
+        header._cdcModeBadge:Hide()
+    end
+
+    local tooltipTarget = EnsurePanelTypeTooltipTarget(header)
+    tooltipTarget._cdcDisplayMode = displayMode
+    tooltipTarget:ClearAllPoints()
+    local badgeCenterOffset = -(textWidth / 2) + (ROW_BADGE_SIZE / 2)
+    tooltipTarget:SetPoint("CENTER", header.label, "CENTER", badgeCenterOffset, 0)
+    tooltipTarget:Show()
+end
+
 local function ConfigurePanelTypeBadge(header, displayMode, textWidth)
     local modeBadge = header._cdcModeBadge
     if not modeBadge then
@@ -203,27 +283,19 @@ local function ConfigurePanelTypeBadge(header, displayMode, textWidth)
     end
 
     modeBadge:ClearAllPoints()
-    modeBadge:SetSize(16, 16)
+    modeBadge:SetSize(ROW_BADGE_SIZE, ROW_BADGE_SIZE)
     if modeBadge.SetDesaturated then
         modeBadge:SetDesaturated(false)
     end
     modeBadge:SetVertexColor(1, 1, 1, 1)
-    if displayMode == "bars" then
-        modeBadge:SetAtlas("CreditsScreen-Assets-Buttons-Pause", false)
-    elseif displayMode == "text" then
-        modeBadge:SetAtlas("poi-workorders", false)
-    elseif displayMode == "textures" then
-        modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
-    elseif displayMode == "trigger" then
-        modeBadge:SetAtlas(TEXTURE_PANEL_HEADER_BADGE_ATLAS, false)
+    modeBadge:SetAtlas(GetPanelTypeBadgeAtlas(displayMode), false)
+    if displayMode == "trigger" then
         if modeBadge.SetDesaturated then
             modeBadge:SetDesaturated(true)
         end
         modeBadge:SetVertexColor(TRIGGER_PANEL_BADGE_COLOR[1], TRIGGER_PANEL_BADGE_COLOR[2], TRIGGER_PANEL_BADGE_COLOR[3], 1)
-    else
-        modeBadge:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
     end
-    modeBadge:SetPoint("RIGHT", header.label, "CENTER", -(textWidth / 2) - 2, 0)
+    modeBadge:SetPoint("RIGHT", header.label, "CENTER", -(textWidth / 2) - PANEL_HEADER_TYPE_BADGE_GAP, 0)
     modeBadge:Show()
 
     local tooltipTarget = EnsurePanelTypeTooltipTarget(header)
@@ -1391,9 +1463,8 @@ local function RefreshColumn2()
             CS.col2Scroll:AddChild(panelContainer)
 
             -- Panel header (same badge pattern as normal Column 2 panel headers)
-            local headerText = panel.name or "Panel"
             local buttonCount = panel.buttons and #panel.buttons or 0
-            headerText = headerText .. " |cff888888(" .. buttonCount .. ")|r"
+            local headerText = BuildPanelHeaderText(panel, nil, buttonCount, "888888")
 
             local header = AceGUI:Create("InteractiveLabel")
             CleanRecycledEntry(header)
@@ -1404,7 +1475,7 @@ local function RefreshColumn2()
             header:SetJustifyH("CENTER")
             ApplyConfigTextRow(header, "CENTER")
             local textW = header.label:GetStringWidth()
-            ConfigurePanelTypeBadge(header, panel.displayMode, textW)
+            ConfigureInlinePanelTypeBadgeTarget(header, panel.displayMode, textW)
 
             -- Disabled badge (shown when panel is individually disabled)
             local disabledBadge = header.frame._cdcHeaderDisabledBadge
@@ -1924,7 +1995,7 @@ local function RefreshColumn2()
 
             -- Panel header
                 local btnCount = panel.buttons and #panel.buttons or 0
-                local headerText = (panel.name or ("Panel " .. panelId)) .. " |cff666666(" .. btnCount .. ")|r"
+                local headerText = BuildPanelHeaderText(panel, panelId, btnCount, "666666")
 
                 local header = AceGUI:Create("InteractiveLabel")
                 CleanRecycledEntry(header)
@@ -1935,12 +2006,16 @@ local function RefreshColumn2()
                 header:SetFontObject(GameFontHighlight)
                 header:SetJustifyH("CENTER")
                 ApplyConfigTextRow(header, "CENTER")
-                -- Position badge to the left of centered text
+                -- Keep the panel-type badge, title, and entry count centered as one string.
                 local textW = header.label:GetStringWidth()
-                ConfigurePanelTypeBadge(header, panel.displayMode, textW)
+                ConfigureInlinePanelTypeBadgeTarget(header, panel.displayMode, textW)
                 header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
                 local rightOffset = (textW / 2) + 4
+                local isCursorAnchoredPanel = CooldownCompanion.IsGroupCursorAnchored
+                    and CooldownCompanion:IsGroupCursorAnchored(panel)
+                    or false
+                ConfigureCursorAnchorBadge(header, panel)
                 rightOffset = ConfigureGenericRenameBadge(header, panel, panelId, rightOffset)
 
                 -- Anchor unlock badge (shown when panel is individually unlocked)
@@ -1952,7 +2027,7 @@ local function RefreshColumn2()
                 anchorBadge:SetSize(16, 16)
                 anchorBadge:ClearAllPoints()
                 anchorBadge:SetPoint("LEFT", header.label, "CENTER", rightOffset, 0)
-                if panel.locked == false then
+                if panel.locked == false and not isCursorAnchoredPanel then
                     anchorBadge:SetAtlas("ShipMissionIcon-Training-Map", false)
                     anchorBadge:Show()
                     rightOffset = rightOffset + 22
@@ -2127,6 +2202,10 @@ local function RefreshColumn2()
                         CooldownCompanion:RefreshConfigPanel()
                         return
                     elseif mouseButton == "MiddleButton" then
+                        if CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel) then
+                            CooldownCompanion:Print("Cursor-anchored panels are edited from Layout.")
+                            return
+                        end
                         if panel.locked == false then
                             panel.locked = nil
                             CooldownCompanion:Print(panel.name .. " locked.")
@@ -2170,22 +2249,24 @@ local function RefreshColumn2()
                             UIDropDownMenu_AddButton(info, level)
 
                             -- Lock / Unlock panel anchor
-                            info = UIDropDownMenu_CreateInfo()
-                            info.text = ctxPanel.locked == false and "Lock Anchor" or "Unlock Anchor"
-                            info.notCheckable = true
-                            info.func = function()
-                                CloseDropDownMenus()
-                                if ctxPanel.locked == false then
-                                    ctxPanel.locked = nil
-                                    CooldownCompanion:Print(ctxPanel.name .. " locked.")
-                                else
-                                    ctxPanel.locked = false
-                                    CooldownCompanion:Print(ctxPanel.name .. " unlocked. Drag to reposition.")
+                            if not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(ctxPanel)) then
+                                info = UIDropDownMenu_CreateInfo()
+                                info.text = ctxPanel.locked == false and "Lock Anchor" or "Unlock Anchor"
+                                info.notCheckable = true
+                                info.func = function()
+                                    CloseDropDownMenus()
+                                    if ctxPanel.locked == false then
+                                        ctxPanel.locked = nil
+                                        CooldownCompanion:Print(ctxPanel.name .. " locked.")
+                                    else
+                                        ctxPanel.locked = false
+                                        CooldownCompanion:Print(ctxPanel.name .. " unlocked. Drag to reposition.")
+                                    end
+                                    CooldownCompanion:RefreshGroupFrame(ctxPanelId)
+                                    CooldownCompanion:RefreshConfigPanel()
                                 end
-                                CooldownCompanion:RefreshGroupFrame(ctxPanelId)
-                                CooldownCompanion:RefreshConfigPanel()
+                                UIDropDownMenu_AddButton(info, level)
                             end
-                            UIDropDownMenu_AddButton(info, level)
 
                             local switchModes = {
                                 { mode = "icons", label = "Icons" },

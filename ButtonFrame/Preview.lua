@@ -1076,6 +1076,9 @@ function CooldownCompanion:ClearAllConfigPreviews()
     if self.ClearAllAuraTexturePickerPreviews then
         self:ClearAllAuraTexturePickerPreviews()
     end
+    if self.ClearCursorAnchorLayoutPreview then
+        self:ClearCursorAnchorLayoutPreview()
+    end
     if self.StopCastBarPreview then
         self:StopCastBarPreview()
     end
