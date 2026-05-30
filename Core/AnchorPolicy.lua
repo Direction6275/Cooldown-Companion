@@ -557,13 +557,14 @@ function CooldownCompanion:SanitizeCursorAnchorPolicy(profile)
     local targetIsCursorRoot = BuildCursorRootTargetPredicate(profile)
 
     for groupId, group in pairs(profile.groups or {}) do
-        if type(group) == "table" and type(group.anchor) == "table" then
-            local relativeTo = group.anchor.relativeTo
+        if type(group) == "table" then
+            local anchor = group.anchor
+            local relativeTo = type(anchor) == "table" and anchor.relativeTo or anchor
             if relativeTo == CURSOR_ANCHOR_TARGET then
                 if not group.parentContainerId then
                     group.anchor = BuildRootAnchor("UIParent")
                 else
-                    NormalizeCursorAnchor(group.anchor)
+                    group.anchor = NormalizeCursorAnchor(anchor)
                 end
             elseif targetIsCursorRoot(relativeTo) then
                 if group.parentContainerId then
@@ -576,8 +577,9 @@ function CooldownCompanion:SanitizeCursorAnchorPolicy(profile)
     end
 
     for _, container in pairs(profile.groupContainers or {}) do
-        if type(container) == "table" and type(container.anchor) == "table" then
-            local relativeTo = container.anchor.relativeTo
+        if type(container) == "table" then
+            local anchor = container.anchor
+            local relativeTo = type(anchor) == "table" and anchor.relativeTo or anchor
             if targetIsCursorRoot(relativeTo) then
                 container.anchor = BuildRootAnchor("UIParent")
             end
