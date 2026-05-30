@@ -1544,7 +1544,6 @@ local function UpdateCol1Ghost(preview, model)
 end
 
 local ClearCol1AnimatedPreview
-local FindCol1SectionDividerTarget
 
 local function SectionHasLoadedCol1Rows(renderedRows, section)
     for _, row in ipairs(renderedRows or {}) do
