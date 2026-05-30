@@ -358,6 +358,13 @@ function ST.IsConfigButtonForceVisible(button)
         return false
     end
 
+    local addon = ST.Addon
+    if addon
+        and addon.IsCursorAnchorLayoutPreviewGroupActive
+        and addon:IsCursorAnchorLayoutPreviewGroupActive(groupId) then
+        return true
+    end
+
     -- Single-selected panel: check for individual button selection
     if CS.selectedGroup == groupId then
         if CS.selectedButton then

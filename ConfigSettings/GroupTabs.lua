@@ -955,22 +955,28 @@ local function BuildLayoutTab(container)
             RefreshTextureVisual()
         end
 
+        if isCursorAnchor and CooldownCompanion.ShowCursorAnchorLayoutPreview then
+            CooldownCompanion:ShowCursorAnchorLayoutPreview(textureGroupId)
+        elseif CooldownCompanion.ClearCursorAnchorLayoutPreview then
+            CooldownCompanion:ClearCursorAnchorLayoutPreview()
+        end
+
         local anchorTargetDrop = AceGUI:Create("Dropdown")
         anchorTargetDrop:SetLabel("Anchor Target")
         anchorTargetDrop:SetList({
-            default = "Screen",
+            group = "Group",
             cursor = "Cursor",
-        }, { "default", "cursor" })
-        anchorTargetDrop:SetValue(isCursorAnchor and "cursor" or "default")
+        }, { "group", "cursor" })
+        anchorTargetDrop:SetValue(isCursorAnchor and "cursor" or "group")
         anchorTargetDrop:SetFullWidth(true)
         anchorTargetDrop:SetCallback("OnValueChanged", function(widget, event, val)
             if val == "cursor" then
                 if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, cursorAnchorTarget) then
                     CooldownCompanion:RefreshConfigPanel()
                 else
-                    widget:SetValue(isCursorAnchor and "cursor" or "default")
+                    widget:SetValue(isCursorAnchor and "cursor" or "group")
                 end
-            elseif val == "default" then
+            elseif val == "group" then
                 CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, true)
                 CooldownCompanion:RefreshConfigPanel()
             end
@@ -1073,18 +1079,8 @@ local function BuildLayoutTab(container)
         return
     end
 
-    -- ================================================================
-    -- Anchor to Frame (editbox + pick button row)
-    -- ================================================================
-    local anchorRow = AceGUI:Create("SimpleGroup")
-    anchorRow:SetFullWidth(true)
-    anchorRow:SetLayout("Flow")
-
-    local anchorBox = AceGUI:Create("EditBox")
-    if anchorBox.editbox.Instructions then anchorBox.editbox.Instructions:Hide() end
     local isPanel = group.parentContainerId ~= nil
     local panelContainerFrame = isPanel and ("CooldownCompanionContainer" .. group.parentContainerId) or nil
-    anchorBox:SetLabel("Anchor to Frame")
     local currentAnchor = group.anchor.relativeTo
     local rawAnchor = currentAnchor
     local cursorAnchorTarget = CooldownCompanion.GetCursorAnchorTargetName
@@ -1105,38 +1101,45 @@ local function BuildLayoutTab(container)
     elseif rawAnchorGroupId and isPanel then
         targetMode = "panel"
     elseif rawAnchor == nil or rawAnchor == "UIParent" or (isPanel and rawAnchor == panelContainerFrame) then
-        targetMode = "default"
+        targetMode = "group"
     else
         targetMode = "frame"
     end
     CS.layoutAnchorTargetMode = CS.layoutAnchorTargetMode or {}
     local preferredTargetMode = CS.layoutAnchorTargetMode[CS.selectedGroup]
-    if (targetMode == "default" or targetMode == "cursor")
+    if (targetMode == "group" or targetMode == "cursor")
         and (preferredTargetMode == "frame" or (isPanel and preferredTargetMode == "panel")) then
         targetMode = preferredTargetMode
     end
     CS.layoutAnchorTargetMode[CS.selectedGroup] = targetMode
+    if targetMode == "cursor" and isCursorAnchor and CooldownCompanion.ShowCursorAnchorLayoutPreview then
+        CooldownCompanion:ShowCursorAnchorLayoutPreview(CS.selectedGroup)
+    elseif CooldownCompanion.ClearCursorAnchorLayoutPreview then
+        CooldownCompanion:ClearCursorAnchorLayoutPreview()
+    end
 
     local anchorTargetDrop = AceGUI:Create("Dropdown")
     anchorTargetDrop:SetLabel("Anchor Target")
-    local anchorTargetList = {
-        default = isPanel and "Default Container" or "Screen",
-        frame = "Frame",
-    }
-    local anchorTargetOrder = { "default" }
-    if isPanel then
-        anchorTargetList.cursor = "Cursor"
-        anchorTargetList.panel = "Panel"
-        table.insert(anchorTargetOrder, "cursor")
-        table.insert(anchorTargetOrder, "panel")
-    end
-    table.insert(anchorTargetOrder, "frame")
+    local anchorTargetList = isPanel
+        and {
+            group = "Group",
+            panel = "Panel",
+            frame = "Frame",
+            cursor = "Cursor",
+        }
+        or {
+            group = "Screen",
+            frame = "Frame",
+        }
+    local anchorTargetOrder = isPanel
+        and { "group", "panel", "frame", "cursor" }
+        or { "group", "frame" }
     anchorTargetDrop:SetList(anchorTargetList, anchorTargetOrder)
     anchorTargetDrop:SetValue(targetMode)
     anchorTargetDrop:SetFullWidth(true)
     anchorTargetDrop:SetCallback("OnValueChanged", function(widget, event, val)
         if val == targetMode then return end
-        if val == "default" then
+        if val == "group" then
             CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
             local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= defaultFrame
             CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, wasAnchored)
@@ -1155,94 +1158,102 @@ local function BuildLayoutTab(container)
     end)
     container:AddChild(anchorTargetDrop)
 
-    if currentAnchor == "UIParent" then currentAnchor = "" end
-    if isPanel and currentAnchor == panelContainerFrame then currentAnchor = "" end
-    if isCursorAnchor then currentAnchor = "" end
-    anchorBox:SetText(currentAnchor)
-    anchorBox:SetRelativeWidth(0.68)
-    anchorBox:SetDisabled(targetMode ~= "frame")
-    anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        local defaultFrame = isPanel and panelContainerFrame or "UIParent"
-        local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= defaultFrame
-        if text == "" then
-            CooldownCompanion:SetGroupAnchor(CS.selectedGroup, isPanel and panelContainerFrame or "UIParent", wasAnchored)
-        else
-            local target = _G[text]
-            if not target or type(target) ~= "table" or not target.GetObjectType then
-                CooldownCompanion:Print("Frame not found: " .. text)
-                widget:SetText(currentAnchor)
-                return
-            end
-            CooldownCompanion:SetGroupAnchor(CS.selectedGroup, text)
-        end
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    anchorRow:AddChild(anchorBox)
-
-    local pickBtn = AceGUI:Create("Button")
-    pickBtn:SetText("Pick")
-    pickBtn:SetRelativeWidth(0.24)
-    pickBtn:SetDisabled(targetMode ~= "frame")
-    pickBtn:SetCallback("OnClick", function()
-        local grp = CS.selectedGroup
-        CS.StartPickFrame(function(name)
-            if CS.configFrame then
-                CS.configFrame.frame:Show()
-            end
-            if name then
-                CooldownCompanion:SetGroupAnchor(grp, name)
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end, grp)
-    end)
-    anchorRow:AddChild(pickBtn)
-
-    -- (?) tooltip for anchor picking
-    CreateInfoButton(pickBtn.frame, pickBtn.frame, "LEFT", "RIGHT", 2, 0, {
-        "Pick Frame",
-        {"Hides the config panel and highlights frames under your cursor. Left-click a frame to anchor this group to it, or right-click to cancel.", 1, 1, 1, true},
-        " ",
-        {"You can also type a frame name directly into the editbox.", 1, 1, 1, true},
-        " ",
-        {"Middle-click the draggable header to toggle lock/unlock.", 1, 1, 1, true},
-    }, tabInfoButtons)
-
-    container:AddChild(anchorRow)
-    pickBtn.frame:SetScript("OnUpdate", function(self)
-        self:SetScript("OnUpdate", nil)
-        local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
-        if yOfs then
-            self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
-        end
-    end)
-
-    local panelAnchorDrop = AceGUI:Create("Dropdown")
-    panelAnchorDrop:SetLabel("Anchor to Panel")
-    CooldownCompanion:PopulatePanelAnchorTargetDropdown(panelAnchorDrop, CS.selectedGroup)
-    panelAnchorDrop:SetFullWidth(true)
-    panelAnchorDrop:SetDisabled(targetMode ~= "panel")
     local currentAnchorGroupId = type(currentAnchor) == "string"
         and currentAnchor:match("^CooldownCompanionGroup(%d+)$")
         or nil
-    if currentAnchorGroupId then
-        panelAnchorDrop:SetValue(tostring(currentAnchorGroupId))
-    else
-        panelAnchorDrop:SetValue(nil)
-    end
-    panelAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        if not val or val == "" then return end
-        local targetGroupId = tonumber(val)
-        if not targetGroupId then return end
-        local targetFrameName = "CooldownCompanionGroup" .. targetGroupId
-        if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, targetFrameName) then
-            currentAnchor = targetFrameName
-            anchorBox:SetText(targetFrameName)
+    if targetMode == "frame" then
+        -- ================================================================
+        -- Anchor to Frame (editbox + pick button row)
+        -- ================================================================
+        local anchorRow = AceGUI:Create("SimpleGroup")
+        anchorRow:SetFullWidth(true)
+        anchorRow:SetLayout("Flow")
+
+        local anchorBox = AceGUI:Create("EditBox")
+        if anchorBox.editbox.Instructions then anchorBox.editbox.Instructions:Hide() end
+        anchorBox:SetLabel("Anchor to Frame")
+        local frameAnchorText = currentAnchor
+        if frameAnchorText == "UIParent" or isCursorAnchor or currentAnchorGroupId then frameAnchorText = "" end
+        if isPanel and frameAnchorText == panelContainerFrame then frameAnchorText = "" end
+        anchorBox:SetText(frameAnchorText)
+        anchorBox:SetRelativeWidth(0.68)
+        anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
+            local wasAnchored = group.anchor.relativeTo and group.anchor.relativeTo ~= defaultFrame
+            if text == "" then
+                CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, wasAnchored)
+            else
+                local target = _G[text]
+                if not target or type(target) ~= "table" or not target.GetObjectType then
+                    CooldownCompanion:Print("Frame not found: " .. text)
+                    widget:SetText(frameAnchorText)
+                    return
+                end
+                CooldownCompanion:SetGroupAnchor(CS.selectedGroup, text)
+            end
             CooldownCompanion:RefreshConfigPanel()
+        end)
+        anchorRow:AddChild(anchorBox)
+
+        local pickBtn = AceGUI:Create("Button")
+        pickBtn:SetText("Pick")
+        pickBtn:SetRelativeWidth(0.24)
+        pickBtn:SetCallback("OnClick", function()
+            local grp = CS.selectedGroup
+            CS.StartPickFrame(function(name)
+                if CS.configFrame then
+                    CS.configFrame.frame:Show()
+                end
+                if name then
+                    CooldownCompanion:SetGroupAnchor(grp, name)
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end, grp)
+        end)
+        anchorRow:AddChild(pickBtn)
+
+        -- (?) tooltip for anchor picking
+        CreateInfoButton(pickBtn.frame, pickBtn.frame, "LEFT", "RIGHT", 2, 0, {
+            "Pick Frame",
+            {"Hides the config panel and highlights frames under your cursor. Left-click a frame to anchor this group to it, or right-click to cancel.", 1, 1, 1, true},
+            " ",
+            {"You can also type a frame name directly into the editbox.", 1, 1, 1, true},
+            " ",
+            {"Middle-click the draggable header to toggle lock/unlock.", 1, 1, 1, true},
+        }, tabInfoButtons)
+
+        container:AddChild(anchorRow)
+        pickBtn.frame:SetScript("OnUpdate", function(self)
+            self:SetScript("OnUpdate", nil)
+            local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
+            if yOfs then
+                self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
+            end
+        end)
+    end
+
+    if isPanel and targetMode == "panel" then
+        local panelAnchorDrop = AceGUI:Create("Dropdown")
+        panelAnchorDrop:SetLabel("Anchor to Panel")
+        CooldownCompanion:PopulatePanelAnchorTargetDropdown(panelAnchorDrop, CS.selectedGroup)
+        panelAnchorDrop:SetFullWidth(true)
+        if currentAnchorGroupId then
+            panelAnchorDrop:SetValue(tostring(currentAnchorGroupId))
         else
-            widget:SetValue(nil)
+            panelAnchorDrop:SetValue(nil)
         end
-    end)
-    container:AddChild(panelAnchorDrop)
+        panelAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            if not val or val == "" then return end
+            local targetGroupId = tonumber(val)
+            if not targetGroupId then return end
+            local targetFrameName = "CooldownCompanionGroup" .. targetGroupId
+            if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, targetFrameName) then
+                CooldownCompanion:RefreshConfigPanel()
+            else
+                widget:SetValue(nil)
+            end
+        end)
+        container:AddChild(panelAnchorDrop)
+    end
 
     -- Anchor Point / Relative Point dropdowns
     local function refreshGroupAnchor()
@@ -1252,7 +1263,7 @@ local function BuildLayoutTab(container)
         end
     end
 
-    AddAnchorDropdown(container, group.anchor, "point", targetMode == "cursor" and "BOTTOMLEFT" or "CENTER", refreshGroupAnchor, "Anchor Point")
+    AddAnchorDropdown(container, group.anchor, "point", targetMode == "cursor" and "BOTTOMLEFT" or "CENTER", refreshGroupAnchor, targetMode == "cursor" and "Panel Point" or "Anchor Point")
     if targetMode == "cursor" then
         group.anchor.relativePoint = "CENTER"
     else

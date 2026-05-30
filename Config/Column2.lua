@@ -208,7 +208,10 @@ local function ConfigureCursorAnchorBadge(header, panel, rightOffset)
     badge:ClearAllPoints()
     badge:SetPoint("LEFT", header.label, "CENTER", rightOffset, 0)
 
-    if CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel) then
+    if panel
+        and panel.parentContainerId
+        and CooldownCompanion.IsGroupCursorAnchored
+        and CooldownCompanion:IsGroupCursorAnchored(panel) then
         badge:SetAtlas(CURSOR_PANEL_HEADER_BADGE_ATLAS, false)
         if badge.SetDesaturated then
             badge:SetDesaturated(false)
