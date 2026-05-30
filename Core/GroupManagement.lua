@@ -233,6 +233,10 @@ local function SyncGroupAnchorFromTexturePanelSettings(self, group)
         return
     end
 
+    if self.IsCursorAnchor and self:IsCursorAnchor(group.anchor) then
+        return
+    end
+
     group.anchor = group.anchor or {}
 
     local point = settings.point or group.anchor.point or "CENTER"

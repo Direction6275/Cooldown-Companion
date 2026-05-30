@@ -2235,6 +2235,9 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         self:SetGroupDragControlsShown(frame, false)
         self:UpdateGroupClickthrough(groupId)
         self:RefreshCursorAnchorTicker()
+        if self.EvaluateBarsAndFramesRuntime then
+            self:EvaluateBarsAndFramesRuntime("cursor-anchor-changed")
+        end
         return true
     end
 
