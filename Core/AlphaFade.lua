@@ -220,6 +220,16 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
         self.alphaState[groupId] = state
     end
 
+    local cursorPreviewActive = self.IsCursorAnchorLayoutPreviewGroupActive
+        and self:IsCursorAnchorLayoutPreviewGroupActive(groupId)
+    if cursorPreviewActive then
+        locked = false
+    elseif not locked
+        and self.IsGroupCursorAnchored
+        and self:IsGroupCursorAnchored(group) then
+        locked = true
+    end
+
     -- Force 100% alpha while group is unlocked for easier positioning
     if not locked then
         frame._naturalAlpha = nil

@@ -270,9 +270,25 @@ end
 -- Helper: Check if frame name belongs to this addon (should be excluded)
 ------------------------------------------------------------------------
 local function GetPickFrameAnchorOptions()
+    if pickFrameOptions then
+        local options = {}
+        for key, value in pairs(pickFrameOptions) do
+            options[key] = value
+        end
+        if pickFrameSourceGroupId then
+            options.sourceGroupId = options.sourceGroupId or pickFrameSourceGroupId
+            options.sourceKind = options.sourceKind or "group"
+        end
+        return options
+    end
+    if pickFrameSourceGroupId
+        and CooldownCompanion.GetGroupAnchorValidationOptions then
+        return CooldownCompanion:GetGroupAnchorValidationOptions(pickFrameSourceGroupId)
+    end
     return {
-        domain = pickFrameOptions and pickFrameOptions.domain or (pickFrameSourceGroupId and "panel" or "external"),
+        domain = pickFrameSourceGroupId and "panel" or "external",
         sourceGroupId = pickFrameSourceGroupId,
+        sourceKind = pickFrameSourceGroupId and "group" or nil,
     }
 end
 

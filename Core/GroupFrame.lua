@@ -252,11 +252,23 @@ local function ResolveSafeAnchorTarget(self, sourceId, sourceKind, relativeTo)
     if relativeTo == CURSOR_ANCHOR_TARGET then
         return nil, "cursor"
     end
-    local domain = sourceKind == "container" and "container" or "panel"
-    local ok, reason = self:ValidateAddonFrameAnchorTarget(relativeTo, {
-        domain = domain,
-        sourceGroupId = sourceKind == "group" and sourceId or nil,
-    })
+    local validationOptions
+    if sourceKind == "container" then
+        validationOptions = {
+            domain = "container",
+            sourceGroupId = sourceId,
+            sourceKind = "container",
+        }
+    elseif self.GetGroupAnchorValidationOptions then
+        validationOptions = self:GetGroupAnchorValidationOptions(sourceId)
+    else
+        validationOptions = {
+            domain = "panel",
+            sourceGroupId = sourceId,
+            sourceKind = "group",
+        }
+    end
+    local ok, reason = self:ValidateAddonFrameAnchorTarget(relativeTo, validationOptions)
     if not ok then
         return nil, reason
     end
@@ -2280,10 +2292,13 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         return true
     end
 
-    local validationOptions = {
-        domain = "panel",
-        sourceGroupId = groupId,
-    }
+    local validationOptions = self.GetGroupAnchorValidationOptions
+        and self:GetGroupAnchorValidationOptions(groupId)
+        or {
+            domain = "panel",
+            sourceGroupId = groupId,
+            sourceKind = "group",
+        }
     local targetOk = self:ValidateAddonFrameAnchorTarget(targetFrameName, validationOptions)
     if not targetOk then
         self:Print(self:GetInvalidAnchorTargetReason(targetFrameName, validationOptions))

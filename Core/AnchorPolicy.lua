@@ -394,6 +394,19 @@ function CooldownCompanion:CanGroupUseCursorAnchor(groupOrId)
     return group and group.parentContainerId ~= nil or false
 end
 
+function CooldownCompanion:GetGroupAnchorValidationDomain(groupOrId)
+    local group = GetGroup(self, groupOrId)
+    return group and group.parentContainerId and "panel" or "external"
+end
+
+function CooldownCompanion:GetGroupAnchorValidationOptions(groupId)
+    return {
+        domain = self:GetGroupAnchorValidationDomain(groupId),
+        sourceGroupId = groupId,
+        sourceKind = "group",
+    }
+end
+
 function CooldownCompanion:CanGroupBePanelAnchorTarget(targetGroupId, sourceGroupId)
     local profile = GetProfile(self)
     local group = GetGroup(self, targetGroupId)
@@ -445,6 +458,8 @@ end
 
 function CooldownCompanion:ValidateAddonFrameAnchorTarget(relativeTo, options)
     options = options or {}
+    local sourceId = options.sourceId or options.sourceGroupId
+    local sourceKind = options.sourceKind or "group"
     if relativeTo == nil or relativeTo == "" or relativeTo == "UIParent" then
         return true, "ui-parent"
     end
@@ -459,13 +474,18 @@ function CooldownCompanion:ValidateAddonFrameAnchorTarget(relativeTo, options)
 
     if kind == "group" then
         if PANEL_ANCHOR_DOMAINS[options.domain] then
-            local ok, reason = self:CanGroupBePanelAnchorTarget(id, options.sourceGroupId)
+            local ok, reason = self:CanGroupBePanelAnchorTarget(id, sourceId)
             if not ok then return false, reason, kind, id end
             return true, "ok", kind, id
         end
 
         local ok, reason = self:CanGroupBeExternalAnchorTarget(id)
         if not ok then return false, reason, kind, id end
+        if sourceId
+            and self.WouldCreateCircularAnchor
+            and self:WouldCreateCircularAnchor(sourceId, id, "group", sourceKind) then
+            return false, "circular", kind, id
+        end
         return true, "ok", kind, id
     end
 
@@ -473,9 +493,9 @@ function CooldownCompanion:ValidateAddonFrameAnchorTarget(relativeTo, options)
         if AnchorTargetsCursorRoot(GetProfile(self), relativeTo) then
             return false, "cursor-root-target", kind, id
         end
-        if options.sourceGroupId
+        if sourceId
             and self.WouldCreateCircularAnchor
-            and self:WouldCreateCircularAnchor(options.sourceGroupId, id, "container") then
+            and self:WouldCreateCircularAnchor(sourceId, id, "container", sourceKind) then
             return false, "circular", kind, id
         end
         return true, "ok", kind, id
