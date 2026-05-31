@@ -400,6 +400,10 @@ function CooldownCompanion:InitAlphaUpdateFrame()
     end
 
     local function GroupNeedsAlphaUpdate(group, groupId)
+        if self.ShouldInheritPanelAnchorAlpha
+            and self:ShouldInheritPanelAnchorAlpha(groupId) then
+            return false
+        end
         if ST.IsGroupConfigSelected(groupId) then return true end
         return ConfigNeedsAlphaUpdate(group, groupId)
     end

@@ -206,6 +206,9 @@ function CooldownCompanion:RunAllMigrations()
     if self.SanitizeCursorAnchorPolicy and not self._deferCursorAnchorPolicySanitizer then
         self:SanitizeCursorAnchorPolicy(self.db and self.db.profile)
     end
+    if self.NormalizePanelAlphaInheritance then
+        self:NormalizePanelAlphaInheritance(self.db and self.db.profile)
+    end
     return true
 end
 

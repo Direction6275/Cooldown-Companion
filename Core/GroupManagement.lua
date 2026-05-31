@@ -869,6 +869,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         compactLayout = false,
         maxVisibleButtons = 0,
         compactGrowthDirection = "center",
+        inheritPanelAlpha = true,
         -- Alpha fade defaults (panels own their own alpha)
         baselineAlpha = 1,
         fadeDelay = 1,
