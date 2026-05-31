@@ -1585,9 +1585,9 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
         if accumulator < SYNC_INTERVAL then return end
         accumulator = 0
         if frame.anchoredToParent then
-            -- Skip sync if alpha system is active or group is unlocked
+            -- Skip sync if this panel owns alpha locally or the group is unlocked.
             local locked, bAlpha = GetContainerState(frame.groupId)
-            if bAlpha < 1 or not locked then return end
+            if (bAlpha < 1 and not inheritsPanelAlpha) or not locked then return end
             -- Read parent's natural alpha to avoid config override cascade
             local alpha = frame.anchoredToParent._naturalAlpha or frame.anchoredToParent:GetEffectiveAlpha()
             -- Config-selected: store natural alpha for further downstream chains, force own frame to full

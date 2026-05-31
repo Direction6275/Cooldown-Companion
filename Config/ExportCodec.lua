@@ -506,6 +506,12 @@ local function CompactPanel(group, styleDefaults, panelContainerRef, formatVersi
             if compactAnchor then
                 compact.anchor = compactAnchor
             end
+        elseif key == "inheritPanelAlpha"
+            and value == true
+            and panelContainerRef ~= nil
+            and IsPanelAnchor(group.anchor)
+            and HasActivePanelAlphaSettings(group) then
+            compact.inheritPanelAlpha = true
         elseif panelDefaults[key] ~= nil then
             if not DeepEqual(value, panelDefaults[key]) then
                 compact[key] = CopyValue(value)
