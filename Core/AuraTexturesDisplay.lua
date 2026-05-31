@@ -1284,7 +1284,12 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         if alphaModuleId then
             self:UnregisterModuleAlpha(alphaModuleId, true)
         end
-        StartStandalonePanelAlphaSync(host, panelAlphaTarget, visibilityAlpha)
+        if visibilityState.bypassModuleAlpha then
+            StopStandalonePanelAlphaSync(host)
+            host:SetAlpha(layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1)
+        else
+            StartStandalonePanelAlphaSync(host, panelAlphaTarget, visibilityAlpha)
+        end
     elseif alphaModuleId then
         StopStandalonePanelAlphaSync(host)
         if visibilityState.bypassModuleAlpha then
