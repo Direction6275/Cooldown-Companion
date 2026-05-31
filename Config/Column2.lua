@@ -132,9 +132,7 @@ local function BuildPanelHeaderText(panel, panelId, buttonCount, countColor)
         panelName = panelId and ("Panel " .. tostring(panelId)) or "Panel"
     end
 
-    return "|A:" .. GetPanelTypeBadgeAtlas(panel and panel.displayMode) .. ":" ..
-        tostring(ROW_BADGE_SIZE) .. ":" .. tostring(ROW_BADGE_SIZE) .. "|a " ..
-        panelName .. " |cff" .. (countColor or "666666") .. "(" ..
+    return panelName .. " |cff" .. (countColor or "666666") .. "(" ..
         tostring(buttonCount or 0) .. ")|r"
 end
 
@@ -260,19 +258,6 @@ local function ConfigureCursorAnchorBadge(header, panel)
     end
 
     badge:Hide()
-end
-
-local function ConfigureInlinePanelTypeBadgeTarget(header, displayMode, textWidth)
-    if header._cdcModeBadge then
-        header._cdcModeBadge:Hide()
-    end
-
-    local tooltipTarget = EnsurePanelTypeTooltipTarget(header)
-    tooltipTarget._cdcDisplayMode = displayMode
-    tooltipTarget:ClearAllPoints()
-    local badgeCenterOffset = -(textWidth / 2) + (ROW_BADGE_SIZE / 2)
-    tooltipTarget:SetPoint("CENTER", header.label, "CENTER", badgeCenterOffset, 0)
-    tooltipTarget:Show()
 end
 
 local function ConfigurePanelTypeBadge(header, displayMode, textWidth)
@@ -1475,7 +1460,7 @@ local function RefreshColumn2()
             header:SetJustifyH("CENTER")
             ApplyConfigTextRow(header, "CENTER")
             local textW = header.label:GetStringWidth()
-            ConfigureInlinePanelTypeBadgeTarget(header, panel.displayMode, textW)
+            ConfigurePanelTypeBadge(header, panel.displayMode, textW)
 
             -- Disabled badge (shown when panel is individually disabled)
             local disabledBadge = header.frame._cdcHeaderDisabledBadge
@@ -2006,9 +1991,9 @@ local function RefreshColumn2()
                 header:SetFontObject(GameFontHighlight)
                 header:SetJustifyH("CENTER")
                 ApplyConfigTextRow(header, "CENTER")
-                -- Keep the panel-type badge, title, and entry count centered as one string.
+                -- Draw the panel-type badge separately so shared atlases can use mode-specific tint.
                 local textW = header.label:GetStringWidth()
-                ConfigureInlinePanelTypeBadgeTarget(header, panel.displayMode, textW)
+                ConfigurePanelTypeBadge(header, panel.displayMode, textW)
                 header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
                 local rightOffset = (textW / 2) + 4
