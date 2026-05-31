@@ -192,6 +192,19 @@ local function SyncTexturePanelPositionFromGroupFrame(self, groupId, group)
     local anchor = type(group.anchor) == "table" and group.anchor or nil
     local point = (anchor and anchor.point) or "CENTER"
     local relativePoint = (anchor and anchor.relativePoint) or "CENTER"
+    local relativeTo = anchor and anchor.relativeTo or nil
+    if type(relativeTo) == "string" and relativeTo:match("^CooldownCompanionGroup%d+$") then
+        local options = self.GetGroupAnchorValidationOptions and self:GetGroupAnchorValidationOptions(groupId) or nil
+        local ok = not self.ValidateAddonFrameAnchorTarget or self:ValidateAddonFrameAnchorTarget(relativeTo, options)
+        if ok then
+            settings.point = point
+            settings.relativePoint = relativePoint
+            settings.relativeTo = relativeTo
+            settings.x = RoundAnchorOffset(tonumber(anchor and anchor.x) or 0)
+            settings.y = RoundAnchorOffset(tonumber(anchor and anchor.y) or 0)
+            return
+        end
+    end
 
     if frame and frame.GetCenter then
         local cx, cy = frame:GetCenter()
@@ -223,8 +236,8 @@ local function SyncTexturePanelPositionFromGroupFrame(self, groupId, group)
     settings.y = tonumber(anchor and anchor.y) or 0
 end
 
-local function SyncGroupAnchorFromTexturePanelSettings(self, group)
-    if not (self and type(group) == "table") then
+local function SyncGroupAnchorFromTexturePanelSettings(self, groupId, group)
+    if not (self and groupId and type(group) == "table") then
         return
     end
 
@@ -246,6 +259,21 @@ local function SyncGroupAnchorFromTexturePanelSettings(self, group)
 
     local point = settings.point or group.anchor.point or "CENTER"
     local relativePoint = settings.relativePoint or group.anchor.relativePoint or "CENTER"
+    local settingsRelativeTo = type(settings.relativeTo) == "string" and settings.relativeTo or nil
+    if settingsRelativeTo and settingsRelativeTo:match("^CooldownCompanionGroup%d+$") then
+        local relFrame = _G[settingsRelativeTo]
+        local options = self.GetGroupAnchorValidationOptions and self:GetGroupAnchorValidationOptions(groupId) or nil
+        local ok = not self.ValidateAddonFrameAnchorTarget or self:ValidateAddonFrameAnchorTarget(settingsRelativeTo, options)
+        if ok and relFrame and relFrame.GetCenter and relFrame.GetSize then
+            group.anchor.point = point
+            group.anchor.relativeTo = settingsRelativeTo
+            group.anchor.relativePoint = relativePoint
+            group.anchor.x = RoundAnchorOffset(tonumber(settings.x) or 0)
+            group.anchor.y = RoundAnchorOffset(tonumber(settings.y) or 0)
+            return
+        end
+    end
+
     local relativeTo = group.anchor.relativeTo or "UIParent"
     local relFrame = nil
 
@@ -765,6 +793,72 @@ function CooldownCompanion:DeleteContainer(containerId)
     db.groupContainers[containerId] = nil
 end
 
+local function GetStandalonePanelAnchorSettings(panel)
+    if not CooldownCompanion.GetStandaloneTextureAnchorSettings then
+        return nil
+    end
+    return CooldownCompanion:GetStandaloneTextureAnchorSettings(panel)
+end
+
+local function GetStandalonePanelAnchorTargetId(panel)
+    local settings = GetStandalonePanelAnchorSettings(panel)
+    local relativeTo = type(settings) == "table" and settings.relativeTo or nil
+    return type(relativeTo) == "string" and tonumber(relativeTo:match("^CooldownCompanionGroup(%d+)$")) or nil
+end
+
+local function GetStandalonePanelAnchorTarget(panel)
+    local settings = GetStandalonePanelAnchorSettings(panel)
+    local relativeTo = type(settings) == "table" and settings.relativeTo or nil
+    return settings, type(relativeTo) == "string" and relativeTo or nil
+end
+
+local function ResetStandalonePanelAnchor(panel)
+    local settings = GetStandalonePanelAnchorSettings(panel)
+    if type(settings) ~= "table" then
+        return
+    end
+    settings.point = "CENTER"
+    settings.relativeTo = "UIParent"
+    settings.relativePoint = "CENTER"
+    settings.x = 0
+    settings.y = 0
+end
+
+local function RemapDuplicatedStandalonePanelAnchor(panel, groupIdMap)
+    local settings, relativeTo = GetStandalonePanelAnchorTarget(panel)
+    if not settings or not relativeTo or relativeTo == "UIParent" then
+        return
+    end
+
+    local targetId = GetStandalonePanelAnchorTargetId(panel)
+    local newTargetId = targetId and groupIdMap[targetId] or nil
+    if newTargetId then
+        settings.relativeTo = "CooldownCompanionGroup" .. tostring(newTargetId)
+    else
+        ResetStandalonePanelAnchor(panel)
+    end
+end
+
+local function ResetCopiedStandalonePanelAnchor(panel, groups, sourceGroupId, sourceContainerId, targetContainerId)
+    local settings, relativeTo = GetStandalonePanelAnchorTarget(panel)
+    if not settings or not relativeTo or relativeTo == "UIParent" then
+        return
+    end
+
+    local targetId = GetStandalonePanelAnchorTargetId(panel)
+    if not targetId then
+        ResetStandalonePanelAnchor(panel)
+        return
+    end
+
+    local targetGroup = groups and groups[targetId] or nil
+    if targetId == sourceGroupId
+        or not targetGroup
+        or targetGroup.parentContainerId ~= targetContainerId then
+        ResetStandalonePanelAnchor(panel)
+    end
+end
+
 function CooldownCompanion:DuplicateContainer(containerId)
     local db = self.db.profile
     local sourceContainer = db.groupContainers[containerId]
@@ -797,6 +891,7 @@ function CooldownCompanion:DuplicateContainer(containerId)
 
     -- Deep copy all child panels, re-anchoring to new container
     local containerFrameName = "CooldownCompanionContainer" .. newContainerId
+    local groupIdMap = {}
     for _, groupId in ipairs(sourcePanelIds) do
         local group = db.groups[groupId]
         if group then
@@ -814,8 +909,13 @@ function CooldownCompanion:DuplicateContainer(containerId)
             }
 
             db.groups[newGroupId] = newPanel
+            groupIdMap[groupId] = newGroupId
             self:CreateGroupFrame(newGroupId)
         end
+    end
+
+    for _, newGroupId in pairs(groupIdMap) do
+        RemapDuplicatedStandalonePanelAnchor(db.groups[newGroupId], groupIdMap)
     end
 
     -- Create container frame (Phase 3 — safe noop if method doesn't exist yet)
@@ -950,6 +1050,7 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
     local newPanel = CopyTable(sourcePanel)
     newPanel.name = sourcePanel.name .. " (Copy)"
     newPanel.order = self:GetPanelCount(containerId) + 1
+    ResetCopiedStandalonePanelAnchor(newPanel, db.groups, groupId, containerId, containerId)
 
     db.groups[newGroupId] = newPanel
     self:CreateGroupFrame(newGroupId)
@@ -977,6 +1078,7 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
         x = 0,
         y = 0,
     }
+    ResetCopiedStandalonePanelAnchor(group, db.groups, groupId, sourceContainerId, targetContainerId)
 
     -- Put at end of target's panel list (GetPanelCount already sees the moved panel)
     group.order = self:GetPanelCount(targetContainerId)
@@ -1023,7 +1125,7 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     if (oldMode == "textures" or oldMode == "trigger") and newMode ~= oldMode then
         -- Leaving texture mode should carry the standalone texture position
         -- back into the normal panel anchor so the panel does not jump back.
-        SyncGroupAnchorFromTexturePanelSettings(self, group)
+        SyncGroupAnchorFromTexturePanelSettings(self, groupId, group)
     end
 
     group.displayMode = newMode
@@ -1633,6 +1735,7 @@ function CooldownCompanion:CopyPanelToContainer(sourceGroupId, targetContainerId
         x = 0,
         y = 0,
     }
+    ResetCopiedStandalonePanelAnchor(newPanel, db.groups, sourceGroupId, sourcePanel.parentContainerId, targetContainerId)
 
     db.groups[newGroupId] = newPanel
     self:CreateGroupFrame(newGroupId)
@@ -1670,6 +1773,7 @@ function CooldownCompanion:CopyPanelAsNewGroup(sourceGroupId, sourceName)
         x = 0,
         y = 0,
     }
+    ResetCopiedStandalonePanelAnchor(newPanel, db.groups, sourceGroupId, sourcePanel.parentContainerId, containerId)
 
     db.groups[newGroupId] = newPanel
     self:CreateGroupFrame(newGroupId)
