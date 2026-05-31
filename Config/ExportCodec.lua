@@ -54,6 +54,7 @@ local PANEL_DEFAULTS = {
     compactLayout = false,
     maxVisibleButtons = 0,
     compactGrowthDirection = "center",
+    inheritPanelAlpha = true,
     baselineAlpha = 1,
     forceAlphaTargetEnemyOnly = false,
     forceAlphaFocusExists = false,
@@ -90,6 +91,28 @@ local CONTAINER_DEFAULT_ANCHOR = {
     x = 0,
     y = 0,
 }
+
+local function IsPanelAnchor(anchor)
+    local relativeTo = type(anchor) == "table" and anchor.relativeTo or anchor
+    return type(relativeTo) == "string"
+        and relativeTo:match("^CooldownCompanionGroup%d+$") ~= nil
+        or false
+end
+
+local function HasActivePanelAlphaSettings(group)
+    return (group.baselineAlpha or 1) < 1
+        or group.forceAlphaInCombat == true
+        or group.forceAlphaOutOfCombat == true
+        or group.forceAlphaRegularMounted == true
+        or group.forceAlphaDragonriding == true
+        or group.forceAlphaTargetExists == true
+        or group.forceAlphaFocusExists == true
+        or group.forceAlphaMouseover == true
+        or group.forceHideInCombat == true
+        or group.forceHideOutOfCombat == true
+        or group.forceHideRegularMounted == true
+        or group.forceHideDragonriding == true
+end
 
 local PROFILE_DEFAULT_KEYS = {
     minimap = "minimap",
@@ -165,6 +188,7 @@ local COMPACT_ENTITY_DEFAULTS = {
             compactLayout = false,
             maxVisibleButtons = 0,
             compactGrowthDirection = "center",
+            inheritPanelAlpha = true,
             baselineAlpha = 1,
             forceAlphaTargetEnemyOnly = false,
             forceAlphaFocusExists = false,
@@ -482,6 +506,12 @@ local function CompactPanel(group, styleDefaults, panelContainerRef, formatVersi
             if compactAnchor then
                 compact.anchor = compactAnchor
             end
+        elseif key == "inheritPanelAlpha"
+            and value == true
+            and panelContainerRef ~= nil
+            and IsPanelAnchor(group.anchor)
+            and HasActivePanelAlphaSettings(group) then
+            compact.inheritPanelAlpha = true
         elseif panelDefaults[key] ~= nil then
             if not DeepEqual(value, panelDefaults[key]) then
                 compact[key] = CopyValue(value)
@@ -500,6 +530,10 @@ local function RehydratePanel(group, styleDefaults, panelContainerRef, formatVer
 
     local panelDefaults = GetPanelDefaults(formatVersion)
     group.style = MergeWithDefaults(group.style, styleDefaults)
+    local preserveCustomPanelAlpha = group.inheritPanelAlpha == nil
+        and panelContainerRef ~= nil
+        and IsPanelAnchor(group.anchor)
+        and HasActivePanelAlphaSettings(group)
 
     if group.loadConditions ~= nil then
         group.loadConditions = RehydrateLoadConditions(group.loadConditions, formatVersion)
@@ -517,6 +551,9 @@ local function RehydratePanel(group, styleDefaults, panelContainerRef, formatVer
         if group[key] == nil then
             group[key] = CopyValue(defaultValue)
         end
+    end
+    if preserveCustomPanelAlpha then
+        group.inheritPanelAlpha = false
     end
 end
 

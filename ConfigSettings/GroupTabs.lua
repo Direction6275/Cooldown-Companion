@@ -1132,6 +1132,13 @@ local function BuildLayoutTab(container)
     elseif CooldownCompanion.ClearCursorAnchorLayoutPreview then
         CooldownCompanion:ClearCursorAnchorLayoutPreview()
     end
+    local panelAlphaInherited = false
+    if isPanel
+        and targetMode == "panel"
+        and currentAnchorGroupId
+        and CooldownCompanion.ShouldInheritPanelAnchorAlpha then
+        panelAlphaInherited = CooldownCompanion:ShouldInheritPanelAnchorAlpha(CS.selectedGroup)
+    end
 
     local anchorTargetDrop = AceGUI:Create("Dropdown")
     anchorTargetDrop:SetLabel("Anchor Target")
@@ -1265,6 +1272,29 @@ local function BuildLayoutTab(container)
             end
         end)
         container:AddChild(panelAnchorDrop)
+
+        local panelAlphaDrop = AceGUI:Create("Dropdown")
+        panelAlphaDrop:SetLabel("Panel Alpha")
+        panelAlphaDrop:SetList({
+            inherit = "Inherit Target Panel Alpha",
+            custom = "Custom Alpha",
+        }, { "inherit", "custom" })
+        panelAlphaDrop:SetValue(group.inheritPanelAlpha == false and "custom" or "inherit")
+        panelAlphaDrop:SetFullWidth(true)
+        panelAlphaDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            if val == "custom" then
+                group.inheritPanelAlpha = false
+            else
+                group.inheritPanelAlpha = true
+            end
+
+            local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
+            if frame then
+                CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(panelAlphaDrop)
     end
 
     if targetMode == "cursor" then
@@ -1445,6 +1475,8 @@ local function BuildLayoutTab(container)
         CooldownCompanion:RefreshConfigPanel()
     end, "layout_alpha", {
         isGlobal = group.isGlobal,
+        disabled = panelAlphaInherited,
+        disabledText = "This panel inherits alpha from the parent panel. Change the parent panel's Alpha settings to affect it.",
         onBaselineChanged = function(val)
             local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
             if frame and frame:IsShown() then

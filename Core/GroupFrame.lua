@@ -81,6 +81,37 @@ local function GetContainerState(groupId)
     return group.locked or false, group.baselineAlpha or 1
 end
 
+local function ShouldSyncAnchorAlpha(self, groupId)
+    if self.IsPanelAnchoredToPanel
+        and self:IsPanelAnchoredToPanel(groupId) then
+        if self.ShouldInheritPanelAnchorAlpha then
+            return self:ShouldInheritPanelAnchorAlpha(groupId)
+        end
+        return true
+    end
+    return true
+end
+
+local function ApplyGroupOwnAlpha(frame)
+    if not frame then return end
+
+    local locked, baseAlpha = GetContainerState(frame.groupId)
+    local alpha = locked and (baseAlpha or 1) or 1
+    local state = CooldownCompanion.alphaState and CooldownCompanion.alphaState[frame.groupId]
+    if locked and state and state.currentAlpha ~= nil then
+        alpha = state.currentAlpha
+    end
+
+    if ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(frame.groupId) then
+        frame._naturalAlpha = alpha
+        frame:SetAlpha(1)
+        return
+    end
+
+    frame._naturalAlpha = nil
+    frame:SetAlpha(alpha)
+end
+
 local function GetContainerPreviewSelectionState(groupId)
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local group = profile and profile.groups and profile.groups[groupId]
@@ -1514,14 +1545,30 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
 end
 
 function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
+    if not ShouldSyncAnchorAlpha(self, frame.groupId) then
+        if frame.alphaSyncFrame then
+            frame.alphaSyncFrame:SetScript("OnUpdate", nil)
+        end
+        ApplyGroupOwnAlpha(frame)
+        return
+    end
+
     -- Create a hidden frame to handle OnUpdate if needed
     if not frame.alphaSyncFrame then
         frame.alphaSyncFrame = CreateFrame("Frame", nil, frame)
     end
 
-    -- If this group has baseline alpha < 1, the alpha fade system takes priority
+    local inheritsPanelAlpha = self.ShouldInheritPanelAnchorAlpha
+        and self:ShouldInheritPanelAnchorAlpha(frame.groupId)
+        or false
+    if inheritsPanelAlpha and self.alphaState then
+        self.alphaState[frame.groupId] = nil
+    end
+
+    -- If this group has baseline alpha < 1, the alpha fade system takes
+    -- priority unless panel alpha inheritance is explicitly active.
     local _, baseAlpha = GetContainerState(frame.groupId)
-    if baseAlpha < 1 then
+    if baseAlpha < 1 and not inheritsPanelAlpha then
         frame.alphaSyncFrame:SetScript("OnUpdate", nil)
         return
     end
@@ -1538,9 +1585,9 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
         if accumulator < SYNC_INTERVAL then return end
         accumulator = 0
         if frame.anchoredToParent then
-            -- Skip sync if alpha system is active or group is unlocked
+            -- Skip sync if this panel owns alpha locally or the group is unlocked.
             local locked, bAlpha = GetContainerState(frame.groupId)
-            if bAlpha < 1 or not locked then return end
+            if (bAlpha < 1 and not inheritsPanelAlpha) or not locked then return end
             -- Read parent's natural alpha to avoid config override cascade
             local alpha = frame.anchoredToParent._naturalAlpha or frame.anchoredToParent:GetEffectiveAlpha()
             -- Config-selected: store natural alpha for further downstream chains, force own frame to full
