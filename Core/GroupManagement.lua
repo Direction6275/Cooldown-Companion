@@ -767,17 +767,22 @@ function CooldownCompanion:CreateContainer(name)
     return containerId
 end
 
+local ResetStandalonePanelAnchorsTargeting
+
 function CooldownCompanion:DeleteContainer(containerId)
     local db = self.db.profile
     if not db.groupContainers[containerId] then return end
 
     -- Delete all child panels first
     local panelIds = {}
+    local deletedGroupIds = {}
     for groupId, group in pairs(db.groups) do
         if group.parentContainerId == containerId then
             panelIds[#panelIds + 1] = groupId
+            deletedGroupIds[groupId] = true
         end
     end
+    ResetStandalonePanelAnchorsTargeting(db.groups, deletedGroupIds)
     for _, groupId in ipairs(panelIds) do
         self:UnloadGroup(groupId)
         self:DiscardDormantFrame(groupId)
@@ -822,6 +827,21 @@ local function ResetStandalonePanelAnchor(panel)
     settings.relativePoint = "CENTER"
     settings.x = 0
     settings.y = 0
+end
+
+ResetStandalonePanelAnchorsTargeting = function(groups, deletedGroupIds)
+    if type(groups) ~= "table" or type(deletedGroupIds) ~= "table" then
+        return
+    end
+
+    for groupId, panel in pairs(groups) do
+        if not deletedGroupIds[groupId] then
+            local targetId = GetStandalonePanelAnchorTargetId(panel)
+            if targetId and deletedGroupIds[targetId] then
+                ResetStandalonePanelAnchor(panel)
+            end
+        end
+    end
 end
 
 local function RemapDuplicatedStandalonePanelAnchor(panel, groupIdMap)
@@ -1033,6 +1053,7 @@ function CooldownCompanion:DeletePanel(containerId, groupId)
     local group = db.groups[groupId]
     if not group or group.parentContainerId ~= containerId then return false end
 
+    ResetStandalonePanelAnchorsTargeting(db.groups, { [groupId] = true })
     self:UnloadGroup(groupId)
     self:DiscardDormantFrame(groupId)
     db.groups[groupId] = nil
@@ -1197,6 +1218,7 @@ function CooldownCompanion:DeleteGroup(id)
 
     local parentId = group.parentContainerId
 
+    ResetStandalonePanelAnchorsTargeting(self.db.profile.groups, { [id] = true })
     self:UnloadGroup(id)
     self:DiscardDormantFrame(id)
     self.db.profile.groups[id] = nil
