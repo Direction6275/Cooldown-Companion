@@ -311,7 +311,7 @@ CS.InitPendingStrataOrder = InitPendingStrataOrder
 local function ShowPopupAboveConfig(which, text_arg1, data)
     local dialog = StaticPopup_Show(which, text_arg1, nil, data)
     if dialog then
-        dialog:SetFrameStrata("FULLSCREEN_DIALOG")
+        dialog:SetFrameStrata("TOOLTIP")
         dialog:SetFrameLevel(200)
     end
     return dialog

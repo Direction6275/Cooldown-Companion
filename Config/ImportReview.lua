@@ -28,6 +28,7 @@ local IMPORT_TEXT_HEIGHT = 160
 local IMPORT_ACTION_HEIGHT = 30
 local IMPORT_WINDOW_WIDTH = 640
 local IMPORT_WINDOW_HEIGHT = 500
+local IMPORT_WINDOW_FRAME_STRATA = "TOOLTIP"
 local ACE_WINDOW_DEFAULT_MIN_WIDTH = 240
 local ACE_WINDOW_DEFAULT_MIN_HEIGHT = 240
 local IMPORT_WINDOW_MIN_WIDTH = 420
@@ -46,6 +47,10 @@ local IMPORT_MODE_LABELS = {
     restore = "Restore backup",
 }
 local IMPORT_MODE_ORDER = { "selected", "restore" }
+local IMPORT_MODE_OPTION_WIDTHS = {
+    selected = 190,
+    restore = 150,
+}
 
 if not AceGUI:GetLayout(IMPORT_LAYOUT) then
     local function LayoutImportBand(group, width, height)
@@ -158,6 +163,13 @@ local function BuildReview(kind, data, title, acceptText, summaryLines, extra)
         for key, value in pairs(extra) do review[key] = value end
     end
     return review
+end
+
+local function RaiseImportReviewWindow(widget)
+    local frame = widget and widget.frame
+    if frame and frame.SetFrameStrata then
+        frame:SetFrameStrata(IMPORT_WINDOW_FRAME_STRATA)
+    end
 end
 
 local function ShowPopupOverConfig(which, textArg1, data)
@@ -743,16 +755,24 @@ local function RenderModeControl(group, review, refresh)
         return
     end
 
-    local modeDrop = AceGUI:Create("Dropdown")
-    modeDrop:SetLabel("Import mode:")
-    modeDrop:SetList(IMPORT_MODE_LABELS, IMPORT_MODE_ORDER)
-    modeDrop:SetValue(review.mode or "restore")
-    modeDrop:SetWidth(260)
-    modeDrop:SetCallback("OnValueChanged", function(widget, event, value)
-        review.mode = value == "selected" and "selected" or "restore"
-        refresh()
-    end)
-    group:AddChild(modeDrop)
+    local currentMode = review.mode == "selected" and "selected" or "restore"
+    for _, mode in ipairs(IMPORT_MODE_ORDER) do
+        local optionMode = mode
+        local option = AceGUI:Create("CheckBox")
+        option:SetType("radio")
+        option:SetLabel(IMPORT_MODE_LABELS[optionMode])
+        option:SetValue(optionMode == currentMode)
+        option:SetWidth(IMPORT_MODE_OPTION_WIDTHS[optionMode] or 160)
+        option:SetCallback("OnValueChanged", function(widget, event, value)
+            if value ~= true then
+                widget:SetValue(true)
+                return
+            end
+            review.mode = optionMode
+            refresh()
+        end)
+        group:AddChild(option)
+    end
 end
 
 local function RenderPieceRows(group, review, refresh)
@@ -804,6 +824,7 @@ end
 local function ShowImportReviewWindow(context)
     if importReviewFrame then
         importReviewFrame:Show()
+        RaiseImportReviewWindow(importReviewFrame)
         return
     end
 
@@ -944,6 +965,7 @@ local function ShowImportReviewWindow(context)
         ReviewInput()
     end
 
+    RaiseImportReviewWindow(frame)
     inputBox:SetFocus()
 end
 
