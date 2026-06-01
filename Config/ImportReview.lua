@@ -47,6 +47,10 @@ local IMPORT_MODE_LABELS = {
     restore = "Restore backup",
 }
 local IMPORT_MODE_ORDER = { "selected", "restore" }
+local IMPORT_MODE_OPTION_WIDTHS = {
+    selected = 190,
+    restore = 150,
+}
 
 if not AceGUI:GetLayout(IMPORT_LAYOUT) then
     local function LayoutImportBand(group, width, height)
@@ -751,16 +755,24 @@ local function RenderModeControl(group, review, refresh)
         return
     end
 
-    local modeDrop = AceGUI:Create("Dropdown")
-    modeDrop:SetLabel("Import mode:")
-    modeDrop:SetList(IMPORT_MODE_LABELS, IMPORT_MODE_ORDER)
-    modeDrop:SetValue(review.mode or "restore")
-    modeDrop:SetWidth(260)
-    modeDrop:SetCallback("OnValueChanged", function(widget, event, value)
-        review.mode = value == "selected" and "selected" or "restore"
-        refresh()
-    end)
-    group:AddChild(modeDrop)
+    local currentMode = review.mode == "selected" and "selected" or "restore"
+    for _, mode in ipairs(IMPORT_MODE_ORDER) do
+        local optionMode = mode
+        local option = AceGUI:Create("CheckBox")
+        option:SetType("radio")
+        option:SetLabel(IMPORT_MODE_LABELS[optionMode])
+        option:SetValue(optionMode == currentMode)
+        option:SetWidth(IMPORT_MODE_OPTION_WIDTHS[optionMode] or 160)
+        option:SetCallback("OnValueChanged", function(widget, event, value)
+            if value ~= true then
+                widget:SetValue(true)
+                return
+            end
+            review.mode = optionMode
+            refresh()
+        end)
+        group:AddChild(option)
+    end
 end
 
 local function RenderPieceRows(group, review, refresh)
