@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.17",
         "1.16",
         "1.15",
         "1.14.3",
@@ -37,6 +38,26 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.17"] = {
+            markdown = [[
+## New Features
+
+- **Cursor-anchored panels:** Panels can now use the mouse cursor as an anchor target during gameplay.
+  - Cursor-anchored panels keep their normal cooldowns, glows, visibility rules, hide conditions, click behavior, and other panel settings while following the mouse.
+  - Resource bars, cast bar, and unit frames cannot anchor to the cursor-anchored panels.
+- **Panel Alpha controls:** Panels anchored to another panel can now inherit the target panel's alpha or use their own custom alpha settings.
+- **Texture and Trigger Panel anchoring:** Texture Panels and Trigger Panels can now anchor standalone displays to another panel or to a picked frame.
+
+## Polish | QoL
+
+- **Smoother panel movement:** Unlocked panels now use more consistent drag headers, coordinate readouts, help tooltips, reset controls, and one-pixel nudging across regular panels, textures, and trigger panels.
+
+## Bug Fixes
+
+- **Loaded-to-unloaded group dragging:** Dragging a loaded group over the Unloaded Groups section no longer causes a Lua error.
+- **Import review window layering:** Import review windows and confirmation popups now open above the main config panel, and import mode uses stable radio-style choices instead of a dropdown that could cover review text.
+]],
+        },
         ["1.16"] = {
             markdown = [[
 ## New Features
