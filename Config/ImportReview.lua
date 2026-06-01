@@ -28,6 +28,7 @@ local IMPORT_TEXT_HEIGHT = 160
 local IMPORT_ACTION_HEIGHT = 30
 local IMPORT_WINDOW_WIDTH = 640
 local IMPORT_WINDOW_HEIGHT = 500
+local IMPORT_WINDOW_FRAME_STRATA = "TOOLTIP"
 local ACE_WINDOW_DEFAULT_MIN_WIDTH = 240
 local ACE_WINDOW_DEFAULT_MIN_HEIGHT = 240
 local IMPORT_WINDOW_MIN_WIDTH = 420
@@ -158,6 +159,13 @@ local function BuildReview(kind, data, title, acceptText, summaryLines, extra)
         for key, value in pairs(extra) do review[key] = value end
     end
     return review
+end
+
+local function RaiseImportReviewWindow(widget)
+    local frame = widget and widget.frame
+    if frame and frame.SetFrameStrata then
+        frame:SetFrameStrata(IMPORT_WINDOW_FRAME_STRATA)
+    end
 end
 
 local function ShowPopupOverConfig(which, textArg1, data)
@@ -804,6 +812,7 @@ end
 local function ShowImportReviewWindow(context)
     if importReviewFrame then
         importReviewFrame:Show()
+        RaiseImportReviewWindow(importReviewFrame)
         return
     end
 
@@ -944,6 +953,7 @@ local function ShowImportReviewWindow(context)
         ReviewInput()
     end
 
+    RaiseImportReviewWindow(frame)
     inputBox:SetFocus()
 end
 
