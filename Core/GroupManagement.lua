@@ -85,6 +85,10 @@ local function IsAddonAnchorFrameName(frameName)
         or frameName == "CooldownCompanionCursor"
 end
 
+local function IsFrameLikeAnchorTarget(frame)
+    return type(frame) == "table" and type(frame.GetObjectType) == "function"
+end
+
 function CooldownCompanion:NormalizeContainerAnchor(anchor, resolveAddonFrames)
     local normalized = type(anchor) == "table" and anchor or {}
     local point = normalized.point or "CENTER"
@@ -193,7 +197,11 @@ local function SyncTexturePanelPositionFromGroupFrame(self, groupId, group)
     local point = (anchor and anchor.point) or "CENTER"
     local relativePoint = (anchor and anchor.relativePoint) or "CENTER"
     local relativeTo = anchor and anchor.relativeTo or nil
-    if type(relativeTo) == "string" and relativeTo:match("^CooldownCompanionGroup%d+$") then
+    local ownContainerFrame = group.parentContainerId and ("CooldownCompanionContainer" .. tostring(group.parentContainerId)) or nil
+    if type(relativeTo) == "string"
+        and relativeTo ~= "UIParent"
+        and relativeTo ~= ownContainerFrame
+        and not self:IsCursorAnchor(relativeTo) then
         local options = self.GetGroupAnchorValidationOptions and self:GetGroupAnchorValidationOptions(groupId) or nil
         local ok = not self.ValidateAddonFrameAnchorTarget or self:ValidateAddonFrameAnchorTarget(relativeTo, options)
         if ok then
@@ -260,11 +268,11 @@ local function SyncGroupAnchorFromTexturePanelSettings(self, groupId, group)
     local point = settings.point or group.anchor.point or "CENTER"
     local relativePoint = settings.relativePoint or group.anchor.relativePoint or "CENTER"
     local settingsRelativeTo = type(settings.relativeTo) == "string" and settings.relativeTo or nil
-    if settingsRelativeTo and settingsRelativeTo:match("^CooldownCompanionGroup%d+$") then
-        local relFrame = _G[settingsRelativeTo]
+    if settingsRelativeTo and settingsRelativeTo ~= "UIParent" then
+        local targetFrame = _G[settingsRelativeTo]
         local options = self.GetGroupAnchorValidationOptions and self:GetGroupAnchorValidationOptions(groupId) or nil
         local ok = not self.ValidateAddonFrameAnchorTarget or self:ValidateAddonFrameAnchorTarget(settingsRelativeTo, options)
-        if ok and relFrame and relFrame.GetCenter and relFrame.GetSize then
+        if ok and (targetFrame == nil or IsFrameLikeAnchorTarget(targetFrame)) then
             group.anchor.point = point
             group.anchor.relativeTo = settingsRelativeTo
             group.anchor.relativePoint = relativePoint
@@ -782,7 +790,7 @@ function CooldownCompanion:DeleteContainer(containerId)
             deletedGroupIds[groupId] = true
         end
     end
-    ResetStandalonePanelAnchorsTargeting(db.groups, deletedGroupIds)
+    ResetStandalonePanelAnchorsTargeting(db.groups, deletedGroupIds, { [containerId] = true })
     for _, groupId in ipairs(panelIds) do
         self:UnloadGroup(groupId)
         self:DiscardDormantFrame(groupId)
@@ -805,10 +813,26 @@ local function GetStandalonePanelAnchorSettings(panel)
     return CooldownCompanion:GetStandaloneTextureAnchorSettings(panel)
 end
 
-local function GetStandalonePanelAnchorTargetId(panel)
+local function ParseStandaloneAddonAnchorTarget(relativeTo)
+    if type(relativeTo) ~= "string" then
+        return nil
+    end
+    local groupId = relativeTo:match("^CooldownCompanionGroup(%d+)$")
+    if groupId then
+        return "group", tonumber(groupId)
+    end
+    local containerId = relativeTo:match("^CooldownCompanionContainer(%d+)$")
+    if containerId then
+        return "container", tonumber(containerId)
+    end
+    return nil
+end
+
+local function GetStandaloneAddonAnchorTarget(panel)
     local settings = GetStandalonePanelAnchorSettings(panel)
     local relativeTo = type(settings) == "table" and settings.relativeTo or nil
-    return type(relativeTo) == "string" and tonumber(relativeTo:match("^CooldownCompanionGroup(%d+)$")) or nil
+    local kind, id = ParseStandaloneAddonAnchorTarget(relativeTo)
+    return kind, id, relativeTo
 end
 
 local function GetStandalonePanelAnchorTarget(panel)
@@ -829,33 +853,49 @@ local function ResetStandalonePanelAnchor(panel)
     settings.y = 0
 end
 
-ResetStandalonePanelAnchorsTargeting = function(groups, deletedGroupIds)
-    if type(groups) ~= "table" or type(deletedGroupIds) ~= "table" then
+ResetStandalonePanelAnchorsTargeting = function(groups, deletedGroupIds, deletedContainerIds)
+    if type(groups) ~= "table" then
         return
     end
+    deletedGroupIds = type(deletedGroupIds) == "table" and deletedGroupIds or {}
+    deletedContainerIds = type(deletedContainerIds) == "table" and deletedContainerIds or {}
 
     for groupId, panel in pairs(groups) do
         if not deletedGroupIds[groupId] then
-            local targetId = GetStandalonePanelAnchorTargetId(panel)
-            if targetId and deletedGroupIds[targetId] then
+            local targetKind, targetId = GetStandaloneAddonAnchorTarget(panel)
+            if (targetKind == "group" and deletedGroupIds[targetId])
+                or (targetKind == "container" and deletedContainerIds[targetId]) then
                 ResetStandalonePanelAnchor(panel)
             end
         end
     end
 end
 
-local function RemapDuplicatedStandalonePanelAnchor(panel, groupIdMap)
+local function RemapDuplicatedStandalonePanelAnchor(panel, groupIdMap, containerIdMap)
     local settings, relativeTo = GetStandalonePanelAnchorTarget(panel)
     if not settings or not relativeTo or relativeTo == "UIParent" then
         return
     end
 
-    local targetId = GetStandalonePanelAnchorTargetId(panel)
-    local newTargetId = targetId and groupIdMap[targetId] or nil
-    if newTargetId then
-        settings.relativeTo = "CooldownCompanionGroup" .. tostring(newTargetId)
-    else
+    local targetKind, targetId = ParseStandaloneAddonAnchorTarget(relativeTo)
+    if targetKind == "group" then
+        local newTargetId = targetId and groupIdMap[targetId] or nil
+        if newTargetId then
+            settings.relativeTo = "CooldownCompanionGroup" .. tostring(newTargetId)
+        else
+            ResetStandalonePanelAnchor(panel)
+        end
+    elseif targetKind == "container" then
+        local newTargetId = targetId and containerIdMap and containerIdMap[targetId] or nil
+        if newTargetId then
+            settings.relativeTo = "CooldownCompanionContainer" .. tostring(newTargetId)
+        else
+            ResetStandalonePanelAnchor(panel)
+        end
+    elseif relativeTo:find("^CooldownCompanion") then
         ResetStandalonePanelAnchor(panel)
+    else
+        return
     end
 end
 
@@ -865,8 +905,22 @@ local function ResetCopiedStandalonePanelAnchor(panel, groups, sourceGroupId, so
         return
     end
 
-    local targetId = GetStandalonePanelAnchorTargetId(panel)
-    if not targetId then
+    local targetKind, targetId = ParseStandaloneAddonAnchorTarget(relativeTo)
+    if not targetKind then
+        if relativeTo:find("^CooldownCompanion") then
+            ResetStandalonePanelAnchor(panel)
+        end
+        return
+    end
+
+    if targetKind == "container" then
+        if targetId ~= targetContainerId then
+            ResetStandalonePanelAnchor(panel)
+        end
+        return
+    end
+
+    if targetKind ~= "group" then
         ResetStandalonePanelAnchor(panel)
         return
     end
@@ -934,8 +988,9 @@ function CooldownCompanion:DuplicateContainer(containerId)
         end
     end
 
+    local containerIdMap = { [containerId] = newContainerId }
     for _, newGroupId in pairs(groupIdMap) do
-        RemapDuplicatedStandalonePanelAnchor(db.groups[newGroupId], groupIdMap)
+        RemapDuplicatedStandalonePanelAnchor(db.groups[newGroupId], groupIdMap, containerIdMap)
     end
 
     -- Create container frame (Phase 3 — safe noop if method doesn't exist yet)

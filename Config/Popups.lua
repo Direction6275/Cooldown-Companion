@@ -875,23 +875,39 @@ end
 local function RemapImportedStandalonePanelAnchor(panel, newGroupId, importState)
     local settings = CooldownCompanion:GetStandaloneTextureAnchorSettings(panel)
     local relativeTo = type(settings) == "table" and settings.relativeTo or nil
-    local groupRef = type(relativeTo) == "string" and tonumber(relativeTo:match("^CooldownCompanionGroup(%d+)$")) or nil
     if not relativeTo or relativeTo == "UIParent" then
         return
     end
-    if not groupRef then
+    if type(relativeTo) ~= "string" then
         ResetImportedStandalonePanelAnchor(panel)
         return
     end
-
-    local targetFrameName = GetRemappedImportedGroupAnchorTarget(importState, groupRef, {
-        domain = "panel-import",
-        sourceGroupId = newGroupId,
-    })
-    if targetFrameName then
-        settings.relativeTo = targetFrameName
-    else
+    local groupRef = tonumber(relativeTo:match("^CooldownCompanionGroup(%d+)$"))
+    local containerRef = tonumber(relativeTo:match("^CooldownCompanionContainer(%d+)$"))
+    if groupRef then
+        local targetFrameName = GetRemappedImportedGroupAnchorTarget(importState, groupRef, {
+            domain = "panel-import",
+            sourceGroupId = newGroupId,
+        })
+        if targetFrameName then
+            settings.relativeTo = targetFrameName
+        else
+            ResetImportedStandalonePanelAnchor(panel)
+        end
+        return
+    end
+    if containerRef then
+        local targetContainerId = importState.containerIdMap[containerRef]
+        if targetContainerId then
+            settings.relativeTo = "CooldownCompanionContainer" .. tostring(targetContainerId)
+        else
+            ResetImportedStandalonePanelAnchor(panel)
+        end
+        return
+    end
+    if relativeTo:find("^CooldownCompanion") then
         ResetImportedStandalonePanelAnchor(panel)
+        return
     end
 end
 

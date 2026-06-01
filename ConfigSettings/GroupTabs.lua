@@ -985,6 +985,30 @@ local function BuildLayoutTab(container)
             group.inheritPanelAlpha = group.inheritPanelAlpha ~= false
             return true
         end
+        local function SetStandaloneFrameAnchorTarget(targetFrameName)
+            if type(targetFrameName) ~= "string" or targetFrameName == "" then
+                ResetStandalonePosition()
+                return true
+            end
+            local target = _G[targetFrameName]
+            if not target or type(target) ~= "table" or not target.GetObjectType then
+                CooldownCompanion:Print("Frame not found: " .. targetFrameName)
+                return false
+            end
+            local ok = true
+            local options = GetStandaloneAnchorValidationOptions()
+            if CooldownCompanion.ValidateAddonFrameAnchorTarget then
+                ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(targetFrameName, options)
+            end
+            if not ok then
+                if CooldownCompanion.PrintInvalidAnchorTargetReason then
+                    CooldownCompanion:PrintInvalidAnchorTargetReason(targetFrameName, options)
+                end
+                return false
+            end
+            ResetStandalonePosition(targetFrameName, "TOPLEFT", "BOTTOMLEFT", 0, -5)
+            return true
+        end
         local anchorKind, currentAnchorGroupId
         if CooldownCompanion.ParseAddonAnchorFrameName then
             anchorKind, currentAnchorGroupId = CooldownCompanion:ParseAddonAnchorFrameName(settings.relativeTo)
@@ -1007,8 +1031,12 @@ local function BuildLayoutTab(container)
             targetMode = "cursor"
         elseif currentAnchorIsPanel then
             targetMode = "panel"
+        elseif settings.relativeTo ~= "UIParent" then
+            targetMode = "frame"
         elseif storedTargetMode == "panel" and isPanel then
             targetMode = "panel"
+        elseif storedTargetMode == "frame" then
+            targetMode = "frame"
         else
             targetMode = "group"
         end
@@ -1037,14 +1065,16 @@ local function BuildLayoutTab(container)
             and {
                 group = "Group",
                 panel = "Panel",
+                frame = "Frame",
                 cursor = "Cursor",
             }
             or {
                 group = group.parentContainerId and "Group" or "Screen",
+                frame = "Frame",
             }
         local anchorTargetOrder = isPanel
-            and (canUseCursorAnchor and { "group", "panel", "cursor" } or { "group", "panel" })
-            or { "group" }
+            and (canUseCursorAnchor and { "group", "panel", "frame", "cursor" } or { "group", "panel", "frame" })
+            or { "group", "frame" }
         if not canUseCursorAnchor then
             anchorTargetList.cursor = nil
         end
@@ -1078,9 +1108,76 @@ local function BuildLayoutTab(container)
                 ResetStandalonePosition()
                 CS.layoutAnchorTargetMode[CS.selectedGroup] = "panel"
                 CooldownCompanion:RefreshConfigPanel()
+            elseif val == "frame" then
+                if isCursorAnchor and not CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, true) then
+                    widget:SetValue(targetMode)
+                    return
+                end
+                ResetStandalonePosition()
+                CS.layoutAnchorTargetMode[CS.selectedGroup] = "frame"
+                CooldownCompanion:RefreshConfigPanel()
             end
         end)
         container:AddChild(anchorTargetDrop)
+
+        if targetMode == "frame" then
+            local anchorRow = AceGUI:Create("SimpleGroup")
+            anchorRow:SetFullWidth(true)
+            anchorRow:SetLayout("Flow")
+
+            local anchorBox = AceGUI:Create("EditBox")
+            if anchorBox.editbox.Instructions then anchorBox.editbox.Instructions:Hide() end
+            anchorBox:SetLabel("Anchor to Frame")
+            local frameAnchorText = settings.relativeTo
+            if frameAnchorText == "UIParent" or currentAnchorGroupId then frameAnchorText = "" end
+            anchorBox:SetText(frameAnchorText)
+            anchorBox:SetRelativeWidth(0.68)
+            anchorBox:SetCallback("OnEnterPressed", function(widget, event, text)
+                if SetStandaloneFrameAnchorTarget(text) then
+                    CooldownCompanion:RefreshAllAuraTextureVisuals()
+                    CooldownCompanion:RefreshConfigPanel()
+                else
+                    widget:SetText(frameAnchorText)
+                end
+            end)
+            anchorRow:AddChild(anchorBox)
+
+            local pickBtn = AceGUI:Create("Button")
+            pickBtn:SetText("Pick")
+            pickBtn:SetRelativeWidth(0.24)
+            pickBtn:SetCallback("OnClick", function()
+                local grp = CS.selectedGroup
+                CS.StartPickFrame(function(name)
+                    if CS.configFrame then
+                        CS.configFrame.frame:Show()
+                    end
+                    if name then
+                        SetStandaloneFrameAnchorTarget(name)
+                    end
+                    CooldownCompanion:RefreshAllAuraTextureVisuals()
+                    CooldownCompanion:RefreshConfigPanel()
+                end, grp)
+            end)
+            anchorRow:AddChild(pickBtn)
+
+            CreateInfoButton(pickBtn.frame, pickBtn.frame, "LEFT", "RIGHT", 2, 0, {
+                "Pick Frame",
+                {"Hides the config panel and highlights frames under your cursor. Left-click a frame to anchor this panel to it, or right-click to cancel.", 1, 1, 1, true},
+                " ",
+                {"You can also type a frame name directly into the editbox.", 1, 1, 1, true},
+                " ",
+                {"Middle-click the draggable header to toggle lock/unlock.", 1, 1, 1, true},
+            }, tabInfoButtons)
+
+            container:AddChild(anchorRow)
+            pickBtn.frame:SetScript("OnUpdate", function(self)
+                self:SetScript("OnUpdate", nil)
+                local p, rel, rp, xOfs, yOfs = self:GetPoint(1)
+                if yOfs then
+                    self:SetPoint(p, rel, rp, xOfs, yOfs - 2)
+                end
+            end)
+        end
 
         if targetMode == "panel" then
             local panelAnchorDrop = AceGUI:Create("Dropdown")
@@ -1151,7 +1248,7 @@ local function BuildLayoutTab(container)
             container:AddChild(resetBtn)
         else
             AddAnchorDropdown(container, settings, "point", "CENTER", RefreshTextureVisual, anchorLabel)
-            AddAnchorDropdown(container, settings, "relativePoint", "CENTER", RefreshTextureVisual, targetMode == "panel" and "Target Point" or "Screen Point")
+            AddAnchorDropdown(container, settings, "relativePoint", "CENTER", RefreshTextureVisual, (targetMode == "panel" or targetMode == "frame") and "Target Point" or "Screen Point")
             AddOffsetSliders(container, settings, "x", "y", {
                 x = 0,
                 y = 0,
@@ -1163,7 +1260,7 @@ local function BuildLayoutTab(container)
             resetBtn:SetText("Reset Position")
             resetBtn:SetFullWidth(true)
             resetBtn:SetCallback("OnClick", function()
-                if targetMode == "panel" and settings.relativeTo ~= "UIParent" then
+                if (targetMode == "panel" or targetMode == "frame") and settings.relativeTo ~= "UIParent" then
                     ResetStandalonePosition(settings.relativeTo, "TOPLEFT", "BOTTOMLEFT", 0, -5)
                 else
                     ResetStandalonePosition()
