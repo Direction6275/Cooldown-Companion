@@ -487,6 +487,23 @@ local function NormalizeAnchorPoint(anchor)
     return anchor
 end
 
+local function NormalizeStandaloneAnchorRelativeTo(relativeTo)
+    if type(relativeTo) ~= "string" or relativeTo == "" then
+        return UI_PARENT_NAME
+    end
+    if relativeTo == UI_PARENT_NAME then
+        return relativeTo
+    end
+    if relativeTo:match("^CooldownCompanionGroup%d+$")
+        or relativeTo:match("^CooldownCompanionContainer%d+$") then
+        return relativeTo
+    end
+    if relativeTo:find("^CooldownCompanion") then
+        return UI_PARENT_NAME
+    end
+    return relativeTo
+end
+
 local function NormalizeTextureLayout(locationType)
     if LOCATION_DIMENSIONS[locationType] then
         if locationType == LOCATION_LEFTRIGHTOUTSIDE then
@@ -597,6 +614,7 @@ AT.GetTriggerConditionOrderForButtonData = GetTriggerConditionOrderForButtonData
 AT.NormalizeTriggerConditionKey = NormalizeTriggerConditionKey
 AT.NormalizeTriggerStateKey = NormalizeTriggerStateKey
 AT.NormalizeAnchorPoint = NormalizeAnchorPoint
+AT.NormalizeStandaloneAnchorRelativeTo = NormalizeStandaloneAnchorRelativeTo
 AT.NormalizeTextureLayout = NormalizeTextureLayout
 AT.GetStretchMultiplier = GetStretchMultiplier
 AT.RotateOffset = RotateOffset
@@ -655,11 +673,7 @@ local function NormalizeAuraTextureSettings(settings)
     settings.stretchY = Clamp(tonumber(settings.stretchY) or 0, MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH)
     settings.point = NormalizeAnchorPoint(settings.point or settings.anchor)
     settings.relativePoint = NormalizeAnchorPoint(settings.relativePoint)
-    local relativeTo = settings.relativeTo
-    settings.relativeTo = type(relativeTo) == "string"
-        and (relativeTo == UI_PARENT_NAME or relativeTo:match("^CooldownCompanionGroup%d+$"))
-        and relativeTo
-        or UI_PARENT_NAME
+    settings.relativeTo = NormalizeStandaloneAnchorRelativeTo(settings.relativeTo)
     settings.x = tonumber(settings.x or settings.xOffset) or 0
     settings.y = tonumber(settings.y or settings.yOffset) or 0
     settings.anchor = nil

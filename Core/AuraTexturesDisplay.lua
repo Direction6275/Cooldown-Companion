@@ -163,27 +163,83 @@ local function GetTextureHostDisplayCoords(host, point, relativePoint)
     return x, y, normalizedPoint, normalizedRelativePoint
 end
 
-local function GetStandalonePanelAnchorFrame(group, settings, groupId)
-    if not (group and group.parentContainerId and type(settings) == "table") then
-        return nil
-    end
-    local relativeTo = settings.relativeTo
-    local targetGroupId = type(relativeTo) == "string" and relativeTo:match("^CooldownCompanionGroup(%d+)$") or nil
-    if not targetGroupId then
-        return nil
-    end
-    local ok = true
-    if CooldownCompanion.ValidateAddonFrameAnchorTarget then
-        ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(relativeTo, {
+local function HasStandaloneAnchorTarget(settings)
+    local relativeTo = type(settings) == "table" and settings.relativeTo or nil
+    return type(relativeTo) == "string" and relativeTo ~= "" and relativeTo ~= UI_PARENT_NAME
+end
+
+local function GetStandaloneAnchorValidationOptions(relativeTo, groupId, domain)
+    if domain == "panel" then
+        return {
             domain = "panel",
             sourceGroupId = groupId,
             sourceKind = "group",
-        })
+        }
     end
-    if not ok then
+    return {
+        domain = "external",
+        sourceGroupId = groupId,
+        sourceKind = "group",
+    }
+end
+
+local function IsFrameLikeAnchorTarget(frame)
+    return type(frame) == "table" and type(frame.GetObjectType) == "function"
+end
+
+local function GetStandaloneAnchorTargetFrame(group, settings, groupId, domain)
+    if not (group and type(settings) == "table") then
         return nil
     end
-    return _G[relativeTo], relativeTo
+    local relativeTo = settings.relativeTo
+    if type(relativeTo) ~= "string" or relativeTo == "" or relativeTo == UI_PARENT_NAME then
+        return nil
+    end
+
+    local ok = true
+    if CooldownCompanion.ValidateAddonFrameAnchorTarget then
+        ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(
+            relativeTo,
+            GetStandaloneAnchorValidationOptions(relativeTo, groupId, domain)
+        )
+    end
+    if not ok then
+        return nil, relativeTo
+    end
+    local frame = _G[relativeTo]
+    if not IsFrameLikeAnchorTarget(frame) then
+        return nil, relativeTo
+    end
+    return frame, relativeTo
+end
+
+local function GetStandalonePanelAnchorFrame(group, settings, groupId)
+    local relativeTo = type(settings) == "table" and settings.relativeTo or nil
+    if not (group and group.parentContainerId)
+        or type(relativeTo) ~= "string"
+        or not relativeTo:match("^CooldownCompanionGroup%d+$") then
+        return nil
+    end
+    return GetStandaloneAnchorTargetFrame(group, settings, groupId, "panel")
+end
+
+local function GetStandaloneFrameAnchorFrame(group, settings, groupId)
+    local relativeTo = type(settings) == "table" and settings.relativeTo or nil
+    if type(relativeTo) ~= "string"
+        or relativeTo == ""
+        or relativeTo == UI_PARENT_NAME
+        or (group and group.parentContainerId and relativeTo:match("^CooldownCompanionGroup%d+$")) then
+        return nil
+    end
+    return GetStandaloneAnchorTargetFrame(group, settings, groupId, "external")
+end
+
+local function GetStandaloneResolvedAnchorFrame(group, settings, groupId)
+    local frame, name = GetStandalonePanelAnchorFrame(group, settings, groupId)
+    if frame then
+        return frame, name
+    end
+    return GetStandaloneFrameAnchorFrame(group, settings, groupId)
 end
 
 local function StopStandalonePanelAlphaSync(host)
@@ -268,7 +324,7 @@ local function SaveGroupedStandalonePreviewSettings(host, group, settings, group
     if not (host and containerFrame and settings and host.GetPoint and host.GetCenter and host.GetSize) then
         return false
     end
-    if GetStandalonePanelAnchorFrame(group, settings, groupId) then
+    if HasStandaloneAnchorTarget(settings) then
         return false
     end
 
@@ -324,9 +380,9 @@ local function SaveTextureHostPosition(host)
         local point, relativeFrame, relPoint, x, y = host:GetPoint(1)
         settings.point = NormalizeAnchorPoint(point)
         settings.relativePoint = NormalizeAnchorPoint(relPoint)
-        local panelTargetFrame, panelTargetName = GetStandalonePanelAnchorFrame(group, settings, owner and owner._groupId)
-        if panelTargetFrame and relativeFrame == panelTargetFrame then
-            settings.relativeTo = panelTargetName
+        local targetFrame, targetName = GetStandaloneResolvedAnchorFrame(group, settings, owner and owner._groupId)
+        if targetFrame and relativeFrame == targetFrame then
+            settings.relativeTo = targetName
         else
             settings.relativeTo = UI_PARENT_NAME
         end
@@ -450,7 +506,7 @@ local function EnsureAuraTextureNudger(host)
         end
         local displayX, displayY
         if settings and group and group.parentContainerId
-            and not GetStandalonePanelAnchorFrame(group, settings, owner and owner._groupId)
+            and not HasStandaloneAnchorTarget(settings)
             and CooldownCompanion.IsContainerUnlockPreviewActive
             and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
         then
@@ -1239,16 +1295,18 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         else
             local currentPoint, currentRelativeFrame, _, currentX, currentY = host:GetPoint(1)
             host:ClearAllPoints()
-            local panelTargetFrame = GetStandalonePanelAnchorFrame(group, sharedSettings, driverButton and driverButton._groupId)
+            local anchorTargetFrame = GetStandaloneResolvedAnchorFrame(group, sharedSettings, driverButton and driverButton._groupId)
             local groupedPreviewFrame = visibilityState and visibilityState.groupedPreviewFrame or nil
-            if panelTargetFrame then
+            if anchorTargetFrame then
                 host:SetPoint(
                     sharedSettings.point or "TOPLEFT",
-                    panelTargetFrame,
+                    anchorTargetFrame,
                     sharedSettings.relativePoint or "BOTTOMLEFT",
                     sharedSettings.x or 0,
                     sharedSettings.y or -5
                 )
+            elseif HasStandaloneAnchorTarget(sharedSettings) then
+                host:SetPoint(sharedSettings.point, UIParent, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
             elseif groupedPreviewFrame then
                 local preserveRelativeOffset = host._wrapperManaged
                     and currentRelativeFrame == groupedPreviewFrame
@@ -1507,12 +1565,10 @@ function CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, del
             end
 
             local didSync = false
-            local standalonePanelAnchorFrame = settings
-                and GetStandalonePanelAnchorFrame(group, settings, panelInfo.groupId)
-                or nil
+            local hasStandaloneAnchorTarget = HasStandaloneAnchorTarget(settings)
             if host
                 and settings
-                and not standalonePanelAnchorFrame
+                and not hasStandaloneAnchorTarget
                 and self.IsGroupVisibleInUnlockPreview
                 and self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
                     group = group,
@@ -1525,7 +1581,7 @@ function CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, del
                 UpdateTextureHostCoordLabel(host, settings.x, settings.y)
             end
             if not didSync
-                and not standalonePanelAnchorFrame
+                and not hasStandaloneAnchorTarget
                 and ApplyGroupedStandaloneSettingsDelta(settings, deltaX, deltaY)
             then
                 if host and host.coordLabel and host:IsShown() then
