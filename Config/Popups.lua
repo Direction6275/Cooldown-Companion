@@ -715,6 +715,18 @@ local function BuildImportedRootAnchor(relativeTo)
     }
 end
 
+local function ResetImportedStandalonePanelAnchor(panel)
+    local settings = CooldownCompanion:GetStandaloneTextureAnchorSettings(panel)
+    if type(settings) ~= "table" then
+        return
+    end
+    settings.point = "CENTER"
+    settings.relativeTo = "UIParent"
+    settings.relativePoint = "CENTER"
+    settings.x = 0
+    settings.y = 0
+end
+
 local function BuildDefaultImportedPanel(containerId)
     return {
         name = "Panel 1",
@@ -860,6 +872,29 @@ local function RemapImportedContainerAnchors(db, importState, preserveContainerR
     end
 end
 
+local function RemapImportedStandalonePanelAnchor(panel, newGroupId, importState)
+    local settings = CooldownCompanion:GetStandaloneTextureAnchorSettings(panel)
+    local relativeTo = type(settings) == "table" and settings.relativeTo or nil
+    local groupRef = type(relativeTo) == "string" and tonumber(relativeTo:match("^CooldownCompanionGroup(%d+)$")) or nil
+    if not relativeTo or relativeTo == "UIParent" then
+        return
+    end
+    if not groupRef then
+        ResetImportedStandalonePanelAnchor(panel)
+        return
+    end
+
+    local targetFrameName = GetRemappedImportedGroupAnchorTarget(importState, groupRef, {
+        domain = "panel-import",
+        sourceGroupId = newGroupId,
+    })
+    if targetFrameName then
+        settings.relativeTo = targetFrameName
+    else
+        ResetImportedStandalonePanelAnchor(panel)
+    end
+end
+
 local function RemapImportedPanelAnchors(db, importState, preserveOwnContainerRefs)
     for _, newGid in ipairs(importState.importedGroupIds) do
         local panel = db.groups[newGid]
@@ -891,6 +926,7 @@ local function RemapImportedPanelAnchors(db, importState, preserveOwnContainerRe
                 end
             end
         end
+        RemapImportedStandalonePanelAnchor(panel, newGid, importState)
     end
 end
 

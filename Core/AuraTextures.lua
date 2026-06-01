@@ -655,7 +655,11 @@ local function NormalizeAuraTextureSettings(settings)
     settings.stretchY = Clamp(tonumber(settings.stretchY) or 0, MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH)
     settings.point = NormalizeAnchorPoint(settings.point or settings.anchor)
     settings.relativePoint = NormalizeAnchorPoint(settings.relativePoint)
-    settings.relativeTo = UI_PARENT_NAME
+    local relativeTo = settings.relativeTo
+    settings.relativeTo = type(relativeTo) == "string"
+        and (relativeTo == UI_PARENT_NAME or relativeTo:match("^CooldownCompanionGroup%d+$"))
+        and relativeTo
+        or UI_PARENT_NAME
     settings.x = tonumber(settings.x or settings.xOffset) or 0
     settings.y = tonumber(settings.y or settings.yOffset) or 0
     settings.anchor = nil

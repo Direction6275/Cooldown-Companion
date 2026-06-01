@@ -445,7 +445,7 @@ function CooldownCompanion:ApplyTexturePanelEntry(settings, entry)
     )
     settings.point = AT.NormalizeAnchorPoint(settings.point or "CENTER")
     settings.relativePoint = AT.NormalizeAnchorPoint(settings.relativePoint or "CENTER")
-    settings.relativeTo = AT.UI_PARENT_NAME
+    settings.relativeTo = type(settings.relativeTo) == "string" and settings.relativeTo ~= "" and settings.relativeTo or AT.UI_PARENT_NAME
     settings.x = tonumber(settings.x) or 0
     settings.y = tonumber(settings.y) or 0
 end
@@ -474,7 +474,7 @@ function CooldownCompanion:CreateTexturePanelSelection(entry, baseSettings)
         stretchY = base and base.stretchY or 0,
         point = base and base.point or "CENTER",
         relativePoint = base and base.relativePoint or "CENTER",
-        relativeTo = AT.UI_PARENT_NAME,
+        relativeTo = base and base.relativeTo or AT.UI_PARENT_NAME,
         x = base and base.x or 0,
         y = base and base.y or 0,
         color = CopyColor(base and base.color) or CopyColor(entry.color) or { 1, 1, 1, 1 },

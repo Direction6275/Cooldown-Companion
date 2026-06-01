@@ -163,9 +163,112 @@ local function GetTextureHostDisplayCoords(host, point, relativePoint)
     return x, y, normalizedPoint, normalizedRelativePoint
 end
 
+local function GetStandalonePanelAnchorFrame(group, settings, groupId)
+    if not (group and group.parentContainerId and type(settings) == "table") then
+        return nil
+    end
+    local relativeTo = settings.relativeTo
+    local targetGroupId = type(relativeTo) == "string" and relativeTo:match("^CooldownCompanionGroup(%d+)$") or nil
+    if not targetGroupId then
+        return nil
+    end
+    local ok = true
+    if CooldownCompanion.ValidateAddonFrameAnchorTarget then
+        ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(relativeTo, {
+            domain = "panel",
+            sourceGroupId = groupId,
+            sourceKind = "group",
+        })
+    end
+    if not ok then
+        return nil
+    end
+    return _G[relativeTo], relativeTo
+end
+
+local function StopStandalonePanelAlphaSync(host)
+    if host and host.standalonePanelAlphaSyncFrame then
+        host.standalonePanelAlphaSyncFrame:SetScript("OnUpdate", nil)
+    end
+    if host then
+        host._standalonePanelAlphaTarget = nil
+        host._standalonePanelAlphaVisibilityAlpha = nil
+        host._standalonePanelAlphaLastAlpha = nil
+        host._standalonePanelAlphaAccumulator = nil
+        host._standalonePanelAlphaSyncActive = nil
+    end
+end
+
+local function GetInheritedFrameAlpha(frame)
+    if not frame then
+        return 1
+    end
+    local alpha = frame._naturalAlpha
+    if alpha == nil and frame.GetEffectiveAlpha then
+        alpha = frame:GetEffectiveAlpha()
+    end
+    if alpha == nil and frame.GetAlpha then
+        alpha = frame:GetAlpha()
+    end
+    return Clamp(alpha or 1, 0, 1)
+end
+
+local function StartStandalonePanelAlphaSync(host, targetFrame, visibilityAlpha)
+    if not (host and targetFrame) then
+        StopStandalonePanelAlphaSync(host)
+        return
+    end
+
+    visibilityAlpha = Clamp(visibilityAlpha or 1, 0, 1)
+    local wasSyncing = host._standalonePanelAlphaSyncActive == true
+    local syncChanged = host._standalonePanelAlphaTarget ~= targetFrame
+        or host._standalonePanelAlphaVisibilityAlpha ~= visibilityAlpha
+
+    host._standalonePanelAlphaTarget = targetFrame
+    host._standalonePanelAlphaVisibilityAlpha = visibilityAlpha
+    if syncChanged or not wasSyncing then
+        local alpha = Clamp(GetInheritedFrameAlpha(targetFrame) * visibilityAlpha, 0, 1)
+        host._standalonePanelAlphaLastAlpha = alpha
+        host._standalonePanelAlphaAccumulator = 0
+        host:SetAlpha(alpha)
+    end
+    if wasSyncing then
+        return
+    end
+
+    if not host.standalonePanelAlphaSyncFrame then
+        host.standalonePanelAlphaSyncFrame = CreateFrame("Frame", nil, host)
+    end
+
+    host._standalonePanelAlphaSyncActive = true
+    host.standalonePanelAlphaSyncFrame:SetScript("OnUpdate", function(self, dt)
+        local activeTarget = host._standalonePanelAlphaTarget
+        if not activeTarget then
+            self:SetScript("OnUpdate", nil)
+            host._standalonePanelAlphaSyncActive = nil
+            return
+        end
+
+        host._standalonePanelAlphaAccumulator = (host._standalonePanelAlphaAccumulator or 0) + dt
+        if host._standalonePanelAlphaAccumulator < (1 / 30) then
+            return
+        end
+        host._standalonePanelAlphaAccumulator = 0
+
+        local alpha = Clamp(GetInheritedFrameAlpha(activeTarget) * (host._standalonePanelAlphaVisibilityAlpha or 1), 0, 1)
+        if alpha ~= host._standalonePanelAlphaLastAlpha then
+            host._standalonePanelAlphaLastAlpha = alpha
+            host:SetAlpha(alpha)
+        end
+    end)
+end
+
 local function SaveGroupedStandalonePreviewSettings(host, group, settings, groupId)
     local containerFrame = GetGroupedPreviewContainerFrame(group, groupId)
     if not (host and containerFrame and settings and host.GetPoint and host.GetCenter and host.GetSize) then
+        return false
+    end
+    if GetStandalonePanelAnchorFrame(group, settings, groupId) then
         return false
     end
 
@@ -218,10 +321,15 @@ local function SaveTextureHostPosition(host)
     end
 
     if not SaveGroupedStandalonePreviewSettings(host, group, settings, owner and owner._groupId) then
-        local point, _, relPoint, x, y = host:GetPoint(1)
+        local point, relativeFrame, relPoint, x, y = host:GetPoint(1)
         settings.point = NormalizeAnchorPoint(point)
         settings.relativePoint = NormalizeAnchorPoint(relPoint)
-        settings.relativeTo = UI_PARENT_NAME
+        local panelTargetFrame, panelTargetName = GetStandalonePanelAnchorFrame(group, settings, owner and owner._groupId)
+        if panelTargetFrame and relativeFrame == panelTargetFrame then
+            settings.relativeTo = panelTargetName
+        else
+            settings.relativeTo = UI_PARENT_NAME
+        end
         settings.x = math_floor(((x or 0) * 10) + 0.5) / 10
         settings.y = math_floor(((y or 0) * 10) + 0.5) / 10
     end
@@ -342,6 +450,7 @@ local function EnsureAuraTextureNudger(host)
         end
         local displayX, displayY
         if settings and group and group.parentContainerId
+            and not GetStandalonePanelAnchorFrame(group, settings, owner and owner._groupId)
             and CooldownCompanion.IsContainerUnlockPreviewActive
             and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
         then
@@ -753,6 +862,7 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     end
 
     StopAllTextureIndicatorEffects(host)
+    StopStandalonePanelAlphaSync(host)
     if host._isDragging then
         host._isDragging = nil
         host:StopMovingOrSizing()
@@ -1129,8 +1239,17 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         else
             local currentPoint, currentRelativeFrame, _, currentX, currentY = host:GetPoint(1)
             host:ClearAllPoints()
+            local panelTargetFrame = GetStandalonePanelAnchorFrame(group, sharedSettings, driverButton and driverButton._groupId)
             local groupedPreviewFrame = visibilityState and visibilityState.groupedPreviewFrame or nil
-            if groupedPreviewFrame then
+            if panelTargetFrame then
+                host:SetPoint(
+                    sharedSettings.point or "TOPLEFT",
+                    panelTargetFrame,
+                    sharedSettings.relativePoint or "BOTTOMLEFT",
+                    sharedSettings.x or 0,
+                    sharedSettings.y or -5
+                )
+            elseif groupedPreviewFrame then
                 local preserveRelativeOffset = host._wrapperManaged
                     and currentRelativeFrame == groupedPreviewFrame
                     and currentX ~= nil
@@ -1157,7 +1276,22 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     local alphaModuleId = GetTexturePanelAlphaModuleId(driverButton._groupId)
     local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(driverButton)
     local visibilityAlpha = Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1)
-    if alphaModuleId then
+    local panelAlphaTarget = CooldownCompanion.ShouldInheritPanelAnchorAlpha
+        and CooldownCompanion:ShouldInheritPanelAnchorAlpha(driverButton._groupId)
+        and GetStandalonePanelAnchorFrame(group, sharedSettings, driverButton._groupId)
+        or nil
+    if panelAlphaTarget then
+        if alphaModuleId then
+            self:UnregisterModuleAlpha(alphaModuleId, true)
+        end
+        if visibilityState.bypassModuleAlpha then
+            StopStandalonePanelAlphaSync(host)
+            host:SetAlpha(layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1)
+        else
+            StartStandalonePanelAlphaSync(host, panelAlphaTarget, visibilityAlpha)
+        end
+    elseif alphaModuleId then
+        StopStandalonePanelAlphaSync(host)
         if visibilityState.bypassModuleAlpha then
             self:UnregisterModuleAlpha(alphaModuleId, true)
             host:SetAlpha(layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1)
@@ -1171,6 +1305,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
             end
         end
     else
+        StopStandalonePanelAlphaSync(host)
         host:SetAlpha(visibilityState.bypassModuleAlpha and (layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1) or visibilityAlpha)
     end
 
@@ -1372,8 +1507,12 @@ function CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, del
             end
 
             local didSync = false
+            local standalonePanelAnchorFrame = settings
+                and GetStandalonePanelAnchorFrame(group, settings, panelInfo.groupId)
+                or nil
             if host
                 and settings
+                and not standalonePanelAnchorFrame
                 and self.IsGroupVisibleInUnlockPreview
                 and self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
                     group = group,
@@ -1385,7 +1524,10 @@ function CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, del
                 didSync = true
                 UpdateTextureHostCoordLabel(host, settings.x, settings.y)
             end
-            if not didSync and ApplyGroupedStandaloneSettingsDelta(settings, deltaX, deltaY) then
+            if not didSync
+                and not standalonePanelAnchorFrame
+                and ApplyGroupedStandaloneSettingsDelta(settings, deltaX, deltaY)
+            then
                 if host and host.coordLabel and host:IsShown() then
                     UpdateTextureHostCoordLabel(host, settings.x, settings.y)
                 end

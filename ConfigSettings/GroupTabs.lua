@@ -949,6 +949,70 @@ local function BuildLayoutTab(container)
             isCursorAnchor = false
         end
 
+        settings.relativeTo = type(settings.relativeTo) == "string" and settings.relativeTo ~= "" and settings.relativeTo or "UIParent"
+        local isPanel = group.parentContainerId ~= nil
+        local function ResetStandalonePosition(relativeTo, point, relativePoint, x, y)
+            settings.point = point or "CENTER"
+            settings.relativeTo = relativeTo or "UIParent"
+            settings.relativePoint = relativePoint or "CENTER"
+            settings.x = x or 0
+            settings.y = y or 0
+        end
+        local function GetStandaloneAnchorValidationOptions()
+            if CooldownCompanion.GetGroupAnchorValidationOptions then
+                return CooldownCompanion:GetGroupAnchorValidationOptions(textureGroupId)
+            end
+            return {
+                domain = "panel",
+                sourceGroupId = textureGroupId,
+                sourceKind = "group",
+            }
+        end
+        local function SetStandalonePanelAnchorTarget(targetGroupId)
+            local targetFrameName = "CooldownCompanionGroup" .. tostring(targetGroupId)
+            local ok = true
+            local options = GetStandaloneAnchorValidationOptions()
+            if CooldownCompanion.ValidateAddonFrameAnchorTarget then
+                ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(targetFrameName, options)
+            end
+            if not ok then
+                if CooldownCompanion.PrintInvalidAnchorTargetReason then
+                    CooldownCompanion:PrintInvalidAnchorTargetReason(targetFrameName, options)
+                end
+                return false
+            end
+            ResetStandalonePosition(targetFrameName, "TOPLEFT", "BOTTOMLEFT", 0, -5)
+            group.inheritPanelAlpha = group.inheritPanelAlpha ~= false
+            return true
+        end
+        local anchorKind, currentAnchorGroupId
+        if CooldownCompanion.ParseAddonAnchorFrameName then
+            anchorKind, currentAnchorGroupId = CooldownCompanion:ParseAddonAnchorFrameName(settings.relativeTo)
+        else
+            currentAnchorGroupId = settings.relativeTo:match("^CooldownCompanionGroup(%d+)$")
+            anchorKind = currentAnchorGroupId and "group" or nil
+        end
+        local currentAnchorIsPanel = anchorKind == "group"
+            and isPanel
+            and CooldownCompanion.IsPanelAnchoredToPanel
+            and CooldownCompanion:IsPanelAnchoredToPanel(textureGroupId)
+            or false
+        if not currentAnchorIsPanel then
+            currentAnchorGroupId = nil
+        end
+        CS.layoutAnchorTargetMode = CS.layoutAnchorTargetMode or {}
+        local storedTargetMode = CS.layoutAnchorTargetMode[textureGroupId]
+        local targetMode
+        if isCursorAnchor then
+            targetMode = "cursor"
+        elseif currentAnchorIsPanel then
+            targetMode = "panel"
+        elseif storedTargetMode == "panel" and isPanel then
+            targetMode = "panel"
+        else
+            targetMode = "group"
+        end
+
         local function RefreshTextureVisual()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
         end
@@ -961,7 +1025,7 @@ local function BuildLayoutTab(container)
             RefreshTextureVisual()
         end
 
-        if isCursorAnchor and CooldownCompanion.ShowCursorAnchorLayoutPreview then
+        if targetMode == "cursor" and CooldownCompanion.ShowCursorAnchorLayoutPreview then
             CooldownCompanion:ShowCursorAnchorLayoutPreview(textureGroupId)
         elseif CooldownCompanion.ClearCursorAnchorLayoutPreview then
             CooldownCompanion:ClearCursorAnchorLayoutPreview()
@@ -969,43 +1033,96 @@ local function BuildLayoutTab(container)
 
         local anchorTargetDrop = AceGUI:Create("Dropdown")
         anchorTargetDrop:SetLabel("Anchor Target")
-        if canUseCursorAnchor then
-            anchorTargetDrop:SetList({
+        local anchorTargetList = isPanel
+            and {
                 group = "Group",
+                panel = "Panel",
                 cursor = "Cursor",
-            }, { "group", "cursor" })
-        else
-            anchorTargetDrop:SetList({
+            }
+            or {
                 group = group.parentContainerId and "Group" or "Screen",
-            }, { "group" })
+            }
+        local anchorTargetOrder = isPanel
+            and (canUseCursorAnchor and { "group", "panel", "cursor" } or { "group", "panel" })
+            or { "group" }
+        if not canUseCursorAnchor then
+            anchorTargetList.cursor = nil
         end
-        anchorTargetDrop:SetValue(isCursorAnchor and "cursor" or "group")
+        anchorTargetDrop:SetList(anchorTargetList, anchorTargetOrder)
+        anchorTargetDrop:SetValue(targetMode)
         anchorTargetDrop:SetFullWidth(true)
         anchorTargetDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            if val == targetMode then return end
             if val == "cursor" then
                 if not canUseCursorAnchor then
                     widget:SetValue("group")
                     return
                 end
                 if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, cursorAnchorTarget) then
+                    CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
+                    ResetStandalonePosition()
                     CooldownCompanion:RefreshConfigPanel()
                 else
-                    widget:SetValue(isCursorAnchor and "cursor" or "group")
+                    widget:SetValue(targetMode)
                 end
             elseif val == "group" then
+                CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
+                ResetStandalonePosition()
                 CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, true)
+                CooldownCompanion:RefreshConfigPanel()
+            elseif val == "panel" then
+                if isCursorAnchor and not CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, true) then
+                    widget:SetValue(targetMode)
+                    return
+                end
+                ResetStandalonePosition()
+                CS.layoutAnchorTargetMode[CS.selectedGroup] = "panel"
                 CooldownCompanion:RefreshConfigPanel()
             end
         end)
         container:AddChild(anchorTargetDrop)
 
+        if targetMode == "panel" then
+            local panelAnchorDrop = AceGUI:Create("Dropdown")
+            panelAnchorDrop:SetLabel("Anchor to Panel")
+            CooldownCompanion:PopulatePanelAnchorTargetDropdown(panelAnchorDrop, textureGroupId)
+            panelAnchorDrop:SetFullWidth(true)
+            panelAnchorDrop:SetValue(currentAnchorGroupId and tostring(currentAnchorGroupId) or nil)
+            panelAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                if not val or val == "" then return end
+                local targetGroupId = tonumber(val)
+                if targetGroupId and SetStandalonePanelAnchorTarget(targetGroupId) then
+                    CooldownCompanion:RefreshAllAuraTextureVisuals()
+                    CooldownCompanion:RefreshConfigPanel()
+                else
+                    widget:SetValue(currentAnchorGroupId and tostring(currentAnchorGroupId) or nil)
+                end
+            end)
+            container:AddChild(panelAnchorDrop)
+
+            local panelAlphaDrop = AceGUI:Create("Dropdown")
+            panelAlphaDrop:SetLabel("Panel Alpha")
+            panelAlphaDrop:SetList({
+                inherit = "Inherit Target Panel Alpha",
+                custom = "Custom Alpha",
+            }, { "inherit", "custom" })
+            panelAlphaDrop:SetValue(group.inheritPanelAlpha == false and "custom" or "inherit")
+            panelAlphaDrop:SetFullWidth(true)
+            panelAlphaDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                group.inheritPanelAlpha = val ~= "custom"
+                CooldownCompanion:RefreshAllAuraTextureVisuals()
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            container:AddChild(panelAlphaDrop)
+        end
+
         local heading = AceGUI:Create("Heading")
-        heading:SetText(isCursorAnchor and "Cursor Offset" or positionHeadingText)
+        heading:SetText(targetMode == "cursor" and "Cursor Offset" or positionHeadingText)
         ColorHeading(heading)
         heading:SetFullWidth(true)
         container:AddChild(heading)
 
-        if isCursorAnchor then
+        if targetMode == "cursor" then
             AddAnchorDropdown(container, group.anchor, "point", "BOTTOMLEFT", RefreshCursorAnchor, "Panel Point")
             group.anchor.relativePoint = "CENTER"
             AddOffsetSliders(container, group.anchor, "x", "y", {
@@ -1034,7 +1151,7 @@ local function BuildLayoutTab(container)
             container:AddChild(resetBtn)
         else
             AddAnchorDropdown(container, settings, "point", "CENTER", RefreshTextureVisual, anchorLabel)
-            AddAnchorDropdown(container, settings, "relativePoint", "CENTER", RefreshTextureVisual, "Screen Point")
+            AddAnchorDropdown(container, settings, "relativePoint", "CENTER", RefreshTextureVisual, targetMode == "panel" and "Target Point" or "Screen Point")
             AddOffsetSliders(container, settings, "x", "y", {
                 x = 0,
                 y = 0,
@@ -1046,22 +1163,30 @@ local function BuildLayoutTab(container)
             resetBtn:SetText("Reset Position")
             resetBtn:SetFullWidth(true)
             resetBtn:SetCallback("OnClick", function()
-                settings.point = "CENTER"
-                settings.relativePoint = "CENTER"
-                settings.relativeTo = "UIParent"
-                settings.x = 0
-                settings.y = 0
+                if targetMode == "panel" and settings.relativeTo ~= "UIParent" then
+                    ResetStandalonePosition(settings.relativeTo, "TOPLEFT", "BOTTOMLEFT", 0, -5)
+                else
+                    ResetStandalonePosition()
+                end
                 CooldownCompanion:RefreshAllAuraTextureVisuals()
                 CooldownCompanion:RefreshConfigPanel()
             end)
             container:AddChild(resetBtn)
         end
 
+        local panelAlphaInherited = targetMode == "panel"
+            and currentAnchorGroupId
+            and CooldownCompanion.ShouldInheritPanelAnchorAlpha
+            and CooldownCompanion:ShouldInheritPanelAnchorAlpha(textureGroupId)
+            or false
+
         BuildAlphaControls(container, group, function()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
             CooldownCompanion:RefreshConfigPanel()
         end, "layout_alpha", {
             isGlobal = group.isGlobal,
+            disabled = panelAlphaInherited,
+            disabledText = "This panel inherits alpha from the parent panel. Change the parent panel's Alpha settings to affect it.",
             onBaselineChanged = function(val)
                 CS.texturePanelAlphaPreview = CS.texturePanelAlphaPreview or {}
                 CS.texturePanelAlphaPreview[textureGroupId] = val

@@ -129,6 +129,39 @@ local function ParseAddonAnchorFrameName(frameName)
     end
 end
 
+local function GetStandaloneTextureAnchorSettings(group)
+    if type(group) ~= "table" then
+        return nil
+    end
+    if group.displayMode == "trigger" then
+        return type(group.triggerSettings) == "table" and group.triggerSettings.signal or nil
+    end
+    if group.displayMode == "textures" then
+        return group.textureSettings
+    end
+    return nil
+end
+
+local function GetAnchorRelativeTo(anchor)
+    if type(anchor) == "table" then
+        return anchor.relativeTo
+    end
+    return anchor
+end
+
+local function GetPanelFrameAnchorRelativeTo(group)
+    return GetAnchorRelativeTo(group and group.anchor)
+end
+
+local function GetActivePanelAnchorRelativeTo(group)
+    local standalone = GetStandaloneTextureAnchorSettings(group)
+    if type(standalone) == "table" and type(standalone.relativeTo) == "string" then
+        return standalone.relativeTo
+    end
+
+    return GetPanelFrameAnchorRelativeTo(group)
+end
+
 local function AddonAnchorFrameReachesCursorRoot(profile, kind, id, visited)
     local node
     if kind == "group" then
@@ -139,13 +172,8 @@ local function AddonAnchorFrameReachesCursorRoot(profile, kind, id, visited)
     if not node then
         return false
     end
-    local anchor = node.anchor
-    local relativeTo
-    if type(anchor) == "table" then
-        relativeTo = anchor.relativeTo
-    elseif type(anchor) == "string" then
-        relativeTo = anchor
-    else
+    local relativeTo = GetPanelFrameAnchorRelativeTo(node)
+    if type(relativeTo) ~= "string" then
         return false
     end
 
@@ -229,12 +257,27 @@ local function ResetExternalAnchor(anchor)
     anchor.y = 0
 end
 
+local function ResetStandaloneTextureAnchor(anchor)
+    anchor.point = "CENTER"
+    anchor.relativeTo = "UIParent"
+    anchor.relativePoint = "CENTER"
+    anchor.x = 0
+    anchor.y = 0
+end
+
 local function SanitizeExternalAnchor(anchor, targetIsCursorRoot)
     if type(anchor) ~= "table" then
         return
     end
     if targetIsCursorRoot(anchor.relativeTo) then
         ResetExternalAnchor(anchor)
+    end
+end
+
+local function SanitizeStandaloneTextureAnchor(group, targetIsCursorRoot)
+    local anchor = GetStandaloneTextureAnchorSettings(group)
+    if type(anchor) == "table" and targetIsCursorRoot(anchor.relativeTo) then
+        ResetStandaloneTextureAnchor(anchor)
     end
 end
 
@@ -364,6 +407,14 @@ local function AddFrameAnchoringDependents(dependents, settings, targetFrameName
     AddFrameNameDependent(dependents, settings.customTargetFrame, targetFrameName, name .. " Target")
 end
 
+local function AddStandaloneTextureDependents(dependents, group, targetFrameName, name)
+    local settings = GetStandaloneTextureAnchorSettings(group)
+    if type(settings) ~= "table" then
+        return
+    end
+    AddAnchorDependent(dependents, settings, targetFrameName, name)
+end
+
 function CooldownCompanion:GetCursorAnchorTargetName()
     return CURSOR_ANCHOR_TARGET
 end
@@ -388,21 +439,36 @@ function CooldownCompanion:IsGroupCursorAnchored(groupOrId)
     return self:IsCursorAnchor(group and group.anchor)
 end
 
+function CooldownCompanion:GetStandaloneTextureAnchorSettings(groupOrId)
+    return GetStandaloneTextureAnchorSettings(GetGroup(self, groupOrId))
+end
+
 function CooldownCompanion:IsPanelAnchoredToPanel(groupOrId)
     local group = GetGroup(self, groupOrId)
     if not (group and group.parentContainerId) then
         return false
     end
 
-    local anchor = group.anchor
-    local relativeTo = type(anchor) == "table" and anchor.relativeTo or anchor
+    local relativeTo = GetActivePanelAnchorRelativeTo(group)
     local kind = ParseAddonAnchorFrameName(relativeTo)
-    return kind == "group"
+    if kind ~= "group" then
+        return false
+    end
+
+    if self.ValidateAddonFrameAnchorTarget then
+        local sourceGroupId = type(groupOrId) ~= "table" and groupOrId or nil
+        return self:ValidateAddonFrameAnchorTarget(relativeTo, {
+            domain = "panel",
+            sourceGroupId = sourceGroupId,
+            sourceKind = "group",
+        }) == true
+    end
+    return true
 end
 
 function CooldownCompanion:ShouldInheritPanelAnchorAlpha(groupOrId)
     local group = GetGroup(self, groupOrId)
-    return self:IsPanelAnchoredToPanel(group)
+    return self:IsPanelAnchoredToPanel(groupOrId)
         and group.inheritPanelAlpha ~= false
         or false
 end
@@ -490,6 +556,17 @@ function CooldownCompanion:GetExternalAnchorDependents(groupId, profile)
     ForEachExternalAnchorSettings(profile, EXTERNAL_ANCHOR_STORES.frameAnchoring, function(settings, name)
         AddFrameAnchoringDependents(dependents, settings, targetFrameName, name)
     end)
+
+    for id, group in pairs(profile.groups or {}) do
+        if type(group) == "table" then
+            local name = group.name or ("Panel " .. tostring(id))
+            if group.displayMode == "trigger" then
+                AddStandaloneTextureDependents(dependents, group, targetFrameName, name .. " Trigger Display")
+            elseif group.displayMode == "textures" then
+                AddStandaloneTextureDependents(dependents, group, targetFrameName, name .. " Texture Display")
+            end
+        end
+    end
 
     return dependents
 end
@@ -611,6 +688,7 @@ function CooldownCompanion:SanitizeCursorAnchorPolicy(profile)
                     group.anchor = BuildRootAnchor("UIParent")
                 end
             end
+            SanitizeStandaloneTextureAnchor(group, targetIsCursorRoot)
         end
     end
 
