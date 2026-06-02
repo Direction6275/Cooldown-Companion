@@ -15,3 +15,4 @@ scripts/
 docs/
 tests/
 STRATEGY.md
+.tmp/vscode-wow-api-audit/
