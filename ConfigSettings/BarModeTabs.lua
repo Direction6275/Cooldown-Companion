@@ -52,33 +52,10 @@ local function BuildBarAppearanceTab(container, group, style)
     container:AddChild(barHeading)
 
     local barSettingsCollapsed = CS.collapsedSections["barappearance_settings"]
-    local collapseBtn = AttachCollapseButton(barHeading, barSettingsCollapsed, function()
+    AttachCollapseButton(barHeading, barSettingsCollapsed, function()
         CS.collapsedSections["barappearance_settings"] = not CS.collapsedSections["barappearance_settings"]
         CooldownCompanion:RefreshConfigPanel()
     end)
-
-    local function BuildBarSettingsAdvanced(panel)
-        local updateFreqSlider = AceGUI:Create("Slider")
-        updateFreqSlider:SetLabel("Update Frequency (Hz)")
-        updateFreqSlider:SetSliderValues(10, 60, 0.1)
-        local curInterval = style.barUpdateInterval or 0.025
-        updateFreqSlider:SetValue(math.floor(1 / curInterval + 0.5))
-        updateFreqSlider:SetFullWidth(true)
-        updateFreqSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            style.barUpdateInterval = 1 / val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        panel:AddChild(updateFreqSlider)
-    end
-
-    local barAdvExpanded, barAdvBtn = AddAdvancedToggle(barHeading, "barSettings", tabInfoButtons, nil, {
-        title = "Bar Settings Advanced",
-        build = BuildBarSettingsAdvanced,
-    })
-    barAdvBtn:SetPoint("LEFT", collapseBtn, "RIGHT", 4, 0)
-    barHeading.right:ClearAllPoints()
-    barHeading.right:SetPoint("RIGHT", barHeading.frame, "RIGHT", -3, 0)
-    barHeading.right:SetPoint("LEFT", barAdvBtn, "RIGHT", 4, 0)
 
     if not barSettingsCollapsed then
     local lengthSlider = AceGUI:Create("Slider")

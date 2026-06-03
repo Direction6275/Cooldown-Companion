@@ -1431,8 +1431,14 @@ local function ApplyPreview()
 
     cb:SetAlpha(1)
     cb:Show()
-    cb:SetMinMaxValues(0, 100)
-    cb:SetValue(65)
+    local interpolation = ST.STATUS_BAR_INTERPOLATION_SMOOTH
+    if interpolation ~= nil then
+        cb:SetMinMaxValues(0, 100, interpolation)
+        cb:SetValue(65, interpolation)
+    else
+        cb:SetMinMaxValues(0, 100)
+        cb:SetValue(65)
+    end
 
     -- Spell name text
     if cb.Text then
