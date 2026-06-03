@@ -11,6 +11,7 @@ local CS = ST._configState
 local IsSpellInCDMBuffBar = ST._IsSpellInCDMBuffBar
 local IsSpellInCDMCooldown = ST._IsSpellInCDMCooldown
 local IsPassiveOrProc = ST._IsPassiveOrProc
+local IsPassiveCooldownSpell = ST.IsPassiveCooldownSpell
 local IsNeverTrackableSpell = ST._IsNeverTrackableSpell
 local ShouldSuppressSpellbookEntry = ST._ShouldSuppressSpellbookEntry
 local GetButtonIcon = ST._GetButtonIcon
@@ -549,13 +550,14 @@ local function BuildAutocompleteCache()
             for slotOffset = 1, lineInfo.numSpellBookItems do
                 local slotIdx = lineInfo.itemIndexOffset + slotOffset
                 local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIdx, Enum.SpellBookSpellBank.Player)
-                if itemInfo and itemInfo.spellID
-                    and not itemInfo.isPassive
+                local id = itemInfo and itemInfo.spellID
+                local passiveCooldown = id and IsPassiveCooldownSpell(id)
+                if itemInfo and id
+                    and (not itemInfo.isPassive or passiveCooldown)
                     and not itemInfo.isOffSpec
                     and itemInfo.itemType ~= Enum.SpellBookItemType.Flyout
                     and itemInfo.itemType ~= Enum.SpellBookItemType.FutureSpell
                 then
-                    local id = itemInfo.spellID
                     local isAura = IsPassiveOrProc(id)
                     local isBuffOnlyCDMSpell = cdmBuffSet[id] and not cdmCooldownSet[id]
                     if ShouldSuppressSpellbookEntry(id, lineIdx, isAura) then
@@ -613,10 +615,11 @@ local function BuildAutocompleteCache()
     if numPetSpells and numPetSpells > 0 then
         for slotIdx = 1, numPetSpells do
             local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIdx, Enum.SpellBookSpellBank.Pet)
-            if itemInfo and itemInfo.spellID
-                and not itemInfo.isPassive
+            local id = itemInfo and itemInfo.spellID
+            local passiveCooldown = id and IsPassiveCooldownSpell(id)
+            if itemInfo and id
+                and (not itemInfo.isPassive or passiveCooldown)
             then
-                local id = itemInfo.spellID
                 local isAura = IsPassiveOrProc(id)
                 if not ShouldSuppressSpellbookEntry(id, itemInfo.skillLineIndex, isAura) and not seen[id] then
                     seen[id] = true

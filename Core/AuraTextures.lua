@@ -421,6 +421,10 @@ local function GetTriggerConditionOrderForButtonData(buttonData)
         return order
     end
 
+    if buttonData.type == "spell" and buttonData.isPassiveCooldown == true then
+        return { "cooldownActive" }
+    end
+
     if buttonData.type == "spell" and buttonData.isPassive == true then
         return { "auraActive", "procActive" }
     end

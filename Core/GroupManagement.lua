@@ -1462,6 +1462,16 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         end
     end
 
+    local isPassiveCooldown = false
+    if buttonType == "spell"
+        and forceAura ~= true
+        and ST.IsPassiveCooldownSpell
+        and ST.IsPassiveCooldownSpell(id) then
+        isPassiveCooldown = true
+        isPassive = nil
+        forceAura = false
+    end
+
     local buttonIndex = #group.buttons + 1
     group.buttons[buttonIndex] = {
         type = buttonType,
@@ -1469,12 +1479,13 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         name = name,
         isPetSpell = isPetSpell or nil,
         isPassive = isPassive or nil,
+        isPassiveCooldown = isPassiveCooldown or nil,
         cdmChildSlot = cdmChildSlot or nil,
     }
 
-    -- Auto-detect charges for spells (skip for passives — no cooldown).
+    -- Auto-detect charges for castable spells.
     -- Treat as charge-based only when max charges is greater than 1.
-    if buttonType == "spell" and not isPassive then
+    if buttonType == "spell" and not isPassive and not isPassiveCooldown then
         local chargeInfo = C_Spell.GetSpellCharges(id)
         -- Base spell may not have charges when the override form does
         -- (e.g. Primal Strike → Stormstrike). Try the current override.

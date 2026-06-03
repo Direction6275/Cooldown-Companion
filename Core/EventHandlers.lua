@@ -152,6 +152,7 @@ function CooldownCompanion:UpdateRangeCheckRegistrations()
     self:ForEachButton(function(button, bd)
         if bd.type == "spell"
             and not bd.isPassive
+            and not bd.isPassiveCooldown
             and ((button.style and button.style.showOutOfRange)
                 or (self.TriggerRowUsesCondition and self:TriggerRowUsesCondition(bd, "rangeActive"))) then
             newSet[bd.id] = true
