@@ -22,6 +22,8 @@ local StartDragTracking = ST._StartDragTracking
 local CancelDrag = ST._CancelDrag
 local HideDragIndicator = ST._HideDragIndicator
 local ApplyIconTexCoord = ST._ApplyIconTexCoord
+local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
+local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 
 local POWER_NAMES = RB.POWER_NAMES
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
@@ -1310,8 +1312,8 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
     bar:ClearAllPoints()
     bar:SetPoint("TOPLEFT", root, "TOPLEFT", barLeft, 0)
     bar:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", barRight, 0)
-    bar:SetMinMaxValues(0, 100)
-    bar:SetValue(65)
+    SetStatusBarSmoothRange(bar, 0, 100)
+    SetStatusBarSmoothValue(bar, 65)
     bar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(settings.barTexture or "Solid"))
     local liveR, liveG, liveB, liveA = liveCastBar and liveCastBar.GetStatusBarColor and liveCastBar:GetStatusBarColor()
     local barColor = settings.barColor or { 1, 0.72, 0.18, 1 }

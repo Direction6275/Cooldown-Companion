@@ -5,6 +5,9 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
+local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
+local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 
 local math_min = math.min
 local math_sin = math.sin
@@ -150,7 +153,7 @@ function HealthBar.EnsureEffectBar(bar, key, color, frameLevelOffset)
         local effectBar = CreateFrame("StatusBar", nil, bar.healthEffectClip)
         effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(HEALTH_EFFECTS.texture))
         effectBar:SetMinMaxValues(0, 1)
-        effectBar:SetValue(0)
+        SetStatusBarImmediateValue(effectBar, 0)
         effectBar:Hide()
         bar[key] = effectBar
     end
@@ -209,7 +212,7 @@ function HealthBar.ApplyLowHealthAlertStyle(effectBar, config)
     end
     effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texture))
     effectBar:SetMinMaxValues(0, 1)
-    effectBar:SetValue(1)
+    SetStatusBarImmediateValue(effectBar, 1)
 end
 
 function HealthBar.ApplyLowHealthAlertColor(bar, config, preview)
@@ -442,7 +445,7 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
         else
             bar.lowHealthAlertBar:Hide()
             bar.lowHealthAlertBar:SetAlpha(1)
-            bar.lowHealthAlertBar:SetValue(0)
+            SetStatusBarImmediateValue(bar.lowHealthAlertBar, 0)
         end
     end
 
@@ -451,17 +454,17 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
     if bar.incomingHealBar then
         HealthBar.ApplyEffectStyle(bar.incomingHealBar, config, "healthIncomingHealColor", HEALTH_EFFECTS.incomingHealColor, "healthIncomingHealTexture")
         if incomingHealsVisible then
-            bar.incomingHealBar:SetMinMaxValues(0, maxHealth)
+            SetStatusBarSmoothRange(bar.incomingHealBar, 0, maxHealth)
             if preview.incomingHeals == true then
-                bar.incomingHealBar:SetValue(18)
+                SetStatusBarSmoothValue(bar.incomingHealBar, 18)
             else
-                bar.incomingHealBar:SetValue(EnsureNonNilNumber(GetNetHealingCalc():GetIncomingHeals()))
+                SetStatusBarSmoothValue(bar.incomingHealBar, EnsureNonNilNumber(GetNetHealingCalc():GetIncomingHeals()))
             end
             bar.incomingHealBar:Show()
             incomingHealAnchorTexture = bar.incomingHealBar:GetStatusBarTexture()
         else
             bar.incomingHealBar:Hide()
-            bar.incomingHealBar:SetValue(0)
+            SetStatusBarImmediateValue(bar.incomingHealBar, 0)
         end
     end
 
@@ -494,22 +497,22 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
                 overflowAbsorb = HEALTH_EFFECTS.absorbOverflowCalc:GetDamageAbsorbs()
             end
 
-            bar.absorbBar:SetMinMaxValues(0, maxHealth)
-            bar.absorbBar:SetValue(EnsureNonNilNumber(missingHealthAbsorb))
+            SetStatusBarSmoothRange(bar.absorbBar, 0, maxHealth)
+            SetStatusBarSmoothValue(bar.absorbBar, EnsureNonNilNumber(missingHealthAbsorb))
             bar.absorbBar:SetAlpha(1)
             bar.absorbBar:Show()
             if bar.absorbOverflowBar then
-                bar.absorbOverflowBar:SetMinMaxValues(0, maxHealth)
-                bar.absorbOverflowBar:SetValue(EnsureNonNilNumber(overflowAbsorb))
+                SetStatusBarSmoothRange(bar.absorbOverflowBar, 0, maxHealth)
+                SetStatusBarSmoothValue(bar.absorbOverflowBar, EnsureNonNilNumber(overflowAbsorb))
                 HealthBar.SetEffectAlphaFromBoolean(bar.absorbOverflowBar, absorbOverflowing, 1, 0)
                 bar.absorbOverflowBar:Show()
             end
         else
             bar.absorbBar:Hide()
-            bar.absorbBar:SetValue(0)
+            SetStatusBarImmediateValue(bar.absorbBar, 0)
             if bar.absorbOverflowBar then
                 bar.absorbOverflowBar:Hide()
-                bar.absorbOverflowBar:SetValue(0)
+                SetStatusBarImmediateValue(bar.absorbOverflowBar, 0)
             end
         end
     end
@@ -517,17 +520,17 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
     if bar.healAbsorbBar then
         HealthBar.ApplyEffectStyle(bar.healAbsorbBar, config, "healthHealAbsorbColor", HEALTH_EFFECTS.healAbsorbColor, "healthHealAbsorbTexture")
         if config.showHealAbsorbs == true or preview.healAbsorbs == true then
-            bar.healAbsorbBar:SetMinMaxValues(0, maxHealth)
+            SetStatusBarSmoothRange(bar.healAbsorbBar, 0, maxHealth)
             if preview.healAbsorbs == true then
-                bar.healAbsorbBar:SetValue(22)
+                SetStatusBarSmoothValue(bar.healAbsorbBar, 22)
             else
                 local healAbsorbCalc = incomingHealsVisible and GetNetHealingCalc() or GetStandaloneHealingCalc()
-                bar.healAbsorbBar:SetValue(EnsureNonNilNumber(healAbsorbCalc:GetHealAbsorbs()))
+                SetStatusBarSmoothValue(bar.healAbsorbBar, EnsureNonNilNumber(healAbsorbCalc:GetHealAbsorbs()))
             end
             bar.healAbsorbBar:Show()
         else
             bar.healAbsorbBar:Hide()
-            bar.healAbsorbBar:SetValue(0)
+            SetStatusBarImmediateValue(bar.healAbsorbBar, 0)
         end
     end
 end
@@ -695,8 +698,8 @@ function HealthBar.Update(bar, settings)
         maxHealth = 1
     end
 
-    bar:SetMinMaxValues(0, maxHealth)
-    bar:SetValue(currentHealth)
+    SetStatusBarSmoothRange(bar, 0, maxHealth)
+    SetStatusBarSmoothValue(bar, currentHealth)
     local config = HealthBar.GetConfig(settings)
     HealthBar.ApplyFillColor(bar, config)
     HealthBar.ApplyBackgroundColor(bar, config)

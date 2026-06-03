@@ -55,6 +55,11 @@ local LayoutOverlaySegments = RB.LayoutOverlaySegments
 local FormatTime = CooldownCompanion.FormatTime
 local GetDurationSecretFormatSpec = CooldownCompanion.GetDurationSecretFormatSpec
 local SetAuraStackCountText = EntryRuntime.SetAuraStackCountText
+local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
+local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
+local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
+local SetStatusBarElapsedDuration = ST.SetStatusBarElapsedDuration
+local SetStatusBarRemainingDuration = ST.SetStatusBarRemainingDuration
 
 function RB.CreateResourceBarCustomBarsModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
@@ -303,30 +308,32 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         if barInfo.barType == "custom_continuous" then
             local bar = barInfo.frame
             if isActive then
-                bar:SetMinMaxValues(0, 1)
+                SetStatusBarSmoothRange(bar, 0, 1)
                 if durationObj then
-                    bar:SetValue(durationObj:GetRemainingPercent())  -- secret-safe, 1->0 drain
+                    if not SetStatusBarRemainingDuration(bar, durationObj) then
+                        SetStatusBarSmoothValue(bar, durationObj:GetRemainingPercent())  -- secret-safe, 1->0 drain
+                    end
                 elseif auraCooldownStart and auraCooldownDuration and auraCooldownDuration > 0 then
                     local remaining = auraCooldownStart + auraCooldownDuration - GetTime()
-                    bar:SetValue(math_max(0, math_min(1, remaining / auraCooldownDuration)))
+                    SetStatusBarSmoothValue(bar, math_max(0, math_min(1, remaining / auraCooldownDuration)))
                 elseif indicatorPreview then
-                    bar:SetValue(CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL)
+                    SetStatusBarImmediateValue(bar, CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL)
                 else
                     -- No DurationObject (indefinite aura or aura absent)
-                    bar:SetValue(stacks)  -- 1 if active (full), 0 if absent (empty)
+                    SetStatusBarImmediateValue(bar, stacks)  -- 1 if active (full), 0 if absent (empty)
                 end
             else
-                bar:SetMinMaxValues(0, maxStacks)
-                bar:SetValue(stacks)  -- SetValue accepts secrets
+                SetStatusBarSmoothRange(bar, 0, maxStacks)
+                SetStatusBarSmoothValue(bar, stacks)  -- SetValue accepts secrets
             end
 
             if bar.thresholdOverlay then
                 if thresholdEnabled then
                     SetCustomAuraMaxThresholdRange(bar.thresholdOverlay, maxStacks)
-                    bar.thresholdOverlay:SetValue(stacks)
+                    SetStatusBarSmoothValue(bar.thresholdOverlay, stacks)
                     bar.thresholdOverlay:Show()
                 else
-                    bar.thresholdOverlay:SetValue(0)
+                    SetStatusBarImmediateValue(bar.thresholdOverlay, 0)
                     bar.thresholdOverlay:Hide()
                 end
             end
@@ -384,7 +391,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             -- Each segment has MinMax(i-1, i) — SetValue(stacks) with C-level clamping
             -- handles fill/empty without comparing the secret stacks value in Lua
             for i = 1, #holder.segments do
-                holder.segments[i]:SetValue(stacks)
+                SetStatusBarSmoothValue(holder.segments[i], stacks)
             end
 
             if holder.thresholdSegments then
@@ -392,10 +399,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                     local thresholdSeg = holder.thresholdSegments[i]
                     if thresholdEnabled then
                         SetCustomAuraMaxThresholdRange(thresholdSeg, maxStacks)
-                        thresholdSeg:SetValue(stacks)
+                        SetStatusBarSmoothValue(thresholdSeg, stacks)
                         thresholdSeg:Show()
                     else
-                        thresholdSeg:SetValue(0)
+                        SetStatusBarImmediateValue(thresholdSeg, 0)
                         thresholdSeg:Hide()
                     end
                 end
@@ -408,8 +415,8 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
             -- Pass stacks to ALL segments (StatusBar C-level clamping handles per-segment fill)
             for i = 1, half do
-                holder.segments[i]:SetValue(stacks)
-                holder.overlaySegments[i]:SetValue(stacks)
+                SetStatusBarSmoothValue(holder.segments[i], stacks)
+                SetStatusBarSmoothValue(holder.overlaySegments[i], stacks)
             end
 
             if holder.thresholdSegments then
@@ -417,10 +424,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                     local thresholdSeg = holder.thresholdSegments[i]
                     if thresholdEnabled then
                         SetCustomAuraMaxThresholdRange(thresholdSeg, maxStacks)
-                        thresholdSeg:SetValue(stacks)
+                        SetStatusBarSmoothValue(thresholdSeg, stacks)
                         thresholdSeg:Show()
                     else
-                        thresholdSeg:SetValue(0)
+                        SetStatusBarImmediateValue(thresholdSeg, 0)
                         thresholdSeg:Hide()
                     end
                 end
@@ -439,7 +446,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         -- Max stacks indicator: SetValue drives visibility via C-level clamping
         if cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
-            barInfo._maxStacksIndicator:SetValue((auraPresent and applications ~= nil) and applications or 0)
+            SetStatusBarSmoothValue(barInfo._maxStacksIndicator, (auraPresent and applications ~= nil) and applications or 0)
         end
     end
 
@@ -581,17 +588,19 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
             local auraDurationObj = auraState and auraState.durationObj
             bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] ~= nil and barColor[4] or 1)
-            bar:SetMinMaxValues(0, 1)
+            SetStatusBarSmoothRange(bar, 0, 1)
             if auraDurationObj then
-                bar:SetValue(auraDurationObj:GetRemainingPercent())
+                if not SetStatusBarRemainingDuration(bar, auraDurationObj) then
+                    SetStatusBarSmoothValue(bar, auraDurationObj:GetRemainingPercent())
+                end
             elseif auraPreview or pandemicPreview then
-                bar:SetValue(CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL)
+                SetStatusBarImmediateValue(bar, CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL)
             else
-                bar:SetValue(1)
+                SetStatusBarImmediateValue(bar, 1)
             end
 
             if bar.thresholdOverlay then
-                bar.thresholdOverlay:SetValue(0)
+                SetStatusBarImmediateValue(bar.thresholdOverlay, 0)
                 bar.thresholdOverlay:Hide()
             end
 
@@ -616,7 +625,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPresent)
 
             if barInfo._maxStacksIndicator then
-                barInfo._maxStacksIndicator:SetValue(0)
+                SetStatusBarImmediateValue(barInfo._maxStacksIndicator, 0)
             end
 
             UpdateSpellCustomBarSounds(auraPresent)
@@ -625,18 +634,20 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         ClearCustomAuraBarIndicatorState(barInfo, false)
 
-        bar:SetMinMaxValues(0, 1)
+        SetStatusBarSmoothRange(bar, 0, 1)
         bar:SetStatusBarColor(fillColor[1], fillColor[2], fillColor[3], fillColor[4] ~= nil and fillColor[4] or 1)
         if cooldownActive and durationObj then
-            bar:SetValue(durationObj:GetElapsedPercent())
+            if not SetStatusBarElapsedDuration(bar, durationObj) then
+                SetStatusBarSmoothValue(bar, durationObj:GetElapsedPercent())
+            end
         elseif cooldownActive then
-            bar:SetValue(0)
+            SetStatusBarImmediateValue(bar, 0)
         else
-            bar:SetValue(1)
+            SetStatusBarImmediateValue(bar, 1)
         end
 
         if bar.thresholdOverlay then
-            bar.thresholdOverlay:SetValue(0)
+            SetStatusBarImmediateValue(bar.thresholdOverlay, 0)
             bar.thresholdOverlay:Hide()
         end
 
@@ -658,7 +669,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         UpdateSpellCustomBarChargeText(bar, cooldownResult)
 
         if barInfo._maxStacksIndicator then
-            barInfo._maxStacksIndicator:SetValue(0)
+            SetStatusBarImmediateValue(barInfo._maxStacksIndicator, 0)
         end
 
         UpdateSpellCustomBarSounds(false)
@@ -1097,7 +1108,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
             if mode == "continuous" then
                 local bar = CreateContinuousBar(targetContainer)
-                bar:SetMinMaxValues(0, maxStacks)
+                SetStatusBarSmoothRange(bar, 0, maxStacks)
                 barInfo = { frame = bar, barType = targetBarType }
             elseif mode == "segmented" then
                 local holder = CreateSegmentedBar(targetContainer, maxStacks)

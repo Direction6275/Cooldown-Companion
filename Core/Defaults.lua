@@ -404,7 +404,6 @@ local defaults = {
             barReadyFontSize = 12,
             barReadyFont = "Friz Quadrata TT",
             barReadyFontOutline = "OUTLINE",
-            barUpdateInterval = 0.025,  -- seconds between bar fill updates (~40Hz default)
             barTexture = "Solid",
             -- Text display mode defaults
             textWidth = 200,

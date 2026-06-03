@@ -11,6 +11,8 @@ local ipairs = ipairs
 local pairs = pairs
 local tonumber = tonumber
 local type = type
+local Enum = Enum
+local issecretvalue = issecretvalue
 
 --------------------------------------------------------------------------------
 -- Constants
@@ -23,6 +25,12 @@ ST.NUM_GLOW_STYLES = 3
 ST.BORDER_RENDER_MODE_CUSTOM = "custom"
 ST.BORDER_RENDER_MODE_CRISP = "crisp"
 
+local statusBarInterpolation = Enum and Enum.StatusBarInterpolation
+local statusBarTimerDirection = Enum and Enum.StatusBarTimerDirection
+ST.STATUS_BAR_INTERPOLATION_SMOOTH = statusBarInterpolation and statusBarInterpolation.ExponentialEaseOut
+ST.STATUS_BAR_TIMER_DIRECTION_ELAPSED = statusBarTimerDirection and statusBarTimerDirection.ElapsedTime or 0
+ST.STATUS_BAR_TIMER_DIRECTION_REMAINING = statusBarTimerDirection and statusBarTimerDirection.RemainingTime or 1
+
 -- Shared edge anchor spec: {point1, relPoint1, point2, relPoint2, x1sign, y1sign, x2sign, y2sign}
 -- Signs: 0 = zero offset, 1 = +size, -1 = -size
 ST.EDGE_ANCHOR_SPEC = {
@@ -31,6 +39,128 @@ ST.EDGE_ANCHOR_SPEC = {
     {"TOPLEFT", "TOPLEFT",     "BOTTOMRIGHT", "BOTTOMLEFT",   0, -1,  1,  1}, -- Left   (inset to avoid corner overlap)
     {"TOPLEFT", "TOPRIGHT",    "BOTTOMRIGHT", "BOTTOMRIGHT", -1, -1,  0,  1}, -- Right  (inset to avoid corner overlap)
 }
+
+--------------------------------------------------------------------------------
+-- StatusBar Motion Helpers
+--------------------------------------------------------------------------------
+
+local STATUS_BAR_MOTION_TIMER = "timer"
+local STATUS_BAR_MOTION_SMOOTH_VALUE = "smoothValue"
+
+function ST.ClearStatusBarMotion(statusBar)
+    if not statusBar then return end
+
+    statusBar._cdcStatusBarMotionKind = nil
+    statusBar._cdcStatusBarMotionDurationObj = nil
+    statusBar._cdcStatusBarMotionDirection = nil
+    statusBar._cdcStatusBarMotionValue = nil
+    statusBar._cdcStatusBarRangeMin = nil
+    statusBar._cdcStatusBarRangeMax = nil
+    statusBar._cdcStatusBarRangeInterpolation = nil
+end
+
+function ST.SetStatusBarRange(statusBar, minValue, maxValue, interpolation)
+    if not statusBar then return false end
+
+    local rangeIsSecret = issecretvalue
+        and (issecretvalue(minValue) or issecretvalue(maxValue))
+    if not rangeIsSecret
+        and statusBar._cdcStatusBarRangeMin == minValue
+        and statusBar._cdcStatusBarRangeMax == maxValue
+        and statusBar._cdcStatusBarRangeInterpolation == interpolation then
+        return true
+    end
+
+    if rangeIsSecret then
+        statusBar._cdcStatusBarRangeMin = nil
+        statusBar._cdcStatusBarRangeMax = nil
+        statusBar._cdcStatusBarRangeInterpolation = nil
+    else
+        statusBar._cdcStatusBarRangeMin = minValue
+        statusBar._cdcStatusBarRangeMax = maxValue
+        statusBar._cdcStatusBarRangeInterpolation = interpolation
+    end
+
+    if interpolation ~= nil then
+        statusBar:SetMinMaxValues(minValue, maxValue, interpolation)
+    else
+        statusBar:SetMinMaxValues(minValue, maxValue)
+    end
+    return true
+end
+
+function ST.SetStatusBarImmediateRange(statusBar, minValue, maxValue)
+    return ST.SetStatusBarRange(statusBar, minValue, maxValue, nil)
+end
+
+function ST.SetStatusBarSmoothRange(statusBar, minValue, maxValue)
+    return ST.SetStatusBarRange(statusBar, minValue, maxValue, ST.STATUS_BAR_INTERPOLATION_SMOOTH)
+end
+
+function ST.SetStatusBarImmediateValue(statusBar, value)
+    if not statusBar then return false end
+
+    ST.ClearStatusBarMotion(statusBar)
+    statusBar:SetValue(value)
+    return true
+end
+
+function ST.SetStatusBarSmoothValue(statusBar, value)
+    if not statusBar then return false end
+
+    local valueIsSecret = issecretvalue and issecretvalue(value)
+    if statusBar._cdcStatusBarMotionKind == STATUS_BAR_MOTION_SMOOTH_VALUE
+        and not valueIsSecret
+        and statusBar._cdcStatusBarMotionValue == value then
+        return true
+    end
+
+    statusBar._cdcStatusBarMotionKind = STATUS_BAR_MOTION_SMOOTH_VALUE
+    statusBar._cdcStatusBarMotionDurationObj = nil
+    statusBar._cdcStatusBarMotionDirection = nil
+    if valueIsSecret then
+        statusBar._cdcStatusBarMotionValue = nil
+    else
+        statusBar._cdcStatusBarMotionValue = value
+    end
+
+    local interpolation = ST.STATUS_BAR_INTERPOLATION_SMOOTH
+    if interpolation ~= nil then
+        statusBar:SetValue(value, interpolation)
+    else
+        statusBar:SetValue(value)
+    end
+    return true
+end
+
+function ST.SetStatusBarTimerDuration(statusBar, durationObj, direction)
+    if not (statusBar and durationObj and statusBar.SetTimerDuration) then
+        return false
+    end
+
+    direction = direction or ST.STATUS_BAR_TIMER_DIRECTION_ELAPSED
+    if statusBar._cdcStatusBarMotionKind == STATUS_BAR_MOTION_TIMER
+        and statusBar._cdcStatusBarMotionDurationObj == durationObj
+        and statusBar._cdcStatusBarMotionDirection == direction then
+        return true
+    end
+
+    statusBar._cdcStatusBarMotionKind = STATUS_BAR_MOTION_TIMER
+    statusBar._cdcStatusBarMotionDurationObj = durationObj
+    statusBar._cdcStatusBarMotionDirection = direction
+    statusBar._cdcStatusBarMotionValue = nil
+
+    statusBar:SetTimerDuration(durationObj, ST.STATUS_BAR_INTERPOLATION_SMOOTH, direction)
+    return true
+end
+
+function ST.SetStatusBarElapsedDuration(statusBar, durationObj)
+    return ST.SetStatusBarTimerDuration(statusBar, durationObj, ST.STATUS_BAR_TIMER_DIRECTION_ELAPSED)
+end
+
+function ST.SetStatusBarRemainingDuration(statusBar, durationObj)
+    return ST.SetStatusBarTimerDuration(statusBar, durationObj, ST.STATUS_BAR_TIMER_DIRECTION_REMAINING)
+end
 
 --------------------------------------------------------------------------------
 -- Border Helpers

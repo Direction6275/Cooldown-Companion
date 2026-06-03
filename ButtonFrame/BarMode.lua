@@ -61,6 +61,15 @@ local EvaluateDesaturation = ST._EvaluateDesaturation
 
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
+local ClearStatusBarMotion = ST.ClearStatusBarMotion
+local SetStatusBarImmediateRange = ST.SetStatusBarImmediateRange
+local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
+local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
+local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
+local SetStatusBarElapsedDuration = ST.SetStatusBarElapsedDuration
+local SetStatusBarRemainingDuration = ST.SetStatusBarRemainingDuration
+
+local BAR_TEXT_UPDATE_INTERVAL = 0.1
 
 local function IsCursorAnchoredButton(button)
     return button
@@ -318,10 +327,10 @@ local function ClearBarAuraStackVisual(button, keepIndicator)
     end
     if button.statusBar and button.statusBar.thresholdOverlay then
         button.statusBar.thresholdOverlay:Hide()
-        button.statusBar.thresholdOverlay:SetValue(0)
+        SetStatusBarImmediateValue(button.statusBar.thresholdOverlay, 0)
     end
     if button.statusBar then
-        button.statusBar:SetMinMaxValues(0, 1)
+        SetStatusBarImmediateRange(button.statusBar, 0, 1)
     end
     if not keepIndicator and RB and RB.ClearMaxStacksIndicator then
         if button._barAuraStackIndicatorInfo then
@@ -345,7 +354,7 @@ function CooldownCompanion:RefreshBarPanelAuraStackVisual(button)
     if button._barAuraStackContinuousInfo then
         button._barAuraStackContinuousInfo._barAuraStackIndicatorKey = nil
     end
-    button._barFillElapsed = button._barUpdateInterval or 0.025
+    button._barFillElapsed = button._barTextUpdateInterval or BAR_TEXT_UPDATE_INTERVAL
 end
 
 local function ClearBarAuraStackIndicatorInfo(info, RB)
@@ -366,7 +375,7 @@ local function CreateBarAuraStackSegment(holder, RB)
     local segment = CreateFrame("StatusBar", nil, holder)
     segment:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
     segment:SetMinMaxValues(0, 1)
-    segment:SetValue(0)
+    SetStatusBarImmediateValue(segment, 0)
 
     segment.bg = segment:CreateTexture(nil, "BACKGROUND")
     segment.bg:SetAllPoints()
@@ -387,7 +396,7 @@ local function EnsureBarAuraSegmentCapacity(holder, count, RB)
     for i, segment in ipairs(holder.segments) do
         segment:SetMinMaxValues(i - 1, i)
         if i > count then
-            segment:SetValue(0)
+            SetStatusBarImmediateValue(segment, 0)
             segment:Hide()
         end
     end
@@ -404,7 +413,7 @@ local function EnsureBarAuraOverlayCapacity(holder, halfSegments, RB)
         overlaySegment:SetFrameLevel(holder:GetFrameLevel() + 2)
         overlaySegment:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
         overlaySegment:SetMinMaxValues(i + halfSegments - 1, i + halfSegments)
-        overlaySegment:SetValue(0)
+        SetStatusBarImmediateValue(overlaySegment, 0)
         SetFrameClickThroughRecursive(overlaySegment, true, true)
         holder.overlaySegments[i] = overlaySegment
     end
@@ -412,14 +421,14 @@ local function EnsureBarAuraOverlayCapacity(holder, halfSegments, RB)
     for i, segment in ipairs(holder.segments) do
         segment:SetMinMaxValues(i - 1, i)
         if i > halfSegments then
-            segment:SetValue(0)
+            SetStatusBarImmediateValue(segment, 0)
             segment:Hide()
         end
     end
     for i, segment in ipairs(holder.overlaySegments) do
         segment:SetMinMaxValues(i + halfSegments - 1, i + halfSegments)
         if i > halfSegments then
-            segment:SetValue(0)
+            SetStatusBarImmediateValue(segment, 0)
             segment:Hide()
         end
     end
@@ -489,7 +498,7 @@ local function ApplyBarAuraStackSegmentValues(segments, color, value, valueAvail
     local widgetValue = GetBarAuraStackWidgetValue(value, valueAvailable)
     for _, segment in ipairs(segments) do
         segment:SetStatusBarColor(color[1], color[2], color[3], color[4] or 1)
-        segment:SetValue(widgetValue)
+        SetStatusBarSmoothValue(segment, widgetValue)
     end
 end
 
@@ -497,16 +506,16 @@ local function ApplyBarAuraStackSegmentOnlyValues(segments, value, valueAvailabl
     if not segments then return end
     local widgetValue = GetBarAuraStackWidgetValue(value, valueAvailable)
     for _, segment in ipairs(segments) do
-        segment:SetValue(widgetValue)
+        SetStatusBarSmoothValue(segment, widgetValue)
     end
 end
 
 local function ApplyBarAuraStackValuesOnly(button, mode, stackValue, valueAvailable)
     local widgetValue = GetBarAuraStackWidgetValue(stackValue, valueAvailable)
     if mode == "continuous" then
-        button.statusBar:SetValue(widgetValue)
+        SetStatusBarSmoothValue(button.statusBar, widgetValue)
         if button.statusBar.thresholdOverlay and button.statusBar.thresholdOverlay:IsShown() then
-            button.statusBar.thresholdOverlay:SetValue(widgetValue)
+            SetStatusBarSmoothValue(button.statusBar.thresholdOverlay, widgetValue)
         end
     else
         local holder = mode == "overlay" and button._barAuraStackOverlay or button._barAuraStackSegments
@@ -522,7 +531,7 @@ local function ApplyBarAuraStackValuesOnly(button, mode, stackValue, valueAvaila
 
     local info = mode == "continuous" and button._barAuraStackContinuousInfo or button._barAuraStackIndicatorInfo
     if info and info._maxStacksIndicator then
-        info._maxStacksIndicator:SetValue(widgetValue)
+        SetStatusBarSmoothValue(info._maxStacksIndicator, widgetValue)
     end
 end
 
@@ -696,8 +705,8 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
         end
         button._barAuraStackVisualActive = true
         button._barAuraStackVisualMode = "continuous"
-        button.statusBar:SetMinMaxValues(0, maxStacks)
-        button.statusBar:SetValue(GetBarAuraStackWidgetValue(stackValue, valueAvailable))
+        SetStatusBarSmoothRange(button.statusBar, 0, maxStacks)
+        SetStatusBarSmoothValue(button.statusBar, GetBarAuraStackWidgetValue(stackValue, valueAvailable))
         button.statusBar:SetStatusBarColor(stackBarColor[1], stackBarColor[2], stackBarColor[3], stackBarColor[4] or 1)
         if showThreshold and RB.EnsureCustomAuraContinuousThresholdOverlay and RB.LayoutCustomAuraContinuousThresholdOverlay then
             RB.EnsureCustomAuraContinuousThresholdOverlay(button.statusBar)
@@ -708,12 +717,12 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
             if overlay then
                 RB.SetCustomAuraMaxThresholdRange(overlay, maxStacks)
                 overlay:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], thresholdColor[4] or 1)
-                overlay:SetValue(GetBarAuraStackWidgetValue(stackValue, valueAvailable))
+                SetStatusBarSmoothValue(overlay, GetBarAuraStackWidgetValue(stackValue, valueAvailable))
                 overlay:Show()
             end
         elseif button.statusBar.thresholdOverlay then
             button.statusBar.thresholdOverlay:Hide()
-            button.statusBar.thresholdOverlay:SetValue(0)
+            SetStatusBarImmediateValue(button.statusBar.thresholdOverlay, 0)
         end
         button._barAuraStackLayoutKey = layoutKey
         return
@@ -726,7 +735,7 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
     HideBarAuraBaseFill(button)
     if button.statusBar.thresholdOverlay then
         button.statusBar.thresholdOverlay:Hide()
-        button.statusBar.thresholdOverlay:SetValue(0)
+        SetStatusBarImmediateValue(button.statusBar.thresholdOverlay, 0)
     end
     holder._isVertical = button._isVertical == true
     holder._reverseFill = reverseFill
@@ -762,10 +771,10 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
                     RB.SetCustomAuraMaxThresholdRange(segment, maxStacks)
                     segment:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], thresholdColor[4] or 1)
                 end
-                segment:SetValue(GetBarAuraStackWidgetValue(stackValue, valueAvailable))
+                SetStatusBarSmoothValue(segment, GetBarAuraStackWidgetValue(stackValue, valueAvailable))
                 segment:Show()
             elseif layoutChanged then
-                segment:SetValue(0)
+                SetStatusBarImmediateValue(segment, 0)
                 segment:Hide()
             end
         end
@@ -860,7 +869,7 @@ local function UpdateBarAuraStackIndicator(button, mode, maxStacks, stackValue, 
         info._barAuraStackIndicatorKey = indicatorKey
     end
     if info._maxStacksIndicator then
-        info._maxStacksIndicator:SetValue(GetBarAuraStackWidgetValue(stackValue, stackValueAvailable))
+        SetStatusBarSmoothValue(info._maxStacksIndicator, GetBarAuraStackWidgetValue(stackValue, stackValueAvailable))
     end
 end
 
@@ -878,8 +887,8 @@ local function ApplyBarAuraStackVisual(button, stackValue, stackValueAvailable)
         if mode == "continuous" then
             LayoutBarAuraStackVisual(button, "continuous", maxStacks, widgetValue, stackValueAvailable)
         else
-            button.statusBar:SetMinMaxValues(0, 1)
-            button.statusBar:SetValue(0)
+            SetStatusBarImmediateRange(button.statusBar, 0, 1)
+            SetStatusBarImmediateValue(button.statusBar, 0)
             LayoutBarAuraStackVisual(button, mode, maxStacks, widgetValue, stackValueAvailable)
         end
         UpdateBarAuraStackIndicator(button, mode, maxStacks, widgetValue, stackValueAvailable)
@@ -890,7 +899,7 @@ local function ApplyBarAuraStackVisual(button, stackValue, stackValueAvailable)
     end
 end
 
--- Lightweight OnUpdate: interpolates bar fill + time text between ticker updates.
+-- Lightweight OnUpdate: keeps time text fresh while native StatusBar timers drive fill motion.
 local function SetBarTimeText(button, text)
     if button._lastBarTimeText ~= text then
         button._lastBarTimeText = text
@@ -905,9 +914,9 @@ end
 
 local function UpdateBarFill(button)
     -- Single-bar path
-    -- DurationObject percent methods return secret values during combat in 12.0.1,
-    -- but SetValue() accepts secrets (C-side widget method).  HasSecretValues gates
-    -- expiry detection and time text formatting.
+    -- DurationObjects are handed to StatusBar:SetTimerDuration so drain/fill motion
+    -- is engine-driven instead of re-sampled as Lua percentages.
+    -- HasSecretValues gates expiry detection and time text formatting.
     -- Items use stored C_Item.GetItemCooldown values (_itemCdStart/_itemCdDuration).
     local onCooldown = false
     local itemRemaining = 0
@@ -918,6 +927,7 @@ local function UpdateBarFill(button)
     if previewRemaining and previewRemaining > 0 and not button._barGCDSuppressed then
         ClearBarAuraStackVisual(button)
         onCooldown = true
+        SetStatusBarSmoothRange(button.statusBar, 0, 1)
         previewDuration = previewDuration or previewRemaining
         if previewDuration <= 0 then
             previewDuration = previewRemaining
@@ -930,7 +940,7 @@ local function UpdateBarFill(button)
         end
         if frac < 0 then frac = 0 end
         if frac > 1 then frac = 1 end
-        button.statusBar:SetValue(frac)
+        SetStatusBarSmoothValue(button.statusBar, frac)
     elseif button._barAuraStackDisplay then
         onCooldown = true
         if not button._barAuraStackValueSecret then
@@ -940,11 +950,15 @@ local function UpdateBarFill(button)
     elseif button._durationObj and not button._barGCDSuppressed then
         ClearBarAuraStackVisual(button)
         onCooldown = true
-        -- SetValue accepts secret values; fraction animates natively in the engine
+        SetStatusBarSmoothRange(button.statusBar, 0, 1)
         if button._auraActive then
-            button.statusBar:SetValue(button._durationObj:GetRemainingPercent())   -- drain: 1→0
+            if not SetStatusBarRemainingDuration(button.statusBar, button._durationObj) then
+                SetStatusBarSmoothValue(button.statusBar, button._durationObj:GetRemainingPercent())   -- drain: 1->0
+            end
         else
-            button.statusBar:SetValue(button._durationObj:GetElapsedPercent())     -- fill: 0→1
+            if not SetStatusBarElapsedDuration(button.statusBar, button._durationObj) then
+                SetStatusBarSmoothValue(button.statusBar, button._durationObj:GetElapsedPercent())     -- fill: 0->1
+            end
         end
     elseif button._viewerBar and button._auraActive and not button._barGCDSuppressed then
         ClearBarAuraStackVisual(button)
@@ -956,18 +970,20 @@ local function UpdateBarFill(button)
         if viewerBar:IsVisible() then
             onCooldown = true
             local _, maxVal = viewerBar:GetMinMaxValues()
-            button.statusBar:SetMinMaxValues(0, maxVal)
-            button.statusBar:SetValue(viewerBar:GetValue())
+            SetStatusBarSmoothRange(button.statusBar, 0, maxVal)
+            SetStatusBarSmoothValue(button.statusBar, viewerBar:GetValue())
         end
     elseif button._cooldownDeferred then
         ClearBarAuraStackVisual(button)
         -- Deferred cooldown (timer hasn't started): show as "on cooldown"
         -- with a static full bar (no animation, no time text).
         onCooldown = true
-        button.statusBar:SetValue(0)
+        SetStatusBarImmediateRange(button.statusBar, 0, 1)
+        SetStatusBarImmediateValue(button.statusBar, 0)
     elseif button.buttonData.type == "item" then
         ClearBarAuraStackVisual(button)
         -- Items: use stored C_Item.GetItemCooldown values (avoids hidden-widget staleness)
+        SetStatusBarSmoothRange(button.statusBar, 0, 1)
         local startMs = (button._itemCdStart or 0) * 1000
         local durationMs = (button._itemCdDuration or 0) * 1000
         local now = GetTime() * 1000
@@ -979,11 +995,11 @@ local function UpdateBarFill(button)
             if button._auraActive then
                 local frac = 1 - (elapsed / durationMs)
                 if frac < 0 then frac = 0 end
-                button.statusBar:SetValue(frac)
+                SetStatusBarSmoothValue(button.statusBar, frac)
             else
                 local frac = elapsed / durationMs
                 if frac > 1 then frac = 1 end
-                button.statusBar:SetValue(frac)
+                SetStatusBarSmoothValue(button.statusBar, frac)
             end
         end
     end
@@ -1054,29 +1070,29 @@ local function UpdateBarFill(button)
         ClearBarAuraStackVisual(button)
         -- Restore 0-1 range if exiting viewer bar pass-through
         if button._viewerBar then
-            button.statusBar:SetMinMaxValues(0, 1)
+            SetStatusBarImmediateRange(button.statusBar, 0, 1)
             button._viewerBar = nil
         end
         if button._barAuraActivePreview or button._conditionalBarAuraActivePreview then
-            button.statusBar:SetValue(1)
+            SetStatusBarImmediateValue(button.statusBar, 1)
             SetBarTimeText(button, "")
         elseif button.buttonData.isPassive then
-            button.statusBar:SetValue(0)
+            SetStatusBarImmediateValue(button.statusBar, 0)
             SetBarTimeText(button, "")
         else
-        button.statusBar:SetValue(1)
-        if button.style.showBarReadyText then
-            if button._barTextMode ~= "ready" then
-                button._barTextMode = "ready"
-                local f = CooldownCompanion:FetchFont(button.style.barReadyFont or "Friz Quadrata TT")
-                local s = button.style.barReadyFontSize or 12
-                local o = button.style.barReadyFontOutline or "OUTLINE"
-                button.timeText:SetFont(f, s, o)
+            SetStatusBarImmediateValue(button.statusBar, 1)
+            if button.style.showBarReadyText then
+                if button._barTextMode ~= "ready" then
+                    button._barTextMode = "ready"
+                    local f = CooldownCompanion:FetchFont(button.style.barReadyFont or "Friz Quadrata TT")
+                    local s = button.style.barReadyFontSize or 12
+                    local o = button.style.barReadyFontOutline or "OUTLINE"
+                    button.timeText:SetFont(f, s, o)
+                end
+                SetBarTimeText(button, button.style.barReadyText or "Ready")
+            else
+                SetBarTimeText(button, "")
             end
-            SetBarTimeText(button, button.style.barReadyText or "Ready")
-        else
-            SetBarTimeText(button, "")
-        end
         end
     end
 end
@@ -1340,7 +1356,7 @@ local function UpdateBarDisplay(button)
 end
 
 -- Shared OnUpdate for bar-mode buttons: aura expiry detection, pulse/color-shift animation, + throttled bar fill.
--- Reads interval from self._barUpdateInterval so it can be updated without re-installing.
+-- Reads interval from self._barTextUpdateInterval so it can be updated without re-installing.
 local function BarModeOnUpdate(self, elapsed)
     -- Detect aura expiry via HasSecretValues + GetRemainingDuration.
     -- Non-secret (out of combat): instant expiry detection.
@@ -1375,7 +1391,7 @@ local function BarModeOnUpdate(self, elapsed)
             self._barAuraColor = nil
             local c = self.style.barColor or DEFAULT_BAR_COLOR
             self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-            self.statusBar:SetMinMaxValues(0, 1)
+            SetStatusBarImmediateRange(self.statusBar, 0, 1)
             SetBarAuraEffect(self, false)
             self._barPulseActive = nil
             self._barColorShiftActive = nil
@@ -1409,7 +1425,7 @@ local function BarModeOnUpdate(self, elapsed)
     end
 
     self._barFillElapsed = self._barFillElapsed + elapsed
-    if self._barFillElapsed >= self._barUpdateInterval then
+    if self._barFillElapsed >= (self._barTextUpdateInterval or BAR_TEXT_UPDATE_INTERVAL) then
         self._barFillElapsed = 0
         UpdateBarFill(self)
     end
@@ -1496,8 +1512,8 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     if isVertical then
         button.statusBar:SetOrientation("VERTICAL")
     end
-    button.statusBar:SetMinMaxValues(0, 1)
-    button.statusBar:SetValue(1)
+    SetStatusBarImmediateRange(button.statusBar, 0, 1)
+    SetStatusBarImmediateValue(button.statusBar, 1)
     button.statusBar:SetReverseFill(style.barReverseFill or false)
     button.statusBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(style.barTexture or "Solid"))
     local barColor = style.barColor or DEFAULT_BAR_COLOR
@@ -1645,9 +1661,9 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(buttonData.id)
     end
 
-    -- Bar fill interpolation OnUpdate
+    -- Bar text refresh / fallback fill OnUpdate. Native timers drive DurationObject fills.
     button._barFillElapsed = 0
-    button._barUpdateInterval = style.barUpdateInterval or 0.025
+    button._barTextUpdateInterval = BAR_TEXT_UPDATE_INTERVAL
     button:SetScript("OnUpdate", BarModeOnUpdate)
 
     -- Aura tracking runtime state
@@ -1774,9 +1790,9 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     end
     button._isVertical = isVertical
 
-    -- Update bar fill OnUpdate interval
+    -- Update bar text/fallback fill OnUpdate interval
     button._barFillElapsed = 0
-    button._barUpdateInterval = newStyle.barUpdateInterval or 0.025
+    button._barTextUpdateInterval = BAR_TEXT_UPDATE_INTERVAL
     button:SetScript("OnUpdate", BarModeOnUpdate)
 
     -- Invalidate cached state

@@ -25,6 +25,9 @@ local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
 local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
 local GetResourceColors = RB.GetResourceColors
 local SetSegmentedText = RB.SetSegmentedText
+local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
+local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
+local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 
 function RB.CreateResourceBarPreviewModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
@@ -78,8 +81,8 @@ function RB.CreateResourceBarPreviewModule(deps)
 
         ClearResourceAuraVisuals(barInfo.frame)
         if barInfo.barType == "continuous" then
-            barInfo.frame:SetMinMaxValues(0, 100)
-            barInfo.frame:SetValue(65)
+            SetStatusBarSmoothRange(barInfo.frame, 0, 100)
+            SetStatusBarSmoothValue(barInfo.frame, 65)
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
                 local textFormat = barInfo.frame._textFormat
                 if textFormat == "current" then
@@ -91,8 +94,8 @@ function RB.CreateResourceBarPreviewModule(deps)
                 end
             end
         elseif barInfo.barType == "health_continuous" then
-            barInfo.frame:SetMinMaxValues(0, 100)
-            barInfo.frame:SetValue(65)
+            SetStatusBarSmoothRange(barInfo.frame, 0, 100)
+            SetStatusBarSmoothValue(barInfo.frame, 65)
             local config = HealthBar.GetConfig(settings)
             HealthBar.ApplyFillColor(barInfo.frame, config, 0.65)
             HealthBar.ApplyBackgroundColor(barInfo.frame, config, 0.65)
@@ -119,19 +122,19 @@ function RB.CreateResourceBarPreviewModule(deps)
             local previewValue = filled + 0.5
             for i, seg in ipairs(barInfo.frame.segments) do
                 if i <= filled then
-                    seg:SetValue(1)
+                    SetStatusBarSmoothValue(seg, 1)
                 elseif i == filled + 1 then
-                    seg:SetValue(0.5)
+                    SetStatusBarSmoothValue(seg, 0.5)
                 else
-                    seg:SetValue(0)
+                    SetStatusBarSmoothValue(seg, 0)
                 end
             end
             ApplySegmentedPreviewColors(barInfo.frame, barInfo.powerType, settings, previewValue)
             ApplyResourceAuraLanePreview(barInfo, 0.5)
             SetSegmentedText(barInfo.frame, previewValue, n)
         elseif barInfo.barType == "stagger_continuous" then
-            barInfo.frame:SetMinMaxValues(0, 100)
-            barInfo.frame:SetValue(45)
+            SetStatusBarSmoothRange(barInfo.frame, 0, 100)
+            SetStatusBarSmoothValue(barInfo.frame, 45)
             local _, yellowColor = GetResourceColors(101, settings)
             barInfo.frame:SetStatusBarColor(yellowColor[1], yellowColor[2], yellowColor[3], 1)
             barInfo.frame.brightnessOverlay:Hide()
@@ -152,8 +155,8 @@ function RB.CreateResourceBarPreviewModule(deps)
                 previewStacks = math_min(GetMWMaxStacks(), math_max(previewStacks, 7))
             end
             for i = 1, half do
-                barInfo.frame.segments[i]:SetValue(previewStacks)
-                barInfo.frame.overlaySegments[i]:SetValue(previewStacks)
+                SetStatusBarSmoothValue(barInfo.frame.segments[i], previewStacks)
+                SetStatusBarSmoothValue(barInfo.frame.overlaySegments[i], previewStacks)
                 if previewStacks > (half + i - 1) then
                     barInfo.frame.overlaySegments[i]:SetAlpha(1)
                 else
@@ -168,16 +171,16 @@ function RB.CreateResourceBarPreviewModule(deps)
             local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
             local previewValue
             if isSpellAuraStackDisplay then
-                barInfo.frame:SetMinMaxValues(0, maxStacks)
+                SetStatusBarSmoothRange(barInfo.frame, 0, maxStacks)
                 previewValue = math.ceil(maxStacks * 0.65)
-                barInfo.frame:SetValue(previewValue)
+                SetStatusBarSmoothValue(barInfo.frame, previewValue)
             else
-                barInfo.frame:SetMinMaxValues(0, 1)
+                SetStatusBarSmoothRange(barInfo.frame, 0, 1)
                 previewValue = 0.45
-                barInfo.frame:SetValue(previewValue)
+                SetStatusBarSmoothValue(barInfo.frame, previewValue)
             end
             if barInfo.frame.thresholdOverlay then
-                barInfo.frame.thresholdOverlay:SetValue(0)
+                SetStatusBarImmediateValue(barInfo.frame.thresholdOverlay, 0)
                 barInfo.frame.thresholdOverlay:Hide()
             end
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
@@ -196,7 +199,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             end
             ClearCustomAuraBarIndicatorState(barInfo, true)
             if barInfo._maxStacksIndicator then
-                barInfo._maxStacksIndicator:SetValue(0)
+                SetStatusBarImmediateValue(barInfo._maxStacksIndicator, 0)
             end
         elseif barInfo.barType == "custom_continuous" then
             local cabConfig = barInfo.cabConfig
@@ -207,21 +210,21 @@ function RB.CreateResourceBarPreviewModule(deps)
             ClearCustomAuraBarIndicatorState(barInfo, false)
             local previewValue
             if isActive then
-                barInfo.frame:SetMinMaxValues(0, 1)
+                SetStatusBarSmoothRange(barInfo.frame, 0, 1)
                 previewValue = indicatorPreview and 1 or 0.65
-                barInfo.frame:SetValue(previewValue)
+                SetStatusBarSmoothValue(barInfo.frame, previewValue)
             else
-                barInfo.frame:SetMinMaxValues(0, maxStacks)
+                SetStatusBarSmoothRange(barInfo.frame, 0, maxStacks)
                 previewValue = indicatorPreview and maxStacks or math.ceil(maxStacks * 0.65)
-                barInfo.frame:SetValue(previewValue)
+                SetStatusBarSmoothValue(barInfo.frame, previewValue)
             end
             if barInfo.frame.thresholdOverlay then
                 if thresholdEnabled then
                     SetCustomAuraMaxThresholdRange(barInfo.frame.thresholdOverlay, maxStacks)
-                    barInfo.frame.thresholdOverlay:SetValue(previewValue or 0)
+                    SetStatusBarSmoothValue(barInfo.frame.thresholdOverlay, previewValue or 0)
                     barInfo.frame.thresholdOverlay:Show()
                 else
-                    barInfo.frame.thresholdOverlay:SetValue(0)
+                    SetStatusBarImmediateValue(barInfo.frame.thresholdOverlay, 0)
                     barInfo.frame.thresholdOverlay:Hide()
                 end
             end
@@ -241,7 +244,7 @@ function RB.CreateResourceBarPreviewModule(deps)
                 end
             end
             if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
-                barInfo._maxStacksIndicator:SetValue(maxStacks)
+                SetStatusBarSmoothValue(barInfo._maxStacksIndicator, maxStacks)
             end
         elseif barInfo.barType == "custom_segmented" then
             local cabConfig = barInfo.cabConfig
@@ -251,22 +254,22 @@ function RB.CreateResourceBarPreviewModule(deps)
             local n = #barInfo.frame.segments
             local fill = indicatorPreview and n or math.ceil(n * 0.6)
             for _, seg in ipairs(barInfo.frame.segments) do
-                seg:SetValue(fill)
+                SetStatusBarSmoothValue(seg, fill)
             end
             if barInfo.frame.thresholdSegments then
                 for _, seg in ipairs(barInfo.frame.thresholdSegments) do
                     if thresholdEnabled then
                         SetCustomAuraMaxThresholdRange(seg, maxStacks)
-                        seg:SetValue(fill)
+                        SetStatusBarSmoothValue(seg, fill)
                         seg:Show()
                     else
-                        seg:SetValue(0)
+                        SetStatusBarImmediateValue(seg, 0)
                         seg:Hide()
                     end
                 end
             end
             if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
-                barInfo._maxStacksIndicator:SetValue(maxStacks)
+                SetStatusBarSmoothValue(barInfo._maxStacksIndicator, maxStacks)
             end
         elseif barInfo.barType == "custom_overlay" then
             local cabConfig = barInfo.cabConfig
@@ -276,22 +279,22 @@ function RB.CreateResourceBarPreviewModule(deps)
             local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
             local half = barInfo.halfSegments or 1
             for i = 1, half do
-                barInfo.frame.segments[i]:SetValue(previewStacks)
-                barInfo.frame.overlaySegments[i]:SetValue(previewStacks)
+                SetStatusBarSmoothValue(barInfo.frame.segments[i], previewStacks)
+                SetStatusBarSmoothValue(barInfo.frame.overlaySegments[i], previewStacks)
                 if barInfo.frame.thresholdSegments and barInfo.frame.thresholdSegments[i] then
                     local seg = barInfo.frame.thresholdSegments[i]
                     if thresholdEnabled then
                         SetCustomAuraMaxThresholdRange(seg, maxStacks)
-                        seg:SetValue(previewStacks)
+                        SetStatusBarSmoothValue(seg, previewStacks)
                         seg:Show()
                     else
-                        seg:SetValue(0)
+                        SetStatusBarImmediateValue(seg, 0)
                         seg:Hide()
                     end
                 end
             end
             if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
-                barInfo._maxStacksIndicator:SetValue(maxStacks)
+                SetStatusBarSmoothValue(barInfo._maxStacksIndicator, maxStacks)
             end
         end
     end

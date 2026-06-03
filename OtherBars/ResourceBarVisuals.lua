@@ -9,6 +9,9 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
+local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
+local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 
 local math_floor = math.floor
 local math_min = math.min
@@ -255,7 +258,7 @@ end
 local function HideResourceAuraStackSegments(holder)
     if not holder or not holder.auraStackSegments then return end
     for _, seg in ipairs(holder.auraStackSegments) do
-        seg:SetValue(0)
+        SetStatusBarImmediateValue(seg, 0)
         seg:Hide()
     end
 end
@@ -374,7 +377,7 @@ local function EnsureResourceAuraStackSegments(holder, settings)
     if not holder.auraStackSegments or #holder.auraStackSegments ~= count then
         if holder.auraStackSegments then
             for _, oldSeg in ipairs(holder.auraStackSegments) do
-                oldSeg:SetValue(0)
+                SetStatusBarImmediateValue(oldSeg, 0)
                 oldSeg:ClearAllPoints()
                 oldSeg:Hide()
             end
@@ -383,7 +386,7 @@ local function EnsureResourceAuraStackSegments(holder, settings)
         for i = 1, count do
             local seg = CreateFrame("StatusBar", nil, holder)
             seg:SetMinMaxValues(0, 1)
-            seg:SetValue(0)
+            SetStatusBarImmediateValue(seg, 0)
             seg:Hide()
             holder.auraStackSegments[i] = seg
         end
@@ -405,8 +408,8 @@ local function ApplyResourceAuraStackSegments(holder, settings, stackValue, maxS
         local seg = auraSegments[i]
         local segMin = ((i - 1) * maxStacks) / count
         local segMax = (i * maxStacks) / count
-        seg:SetMinMaxValues(segMin, segMax)
-        seg:SetValue(stackValue)
+        SetStatusBarSmoothRange(seg, segMin, segMax)
+        SetStatusBarSmoothValue(seg, stackValue)
         seg:SetAlpha(1)
         seg:SetStatusBarColor(color[1], color[2], color[3], 1)
         seg:Show()
@@ -665,7 +668,7 @@ local function ClearMaxStacksIndicator(barInfo)
     if indicator._pulseAG then
         indicator._pulseAG:Stop()
     end
-    indicator:SetValue(0)
+    SetStatusBarImmediateValue(indicator, 0)
 end
 
 local function EnsureCustomAuraContinuousThresholdOverlay(bar)
@@ -673,7 +676,7 @@ local function EnsureCustomAuraContinuousThresholdOverlay(bar)
     local overlay = CreateFrame("StatusBar", nil, bar)
     overlay:SetFrameLevel(bar:GetFrameLevel() + 1)
     overlay:SetMinMaxValues(0, 1)
-    overlay:SetValue(0)
+    SetStatusBarImmediateValue(overlay, 0)
     overlay:Hide()
     bar.thresholdOverlay = overlay
 end
@@ -687,7 +690,7 @@ local function EnsureCustomAuraSegmentThresholdOverlays(holder)
             local seg = CreateFrame("StatusBar", nil, holder)
             seg:SetFrameLevel(holder:GetFrameLevel() + 3)
             seg:SetMinMaxValues(0, 1)
-            seg:SetValue(0)
+            SetStatusBarImmediateValue(seg, 0)
             seg:Hide()
             holder.thresholdSegments[i] = seg
         end
@@ -695,7 +698,7 @@ local function EnsureCustomAuraSegmentThresholdOverlays(holder)
     for i = count + 1, #holder.thresholdSegments do
         local seg = holder.thresholdSegments[i]
         if seg then
-            seg:SetValue(0)
+            SetStatusBarImmediateValue(seg, 0)
             seg:Hide()
         end
     end
@@ -709,7 +712,7 @@ local function EnsureCustomAuraOverlayThresholdOverlays(holder, halfSegments)
             local seg = CreateFrame("StatusBar", nil, holder)
             seg:SetFrameLevel(holder:GetFrameLevel() + 4)
             seg:SetMinMaxValues(0, 1)
-            seg:SetValue(0)
+            SetStatusBarImmediateValue(seg, 0)
             seg:Hide()
             holder.thresholdSegments[i] = seg
         end
@@ -717,7 +720,7 @@ local function EnsureCustomAuraOverlayThresholdOverlays(holder, halfSegments)
     for i = halfSegments + 1, #holder.thresholdSegments do
         local seg = holder.thresholdSegments[i]
         if seg then
-            seg:SetValue(0)
+            SetStatusBarImmediateValue(seg, 0)
             seg:Hide()
         end
     end
@@ -753,7 +756,7 @@ local function CreateContinuousBar(parent)
     local bar = CreateFrame("StatusBar", nil, parent)
     bar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
     bar:SetMinMaxValues(0, 100)
-    bar:SetValue(0)
+    SetStatusBarImmediateValue(bar, 0)
 
     -- Background
     bar.bg = bar:CreateTexture(nil, "BACKGROUND")
@@ -796,7 +799,7 @@ local function CreateSegmentedBar(parent, numSegments)
         local seg = CreateFrame("StatusBar", nil, holder)
         seg:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
         seg:SetMinMaxValues(0, 1)
-        seg:SetValue(0)
+        SetStatusBarImmediateValue(seg, 0)
 
         seg.bg = seg:CreateTexture(nil, "BACKGROUND")
         seg.bg:SetAllPoints()
@@ -866,10 +869,10 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, or
         local seg = holder.segments[i]
         seg:ClearAllPoints()
         if i > n then
-            seg:SetValue(0)
+            SetStatusBarImmediateValue(seg, 0)
             seg:Hide()
             if holder.thresholdSegments and holder.thresholdSegments[i] then
-                holder.thresholdSegments[i]:SetValue(0)
+                SetStatusBarImmediateValue(holder.thresholdSegments[i], 0)
                 holder.thresholdSegments[i]:Hide()
             end
         elseif isVertical then
@@ -943,7 +946,7 @@ local function CreateOverlayBar(parent, halfSegments)
         local seg = CreateFrame("StatusBar", nil, holder)
         seg:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
         seg:SetMinMaxValues(i - 1, i)
-        seg:SetValue(0)
+        SetStatusBarImmediateValue(seg, 0)
 
         seg.bg = seg:CreateTexture(nil, "BACKGROUND")
         seg.bg:SetAllPoints()
@@ -960,7 +963,7 @@ local function CreateOverlayBar(parent, halfSegments)
         seg:SetFrameLevel(holder:GetFrameLevel() + 2)
         seg:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
         seg:SetMinMaxValues(i + halfSegments - 1, i + halfSegments)
-        seg:SetValue(0)
+        SetStatusBarImmediateValue(seg, 0)
 
         -- No background on overlay (transparent when empty, base bg shows through)
 
@@ -1082,17 +1085,17 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
     for i = halfSegments + 1, #holder.segments do
         local seg = holder.segments[i]
         if seg then
-            seg:SetValue(0)
+            SetStatusBarImmediateValue(seg, 0)
             seg:Hide()
         end
         local ov = holder.overlaySegments and holder.overlaySegments[i]
         if ov then
-            ov:SetValue(0)
+            SetStatusBarImmediateValue(ov, 0)
             ov:Hide()
         end
         local thresholdSeg = holder.thresholdSegments and holder.thresholdSegments[i]
         if thresholdSeg then
-            thresholdSeg:SetValue(0)
+            SetStatusBarImmediateValue(thresholdSeg, 0)
             thresholdSeg:Hide()
         end
     end
