@@ -872,9 +872,13 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     -- Hide While No Proc (spell entries only, not aura entries)
     local showNoProcToggle
     if isBatch then
-        showNoProcToggle = batchContext and batchContext.uniformType == "spell"
+        showNoProcToggle = batchContext
+            and batchContext.uniformType == "spell"
+            and not AllSelectedAre(group, "isPassiveCooldown")
     else
-        showNoProcToggle = buttonData.type == "spell" and buttonData.addedAs ~= "aura"
+        showNoProcToggle = buttonData.type == "spell"
+            and buttonData.addedAs ~= "aura"
+            and not buttonData.isPassiveCooldown
     end
     if showNoProcToggle then
         local hideNoProcCb = AceGUI:Create("CheckBox")

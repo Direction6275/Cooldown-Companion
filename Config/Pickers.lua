@@ -1346,8 +1346,10 @@ local IsSpellInCDMCooldown = ST.IsSpellInCDMCooldown
 -- Helper: Detect passive or proc spells (zero-cooldown CDM-tracked spells)
 ------------------------------------------------------------------------
 local IsActiveSpellBookSpell = ST.IsActiveSpellBookSpell
+local IsPassiveCooldownSpell = ST.IsPassiveCooldownSpell
 
 local function IsPassiveOrProc(spellId)
+    if IsPassiveCooldownSpell(spellId) then return false end
     if C_Spell.IsSpellPassive(spellId) then return true end
     -- Active spellbook spells (e.g. Death Strike) can have base cooldown 0 and
     -- still be normal spell entries; don't auto-classify them as aura-only.

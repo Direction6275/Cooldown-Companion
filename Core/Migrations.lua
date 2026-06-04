@@ -8,6 +8,8 @@ local CooldownCompanion = ST.Addon
 local type = type
 local next = next
 local rawget = rawget
+local pairs = pairs
+local ipairs = ipairs
 
 local IMPORT_CHECKPOINT_KEY = "_cdcImportCheckpoint"
 local IMPORT_CHECKPOINT_VERSION = "1.15"
@@ -60,6 +62,97 @@ local function LooksLikeProfilePayload(profile)
         or rawget(profile, "resourceBars") ~= nil
         or rawget(profile, "castBar") ~= nil
         or rawget(profile, "frameAnchoring") ~= nil
+end
+
+local function HasTriggerConditionConfig(buttonData)
+    return buttonData.triggerCondition ~= nil
+        or buttonData.triggerExpected ~= nil
+        or buttonData.triggerState ~= nil
+        or buttonData.triggerConditions ~= nil
+end
+
+local function ClearTriggerConditionConfig(buttonData)
+    local changed = false
+    if buttonData.triggerCondition ~= nil then
+        buttonData.triggerCondition = nil
+        changed = true
+    end
+    if buttonData.triggerExpected ~= nil then
+        buttonData.triggerExpected = nil
+        changed = true
+    end
+    if buttonData.triggerState ~= nil then
+        buttonData.triggerState = nil
+        changed = true
+    end
+    if buttonData.triggerConditions ~= nil then
+        buttonData.triggerConditions = nil
+        changed = true
+    end
+    return changed
+end
+
+local function NormalizePromotedPassiveCooldownTriggerConditions(buttonData)
+    if not HasTriggerConditionConfig(buttonData) then
+        return false
+    end
+    if not (CooldownCompanion.GetTriggerConditionClauses and CooldownCompanion.NormalizeTriggerConditionRowData) then
+        return false
+    end
+
+    local clauses = CooldownCompanion:GetTriggerConditionClauses(buttonData)
+    local changed = false
+    if #clauses == 0 then
+        changed = ClearTriggerConditionConfig(buttonData)
+    end
+
+    CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
+    return changed
+end
+
+local function NormalizePassiveCooldownButtons(profile)
+    if type(profile) ~= "table" or type(profile.groups) ~= "table" then
+        return false
+    end
+    if not ST.IsPassiveCooldownSpell then
+        return false
+    end
+
+    local changed = false
+    for _, group in pairs(profile.groups) do
+        if type(group) == "table" and type(group.buttons) == "table" then
+            for _, buttonData in ipairs(group.buttons) do
+                if type(buttonData) == "table"
+                    and buttonData.type == "spell"
+                    and (buttonData.isPassive == true or buttonData.isPassiveCooldown == true) then
+                    local isPassiveCooldown = buttonData.isPassiveCooldown == true
+                        or ST.IsPassiveCooldownSpell(buttonData.id)
+                    if isPassiveCooldown then
+                        if buttonData.isPassiveCooldown ~= true then
+                            buttonData.isPassiveCooldown = true
+                            changed = true
+                        end
+                        if buttonData.isPassive ~= nil then
+                            buttonData.isPassive = nil
+                            changed = true
+                        end
+                        if buttonData.auraTracking ~= false then
+                            buttonData.auraTracking = false
+                            changed = true
+                        end
+                        if buttonData.addedAs ~= "spell" then
+                            buttonData.addedAs = "spell"
+                            changed = true
+                        end
+                        if NormalizePromotedPassiveCooldownTriggerConditions(buttonData) then
+                            changed = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return changed
 end
 
 local function HasSupportedCheckpoint(payload)
@@ -203,6 +296,7 @@ function CooldownCompanion:RunAllMigrations()
     self._pendingUnsupportedLegacyHide = nil
 
     self:StampImportCheckpoint(self.db and self.db.profile)
+    NormalizePassiveCooldownButtons(self.db and self.db.profile)
     if self.SanitizeCursorAnchorPolicy and not self._deferCursorAnchorPolicySanitizer then
         self:SanitizeCursorAnchorPolicy(self.db and self.db.profile)
     end

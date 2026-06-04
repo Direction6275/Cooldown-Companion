@@ -88,6 +88,13 @@ function ST.IsSpellInCDMCooldown(spellId)
     return false
 end
 
+function ST.IsPassiveCooldownSpell(spellId)
+    if not spellId or not C_Spell.IsSpellPassive(spellId) then
+        return false
+    end
+    return ST.HasSpellCooldownSurface(spellId)
+end
+
 --------------------------------------------------------------------------------
 -- Tooltip Cooldown Detection
 --------------------------------------------------------------------------------
@@ -125,12 +132,21 @@ function ST.HasChargeCooldownInfo(spellId)
     return false
 end
 
+local function HasBaseCooldown(spellId)
+    local baseCd = GetSpellBaseCooldown(spellId)
+    return baseCd and baseCd > 0
+end
+
+function ST.HasSpellCooldownSurface(spellId)
+    if not spellId then return false end
+    return HasBaseCooldown(spellId)
+        or ST.HasTooltipCooldown(spellId)
+        or ST.HasChargeCooldownInfo(spellId)
+end
+
 -- Returns true if the spell has no real cooldown surface (GCD-only).
 function ST.IsNoCooldownSpell(spellId)
-    local baseCd = GetSpellBaseCooldown(spellId)
-    return (not baseCd or baseCd == 0)
-        and not ST.HasTooltipCooldown(spellId)
-        and not ST.HasChargeCooldownInfo(spellId)
+    return not ST.HasSpellCooldownSurface(spellId)
 end
 
 -- Returns true if the spell tooltip contains a UsageRequirement line

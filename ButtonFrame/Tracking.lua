@@ -237,7 +237,7 @@ local function ResolveIconTintIntent(button, buttonData, style, target)
             reason = "unusable-preview"
             stateOverride = true
             unusableActive = true
-        elseif buttonData.type == "spell" then
+        elseif buttonData.type == "spell" and not buttonData.isPassiveCooldown then
             local spellID = button._displaySpellId or buttonData.id
             local isUsable = C_Spell.IsSpellUsable(spellID)
             if not isUsable then

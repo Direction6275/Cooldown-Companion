@@ -188,7 +188,10 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
 
     -- Check hideWhileNoProc (spell entries added as spells only)
     if buttonData.hideWhileNoProc then
-        local isSpellEntry = buttonData.type == "spell" and buttonData.addedAs ~= "aura" and not buttonData.isPassive
+        local isSpellEntry = buttonData.type == "spell"
+            and buttonData.addedAs ~= "aura"
+            and not buttonData.isPassive
+            and not buttonData.isPassiveCooldown
         if isSpellEntry and not procOverlayActive then
             hideReasons = bit_bor(hideReasons, HIDE_NO_PROC)
         end
@@ -216,7 +219,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     end
 
     -- Check hideWhileUnusable
-    if buttonData.hideWhileUnusable and not buttonData.isPassive then
+    if buttonData.hideWhileUnusable and not buttonData.isPassive and not buttonData.isPassiveCooldown then
         if buttonData.type == "spell" then
             local spellID = button._displaySpellId or buttonData.id
             if not C_Spell_IsSpellUsable(spellID) then

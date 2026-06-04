@@ -609,8 +609,11 @@ local function ResolveTextureIndicatorSectionState(button, sectionKey, config, t
 
     if sectionKey == "unusable" then
         local buttonData = button.buttonData
-        if not buttonData or buttonData.isPassive then
-            return FinishTextureIndicatorSectionState(target, false, not buttonData and "missing-button-data" or "passive", nil, effectType)
+        if not buttonData or buttonData.isPassive or buttonData.isPassiveCooldown then
+            local reason = not buttonData and "missing-button-data"
+                or buttonData.isPassiveCooldown and "passive-cooldown"
+                or "passive"
+            return FinishTextureIndicatorSectionState(target, false, reason, nil, effectType)
         end
         if buttonData.type == "spell" then
             local spellID = button._displaySpellId or buttonData.id
@@ -646,7 +649,7 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
 
     if conditionKey == "rangeActive" then
         local buttonData = button.buttonData
-        if not buttonData or buttonData.isPassive then
+        if not buttonData or buttonData.isPassive or buttonData.isPassiveCooldown then
             return nil
         end
 
@@ -673,7 +676,7 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
 
     if conditionKey == "usable" then
         local buttonData = button.buttonData
-        if not buttonData or buttonData.isPassive then
+        if not buttonData or buttonData.isPassive or buttonData.isPassiveCooldown then
             return false
         end
         if buttonData.type == "spell" then

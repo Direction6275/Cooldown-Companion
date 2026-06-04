@@ -1603,7 +1603,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Unusable/out-of-range state for text mode {unusable}/{oor} conditionals
     if button._isText then
-        if buttonData.isPassive then
+        if buttonData.isPassive or buttonData.isPassiveCooldown then
             button._isUnusable = false
         elseif buttonData.type == "spell" then
             local spellID = button._displaySpellId or buttonData.id
@@ -1615,7 +1615,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._isUnusable = false
         end
 
-        if buttonData.type == "spell" then
+        if buttonData.type == "spell" and not buttonData.isPassiveCooldown then
             button._isOutOfRange = button._spellOutOfRange or false
         elseif buttonData.type == "item" or buttonData.type == "equipitem" then
             -- C_Item.IsItemInRange is protected in combat for non-enemy targets (10.2.0)

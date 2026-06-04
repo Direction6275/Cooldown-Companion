@@ -11,6 +11,7 @@ local CS = ST._configState
 local IsSpellInCDMBuffBar = ST._IsSpellInCDMBuffBar
 local IsSpellInCDMCooldown = ST._IsSpellInCDMCooldown
 local IsPassiveOrProc = ST._IsPassiveOrProc
+local IsPassiveCooldownSpell = ST.IsPassiveCooldownSpell
 local IsNeverTrackableSpell = ST._IsNeverTrackableSpell
 local ShouldSuppressSpellbookEntry = ST._ShouldSuppressSpellbookEntry
 local GetButtonIcon = ST._GetButtonIcon
@@ -308,7 +309,9 @@ local function TryAdd(input)
 
         -- Non-passive spell → add it
         if spellFound and not passiveOrProc then
-            if IsSpellInCDMBuffBar(id) and not IsSpellInCDMCooldown(id) then
+            if IsSpellInCDMBuffBar(id)
+                and not IsSpellInCDMCooldown(id)
+                and not IsPassiveCooldownSpell(id) then
                 return TryAddSpell(tostring(id), nil, true)
             end
             local forceAura = nil
@@ -404,7 +407,9 @@ local function TryAdd(input)
                 end
                 -- Not in CDM — fall through to try as item, then report error
             else
-                if IsSpellInCDMBuffBar(spellId) and not IsSpellInCDMCooldown(spellId) then
+                if IsSpellInCDMBuffBar(spellId)
+                    and not IsSpellInCDMCooldown(spellId)
+                    and not IsPassiveCooldownSpell(spellId) then
                     return TryAddSpell(tostring(spellId), nil, true)
                 end
                 local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName)
@@ -549,15 +554,16 @@ local function BuildAutocompleteCache()
             for slotOffset = 1, lineInfo.numSpellBookItems do
                 local slotIdx = lineInfo.itemIndexOffset + slotOffset
                 local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIdx, Enum.SpellBookSpellBank.Player)
-                if itemInfo and itemInfo.spellID
-                    and not itemInfo.isPassive
+                local id = itemInfo and itemInfo.spellID
+                local passiveCooldown = id and IsPassiveCooldownSpell(id)
+                if itemInfo and id
+                    and (not itemInfo.isPassive or passiveCooldown)
                     and not itemInfo.isOffSpec
                     and itemInfo.itemType ~= Enum.SpellBookItemType.Flyout
                     and itemInfo.itemType ~= Enum.SpellBookItemType.FutureSpell
                 then
-                    local id = itemInfo.spellID
                     local isAura = IsPassiveOrProc(id)
-                    local isBuffOnlyCDMSpell = cdmBuffSet[id] and not cdmCooldownSet[id]
+                    local isBuffOnlyCDMSpell = not passiveCooldown and cdmBuffSet[id] and not cdmCooldownSet[id]
                     if ShouldSuppressSpellbookEntry(id, lineIdx, isAura) then
                         -- Omit filtered entries to reduce autocomplete noise.
                     elseif not seen[id] then
@@ -613,10 +619,11 @@ local function BuildAutocompleteCache()
     if numPetSpells and numPetSpells > 0 then
         for slotIdx = 1, numPetSpells do
             local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIdx, Enum.SpellBookSpellBank.Pet)
-            if itemInfo and itemInfo.spellID
-                and not itemInfo.isPassive
+            local id = itemInfo and itemInfo.spellID
+            local passiveCooldown = id and IsPassiveCooldownSpell(id)
+            if itemInfo and id
+                and (not itemInfo.isPassive or passiveCooldown)
             then
-                local id = itemInfo.spellID
                 local isAura = IsPassiveOrProc(id)
                 if not ShouldSuppressSpellbookEntry(id, itemInfo.skillLineIndex, isAura) and not seen[id] then
                     seen[id] = true
