@@ -734,7 +734,7 @@ end
 
 function HealthBar.Style(bar, settings)
     local resourceConfig = HealthBar.GetConfig(settings)
-    local texName = GetResourceDisplayValue(settings, "barTexture", "Solid")
+    local texName = ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid"))
     local isVertical = IsVerticalResourceLayout(settings)
     local reverseFill = IsVerticalFillReversed(settings)
     local texture = CooldownCompanion:FetchStatusBar(texName == "blizzard_class" and "Blizzard" or texName)

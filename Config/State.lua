@@ -59,6 +59,18 @@ local function IsFontControlLocked(opts)
     return ST.IsFontPickerLocked and ST.IsFontPickerLocked() and not (opts and opts.ignoreProfileWideFontLock)
 end
 
+local function GetBarTextureOptions()
+    local t = {}
+    for _, name in ipairs(LSM:List("statusbar")) do
+        t[name] = name
+    end
+    return t
+end
+
+local function IsBarTextureControlLocked(opts)
+    return ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked() and not (opts and opts.ignoreProfileWideBarTextureLock)
+end
+
 -- Sets up a font dropdown with correct name→name list and per-item font preview.
 local function SetupFontDropdown(dropdown, opts)
     dropdown:SetList(GetFontOptions())
@@ -118,6 +130,31 @@ local function GetProfileWideFontOutlinePickerValue()
         return outline
     end
     return ST.DEFAULT_FONT_OUTLINE or "OUTLINE"
+end
+
+local function SetupBarTextureDropdown(dropdown, opts)
+    opts = opts or {}
+    dropdown:SetList(opts.list or GetBarTextureOptions(), opts.order)
+    if dropdown.SetDisabled then
+        dropdown:SetDisabled(IsBarTextureControlLocked(opts))
+    end
+end
+
+local function SetBarTextureDropdownCallback(dropdown, callback, opts)
+    dropdown:SetCallback("OnValueChanged", function(widget, event, val, checked)
+        if IsBarTextureControlLocked(opts) then
+            return
+        end
+        callback(widget, event, val, checked)
+    end)
+end
+
+local function GetProfileWideBarTexturePickerValue()
+    local name = ST.GetProfileWideBarTextureName and ST.GetProfileWideBarTextureName()
+    if name and (not LSM.IsValid or LSM:IsValid("statusbar", name)) then
+        return name
+    end
+    return "Solid"
 end
 
 -- Strata ordering element definitions
@@ -212,6 +249,7 @@ ST._configState = {
     customBarContextMenu = nil,
     gearDropdownFrame = nil,
     profileWideFontWindow = nil,
+    profileWideBarTextureWindow = nil,
     folderContextMenu = nil,
     folderIconPickerFrame = nil,
     buttonIconPickerFrame = nil,
@@ -299,6 +337,10 @@ ST._configState = {
     SetFontOutlineDropdownCallback = SetFontOutlineDropdownCallback,
     GetProfileWideFontPickerValue = GetProfileWideFontPickerValue,
     GetProfileWideFontOutlinePickerValue = GetProfileWideFontOutlinePickerValue,
+    GetBarTextureOptions = GetBarTextureOptions,
+    SetupBarTextureDropdown = SetupBarTextureDropdown,
+    SetBarTextureDropdownCallback = SetBarTextureDropdownCallback,
+    GetProfileWideBarTexturePickerValue = GetProfileWideBarTexturePickerValue,
     outlineOptions = outlineOptions,
     strataElementLabels = strataElementLabels,
     strataElementKeys = strataElementKeys,

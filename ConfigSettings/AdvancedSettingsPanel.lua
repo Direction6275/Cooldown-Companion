@@ -303,6 +303,9 @@ local function OpenAdvancedSettingsPanel(opts)
     if CS.CloseProfileWideFontWindow then
         CS.CloseProfileWideFontWindow()
     end
+    if CS.CloseProfileWideBarTextureWindow then
+        CS.CloseProfileWideBarTextureWindow()
+    end
     if ST._CloseFormatEditor then
         ST._CloseFormatEditor()
     end

@@ -543,7 +543,7 @@ local function ReapplyCastBarFillStyling(cb, s)
 
     local tex = s.barTexture
     if tex and tex ~= "" then
-        cb:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(tex))
+        cb:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(tex))
     end
 
     local bc = s.barColor

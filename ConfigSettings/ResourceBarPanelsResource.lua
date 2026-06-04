@@ -1239,10 +1239,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     -- Bar Texture
     local texDrop = AceGUI:Create("Dropdown")
     texDrop:SetLabel("Bar Texture")
-    texDrop:SetList(GetResourceBarTextureOptions())
+    CS.SetupBarTextureDropdown(texDrop, { list = GetResourceBarTextureOptions() })
     texDrop:SetValue(displayProfile.barTexture or settings.barTexture or "Solid")
     texDrop:SetFullWidth(true)
-    texDrop:SetCallback("OnValueChanged", function(widget, event, val)
+    CS.SetBarTextureDropdownCallback(texDrop, function(widget, event, val)
         displayProfile.barTexture = val
         CooldownCompanion:ApplyResourceBars()
         -- Defer panel rebuild to next frame so it doesn't interfere with current callback
@@ -1257,7 +1257,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
         brightSlider:SetSliderValues(0.5, 2.0, 0.1)
         brightSlider:SetValue(displayProfile.classBarBrightness or settings.classBarBrightness or 1.3)
         brightSlider:SetFullWidth(true)
+        brightSlider:SetDisabled(ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked())
         brightSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked() then return end
             displayProfile.classBarBrightness = val
             CooldownCompanion:ApplyResourceBars()
         end)

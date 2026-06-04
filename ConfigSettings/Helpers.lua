@@ -1051,6 +1051,9 @@ end
 -- Shared bar texture option builder (used by CastBarPanels and BarModeTabs)
 local LSM = LibStub("LibSharedMedia-3.0")
 local function GetBarTextureOptions()
+    if CS.GetBarTextureOptions then
+        return CS.GetBarTextureOptions()
+    end
     local t = {}
     for _, name in ipairs(LSM:List("statusbar")) do
         t[name] = name

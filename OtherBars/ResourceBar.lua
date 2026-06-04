@@ -1495,7 +1495,7 @@ local DisableEventFrame
 ------------------------------------------------------------------------
 
 local function StyleContinuousBar(bar, powerType, settings)
-    local texName = GetResourceDisplayValue(settings, "barTexture", "Solid")
+    local texName = ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid"))
     local isVertical = IsVerticalResourceLayout(settings)
     local reverseFill = IsVerticalFillReversed(settings)
 

@@ -104,6 +104,9 @@ local function OpenAuraTexturePicker(opts)
     if CS.CloseProfileWideFontWindow then
         CS.CloseProfileWideFontWindow()
     end
+    if CS.CloseProfileWideBarTextureWindow then
+        CS.CloseProfileWideBarTextureWindow()
+    end
 
     if pickerWindow then
         pickerWindow:Show()

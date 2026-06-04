@@ -117,10 +117,10 @@ local function BuildBarAppearanceTab(container, group, style)
     -- Bar Texture
     local barTexDrop = AceGUI:Create("Dropdown")
     barTexDrop:SetLabel("Bar Texture")
-    barTexDrop:SetList(GetBarTextureOptions())
+    CS.SetupBarTextureDropdown(barTexDrop, { list = GetBarTextureOptions() })
     barTexDrop:SetValue(style.barTexture or "Solid")
     barTexDrop:SetFullWidth(true)
-    barTexDrop:SetCallback("OnValueChanged", function(widget, event, val)
+    CS.SetBarTextureDropdownCallback(barTexDrop, function(widget, event, val)
         style.barTexture = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)

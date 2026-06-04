@@ -1314,7 +1314,7 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
     bar:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", barRight, 0)
     SetStatusBarSmoothRange(bar, 0, 100)
     SetStatusBarSmoothValue(bar, 65)
-    bar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(settings.barTexture or "Solid"))
+    bar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(settings.barTexture or "Solid"))
     local liveR, liveG, liveB, liveA = liveCastBar and liveCastBar.GetStatusBarColor and liveCastBar:GetStatusBarColor()
     local barColor = settings.barColor or { 1, 0.72, 0.18, 1 }
     if liveR ~= nil then
