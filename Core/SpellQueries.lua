@@ -137,17 +137,11 @@ local function HasBaseCooldown(spellId)
     return baseCd and baseCd > 0
 end
 
-local function HasActiveSpellCooldown(spellId)
-    local info = C_Spell.GetSpellCooldown(spellId)
-    return info and info.isActive == true and info.isOnGCD ~= true
-end
-
 function ST.HasSpellCooldownSurface(spellId)
     if not spellId then return false end
     return HasBaseCooldown(spellId)
         or ST.HasTooltipCooldown(spellId)
         or ST.HasChargeCooldownInfo(spellId)
-        or HasActiveSpellCooldown(spellId)
 end
 
 -- Returns true if the spell has no real cooldown surface (GCD-only).

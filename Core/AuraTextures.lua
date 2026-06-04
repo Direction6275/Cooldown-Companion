@@ -422,7 +422,12 @@ local function GetTriggerConditionOrderForButtonData(buttonData)
     end
 
     if buttonData.type == "spell" and buttonData.isPassiveCooldown == true then
-        return { "cooldownActive" }
+        local order = { "cooldownActive" }
+        if buttonData.hasCharges == true then
+            order[#order + 1] = "chargesRecharging"
+            order[#order + 1] = "chargeState"
+        end
+        return order
     end
 
     if buttonData.type == "spell" and buttonData.isPassive == true then

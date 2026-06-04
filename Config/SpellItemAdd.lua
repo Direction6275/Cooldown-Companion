@@ -309,7 +309,9 @@ local function TryAdd(input)
 
         -- Non-passive spell → add it
         if spellFound and not passiveOrProc then
-            if IsSpellInCDMBuffBar(id) and not IsSpellInCDMCooldown(id) then
+            if IsSpellInCDMBuffBar(id)
+                and not IsSpellInCDMCooldown(id)
+                and not IsPassiveCooldownSpell(id) then
                 return TryAddSpell(tostring(id), nil, true)
             end
             local forceAura = nil
@@ -405,7 +407,9 @@ local function TryAdd(input)
                 end
                 -- Not in CDM — fall through to try as item, then report error
             else
-                if IsSpellInCDMBuffBar(spellId) and not IsSpellInCDMCooldown(spellId) then
+                if IsSpellInCDMBuffBar(spellId)
+                    and not IsSpellInCDMCooldown(spellId)
+                    and not IsPassiveCooldownSpell(spellId) then
                     return TryAddSpell(tostring(spellId), nil, true)
                 end
                 local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName)
@@ -559,7 +563,7 @@ local function BuildAutocompleteCache()
                     and itemInfo.itemType ~= Enum.SpellBookItemType.FutureSpell
                 then
                     local isAura = IsPassiveOrProc(id)
-                    local isBuffOnlyCDMSpell = cdmBuffSet[id] and not cdmCooldownSet[id]
+                    local isBuffOnlyCDMSpell = not passiveCooldown and cdmBuffSet[id] and not cdmCooldownSet[id]
                     if ShouldSuppressSpellbookEntry(id, lineIdx, isAura) then
                         -- Omit filtered entries to reduce autocomplete noise.
                     elseif not seen[id] then

@@ -1483,9 +1483,9 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         cdmChildSlot = cdmChildSlot or nil,
     }
 
-    -- Auto-detect charges for castable spells.
+    -- Auto-detect charges for castable and passive-cooldown spells.
     -- Treat as charge-based only when max charges is greater than 1.
-    if buttonType == "spell" and not isPassive and not isPassiveCooldown then
+    if buttonType == "spell" and not isPassive then
         local chargeInfo = C_Spell.GetSpellCharges(id)
         -- Base spell may not have charges when the override form does
         -- (e.g. Primal Strike → Stormstrike). Try the current override.
