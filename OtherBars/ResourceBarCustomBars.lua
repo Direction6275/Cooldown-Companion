@@ -1193,7 +1193,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             LayoutCustomAuraContinuousThresholdOverlay(barInfo.frame, barTexture, borderStyle, borderSize, borderRenderMode)
             local durationTextFontName = cabConfig.durationTextFont or DEFAULT_RESOURCE_TEXT_FONT
             local durationTextSize = tonumber(cabConfig.durationTextFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
-            local durationTextOutline = cabConfig.durationTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE
+            local durationTextOutline = ST.GetEffectiveFontOutline(cabConfig.durationTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
             local durationTextColor = cabConfig.durationTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR
             if type(durationTextColor) ~= "table" or durationTextColor[1] == nil or durationTextColor[2] == nil or durationTextColor[3] == nil then
                 durationTextColor = DEFAULT_RESOURCE_TEXT_COLOR
@@ -1207,7 +1207,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
             local stackTextFontName = cabConfig.stackTextFont or DEFAULT_RESOURCE_TEXT_FONT
             local stackTextSize = tonumber(cabConfig.stackTextFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
-            local stackTextOutline = cabConfig.stackTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE
+            local stackTextOutline = ST.GetEffectiveFontOutline(cabConfig.stackTextFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
             local stackTextColor = cabConfig.stackTextFontColor or DEFAULT_RESOURCE_TEXT_COLOR
             if type(stackTextColor) ~= "table" or stackTextColor[1] == nil or stackTextColor[2] == nil or stackTextColor[3] == nil then
                 stackTextColor = DEFAULT_RESOURCE_TEXT_COLOR

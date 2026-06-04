@@ -48,6 +48,8 @@ local function InvalidateFontCache()
 end
 ST._InvalidateFontCache = InvalidateFontCache
 
+local outlineOptions
+
 -- Sets up a font dropdown with correct name→name list and per-item font preview.
 local function SetupFontDropdown(dropdown, opts)
     opts = opts or {}
@@ -79,6 +81,24 @@ local function SetFontDropdownCallback(dropdown, callback, opts)
     end)
 end
 
+local function SetupFontOutlineDropdown(dropdown, opts)
+    opts = opts or {}
+    dropdown:SetList(outlineOptions)
+    if dropdown.SetDisabled then
+        dropdown:SetDisabled(ST.IsFontPickerLocked and ST.IsFontPickerLocked() and not opts.ignoreProfileWideFontLock)
+    end
+end
+
+local function SetFontOutlineDropdownCallback(dropdown, callback, opts)
+    opts = opts or {}
+    dropdown:SetCallback("OnValueChanged", function(widget, event, val, checked)
+        if ST.IsFontPickerLocked and ST.IsFontPickerLocked() and not opts.ignoreProfileWideFontLock then
+            return
+        end
+        callback(widget, event, val, checked)
+    end)
+end
+
 local function GetProfileWideFontPickerValue()
     local name = ST.GetProfileWideFontName and ST.GetProfileWideFontName()
     if name and (not LSM.IsValid or LSM:IsValid("font", name)) then
@@ -87,7 +107,15 @@ local function GetProfileWideFontPickerValue()
     return ST.DEFAULT_FONT_NAME or "Friz Quadrata TT"
 end
 
-local outlineOptions = {
+local function GetProfileWideFontOutlinePickerValue()
+    local outline = ST.GetProfileWideFontOutline and ST.GetProfileWideFontOutline()
+    if type(outline) == "string" then
+        return outline
+    end
+    return ST.DEFAULT_FONT_OUTLINE or "OUTLINE"
+end
+
+outlineOptions = {
     [""] = "None",
     ["OUTLINE"] = "Outline",
     ["THICKOUTLINE"] = "Thick Outline",
@@ -187,6 +215,7 @@ ST._configState = {
     gearDropdownFrame = nil,
     profileWideFontWindow = nil,
     profileWideFontDropdown = nil,
+    profileWideFontOutlineDropdown = nil,
     folderContextMenu = nil,
     folderIconPickerFrame = nil,
     buttonIconPickerFrame = nil,
@@ -270,7 +299,10 @@ ST._configState = {
     fontOptions = GetFontOptions,
     SetupFontDropdown = SetupFontDropdown,
     SetFontDropdownCallback = SetFontDropdownCallback,
+    SetupFontOutlineDropdown = SetupFontOutlineDropdown,
+    SetFontOutlineDropdownCallback = SetFontOutlineDropdownCallback,
     GetProfileWideFontPickerValue = GetProfileWideFontPickerValue,
+    GetProfileWideFontOutlinePickerValue = GetProfileWideFontOutlinePickerValue,
     outlineOptions = outlineOptions,
     strataElementLabels = strataElementLabels,
     strataElementKeys = strataElementKeys,

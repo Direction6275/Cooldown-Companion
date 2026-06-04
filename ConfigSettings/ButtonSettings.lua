@@ -1724,10 +1724,10 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     -- Item count font outline
     local itemOutlineDrop = AceGUI:Create("Dropdown")
     itemOutlineDrop:SetLabel("Font Outline")
-    itemOutlineDrop:SetList(CS.outlineOptions)
+    CS.SetupFontOutlineDropdown(itemOutlineDrop)
     itemOutlineDrop:SetValue(buttonData.itemCountFontOutline or "OUTLINE")
     itemOutlineDrop:SetFullWidth(true)
-    itemOutlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+    CS.SetFontOutlineDropdownCallback(itemOutlineDrop, function(widget, event, val)
         buttonData.itemCountFontOutline = val
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
     end)

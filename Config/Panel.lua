@@ -71,7 +71,7 @@ local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
 local CONFIG_NESTED_INLINE_GROUP_INSET = 20
 local CONFIG_DRAG_ALPHA = 0.40
 local PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH = 330
-local PROFILE_WIDE_FONT_WINDOW_HEIGHT = 116
+local PROFILE_WIDE_FONT_WINDOW_HEIGHT = 168
 
 local function GetProfileWideFontWindowWidth()
     local configFrame = CS.configFrame
@@ -100,6 +100,7 @@ local function CleanupProfileWideFontWindow(widget)
     AceGUI:Release(widget)
     CS.profileWideFontWindow = nil
     CS.profileWideFontDropdown = nil
+    CS.profileWideFontOutlineDropdown = nil
 end
 
 local function CloseProfileWideFontWindow()
@@ -130,7 +131,7 @@ local function OpenProfileWideFontWindow()
     local window = CS.profileWideFontWindow
     if not window then
         window = AceGUI:Create("Window")
-        window:SetTitle("Profile-wide Font")
+        window:SetTitle("Profile-wide Font + Outline")
         window:SetWidth(GetProfileWideFontWindowWidth())
         window:SetHeight(PROFILE_WIDE_FONT_WINDOW_HEIGHT)
         window:SetLayout("List")
@@ -159,12 +160,21 @@ local function OpenProfileWideFontWindow()
     dropdown:SetValue(CS.GetProfileWideFontPickerValue and CS.GetProfileWideFontPickerValue() or ST.DEFAULT_FONT_NAME or "Friz Quadrata TT")
     dropdown:SetFullWidth(true)
     CS.SetFontDropdownCallback(dropdown, function(widget, event, val)
-        if CooldownCompanion:SetProfileWideFontName(val, { enable = true }) then
-            CloseProfileWideFontWindow()
-        end
+        CooldownCompanion:SetProfileWideFontName(val, { enable = true })
     end, { ignoreProfileWideFontLock = true })
     window:AddChild(dropdown)
     CS.profileWideFontDropdown = dropdown
+
+    local outlineDrop = AceGUI:Create("Dropdown")
+    outlineDrop:SetLabel("Outline")
+    CS.SetupFontOutlineDropdown(outlineDrop, { ignoreProfileWideFontLock = true })
+    outlineDrop:SetValue(CS.GetProfileWideFontOutlinePickerValue and CS.GetProfileWideFontOutlinePickerValue() or ST.DEFAULT_FONT_OUTLINE or "OUTLINE")
+    outlineDrop:SetFullWidth(true)
+    CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
+        CooldownCompanion:SetProfileWideFontOutline(val, { enable = true })
+    end, { ignoreProfileWideFontLock = true })
+    window:AddChild(outlineDrop)
+    CS.profileWideFontOutlineDropdown = outlineDrop
 end
 
 CS.CloseProfileWideFontWindow = CloseProfileWideFontWindow
@@ -1288,7 +1298,7 @@ local function CreateConfigPanel()
             infoFont.isNotRadio = true
             infoFont.keepShownOnClick = true
             infoFont.tooltipTitle = "Profile-wide Font"
-            infoFont.tooltipText = "Use one font face for this profile's configurable text."
+            infoFont.tooltipText = "Use one font face and outline for this profile's configurable text."
             infoFont.tooltipOnButton = true
             infoFont.func = function()
                 local enabling = not (ST.IsProfileWideFontEnabled and ST.IsProfileWideFontEnabled())

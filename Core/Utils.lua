@@ -25,6 +25,7 @@ ST.NUM_GLOW_STYLES = 3
 ST.BORDER_RENDER_MODE_CUSTOM = "custom"
 ST.BORDER_RENDER_MODE_CRISP = "crisp"
 ST.DEFAULT_FONT_NAME = ST.DEFAULT_FONT_NAME or "Friz Quadrata TT"
+ST.DEFAULT_FONT_OUTLINE = ST.DEFAULT_FONT_OUTLINE or "OUTLINE"
 
 local statusBarInterpolation = Enum and Enum.StatusBarInterpolation
 local statusBarTimerDirection = Enum and Enum.StatusBarTimerDirection
@@ -213,6 +214,16 @@ function ST.GetProfileWideFontName()
     return nil
 end
 
+function ST.GetProfileWideFontOutline()
+    local addon = ST.Addon
+    local db = addon and addon.db and addon.db.profile
+    local outline = db and db.profileWideFontOutline
+    if type(outline) == "string" then
+        return outline
+    end
+    return nil
+end
+
 function ST.GetEffectiveFontName(localFontName)
     if ST.IsProfileWideFontEnabled() then
         return ST.GetProfileWideFontName() or ST.DEFAULT_FONT_NAME
@@ -221,6 +232,20 @@ function ST.GetEffectiveFontName(localFontName)
         return localFontName
     end
     return ST.DEFAULT_FONT_NAME
+end
+
+function ST.GetEffectiveFontOutline(localOutline)
+    if ST.IsProfileWideFontEnabled() then
+        local profileOutline = ST.GetProfileWideFontOutline()
+        if profileOutline ~= nil then
+            return profileOutline
+        end
+        return ST.DEFAULT_FONT_OUTLINE
+    end
+    if type(localOutline) == "string" then
+        return localOutline
+    end
+    return ST.DEFAULT_FONT_OUTLINE
 end
 
 function ST.GetEffectiveBorderRenderMode(source, key, size)

@@ -338,10 +338,10 @@ local function BuildTextAppearanceTab(container, group, style)
 
     local outlineDrop = AceGUI:Create("Dropdown")
     outlineDrop:SetLabel("Font Outline")
-    outlineDrop:SetList(CS.outlineOptions)
+    CS.SetupFontOutlineDropdown(outlineDrop)
     outlineDrop:SetValue(style.textFontOutline or "OUTLINE")
     outlineDrop:SetFullWidth(true)
-    outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+    CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
         style.textFontOutline = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)

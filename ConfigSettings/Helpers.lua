@@ -1140,10 +1140,10 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn)
 
     local outlineDrop = AceGUI:Create("Dropdown")
     outlineDrop:SetLabel("Font Outline")
-    outlineDrop:SetList(CS.outlineOptions)
+    CS.SetupFontOutlineDropdown(outlineDrop)
     outlineDrop:SetValue(tbl[outlineKey] or defaults.outline or "OUTLINE")
     outlineDrop:SetFullWidth(true)
-    outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+    CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
         tbl[outlineKey] = val
         refreshFn()
     end)

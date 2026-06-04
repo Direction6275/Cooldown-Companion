@@ -1261,7 +1261,7 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
                 cb.Text:Show()
                 local nf = CooldownCompanion:FetchFont(settings.nameFont or "Friz Quadrata TT")
                 local ns = settings.nameFontSize or 10
-                local no = settings.nameFontOutline or "OUTLINE"
+                local no = ST.GetEffectiveFontOutline(settings.nameFontOutline or "OUTLINE")
                 cb.Text:SetFont(nf, ns, no)
                 cb.Text:ClearAllPoints()
                 cb.Text:SetPoint("LEFT", cb, "LEFT", 4, 0)
@@ -1283,7 +1283,7 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
             if settings.showCastTimeText then
                 local ctf = CooldownCompanion:FetchFont(settings.castTimeFont or "Friz Quadrata TT")
                 local cts = settings.castTimeFontSize or 10
-                local cto = settings.castTimeFontOutline or "OUTLINE"
+                local cto = ST.GetEffectiveFontOutline(settings.castTimeFontOutline or "OUTLINE")
                 cb.CastTimeText:SetFont(ctf, cts, cto)
                 cb.CastTimeText:ClearAllPoints()
                 local xOfs = settings.castTimeXOffset or 0

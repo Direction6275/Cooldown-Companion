@@ -122,6 +122,7 @@ local PROFILE_DEFAULT_KEYS = {
     autoAddPrefs = "autoAddPrefs",
     profileWideFontEnabled = "profileWideFontEnabled",
     profileWideFontName = "profileWideFontName",
+    profileWideFontOutline = "profileWideFontOutline",
     groupSettingPresets = "groupSettingPresets",
     auraTextureLibrary = "auraTextureLibrary",
     globalStyle = "globalStyle",

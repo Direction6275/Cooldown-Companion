@@ -773,7 +773,7 @@ local function CreateContinuousBar(parent)
 
     -- Text
     bar.text = bar.textLayer:CreateFontString(nil, "OVERLAY")
-    bar.text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, "OUTLINE")
+    bar.text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, ST.GetEffectiveFontOutline("OUTLINE"))
     bar.text:SetPoint("CENTER")
     bar.text:SetTextColor(1, 1, 1, 1)
 
@@ -815,7 +815,7 @@ local function CreateSegmentedBar(parent, numSegments)
     holder.textLayer:SetFrameLevel(holder:GetFrameLevel() + 8)
 
     holder.text = holder.textLayer:CreateFontString(nil, "OVERLAY")
-    holder.text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, "OUTLINE")
+    holder.text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, ST.GetEffectiveFontOutline("OUTLINE"))
     holder.text:SetPoint("CENTER")
     holder.text:SetTextColor(1, 1, 1, 1)
     holder.text:Hide()
@@ -975,7 +975,7 @@ local function CreateOverlayBar(parent, halfSegments)
     holder.textLayer:SetFrameLevel(holder:GetFrameLevel() + 8)
 
     holder.text = holder.textLayer:CreateFontString(nil, "OVERLAY")
-    holder.text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, "OUTLINE")
+    holder.text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, ST.GetEffectiveFontOutline("OUTLINE"))
     holder.text:SetPoint("CENTER")
     holder.text:SetTextColor(1, 1, 1, 1)
     holder.text:Hide()

@@ -1476,10 +1476,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
                 local outlineDrop = AceGUI:Create("Dropdown")
                 outlineDrop:SetLabel("Outline")
-                outlineDrop:SetList(CS.outlineOptions)
+                CS.SetupFontOutlineDropdown(outlineDrop)
                 outlineDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
                 outlineDrop:SetFullWidth(true)
-                outlineDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
                     resSettings.textFontOutline = val
                     CooldownCompanion:ApplyResourceBars()
                 end)

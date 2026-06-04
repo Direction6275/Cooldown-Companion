@@ -29,6 +29,7 @@ local defaults = {
         profileOnePixelBorders = false,
         profileWideFontEnabled = false,
         profileWideFontName = nil,
+        profileWideFontOutline = nil,
         showAdvanced = {},
         autoAddPrefs = {
             lastSource = "actionbars",
