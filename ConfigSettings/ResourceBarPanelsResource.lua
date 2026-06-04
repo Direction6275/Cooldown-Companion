@@ -1457,7 +1457,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 CS.SetupFontDropdown(fontDrop)
                 fontDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textFont", DEFAULT_RESOURCE_TEXT_FONT))
                 fontDrop:SetFullWidth(true)
-                fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
                     resSettings.textFont = val
                     CooldownCompanion:ApplyResourceBars()
                 end)

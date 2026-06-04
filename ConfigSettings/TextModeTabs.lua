@@ -319,7 +319,7 @@ local function BuildTextAppearanceTab(container, group, style)
     CS.SetupFontDropdown(fontDrop)
     fontDrop:SetValue(style.textFont or "Friz Quadrata TT")
     fontDrop:SetFullWidth(true)
-    fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+    CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
         style.textFont = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)

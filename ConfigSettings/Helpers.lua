@@ -1132,7 +1132,7 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn)
     CS.SetupFontDropdown(fontDrop)
     fontDrop:SetValue(tbl[fontKey] or defaults.font or "Friz Quadrata TT")
     fontDrop:SetFullWidth(true)
-    fontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+    CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
         tbl[fontKey] = val
         refreshFn()
     end)

@@ -638,6 +638,9 @@ local function OpenFormatEditor(style, groupId, opts)
     if CS.CloseAdvancedSettingsPanel then
         CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
     end
+    if CS.CloseProfileWideFontWindow then
+        CS.CloseProfileWideFontWindow()
+    end
 
     -- If already open, bring to front and refresh
     if formatEditorFrame then

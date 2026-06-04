@@ -89,7 +89,14 @@ function CooldownCompanion:SetOrderForSpec(obj, specId, value)
 end
 
 function CooldownCompanion:FetchFont(name)
-    return LSM:Fetch("font", name) or LSM:Fetch("font", "Friz Quadrata TT") or STANDARD_TEXT_FONT
+    local effectiveName = ST.GetEffectiveFontName and ST.GetEffectiveFontName(name) or name
+    if effectiveName and (not LSM.IsValid or LSM:IsValid("font", effectiveName)) then
+        local font = LSM:Fetch("font", effectiveName)
+        if font then
+            return font
+        end
+    end
+    return LSM:Fetch("font", ST.DEFAULT_FONT_NAME or "Friz Quadrata TT") or STANDARD_TEXT_FONT
 end
 
 function CooldownCompanion:FetchStatusBar(name)
@@ -132,6 +139,70 @@ function CooldownCompanion:SetProfileOnePixelBordersEnabled(enabled, opts)
     profile.profileOnePixelBorders = enabled == true
     self:ApplyProfileOnePixelBorderMode(opts)
     return true
+end
+
+function CooldownCompanion:ApplyProfileWideFontMode(opts)
+    if self.RefreshAllGroups then
+        self:RefreshAllGroups()
+    end
+    if self.EvaluateBarsAndFramesRuntime then
+        self:EvaluateBarsAndFramesRuntime("profile-font-mode")
+    end
+    if self.RefreshAllAuraTextureVisuals then
+        self:RefreshAllAuraTextureVisuals()
+    end
+    if not opts or opts.refreshConfig ~= false then
+        if self.RefreshConfigPanel then
+            self:RefreshConfigPanel()
+        end
+    end
+end
+
+function CooldownCompanion:SetProfileWideFontEnabled(enabled, opts)
+    local profile = self.db and self.db.profile
+    if not profile then return false end
+
+    local target = enabled == true
+    local changed = profile.profileWideFontEnabled ~= target
+    profile.profileWideFontEnabled = target
+
+    local initializedFont = false
+    if target and (type(profile.profileWideFontName) ~= "string" or profile.profileWideFontName == "") then
+        profile.profileWideFontName = ST.DEFAULT_FONT_NAME or "Friz Quadrata TT"
+        initializedFont = true
+    end
+
+    if changed or initializedFont then
+        self:ApplyProfileWideFontMode(opts)
+    end
+    return true
+end
+
+function CooldownCompanion:SetProfileWideFontName(fontName, opts)
+    local profile = self.db and self.db.profile
+    if not profile or type(fontName) ~= "string" or fontName == "" then
+        return false
+    end
+
+    local changed = profile.profileWideFontName ~= fontName
+    if changed then
+        profile.profileWideFontName = fontName
+    end
+
+    local enableChanged = false
+    if opts and opts.enable == true and profile.profileWideFontEnabled ~= true then
+        profile.profileWideFontEnabled = true
+        enableChanged = true
+    end
+
+    if changed or enableChanged then
+        self:ApplyProfileWideFontMode(opts)
+    end
+    return true
+end
+
+function CooldownCompanion:SetProfileWideFont(fontName, opts)
+    return self:SetProfileWideFontName(fontName, opts)
 end
 
 function CooldownCompanion:ClearUnsupportedProfileRuntime()

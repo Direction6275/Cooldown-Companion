@@ -48,9 +48,13 @@ local function InvalidateFontCache()
 end
 ST._InvalidateFontCache = InvalidateFontCache
 
--- Sets up a font dropdown with correct name→name list and per-item font preview
-local function SetupFontDropdown(dropdown)
+-- Sets up a font dropdown with correct name→name list and per-item font preview.
+local function SetupFontDropdown(dropdown, opts)
+    opts = opts or {}
     dropdown:SetList(GetFontOptions())
+    if dropdown.SetDisabled then
+        dropdown:SetDisabled(ST.IsFontPickerLocked and ST.IsFontPickerLocked() and not opts.ignoreProfileWideFontLock)
+    end
     dropdown:SetCallback("OnOpened", function(self)
         for i, item in self.pullout:IterateItems() do
             local fontName = item.userdata.value
@@ -63,6 +67,24 @@ local function SetupFontDropdown(dropdown)
             end
         end
     end)
+end
+
+local function SetFontDropdownCallback(dropdown, callback, opts)
+    opts = opts or {}
+    dropdown:SetCallback("OnValueChanged", function(widget, event, val, checked)
+        if ST.IsFontPickerLocked and ST.IsFontPickerLocked() and not opts.ignoreProfileWideFontLock then
+            return
+        end
+        callback(widget, event, val, checked)
+    end)
+end
+
+local function GetProfileWideFontPickerValue()
+    local name = ST.GetProfileWideFontName and ST.GetProfileWideFontName()
+    if name and (not LSM.IsValid or LSM:IsValid("font", name)) then
+        return name
+    end
+    return ST.DEFAULT_FONT_NAME or "Friz Quadrata TT"
 end
 
 local outlineOptions = {
@@ -163,6 +185,8 @@ ST._configState = {
     buttonContextMenu = nil,
     customBarContextMenu = nil,
     gearDropdownFrame = nil,
+    profileWideFontWindow = nil,
+    profileWideFontDropdown = nil,
     folderContextMenu = nil,
     folderIconPickerFrame = nil,
     buttonIconPickerFrame = nil,
@@ -245,6 +269,8 @@ ST._configState = {
     -- Static lookup tables
     fontOptions = GetFontOptions,
     SetupFontDropdown = SetupFontDropdown,
+    SetFontDropdownCallback = SetFontDropdownCallback,
+    GetProfileWideFontPickerValue = GetProfileWideFontPickerValue,
     outlineOptions = outlineOptions,
     strataElementLabels = strataElementLabels,
     strataElementKeys = strataElementKeys,

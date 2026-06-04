@@ -1715,7 +1715,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     CS.SetupFontDropdown(itemFontDrop)
     itemFontDrop:SetValue(buttonData.itemCountFont or "Friz Quadrata TT")
     itemFontDrop:SetFullWidth(true)
-    itemFontDrop:SetCallback("OnValueChanged", function(widget, event, val)
+    CS.SetFontDropdownCallback(itemFontDrop, function(widget, event, val)
         buttonData.itemCountFont = val
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
     end)
