@@ -587,7 +587,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Apply custom cooldown text font settings
     local cooldownFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
     local cooldownFontSize = style.cooldownFontSize or 12
-    local cooldownFontOutline = style.cooldownFontOutline or "OUTLINE"
+    local cooldownFontOutline = ST.GetEffectiveFontOutline(style.cooldownFontOutline or "OUTLINE")
     local region = button.cooldown:GetRegions()
     if region and region.SetFont then
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
@@ -1081,7 +1081,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             fontColor = style.auraTextFontColor or DEFAULT_AURA_TEXT_COLOR
             wantFont = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
             wantSize = style.auraTextFontSize or 12
-            wantOutline = style.auraTextFontOutline or "OUTLINE"
+            wantOutline = ST.GetEffectiveFontOutline(style.auraTextFontOutline or "OUTLINE")
         elseif buttonData.isPassive then
             -- Inactive passive aura: no text (cooldown frame hidden)
             button._cdTextRegion:SetTextColor(0, 0, 0, 0)
@@ -1093,7 +1093,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             fontColor = style.cooldownFontColor or DEFAULT_WHITE
             wantFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
             wantSize = style.cooldownFontSize or 12
-            wantOutline = style.cooldownFontOutline or "OUTLINE"
+            wantOutline = ST.GetEffectiveFontOutline(style.cooldownFontOutline or "OUTLINE")
         end
         if showText then
             local cc = fontColor
@@ -1340,7 +1340,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update cooldown font settings (default state; per-tick logic handles aura mode)
     local cooldownFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
     local cooldownFontSize = style.cooldownFontSize or 12
-    local cooldownFontOutline = style.cooldownFontOutline or "OUTLINE"
+    local cooldownFontOutline = ST.GetEffectiveFontOutline(style.cooldownFontOutline or "OUTLINE")
     local region = button.cooldown:GetRegions()
     if region and region.SetFont then
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)

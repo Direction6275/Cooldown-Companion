@@ -193,7 +193,7 @@ CooldownCompanion.ApplyDurationFormatToCooldown = ApplyDurationFormatToCooldown
 local function ApplyFontStyle(region, source, prefix, defaultSize)
     local font = CooldownCompanion:FetchFont(source[prefix .. "Font"] or "Friz Quadrata TT")
     local size = source[prefix .. "FontSize"] or defaultSize or 12
-    local outline = source[prefix .. "FontOutline"] or "OUTLINE"
+    local outline = ST.GetEffectiveFontOutline(source[prefix .. "FontOutline"] or "OUTLINE")
     region:SetFont(font, size, outline)
     local color = source[prefix .. "FontColor"] or {1, 1, 1, 1}
     region:SetTextColor(color[1], color[2], color[3], color[4])

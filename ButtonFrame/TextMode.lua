@@ -898,7 +898,7 @@ local function UpdateTextStyle(button, newStyle)
     -- Font
     local font = CooldownCompanion:FetchFont(newStyle.textFont or "Friz Quadrata TT")
     local fontSize = newStyle.textFontSize or 12
-    local fontOutline = newStyle.textFontOutline or "OUTLINE"
+    local fontOutline = ST.GetEffectiveFontOutline(newStyle.textFontOutline or "OUTLINE")
     button.textString:SetFont(font, fontSize, fontOutline)
 
     -- Alignment
@@ -966,7 +966,7 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button.textString = button:CreateFontString(nil, "OVERLAY")
     local font = CooldownCompanion:FetchFont(style.textFont or "Friz Quadrata TT")
     local fontSize = style.textFontSize or 12
-    local fontOutline = style.textFontOutline or "OUTLINE"
+    local fontOutline = ST.GetEffectiveFontOutline(style.textFontOutline or "OUTLINE")
     button.textString:SetFont(font, fontSize, fontOutline)
     local baseColor = style.textFontColor or DEFAULT_WHITE
     button.textString:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)

@@ -300,6 +300,9 @@ local function OpenAdvancedSettingsPanel(opts)
     if CS.CancelPickAuraTexture then
         CS.CancelPickAuraTexture()
     end
+    if CS.CloseProfileWideFontWindow then
+        CS.CloseProfileWideFontWindow()
+    end
     if ST._CloseFormatEditor then
         ST._CloseFormatEditor()
     end

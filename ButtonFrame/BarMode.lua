@@ -1017,12 +1017,12 @@ local function UpdateBarFill(button)
                 if button._auraActive or auraDurationTextPreview then
                     local f = CooldownCompanion:FetchFont(button.style.auraTextFont or "Friz Quadrata TT")
                     local s = button.style.auraTextFontSize or 12
-                    local o = button.style.auraTextFontOutline or "OUTLINE"
+                    local o = ST.GetEffectiveFontOutline(button.style.auraTextFontOutline or "OUTLINE")
                     button.timeText:SetFont(f, s, o)
                 else
                     local f = CooldownCompanion:FetchFont(button.style.cooldownFont or "Friz Quadrata TT")
                     local s = button.style.cooldownFontSize or 12
-                    local o = button.style.cooldownFontOutline or "OUTLINE"
+                    local o = ST.GetEffectiveFontOutline(button.style.cooldownFontOutline or "OUTLINE")
                     button.timeText:SetFont(f, s, o)
                 end
             end
@@ -1086,7 +1086,7 @@ local function UpdateBarFill(button)
                     button._barTextMode = "ready"
                     local f = CooldownCompanion:FetchFont(button.style.barReadyFont or "Friz Quadrata TT")
                     local s = button.style.barReadyFontSize or 12
-                    local o = button.style.barReadyFontOutline or "OUTLINE"
+                    local o = ST.GetEffectiveFontOutline(button.style.barReadyFontOutline or "OUTLINE")
                     button.timeText:SetFont(f, s, o)
                 end
                 SetBarTimeText(button, button.style.barReadyText or "Ready")

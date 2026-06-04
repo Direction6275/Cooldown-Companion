@@ -1760,7 +1760,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
         end
         local font = CooldownCompanion:FetchFont(style.textFont or "Friz Quadrata TT")
         local fontSize = style.textHeaderFontSize or style.textFontSize or 12
-        local fontOutline = style.textFontOutline or "OUTLINE"
+        local fontOutline = ST.GetEffectiveFontOutline(style.textFontOutline or "OUTLINE")
         frame.textHeader:SetFont(font, fontSize, fontOutline)
         local hdrColor = style.textHeaderFontColor or {1, 1, 1, 1}
         frame.textHeader:SetTextColor(hdrColor[1], hdrColor[2], hdrColor[3], hdrColor[4] or 1)

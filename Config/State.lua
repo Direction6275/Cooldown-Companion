@@ -48,9 +48,23 @@ local function InvalidateFontCache()
 end
 ST._InvalidateFontCache = InvalidateFontCache
 
--- Sets up a font dropdown with correct name→name list and per-item font preview
-local function SetupFontDropdown(dropdown)
+local outlineOptions = {
+    [""] = "None",
+    ["OUTLINE"] = "Outline",
+    ["THICKOUTLINE"] = "Thick Outline",
+    ["MONOCHROME"] = "Monochrome",
+}
+
+local function IsFontControlLocked(opts)
+    return ST.IsFontPickerLocked and ST.IsFontPickerLocked() and not (opts and opts.ignoreProfileWideFontLock)
+end
+
+-- Sets up a font dropdown with correct name→name list and per-item font preview.
+local function SetupFontDropdown(dropdown, opts)
     dropdown:SetList(GetFontOptions())
+    if dropdown.SetDisabled then
+        dropdown:SetDisabled(IsFontControlLocked(opts))
+    end
     dropdown:SetCallback("OnOpened", function(self)
         for i, item in self.pullout:IterateItems() do
             local fontName = item.userdata.value
@@ -65,12 +79,46 @@ local function SetupFontDropdown(dropdown)
     end)
 end
 
-local outlineOptions = {
-    [""] = "None",
-    ["OUTLINE"] = "Outline",
-    ["THICKOUTLINE"] = "Thick Outline",
-    ["MONOCHROME"] = "Monochrome",
-}
+local function SetFontDropdownCallback(dropdown, callback, opts)
+    dropdown:SetCallback("OnValueChanged", function(widget, event, val, checked)
+        if IsFontControlLocked(opts) then
+            return
+        end
+        callback(widget, event, val, checked)
+    end)
+end
+
+local function SetupFontOutlineDropdown(dropdown, opts)
+    dropdown:SetList(outlineOptions)
+    if dropdown.SetDisabled then
+        dropdown:SetDisabled(IsFontControlLocked(opts))
+    end
+end
+
+local function SetFontOutlineDropdownCallback(dropdown, callback, opts)
+    dropdown:SetCallback("OnValueChanged", function(widget, event, val, checked)
+        if IsFontControlLocked(opts) then
+            return
+        end
+        callback(widget, event, val, checked)
+    end)
+end
+
+local function GetProfileWideFontPickerValue()
+    local name = ST.GetProfileWideFontName and ST.GetProfileWideFontName()
+    if name and (not LSM.IsValid or LSM:IsValid("font", name)) then
+        return name
+    end
+    return ST.DEFAULT_FONT_NAME or "Friz Quadrata TT"
+end
+
+local function GetProfileWideFontOutlinePickerValue()
+    local outline = ST.GetProfileWideFontOutline and ST.GetProfileWideFontOutline()
+    if type(outline) == "string" then
+        return outline
+    end
+    return ST.DEFAULT_FONT_OUTLINE or "OUTLINE"
+end
 
 -- Strata ordering element definitions
 local strataElementLabels = {
@@ -163,6 +211,7 @@ ST._configState = {
     buttonContextMenu = nil,
     customBarContextMenu = nil,
     gearDropdownFrame = nil,
+    profileWideFontWindow = nil,
     folderContextMenu = nil,
     folderIconPickerFrame = nil,
     buttonIconPickerFrame = nil,
@@ -245,6 +294,11 @@ ST._configState = {
     -- Static lookup tables
     fontOptions = GetFontOptions,
     SetupFontDropdown = SetupFontDropdown,
+    SetFontDropdownCallback = SetFontDropdownCallback,
+    SetupFontOutlineDropdown = SetupFontOutlineDropdown,
+    SetFontOutlineDropdownCallback = SetFontOutlineDropdownCallback,
+    GetProfileWideFontPickerValue = GetProfileWideFontPickerValue,
+    GetProfileWideFontOutlinePickerValue = GetProfileWideFontOutlinePickerValue,
     outlineOptions = outlineOptions,
     strataElementLabels = strataElementLabels,
     strataElementKeys = strataElementKeys,

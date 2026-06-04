@@ -70,6 +70,111 @@ local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_B
 local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
 local CONFIG_NESTED_INLINE_GROUP_INSET = 20
 local CONFIG_DRAG_ALPHA = 0.40
+local PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH = 330
+local PROFILE_WIDE_FONT_WINDOW_HEIGHT = 168
+
+local function GetProfileWideFontWindowWidth()
+    local configFrame = CS.configFrame
+    local narrowestWidth
+
+    for _, columnKey in ipairs({ "col1", "col2", "col3", "col4" }) do
+        local column = configFrame and configFrame[columnKey]
+        local frame = column and column.frame
+        local visible = frame and (frame:IsVisible() or frame:IsShown())
+        if visible then
+            local width = frame:GetWidth()
+            if width and width > 0 then
+                narrowestWidth = narrowestWidth and math.min(narrowestWidth, width) or width
+            end
+        end
+    end
+
+    return math.floor((narrowestWidth or PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH) + 0.5)
+end
+
+local function CleanupProfileWideFontWindow(widget)
+    if CS.UnregisterConfigDragAlphaFrame then
+        CS.UnregisterConfigDragAlphaFrame(widget.frame)
+    end
+    widget:ReleaseChildren()
+    AceGUI:Release(widget)
+    CS.profileWideFontWindow = nil
+end
+
+local function CloseProfileWideFontWindow()
+    local window = CS.profileWideFontWindow
+    if window then
+        window:Hide()
+        return true
+    end
+    return false
+end
+
+local function OpenProfileWideFontWindow()
+    if not ST.IsProfileWideFontEnabled or not ST.IsProfileWideFontEnabled() then
+        CloseProfileWideFontWindow()
+        return
+    end
+
+    if CS.CloseAdvancedSettingsPanel then
+        CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+    end
+    if CS.CancelPickAuraTexture then
+        CS.CancelPickAuraTexture()
+    end
+    if ST._CloseFormatEditor then
+        ST._CloseFormatEditor()
+    end
+
+    local window = CS.profileWideFontWindow
+    if not window then
+        window = AceGUI:Create("Window")
+        window:SetTitle("Profile-wide Font + Outline")
+        window:SetWidth(GetProfileWideFontWindowWidth())
+        window:SetHeight(PROFILE_WIDE_FONT_WINDOW_HEIGHT)
+        window:SetLayout("List")
+        window:EnableResize(false)
+        window:SetCallback("OnClose", CleanupProfileWideFontWindow)
+        CS.profileWideFontWindow = window
+        if CS.RegisterConfigDragAlphaFrame then
+            CS.RegisterConfigDragAlphaFrame(window.frame)
+        end
+    else
+        window:Show()
+        window.frame:Raise()
+        window:ReleaseChildren()
+        window:SetWidth(GetProfileWideFontWindowWidth())
+    end
+
+    local configFrame = CS.configFrame
+    if configFrame and configFrame.frame and configFrame.frame:IsShown() then
+        window.frame:ClearAllPoints()
+        window.frame:SetPoint("TOPLEFT", configFrame.frame, "TOPRIGHT", 4, 0)
+    end
+
+    local dropdown = AceGUI:Create("Dropdown")
+    dropdown:SetLabel("Font")
+    CS.SetupFontDropdown(dropdown, { ignoreProfileWideFontLock = true })
+    dropdown:SetValue(CS.GetProfileWideFontPickerValue and CS.GetProfileWideFontPickerValue() or ST.DEFAULT_FONT_NAME or "Friz Quadrata TT")
+    dropdown:SetFullWidth(true)
+    CS.SetFontDropdownCallback(dropdown, function(widget, event, val)
+        CooldownCompanion:SetProfileWideFontName(val, { enable = true })
+    end, { ignoreProfileWideFontLock = true })
+    window:AddChild(dropdown)
+
+    local outlineDrop = AceGUI:Create("Dropdown")
+    outlineDrop:SetLabel("Outline")
+    CS.SetupFontOutlineDropdown(outlineDrop, { ignoreProfileWideFontLock = true })
+    outlineDrop:SetValue(CS.GetProfileWideFontOutlinePickerValue and CS.GetProfileWideFontOutlinePickerValue() or ST.DEFAULT_FONT_OUTLINE or "OUTLINE")
+    outlineDrop:SetFullWidth(true)
+    CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
+        CooldownCompanion:SetProfileWideFontOutline(val, { enable = true })
+    end, { ignoreProfileWideFontLock = true })
+    window:AddChild(outlineDrop)
+end
+
+CS.CloseProfileWideFontWindow = CloseProfileWideFontWindow
+CS.OpenProfileWideFontWindow = OpenProfileWideFontWindow
 
 if not AceGUI:GetLayout(MANUAL_COLUMN_LAYOUT) then
     -- These columns are positioned and sized manually, so their layout should
@@ -484,6 +589,7 @@ end
 
 -- Shared reset for profile change/copy/reset callbacks
 local function ResetConfigForProfileChange()
+    CloseProfileWideFontWindow()
     if CancelFirstIconPanelTutorial then
         CancelFirstIconPanelTutorial("profile_changed")
     end
@@ -702,6 +808,7 @@ local function CreateConfigPanel()
         if frame.HideChangelogOverlay then
             frame.HideChangelogOverlay()
         end
+        CloseProfileWideFontWindow()
         -- If talent picker is open when panel closes, clean up its raw frames
         -- (RefreshConfigPanel inside CloseTalentPicker is guarded by IsShown, so it's safe)
         if CS.talentPickerMode then
@@ -1181,6 +1288,38 @@ local function CreateConfigPanel()
             end
             UIDropDownMenu_AddButton(info3, level)
 
+            local infoFont = UIDropDownMenu_CreateInfo()
+            infoFont.text = "  Profile-wide Font"
+            infoFont.checked = function() return ST.IsProfileWideFontEnabled and ST.IsProfileWideFontEnabled() end
+            infoFont.isNotRadio = true
+            infoFont.keepShownOnClick = true
+            infoFont.tooltipTitle = "Profile-wide Font"
+            infoFont.tooltipText = "Use one font face and outline for this profile's configurable text."
+            infoFont.tooltipOnButton = true
+            infoFont.func = function()
+                local enabling = not (ST.IsProfileWideFontEnabled and ST.IsProfileWideFontEnabled())
+                if CooldownCompanion:SetProfileWideFontEnabled(enabling) then
+                    CloseDropDownMenus()
+                    if enabling then
+                        OpenProfileWideFontWindow()
+                    else
+                        CloseProfileWideFontWindow()
+                    end
+                end
+            end
+            UIDropDownMenu_AddButton(infoFont, level)
+
+            if ST.IsProfileWideFontEnabled and ST.IsProfileWideFontEnabled() then
+                local infoFontPicker = UIDropDownMenu_CreateInfo()
+                infoFontPicker.text = "  Pick Font"
+                infoFontPicker.notCheckable = true
+                infoFontPicker.func = function()
+                    CloseDropDownMenus()
+                    OpenProfileWideFontWindow()
+                end
+                UIDropDownMenu_AddButton(infoFontPicker, level)
+            end
+
             local info4 = UIDropDownMenu_CreateInfo()
             info4.text = "  Generate Bug Report"
             info4.notCheckable = true
@@ -1321,6 +1460,7 @@ local function CreateConfigPanel()
         else
             -- Collapse: save main frame position, then show mini frame at collapse button position
             CloseDropDownMenus()
+            CloseProfileWideFontWindow()
             if CS.CloseAdvancedSettingsPanel then
                 CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
             end
