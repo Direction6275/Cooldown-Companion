@@ -48,14 +48,22 @@ local function InvalidateFontCache()
 end
 ST._InvalidateFontCache = InvalidateFontCache
 
-local outlineOptions
+local outlineOptions = {
+    [""] = "None",
+    ["OUTLINE"] = "Outline",
+    ["THICKOUTLINE"] = "Thick Outline",
+    ["MONOCHROME"] = "Monochrome",
+}
+
+local function IsFontControlLocked(opts)
+    return ST.IsFontPickerLocked and ST.IsFontPickerLocked() and not (opts and opts.ignoreProfileWideFontLock)
+end
 
 -- Sets up a font dropdown with correct name→name list and per-item font preview.
 local function SetupFontDropdown(dropdown, opts)
-    opts = opts or {}
     dropdown:SetList(GetFontOptions())
     if dropdown.SetDisabled then
-        dropdown:SetDisabled(ST.IsFontPickerLocked and ST.IsFontPickerLocked() and not opts.ignoreProfileWideFontLock)
+        dropdown:SetDisabled(IsFontControlLocked(opts))
     end
     dropdown:SetCallback("OnOpened", function(self)
         for i, item in self.pullout:IterateItems() do
@@ -72,9 +80,8 @@ local function SetupFontDropdown(dropdown, opts)
 end
 
 local function SetFontDropdownCallback(dropdown, callback, opts)
-    opts = opts or {}
     dropdown:SetCallback("OnValueChanged", function(widget, event, val, checked)
-        if ST.IsFontPickerLocked and ST.IsFontPickerLocked() and not opts.ignoreProfileWideFontLock then
+        if IsFontControlLocked(opts) then
             return
         end
         callback(widget, event, val, checked)
@@ -82,17 +89,15 @@ local function SetFontDropdownCallback(dropdown, callback, opts)
 end
 
 local function SetupFontOutlineDropdown(dropdown, opts)
-    opts = opts or {}
     dropdown:SetList(outlineOptions)
     if dropdown.SetDisabled then
-        dropdown:SetDisabled(ST.IsFontPickerLocked and ST.IsFontPickerLocked() and not opts.ignoreProfileWideFontLock)
+        dropdown:SetDisabled(IsFontControlLocked(opts))
     end
 end
 
 local function SetFontOutlineDropdownCallback(dropdown, callback, opts)
-    opts = opts or {}
     dropdown:SetCallback("OnValueChanged", function(widget, event, val, checked)
-        if ST.IsFontPickerLocked and ST.IsFontPickerLocked() and not opts.ignoreProfileWideFontLock then
+        if IsFontControlLocked(opts) then
             return
         end
         callback(widget, event, val, checked)
@@ -114,13 +119,6 @@ local function GetProfileWideFontOutlinePickerValue()
     end
     return ST.DEFAULT_FONT_OUTLINE or "OUTLINE"
 end
-
-outlineOptions = {
-    [""] = "None",
-    ["OUTLINE"] = "Outline",
-    ["THICKOUTLINE"] = "Thick Outline",
-    ["MONOCHROME"] = "Monochrome",
-}
 
 -- Strata ordering element definitions
 local strataElementLabels = {
@@ -214,8 +212,6 @@ ST._configState = {
     customBarContextMenu = nil,
     gearDropdownFrame = nil,
     profileWideFontWindow = nil,
-    profileWideFontDropdown = nil,
-    profileWideFontOutlineDropdown = nil,
     folderContextMenu = nil,
     folderIconPickerFrame = nil,
     buttonIconPickerFrame = nil,

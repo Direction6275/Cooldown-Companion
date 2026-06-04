@@ -99,8 +99,6 @@ local function CleanupProfileWideFontWindow(widget)
     widget:ReleaseChildren()
     AceGUI:Release(widget)
     CS.profileWideFontWindow = nil
-    CS.profileWideFontDropdown = nil
-    CS.profileWideFontOutlineDropdown = nil
 end
 
 local function CloseProfileWideFontWindow()
@@ -163,7 +161,6 @@ local function OpenProfileWideFontWindow()
         CooldownCompanion:SetProfileWideFontName(val, { enable = true })
     end, { ignoreProfileWideFontLock = true })
     window:AddChild(dropdown)
-    CS.profileWideFontDropdown = dropdown
 
     local outlineDrop = AceGUI:Create("Dropdown")
     outlineDrop:SetLabel("Outline")
@@ -174,7 +171,6 @@ local function OpenProfileWideFontWindow()
         CooldownCompanion:SetProfileWideFontOutline(val, { enable = true })
     end, { ignoreProfileWideFontLock = true })
     window:AddChild(outlineDrop)
-    CS.profileWideFontOutlineDropdown = outlineDrop
 end
 
 CS.CloseProfileWideFontWindow = CloseProfileWideFontWindow

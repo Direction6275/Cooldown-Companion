@@ -116,21 +116,25 @@ function CooldownCompanion:RefreshAllMedia()
     self:EvaluateBarsAndFramesRuntime("shared-media")
 end
 
-function CooldownCompanion:ApplyProfileOnePixelBorderMode(opts)
-    if self.RefreshAllGroups then
-        self:RefreshAllGroups()
+local function RefreshProfileWideVisuals(addon, reason, opts)
+    if addon.RefreshAllGroups then
+        addon:RefreshAllGroups()
     end
-    if self.EvaluateBarsAndFramesRuntime then
-        self:EvaluateBarsAndFramesRuntime("profile-border-mode")
+    if addon.EvaluateBarsAndFramesRuntime then
+        addon:EvaluateBarsAndFramesRuntime(reason)
     end
-    if self.RefreshAllAuraTextureVisuals then
-        self:RefreshAllAuraTextureVisuals()
+    if addon.RefreshAllAuraTextureVisuals then
+        addon:RefreshAllAuraTextureVisuals()
     end
     if not opts or opts.refreshConfig ~= false then
-        if self.RefreshConfigPanel then
-            self:RefreshConfigPanel()
+        if addon.RefreshConfigPanel then
+            addon:RefreshConfigPanel()
         end
     end
+end
+
+function CooldownCompanion:ApplyProfileOnePixelBorderMode(opts)
+    RefreshProfileWideVisuals(self, "profile-border-mode", opts)
 end
 
 function CooldownCompanion:SetProfileOnePixelBordersEnabled(enabled, opts)
@@ -142,20 +146,20 @@ function CooldownCompanion:SetProfileOnePixelBordersEnabled(enabled, opts)
 end
 
 function CooldownCompanion:ApplyProfileWideFontMode(opts)
-    if self.RefreshAllGroups then
-        self:RefreshAllGroups()
+    RefreshProfileWideVisuals(self, "profile-font-mode", opts)
+end
+
+local function InitializeProfileWideFontDefaults(profile)
+    local initialized = false
+    if type(profile.profileWideFontName) ~= "string" or profile.profileWideFontName == "" then
+        profile.profileWideFontName = ST.DEFAULT_FONT_NAME or "Friz Quadrata TT"
+        initialized = true
     end
-    if self.EvaluateBarsAndFramesRuntime then
-        self:EvaluateBarsAndFramesRuntime("profile-font-mode")
+    if type(profile.profileWideFontOutline) ~= "string" then
+        profile.profileWideFontOutline = ST.DEFAULT_FONT_OUTLINE or "OUTLINE"
+        initialized = true
     end
-    if self.RefreshAllAuraTextureVisuals then
-        self:RefreshAllAuraTextureVisuals()
-    end
-    if not opts or opts.refreshConfig ~= false then
-        if self.RefreshConfigPanel then
-            self:RefreshConfigPanel()
-        end
-    end
+    return initialized
 end
 
 function CooldownCompanion:SetProfileWideFontEnabled(enabled, opts)
@@ -166,17 +170,9 @@ function CooldownCompanion:SetProfileWideFontEnabled(enabled, opts)
     local changed = profile.profileWideFontEnabled ~= target
     profile.profileWideFontEnabled = target
 
-    local initializedFont = false
-    if target and (type(profile.profileWideFontName) ~= "string" or profile.profileWideFontName == "") then
-        profile.profileWideFontName = ST.DEFAULT_FONT_NAME or "Friz Quadrata TT"
-        initializedFont = true
-    end
-    if target and type(profile.profileWideFontOutline) ~= "string" then
-        profile.profileWideFontOutline = ST.DEFAULT_FONT_OUTLINE or "OUTLINE"
-        initializedFont = true
-    end
+    local initialized = target and InitializeProfileWideFontDefaults(profile)
 
-    if changed or initializedFont then
+    if changed or initialized then
         self:ApplyProfileWideFontMode(opts)
     end
     return true
@@ -197,9 +193,7 @@ function CooldownCompanion:SetProfileWideFontName(fontName, opts)
     if opts and opts.enable == true and profile.profileWideFontEnabled ~= true then
         profile.profileWideFontEnabled = true
         enableChanged = true
-        if type(profile.profileWideFontOutline) ~= "string" then
-            profile.profileWideFontOutline = ST.DEFAULT_FONT_OUTLINE or "OUTLINE"
-        end
+        InitializeProfileWideFontDefaults(profile)
     end
 
     if changed or enableChanged then
@@ -223,19 +217,13 @@ function CooldownCompanion:SetProfileWideFontOutline(outline, opts)
     if opts and opts.enable == true and profile.profileWideFontEnabled ~= true then
         profile.profileWideFontEnabled = true
         enableChanged = true
-        if type(profile.profileWideFontName) ~= "string" or profile.profileWideFontName == "" then
-            profile.profileWideFontName = ST.DEFAULT_FONT_NAME or "Friz Quadrata TT"
-        end
+        InitializeProfileWideFontDefaults(profile)
     end
 
     if changed or enableChanged then
         self:ApplyProfileWideFontMode(opts)
     end
     return true
-end
-
-function CooldownCompanion:SetProfileWideFont(fontName, opts)
-    return self:SetProfileWideFontName(fontName, opts)
 end
 
 function CooldownCompanion:ClearUnsupportedProfileRuntime()
