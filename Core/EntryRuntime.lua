@@ -7,7 +7,7 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
 local IsNoCooldownSpell = ST.IsNoCooldownSpell
-local IsRuneCostNoCooldownSpell = ST.IsRuneCostNoCooldownSpell
+local IsResourceGateNoCooldownSpell = ST.IsResourceGateNoCooldownSpell
 
 local ipairs = ipairs
 local tonumber = tonumber
@@ -928,9 +928,9 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
 end
 local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldown)
     local resourceGatedNoCooldown = noCooldown == true
-        and IsRuneCostNoCooldownSpell
-        and (IsRuneCostNoCooldownSpell(cooldownSpellId)
-            or (cooldownSpellId ~= buttonData.id and IsRuneCostNoCooldownSpell(buttonData.id)))
+        and IsResourceGateNoCooldownSpell
+        and (IsResourceGateNoCooldownSpell(cooldownSpellId)
+            or (cooldownSpellId ~= buttonData.id and IsResourceGateNoCooldownSpell(buttonData.id)))
     local allowActionSlotRealFallback = buttonData.hasCharges ~= true
         and cooldownSpellId == buttonData.id
         and noCooldown ~= true
@@ -1215,9 +1215,9 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     local secrecy = ResolveSpellCooldownSecrecy(owner, cooldownSpellID)
     local noCooldown = ResolveNoCooldownState(owner, cooldownSpellID, hasCharges)
     local resourceGatedNoCooldown = noCooldown == true
-        and IsRuneCostNoCooldownSpell
-        and (IsRuneCostNoCooldownSpell(cooldownSpellID)
-            or (cooldownSpellID ~= spellID and IsRuneCostNoCooldownSpell(spellID)))
+        and IsResourceGateNoCooldownSpell
+        and (IsResourceGateNoCooldownSpell(cooldownSpellID)
+            or (cooldownSpellID ~= spellID and IsResourceGateNoCooldownSpell(spellID)))
 
     local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, {
         allowActionSlotRealFallback = not hasCharges and cooldownSpellID == spellID and noCooldown ~= true,

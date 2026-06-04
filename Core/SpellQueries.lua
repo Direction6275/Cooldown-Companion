@@ -140,17 +140,23 @@ local function IsPositiveReadableNumber(value)
     return (tonumber(value) or 0) > 0
 end
 
-function ST.HasPositiveRuneCost(spellId)
+local function IsResourceGatedNoCooldownPowerType(powerType)
+    local powerTypes = Enum and Enum.PowerType
+    if not powerTypes then return false end
+
+    return powerType == powerTypes.Runes
+        or powerType == powerTypes.Essence
+end
+
+local function HasPositivePowerCost(spellId, matchesPowerType)
     if not spellId then return false end
-    local runePowerType = Enum and Enum.PowerType and Enum.PowerType.Runes
-    if runePowerType == nil then return false end
 
     local costs = C_Spell.GetSpellPowerCost(spellId)
     if not costs then return false end
 
     for _, costInfo in ipairs(costs) do
         if costInfo
-            and costInfo.type == runePowerType
+            and matchesPowerType(costInfo.type)
             and (IsPositiveReadableNumber(costInfo.cost)
                 or IsPositiveReadableNumber(costInfo.minCost)) then
             return true
@@ -158,6 +164,19 @@ function ST.HasPositiveRuneCost(spellId)
     end
 
     return false
+end
+
+function ST.HasPositiveResourceGateCost(spellId)
+    return HasPositivePowerCost(spellId, IsResourceGatedNoCooldownPowerType)
+end
+
+function ST.HasPositiveRuneCost(spellId)
+    local runePowerType = Enum and Enum.PowerType and Enum.PowerType.Runes
+    if runePowerType == nil then return false end
+
+    return HasPositivePowerCost(spellId, function(powerType)
+        return powerType == runePowerType
+    end)
 end
 
 local function HasBaseCooldown(spellId)
@@ -179,6 +198,10 @@ end
 
 function ST.IsRuneCostNoCooldownSpell(spellId)
     return ST.HasPositiveRuneCost(spellId) and ST.IsNoCooldownSpell(spellId)
+end
+
+function ST.IsResourceGateNoCooldownSpell(spellId)
+    return ST.HasPositiveResourceGateCost(spellId) and ST.IsNoCooldownSpell(spellId)
 end
 
 -- Returns true if the spell tooltip contains a UsageRequirement line
