@@ -8,7 +8,6 @@ local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
-local GetBarTextureOptions = ST._GetBarTextureOptions
 local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local HookSliderEditBox = ST._HookSliderEditBox
@@ -305,10 +304,10 @@ local function BuildCastBarStylingPanel(container)
     -- Bar Texture
     local texDrop = AceGUI:Create("Dropdown")
     texDrop:SetLabel("Bar Texture")
-    texDrop:SetList(GetBarTextureOptions())
+    CS.SetupBarTextureDropdown(texDrop)
     texDrop:SetValue(settings.barTexture or "Solid")
     texDrop:SetFullWidth(true)
-    texDrop:SetCallback("OnValueChanged", function(widget, event, val)
+    CS.SetBarTextureDropdownCallback(texDrop, function(widget, event, val)
         settings.barTexture = val
         CooldownCompanion:ApplyCastBarSettings()
     end)

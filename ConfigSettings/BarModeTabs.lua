@@ -16,7 +16,6 @@ local CreateColorPickerPromoteButton = ST._CreateColorPickerPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
-local GetBarTextureOptions = ST._GetBarTextureOptions
 local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
@@ -117,10 +116,10 @@ local function BuildBarAppearanceTab(container, group, style)
     -- Bar Texture
     local barTexDrop = AceGUI:Create("Dropdown")
     barTexDrop:SetLabel("Bar Texture")
-    barTexDrop:SetList(GetBarTextureOptions())
+    CS.SetupBarTextureDropdown(barTexDrop)
     barTexDrop:SetValue(style.barTexture or "Solid")
     barTexDrop:SetFullWidth(true)
-    barTexDrop:SetCallback("OnValueChanged", function(widget, event, val)
+    CS.SetBarTextureDropdownCallback(barTexDrop, function(widget, event, val)
         style.barTexture = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)

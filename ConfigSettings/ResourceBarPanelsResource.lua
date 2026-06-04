@@ -1234,15 +1234,17 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
             or textFormat == "current_percent"
             or textFormat == "current_percent_no_sign"
     end
+    local localBarTextureName = displayProfile.barTexture or settings.barTexture or "Solid"
+    local effectiveBarTextureName = ST.GetEffectiveBarTextureName(localBarTextureName)
 
     if showBarText then
     -- Bar Texture
     local texDrop = AceGUI:Create("Dropdown")
     texDrop:SetLabel("Bar Texture")
-    texDrop:SetList(GetResourceBarTextureOptions())
-    texDrop:SetValue(displayProfile.barTexture or settings.barTexture or "Solid")
+    CS.SetupBarTextureDropdown(texDrop, { list = GetResourceBarTextureOptions() })
+    texDrop:SetValue(localBarTextureName)
     texDrop:SetFullWidth(true)
-    texDrop:SetCallback("OnValueChanged", function(widget, event, val)
+    CS.SetBarTextureDropdownCallback(texDrop, function(widget, event, val)
         displayProfile.barTexture = val
         CooldownCompanion:ApplyResourceBars()
         -- Defer panel rebuild to next frame so it doesn't interfere with current callback
@@ -1251,13 +1253,15 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     container:AddChild(texDrop)
 
     -- Brightness slider (only for Blizzard Class texture)
-    if (displayProfile.barTexture or settings.barTexture) == "blizzard_class" then
+    if effectiveBarTextureName == "blizzard_class" then
         local brightSlider = AceGUI:Create("Slider")
         brightSlider:SetLabel("Class Texture Brightness")
         brightSlider:SetSliderValues(0.5, 2.0, 0.1)
         brightSlider:SetValue(displayProfile.classBarBrightness or settings.classBarBrightness or 1.3)
         brightSlider:SetFullWidth(true)
+        brightSlider:SetDisabled(ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked())
         brightSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked() then return end
             displayProfile.classBarBrightness = val
             CooldownCompanion:ApplyResourceBars()
         end)
@@ -1734,7 +1738,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
             else
                 local name = POWER_NAMES[pt] or ("Power " .. pt)
 
-                if (displayProfile.barTexture or settings.barTexture) == "blizzard_class" and ST.POWER_ATLAS_TYPES and ST.POWER_ATLAS_TYPES[pt] then
+                if effectiveBarTextureName == "blizzard_class" and ST.POWER_ATLAS_TYPES and ST.POWER_ATLAS_TYPES[pt] then
                     -- Atlas-backed type; color picker not applicable
                 else
                     local capturedGenericPt = pt

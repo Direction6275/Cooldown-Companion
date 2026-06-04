@@ -103,6 +103,11 @@ function CooldownCompanion:FetchStatusBar(name)
     return LSM:Fetch("statusbar", name) or LSM:Fetch("statusbar", "Solid") or [[Interface\BUTTONS\WHITE8X8]]
 end
 
+function CooldownCompanion:FetchEffectiveBarTexture(name)
+    local effectiveName = ST.GetEffectiveBarTextureName and ST.GetEffectiveBarTextureName(name) or name
+    return self:FetchStatusBar(effectiveName)
+end
+
 -- Re-apply all media after a SharedMedia pack registers new fonts/textures
 function CooldownCompanion:RefreshAllMedia()
     -- SharedMedia registrations from other addons can fire during startup before
@@ -116,14 +121,14 @@ function CooldownCompanion:RefreshAllMedia()
     self:EvaluateBarsAndFramesRuntime("shared-media")
 end
 
-local function RefreshProfileWideVisuals(addon, reason, opts)
+local function RefreshProfileWideVisuals(addon, reason, opts, refreshAuraTextures)
     if addon.RefreshAllGroups then
         addon:RefreshAllGroups()
     end
     if addon.EvaluateBarsAndFramesRuntime then
         addon:EvaluateBarsAndFramesRuntime(reason)
     end
-    if addon.RefreshAllAuraTextureVisuals then
+    if refreshAuraTextures ~= false and addon.RefreshAllAuraTextureVisuals then
         addon:RefreshAllAuraTextureVisuals()
     end
     if not opts or opts.refreshConfig ~= false then
@@ -222,6 +227,58 @@ function CooldownCompanion:SetProfileWideFontOutline(outline, opts)
 
     if changed or enableChanged then
         self:ApplyProfileWideFontMode(opts)
+    end
+    return true
+end
+
+function CooldownCompanion:ApplyProfileWideBarTextureMode(opts)
+    RefreshProfileWideVisuals(self, "profile-bar-texture-mode", opts, false)
+end
+
+local function InitializeProfileWideBarTextureDefaults(profile)
+    if type(profile.profileWideBarTextureName) ~= "string" or profile.profileWideBarTextureName == "" then
+        profile.profileWideBarTextureName = "Solid"
+        return true
+    end
+    return false
+end
+
+function CooldownCompanion:SetProfileWideBarTextureEnabled(enabled, opts)
+    local profile = self.db and self.db.profile
+    if not profile then return false end
+
+    local target = enabled == true
+    local changed = profile.profileWideBarTextureEnabled ~= target
+    profile.profileWideBarTextureEnabled = target
+
+    local initialized = target and InitializeProfileWideBarTextureDefaults(profile)
+
+    if changed or initialized then
+        self:ApplyProfileWideBarTextureMode(opts)
+    end
+    return true
+end
+
+function CooldownCompanion:SetProfileWideBarTextureName(textureName, opts)
+    local profile = self.db and self.db.profile
+    if not profile or type(textureName) ~= "string" or textureName == "" then
+        return false
+    end
+
+    local changed = profile.profileWideBarTextureName ~= textureName
+    if changed then
+        profile.profileWideBarTextureName = textureName
+    end
+
+    local enableChanged = false
+    if opts and opts.enable == true and profile.profileWideBarTextureEnabled ~= true then
+        profile.profileWideBarTextureEnabled = true
+        enableChanged = true
+        InitializeProfileWideBarTextureDefaults(profile)
+    end
+
+    if changed or enableChanged then
+        self:ApplyProfileWideBarTextureMode(opts)
     end
     return true
 end

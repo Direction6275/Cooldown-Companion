@@ -641,6 +641,9 @@ local function OpenFormatEditor(style, groupId, opts)
     if CS.CloseProfileWideFontWindow then
         CS.CloseProfileWideFontWindow()
     end
+    if CS.CloseProfileWideBarTextureWindow then
+        CS.CloseProfileWideBarTextureWindow()
+    end
 
     -- If already open, bring to front and refresh
     if formatEditorFrame then

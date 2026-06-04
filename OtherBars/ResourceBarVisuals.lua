@@ -265,7 +265,7 @@ end
 
 local function GetResourceAuraStackLayoutInputs(holder, settings, orientationOverride, reverseFillOverride)
     local style = GetResourceDisplayStyle(settings)
-    local barTextureName = style and style.barTexture or "Solid"
+    local barTextureName = ST.GetEffectiveBarTextureName(style and style.barTexture or "Solid")
     local borderStyle = style and style.borderStyle or "pixel"
     local borderSize = style and style.borderSize or 1
     local borderRenderMode = ST.GetBorderRenderMode(style)
@@ -508,7 +508,7 @@ local function ApplyContinuousFillColor(bar, powerType, settings, overrideColor)
     if not bar or not settings then return end
 
     local style = GetResourceDisplayStyle(settings)
-    local texName = style and style.barTexture or "Solid"
+    local texName = bar._effectiveBarTextureName or ST.GetEffectiveBarTextureName(style and style.barTexture or "Solid")
     local atlasInfo = (texName == "blizzard_class") and POWER_ATLAS_INFO[powerType] or nil
     if atlasInfo then
         if overrideColor then
@@ -835,7 +835,7 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, or
     if n == 0 then return end
 
     local style = GetResourceDisplayStyle(settings)
-    local barTexture = CooldownCompanion:FetchStatusBar(style and style.barTexture or "Solid")
+    local barTexture = CooldownCompanion:FetchEffectiveBarTexture(style and style.barTexture or "Solid")
     local bgColor = style and style.backgroundColor or { 0, 0, 0, 0.5 }
     local borderStyle = style and style.borderStyle or "pixel"
     local borderColor = style and style.borderColor or { 0, 0, 0, 1 }
@@ -987,7 +987,7 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
     if not holder or not holder.segments then return end
 
     local style = GetResourceDisplayStyle(settings)
-    local barTexture = CooldownCompanion:FetchStatusBar(style and style.barTexture or "Solid")
+    local barTexture = CooldownCompanion:FetchEffectiveBarTexture(style and style.barTexture or "Solid")
     local bgColor = style and style.backgroundColor or { 0, 0, 0, 0.5 }
     local borderStyle = style and style.borderStyle or "pixel"
     local borderColor = style and style.borderColor or { 0, 0, 0, 1 }

@@ -248,6 +248,36 @@ function ST.GetEffectiveFontOutline(localOutline)
     return ST.DEFAULT_FONT_OUTLINE
 end
 
+function ST.IsProfileWideBarTextureEnabled()
+    local addon = ST.Addon
+    local db = addon and addon.db and addon.db.profile
+    return db and db.profileWideBarTextureEnabled == true
+end
+
+function ST.IsBarTexturePickerLocked()
+    return ST.IsProfileWideBarTextureEnabled()
+end
+
+function ST.GetProfileWideBarTextureName()
+    local addon = ST.Addon
+    local db = addon and addon.db and addon.db.profile
+    local name = db and db.profileWideBarTextureName
+    if type(name) == "string" and name ~= "" then
+        return name
+    end
+    return nil
+end
+
+function ST.GetEffectiveBarTextureName(localTextureName)
+    if ST.IsProfileWideBarTextureEnabled() then
+        return ST.GetProfileWideBarTextureName() or "Solid"
+    end
+    if type(localTextureName) == "string" and localTextureName ~= "" then
+        return localTextureName
+    end
+    return "Solid"
+end
+
 function ST.GetEffectiveBorderRenderMode(source, key, size)
     local configuredMode = ST.GetBorderRenderMode(source, key)
     if not ST.IsProfileOnePixelBordersEnabled() then

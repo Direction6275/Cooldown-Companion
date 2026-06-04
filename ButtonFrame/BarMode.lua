@@ -546,7 +546,7 @@ local function BuildBarAuraStackLayoutKey(button, mode, maxStacks, width, height
         tostring(gap),
         button._isVertical and "1" or "0",
         style.barReverseFill and "1" or "0",
-        tostring(style.barTexture or "Solid"),
+        tostring(ST.GetEffectiveBarTextureName(style.barTexture or "Solid")),
         tostring(style.borderStyle or "pixel"),
         tostring(style.borderSize or ST.DEFAULT_BORDER_SIZE or 1),
         tostring(ST.GetBorderRenderMode(style)),
@@ -598,6 +598,7 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
     end
 
     local gap = CooldownCompanion:GetBarPanelAuraSegmentGap(button.buttonData)
+    local effectiveBarTextureName = ST.GetEffectiveBarTextureName(style.barTexture or "Solid")
     layoutDirty = layoutDirty
         or state.mode ~= mode
         or state.maxStacks ~= maxStacks
@@ -606,7 +607,7 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
         or state.gap ~= gap
         or state.isVertical ~= (button._isVertical == true)
         or state.reverseFill ~= (style.barReverseFill == true)
-        or state.barTexture ~= (style.barTexture or "Solid")
+        or state.barTexture ~= effectiveBarTextureName
         or state.borderStyle ~= (style.borderStyle or "pixel")
         or state.borderSize ~= (style.borderSize or ST.DEFAULT_BORDER_SIZE or 1)
         or state.borderRenderMode ~= ST.GetBorderRenderMode(style)
@@ -643,7 +644,7 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
         state.gap = gap
         state.isVertical = button._isVertical == true
         state.reverseFill = style.barReverseFill == true
-        state.barTexture = style.barTexture or "Solid"
+        state.barTexture = effectiveBarTextureName
         state.borderStyle = style.borderStyle or "pixel"
         state.borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE or 1
         state.borderRenderMode = ST.GetBorderRenderMode(style)
@@ -691,7 +692,7 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
     local orientation = button._isVertical and "vertical" or "horizontal"
     local reverseFill = button.style and button.style.barReverseFill == true
     local gap = CooldownCompanion:GetBarPanelAuraSegmentGap(button.buttonData)
-    local barTexture = CooldownCompanion:FetchStatusBar(button.style and button.style.barTexture or "Solid")
+    local barTexture = CooldownCompanion:FetchEffectiveBarTexture(button.style and button.style.barTexture or "Solid")
     local borderStyle = button.style and button.style.borderStyle or "pixel"
     local borderSize = button.style and button.style.borderSize or ST.DEFAULT_BORDER_SIZE or 1
     local borderRenderMode = ST.GetBorderRenderMode(button.style)
@@ -792,7 +793,7 @@ local function BuildBarAuraStackIndicatorKey(button, info, glowConfig, mode, max
         BarAuraColorKey(glowConfig.maxStacksGlowColor),
         tostring(glowConfig.maxStacksGlowSize or 2),
         tostring(glowConfig.maxStacksGlowSpeed or 0.5),
-        tostring(style.barTexture or "Solid"),
+        tostring(ST.GetEffectiveBarTextureName(style.barTexture or "Solid")),
         tostring(style.borderStyle or "pixel"),
         tostring(style.borderSize or ST.DEFAULT_BORDER_SIZE or 1),
         tostring(ST.GetBorderRenderMode(style)),
@@ -861,7 +862,7 @@ local function UpdateBarAuraStackIndicator(button, mode, maxStacks, stackValue, 
             info,
             glowConfig,
             maxStacks,
-            CooldownCompanion:FetchStatusBar(button.style and button.style.barTexture or "Solid"),
+            CooldownCompanion:FetchEffectiveBarTexture(button.style and button.style.barTexture or "Solid"),
             button.style and button.style.borderStyle or "pixel",
             button.style and button.style.borderSize or ST.DEFAULT_BORDER_SIZE or 1,
             ST.GetBorderRenderMode(button.style)
@@ -1515,7 +1516,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     SetStatusBarImmediateRange(button.statusBar, 0, 1)
     SetStatusBarImmediateValue(button.statusBar, 1)
     button.statusBar:SetReverseFill(style.barReverseFill or false)
-    button.statusBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(style.barTexture or "Solid"))
+    button.statusBar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
     local barColor = style.barColor or DEFAULT_BAR_COLOR
     button.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
     button.statusBar:EnableMouse(false)
@@ -1929,7 +1930,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         button.statusBar:SetOrientation("HORIZONTAL")
     end
     button.statusBar:SetReverseFill(newStyle.barReverseFill or false)
-    button.statusBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(newStyle.barTexture or "Solid"))
+    button.statusBar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(newStyle.barTexture or "Solid"))
     local barColor = newStyle.barColor or {0.2, 0.6, 1.0, 1.0}
     button.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
 

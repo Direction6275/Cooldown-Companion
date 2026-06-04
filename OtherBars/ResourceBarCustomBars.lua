@@ -1171,7 +1171,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
         if mode == "continuous" then
             local barTextureName = GetResourceDisplayValue(settings, "barTexture", "Solid")
-            local barTexture = CooldownCompanion:FetchStatusBar(barTextureName)
+            local barTexture = CooldownCompanion:FetchEffectiveBarTexture(barTextureName)
             barInfo.frame:SetStatusBarTexture(barTexture)
             barInfo.frame:SetOrientation(customIsVertical and "VERTICAL" or "HORIZONTAL")
             barInfo.frame:SetReverseFill(customIsVertical and customReverseFill or false)
@@ -1227,7 +1227,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                 local indBorderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
                 local indBorderSize = GetResourceDisplayValue(settings, "borderSize", 1)
                 local indBorderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM)
-                local indBarTexture = CooldownCompanion:FetchStatusBar(GetResourceDisplayValue(settings, "barTexture", "Solid"))
+                local indBarTexture = CooldownCompanion:FetchEffectiveBarTexture(GetResourceDisplayValue(settings, "barTexture", "Solid"))
                 LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, indBarTexture, indBorderStyle, indBorderSize, indBorderRenderMode)
             end
         else

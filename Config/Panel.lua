@@ -72,8 +72,9 @@ local CONFIG_NESTED_INLINE_GROUP_INSET = 20
 local CONFIG_DRAG_ALPHA = 0.40
 local PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH = 330
 local PROFILE_WIDE_FONT_WINDOW_HEIGHT = 168
+local PROFILE_WIDE_BAR_TEXTURE_WINDOW_HEIGHT = 106
 
-local function GetProfileWideFontWindowWidth()
+local function GetProfileWideSideWindowWidth()
     local configFrame = CS.configFrame
     local narrowestWidth
 
@@ -92,22 +93,65 @@ local function GetProfileWideFontWindowWidth()
     return math.floor((narrowestWidth or PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH) + 0.5)
 end
 
-local function CleanupProfileWideFontWindow(widget)
+local function CleanupProfileWideSideWindow(widget, stateKey)
     if CS.UnregisterConfigDragAlphaFrame then
         CS.UnregisterConfigDragAlphaFrame(widget.frame)
     end
     widget:ReleaseChildren()
     AceGUI:Release(widget)
-    CS.profileWideFontWindow = nil
+    CS[stateKey] = nil
 end
 
-local function CloseProfileWideFontWindow()
-    local window = CS.profileWideFontWindow
+local function CloseProfileWideSideWindow(stateKey)
+    local window = CS[stateKey]
     if window then
         window:Hide()
         return true
     end
     return false
+end
+
+local function AnchorProfileWideSideWindow(window)
+    local configFrame = CS.configFrame
+    if configFrame and configFrame.frame and configFrame.frame:IsShown() then
+        window.frame:ClearAllPoints()
+        window.frame:SetPoint("TOPLEFT", configFrame.frame, "TOPRIGHT", 4, 0)
+    end
+end
+
+local function PrepareProfileWideSideWindow(stateKey, title, height)
+    local window = CS[stateKey]
+    if not window then
+        window = AceGUI:Create("Window")
+        window:SetTitle(title)
+        window:SetWidth(GetProfileWideSideWindowWidth())
+        window:SetHeight(height)
+        window:SetLayout("List")
+        window:EnableResize(false)
+        window:SetCallback("OnClose", function(widget)
+            CleanupProfileWideSideWindow(widget, stateKey)
+        end)
+        CS[stateKey] = window
+        if CS.RegisterConfigDragAlphaFrame then
+            CS.RegisterConfigDragAlphaFrame(window.frame)
+        end
+    else
+        window:Show()
+        window.frame:Raise()
+        window:ReleaseChildren()
+        window:SetWidth(GetProfileWideSideWindowWidth())
+    end
+
+    AnchorProfileWideSideWindow(window)
+    return window
+end
+
+local function CloseProfileWideFontWindow()
+    return CloseProfileWideSideWindow("profileWideFontWindow")
+end
+
+local function CloseProfileWideBarTextureWindow()
+    return CloseProfileWideSideWindow("profileWideBarTextureWindow")
 end
 
 local function OpenProfileWideFontWindow()
@@ -125,32 +169,9 @@ local function OpenProfileWideFontWindow()
     if ST._CloseFormatEditor then
         ST._CloseFormatEditor()
     end
+    CloseProfileWideBarTextureWindow()
 
-    local window = CS.profileWideFontWindow
-    if not window then
-        window = AceGUI:Create("Window")
-        window:SetTitle("Profile-wide Font + Outline")
-        window:SetWidth(GetProfileWideFontWindowWidth())
-        window:SetHeight(PROFILE_WIDE_FONT_WINDOW_HEIGHT)
-        window:SetLayout("List")
-        window:EnableResize(false)
-        window:SetCallback("OnClose", CleanupProfileWideFontWindow)
-        CS.profileWideFontWindow = window
-        if CS.RegisterConfigDragAlphaFrame then
-            CS.RegisterConfigDragAlphaFrame(window.frame)
-        end
-    else
-        window:Show()
-        window.frame:Raise()
-        window:ReleaseChildren()
-        window:SetWidth(GetProfileWideFontWindowWidth())
-    end
-
-    local configFrame = CS.configFrame
-    if configFrame and configFrame.frame and configFrame.frame:IsShown() then
-        window.frame:ClearAllPoints()
-        window.frame:SetPoint("TOPLEFT", configFrame.frame, "TOPRIGHT", 4, 0)
-    end
+    local window = PrepareProfileWideSideWindow("profileWideFontWindow", "Profile-wide Font + Outline", PROFILE_WIDE_FONT_WINDOW_HEIGHT)
 
     local dropdown = AceGUI:Create("Dropdown")
     dropdown:SetLabel("Font")
@@ -173,8 +194,40 @@ local function OpenProfileWideFontWindow()
     window:AddChild(outlineDrop)
 end
 
+local function OpenProfileWideBarTextureWindow()
+    if not ST.IsProfileWideBarTextureEnabled or not ST.IsProfileWideBarTextureEnabled() then
+        CloseProfileWideBarTextureWindow()
+        return
+    end
+
+    if CS.CloseAdvancedSettingsPanel then
+        CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+    end
+    if CS.CancelPickAuraTexture then
+        CS.CancelPickAuraTexture()
+    end
+    if ST._CloseFormatEditor then
+        ST._CloseFormatEditor()
+    end
+    CloseProfileWideFontWindow()
+
+    local window = PrepareProfileWideSideWindow("profileWideBarTextureWindow", "Profile-wide Bar Texture", PROFILE_WIDE_BAR_TEXTURE_WINDOW_HEIGHT)
+
+    local dropdown = AceGUI:Create("Dropdown")
+    dropdown:SetLabel("Bar Texture")
+    CS.SetupBarTextureDropdown(dropdown, { ignoreProfileWideBarTextureLock = true })
+    dropdown:SetValue(CS.GetProfileWideBarTexturePickerValue and CS.GetProfileWideBarTexturePickerValue() or "Solid")
+    dropdown:SetFullWidth(true)
+    CS.SetBarTextureDropdownCallback(dropdown, function(widget, event, val)
+        CooldownCompanion:SetProfileWideBarTextureName(val, { enable = true })
+    end, { ignoreProfileWideBarTextureLock = true })
+    window:AddChild(dropdown)
+end
+
 CS.CloseProfileWideFontWindow = CloseProfileWideFontWindow
 CS.OpenProfileWideFontWindow = OpenProfileWideFontWindow
+CS.CloseProfileWideBarTextureWindow = CloseProfileWideBarTextureWindow
+CS.OpenProfileWideBarTextureWindow = OpenProfileWideBarTextureWindow
 
 if not AceGUI:GetLayout(MANUAL_COLUMN_LAYOUT) then
     -- These columns are positioned and sized manually, so their layout should
@@ -590,6 +643,7 @@ end
 -- Shared reset for profile change/copy/reset callbacks
 local function ResetConfigForProfileChange()
     CloseProfileWideFontWindow()
+    CloseProfileWideBarTextureWindow()
     if CancelFirstIconPanelTutorial then
         CancelFirstIconPanelTutorial("profile_changed")
     end
@@ -809,6 +863,7 @@ local function CreateConfigPanel()
             frame.HideChangelogOverlay()
         end
         CloseProfileWideFontWindow()
+        CloseProfileWideBarTextureWindow()
         -- If talent picker is open when panel closes, clean up its raw frames
         -- (RefreshConfigPanel inside CloseTalentPicker is guarded by IsShown, so it's safe)
         if CS.talentPickerMode then
@@ -1289,11 +1344,11 @@ local function CreateConfigPanel()
             UIDropDownMenu_AddButton(info3, level)
 
             local infoFont = UIDropDownMenu_CreateInfo()
-            infoFont.text = "  Profile-wide Font"
+            infoFont.text = "  Profile Font"
             infoFont.checked = function() return ST.IsProfileWideFontEnabled and ST.IsProfileWideFontEnabled() end
             infoFont.isNotRadio = true
             infoFont.keepShownOnClick = true
-            infoFont.tooltipTitle = "Profile-wide Font"
+            infoFont.tooltipTitle = "Profile Font"
             infoFont.tooltipText = "Use one font face and outline for this profile's configurable text."
             infoFont.tooltipOnButton = true
             infoFont.func = function()
@@ -1318,6 +1373,38 @@ local function CreateConfigPanel()
                     OpenProfileWideFontWindow()
                 end
                 UIDropDownMenu_AddButton(infoFontPicker, level)
+            end
+
+            local infoBarTexture = UIDropDownMenu_CreateInfo()
+            infoBarTexture.text = "  Profile Bar Texture"
+            infoBarTexture.checked = function() return ST.IsProfileWideBarTextureEnabled and ST.IsProfileWideBarTextureEnabled() end
+            infoBarTexture.isNotRadio = true
+            infoBarTexture.keepShownOnClick = true
+            infoBarTexture.tooltipTitle = "Profile Bar Texture"
+            infoBarTexture.tooltipText = "Use one texture for this profile's main bar fills."
+            infoBarTexture.tooltipOnButton = true
+            infoBarTexture.func = function()
+                local enabling = not (ST.IsProfileWideBarTextureEnabled and ST.IsProfileWideBarTextureEnabled())
+                if CooldownCompanion:SetProfileWideBarTextureEnabled(enabling) then
+                    CloseDropDownMenus()
+                    if enabling then
+                        OpenProfileWideBarTextureWindow()
+                    else
+                        CloseProfileWideBarTextureWindow()
+                    end
+                end
+            end
+            UIDropDownMenu_AddButton(infoBarTexture, level)
+
+            if ST.IsProfileWideBarTextureEnabled and ST.IsProfileWideBarTextureEnabled() then
+                local infoBarTexturePicker = UIDropDownMenu_CreateInfo()
+                infoBarTexturePicker.text = "  Pick Texture"
+                infoBarTexturePicker.notCheckable = true
+                infoBarTexturePicker.func = function()
+                    CloseDropDownMenus()
+                    OpenProfileWideBarTextureWindow()
+                end
+                UIDropDownMenu_AddButton(infoBarTexturePicker, level)
             end
 
             local info4 = UIDropDownMenu_CreateInfo()
@@ -1461,6 +1548,7 @@ local function CreateConfigPanel()
             -- Collapse: save main frame position, then show mini frame at collapse button position
             CloseDropDownMenus()
             CloseProfileWideFontWindow()
+            CloseProfileWideBarTextureWindow()
             if CS.CloseAdvancedSettingsPanel then
                 CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
             end
