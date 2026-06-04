@@ -104,7 +104,7 @@ end
 local function CloseProfileWideFontWindow()
     local window = CS.profileWideFontWindow
     if window then
-        window:Fire("OnClose")
+        window:Hide()
         return true
     end
     return false
