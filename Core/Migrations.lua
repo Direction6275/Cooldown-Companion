@@ -64,6 +64,52 @@ local function LooksLikeProfilePayload(profile)
         or rawget(profile, "frameAnchoring") ~= nil
 end
 
+local function HasTriggerConditionConfig(buttonData)
+    return buttonData.triggerCondition ~= nil
+        or buttonData.triggerExpected ~= nil
+        or buttonData.triggerState ~= nil
+        or buttonData.triggerConditions ~= nil
+end
+
+local function ClearTriggerConditionConfig(buttonData)
+    local changed = false
+    if buttonData.triggerCondition ~= nil then
+        buttonData.triggerCondition = nil
+        changed = true
+    end
+    if buttonData.triggerExpected ~= nil then
+        buttonData.triggerExpected = nil
+        changed = true
+    end
+    if buttonData.triggerState ~= nil then
+        buttonData.triggerState = nil
+        changed = true
+    end
+    if buttonData.triggerConditions ~= nil then
+        buttonData.triggerConditions = nil
+        changed = true
+    end
+    return changed
+end
+
+local function NormalizePromotedPassiveCooldownTriggerConditions(buttonData)
+    if not HasTriggerConditionConfig(buttonData) then
+        return false
+    end
+    if not (CooldownCompanion.GetTriggerConditionClauses and CooldownCompanion.NormalizeTriggerConditionRowData) then
+        return false
+    end
+
+    local clauses = CooldownCompanion:GetTriggerConditionClauses(buttonData)
+    local changed = false
+    if #clauses == 0 then
+        changed = ClearTriggerConditionConfig(buttonData)
+    end
+
+    CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
+    return changed
+end
+
 local function NormalizePassiveCooldownButtons(profile)
     if type(profile) ~= "table" or type(profile.groups) ~= "table" then
         return false
@@ -96,6 +142,9 @@ local function NormalizePassiveCooldownButtons(profile)
                         end
                         if buttonData.addedAs ~= "spell" then
                             buttonData.addedAs = "spell"
+                            changed = true
+                        end
+                        if NormalizePromotedPassiveCooldownTriggerConditions(buttonData) then
                             changed = true
                         end
                     end
