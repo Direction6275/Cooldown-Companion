@@ -121,14 +121,14 @@ function CooldownCompanion:RefreshAllMedia()
     self:EvaluateBarsAndFramesRuntime("shared-media")
 end
 
-local function RefreshProfileWideVisuals(addon, reason, opts)
+local function RefreshProfileWideVisuals(addon, reason, opts, refreshAuraTextures)
     if addon.RefreshAllGroups then
         addon:RefreshAllGroups()
     end
     if addon.EvaluateBarsAndFramesRuntime then
         addon:EvaluateBarsAndFramesRuntime(reason)
     end
-    if addon.RefreshAllAuraTextureVisuals then
+    if refreshAuraTextures ~= false and addon.RefreshAllAuraTextureVisuals then
         addon:RefreshAllAuraTextureVisuals()
     end
     if not opts or opts.refreshConfig ~= false then
@@ -232,7 +232,7 @@ function CooldownCompanion:SetProfileWideFontOutline(outline, opts)
 end
 
 function CooldownCompanion:ApplyProfileWideBarTextureMode(opts)
-    RefreshProfileWideVisuals(self, "profile-bar-texture-mode", opts)
+    RefreshProfileWideVisuals(self, "profile-bar-texture-mode", opts, false)
 end
 
 local function InitializeProfileWideBarTextureDefaults(profile)

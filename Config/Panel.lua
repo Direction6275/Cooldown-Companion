@@ -74,7 +74,7 @@ local PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH = 330
 local PROFILE_WIDE_FONT_WINDOW_HEIGHT = 168
 local PROFILE_WIDE_BAR_TEXTURE_WINDOW_HEIGHT = 106
 
-local function GetProfileWideFontWindowWidth()
+local function GetProfileWideSideWindowWidth()
     local configFrame = CS.configFrame
     local narrowestWidth
 
@@ -93,40 +93,65 @@ local function GetProfileWideFontWindowWidth()
     return math.floor((narrowestWidth or PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH) + 0.5)
 end
 
-local function CleanupProfileWideFontWindow(widget)
+local function CleanupProfileWideSideWindow(widget, stateKey)
     if CS.UnregisterConfigDragAlphaFrame then
         CS.UnregisterConfigDragAlphaFrame(widget.frame)
     end
     widget:ReleaseChildren()
     AceGUI:Release(widget)
-    CS.profileWideFontWindow = nil
+    CS[stateKey] = nil
+end
+
+local function CloseProfileWideSideWindow(stateKey)
+    local window = CS[stateKey]
+    if window then
+        window:Hide()
+        return true
+    end
+    return false
+end
+
+local function AnchorProfileWideSideWindow(window)
+    local configFrame = CS.configFrame
+    if configFrame and configFrame.frame and configFrame.frame:IsShown() then
+        window.frame:ClearAllPoints()
+        window.frame:SetPoint("TOPLEFT", configFrame.frame, "TOPRIGHT", 4, 0)
+    end
+end
+
+local function PrepareProfileWideSideWindow(stateKey, title, height)
+    local window = CS[stateKey]
+    if not window then
+        window = AceGUI:Create("Window")
+        window:SetTitle(title)
+        window:SetWidth(GetProfileWideSideWindowWidth())
+        window:SetHeight(height)
+        window:SetLayout("List")
+        window:EnableResize(false)
+        window:SetCallback("OnClose", function(widget)
+            CleanupProfileWideSideWindow(widget, stateKey)
+        end)
+        CS[stateKey] = window
+        if CS.RegisterConfigDragAlphaFrame then
+            CS.RegisterConfigDragAlphaFrame(window.frame)
+        end
+    else
+        window:Show()
+        window.frame:Raise()
+        window:ReleaseChildren()
+        window:SetWidth(GetProfileWideSideWindowWidth())
+    end
+
+    AnchorProfileWideSideWindow(window)
+    return window
 end
 
 local function CloseProfileWideFontWindow()
-    local window = CS.profileWideFontWindow
-    if window then
-        window:Hide()
-        return true
-    end
-    return false
-end
-
-local function CleanupProfileWideBarTextureWindow(widget)
-    if CS.UnregisterConfigDragAlphaFrame then
-        CS.UnregisterConfigDragAlphaFrame(widget.frame)
-    end
-    widget:ReleaseChildren()
-    AceGUI:Release(widget)
-    CS.profileWideBarTextureWindow = nil
+    return CloseProfileWideSideWindow("profileWideFontWindow")
 end
 
 local function CloseProfileWideBarTextureWindow()
-    local window = CS.profileWideBarTextureWindow
-    if window then
-        window:Hide()
-        return true
-    end
-    return false
+    return CloseProfileWideSideWindow("profileWideBarTextureWindow")
 end
 
 local function OpenProfileWideFontWindow()
@@ -146,31 +171,7 @@ local function OpenProfileWideFontWindow()
     end
     CloseProfileWideBarTextureWindow()
 
-    local window = CS.profileWideFontWindow
-    if not window then
-        window = AceGUI:Create("Window")
-        window:SetTitle("Profile-wide Font + Outline")
-        window:SetWidth(GetProfileWideFontWindowWidth())
-        window:SetHeight(PROFILE_WIDE_FONT_WINDOW_HEIGHT)
-        window:SetLayout("List")
-        window:EnableResize(false)
-        window:SetCallback("OnClose", CleanupProfileWideFontWindow)
-        CS.profileWideFontWindow = window
-        if CS.RegisterConfigDragAlphaFrame then
-            CS.RegisterConfigDragAlphaFrame(window.frame)
-        end
-    else
-        window:Show()
-        window.frame:Raise()
-        window:ReleaseChildren()
-        window:SetWidth(GetProfileWideFontWindowWidth())
-    end
-
-    local configFrame = CS.configFrame
-    if configFrame and configFrame.frame and configFrame.frame:IsShown() then
-        window.frame:ClearAllPoints()
-        window.frame:SetPoint("TOPLEFT", configFrame.frame, "TOPRIGHT", 4, 0)
-    end
+    local window = PrepareProfileWideSideWindow("profileWideFontWindow", "Profile-wide Font + Outline", PROFILE_WIDE_FONT_WINDOW_HEIGHT)
 
     local dropdown = AceGUI:Create("Dropdown")
     dropdown:SetLabel("Font")
@@ -210,31 +211,7 @@ local function OpenProfileWideBarTextureWindow()
     end
     CloseProfileWideFontWindow()
 
-    local window = CS.profileWideBarTextureWindow
-    if not window then
-        window = AceGUI:Create("Window")
-        window:SetTitle("Profile-wide Bar Texture")
-        window:SetWidth(GetProfileWideFontWindowWidth())
-        window:SetHeight(PROFILE_WIDE_BAR_TEXTURE_WINDOW_HEIGHT)
-        window:SetLayout("List")
-        window:EnableResize(false)
-        window:SetCallback("OnClose", CleanupProfileWideBarTextureWindow)
-        CS.profileWideBarTextureWindow = window
-        if CS.RegisterConfigDragAlphaFrame then
-            CS.RegisterConfigDragAlphaFrame(window.frame)
-        end
-    else
-        window:Show()
-        window.frame:Raise()
-        window:ReleaseChildren()
-        window:SetWidth(GetProfileWideFontWindowWidth())
-    end
-
-    local configFrame = CS.configFrame
-    if configFrame and configFrame.frame and configFrame.frame:IsShown() then
-        window.frame:ClearAllPoints()
-        window.frame:SetPoint("TOPLEFT", configFrame.frame, "TOPRIGHT", 4, 0)
-    end
+    local window = PrepareProfileWideSideWindow("profileWideBarTextureWindow", "Profile-wide Bar Texture", PROFILE_WIDE_BAR_TEXTURE_WINDOW_HEIGHT)
 
     local dropdown = AceGUI:Create("Dropdown")
     dropdown:SetLabel("Bar Texture")

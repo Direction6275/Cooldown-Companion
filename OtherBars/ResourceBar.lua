@@ -1498,6 +1498,7 @@ local function StyleContinuousBar(bar, powerType, settings)
     local texName = ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid"))
     local isVertical = IsVerticalResourceLayout(settings)
     local reverseFill = IsVerticalFillReversed(settings)
+    bar._effectiveBarTextureName = texName
 
     if texName == "blizzard_class" then
         local atlasInfo = POWER_ATLAS_INFO[powerType]

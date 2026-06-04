@@ -508,7 +508,7 @@ local function ApplyContinuousFillColor(bar, powerType, settings, overrideColor)
     if not bar or not settings then return end
 
     local style = GetResourceDisplayStyle(settings)
-    local texName = ST.GetEffectiveBarTextureName(style and style.barTexture or "Solid")
+    local texName = bar._effectiveBarTextureName or ST.GetEffectiveBarTextureName(style and style.barTexture or "Solid")
     local atlasInfo = (texName == "blizzard_class") and POWER_ATLAS_INFO[powerType] or nil
     if atlasInfo then
         if overrideColor then

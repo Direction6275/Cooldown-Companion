@@ -71,6 +71,15 @@ local function IsBarTextureControlLocked(opts)
     return ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked() and not (opts and opts.ignoreProfileWideBarTextureLock)
 end
 
+local function SetLockedDropdownCallback(dropdown, callback, isLocked, opts)
+    dropdown:SetCallback("OnValueChanged", function(widget, event, val, checked)
+        if isLocked(opts) then
+            return
+        end
+        callback(widget, event, val, checked)
+    end)
+end
+
 -- Sets up a font dropdown with correct name→name list and per-item font preview.
 local function SetupFontDropdown(dropdown, opts)
     dropdown:SetList(GetFontOptions())
@@ -92,12 +101,7 @@ local function SetupFontDropdown(dropdown, opts)
 end
 
 local function SetFontDropdownCallback(dropdown, callback, opts)
-    dropdown:SetCallback("OnValueChanged", function(widget, event, val, checked)
-        if IsFontControlLocked(opts) then
-            return
-        end
-        callback(widget, event, val, checked)
-    end)
+    SetLockedDropdownCallback(dropdown, callback, IsFontControlLocked, opts)
 end
 
 local function SetupFontOutlineDropdown(dropdown, opts)
@@ -108,12 +112,7 @@ local function SetupFontOutlineDropdown(dropdown, opts)
 end
 
 local function SetFontOutlineDropdownCallback(dropdown, callback, opts)
-    dropdown:SetCallback("OnValueChanged", function(widget, event, val, checked)
-        if IsFontControlLocked(opts) then
-            return
-        end
-        callback(widget, event, val, checked)
-    end)
+    SetLockedDropdownCallback(dropdown, callback, IsFontControlLocked, opts)
 end
 
 local function GetProfileWideFontPickerValue()
@@ -141,12 +140,7 @@ local function SetupBarTextureDropdown(dropdown, opts)
 end
 
 local function SetBarTextureDropdownCallback(dropdown, callback, opts)
-    dropdown:SetCallback("OnValueChanged", function(widget, event, val, checked)
-        if IsBarTextureControlLocked(opts) then
-            return
-        end
-        callback(widget, event, val, checked)
-    end)
+    SetLockedDropdownCallback(dropdown, callback, IsBarTextureControlLocked, opts)
 end
 
 local function GetProfileWideBarTexturePickerValue()

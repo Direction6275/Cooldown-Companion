@@ -598,6 +598,7 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
     end
 
     local gap = CooldownCompanion:GetBarPanelAuraSegmentGap(button.buttonData)
+    local effectiveBarTextureName = ST.GetEffectiveBarTextureName(style.barTexture or "Solid")
     layoutDirty = layoutDirty
         or state.mode ~= mode
         or state.maxStacks ~= maxStacks
@@ -606,7 +607,7 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
         or state.gap ~= gap
         or state.isVertical ~= (button._isVertical == true)
         or state.reverseFill ~= (style.barReverseFill == true)
-        or state.barTexture ~= ST.GetEffectiveBarTextureName(style.barTexture or "Solid")
+        or state.barTexture ~= effectiveBarTextureName
         or state.borderStyle ~= (style.borderStyle or "pixel")
         or state.borderSize ~= (style.borderSize or ST.DEFAULT_BORDER_SIZE or 1)
         or state.borderRenderMode ~= ST.GetBorderRenderMode(style)
@@ -643,7 +644,7 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
         state.gap = gap
         state.isVertical = button._isVertical == true
         state.reverseFill = style.barReverseFill == true
-        state.barTexture = ST.GetEffectiveBarTextureName(style.barTexture or "Solid")
+        state.barTexture = effectiveBarTextureName
         state.borderStyle = style.borderStyle or "pixel"
         state.borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE or 1
         state.borderRenderMode = ST.GetBorderRenderMode(style)

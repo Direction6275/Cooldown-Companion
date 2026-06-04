@@ -1048,19 +1048,6 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
     return btn
 end
 
--- Shared bar texture option builder (used by CastBarPanels and BarModeTabs)
-local LSM = LibStub("LibSharedMedia-3.0")
-local function GetBarTextureOptions()
-    if CS.GetBarTextureOptions then
-        return CS.GetBarTextureOptions()
-    end
-    local t = {}
-    for _, name in ipairs(LSM:List("statusbar")) do
-        t[name] = name
-    end
-    return t
-end
-
 -- Helper: wire up OnValueChanged and OnValueConfirmed for a ColorPicker widget.
 -- Stores {r,g,b,a} into tbl[key]. onConfirmedFn fires on release; onChangeFn
 -- (optional) fires during drag for live preview.
@@ -1256,7 +1243,6 @@ ST._CreateInfoButton = CreateInfoButton
 ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
 ST._CreateCharacterCopyButton = CreateCharacterCopyButton
-ST._GetBarTextureOptions = GetBarTextureOptions
 ST._AddColorPicker = AddColorPicker
 ST._AddAnchorDropdown = AddAnchorDropdown
 
