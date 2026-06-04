@@ -1460,6 +1460,7 @@ local function CreateConfigPanel()
         else
             -- Collapse: save main frame position, then show mini frame at collapse button position
             CloseDropDownMenus()
+            CloseProfileWideFontWindow()
             if CS.CloseAdvancedSettingsPanel then
                 CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
             end
