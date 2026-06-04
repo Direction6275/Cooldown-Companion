@@ -8,6 +8,7 @@ local ADDON_NAME, ST = ...
 local ipairs = ipairs
 local tonumber = tonumber
 local issecretvalue = issecretvalue
+local Enum = Enum
 
 --------------------------------------------------------------------------------
 -- Spell Resolution
@@ -132,6 +133,33 @@ function ST.HasChargeCooldownInfo(spellId)
     return false
 end
 
+local function IsPositiveReadableNumber(value)
+    if issecretvalue and issecretvalue(value) then
+        return false
+    end
+    return (tonumber(value) or 0) > 0
+end
+
+function ST.HasPositiveRuneCost(spellId)
+    if not spellId then return false end
+    local runePowerType = Enum and Enum.PowerType and Enum.PowerType.Runes
+    if runePowerType == nil then return false end
+
+    local costs = C_Spell.GetSpellPowerCost(spellId)
+    if not costs then return false end
+
+    for _, costInfo in ipairs(costs) do
+        if costInfo
+            and costInfo.type == runePowerType
+            and (IsPositiveReadableNumber(costInfo.cost)
+                or IsPositiveReadableNumber(costInfo.minCost)) then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function HasBaseCooldown(spellId)
     local baseCd = GetSpellBaseCooldown(spellId)
     return baseCd and baseCd > 0
@@ -147,6 +175,10 @@ end
 -- Returns true if the spell has no real cooldown surface (GCD-only).
 function ST.IsNoCooldownSpell(spellId)
     return not ST.HasSpellCooldownSurface(spellId)
+end
+
+function ST.IsRuneCostNoCooldownSpell(spellId)
+    return ST.HasPositiveRuneCost(spellId) and ST.IsNoCooldownSpell(spellId)
 end
 
 -- Returns true if the spell tooltip contains a UsageRequirement line
