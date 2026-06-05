@@ -561,6 +561,7 @@ local function BuildBarEffectsTab(container, group, style)
         -- ================================================================
         local unusableCb, unusableAdvBtn = BuildUnusableDimmingControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
         end)
         local unusablePromoteBtn = CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
         AddConditionalPreviewBadge(unusableCb, unusablePromoteBtn or unusableAdvBtn, "Preview Unusable State", "unusable", style.showUnusable)
