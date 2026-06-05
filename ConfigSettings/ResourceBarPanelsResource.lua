@@ -1561,6 +1561,35 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 container:AddChild(rechargeCb)
 
                 local function BuildRechargeTextAdvanced(panel)
+                    local modeValue = CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextMode", "recharging")
+                    if modeValue ~= "all" then
+                        modeValue = "recharging"
+                    end
+                    local modeOptions = {
+                        { value = "recharging", label = "Recharging Segments Only" },
+                        { value = "all", label = "All Segments" },
+                    }
+                    for _, option in ipairs(modeOptions) do
+                        local optionValue = option.value
+                        local modeRadio = AceGUI:Create("CheckBox")
+                        modeRadio:SetType("radio")
+                        modeRadio:SetLabel(option.label)
+                        modeRadio:SetValue(modeValue == optionValue)
+                        modeRadio:SetFullWidth(true)
+                        modeRadio:SetCallback("OnValueChanged", function(widget, event, val)
+                            if val ~= true then
+                                widget:SetValue(true)
+                                return
+                            end
+                            resSettings.rechargeTextMode = optionValue
+                            CooldownCompanion:ApplyResourceBars()
+                            if CS.RefreshAdvancedSettingsPanel then
+                                CS.RefreshAdvancedSettingsPanel()
+                            end
+                        end)
+                        panel:AddChild(modeRadio)
+                    end
+
                     local fontDrop = AceGUI:Create("Dropdown")
                     fontDrop:SetLabel("Font")
                     CS.SetupFontDropdown(fontDrop)

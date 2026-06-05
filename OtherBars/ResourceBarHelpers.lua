@@ -59,6 +59,7 @@ local RESOURCE_TEXT_DISPLAY_KEYS = {
     "textYOffset",
     "hideTextAtZero",
     "showRechargeText",
+    "rechargeTextMode",
     "rechargeTextFont",
     "rechargeTextFontSize",
     "rechargeTextFontOutline",

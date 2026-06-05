@@ -974,15 +974,35 @@ local function StyleRechargeTexts(holder, powerType, settings)
         text:SetPoint(anchor, holder.segments[i], anchor, xOffset, yOffset)
     end
 
+    local mode = resourceConfig.rechargeTextMode
+    if mode ~= "all" then
+        mode = "recharging"
+    end
+
     holder._showRechargeText = true
+    holder._rechargeTextMode = mode
     holder._rechargeTextFormatSource = resourceConfig
 end
 
-local function SetRechargeText(holder, segmentIndex, remaining)
+local function IsRechargeTextAllSegmentsMode(holder)
+    return holder and holder._rechargeTextMode == "all"
+end
+
+local function ShouldShowRechargeTextForTimer(holder)
+    if not holder then return false end
+    return holder._rechargeTextMode == "recharging" or holder._rechargeTextMode == "all"
+end
+
+local function SetRechargeText(holder, segmentIndex, remaining, showZero)
     if not (holder and holder._showRechargeText and holder.rechargeTexts) then return end
     local text = holder.rechargeTexts[segmentIndex]
     if not text then return end
     if type(remaining) ~= "number" or remaining <= 0 then
+        if showZero then
+            text:SetText("0")
+            text:Show()
+            return
+        end
         text:SetText("")
         text:Hide()
         return
@@ -1025,14 +1045,17 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         for i = 1, 6 do
             local start, duration, ready = GetRuneCooldown(i)
             local remaining = 0
+            local activelyRecharging = false
             if not ready and duration and duration > 0 then
                 remaining = math_max((start + duration) - now, 0)
+                activelyRecharging = start and start <= now and remaining > 0
             end
             local rune = runeData[i]
             rune.start = start
             rune.duration = duration
             rune.ready = ready
             rune.remaining = remaining
+            rune.activelyRecharging = activelyRecharging
         end
         -- Sort: ready first, then by ascending remaining time
         table.sort(runeData, segmentedUpdateScratch.SortRuneData)
@@ -1050,6 +1073,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         local thresholdActive = thresholdEnabled and readyCount >= thresholdValue
         local activeReadyColor = allReady and maxColor or (thresholdActive and thresholdColor or readyColor)
         local runeValueTotal = 0
+        local showAllRechargeText = IsRechargeTextAllSegmentsMode(holder)
         for i = 1, numSegs do
             local r = runeData[i]
             local seg = holder.segments[i]
@@ -1059,14 +1083,22 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                 SetStatusBarSmoothValue(seg, segValue)
                 seg:SetStatusBarColor(activeReadyColor[1], activeReadyColor[2], activeReadyColor[3], 1)
                 fullSegments[i] = true
+                if showAllRechargeText then
+                    SetRechargeText(holder, i, 0, true)
+                end
             elseif r.duration and r.duration > 0 then
                 segValue = math_min((now - r.start) / r.duration, 1)
                 SetStatusBarSmoothValue(seg, segValue)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
-                SetRechargeText(holder, i, r.remaining)
+                if showAllRechargeText or (ShouldShowRechargeTextForTimer(holder) and r.activelyRecharging) then
+                    SetRechargeText(holder, i, r.remaining)
+                end
             else
                 SetStatusBarSmoothValue(seg, segValue)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
+                if showAllRechargeText then
+                    SetRechargeText(holder, i, 0, true)
+                end
             end
             runeValueTotal = runeValueTotal + segValue
         end
@@ -1153,12 +1185,16 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         local isMax = (filled == max)
         local thresholdActive = thresholdEnabled and filled >= thresholdValue
         local activeReadyColor = isMax and maxColor or (thresholdActive and thresholdColor or readyColor)
+        local showAllRechargeText = IsRechargeTextAllSegmentsMode(holder)
         for i = 1, math_min(#holder.segments, max) do
             local seg = holder.segments[i]
             if i <= filled then
                 SetStatusBarSmoothValue(seg, 1)
                 seg:SetStatusBarColor(activeReadyColor[1], activeReadyColor[2], activeReadyColor[3], 1)
                 fullSegments[i] = true
+                if showAllRechargeText then
+                    SetRechargeText(holder, i, 0, true)
+                end
             elseif i == filled + 1 and partial > 0 then
                 SetStatusBarSmoothValue(seg, partial)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
@@ -1166,6 +1202,9 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
             else
                 SetStatusBarSmoothValue(seg, 0)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
+                if showAllRechargeText then
+                    SetRechargeText(holder, i, 0, true)
+                end
             end
         end
         segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, displayCurrent, max, false)
