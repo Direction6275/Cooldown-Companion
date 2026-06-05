@@ -937,6 +937,82 @@ function segmentedUpdateScratch.GetRuneData(holder)
     return holder._runeDataScratch
 end
 
+local function HideRechargeTexts(holder)
+    if not (holder and holder.rechargeTexts) then return end
+    for _, text in ipairs(holder.rechargeTexts) do
+        text:SetText("")
+        text:Hide()
+    end
+end
+
+local function StyleRechargeTexts(holder, powerType, settings)
+    if not (holder and holder.rechargeTexts) then return end
+    local resourceConfig = GetResourceDisplayConfig(settings, powerType)
+    local enabled = resourceConfig and resourceConfig.showRechargeText == true
+    if not enabled or powerType ~= 5 then
+        holder._showRechargeText = false
+        HideRechargeTexts(holder)
+        return
+    end
+
+    local fontName = resourceConfig.rechargeTextFont or resourceConfig.textFont or DEFAULT_RESOURCE_TEXT_FONT
+    local fontSize = tonumber(resourceConfig.rechargeTextFontSize or resourceConfig.textFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
+    local outline = ST.GetEffectiveFontOutline(resourceConfig.rechargeTextFontOutline or resourceConfig.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
+    local color = resourceConfig.rechargeTextFontColor or resourceConfig.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR
+    if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
+        color = DEFAULT_RESOURCE_TEXT_COLOR
+    end
+
+    local anchor = resourceConfig.rechargeTextAnchor or resourceConfig.textAnchor or "CENTER"
+    local xOffset = resourceConfig.rechargeTextXOffset or 0
+    local yOffset = resourceConfig.rechargeTextYOffset or 0
+    local font = CooldownCompanion:FetchFont(fontName)
+    for i, text in ipairs(holder.rechargeTexts) do
+        text:SetFont(font, fontSize, outline)
+        text:SetTextColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
+        text:ClearAllPoints()
+        text:SetPoint(anchor, holder.segments[i], anchor, xOffset, yOffset)
+    end
+
+    local mode = resourceConfig.rechargeTextMode
+    if mode ~= "all" then
+        mode = "recharging"
+    end
+
+    holder._showRechargeText = true
+    holder._rechargeTextMode = mode
+    holder._rechargeTextFormatSource = resourceConfig
+end
+
+local function IsRechargeTextAllSegmentsMode(holder)
+    return holder and holder._rechargeTextMode == "all"
+end
+
+local function ShouldShowRechargeTextForTimer(holder)
+    if not holder then return false end
+    return holder._rechargeTextMode == "recharging" or holder._rechargeTextMode == "all"
+end
+
+local function SetRechargeText(holder, segmentIndex, remaining, showZero)
+    if not (holder and holder._showRechargeText and holder.rechargeTexts) then return end
+    local text = holder.rechargeTexts[segmentIndex]
+    if not text then return end
+    if type(remaining) ~= "number" or remaining <= 0 then
+        if showZero then
+            text:SetText("0")
+            text:Show()
+            return
+        end
+        text:SetText("")
+        text:Hide()
+        return
+    end
+
+    local formatted = FormatTime(remaining, holder._rechargeTextFormatSource)
+    text:SetText(formatted)
+    text:SetShown(formatted ~= "")
+end
+
 local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
     if not holder or not holder.segments then return end
     if not settings then
@@ -951,6 +1027,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         and SupportsResourceAuraStackMode(powerType)
     local thresholdEnabled, thresholdValue, thresholdColor = GetSegmentedThresholdConfig(powerType, settings)
     local fullSegments = segmentedUpdateScratch.GetFullSegments(holder)
+    HideRechargeTexts(holder)
 
     if powerType == 5 then
         -- DK Runes: sorted by readiness (ready left, longest CD right)
@@ -960,14 +1037,17 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         for i = 1, 6 do
             local start, duration, ready = GetRuneCooldown(i)
             local remaining = 0
+            local activelyRecharging = false
             if not ready and duration and duration > 0 then
                 remaining = math_max((start + duration) - now, 0)
+                activelyRecharging = start and start <= now and remaining > 0
             end
             local rune = runeData[i]
             rune.start = start
             rune.duration = duration
             rune.ready = ready
             rune.remaining = remaining
+            rune.activelyRecharging = activelyRecharging
         end
         -- Sort: ready first, then by ascending remaining time
         table.sort(runeData, segmentedUpdateScratch.SortRuneData)
@@ -985,6 +1065,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         local thresholdActive = thresholdEnabled and readyCount >= thresholdValue
         local activeReadyColor = allReady and maxColor or (thresholdActive and thresholdColor or readyColor)
         local runeValueTotal = 0
+        local showAllRechargeText = IsRechargeTextAllSegmentsMode(holder)
         for i = 1, numSegs do
             local r = runeData[i]
             local seg = holder.segments[i]
@@ -994,13 +1075,22 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                 SetStatusBarSmoothValue(seg, segValue)
                 seg:SetStatusBarColor(activeReadyColor[1], activeReadyColor[2], activeReadyColor[3], 1)
                 fullSegments[i] = true
+                if showAllRechargeText then
+                    SetRechargeText(holder, i, 0, true)
+                end
             elseif r.duration and r.duration > 0 then
                 segValue = math_min((now - r.start) / r.duration, 1)
                 SetStatusBarSmoothValue(seg, segValue)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
+                if showAllRechargeText or (ShouldShowRechargeTextForTimer(holder) and r.activelyRecharging) then
+                    SetRechargeText(holder, i, r.remaining)
+                end
             else
                 SetStatusBarSmoothValue(seg, segValue)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
+                if showAllRechargeText then
+                    SetRechargeText(holder, i, 0, true)
+                end
             end
             runeValueTotal = runeValueTotal + segValue
         end
@@ -1629,6 +1719,7 @@ local function StyleSegmentedBar(holder, powerType, settings)
     -- run during combat events, so avoid briefly repainting every segment with
     -- the generic ready color before UpdateSegmentedBar restores per-segment state.
     StyleSegmentedText(holder, powerType, settings)
+    StyleRechargeTexts(holder, powerType, settings)
 end
 
 local function ApplySegmentedPreviewColors(holder, powerType, settings, previewValue)
@@ -1637,6 +1728,7 @@ local function ApplySegmentedPreviewColors(holder, powerType, settings, previewV
     local numSegments = #holder.segments
     if numSegments <= 0 then return end
 
+    HideRechargeTexts(holder)
     previewValue = tonumber(previewValue) or (numSegments * 0.6)
     local filled = math_min(numSegments, math_max(0, math_floor(previewValue)))
     local hasPartial = previewValue > filled and filled < numSegments
@@ -1669,6 +1761,18 @@ local function ApplySegmentedPreviewColors(holder, powerType, settings, previewV
         end
         if type(color) == "table" then
             seg:SetStatusBarColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
+        end
+
+        if powerType == 5 and holder._showRechargeText then
+            if IsRechargeTextAllSegmentsMode(holder) then
+                if i == filled + 1 and hasPartial then
+                    SetRechargeText(holder, i, 8)
+                else
+                    SetRechargeText(holder, i, 0, true)
+                end
+            elseif i == filled + 1 and hasPartial then
+                SetRechargeText(holder, i, 8)
+            end
         end
     end
 end
