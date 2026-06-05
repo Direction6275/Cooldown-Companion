@@ -56,6 +56,7 @@ local specEmptyText = nil
 local backBtn = nil
 local clearBtn = nil
 local acceptBtn = nil
+local talentHelpButton = nil
 local specDropdown = nil
 local heroDropdown = nil
 local nodeButtons = {}
@@ -925,6 +926,49 @@ local function EnsureButtons()
     end
 end
 
+local function AddTalentPickerHelpTooltipLines(tooltip)
+    tooltip:AddLine("Talent Picker")
+    tooltip:AddLine("Click a talent to cycle its condition.", 1, 1, 1, true)
+    tooltip:AddLine("|cff4dafffBlue border|r: show when taken.", 1, 1, 1, true)
+    tooltip:AddLine("|cffff4d4dRed border|r: show when not taken.", 1, 1, 1, true)
+    tooltip:AddLine("No border: ignored.", 1, 1, 1, true)
+    tooltip:AddLine(" ")
+    tooltip:AddLine("Choice talents open a small picker; click a choice to condition on that option.", 1, 1, 1, true)
+    tooltip:AddLine(" ")
+    tooltip:AddLine("Use the spec and hero dropdowns to view those trees. Class conditions apply across specs; spec and hero conditions use the selected tree.", 1, 1, 1, true)
+    tooltip:AddLine(" ")
+    tooltip:AddLine("If multiple conditions are set, every one must pass for this entry to show.", 1, 1, 1, true)
+end
+
+local function EnsureTalentHelpButton(configFrame)
+    if not (configFrame and configFrame.frame and specTreeFrame) then
+        return
+    end
+
+    if not talentHelpButton then
+        if not ST.CreateRuntimeInfoButton then
+            return
+        end
+
+        talentHelpButton = ST.CreateRuntimeInfoButton(
+            specTreeFrame,
+            specTreeFrame,
+            "BOTTOMRIGHT",
+            "BOTTOMRIGHT",
+            -4,
+            4,
+            function(tooltip, owner)
+                tooltip:SetOwner(owner, "ANCHOR_LEFT")
+                AddTalentPickerHelpTooltipLines(tooltip)
+            end
+        )
+    else
+        talentHelpButton:SetParent(specTreeFrame)
+        talentHelpButton:ClearAllPoints()
+        talentHelpButton:SetPoint("BOTTOMRIGHT", specTreeFrame, "BOTTOMRIGHT", -4, 4)
+    end
+end
+
 ------------------------------------------------------------------------
 -- SHOW / HIDE TALENT PICKER
 ------------------------------------------------------------------------
@@ -1059,6 +1103,13 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     acceptBtn.frame:SetPoint("BOTTOM", configFrame.frame, "BOTTOM", 0, 21)
     acceptBtn.frame:Show()
 
+    EnsureTalentHelpButton(configFrame)
+    if ST.SetRuntimeInfoButtonShown then
+        ST.SetRuntimeInfoButtonShown(talentHelpButton, true)
+    elseif talentHelpButton then
+        talentHelpButton:Show()
+    end
+
     -- Populate talent trees
     PopulateTree()
 end
@@ -1080,6 +1131,14 @@ HideTalentPicker = function()
     if backBtn then backBtn.frame:Hide() end
     if clearBtn then clearBtn.frame:Hide() end
     if acceptBtn then acceptBtn.frame:Hide() end
+    if talentHelpButton then
+        if ST.SetRuntimeInfoButtonShown then
+            ST.SetRuntimeInfoButtonShown(talentHelpButton, false)
+        else
+            talentHelpButton:Hide()
+        end
+        GameTooltip:Hide()
+    end
     HideChoiceFrame()
 
     -- Hide all node buttons and edges
