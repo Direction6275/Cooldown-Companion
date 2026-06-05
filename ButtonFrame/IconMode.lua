@@ -1233,6 +1233,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._noCooldownSpellId = nil
     button._baseNoCooldown = nil
     button._baseNoCooldownSpellId = nil
+    button._resourceGateCost = nil
+    button._resourceGateCostSpellId = nil
+    button._baseResourceGateCost = nil
+    button._baseResourceGateCostSpellId = nil
     button._vertexR = nil
     button._vertexG = nil
     button._vertexB = nil

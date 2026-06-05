@@ -36,6 +36,7 @@ local UnitCanAttack = UnitCanAttack
 
 -- Imports from Utils
 local IsNoCooldownSpell = ST.IsNoCooldownSpell
+local HasPositiveResourceGateCost = ST.HasPositiveResourceGateCost
 
 -- Imports from Preview
 local GetConditionalVisualPreview = ST._GetConditionalVisualPreview
@@ -736,15 +737,27 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._baseNoCooldownSpellId = buttonData.id
             button._baseNoCooldown = IsNoCooldownSpell(buttonData.id)
         end
+        if button._baseResourceGateCost == nil or button._baseResourceGateCostSpellId ~= buttonData.id then
+            button._baseResourceGateCostSpellId = buttonData.id
+            button._baseResourceGateCost = HasPositiveResourceGateCost(buttonData.id)
+        end
         if button._noCooldown == nil or button._noCooldownSpellId ~= cooldownSpellId then
             button._noCooldownSpellId = cooldownSpellId
             button._noCooldown = IsNoCooldownSpell(cooldownSpellId)
+        end
+        if button._resourceGateCost == nil or button._resourceGateCostSpellId ~= cooldownSpellId then
+            button._resourceGateCostSpellId = cooldownSpellId
+            button._resourceGateCost = HasPositiveResourceGateCost(cooldownSpellId)
         end
     else
         button._noCooldown = false
         button._noCooldownSpellId = nil
         button._baseNoCooldown = nil
         button._baseNoCooldownSpellId = nil
+        button._resourceGateCost = false
+        button._resourceGateCostSpellId = nil
+        button._baseResourceGateCost = nil
+        button._baseResourceGateCostSpellId = nil
     end
 
     -- Proc state: event-driven table lookup (base spell + current displayed override).
@@ -1035,7 +1048,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     if not auraOwnsPrimarySwipe and not barAuraStackDisplay then
         if buttonData.type == "spell" and not buttonData.isPassive then
-            spellCooldownResult = EntryRuntime.EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, button._noCooldown)
+            spellCooldownResult = EntryRuntime.EvaluateButtonSpellCooldown(
+                buttonData,
+                cooldownSpellId,
+                button._noCooldown,
+                button._resourceGateCost,
+                button._baseNoCooldown,
+                button._baseResourceGateCost
+            )
             if spellCooldownResult and spellCooldownResult.fetchOk then
                 spellCooldownInfo = spellCooldownResult.info
                 spellCooldownDuration = spellCooldownResult.durationObj
