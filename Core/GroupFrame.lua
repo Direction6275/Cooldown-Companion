@@ -1793,8 +1793,11 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     -- Create new buttons (skip untalented spells)
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
     local visibleIndex = 0
+    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
+        and self:GetGroupButtonUsabilityOptions(groupId, group)
+        or nil
     for i, buttonData in ipairs(group.buttons) do
-        if self:IsButtonUsable(buttonData, group) then
+        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             visibleIndex = visibleIndex + 1
             local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
             local button
@@ -1839,6 +1842,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     -- Resize the frame to fit visible buttons
     frame.visibleButtonCount = isTriggerMode and (visibleIndex > 0 and 1 or 0) or visibleIndex
+    frame.layoutButtonCount = self.GetGroupLayoutButtonCount and self:GetGroupLayoutButtonCount(groupId, group) or nil
     frame._layoutDirty = false
     frame._lastVisibleCount = visibleIndex
     self:ResizeGroupFrame(groupId)
@@ -1897,6 +1901,9 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
     local buttonsPerRow = style.buttonsPerRow or 12
     local numButtons = frame.visibleButtonCount or #group.buttons
+    if group.parentContainerId and not group.compactLayout and frame.layoutButtonCount then
+        numButtons = math_max(numButtons, frame.layoutButtonCount)
+    end
 
     local targetWidth, targetHeight
     local oldWidth, oldHeight = frame:GetSize()
