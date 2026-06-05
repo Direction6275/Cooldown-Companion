@@ -58,6 +58,14 @@ local RESOURCE_TEXT_DISPLAY_KEYS = {
     "textXOffset",
     "textYOffset",
     "hideTextAtZero",
+    "showRechargeText",
+    "rechargeTextFont",
+    "rechargeTextFontSize",
+    "rechargeTextFontOutline",
+    "rechargeTextFontColor",
+    "rechargeTextAnchor",
+    "rechargeTextXOffset",
+    "rechargeTextYOffset",
 }
 
 local RESOURCE_HEALTH_DISPLAY_KEYS = {

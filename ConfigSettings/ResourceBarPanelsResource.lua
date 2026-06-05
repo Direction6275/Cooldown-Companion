@@ -61,6 +61,7 @@ local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
 local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
 local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
 local DEFAULT_RESOURCE_TEXT_COLOR = RB.DEFAULT_RESOURCE_TEXT_COLOR
+local DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED = RB.DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED
 local DEFAULT_RESOURCE_TEXT_ANCHOR = RB.DEFAULT_RESOURCE_TEXT_ANCHOR
 local DEFAULT_RESOURCE_TEXT_X_OFFSET = RB.DEFAULT_RESOURCE_TEXT_X_OFFSET
 local DEFAULT_RESOURCE_TEXT_Y_OFFSET = RB.DEFAULT_RESOURCE_TEXT_Y_OFFSET
@@ -1545,6 +1546,99 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 title = name .. " Text Advanced",
                 build = BuildResourceTextAdvanced,
             })
+
+            if capturedPt == 5 or capturedPt == 19 then
+                local rechargeEnabled = CS._ReadResourceDisplaySetting(baseSettings, resSettings, "showRechargeText", DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED) == true
+                local rechargeCb = AceGUI:Create("CheckBox")
+                rechargeCb:SetLabel("Show " .. name .. " Recharge Text")
+                rechargeCb:SetValue(rechargeEnabled)
+                rechargeCb:SetFullWidth(true)
+                rechargeCb:SetCallback("OnValueChanged", function(widget, event, val)
+                    resSettings.showRechargeText = val == true
+                    CooldownCompanion:ApplyResourceBars()
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
+                container:AddChild(rechargeCb)
+
+                local function BuildRechargeTextAdvanced(panel)
+                    local fontDrop = AceGUI:Create("Dropdown")
+                    fontDrop:SetLabel("Font")
+                    CS.SetupFontDropdown(fontDrop)
+                    fontDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextFont", DEFAULT_RESOURCE_TEXT_FONT))
+                    fontDrop:SetFullWidth(true)
+                    CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
+                        resSettings.rechargeTextFont = val
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    panel:AddChild(fontDrop)
+
+                    local sizeDrop = AceGUI:Create("Slider")
+                    sizeDrop:SetLabel("Font Size")
+                    sizeDrop:SetSliderValues(6, 24, 1)
+                    sizeDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextFontSize", DEFAULT_RESOURCE_TEXT_SIZE))
+                    sizeDrop:SetFullWidth(true)
+                    sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                        resSettings.rechargeTextFontSize = val
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    panel:AddChild(sizeDrop)
+
+                    local outlineDrop = AceGUI:Create("Dropdown")
+                    outlineDrop:SetLabel("Outline")
+                    CS.SetupFontOutlineDropdown(outlineDrop)
+                    outlineDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
+                    outlineDrop:SetFullWidth(true)
+                    CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
+                        resSettings.rechargeTextFontOutline = val
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    panel:AddChild(outlineDrop)
+
+                    AddColorPicker(panel, resSettings, "rechargeTextFontColor", "Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, applyBars)
+
+                    local anchorDrop = AceGUI:Create("Dropdown")
+                    anchorDrop:SetLabel("Text Anchor")
+                    local anchorValues = {}
+                    for _, pt in ipairs(CS.anchorPoints) do
+                        anchorValues[pt] = CS.anchorPointLabels[pt]
+                    end
+                    anchorDrop:SetList(anchorValues, CS.anchorPoints)
+                    anchorDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR))
+                    anchorDrop:SetFullWidth(true)
+                    anchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+                        resSettings.rechargeTextAnchor = val
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    panel:AddChild(anchorDrop)
+
+                    local xSlider = AceGUI:Create("Slider")
+                    xSlider:SetLabel("Text X Offset")
+                    xSlider:SetSliderValues(-50, 50, 0.1)
+                    xSlider:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET))
+                    xSlider:SetFullWidth(true)
+                    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                        resSettings.rechargeTextXOffset = val
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    panel:AddChild(xSlider)
+
+                    local ySlider = AceGUI:Create("Slider")
+                    ySlider:SetLabel("Text Y Offset")
+                    ySlider:SetSliderValues(-50, 50, 0.1)
+                    ySlider:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET))
+                    ySlider:SetFullWidth(true)
+                    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+                        resSettings.rechargeTextYOffset = val
+                        CooldownCompanion:ApplyResourceBars()
+                    end)
+                    panel:AddChild(ySlider)
+                end
+
+                AddAdvancedToggle(rechargeCb, "rbRechargeText_" .. capturedPt, rbTextAdvBtns, rechargeEnabled, {
+                    title = name .. " Recharge Text Advanced",
+                    build = BuildRechargeTextAdvanced,
+                })
+            end
         end
     end
 

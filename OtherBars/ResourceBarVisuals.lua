@@ -820,6 +820,16 @@ local function CreateSegmentedBar(parent, numSegments)
     holder.text:SetTextColor(1, 1, 1, 1)
     holder.text:Hide()
 
+    holder.rechargeTexts = {}
+    for i = 1, numSegments do
+        local text = holder.textLayer:CreateFontString(nil, "OVERLAY")
+        text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, ST.GetEffectiveFontOutline("OUTLINE"))
+        text:SetPoint("CENTER", holder.segments[i], "CENTER", 0, 0)
+        text:SetTextColor(1, 1, 1, 1)
+        text:Hide()
+        holder.rechargeTexts[i] = text
+    end
+
     holder._barType = "segmented"
     holder._numSegments = numSegments
     return holder
@@ -871,6 +881,9 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, or
         if i > n then
             SetStatusBarImmediateValue(seg, 0)
             seg:Hide()
+            if holder.rechargeTexts and holder.rechargeTexts[i] then
+                holder.rechargeTexts[i]:Hide()
+            end
             if holder.thresholdSegments and holder.thresholdSegments[i] then
                 SetStatusBarImmediateValue(holder.thresholdSegments[i], 0)
                 holder.thresholdSegments[i]:Hide()
