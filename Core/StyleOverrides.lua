@@ -45,6 +45,9 @@ function CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
     -- Copy current group values into overrides
     for _, key in ipairs(section.keys) do
         local val = groupStyle[key]
+        if key == "unusableVisualMode" then
+            val = ST.GetUnusableVisualMode(groupStyle)
+        end
         if type(val) == "table" then
             buttonData.styleOverrides[key] = CopyTable(val)
         else

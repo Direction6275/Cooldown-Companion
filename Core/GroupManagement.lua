@@ -1064,6 +1064,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.showLossOfControl == nil then style.showLossOfControl = false end
     if style.showTooltips == nil then style.showTooltips = false end
     if style.showUnusable == nil then style.showUnusable = true end
+    if style.unusableVisualMode == nil then style.unusableVisualMode = "dim" end
     if style.showCooldownSwipe == nil then style.showCooldownSwipe = true end
     if style.showCooldownSwipeFill == nil then style.showCooldownSwipeFill = true end
     if style.auraUseBlizzardSwipe == nil then style.auraUseBlizzardSwipe = false end

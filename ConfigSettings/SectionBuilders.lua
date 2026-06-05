@@ -35,7 +35,6 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     " ",
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
-
 local function ResolvePreviewOption(value)
     if type(value) == "function" then
         return value()
@@ -584,8 +583,8 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
         AddColorPicker(container, styleTable, "iconAuraTintColor", "Aura Active Icon Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback)
     end
 
-    if styleTable.showUnusable then
-        AddColorPicker(container, styleTable, "iconUnusableTintColor", "Unusable Dimming Tint", {0.4, 0.4, 0.4, 1}, true, refreshCallback, refreshCallback)
+    if styleTable.showUnusable and ST.UnusableVisualUsesDimTint(styleTable) then
+        AddColorPicker(container, styleTable, "iconUnusableTintColor", "Unusable Dim Color", {0.4, 0.4, 0.4, 1}, true, refreshCallback, refreshCallback)
     end
 end
 
@@ -826,17 +825,55 @@ local function BuildLossOfControlControls(container, styleTable, refreshCallback
     return locCb
 end
 
-local function BuildUnusableDimmingControls(container, styleTable, refreshCallback)
+local function BuildUnusableVisualModeControls(container, styleTable, refreshCallback)
+    local dimCb = AceGUI:Create("CheckBox")
+    dimCb:SetLabel("Dim Icon")
+    dimCb:SetValue(ST.UnusableVisualUsesDimTint(styleTable))
+    dimCb:SetFullWidth(true)
+    dimCb:SetCallback("OnValueChanged", function(widget, event, val)
+        ST.SetUnusableVisualMode(styleTable, val == true, ST.UnusableVisualUsesDesaturation(styleTable))
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(dimCb)
+
+    local desatCb = AceGUI:Create("CheckBox")
+    desatCb:SetLabel("Desaturate Icon")
+    desatCb:SetValue(ST.UnusableVisualUsesDesaturation(styleTable))
+    desatCb:SetFullWidth(true)
+    desatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        ST.SetUnusableVisualMode(styleTable, ST.UnusableVisualUsesDimTint(styleTable), val == true)
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(desatCb)
+end
+
+local function BuildUnusableDimmingControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+
     local unusableCb = AceGUI:Create("CheckBox")
-    unusableCb:SetLabel("Show Unusable Dimming")
-    unusableCb:SetValue(styleTable.showUnusable or false)
+    unusableCb:SetLabel("Show Unusable Visual")
+    unusableCb:SetValue(styleTable.showUnusable == true)
     unusableCb:SetFullWidth(true)
     unusableCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showUnusable = val
+        styleTable.showUnusable = val == true
         refreshCallback()
+        RefreshStructuralControls(container)
     end)
     container:AddChild(unusableCb)
-    return unusableCb
+
+    local _, unusableAdvBtn = AddAdvancedToggle(unusableCb,
+        opts.advancedKey or "unusableVisual",
+        opts.infoButtons or tabInfoButtons,
+        styleTable.showUnusable == true, {
+            title = "Unusable Visual Advanced",
+            build = function(panel)
+                BuildUnusableVisualModeControls(panel, styleTable, refreshCallback)
+            end,
+        })
+
+    return unusableCb, unusableAdvBtn
 end
 
 local function BuildAssistedHighlightControls(container, styleTable, refreshCallback, opts)

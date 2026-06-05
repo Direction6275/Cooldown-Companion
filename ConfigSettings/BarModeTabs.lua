@@ -557,14 +557,14 @@ local function BuildBarEffectsTab(container, group, style)
         CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
 
         -- ================================================================
-        -- Unusable Dimming
+        -- Unusable Visual
         -- ================================================================
-        local unusableCb = BuildUnusableDimmingControls(container, style, function()
+        local unusableCb, unusableAdvBtn = BuildUnusableDimmingControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end)
-        local unusablePromoteBtn = CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
-        AddConditionalPreviewBadge(unusableCb, unusablePromoteBtn, "Preview Unusable State", "unusable", style.showUnusable)
+        local unusablePromoteBtn = CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
+        AddConditionalPreviewBadge(unusableCb, unusablePromoteBtn or unusableAdvBtn, "Preview Unusable State", "unusable", style.showUnusable)
 
         -- Show Tooltips
         local tooltipCb = BuildShowTooltipsControls(container, style, function()

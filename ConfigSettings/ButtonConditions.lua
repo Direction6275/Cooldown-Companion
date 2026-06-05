@@ -277,7 +277,7 @@ local function AllSelectedNoCooldown(group)
     return true
 end
 
--- Returns true if a button would never be affected by unusable dimming.
+-- Returns true if a button would never be affected by Unusable Visual.
 -- Items can always be unusable (level, class, etc.), so only spells are checked.
 -- A spell is "never unusable" only if it has no resource cost AND no usage
 -- requirements (form/stance/etc). Spells like Mangle (zero cost, requires
@@ -294,7 +294,7 @@ local function IsNeverUnusableButton(bd)
     return not HasUsageRequirement(bd.id)
 end
 
--- Returns true if all selected buttons would never be affected by unusable dimming
+-- Returns true if all selected buttons would never be affected by Unusable Visual.
 local function AllSelectedNeverUnusable(group)
     for idx in pairs(CS.selectedButtons) do
         local bd = group.buttons[idx]
@@ -844,7 +844,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     -- (?) tooltip
     CreateInfoButton(hideUnusableCb.frame, hideUnusableCb.checkbg, "LEFT", "RIGHT", hideUnusableCb.text:GetStringWidth() + 4, 0, {
         "Hide While Unusable",
-        {"Uses the same logic as unusable dimming, but completely hides the button instead of dimming it.", 1, 1, 1, true},
+        {"Uses the same logic as Unusable Visual, but completely hides the button instead of changing the icon.", 1, 1, 1, true},
     }, infoButtons)
 
     -- Baseline Alpha Fallback (nested under hideWhileUnusable)
