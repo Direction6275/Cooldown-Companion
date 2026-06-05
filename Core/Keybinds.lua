@@ -80,13 +80,11 @@ local function GetBonusBarButtonInfo(slot)
     return "ACTIONBUTTON" .. buttonIndex, "ActionButton" .. buttonIndex
 end
 
-local function GetSlotBindingInfo(slot)
+local function GetMappedSlotBindingInfo(slot)
     local info = slotToButtonInfo[slot]
     if info then
         return info.bindingAction, info.frameName
     end
-
-    return GetBonusBarButtonInfo(slot)
 end
 
 -- Map verbose localized keybind names to short abbreviations.
@@ -131,9 +129,9 @@ local function AbbreviateKeybind(text)
 end
 
 -- Return the formatted keybind string for a given action bar slot, or nil.
--- Tries Blizzard binding names and CLICK fallback first, then addon bar bindings.
+-- Prefer live Blizzard frame bindings, then addon bars, then inactive bonus bars.
 local function GetKeybindForSlot(slot)
-    local bindingAction, frameName = GetSlotBindingInfo(slot)
+    local bindingAction, frameName = GetMappedSlotBindingInfo(slot)
     if bindingAction then
         local key = GetBindingKey(bindingAction) or
                     GetBindingKey("CLICK " .. frameName .. ":LeftButton")
@@ -141,8 +139,22 @@ local function GetKeybindForSlot(slot)
             return AbbreviateKeybind(GetBindingText(key, 1))
         end
     end
-    -- Fallback: addon bar bindings (e.g. Bartender4, Dominos, ElvUI)
-    return addonSlotBindings[slot]
+
+    local addonText = addonSlotBindings[slot]
+    if addonText then
+        return addonText
+    end
+
+    bindingAction, frameName = GetBonusBarButtonInfo(slot)
+    if bindingAction then
+        local key = GetBindingKey(bindingAction) or
+                    GetBindingKey("CLICK " .. frameName .. ":LeftButton")
+        if key then
+            return AbbreviateKeybind(GetBindingText(key, 1))
+        end
+    end
+
+    return nil
 end
 
 ------------------------------------------------------------------------
@@ -185,23 +197,34 @@ local function IsBindingKeyPressed(info)
     return true
 end
 
+local function AddRawBindingKeys(keys, bindingAction, frameName)
+    if not bindingAction then return end
+
+    local key1, key2 = GetBindingKey(bindingAction)
+    if not key1 then
+        key1, key2 = GetBindingKey("CLICK " .. frameName .. ":LeftButton")
+    end
+    if key1 then keys[#keys + 1] = key1 end
+    if key2 then keys[#keys + 1] = key2 end
+end
+
 -- Return an array of raw binding key strings for a slot (may be multiple per slot).
--- Falls back to addon bar raw key cache for third-party bar addons.
+-- Prefer live Blizzard frame bindings, then addon bars, then inactive bonus bars.
 local function GetRawBindingKeysForSlot(slot)
     local keys = {}
-    local bindingAction, frameName = GetSlotBindingInfo(slot)
-    if bindingAction then
-        local key1, key2 = GetBindingKey(bindingAction)
-        if not key1 then
-            key1, key2 = GetBindingKey("CLICK " .. frameName .. ":LeftButton")
-        end
-        if key1 then keys[#keys + 1] = key1 end
-        if key2 then keys[#keys + 1] = key2 end
-    end
-    -- Fallback: addon bar raw bindings
+
+    local bindingAction, frameName = GetMappedSlotBindingInfo(slot)
+    AddRawBindingKeys(keys, bindingAction, frameName)
+
     if #keys == 0 and addonSlotRawBindings[slot] then
         keys[#keys + 1] = addonSlotRawBindings[slot]
     end
+
+    if #keys == 0 then
+        bindingAction, frameName = GetBonusBarButtonInfo(slot)
+        AddRawBindingKeys(keys, bindingAction, frameName)
+    end
+
     return keys
 end
 
