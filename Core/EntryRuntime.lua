@@ -7,7 +7,7 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
 local IsNoCooldownSpell = ST.IsNoCooldownSpell
-local IsResourceGateNoCooldownSpell = ST.IsResourceGateNoCooldownSpell
+local HasPositiveResourceGateCost = ST.HasPositiveResourceGateCost
 
 local ipairs = ipairs
 local tonumber = tonumber
@@ -926,11 +926,12 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
 
     return result
 end
-local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldown)
+local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldown, resourceGateCost, baseNoCooldown, baseResourceGateCost)
     local resourceGatedNoCooldown = noCooldown == true
-        and IsResourceGateNoCooldownSpell
-        and (IsResourceGateNoCooldownSpell(cooldownSpellId)
-            or (cooldownSpellId ~= buttonData.id and IsResourceGateNoCooldownSpell(buttonData.id)))
+        and (resourceGateCost == true
+            or (cooldownSpellId ~= buttonData.id
+                and baseNoCooldown == true
+                and baseResourceGateCost == true))
     local allowActionSlotRealFallback = buttonData.hasCharges ~= true
         and cooldownSpellId == buttonData.id
         and noCooldown ~= true
@@ -958,11 +959,11 @@ local function ResolveSpellCooldownSecrecy(owner, spellID)
     return C_Secrets.GetSpellCooldownSecrecy(spellID)
 end
 
-local function ResolveNoCooldownState(owner, spellID, hasCharges)
+local function ResolveCachedSpellBooleanState(owner, spellID, hasCharges, valueKey, spellKey, resolver)
     if hasCharges then
         if owner then
-            owner._noCooldown = false
-            owner._noCooldownSpellId = nil
+            owner[valueKey] = false
+            owner[spellKey] = nil
         end
         return false
     end
@@ -971,16 +972,60 @@ local function ResolveNoCooldownState(owner, spellID, hasCharges)
         return false
     end
 
-    if owner and owner._noCooldown ~= nil and owner._noCooldownSpellId == spellID then
-        return owner._noCooldown == true
+    if owner and owner[valueKey] ~= nil and owner[spellKey] == spellID then
+        return owner[valueKey] == true
     end
 
-    local noCooldown = IsNoCooldownSpell(spellID)
+    local value = resolver(spellID)
     if owner then
-        owner._noCooldownSpellId = spellID
-        owner._noCooldown = noCooldown
+        owner[spellKey] = spellID
+        owner[valueKey] = value
     end
-    return noCooldown
+    return value
+end
+
+local function ResolveNoCooldownState(owner, spellID, hasCharges)
+    return ResolveCachedSpellBooleanState(
+        owner,
+        spellID,
+        hasCharges,
+        "_noCooldown",
+        "_noCooldownSpellId",
+        IsNoCooldownSpell
+    )
+end
+
+local function ResolveBaseNoCooldownState(owner, spellID, hasCharges)
+    return ResolveCachedSpellBooleanState(
+        owner,
+        spellID,
+        hasCharges,
+        "_baseNoCooldown",
+        "_baseNoCooldownSpellId",
+        IsNoCooldownSpell
+    )
+end
+
+local function ResolveResourceGateCostState(owner, spellID, hasCharges)
+    return ResolveCachedSpellBooleanState(
+        owner,
+        spellID,
+        hasCharges,
+        "_resourceGateCost",
+        "_resourceGateCostSpellId",
+        HasPositiveResourceGateCost
+    )
+end
+
+local function ResolveBaseResourceGateCostState(owner, spellID, hasCharges)
+    return ResolveCachedSpellBooleanState(
+        owner,
+        spellID,
+        hasCharges,
+        "_baseResourceGateCost",
+        "_baseResourceGateCostSpellId",
+        HasPositiveResourceGateCost
+    )
 end
 
 local function ClearOwnerChargeState(owner)
@@ -1214,10 +1259,18 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     local hasCharges = (maxCharges or 0) > 1
     local secrecy = ResolveSpellCooldownSecrecy(owner, cooldownSpellID)
     local noCooldown = ResolveNoCooldownState(owner, cooldownSpellID, hasCharges)
+    local resourceGateCost = ResolveResourceGateCostState(owner, cooldownSpellID, hasCharges)
+    local baseNoCooldown = noCooldown
+    local baseResourceGateCost = resourceGateCost
+    if cooldownSpellID ~= spellID then
+        baseNoCooldown = ResolveBaseNoCooldownState(owner, spellID, hasCharges)
+        baseResourceGateCost = ResolveBaseResourceGateCostState(owner, spellID, hasCharges)
+    end
     local resourceGatedNoCooldown = noCooldown == true
-        and IsResourceGateNoCooldownSpell
-        and (IsResourceGateNoCooldownSpell(cooldownSpellID)
-            or (cooldownSpellID ~= spellID and IsResourceGateNoCooldownSpell(spellID)))
+        and (resourceGateCost == true
+            or (cooldownSpellID ~= spellID
+                and baseNoCooldown == true
+                and baseResourceGateCost == true))
 
     local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, {
         allowActionSlotRealFallback = not hasCharges and cooldownSpellID == spellID and noCooldown ~= true,

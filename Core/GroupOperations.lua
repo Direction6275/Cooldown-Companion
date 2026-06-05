@@ -1692,6 +1692,10 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
                 button._noCooldownSpellId = nil
                 button._baseNoCooldown = nil
                 button._baseNoCooldownSpellId = nil
+                button._resourceGateCost = nil
+                button._resourceGateCostSpellId = nil
+                button._baseResourceGateCost = nil
+                button._baseResourceGateCostSpellId = nil
                 button._displaySpellId = nil
                 button._liveOverrideSpellId = nil
                 button._lastSpellTexture = nil
