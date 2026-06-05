@@ -1728,6 +1728,7 @@ local function ApplySegmentedPreviewColors(holder, powerType, settings, previewV
     local numSegments = #holder.segments
     if numSegments <= 0 then return end
 
+    HideRechargeTexts(holder)
     previewValue = tonumber(previewValue) or (numSegments * 0.6)
     local filled = math_min(numSegments, math_max(0, math_floor(previewValue)))
     local hasPartial = previewValue > filled and filled < numSegments
@@ -1760,6 +1761,18 @@ local function ApplySegmentedPreviewColors(holder, powerType, settings, previewV
         end
         if type(color) == "table" then
             seg:SetStatusBarColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
+        end
+
+        if powerType == 5 and holder._showRechargeText then
+            if IsRechargeTextAllSegmentsMode(holder) then
+                if i == filled + 1 and hasPartial then
+                    SetRechargeText(holder, i, 8)
+                else
+                    SetRechargeText(holder, i, 0, true)
+                end
+            elseif i == filled + 1 and hasPartial then
+                SetRechargeText(holder, i, 8)
+            end
         end
     end
 end
