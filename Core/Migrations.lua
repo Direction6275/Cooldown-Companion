@@ -155,6 +155,30 @@ local function NormalizePassiveCooldownButtons(profile)
     return changed
 end
 
+local function BackfillUnusableVisualOverrideModes(profile)
+    if type(profile) ~= "table" or type(profile.groups) ~= "table" then
+        return false
+    end
+
+    local changed = false
+    for _, group in pairs(profile.groups) do
+        if type(group) == "table" and type(group.buttons) == "table" then
+            for _, buttonData in ipairs(group.buttons) do
+                local overrides = type(buttonData) == "table" and buttonData.styleOverrides
+                local overrideSections = type(buttonData) == "table" and buttonData.overrideSections
+                if type(overrides) == "table"
+                    and type(overrideSections) == "table"
+                    and overrideSections.unusableDimming == true
+                    and overrides.unusableVisualMode == nil then
+                    overrides.unusableVisualMode = ST.UNUSABLE_VISUAL_MODE_DIM or "dim"
+                    changed = true
+                end
+            end
+        end
+    end
+    return changed
+end
+
 local function HasSupportedCheckpoint(payload)
     if type(payload) ~= "table" then
         return false
@@ -297,6 +321,7 @@ function CooldownCompanion:RunAllMigrations()
 
     self:StampImportCheckpoint(self.db and self.db.profile)
     NormalizePassiveCooldownButtons(self.db and self.db.profile)
+    BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     if self.SanitizeCursorAnchorPolicy and not self._deferCursorAnchorPolicySanitizer then
         self:SanitizeCursorAnchorPolicy(self.db and self.db.profile)
     end
