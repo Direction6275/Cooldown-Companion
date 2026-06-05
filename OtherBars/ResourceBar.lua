@@ -949,7 +949,7 @@ local function StyleRechargeTexts(holder, powerType, settings)
     if not (holder and holder.rechargeTexts) then return end
     local resourceConfig = GetResourceDisplayConfig(settings, powerType)
     local enabled = resourceConfig and resourceConfig.showRechargeText == true
-    if not enabled or (powerType ~= 5 and powerType ~= 19) then
+    if not enabled or powerType ~= 5 then
         holder._showRechargeText = false
         HideRechargeTexts(holder)
         return
@@ -1011,14 +1011,6 @@ local function SetRechargeText(holder, segmentIndex, remaining, showZero)
     local formatted = FormatTime(remaining, holder._rechargeTextFormatSource)
     text:SetText(formatted)
     text:SetShown(formatted ~= "")
-end
-
-local function GetEssenceRechargeRemaining(partial)
-    local regen = GetPowerRegenForPowerType(19)
-    if type(regen) ~= "number" or regen <= 0 then
-        regen = 0.2
-    end
-    return math_max((1 - partial) / regen, 0)
 end
 
 local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
@@ -1185,26 +1177,18 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         local isMax = (filled == max)
         local thresholdActive = thresholdEnabled and filled >= thresholdValue
         local activeReadyColor = isMax and maxColor or (thresholdActive and thresholdColor or readyColor)
-        local showAllRechargeText = IsRechargeTextAllSegmentsMode(holder)
         for i = 1, math_min(#holder.segments, max) do
             local seg = holder.segments[i]
             if i <= filled then
                 SetStatusBarSmoothValue(seg, 1)
                 seg:SetStatusBarColor(activeReadyColor[1], activeReadyColor[2], activeReadyColor[3], 1)
                 fullSegments[i] = true
-                if showAllRechargeText then
-                    SetRechargeText(holder, i, 0, true)
-                end
             elseif i == filled + 1 and partial > 0 then
                 SetStatusBarSmoothValue(seg, partial)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
-                SetRechargeText(holder, i, GetEssenceRechargeRemaining(partial))
             else
                 SetStatusBarSmoothValue(seg, 0)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
-                if showAllRechargeText then
-                    SetRechargeText(holder, i, 0, true)
-                end
             end
         end
         segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, displayCurrent, max, false)

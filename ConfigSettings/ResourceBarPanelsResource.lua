@@ -1547,7 +1547,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 build = BuildResourceTextAdvanced,
             })
 
-            if capturedPt == 5 or capturedPt == 19 then
+            if capturedPt == 5 then
                 local rechargeEnabled = CS._ReadResourceDisplaySetting(baseSettings, resSettings, "showRechargeText", DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED) == true
                 local rechargeCb = AceGUI:Create("CheckBox")
                 rechargeCb:SetLabel("Show " .. name .. " Recharge Text")
