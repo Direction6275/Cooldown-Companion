@@ -7,11 +7,17 @@ local CooldownCompanion = ST.Addon
 
 local ipairs = ipairs
 local pairs = pairs
+local type = type
 local wipe = wipe
 
 ------------------------------------------------------------------------
 -- KEYBIND TEXT SUPPORT
 ------------------------------------------------------------------------
+
+local MAIN_ACTION_BUTTON_COUNT = 12
+local BONUS_BAR_SLOT_NONE = 0
+local BONUS_BAR_SLOT_ACTIVE = 1
+local BONUS_BAR_SLOT_INACTIVE = 2
 
 -- Known action bar button frames: {framePrefix, bindingPrefix, count}
 -- Frame names come from Blizzard_ActionBar/Shared/ActionBar.lua:
@@ -63,6 +69,41 @@ function CooldownCompanion:RebuildSlotMapping()
     end
 end
 
+local function GetButtonIndexForSlot(slot)
+    if type(slot) ~= "number" or slot < 1 then return nil end
+    return ((slot - 1) % MAIN_ACTION_BUTTON_COUNT) + 1
+end
+
+local function GetBonusBarSlotState(slot)
+    local slotBonusBarIndex = C_ActionBar.GetBonusBarIndexForSlot(slot)
+    if not slotBonusBarIndex then return BONUS_BAR_SLOT_NONE end
+
+    if C_ActionBar.HasBonusActionBar() and slotBonusBarIndex == C_ActionBar.GetBonusBarIndex() then
+        return BONUS_BAR_SLOT_ACTIVE
+    end
+
+    return BONUS_BAR_SLOT_INACTIVE
+end
+
+local function GetActiveBonusBarButtonInfo(slot, bonusBarSlotState)
+    if bonusBarSlotState == nil then
+        bonusBarSlotState = GetBonusBarSlotState(slot)
+    end
+    if bonusBarSlotState ~= BONUS_BAR_SLOT_ACTIVE then return nil, nil end
+
+    local buttonIndex = GetButtonIndexForSlot(slot)
+    if not buttonIndex then return nil, nil end
+
+    return "ACTIONBUTTON" .. buttonIndex, "ActionButton" .. buttonIndex
+end
+
+local function GetMappedSlotBindingInfo(slot)
+    local info = slotToButtonInfo[slot]
+    if info then
+        return info.bindingAction, info.frameName
+    end
+end
+
 -- Map verbose localized keybind names to short abbreviations.
 -- Built from KEY_ GlobalStrings so it works on any WoW locale.
 local keybindMap = {}
@@ -104,19 +145,40 @@ local function AbbreviateKeybind(text)
     return text
 end
 
--- Return the formatted keybind string for a given action bar slot, or nil.
--- Tries Blizzard binding names and CLICK fallback first, then addon bar bindings.
-local function GetKeybindForSlot(slot)
-    local info = slotToButtonInfo[slot]
-    if info then
-        local key = GetBindingKey(info.bindingAction) or
-                    GetBindingKey("CLICK " .. info.frameName .. ":LeftButton")
-        if key then
-            return AbbreviateKeybind(GetBindingText(key, 1))
-        end
+local function GetDisplayTextForBinding(bindingAction, frameName)
+    if not bindingAction then return nil end
+
+    local key = GetBindingKey(bindingAction) or
+                GetBindingKey("CLICK " .. frameName .. ":LeftButton")
+    if key then
+        return AbbreviateKeybind(GetBindingText(key, 1))
     end
-    -- Fallback: addon bar bindings (e.g. Bartender4, Dominos, ElvUI)
-    return addonSlotBindings[slot]
+end
+
+-- Return the formatted keybind string for a given action bar slot, or nil.
+-- Prefer addon bars, then live Blizzard frame bindings, then active bonus bars.
+local function GetKeybindForSlot(slot)
+    local addonText = addonSlotBindings[slot]
+    if addonText then
+        return addonText
+    end
+
+    local bonusBarSlotState = GetBonusBarSlotState(slot)
+    if bonusBarSlotState == BONUS_BAR_SLOT_INACTIVE then return nil end
+
+    local bindingAction, frameName = GetMappedSlotBindingInfo(slot)
+    if bindingAction then
+        local text = GetDisplayTextForBinding(bindingAction, frameName)
+        if text then return text end
+    end
+
+    bindingAction, frameName = GetActiveBonusBarButtonInfo(slot, bonusBarSlotState)
+    if bindingAction then
+        local text = GetDisplayTextForBinding(bindingAction, frameName)
+        if text then return text end
+    end
+
+    return nil
 end
 
 ------------------------------------------------------------------------
@@ -159,24 +221,70 @@ local function IsBindingKeyPressed(info)
     return true
 end
 
+local function AddRawBindingKeys(keys, bindingAction, frameName)
+    if not bindingAction then return end
+
+    local key1, key2 = GetBindingKey(bindingAction)
+    if not key1 then
+        key1, key2 = GetBindingKey("CLICK " .. frameName .. ":LeftButton")
+    end
+    if key1 then keys[#keys + 1] = key1 end
+    if key2 then keys[#keys + 1] = key2 end
+end
+
 -- Return an array of raw binding key strings for a slot (may be multiple per slot).
--- Falls back to addon bar raw key cache for third-party bar addons.
+-- Prefer addon bars, then live Blizzard frame bindings, then active bonus bars.
 local function GetRawBindingKeysForSlot(slot)
     local keys = {}
-    local info = slotToButtonInfo[slot]
-    if info then
-        local key1, key2 = GetBindingKey(info.bindingAction)
-        if not key1 then
-            key1, key2 = GetBindingKey("CLICK " .. info.frameName .. ":LeftButton")
-        end
-        if key1 then keys[#keys + 1] = key1 end
-        if key2 then keys[#keys + 1] = key2 end
-    end
-    -- Fallback: addon bar raw bindings
-    if #keys == 0 and addonSlotRawBindings[slot] then
+
+    if addonSlotRawBindings[slot] then
         keys[#keys + 1] = addonSlotRawBindings[slot]
     end
+
+    local bonusBarSlotState = GetBonusBarSlotState(slot)
+    if bonusBarSlotState == BONUS_BAR_SLOT_INACTIVE then return keys end
+
+    if #keys == 0 then
+        local bindingAction, frameName = GetMappedSlotBindingInfo(slot)
+        AddRawBindingKeys(keys, bindingAction, frameName)
+    end
+
+    if #keys == 0 then
+        local bindingAction, frameName = GetActiveBonusBarButtonInfo(slot, bonusBarSlotState)
+        AddRawBindingKeys(keys, bindingAction, frameName)
+    end
+
     return keys
+end
+
+local function AddSpellActionSlots(slots, seenSlots, spellID)
+    if not spellID then return end
+
+    local foundSlots = C_ActionBar.FindSpellActionButtons(spellID)
+    if not foundSlots then return end
+
+    for _, slot in ipairs(foundSlots) do
+        if type(slot) == "number" and not seenSlots[slot] then
+            seenSlots[slot] = true
+            slots[#slots + 1] = slot
+        end
+    end
+end
+
+local function GetSpellActionSlots(spellID)
+    if not spellID then return nil end
+
+    local slots = {}
+    local seenSlots = {}
+
+    AddSpellActionSlots(slots, seenSlots, spellID)
+
+    local baseSpellID = ST.ResolveToBaseSpell(spellID)
+    if baseSpellID and baseSpellID ~= spellID then
+        AddSpellActionSlots(slots, seenSlots, baseSpellID)
+    end
+
+    return #slots > 0 and slots or nil
 end
 
 -- Resolve and cache parsed binding key info for a CC button.
@@ -189,7 +297,7 @@ local function CacheButtonBindingKeys(button, buttonData)
     end
     local slots
     if buttonData.type == "spell" then
-        slots = C_ActionBar.FindSpellActionButtons(buttonData.id)
+        slots = GetSpellActionSlots(buttonData.id)
     elseif buttonData.type == "item" then
         local itemID = button._resolvedItemId or buttonData.id
         local slot = CooldownCompanion._itemSlotCache[itemID]
@@ -313,7 +421,7 @@ function CooldownCompanion:GetKeybindText(buttonData, itemIDOverride)
     if not buttonData then return nil end
 
     if buttonData.type == "spell" then
-        local slots = C_ActionBar.FindSpellActionButtons(buttonData.id)
+        local slots = GetSpellActionSlots(buttonData.id)
         if slots then
             for _, slot in ipairs(slots) do
                 local text = GetKeybindForSlot(slot)
@@ -344,6 +452,13 @@ function CooldownCompanion:GetDisplayedKeybindText(buttonData, itemIDOverride)
     end
 
     return self:GetKeybindText(buttonData, itemIDOverride)
+end
+
+function CooldownCompanion:RefreshKeybindState()
+    self:RebuildSlotMapping()
+    self:RebuildItemSlotCache()
+    self:RebuildAddonSlotBindings()
+    self:OnKeybindsChanged()
 end
 
 -- Refresh keybind text and binding key caches on all buttons.

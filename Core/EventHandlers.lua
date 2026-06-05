@@ -104,6 +104,7 @@ function CooldownCompanion:RefreshSpellAvailabilityState(opts)
         self:RefreshChargeFlags("spell")
     end
     self:RefreshAllGroupsForSpellAvailability()
+    self:RefreshKeybindState()
     self:RefreshConfigPanel()
 
     if opts.applyResourceBars then
@@ -426,9 +427,7 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
         end
         self:ApplyCdmAlpha()
         if isFullInit then
-            self:RebuildSlotMapping()
-            self:RebuildItemSlotCache()
-            self:OnKeybindsChanged()
+            self:RefreshKeybindState()
         end
         -- Delayed second pass: talent-dependent charge data (e.g. Hover,
         -- Keg Smash) may not be resolved when RefreshChargeFlags runs
@@ -531,10 +530,7 @@ function CooldownCompanion:OnActionBarSlotChanged(_, slot)
 end
 
 function CooldownCompanion:OnActionBarLayoutChanged()
-    self:RebuildSlotMapping()
-    self:RebuildItemSlotCache()
-    self:RebuildAddonSlotBindings()
-    self:OnKeybindsChanged()
+    self:RefreshKeybindState()
     -- UPDATE_OVERRIDE_ACTIONBAR / UPDATE_VEHICLE_ACTIONBAR also route here for
     -- keybind rebuilds; piggyback vehicle UI state check to avoid duplicate
     -- AceEvent registrations (AceEvent allows only one handler per event).
