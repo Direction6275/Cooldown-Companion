@@ -710,6 +710,25 @@ local function GetGroupIcon(group)
     return 134400
 end
 
+local function GetFirstPanelForContainer(containerId, db)
+    if not (containerId and db and db.groups) then
+        return nil
+    end
+
+    local firstPanel, firstOrder
+    for gid, group in pairs(db.groups) do
+        if group.parentContainerId == containerId then
+            local order = group.order or gid
+            if not firstOrder or order < firstOrder then
+                firstOrder = order
+                firstPanel = group
+            end
+        end
+    end
+
+    return firstPanel
+end
+
 ------------------------------------------------------------------------
 -- Helper: Validate icon texture (number or string)
 ------------------------------------------------------------------------
@@ -737,17 +756,7 @@ local function GetContainerIcon(containerId, db)
     if container and IsValidIconTexture(container.manualIcon) then
         return container.manualIcon
     end
-    if not db.groups then return 134400 end
-    local firstPanel, firstOrder
-    for gid, group in pairs(db.groups) do
-        if group.parentContainerId == containerId then
-            local order = group.order or gid
-            if not firstOrder or order < firstOrder then
-                firstOrder = order
-                firstPanel = group
-            end
-        end
-    end
+    local firstPanel = GetFirstPanelForContainer(containerId, db)
     if firstPanel then
         return GetGroupIcon(firstPanel)
     end
@@ -773,17 +782,7 @@ local function GetAutoFolderIcon(folderId, db)
         table.sort(children, function(a, b) return a.order < b.order end)
         if children[1] and db.groups then
             -- Find first panel of this container for its icon
-            local containerId = children[1].id
-            local firstPanel, firstOrder
-            for gid, group in pairs(db.groups) do
-                if group.parentContainerId == containerId then
-                    local order = group.order or gid
-                    if not firstOrder or order < firstOrder then
-                        firstOrder = order
-                        firstPanel = group
-                    end
-                end
-            end
+            local firstPanel = GetFirstPanelForContainer(children[1].id, db)
             if firstPanel then
                 return GetGroupIcon(firstPanel)
             end

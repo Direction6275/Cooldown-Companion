@@ -1190,7 +1190,6 @@ local function RefreshColumn1(preserveDrag)
         end
 
         entry:SetText(displayName)
-        local showManualIcon = not inFolder and IsValidIconTexture(container.manualIcon)
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
         local groupNameWidth = 0
@@ -1199,10 +1198,10 @@ local function RefreshColumn1(preserveDrag)
             groupNameWidth = entry.label:GetStringWidth()
             entry:SetText(displayName)
         end
-        if showManualIcon then
-            ApplyConfigRowIcon(entry, container.manualIcon)
+        if inFolder then
+            ApplyConfigTextRow(entry, "LEFT", 17)
         else
-            ApplyConfigTextRow(entry, "LEFT", inFolder and 17 or 0)
+            ApplyConfigRowIcon(entry, GetContainerIcon(containerId, db))
         end
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
