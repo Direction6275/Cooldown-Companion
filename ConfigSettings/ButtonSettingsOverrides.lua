@@ -403,7 +403,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                             elseif sectionId == "iconTint" then
                                 AddConditionalPreviewButton(panel, "Preview Cooldown Tint", "cooldown", target)
                                 AddConditionalPreviewButton(panel, "Preview Aura Tint", "aura", target)
-                                AddConditionalPreviewButton(panel, "Preview Unusable Tint", "unusable", target)
+                                AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable", target)
                                 AddConditionalPreviewButton(panel, "Preview Out of Range Tint", "out_of_range", target)
                             end
                         end
@@ -547,6 +547,8 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                             fallbackStyle = group.style,
                             afterEnableCallback = afterEnableCallback,
                             masqueEnabled = group.masqueEnabled == true,
+                            infoButtons = infoButtons,
+                            advancedKey = "overrideSetting_" .. sectionId,
                         })
 
                     end

@@ -1197,7 +1197,7 @@ local function UpdateBarDisplay(button)
 
     EvaluateDesaturation(button, button.buttonData, style)
 
-    -- Icon tinting (out-of-range red / unusable dimming)
+    -- Icon tinting (out-of-range red / unusable dim mode)
     UpdateIconTint(button, button.buttonData, style)
 
     -- Loss of control overlay on bar icon

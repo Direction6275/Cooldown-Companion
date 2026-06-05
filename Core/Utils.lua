@@ -165,6 +165,54 @@ function ST.SetStatusBarRemainingDuration(statusBar, durationObj)
 end
 
 --------------------------------------------------------------------------------
+-- Unusable Visual Helpers
+--------------------------------------------------------------------------------
+
+ST.UNUSABLE_VISUAL_MODE_DIM = "dim"
+ST.UNUSABLE_VISUAL_MODE_DESATURATE = "desaturate"
+ST.UNUSABLE_VISUAL_MODE_BOTH = "both"
+ST.UNUSABLE_VISUAL_MODE_NONE = "none"
+
+function ST.GetUnusableVisualMode(source)
+    if type(source) == "table" then
+        source = source.unusableVisualMode
+    end
+    if source == ST.UNUSABLE_VISUAL_MODE_DESATURATE then
+        return ST.UNUSABLE_VISUAL_MODE_DESATURATE
+    elseif source == ST.UNUSABLE_VISUAL_MODE_BOTH then
+        return ST.UNUSABLE_VISUAL_MODE_BOTH
+    elseif source == ST.UNUSABLE_VISUAL_MODE_NONE then
+        return ST.UNUSABLE_VISUAL_MODE_NONE
+    end
+    return ST.UNUSABLE_VISUAL_MODE_DIM
+end
+
+function ST.UnusableVisualUsesDimTint(source)
+    local mode = ST.GetUnusableVisualMode(source)
+    return mode == ST.UNUSABLE_VISUAL_MODE_DIM or mode == ST.UNUSABLE_VISUAL_MODE_BOTH
+end
+
+function ST.UnusableVisualUsesDesaturation(source)
+    local mode = ST.GetUnusableVisualMode(source)
+    return mode == ST.UNUSABLE_VISUAL_MODE_DESATURATE or mode == ST.UNUSABLE_VISUAL_MODE_BOTH
+end
+
+function ST.SetUnusableVisualMode(styleTable, useDimTint, useDesaturation)
+    if type(styleTable) ~= "table" then
+        return
+    end
+    if useDimTint and useDesaturation then
+        styleTable.unusableVisualMode = ST.UNUSABLE_VISUAL_MODE_BOTH
+    elseif useDimTint then
+        styleTable.unusableVisualMode = ST.UNUSABLE_VISUAL_MODE_DIM
+    elseif useDesaturation then
+        styleTable.unusableVisualMode = ST.UNUSABLE_VISUAL_MODE_DESATURATE
+    else
+        styleTable.unusableVisualMode = ST.UNUSABLE_VISUAL_MODE_NONE
+    end
+end
+
+--------------------------------------------------------------------------------
 -- Border Helpers
 --------------------------------------------------------------------------------
 

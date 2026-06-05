@@ -114,6 +114,7 @@ local defaults = {
                         assistedHighlightProcColor = {1, 1, 1, 1},
                         assistedHighlightCombatOnly = false,
                         showUnusable = true,
+                        unusableVisualMode = "dim",
                         iconUnusableTintColor = {0.4, 0.4, 0.4, 1},
                         iconTintColor = {1, 1, 1, 1},           -- base icon vertex color (RGBA)
                         iconCooldownTintEnabled = false,         -- apply separate tint when on cooldown
@@ -287,6 +288,7 @@ local defaults = {
             assistedHighlightProcOverhang = 32,
             assistedHighlightCombatOnly = false,
             showUnusable = false,
+            unusableVisualMode = "dim",
             iconUnusableTintColor = {0.4, 0.4, 0.4, 1},
             iconTintColor = {1, 1, 1, 1},
             iconCooldownTintEnabled = false,
@@ -691,8 +693,8 @@ ST.OVERRIDE_SECTIONS = {
         modes = {icons = true, bars = true},
     },
     unusableDimming = {
-        label = "Unusable Dimming",
-        keys = {"showUnusable", "iconUnusableTintColor"},
+        label = "Unusable Visual",
+        keys = {"showUnusable", "unusableVisualMode", "iconUnusableTintColor"},
         modes = {icons = true, bars = true},
     },
     iconTint = {

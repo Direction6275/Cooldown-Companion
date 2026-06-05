@@ -2705,13 +2705,12 @@ local function BuildEffectsTab(container)
     end)
     CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
 
-    -- Unusable Dimming
-    local unusableCb = BuildUnusableDimmingControls(container, style, function()
+    -- Unusable Visual
+    local unusableCb, unusableAdvBtn = BuildUnusableDimmingControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
     end)
-    local unusablePromoteBtn = CreateCheckboxPromoteButton(unusableCb, nil, "unusableDimming", group, style)
-    AddConditionalPreviewBadge(unusableCb, unusablePromoteBtn, "Preview Unusable State", "unusable", style.showUnusable)
+    local unusablePromoteBtn = CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
+    AddConditionalPreviewBadge(unusableCb, unusablePromoteBtn or unusableAdvBtn, "Preview Unusable State", "unusable", style.showUnusable)
 
     -- Show Tooltips
     local tooltipCb = BuildShowTooltipsControls(container, style, function()
@@ -3389,8 +3388,8 @@ local function BuildAppearanceTab(container)
         {"Aura Tint:", 1, 0.82, 0},
         {"A separate color applied while an aura-tracked ability's buff or debuff is active. Only affects buttons with aura tracking enabled.", 1, 1, 1, true},
         " ",
-        {"Unusable Dimming Tint:", 1, 0.82, 0},
-        {"A color applied when an ability is not usable. Only appears when unusable dimming is enabled in the Indicators tab.", 1, 1, 1, true},
+        {"Unusable Dim Color:", 1, 0.82, 0},
+        {"A color applied when an ability is not usable and Unusable Visual uses dimming in the Indicators tab.", 1, 1, 1, true},
     }, tabInfoButtons)
 
     iconTintHeading.right:ClearAllPoints()

@@ -15,6 +15,7 @@ local InCombatLockdown = InCombatLockdown
 local UnitCanAttack = UnitCanAttack
 local IsItemInRange = C_Item.IsItemInRange
 local IsUsableItem = C_Item.IsUsableItem
+local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 
 -- Update charge count state for a spell with hasCharges enabled.
 -- chargeSpellID should be the effective runtime spell ID (override-aware).
@@ -174,7 +175,28 @@ local function SetTintIntent(target, active, reason, unusableActive, r, g, b, a)
     return target
 end
 
--- Icon tinting: out-of-range red > unusable dimming > aura tint > cooldown tint > base tint.
+local function IsUnusableVisualActive(button, buttonData)
+    if buttonData.isPassive or buttonData.isPassiveCooldown then
+        return false
+    end
+    if button._conditionalUnusablePreview then
+        return true, "unusable-preview"
+    end
+    if buttonData.type == "spell" then
+        local spellID = button._displaySpellId or buttonData.id
+        if not C_Spell_IsSpellUsable(spellID) then
+            return true, "unusable"
+        end
+    elseif buttonData.type == "item" then
+        local itemID = button._resolvedItemId or buttonData.id
+        if not IsUsableItem(itemID) then
+            return true, "unusable"
+        end
+    end
+    return false
+end
+
+-- Icon tinting: out-of-range red > unusable dim mode > aura tint > cooldown tint > base tint.
 -- This resolver may read range/usability APIs; call it only from the normal tint update path.
 local function ResolveIconTintIntent(button, buttonData, style, target)
     target = target or {}
@@ -229,34 +251,15 @@ local function ResolveIconTintIntent(button, buttonData, style, target)
         end
     end
 
-    if not stateOverride and style.showUnusable then
+    if not stateOverride and style.showUnusable and ST.UnusableVisualUsesDimTint(style) then
         local uc = style.iconUnusableTintColor
-        if button._conditionalUnusablePreview then
+        local isUnusable, unusableReason = IsUnusableVisualActive(button, buttonData)
+        if isUnusable then
             r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
             a = uc and uc[4] or a
-            reason = "unusable-preview"
+            reason = unusableReason or "unusable"
             stateOverride = true
             unusableActive = true
-        elseif buttonData.type == "spell" and not buttonData.isPassiveCooldown then
-            local spellID = button._displaySpellId or buttonData.id
-            local isUsable = C_Spell.IsSpellUsable(spellID)
-            if not isUsable then
-                r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
-                a = uc and uc[4] or a
-                reason = "unusable"
-                stateOverride = true
-                unusableActive = true
-            end
-        elseif buttonData.type == "item" then
-            local itemID = button._resolvedItemId or buttonData.id
-            local usable = IsUsableItem(itemID)
-            if not usable then
-                r, g, b = uc and uc[1] or 0.4, uc and uc[2] or 0.4, uc and uc[3] or 0.4
-                a = uc and uc[4] or a
-                reason = "unusable"
-                stateOverride = true
-                unusableActive = true
-            end
         end
     end
 
@@ -360,6 +363,13 @@ local function ResolveDesaturationIntent(button, buttonData, style, target)
     if not target.active and button._isEquippableNotEquipped then
         target.active = true
         target.reason = "not-equipped"
+    end
+    if not target.active and style.showUnusable and ST.UnusableVisualUsesDesaturation(style) then
+        local isUnusable, unusableReason = IsUnusableVisualActive(button, buttonData)
+        if isUnusable then
+            target.active = true
+            target.reason = unusableReason or "unusable"
+        end
     end
 
     return target
