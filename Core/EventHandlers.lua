@@ -498,7 +498,8 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
 end
 
 function CooldownCompanion:OnBindingsChanged()
-    self:RefreshKeybindState()
+    self:RebuildAddonSlotBindings()
+    self:OnKeybindsChanged()
 end
 
 function CooldownCompanion:OnActionBarSlotChanged(_, slot)

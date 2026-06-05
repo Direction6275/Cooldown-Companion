@@ -15,6 +15,9 @@ local wipe = wipe
 ------------------------------------------------------------------------
 
 local MAIN_ACTION_BUTTON_COUNT = 12
+local BONUS_BAR_SLOT_NONE = 0
+local BONUS_BAR_SLOT_ACTIVE = 1
+local BONUS_BAR_SLOT_INACTIVE = 2
 
 -- Known action bar button frames: {framePrefix, bindingPrefix, count}
 -- Frame names come from Blizzard_ActionBar/Shared/ActionBar.lua:
@@ -71,15 +74,22 @@ local function GetButtonIndexForSlot(slot)
     return ((slot - 1) % MAIN_ACTION_BUTTON_COUNT) + 1
 end
 
-local function IsActiveBonusBarSlot(slot)
+local function GetBonusBarSlotState(slot)
     local slotBonusBarIndex = C_ActionBar.GetBonusBarIndexForSlot(slot)
-    if not slotBonusBarIndex then return nil end
+    if not slotBonusBarIndex then return BONUS_BAR_SLOT_NONE end
 
-    return C_ActionBar.HasBonusActionBar() and slotBonusBarIndex == C_ActionBar.GetBonusBarIndex()
+    if C_ActionBar.HasBonusActionBar() and slotBonusBarIndex == C_ActionBar.GetBonusBarIndex() then
+        return BONUS_BAR_SLOT_ACTIVE
+    end
+
+    return BONUS_BAR_SLOT_INACTIVE
 end
 
-local function GetActiveBonusBarButtonInfo(slot)
-    if not IsActiveBonusBarSlot(slot) then return nil, nil end
+local function GetActiveBonusBarButtonInfo(slot, bonusBarSlotState)
+    if bonusBarSlotState == nil then
+        bonusBarSlotState = GetBonusBarSlotState(slot)
+    end
+    if bonusBarSlotState ~= BONUS_BAR_SLOT_ACTIVE then return nil, nil end
 
     local buttonIndex = GetButtonIndexForSlot(slot)
     if not buttonIndex then return nil, nil end
@@ -88,8 +98,6 @@ local function GetActiveBonusBarButtonInfo(slot)
 end
 
 local function GetMappedSlotBindingInfo(slot)
-    if IsActiveBonusBarSlot(slot) == false then return nil end
-
     local info = slotToButtonInfo[slot]
     if info then
         return info.bindingAction, info.frameName
@@ -137,32 +145,37 @@ local function AbbreviateKeybind(text)
     return text
 end
 
+local function GetDisplayTextForBinding(bindingAction, frameName)
+    if not bindingAction then return nil end
+
+    local key = GetBindingKey(bindingAction) or
+                GetBindingKey("CLICK " .. frameName .. ":LeftButton")
+    if key then
+        return AbbreviateKeybind(GetBindingText(key, 1))
+    end
+end
+
 -- Return the formatted keybind string for a given action bar slot, or nil.
 -- Prefer addon bars, then live Blizzard frame bindings, then active bonus bars.
 local function GetKeybindForSlot(slot)
-    if IsActiveBonusBarSlot(slot) == false then return nil end
-
     local addonText = addonSlotBindings[slot]
     if addonText then
         return addonText
     end
 
+    local bonusBarSlotState = GetBonusBarSlotState(slot)
+    if bonusBarSlotState == BONUS_BAR_SLOT_INACTIVE then return nil end
+
     local bindingAction, frameName = GetMappedSlotBindingInfo(slot)
     if bindingAction then
-        local key = GetBindingKey(bindingAction) or
-                    GetBindingKey("CLICK " .. frameName .. ":LeftButton")
-        if key then
-            return AbbreviateKeybind(GetBindingText(key, 1))
-        end
+        local text = GetDisplayTextForBinding(bindingAction, frameName)
+        if text then return text end
     end
 
-    bindingAction, frameName = GetActiveBonusBarButtonInfo(slot)
+    bindingAction, frameName = GetActiveBonusBarButtonInfo(slot, bonusBarSlotState)
     if bindingAction then
-        local key = GetBindingKey(bindingAction) or
-                    GetBindingKey("CLICK " .. frameName .. ":LeftButton")
-        if key then
-            return AbbreviateKeybind(GetBindingText(key, 1))
-        end
+        local text = GetDisplayTextForBinding(bindingAction, frameName)
+        if text then return text end
     end
 
     return nil
@@ -223,11 +236,13 @@ end
 -- Prefer addon bars, then live Blizzard frame bindings, then active bonus bars.
 local function GetRawBindingKeysForSlot(slot)
     local keys = {}
-    if IsActiveBonusBarSlot(slot) == false then return keys end
 
     if addonSlotRawBindings[slot] then
         keys[#keys + 1] = addonSlotRawBindings[slot]
     end
+
+    local bonusBarSlotState = GetBonusBarSlotState(slot)
+    if bonusBarSlotState == BONUS_BAR_SLOT_INACTIVE then return keys end
 
     if #keys == 0 then
         local bindingAction, frameName = GetMappedSlotBindingInfo(slot)
@@ -235,7 +250,7 @@ local function GetRawBindingKeysForSlot(slot)
     end
 
     if #keys == 0 then
-        local bindingAction, frameName = GetActiveBonusBarButtonInfo(slot)
+        local bindingAction, frameName = GetActiveBonusBarButtonInfo(slot, bonusBarSlotState)
         AddRawBindingKeys(keys, bindingAction, frameName)
     end
 
@@ -264,7 +279,7 @@ local function GetSpellActionSlots(spellID)
 
     AddSpellActionSlots(slots, seenSlots, spellID)
 
-    local baseSpellID = C_Spell.GetBaseSpell(spellID)
+    local baseSpellID = ST.ResolveToBaseSpell(spellID)
     if baseSpellID and baseSpellID ~= spellID then
         AddSpellActionSlots(slots, seenSlots, baseSpellID)
     end
