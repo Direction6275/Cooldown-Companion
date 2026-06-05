@@ -1,13 +1,9 @@
-CLAUDE.md
 AGENTS.md
-STRATEGY.md
-.claude
 .codex
 .agents
 .mcp.json
 .vscode
 Libs/
-wiki/
 nul
 agent-reference/
 .local-tools/
