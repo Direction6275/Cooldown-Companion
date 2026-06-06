@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.18",
         "1.17",
         "1.16",
         "1.15",
@@ -38,6 +39,28 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.18"] = {
+            markdown = [[
+## New Features
+
+- **Profile-wide visual styles:** The gear menu now includes profile-level font, outline, and bar texture options so players can set one shared look across configurable addon text and bars while preserving local choices for later.
+- **Passive cooldown tracking:** Passive abilities that Blizzard exposes as real cooldowns, such as Shaman Reincarnation, can now be added and tracked as cooldown entries.
+- **Rune recharge text:** Death Knight Rune bars can now show optional per-segment recharge countdown text, either only on recharging Runes or across all Rune segments.
+- **Unusable Visual modes:** The Indicators setting is now Show Unusable Visual, with separate Dim Icon and Desaturate Icon controls so players can use dimming, desaturation, both, or neither.
+
+## Polish | QoL
+
+- **Smoother bar motion:** Bar panels, Custom Bars, resource bars, health bars, and previews now fill and drain more smoothly instead of stepping through choppy value updates.
+- **Smarter group and folder icons:** Top-level group rows and folder rows now show the first available child icon when no custom icon is set.
+- **Talent picker help:** The talent picker now includes an in-panel help icon that explains border colors, choice talents, spec and hero tree dropdowns, and how multiple talent conditions combine.
+- **Rune and Essence spenders:** Death Knight rune spenders and Evoker Essence spenders without real cooldowns no longer show resource recharge as a button cooldown or desaturation. These displays were simplified in order to avoid inconsistent Blizzard-provided information.
+
+## Bug Fixes
+
+- **Form action-bar keybinds:** Keybind text should now stay accurate for abilities on form-replacement action bars, such as Druid Bear Form replacing Action Bar 1.
+- **Panel anchoring and alpha:** Panels anchored to other panels should now keep their intended positions on fresh login, and inherited alpha should follow parent visibility and mouseover behavior more reliably.
+]],
+        },
         ["1.17"] = {
             markdown = [[
 ## New Features
