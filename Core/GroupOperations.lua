@@ -62,6 +62,50 @@ local function GetAddonAnchorGroupId(frameName)
     return kind == "group" and id or nil
 end
 
+local function IsAddonFrameAnchorTarget(frameName)
+    if not CooldownCompanion.ParseAddonAnchorFrameName then
+        return false
+    end
+
+    local kind = CooldownCompanion:ParseAddonAnchorFrameName(frameName)
+    return kind == "group" or kind == "container"
+end
+
+local function GetFrameName(frame)
+    if not frame then
+        return nil
+    end
+    if frame.GetName then
+        return frame:GetName()
+    end
+    if frame.groupId then
+        return "CooldownCompanionGroup" .. frame.groupId
+    end
+    return frame.name
+end
+
+local function GetCurrentAnchorTargetName(frame)
+    if not frame then
+        return nil
+    end
+    if frame.anchoredToParent then
+        return GetFrameName(frame.anchoredToParent)
+    end
+    if frame.GetPoint then
+        local _, relativeFrame = frame:GetPoint(1)
+        return GetFrameName(relativeFrame)
+    end
+    return frame.relativeTo
+end
+
+local function IsFrameAnchoredToSavedTarget(frame, anchor)
+    local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
+    if not relativeTo or relativeTo == "UIParent" then
+        return true
+    end
+    return GetCurrentAnchorTargetName(frame) == relativeTo
+end
+
 local function GetPanelAnchorDepth(groups, groupId, visiting)
     visiting = visiting or {}
     if visiting[groupId] then
@@ -1058,15 +1102,21 @@ function CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)
     return nil
 end
 
+function CooldownCompanion:GetGroupLayoutButtonUsabilityOptions(groupId, group)
+    if group and group.parentContainerId and not group.compactLayout then
+        return IGNORE_SPELL_AVAILABILITY_OPTIONS
+    end
+    return nil
+end
+
 function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group)
     if not (group and group.buttons and #group.buttons > 0) then
         return 0
     end
 
-    local opts = nil
-    if group.parentContainerId and not group.compactLayout then
-        opts = IGNORE_SPELL_AVAILABILITY_OPTIONS
-    end
+    local opts = self.GetGroupLayoutButtonUsabilityOptions
+        and self:GetGroupLayoutButtonUsabilityOptions(groupId, group)
+        or nil
 
     local count = 0
     for _, buttonData in ipairs(group.buttons) do
@@ -1832,6 +1882,7 @@ function CooldownCompanion:CreateAllGroupFrames()
         end
     end
     self:FinalizePanelAnchors()
+    self:FinalizeNonPanelGroupAnchors()
 end
 
 function CooldownCompanion:RefreshConfigSelectedGroupFrames()
@@ -1933,7 +1984,28 @@ function CooldownCompanion:FinalizePanelAnchors()
     end)
 
     for _, panel in ipairs(panels) do
-        self:AnchorGroupFrame(panel.frame, panel.group.anchor)
+        if not (panel.group.compactLayout and IsFrameAnchoredToSavedTarget(panel.frame, panel.group.anchor)) then
+            self:AnchorGroupFrame(panel.frame, panel.group.anchor)
+        end
+    end
+end
+
+function CooldownCompanion:FinalizeNonPanelGroupAnchors()
+    local groups = self.db and self.db.profile and self.db.profile.groups
+    if not (groups and self.groupFrames) then
+        return
+    end
+
+    for groupId, group in pairs(groups) do
+        local anchor = group and group.anchor
+        local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
+        local frame = self.groupFrames[groupId]
+        if frame
+            and group
+            and not group.parentContainerId
+            and IsAddonFrameAnchorTarget(relativeTo) then
+            self:AnchorGroupFrame(frame, anchor)
+        end
     end
 end
 

@@ -149,6 +149,16 @@ local function GetAnchorInheritedAlpha(parentFrame)
     return 1
 end
 
+local function GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
+    if buttonUsabilityOptions then
+        return buttonUsabilityOptions
+    end
+    if self.GetGroupLayoutButtonUsabilityOptions then
+        return self:GetGroupLayoutButtonUsabilityOptions(groupId, group)
+    end
+    return nil
+end
+
 local function GetContainerPreviewSelectionState(groupId)
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local group = profile and profile.groups and profile.groups[groupId]
@@ -1723,7 +1733,7 @@ end
 
 -- Compute button width/height from group style (bar mode vs square vs non-square).
 -- Returns width, height, isBarMode.
-local function GetButtonDimensions(group)
+local function GetButtonDimensions(group, buttonUsabilityOptions)
     local style = group.style or {}
     local isBarMode = group.displayMode == "bars"
     local isTextMode = group.displayMode == "text"
@@ -1736,7 +1746,7 @@ local function GetButtonDimensions(group)
         if GetEffectiveTextHeight then
             local maxHeight = GetEffectiveTextHeight(style, style.textFormat or "{name}  {status}")
             for _, buttonData in ipairs(group.buttons or {}) do
-                if CooldownCompanion:IsButtonUsable(buttonData, group) then
+                if CooldownCompanion:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
                     local effectiveStyle = CooldownCompanion:GetEffectiveStyle(style, buttonData)
                     local fmt = buttonData.textFormat or effectiveStyle.textFormat or "{name}  {status}"
                     local buttonHeight = GetEffectiveTextHeight(effectiveStyle, fmt)
@@ -1767,7 +1777,11 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     if not frame or not group then return end
 
-    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group)
+    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
+        and self:GetGroupButtonUsabilityOptions(groupId, group)
+        or nil
+    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
@@ -1830,9 +1844,6 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     -- Create new buttons (skip untalented spells)
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
     local visibleIndex = 0
-    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
-        and self:GetGroupButtonUsabilityOptions(groupId, group)
-        or nil
     for i, buttonData in ipairs(group.buttons) do
         if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             visibleIndex = visibleIndex + 1
@@ -1936,7 +1947,11 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
 
     if not frame or not group then return end
 
-    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group)
+    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
+        and self:GetGroupButtonUsabilityOptions(groupId, group)
+        or nil
+    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
@@ -2018,7 +2033,11 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
         return
     end
 
-    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group)
+    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
+        and self:GetGroupButtonUsabilityOptions(groupId, group)
+        or nil
+    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
