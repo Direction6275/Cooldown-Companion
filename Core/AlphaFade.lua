@@ -26,41 +26,6 @@ local function FrameAlphaDiffers(frame, alpha)
     return frame:GetAlpha() ~= alpha
 end
 
-local function GetAddonAnchorGroupId(frameName)
-    if not CooldownCompanion.ParseAddonAnchorFrameName then
-        return nil
-    end
-
-    local kind, id = CooldownCompanion:ParseAddonAnchorFrameName(frameName)
-    return kind == "group" and id or nil
-end
-
-local function GetPanelAlphaAnchorRelativeTo(group)
-    if CooldownCompanion.GetActivePanelAnchorRelativeTo then
-        return CooldownCompanion:GetActivePanelAnchorRelativeTo(group)
-    end
-
-    local anchor = group and group.anchor
-    return type(anchor) == "table" and anchor.relativeTo or nil
-end
-
-local function CollectPanelAlphaAnchorTargets(groups)
-    local targets = nil
-    for _, group in pairs(groups or {}) do
-        local relativeTo = GetPanelAlphaAnchorRelativeTo(group)
-        local targetGroupId = GetAddonAnchorGroupId(relativeTo)
-        if group
-            and group.parentContainerId
-            and group.inheritPanelAlpha ~= false
-            and targetGroupId then
-            targets = targets or {}
-            targets[targetGroupId] = true
-            targets[tostring(targetGroupId)] = true
-        end
-    end
-    return targets
-end
-
 -- Alpha fade system: per-group runtime state
 -- self.alphaState[groupId] = {
 --     currentAlpha   - current interpolated alpha
@@ -266,9 +231,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
         and self:IsCursorAnchorLayoutPreviewGroupActive(groupId)
     if cursorPreviewActive then
         locked = false
-    elseif not locked
-        and self.IsGroupCursorAnchored
-        and self:IsGroupCursorAnchored(group) then
+    elseif not locked and self:IsGroupCursorAnchored(group) then
         locked = true
     end
 
@@ -311,7 +274,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
     local forceFull, forceHidden, baseline = EvaluateDesiredAlpha(group, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
 
     -- Mouseover check (geometric, works even when click-through)
-    local ignoreSelfMouseover = CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(group)
+    local ignoreSelfMouseover = CooldownCompanion:IsGroupCursorAnchored(group)
     if not forceFull and group.forceAlphaMouseover and not ignoreSelfMouseover then
         local isHovering = frame:IsMouseOver()
         if isHovering then
@@ -363,7 +326,7 @@ function CooldownCompanion:UpdateModuleAlpha(moduleId, config, frames, now, inCo
     local forceFull, forceHidden, baseline = EvaluateDesiredAlpha(config, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
 
     -- Mouseover check across all frames
-    local ignoreModuleSelfMouseover = self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(config)
+    local ignoreModuleSelfMouseover = self:IsGroupCursorAnchored(config)
     if not forceFull and config.forceAlphaMouseover and not ignoreModuleSelfMouseover then
         local isHovering = false
         for i = 1, #frames do
@@ -442,8 +405,7 @@ function CooldownCompanion:InitAlphaUpdateFrame()
     end
 
     local function GroupNeedsAlphaUpdate(group, groupId)
-        if self.ShouldInheritPanelAnchorAlpha
-            and self:ShouldInheritPanelAnchorAlpha(groupId) then
+        if self:ShouldInheritPanelAnchorAlpha(groupId) then
             return false
         end
         if ST.IsGroupConfigSelected(groupId) then return true end
@@ -476,7 +438,7 @@ function CooldownCompanion:InitAlphaUpdateFrame()
 
         local containers = self.db.profile.groupContainers or {}
         local groups = self.db.profile.groups or {}
-        local panelAlphaAnchorTargets = CollectPanelAlphaAnchorTargets(groups)
+        local panelAlphaAnchorTargets = self:GetPanelAlphaDependencyTargets(groups)
         for groupId, group in pairs(groups) do
             local frame = self.groupFrames[groupId] or (self._dormantFrames and self._dormantFrames[groupId])
             if frame

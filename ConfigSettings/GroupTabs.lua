@@ -942,9 +942,7 @@ local function BuildLayoutTab(container)
         local isCursorAnchor = CooldownCompanion.IsCursorAnchor
             and CooldownCompanion:IsCursorAnchor(group.anchor)
             or false
-        local canUseCursorAnchor = CooldownCompanion.CanGroupUseCursorAnchor
-            and CooldownCompanion:CanGroupUseCursorAnchor(group)
-            or group.parentContainerId ~= nil
+        local canUseCursorAnchor = CooldownCompanion:CanGroupUseCursorAnchor(group)
         if isCursorAnchor and not canUseCursorAnchor then
             isCursorAnchor = false
         end
@@ -959,26 +957,14 @@ local function BuildLayoutTab(container)
             settings.y = y or 0
         end
         local function GetStandaloneAnchorValidationOptions()
-            if CooldownCompanion.GetGroupAnchorValidationOptions then
-                return CooldownCompanion:GetGroupAnchorValidationOptions(textureGroupId)
-            end
-            return {
-                domain = "panel",
-                sourceGroupId = textureGroupId,
-                sourceKind = "group",
-            }
+            return CooldownCompanion:GetGroupAnchorValidationOptions(textureGroupId)
         end
         local function SetStandalonePanelAnchorTarget(targetGroupId)
             local targetFrameName = "CooldownCompanionGroup" .. tostring(targetGroupId)
-            local ok = true
             local options = GetStandaloneAnchorValidationOptions()
-            if CooldownCompanion.ValidateAddonFrameAnchorTarget then
-                ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(targetFrameName, options)
-            end
+            local ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(targetFrameName, options)
             if not ok then
-                if CooldownCompanion.PrintInvalidAnchorTargetReason then
-                    CooldownCompanion:PrintInvalidAnchorTargetReason(targetFrameName, options)
-                end
+                CooldownCompanion:PrintInvalidAnchorTargetReason(targetFrameName, options)
                 return false
             end
             ResetStandalonePosition(targetFrameName, "TOPLEFT", "BOTTOMLEFT", 0, -5)
@@ -995,27 +981,17 @@ local function BuildLayoutTab(container)
                 CooldownCompanion:Print("Frame not found: " .. targetFrameName)
                 return false
             end
-            local ok = true
             local options = GetStandaloneAnchorValidationOptions()
-            if CooldownCompanion.ValidateAddonFrameAnchorTarget then
-                ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(targetFrameName, options)
-            end
+            local ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(targetFrameName, options)
             if not ok then
-                if CooldownCompanion.PrintInvalidAnchorTargetReason then
-                    CooldownCompanion:PrintInvalidAnchorTargetReason(targetFrameName, options)
-                end
+                CooldownCompanion:PrintInvalidAnchorTargetReason(targetFrameName, options)
                 return false
             end
             ResetStandalonePosition(targetFrameName, "TOPLEFT", "BOTTOMLEFT", 0, -5)
             return true
         end
         local anchorKind, currentAnchorGroupId
-        if CooldownCompanion.ParseAddonAnchorFrameName then
-            anchorKind, currentAnchorGroupId = CooldownCompanion:ParseAddonAnchorFrameName(settings.relativeTo)
-        else
-            currentAnchorGroupId = settings.relativeTo:match("^CooldownCompanionGroup(%d+)$")
-            anchorKind = currentAnchorGroupId and "group" or nil
-        end
+        anchorKind, currentAnchorGroupId = CooldownCompanion:ParseAddonAnchorFrameName(settings.relativeTo)
         local currentAnchorIsPanel = anchorKind == "group"
             and isPanel
             and CooldownCompanion.IsPanelAnchoredToPanel
@@ -1053,9 +1029,9 @@ local function BuildLayoutTab(container)
             RefreshTextureVisual()
         end
 
-        if targetMode == "cursor" and CooldownCompanion.ShowCursorAnchorLayoutPreview then
+        if targetMode == "cursor" then
             CooldownCompanion:ShowCursorAnchorLayoutPreview(textureGroupId)
-        elseif CooldownCompanion.ClearCursorAnchorLayoutPreview then
+        else
             CooldownCompanion:ClearCursorAnchorLayoutPreview()
         end
 
@@ -1349,9 +1325,9 @@ local function BuildLayoutTab(container)
         targetMode = preferredTargetMode
     end
     CS.layoutAnchorTargetMode[CS.selectedGroup] = targetMode
-    if targetMode == "cursor" and isCursorAnchor and CooldownCompanion.ShowCursorAnchorLayoutPreview then
+    if targetMode == "cursor" and isCursorAnchor then
         CooldownCompanion:ShowCursorAnchorLayoutPreview(CS.selectedGroup)
-    elseif CooldownCompanion.ClearCursorAnchorLayoutPreview then
+    else
         CooldownCompanion:ClearCursorAnchorLayoutPreview()
     end
     local panelAlphaInherited = false
@@ -1514,6 +1490,7 @@ local function BuildLayoutTab(container)
             if frame then
                 CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
             end
+            CooldownCompanion:RebuildPanelAlphaDependencyTargets()
             CooldownCompanion:RefreshConfigPanel()
         end)
         container:AddChild(panelAlphaDrop)

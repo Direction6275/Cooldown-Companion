@@ -142,24 +142,36 @@ local function GetStandaloneTextureAnchorSettings(group)
     return nil
 end
 
-local function GetAnchorRelativeTo(anchor)
-    if type(anchor) == "table" then
-        return anchor.relativeTo
-    end
-    return anchor
-end
-
-local function GetPanelFrameAnchorRelativeTo(group)
-    return GetAnchorRelativeTo(group and group.anchor)
-end
-
 local function GetActivePanelAnchorRelativeTo(group)
     local standalone = GetStandaloneTextureAnchorSettings(group)
     if type(standalone) == "table" and type(standalone.relativeTo) == "string" then
         return standalone.relativeTo
     end
 
-    return GetPanelFrameAnchorRelativeTo(group)
+    local anchor = group and group.anchor
+    return type(anchor) == "table" and anchor.relativeTo or anchor
+end
+
+local function GetAddonAnchorGroupId(frameName)
+    local kind, id = ParseAddonAnchorFrameName(frameName)
+    return kind == "group" and id or nil
+end
+
+local function BuildPanelAlphaDependencyTargets(groups)
+    local targets = nil
+    for groupId, group in pairs(groups or {}) do
+        local relativeTo = GetActivePanelAnchorRelativeTo(group)
+        local targetGroupId = GetAddonAnchorGroupId(relativeTo)
+        if group
+            and group.parentContainerId
+            and group.inheritPanelAlpha ~= false
+            and targetGroupId then
+            targets = targets or {}
+            targets[targetGroupId] = true
+            targets[tostring(targetGroupId)] = true
+        end
+    end
+    return targets
 end
 
 local function AddonAnchorFrameReachesCursorRoot(profile, kind, id, visited)
@@ -172,7 +184,8 @@ local function AddonAnchorFrameReachesCursorRoot(profile, kind, id, visited)
     if not node then
         return false
     end
-    local relativeTo = GetPanelFrameAnchorRelativeTo(node)
+    local anchor = node and node.anchor
+    local relativeTo = type(anchor) == "table" and anchor.relativeTo or anchor
     if type(relativeTo) ~= "string" then
         return false
     end
@@ -445,6 +458,56 @@ end
 
 function CooldownCompanion:GetActivePanelAnchorRelativeTo(groupOrId)
     return GetActivePanelAnchorRelativeTo(GetGroup(self, groupOrId))
+end
+
+function CooldownCompanion:ResolveAddonFrameAnchorTarget(sourceId, sourceKind, relativeTo)
+    if relativeTo == nil or relativeTo == "" or relativeTo == "UIParent" then
+        return nil, "ui-parent"
+    end
+    if relativeTo == CURSOR_ANCHOR_TARGET then
+        return nil, "cursor"
+    end
+
+    local validationOptions
+    if sourceKind == "container" then
+        validationOptions = {
+            domain = "container",
+            sourceGroupId = sourceId,
+            sourceKind = "container",
+        }
+    else
+        validationOptions = self:GetGroupAnchorValidationOptions(sourceId)
+    end
+
+    local ok, reason, kind, id = self:ValidateAddonFrameAnchorTarget(relativeTo, validationOptions)
+    if not ok then
+        return nil, reason, kind, id
+    end
+
+    local frame = _G[relativeTo]
+    if not frame then
+        return nil, "missing", kind, id
+    end
+
+    return frame, "ok", kind, id
+end
+
+function CooldownCompanion:RebuildPanelAlphaDependencyTargets(groups)
+    local profile = GetProfile(self)
+    local sourceGroups = groups or (profile and profile.groups) or nil
+    local targets = BuildPanelAlphaDependencyTargets(sourceGroups)
+    self._panelAlphaDependencyTargets = targets
+    self._panelAlphaDependencyGroups = sourceGroups
+    return targets
+end
+
+function CooldownCompanion:GetPanelAlphaDependencyTargets(groups)
+    local profile = GetProfile(self)
+    local sourceGroups = groups or (profile and profile.groups) or nil
+    if self._panelAlphaDependencyGroups ~= sourceGroups then
+        self:RebuildPanelAlphaDependencyTargets(sourceGroups)
+    end
+    return self._panelAlphaDependencyTargets
 end
 
 function CooldownCompanion:IsPanelAnchoredToPanel(groupOrId)

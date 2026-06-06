@@ -53,24 +53,6 @@ local IGNORE_SPELL_AVAILABILITY_OPTIONS = {
     ignoreSpellAvailability = true,
 }
 
-local function GetAddonAnchorGroupId(frameName)
-    if not CooldownCompanion.ParseAddonAnchorFrameName then
-        return nil
-    end
-
-    local kind, id = CooldownCompanion:ParseAddonAnchorFrameName(frameName)
-    return kind == "group" and id or nil
-end
-
-local function IsAddonFrameAnchorTarget(frameName)
-    if not CooldownCompanion.ParseAddonAnchorFrameName then
-        return false
-    end
-
-    local kind = CooldownCompanion:ParseAddonAnchorFrameName(frameName)
-    return kind == "group" or kind == "container"
-end
-
 local function GetFrameName(frame)
     if not frame then
         return nil
@@ -116,8 +98,8 @@ local function GetPanelAnchorDepth(groups, groupId, visiting)
     local group = groups and groups[groupId]
     local anchor = group and group.anchor
     local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
-    local targetGroupId = GetAddonAnchorGroupId(relativeTo)
-    if not targetGroupId then
+    local kind, targetGroupId = CooldownCompanion:ParseAddonAnchorFrameName(relativeTo)
+    if kind ~= "group" then
         visiting[groupId] = nil
         return 0
     end
@@ -1955,18 +1937,18 @@ function CooldownCompanion:FinalizePanelAnchors()
         return
     end
 
+    -- This is the post-create/post-refresh owner for panel lifecycle order:
+    -- size every panel first, then re-apply saved anchors from roots outward.
     local panels = {}
     for groupId, group in pairs(groups) do
         local frame = self.groupFrames[groupId]
         if group and group.parentContainerId and group.anchor and frame then
-            if not group.compactLayout and self.GetGroupLayoutButtonCount then
+            if not group.compactLayout then
                 frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
             else
                 frame.layoutButtonCount = nil
             end
-            if self.ResizeGroupFrame then
-                self:ResizeGroupFrame(groupId)
-            end
+            self:ResizeGroupFrame(groupId)
             panels[#panels + 1] = {
                 groupId = groupId,
                 group = group,
@@ -1988,6 +1970,8 @@ function CooldownCompanion:FinalizePanelAnchors()
             self:AnchorGroupFrame(panel.frame, panel.group.anchor)
         end
     end
+
+    self:RebuildPanelAlphaDependencyTargets(groups)
 end
 
 function CooldownCompanion:FinalizeNonPanelGroupAnchors()
@@ -1999,11 +1983,12 @@ function CooldownCompanion:FinalizeNonPanelGroupAnchors()
     for groupId, group in pairs(groups) do
         local anchor = group and group.anchor
         local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
+        local targetKind = self:ParseAddonAnchorFrameName(relativeTo)
         local frame = self.groupFrames[groupId]
         if frame
             and group
             and not group.parentContainerId
-            and IsAddonFrameAnchorTarget(relativeTo) then
+            and (targetKind == "group" or targetKind == "container") then
             self:AnchorGroupFrame(frame, anchor)
         end
     end
