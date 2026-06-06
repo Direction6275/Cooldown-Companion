@@ -719,7 +719,7 @@ local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId,
     inputBox:DisableButton(true)
     inputBox:SetFullWidth(true)
     panelMeta.addInputFrame = inputBox.frame
-    local updatePlaceholder = ConfigureInlineAddInstructions(inputBox, "Add spells, items, and IDs")
+    local updatePlaceholder = ConfigureInlineAddInstructions(inputBox, "Add spell, item, trinket slot, or ID")
     inputBox:SetCallback("OnEnterPressed", function(widget, event, text)
         if CS.ConsumeAutocompleteEnter() then return end
         CS.HideAutocomplete()
@@ -801,6 +801,7 @@ local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId,
     end
 
     panelContainer:AddChild(addRow)
+
 end
 
 local function EnsureRowBadge(frame, key, atlas, iconSize)
@@ -2534,6 +2535,13 @@ local function RefreshColumn2()
                         BindConfigShiftTooltip(entry, "spell", ResolveColumn2TooltipSpellId(buttonData), entry.frame, "ANCHOR_RIGHT")
                     elseif buttonData.type == "item" then
                         BindConfigShiftTooltip(entry, "item", buttonData.id, entry.frame, "ANCHOR_RIGHT")
+                    elseif CooldownCompanion.IsEquipmentSlotEntry
+                        and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+                        local effectiveItem = CooldownCompanion.ResolveEffectiveItem
+                            and CooldownCompanion.ResolveEffectiveItem(buttonData, { requestLoad = true }) or nil
+                        if effectiveItem and effectiveItem.trackable and effectiveItem.itemID then
+                            BindConfigShiftTooltip(entry, "item", effectiveItem.itemID, entry.frame, "ANCHOR_RIGHT")
+                        end
                     end
                     entry:SetUserData(
                         "cdcShiftTooltipExtraLine",

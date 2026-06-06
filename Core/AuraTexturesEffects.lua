@@ -28,6 +28,11 @@ local tonumber = tonumber
 local type = type
 local wipe = wipe
 
+local function IsRuntimeItemLike(buttonData)
+    return buttonData
+        and (buttonData.type == "item" or buttonData.type == "equipmentSlot" or buttonData.type == "equipitem")
+end
+
 local LOCATION_CENTER = AT.LOCATION_CENTER
 local LOCATION_DIMENSIONS = AT.LOCATION_DIMENSIONS
 local DEFAULT_TEXTURE_SIZE = AT.DEFAULT_TEXTURE_SIZE
@@ -620,8 +625,9 @@ local function ResolveTextureIndicatorSectionState(button, sectionKey, config, t
             local active = not C_Spell_IsSpellUsable(spellID)
             return FinishTextureIndicatorSectionState(target, active, active and "unusable" or "usable", nil, effectType)
         end
-        if buttonData.type == "item" or buttonData.type == "equipitem" then
-            local active = not C_Item_IsUsableItem(button._resolvedItemId or buttonData.id)
+        if IsRuntimeItemLike(buttonData) then
+            local itemID = button._resolvedItemId or buttonData.id
+            local active = not itemID or not C_Item_IsUsableItem(itemID)
             return FinishTextureIndicatorSectionState(target, active, active and "unusable" or "usable", nil, effectType)
         end
         return FinishTextureIndicatorSectionState(target, false, "unsupported-type", nil, effectType)
@@ -660,9 +666,10 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
             return button._spellOutOfRange == false
         end
 
-        if buttonData.type == "item" or buttonData.type == "equipitem" then
+        if IsRuntimeItemLike(buttonData) then
             if not InCombatLockdown() or UnitCanAttack("player", "target") then
-                local inRange = C_Item_IsItemInRange(button._resolvedItemId or buttonData.id, "target")
+                local itemID = button._resolvedItemId or buttonData.id
+                local inRange = itemID and C_Item_IsItemInRange(itemID, "target") or nil
                 if inRange == nil then
                     return nil
                 end
@@ -683,8 +690,9 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
             local spellID = button._displaySpellId or buttonData.id
             return C_Spell_IsSpellUsable(spellID)
         end
-        if buttonData.type == "item" or buttonData.type == "equipitem" then
-            return C_Item_IsUsableItem(button._resolvedItemId or buttonData.id)
+        if IsRuntimeItemLike(buttonData) then
+            local itemID = button._resolvedItemId or buttonData.id
+            return itemID and C_Item_IsUsableItem(itemID) or false
         end
         return false
     end

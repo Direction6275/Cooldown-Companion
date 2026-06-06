@@ -298,10 +298,12 @@ local function CacheButtonBindingKeys(button, buttonData)
     local slots
     if buttonData.type == "spell" then
         slots = GetSpellActionSlots(buttonData.id)
-    elseif buttonData.type == "item" then
+    elseif buttonData.type == "item" or buttonData.type == "equipmentSlot" then
         local itemID = button._resolvedItemId or buttonData.id
-        local slot = CooldownCompanion._itemSlotCache[itemID]
-        if slot then slots = {slot} end
+        if itemID then
+            local slot = CooldownCompanion._itemSlotCache[itemID]
+            if slot then slots = {slot} end
+        end
     end
     if slots then
         local seen = {}
@@ -430,10 +432,13 @@ function CooldownCompanion:GetKeybindText(buttonData, itemIDOverride)
                 end
             end
         end
-    elseif buttonData.type == "item" then
-        local slot = self._itemSlotCache[itemIDOverride or buttonData.id]
-        if slot then
-            return GetKeybindForSlot(slot)
+    elseif buttonData.type == "item" or buttonData.type == "equipmentSlot" then
+        local itemID = itemIDOverride or buttonData.id
+        if itemID then
+            local slot = self._itemSlotCache[itemID]
+            if slot then
+                return GetKeybindForSlot(slot)
+            end
         end
     end
 

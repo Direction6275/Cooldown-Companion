@@ -33,6 +33,11 @@ local math_rad = math.rad
 local math_sin = math.sin
 local pairs = pairs
 local string_find = string.find
+
+local function IsRuntimeItemLike(buttonData)
+    return buttonData
+        and (buttonData.type == "item" or buttonData.type == "equipmentSlot" or buttonData.type == "equipitem")
+end
 local string_format = string.format
 local string_gsub = string.gsub
 local string_lower = string.lower
@@ -412,7 +417,7 @@ local function GetTriggerConditionOrderForButtonData(buttonData)
         return TRIGGER_CONDITION_ORDERS.spell
     end
 
-    if buttonData.type == "item" or buttonData.type == "equipitem" then
+    if IsRuntimeItemLike(buttonData) then
         local order = { "cooldownActive", "rangeActive", "usable" }
         if buttonData.hasCharges == true then
             order[#order + 1] = "chargesRecharging"

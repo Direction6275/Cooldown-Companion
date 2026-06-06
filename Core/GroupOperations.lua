@@ -1723,6 +1723,10 @@ function CooldownCompanion:IsButtonUsable(buttonData, group, opts)
         end
 
         return true
+    elseif CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+        local effectiveItem = CooldownCompanion.ResolveEffectiveItem
+            and CooldownCompanion.ResolveEffectiveItem(buttonData, { requestLoad = true }) or nil
+        return effectiveItem and effectiveItem.trackable == true
     elseif buttonData.type == "item" then
         if buttonData.hasCharges then return true end
         if not CooldownCompanion.IsItemEquippable(buttonData) then return true end

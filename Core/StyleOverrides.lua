@@ -6,6 +6,38 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local effectiveStyleCache = setmetatable({}, { __mode = "k" })
 
+local function PruneDisallowedOverrideSections(buttonData)
+    if not (buttonData and buttonData.overrideSections) then
+        return
+    end
+    if not ST.CanButtonUseOverrideSection then
+        return
+    end
+
+    local changed = false
+    for sectionId in pairs(buttonData.overrideSections) do
+        if not ST.CanButtonUseOverrideSection(buttonData, sectionId) then
+            local section = ST.OVERRIDE_SECTIONS[sectionId]
+            if section and buttonData.styleOverrides then
+                for _, key in ipairs(section.keys) do
+                    buttonData.styleOverrides[key] = nil
+                end
+            end
+            buttonData.overrideSections[sectionId] = nil
+            changed = true
+        end
+    end
+
+    if changed then
+        if buttonData.styleOverrides and not next(buttonData.styleOverrides) then
+            buttonData.styleOverrides = nil
+        end
+        if buttonData.overrideSections and not next(buttonData.overrideSections) then
+            buttonData.overrideSections = nil
+        end
+    end
+end
+
 ------------------------------------------------------------------------
 -- EFFECTIVE STYLE UTILITIES
 ------------------------------------------------------------------------
@@ -13,6 +45,8 @@ local effectiveStyleCache = setmetatable({}, { __mode = "k" })
 --- Compute the effective style for a button, merging per-button overrides
 --- with group defaults via metatable __index fallback.
 function CooldownCompanion:GetEffectiveStyle(groupStyle, buttonData)
+    PruneDisallowedOverrideSections(buttonData)
+
     if buttonData and buttonData.styleOverrides
        and buttonData.overrideSections and next(buttonData.overrideSections) then
         local cache = effectiveStyleCache[buttonData]
@@ -38,6 +72,9 @@ end
 function CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
     local section = ST.OVERRIDE_SECTIONS[sectionId]
     if not section then return end
+    if ST.CanButtonUseOverrideSection and not ST.CanButtonUseOverrideSection(buttonData, sectionId) then
+        return
+    end
 
     if not buttonData.styleOverrides then buttonData.styleOverrides = {} end
     if not buttonData.overrideSections then buttonData.overrideSections = {} end
@@ -84,5 +121,6 @@ end
 
 --- Check if a button has any active style overrides.
 function CooldownCompanion:HasStyleOverrides(buttonData)
+    PruneDisallowedOverrideSections(buttonData)
     return buttonData and buttonData.overrideSections and next(buttonData.overrideSections) ~= nil
 end

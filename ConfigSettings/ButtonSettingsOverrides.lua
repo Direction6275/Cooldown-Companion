@@ -48,6 +48,15 @@ local BuildTextBackgroundControls = ST._BuildTextBackgroundControls
 local AddPreviewToggleButton = ST._AddPreviewToggleButton
 local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 
+local function CanButtonUseOverrideSection(buttonData, sectionId)
+    if ST.CanButtonUseOverrideSection then
+        return ST.CanButtonUseOverrideSection(buttonData, sectionId)
+    end
+    return not (buttonData and buttonData.type == "equipmentSlot"
+        and ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS
+        and ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId])
+end
+
 local function PrimeSelectedReadyGlowCappedChargeTransition(groupId, buttonIndex)
     local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
     local button = frame and frame.buttons and frame.buttons[buttonIndex]
@@ -348,7 +357,9 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
     end
 
     for _, sectionId in ipairs(sectionOrder) do
-        if buttonData.overrideSections[sectionId] and not (isNoCooldownSpell and (sectionId == "readyGlow" or sectionId == "desaturation")) then
+        if buttonData.overrideSections[sectionId]
+            and CanButtonUseOverrideSection(buttonData, sectionId)
+            and not (isNoCooldownSpell and (sectionId == "readyGlow" or sectionId == "desaturation")) then
             local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
             if sectionDef and sectionDef.modes[displayMode] then
                 local heading = AceGUI:Create("Heading")

@@ -467,6 +467,13 @@ GetLayoutPreviewIcon = function(buttonData)
     local icon
     if buttonData.type == "spell" then
         icon = C_Spell.GetSpellTexture(buttonData.id)
+    elseif CooldownCompanion.IsEquipmentSlotEntry
+        and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+        local effectiveItem = CooldownCompanion.ResolveEffectiveItem
+            and CooldownCompanion.ResolveEffectiveItem(buttonData, { requestLoad = true }) or nil
+        if effectiveItem and effectiveItem.trackable then
+            icon = effectiveItem.icon
+        end
     elseif buttonData.type == "item" then
         icon = C_Item.GetItemIconByID(buttonData.id)
     end

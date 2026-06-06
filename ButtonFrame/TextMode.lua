@@ -38,7 +38,8 @@ local AreButtonVisualStateSnapshotsEnabled = ST._AreButtonVisualStateSnapshotsEn
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
 -- Shared helpers from ButtonFrame/Helpers.lua
-local IsItemEquippable = CooldownCompanion.IsItemEquippable
+local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
+local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
 local FormatTime = CooldownCompanion.FormatTime
 local GetDurationSecretFormatSpec = CooldownCompanion.GetDurationSecretFormatSpec
 
@@ -567,8 +568,9 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
                         local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
                         if spellName then name = spellName end
                     end
-                elseif not buttonData.customName and buttonData.type == "item" then
-                    local itemName = C_Item.GetItemNameByID(button._resolvedItemId or buttonData.id)
+                elseif not buttonData.customName and IsEntryItemLike(buttonData) then
+                    local itemID = button._resolvedItemId or buttonData.id
+                    local itemName = itemID and C_Item.GetItemNameByID(itemID)
                     if itemName then name = itemName end
                 end
                 if name then
@@ -1051,11 +1053,13 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button._auraNameOverrideActive = nil
     button._textSecretNameActive = nil
 
-    if buttonData.type == "item" then
-        local resolvedItemID, availableQuantity, quantityKind = CooldownCompanion.ResolveItemFallback(buttonData)
-        button._resolvedItemId = resolvedItemID or buttonData.id
-        button._resolvedItemAvailableQuantity = availableQuantity or 0
-        button._resolvedItemQuantityKind = quantityKind or "stacks"
+    if IsEntryItemLike(buttonData) then
+        local effectiveItem = ResolveEffectiveItem(buttonData, { requestLoad = true })
+        button._resolvedItemId = effectiveItem and effectiveItem.itemID or buttonData.id
+        button._resolvedItemAvailableQuantity = effectiveItem and effectiveItem.availableQuantity or 0
+        button._resolvedItemQuantityKind = effectiveItem and effectiveItem.quantityKind or "stacks"
+        button._equipmentSlotTrackable = CooldownCompanion.IsEquipmentSlotEntry(buttonData)
+            and effectiveItem and effectiveItem.trackable == true or nil
     end
 
     -- Per-button visibility runtime state

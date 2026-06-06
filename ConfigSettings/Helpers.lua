@@ -247,6 +247,15 @@ local function GroupSupportsPerButtonOverrides(group)
     return group and (group.displayMode or "icons") ~= "textures"
 end
 
+local function CanButtonUseOverrideSection(buttonData, sectionId)
+    if ST.CanButtonUseOverrideSection then
+        return ST.CanButtonUseOverrideSection(buttonData, sectionId)
+    end
+    return not (buttonData and buttonData.type == "equipmentSlot"
+        and ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS
+        and ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId])
+end
+
 local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupStyle)
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not GroupSupportsPerButtonOverrides(group) then
@@ -270,8 +279,10 @@ local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupSt
     if CS.selectedButtons then
         for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
     end
+    local sectionAllowed = CanButtonUseOverrideSection(buttonData, sectionId)
     local canPromote = CS.selectedButton ~= nil and multiCount < 2
         and buttonData ~= nil
+        and sectionAllowed
         and not (buttonData.overrideSections and buttonData.overrideSections[sectionId])
 
     if canPromote then
@@ -289,6 +300,8 @@ local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupSt
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if canPromote then
             GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
+        elseif buttonData and not sectionAllowed then
+            GameTooltip:AddLine("This override is not available for equipment slots", 0.5, 0.5, 0.5)
         else
             GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
         end
@@ -366,8 +379,10 @@ local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId
     if CS.selectedButtons then
         for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
     end
+    local sectionAllowed = CanButtonUseOverrideSection(btnData, sectionId)
     local canPromote = CS.selectedButton ~= nil and multiCount < 2
         and btnData ~= nil
+        and sectionAllowed
         and not (btnData.overrideSections and btnData.overrideSections[sectionId])
 
     if canPromote then
@@ -385,6 +400,8 @@ local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if canPromote then
             GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
+        elseif btnData and not sectionAllowed then
+            GameTooltip:AddLine("This override is not available for equipment slots", 0.5, 0.5, 0.5)
         else
             GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
         end
@@ -431,8 +448,10 @@ local function CreateColorPickerPromoteButton(colorPickerWidget, sectionId, grou
     if CS.selectedButtons then
         for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
     end
+    local sectionAllowed = CanButtonUseOverrideSection(btnData, sectionId)
     local canPromote = CS.selectedButton ~= nil and multiCount < 2
         and btnData ~= nil
+        and sectionAllowed
         and not (btnData.overrideSections and btnData.overrideSections[sectionId])
 
     if canPromote then
@@ -450,6 +469,8 @@ local function CreateColorPickerPromoteButton(colorPickerWidget, sectionId, grou
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if canPromote then
             GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
+        elseif btnData and not sectionAllowed then
+            GameTooltip:AddLine("This override is not available for equipment slots", 0.5, 0.5, 0.5)
         else
             GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
         end

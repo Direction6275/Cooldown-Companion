@@ -418,6 +418,14 @@ local function GetButtonIcon(buttonData)
     end
     if buttonData.type == "spell" then
         return C_Spell.GetSpellTexture(buttonData.id) or 134400
+    elseif CooldownCompanion.IsEquipmentSlotEntry
+        and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+        local effectiveItem = CooldownCompanion.ResolveEffectiveItem
+            and CooldownCompanion.ResolveEffectiveItem(buttonData, { requestLoad = true }) or nil
+        if effectiveItem and effectiveItem.trackable and effectiveItem.icon then
+            return effectiveItem.icon
+        end
+        return 134400
     elseif buttonData.type == "item" then
         return C_Item.GetItemIconByID(buttonData.id) or 134400
     end
@@ -460,9 +468,16 @@ local function GetConfigEntryDisplayName(buttonData, opts)
 
     opts = opts or {}
     local includeDecorations = opts.includeDecorations == true
-    local entryName = buttonData.customName or buttonData.name
+    local isEquipmentSlot = CooldownCompanion.IsEquipmentSlotEntry
+        and CooldownCompanion.IsEquipmentSlotEntry(buttonData)
+    local entryName = isEquipmentSlot
+        and (CooldownCompanion.GetEquipmentSlotDisplayName
+            and CooldownCompanion.GetEquipmentSlotDisplayName(buttonData) or buttonData.name)
+        or buttonData.customName or buttonData.name
 
-    if buttonData.type == "spell" then
+    if isEquipmentSlot then
+        entryName = entryName or ("Unknown " .. tostring(buttonData.type))
+    elseif buttonData.type == "spell" then
         local child
         if buttonData.cdmChildSlot then
             local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]

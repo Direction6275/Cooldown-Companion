@@ -63,6 +63,8 @@ end
 
 -- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
+local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
+local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
 local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 local ApplyDurationFormatToCooldown = CooldownCompanion.ApplyDurationFormatToCooldown
 
@@ -279,7 +281,7 @@ local function SetIconFillValue(button)
         return
     end
 
-    if button._iconFillMode == "cooldown" and button.buttonData and button.buttonData.type == "item" then
+    if button._iconFillMode == "cooldown" and IsEntryItemLike(button.buttonData) then
         local durationSeconds = button._itemCdDuration or 0
         if durationSeconds > 0 then
             local elapsed = GetTime() - (button._itemCdStart or 0)
@@ -642,11 +644,13 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.count:SetText("")
     button.buttonData = buttonData
 
-    if buttonData.type == "item" then
-        local resolvedItemID, availableQuantity, quantityKind = CooldownCompanion.ResolveItemFallback(buttonData)
-        button._resolvedItemId = resolvedItemID or buttonData.id
-        button._resolvedItemAvailableQuantity = availableQuantity or 0
-        button._resolvedItemQuantityKind = quantityKind or "stacks"
+    if IsEntryItemLike(buttonData) then
+        local effectiveItem = ResolveEffectiveItem(buttonData, { requestLoad = true })
+        button._resolvedItemId = effectiveItem and effectiveItem.itemID or buttonData.id
+        button._resolvedItemAvailableQuantity = effectiveItem and effectiveItem.availableQuantity or 0
+        button._resolvedItemQuantityKind = effectiveItem and effectiveItem.quantityKind or "stacks"
+        button._equipmentSlotTrackable = CooldownCompanion.IsEquipmentSlotEntry(buttonData)
+            and effectiveItem and effectiveItem.trackable == true or nil
     end
 
     ApplyCountTextStyle(button, style)
@@ -919,9 +923,11 @@ function CooldownCompanion:UpdateButtonIcon(button)
             -- resolves the current visual (including talent transforms).
             icon = C_Spell.GetSpellTexture(buttonData.id)
         end
-    elseif buttonData.type == "item" then
+    elseif IsEntryItemLike(buttonData) then
         local itemID = button._resolvedItemId or buttonData.id
-        icon = C_Item.GetItemIconByID(itemID)
+        if itemID then
+            icon = C_Item.GetItemIconByID(itemID)
+        end
     end
 
     -- Manual icon override: replaces base icon; aura icon swap still takes precedence

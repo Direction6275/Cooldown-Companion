@@ -15,6 +15,7 @@ local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 local IsUsableItem = C_Item.IsUsableItem
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
+local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
 
 local bit_band = bit.band
 local bit_bor  = bit.bor
@@ -127,7 +128,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     local hideReasons = 0
     local auraTrackingReady = button._auraTrackingReady == true
     local barAuraStackDisplay = button._barAuraStackDisplay == true
-    local itemUsesResolvedCooldownState = buttonData.type == "item"
+    local itemUsesResolvedCooldownState = IsEntryItemLike(buttonData)
         and button._resolvedItemQuantityKind == "stacks"
     local noCooldownForVisibility = IsNoCooldownForVisibility(button)
 
@@ -142,7 +143,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                     or button._chargeState == CHARGE_STATE_MISSING then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
-        elseif buttonData.type == "item" then
+        elseif IsEntryItemLike(buttonData) then
             if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
@@ -163,7 +164,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
             if button._chargeState == CHARGE_STATE_FULL then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
-        elseif buttonData.type == "item" then
+        elseif IsEntryItemLike(buttonData) then
             if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
@@ -209,7 +210,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     local itemUseCount = CooldownCompanion.HasItemFallbacks(buttonData)
         and button._resolvedItemAvailableQuantity
         or button._itemCount
-    if buttonData.hideWhileZeroStacks and (itemUseCount or 0) == 0 then
+    if buttonData.type == "item" and buttonData.hideWhileZeroStacks and (itemUseCount or 0) == 0 then
         hideReasons = bit_bor(hideReasons, HIDE_ZERO_STACKS)
     end
 
@@ -225,9 +226,9 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
             if not C_Spell_IsSpellUsable(spellID) then
                 hideReasons = bit_bor(hideReasons, HIDE_UNUSABLE)
             end
-        elseif buttonData.type == "item" then
+        elseif IsEntryItemLike(buttonData) then
             local itemID = button._resolvedItemId or buttonData.id
-            if not IsUsableItem(itemID) then
+            if not itemID or not IsUsableItem(itemID) then
                 hideReasons = bit_bor(hideReasons, HIDE_UNUSABLE)
             end
         end

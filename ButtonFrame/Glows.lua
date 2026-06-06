@@ -6,6 +6,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
 
 -- Localize frequently-used globals
 local ipairs = ipairs
@@ -810,8 +811,11 @@ local function SetupTooltipScripts(button)
         GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
         if self.buttonData.type == "spell" then
             GameTooltip:SetSpellByID(self._displaySpellId or self.buttonData.id)
-        elseif self.buttonData.type == "item" then
-            GameTooltip:SetItemByID(self._resolvedItemId or self.buttonData.id)
+        elseif IsEntryItemLike(self.buttonData) then
+            local itemID = self._resolvedItemId or self.buttonData.id
+            if itemID then
+                GameTooltip:SetItemByID(itemID)
+            end
         end
         GameTooltip:Show()
     end)

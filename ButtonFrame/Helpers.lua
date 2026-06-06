@@ -11,6 +11,7 @@ local ipairs = ipairs
 local math_floor = math.floor
 local pairs = pairs
 local string_format = string.format
+local tostring = tostring
 local tonumber = tonumber
 local type = type
 
@@ -19,6 +20,62 @@ local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
 local DEFAULT_BAR_PANDEMIC_COLOR = {1.0, 0.5, 0.0, 1.0}
 local DEFAULT_BAR_CHARGE_COLOR = {1.0, 0.82, 0.0, 1.0}
 local HEALTHSTONE_ITEM_ID = 5512
+local EQUIPMENT_SLOT_TYPE = "equipmentSlot"
+local EQUIPMENT_SLOT_KIND_TRINKET = "trinket"
+local TRINKET_SLOT_1 = 13
+local TRINKET_SLOT_2 = 14
+local UNKNOWN_ICON = 134400
+
+local EQUIPMENT_SLOT_NAMES = {
+    [TRINKET_SLOT_1] = "Trinket Slot 1",
+    [TRINKET_SLOT_2] = "Trinket Slot 2",
+}
+
+CooldownCompanion.EQUIPMENT_SLOT_TYPE = EQUIPMENT_SLOT_TYPE
+CooldownCompanion.EQUIPMENT_SLOT_KIND_TRINKET = EQUIPMENT_SLOT_KIND_TRINKET
+CooldownCompanion.TRINKET_SLOT_1 = TRINKET_SLOT_1
+CooldownCompanion.TRINKET_SLOT_2 = TRINKET_SLOT_2
+
+local function IsEquipmentSlotEntry(buttonData)
+    if not (buttonData and buttonData.type == EQUIPMENT_SLOT_TYPE) then
+        return false
+    end
+    return buttonData.itemSlotKind == EQUIPMENT_SLOT_KIND_TRINKET
+        and (buttonData.itemSlot == TRINKET_SLOT_1 or buttonData.itemSlot == TRINKET_SLOT_2)
+end
+CooldownCompanion.IsEquipmentSlotEntry = IsEquipmentSlotEntry
+
+local function GetEquipmentSlotDisplayName(buttonData)
+    if not IsEquipmentSlotEntry(buttonData) then
+        return nil
+    end
+    return EQUIPMENT_SLOT_NAMES[buttonData.itemSlot] or buttonData.name
+end
+CooldownCompanion.GetEquipmentSlotDisplayName = GetEquipmentSlotDisplayName
+
+local function GetEntryStableKey(buttonData)
+    if IsEquipmentSlotEntry(buttonData) then
+        return EQUIPMENT_SLOT_TYPE .. ":" .. buttonData.itemSlotKind .. ":" .. tostring(buttonData.itemSlot)
+    end
+    if buttonData and buttonData.type and buttonData.id ~= nil then
+        return tostring(buttonData.type) .. ":" .. tostring(buttonData.id)
+    end
+    return nil
+end
+CooldownCompanion.GetEntryStableKey = GetEntryStableKey
+
+local function GetEntrySettingsKind(buttonData)
+    if IsEquipmentSlotEntry(buttonData) then
+        return EQUIPMENT_SLOT_TYPE
+    end
+    return buttonData and buttonData.type or nil
+end
+CooldownCompanion.GetEntrySettingsKind = GetEntrySettingsKind
+
+local function IsEntryItemLike(buttonData)
+    return buttonData and (buttonData.type == "item" or IsEquipmentSlotEntry(buttonData))
+end
+CooldownCompanion.IsEntryItemLike = IsEntryItemLike
 
 -- Format remaining seconds for time display (shared across bar, text, and preview modes).
 local DURATION_FORMAT_CLOCK = "clock"
@@ -590,10 +647,115 @@ end
 -- Returns true if the given item ID is equippable (trinkets, weapons, armor, etc.)
 -- Caches result on buttonData to avoid repeated API calls.
 local function IsItemEquippable(buttonData)
+    if IsEquipmentSlotEntry(buttonData) then
+        return true
+    end
+    if not (buttonData and buttonData.id) then
+        return false
+    end
     local _, _, _, equipLoc = C_Item.GetItemInfoInstant(buttonData.id)
     return equipLoc ~= nil and equipLoc ~= "" and not equipLoc:find("NON_EQUIP")
 end
 CooldownCompanion.IsItemEquippable = IsItemEquippable
+
+local function RequestEquipmentSlotItemData(itemLocation, itemID)
+    if itemID then
+        CooldownCompanion._pendingEquipmentSlotItemLoads = CooldownCompanion._pendingEquipmentSlotItemLoads or {}
+        CooldownCompanion._pendingEquipmentSlotItemLoads[itemID] = true
+        C_Item.RequestLoadItemDataByID(itemID)
+    elseif itemLocation then
+        CooldownCompanion._pendingEquipmentSlotLocationLoad = true
+        C_Item.RequestLoadItemData(itemLocation)
+    end
+end
+
+local function ResolveEquipmentSlotItem(buttonData, opts)
+    local result = {
+        isEquipmentSlot = true,
+        itemSlot = buttonData and buttonData.itemSlot or nil,
+        itemSlotKind = buttonData and buttonData.itemSlotKind or nil,
+        name = GetEquipmentSlotDisplayName(buttonData),
+        icon = UNKNOWN_ICON,
+        trackable = false,
+        availableQuantity = 0,
+        quantityKind = "equipment",
+    }
+
+    if not IsEquipmentSlotEntry(buttonData) then
+        result.reason = "invalid"
+        return result
+    end
+
+    local itemLocation = ItemLocation:CreateFromEquipmentSlot(buttonData.itemSlot)
+    result.itemLocation = itemLocation
+    if not C_Item.DoesItemExist(itemLocation) then
+        result.reason = "empty"
+        return result
+    end
+
+    local itemID = C_Item.GetItemID(itemLocation)
+    result.itemID = itemID
+    if not itemID then
+        result.reason = "loading"
+        if opts and opts.requestLoad then
+            RequestEquipmentSlotItemData(itemLocation)
+        end
+        return result
+    end
+
+    result.icon = C_Item.GetItemIcon(itemLocation) or C_Item.GetItemIconByID(itemID) or UNKNOWN_ICON
+    result.itemName = C_Item.GetItemName(itemLocation) or C_Item.GetItemNameByID(itemID)
+    result.availableQuantity = 1
+
+    if C_Item.IsItemDataCached(itemLocation) == false or C_Item.IsItemDataCachedByID(itemID) == false then
+        result.reason = "loading"
+        if opts and opts.requestLoad then
+            RequestEquipmentSlotItemData(itemLocation, itemID)
+        end
+        return result
+    end
+
+    local inventoryType = C_Item.GetItemInventoryType(itemLocation)
+    result.inventoryType = inventoryType
+    if inventoryType ~= Enum.InventoryType.IndexTrinketType then
+        result.reason = "not-trinket"
+        return result
+    end
+
+    local spellName, spellID = C_Item.GetItemSpell(itemID)
+    result.itemSpellName = spellName
+    result.itemSpellID = spellID
+    if not spellName then
+        result.reason = "no-use"
+        return result
+    end
+
+    result.trackable = true
+    result.reason = "resolved"
+    return result
+end
+
+local function ResolveEffectiveItem(buttonData, opts)
+    if IsEquipmentSlotEntry(buttonData) then
+        return ResolveEquipmentSlotItem(buttonData, opts)
+    end
+    if not (buttonData and buttonData.type == "item") then
+        return nil
+    end
+
+    local resolvedItemID, availableQuantity, quantityKind = ResolveItemFallback(buttonData)
+    local itemID = resolvedItemID or buttonData.id
+    return {
+        itemID = itemID,
+        itemName = itemID and C_Item.GetItemNameByID(itemID) or nil,
+        icon = itemID and C_Item.GetItemIconByID(itemID) or UNKNOWN_ICON,
+        trackable = itemID ~= nil,
+        availableQuantity = availableQuantity or 0,
+        quantityKind = quantityKind or "stacks",
+        isEquipmentSlot = false,
+    }
+end
+CooldownCompanion.ResolveEffectiveItem = ResolveEffectiveItem
 
 -- Apply configurable strata (frame level) ordering to button sub-elements.
 -- order: array of 6 keys or nil for default.
