@@ -1177,7 +1177,7 @@ local function RefreshColumn2()
     end
     wipe(CS.col2BarWidgets)
 
-        -- Bars & Frames panel mode: show Appearance/Layout/Colors in col2
+        -- Bars & Frames panel mode: show shared Appearance/Layout in col2
     if CS.resourceBarPanelActive then
         CancelDrag()
         CS.HideAutocomplete()
@@ -1214,9 +1214,9 @@ local function RefreshColumn2()
                 col2._infoBtn:SetScript("OnEnter", function(self)
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                     GameTooltip:AddLine("Resource Customization")
-                    GameTooltip:AddLine("Controls shared resource bar appearance, layout, and colors.", 1, 1, 1, false)
+                    GameTooltip:AddLine("Controls shared resource bar appearance and layout.", 1, 1, 1, false)
                     GameTooltip:AddLine(" ")
-                    GameTooltip:AddLine("Use Resources in Custom Bars & Resources for per-resource text, thresholds, ticks, and overlays.", 1, 1, 1, false)
+                    GameTooltip:AddLine("Use Resources in Custom Bars & Resources for per-resource colors, text, thresholds, ticks, and overlays.", 1, 1, 1, false)
                     GameTooltip:AddLine(" ")
                     GameTooltip:AddLine("These settings also apply to Custom Bars.", 1, 1, 1, false)
                     GameTooltip:Show()
@@ -1236,13 +1236,7 @@ local function RefreshColumn2()
                     scroll:SetLayout("List")
                     widget:AddChild(scroll)
                     col2._resourceStylingSubScroll = scroll
-                    if tab == "colors" then
-                        if ST._BuildResourceBarColorsStylingPanel then
-                            ST._BuildResourceBarColorsStylingPanel(scroll)
-                        else
-                            ST._BuildResourceBarStylingPanel(scroll, "colors")
-                        end
-                    elseif tab == "health" then
+                    if tab == "health" then
                         if ST._BuildResourceBarHealthStylingPanel then
                             ST._BuildResourceBarHealthStylingPanel(scroll)
                         else
@@ -1273,17 +1267,18 @@ local function RefreshColumn2()
             local tabs = {
                 { value = "bar_text", text = "Appearance" },
                 { value = "positioning", text = "Layout" },
-                { value = "colors", text = "Colors" },
             }
             if healthEnabled then
                 tabs[#tabs + 1] = { value = "health", text = "Health" }
             elseif CS.resourceStylingTab == "health" then
                 CS.resourceStylingTab = "bar_text"
             end
+            if CS.resourceStylingTab == "colors" then
+                CS.resourceStylingTab = "bar_text"
+            end
             col2._resourceStylingTabGroup:SetTabs(tabs)
 
             if CS.resourceStylingTab ~= "bar_text"
-                and CS.resourceStylingTab ~= "colors"
                 and CS.resourceStylingTab ~= "positioning"
                 and not (healthEnabled and CS.resourceStylingTab == "health")
             then

@@ -1083,6 +1083,86 @@ local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onChangeFn)
     end)
 end
 
+local function GetColorPickerDefaultButton()
+    if not ColorPickerFrame then
+        return nil
+    end
+    if ColorPickerFrame.Footer and ColorPickerFrame.Footer.DefaultButton then
+        return ColorPickerFrame.Footer.DefaultButton
+    end
+    if ColorPickerFrame.Content and ColorPickerFrame.Content.DefaultButton then
+        return ColorPickerFrame.Content.DefaultButton
+    end
+    return nil
+end
+
+local function SetColorPickerDefaultButtonEnabled(button, enabled)
+    if button.SetEnabled then
+        button:SetEnabled(enabled)
+    elseif enabled and button.Enable then
+        button:Enable()
+    elseif not enabled and button.Disable then
+        button:Disable()
+    end
+end
+
+local function SetOpenColorPickerFrameColor(color)
+    if not (ColorPickerFrame and ColorPickerFrame.Content and ColorPickerFrame.Content.ColorPicker) then
+        return
+    end
+    local picker = ColorPickerFrame.Content.ColorPicker
+    if picker.SetColorRGB then
+        picker:SetColorRGB(color[1], color[2], color[3])
+    end
+    if color[4] ~= nil and picker.SetColorAlpha then
+        picker:SetColorAlpha(color[4])
+    end
+end
+
+local function ConfigureColorPickerDefaultButton(widget, resetOptions)
+    local button = GetColorPickerDefaultButton()
+    if not button then
+        return
+    end
+
+    if not (resetOptions and resetOptions.defaultColor) then
+        SetColorPickerDefaultButtonEnabled(button, false)
+        if button.SetScript then
+            button:SetScript("OnClick", nil)
+        end
+        return
+    end
+
+    SetColorPickerDefaultButtonEnabled(button, true)
+    if button.SetScript then
+        button:SetScript("OnClick", function()
+            local defaultColor = resetOptions.defaultColor
+            local resetColor = { defaultColor[1], defaultColor[2], defaultColor[3], defaultColor[4] }
+            if resetColor[4] == nil then
+                resetColor[4] = 1
+            end
+            widget:SetColor(resetColor[1], resetColor[2], resetColor[3], resetColor[4])
+            SetOpenColorPickerFrameColor(resetColor)
+            if resetOptions.onReset then
+                resetOptions.onReset(resetColor)
+            end
+        end)
+    end
+end
+
+local function AttachColorPickerDefaultButtonReset(widget, resetOptions)
+    if not (widget and widget.frame and widget.frame.GetScript and widget.frame.SetScript) then
+        return
+    end
+    local originalOnClick = widget.frame:GetScript("OnClick")
+    widget.frame:SetScript("OnClick", function(frame, ...)
+        if originalOnClick then
+            originalOnClick(frame, ...)
+        end
+        ConfigureColorPickerDefaultButton(widget, resetOptions)
+    end)
+end
+
 ------------------------------------------------------------------------
 -- WIDGET FACTORIES
 -- Composable builders that replace repeated AceGUI boilerplate.
@@ -1091,7 +1171,7 @@ end
 
 -- Create a ColorPicker, configure it, wire callbacks, add to container.
 -- onConfirmFn fires on mouse release; onChangeFn (optional) fires during drag.
-local function AddColorPicker(container, tbl, key, label, default, hasAlpha, onConfirmFn, onChangeFn)
+local function AddColorPicker(container, tbl, key, label, default, hasAlpha, onConfirmFn, onChangeFn, options)
     local picker = AceGUI:Create("ColorPicker")
     picker:SetLabel(label)
     picker:SetHasAlpha(hasAlpha)
@@ -1099,6 +1179,7 @@ local function AddColorPicker(container, tbl, key, label, default, hasAlpha, onC
     picker:SetColor(c[1], c[2], c[3], c[4])
     picker:SetFullWidth(true)
     SetupColorCallbacks(picker, tbl, key, onConfirmFn, onChangeFn)
+    AttachColorPickerDefaultButtonReset(picker, options and options.resetToDefault)
     container:AddChild(picker)
     return picker
 end

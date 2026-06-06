@@ -1374,7 +1374,7 @@ local function AcceptResourceSpecCopy(self, data)
 end
 
 StaticPopupDialogs["CDC_CONFIRM_RESOURCE_SPEC_COPY"] = {
-    text = "Copy Resource Bar settings from %s?\n\nThis copies Appearance, Layout, static resource colors, and non-aura Resource Settings into the current spec. If that spec is using defaults, those default values are copied. Health settings, Custom Bars, and aura overlays are not copied.",
+    text = "Copy Resource Bar settings from %s?\n\nThis copies Appearance, Layout, resource colors, and non-aura Resource Settings into the current spec. If that spec is using defaults, those default values are copied. Health settings, Custom Bars, and aura overlays are not copied.",
     button1 = "Copy",
     button2 = "Cancel",
     OnAccept = AcceptResourceSpecCopy,
