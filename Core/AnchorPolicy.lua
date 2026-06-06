@@ -443,6 +443,10 @@ function CooldownCompanion:GetStandaloneTextureAnchorSettings(groupOrId)
     return GetStandaloneTextureAnchorSettings(GetGroup(self, groupOrId))
 end
 
+function CooldownCompanion:GetActivePanelAnchorRelativeTo(groupOrId)
+    return GetActivePanelAnchorRelativeTo(GetGroup(self, groupOrId))
+end
+
 function CooldownCompanion:IsPanelAnchoredToPanel(groupOrId)
     local group = GetGroup(self, groupOrId)
     if not (group and group.parentContainerId) then

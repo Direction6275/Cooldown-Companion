@@ -35,11 +35,19 @@ local function GetAddonAnchorGroupId(frameName)
     return kind == "group" and id or nil
 end
 
+local function GetPanelAlphaAnchorRelativeTo(group)
+    if CooldownCompanion.GetActivePanelAnchorRelativeTo then
+        return CooldownCompanion:GetActivePanelAnchorRelativeTo(group)
+    end
+
+    local anchor = group and group.anchor
+    return type(anchor) == "table" and anchor.relativeTo or nil
+end
+
 local function CollectPanelAlphaAnchorTargets(groups)
     local targets = nil
     for _, group in pairs(groups or {}) do
-        local anchor = group and group.anchor
-        local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
+        local relativeTo = GetPanelAlphaAnchorRelativeTo(group)
         local targetGroupId = GetAddonAnchorGroupId(relativeTo)
         if group
             and group.parentContainerId

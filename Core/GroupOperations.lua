@@ -1847,16 +1847,42 @@ function CooldownCompanion:RefreshConfigSelectedGroupFrames()
     end
 
     self._refreshingConfigSelectedGroupFrames = true
-    local refreshed = false
-    for groupId, group in pairs(self.db.profile.groups) do
+    local groups = self.db.profile.groups
+    local previousPreviewed = self._configPreviewedGroupFrames
+    local currentPreviewed = nil
+    local candidates = {}
+
+    for groupId in pairs(groups) do
         if ST.IsGroupConfigSelected(groupId) then
+            currentPreviewed = currentPreviewed or {}
+            currentPreviewed[groupId] = true
+            candidates[groupId] = true
+        end
+    end
+    if previousPreviewed then
+        for groupId in pairs(previousPreviewed) do
+            candidates[groupId] = true
+        end
+    end
+    self._configPreviewedGroupFrames = currentPreviewed
+
+    local refreshed = false
+    for groupId in pairs(candidates) do
+        local group = groups[groupId]
+        if group then
+            local frame = self.groupFrames and self.groupFrames[groupId]
+            local wasPreviewed = previousPreviewed and previousPreviewed[groupId]
+            local isPreviewed = currentPreviewed and currentPreviewed[groupId]
             local active = self:IsGroupActive(groupId, {
                 group = group,
                 checkCharVisibility = true,
                 checkLoadConditions = true,
                 requireButtons = true,
             })
-            if active and (not self.groupFrames[groupId] or self:GroupButtonSetNeedsRebuild(groupId, group)) then
+            if (active or (wasPreviewed and frame))
+                and (not frame
+                    or (wasPreviewed and not isPreviewed)
+                    or self:GroupButtonSetNeedsRebuild(groupId, group)) then
                 self:RefreshGroupFrame(groupId)
                 refreshed = true
             end
