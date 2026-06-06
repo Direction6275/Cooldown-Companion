@@ -82,13 +82,20 @@ local function GetContainerState(groupId)
 end
 
 local function ShouldSyncAnchorAlpha(self, groupId)
-    if self.IsPanelAnchoredToPanel
-        and self:IsPanelAnchoredToPanel(groupId) then
-        if self.ShouldInheritPanelAnchorAlpha then
-            return self:ShouldInheritPanelAnchorAlpha(groupId)
+    local profile = self.db and self.db.profile
+    local group = profile and profile.groups and profile.groups[groupId]
+
+    if group and group.parentContainerId then
+        if self.IsPanelAnchoredToPanel
+            and self:IsPanelAnchoredToPanel(groupId) then
+            if self.ShouldInheritPanelAnchorAlpha then
+                return self:ShouldInheritPanelAnchorAlpha(groupId)
+            end
+            return true
         end
-        return true
+        return false
     end
+
     return true
 end
 
@@ -110,6 +117,36 @@ local function ApplyGroupOwnAlpha(frame)
 
     frame._naturalAlpha = nil
     frame:SetAlpha(alpha)
+end
+
+local function GetAnchorInheritedAlpha(parentFrame)
+    if not parentFrame then
+        return 1
+    end
+
+    if parentFrame._naturalAlpha ~= nil then
+        return parentFrame._naturalAlpha
+    end
+
+    local parentGroupId = parentFrame.groupId
+    if parentGroupId and CooldownCompanion.alphaState then
+        local state = CooldownCompanion.alphaState[parentGroupId]
+        if state and state.currentAlpha ~= nil then
+            return state.currentAlpha
+        end
+    end
+
+    if parentFrame.IsShown and not parentFrame:IsShown() then
+        return 0
+    end
+
+    if parentFrame.GetEffectiveAlpha then
+        return parentFrame:GetEffectiveAlpha()
+    end
+    if parentFrame.GetAlpha then
+        return parentFrame:GetAlpha()
+    end
+    return 1
 end
 
 local function GetContainerPreviewSelectionState(groupId)
@@ -1574,7 +1611,7 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
     end
 
     -- Sync alpha immediately — use parent's natural alpha to avoid config override cascade
-    local lastAlpha = parentFrame._naturalAlpha or parentFrame:GetEffectiveAlpha()
+    local lastAlpha = GetAnchorInheritedAlpha(parentFrame)
     frame:SetAlpha(lastAlpha)
 
     -- Sync alpha at ~30Hz (smooth enough for fade animations, avoids per-frame overhead)
@@ -1589,7 +1626,7 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
             local locked, bAlpha = GetContainerState(frame.groupId)
             if (bAlpha < 1 and not inheritsPanelAlpha) or not locked then return end
             -- Read parent's natural alpha to avoid config override cascade
-            local alpha = frame.anchoredToParent._naturalAlpha or frame.anchoredToParent:GetEffectiveAlpha()
+            local alpha = GetAnchorInheritedAlpha(frame.anchoredToParent)
             -- Config-selected: store natural alpha for further downstream chains, force own frame to full
             if ST.IsGroupConfigSelected(frame.groupId) then
                 frame._naturalAlpha = alpha
