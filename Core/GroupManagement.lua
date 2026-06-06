@@ -89,6 +89,12 @@ local function IsFrameLikeAnchorTarget(frame)
     return type(frame) == "table" and type(frame.GetObjectType) == "function"
 end
 
+local function RefreshPanelAlphaDependencyTargets(self)
+    if self.RebuildPanelAlphaDependencyTargets then
+        self:RebuildPanelAlphaDependencyTargets()
+    end
+end
+
 function CooldownCompanion:NormalizeContainerAnchor(anchor, resolveAddonFrames)
     local normalized = type(anchor) == "table" and anchor or {}
     local point = normalized.point or "CENTER"
@@ -804,6 +810,7 @@ function CooldownCompanion:DeleteContainer(containerId)
     end
 
     db.groupContainers[containerId] = nil
+    RefreshPanelAlphaDependencyTargets(self)
 end
 
 local function GetStandalonePanelAnchorSettings(panel)
@@ -1000,6 +1007,7 @@ function CooldownCompanion:DuplicateContainer(containerId)
     if self.FinalizeContainerAnchorsToScreenOffsets then
         self:FinalizeContainerAnchorsToScreenOffsets()
     end
+    RefreshPanelAlphaDependencyTargets(self)
 
     return newContainerId
 end
@@ -1113,6 +1121,7 @@ function CooldownCompanion:DeletePanel(containerId, groupId)
     self:UnloadGroup(groupId)
     self:DiscardDormantFrame(groupId)
     db.groups[groupId] = nil
+    RefreshPanelAlphaDependencyTargets(self)
     return true
 end
 
@@ -1131,6 +1140,7 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
 
     db.groups[newGroupId] = newPanel
     self:CreateGroupFrame(newGroupId)
+    RefreshPanelAlphaDependencyTargets(self)
     return newGroupId
 end
 
@@ -1174,6 +1184,7 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
         sourceDeleted = true
     end
 
+    RefreshPanelAlphaDependencyTargets(self)
     return true, sourceDeleted
 end
 
@@ -1242,6 +1253,7 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
             end
         end
     end
+    RefreshPanelAlphaDependencyTargets(self)
     self:RefreshGroupFrame(groupId)
     return true
 end
@@ -1283,6 +1295,7 @@ function CooldownCompanion:DeleteGroup(id)
     if parentId and self:GetPanelCount(parentId) == 0 then
         self:DeleteContainer(parentId)
     end
+    RefreshPanelAlphaDependencyTargets(self)
 end
 
 function CooldownCompanion:DuplicateGroup(id)
@@ -1315,6 +1328,7 @@ function CooldownCompanion:DuplicateGroup(id)
 
     self.db.profile.groups[newGroupId] = newGroup
     self:CreateGroupFrame(newGroupId)
+    RefreshPanelAlphaDependencyTargets(self)
     return newGroupId
 end
 
@@ -1828,6 +1842,7 @@ function CooldownCompanion:CopyPanelToContainer(sourceGroupId, targetContainerId
 
     db.groups[newGroupId] = newPanel
     self:CreateGroupFrame(newGroupId)
+    RefreshPanelAlphaDependencyTargets(self)
     return newGroupId
 end
 
@@ -1866,6 +1881,7 @@ function CooldownCompanion:CopyPanelAsNewGroup(sourceGroupId, sourceName)
 
     db.groups[newGroupId] = newPanel
     self:CreateGroupFrame(newGroupId)
+    RefreshPanelAlphaDependencyTargets(self)
 
     return containerId, newGroupId
 end
