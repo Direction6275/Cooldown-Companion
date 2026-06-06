@@ -196,13 +196,10 @@ local function GetStandaloneAnchorTargetFrame(group, settings, groupId, domain)
         return nil
     end
 
-    local ok = true
-    if CooldownCompanion.ValidateAddonFrameAnchorTarget then
-        ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(
-            relativeTo,
-            GetStandaloneAnchorValidationOptions(relativeTo, groupId, domain)
-        )
-    end
+    local ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(
+        relativeTo,
+        GetStandaloneAnchorValidationOptions(relativeTo, groupId, domain)
+    )
     if not ok then
         return nil, relativeTo
     end
@@ -391,7 +388,7 @@ local function SaveTextureHostPosition(host)
         settings.y = math_floor(((y or 0) * 10) + 0.5) / 10
     end
 
-    if settings.relativeTo ~= previousRelativeTo and CooldownCompanion.RebuildPanelAlphaDependencyTargets then
+    if settings.relativeTo ~= previousRelativeTo then
         CooldownCompanion:RebuildPanelAlphaDependencyTargets()
     end
     UpdateTextureHostCoordLabel(host, settings.x, settings.y)
@@ -1658,9 +1655,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
 end
 
 function CooldownCompanion:RefreshAllAuraTextureVisuals()
-    if self.RebuildPanelAlphaDependencyTargets then
-        self:RebuildPanelAlphaDependencyTargets()
-    end
+    self:RebuildPanelAlphaDependencyTargets()
     for _, frame in pairs(self.groupFrames or {}) do
         for _, button in ipairs(frame.buttons or {}) do
             self:UpdateAuraTextureVisual(button)

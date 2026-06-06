@@ -142,24 +142,14 @@ local function GetStandaloneTextureAnchorSettings(group)
     return nil
 end
 
-local function GetAnchorRelativeTo(anchor)
-    if type(anchor) == "table" then
-        return anchor.relativeTo
-    end
-    return anchor
-end
-
-local function GetPanelFrameAnchorRelativeTo(group)
-    return GetAnchorRelativeTo(group and group.anchor)
-end
-
 local function GetActivePanelAnchorRelativeTo(group)
     local standalone = GetStandaloneTextureAnchorSettings(group)
     if type(standalone) == "table" and type(standalone.relativeTo) == "string" then
         return standalone.relativeTo
     end
 
-    return GetPanelFrameAnchorRelativeTo(group)
+    local anchor = group and group.anchor
+    return type(anchor) == "table" and anchor.relativeTo or anchor
 end
 
 local function GetAddonAnchorGroupId(frameName)
@@ -167,57 +157,8 @@ local function GetAddonAnchorGroupId(frameName)
     return kind == "group" and id or nil
 end
 
-local function IsAddonFrameAnchorTarget(frameName)
-    local kind = ParseAddonAnchorFrameName(frameName)
-    return kind == "group" or kind == "container"
-end
-
-local function BuildAddonFrameAnchorValidationOptions(self, sourceId, sourceKind)
-    if sourceKind == "container" then
-        return {
-            domain = "container",
-            sourceGroupId = sourceId,
-            sourceKind = "container",
-        }
-    end
-
-    if self.GetGroupAnchorValidationOptions then
-        return self:GetGroupAnchorValidationOptions(sourceId)
-    end
-
-    return {
-        domain = "panel",
-        sourceGroupId = sourceId,
-        sourceKind = "group",
-    }
-end
-
-local function AddPanelAlphaDependency(dependencies, parentGroupId, childGroupId, relativeTo)
-    if not dependencies then
-        dependencies = {
-            byParent = {},
-            targets = {},
-        }
-    end
-
-    local children = dependencies.byParent[parentGroupId]
-    if not children then
-        children = {}
-        dependencies.byParent[parentGroupId] = children
-        dependencies.byParent[tostring(parentGroupId)] = children
-    end
-    children[#children + 1] = {
-        groupId = childGroupId,
-        relativeTo = relativeTo,
-    }
-
-    dependencies.targets[parentGroupId] = true
-    dependencies.targets[tostring(parentGroupId)] = true
-    return dependencies
-end
-
-local function BuildPanelAlphaDependencies(groups)
-    local dependencies = nil
+local function BuildPanelAlphaDependencyTargets(groups)
+    local targets = nil
     for groupId, group in pairs(groups or {}) do
         local relativeTo = GetActivePanelAnchorRelativeTo(group)
         local targetGroupId = GetAddonAnchorGroupId(relativeTo)
@@ -225,10 +166,12 @@ local function BuildPanelAlphaDependencies(groups)
             and group.parentContainerId
             and group.inheritPanelAlpha ~= false
             and targetGroupId then
-            dependencies = AddPanelAlphaDependency(dependencies, targetGroupId, groupId, relativeTo)
+            targets = targets or {}
+            targets[targetGroupId] = true
+            targets[tostring(targetGroupId)] = true
         end
     end
-    return dependencies
+    return targets
 end
 
 local function AddonAnchorFrameReachesCursorRoot(profile, kind, id, visited)
@@ -241,7 +184,8 @@ local function AddonAnchorFrameReachesCursorRoot(profile, kind, id, visited)
     if not node then
         return false
     end
-    local relativeTo = GetPanelFrameAnchorRelativeTo(node)
+    local anchor = node and node.anchor
+    local relativeTo = type(anchor) == "table" and anchor.relativeTo or anchor
     if type(relativeTo) ~= "string" then
         return false
     end
@@ -516,24 +460,23 @@ function CooldownCompanion:GetActivePanelAnchorRelativeTo(groupOrId)
     return GetActivePanelAnchorRelativeTo(GetGroup(self, groupOrId))
 end
 
-function CooldownCompanion:GetAddonAnchorGroupId(frameName)
-    return GetAddonAnchorGroupId(frameName)
-end
-
-function CooldownCompanion:IsAddonFrameAnchorTarget(frameName)
-    return IsAddonFrameAnchorTarget(frameName)
-end
-
-function CooldownCompanion:GetAddonFrameAnchorValidationOptions(sourceId, sourceKind)
-    return BuildAddonFrameAnchorValidationOptions(self, sourceId, sourceKind)
-end
-
-function CooldownCompanion:ResolveAddonFrameAnchorTarget(relativeTo, validationOptions)
+function CooldownCompanion:ResolveAddonFrameAnchorTarget(sourceId, sourceKind, relativeTo)
     if relativeTo == nil or relativeTo == "" or relativeTo == "UIParent" then
         return nil, "ui-parent"
     end
     if relativeTo == CURSOR_ANCHOR_TARGET then
         return nil, "cursor"
+    end
+
+    local validationOptions
+    if sourceKind == "container" then
+        validationOptions = {
+            domain = "container",
+            sourceGroupId = sourceId,
+            sourceKind = "container",
+        }
+    else
+        validationOptions = self:GetGroupAnchorValidationOptions(sourceId)
     end
 
     local ok, reason, kind, id = self:ValidateAddonFrameAnchorTarget(relativeTo, validationOptions)
@@ -552,24 +495,19 @@ end
 function CooldownCompanion:RebuildPanelAlphaDependencyTargets(groups)
     local profile = GetProfile(self)
     local sourceGroups = groups or (profile and profile.groups) or nil
-    local dependencies = BuildPanelAlphaDependencies(sourceGroups)
-    self._panelAlphaDependencies = dependencies
+    local targets = BuildPanelAlphaDependencyTargets(sourceGroups)
+    self._panelAlphaDependencyTargets = targets
     self._panelAlphaDependencyGroups = sourceGroups
-    return dependencies and dependencies.targets or nil
+    return targets
 end
 
-function CooldownCompanion:GetPanelAlphaDependencies(groups)
+function CooldownCompanion:GetPanelAlphaDependencyTargets(groups)
     local profile = GetProfile(self)
     local sourceGroups = groups or (profile and profile.groups) or nil
     if self._panelAlphaDependencyGroups ~= sourceGroups then
         self:RebuildPanelAlphaDependencyTargets(sourceGroups)
     end
-    return self._panelAlphaDependencies
-end
-
-function CooldownCompanion:GetPanelAlphaDependencyTargets(groups)
-    local dependencies = self:GetPanelAlphaDependencies(groups)
-    return dependencies and dependencies.targets or nil
+    return self._panelAlphaDependencyTargets
 end
 
 function CooldownCompanion:IsPanelAnchoredToPanel(groupOrId)

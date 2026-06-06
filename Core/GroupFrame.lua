@@ -86,12 +86,8 @@ local function ShouldSyncAnchorAlpha(self, groupId)
     local group = profile and profile.groups and profile.groups[groupId]
 
     if group and group.parentContainerId then
-        if self.IsPanelAnchoredToPanel
-            and self:IsPanelAnchoredToPanel(groupId) then
-            if self.ShouldInheritPanelAnchorAlpha then
-                return self:ShouldInheritPanelAnchorAlpha(groupId)
-            end
-            return true
+        if self:IsPanelAnchoredToPanel(groupId) then
+            return self:ShouldInheritPanelAnchorAlpha(groupId)
         end
         return false
     end
@@ -319,55 +315,8 @@ local function WouldFrameDependencyCreateCircularAnchor(self, sourceId, sourceKi
     return false
 end
 
-local function GetAddonFrameAnchorValidationOptions(self, sourceId, sourceKind)
-    if self.GetAddonFrameAnchorValidationOptions then
-        return self:GetAddonFrameAnchorValidationOptions(sourceId, sourceKind)
-    end
-
-    if sourceKind == "container" then
-        return {
-            domain = "container",
-            sourceGroupId = sourceId,
-            sourceKind = "container",
-        }
-    end
-    if self.GetGroupAnchorValidationOptions then
-        return self:GetGroupAnchorValidationOptions(sourceId)
-    end
-    return {
-        domain = "panel",
-        sourceGroupId = sourceId,
-        sourceKind = "group",
-    }
-end
-
-local function ResolveAddonFrameAnchorTarget(self, sourceId, sourceKind, relativeTo)
-    local validationOptions = GetAddonFrameAnchorValidationOptions(self, sourceId, sourceKind)
-    if self.ResolveAddonFrameAnchorTarget then
-        return self:ResolveAddonFrameAnchorTarget(relativeTo, validationOptions)
-    end
-
-    if not relativeTo or relativeTo == "UIParent" then
-        return nil, "ui-parent"
-    end
-    if relativeTo == CURSOR_ANCHOR_TARGET then
-        return nil, "cursor"
-    end
-    local ok, reason, kind, id = self:ValidateAddonFrameAnchorTarget(relativeTo, validationOptions)
-    if not ok then
-        return nil, reason, kind, id
-    end
-
-    local relativeFrame = _G[relativeTo]
-    if not relativeFrame then
-        return nil, "missing", kind, id
-    end
-
-    return relativeFrame, "ok", kind, id
-end
-
 local function ResolveSafeAnchorTarget(self, sourceId, sourceKind, relativeTo)
-    local relativeFrame, anchorState = ResolveAddonFrameAnchorTarget(self, sourceId, sourceKind, relativeTo)
+    local relativeFrame, anchorState = self:ResolveAddonFrameAnchorTarget(sourceId, sourceKind, relativeTo)
     if not relativeFrame then
         return nil, anchorState
     end
@@ -816,7 +765,7 @@ local function BuildCursorAnchorLayoutPreviewGroupMap(self)
 
     for groupId, group in pairs(groups) do
         if IsCursorAnchor(group.anchor)
-            and (not self.CanGroupUseCursorAnchor or self:CanGroupUseCursorAnchor(group))
+            and self:CanGroupUseCursorAnchor(group)
             and self:IsGroupActive(groupId, {
                 group = group,
                 checkCharVisibility = true,
@@ -1234,7 +1183,7 @@ function CooldownCompanion:UpdateCursorAnchoredFrames()
 
     for groupId, group in pairs(groups) do
         if IsCursorAnchor(group.anchor)
-            and (not self.CanGroupUseCursorAnchor or self:CanGroupUseCursorAnchor(group)) then
+            and self:CanGroupUseCursorAnchor(group) then
             local frame = self.groupFrames and self.groupFrames[groupId] or nil
             if frame and frame:IsShown() and not GroupIdsEqual(draggedGroupId, groupId) then
                 local previewX, previewY = GetCursorAnchorLayoutPreviewPosition(self, groupId)
@@ -1262,7 +1211,7 @@ function CooldownCompanion:RefreshCursorAnchorTicker()
         for groupId, group in pairs(groups) do
             local frame = self.groupFrames[groupId]
             if IsCursorAnchor(group.anchor)
-                and (not self.CanGroupUseCursorAnchor or self:CanGroupUseCursorAnchor(group))
+                and self:CanGroupUseCursorAnchor(group)
                 and frame
                 and frame:IsShown() then
                 active = true
@@ -1513,10 +1462,7 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
 
     if IsCursorAnchor(anchor) then
         local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[frame.groupId]
-        local canUseCursorAnchor = group and group.parentContainerId ~= nil
-        if self.CanGroupUseCursorAnchor then
-            canUseCursorAnchor = self:CanGroupUseCursorAnchor(group)
-        end
+        local canUseCursorAnchor = self:CanGroupUseCursorAnchor(group)
         if not canUseCursorAnchor then
             frame._anchorDirty = nil
             frame:ClearAllPoints()
@@ -1625,9 +1571,7 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
         frame.alphaSyncFrame = CreateFrame("Frame", nil, frame)
     end
 
-    local inheritsPanelAlpha = self.ShouldInheritPanelAnchorAlpha
-        and self:ShouldInheritPanelAnchorAlpha(frame.groupId)
-        or false
+    local inheritsPanelAlpha = self:ShouldInheritPanelAnchorAlpha(frame.groupId)
     if inheritsPanelAlpha and self.alphaState then
         self.alphaState[frame.groupId] = nil
     end
@@ -1739,7 +1683,7 @@ function CooldownCompanion:SaveGroupPosition(groupId)
     group.anchor.x = newX
     group.anchor.y = newY
     group.anchor.relativeTo = relativeTo
-    if relativeTo ~= previousRelativeTo and self.RebuildPanelAlphaDependencyTargets then
+    if relativeTo ~= previousRelativeTo then
         self:RebuildPanelAlphaDependencyTargets()
     end
 
@@ -2377,9 +2321,7 @@ end
 
 local function FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnchored)
     self:AnchorGroupFrame(frame, group.anchor)
-    if self.RebuildPanelAlphaDependencyTargets then
-        self:RebuildPanelAlphaDependencyTargets()
-    end
+    self:RebuildPanelAlphaDependencyTargets()
     RefreshGroupAnchorInteractionState(self, groupId, frame, group)
     self:RefreshCursorAnchorTicker()
     if (wasCursorAnchored or IsCursorAnchor(group.anchor)) and self.EvaluateBarsAndFramesRuntime then
@@ -2402,7 +2344,7 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
     end
 
     if targetFrameName == CURSOR_ANCHOR_TARGET then
-        if not (self.CanGroupUseCursorAnchor and self:CanGroupUseCursorAnchor(group)) then
+        if not self:CanGroupUseCursorAnchor(group) then
             self:Print("Only panels can anchor to the cursor.")
             return false
         end
@@ -2460,9 +2402,7 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         -- If not forceCenter, keep current anchor settings (just relativeTo changes)
         group.anchor.relativeTo = "UIParent"
         self:AnchorGroupFrame(frame, group.anchor, forceCenter)
-        if self.RebuildPanelAlphaDependencyTargets then
-            self:RebuildPanelAlphaDependencyTargets()
-        end
+        self:RebuildPanelAlphaDependencyTargets()
         RefreshGroupAnchorInteractionState(self, groupId, frame, group)
         self:RefreshCursorAnchorTicker()
         if wasCursorAnchored and self.EvaluateBarsAndFramesRuntime then
