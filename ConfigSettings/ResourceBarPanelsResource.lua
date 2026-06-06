@@ -1200,31 +1200,6 @@ end
 
 ST._BuildBarHeightControls = BuildBarHeightControls
 
-local function CloneResourceColor(color)
-    if type(color) ~= "table" then
-        return { 1, 1, 1, 1 }
-    end
-    return { color[1], color[2], color[3], color[4] }
-end
-
-local function ResourceColorsEqual(left, right)
-    if type(left) ~= "table" or type(right) ~= "table" then
-        return false
-    end
-    for index = 1, 4 do
-        local leftValue = left[index]
-        local rightValue = right[index]
-        if index == 4 then
-            if leftValue == nil then leftValue = 1 end
-            if rightValue == nil then rightValue = 1 end
-        end
-        if leftValue ~= rightValue then
-            return false
-        end
-    end
-    return true
-end
-
 local function AddResourceColorDescriptor(descriptors, key, label, defaultColor, hasAlpha)
     descriptors[#descriptors + 1] = {
         key = key,
@@ -1285,15 +1260,6 @@ local function GetResourceColorDescriptors(powerType, effectiveBarTextureName)
     return descriptors
 end
 
-local function GetResourceColorResetWriteValue(settings, powerType, key, defaultColor)
-    local resource = settings.resources and settings.resources[powerType]
-    local resourceValue = resource and resource[key]
-    if resourceValue ~= nil and not ResourceColorsEqual(resourceValue, defaultColor) then
-        return CloneResourceColor(defaultColor)
-    end
-    return nil
-end
-
 local function BuildResourceColorControls(container, settings, powerType, specID, effectiveBarTextureName, applyBars)
     if not specID then
         return false
@@ -1342,17 +1308,7 @@ local function BuildResourceColorControls(container, settings, powerType, specID
             end,
             function()
                 WriteSpecOverrideKey(settings, powerType, specID, capturedKey, proxy[capturedKey])
-            end,
-            {
-                resetToDefault = {
-                    defaultColor = capturedDefault,
-                    onReset = function()
-                        proxy[capturedKey] = CloneResourceColor(capturedDefault)
-                        WriteSpecOverrideKey(settings, powerType, specID, capturedKey, GetResourceColorResetWriteValue(settings, powerType, capturedKey, capturedDefault))
-                        applyBars()
-                    end,
-                },
-            })
+            end)
     end
 
     return true
