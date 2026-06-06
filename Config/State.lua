@@ -1722,6 +1722,7 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcFallbackDownBtn then entry.frame._cdcFallbackDownBtn:Hide() end
     CleanFrameButton(entry.frame._cdcCustomBarAuraUpBtn)
     CleanFrameButton(entry.frame._cdcCustomBarAuraDownBtn)
+    CleanFrameButton(entry.frame._cdcResourceAuraClearBtn)
     if entry.frame._cdcMarkerLeft then entry.frame._cdcMarkerLeft:Hide() end
     if entry.frame._cdcMarkerRight then entry.frame._cdcMarkerRight:Hide() end
     entry._cdcAfterConfigRowLayout = nil

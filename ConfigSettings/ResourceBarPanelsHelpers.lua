@@ -18,6 +18,9 @@ local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local AddColorPicker = ST._AddColorPicker
+local CleanRecycledEntry = ST._CleanRecycledEntry
+local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
+local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local tabInfoButtons = CS.tabInfoButtons
 
 -- Shared constants from ResourceBarConstants (eliminates _CONFIG duplicates)
@@ -123,7 +126,7 @@ local function GetAuraBarAutocompleteDisplayName(spellID)
     if entry and entry.name then
         return entry.name
     end
-    return spellID and C_Spell.GetSpellName(spellID) or nil
+    return spellID and C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellID) or nil
 end
 
 local function GetAuraBarAutocompleteDisplayIcon(spellID)
@@ -131,7 +134,7 @@ local function GetAuraBarAutocompleteDisplayIcon(spellID)
     if entry and entry.icon then
         return entry.icon
     end
-    return spellID and C_Spell.GetSpellTexture(spellID) or nil
+    return spellID and C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellID) or nil
 end
 
 local function GetAuraBarAutocompleteEntryName(entry)
@@ -176,64 +179,292 @@ local function ShowAuraBarAutocompleteResults(text, widget, onAuraSelect)
 end
 
 ------------------------------------------------------------------------
--- CDM Aura Readiness Warning (shared by Resource Aura Overlays & Custom Bars)
+-- Resource aura overlay editor helpers
 ------------------------------------------------------------------------
-local function AddCdmAuraReadinessWarning(container, spellID)
-    if not spellID then return end
-
-    local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
-    local hasViewerFrame = false
-    if cdmEnabled then
-        local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
-        if viewerFrame then
-            local parent = viewerFrame:GetParent()
-            local parentName = parent and parent:GetName()
-            hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
-        end
-    end
-
-    if hasViewerFrame then return end
-
-    local statusLabel = AceGUI:Create("Label")
-    ST._ConfigureWrappedHelperLabel(statusLabel)
-    statusLabel:SetText("|cffff0000Aura tracking is not ready.|r")
-    statusLabel:SetFullWidth(true)
-    statusLabel:SetJustifyH("CENTER")
-    container:AddChild(statusLabel)
-
-    local explainLabel = AceGUI:Create("Label")
-    ST._ConfigureWrappedHelperLabel(explainLabel)
-    if not cdmEnabled then
-        explainLabel:SetText("|cff888888The Cooldown Manager (CDM) is currently disabled. Enable it in Options > Gameplay > Combat > Cooldown Manager to allow reliable aura tracking in combat.|r")
-    else
-        local canTrack = false
-        for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
-            local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
-            if ids then
-                for _, cdID in ipairs(ids) do
-                    local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                    if info and (info.spellID == spellID or info.overrideSpellID == spellID or info.overrideTooltipSpellID == spellID) then
-                        canTrack = true
-                        break
-                    end
-                end
-            end
-            if canTrack then break end
-        end
-
-        if canTrack then
-            explainLabel:SetText("|cff888888This spell has a trackable aura in the Cooldown Manager, but it has not been added as a tracked buff or debuff yet. Add it in the CDM to enable aura tracking.|r")
-        else
-            explainLabel:SetText("|cff888888This spell was not found in the Cooldown Manager's tracked buff or tracked bar categories. Without CDM tracking, aura data may be unreliable during combat.|r")
-        end
-    end
-    explainLabel:SetFullWidth(true)
-    container:AddChild(explainLabel)
-
+local function AddResourceAuraTrackingGap(container)
     local spacer = AceGUI:Create("Label")
     spacer:SetText(" ")
     spacer:SetFullWidth(true)
     container:AddChild(spacer)
+end
+
+local function SetupResourceAuraStatusLabel(container, label, text, justifyH)
+    label:SetFullWidth(true)
+    label:SetJustifyH(justifyH or "LEFT")
+    local contentWidth = container.content and container.content:GetWidth()
+    if contentWidth and contentWidth > 0 then
+        label:SetWidth(math.max(1, contentWidth - 20))
+    end
+    ST._ConfigureWrappedHelperLabel(label)
+    label:SetText(text)
+end
+
+local function GetResourceAuraCdmEnabledConfig()
+    if C_CVar and C_CVar.GetCVarBool then
+        return C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+    end
+    if GetCVarBool then
+        return GetCVarBool("cooldownViewerEnabled") == true
+    end
+    return false
+end
+
+local function SetResourceAuraCdmEnabledConfig(enabled)
+    if C_CVar and C_CVar.SetCVar then
+        C_CVar.SetCVar("cooldownViewerEnabled", enabled and "1" or "0")
+    elseif SetCVar then
+        SetCVar("cooldownViewerEnabled", enabled and "1" or "0")
+    end
+end
+
+local function GetResourceAuraDisplayName(spellID)
+    return GetAuraBarAutocompleteDisplayName(spellID) or (spellID and ("Spell " .. tostring(spellID))) or nil
+end
+
+local function GetResourceAuraDisplayIcon(spellID)
+    return GetAuraBarAutocompleteDisplayIcon(spellID) or 134400
+end
+
+local function TrimResourceOverlayAuraText(text)
+    return tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function BuildResourceOverlayAuraError(token, reason)
+    if reason == "ambiguous" then
+        return "Multiple CDM auras match " .. token .. ". Pick the specific aura from the dropdown, or enter its aura spell ID."
+    end
+    return token .. " is not a CDM Tracked Buff/Bar aura."
+end
+
+local function ResolveResourceOverlayAuraText(rawText)
+    local text = TrimResourceOverlayAuraText(rawText)
+    if text == "" then
+        return nil
+    end
+    if text:find("[,;\n\r]") then
+        return nil, "Resource aura overlays use one aura. Enter one CDM aura name or spell ID."
+    end
+    if text:match("^%d+%s+%d+[%d%s]*$") then
+        return nil, "Resource aura overlays use one aura. Enter one CDM aura name or spell ID."
+    end
+    if not CS.ResolveCDMAuraAutocompleteEntry then
+        return nil, "CDM aura autocomplete is not ready. Try again in a moment."
+    end
+
+    local entry, reason = CS.ResolveCDMAuraAutocompleteEntry(text)
+    local spellID = entry and tonumber(entry.id)
+    if not spellID or spellID <= 0 then
+        return nil, BuildResourceOverlayAuraError(text, reason)
+    end
+    return spellID
+end
+
+local function SetResourceAuraSpellIDConfig(entry, spellID)
+    spellID = tonumber(spellID)
+    if type(entry) ~= "table" or not spellID or spellID <= 0 then
+        return false
+    end
+    entry.auraColorSpellID = spellID
+    if RefreshResourceAuraUnitForSpell then
+        RefreshResourceAuraUnitForSpell(entry, spellID)
+    end
+    return true
+end
+
+local function ClearResourceAuraIdentityConfig(entry)
+    if type(entry) ~= "table" or entry.auraColorSpellID == nil then
+        return false
+    end
+    entry.auraColorSpellID = nil
+    return true
+end
+
+local function BuildResourceAuraButtonData(spellID, resolvedAuraUnit)
+    spellID = tonumber(spellID)
+    if not spellID or spellID <= 0 then
+        return nil
+    end
+    return {
+        type = "spell",
+        id = spellID,
+        auraTracking = true,
+        auraUnit = resolvedAuraUnit,
+        addedAs = "aura",
+    }
+end
+
+local function ResolveResourceAuraTrackingStatus(spellID, resolvedAuraUnit)
+    local cdmEnabled = GetResourceAuraCdmEnabledConfig()
+    local buttonData = BuildResourceAuraButtonData(spellID, resolvedAuraUnit)
+    if not (buttonData and CooldownCompanion.ResolveAuraTrackingConfigStatus) then
+        return { state = "noAssociatedAura", ready = false, cdmEnabled = cdmEnabled }
+    end
+
+    local viewerFrame = CooldownCompanion.ResolveButtonAuraViewerFrame
+        and CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
+        or nil
+    return CooldownCompanion:ResolveAuraTrackingConfigStatus(buttonData, cdmEnabled, viewerFrame)
+end
+
+local function AddResourceAuraSubHeading(container, text, tooltipLines, infoButtons)
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(text)
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    if tooltipLines then
+        local tooltip = { text }
+        for _, line in ipairs(tooltipLines) do
+            tooltip[#tooltip + 1] = type(line) == "table" and line or { line, 1, 1, 1, true }
+        end
+        local infoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, tooltip, infoButtons or tabInfoButtons)
+        heading.right:ClearAllPoints()
+        heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+        heading.right:SetPoint("LEFT", infoBtn, "RIGHT", 4, 0)
+    end
+
+    return heading
+end
+
+local function ConfigureResourceAuraClearButton(button, onClear)
+    button:SetSize(16, 16)
+    if not button.icon then
+        button.icon = button:CreateTexture(nil, "ARTWORK")
+        button.icon:SetPoint("TOPLEFT", 2, -2)
+        button.icon:SetPoint("BOTTOMRIGHT", -2, 2)
+    end
+    button.icon:SetAtlas("common-icon-redx", false)
+    button.icon:Show()
+    button:SetScript("OnClick", function()
+        if CS.browseMode then
+            return
+        end
+        if onClear then
+            onClear()
+        end
+    end)
+    button:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Clear Overlay Aura")
+        GameTooltip:AddLine("Removes the selected aura while keeping this resource overlay enabled and preserving its display settings.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    button:Show()
+end
+
+local function AddResourceAuraRow(container, spellID, onClear)
+    spellID = tonumber(spellID)
+    if not spellID then
+        return nil
+    end
+
+    local row = AceGUI:Create("InteractiveLabel")
+    local icon = GetResourceAuraDisplayIcon(spellID)
+    local name = GetResourceAuraDisplayName(spellID) or ("Spell " .. tostring(spellID))
+    if CleanRecycledEntry then
+        CleanRecycledEntry(row)
+    end
+    row:SetText(name)
+    row:SetFullWidth(true)
+    row:SetFontObject(GameFontHighlightSmall)
+    row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    if ApplyConfigRowIcon then
+        ApplyConfigRowIcon(row, icon, { rightPad = onClear and 28 or 4 })
+    end
+    if BindConfigShiftTooltip then
+        BindConfigShiftTooltip(row, "spell", spellID, row.frame, "ANCHOR_RIGHT")
+    end
+    row._cdcAfterConfigRowLayout = function(self)
+        local frame = self.frame
+        local label = self.label
+        local image = self.image
+        self:SetHeight(22)
+        frame:SetHeight(22)
+        frame.height = 22
+        if image then
+            image:ClearAllPoints()
+            image:SetTexture(icon)
+            image:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            image:SetSize(18, 18)
+            image:SetPoint("LEFT", frame, "LEFT", 2, 0)
+            image:Show()
+        end
+        if label then
+            label:ClearAllPoints()
+            label:SetPoint("LEFT", frame, "LEFT", 24, 0)
+            label:SetPoint("RIGHT", frame, "RIGHT", onClear and -28 or -4, 0)
+            label:SetJustifyH("LEFT")
+            label:SetJustifyV("MIDDLE")
+            if label.SetWordWrap then
+                label:SetWordWrap(false)
+            end
+            if label.SetNonSpaceWrap then
+                label:SetNonSpaceWrap(false)
+            end
+            if label.SetMaxLines then
+                label:SetMaxLines(1)
+            end
+        end
+    end
+    row:_cdcAfterConfigRowLayout()
+
+    if onClear then
+        local frame = row.frame
+        local clearBtn = frame._cdcResourceAuraClearBtn
+        if not clearBtn then
+            clearBtn = CreateFrame("Button", nil, frame)
+            frame._cdcResourceAuraClearBtn = clearBtn
+        end
+        clearBtn:ClearAllPoints()
+        clearBtn:SetPoint("RIGHT", frame, "RIGHT", -4, 0)
+        clearBtn:SetFrameLevel(frame:GetFrameLevel() + 6)
+        ConfigureResourceAuraClearButton(clearBtn, onClear)
+    end
+
+    container:AddChild(row)
+    return row
+end
+
+local function AddResourceAuraStatusBlock(container, spellID, resolvedAuraUnit)
+    if not spellID then
+        return
+    end
+
+    local auraStatus = ResolveResourceAuraTrackingStatus(spellID, resolvedAuraUnit)
+    local auraConfigReady = auraStatus.ready == true
+    local inactiveColor = auraStatus.state == "associatedAuraNotTracked" and "|cffffff00" or "|cffff0000"
+
+    AddResourceAuraTrackingGap(container)
+
+    local statusLabel = AceGUI:Create("Label")
+    SetupResourceAuraStatusLabel(container, statusLabel,
+        auraConfigReady and "|cff00ff00Aura tracking is active and ready.|r" or inactiveColor .. "Aura tracking is not ready.|r",
+        "CENTER")
+    container:AddChild(statusLabel)
+
+    AddResourceAuraTrackingGap(container)
+
+    local explainText
+    if auraStatus.state == "cdmDisabled" then
+        explainText = "|cff888888Blizzard Cooldown Manager is disabled. Enable it above to allow aura tracking.|r"
+    elseif auraStatus.state == "noAssociatedAura" then
+        explainText = "|cff888888This aura was not found in Blizzard CDM's tracked buff or tracked bar data.|r"
+    elseif auraStatus.state == "trackedAuraUnavailable" then
+        explainText = "|cff888888This aura is tracked in Blizzard CDM, but its Buffs/Debuffs viewer is not currently readable. Set the CDM Buffs/Debuffs visibility to Always Visible.|r"
+    elseif auraStatus.state == "associatedAuraNotTracked" then
+        explainText = "|cff888888This aura was found, but it is not currently tracked in CDM as a Tracked Buff or Tracked Bar.|r"
+    end
+
+    if explainText then
+        local explainLabel = AceGUI:Create("Label")
+        SetupResourceAuraStatusLabel(container, explainLabel, explainText)
+        container:AddChild(explainLabel)
+        AddResourceAuraTrackingGap(container)
+    end
 end
 
 ------------------------------------------------------------------------
@@ -754,50 +985,80 @@ local function AddResourceAuraEntryFields(container, powerType, resourceName, en
 
     local spellID = tonumber(entry and entry.auraColorSpellID) or nil
     local resolvedAuraUnit = GetResolvedResourceAuraUnit and GetResolvedResourceAuraUnit(entry, spellID) or "player"
-    local spellEdit = AceGUI:Create("EditBox")
-    if spellEdit.editbox.Instructions then spellEdit.editbox.Instructions:Hide() end
-    spellEdit:SetLabel(resourceName .. " Aura (Spell ID or Name)")
-    spellEdit:SetText(spellID and tostring(spellID) or "")
-    spellEdit:SetFullWidth(true)
-    spellEdit:DisableButton(true)
 
-    local function CommitSpellID(id)
+    AddResourceAuraSubHeading(container, "Aura Tracking", {
+        "Resource overlays use one CDM-trackable aura for this resource and specialization.",
+        "Use the field below or Pick CDM to choose the overlay aura. This is a basic resource overlay editor, not the full Aura Tracking module.",
+    }, options.infoButtons)
+
+    local auraEditBox = AceGUI:Create("EditBox")
+    if auraEditBox.editbox.Instructions then
+        auraEditBox.editbox.Instructions:Hide()
+    end
+    auraEditBox:SetLabel("Overlay Aura")
+    auraEditBox:SetText("")
+    auraEditBox:DisableButton(true)
+    auraEditBox:SetFullWidth(true)
+    if auraEditBox.SetDisabled then
+        auraEditBox:SetDisabled(spellID ~= nil)
+    end
+
+    local function CommitOverlayAuraID(id)
         CS.HideAutocomplete()
         if options.onSpellChanged then
             options.onSpellChanged(id)
         end
     end
 
-    spellEdit:SetCallback("OnEnterPressed", function(widget, event, text)
-        if CS.ConsumeAutocompleteEnter() then return end
+    auraEditBox:SetCallback("OnTextChanged", function(widget, _, text)
+        if spellID or CS.browseMode then
+            CS.HideAutocomplete()
+            return
+        end
+        if text and #text >= 1 and CS.SearchCDMAuraAutocomplete then
+            CS.ShowAutocompleteResults(CS.SearchCDMAuraAutocomplete(text), widget, function(selectedEntry)
+                CommitOverlayAuraID(selectedEntry.id)
+            end, { requireExactNumericEnter = true })
+        else
+            CS.HideAutocomplete()
+        end
+    end)
+    auraEditBox:SetCallback("OnEnterPressed", function(widget, _, text)
+        if spellID or CS.browseMode then
+            CS.HideAutocomplete()
+            return
+        end
+        if CS.ConsumeAutocompleteEnter and CS.ConsumeAutocompleteEnter() then
+            return
+        end
         CS.HideAutocomplete()
 
-        local id, explicitClear = ResolveAuraColorSpellIDFromText(text)
-        if not id and not explicitClear then
+        local id, errorText = ResolveResourceOverlayAuraText(text)
+        if not id then
+            if errorText then
+                CooldownCompanion:Print(errorText)
+            end
             return
         end
 
-        CommitSpellID(id)
+        widget:SetText("")
+        CommitOverlayAuraID(id)
     end)
+    if CS.SetupAutocompleteKeyHandler then
+        CS.SetupAutocompleteKeyHandler(auraEditBox)
+    end
+    container:AddChild(auraEditBox)
 
-    AttachAuraAutocompleteHandlers(spellEdit, function(selectedEntry)
-        CommitSpellID(selectedEntry.id)
-    end)
-
-    container:AddChild(spellEdit)
+    CreateInfoButton(auraEditBox.frame, auraEditBox.frame, "TOPLEFT", "TOPLEFT", auraEditBox.label:GetStringWidth() + 4, -2, {
+        "Overlay Aura",
+        {"Resource overlays use one CDM-trackable aura for the selected resource/spec. Clear the selected aura before typing a replacement, or use Pick CDM to replace it directly.", 1, 1, 1, true},
+    }, options.infoButtons or tabInfoButtons)
 
     if spellID then
-        local auraName = GetAuraBarAutocompleteDisplayName(spellID)
-        if auraName then
-            local auraLabel = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(auraLabel)
-            auraLabel:SetText("|cff888888" .. auraName .. "|r")
-            auraLabel:SetFullWidth(true)
-            container:AddChild(auraLabel)
-        end
+        AddResourceAuraRow(container, spellID, options.onClearSpell)
     end
 
-    AddCdmAuraReadinessWarning(container, spellID)
+    AddResourceAuraTrackingGap(container)
 
     local auraUnitDrop = AceGUI:Create("Dropdown")
     auraUnitDrop:SetLabel("Aura Unit")
@@ -820,29 +1081,83 @@ local function AddResourceAuraEntryFields(container, powerType, resourceName, en
         4, 0, {
         "Aura Unit",
         {"This controls where the tracked aura is expected to exist. Use Target for debuffs on your target, or Player for buffs and procs on yourself.", 1, 1, 1, true},
-    }, tabInfoButtons)
+    }, options.infoButtons or tabInfoButtons)
 
-    local auraUnitSpacer = AceGUI:Create("Label")
-    auraUnitSpacer:SetText(" ")
-    auraUnitSpacer:SetFullWidth(true)
-    container:AddChild(auraUnitSpacer)
+    AddResourceAuraTrackingGap(container)
 
-    local _auraProxy = { auraActiveColor = GetSafeRGBConfig(entry and entry.auraActiveColor, DEFAULT_RESOURCE_AURA_ACTIVE_COLOR) }
-    AddColorPicker(container, _auraProxy, "auraActiveColor", resourceName .. " Aura Active Color", DEFAULT_RESOURCE_AURA_ACTIVE_COLOR, false,
-        function()
-            if options.onColorConfirmed then
-                local c = _auraProxy.auraActiveColor
-                options.onColorConfirmed(c[1], c[2], c[3])
+    local cdmEnabled = GetResourceAuraCdmEnabledConfig()
+    local cdmToggleBtn = AceGUI:Create("Button")
+    cdmToggleBtn:SetText(cdmEnabled and "Blizzard CDM: |cff00ff00Active|r" or "Blizzard CDM: |cffff0000Inactive|r")
+    cdmToggleBtn:SetFullWidth(true)
+    cdmToggleBtn:SetCallback("OnClick", function()
+        local nextEnabled = not GetResourceAuraCdmEnabledConfig()
+        SetResourceAuraCdmEnabledConfig(nextEnabled)
+        CooldownCompanion:RefreshConfigPanel()
+        if nextEnabled and C_Timer then
+            C_Timer.After(0.2, function()
+                if CooldownCompanion.BuildViewerAuraMap then
+                    CooldownCompanion:BuildViewerAuraMap()
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+        end
+    end)
+    container:AddChild(cdmToggleBtn)
+
+    local cdmRow = AceGUI:Create("SimpleGroup")
+    cdmRow:SetFullWidth(true)
+    cdmRow:SetLayout("Flow")
+
+    local openCdmBtn = AceGUI:Create("Button")
+    openCdmBtn:SetText("CDM Settings")
+    openCdmBtn:SetRelativeWidth(0.5)
+    openCdmBtn:SetCallback("OnClick", function()
+        if CooldownViewerSettings then
+            CooldownViewerSettings:TogglePanel()
+        end
+    end)
+    cdmRow:AddChild(openCdmBtn)
+
+    local pickCDMBtn = AceGUI:Create("Button")
+    pickCDMBtn:SetText("Pick CDM")
+    pickCDMBtn:SetRelativeWidth(0.5)
+    pickCDMBtn:SetCallback("OnClick", function()
+        if not CS.StartPickCDM then
+            return
+        end
+        CS.StartPickCDM(function(pickedSpellID)
+            if CS.configFrame then
+                CS.configFrame.frame:Show()
             end
-        end,
-        function()
-            if options.onColorChanged then
-                local c = _auraProxy.auraActiveColor
-                options.onColorChanged(c[1], c[2], c[3])
+            if pickedSpellID and options.onSpellChanged then
+                options.onSpellChanged(pickedSpellID)
             end
         end)
+    end)
+    pickCDMBtn:SetCallback("OnEnter", function(widget)
+        GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+        GameTooltip:AddLine("Pick from Cooldown Manager")
+        if spellID then
+            GameTooltip:AddLine("Shows CDM Tracked Buff/Bar auras. Picking one replaces the current overlay aura for this resource/spec.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Shows CDM Tracked Buff/Bar auras. Picking one sets the overlay aura for this resource/spec.", 1, 1, 1, true)
+        end
+        GameTooltip:Show()
+    end)
+    pickCDMBtn:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    cdmRow:AddChild(pickCDMBtn)
+    container:AddChild(cdmRow)
+
+    AddResourceAuraStatusBlock(container, spellID, resolvedAuraUnit)
 
     if SupportsResourceAuraStackModeConfig(powerType) then
+        AddResourceAuraSubHeading(container, "Aura Display Mode", {
+            "Active recolors the resource while the overlay aura is active.",
+            "Stack Count maps the aura's current stack count onto the resource bar.",
+        }, options.infoButtons)
+
         local trackingMode = GetResourceAuraTrackingModeConfig(entry)
         local trackDrop = AceGUI:Create("Dropdown")
         trackDrop:SetLabel("Tracking Mode")
@@ -899,6 +1214,25 @@ local function AddResourceAuraEntryFields(container, powerType, resourceName, en
             container:AddChild(auraStackHint)
         end
     end
+
+    AddResourceAuraSubHeading(container, "Colors", {
+        "Controls the resource color while the overlay aura is active.",
+    }, options.infoButtons)
+
+    local _auraProxy = { auraActiveColor = GetSafeRGBConfig(entry and entry.auraActiveColor, DEFAULT_RESOURCE_AURA_ACTIVE_COLOR) }
+    AddColorPicker(container, _auraProxy, "auraActiveColor", "Bar Color", DEFAULT_RESOURCE_AURA_ACTIVE_COLOR, false,
+        function()
+            if options.onColorConfirmed then
+                local c = _auraProxy.auraActiveColor
+                options.onColorConfirmed(c[1], c[2], c[3])
+            end
+        end,
+        function()
+            if options.onColorChanged then
+                local c = _auraProxy.auraActiveColor
+                options.onColorChanged(c[1], c[2], c[3])
+            end
+        end)
 end
 
 local function ClearLegacyResourceAuraFieldsConfig(resource)
@@ -960,6 +1294,8 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
         return
     end
     local auraOverlayEnabled = IsResourceAuraOverlayEnabledConfig(res, currentSpecID)
+    local selectedAuraEntry = GetResourceAuraEntryConfig(res, currentSpecID)
+    local selectedAuraSpellID = tonumber(selectedAuraEntry and selectedAuraEntry.auraColorSpellID) or nil
 
     local enableAuraOverlayCb = AceGUI:Create("CheckBox")
     enableAuraOverlayCb:SetLabel("Enable " .. resourceName .. " Aura Overlay")
@@ -977,18 +1313,31 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
     end)
     container:AddChild(enableAuraOverlayCb)
 
+    if auraOverlayEnabled and selectedAuraSpellID then
+        AddResourceAuraRow(container, selectedAuraSpellID)
+    end
+
     local function BuildResourceAuraOverlayAdvanced(panel)
         local entryForSpec = GetResourceAuraEntryConfig(res, currentSpecID)
 
         AddResourceAuraEntryFields(panel, powerType, resourceName, entryForSpec, {
+            infoButtons = auraAdvButtons or tabInfoButtons,
             onSpellChanged = function(id)
                 local entry = GetOrCreateResourceAuraEntryConfig(res, currentSpecID)
                 if not entry then
                     return
                 end
-                entry.auraColorSpellID = id
-                if RefreshResourceAuraUnitForSpell then
-                    RefreshResourceAuraUnitForSpell(entry, id)
+                if not SetResourceAuraSpellIDConfig(entry, id) then
+                    return
+                end
+                ClearLegacyResourceAuraFieldsConfig(res)
+                CooldownCompanion:ApplyResourceBars()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+            onClearSpell = function()
+                local entry = GetResourceAuraEntryConfig(res, currentSpecID)
+                if not ClearResourceAuraIdentityConfig(entry) then
+                    return
                 end
                 ClearLegacyResourceAuraFieldsConfig(res)
                 CooldownCompanion:ApplyResourceBars()
@@ -1052,22 +1401,6 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })
-
-        -- Clear Overlay button (only if entry exists)
-        if type(entryForSpec) == "table" then
-            local clearSpacer = AceGUI:Create("Label")
-            clearSpacer:SetText(" ")
-            clearSpacer:SetFullWidth(true)
-            panel:AddChild(clearSpacer)
-
-            local clearBtn = AceGUI:Create("Button")
-            clearBtn:SetText("Clear Overlay")
-            clearBtn:SetFullWidth(true)
-            clearBtn:SetCallback("OnClick", function()
-                ClearResourceAuraEntryConfig(powerType, res, currentSpecID)
-            end)
-            panel:AddChild(clearBtn)
-        end
     end
 
     local auraAdvExpanded = AddAdvancedToggle(
@@ -1076,7 +1409,7 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
         auraAdvButtons or tabInfoButtons,
         auraOverlayEnabled,
         {
-            title = resourceName .. " Aura Overlay Advanced",
+            title = resourceName .. " Aura Overlay",
             build = BuildResourceAuraOverlayAdvanced,
             context = advancedContext,
         }
@@ -1104,9 +1437,9 @@ local function BuildResourceAuraOverlaySection(container, settings)
 
     local auraInfoBtn = CreateInfoButton(auraHeading.frame, auraCollapseBtn, "LEFT", "RIGHT", 4, 0, {
         "Resource Aura Overlays",
-        {"When enabled, a selected aura (by Spell ID) recolors the resource bar while that aura is active.", 1, 1, 1, true},
+        {"When enabled, one CDM-trackable aura can recolor each resource bar while that aura is active.", 1, 1, 1, true},
         " ",
-        {"These settings are per-specialization. Select a resource in Custom Bars & Resources, then use the specialization tabs to edit that resource for each spec.", 1, 1, 1, true},
+        {"These settings are per-specialization. Select a resource in Custom Bars & Resources, then use the specialization tabs to edit each resource/spec overlay.", 1, 1, 1, true},
     }, auraHeading)
 
     auraHeading.right:ClearAllPoints()
@@ -1171,6 +1504,9 @@ ST._RBP = {
     WriteSpecOverrideKey = WriteSpecOverrideKey,
     GetPlayerSpecOptionsConfig = GetPlayerSpecOptionsConfig,
     ResolveAuraColorSpellIDFromText = ResolveAuraColorSpellIDFromText,
+    ResolveResourceOverlayAuraText = ResolveResourceOverlayAuraText,
+    SetResourceAuraSpellIDConfig = SetResourceAuraSpellIDConfig,
+    ClearResourceAuraIdentityConfig = ClearResourceAuraIdentityConfig,
     GetResourceAuraEntryCountConfig = GetResourceAuraEntryCountConfig,
     GetResourceAuraEntryConfig = GetResourceAuraEntryConfig,
     IsResourceAuraOverlayEnabledConfig = IsResourceAuraOverlayEnabledConfig,
@@ -1192,7 +1528,6 @@ ST._RBP = {
     ClearLegacyResourceAuraFieldsConfig = ClearLegacyResourceAuraFieldsConfig,
     ClearResourceAuraEntryConfig = ClearResourceAuraEntryConfig,
     AddResourceAuraOverrideControls = AddResourceAuraOverrideControls,
-    AddCdmAuraReadinessWarning = AddCdmAuraReadinessWarning,
     BuildAuraBarAutocompleteCache = BuildAuraBarAutocompleteCache,
     SupportsResourceAuraStackModeConfig = SupportsResourceAuraStackModeConfig,
     IsResourceBarVerticalConfig = IsResourceBarVerticalConfig,

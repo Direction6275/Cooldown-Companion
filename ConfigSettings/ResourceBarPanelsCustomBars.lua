@@ -474,6 +474,68 @@ local function ConfigureCustomBarAddInstructions(addBox, placeholderText)
     return Update
 end
 
+local function PositionCustomBarActionControls(actionControls, width)
+    local refs = actionControls and actionControls._cdcCustomBarActionRefs
+    local addBox = refs and refs.addBox
+    local importBtn = refs and refs.importBtn
+    local exportAllBtn = refs and refs.exportAllBtn
+    if not (addBox and addBox.frame and importBtn and importBtn.frame and exportAllBtn and exportAllBtn.frame) then
+        return
+    end
+
+    local host = actionControls.content or actionControls.frame
+    width = width or host:GetWidth() or actionControls.frame:GetWidth() or 0
+    if width <= 0 then return end
+
+    addBox.frame:ClearAllPoints()
+    addBox.frame:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+    addBox.frame:SetWidth(width)
+    addBox.frame:SetHeight(28)
+
+    local gap = 3
+    local importWidth = math.floor((width - gap) / 2)
+    local exportWidth = width - gap - importWidth
+    importBtn.frame:ClearAllPoints()
+    importBtn.frame:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -31)
+    importBtn.frame:SetWidth(importWidth)
+    importBtn.frame:SetHeight(28)
+
+    exportAllBtn.frame:ClearAllPoints()
+    exportAllBtn.frame:SetPoint("LEFT", importBtn.frame, "RIGHT", gap, 0)
+    exportAllBtn.frame:SetWidth(exportWidth)
+    exportAllBtn.frame:SetHeight(28)
+end
+
+local function SetupCustomBarActionControls(actionControls, addBox, importBtn, exportAllBtn)
+    actionControls._cdcCustomBarActionRefs = {
+        addBox = addBox,
+        importBtn = importBtn,
+        exportAllBtn = exportAllBtn,
+    }
+
+    if not actionControls._cdcCustomBarActionWidthHooked then
+        local previousOnWidthSet = actionControls.OnWidthSet
+        actionControls.OnWidthSet = function(self, width)
+            if previousOnWidthSet then
+                previousOnWidthSet(self, width)
+            end
+            PositionCustomBarActionControls(self, width)
+        end
+        actionControls._cdcCustomBarActionWidthHooked = true
+    end
+
+    if not actionControls._cdcCustomBarActionReleaseHooked then
+        local previousOnRelease = actionControls.OnRelease
+        actionControls.OnRelease = function(self, ...)
+            self._cdcCustomBarActionRefs = nil
+            if previousOnRelease then
+                previousOnRelease(self, ...)
+            end
+        end
+        actionControls._cdcCustomBarActionReleaseHooked = true
+    end
+end
+
 local function DeleteCustomBarById(settings, specID, customBars, customBarId)
     if RB.DeleteCustomBar then
         return RB.DeleteCustomBar(settings, customBarId)
@@ -1802,35 +1864,9 @@ local function BuildCustomBarsListPanel(container)
         end
     end)
     actionControls:AddChild(exportAllBtn)
-    local function PositionCustomBarActionControls(width)
-        local host = actionControls.content or actionControls.frame
-        width = width or host:GetWidth() or actionControls.frame:GetWidth() or 0
-        if width <= 0 then return end
-        addBox.frame:ClearAllPoints()
-        addBox.frame:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
-        addBox.frame:SetWidth(width)
-        addBox.frame:SetHeight(28)
-        local gap = 3
-        local importWidth = math.floor((width - gap) / 2)
-        local exportWidth = width - gap - importWidth
-        importBtn.frame:ClearAllPoints()
-        importBtn.frame:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -31)
-        importBtn.frame:SetWidth(importWidth)
-        importBtn.frame:SetHeight(28)
-        exportAllBtn.frame:ClearAllPoints()
-        exportAllBtn.frame:SetPoint("LEFT", importBtn.frame, "RIGHT", gap, 0)
-        exportAllBtn.frame:SetWidth(exportWidth)
-        exportAllBtn.frame:SetHeight(28)
-    end
-    local originalActionControlsOnWidthSet = actionControls.OnWidthSet
-    actionControls.OnWidthSet = function(self, width)
-        if originalActionControlsOnWidthSet then
-            originalActionControlsOnWidthSet(self, width)
-        end
-        PositionCustomBarActionControls(width)
-    end
+    SetupCustomBarActionControls(actionControls, addBox, importBtn, exportAllBtn)
     container:AddChild(actionControls)
-    PositionCustomBarActionControls()
+    PositionCustomBarActionControls(actionControls)
 
     local loadedBars = {}
     local inactiveBars = {}
