@@ -49,13 +49,18 @@ local LOCAL_LOAD_CONDITION_DEFAULTS = {
     vehicleUI = false,
 }
 
-local CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS = {
+local IGNORE_SPELL_AVAILABILITY_OPTIONS = {
     ignoreSpellAvailability = true,
 }
 
-local PANEL_LAYOUT_BUTTON_USABILITY_OPTIONS = {
-    ignoreSpellAvailability = true,
-}
+local function GetAddonAnchorGroupId(frameName)
+    if not CooldownCompanion.ParseAddonAnchorFrameName then
+        return nil
+    end
+
+    local kind, id = CooldownCompanion:ParseAddonAnchorFrameName(frameName)
+    return kind == "group" and id or nil
+end
 
 local function GetPanelAnchorDepth(groups, groupId, visiting)
     visiting = visiting or {}
@@ -67,13 +72,12 @@ local function GetPanelAnchorDepth(groups, groupId, visiting)
     local group = groups and groups[groupId]
     local anchor = group and group.anchor
     local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
-    local targetGroupId = type(relativeTo) == "string" and relativeTo:match("^CooldownCompanionGroup(%d+)$") or nil
+    local targetGroupId = GetAddonAnchorGroupId(relativeTo)
     if not targetGroupId then
         visiting[groupId] = nil
         return 0
     end
 
-    targetGroupId = tonumber(targetGroupId)
     local target = groups[targetGroupId]
     if not (target and target.parentContainerId) then
         visiting[groupId] = nil
@@ -1049,7 +1053,7 @@ function CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)
         and group.parentContainerId
         and ST.IsGroupConfigSelected
         and ST.IsGroupConfigSelected(groupId) then
-        return CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS
+        return IGNORE_SPELL_AVAILABILITY_OPTIONS
     end
     return nil
 end
@@ -1061,7 +1065,7 @@ function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group)
 
     local opts = nil
     if group.parentContainerId and not group.compactLayout then
-        opts = PANEL_LAYOUT_BUTTON_USABILITY_OPTIONS
+        opts = IGNORE_SPELL_AVAILABILITY_OPTIONS
     end
 
     local count = 0
@@ -1878,8 +1882,10 @@ function CooldownCompanion:FinalizePanelAnchors()
     for groupId, group in pairs(groups) do
         local frame = self.groupFrames[groupId]
         if group and group.parentContainerId and group.anchor and frame then
-            if self.GetGroupLayoutButtonCount then
+            if not group.compactLayout and self.GetGroupLayoutButtonCount then
                 frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
+            else
+                frame.layoutButtonCount = nil
             end
             if self.ResizeGroupFrame then
                 self:ResizeGroupFrame(groupId)

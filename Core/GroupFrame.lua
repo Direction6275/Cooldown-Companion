@@ -1879,7 +1879,11 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     -- Resize the frame to fit visible buttons
     frame.visibleButtonCount = isTriggerMode and (visibleIndex > 0 and 1 or 0) or visibleIndex
-    frame.layoutButtonCount = self.GetGroupLayoutButtonCount and self:GetGroupLayoutButtonCount(groupId, group) or nil
+    if group.parentContainerId and not group.compactLayout and self.GetGroupLayoutButtonCount then
+        frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
+    else
+        frame.layoutButtonCount = nil
+    end
     frame._layoutDirty = false
     frame._lastVisibleCount = visibleIndex
     self:ResizeGroupFrame(groupId)
