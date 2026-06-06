@@ -60,9 +60,11 @@ local defaults = {
                     },
                     buttons = {
                         [index] = {
-                            type = "spell" or "item",
-                            id = spellId or itemId,
-                            name = "Spell/Item Name",
+                            type = "spell" or "item" or "equipmentSlot",
+                            id = spellId or itemId, -- spell/item entries only
+                            itemSlot = 13 or 14, -- equipmentSlot entries only
+                            itemSlotKind = "trinket", -- equipmentSlot entries only
+                            name = "Spell/Item/Slot Name",
                         }
                     },
                     style = {
@@ -815,3 +817,22 @@ ST.OVERRIDE_SECTIONS = {
         modes = {text = true},
     },
 }
+
+ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
+    auraText = true,
+    auraStackText = true,
+    auraDurationSwipe = true,
+    assistedHighlight = true,
+    procGlow = true,
+    pandemicGlow = true,
+    auraIndicator = true,
+    pandemicBar = true,
+    barActiveAura = true,
+}
+
+function ST.CanButtonUseOverrideSection(buttonData, sectionId)
+    if buttonData and buttonData.type == "equipmentSlot" then
+        return not ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId]
+    end
+    return true
+end

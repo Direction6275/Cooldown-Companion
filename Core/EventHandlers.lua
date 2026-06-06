@@ -43,6 +43,61 @@ local function QueueSpellAvailabilitySettlingRefresh(addon)
     end)
 end
 
+local function GroupHasEquipmentSlotEntries(group)
+    if not (group and group.buttons and CooldownCompanion.IsEquipmentSlotEntry) then
+        return false
+    end
+    for _, buttonData in ipairs(group.buttons) do
+        if CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+            return true
+        end
+    end
+    return false
+end
+
+function CooldownCompanion:RefreshEquipmentSlotEntries(reason, itemID)
+    self:MarkCooldownsDirty()
+    if self.db and self.db.profile and self.db.profile.groups then
+        for groupId, group in pairs(self.db.profile.groups) do
+            if GroupHasEquipmentSlotEntries(group) then
+                self:RefreshGroupFrame(groupId)
+            end
+        end
+    end
+    self:RefreshConfigPanel()
+end
+
+function CooldownCompanion:OnEquipmentChanged(event, equipmentSlot)
+    local trinket1 = self.TRINKET_SLOT_1 or 13
+    local trinket2 = self.TRINKET_SLOT_2 or 14
+    if equipmentSlot == trinket1 or equipmentSlot == trinket2 then
+        self:RefreshEquipmentSlotEntries("equipment", nil)
+    else
+        self:MarkCooldownsDirty()
+    end
+end
+
+function CooldownCompanion:EnsureEquipmentSlotItemLoadFrame()
+    if self._equipmentSlotItemLoadFrame then
+        return
+    end
+
+    self._equipmentSlotItemLoadFrame = CreateFrame("Frame")
+    self._equipmentSlotItemLoadFrame:RegisterEvent("ITEM_DATA_LOAD_RESULT")
+    self._equipmentSlotItemLoadFrame:SetScript("OnEvent", function(_, _, itemID, success)
+        local pendingLoads = CooldownCompanion._pendingEquipmentSlotItemLoads
+        local locationLoadPending = CooldownCompanion._pendingEquipmentSlotLocationLoad == true
+        if not locationLoadPending and not (pendingLoads and itemID and pendingLoads[itemID]) then
+            return
+        end
+        if pendingLoads and itemID then
+            pendingLoads[itemID] = nil
+        end
+        CooldownCompanion._pendingEquipmentSlotLocationLoad = nil
+        CooldownCompanion:RefreshEquipmentSlotEntries("item-data", itemID)
+    end)
+end
+
 local function PlayerHasTrackedAuraForButton(button, buttonData)
     if button._activeAuraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(button._activeAuraSpellID) then
         return true

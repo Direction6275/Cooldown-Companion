@@ -477,6 +477,10 @@ local function GetPreviewName()
                 local displayId = (raw and raw ~= 0) and raw or bd.id
                 local spellName = C_Spell.GetSpellName(displayId)
                 if spellName then name = spellName end
+            elseif CooldownCompanion.IsEquipmentSlotEntry
+                and CooldownCompanion.IsEquipmentSlotEntry(bd) then
+                name = CooldownCompanion.GetEquipmentSlotDisplayName
+                    and CooldownCompanion.GetEquipmentSlotDisplayName(bd) or name
             elseif not bd.customName and bd.type == "item" then
                 local itemName = C_Item.GetItemNameByID(bd.id)
                 if itemName then name = itemName end
@@ -495,6 +499,13 @@ local function GetPreviewIcon()
             if bd.type == "spell" then
                 local info = C_Spell.GetSpellTexture(bd.id)
                 if info then return info end
+            elseif CooldownCompanion.IsEquipmentSlotEntry
+                and CooldownCompanion.IsEquipmentSlotEntry(bd) then
+                local effectiveItem = CooldownCompanion.ResolveEffectiveItem
+                    and CooldownCompanion.ResolveEffectiveItem(bd, { requestLoad = true }) or nil
+                if effectiveItem and effectiveItem.trackable and effectiveItem.icon then
+                    return effectiveItem.icon
+                end
             elseif bd.type == "item" then
                 local tex = C_Item.GetItemIconByID(bd.id)
                 if tex then return tex end

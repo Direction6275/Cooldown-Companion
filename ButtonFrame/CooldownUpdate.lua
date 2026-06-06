@@ -65,7 +65,9 @@ local UpdateTextDisplay = ST._UpdateTextDisplay
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
-local ResolveItemFallback = CooldownCompanion.ResolveItemFallback
+local IsEquipmentSlotEntry = CooldownCompanion.IsEquipmentSlotEntry
+local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
+local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
 local HasCastCountText = CooldownCompanion.HasCastCountText
 local GetCastCountSpellID = CooldownCompanion.GetCastCountSpellID
 local GetConditionalCastCountSpellID = CooldownCompanion.GetConditionalCastCountSpellID
@@ -399,8 +401,11 @@ local function RestoreBaseDisplayName(button, buttonData)
     local baseName = buttonData.name
     if buttonData.type == "spell" then
         baseName = C_Spell.GetSpellName(restoreSpellID) or baseName
-    elseif buttonData.type == "item" then
-        baseName = C_Item.GetItemNameByID(button._resolvedItemId or buttonData.id) or baseName
+    elseif IsEntryItemLike(buttonData) then
+        local itemID = button._resolvedItemId or buttonData.id
+        if itemID then
+            baseName = C_Item.GetItemNameByID(itemID) or baseName
+        end
     end
 
     if baseName then
@@ -559,8 +564,19 @@ end
 local function EvaluateItemCooldown(button, buttonData, style, renderCooldown)
     button._isEquippableNotEquipped = false
     button._itemGCDOnly = false
-    local isEquippable = IsItemEquippable(buttonData)
+    local isEquipmentSlot = IsEquipmentSlotEntry(buttonData)
+    local isEquippable = (not isEquipmentSlot) and IsItemEquippable(buttonData)
     local itemID = button._resolvedItemId or buttonData.id
+    if not itemID then
+        if renderCooldown then
+            button.cooldown:SetCooldown(0, 0)
+        end
+        button._itemCdStart = 0
+        button._itemCdDuration = 0
+        button._cooldownState = COOLDOWN_STATE_READY
+        return false
+    end
+
     if isEquippable and not C_Item.IsEquippedItem(itemID) then
         button._isEquippableNotEquipped = true
         if renderCooldown then
@@ -615,15 +631,35 @@ local function EvaluateItemCooldown(button, buttonData, style, renderCooldown)
 end
 
 local function UpdateResolvedItemState(button, buttonData)
-    if not (buttonData and buttonData.type == "item") then
+    if not IsEntryItemLike(buttonData) then
         button._resolvedItemId = nil
         button._resolvedItemAvailableQuantity = nil
         button._resolvedItemQuantityKind = nil
         button._resolvedItemMaxCharges = nil
+        button._equipmentSlotTrackable = nil
         return false
     end
 
-    local resolvedItemID, availableQuantity, quantityKind = ResolveItemFallback(buttonData)
+    local effectiveItem = ResolveEffectiveItem(buttonData, { requestLoad = true })
+    if IsEquipmentSlotEntry(buttonData) and not (effectiveItem and effectiveItem.trackable) then
+        if InCombatLockdown() and button._resolvedItemId then
+            return false
+        end
+        local changed = button._resolvedItemId ~= nil
+            or button._resolvedItemAvailableQuantity ~= nil
+            or button._resolvedItemQuantityKind ~= nil
+            or button._equipmentSlotTrackable ~= false
+        button._resolvedItemId = nil
+        button._resolvedItemAvailableQuantity = 0
+        button._resolvedItemQuantityKind = "equipment"
+        button._resolvedItemMaxCharges = nil
+        button._equipmentSlotTrackable = false
+        return changed
+    end
+
+    local resolvedItemID = effectiveItem and effectiveItem.itemID
+    local availableQuantity = effectiveItem and effectiveItem.availableQuantity
+    local quantityKind = effectiveItem and effectiveItem.quantityKind
     local changed = resolvedItemID ~= button._resolvedItemId
         or quantityKind ~= button._resolvedItemQuantityKind
 
@@ -633,6 +669,7 @@ local function UpdateResolvedItemState(button, buttonData)
     button._resolvedItemId = resolvedItemID or buttonData.id
     button._resolvedItemAvailableQuantity = availableQuantity or 0
     button._resolvedItemQuantityKind = quantityKind or "stacks"
+    button._equipmentSlotTrackable = IsEquipmentSlotEntry(buttonData) and true or nil
     return changed
 end
 
@@ -1029,13 +1066,18 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button.secondaryCooldown:SetCooldown(0, 0)
                 button._secondaryCdActive = false
             end
-        elseif buttonData.type == "item" then
+        elseif IsEntryItemLike(buttonData) then
             local itemID = button._resolvedItemId or buttonData.id
-            local cdStart, cdDuration = C_Item.GetItemCooldown(itemID)
-            local probeIsGCDOnly = CooldownLogic.IsItemGCDOnly(cdStart, cdDuration, CooldownCompanion._gcdInfo)
-            if cdDuration and cdDuration > 0 and not probeIsGCDOnly then
-                button.secondaryCooldown:SetCooldown(cdStart, cdDuration)
-                button._secondaryCdActive = true
+            if itemID then
+                local cdStart, cdDuration = C_Item.GetItemCooldown(itemID)
+                local probeIsGCDOnly = CooldownLogic.IsItemGCDOnly(cdStart, cdDuration, CooldownCompanion._gcdInfo)
+                if cdDuration and cdDuration > 0 and not probeIsGCDOnly then
+                    button.secondaryCooldown:SetCooldown(cdStart, cdDuration)
+                    button._secondaryCdActive = true
+                else
+                    button.secondaryCooldown:SetCooldown(0, 0)
+                    button._secondaryCdActive = false
+                end
             else
                 button.secondaryCooldown:SetCooldown(0, 0)
                 button._secondaryCdActive = false
@@ -1089,11 +1131,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             elseif not fetchOk or auraOverrideActive then
                 button.cooldown:SetCooldown(0, 0)
             end
-        elseif buttonData.type == "item" then
+        elseif IsEntryItemLike(buttonData) then
             isGCDOnly = EvaluateItemCooldown(button, buttonData, style, true)
             fetchOk = true
         end
-    elseif not barAuraStackDisplay and buttonData.type == "item" then
+    elseif not barAuraStackDisplay and IsEntryItemLike(buttonData) then
         -- Items keep underlying cooldown state during aura override for visibility/desaturation.
         -- Spell aura overrides intentionally do not: the aura owns the spell visual state.
         isGCDOnly = EvaluateItemCooldown(button, buttonData, style, false)
@@ -1313,7 +1355,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     button._chargeState = ResolveChargeState(button, buttonData)
 
     -- Cooldown desaturation follows the canonical cooldown state, never the GCD.
-    if buttonData.type == "item" then
+    if IsEntryItemLike(buttonData) then
         button._desatCooldownActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     elseif usesChargeBehavior then
         button._desatCooldownActive = button._chargeState == CHARGE_STATE_ZERO
@@ -1628,8 +1670,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         elseif buttonData.type == "spell" then
             local spellID = button._displaySpellId or buttonData.id
             button._isUnusable = not C_Spell_IsSpellUsable(spellID)
-        elseif buttonData.type == "item" or buttonData.type == "equipitem" then
-            local usable = IsUsableItem(button._resolvedItemId or buttonData.id)
+        elseif IsEntryItemLike(buttonData) or buttonData.type == "equipitem" then
+            local itemID = button._resolvedItemId or buttonData.id
+            local usable = itemID and IsUsableItem(itemID)
             button._isUnusable = not usable
         else
             button._isUnusable = false
@@ -1637,10 +1680,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
         if buttonData.type == "spell" and not buttonData.isPassiveCooldown then
             button._isOutOfRange = button._spellOutOfRange or false
-        elseif buttonData.type == "item" or buttonData.type == "equipitem" then
+        elseif IsEntryItemLike(buttonData) or buttonData.type == "equipitem" then
             -- C_Item.IsItemInRange is protected in combat for non-enemy targets (10.2.0)
+            local itemID = button._resolvedItemId or buttonData.id
             if not InCombatLockdown() or UnitCanAttack("player", "target") then
-                local inRange = IsItemInRange(button._resolvedItemId or buttonData.id, "target")
+                local inRange = itemID and IsItemInRange(itemID, "target") or nil
                 button._isOutOfRange = (inRange == false)
             else
                 button._isOutOfRange = false

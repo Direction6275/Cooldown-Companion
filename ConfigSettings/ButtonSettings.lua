@@ -79,12 +79,17 @@ local function GroupUsesTriggerPanelEntries(group)
 end
 
 local function BuildButtonSettingsTabs(group, buttonData)
+    local isEquipmentSlot = CooldownCompanion.IsEquipmentSlotEntry
+        and CooldownCompanion.IsEquipmentSlotEntry(buttonData)
     if GroupUsesTriggerPanelEntries(group) then
-        return {
+        local tabs = {
             { value = "settings", text = "Condition" },
             { value = "loadconditions", text = "Load Conditions" },
-            { value = "soundalerts", text = "Sound Alerts" },
         }
+        if not isEquipmentSlot then
+            tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
+        end
+        return tabs
     end
 
     local tabs = {
@@ -92,7 +97,7 @@ local function BuildButtonSettingsTabs(group, buttonData)
     }
     if buttonData and buttonData.type == "item" then
         tabs[#tabs + 1] = { value = "fallbacks", text = "Fallbacks" }
-    else
+    elseif not isEquipmentSlot then
         tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
     end
 
@@ -2307,6 +2312,9 @@ end
 -- TYPE CLASSIFICATION (for batch visibility)
 ------------------------------------------------------------------------
 local function GetButtonEntryType(buttonData)
+    if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+        return "equipmentSlot"
+    end
     if buttonData.type == "item" then return "item" end
     if buttonData.addedAs == "aura" then return "aura" end
     if buttonData.addedAs == "spell" then return "spell" end
@@ -2388,13 +2396,18 @@ local function RefreshButtonSettingsColumn()
         local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
         local buttonData = group and group.buttons and group.buttons[CS.selectedButton]
         bsCol.bsTabGroup:SetTabs(BuildButtonSettingsTabs(group, buttonData))
+        local isEquipmentSlot = CooldownCompanion.IsEquipmentSlotEntry
+            and CooldownCompanion.IsEquipmentSlotEntry(buttonData)
 
         if GroupUsesTriggerPanelEntries(group)
             and CS.buttonSettingsTab ~= "settings"
             and CS.buttonSettingsTab ~= "loadconditions"
-            and CS.buttonSettingsTab ~= "soundalerts" then
+            and (CS.buttonSettingsTab ~= "soundalerts" or isEquipmentSlot) then
             CS.buttonSettingsTab = "settings"
         elseif GroupUsesTexturePanelEntries(group) and CS.buttonSettingsTab == "overrides" then
+            CS.buttonSettingsTab = "settings"
+        elseif isEquipmentSlot
+            and (CS.buttonSettingsTab == "soundalerts" or CS.buttonSettingsTab == "fallbacks") then
             CS.buttonSettingsTab = "settings"
         elseif buttonData and buttonData.type == "item" and CS.buttonSettingsTab == "soundalerts" then
             CS.buttonSettingsTab = "fallbacks"
@@ -2452,6 +2465,9 @@ local function ConfigureInlineEditBoxInstructions(editBoxWidget, placeholderText
 end
 
 local function BuildCustomNameSection(scroll, buttonData)
+    if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+        return
+    end
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group or group.displayMode ~= "bars" then return end
 

@@ -1641,6 +1641,37 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     return buttonIndex, transformNotified
 end
 
+function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKind)
+    local group = self.db.profile.groups[groupId]
+    if not group then return end
+
+    if group.displayMode == "textures" and #group.buttons >= 1 then
+        self:Print("Texture Panels can only hold one entry. Remove the current entry first if you want to replace it.")
+        return nil
+    end
+
+    local newButton = {
+        type = self.EQUIPMENT_SLOT_TYPE or "equipmentSlot",
+        itemSlot = itemSlot,
+        itemSlotKind = itemSlotKind or self.EQUIPMENT_SLOT_KIND_TRINKET or "trinket",
+    }
+    if not (self.IsEquipmentSlotEntry and self.IsEquipmentSlotEntry(newButton)) then
+        return nil
+    end
+    newButton.name = self.GetEquipmentSlotDisplayName
+        and self.GetEquipmentSlotDisplayName(newButton) or "Trinket Slot"
+
+    local buttonIndex = #group.buttons + 1
+    group.buttons[buttonIndex] = newButton
+
+    if group.displayMode == "trigger" and self.NormalizeTriggerConditionRowData then
+        self:NormalizeTriggerConditionRowData(newButton)
+    end
+
+    self:RefreshGroupFrame(groupId)
+    return buttonIndex
+end
+
 function CooldownCompanion:RemoveButtonFromGroup(groupId, buttonIndex)
     local group = self.db.profile.groups[groupId]
     if not group then return end

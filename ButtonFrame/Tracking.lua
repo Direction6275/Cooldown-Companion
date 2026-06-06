@@ -16,6 +16,13 @@ local UnitCanAttack = UnitCanAttack
 local IsItemInRange = C_Item.IsItemInRange
 local IsUsableItem = C_Item.IsUsableItem
 local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
+local IsEntryItemLike = CooldownCompanion.IsEntryItemLike or function(buttonData)
+    return buttonData
+        and (buttonData.type == "item"
+            or (buttonData.type == "equipmentSlot"
+                and buttonData.itemSlotKind == "trinket"
+                and (buttonData.itemSlot == 13 or buttonData.itemSlot == 14)))
+end
 
 -- Update charge count state for a spell with hasCharges enabled.
 -- chargeSpellID should be the effective runtime spell ID (override-aware).
@@ -187,9 +194,9 @@ local function IsUnusableVisualActive(button, buttonData)
         if not C_Spell_IsSpellUsable(spellID) then
             return true, "unusable"
         end
-    elseif buttonData.type == "item" then
+    elseif IsEntryItemLike(buttonData) then
         local itemID = button._resolvedItemId or buttonData.id
-        if not IsUsableItem(itemID) then
+        if not itemID or not IsUsableItem(itemID) then
             return true, "unusable"
         end
     end
@@ -235,12 +242,12 @@ local function ResolveIconTintIntent(button, buttonData, style, target)
                 reason = "out-of-range"
                 stateOverride = true
             end
-        elseif buttonData.type == "item" then
+        elseif IsEntryItemLike(buttonData) then
             -- C_Item.IsItemInRange is protected in combat for non-enemy targets (10.2.0);
             -- only call when out of combat or target is attackable.
             if not InCombatLockdown() or UnitCanAttack("player", "target") then
                 local itemID = button._resolvedItemId or buttonData.id
-                local inRange = IsItemInRange(itemID, "target")
+                local inRange = itemID and IsItemInRange(itemID, "target") or nil
                 -- inRange is nil when no target or item has no range; only tint on explicit false
                 if inRange == false then
                     r, g, b = 1, 0.2, 0.2
@@ -355,7 +362,8 @@ local function ResolveDesaturationIntent(button, buttonData, style, target)
         local itemUseCount = CooldownCompanion.HasItemFallbacks(buttonData)
             and button._resolvedItemAvailableQuantity
             or button._itemCount
-        if not target.active and buttonData.desaturateWhileZeroStacks and (itemUseCount or 0) == 0 then
+        if not target.active and buttonData.type == "item"
+                and buttonData.desaturateWhileZeroStacks and (itemUseCount or 0) == 0 then
             target.active = true
             target.reason = "zero-stacks"
         end

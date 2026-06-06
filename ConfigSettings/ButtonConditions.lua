@@ -19,6 +19,7 @@ local IsNoCooldownSpellID = ST.IsNoCooldownSpell
 local HasUsageRequirement = ST.HasUsageRequirement
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local HasItemFallbacks = CooldownCompanion.HasItemFallbacks
+local IsEquipmentSlotEntry = CooldownCompanion.IsEquipmentSlotEntry
 
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
@@ -506,11 +507,15 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 
     local isBatch = batchContext ~= nil
     local isItem
+    local isEquipmentSlot
     if isBatch then
         isItem = batchContext.uniformType == "item"
+        isEquipmentSlot = batchContext.uniformType == "equipmentSlot"
     else
         isItem = buttonData.type == "item"
+        isEquipmentSlot = IsEquipmentSlotEntry and IsEquipmentSlotEntry(buttonData)
     end
+    local isItemLike = isItem or isEquipmentSlot
 
     -- Helper: apply a value to all selected buttons if multi-select, else just this one
     local function ApplyToSelected(field, value)
@@ -1106,8 +1111,8 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         end
     end
 
-    -- Hide While Aura Active (not applicable for items)
-    if not isItem then
+    -- Hide While Aura Active (not applicable for item-like entries)
+    if not isItemLike then
         local anyAuraTrackingEnabled
         local allAuraTrackingReady
         if isBatch then

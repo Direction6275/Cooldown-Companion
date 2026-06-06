@@ -127,10 +127,12 @@ function CooldownCompanion:OnEnable()
     -- Broader state changes can wait for the regular ticker pass.
     for _, evt in ipairs({
         "UNIT_POWER_FREQUENT", "LOSS_OF_CONTROL_ADDED", "LOSS_OF_CONTROL_UPDATE",
-        "ITEM_COUNT_CHANGED", "PLAYER_EQUIPMENT_CHANGED",
+        "ITEM_COUNT_CHANGED",
     }) do
         self:RegisterEvent(evt, "MarkCooldownsDirty")
     end
+    self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED", "OnEquipmentChanged")
+    self:EnsureEquipmentSlotItemLoadFrame()
 
     self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnPlayerEnteringWorld")
 

@@ -80,6 +80,8 @@ end
 
 -- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
+local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
+local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
 local FormatTime = CooldownCompanion.FormatTime
 local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 
@@ -95,8 +97,11 @@ local function SetBarIconTooltipScripts(button, enable)
             GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
             if bd.type == "spell" then
                 GameTooltip:SetSpellByID(button._displaySpellId or bd.id)
-            elseif bd.type == "item" then
-                GameTooltip:SetItemByID(button._resolvedItemId or bd.id)
+            elseif IsEntryItemLike(bd) then
+                local itemID = button._resolvedItemId or bd.id
+                if itemID then
+                    GameTooltip:SetItemByID(itemID)
+                end
             end
             GameTooltip:Show()
         end)
@@ -981,7 +986,7 @@ local function UpdateBarFill(button)
         onCooldown = true
         SetStatusBarImmediateRange(button.statusBar, 0, 1)
         SetStatusBarImmediateValue(button.statusBar, 0)
-    elseif button.buttonData.type == "item" then
+    elseif IsEntryItemLike(button.buttonData) then
         ClearBarAuraStackVisual(button)
         -- Items: use stored C_Item.GetItemCooldown values (avoids hidden-widget staleness)
         SetStatusBarSmoothRange(button.statusBar, 0, 1)
@@ -1145,7 +1150,7 @@ local function UpdateBarDisplay(button)
 
     -- "On cooldown" for bar color/ready text follows canonical state.
     -- _durationObj may also hold aura/totem timing and must not imply cooldown.
-    local itemUsesResolvedCooldownState = button.buttonData.type == "item"
+    local itemUsesResolvedCooldownState = IsEntryItemLike(button.buttonData)
         and button._resolvedItemQuantityKind == "stacks"
     local barAuraStackDisplay = button._barAuraStackDisplay == true
     local stackSegmentLayerActive = barAuraStackDisplay and button._barAuraStackMode ~= "continuous"
@@ -1688,11 +1693,13 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._auraDisplayName = nil
     button._auraNameOverrideActive = nil
 
-    if buttonData.type == "item" then
-        local resolvedItemID, availableQuantity, quantityKind = CooldownCompanion.ResolveItemFallback(buttonData)
-        button._resolvedItemId = resolvedItemID or buttonData.id
-        button._resolvedItemAvailableQuantity = availableQuantity or 0
-        button._resolvedItemQuantityKind = quantityKind or "stacks"
+    if IsEntryItemLike(buttonData) then
+        local effectiveItem = ResolveEffectiveItem(buttonData, { requestLoad = true })
+        button._resolvedItemId = effectiveItem and effectiveItem.itemID or buttonData.id
+        button._resolvedItemAvailableQuantity = effectiveItem and effectiveItem.availableQuantity or 0
+        button._resolvedItemQuantityKind = effectiveItem and effectiveItem.quantityKind or "stacks"
+        button._equipmentSlotTrackable = CooldownCompanion.IsEquipmentSlotEntry(buttonData)
+            and effectiveItem and effectiveItem.trackable == true or nil
     end
 
     -- Per-button visibility runtime state
@@ -1717,8 +1724,9 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
             elseif buttonData.type == "spell" then
                 local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
                 if spellName then displayName = spellName end
-            elseif buttonData.type == "item" then
-                local itemName = C_Item.GetItemNameByID(button._resolvedItemId or buttonData.id)
+            elseif IsEntryItemLike(buttonData) then
+                local itemID = button._resolvedItemId or buttonData.id
+                local itemName = itemID and C_Item.GetItemNameByID(itemID)
                 if itemName then displayName = itemName end
             end
         end
@@ -2055,8 +2063,9 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
             elseif button.buttonData.type == "spell" then
                 local spellName = C_Spell.GetSpellName(button._displaySpellId or button.buttonData.id)
                 if spellName then displayName = spellName end
-            elseif button.buttonData.type == "item" then
-                local itemName = C_Item.GetItemNameByID(button._resolvedItemId or button.buttonData.id)
+            elseif IsEntryItemLike(button.buttonData) then
+                local itemID = button._resolvedItemId or button.buttonData.id
+                local itemName = itemID and C_Item.GetItemNameByID(itemID)
                 if itemName then displayName = itemName end
             end
         end

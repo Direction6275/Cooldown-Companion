@@ -281,11 +281,69 @@ local function TryAddItem(input)
     return false
 end
 
+local function TryAddEquipmentSlot(itemSlot)
+    if not CS.selectedGroup then return false end
+    if IsTriggerPanelTarget(CS.selectedGroup) then return false end
+
+    local slotData = {
+        type = CooldownCompanion.EQUIPMENT_SLOT_TYPE or "equipmentSlot",
+        itemSlot = itemSlot,
+        itemSlotKind = CooldownCompanion.EQUIPMENT_SLOT_KIND_TRINKET or "trinket",
+    }
+    if CooldownCompanion.IsEquipmentSlotEntry
+        and not CooldownCompanion.IsEquipmentSlotEntry(slotData) then
+        return false
+    end
+
+    local slotName = CooldownCompanion.GetEquipmentSlotDisplayName
+        and CooldownCompanion.GetEquipmentSlotDisplayName(slotData) or "Trinket Slot"
+    local idx = CooldownCompanion:AddEquipmentSlotToGroup(
+        CS.selectedGroup,
+        itemSlot,
+        slotData.itemSlotKind
+    )
+    if not idx then
+        return false
+    end
+
+    SelectNewButton(CS.selectedGroup, idx)
+    CooldownCompanion:Print("Added equipment slot: " .. slotName)
+    return true
+end
+
+local function ResolveEquipmentSlotInput(input)
+    if type(input) ~= "string" then
+        return nil
+    end
+
+    local query = input:lower():gsub("^%s+", ""):gsub("%s+$", ""):gsub("%s+", " ")
+    if query == "trinket slot 1"
+        or query == "trinket 1"
+        or query == "slot 1"
+        or query == "first trinket"
+        or query == "top trinket" then
+        return CooldownCompanion.TRINKET_SLOT_1 or 13
+    end
+    if query == "trinket slot 2"
+        or query == "trinket 2"
+        or query == "slot 2"
+        or query == "second trinket"
+        or query == "bottom trinket" then
+        return CooldownCompanion.TRINKET_SLOT_2 or 14
+    end
+    return nil
+end
+
 ------------------------------------------------------------------------
 -- Unified add: resolve input as spell or item automatically
 ------------------------------------------------------------------------
 local function TryAdd(input)
     if input == "" or not CS.selectedGroup then return false end
+
+    local equipmentSlot = ResolveEquipmentSlotInput(input)
+    if equipmentSlot then
+        return TryAddEquipmentSlot(equipmentSlot)
+    end
 
     local id = tonumber(input)
 
@@ -441,6 +499,53 @@ local function TryAdd(input)
     end
 end
 
+local function BuildEquipmentSlotAutocompleteEntry(itemSlot, aliases)
+    local slotData = {
+        type = CooldownCompanion.EQUIPMENT_SLOT_TYPE or "equipmentSlot",
+        itemSlot = itemSlot,
+        itemSlotKind = CooldownCompanion.EQUIPMENT_SLOT_KIND_TRINKET or "trinket",
+    }
+    local name = CooldownCompanion.GetEquipmentSlotDisplayName
+        and CooldownCompanion.GetEquipmentSlotDisplayName(slotData)
+        or ("Trinket Slot " .. tostring(itemSlot == (CooldownCompanion.TRINKET_SLOT_2 or 14) and 2 or 1))
+    local effectiveItem = CooldownCompanion.ResolveEffectiveItem
+        and CooldownCompanion.ResolveEffectiveItem(slotData)
+        or nil
+    local searchParts = { name:lower() }
+    for _, alias in ipairs(aliases or {}) do
+        searchParts[#searchParts + 1] = alias
+    end
+    return {
+        id = CooldownCompanion.GetEntryStableKey and CooldownCompanion.GetEntryStableKey(slotData)
+            or ("equipmentSlot:trinket:" .. tostring(itemSlot)),
+        name = name,
+        nameLower = name:lower(),
+        searchLower = table.concat(searchParts, " "),
+        icon = (effectiveItem and effectiveItem.trackable and effectiveItem.icon) or 134400,
+        category = "Equipment",
+        isEquipmentSlot = true,
+        itemSlot = itemSlot,
+        itemSlotKind = slotData.itemSlotKind,
+    }
+end
+
+local function AddEquipmentSlotAutocompleteEntries(cache)
+    cache[#cache + 1] = BuildEquipmentSlotAutocompleteEntry(CooldownCompanion.TRINKET_SLOT_1 or 13, {
+        "trinket 1",
+        "slot 1",
+        "first trinket",
+        "top trinket",
+        "equipment",
+    })
+    cache[#cache + 1] = BuildEquipmentSlotAutocompleteEntry(CooldownCompanion.TRINKET_SLOT_2 or 14, {
+        "trinket 2",
+        "slot 2",
+        "second trinket",
+        "bottom trinket",
+        "equipment",
+    })
+end
+
 ------------------------------------------------------------------------
 -- Helper: Receive a spell/item drop from the cursor
 ------------------------------------------------------------------------
@@ -476,6 +581,8 @@ local function BuildAutocompleteCache()
     local cache = {}
     local seen = {}
     local seenAuras = {}
+
+    AddEquipmentSlotAutocompleteEntries(cache)
 
     -- Pre-compute dual-CDM spell set (spells in both cooldown and buff CDM categories)
     local cdmCooldownSet = {}
@@ -789,7 +896,8 @@ local function SearchAutocompleteInCache(query, cache)
 
         -- Match by name substring
         if not isMatch then
-            local pos = entry.nameLower:find(queryLower, 1, true)
+            local searchable = entry.searchLower or entry.nameLower
+            local pos = searchable and searchable:find(queryLower, 1, true)
             if pos then
                 isMatch = true
                 isPrefix = (pos == 1)
@@ -829,7 +937,18 @@ local function SearchCDMAuraAutocomplete(query)
 end
 
 local function SearchAutocomplete(query)
-    return SearchAutocompleteInCache(query, CS.autocompleteCache or BuildAutocompleteCache())
+    local cache = CS.autocompleteCache or BuildAutocompleteCache()
+    local groupId = CS.addingToPanelId or CS.selectedGroup
+    if IsTriggerPanelTarget(groupId) then
+        local filtered = {}
+        for _, entry in ipairs(cache) do
+            if not entry.isEquipmentSlot then
+                filtered[#filtered + 1] = entry
+            end
+        end
+        cache = filtered
+    end
+    return SearchAutocompleteInCache(query, cache)
 end
 
 ------------------------------------------------------------------------
@@ -863,9 +982,14 @@ end
 ------------------------------------------------------------------------
 local function OnAutocompleteSelect(entry)
     HideAutocomplete()
-    if not CS.selectedGroup then return end
+    local addTargetGroupId = CS.addingToPanelId or CS.selectedGroup
+    if not addTargetGroupId then return end
+
+    CS.selectedGroup = addTargetGroupId
     local added
-    if entry.isItem then
+    if entry.isEquipmentSlot then
+        added = TryAddEquipmentSlot(entry.itemSlot)
+    elseif entry.isItem then
         added = TryAddItem(tostring(entry.id))
     else
         local displayNameOverride
@@ -1104,6 +1228,7 @@ end
 -- ST._ exports (consumed by later Config/ files)
 ------------------------------------------------------------------------
 ST._TryAdd = TryAdd
+ST._TryAddEquipmentSlot = TryAddEquipmentSlot
 ST._TryReceiveCursorDrop = TryReceiveCursorDrop
 ST._BuildAutocompleteCache = BuildAutocompleteCache
 ST._OnAutocompleteSelect = OnAutocompleteSelect
