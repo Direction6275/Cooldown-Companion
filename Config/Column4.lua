@@ -14,6 +14,8 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local ResetConfigSelection = ST._ResetConfigSelection
 local SetConfigCustomBarSettingsTab = ST._SetConfigCustomBarSettingsTab
 local PruneConfigCustomBarSelection = ST._PruneConfigCustomBarSelection
+local SetConfigResourceSettingsSpecID = ST._SetConfigResourceSettingsSpecID
+local PruneConfigResourceSelection = ST._PruneConfigResourceSelection
 
 ------------------------------------------------------------------------
 -- COLUMN 4: Group / Panel Settings Column
@@ -79,6 +81,38 @@ local function GetCustomBarDetailScrollKey()
     return tostring(CS.selectedCustomBarId) .. ":" .. tostring(CS.customBarSettingsTab or "appearance")
 end
 
+local function GetResourceSettingsDetailScrollKey()
+    if not CS.selectedResourcePowerType or not CS.resourceSettingsSpecID then return nil end
+    return tostring(CS.selectedResourcePowerType) .. ":" .. tostring(CS.resourceSettingsSpecID)
+end
+
+local function GetResourceSettingsSpecTabText(info, specID)
+    local specName = (info and info.name) or tostring(specID)
+    local icon = info and info.icon
+    if icon and icon ~= "" then
+        return string.format("|T%s:13:13:0:0|t %s", tostring(icon), specName)
+    end
+    return specName
+end
+
+local function GetResourceSettingsSpecTabs(powerType)
+    local RBP = ST._RBP
+    if not (RBP and RBP.GetResourceApplicableSpecIDs and RBP.GetPlayerSpecOptionsConfig) then
+        return {}
+    end
+
+    local _, _, specInfoByID = RBP.GetPlayerSpecOptionsConfig()
+    local tabs = {}
+    for _, specID in ipairs(RBP.GetResourceApplicableSpecIDs(powerType) or {}) do
+        local info = specInfoByID and specInfoByID[specID] or nil
+        tabs[#tabs + 1] = {
+            value = tostring(specID),
+            text = GetResourceSettingsSpecTabText(info, specID),
+        }
+    end
+    return tabs
+end
+
 local function AreResourceBarsConfigEnabled()
     local settings = CooldownCompanion:GetResourceBarSettings()
     return type(settings) == "table" and settings.enabled == true
@@ -115,6 +149,8 @@ local function HideResourceBarPanelSurfaces(container)
     HideWidgetFrame(container.customBarsDetailScroll)
     HideWidgetFrame(container.customBarsMultiSelectScroll)
     HideWidgetFrame(container.customBarEntryTabGroup)
+    HideWidgetFrame(container.resourceSettingsDetailScroll)
+    HideWidgetFrame(container.resourceSettingsTabGroup)
     HideFrame(container.layoutOrderHost)
 end
 
@@ -147,6 +183,8 @@ local function ShowCustomBarMultiSelect(container, selectedIds, selectedEntries)
     HideFrame(container.placeholderLabel)
     HideWidgetFrame(container.customBarEntryTabGroup)
     HideWidgetFrame(container.customBarsDetailScroll)
+    HideWidgetFrame(container.resourceSettingsTabGroup)
+    HideWidgetFrame(container.resourceSettingsDetailScroll)
     HideFrame(container.layoutOrderHost)
     if not container.customBarsMultiSelectScroll then
         local scroll = AceGUI:Create("ScrollFrame")
@@ -228,6 +266,80 @@ local function ShowCustomBarMultiSelect(container, selectedIds, selectedEntries)
     scroll:AddChild(deleteBtn)
 end
 
+local function ShowResourceSettingsPanel(container)
+    HideFrame(container.placeholderLabel)
+    HideWidgetFrame(container.customBarEntryTabGroup)
+    HideWidgetFrame(container.customBarsDetailScroll)
+    HideWidgetFrame(container.customBarsMultiSelectScroll)
+    HideFrame(container.layoutOrderHost)
+
+    local tabs = GetResourceSettingsSpecTabs(CS.selectedResourcePowerType)
+    if #tabs == 0 then
+        return false
+    end
+    if SetConfigResourceSettingsSpecID then
+        SetConfigResourceSettingsSpecID(CS.resourceSettingsSpecID)
+    end
+    if not CS.resourceSettingsSpecID then
+        return false
+    end
+
+    if not container.resourceSettingsTabGroup then
+        local tabGroup = AceGUI:Create("TabGroup")
+        tabGroup:SetLayout("Fill")
+        tabGroup.frame:SetParent(container)
+        tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+            SetConfigResourceSettingsSpecID(tab)
+            widget:ReleaseChildren()
+
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            widget:AddChild(scroll)
+            container.resourceSettingsDetailScroll = scroll
+            container._resourceSettingsDetailScrollKey = GetResourceSettingsDetailScrollKey()
+            if ST._BuildResourceSettingsPanel then
+                ST._BuildResourceSettingsPanel(scroll, CS.selectedResourcePowerType, CS.resourceSettingsSpecID)
+            else
+                local label = AceGUI:Create("Label")
+                ST._ConfigureWrappedHelperLabel(label)
+                label:SetText("|cff888888Resource settings are unavailable.|r")
+                label:SetFullWidth(true)
+                scroll:AddChild(label)
+            end
+        end)
+        container.resourceSettingsTabGroup = tabGroup
+    end
+
+    local tabGroup = container.resourceSettingsTabGroup
+    tabGroup.frame:ClearAllPoints()
+    tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+    tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+    tabGroup:SetTabs(tabs)
+    tabGroup.frame:Show()
+
+    local savedOffset, savedScrollvalue
+    local currentScrollKey = GetResourceSettingsDetailScrollKey()
+    if container.resourceSettingsDetailScroll and container._resourceSettingsDetailScrollKey == currentScrollKey then
+        local state = container.resourceSettingsDetailScroll.status or container.resourceSettingsDetailScroll.localstatus
+        if state and state.offset and state.offset > 0 then
+            savedOffset = state.offset
+            savedScrollvalue = state.scrollvalue
+        end
+    end
+
+    tabGroup:SelectTab(tostring(CS.resourceSettingsSpecID))
+
+    if savedOffset and container.resourceSettingsDetailScroll then
+        local state = container.resourceSettingsDetailScroll.status or container.resourceSettingsDetailScroll.localstatus
+        if state then
+            state.offset = savedOffset
+            state.scrollvalue = savedScrollvalue
+        end
+    end
+
+    return true
+end
+
 local function RefreshColumn4(container)
     -- Hide browse placeholder
     if container._browsePlaceholder then
@@ -253,6 +365,15 @@ local function RefreshColumn4(container)
                 return FindCustomBarById(settings, customBarId) ~= nil
             end
             PruneConfigCustomBarSelection(CustomBarExists, true)
+            if PruneConfigResourceSelection then
+                local RBP = ST._RBP
+                PruneConfigResourceSelection(function(powerType)
+                    if not (RBP and RBP.IsResourceEditableInColumn4) then
+                        return false
+                    end
+                    return RBP.IsResourceEditableInColumn4(powerType, settings)
+                end)
+            end
             for customBarId in pairs(CS.selectedCustomBars) do
                 local entry = FindCustomBarById(settings, customBarId)
                 selectedCustomBarIds[#selectedCustomBarIds + 1] = customBarId
@@ -262,6 +383,11 @@ local function RefreshColumn4(container)
             if #selectedCustomBarEntries >= 2 then
                 ShowCustomBarMultiSelect(container, selectedCustomBarIds, selectedCustomBarEntries)
                 return
+            end
+            if CS.selectedResourcePowerType then
+                if ShowResourceSettingsPanel(container) then
+                    return
+                end
             end
             if CS.selectedCustomBarId then
                 if container.layoutOrderHost then
@@ -366,6 +492,12 @@ local function RefreshColumn4(container)
     end
     if container.customBarEntryTabGroup then
         container.customBarEntryTabGroup.frame:Hide()
+    end
+    if container.resourceSettingsDetailScroll then
+        container.resourceSettingsDetailScroll.frame:Hide()
+    end
+    if container.resourceSettingsTabGroup then
+        container.resourceSettingsTabGroup.frame:Hide()
     end
     -- Hide layout order scroll if it exists
     if container.layoutOrderScroll then

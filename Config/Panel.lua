@@ -262,7 +262,17 @@ local function GetLayoutOrderColumnTitle()
 end
 
 local function GetCustomBarsColumnTitle()
-    return "Custom Bars"
+    return "Custom Bars & Resources"
+end
+
+local function GetResourceSettingsColumnTitle()
+    local powerType = tonumber(CS.selectedResourcePowerType)
+    local powerNames = ST._RB and ST._RB.POWER_NAMES
+    local resourceName = powerType and powerNames and powerNames[powerType] or nil
+    if resourceName and resourceName ~= "" then
+        return "Resource: " .. resourceName
+    end
+    return "Resource Settings"
 end
 
 local function CountSelections(selectionSet)
@@ -358,8 +368,17 @@ end
 local function GetColumn4HeaderMode(selection)
     if CS.resourceBarPanelActive then
         local resourceBarSettings = CooldownCompanion:GetResourceBarSettings()
-        if resourceBarSettings and resourceBarSettings.enabled == true and CS.selectedCustomBarId then
-            return "custom_bar"
+        if resourceBarSettings and resourceBarSettings.enabled == true then
+            if CS.selectedResourcePowerType
+                and ST._RBP
+                and ST._RBP.IsResourceEditableInColumn4
+                and ST._RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, resourceBarSettings)
+            then
+                return "resource_settings"
+            end
+            if CS.selectedCustomBarId then
+                return "custom_bar"
+            end
         end
         return "layout_order"
     end
@@ -392,6 +411,8 @@ local function GetColumn4HeaderTitle(selection)
     local mode = GetColumn4HeaderMode(selection)
     if mode == "layout_order" then
         return GetLayoutOrderColumnTitle()
+    elseif mode == "resource_settings" then
+        return GetResourceSettingsColumnTitle()
     elseif mode == "custom_bar" then
         return "Custom Bar Settings"
     elseif mode == "panel" then
@@ -1832,12 +1853,14 @@ local function CreateConfigPanel()
     bsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if CS.resourceBarPanelActive then
-            GameTooltip:AddLine("Custom Bars")
-            GameTooltip:AddLine("Create and manage resource-style bars across all specs.", 1, 1, 1, true)
+            GameTooltip:AddLine("Custom Bars & Resources")
+            GameTooltip:AddLine("Create Custom Bars and manage enabled resource-specific settings.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Loaded shows bars available to the current spec; Inactive Specs shows bars filtered to other specs.", 1, 1, 1, true)
+            GameTooltip:AddLine("Loaded shows Custom Bars available to the current spec.", 1, 1, 1, true)
+            GameTooltip:AddLine("Resources opens settings for enabled non-health resources.", 1, 1, 1, true)
+            GameTooltip:AddLine("Inactive shows Custom Bars filtered to other specs.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("No spec filter means the bar applies to every spec.", 1, 1, 1, true)
+            GameTooltip:AddLine("No spec filter means a Custom Bar applies to every spec.", 1, 1, 1, true)
         elseif CS.autoAddFlowActive then
             GameTooltip:AddLine("Auto Add")
             GameTooltip:AddLine("Guided import flow for Action Bars, Spellbook, and CDM Auras.", 1, 1, 1, true)

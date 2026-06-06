@@ -206,6 +206,8 @@ ST._configState = {
     selectedPanels = {},         -- multi-selected panel IDs (within a container)
     selectedGroups = {},         -- multi-selected container IDs
     selectedCustomBars = {},     -- multi-selected custom bar IDs
+    selectedResourcePowerType = nil,
+    resourceSettingsSpecID = nil,
     selectedTab = "appearance",
     selectedContainerTab = "general",
     buttonSettingsTab = "settings",
@@ -706,6 +708,8 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     wipe(CS.selectedPanels)
     wipe(CS.selectedButtons)
     wipe(CS.selectedCustomBars)
+    CS.selectedResourcePowerType = nil
+    CS.resourceSettingsSpecID = nil
     CS.selectedFolder = nil
     CS.selectedContainer = containerId
     CS.selectedGroup = panelId
@@ -1708,6 +1712,9 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcCustomBarTypeBadge then entry.frame._cdcCustomBarTypeBadge:Hide() end
     if entry.frame._cdcCustomBarAuraStatusBadge then entry.frame._cdcCustomBarAuraStatusBadge:Hide() end
     if entry.frame._cdcCustomBarDisabledBadge then entry.frame._cdcCustomBarDisabledBadge:Hide() end
+    if entry.frame._cdcCustomBarSpecBadges then
+        for _, badge in ipairs(entry.frame._cdcCustomBarSpecBadges) do badge:Hide() end
+    end
     if entry.frame._cdcFallbackRemoveBtn then entry.frame._cdcFallbackRemoveBtn:Hide() end
     if entry.frame._cdcPriorityUpBtn then entry.frame._cdcPriorityUpBtn:Hide() end
     if entry.frame._cdcPriorityDownBtn then entry.frame._cdcPriorityDownBtn:Hide() end
@@ -2478,6 +2485,11 @@ local function ClearConfigContainerMultiSelection()
     wipe(CS.selectedGroups)
 end
 
+local function ClearConfigResourceSelection()
+    CS.selectedResourcePowerType = nil
+    CS.resourceSettingsSpecID = nil
+end
+
 local function ClearConfigPrimarySelection()
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedFolder = nil
@@ -2487,6 +2499,7 @@ local function ClearConfigPrimarySelection()
     wipe(CS.selectedPanels)
     wipe(CS.selectedGroups)
     wipe(CS.selectedCustomBars)
+    ClearConfigResourceSelection()
 end
 
 local function SelectConfigFolder(folderId)
@@ -2660,6 +2673,7 @@ local function SelectConfigCustomBar(customBarId, opts)
         return true
     end
 
+    ClearConfigResourceSelection()
     if selectionChanged and opts and opts.clearPreview then
         ClearConfigCustomBarPreviewState()
     end
@@ -2675,6 +2689,7 @@ local function SelectConfigCustomBar(customBarId, opts)
 end
 
 local function ToggleConfigCustomBarMultiSelect(customBarId)
+    ClearConfigResourceSelection()
     if CS.selectedCustomBars[customBarId] then
         CS.selectedCustomBars[customBarId] = nil
     else
@@ -2684,6 +2699,64 @@ local function ToggleConfigCustomBarMultiSelect(customBarId)
         CS.selectedCustomBars[CS.selectedCustomBarId] = true
     end
     ClearConfigCustomBarPreviewState()
+end
+
+local function SetConfigResourceSettingsSpecID(specID)
+    local powerType = CS.selectedResourcePowerType
+    if powerType == nil then
+        CS.resourceSettingsSpecID = nil
+        return false
+    end
+
+    local numericSpecID = tonumber(specID)
+    local RBP = ST._RBP
+    local resolvedSpecID = RBP
+        and RBP.GetDefaultResourceSettingsSpecID
+        and RBP.GetDefaultResourceSettingsSpecID(powerType, numericSpecID)
+        or nil
+    local changed = CS.resourceSettingsSpecID ~= resolvedSpecID
+    CS.resourceSettingsSpecID = resolvedSpecID
+    return changed
+end
+
+local function SelectConfigResource(powerType, opts)
+    local numericPowerType = tonumber(powerType)
+    if numericPowerType == nil then
+        return false
+    end
+
+    local selectionChanged = CS.selectedResourcePowerType ~= numericPowerType
+    if opts and opts.toggle and not selectionChanged then
+        ClearConfigResourceSelection()
+        return true
+    end
+
+    ClearConfigCustomBarPreviewState()
+    CS.selectedCustomBarId = nil
+    CS.customBarSpecExpandedId = nil
+    wipe(CS.selectedCustomBars)
+    SetConfigCustomBarSettingsTab("appearance")
+    if opts and opts.clearButtonMulti then
+        wipe(CS.selectedButtons)
+    end
+
+    CS.selectedResourcePowerType = numericPowerType
+    CS.resourceSettingsSpecID = nil
+    SetConfigResourceSettingsSpecID(opts and opts.specID)
+    return selectionChanged
+end
+
+local function PruneConfigResourceSelection(resourceExists)
+    if type(resourceExists) ~= "function" or CS.selectedResourcePowerType == nil then
+        return false
+    end
+
+    if not resourceExists(CS.selectedResourcePowerType) then
+        ClearConfigResourceSelection()
+        return true
+    end
+
+    return SetConfigResourceSettingsSpecID(CS.resourceSettingsSpecID)
 end
 
 local function PruneConfigCustomBarSelection(customBarExists, resetTab)
@@ -2717,6 +2790,7 @@ local function ResetConfigSelection(full)
     CS.selectedCustomBarId = nil
     CS.customBarSpecExpandedId = nil
     CS.customBarSettingsTab = "appearance"
+    ClearConfigResourceSelection()
     wipe(CS.selectedButtons)
     wipe(CS.selectedPanels)
     wipe(CS.selectedCustomBars)
@@ -2752,6 +2826,7 @@ local function SetConfigPrimaryMode(mode, opts)
         CooldownCompanion:ClearAllConfigPreviews()
         CS.selectedCustomBarId = nil
         CS.customBarSettingsTab = "appearance"
+        ClearConfigResourceSelection()
     end
 
     CS.resourceBarPanelActive = toBars
@@ -2957,6 +3032,10 @@ ST._ClearConfigCustomBarSelection = ClearConfigCustomBarSelection
 ST._SelectConfigCustomBar = SelectConfigCustomBar
 ST._ToggleConfigCustomBarMultiSelect = ToggleConfigCustomBarMultiSelect
 ST._PruneConfigCustomBarSelection = PruneConfigCustomBarSelection
+ST._ClearConfigResourceSelection = ClearConfigResourceSelection
+ST._SelectConfigResource = SelectConfigResource
+ST._SetConfigResourceSettingsSpecID = SetConfigResourceSettingsSpecID
+ST._PruneConfigResourceSelection = PruneConfigResourceSelection
 ST._ResetConfigSelection = ResetConfigSelection
 ST._SetConfigPrimaryMode = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs

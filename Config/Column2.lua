@@ -1177,7 +1177,7 @@ local function RefreshColumn2()
     end
     wipe(CS.col2BarWidgets)
 
-    -- Bars & Frames panel mode: show Styling in col2
+        -- Bars & Frames panel mode: show Appearance/Layout/Colors in col2
     if CS.resourceBarPanelActive then
         CancelDrag()
         CS.HideAutocomplete()
@@ -1214,7 +1214,9 @@ local function RefreshColumn2()
                 col2._infoBtn:SetScript("OnEnter", function(self)
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                     GameTooltip:AddLine("Resource Customization")
-                    GameTooltip:AddLine("Controls how resource bars are styled and positioned for the active specialization.", 1, 1, 1, false)
+                    GameTooltip:AddLine("Controls shared resource bar appearance, layout, and colors.", 1, 1, 1, false)
+                    GameTooltip:AddLine(" ")
+                    GameTooltip:AddLine("Use Resources in Custom Bars & Resources for per-resource text, thresholds, ticks, and overlays.", 1, 1, 1, false)
                     GameTooltip:AddLine(" ")
                     GameTooltip:AddLine("These settings also apply to Custom Bars.", 1, 1, 1, false)
                     GameTooltip:Show()
@@ -1269,7 +1271,7 @@ local function RefreshColumn2()
             local health = rbSettings and rbSettings.resources and rbSettings.resources[RESOURCE_HEALTH]
             local healthEnabled = health and health.enabled == true
             local tabs = {
-                { value = "bar_text", text = "Styling" },
+                { value = "bar_text", text = "Appearance" },
                 { value = "positioning", text = "Layout" },
                 { value = "colors", text = "Colors" },
             }
