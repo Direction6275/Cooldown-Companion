@@ -2354,6 +2354,9 @@ function CooldownCompanion:RefreshConfigPanel()
     if not CS.configFrame.frame:IsShown() then return end
     if CS.talentPickerMode then return end
     if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
+    if self.RefreshConfigSelectedGroupFrames then
+        self:RefreshConfigSelectedGroupFrames()
+    end
     CS.configRefreshInProgress = true
     if IsConfigFinderAvailable and not IsConfigFinderAvailable() and ClearConfigFinderText then
         ClearConfigFinderText()

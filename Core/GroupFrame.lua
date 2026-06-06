@@ -82,13 +82,20 @@ local function GetContainerState(groupId)
 end
 
 local function ShouldSyncAnchorAlpha(self, groupId)
-    if self.IsPanelAnchoredToPanel
-        and self:IsPanelAnchoredToPanel(groupId) then
-        if self.ShouldInheritPanelAnchorAlpha then
-            return self:ShouldInheritPanelAnchorAlpha(groupId)
+    local profile = self.db and self.db.profile
+    local group = profile and profile.groups and profile.groups[groupId]
+
+    if group and group.parentContainerId then
+        if self.IsPanelAnchoredToPanel
+            and self:IsPanelAnchoredToPanel(groupId) then
+            if self.ShouldInheritPanelAnchorAlpha then
+                return self:ShouldInheritPanelAnchorAlpha(groupId)
+            end
+            return true
         end
-        return true
+        return false
     end
+
     return true
 end
 
@@ -110,6 +117,46 @@ local function ApplyGroupOwnAlpha(frame)
 
     frame._naturalAlpha = nil
     frame:SetAlpha(alpha)
+end
+
+local function GetAnchorInheritedAlpha(parentFrame)
+    if not parentFrame then
+        return 1
+    end
+
+    if parentFrame._naturalAlpha ~= nil then
+        return parentFrame._naturalAlpha
+    end
+
+    local parentGroupId = parentFrame.groupId
+    if parentGroupId and CooldownCompanion.alphaState then
+        local state = CooldownCompanion.alphaState[parentGroupId]
+        if state and state.currentAlpha ~= nil then
+            return state.currentAlpha
+        end
+    end
+
+    if parentFrame.IsShown and not parentFrame:IsShown() then
+        return 0
+    end
+
+    if parentFrame.GetEffectiveAlpha then
+        return parentFrame:GetEffectiveAlpha()
+    end
+    if parentFrame.GetAlpha then
+        return parentFrame:GetAlpha()
+    end
+    return 1
+end
+
+local function GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
+    if buttonUsabilityOptions then
+        return buttonUsabilityOptions
+    end
+    if self.GetGroupLayoutButtonUsabilityOptions then
+        return self:GetGroupLayoutButtonUsabilityOptions(groupId, group)
+    end
+    return nil
 end
 
 local function GetContainerPreviewSelectionState(groupId)
@@ -1574,7 +1621,7 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
     end
 
     -- Sync alpha immediately — use parent's natural alpha to avoid config override cascade
-    local lastAlpha = parentFrame._naturalAlpha or parentFrame:GetEffectiveAlpha()
+    local lastAlpha = GetAnchorInheritedAlpha(parentFrame)
     frame:SetAlpha(lastAlpha)
 
     -- Sync alpha at ~30Hz (smooth enough for fade animations, avoids per-frame overhead)
@@ -1589,7 +1636,7 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
             local locked, bAlpha = GetContainerState(frame.groupId)
             if (bAlpha < 1 and not inheritsPanelAlpha) or not locked then return end
             -- Read parent's natural alpha to avoid config override cascade
-            local alpha = frame.anchoredToParent._naturalAlpha or frame.anchoredToParent:GetEffectiveAlpha()
+            local alpha = GetAnchorInheritedAlpha(frame.anchoredToParent)
             -- Config-selected: store natural alpha for further downstream chains, force own frame to full
             if ST.IsGroupConfigSelected(frame.groupId) then
                 frame._naturalAlpha = alpha
@@ -1686,7 +1733,7 @@ end
 
 -- Compute button width/height from group style (bar mode vs square vs non-square).
 -- Returns width, height, isBarMode.
-local function GetButtonDimensions(group)
+local function GetButtonDimensions(group, buttonUsabilityOptions)
     local style = group.style or {}
     local isBarMode = group.displayMode == "bars"
     local isTextMode = group.displayMode == "text"
@@ -1699,7 +1746,7 @@ local function GetButtonDimensions(group)
         if GetEffectiveTextHeight then
             local maxHeight = GetEffectiveTextHeight(style, style.textFormat or "{name}  {status}")
             for _, buttonData in ipairs(group.buttons or {}) do
-                if CooldownCompanion:IsButtonUsable(buttonData, group) then
+                if CooldownCompanion:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
                     local effectiveStyle = CooldownCompanion:GetEffectiveStyle(style, buttonData)
                     local fmt = buttonData.textFormat or effectiveStyle.textFormat or "{name}  {status}"
                     local buttonHeight = GetEffectiveTextHeight(effectiveStyle, fmt)
@@ -1730,7 +1777,11 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     if not frame or not group then return end
 
-    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group)
+    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
+        and self:GetGroupButtonUsabilityOptions(groupId, group)
+        or nil
+    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
@@ -1794,7 +1845,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
     local visibleIndex = 0
     for i, buttonData in ipairs(group.buttons) do
-        if self:IsButtonUsable(buttonData, group) then
+        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             visibleIndex = visibleIndex + 1
             local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
             local button
@@ -1839,6 +1890,11 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     -- Resize the frame to fit visible buttons
     frame.visibleButtonCount = isTriggerMode and (visibleIndex > 0 and 1 or 0) or visibleIndex
+    if group.parentContainerId and not group.compactLayout and self.GetGroupLayoutButtonCount then
+        frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
+    else
+        frame.layoutButtonCount = nil
+    end
     frame._layoutDirty = false
     frame._lastVisibleCount = visibleIndex
     self:ResizeGroupFrame(groupId)
@@ -1891,12 +1947,19 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
 
     if not frame or not group then return end
 
-    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group)
+    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
+        and self:GetGroupButtonUsabilityOptions(groupId, group)
+        or nil
+    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
     local buttonsPerRow = style.buttonsPerRow or 12
     local numButtons = frame.visibleButtonCount or #group.buttons
+    if group.parentContainerId and not group.compactLayout and frame.layoutButtonCount then
+        numButtons = math_max(numButtons, frame.layoutButtonCount)
+    end
 
     local targetWidth, targetHeight
     local oldWidth, oldHeight = frame:GetSize()
@@ -1970,7 +2033,11 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
         return
     end
 
-    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group)
+    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
+        and self:GetGroupButtonUsabilityOptions(groupId, group)
+        or nil
+    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")

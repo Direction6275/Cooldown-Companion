@@ -49,6 +49,90 @@ local LOCAL_LOAD_CONDITION_DEFAULTS = {
     vehicleUI = false,
 }
 
+local IGNORE_SPELL_AVAILABILITY_OPTIONS = {
+    ignoreSpellAvailability = true,
+}
+
+local function GetAddonAnchorGroupId(frameName)
+    if not CooldownCompanion.ParseAddonAnchorFrameName then
+        return nil
+    end
+
+    local kind, id = CooldownCompanion:ParseAddonAnchorFrameName(frameName)
+    return kind == "group" and id or nil
+end
+
+local function IsAddonFrameAnchorTarget(frameName)
+    if not CooldownCompanion.ParseAddonAnchorFrameName then
+        return false
+    end
+
+    local kind = CooldownCompanion:ParseAddonAnchorFrameName(frameName)
+    return kind == "group" or kind == "container"
+end
+
+local function GetFrameName(frame)
+    if not frame then
+        return nil
+    end
+    if frame.GetName then
+        return frame:GetName()
+    end
+    if frame.groupId then
+        return "CooldownCompanionGroup" .. frame.groupId
+    end
+    return frame.name
+end
+
+local function GetCurrentAnchorTargetName(frame)
+    if not frame then
+        return nil
+    end
+    if frame.anchoredToParent then
+        return GetFrameName(frame.anchoredToParent)
+    end
+    if frame.GetPoint then
+        local _, relativeFrame = frame:GetPoint(1)
+        return GetFrameName(relativeFrame)
+    end
+    return frame.relativeTo
+end
+
+local function IsFrameAnchoredToSavedTarget(frame, anchor)
+    local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
+    if not relativeTo or relativeTo == "UIParent" then
+        return true
+    end
+    return GetCurrentAnchorTargetName(frame) == relativeTo
+end
+
+local function GetPanelAnchorDepth(groups, groupId, visiting)
+    visiting = visiting or {}
+    if visiting[groupId] then
+        return 0
+    end
+    visiting[groupId] = true
+
+    local group = groups and groups[groupId]
+    local anchor = group and group.anchor
+    local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
+    local targetGroupId = GetAddonAnchorGroupId(relativeTo)
+    if not targetGroupId then
+        visiting[groupId] = nil
+        return 0
+    end
+
+    local target = groups[targetGroupId]
+    if not (target and target.parentContainerId) then
+        visiting[groupId] = nil
+        return 0
+    end
+
+    local depth = GetPanelAnchorDepth(groups, targetGroupId, visiting) + 1
+    visiting[groupId] = nil
+    return depth
+end
+
 ST.LOAD_CONDITION_OPTIONS = ST.LOAD_CONDITION_OPTIONS or {
     { key = "raid",          label = "Raid" },
     { key = "dungeon",       label = "Dungeon" },
@@ -1008,6 +1092,41 @@ function CooldownCompanion:GroupHasUsableButtons(group, opts)
     return false
 end
 
+function CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)
+    if group
+        and group.parentContainerId
+        and ST.IsGroupConfigSelected
+        and ST.IsGroupConfigSelected(groupId) then
+        return IGNORE_SPELL_AVAILABILITY_OPTIONS
+    end
+    return nil
+end
+
+function CooldownCompanion:GetGroupLayoutButtonUsabilityOptions(groupId, group)
+    if group and group.parentContainerId and not group.compactLayout then
+        return IGNORE_SPELL_AVAILABILITY_OPTIONS
+    end
+    return nil
+end
+
+function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group)
+    if not (group and group.buttons and #group.buttons > 0) then
+        return 0
+    end
+
+    local opts = self.GetGroupLayoutButtonUsabilityOptions
+        and self:GetGroupLayoutButtonUsabilityOptions(groupId, group)
+        or nil
+
+    local count = 0
+    for _, buttonData in ipairs(group.buttons) do
+        if self:IsButtonUsable(buttonData, group, opts) then
+            count = count + 1
+        end
+    end
+    return count
+end
+
 function CooldownCompanion:IsGroupActive(groupId, opts)
     opts = opts or {}
     local group = opts.group or self.db.profile.groups[groupId]
@@ -1031,8 +1150,12 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         if group.enabled == false then return false end
     end
 
+    local buttonUsabilityOptions = opts.buttonUsabilityOptions
+        or (self.GetGroupButtonUsabilityOptions and self:GetGroupButtonUsabilityOptions(groupId, group))
+
     if opts.requireButtons and not self:GroupHasUsableButtons(group, {
         checkLoadConditions = opts.checkLoadConditions,
+        ignoreSpellAvailability = buttonUsabilityOptions and buttonUsabilityOptions.ignoreSpellAvailability,
     }) then
         return false
     end
@@ -1557,6 +1680,10 @@ function CooldownCompanion:IsButtonUsable(buttonData, group, opts)
     -- Per-button talent condition: gate visibility on a specific talent node.
     if not self:IsTalentConditionMet(buttonData) then return false end
 
+    if opts.ignoreSpellAvailability and buttonData.type == "spell" then
+        return true
+    end
+
     -- Passive/proc spells are tracked via aura, not spellbook presence.
     -- Multi-CDM-child buttons: verify their specific slot still exists in the CDM
     -- (spell may not be available on the current spec/talent loadout).
@@ -1639,8 +1766,11 @@ function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group)
 
     local usableButtons = {}
     local usableCount = 0
+    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
+        and self:GetGroupButtonUsabilityOptions(groupId, group)
+        or nil
     for _, buttonData in ipairs(group.buttons) do
-        if self:IsButtonUsable(buttonData, group) then
+        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             usableCount = usableCount + 1
             usableButtons[usableCount] = buttonData
         end
@@ -1751,20 +1881,130 @@ function CooldownCompanion:CreateAllGroupFrames()
             self:CreateGroupFrame(groupId)
         end
     end
-    -- Re-anchor pass: custom anchors to other group frames may have fallen
-    -- back to the container because the target wasn't created yet.
-    -- All frames now exist, so re-apply to resolve cross-group anchors.
-    for groupId, frame in pairs(self.groupFrames) do
-        local group = self.db.profile.groups[groupId]
-        if group and group.anchor then
-            local relativeTo = group.anchor.relativeTo
-            if relativeTo and relativeTo ~= "UIParent" then
-                local containerName = group.parentContainerId
-                    and ("CooldownCompanionContainer" .. group.parentContainerId)
-                if not containerName or relativeTo ~= containerName then
-                    self:AnchorGroupFrame(frame, group.anchor)
-                end
+    self:FinalizePanelAnchors()
+    self:FinalizeNonPanelGroupAnchors()
+end
+
+function CooldownCompanion:RefreshConfigSelectedGroupFrames()
+    if self._refreshingConfigSelectedGroupFrames then
+        return
+    end
+    if InCombatLockdown() then
+        self._pendingFullRefresh = true
+        return
+    end
+    if not (ST.IsGroupConfigSelected and self.db and self.db.profile and self.db.profile.groups) then
+        return
+    end
+
+    self._refreshingConfigSelectedGroupFrames = true
+    local groups = self.db.profile.groups
+    local previousPreviewed = self._configPreviewedGroupFrames
+    local currentPreviewed = nil
+    local candidates = {}
+
+    for groupId in pairs(groups) do
+        if ST.IsGroupConfigSelected(groupId) then
+            currentPreviewed = currentPreviewed or {}
+            currentPreviewed[groupId] = true
+            candidates[groupId] = true
+        end
+    end
+    if previousPreviewed then
+        for groupId in pairs(previousPreviewed) do
+            candidates[groupId] = true
+        end
+    end
+    self._configPreviewedGroupFrames = currentPreviewed
+
+    local refreshed = false
+    for groupId in pairs(candidates) do
+        local group = groups[groupId]
+        if group then
+            local frame = self.groupFrames and self.groupFrames[groupId]
+            local wasPreviewed = previousPreviewed and previousPreviewed[groupId]
+            local isPreviewed = currentPreviewed and currentPreviewed[groupId]
+            local active = self:IsGroupActive(groupId, {
+                group = group,
+                checkCharVisibility = true,
+                checkLoadConditions = true,
+                requireButtons = true,
+            })
+            if (active or (wasPreviewed and frame))
+                and (not frame
+                    or (wasPreviewed and not isPreviewed)
+                    or self:GroupButtonSetNeedsRebuild(groupId, group)) then
+                self:RefreshGroupFrame(groupId)
+                refreshed = true
             end
+        end
+    end
+    self._refreshingConfigSelectedGroupFrames = nil
+
+    if refreshed then
+        self:FinalizePanelAnchors()
+        if self.RefreshAllContainerWrappers then
+            self:RefreshAllContainerWrappers()
+        end
+    end
+end
+
+function CooldownCompanion:FinalizePanelAnchors()
+    local groups = self.db and self.db.profile and self.db.profile.groups
+    if not (groups and self.groupFrames) then
+        return
+    end
+
+    local panels = {}
+    for groupId, group in pairs(groups) do
+        local frame = self.groupFrames[groupId]
+        if group and group.parentContainerId and group.anchor and frame then
+            if not group.compactLayout and self.GetGroupLayoutButtonCount then
+                frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
+            else
+                frame.layoutButtonCount = nil
+            end
+            if self.ResizeGroupFrame then
+                self:ResizeGroupFrame(groupId)
+            end
+            panels[#panels + 1] = {
+                groupId = groupId,
+                group = group,
+                frame = frame,
+                depth = GetPanelAnchorDepth(groups, groupId),
+            }
+        end
+    end
+
+    table.sort(panels, function(a, b)
+        if a.depth ~= b.depth then
+            return a.depth < b.depth
+        end
+        return tostring(a.groupId) < tostring(b.groupId)
+    end)
+
+    for _, panel in ipairs(panels) do
+        if not (panel.group.compactLayout and IsFrameAnchoredToSavedTarget(panel.frame, panel.group.anchor)) then
+            self:AnchorGroupFrame(panel.frame, panel.group.anchor)
+        end
+    end
+end
+
+function CooldownCompanion:FinalizeNonPanelGroupAnchors()
+    local groups = self.db and self.db.profile and self.db.profile.groups
+    if not (groups and self.groupFrames) then
+        return
+    end
+
+    for groupId, group in pairs(groups) do
+        local anchor = group and group.anchor
+        local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
+        local frame = self.groupFrames[groupId]
+        if frame
+            and group
+            and not group.parentContainerId
+            and IsAddonFrameAnchorTarget(relativeTo) then
+            self:AnchorGroupFrame(frame, anchor)
         end
     end
 end
@@ -1839,6 +2079,7 @@ function CooldownCompanion:RefreshAllGroups()
     end
 
     self:FinalizeContainerAnchorsToScreenOffsets()
+    self:FinalizePanelAnchors()
     if self.RefreshAllContainerWrappers then
         self:RefreshAllContainerWrappers()
     end
@@ -1953,6 +2194,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     end
 
     self:FinalizeContainerAnchorsToScreenOffsets()
+    self:FinalizePanelAnchors()
     if self.RefreshAllContainerWrappers then
         self:RefreshAllContainerWrappers()
     end

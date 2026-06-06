@@ -19,6 +19,48 @@ local issecretvalue = issecretvalue
 
 local SOAR_SPELL_ID = 430747
 
+local function FrameAlphaDiffers(frame, alpha)
+    if not (frame and frame.GetAlpha) then
+        return false
+    end
+    return frame:GetAlpha() ~= alpha
+end
+
+local function GetAddonAnchorGroupId(frameName)
+    if not CooldownCompanion.ParseAddonAnchorFrameName then
+        return nil
+    end
+
+    local kind, id = CooldownCompanion:ParseAddonAnchorFrameName(frameName)
+    return kind == "group" and id or nil
+end
+
+local function GetPanelAlphaAnchorRelativeTo(group)
+    if CooldownCompanion.GetActivePanelAnchorRelativeTo then
+        return CooldownCompanion:GetActivePanelAnchorRelativeTo(group)
+    end
+
+    local anchor = group and group.anchor
+    return type(anchor) == "table" and anchor.relativeTo or nil
+end
+
+local function CollectPanelAlphaAnchorTargets(groups)
+    local targets = nil
+    for _, group in pairs(groups or {}) do
+        local relativeTo = GetPanelAlphaAnchorRelativeTo(group)
+        local targetGroupId = GetAddonAnchorGroupId(relativeTo)
+        if group
+            and group.parentContainerId
+            and group.inheritPanelAlpha ~= false
+            and targetGroupId then
+            targets = targets or {}
+            targets[targetGroupId] = true
+            targets[tostring(targetGroupId)] = true
+        end
+    end
+    return targets
+end
+
 -- Alpha fade system: per-group runtime state
 -- self.alphaState[groupId] = {
 --     currentAlpha   - current interpolated alpha
@@ -233,7 +275,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
     -- Force 100% alpha while group is unlocked for easier positioning
     if not locked then
         frame._naturalAlpha = nil
-        if state.currentAlpha ~= 1 or state.lastAlpha ~= 1 then
+        if state.currentAlpha ~= 1 or state.lastAlpha ~= 1 or FrameAlphaDiffers(frame, 1) then
             frame:SetAlpha(1)
             state.currentAlpha = 1
             state.desiredAlpha = 1
@@ -254,7 +296,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
         else
             frame._naturalAlpha = nil
         end
-        if state.currentAlpha and state.currentAlpha ~= 1 then
+        if (state.currentAlpha and state.currentAlpha ~= 1) or FrameAlphaDiffers(frame, 1) then
             frame:SetAlpha(1)
             state.currentAlpha = 1
             state.desiredAlpha = 1
@@ -286,7 +328,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
     -- then force the frame itself to full alpha for config visibility.
     if configSelected then
         frame._naturalAlpha = desired
-        if state.lastAlpha ~= 1 then
+        if state.lastAlpha ~= 1 or FrameAlphaDiffers(frame, 1) then
             frame:SetAlpha(1)
             state.currentAlpha = 1
             state.desiredAlpha = 1
@@ -301,7 +343,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
     local fadeOut = group.fadeOutDuration or 0.2
     local alpha = UpdateFadedAlpha(state, desired, now, fadeIn, fadeOut)
 
-    if state.lastAlpha ~= alpha then
+    if state.lastAlpha ~= alpha or FrameAlphaDiffers(frame, alpha) then
         frame:SetAlpha(alpha)
         state.lastAlpha = alpha
     end
@@ -433,9 +475,12 @@ function CooldownCompanion:InitAlphaUpdateFrame()
         end
 
         local containers = self.db.profile.groupContainers or {}
-        for groupId, group in pairs(self.db.profile.groups) do
-            local frame = self.groupFrames[groupId]
-            if frame and frame:IsShown() then
+        local groups = self.db.profile.groups or {}
+        local panelAlphaAnchorTargets = CollectPanelAlphaAnchorTargets(groups)
+        for groupId, group in pairs(groups) do
+            local frame = self.groupFrames[groupId] or (self._dormantFrames and self._dormantFrames[groupId])
+            if frame
+                and (frame:IsShown() or (panelAlphaAnchorTargets and panelAlphaAnchorTargets[groupId])) then
                 if GroupNeedsAlphaUpdate(group, groupId) then
                     local locked = true
                     if group.parentContainerId then
