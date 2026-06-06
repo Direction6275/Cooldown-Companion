@@ -157,6 +157,7 @@ local RefreshCustomAuraBarAuraUnitForSpell = RB.RefreshCustomAuraBarAuraUnitForS
 local RBP = ST._RBP
 local resourceBarCollapsedSections = RBP.collapsedSections
 local BuildResourceAuraOverlaySection = RBP.BuildResourceAuraOverlaySection
+local AddResourceAuraOverrideControls = RBP.AddResourceAuraOverrideControls
 local GetConfigActiveResources = RBP.GetConfigActiveResources
 local GetCurrentConfigSpecID = RBP.GetCurrentConfigSpecID
 local ReadSpecOverrideKey = RBP.ReadSpecOverrideKey
@@ -645,12 +646,13 @@ local function AddResourceSpecCopyButton(enableCb, characterCopyButton)
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Copy From Another Spec")
-        GameTooltip:AddLine("Copies Column 2 tab settings from another spec into your current spec.", 1, 1, 1, true)
+        GameTooltip:AddLine("Copies shared resource bar settings from another spec into your current spec.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("What is copied:", 1, 0.82, 0, true)
-        GameTooltip:AddLine("- Styling tab", 1, 1, 1, true)
+        GameTooltip:AddLine("- Appearance tab", 1, 1, 1, true)
         GameTooltip:AddLine("- Layout tab", 1, 1, 1, true)
-        GameTooltip:AddLine("- Colors tab settings that apply to the current spec", 1, 1, 1, true)
+        GameTooltip:AddLine("- Static resource colors", 1, 1, 1, true)
+        GameTooltip:AddLine("- Resource Settings except aura overlays", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("What is not copied:", 1, 0.82, 0, true)
         GameTooltip:AddLine("- Health settings", 1, 1, 1, true)
@@ -1197,7 +1199,7 @@ end
 
 ST._BuildBarHeightControls = BuildBarHeightControls
 
-local function BuildResourceBarStylingPanel(container, sectionMode)
+local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     local settings = CooldownCompanion:GetResourceBarSettings()
 
     if not settings.enabled then
@@ -1210,14 +1212,23 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     end
 
     local mode = sectionMode or "all"
-    local showBarText = (mode == "all" or mode == "bar_text")
+    local resourceSettingsPowerType = opts and tonumber(opts.powerType) or nil
+    local showResourceSettings = mode == "resource_settings" and resourceSettingsPowerType ~= nil
+    local showBarText = (mode == "all" or mode == "bar_text" or showResourceSettings)
     local showColors = (mode == "all" or mode == "colors")
     local showHealthColors = (mode == "all" or mode == "health")
-    local showAuraOverlays = (mode == "all" or mode == "colors") -- aura overlays merged into Colors tab
+    local showAuraOverlays = (mode == "all")
+    local showResourceText = showResourceSettings
+    local showThresholdsTicks = false
 
     local applyBars = function() CooldownCompanion:ApplyResourceBars() end
     local healthResourceID = -1 -- Keep aligned with RB.RESOURCE_HEALTH without adding an upvalue here.
-    local displaySpecID = CS._GetCurrentConfigSpecID()
+    if showResourceSettings then
+        local hasSegmentedThreshold = SEGMENTED_TYPES[resourceSettingsPowerType] == true or resourceSettingsPowerType == 100
+        local hasContinuousTick = resourceSettingsPowerType ~= 101 and resourceSettingsPowerType ~= healthResourceID
+        showThresholdsTicks = hasSegmentedThreshold or hasContinuousTick
+    end
+    local displaySpecID = opts and tonumber(opts.specID) or CS._GetCurrentConfigSpecID()
     local displayProfile = displaySpecID and CS._GetSpecResourceDisplayProfile(settings, displaySpecID) or nil
     if not displaySpecID or not displayProfile then
         local label = AceGUI:Create("Label")
@@ -1237,8 +1248,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     end
     local localBarTextureName = displayProfile.barTexture or settings.barTexture or "Solid"
     local effectiveBarTextureName = ST.GetEffectiveBarTextureName(localBarTextureName)
+    local _colorSpecID = displaySpecID
 
     if showBarText then
+    if not showResourceSettings then
     -- Bar Texture
     local texDrop = AceGUI:Create("Dropdown")
     texDrop:SetLabel("Bar Texture")
@@ -1313,8 +1326,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
             container:AddChild(borderSizeSlider)
         end
     end
+    end
 
     -- ============ Text Section ============
+    if showResourceText then
     local rbTextAdvBtns = {}
 
     local textHeading = AceGUI:Create("Heading")
@@ -1337,7 +1352,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
     if not textCollapsed then
         -- Per-resource "Show Text" checkboxes (continuous + segmented resources)
-        local resources = GetConfigActiveResources()
+        local resources = { resourceSettingsPowerType }
         for _, pt in ipairs(resources) do
             local capturedPt = pt
             local isHealthResource = capturedPt == healthResourceID
@@ -1542,9 +1557,14 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 end
             end
 
-            AddAdvancedToggle(cb, "rbText_" .. capturedPt, rbTextAdvBtns, showTextEnabled, {
+            local textAdvKey = "rbText_" .. capturedPt .. "_" .. tostring(displaySpecID)
+            AddAdvancedToggle(cb, textAdvKey, rbTextAdvBtns, showTextEnabled, {
                 title = name .. " Text Advanced",
                 build = BuildResourceTextAdvanced,
+                context = {
+                    selectedResourcePowerType = capturedPt,
+                    resourceSettingsSpecID = displaySpecID,
+                },
             })
 
             if capturedPt == 5 then
@@ -1663,12 +1683,18 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                     panel:AddChild(ySlider)
                 end
 
-                AddAdvancedToggle(rechargeCb, "rbRechargeText_" .. capturedPt, rbTextAdvBtns, rechargeEnabled, {
+                local rechargeAdvKey = "rbRechargeText_" .. capturedPt .. "_" .. tostring(displaySpecID)
+                AddAdvancedToggle(rechargeCb, rechargeAdvKey, rbTextAdvBtns, rechargeEnabled, {
                     title = name .. " Recharge Text Advanced",
                     build = BuildRechargeTextAdvanced,
+                    context = {
+                        selectedResourcePowerType = capturedPt,
+                        resourceSettingsSpecID = displaySpecID,
+                    },
                 })
             end
         end
+    end
     end
 
     end
@@ -1705,8 +1731,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
     colorHeading.right:ClearAllPoints()
     colorHeading.right:SetPoint("RIGHT", colorHeading.frame, "RIGHT", -3, 0)
     colorHeading.right:SetPoint("LEFT", colorCollapseBtn, "RIGHT", 4, 0)
-
-    local _colorSpecID = GetCurrentConfigSpecID()
 
     if not _colorSpecID and not colorCollapsed then
         local specUnavailLabel = AceGUI:Create("Label")
@@ -1875,6 +1899,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
         end
     end
 
+    end
+
+    if showThresholdsTicks then
     -- ============ Thresholds & Ticks Section ============
     local thresholdHeading = AceGUI:Create("Heading")
     thresholdHeading:SetText("Thresholds & Ticks")
@@ -1903,7 +1930,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
     if not thresholdCollapsed then
         local rbThresholdTickAdvBtns = {}
-        local resources = GetConfigActiveResources()
+        local resources = { resourceSettingsPowerType }
         for _, pt in ipairs(resources) do
             if not settings.resources[pt] then
                 settings.resources[pt] = {}
@@ -1915,7 +1942,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                 local isSegmented = SEGMENTED_TYPES[capturedPt] == true or capturedPt == 100
 
                 if isSegmented then
-                    local thresholdAdvKey = "rbSegThreshold_" .. capturedPt
+                    local thresholdAdvKey = "rbSegThreshold_" .. capturedPt .. "_" .. tostring(_colorSpecID)
                     local thresholdEnableCb = AceGUI:Create("CheckBox")
                     thresholdEnableCb:SetLabel("Enable " .. resourceName .. " Threshold Color")
                     thresholdEnableCb:SetValue(ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdEnabled", false) == true)
@@ -1924,7 +1951,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         local wasEnabled = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdEnabled", false) == true
                         WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdEnabled", val == true)
                         if val and not wasEnabled and CS.QueueAdvancedSettingsPanelOpen then
-                            CS.QueueAdvancedSettingsPanelOpen(thresholdAdvKey)
+                            CS.QueueAdvancedSettingsPanelOpen(thresholdAdvKey, {
+                                selectedResourcePowerType = capturedPt,
+                                resourceSettingsSpecID = _colorSpecID,
+                            })
                         end
                         CooldownCompanion:ApplyResourceBars()
                         C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
@@ -1973,11 +2003,15 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         {
                             title = resourceName .. " Threshold Advanced",
                             build = BuildSegmentedThresholdAdvanced,
+                            context = {
+                                selectedResourcePowerType = capturedPt,
+                                resourceSettingsSpecID = _colorSpecID,
+                            },
                         }
                     )
                 elseif capturedPt ~= 101 and capturedPt ~= healthResourceID then
                     -- Stagger (101) and Health have dedicated coloring; tick markers not applicable
-                    local tickAdvKey = "rbTickMarker_" .. capturedPt
+                    local tickAdvKey = "rbTickMarker_" .. capturedPt .. "_" .. tostring(_colorSpecID)
                     local _tickEnabled = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickEnabled", false) == true
                     local tickEnableCb = AceGUI:Create("CheckBox")
                     tickEnableCb:SetLabel("Enable " .. resourceName .. " Tick Marker")
@@ -1987,7 +2021,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         local wasEnabled = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickEnabled", false) == true
                         WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickEnabled", val == true)
                         if val and not wasEnabled and CS.QueueAdvancedSettingsPanelOpen then
-                            CS.QueueAdvancedSettingsPanelOpen(tickAdvKey)
+                            CS.QueueAdvancedSettingsPanelOpen(tickAdvKey, {
+                                selectedResourcePowerType = capturedPt,
+                                resourceSettingsSpecID = _colorSpecID,
+                            })
                         end
                         CooldownCompanion:ApplyResourceBars()
                         C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
@@ -2095,6 +2132,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
                         {
                             title = resourceName .. " Tick Marker Advanced",
                             build = BuildTickMarkerAdvanced,
+                            context = {
+                                selectedResourcePowerType = capturedPt,
+                                resourceSettingsSpecID = _colorSpecID,
+                            },
                         }
                     )
                 end
@@ -2104,10 +2145,53 @@ local function BuildResourceBarStylingPanel(container, sectionMode)
 
     end
 
+    if showResourceSettings then
+        local auraHeading = AceGUI:Create("Heading")
+        auraHeading:SetText("Aura Overlay")
+        ColorHeading(auraHeading)
+        auraHeading:SetFullWidth(true)
+        container:AddChild(auraHeading)
+
+        local rbAuraOverlayAdvBtns = {}
+        local resourceName = POWER_NAMES[resourceSettingsPowerType] or ("Power " .. resourceSettingsPowerType)
+        AddResourceAuraOverrideControls(container, settings, resourceSettingsPowerType, resourceName, rbAuraOverlayAdvBtns, {
+            specID = displaySpecID,
+            context = {
+                selectedResourcePowerType = resourceSettingsPowerType,
+                resourceSettingsSpecID = displaySpecID,
+            },
+        })
+    end
+
     if showAuraOverlays then
         BuildResourceAuraOverlaySection(container, settings)
     end
 
+end
+
+local function BuildResourceSettingsPanel(container, powerType, specID)
+    local numericPowerType = tonumber(powerType)
+    local numericSpecID = tonumber(specID)
+    if not numericPowerType or not numericSpecID then
+        local label = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(label)
+        label:SetText("Specialization data loading...")
+        label:SetFullWidth(true)
+        container:AddChild(label)
+        return
+    end
+
+    local resourceName = POWER_NAMES[numericPowerType] or ("Power " .. numericPowerType)
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(resourceName .. " Resource Settings")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    BuildResourceBarStylingPanel(container, "resource_settings", {
+        powerType = numericPowerType,
+        specID = numericSpecID,
+    })
 end
 
 local function BuildResourceBarBarTextStylingPanel(container)
@@ -2129,3 +2213,4 @@ ST._BuildResourceBarStylingPanel = BuildResourceBarStylingPanel
 ST._BuildResourceBarBarTextStylingPanel = BuildResourceBarBarTextStylingPanel
 ST._BuildResourceBarColorsStylingPanel = BuildResourceBarColorsStylingPanel
 ST._BuildResourceBarHealthStylingPanel = BuildResourceBarHealthStylingPanel
+ST._BuildResourceSettingsPanel = BuildResourceSettingsPanel

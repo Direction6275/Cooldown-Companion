@@ -68,6 +68,8 @@ local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local CLASS_RESOURCES_CONFIG = RB.CLASS_RESOURCES_CONFIG
 local SPEC_RESOURCES_CONFIG = RB.SPEC_RESOURCES_CONFIG
 local IsAstralPowerAvailableForCurrentDruidSpec = RB.IsAstralPowerAvailableForCurrentDruidSpec
+local DRUID_CLASS_ID = 11
+local DRUID_BALANCE_SPEC_ID = 102
 
 local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
 local GetResolvedResourceAuraUnit = RB.GetResolvedResourceAuraUnit
@@ -299,6 +301,137 @@ local function GetCurrentConfigSpecID()
         return C_SpecializationInfo.GetSpecializationInfo(specIdx)
     end
     return nil
+end
+
+local function AddUniqueResource(result, seen, powerType)
+    if powerType == nil or powerType == RESOURCE_HEALTH or seen[powerType] then
+        return
+    end
+    result[#result + 1] = powerType
+    seen[powerType] = true
+end
+
+local function ResourceListContains(resourceList, powerType)
+    if type(resourceList) ~= "table" then
+        return false
+    end
+    for _, listedPowerType in ipairs(resourceList) do
+        if listedPowerType == powerType then
+            return true
+        end
+    end
+    return false
+end
+
+local function IsResourceConfigEnabled(settings, powerType)
+    local resource = settings and settings.resources and settings.resources[powerType]
+    return not (type(resource) == "table" and resource.enabled == false)
+end
+
+local function GetPlayerClassAndSpecsConfig()
+    local _, _, classID = UnitClass("player")
+    local specIDs = {}
+    local numSpecs = GetNumSpecializations() or 0
+    for specIndex = 1, numSpecs do
+        local specID = C_SpecializationInfo.GetSpecializationInfo(specIndex)
+        if specID then
+            specIDs[#specIDs + 1] = specID
+        end
+    end
+    return classID, specIDs
+end
+
+local function GetConfigEditableResources(settings)
+    settings = settings or CooldownCompanion:GetResourceBarSettings()
+    if not (type(settings) == "table" and settings.enabled == true) then
+        return {}
+    end
+
+    local classID, specIDs = GetPlayerClassAndSpecsConfig()
+    if not classID then
+        return {}
+    end
+
+    local result = {}
+    local seen = {}
+    for _, powerType in ipairs(CLASS_RESOURCES_CONFIG[classID] or {}) do
+        if IsResourceConfigEnabled(settings, powerType) then
+            AddUniqueResource(result, seen, powerType)
+        end
+    end
+
+    for _, specID in ipairs(specIDs) do
+        for _, powerType in ipairs(SPEC_RESOURCES_CONFIG[specID] or {}) do
+            if IsResourceConfigEnabled(settings, powerType) then
+                AddUniqueResource(result, seen, powerType)
+            end
+        end
+    end
+
+    return result
+end
+
+local function GetResourceApplicableSpecIDs(powerType)
+    local classID, specIDs = GetPlayerClassAndSpecsConfig()
+    if not classID or powerType == nil or powerType == RESOURCE_HEALTH then
+        return {}
+    end
+
+    local applicable = {}
+    for _, specID in ipairs(specIDs) do
+        local belongs
+        if classID == DRUID_CLASS_ID then
+            if powerType == 8 then
+                belongs = specID == DRUID_BALANCE_SPEC_ID
+            else
+                belongs = ResourceListContains(CLASS_RESOURCES_CONFIG[DRUID_CLASS_ID], powerType)
+            end
+        elseif SPEC_RESOURCES_CONFIG[specID] then
+            belongs = ResourceListContains(SPEC_RESOURCES_CONFIG[specID], powerType)
+        else
+            belongs = ResourceListContains(CLASS_RESOURCES_CONFIG[classID], powerType)
+        end
+        if belongs then
+            applicable[#applicable + 1] = specID
+        end
+    end
+    return applicable
+end
+
+local function IsResourceEditableInColumn4(powerType, settings)
+    settings = settings or CooldownCompanion:GetResourceBarSettings()
+    if powerType == nil or powerType == RESOURCE_HEALTH then
+        return false
+    end
+    if not (type(settings) == "table" and settings.enabled == true) then
+        return false
+    end
+    if not IsResourceConfigEnabled(settings, powerType) then
+        return false
+    end
+    return #GetResourceApplicableSpecIDs(powerType) > 0
+end
+
+local function GetDefaultResourceSettingsSpecID(powerType, preferredSpecID)
+    local applicable = GetResourceApplicableSpecIDs(powerType)
+    if #applicable == 0 then
+        return nil
+    end
+
+    if preferredSpecID then
+        for _, specID in ipairs(applicable) do
+            if specID == preferredSpecID then
+                return specID
+            end
+        end
+    end
+    local currentSpecID = GetCurrentConfigSpecID()
+    for _, specID in ipairs(applicable) do
+        if specID == currentSpecID then
+            return specID
+        end
+    end
+    return applicable[1]
 end
 
 ------------------------------------------------------------------------
@@ -809,13 +942,15 @@ local function ClearResourceAuraEntryConfig(powerType, resource, specID)
 end
 
 
-local function AddResourceAuraOverrideControls(container, settings, powerType, resourceName, auraAdvButtons)
+local function AddResourceAuraOverrideControls(container, settings, powerType, resourceName, auraAdvButtons, opts)
     if not settings.resources[powerType] then
         settings.resources[powerType] = {}
     end
     local res = settings.resources[powerType]
-    local auraAdvKey = "rbAuraOverlay_" .. powerType
-    local currentSpecID = GetCurrentConfigSpecID()
+    local configuredSpecID = opts and tonumber(opts.specID) or nil
+    local auraAdvKey = "rbAuraOverlay_" .. powerType .. (configuredSpecID and ("_" .. configuredSpecID) or "")
+    local currentSpecID = configuredSpecID or GetCurrentConfigSpecID()
+    local advancedContext = opts and opts.context or nil
     if not currentSpecID then
         local specUnavailLabel = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(specUnavailLabel)
@@ -835,7 +970,7 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
         WriteSpecOverrideKey(settings, powerType, currentSpecID, "auraOverlayEnabled", val == true)
 
         if val and CS.QueueAdvancedSettingsPanelOpen then
-            CS.QueueAdvancedSettingsPanelOpen(auraAdvKey)
+            CS.QueueAdvancedSettingsPanelOpen(auraAdvKey, advancedContext)
         end
         CooldownCompanion:ApplyResourceBars()
         C_Timer.After(0, function() CooldownCompanion:RefreshConfigPanel() end)
@@ -943,6 +1078,7 @@ local function AddResourceAuraOverrideControls(container, settings, powerType, r
         {
             title = resourceName .. " Aura Overlay Advanced",
             build = BuildResourceAuraOverlayAdvanced,
+            context = advancedContext,
         }
     )
 
@@ -970,7 +1106,7 @@ local function BuildResourceAuraOverlaySection(container, settings)
         "Resource Aura Overlays",
         {"When enabled, a selected aura (by Spell ID) recolors the resource bar while that aura is active.", 1, 1, 1, true},
         " ",
-        {"These settings are per-specialization. Switch specs to configure different aura overlays.", 1, 1, 1, true},
+        {"These settings are per-specialization. Select a resource, then use the specialization tabs in Resource Settings to edit each spec.", 1, 1, 1, true},
     }, auraHeading)
 
     auraHeading.right:ClearAllPoints()
@@ -1025,6 +1161,10 @@ ST._RBP = {
     collapsedSections = resourceBarCollapsedSections,
     BuildResourceAuraOverlaySection = BuildResourceAuraOverlaySection,
     GetConfigActiveResources = GetConfigActiveResources,
+    GetConfigEditableResources = GetConfigEditableResources,
+    GetResourceApplicableSpecIDs = GetResourceApplicableSpecIDs,
+    IsResourceEditableInColumn4 = IsResourceEditableInColumn4,
+    GetDefaultResourceSettingsSpecID = GetDefaultResourceSettingsSpecID,
     GetCurrentConfigSpecID = GetCurrentConfigSpecID,
     GetSpecOverrideTable = GetSpecOverrideTable,
     ReadSpecOverrideKey = ReadSpecOverrideKey,

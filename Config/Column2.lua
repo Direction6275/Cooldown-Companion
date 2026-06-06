@@ -1177,7 +1177,7 @@ local function RefreshColumn2()
     end
     wipe(CS.col2BarWidgets)
 
-    -- Bars & Frames panel mode: show Styling in col2
+        -- Bars & Frames panel mode: show Appearance/Layout/Colors in col2
     if CS.resourceBarPanelActive then
         CancelDrag()
         CS.HideAutocomplete()
@@ -1269,7 +1269,7 @@ local function RefreshColumn2()
             local health = rbSettings and rbSettings.resources and rbSettings.resources[RESOURCE_HEALTH]
             local healthEnabled = health and health.enabled == true
             local tabs = {
-                { value = "bar_text", text = "Styling" },
+                { value = "bar_text", text = "Appearance" },
                 { value = "positioning", text = "Layout" },
                 { value = "colors", text = "Colors" },
             }

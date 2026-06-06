@@ -262,7 +262,7 @@ local function GetLayoutOrderColumnTitle()
 end
 
 local function GetCustomBarsColumnTitle()
-    return "Custom Bars"
+    return "Custom Bars & Resources"
 end
 
 local function CountSelections(selectionSet)
@@ -358,8 +358,17 @@ end
 local function GetColumn4HeaderMode(selection)
     if CS.resourceBarPanelActive then
         local resourceBarSettings = CooldownCompanion:GetResourceBarSettings()
-        if resourceBarSettings and resourceBarSettings.enabled == true and CS.selectedCustomBarId then
-            return "custom_bar"
+        if resourceBarSettings and resourceBarSettings.enabled == true then
+            if CS.selectedResourcePowerType
+                and ST._RBP
+                and ST._RBP.IsResourceEditableInColumn4
+                and ST._RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, resourceBarSettings)
+            then
+                return "resource_settings"
+            end
+            if CS.selectedCustomBarId then
+                return "custom_bar"
+            end
         end
         return "layout_order"
     end
@@ -392,6 +401,8 @@ local function GetColumn4HeaderTitle(selection)
     local mode = GetColumn4HeaderMode(selection)
     if mode == "layout_order" then
         return GetLayoutOrderColumnTitle()
+    elseif mode == "resource_settings" then
+        return "Resource Settings"
     elseif mode == "custom_bar" then
         return "Custom Bar Settings"
     elseif mode == "panel" then

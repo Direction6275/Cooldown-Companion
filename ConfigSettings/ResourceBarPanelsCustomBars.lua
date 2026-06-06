@@ -1548,17 +1548,68 @@ local function AddResourceBarsDisabledLabel(container, text)
     label:SetFullWidth(true)
     container:AddChild(label)
 end
+ST._AddResourceBarsDisabledLabel = AddResourceBarsDisabledLabel
+
+ST._AddResourceSettingsListSection = function(container, settings)
+    local resources = settings and RBP.GetConfigEditableResources and RBP.GetConfigEditableResources(settings) or {}
+    local editableResourceSet = {}
+    for _, powerType in ipairs(resources or {}) do
+        editableResourceSet[powerType] = true
+    end
+    if ST._PruneConfigResourceSelection then
+        ST._PruneConfigResourceSelection(function(powerType)
+            return editableResourceSet[powerType] == true
+        end)
+    end
+
+    if #resources == 0 then
+        return
+    end
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Resources")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    for _, powerType in ipairs(resources) do
+        local row = AceGUI:Create("InteractiveLabel")
+        if CleanRecycledEntry then CleanRecycledEntry(row) end
+        row:SetText(POWER_NAMES[powerType] or ("Power " .. tostring(powerType)))
+        row:SetFullWidth(true)
+        row:SetFontObject(GameFontHighlight)
+        row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        if ST._ApplyConfigTextRow then
+            ST._ApplyConfigTextRow(row, "LEFT", 4, 4)
+        end
+        if CS.selectedResourcePowerType == powerType then
+            row:SetColor(0.4, 0.7, 1.0)
+        end
+        if row.frame and row.frame.RegisterForClicks then
+            row.frame:RegisterForClicks("AnyUp")
+        end
+        row:SetCallback("OnClick", function() end)
+        row.frame:SetScript("OnMouseUp", function(self, mouseButton)
+            if mouseButton == "LeftButton" then
+                ST._SelectConfigResource(powerType, { toggle = true })
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        end)
+        container:AddChild(row)
+    end
+end
 
 local function BuildCustomBarsListPanel(container)
     local settings = CooldownCompanion:GetResourceBarSettings()
     if not (settings and settings.enabled) then
-        AddResourceBarsDisabledLabel(container, "Enable Resource Bars to configure Custom Bars.")
+        ST._AddResourceSettingsListSection(container, nil)
+        ST._AddResourceBarsDisabledLabel(container, "Enable Resource Bars to configure Custom Bars and Resources.")
         return
     end
 
-    local customBarsSpecID = GetCurrentConfigSpecID()
+    local customBarsSpecID = ST._RBP.GetCurrentConfigSpecID()
     local customBars = RB.GetAllCustomBars and RB.GetAllCustomBars(settings) or CooldownCompanion:GetSpecCustomAuraBars()
-    PruneConfigCustomBarSelection(function(customBarId)
+    ST._PruneConfigCustomBarSelection(function(customBarId)
         return FindCustomBarIndexById(customBars, customBarId) ~= nil
     end)
     local selectedId = CS.selectedCustomBarId
@@ -1606,7 +1657,7 @@ local function BuildCustomBarsListPanel(container)
         end
         local sawAuraEntry = false
         local sawSpellEntry = false
-        local cache = BuildAuraBarAutocompleteCache and BuildAuraBarAutocompleteCache() or nil
+        local cache = ST._RBP.BuildAuraBarAutocompleteCache and ST._RBP.BuildAuraBarAutocompleteCache() or nil
         for _, entry in ipairs(cache or {}) do
             if entry.id == spellId then
                 if GetCustomBarEntryTypeForAutocomplete(entry) == "aura" then
@@ -1654,7 +1705,7 @@ local function BuildCustomBarsListPanel(container)
             customBars[#customBars + 1] = entry
             EnsureCustomBarLayout(settings, nil, id, 1000 + #customBars)
         end
-        SelectConfigCustomBar(id)
+        ST._SelectConfigCustomBar(id)
         ApplyCustomAuraBarPanelChanges({
             updateAnchors = true,
             refreshConfig = true,
@@ -1734,7 +1785,7 @@ local function BuildCustomBarsListPanel(container)
     local importBtn = AceGUI:Create("Button")
     importBtn:SetText("Import")
     importBtn:SetCallback("OnClick", function()
-        OpenImportReviewWindow()
+        ST._OpenImportReviewWindow()
     end)
     actionControls:AddChild(importBtn)
 
@@ -1744,7 +1795,7 @@ local function BuildCustomBarsListPanel(container)
         local payload = RB.BuildCustomBarsExportPayload and RB.BuildCustomBarsExportPayload(settings, customBars)
         local exportString = payload and ST._EncodeExportData and ST._EncodeExportData(payload)
         if exportString then
-            ShowPopupAboveConfig("CDC_EXPORT_CUSTOM_BARS", nil, { exportString = exportString })
+            CS.ShowPopupAboveConfig("CDC_EXPORT_CUSTOM_BARS", nil, { exportString = exportString })
         else
             CooldownCompanion:Print("Export failed: Custom Bar data was unavailable.")
         end
@@ -1786,37 +1837,35 @@ local function BuildCustomBarsListPanel(container)
         empty:SetText("|cff888888No Custom Bars yet.|r")
         empty:SetFullWidth(true)
         container:AddChild(empty)
-        return
-    end
-
-    local loadedBars = {}
-    local inactiveBars = {}
-    for index, entry in ipairs(customBars) do
-        local target = (RB.CustomBarHasSpec and RB.CustomBarHasSpec(entry, customBarsSpecID)) and loadedBars or inactiveBars
-        target[#target + 1] = { entry = entry, index = index }
-    end
-
-    local customBarRows = {
-        { heading = "Loaded" },
-    }
-    if #loadedBars == 0 then
-        customBarRows[#customBarRows + 1] = { empty = "No Custom Bars loaded for this spec." }
     else
-        for _, row in ipairs(loadedBars) do
-            customBarRows[#customBarRows + 1] = row
+        local loadedBars = {}
+        local inactiveBars = {}
+        for index, entry in ipairs(customBars) do
+            local target = (RB.CustomBarHasSpec and RB.CustomBarHasSpec(entry, customBarsSpecID)) and loadedBars or inactiveBars
+            target[#target + 1] = { entry = entry, index = index }
         end
-    end
-    customBarRows[#customBarRows + 1] = { heading = "Inactive Specs" }
-    if #inactiveBars == 0 then
-        customBarRows[#customBarRows + 1] = { empty = "No inactive-spec Custom Bars." }
-    else
-        for _, row in ipairs(inactiveBars) do
-            row.inactive = true
-            customBarRows[#customBarRows + 1] = row
-        end
-    end
 
-    for index, item in ipairs(customBarRows) do
+        local customBarRows = {
+            { heading = "Loaded" },
+        }
+        if #loadedBars == 0 then
+            customBarRows[#customBarRows + 1] = { empty = "No Custom Bars loaded for this spec." }
+        else
+            for _, row in ipairs(loadedBars) do
+                customBarRows[#customBarRows + 1] = row
+            end
+        end
+        customBarRows[#customBarRows + 1] = { heading = "Inactive Specs" }
+        if #inactiveBars == 0 then
+            customBarRows[#customBarRows + 1] = { empty = "No inactive-spec Custom Bars." }
+        else
+            for _, row in ipairs(inactiveBars) do
+                row.inactive = true
+                customBarRows[#customBarRows + 1] = row
+            end
+        end
+
+        for index, item in ipairs(customBarRows) do
         if item.heading then
             local listHeading = AceGUI:Create("Heading")
             listHeading:SetText(item.heading)
@@ -1942,7 +1991,7 @@ local function BuildCustomBarsListPanel(container)
                 return
             end
             if mouseButton == "RightButton" then
-                local selectionChanged = SelectConfigCustomBar(customBarId, {
+                local selectionChanged = ST._SelectConfigCustomBar(customBarId, {
                     clearPreview = true,
                     clearButtonMulti = true,
                 })
@@ -1952,12 +2001,12 @@ local function BuildCustomBarsListPanel(container)
                 OpenCustomBarRowMenu(customBars, customBarsSpecID, customBarId, entry)
             elseif mouseButton == "LeftButton" then
                 if IsControlKeyDown and IsControlKeyDown() then
-                    ToggleConfigCustomBarMultiSelect(customBarId)
+                    ST._ToggleConfigCustomBarMultiSelect(customBarId)
                     CooldownCompanion:RefreshConfigPanel()
                     return
                 end
 
-                SelectConfigCustomBar(customBarId, {
+                ST._SelectConfigCustomBar(customBarId, {
                     clearPreview = true,
                     toggle = true,
                 })
@@ -1970,6 +2019,9 @@ local function BuildCustomBarsListPanel(container)
         end
         end
     end
+    end
+
+    ST._AddResourceSettingsListSection(container, settings)
 end
 
 local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, cab, isSpellCustomBar, resolvedAuraUnit, capturedKey, infoButtons, previewsEnabled)
