@@ -86,6 +86,15 @@ local function GetResourceSettingsDetailScrollKey()
     return tostring(CS.selectedResourcePowerType) .. ":" .. tostring(CS.resourceSettingsSpecID)
 end
 
+local function GetResourceSettingsSpecTabText(info, specID)
+    local specName = (info and info.name) or tostring(specID)
+    local icon = info and info.icon
+    if icon and icon ~= "" then
+        return string.format("|T%s:13:13:0:0|t %s", tostring(icon), specName)
+    end
+    return specName
+end
+
 local function GetResourceSettingsSpecTabs(powerType)
     local RBP = ST._RBP
     if not (RBP and RBP.GetResourceApplicableSpecIDs and RBP.GetPlayerSpecOptionsConfig) then
@@ -98,7 +107,7 @@ local function GetResourceSettingsSpecTabs(powerType)
         local info = specInfoByID and specInfoByID[specID] or nil
         tabs[#tabs + 1] = {
             value = tostring(specID),
-            text = (info and info.name) or tostring(specID),
+            text = GetResourceSettingsSpecTabText(info, specID),
         }
     end
     return tabs

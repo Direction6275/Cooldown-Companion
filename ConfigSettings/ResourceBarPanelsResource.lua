@@ -2181,13 +2181,6 @@ local function BuildResourceSettingsPanel(container, powerType, specID)
         return
     end
 
-    local resourceName = POWER_NAMES[numericPowerType] or ("Power " .. numericPowerType)
-    local heading = AceGUI:Create("Heading")
-    heading:SetText(resourceName .. " Resource Settings")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    container:AddChild(heading)
-
     BuildResourceBarStylingPanel(container, "resource_settings", {
         powerType = numericPowerType,
         specID = numericSpecID,

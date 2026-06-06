@@ -1106,7 +1106,7 @@ local function BuildResourceAuraOverlaySection(container, settings)
         "Resource Aura Overlays",
         {"When enabled, a selected aura (by Spell ID) recolors the resource bar while that aura is active.", 1, 1, 1, true},
         " ",
-        {"These settings are per-specialization. Select a resource, then use the specialization tabs in Resource Settings to edit each spec.", 1, 1, 1, true},
+        {"These settings are per-specialization. Select a resource in Custom Bars & Resources, then use the specialization tabs to edit that resource for each spec.", 1, 1, 1, true},
     }, auraHeading)
 
     auraHeading.right:ClearAllPoints()

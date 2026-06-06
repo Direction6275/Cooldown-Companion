@@ -1563,7 +1563,7 @@ ST._AddResourceSettingsListSection = function(container, settings)
     end
 
     if #resources == 0 then
-        return
+        return false
     end
 
     local heading = AceGUI:Create("Heading")
@@ -1597,6 +1597,7 @@ ST._AddResourceSettingsListSection = function(container, settings)
         end)
         container:AddChild(row)
     end
+    return true
 end
 
 local function BuildCustomBarsListPanel(container)
@@ -1831,53 +1832,40 @@ local function BuildCustomBarsListPanel(container)
     container:AddChild(actionControls)
     PositionCustomBarActionControls()
 
-    if #customBars == 0 then
-        local empty = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(empty)
-        empty:SetText("|cff888888No Custom Bars yet.|r")
-        empty:SetFullWidth(true)
-        container:AddChild(empty)
-    else
-        local loadedBars = {}
-        local inactiveBars = {}
-        for index, entry in ipairs(customBars) do
-            local target = (RB.CustomBarHasSpec and RB.CustomBarHasSpec(entry, customBarsSpecID)) and loadedBars or inactiveBars
-            target[#target + 1] = { entry = entry, index = index }
-        end
+    local loadedBars = {}
+    local inactiveBars = {}
+    for index, entry in ipairs(customBars) do
+        local target = (RB.CustomBarHasSpec and RB.CustomBarHasSpec(entry, customBarsSpecID)) and loadedBars or inactiveBars
+        target[#target + 1] = { entry = entry, index = index }
+    end
 
-        local customBarRows = {
-            { heading = "Loaded" },
-        }
-        if #loadedBars == 0 then
-            customBarRows[#customBarRows + 1] = { empty = "No Custom Bars loaded for this spec." }
-        else
-            for _, row in ipairs(loadedBars) do
-                customBarRows[#customBarRows + 1] = row
-            end
+    local customBarRows = {}
+    if #loadedBars > 0 then
+        customBarRows[#customBarRows + 1] = { heading = "Loaded" }
+        for _, row in ipairs(loadedBars) do
+            customBarRows[#customBarRows + 1] = row
         end
-        customBarRows[#customBarRows + 1] = { heading = "Inactive Specs" }
-        if #inactiveBars == 0 then
-            customBarRows[#customBarRows + 1] = { empty = "No inactive-spec Custom Bars." }
-        else
-            for _, row in ipairs(inactiveBars) do
-                row.inactive = true
-                customBarRows[#customBarRows + 1] = row
-            end
+    end
+    customBarRows[#customBarRows + 1] = { resources = true }
+    if #inactiveBars > 0 then
+        customBarRows[#customBarRows + 1] = { heading = "Inactive" }
+        for _, row in ipairs(inactiveBars) do
+            row.inactive = true
+            customBarRows[#customBarRows + 1] = row
         end
+    end
 
-        for index, item in ipairs(customBarRows) do
-        if item.heading then
+    local renderedListBlock = false
+    for index, item in ipairs(customBarRows) do
+        if item.resources then
+            renderedListBlock = ST._AddResourceSettingsListSection(container, settings) or renderedListBlock
+        elseif item.heading then
+            renderedListBlock = true
             local listHeading = AceGUI:Create("Heading")
             listHeading:SetText(item.heading)
             ColorHeading(listHeading)
             listHeading:SetFullWidth(true)
             container:AddChild(listHeading)
-        elseif item.empty then
-            local empty = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(empty)
-            empty:SetText("|cff888888" .. item.empty .. "|r")
-            empty:SetFullWidth(true)
-            container:AddChild(empty)
         else
         local entry = item.entry
         index = item.index or index
@@ -2019,9 +2007,14 @@ local function BuildCustomBarsListPanel(container)
         end
         end
     end
-    end
 
-    ST._AddResourceSettingsListSection(container, settings)
+    if not renderedListBlock then
+        local empty = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(empty)
+        empty:SetText("|cff888888No Custom Bars or Resources enabled.|r")
+        empty:SetFullWidth(true)
+        container:AddChild(empty)
+    end
 end
 
 local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, cab, isSpellCustomBar, resolvedAuraUnit, capturedKey, infoButtons, previewsEnabled)
