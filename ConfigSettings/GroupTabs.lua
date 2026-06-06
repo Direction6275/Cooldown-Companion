@@ -1514,6 +1514,9 @@ local function BuildLayoutTab(container)
             if frame then
                 CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
             end
+            if CooldownCompanion.RebuildPanelAlphaDependencyTargets then
+                CooldownCompanion:RebuildPanelAlphaDependencyTargets()
+            end
             CooldownCompanion:RefreshConfigPanel()
         end)
         container:AddChild(panelAlphaDrop)

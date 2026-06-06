@@ -26,41 +26,6 @@ local function FrameAlphaDiffers(frame, alpha)
     return frame:GetAlpha() ~= alpha
 end
 
-local function GetAddonAnchorGroupId(frameName)
-    if not CooldownCompanion.ParseAddonAnchorFrameName then
-        return nil
-    end
-
-    local kind, id = CooldownCompanion:ParseAddonAnchorFrameName(frameName)
-    return kind == "group" and id or nil
-end
-
-local function GetPanelAlphaAnchorRelativeTo(group)
-    if CooldownCompanion.GetActivePanelAnchorRelativeTo then
-        return CooldownCompanion:GetActivePanelAnchorRelativeTo(group)
-    end
-
-    local anchor = group and group.anchor
-    return type(anchor) == "table" and anchor.relativeTo or nil
-end
-
-local function CollectPanelAlphaAnchorTargets(groups)
-    local targets = nil
-    for _, group in pairs(groups or {}) do
-        local relativeTo = GetPanelAlphaAnchorRelativeTo(group)
-        local targetGroupId = GetAddonAnchorGroupId(relativeTo)
-        if group
-            and group.parentContainerId
-            and group.inheritPanelAlpha ~= false
-            and targetGroupId then
-            targets = targets or {}
-            targets[targetGroupId] = true
-            targets[tostring(targetGroupId)] = true
-        end
-    end
-    return targets
-end
-
 -- Alpha fade system: per-group runtime state
 -- self.alphaState[groupId] = {
 --     currentAlpha   - current interpolated alpha
@@ -476,7 +441,9 @@ function CooldownCompanion:InitAlphaUpdateFrame()
 
         local containers = self.db.profile.groupContainers or {}
         local groups = self.db.profile.groups or {}
-        local panelAlphaAnchorTargets = CollectPanelAlphaAnchorTargets(groups)
+        local panelAlphaAnchorTargets = self.GetPanelAlphaDependencyTargets
+            and self:GetPanelAlphaDependencyTargets(groups)
+            or nil
         for groupId, group in pairs(groups) do
             local frame = self.groupFrames[groupId] or (self._dormantFrames and self._dormantFrames[groupId])
             if frame

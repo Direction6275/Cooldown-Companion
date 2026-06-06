@@ -376,6 +376,7 @@ local function SaveTextureHostPosition(host)
         return
     end
 
+    local previousRelativeTo = settings.relativeTo
     if not SaveGroupedStandalonePreviewSettings(host, group, settings, owner and owner._groupId) then
         local point, relativeFrame, relPoint, x, y = host:GetPoint(1)
         settings.point = NormalizeAnchorPoint(point)
@@ -390,6 +391,9 @@ local function SaveTextureHostPosition(host)
         settings.y = math_floor(((y or 0) * 10) + 0.5) / 10
     end
 
+    if settings.relativeTo ~= previousRelativeTo and CooldownCompanion.RebuildPanelAlphaDependencyTargets then
+        CooldownCompanion:RebuildPanelAlphaDependencyTargets()
+    end
     UpdateTextureHostCoordLabel(host, settings.x, settings.y)
     CooldownCompanion:UpdateAuraTextureVisual(owner)
     if group and group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
@@ -1654,6 +1658,9 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
 end
 
 function CooldownCompanion:RefreshAllAuraTextureVisuals()
+    if self.RebuildPanelAlphaDependencyTargets then
+        self:RebuildPanelAlphaDependencyTargets()
+    end
     for _, frame in pairs(self.groupFrames or {}) do
         for _, button in ipairs(frame.buttons or {}) do
             self:UpdateAuraTextureVisual(button)
