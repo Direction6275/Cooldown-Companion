@@ -111,6 +111,7 @@ local EnsureCustomBarId = RB.EnsureCustomBarId
 local EnsureCustomBarLayout = RB.EnsureCustomBarLayout
 local GetCustomBarLayout = RB.GetCustomBarLayout
 local GetResourceSpecOverrideTable = RB.GetResourceSpecOverrideTable
+local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local RESOURCE_HEALTH_DISPLAY_KEYS = RB.RESOURCE_HEALTH_DISPLAY_KEYS
 local resourceSpecCopyButton
 local resourceSpecCopyMenu
@@ -651,7 +652,7 @@ local function AddResourceSpecCopyButton(enableCb, characterCopyButton)
         GameTooltip:AddLine("What is copied:", 1, 0.82, 0, true)
         GameTooltip:AddLine("- Appearance tab", 1, 1, 1, true)
         GameTooltip:AddLine("- Layout tab", 1, 1, 1, true)
-        GameTooltip:AddLine("- Static resource colors", 1, 1, 1, true)
+        GameTooltip:AddLine("- Resource colors", 1, 1, 1, true)
         GameTooltip:AddLine("- Resource Settings except aura overlays", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("What is not copied:", 1, 0.82, 0, true)
@@ -1199,6 +1200,120 @@ end
 
 ST._BuildBarHeightControls = BuildBarHeightControls
 
+local function AddResourceColorDescriptor(descriptors, key, label, defaultColor, hasAlpha)
+    descriptors[#descriptors + 1] = {
+        key = key,
+        label = label,
+        defaultColor = defaultColor,
+        hasAlpha = hasAlpha == true,
+    }
+end
+
+local function GetResourceColorDescriptors(powerType, effectiveBarTextureName)
+    local descriptors = {}
+    if powerType == RESOURCE_HEALTH then
+        return descriptors
+    end
+
+    if powerType == 4 then
+        AddResourceColorDescriptor(descriptors, "comboColor", "Combo Points", DEFAULT_COMBO_COLOR, false)
+        AddResourceColorDescriptor(descriptors, "comboMaxColor", "Combo Points (Max)", DEFAULT_COMBO_MAX_COLOR, false)
+        local _, _, classID = UnitClass("player")
+        if classID == 4 then
+            AddResourceColorDescriptor(descriptors, "comboChargedColor", "Combo Points (Charged)", DEFAULT_COMBO_CHARGED_COLOR, false)
+        end
+    elseif powerType == 5 then
+        AddResourceColorDescriptor(descriptors, "runeReadyColor", "Runes (Ready)", DEFAULT_RUNE_READY_COLOR, false)
+        AddResourceColorDescriptor(descriptors, "runeRechargingColor", "Runes (Recharging)", DEFAULT_RUNE_RECHARGING_COLOR, false)
+        AddResourceColorDescriptor(descriptors, "runeMaxColor", "Runes (All Ready)", DEFAULT_RUNE_MAX_COLOR, false)
+    elseif powerType == 7 then
+        AddResourceColorDescriptor(descriptors, "shardReadyColor", "Soul Shards (Ready)", DEFAULT_SHARD_READY_COLOR, false)
+        AddResourceColorDescriptor(descriptors, "shardRechargingColor", "Soul Shards (Recharging)", DEFAULT_SHARD_RECHARGING_COLOR, false)
+        AddResourceColorDescriptor(descriptors, "shardMaxColor", "Soul Shards (Max)", DEFAULT_SHARD_MAX_COLOR, false)
+    elseif powerType == 9 then
+        AddResourceColorDescriptor(descriptors, "holyColor", "Holy Power", DEFAULT_HOLY_COLOR, false)
+        AddResourceColorDescriptor(descriptors, "holyMaxColor", "Holy Power (Max)", DEFAULT_HOLY_MAX_COLOR, false)
+    elseif powerType == 12 then
+        AddResourceColorDescriptor(descriptors, "chiColor", "Chi", DEFAULT_CHI_COLOR, false)
+        AddResourceColorDescriptor(descriptors, "chiMaxColor", "Chi (Max)", DEFAULT_CHI_MAX_COLOR, false)
+    elseif powerType == 16 then
+        AddResourceColorDescriptor(descriptors, "arcaneColor", "Arcane Charges", DEFAULT_ARCANE_COLOR, false)
+        AddResourceColorDescriptor(descriptors, "arcaneMaxColor", "Arcane Charges (Max)", DEFAULT_ARCANE_MAX_COLOR, false)
+    elseif powerType == 19 then
+        AddResourceColorDescriptor(descriptors, "essenceReadyColor", "Essence (Ready)", DEFAULT_ESSENCE_READY_COLOR, false)
+        AddResourceColorDescriptor(descriptors, "essenceRechargingColor", "Essence (Recharging)", DEFAULT_ESSENCE_RECHARGING_COLOR, false)
+        AddResourceColorDescriptor(descriptors, "essenceMaxColor", "Essence (Max)", DEFAULT_ESSENCE_MAX_COLOR, false)
+    elseif powerType == 100 then
+        AddResourceColorDescriptor(descriptors, "mwBaseColor", "MW (Base)", DEFAULT_MW_BASE_COLOR, false)
+        AddResourceColorDescriptor(descriptors, "mwOverlayColor", "MW (Overlay)", DEFAULT_MW_OVERLAY_COLOR, false)
+        AddResourceColorDescriptor(descriptors, "mwMaxColor", "MW (Max)", DEFAULT_MW_MAX_COLOR, false)
+    elseif powerType == 101 then
+        AddResourceColorDescriptor(descriptors, "staggerGreenColor", "Stagger (Low)", { 0.52, 0.90, 0.52 }, false)
+        AddResourceColorDescriptor(descriptors, "staggerYellowColor", "Stagger (Medium)", { 1.0, 0.85, 0.36 }, false)
+        AddResourceColorDescriptor(descriptors, "staggerRedColor", "Stagger (High)", { 1.0, 0.42, 0.42 }, false)
+    elseif effectiveBarTextureName == "blizzard_class" and ST.POWER_ATLAS_TYPES and ST.POWER_ATLAS_TYPES[powerType] then
+        return descriptors
+    else
+        AddResourceColorDescriptor(descriptors, "color", POWER_NAMES[powerType] or ("Power " .. powerType), DEFAULT_POWER_COLORS[powerType] or { 1, 1, 1 }, false)
+    end
+
+    return descriptors
+end
+
+local function BuildResourceColorControls(container, settings, powerType, specID, effectiveBarTextureName, applyBars)
+    if not specID then
+        return false
+    end
+    if not settings.resources[powerType] then
+        settings.resources[powerType] = {}
+    end
+
+    local descriptors = GetResourceColorDescriptors(powerType, effectiveBarTextureName)
+    if #descriptors == 0 then
+        return false
+    end
+
+    local colorHeading = AceGUI:Create("Heading")
+    colorHeading:SetText("Colors")
+    ColorHeading(colorHeading)
+    colorHeading:SetFullWidth(true)
+    container:AddChild(colorHeading)
+
+    local colorKey = "rb_colors_" .. tostring(powerType) .. "_" .. tostring(specID)
+    local colorCollapsed = resourceBarCollapsedSections[colorKey]
+
+    local colorCollapseBtn = AttachCollapseButton(colorHeading, colorCollapsed, function()
+        resourceBarCollapsedSections[colorKey] = not resourceBarCollapsedSections[colorKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    colorHeading.right:ClearAllPoints()
+    colorHeading.right:SetPoint("RIGHT", colorHeading.frame, "RIGHT", -3, 0)
+    colorHeading.right:SetPoint("LEFT", colorCollapseBtn, "RIGHT", 4, 0)
+
+    if colorCollapsed then
+        return true
+    end
+
+    for _, descriptor in ipairs(descriptors) do
+        local capturedKey = descriptor.key
+        local capturedDefault = descriptor.defaultColor
+        local proxy = {
+            [capturedKey] = ReadSpecOverrideKey(settings, powerType, specID, capturedKey, capturedDefault),
+        }
+        AddColorPicker(container, proxy, capturedKey, descriptor.label, capturedDefault, descriptor.hasAlpha,
+            function()
+                WriteSpecOverrideKey(settings, powerType, specID, capturedKey, proxy[capturedKey])
+                applyBars()
+            end,
+            function()
+                WriteSpecOverrideKey(settings, powerType, specID, capturedKey, proxy[capturedKey])
+            end)
+    end
+
+    return true
+end
+
 local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     local settings = CooldownCompanion:GetResourceBarSettings()
 
@@ -1215,14 +1330,13 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     local resourceSettingsPowerType = opts and tonumber(opts.powerType) or nil
     local showResourceSettings = mode == "resource_settings" and resourceSettingsPowerType ~= nil
     local showBarText = (mode == "all" or mode == "bar_text" or showResourceSettings)
-    local showColors = (mode == "all" or mode == "colors")
     local showHealthColors = (mode == "all" or mode == "health")
     local showAuraOverlays = (mode == "all")
     local showResourceText = showResourceSettings
     local showThresholdsTicks = false
 
     local applyBars = function() CooldownCompanion:ApplyResourceBars() end
-    local healthResourceID = -1 -- Keep aligned with RB.RESOURCE_HEALTH without adding an upvalue here.
+    local healthResourceID = RESOURCE_HEALTH
     if showResourceSettings then
         local hasSegmentedThreshold = SEGMENTED_TYPES[resourceSettingsPowerType] == true or resourceSettingsPowerType == 100
         local hasContinuousTick = resourceSettingsPowerType ~= 101 and resourceSettingsPowerType ~= healthResourceID
@@ -1249,6 +1363,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     local localBarTextureName = displayProfile.barTexture or settings.barTexture or "Solid"
     local effectiveBarTextureName = ST.GetEffectiveBarTextureName(localBarTextureName)
     local _colorSpecID = displaySpecID
+
+    if showResourceSettings then
+        BuildResourceColorControls(container, settings, resourceSettingsPowerType, _colorSpecID, effectiveBarTextureName, applyBars)
+    end
 
     if showBarText then
     if not showResourceSettings then
@@ -1712,195 +1830,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         end
     end
 
-    if showColors then
-    -- ============ Per-Resource Colors Section ============
-    local colorHeading = AceGUI:Create("Heading")
-    colorHeading:SetText("Per-Resource Colors")
-    ColorHeading(colorHeading)
-    colorHeading:SetFullWidth(true)
-    container:AddChild(colorHeading)
-
-    local colorKey = "rb_colors"
-    local colorCollapsed = resourceBarCollapsedSections[colorKey]
-
-    local colorCollapseBtn = AttachCollapseButton(colorHeading, colorCollapsed, function()
-        resourceBarCollapsedSections[colorKey] = not resourceBarCollapsedSections[colorKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    colorHeading.right:ClearAllPoints()
-    colorHeading.right:SetPoint("RIGHT", colorHeading.frame, "RIGHT", -3, 0)
-    colorHeading.right:SetPoint("LEFT", colorCollapseBtn, "RIGHT", 4, 0)
-
-    if not _colorSpecID and not colorCollapsed then
-        local specUnavailLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(specUnavailLabel)
-        specUnavailLabel:SetText("Specialization data not yet available.")
-        specUnavailLabel:SetFullWidth(true)
-        container:AddChild(specUnavailLabel)
-    end
-
-    if not colorCollapsed and _colorSpecID then
-        local resources = GetConfigActiveResources()
-        for _, pt in ipairs(resources) do
-            if not settings.resources[pt] then
-                settings.resources[pt] = {}
-            end
-
-            if pt == healthResourceID then
-                -- Health colors are rendered in the Health tab.
-            elseif pt == 4 then
-                -- Combo Points: two color pickers (normal vs at max)
-                local _p4n = { comboColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboColor", DEFAULT_COMBO_COLOR) }
-                AddColorPicker(container, _p4n, "comboColor", "Combo Points", DEFAULT_COMBO_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboColor", _p4n.comboColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboColor", _p4n.comboColor) end)
-
-                local _p4m = { comboMaxColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboMaxColor", DEFAULT_COMBO_MAX_COLOR) }
-                AddColorPicker(container, _p4m, "comboMaxColor", "Combo Points (Max)", DEFAULT_COMBO_MAX_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboMaxColor", _p4m.comboMaxColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboMaxColor", _p4m.comboMaxColor) end)
-
-                -- Charged combo point color (Rogue only)
-                local _, _, classID = UnitClass("player")
-                if classID == 4 then
-                    local _p4c = { comboChargedColor = ReadSpecOverrideKey(settings, 4, _colorSpecID, "comboChargedColor", DEFAULT_COMBO_CHARGED_COLOR) }
-                    AddColorPicker(container, _p4c, "comboChargedColor", "Combo Points (Charged)", DEFAULT_COMBO_CHARGED_COLOR, false,
-                        function() WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboChargedColor", _p4c.comboChargedColor); applyBars() end,
-                        function() WriteSpecOverrideKey(settings, 4, _colorSpecID, "comboChargedColor", _p4c.comboChargedColor) end)
-                end
-            elseif pt == 5 then
-                -- Runes: three color pickers (ready, recharging, max)
-                local _p5r = { runeReadyColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeReadyColor", DEFAULT_RUNE_READY_COLOR) }
-                AddColorPicker(container, _p5r, "runeReadyColor", "Runes (Ready)", DEFAULT_RUNE_READY_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeReadyColor", _p5r.runeReadyColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeReadyColor", _p5r.runeReadyColor) end)
-
-                local _p5c = { runeRechargingColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeRechargingColor", DEFAULT_RUNE_RECHARGING_COLOR) }
-                AddColorPicker(container, _p5c, "runeRechargingColor", "Runes (Recharging)", DEFAULT_RUNE_RECHARGING_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeRechargingColor", _p5c.runeRechargingColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeRechargingColor", _p5c.runeRechargingColor) end)
-
-                local _p5m = { runeMaxColor = ReadSpecOverrideKey(settings, 5, _colorSpecID, "runeMaxColor", DEFAULT_RUNE_MAX_COLOR) }
-                AddColorPicker(container, _p5m, "runeMaxColor", "Runes (All Ready)", DEFAULT_RUNE_MAX_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeMaxColor", _p5m.runeMaxColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 5, _colorSpecID, "runeMaxColor", _p5m.runeMaxColor) end)
-            elseif pt == 7 then
-                -- Soul Shards: three color pickers (ready, recharging, max)
-                local _p7r = { shardReadyColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardReadyColor", DEFAULT_SHARD_READY_COLOR) }
-                AddColorPicker(container, _p7r, "shardReadyColor", "Soul Shards (Ready)", DEFAULT_SHARD_READY_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardReadyColor", _p7r.shardReadyColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardReadyColor", _p7r.shardReadyColor) end)
-
-                local _p7c = { shardRechargingColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardRechargingColor", DEFAULT_SHARD_RECHARGING_COLOR) }
-                AddColorPicker(container, _p7c, "shardRechargingColor", "Soul Shards (Recharging)", DEFAULT_SHARD_RECHARGING_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardRechargingColor", _p7c.shardRechargingColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardRechargingColor", _p7c.shardRechargingColor) end)
-
-                local _p7m = { shardMaxColor = ReadSpecOverrideKey(settings, 7, _colorSpecID, "shardMaxColor", DEFAULT_SHARD_MAX_COLOR) }
-                AddColorPicker(container, _p7m, "shardMaxColor", "Soul Shards (Max)", DEFAULT_SHARD_MAX_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardMaxColor", _p7m.shardMaxColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 7, _colorSpecID, "shardMaxColor", _p7m.shardMaxColor) end)
-            elseif pt == 9 then
-                -- Holy Power: two color pickers (normal vs max)
-                local _p9n = { holyColor = ReadSpecOverrideKey(settings, 9, _colorSpecID, "holyColor", DEFAULT_HOLY_COLOR) }
-                AddColorPicker(container, _p9n, "holyColor", "Holy Power", DEFAULT_HOLY_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 9, _colorSpecID, "holyColor", _p9n.holyColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 9, _colorSpecID, "holyColor", _p9n.holyColor) end)
-
-                local _p9m = { holyMaxColor = ReadSpecOverrideKey(settings, 9, _colorSpecID, "holyMaxColor", DEFAULT_HOLY_MAX_COLOR) }
-                AddColorPicker(container, _p9m, "holyMaxColor", "Holy Power (Max)", DEFAULT_HOLY_MAX_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 9, _colorSpecID, "holyMaxColor", _p9m.holyMaxColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 9, _colorSpecID, "holyMaxColor", _p9m.holyMaxColor) end)
-            elseif pt == 12 then
-                -- Chi: two color pickers (normal vs max)
-                local _p12n = { chiColor = ReadSpecOverrideKey(settings, 12, _colorSpecID, "chiColor", DEFAULT_CHI_COLOR) }
-                AddColorPicker(container, _p12n, "chiColor", "Chi", DEFAULT_CHI_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 12, _colorSpecID, "chiColor", _p12n.chiColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 12, _colorSpecID, "chiColor", _p12n.chiColor) end)
-
-                local _p12m = { chiMaxColor = ReadSpecOverrideKey(settings, 12, _colorSpecID, "chiMaxColor", DEFAULT_CHI_MAX_COLOR) }
-                AddColorPicker(container, _p12m, "chiMaxColor", "Chi (Max)", DEFAULT_CHI_MAX_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 12, _colorSpecID, "chiMaxColor", _p12m.chiMaxColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 12, _colorSpecID, "chiMaxColor", _p12m.chiMaxColor) end)
-            elseif pt == 16 then
-                -- Arcane Charges: two color pickers (normal vs max)
-                local _p16n = { arcaneColor = ReadSpecOverrideKey(settings, 16, _colorSpecID, "arcaneColor", DEFAULT_ARCANE_COLOR) }
-                AddColorPicker(container, _p16n, "arcaneColor", "Arcane Charges", DEFAULT_ARCANE_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 16, _colorSpecID, "arcaneColor", _p16n.arcaneColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 16, _colorSpecID, "arcaneColor", _p16n.arcaneColor) end)
-
-                local _p16m = { arcaneMaxColor = ReadSpecOverrideKey(settings, 16, _colorSpecID, "arcaneMaxColor", DEFAULT_ARCANE_MAX_COLOR) }
-                AddColorPicker(container, _p16m, "arcaneMaxColor", "Arcane Charges (Max)", DEFAULT_ARCANE_MAX_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 16, _colorSpecID, "arcaneMaxColor", _p16m.arcaneMaxColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 16, _colorSpecID, "arcaneMaxColor", _p16m.arcaneMaxColor) end)
-            elseif pt == 19 then
-                -- Essence: three color pickers (ready, recharging, max)
-                local _p19r = { essenceReadyColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceReadyColor", DEFAULT_ESSENCE_READY_COLOR) }
-                AddColorPicker(container, _p19r, "essenceReadyColor", "Essence (Ready)", DEFAULT_ESSENCE_READY_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceReadyColor", _p19r.essenceReadyColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceReadyColor", _p19r.essenceReadyColor) end)
-
-                local _p19c = { essenceRechargingColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceRechargingColor", DEFAULT_ESSENCE_RECHARGING_COLOR) }
-                AddColorPicker(container, _p19c, "essenceRechargingColor", "Essence (Recharging)", DEFAULT_ESSENCE_RECHARGING_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceRechargingColor", _p19c.essenceRechargingColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceRechargingColor", _p19c.essenceRechargingColor) end)
-
-                local _p19m = { essenceMaxColor = ReadSpecOverrideKey(settings, 19, _colorSpecID, "essenceMaxColor", DEFAULT_ESSENCE_MAX_COLOR) }
-                AddColorPicker(container, _p19m, "essenceMaxColor", "Essence (Max)", DEFAULT_ESSENCE_MAX_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceMaxColor", _p19m.essenceMaxColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 19, _colorSpecID, "essenceMaxColor", _p19m.essenceMaxColor) end)
-            elseif pt == 100 then
-                -- Maelstrom Weapon: three color pickers (base, overlay, max)
-                local _p100b = { mwBaseColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwBaseColor", DEFAULT_MW_BASE_COLOR) }
-                AddColorPicker(container, _p100b, "mwBaseColor", "MW (Base)", DEFAULT_MW_BASE_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwBaseColor", _p100b.mwBaseColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwBaseColor", _p100b.mwBaseColor) end)
-
-                local _p100o = { mwOverlayColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwOverlayColor", DEFAULT_MW_OVERLAY_COLOR) }
-                AddColorPicker(container, _p100o, "mwOverlayColor", "MW (Overlay)", DEFAULT_MW_OVERLAY_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwOverlayColor", _p100o.mwOverlayColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwOverlayColor", _p100o.mwOverlayColor) end)
-
-                local _p100m = { mwMaxColor = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwMaxColor", DEFAULT_MW_MAX_COLOR) }
-                AddColorPicker(container, _p100m, "mwMaxColor", "MW (Max)", DEFAULT_MW_MAX_COLOR, false,
-                    function() WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwMaxColor", _p100m.mwMaxColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwMaxColor", _p100m.mwMaxColor) end)
-            elseif pt == 101 then
-                -- Stagger: three color pickers (green/yellow/red thresholds)
-                local _p101g = { staggerGreenColor = ReadSpecOverrideKey(settings, 101, _colorSpecID, "staggerGreenColor", { 0.52, 0.90, 0.52 }) }
-                AddColorPicker(container, _p101g, "staggerGreenColor", "Stagger (Low)", { 0.52, 0.90, 0.52 }, false,
-                    function() WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerGreenColor", _p101g.staggerGreenColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerGreenColor", _p101g.staggerGreenColor) end)
-
-                local _p101y = { staggerYellowColor = ReadSpecOverrideKey(settings, 101, _colorSpecID, "staggerYellowColor", { 1.0, 0.85, 0.36 }) }
-                AddColorPicker(container, _p101y, "staggerYellowColor", "Stagger (Medium)", { 1.0, 0.85, 0.36 }, false,
-                    function() WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerYellowColor", _p101y.staggerYellowColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerYellowColor", _p101y.staggerYellowColor) end)
-
-                local _p101r = { staggerRedColor = ReadSpecOverrideKey(settings, 101, _colorSpecID, "staggerRedColor", { 1.0, 0.42, 0.42 }) }
-                AddColorPicker(container, _p101r, "staggerRedColor", "Stagger (High)", { 1.0, 0.42, 0.42 }, false,
-                    function() WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerRedColor", _p101r.staggerRedColor); applyBars() end,
-                    function() WriteSpecOverrideKey(settings, 101, _colorSpecID, "staggerRedColor", _p101r.staggerRedColor) end)
-            else
-                local name = POWER_NAMES[pt] or ("Power " .. pt)
-
-                if effectiveBarTextureName == "blizzard_class" and ST.POWER_ATLAS_TYPES and ST.POWER_ATLAS_TYPES[pt] then
-                    -- Atlas-backed type; color picker not applicable
-                else
-                    local capturedGenericPt = pt
-                    local _pGen = { color = ReadSpecOverrideKey(settings, pt, _colorSpecID, "color", DEFAULT_POWER_COLORS[pt] or { 1, 1, 1 }) }
-                    AddColorPicker(container, _pGen, "color", name, DEFAULT_POWER_COLORS[pt] or { 1, 1, 1 }, false,
-                        function() WriteSpecOverrideKey(settings, capturedGenericPt, _colorSpecID, "color", _pGen.color); applyBars() end,
-                        function() WriteSpecOverrideKey(settings, capturedGenericPt, _colorSpecID, "color", _pGen.color) end)
-                end
-            end
-
-        end
-    end
-
-    end
-
     if showThresholdsTicks then
     -- ============ Thresholds & Ticks Section ============
     local thresholdHeading = AceGUI:Create("Heading")
@@ -2191,10 +2120,6 @@ local function BuildResourceBarBarTextStylingPanel(container)
     BuildResourceBarStylingPanel(container, "bar_text")
 end
 
-local function BuildResourceBarColorsStylingPanel(container)
-    BuildResourceBarStylingPanel(container, "colors")
-end
-
 local function BuildResourceBarHealthStylingPanel(container)
     BuildResourceBarStylingPanel(container, "health")
 end
@@ -2204,6 +2129,5 @@ ST._BuildResourceBarAnchoringPanel = BuildResourceBarAnchoringPanel
 ST._BuildResourceBarPositioningPanel = BuildResourceBarPositioningPanel
 ST._BuildResourceBarStylingPanel = BuildResourceBarStylingPanel
 ST._BuildResourceBarBarTextStylingPanel = BuildResourceBarBarTextStylingPanel
-ST._BuildResourceBarColorsStylingPanel = BuildResourceBarColorsStylingPanel
 ST._BuildResourceBarHealthStylingPanel = BuildResourceBarHealthStylingPanel
 ST._BuildResourceSettingsPanel = BuildResourceSettingsPanel

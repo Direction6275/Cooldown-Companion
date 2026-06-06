@@ -1841,14 +1841,14 @@ local function BuildCustomBarsListPanel(container)
 
     local customBarRows = {}
     if #loadedBars > 0 then
-        customBarRows[#customBarRows + 1] = { heading = "Loaded" }
+        customBarRows[#customBarRows + 1] = { heading = "Active Custom Bars" }
         for _, row in ipairs(loadedBars) do
             customBarRows[#customBarRows + 1] = row
         end
     end
     customBarRows[#customBarRows + 1] = { resources = true }
     if #inactiveBars > 0 then
-        customBarRows[#customBarRows + 1] = { heading = "Inactive" }
+        customBarRows[#customBarRows + 1] = { heading = "Inactive Custom Bars" }
         for _, row in ipairs(inactiveBars) do
             row.inactive = true
             customBarRows[#customBarRows + 1] = row
