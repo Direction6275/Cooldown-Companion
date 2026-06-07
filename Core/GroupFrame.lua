@@ -17,6 +17,7 @@ local math_ceil = math.ceil
 local table_insert = table.insert
 local InCombatLockdown = InCombatLockdown
 local GetCursorPosition = GetCursorPosition
+local issecretvalue = issecretvalue
 local select = select
 local wipe = wipe
 
@@ -81,18 +82,71 @@ local function GetContainerState(groupId)
     return group.locked or false, group.baselineAlpha or 1
 end
 
-local function ShouldSyncAnchorAlpha(self, groupId)
+local function IsSecretValue(value)
+    if issecretvalue and issecretvalue(value) then
+        return true
+    end
+    return false
+end
+
+local function ReadSafeAlphaValue(value)
+    if IsSecretValue(value) then
+        return nil
+    end
+    if value == nil then
+        return nil
+    end
+    if type(value) ~= "number" then
+        return nil
+    end
+    return value
+end
+
+local function GetGroupAnchorRelativeTo(group)
+    local anchor = group and group.anchor
+    return type(anchor) == "table" and anchor.relativeTo or anchor
+end
+
+local function SetExternalAnchorAlphaSyncActive(frame, active)
+    if not frame then return end
+    if active then
+        frame._inheritsExternalAnchorAlpha = true
+    else
+        frame._inheritsExternalAnchorAlpha = nil
+    end
+end
+
+local function IsExternalFrameAnchorTarget(self, group, parentFrame)
+    if not (group and group.parentContainerId and parentFrame and group.inheritPanelAlpha ~= false) then
+        return false
+    end
+
+    local relativeTo = GetGroupAnchorRelativeTo(group)
+    if type(relativeTo) ~= "string" or relativeTo == "" or relativeTo == "UIParent" then
+        return false
+    end
+
+    if self.ParseAddonAnchorFrameName and self:ParseAddonAnchorFrameName(relativeTo) ~= nil then
+        return false
+    end
+
+    return _G[relativeTo] == parentFrame
+end
+
+local function ShouldSyncAnchorAlpha(self, groupId, parentFrame)
     local profile = self.db and self.db.profile
     local group = profile and profile.groups and profile.groups[groupId]
 
     if group and group.parentContainerId then
         if self:IsPanelAnchoredToPanel(groupId) then
-            return self:ShouldInheritPanelAnchorAlpha(groupId)
+            local inheritsPanelAlpha = self:ShouldInheritPanelAnchorAlpha(groupId)
+            return inheritsPanelAlpha, inheritsPanelAlpha, false
         end
-        return false
+        local inheritsExternalAlpha = IsExternalFrameAnchorTarget(self, group, parentFrame)
+        return inheritsExternalAlpha, inheritsExternalAlpha, inheritsExternalAlpha
     end
 
-    return true
+    return true, false, false
 end
 
 local function ApplyGroupOwnAlpha(frame)
@@ -120,27 +174,52 @@ local function GetAnchorInheritedAlpha(parentFrame)
         return 1
     end
 
-    if parentFrame._naturalAlpha ~= nil then
-        return parentFrame._naturalAlpha
+    local alpha = ReadSafeAlphaValue(parentFrame._naturalAlpha)
+    if alpha ~= nil then
+        return alpha
     end
 
     local parentGroupId = parentFrame.groupId
     if parentGroupId and CooldownCompanion.alphaState then
         local state = CooldownCompanion.alphaState[parentGroupId]
-        if state and state.currentAlpha ~= nil then
-            return state.currentAlpha
+        alpha = state and ReadSafeAlphaValue(state.currentAlpha) or nil
+        if alpha ~= nil then
+            return alpha
         end
     end
 
-    if parentFrame.IsShown and not parentFrame:IsShown() then
-        return 0
+    if parentFrame.IsShown then
+        local shown = parentFrame:IsShown()
+        if IsSecretValue(shown) then
+            return nil
+        end
+        if shown == nil then
+            return nil
+        end
+        if not shown then
+            return 0
+        end
     end
 
     if parentFrame.GetEffectiveAlpha then
-        return parentFrame:GetEffectiveAlpha()
+        alpha = parentFrame:GetEffectiveAlpha()
+        if IsSecretValue(alpha) then
+            return nil
+        end
+        if alpha == nil then
+            return nil
+        end
+        return alpha
     end
     if parentFrame.GetAlpha then
-        return parentFrame:GetAlpha()
+        alpha = parentFrame:GetAlpha()
+        if IsSecretValue(alpha) then
+            return nil
+        end
+        if alpha == nil then
+            return nil
+        end
+        return alpha
     end
     return 1
 end
@@ -720,6 +799,7 @@ local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, 
     if frame.alphaSyncFrame then
         frame.alphaSyncFrame:SetScript("OnUpdate", nil)
     end
+    SetExternalAnchorAlphaSyncActive(frame, false)
     frame.anchoredToParent = nil
 
     if not (cursorX and cursorY) then
@@ -1470,6 +1550,7 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
             if frame.alphaSyncFrame then
                 frame.alphaSyncFrame:SetScript("OnUpdate", nil)
             end
+            SetExternalAnchorAlphaSyncActive(frame, false)
             frame.anchoredToParent = nil
             frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
             UpdateCoordLabel(frame, 0, 0)
@@ -1500,6 +1581,7 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     if frame.alphaSyncFrame then
         frame.alphaSyncFrame:SetScript("OnUpdate", nil)
     end
+    SetExternalAnchorAlphaSyncActive(frame, false)
     frame.anchoredToParent = nil
 
     local relativeTo = anchor.relativeTo
@@ -1558,10 +1640,12 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
 end
 
 function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
-    if not ShouldSyncAnchorAlpha(self, frame.groupId) then
+    local shouldSync, inheritsAnchorAlpha, inheritsExternalAlpha = ShouldSyncAnchorAlpha(self, frame.groupId, parentFrame)
+    if not shouldSync then
         if frame.alphaSyncFrame then
             frame.alphaSyncFrame:SetScript("OnUpdate", nil)
         end
+        SetExternalAnchorAlphaSyncActive(frame, false)
         ApplyGroupOwnAlpha(frame)
         return
     end
@@ -1571,22 +1655,30 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
         frame.alphaSyncFrame = CreateFrame("Frame", nil, frame)
     end
 
-    local inheritsPanelAlpha = self:ShouldInheritPanelAnchorAlpha(frame.groupId)
-    if inheritsPanelAlpha and self.alphaState then
+    SetExternalAnchorAlphaSyncActive(frame, inheritsExternalAlpha)
+
+    if inheritsAnchorAlpha and self.alphaState then
         self.alphaState[frame.groupId] = nil
     end
 
     -- If this group has baseline alpha < 1, the alpha fade system takes
     -- priority unless panel alpha inheritance is explicitly active.
     local _, baseAlpha = GetContainerState(frame.groupId)
-    if baseAlpha < 1 and not inheritsPanelAlpha then
+    if baseAlpha < 1 and not inheritsAnchorAlpha then
         frame.alphaSyncFrame:SetScript("OnUpdate", nil)
+        SetExternalAnchorAlphaSyncActive(frame, false)
         return
     end
 
     -- Sync alpha immediately — use parent's natural alpha to avoid config override cascade
     local lastAlpha = GetAnchorInheritedAlpha(parentFrame)
-    frame:SetAlpha(lastAlpha)
+    if lastAlpha ~= nil then
+        SetExternalAnchorAlphaSyncActive(frame, inheritsExternalAlpha)
+        frame:SetAlpha(lastAlpha)
+    elseif ST.IsGroupConfigSelected(frame.groupId) then
+        lastAlpha = 1
+        frame:SetAlpha(1)
+    end
 
     -- Sync alpha at ~30Hz (smooth enough for fade animations, avoids per-frame overhead)
     local accumulator = 0
@@ -1598,9 +1690,11 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
         if frame.anchoredToParent then
             -- Skip sync if this panel owns alpha locally or the group is unlocked.
             local locked, bAlpha = GetContainerState(frame.groupId)
-            if (bAlpha < 1 and not inheritsPanelAlpha) or not locked then return end
+            if (bAlpha < 1 and not inheritsAnchorAlpha) or not locked then return end
             -- Read parent's natural alpha to avoid config override cascade
             local alpha = GetAnchorInheritedAlpha(frame.anchoredToParent)
+            if alpha == nil then return end
+            SetExternalAnchorAlphaSyncActive(frame, inheritsExternalAlpha)
             -- Config-selected: store natural alpha for further downstream chains, force own frame to full
             if ST.IsGroupConfigSelected(frame.groupId) then
                 frame._naturalAlpha = alpha
@@ -1611,7 +1705,7 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
                 return
             end
             frame._naturalAlpha = nil
-            if alpha ~= lastAlpha then
+            if lastAlpha == nil or alpha ~= lastAlpha then
                 lastAlpha = alpha
                 frame:SetAlpha(alpha)
             end

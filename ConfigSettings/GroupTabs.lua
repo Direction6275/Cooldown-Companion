@@ -919,6 +919,17 @@ local function BuildLayoutTab(container)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local style = group.style
+    local function IsResolvedExternalFrameAnchorTarget(frameName)
+        if type(frameName) ~= "string" or frameName == "" or frameName == "UIParent" then
+            return false
+        end
+        if CooldownCompanion.ParseAddonAnchorFrameName
+            and CooldownCompanion:ParseAddonAnchorFrameName(frameName) ~= nil then
+            return false
+        end
+        local target = _G[frameName]
+        return type(target) == "table" and type(target.GetObjectType) == "function"
+    end
 
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
     if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
@@ -1016,6 +1027,9 @@ local function BuildLayoutTab(container)
         else
             targetMode = "group"
         end
+        local hasFrameAnchorTarget = isPanel
+            and targetMode == "frame"
+            and IsResolvedExternalFrameAnchorTarget(settings.relativeTo)
 
         local function RefreshTextureVisual()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -1172,11 +1186,13 @@ local function BuildLayoutTab(container)
                 end
             end)
             container:AddChild(panelAnchorDrop)
+        end
 
+        if isPanel and (targetMode == "panel" or hasFrameAnchorTarget) then
             local panelAlphaDrop = AceGUI:Create("Dropdown")
             panelAlphaDrop:SetLabel("Panel Alpha")
             panelAlphaDrop:SetList({
-                inherit = "Inherit Target Panel Alpha",
+                inherit = targetMode == "frame" and "Inherit Target Frame Alpha" or "Inherit Target Panel Alpha",
                 custom = "Custom Alpha",
             }, { "inherit", "custom" })
             panelAlphaDrop:SetValue(group.inheritPanelAlpha == false and "custom" or "inherit")
@@ -1247,11 +1263,14 @@ local function BuildLayoutTab(container)
             container:AddChild(resetBtn)
         end
 
-        local panelAlphaInherited = targetMode == "panel"
+        local panelAlphaInherited = false
+        if targetMode == "panel"
             and currentAnchorGroupId
-            and CooldownCompanion.ShouldInheritPanelAnchorAlpha
-            and CooldownCompanion:ShouldInheritPanelAnchorAlpha(textureGroupId)
-            or false
+            and CooldownCompanion.ShouldInheritPanelAnchorAlpha then
+            panelAlphaInherited = CooldownCompanion:ShouldInheritPanelAnchorAlpha(textureGroupId)
+        elseif hasFrameAnchorTarget then
+            panelAlphaInherited = group.inheritPanelAlpha ~= false
+        end
 
         BuildAlphaControls(container, group, function()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -1259,7 +1278,9 @@ local function BuildLayoutTab(container)
         end, "layout_alpha", {
             isGlobal = group.isGlobal,
             disabled = panelAlphaInherited,
-            disabledText = "This panel inherits alpha from the parent panel. Change the parent panel's Alpha settings to affect it.",
+            disabledText = targetMode == "frame"
+                and "This panel inherits alpha from the target frame. Change the Panel Alpha setting to use custom alpha."
+                or "This panel inherits alpha from the parent panel. Change the parent panel's Alpha settings to affect it.",
             onBaselineChanged = function(val)
                 CS.texturePanelAlphaPreview = CS.texturePanelAlphaPreview or {}
                 CS.texturePanelAlphaPreview[textureGroupId] = val
@@ -1325,6 +1346,9 @@ local function BuildLayoutTab(container)
         targetMode = preferredTargetMode
     end
     CS.layoutAnchorTargetMode[CS.selectedGroup] = targetMode
+    local hasFrameAnchorTarget = isPanel
+        and targetMode == "frame"
+        and IsResolvedExternalFrameAnchorTarget(currentAnchor)
     if targetMode == "cursor" and isCursorAnchor then
         CooldownCompanion:ShowCursorAnchorLayoutPreview(CS.selectedGroup)
     else
@@ -1336,6 +1360,8 @@ local function BuildLayoutTab(container)
         and currentAnchorGroupId
         and CooldownCompanion.ShouldInheritPanelAnchorAlpha then
         panelAlphaInherited = CooldownCompanion:ShouldInheritPanelAnchorAlpha(CS.selectedGroup)
+    elseif hasFrameAnchorTarget then
+        panelAlphaInherited = group.inheritPanelAlpha ~= false
     end
 
     local anchorTargetDrop = AceGUI:Create("Dropdown")
@@ -1470,11 +1496,13 @@ local function BuildLayoutTab(container)
             end
         end)
         container:AddChild(panelAnchorDrop)
+    end
 
+    if isPanel and (targetMode == "panel" or hasFrameAnchorTarget) then
         local panelAlphaDrop = AceGUI:Create("Dropdown")
         panelAlphaDrop:SetLabel("Panel Alpha")
         panelAlphaDrop:SetList({
-            inherit = "Inherit Target Panel Alpha",
+            inherit = targetMode == "frame" and "Inherit Target Frame Alpha" or "Inherit Target Panel Alpha",
             custom = "Custom Alpha",
         }, { "inherit", "custom" })
         panelAlphaDrop:SetValue(group.inheritPanelAlpha == false and "custom" or "inherit")
@@ -1675,7 +1703,9 @@ local function BuildLayoutTab(container)
     end, "layout_alpha", {
         isGlobal = group.isGlobal,
         disabled = panelAlphaInherited,
-        disabledText = "This panel inherits alpha from the parent panel. Change the parent panel's Alpha settings to affect it.",
+        disabledText = targetMode == "frame"
+            and "This panel inherits alpha from the target frame. Change the Panel Alpha setting to use custom alpha."
+            or "This panel inherits alpha from the parent panel. Change the parent panel's Alpha settings to affect it.",
         onBaselineChanged = function(val)
             local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
             if frame and frame:IsShown() then

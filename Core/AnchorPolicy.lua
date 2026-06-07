@@ -157,6 +157,19 @@ local function GetAddonAnchorGroupId(frameName)
     return kind == "group" and id or nil
 end
 
+local function IsPanelAnchoredToExternalFrame(group)
+    if not (group and group.parentContainerId) then
+        return false
+    end
+
+    local relativeTo = GetActivePanelAnchorRelativeTo(group)
+    if type(relativeTo) ~= "string" or relativeTo == "" or relativeTo == "UIParent" then
+        return false
+    end
+
+    return ParseAddonAnchorFrameName(relativeTo) == nil
+end
+
 local function BuildPanelAlphaDependencyTargets(groups)
     local targets = nil
     for groupId, group in pairs(groups or {}) do
@@ -781,7 +794,7 @@ function CooldownCompanion:NormalizePanelAlphaInheritance(profile)
     for _, group in pairs(profile.groups or {}) do
         if type(group) == "table"
             and group.inheritPanelAlpha == nil
-            and self:IsPanelAnchoredToPanel(group)
+            and (self:IsPanelAnchoredToPanel(group) or IsPanelAnchoredToExternalFrame(group))
             and HasActiveAlphaSettings(group) then
             group.inheritPanelAlpha = false
         end
