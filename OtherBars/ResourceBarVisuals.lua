@@ -26,8 +26,6 @@ local DEFAULT_CUSTOM_AURA_MAX_COLOR = RB.DEFAULT_CUSTOM_AURA_MAX_COLOR
 local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
 local RESOURCE_MAELSTROM_WEAPON = RB.RESOURCE_MAELSTROM_WEAPON
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
-local MAX_RESOURCE_THRESHOLD_TICK_ENTRIES = RB.MAX_RESOURCE_THRESHOLD_TICK_ENTRIES or 3
-
 local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
 local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetCurrentSpecID = RB.GetCurrentSpecID
@@ -426,7 +424,7 @@ end
 -- Continuous Tick & Fill
 ------------------------------------------------------------------------
 
-local function EnsureContinuousTickMarkers(bar)
+local function EnsureContinuousTickMarker(bar, index)
     if not bar then return nil end
     if type(bar.tickMarkers) ~= "table" then
         bar.tickMarkers = {}
@@ -434,15 +432,15 @@ local function EnsureContinuousTickMarkers(bar)
             bar.tickMarkers[1] = bar.tickMarker
         end
     end
-    for index = 1, MAX_RESOURCE_THRESHOLD_TICK_ENTRIES do
-        if not bar.tickMarkers[index] then
-            bar.tickMarkers[index] = bar:CreateTexture(nil, "OVERLAY", nil, 6)
-            bar.tickMarkers[index]:SetColorTexture(1, 0.84, 0, 1)
-            bar.tickMarkers[index]:Hide()
-        end
+    if not bar.tickMarkers[index] then
+        bar.tickMarkers[index] = bar:CreateTexture(nil, "OVERLAY", nil, 6)
+        bar.tickMarkers[index]:SetColorTexture(1, 0.84, 0, 1)
+        bar.tickMarkers[index]:Hide()
     end
-    bar.tickMarker = bar.tickMarkers[1]
-    return bar.tickMarkers
+    if index == 1 then
+        bar.tickMarker = bar.tickMarkers[index]
+    end
+    return bar.tickMarkers[index]
 end
 
 local function HideContinuousTickMarkers(bar, startIndex)
@@ -497,14 +495,10 @@ local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, ma
         return
     end
 
-    local markers = EnsureContinuousTickMarkers(bar)
     local shownCount = 0
     local halfTick = tickWidth / 2
 
     for index, entry in ipairs(entries) do
-        if index > MAX_RESOURCE_THRESHOLD_TICK_ENTRIES then
-            break
-        end
         local ratio = mode == "absolute" and (entry.value / maxPower) or (entry.value / 100)
         if ratio < 0 then
             ratio = 0
@@ -512,7 +506,7 @@ local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, ma
             ratio = 1
         end
 
-        local marker = markers[index]
+        local marker = EnsureContinuousTickMarker(bar, index)
         local tickColor = entry.color or DEFAULT_CONTINUOUS_TICK_COLOR
         marker:SetColorTexture(tickColor[1], tickColor[2], tickColor[3], tickColor[4] ~= nil and tickColor[4] or 1)
         marker:ClearAllPoints()

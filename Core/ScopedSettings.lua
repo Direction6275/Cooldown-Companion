@@ -153,18 +153,15 @@ local RESOURCE_SPEC_AURA_KEYS = {
 
 local MAX_RESOURCE_THRESHOLD_TICK_ENTRIES = 3
 
-local function CopyRGBSetting(color)
+local function CopyColorSetting(color, includeAlpha)
     if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
         return nil
     end
-    return { color[1], color[2], color[3] }
-end
-
-local function CopyRGBASetting(color)
-    if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
-        return nil
+    local copied = { color[1], color[2], color[3] }
+    if includeAlpha then
+        copied[4] = color[4]
     end
-    return { color[1], color[2], color[3], color[4] }
+    return copied
 end
 
 local function ClampLegacySegmentedThresholdValue(value, fallback)
@@ -205,7 +202,7 @@ local function ClampLegacyTickAbsoluteValue(value, fallback)
     return value
 end
 
-local function NormalizeSavedEntryList(entries, clampValue, copyColor)
+local function NormalizeSavedEntryList(entries, clampValue, includeAlpha)
     local normalized = {}
     local seen = {}
     if type(entries) ~= "table" then
@@ -229,7 +226,7 @@ local function NormalizeSavedEntryList(entries, clampValue, copyColor)
                 seen[valueKey] = true
                 normalized[#normalized + 1] = {
                     value = value,
-                    color = copyColor(type(entry) == "table" and entry.color or nil),
+                    color = CopyColorSetting(type(entry) == "table" and entry.color or nil, includeAlpha),
                 }
                 if #normalized >= MAX_RESOURCE_THRESHOLD_TICK_ENTRIES then
                     break
@@ -258,7 +255,7 @@ local function NormalizeThresholdEntriesOnTarget(resource, specID, target)
         return
     end
 
-    local normalized = NormalizeSavedEntryList(target.segThresholdEntries, ClampLegacySegmentedThresholdValue, CopyRGBSetting)
+    local normalized = NormalizeSavedEntryList(target.segThresholdEntries, ClampLegacySegmentedThresholdValue, false)
     if #normalized == 0
         and target.segThresholdEntriesCleared ~= true
         and ResolveSpecOverrideKey(resource, specID, "segThresholdEnabled") == true
@@ -268,7 +265,7 @@ local function NormalizeThresholdEntriesOnTarget(resource, specID, target)
                 target.segThresholdValue ~= nil and target.segThresholdValue or ResolveSpecOverrideKey(resource, specID, "segThresholdValue"),
                 1
             ),
-            color = CopyRGBSetting(target.segThresholdColor) or CopyRGBSetting(ResolveSpecOverrideKey(resource, specID, "segThresholdColor")),
+            color = CopyColorSetting(target.segThresholdColor, false) or CopyColorSetting(ResolveSpecOverrideKey(resource, specID, "segThresholdColor"), false),
         }
     end
     StoreNormalizedEntries(target, "segThresholdEntries", "segThresholdEntriesCleared", normalized)
@@ -287,8 +284,8 @@ local function NormalizeTickEntriesOnTarget(resource, specID, target)
         return
     end
 
-    local percentEntries = NormalizeSavedEntryList(target.continuousTickPercentEntries, ClampLegacyTickPercentValue, CopyRGBASetting)
-    local absoluteEntries = NormalizeSavedEntryList(target.continuousTickAbsoluteEntries, ClampLegacyTickAbsoluteValue, CopyRGBASetting)
+    local percentEntries = NormalizeSavedEntryList(target.continuousTickPercentEntries, ClampLegacyTickPercentValue, true)
+    local absoluteEntries = NormalizeSavedEntryList(target.continuousTickAbsoluteEntries, ClampLegacyTickAbsoluteValue, true)
     local tickEnabled = ResolveSpecOverrideKey(resource, specID, "continuousTickEnabled") == true
     local mode = GetResolvedTickMode(resource, specID, target)
     local hasLegacyTickData = target.continuousTickEnabled ~= nil
@@ -304,7 +301,7 @@ local function NormalizeTickEntriesOnTarget(resource, specID, target)
                     target.continuousTickAbsolute ~= nil and target.continuousTickAbsolute or ResolveSpecOverrideKey(resource, specID, "continuousTickAbsolute"),
                     50
                 ),
-                color = CopyRGBASetting(target.continuousTickColor) or CopyRGBASetting(ResolveSpecOverrideKey(resource, specID, "continuousTickColor")),
+                color = CopyColorSetting(target.continuousTickColor, true) or CopyColorSetting(ResolveSpecOverrideKey(resource, specID, "continuousTickColor"), true),
             }
         elseif mode == "percent" and #percentEntries == 0 and target.continuousTickPercentEntriesCleared ~= true then
             percentEntries[1] = {
@@ -312,7 +309,7 @@ local function NormalizeTickEntriesOnTarget(resource, specID, target)
                     target.continuousTickPercent ~= nil and target.continuousTickPercent or ResolveSpecOverrideKey(resource, specID, "continuousTickPercent"),
                     50
                 ),
-                color = CopyRGBASetting(target.continuousTickColor) or CopyRGBASetting(ResolveSpecOverrideKey(resource, specID, "continuousTickColor")),
+                color = CopyColorSetting(target.continuousTickColor, true) or CopyColorSetting(ResolveSpecOverrideKey(resource, specID, "continuousTickColor"), true),
             }
         end
     end
