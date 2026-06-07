@@ -317,6 +317,19 @@ local function GetReadableAuraSpellID(auraData)
     return nil
 end
 
+local function ResolveAuraIconState(auraData)
+    if not auraData then
+        return nil, false, false
+    end
+
+    local icon = auraData.icon
+    if issecretvalue(icon) then
+        return icon, true, true
+    end
+
+    return icon, icon ~= nil, true
+end
+
 local function AuraDataMatchesTrackedSpell(owner, buttonData, auraSpellID, auraData)
     local auraDataSpellID = auraData and auraData.spellId
     if not auraDataSpellID or issecretvalue(auraDataSpellID) then
@@ -354,6 +367,8 @@ function EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit, options)
     owner._auraUnit = configUnit
     owner._activeAuraSpellID = nil
     owner._activeAuraSpellIDFromFallback = nil
+    owner._activeAuraIcon = nil
+    owner._activeAuraIconAvailable = nil
     owner._auraEventRemoved = nil
     owner._auraGraceStart = nil
     if not options.preserveTargetSwitch then
@@ -436,6 +451,18 @@ local function CommitTrackedAuraOwnerState(owner, state)
             owner._activeAuraSpellID = state.activeAuraSpellID or owner._activeAuraSpellID
             owner._activeAuraSpellIDFromFallback = state.activeAuraSpellIDFromFallback or nil
         end
+        if state.activeAuraIconResolved then
+            if state.activeAuraIconAvailable then
+                owner._activeAuraIcon = state.activeAuraIcon
+                owner._activeAuraIconAvailable = true
+            else
+                owner._activeAuraIcon = nil
+                owner._activeAuraIconAvailable = nil
+            end
+        elseif state.auraGraceHeld ~= true then
+            owner._activeAuraIcon = nil
+            owner._activeAuraIconAvailable = nil
+        end
         if owner._targetSwitchAt
             and state.auraGraceHeld ~= true
             and (state.durationObj or state.auraCooldownDuration or state.allowDurationlessAuraInstance) then
@@ -495,6 +522,9 @@ function EntryRuntime.EvaluateTrackedAuraState(owner, buttonData, auraSpellID, o
     local activeAuraSpellID
     local activeAuraSpellIDResolved = false
     local activeAuraSpellIDFromFallback
+    local activeAuraIcon
+    local activeAuraIconAvailable = false
+    local activeAuraIconResolved = false
     local auraCooldownStart
     local auraCooldownDuration
     local viewerBar
@@ -510,6 +540,7 @@ function EntryRuntime.EvaluateTrackedAuraState(owner, buttonData, auraSpellID, o
                     auraApplications = auraData.applications
                     activeAuraSpellID = GetReadableAuraSpellID(auraData)
                     activeAuraSpellIDResolved = true
+                    activeAuraIcon, activeAuraIconAvailable, activeAuraIconResolved = ResolveAuraIconState(auraData)
                     auraInstanceID = viewerInstId
                     auraUnit = unit
                     auraPresent = true
@@ -564,6 +595,7 @@ function EntryRuntime.EvaluateTrackedAuraState(owner, buttonData, auraSpellID, o
                 auraApplications = auraData.applications
                 activeAuraSpellID = activeAuraSpellID or GetReadableAuraSpellID(auraData)
                 activeAuraSpellIDResolved = true
+                activeAuraIcon, activeAuraIconAvailable, activeAuraIconResolved = ResolveAuraIconState(auraData)
                 auraInstanceID = instId
                 auraUnit = "player"
                 auraPresent = true
@@ -585,6 +617,7 @@ function EntryRuntime.EvaluateTrackedAuraState(owner, buttonData, auraSpellID, o
                     activeAuraSpellID = GetReadableAuraSpellID(auraData)
                     activeAuraSpellIDResolved = true
                     activeAuraSpellIDFromFallback = activeAuraSpellID and true or nil
+                    activeAuraIcon, activeAuraIconAvailable, activeAuraIconResolved = ResolveAuraIconState(auraData)
                     auraInstanceID = owner._auraInstanceID
                     auraUnit = cachedUnit
                     auraPresent = true
@@ -681,6 +714,9 @@ function EntryRuntime.EvaluateTrackedAuraState(owner, buttonData, auraSpellID, o
         activeAuraSpellID = activeAuraSpellID,
         activeAuraSpellIDResolved = activeAuraSpellIDResolved == true,
         activeAuraSpellIDFromFallback = activeAuraSpellIDFromFallback,
+        activeAuraIcon = activeAuraIcon,
+        activeAuraIconAvailable = activeAuraIconAvailable == true,
+        activeAuraIconResolved = activeAuraIconResolved == true,
         allowDurationlessAuraInstance = allowDurationlessAuraInstance,
         wasAuraActive = wasAuraActive,
     }

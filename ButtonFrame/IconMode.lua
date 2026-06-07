@@ -15,6 +15,7 @@ local ipairs = ipairs
 local unpack = unpack
 local InCombatLockdown = InCombatLockdown
 local GetTime = GetTime
+local issecretvalue = issecretvalue
 
 -- Imports from Helpers
 local ApplyStrataOrder = ST._ApplyStrataOrder
@@ -80,6 +81,27 @@ local BLIZZARD_AURA_SWIPE_B = 0.57
 local BLIZZARD_AURA_SWIPE_A = 0.7
 local BLIZZARD_AURA_SWIPE_TEX_LOW = {x = 0.15, y = 0.15}
 local BLIZZARD_AURA_SWIPE_TEX_HIGH = {x = 0.85, y = 0.85}
+local QUESTION_MARK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+
+local function SelectTextureValue(value, knownAvailable)
+    if knownAvailable == true then
+        return value, true
+    end
+    if issecretvalue(value) then
+        return value, true
+    end
+    if value ~= nil then
+        return value, true
+    end
+    return nil, false
+end
+
+local function ShouldUseActiveAuraIcon(buttonData)
+    return buttonData
+        and (buttonData.auraShowAuraIcon == true
+            or buttonData.addedAs == "aura"
+            or buttonData.isPassive == true)
+end
 
 local function ApplyAuraBlizzardCooldownLayer(button)
     if button and button.auraBlizzardCooldown and button.cooldown then
@@ -704,6 +726,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button._auraViewerFrame = nil
     button._activeAuraSpellID = nil
     button._activeAuraSpellIDFromFallback = nil
+    button._activeAuraIcon = nil
+    button._activeAuraIconAvailable = nil
     button._lastViewerTexId = nil
     button._lastSpellTexture = nil
     button._spellTexBaseline = nil
@@ -811,9 +835,18 @@ end
 function CooldownCompanion:UpdateButtonIcon(button)
     local buttonData = button.buttonData
     local icon
+    local hasIcon = false
     local displayId = buttonData.id
     local overrideId = nil
     local forceBaseDisplay = button._forceBaseDisplaySpellId == true
+    local function UseIcon(value, knownAvailable)
+        local selectedIcon, selectedAvailable = SelectTextureValue(value, knownAvailable)
+        if selectedAvailable then
+            icon = selectedIcon
+            hasIcon = true
+        end
+        return selectedAvailable
+    end
 
     if buttonData.type == "spell" then
         overrideId = C_Spell.GetOverrideSpell(buttonData.id)
@@ -868,12 +901,12 @@ function CooldownCompanion:UpdateButtonIcon(button)
                 if iconTexture and iconTexture.GetTextureFileID then
                     -- GetTextureFileID may return a secret value in combat;
                     -- pass it straight through — do not test or branch on it.
-                    icon = iconTexture:GetTextureFileID()
+                    UseIcon(iconTexture:GetTextureFileID())
                 else
                     -- No icon widget found — use spell API fallback.
                     -- Always use buttonData.id: GetSpellTexture dynamically
                     -- resolves the current visual (including talent transforms).
-                    icon = C_Spell.GetSpellTexture(buttonData.id)
+                    UseIcon(C_Spell.GetSpellTexture(buttonData.id))
                 end
             else
                 -- For non-cdmChildSlot buttons, read the viewer frame's Icon
@@ -888,8 +921,7 @@ function CooldownCompanion:UpdateButtonIcon(button)
                         iconTexture = iconTexture.Icon
                     end
                     if iconTexture and iconTexture.GetTextureFileID then
-                        icon = iconTexture:GetTextureFileID()
-                        hasViewerIcon = true
+                        hasViewerIcon = UseIcon(iconTexture:GetTextureFileID())
                     end
                 end
                 if hasViewerIcon then
@@ -901,15 +933,16 @@ function CooldownCompanion:UpdateButtonIcon(button)
                     -- in the same tick all detect the transform consistently.
                     if not issecretvalue(icon) then
                         local spellIcon = C_Spell.GetSpellTexture(buttonData.id)
-                        if spellIcon and spellIcon ~= button._spellTexBaseline then
-                            icon = spellIcon
+                        if spellIcon ~= nil and spellIcon ~= button._spellTexBaseline then
+                            UseIcon(spellIcon)
                         end
                     end
                 else
-                    icon = C_Spell.GetSpellTexture(buttonData.id)
+                    local spellIcon = C_Spell.GetSpellTexture(buttonData.id)
+                    UseIcon(spellIcon)
                     -- Update baseline only when no viewer is active — keeps
                     -- it frozen during viewer presence to prevent oscillation.
-                    button._spellTexBaseline = icon
+                    button._spellTexBaseline = spellIcon
                 end
             end
         end
@@ -918,15 +951,15 @@ function CooldownCompanion:UpdateButtonIcon(button)
         if overrideId then
             displayId = overrideId
         end
-        if not icon then
+        if not hasIcon then
             -- Always use buttonData.id: GetSpellTexture dynamically
             -- resolves the current visual (including talent transforms).
-            icon = C_Spell.GetSpellTexture(buttonData.id)
+            UseIcon(C_Spell.GetSpellTexture(buttonData.id))
         end
     elseif IsEntryItemLike(buttonData) then
         local itemID = button._resolvedItemId or buttonData.id
         if itemID then
-            icon = C_Item.GetItemIconByID(itemID)
+            UseIcon(C_Item.GetItemIconByID(itemID))
         end
     end
 
@@ -934,41 +967,45 @@ function CooldownCompanion:UpdateButtonIcon(button)
     local manualIcon = buttonData.manualIcon
     if type(manualIcon) == "number" or type(manualIcon) == "string" then
         icon = manualIcon
+        hasIcon = true
     end
 
     -- Aura icon swap: show the tracked aura spell's icon while aura is active
-    local auraIconSpellID = button._activeAuraSpellID or button._auraSpellID
-    if buttonData.type == "spell" and button._auraActive
-       and buttonData.auraShowAuraIcon and auraIconSpellID then
-        -- Read the viewer frame's Icon texture (updates per-stage for multi-stage
-        -- auras like Hot Streak). GetTextureFileID may return a secret value in
-        -- combat; pass it straight through — do not test or branch on it.
-        local vf = button._activeAuraSpellIDFromFallback and nil or button._auraViewerFrame
-        local hasViewerIcon
-        if vf then
-            local iconTexture = vf.Icon
-            if iconTexture and not iconTexture.GetTextureFileID then
-                iconTexture = iconTexture.Icon
+    if buttonData.type == "spell" and button._auraActive and ShouldUseActiveAuraIcon(buttonData) then
+        if button._activeAuraIconAvailable == true then
+            UseIcon(button._activeAuraIcon, true)
+        else
+            local auraIconSpellID = button._activeAuraSpellID or button._auraSpellID
+            if auraIconSpellID then
+                -- Read the viewer frame's Icon texture (updates per-stage for multi-stage
+                -- auras like Hot Streak). GetTextureFileID may return a secret value in
+                -- combat; pass it straight through — do not test or branch on it.
+                local vf = button._activeAuraSpellIDFromFallback and nil or button._auraViewerFrame
+                local hasViewerIcon
+                if vf then
+                    local iconTexture = vf.Icon
+                    if iconTexture and not iconTexture.GetTextureFileID then
+                        iconTexture = iconTexture.Icon
+                    end
+                    if iconTexture and iconTexture.GetTextureFileID then
+                        hasViewerIcon = UseIcon(iconTexture:GetTextureFileID())
+                    end
+                end
+                if not hasViewerIcon then
+                    -- Fallback: static spell texture (viewer hidden or unavailable)
+                    UseIcon(C_Spell.GetSpellTexture(auraIconSpellID))
+                end
             end
-            if iconTexture and iconTexture.GetTextureFileID then
-                icon = iconTexture:GetTextureFileID()
-                hasViewerIcon = true
-            end
-        end
-        if not hasViewerIcon then
-            -- Fallback: static spell texture (viewer hidden or unavailable)
-            local auraIcon = C_Spell.GetSpellTexture(auraIconSpellID)
-            if auraIcon then icon = auraIcon end
         end
     end
 
     local prevDisplayId = button._displaySpellId
     button._displaySpellId = displayId
 
-    if icon then
+    if hasIcon then
         button.icon:SetTexture(icon)
     else
-        button.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+        button.icon:SetTexture(QUESTION_MARK_ICON)
     end
 
     -- Update cooldown secrecy when override spell changes (e.g. Command Demon → pet ability)
@@ -1269,6 +1306,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._auraViewerFrame = nil
     button._activeAuraSpellID = nil
     button._activeAuraSpellIDFromFallback = nil
+    button._activeAuraIcon = nil
+    button._activeAuraIconAvailable = nil
     button._lastViewerTexId = nil
     button._lastSpellTexture = nil
     button._spellTexBaseline = nil

@@ -1046,6 +1046,8 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button._auraViewerFrame = nil
     button._activeAuraSpellID = nil
     button._activeAuraSpellIDFromFallback = nil
+    button._activeAuraIcon = nil
+    button._activeAuraIconAvailable = nil
     button._lastViewerTexId = nil
     button._auraInstanceID = nil
     button._viewerBar = nil
