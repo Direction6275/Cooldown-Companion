@@ -459,6 +459,41 @@ local function CommitAuraDisplayName(button, buttonData, viewerFrame, auraOverri
     end
 end
 
+local function ActiveAuraIconNeedsRefresh(button, auraState, previousIcon, previousIconAvailable, previousAuraInstanceID)
+    local currentIconAvailable = button._activeAuraIconAvailable == true
+    if currentIconAvailable ~= (previousIconAvailable == true) then
+        return true
+    end
+
+    local currentAuraInstanceID = button._auraInstanceID
+    if not (issecretvalue(currentAuraInstanceID) or issecretvalue(previousAuraInstanceID))
+        and currentAuraInstanceID ~= previousAuraInstanceID then
+        return true
+    end
+
+    if currentIconAvailable then
+        local currentIcon = button._activeAuraIcon
+        if auraState and auraState.activeAuraIconResolved == true and issecretvalue(currentIcon) then
+            return true
+        end
+        if previousIconAvailable == true
+            and not (issecretvalue(currentIcon) or issecretvalue(previousIcon))
+            and currentIcon ~= previousIcon then
+            return true
+        end
+    end
+
+    return false
+end
+ST._ActiveAuraIconNeedsRefresh = ActiveAuraIconNeedsRefresh
+
+local function ShouldUseActiveAuraIcon(buttonData)
+    return buttonData
+        and (buttonData.auraShowAuraIcon == true
+            or buttonData.addedAs == "aura"
+            or buttonData.isPassive == true)
+end
+
 local function DispatchStandaloneTextureVisual(button)
     if not button then
         return
@@ -846,6 +881,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local auraDisplayNameState
     local previousActiveAuraSpellID = button._activeAuraSpellID
     local previousActiveAuraSpellIDFromFallback = button._activeAuraSpellIDFromFallback == true
+    local previousActiveAuraIcon = button._activeAuraIcon
+    local previousActiveAuraIconAvailable = button._activeAuraIconAvailable == true
+    local previousAuraInstanceID = button._auraInstanceID
     local auraApplications
     local auraGraceHeld = false
     local barAuraSecretStackValue
@@ -932,13 +970,23 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
 
         -- Aura icon swap: trigger icon update on _auraActive transition
-        if buttonData.auraShowAuraIcon and button._auraSpellID then
+        if ShouldUseActiveAuraIcon(buttonData) and button._auraSpellID then
             local shouldShow = auraOverrideActive
             button._auraViewerFrame = shouldShow and viewerFrame or nil
             local activeAuraSpellChanged = shouldShow
                 and (button._activeAuraSpellID ~= previousActiveAuraSpellID
                     or (button._activeAuraSpellIDFromFallback == true) ~= previousActiveAuraSpellIDFromFallback)
-            if shouldShow ~= (button._showingAuraIcon or false) or activeAuraSpellChanged then
+            local activeAuraIconChanged = shouldShow
+                and ActiveAuraIconNeedsRefresh(
+                    button,
+                    auraState,
+                    previousActiveAuraIcon,
+                    previousActiveAuraIconAvailable,
+                    previousAuraInstanceID
+                )
+            if shouldShow ~= (button._showingAuraIcon or false)
+                or activeAuraSpellChanged
+                or activeAuraIconChanged then
                 button._showingAuraIcon = shouldShow
                 CooldownCompanion:UpdateButtonIcon(button)
             elseif shouldShow and viewerFrame then
