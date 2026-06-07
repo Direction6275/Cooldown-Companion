@@ -28,6 +28,18 @@ function RB.CreateResourceBarLifecycleModule(deps)
     local lifecycleEventsEnabled = false
     local InstallHooks
 
+    local function BuildAuraInstanceIDSet(auraInstanceIDs)
+        if not (auraInstanceIDs and auraInstanceIDs[1]) then
+            return nil
+        end
+
+        local auraInstanceIDSet = {}
+        for _, auraInstanceID in ipairs(auraInstanceIDs) do
+            auraInstanceIDSet[auraInstanceID] = true
+        end
+        return auraInstanceIDSet
+    end
+
     local function IsCustomBarAuraRuntimeTracked(barInfo, cabConfig)
         if not (barInfo and cabConfig) then return false end
         return barInfo.barType == "custom_continuous"
@@ -121,6 +133,8 @@ function RB.CreateResourceBarLifecycleModule(deps)
 
                     local removedIDs = updateInfo.removedAuraInstanceIDs
                     local updatedIDs = updateInfo.updatedAuraInstanceIDs
+                    local removedIDSet = BuildAuraInstanceIDSet(removedIDs)
+                    local updatedIDSet = BuildAuraInstanceIDSet(updatedIDs)
                     local hasAuraChange = updateInfo.isFullUpdate or updateInfo.addedAuras or removedIDs or updatedIDs
                     local targetSwitchDataReceived = false
 
@@ -132,24 +146,20 @@ function RB.CreateResourceBarLifecycleModule(deps)
                             if IsCustomBarAuraRuntimeTracked(barInfo, cabConfig)
                                 and bar
                                 and (bar._auraUnit == unit or configUnit == unit) then
-                                if removedIDs and bar._auraInstanceID and bar._auraUnit == unit then
-                                    for _, instId in ipairs(removedIDs) do
-                                        if bar._auraInstanceID == instId then
-                                            ClearCustomBarAuraRuntime(bar, configUnit)
-                                            bar._auraEventRemoved = true
-                                            break
-                                        end
-                                    end
+                                if removedIDSet
+                                    and bar._auraInstanceID
+                                    and bar._auraUnit == unit
+                                    and removedIDSet[bar._auraInstanceID] then
+                                    ClearCustomBarAuraRuntime(bar, configUnit)
+                                    bar._auraEventRemoved = true
                                 end
-                                if updatedIDs and bar._auraInstanceID and bar._auraUnit == unit then
-                                    for _, instId in ipairs(updatedIDs) do
-                                        if bar._auraInstanceID == instId then
-                                            bar._inPandemic = false
-                                            bar._pandemicGraceStart = nil
-                                            bar._pandemicGraceSuppressed = true
-                                            break
-                                        end
-                                    end
+                                if updatedIDSet
+                                    and bar._auraInstanceID
+                                    and bar._auraUnit == unit
+                                    and updatedIDSet[bar._auraInstanceID] then
+                                    bar._inPandemic = false
+                                    bar._pandemicGraceStart = nil
+                                    bar._pandemicGraceSuppressed = true
                                 end
                                 if unit == "target" and bar._targetSwitchAt then
                                     bar._targetSwitchDataReceived = true
