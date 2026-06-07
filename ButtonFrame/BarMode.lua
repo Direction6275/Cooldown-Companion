@@ -66,6 +66,7 @@ local SetStatusBarImmediateRange = ST.SetStatusBarImmediateRange
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
+local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
 local SetStatusBarElapsedDuration = ST.SetStatusBarElapsedDuration
 local SetStatusBarRemainingDuration = ST.SetStatusBarRemainingDuration
 
@@ -498,25 +499,26 @@ local function GetBarAuraStackWidgetValue(value, valueAvailable)
     return 0
 end
 
-local function ApplyBarAuraStackSegmentValues(segments, color, value, valueAvailable)
+local function ApplyBarAuraStackSegmentValues(segments, color, value, valueAvailable, segmentedSmoothing)
     if not segments then return end
     local widgetValue = GetBarAuraStackWidgetValue(value, valueAvailable)
     for _, segment in ipairs(segments) do
         segment:SetStatusBarColor(color[1], color[2], color[3], color[4] or 1)
-        SetStatusBarSmoothValue(segment, widgetValue)
+        SetStatusBarSegmentedValue(segment, widgetValue, segmentedSmoothing)
     end
 end
 
-local function ApplyBarAuraStackSegmentOnlyValues(segments, value, valueAvailable)
+local function ApplyBarAuraStackSegmentOnlyValues(segments, value, valueAvailable, segmentedSmoothing)
     if not segments then return end
     local widgetValue = GetBarAuraStackWidgetValue(value, valueAvailable)
     for _, segment in ipairs(segments) do
-        SetStatusBarSmoothValue(segment, widgetValue)
+        SetStatusBarSegmentedValue(segment, widgetValue, segmentedSmoothing)
     end
 end
 
 local function ApplyBarAuraStackValuesOnly(button, mode, stackValue, valueAvailable)
     local widgetValue = GetBarAuraStackWidgetValue(stackValue, valueAvailable)
+    local segmentedSmoothing = mode ~= "continuous" and CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(button.buttonData) or nil
     if mode == "continuous" then
         SetStatusBarSmoothValue(button.statusBar, widgetValue)
         if button.statusBar.thresholdOverlay and button.statusBar.thresholdOverlay:IsShown() then
@@ -525,18 +527,22 @@ local function ApplyBarAuraStackValuesOnly(button, mode, stackValue, valueAvaila
     else
         local holder = mode == "overlay" and button._barAuraStackOverlay or button._barAuraStackSegments
         if not holder then return end
-        ApplyBarAuraStackSegmentOnlyValues(holder.segments, stackValue, valueAvailable)
+        ApplyBarAuraStackSegmentOnlyValues(holder.segments, stackValue, valueAvailable, segmentedSmoothing)
         if mode == "overlay" then
-            ApplyBarAuraStackSegmentOnlyValues(holder.overlaySegments, stackValue, valueAvailable)
+            ApplyBarAuraStackSegmentOnlyValues(holder.overlaySegments, stackValue, valueAvailable, segmentedSmoothing)
         end
         if holder.thresholdSegments then
-            ApplyBarAuraStackSegmentOnlyValues(holder.thresholdSegments, stackValue, valueAvailable)
+            ApplyBarAuraStackSegmentOnlyValues(holder.thresholdSegments, stackValue, valueAvailable, segmentedSmoothing)
         end
     end
 
     local info = mode == "continuous" and button._barAuraStackContinuousInfo or button._barAuraStackIndicatorInfo
     if info and info._maxStacksIndicator then
-        SetStatusBarSmoothValue(info._maxStacksIndicator, widgetValue)
+        if mode == "continuous" then
+            SetStatusBarSmoothValue(info._maxStacksIndicator, widgetValue)
+        else
+            SetStatusBarSegmentedValue(info._maxStacksIndicator, widgetValue, segmentedSmoothing)
+        end
     end
 end
 
@@ -595,6 +601,7 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
     local auraBar = button.buttonData and button.buttonData.auraBar or nil
     local stackBarColor, overlayColor, thresholdColor = GetBarAuraStackColors(button)
     local showThreshold = auraBar and auraBar.thresholdColorEnabled == true
+    local segmentedSmoothing = mode ~= "continuous" and CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(button.buttonData) or nil
     local state = button._barAuraStackAppliedState
     local layoutDirty = state == nil
     if not state then
@@ -617,6 +624,7 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
         or state.borderSize ~= (style.borderSize or ST.DEFAULT_BORDER_SIZE or 1)
         or state.borderRenderMode ~= ST.GetBorderRenderMode(style)
         or state.showThreshold ~= showThreshold
+        or state.segmentedSmoothing ~= segmentedSmoothing
         or state.maxStacksGlowEnabled ~= (auraBar and auraBar.maxStacksGlowEnabled == true)
         or state.maxStacksGlowStyle ~= (auraBar and auraBar.maxStacksGlowStyle or nil)
         or state.maxStacksGlowSize ~= (auraBar and auraBar.maxStacksGlowSize or nil)
@@ -654,6 +662,7 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
         state.borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE or 1
         state.borderRenderMode = ST.GetBorderRenderMode(style)
         state.showThreshold = showThreshold
+        state.segmentedSmoothing = segmentedSmoothing
         state.maxStacksGlowEnabled = auraBar and auraBar.maxStacksGlowEnabled == true
         state.maxStacksGlowStyle = auraBar and auraBar.maxStacksGlowStyle or nil
         state.maxStacksGlowSize = auraBar and auraBar.maxStacksGlowSize or nil
@@ -694,6 +703,7 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
     button.statusBar._reverseFill = button.style and button.style.barReverseFill == true
 
     local settings = GetBarAuraVisualSettings(button)
+    local segmentedSmoothing = mode ~= "continuous" and CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(button.buttonData) or nil
     local orientation = button._isVertical and "vertical" or "horizontal"
     local reverseFill = button.style and button.style.barReverseFill == true
     local gap = CooldownCompanion:GetBarPanelAuraSegmentGap(button.buttonData)
@@ -756,8 +766,8 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
                 RB.LayoutOverlaySegments(holder, width, height, gap, settings, halfSegments, orientation, reverseFill)
             end
         end
-        ApplyBarAuraStackSegmentValues(holder.segments, stackBarColor, stackValue, valueAvailable)
-        ApplyBarAuraStackSegmentValues(holder.overlaySegments, overlayColor, stackValue, valueAvailable)
+        ApplyBarAuraStackSegmentValues(holder.segments, stackBarColor, stackValue, valueAvailable, segmentedSmoothing)
+        ApplyBarAuraStackSegmentValues(holder.overlaySegments, overlayColor, stackValue, valueAvailable, segmentedSmoothing)
     else
         if layoutChanged then
             if showThreshold and RB.EnsureCustomAuraSegmentThresholdOverlays then
@@ -767,7 +777,7 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
                 RB.LayoutSegments(holder, width, height, gap, settings, orientation, reverseFill)
             end
         end
-        ApplyBarAuraStackSegmentValues(holder.segments, stackBarColor, stackValue, valueAvailable)
+        ApplyBarAuraStackSegmentValues(holder.segments, stackBarColor, stackValue, valueAvailable, segmentedSmoothing)
     end
 
     if holder.thresholdSegments then
@@ -777,7 +787,7 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
                     RB.SetCustomAuraMaxThresholdRange(segment, maxStacks)
                     segment:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], thresholdColor[4] or 1)
                 end
-                SetStatusBarSmoothValue(segment, GetBarAuraStackWidgetValue(stackValue, valueAvailable))
+                SetStatusBarSegmentedValue(segment, GetBarAuraStackWidgetValue(stackValue, valueAvailable), segmentedSmoothing)
                 segment:Show()
             elseif layoutChanged then
                 SetStatusBarImmediateValue(segment, 0)
@@ -875,7 +885,13 @@ local function UpdateBarAuraStackIndicator(button, mode, maxStacks, stackValue, 
         info._barAuraStackIndicatorKey = indicatorKey
     end
     if info._maxStacksIndicator then
-        SetStatusBarSmoothValue(info._maxStacksIndicator, GetBarAuraStackWidgetValue(stackValue, stackValueAvailable))
+        local indicatorValue = GetBarAuraStackWidgetValue(stackValue, stackValueAvailable)
+        local segmentedSmoothing = mode ~= "continuous" and CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(button.buttonData) or nil
+        if mode == "continuous" then
+            SetStatusBarSmoothValue(info._maxStacksIndicator, indicatorValue)
+        else
+            SetStatusBarSegmentedValue(info._maxStacksIndicator, indicatorValue, segmentedSmoothing)
+        end
     end
 end
 

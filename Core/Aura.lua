@@ -1081,6 +1081,18 @@ function CooldownCompanion:SetBarPanelAuraStackTextFormat(buttonData, format)
     EnsureBarPanelAuraSettings(buttonData).stackTextFormat = NormalizeBarPanelAuraStackTextFormat(format)
 end
 
+function CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    return ST.NormalizeSegmentedSmoothing(type(auraBar) == "table" and auraBar.segmentedSmoothing or nil)
+end
+
+function CooldownCompanion:SetBarPanelAuraSegmentedSmoothing(buttonData, value)
+    if not self:IsBarPanelAuraDisplayEligible(buttonData) then
+        return
+    end
+    EnsureBarPanelAuraSettings(buttonData).segmentedSmoothing = ST.NormalizeSegmentedSmoothing(value)
+end
+
 function CooldownCompanion:IsAuraTrackingReady(buttonData, cdmEnabled, viewerFrame)
     if not (buttonData and buttonData.type == "spell") then
         return false

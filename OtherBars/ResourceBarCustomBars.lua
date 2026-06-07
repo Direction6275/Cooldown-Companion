@@ -32,6 +32,7 @@ end
 local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
 local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
+local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
 local NormalizeCustomAuraStackTextFormat = RB.NormalizeCustomAuraStackTextFormat
 local IsCustomAuraMaxThresholdEnabled = RB.IsCustomAuraMaxThresholdEnabled
 local GetCustomAuraMaxThresholdColor = RB.GetCustomAuraMaxThresholdColor
@@ -58,6 +59,7 @@ local SetAuraStackCountText = EntryRuntime.SetAuraStackCountText
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
+local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
 local SetStatusBarElapsedDuration = ST.SetStatusBarElapsedDuration
 local SetStatusBarRemainingDuration = ST.SetStatusBarRemainingDuration
 
@@ -160,6 +162,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
     local function UpdateCustomAuraBar(barInfo)
         local cabConfig = barInfo.cabConfig
         if not cabConfig or not cabConfig.spellID then return end
+        local segmentedSmoothing = GetResourceSegmentedSmoothing(CooldownCompanion:GetResourceBarSettings())
 
         -- Read aura data from viewer frame (applications may be secret in combat)
         local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
@@ -391,7 +394,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             -- Each segment has MinMax(i-1, i) — SetValue(stacks) with C-level clamping
             -- handles fill/empty without comparing the secret stacks value in Lua
             for i = 1, #holder.segments do
-                SetStatusBarSmoothValue(holder.segments[i], stacks)
+                SetStatusBarSegmentedValue(holder.segments[i], stacks, segmentedSmoothing)
             end
 
             if holder.thresholdSegments then
@@ -399,7 +402,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                     local thresholdSeg = holder.thresholdSegments[i]
                     if thresholdEnabled then
                         SetCustomAuraMaxThresholdRange(thresholdSeg, maxStacks)
-                        SetStatusBarSmoothValue(thresholdSeg, stacks)
+                        SetStatusBarSegmentedValue(thresholdSeg, stacks, segmentedSmoothing)
                         thresholdSeg:Show()
                     else
                         SetStatusBarImmediateValue(thresholdSeg, 0)
@@ -415,8 +418,8 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
             -- Pass stacks to ALL segments (StatusBar C-level clamping handles per-segment fill)
             for i = 1, half do
-                SetStatusBarSmoothValue(holder.segments[i], stacks)
-                SetStatusBarSmoothValue(holder.overlaySegments[i], stacks)
+                SetStatusBarSegmentedValue(holder.segments[i], stacks, segmentedSmoothing)
+                SetStatusBarSegmentedValue(holder.overlaySegments[i], stacks, segmentedSmoothing)
             end
 
             if holder.thresholdSegments then
@@ -424,7 +427,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                     local thresholdSeg = holder.thresholdSegments[i]
                     if thresholdEnabled then
                         SetCustomAuraMaxThresholdRange(thresholdSeg, maxStacks)
-                        SetStatusBarSmoothValue(thresholdSeg, stacks)
+                        SetStatusBarSegmentedValue(thresholdSeg, stacks, segmentedSmoothing)
                         thresholdSeg:Show()
                     else
                         SetStatusBarImmediateValue(thresholdSeg, 0)
@@ -446,7 +449,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         -- Max stacks indicator: SetValue drives visibility via C-level clamping
         if cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
-            SetStatusBarSmoothValue(barInfo._maxStacksIndicator, (auraPresent and applications ~= nil) and applications or 0)
+            local indicatorValue = (auraPresent and applications ~= nil) and applications or 0
+            if barInfo.barType == "custom_segmented" or barInfo.barType == "custom_overlay" then
+                SetStatusBarSegmentedValue(barInfo._maxStacksIndicator, indicatorValue, segmentedSmoothing)
+            else
+                SetStatusBarSmoothValue(barInfo._maxStacksIndicator, indicatorValue)
+            end
         end
     end
 

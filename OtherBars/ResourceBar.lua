@@ -21,6 +21,7 @@ local ClearStatusBarMotion = ST.ClearStatusBarMotion
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
+local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
 
 local math_floor = math.floor
 local math_min = math.min
@@ -73,6 +74,7 @@ local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
 local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
 local GetSpecLayoutOrder = RB.GetSpecLayoutOrder
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
+local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
 local GetResourceDisplayConfig = RB.GetResourceDisplayConfig
 local GetAnchorOffset = RB.GetAnchorOffset
 local RoundToTenths = RB.RoundToTenths
@@ -1021,6 +1023,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
 
     local auraOverrideColor, auraApplications, auraHasApplications = GetResourceAuraState(powerType, settings, auraActiveCache)
     local auraMaxStacks = GetResourceAuraConfiguredMaxStacks(powerType, settings)
+    local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
     local useAuraStackMode = auraOverrideColor
         and auraMaxStacks
         and auraHasApplications
@@ -1071,7 +1074,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
             local segValue = 0
             if r.ready then
                 segValue = 1
-                SetStatusBarSmoothValue(seg, segValue)
+                SetStatusBarSegmentedValue(seg, segValue, segmentedSmoothing)
                 seg:SetStatusBarColor(activeReadyColor[1], activeReadyColor[2], activeReadyColor[3], 1)
                 fullSegments[i] = true
                 if showAllRechargeText then
@@ -1079,13 +1082,13 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                 end
             elseif r.duration and r.duration > 0 then
                 segValue = math_min((now - r.start) / r.duration, 1)
-                SetStatusBarSmoothValue(seg, segValue)
+                SetStatusBarSegmentedValue(seg, segValue, segmentedSmoothing)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
                 if showAllRechargeText or (ShouldShowRechargeTextForTimer(holder) and r.activelyRecharging) then
                     SetRechargeText(holder, i, r.remaining)
                 end
             else
-                SetStatusBarSmoothValue(seg, segValue)
+                SetStatusBarSegmentedValue(seg, segValue, segmentedSmoothing)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
                 if showAllRechargeText then
                     SetRechargeText(holder, i, 0, true)
@@ -1128,14 +1131,14 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                 for i = 1, math_min(#holder.segments, max) do
                     local seg = holder.segments[i]
                     if i <= filled then
-                        SetStatusBarSmoothValue(seg, 1)
+                        SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
                         seg:SetStatusBarColor(activeReadyColor[1], activeReadyColor[2], activeReadyColor[3], 1)
                         fullSegments[i] = true
                     elseif i == filled + 1 and partial > 0 then
-                        SetStatusBarSmoothValue(seg, partial)
+                        SetStatusBarSegmentedValue(seg, partial, segmentedSmoothing)
                         seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
                     else
-                        SetStatusBarSmoothValue(seg, 0)
+                        SetStatusBarSegmentedValue(seg, 0, segmentedSmoothing)
                         seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
                     end
                 end
@@ -1179,14 +1182,14 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         for i = 1, math_min(#holder.segments, max) do
             local seg = holder.segments[i]
             if i <= filled then
-                SetStatusBarSmoothValue(seg, 1)
+                SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
                 seg:SetStatusBarColor(activeReadyColor[1], activeReadyColor[2], activeReadyColor[3], 1)
                 fullSegments[i] = true
             elseif i == filled + 1 and partial > 0 then
-                SetStatusBarSmoothValue(seg, partial)
+                SetStatusBarSegmentedValue(seg, partial, segmentedSmoothing)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
             else
-                SetStatusBarSmoothValue(seg, 0)
+                SetStatusBarSegmentedValue(seg, 0, segmentedSmoothing)
                 seg:SetStatusBarColor(rechargingColor[1], rechargingColor[2], rechargingColor[3], 1)
             end
         end
@@ -1224,7 +1227,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         for i = 1, math_min(#holder.segments, max) do
             local seg = holder.segments[i]
             if i <= current then
-                SetStatusBarSmoothValue(seg, 1)
+                SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
                 fullSegments[i] = true
                 if chargedPoints and tContains(chargedPoints, i) then
                     seg:SetStatusBarColor(chargedColor[1], chargedColor[2], chargedColor[3], 1)
@@ -1232,7 +1235,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                     seg:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
                 end
             else
-                SetStatusBarSmoothValue(seg, 0)
+                SetStatusBarSegmentedValue(seg, 0, segmentedSmoothing)
             end
         end
         segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, current, max, false)
@@ -1266,11 +1269,11 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
     for i = 1, math_min(#holder.segments, max) do
         local seg = holder.segments[i]
         if i <= current then
-            SetStatusBarSmoothValue(seg, 1)
+            SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
             seg:SetStatusBarColor(activeColor[1], activeColor[2], activeColor[3], 1)
             fullSegments[i] = true
         else
-            SetStatusBarSmoothValue(seg, 0)
+            SetStatusBarSegmentedValue(seg, 0, segmentedSmoothing)
         end
     end
     segmentedUpdateScratch.Finalize(holder, settings, auraOverrideColor, useAuraStackMode, auraApplications, auraMaxStacks, fullSegments, current, max, false)
@@ -1285,6 +1288,7 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
     if not settings then
         settings = GetResourceBarSettings()
     end
+    local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
 
     -- Read stacks from viewer frame (applications is plain for MW)
     local stacks = 0
@@ -1318,8 +1322,8 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
         local baseSeg = holder.segments[i]
         local overlaySeg = holder.overlaySegments[i]
 
-        SetStatusBarSmoothValue(baseSeg, stacks)
-        SetStatusBarSmoothValue(overlaySeg, stacks)
+        SetStatusBarSegmentedValue(baseSeg, stacks, segmentedSmoothing)
+        SetStatusBarSegmentedValue(overlaySeg, stacks, segmentedSmoothing)
         -- Hide right-half overlay segments when value is at/below their segment minimum.
         -- This prevents tiny leading-edge ticks on empty overlay segments.
         if stacks > (half + i - 1) then

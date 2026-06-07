@@ -1252,6 +1252,26 @@ local function BuildBarPanelAuraDisplaySection(scroll, buttonData, infoButtons)
     scroll:AddChild(stackTextFormatDrop)
 
     if stackDisplayMode == "segmented" or stackDisplayMode == "overlay" then
+        local segmentedSmoothingDrop = AceGUI:Create("Dropdown")
+        segmentedSmoothingDrop:SetLabel("Segmented Smoothing")
+        segmentedSmoothingDrop:SetList({
+            [ST.SEGMENTED_SMOOTHING_ON] = "On",
+            [ST.SEGMENTED_SMOOTHING_OFF] = "Off",
+        }, { ST.SEGMENTED_SMOOTHING_ON, ST.SEGMENTED_SMOOTHING_OFF })
+        segmentedSmoothingDrop:SetValue(CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData))
+        segmentedSmoothingDrop:SetFullWidth(true)
+        segmentedSmoothingDrop:SetCallback("OnValueChanged", function(_, _, value)
+            CooldownCompanion:SetBarPanelAuraSegmentedSmoothing(buttonData, value)
+            RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true })
+        end)
+        scroll:AddChild(segmentedSmoothingDrop)
+        CreateInfoButton(segmentedSmoothingDrop.frame, segmentedSmoothingDrop.label, "LEFT", "RIGHT", 4, 0, {
+            "Segmented Smoothing",
+            {"Controls whether this entry's segmented or overlay Stack Count bar smooths changes or snaps immediately.", 1, 1, 1, true},
+            " ",
+            {"Continuous Stack Count bars are not affected.", 1, 1, 1, true},
+        }, segmentedSmoothingDrop)
+
         local segmentGapSlider = AceGUI:Create("Slider")
         segmentGapSlider:SetLabel("Segment Gap")
         segmentGapSlider:SetSliderValues(0, 20, 0.1)
