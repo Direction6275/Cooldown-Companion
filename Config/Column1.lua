@@ -386,13 +386,15 @@ local function GetFolderTargetsForSection(db, charKey, section)
     return folderList
 end
 
-local function BuildColumn1ContainerStats(db)
+local function BuildColumn1ContainerStats(db, containerIds)
     local statsByContainer = {}
+    if not containerIds or not next(containerIds) then return statsByContainer end
+
     local containers = db.groupContainers or {}
 
     for _, group in pairs(db.groups or {}) do
         local containerId = group and group.parentContainerId
-        if containerId then
+        if containerId and containerIds[containerId] then
             local stats = statsByContainer[containerId]
             if not stats then
                 stats = {
@@ -1031,7 +1033,7 @@ local function RefreshColumn1(preserveDrag)
         return
     end
 
-    local containerStats = BuildColumn1ContainerStats(db)
+    local containerStats = {}
 
     -- Count current children in scroll widget
     local function CountScrollChildren()
@@ -1985,6 +1987,24 @@ local function RefreshColumn1(preserveDrag)
         desc.label:SetMaxLines(0)
         CS.col1Scroll:AddChild(desc)
     else
+        local statsContainerIds = {}
+        for _, id in ipairs(globalIds) do
+            if not searchResults or searchResults.containerMatches[id] then
+                statsContainerIds[id] = true
+            end
+        end
+        for _, id in ipairs(charIds) do
+            if not searchResults or searchResults.containerMatches[id] then
+                statsContainerIds[id] = true
+            end
+        end
+        for id in pairs(CS.selectedGroups) do
+            if containers[id] then
+                statsContainerIds[id] = true
+            end
+        end
+        containerStats = BuildColumn1ContainerStats(db, statsContainerIds)
+
         -- Render sections
         local hasGlobalContent = #globalIds > 0
         if not hasGlobalContent then
