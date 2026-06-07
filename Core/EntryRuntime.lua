@@ -459,6 +459,9 @@ local function CommitTrackedAuraOwnerState(owner, state)
                 owner._activeAuraIcon = nil
                 owner._activeAuraIconAvailable = nil
             end
+        elseif state.auraGraceHeld ~= true then
+            owner._activeAuraIcon = nil
+            owner._activeAuraIconAvailable = nil
         end
         if owner._targetSwitchAt
             and state.auraGraceHeld ~= true
