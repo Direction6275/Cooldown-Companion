@@ -35,6 +35,18 @@ local COOLDOWN_VIEWER_ASSOCIATION_CATEGORIES = {
     Enum.CooldownViewerCategory.TrackedBar,
 }
 
+local function BuildAuraInstanceIDSet(auraInstanceIDs)
+    if not (auraInstanceIDs and auraInstanceIDs[1]) then
+        return nil
+    end
+
+    local auraInstanceIDSet = {}
+    for _, auraInstanceID in ipairs(auraInstanceIDs) do
+        auraInstanceIDSet[auraInstanceID] = true
+    end
+    return auraInstanceIDSet
+end
+
 local function IsBuffViewerChild(frame)
     if not frame then return false end
     local parent = frame:GetParent()
@@ -473,32 +485,26 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
     -- work correctly — the update path re-checks _auraInstanceID after removals.
     local removedIDs = updateInfo.removedAuraInstanceIDs
     local updatedIDs = updateInfo.updatedAuraInstanceIDs
+    local removedIDSet = BuildAuraInstanceIDSet(removedIDs)
+    local updatedIDSet = BuildAuraInstanceIDSet(updatedIDs)
     local isTarget = (unit == "target")
     if removedIDs or updatedIDs or isTarget then
         self:ForEachButton(function(button)
             if button._auraInstanceID and button._auraUnit == unit then
-                if removedIDs then
-                    for _, instId in ipairs(removedIDs) do
-                        if button._auraInstanceID == instId then
-                            button._auraInstanceID = nil
-                            button._inPandemic = false
-                            button._auraEventRemoved = true
-                            break
-                        end
-                    end
+                if removedIDSet and removedIDSet[button._auraInstanceID] then
+                    button._auraInstanceID = nil
+                    button._inPandemic = false
+                    button._auraEventRemoved = true
                 end
                 -- Aura reapplication (pandemic refresh) arrives as an update, not a
                 -- removal + add.  Clear pandemic state and suppress the grace hold so
                 -- the next evaluation clears pandemic immediately instead of holding 0.3s.
-                if updatedIDs and button._auraInstanceID then
-                    for _, instId in ipairs(updatedIDs) do
-                        if button._auraInstanceID == instId then
-                            button._inPandemic = false
-                            button._pandemicGraceStart = nil
-                            button._pandemicGraceSuppressed = true
-                            break
-                        end
-                    end
+                if updatedIDSet
+                    and button._auraInstanceID
+                    and updatedIDSet[button._auraInstanceID] then
+                    button._inPandemic = false
+                    button._pandemicGraceStart = nil
+                    button._pandemicGraceSuppressed = true
                 end
             end
             -- Signal that the server has delivered target aura data, so the hold
