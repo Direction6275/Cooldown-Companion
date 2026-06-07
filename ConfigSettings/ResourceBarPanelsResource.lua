@@ -380,6 +380,376 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
     return expanded, advBtn
 end
 
+local function IsHealthTextFormat(textFormat)
+    return textFormat == "percent"
+        or textFormat == "percent_no_sign"
+        or textFormat == "current"
+        or textFormat == "current_max"
+        or textFormat == "current_percent"
+        or textFormat == "current_percent_no_sign"
+end
+
+local function BuildResourceTextControls(container, settings, powerType, displaySpecID, applyBars, collapsedKey)
+    local rbTextAdvBtns = {}
+
+    local textHeading = AceGUI:Create("Heading")
+    textHeading:SetText("Text")
+    ColorHeading(textHeading)
+    textHeading:SetFullWidth(true)
+    container:AddChild(textHeading)
+
+    local textKey = collapsedKey or "rb_text"
+    local textCollapsed = resourceBarCollapsedSections[textKey]
+
+    local textCollapseBtn = AttachCollapseButton(textHeading, textCollapsed, function()
+        resourceBarCollapsedSections[textKey] = not resourceBarCollapsedSections[textKey]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    textHeading.right:ClearAllPoints()
+    textHeading.right:SetPoint("RIGHT", textHeading.frame, "RIGHT", -3, 0)
+    textHeading.right:SetPoint("LEFT", textCollapseBtn, "RIGHT", 4, 0)
+
+    if textCollapsed then
+        return
+    end
+
+    local capturedPt = powerType
+    local isHealthResource = capturedPt == HealthResource.ID
+    local isSegmentedResource = (SEGMENTED_TYPES[capturedPt] == true) or (capturedPt == 100)
+    if isHealthResource then
+        HealthResource.EnsureSettings(settings)
+    else
+        EnsureResourceSettings(settings, capturedPt)
+    end
+    local baseSettings = settings.resources[capturedPt]
+    local resSettings = SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, CS._ResourceTextDisplayKeys) or baseSettings
+    local name = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
+
+    local showTextValue = ReadDisplaySetting(baseSettings, resSettings, "showText", nil)
+    local showTextEnabled
+    if isHealthResource or isSegmentedResource then
+        showTextEnabled = showTextValue == true
+    else
+        showTextEnabled = showTextValue ~= false
+    end
+
+    local cb = AceGUI:Create("CheckBox")
+    cb:SetLabel("Show " .. name .. " Text")
+    cb:SetValue(showTextEnabled)
+    cb:SetFullWidth(true)
+    cb:SetCallback("OnValueChanged", function(widget, event, val)
+        resSettings.showText = val == true
+        if isHealthResource and not IsHealthTextFormat(resSettings.textFormat) then
+            resSettings.textFormat = "percent"
+        end
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(cb)
+
+    local function BuildResourceTextAdvanced(panel)
+        local textFormatDrop = AceGUI:Create("Dropdown")
+        textFormatDrop:SetLabel("Text Format")
+        local textFormatOptions
+        local textFormatOrder
+        if isHealthResource then
+            textFormatOptions = {
+                percent = "Percent",
+                percent_no_sign = "Percent (No %)",
+                current = "Current Health",
+                current_max = "Current / Max Health",
+                current_percent = "Current + Percent",
+                current_percent_no_sign = "Current + Percent (No %)",
+            }
+            textFormatOrder = {
+                "percent",
+                "percent_no_sign",
+                "current",
+                "current_max",
+                "current_percent",
+                "current_percent_no_sign",
+            }
+        elseif isSegmentedResource then
+            textFormatOptions = {
+                current = "Current Value",
+                current_max = "Current / Max",
+            }
+            textFormatOrder = { "current", "current_max" }
+        else
+            textFormatOptions = {
+                current = "Current Value",
+                current_max = "Current / Max",
+                percent = "Percent",
+            }
+            textFormatOrder = { "current", "current_max", "percent" }
+        end
+        textFormatDrop:SetList(textFormatOptions, textFormatOrder)
+        local textFormatValue = ReadDisplaySetting(baseSettings, resSettings, "textFormat", isHealthResource and "percent" or DEFAULT_RESOURCE_TEXT_FORMAT)
+        if isHealthResource then
+            if not IsHealthTextFormat(textFormatValue) then
+                textFormatValue = "percent"
+            end
+        elseif isSegmentedResource then
+            if textFormatValue ~= "current" and textFormatValue ~= "current_max" then
+                textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT
+            end
+        else
+            if textFormatValue ~= "current" and textFormatValue ~= "current_max" and textFormatValue ~= "percent" then
+                textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT
+            end
+        end
+        textFormatDrop:SetValue(textFormatValue)
+        textFormatDrop:SetFullWidth(true)
+        textFormatDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            if isHealthResource then
+                if IsHealthTextFormat(val) then
+                    resSettings.textFormat = val
+                else
+                    resSettings.textFormat = "percent"
+                end
+            elseif isSegmentedResource then
+                if val == "current" or val == "current_max" then
+                    resSettings.textFormat = val
+                else
+                    resSettings.textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
+                end
+            else
+                if val == "current" or val == "current_max" or val == "percent" then
+                    resSettings.textFormat = val
+                else
+                    resSettings.textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
+                end
+            end
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        panel:AddChild(textFormatDrop)
+
+        local fontDrop = AceGUI:Create("Dropdown")
+        fontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(fontDrop)
+        fontDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textFont", DEFAULT_RESOURCE_TEXT_FONT))
+        fontDrop:SetFullWidth(true)
+        CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
+            resSettings.textFont = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        panel:AddChild(fontDrop)
+
+        local sizeDrop = AceGUI:Create("Slider")
+        sizeDrop:SetLabel("Font Size")
+        sizeDrop:SetSliderValues(6, 24, 1)
+        sizeDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textFontSize", DEFAULT_RESOURCE_TEXT_SIZE))
+        sizeDrop:SetFullWidth(true)
+        sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            resSettings.textFontSize = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        panel:AddChild(sizeDrop)
+
+        local outlineDrop = AceGUI:Create("Dropdown")
+        outlineDrop:SetLabel("Outline")
+        CS.SetupFontOutlineDropdown(outlineDrop)
+        outlineDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
+        outlineDrop:SetFullWidth(true)
+        CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
+            resSettings.textFontOutline = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        panel:AddChild(outlineDrop)
+
+        AddColorPicker(panel, resSettings, "textFontColor", "Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, applyBars)
+
+        local textAnchorDrop = AceGUI:Create("Dropdown")
+        textAnchorDrop:SetLabel("Text Anchor")
+        local textAnchorValues = {}
+        for _, pt in ipairs(CS.anchorPoints) do
+            textAnchorValues[pt] = CS.anchorPointLabels[pt]
+        end
+        textAnchorDrop:SetList(textAnchorValues, CS.anchorPoints)
+        textAnchorDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR))
+        textAnchorDrop:SetFullWidth(true)
+        textAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            resSettings.textAnchor = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        panel:AddChild(textAnchorDrop)
+
+        local textXSlider = AceGUI:Create("Slider")
+        textXSlider:SetLabel("Text X Offset")
+        textXSlider:SetSliderValues(-50, 50, 0.1)
+        textXSlider:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET))
+        textXSlider:SetFullWidth(true)
+        textXSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            resSettings.textXOffset = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        panel:AddChild(textXSlider)
+
+        local textYSlider = AceGUI:Create("Slider")
+        textYSlider:SetLabel("Text Y Offset")
+        textYSlider:SetSliderValues(-50, 50, 0.1)
+        textYSlider:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET))
+        textYSlider:SetFullWidth(true)
+        textYSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            resSettings.textYOffset = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        panel:AddChild(textYSlider)
+
+        if HIDE_AT_ZERO_ELIGIBLE[capturedPt] then
+            local hideAtZeroCb = AceGUI:Create("CheckBox")
+            hideAtZeroCb:SetLabel("Hide at 0")
+            hideAtZeroCb:SetValue(ReadDisplaySetting(baseSettings, resSettings, "hideTextAtZero", false) == true)
+            hideAtZeroCb:SetFullWidth(true)
+            hideAtZeroCb:SetCallback("OnValueChanged", function(widget, event, val)
+                resSettings.hideTextAtZero = val == true
+                CooldownCompanion:ApplyResourceBars()
+            end)
+            panel:AddChild(hideAtZeroCb)
+        end
+    end
+
+    local textAdvKey = "rbText_" .. capturedPt .. "_" .. tostring(displaySpecID)
+    AddAdvancedToggle(cb, textAdvKey, rbTextAdvBtns, showTextEnabled, {
+        title = name .. " Text Advanced",
+        build = BuildResourceTextAdvanced,
+        context = {
+            selectedResourcePowerType = capturedPt,
+            resourceSettingsSpecID = displaySpecID,
+        },
+    })
+
+    if capturedPt ~= 5 then
+        return
+    end
+
+    local rechargeEnabled = ReadDisplaySetting(baseSettings, resSettings, "showRechargeText", DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED) == true
+    local rechargeCb = AceGUI:Create("CheckBox")
+    rechargeCb:SetLabel("Show " .. name .. " Recharge Text")
+    rechargeCb:SetValue(rechargeEnabled)
+    rechargeCb:SetFullWidth(true)
+    rechargeCb:SetCallback("OnValueChanged", function(widget, event, val)
+        resSettings.showRechargeText = val == true
+        CooldownCompanion:ApplyResourceBars()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(rechargeCb)
+
+    local function BuildRechargeTextAdvanced(panel)
+        local modeValue = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextMode", "recharging")
+        if modeValue ~= "all" then
+            modeValue = "recharging"
+        end
+        local modeOptions = {
+            { value = "recharging", label = "Recharging Segments Only" },
+            { value = "all", label = "All Segments" },
+        }
+        for _, option in ipairs(modeOptions) do
+            local optionValue = option.value
+            local modeRadio = AceGUI:Create("CheckBox")
+            modeRadio:SetType("radio")
+            modeRadio:SetLabel(option.label)
+            modeRadio:SetValue(modeValue == optionValue)
+            modeRadio:SetFullWidth(true)
+            modeRadio:SetCallback("OnValueChanged", function(widget, event, val)
+                if val ~= true then
+                    widget:SetValue(true)
+                    return
+                end
+                resSettings.rechargeTextMode = optionValue
+                CooldownCompanion:ApplyResourceBars()
+                if CS.RefreshAdvancedSettingsPanel then
+                    CS.RefreshAdvancedSettingsPanel()
+                end
+            end)
+            panel:AddChild(modeRadio)
+        end
+
+        local fontDrop = AceGUI:Create("Dropdown")
+        fontDrop:SetLabel("Font")
+        CS.SetupFontDropdown(fontDrop)
+        fontDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFont", DEFAULT_RESOURCE_TEXT_FONT))
+        fontDrop:SetFullWidth(true)
+        CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
+            resSettings.rechargeTextFont = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        panel:AddChild(fontDrop)
+
+        local sizeDrop = AceGUI:Create("Slider")
+        sizeDrop:SetLabel("Font Size")
+        sizeDrop:SetSliderValues(6, 24, 1)
+        sizeDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFontSize", DEFAULT_RESOURCE_TEXT_SIZE))
+        sizeDrop:SetFullWidth(true)
+        sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            resSettings.rechargeTextFontSize = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        panel:AddChild(sizeDrop)
+
+        local outlineDrop = AceGUI:Create("Dropdown")
+        outlineDrop:SetLabel("Outline")
+        CS.SetupFontOutlineDropdown(outlineDrop)
+        outlineDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
+        outlineDrop:SetFullWidth(true)
+        CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
+            resSettings.rechargeTextFontOutline = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        panel:AddChild(outlineDrop)
+
+        AddColorPicker(panel, resSettings, "rechargeTextFontColor", "Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, applyBars)
+
+        local anchorDrop = AceGUI:Create("Dropdown")
+        anchorDrop:SetLabel("Text Anchor")
+        local anchorValues = {}
+        for _, pt in ipairs(CS.anchorPoints) do
+            anchorValues[pt] = CS.anchorPointLabels[pt]
+        end
+        anchorDrop:SetList(anchorValues, CS.anchorPoints)
+        anchorDrop:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR))
+        anchorDrop:SetFullWidth(true)
+        anchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            resSettings.rechargeTextAnchor = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        panel:AddChild(anchorDrop)
+
+        local xSlider = AceGUI:Create("Slider")
+        xSlider:SetLabel("Text X Offset")
+        xSlider:SetSliderValues(-50, 50, 0.1)
+        xSlider:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET))
+        xSlider:SetFullWidth(true)
+        xSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            resSettings.rechargeTextXOffset = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        panel:AddChild(xSlider)
+
+        local ySlider = AceGUI:Create("Slider")
+        ySlider:SetLabel("Text Y Offset")
+        ySlider:SetSliderValues(-50, 50, 0.1)
+        ySlider:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET))
+        ySlider:SetFullWidth(true)
+        ySlider:SetCallback("OnValueChanged", function(widget, event, val)
+            resSettings.rechargeTextYOffset = val
+            CooldownCompanion:ApplyResourceBars()
+        end)
+        panel:AddChild(ySlider)
+    end
+
+    local rechargeAdvKey = "rbRechargeText_" .. capturedPt .. "_" .. tostring(displaySpecID)
+    AddAdvancedToggle(rechargeCb, rechargeAdvKey, rbTextAdvBtns, rechargeEnabled, {
+        title = name .. " Recharge Text Advanced",
+        build = BuildRechargeTextAdvanced,
+        context = {
+            selectedResourcePowerType = capturedPt,
+            resourceSettingsSpecID = displaySpecID,
+        },
+    })
+end
+
 function HealthResource.BuildColorControls(container, settings, applyBars)
     local specID = GetCurrentConfigSpecID()
     if not specID then
@@ -475,6 +845,8 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
 
         HealthResource.AddOpacitySlider(container, health, "healthBackgroundOpacity", "Missing Health Opacity", DEFAULT_HEALTH_BACKGROUND_OPACITY, applyBars)
     end
+
+    BuildResourceTextControls(container, settings, HealthResource.ID, specID, applyBars, "rb_health_text")
 
     local effectsHeading = AceGUI:Create("Heading")
     effectsHeading:SetText("Health Effects")
@@ -1648,14 +2020,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         container:AddChild(label)
         return
     end
-    local function isHealthTextFormat(textFormat)
-        return textFormat == "percent"
-            or textFormat == "percent_no_sign"
-            or textFormat == "current"
-            or textFormat == "current_max"
-            or textFormat == "current_percent"
-            or textFormat == "current_percent_no_sign"
-    end
     local localBarTextureName = displayProfile.barTexture or settings.barTexture or "Solid"
     local effectiveBarTextureName = ST.GetEffectiveBarTextureName(localBarTextureName)
     local _colorSpecID = displaySpecID
@@ -1742,375 +2106,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     end
     end
 
-    -- ============ Text Section ============
     if showResourceText then
-    local rbTextAdvBtns = {}
-
-    local textHeading = AceGUI:Create("Heading")
-    textHeading:SetText("Text")
-    ColorHeading(textHeading)
-    textHeading:SetFullWidth(true)
-    container:AddChild(textHeading)
-
-    local textKey = "rb_text"
-    local textCollapsed = resourceBarCollapsedSections[textKey]
-
-    local textCollapseBtn = AttachCollapseButton(textHeading, textCollapsed, function()
-        resourceBarCollapsedSections[textKey] = not resourceBarCollapsedSections[textKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    textHeading.right:ClearAllPoints()
-    textHeading.right:SetPoint("RIGHT", textHeading.frame, "RIGHT", -3, 0)
-    textHeading.right:SetPoint("LEFT", textCollapseBtn, "RIGHT", 4, 0)
-
-    if not textCollapsed then
-        -- Per-resource "Show Text" checkboxes (continuous + segmented resources)
-        local resources = { resourceSettingsPowerType }
-        for _, pt in ipairs(resources) do
-            local capturedPt = pt
-            local isHealthResource = capturedPt == healthResourceID
-            local isSegmentedResource = (SEGMENTED_TYPES[capturedPt] == true) or (capturedPt == 100)
-            if isHealthResource then
-                CS.healthResourceUI.EnsureSettings(settings)
-            elseif not settings.resources[capturedPt] then
-                settings.resources[capturedPt] = {}
-            end
-            local baseSettings = settings.resources[capturedPt]
-            local resSettings = CS._SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, CS._ResourceTextDisplayKeys) or baseSettings
-            local name = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
-
-            local showTextEnabled
-            local showTextValue = CS._ReadResourceDisplaySetting(baseSettings, resSettings, "showText", nil)
-            if isHealthResource or isSegmentedResource then
-                -- Segmented resources and Health are off by default unless explicitly enabled.
-                showTextEnabled = showTextValue == true
-            else
-                showTextEnabled = showTextValue ~= false
-            end
-
-            local cb = AceGUI:Create("CheckBox")
-            cb:SetLabel("Show " .. name .. " Text")
-            cb:SetValue(showTextEnabled)
-            cb:SetFullWidth(true)
-            cb:SetCallback("OnValueChanged", function(widget, event, val)
-                if isHealthResource then
-                    resSettings.showText = val and true or false
-                    if not isHealthTextFormat(resSettings.textFormat) then
-                        resSettings.textFormat = "percent"
-                    end
-                elseif isSegmentedResource then
-                    resSettings.showText = val == true
-                else
-                    resSettings.showText = val == true
-                end
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            container:AddChild(cb)
-
-            local function BuildResourceTextAdvanced(panel)
-                local textFormatDrop = AceGUI:Create("Dropdown")
-                textFormatDrop:SetLabel("Text Format")
-                local textFormatOptions
-                local textFormatOrder
-                if isHealthResource then
-                    textFormatOptions = {
-                        percent = "Percent",
-                        percent_no_sign = "Percent (No %)",
-                        current = "Current Health",
-                        current_max = "Current / Max Health",
-                        current_percent = "Current + Percent",
-                        current_percent_no_sign = "Current + Percent (No %)",
-                    }
-                    textFormatOrder = {
-                        "percent",
-                        "percent_no_sign",
-                        "current",
-                        "current_max",
-                        "current_percent",
-                        "current_percent_no_sign",
-                    }
-                elseif isSegmentedResource then
-                    textFormatOptions = {
-                        current = "Current Value",
-                        current_max = "Current / Max",
-                    }
-                    textFormatOrder = { "current", "current_max" }
-                else
-                    textFormatOptions = {
-                        current = "Current Value",
-                        current_max = "Current / Max",
-                        percent = "Percent",
-                    }
-                    textFormatOrder = { "current", "current_max", "percent" }
-                end
-                textFormatDrop:SetList(textFormatOptions, textFormatOrder)
-                local textFormatValue = CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textFormat", isHealthResource and "percent" or DEFAULT_RESOURCE_TEXT_FORMAT)
-                if isHealthResource then
-                    if not isHealthTextFormat(textFormatValue) then
-                        textFormatValue = "percent"
-                    end
-                elseif isSegmentedResource then
-                    if textFormatValue ~= "current" and textFormatValue ~= "current_max" then
-                        textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT
-                    end
-                else
-                    if textFormatValue ~= "current" and textFormatValue ~= "current_max" and textFormatValue ~= "percent" then
-                        textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT
-                    end
-                end
-                textFormatDrop:SetValue(textFormatValue)
-                textFormatDrop:SetFullWidth(true)
-                textFormatDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                    if isHealthResource then
-                        if isHealthTextFormat(val) then
-                            resSettings.textFormat = val
-                        else
-                            resSettings.textFormat = "percent"
-                        end
-                    elseif isSegmentedResource then
-                        if val == "current" or val == "current_max" then
-                            resSettings.textFormat = val
-                        else
-                            resSettings.textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
-                        end
-                    else
-                        if val == "current" or val == "current_max" or val == "percent" then
-                            resSettings.textFormat = val
-                        else
-                            resSettings.textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
-                        end
-                    end
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                panel:AddChild(textFormatDrop)
-
-                local fontDrop = AceGUI:Create("Dropdown")
-                fontDrop:SetLabel("Font")
-                CS.SetupFontDropdown(fontDrop)
-                fontDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textFont", DEFAULT_RESOURCE_TEXT_FONT))
-                fontDrop:SetFullWidth(true)
-                CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
-                    resSettings.textFont = val
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                panel:AddChild(fontDrop)
-
-                local sizeDrop = AceGUI:Create("Slider")
-                sizeDrop:SetLabel("Font Size")
-                sizeDrop:SetSliderValues(6, 24, 1)
-                sizeDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textFontSize", DEFAULT_RESOURCE_TEXT_SIZE))
-                sizeDrop:SetFullWidth(true)
-                sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                    resSettings.textFontSize = val
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                panel:AddChild(sizeDrop)
-
-                local outlineDrop = AceGUI:Create("Dropdown")
-                outlineDrop:SetLabel("Outline")
-                CS.SetupFontOutlineDropdown(outlineDrop)
-                outlineDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
-                outlineDrop:SetFullWidth(true)
-                CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
-                    resSettings.textFontOutline = val
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                panel:AddChild(outlineDrop)
-
-                AddColorPicker(panel, resSettings, "textFontColor", "Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, applyBars)
-
-                local textAnchorDrop = AceGUI:Create("Dropdown")
-                textAnchorDrop:SetLabel("Text Anchor")
-                local textAnchorValues = {}
-                for _, pt in ipairs(CS.anchorPoints) do
-                    textAnchorValues[pt] = CS.anchorPointLabels[pt]
-                end
-                textAnchorDrop:SetList(textAnchorValues, CS.anchorPoints)
-                textAnchorDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR))
-                textAnchorDrop:SetFullWidth(true)
-                textAnchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                    resSettings.textAnchor = val
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                panel:AddChild(textAnchorDrop)
-
-                local textXSlider = AceGUI:Create("Slider")
-                textXSlider:SetLabel("Text X Offset")
-                textXSlider:SetSliderValues(-50, 50, 0.1)
-                textXSlider:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET))
-                textXSlider:SetFullWidth(true)
-                textXSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                    resSettings.textXOffset = val
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                panel:AddChild(textXSlider)
-
-                local textYSlider = AceGUI:Create("Slider")
-                textYSlider:SetLabel("Text Y Offset")
-                textYSlider:SetSliderValues(-50, 50, 0.1)
-                textYSlider:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "textYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET))
-                textYSlider:SetFullWidth(true)
-                textYSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                    resSettings.textYOffset = val
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                panel:AddChild(textYSlider)
-
-                if HIDE_AT_ZERO_ELIGIBLE[capturedPt] then
-                    local hideAtZeroCb = AceGUI:Create("CheckBox")
-                    hideAtZeroCb:SetLabel("Hide at 0")
-                    hideAtZeroCb:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "hideTextAtZero", false) == true)
-                    hideAtZeroCb:SetFullWidth(true)
-                    hideAtZeroCb:SetCallback("OnValueChanged", function(widget, event, val)
-                        resSettings.hideTextAtZero = val == true
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    panel:AddChild(hideAtZeroCb)
-                end
-            end
-
-            local textAdvKey = "rbText_" .. capturedPt .. "_" .. tostring(displaySpecID)
-            AddAdvancedToggle(cb, textAdvKey, rbTextAdvBtns, showTextEnabled, {
-                title = name .. " Text Advanced",
-                build = BuildResourceTextAdvanced,
-                context = {
-                    selectedResourcePowerType = capturedPt,
-                    resourceSettingsSpecID = displaySpecID,
-                },
-            })
-
-            if capturedPt == 5 then
-                local rechargeEnabled = CS._ReadResourceDisplaySetting(baseSettings, resSettings, "showRechargeText", DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED) == true
-                local rechargeCb = AceGUI:Create("CheckBox")
-                rechargeCb:SetLabel("Show " .. name .. " Recharge Text")
-                rechargeCb:SetValue(rechargeEnabled)
-                rechargeCb:SetFullWidth(true)
-                rechargeCb:SetCallback("OnValueChanged", function(widget, event, val)
-                    resSettings.showRechargeText = val == true
-                    CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
-                container:AddChild(rechargeCb)
-
-                local function BuildRechargeTextAdvanced(panel)
-                    local modeValue = CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextMode", "recharging")
-                    if modeValue ~= "all" then
-                        modeValue = "recharging"
-                    end
-                    local modeOptions = {
-                        { value = "recharging", label = "Recharging Segments Only" },
-                        { value = "all", label = "All Segments" },
-                    }
-                    for _, option in ipairs(modeOptions) do
-                        local optionValue = option.value
-                        local modeRadio = AceGUI:Create("CheckBox")
-                        modeRadio:SetType("radio")
-                        modeRadio:SetLabel(option.label)
-                        modeRadio:SetValue(modeValue == optionValue)
-                        modeRadio:SetFullWidth(true)
-                        modeRadio:SetCallback("OnValueChanged", function(widget, event, val)
-                            if val ~= true then
-                                widget:SetValue(true)
-                                return
-                            end
-                            resSettings.rechargeTextMode = optionValue
-                            CooldownCompanion:ApplyResourceBars()
-                            if CS.RefreshAdvancedSettingsPanel then
-                                CS.RefreshAdvancedSettingsPanel()
-                            end
-                        end)
-                        panel:AddChild(modeRadio)
-                    end
-
-                    local fontDrop = AceGUI:Create("Dropdown")
-                    fontDrop:SetLabel("Font")
-                    CS.SetupFontDropdown(fontDrop)
-                    fontDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextFont", DEFAULT_RESOURCE_TEXT_FONT))
-                    fontDrop:SetFullWidth(true)
-                    CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
-                        resSettings.rechargeTextFont = val
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    panel:AddChild(fontDrop)
-
-                    local sizeDrop = AceGUI:Create("Slider")
-                    sizeDrop:SetLabel("Font Size")
-                    sizeDrop:SetSliderValues(6, 24, 1)
-                    sizeDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextFontSize", DEFAULT_RESOURCE_TEXT_SIZE))
-                    sizeDrop:SetFullWidth(true)
-                    sizeDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                        resSettings.rechargeTextFontSize = val
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    panel:AddChild(sizeDrop)
-
-                    local outlineDrop = AceGUI:Create("Dropdown")
-                    outlineDrop:SetLabel("Outline")
-                    CS.SetupFontOutlineDropdown(outlineDrop)
-                    outlineDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
-                    outlineDrop:SetFullWidth(true)
-                    CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
-                        resSettings.rechargeTextFontOutline = val
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    panel:AddChild(outlineDrop)
-
-                    AddColorPicker(panel, resSettings, "rechargeTextFontColor", "Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, applyBars)
-
-                    local anchorDrop = AceGUI:Create("Dropdown")
-                    anchorDrop:SetLabel("Text Anchor")
-                    local anchorValues = {}
-                    for _, pt in ipairs(CS.anchorPoints) do
-                        anchorValues[pt] = CS.anchorPointLabels[pt]
-                    end
-                    anchorDrop:SetList(anchorValues, CS.anchorPoints)
-                    anchorDrop:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR))
-                    anchorDrop:SetFullWidth(true)
-                    anchorDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                        resSettings.rechargeTextAnchor = val
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    panel:AddChild(anchorDrop)
-
-                    local xSlider = AceGUI:Create("Slider")
-                    xSlider:SetLabel("Text X Offset")
-                    xSlider:SetSliderValues(-50, 50, 0.1)
-                    xSlider:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET))
-                    xSlider:SetFullWidth(true)
-                    xSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        resSettings.rechargeTextXOffset = val
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    panel:AddChild(xSlider)
-
-                    local ySlider = AceGUI:Create("Slider")
-                    ySlider:SetLabel("Text Y Offset")
-                    ySlider:SetSliderValues(-50, 50, 0.1)
-                    ySlider:SetValue(CS._ReadResourceDisplaySetting(baseSettings, resSettings, "rechargeTextYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET))
-                    ySlider:SetFullWidth(true)
-                    ySlider:SetCallback("OnValueChanged", function(widget, event, val)
-                        resSettings.rechargeTextYOffset = val
-                        CooldownCompanion:ApplyResourceBars()
-                    end)
-                    panel:AddChild(ySlider)
-                end
-
-                local rechargeAdvKey = "rbRechargeText_" .. capturedPt .. "_" .. tostring(displaySpecID)
-                AddAdvancedToggle(rechargeCb, rechargeAdvKey, rbTextAdvBtns, rechargeEnabled, {
-                    title = name .. " Recharge Text Advanced",
-                    build = BuildRechargeTextAdvanced,
-                    context = {
-                        selectedResourcePowerType = capturedPt,
-                        resourceSettingsSpecID = displaySpecID,
-                    },
-                })
-            end
-        end
+        BuildResourceTextControls(container, settings, resourceSettingsPowerType, displaySpecID, applyBars, "rb_text")
     end
-    end
-
     end
 
     if showHealthColors then
