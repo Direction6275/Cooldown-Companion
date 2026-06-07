@@ -20,6 +20,7 @@ local string_trim = strtrim
 local tostring = tostring
 local tonumber = tonumber
 local type = type
+local issecretvalue = issecretvalue
 
 local DEFAULT_TEXTURE_SIZE = AT.DEFAULT_TEXTURE_SIZE
 local UI_PARENT_NAME = AT.UI_PARENT_NAME
@@ -239,6 +240,36 @@ local function GetStandaloneResolvedAnchorFrame(group, settings, groupId)
     return GetStandaloneFrameAnchorFrame(group, settings, groupId)
 end
 
+local function GetStandalonePanelAlphaTargetFrame(group, settings, groupId)
+    if not (group and group.parentContainerId and group.inheritPanelAlpha ~= false) then
+        return nil
+    end
+
+    local relativeTo = type(settings) == "table" and settings.relativeTo or nil
+    if type(relativeTo) ~= "string" or relativeTo == "" or relativeTo == UI_PARENT_NAME then
+        return nil
+    end
+
+    local anchorKind = nil
+    if CooldownCompanion.ParseAddonAnchorFrameName then
+        anchorKind = CooldownCompanion:ParseAddonAnchorFrameName(relativeTo)
+    end
+
+    if anchorKind == "group" then
+        if CooldownCompanion.ShouldInheritPanelAnchorAlpha
+            and CooldownCompanion:ShouldInheritPanelAnchorAlpha(groupId) then
+            return GetStandalonePanelAnchorFrame(group, settings, groupId)
+        end
+        return nil
+    end
+
+    if anchorKind ~= nil then
+        return nil
+    end
+
+    return GetStandaloneFrameAnchorFrame(group, settings, groupId)
+end
+
 local function StopStandalonePanelAlphaSync(host)
     if host and host.standalonePanelAlphaSyncFrame then
         host.standalonePanelAlphaSyncFrame:SetScript("OnUpdate", nil)
@@ -252,18 +283,57 @@ local function StopStandalonePanelAlphaSync(host)
     end
 end
 
+local function IsSecretValue(value)
+    if issecretvalue and issecretvalue(value) then
+        return true
+    end
+    return false
+end
+
 local function GetInheritedFrameAlpha(frame)
     if not frame then
         return 1
     end
     local alpha = frame._naturalAlpha
-    if alpha == nil and frame.GetEffectiveAlpha then
+    if IsSecretValue(alpha) then
+        return nil
+    end
+    if type(alpha) == "number" then
+        return Clamp(alpha, 0, 1)
+    end
+    if frame.IsShown then
+        local shown = frame:IsShown()
+        if IsSecretValue(shown) then
+            return nil
+        end
+        if shown == nil then
+            return nil
+        end
+        if not shown then
+            return 0
+        end
+    end
+    if frame.GetEffectiveAlpha then
         alpha = frame:GetEffectiveAlpha()
+        if IsSecretValue(alpha) then
+            return nil
+        end
+        if alpha == nil then
+            return nil
+        end
+        return Clamp(alpha, 0, 1)
     end
-    if alpha == nil and frame.GetAlpha then
+    if frame.GetAlpha then
         alpha = frame:GetAlpha()
+        if IsSecretValue(alpha) then
+            return nil
+        end
+        if alpha == nil then
+            return nil
+        end
+        return Clamp(alpha, 0, 1)
     end
-    return Clamp(alpha or 1, 0, 1)
+    return 1
 end
 
 local function StartStandalonePanelAlphaSync(host, targetFrame, visibilityAlpha)
@@ -280,10 +350,13 @@ local function StartStandalonePanelAlphaSync(host, targetFrame, visibilityAlpha)
     host._standalonePanelAlphaTarget = targetFrame
     host._standalonePanelAlphaVisibilityAlpha = visibilityAlpha
     if syncChanged or not wasSyncing then
-        local alpha = Clamp(GetInheritedFrameAlpha(targetFrame) * visibilityAlpha, 0, 1)
-        host._standalonePanelAlphaLastAlpha = alpha
         host._standalonePanelAlphaAccumulator = 0
-        host:SetAlpha(alpha)
+        local inheritedAlpha = GetInheritedFrameAlpha(targetFrame)
+        if inheritedAlpha ~= nil then
+            local alpha = Clamp(inheritedAlpha * visibilityAlpha, 0, 1)
+            host._standalonePanelAlphaLastAlpha = alpha
+            host:SetAlpha(alpha)
+        end
     end
     if wasSyncing then
         return
@@ -308,7 +381,11 @@ local function StartStandalonePanelAlphaSync(host, targetFrame, visibilityAlpha)
         end
         host._standalonePanelAlphaAccumulator = 0
 
-        local alpha = Clamp(GetInheritedFrameAlpha(activeTarget) * (host._standalonePanelAlphaVisibilityAlpha or 1), 0, 1)
+        local inheritedAlpha = GetInheritedFrameAlpha(activeTarget)
+        if inheritedAlpha == nil then
+            return
+        end
+        local alpha = Clamp(inheritedAlpha * (host._standalonePanelAlphaVisibilityAlpha or 1), 0, 1)
         if alpha ~= host._standalonePanelAlphaLastAlpha then
             host._standalonePanelAlphaLastAlpha = alpha
             host:SetAlpha(alpha)
@@ -1335,10 +1412,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     local alphaModuleId = GetTexturePanelAlphaModuleId(driverButton._groupId)
     local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(driverButton)
     local visibilityAlpha = Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1)
-    local panelAlphaTarget = CooldownCompanion.ShouldInheritPanelAnchorAlpha
-        and CooldownCompanion:ShouldInheritPanelAnchorAlpha(driverButton._groupId)
-        and GetStandalonePanelAnchorFrame(group, sharedSettings, driverButton._groupId)
-        or nil
+    local panelAlphaTarget = GetStandalonePanelAlphaTargetFrame(group, sharedSettings, driverButton._groupId)
     if panelAlphaTarget then
         if alphaModuleId then
             self:UnregisterModuleAlpha(alphaModuleId, true)

@@ -404,8 +404,11 @@ function CooldownCompanion:InitAlphaUpdateFrame()
         return false
     end
 
-    local function GroupNeedsAlphaUpdate(group, groupId)
+    local function GroupNeedsAlphaUpdate(group, groupId, frame)
         if self:ShouldInheritPanelAnchorAlpha(groupId) then
+            return false
+        end
+        if frame and frame._inheritsExternalAnchorAlpha then
             return false
         end
         if ST.IsGroupConfigSelected(groupId) then return true end
@@ -443,7 +446,7 @@ function CooldownCompanion:InitAlphaUpdateFrame()
             local frame = self.groupFrames[groupId] or (self._dormantFrames and self._dormantFrames[groupId])
             if frame
                 and (frame:IsShown() or (panelAlphaAnchorTargets and panelAlphaAnchorTargets[groupId])) then
-                if GroupNeedsAlphaUpdate(group, groupId) then
+                if GroupNeedsAlphaUpdate(group, groupId, frame) then
                     local locked = true
                     if group.parentContainerId then
                         local c = containers[group.parentContainerId]
