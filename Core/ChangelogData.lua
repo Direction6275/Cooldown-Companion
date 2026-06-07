@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.19",
         "1.18",
         "1.17",
         "1.16",
@@ -39,6 +40,30 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.19"] = {
+            markdown = [[
+## New Features
+
+- **Trinket slot tracking:** Players can add Trinket Slot 1 or Trinket Slot 2 and have the entry follow the on-use trinket currently equipped in that slot.
+- **Multiple resource thresholds and ticks:** Resource bars can now show up to three threshold colors or tick markers per resource and specialization.
+- **Segmented smoothing controls:** Segmented resource bars and Stack Count bars in Segmented or Overlay mode can now keep smooth animation or snap immediately between segment values per spec or entry.
+
+## Polish | QoL
+
+- **Resource settings redesign:** Custom Bars & Resources now lets players select enabled resources directly and edit each resource/spec's text, colors, thresholds, ticks, and aura overlay settings from a focused Resource panel.
+- **Resource Aura Overlay setup:** Overlay settings have been modernized and now use a compact Aura Tracking-style editor with Overlay Aura, CDM Settings, Pick CDM, selected-aura display, and clear controls.
+- **Feral snapshot icons:** Feral Druid aura entries for Rake, Rip, and Moonfire can show the actual active aura icon so Tiger's Fury-snapshotted debuffs are easier to distinguish.
+
+## Bug Fixes
+
+- **Frame-anchored alpha inheritance:** Panels that inherit alpha now keep that inheritance when anchored through unit frames or other external frames.
+
+## Performance
+
+- **Large-profile config refreshes:** The left group list should refresh more smoothly on large profiles, especially when sorting loaded/unloaded groups or searching.
+- **Lighter aura updates:** Aura-heavy setups do less repeated work when many auras change at once, helping buttons and aura-backed resource bars stay responsive.
+]],
+        },
         ["1.18"] = {
             markdown = [[
 ## New Features
