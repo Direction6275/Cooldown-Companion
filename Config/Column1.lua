@@ -386,6 +386,48 @@ local function GetFolderTargetsForSection(db, charKey, section)
     return folderList
 end
 
+local function BuildColumn1ContainerStats(db, containerIds)
+    local statsByContainer = {}
+    if not containerIds or not next(containerIds) then return statsByContainer end
+
+    local containers = db.groupContainers or {}
+
+    for _, group in pairs(db.groups or {}) do
+        local containerId = group and group.parentContainerId
+        if containerId and containerIds[containerId] then
+            local stats = statsByContainer[containerId]
+            if not stats then
+                stats = {
+                    panelCount = 0,
+                    hasButtons = false,
+                    hasActivePanel = false,
+                }
+                statsByContainer[containerId] = stats
+            end
+
+            stats.panelCount = stats.panelCount + 1
+            if group.buttons and #group.buttons > 0 then
+                stats.hasButtons = true
+
+                local container = containers[containerId]
+                if container and container.enabled ~= false and not stats.hasActivePanel then
+                    local active = CooldownCompanion:IsGroupActive(nil, {
+                        group = group,
+                        requireButtons = true,
+                        checkCharVisibility = false,
+                        checkLoadConditions = true,
+                    })
+                    if active then
+                        stats.hasActivePanel = true
+                    end
+                end
+            end
+        end
+    end
+
+    return statsByContainer
+end
+
 local function ShowContainerContextMenu(db, charKey, containerId, container)
     if not CS.groupContextMenu then
         CS.groupContextMenu = CreateFrame("Frame", "CDCGroupContextMenu", UIParent, "UIDropDownMenuTemplate")
@@ -991,6 +1033,8 @@ local function RefreshColumn1(preserveDrag)
         return
     end
 
+    local containerStats = {}
+
     -- Count current children in scroll widget
     local function CountScrollChildren()
         local children = { CS.col1Scroll.content:GetChildren() }
@@ -1088,28 +1132,9 @@ local function RefreshColumn1(preserveDrag)
     local function IsContainerInactive(containerId, container)
         if not container then return true end
         if container.enabled == false then return true end
-        -- Check if container has any panels with buttons
-        local hasButtons = false
-        for _, group in pairs(db.groups) do
-            if group.parentContainerId == containerId and group.buttons and #group.buttons > 0 then
-                hasButtons = true
-                break
-            end
-        end
-        if not hasButtons then return true end
-        -- Check load conditions via any panel (they inherit from container)
-        for gid, group in pairs(db.groups) do
-            if group.parentContainerId == containerId then
-                local active = CooldownCompanion:IsGroupActive(nil, {
-                    group = group,
-                    requireButtons = true,
-                    checkCharVisibility = false,
-                    checkLoadConditions = true,
-                })
-                if active then return false end
-            end
-        end
-        return true
+        local stats = containerStats[containerId]
+        if not stats or not stats.hasButtons then return true end
+        return stats.hasActivePanel ~= true
     end
 
     local function IsFolderFullyInactive(folderId, childContainerIds)
@@ -1178,7 +1203,8 @@ local function RefreshColumn1(preserveDrag)
         local isInactive = IsContainerInactive(containerId, container)
 
         -- Show panel count in name when >1 panel
-        local panelCount = CooldownCompanion:GetPanelCount(containerId)
+        local stats = containerStats[containerId]
+        local panelCount = stats and stats.panelCount or 0
         local groupName = container.name or "New Group"
         local showGenericRenameBadge = IsGenericGroupName(groupName)
         local displayName = groupName
@@ -1961,6 +1987,24 @@ local function RefreshColumn1(preserveDrag)
         desc.label:SetMaxLines(0)
         CS.col1Scroll:AddChild(desc)
     else
+        local statsContainerIds = {}
+        for _, id in ipairs(globalIds) do
+            if not searchResults or searchResults.containerMatches[id] then
+                statsContainerIds[id] = true
+            end
+        end
+        for _, id in ipairs(charIds) do
+            if not searchResults or searchResults.containerMatches[id] then
+                statsContainerIds[id] = true
+            end
+        end
+        for id in pairs(CS.selectedGroups) do
+            if containers[id] then
+                statsContainerIds[id] = true
+            end
+        end
+        containerStats = BuildColumn1ContainerStats(db, statsContainerIds)
+
         -- Render sections
         local hasGlobalContent = #globalIds > 0
         if not hasGlobalContent then
