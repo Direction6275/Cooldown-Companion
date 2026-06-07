@@ -26,12 +26,11 @@ local DEFAULT_CUSTOM_AURA_MAX_COLOR = RB.DEFAULT_CUSTOM_AURA_MAX_COLOR
 local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
 local RESOURCE_MAELSTROM_WEAPON = RB.RESOURCE_MAELSTROM_WEAPON
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
-
 local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
 local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetCurrentSpecID = RB.GetCurrentSpecID
 local GetResourceColors = RB.GetResourceColors
-local GetContinuousTickConfig = RB.GetContinuousTickConfig
+local GetContinuousTickEntriesConfig = RB.GetContinuousTickEntriesConfig
 local GetSpecResourceDisplayProfile = RB.GetSpecResourceDisplayProfile
 local GetSafeRGBColor = RB.GetSafeRGBColor
 local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
@@ -425,47 +424,65 @@ end
 -- Continuous Tick & Fill
 ------------------------------------------------------------------------
 
-local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
-    if not bar or not bar.tickMarker then return end
+local function EnsureContinuousTickMarker(bar, index)
+    if not bar then return nil end
+    if type(bar.tickMarkers) ~= "table" then
+        bar.tickMarkers = {}
+        if bar.tickMarker then
+            bar.tickMarkers[1] = bar.tickMarker
+        end
+    end
+    if not bar.tickMarkers[index] then
+        bar.tickMarkers[index] = bar:CreateTexture(nil, "OVERLAY", nil, 6)
+        bar.tickMarkers[index]:SetColorTexture(1, 0.84, 0, 1)
+        bar.tickMarkers[index]:Hide()
+    end
+    if index == 1 then
+        bar.tickMarker = bar.tickMarkers[index]
+    end
+    return bar.tickMarkers[index]
+end
 
-    local enabled, mode, percentValue, absoluteValue, tickColor, tickWidth, combatOnly = GetContinuousTickConfig(powerType, settings)
-    if not enabled then
+local function HideContinuousTickMarkers(bar, startIndex)
+    if not bar then return end
+    startIndex = startIndex or 1
+    if type(bar.tickMarkers) == "table" then
+        for index = startIndex, #bar.tickMarkers do
+            bar.tickMarkers[index]:Hide()
+        end
+    elseif startIndex <= 1 and bar.tickMarker then
         bar.tickMarker:Hide()
+    end
+end
+
+local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
+    if not bar then return end
+
+    local enabled, mode, entries, tickWidth, combatOnly = GetContinuousTickEntriesConfig(powerType, settings)
+    if not enabled then
+        HideContinuousTickMarkers(bar)
         return
     end
 
     if combatOnly and not InCombatLockdown() then
-        bar.tickMarker:Hide()
+        HideContinuousTickMarkers(bar)
         return
     end
 
-    local ratio
     if mode == "absolute" then
         if maxPowerIsSecret then
-            bar.tickMarker:Hide()
+            HideContinuousTickMarkers(bar)
             return
         end
         if issecretvalue and issecretvalue(maxPower) then
-            bar.tickMarker:Hide()
+            HideContinuousTickMarkers(bar)
             return
         end
         if type(maxPower) ~= "number" or maxPower <= 0 then
-            bar.tickMarker:Hide()
+            HideContinuousTickMarkers(bar)
             return
         end
-        ratio = absoluteValue / maxPower
-    else
-        ratio = percentValue / 100
     end
-
-    if ratio < 0 then
-        ratio = 0
-    elseif ratio > 1 then
-        ratio = 1
-    end
-
-    local marker = bar.tickMarker
-    marker:SetColorTexture(tickColor[1], tickColor[2], tickColor[3], tickColor[4] ~= nil and tickColor[4] or 1)
 
     local style = GetResourceDisplayStyle(settings)
     local borderStyle = style and style.borderStyle or "pixel"
@@ -474,34 +491,50 @@ local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, ma
     local width = bar:GetWidth() or 0
     local height = bar:GetHeight() or 0
     if width <= 0 or height <= 0 then
-        marker:Hide()
+        HideContinuousTickMarkers(bar)
         return
     end
 
+    local shownCount = 0
     local halfTick = tickWidth / 2
-    marker:ClearAllPoints()
-    if bar._isVertical then
-        local usableHeight = math_max(height - (borderSize * 2), 1)
-        local localRatio = bar._reverseFill and (1 - ratio) or ratio
-        local y = borderSize + (usableHeight * localRatio)
-        local yMax = height - borderSize
-        if y > yMax then y = yMax end
-        if y < borderSize then y = borderSize end
-        marker:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", borderSize, y - halfTick)
-        marker:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -borderSize, y - halfTick)
-        marker:SetHeight(tickWidth)
-    else
-        local usableWidth = math_max(width - (borderSize * 2), 1)
-        local x = borderSize + (usableWidth * ratio)
-        local xMax = width - borderSize
-        if x > xMax then x = xMax end
-        if x < borderSize then x = borderSize end
-        marker:SetPoint("TOPLEFT", bar, "TOPLEFT", x - halfTick, -borderSize)
-        marker:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", x - halfTick, borderSize)
-        marker:SetWidth(tickWidth)
+
+    for index, entry in ipairs(entries) do
+        local ratio = mode == "absolute" and (entry.value / maxPower) or (entry.value / 100)
+        if ratio < 0 then
+            ratio = 0
+        elseif ratio > 1 then
+            ratio = 1
+        end
+
+        local marker = EnsureContinuousTickMarker(bar, index)
+        local tickColor = entry.color or DEFAULT_CONTINUOUS_TICK_COLOR
+        marker:SetColorTexture(tickColor[1], tickColor[2], tickColor[3], tickColor[4] ~= nil and tickColor[4] or 1)
+        marker:ClearAllPoints()
+        if bar._isVertical then
+            local usableHeight = math_max(height - (borderSize * 2), 1)
+            local localRatio = bar._reverseFill and (1 - ratio) or ratio
+            local y = borderSize + (usableHeight * localRatio)
+            local yMax = height - borderSize
+            if y > yMax then y = yMax end
+            if y < borderSize then y = borderSize end
+            marker:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", borderSize, y - halfTick)
+            marker:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -borderSize, y - halfTick)
+            marker:SetHeight(tickWidth)
+        else
+            local usableWidth = math_max(width - (borderSize * 2), 1)
+            local x = borderSize + (usableWidth * ratio)
+            local xMax = width - borderSize
+            if x > xMax then x = xMax end
+            if x < borderSize then x = borderSize end
+            marker:SetPoint("TOPLEFT", bar, "TOPLEFT", x - halfTick, -borderSize)
+            marker:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", x - halfTick, borderSize)
+            marker:SetWidth(tickWidth)
+        end
+        marker:Show()
+        shownCount = index
     end
 
-    marker:Show()
+    HideContinuousTickMarkers(bar, shownCount + 1)
 end
 
 local function ApplyContinuousFillColor(bar, powerType, settings, overrideColor)
@@ -782,10 +815,11 @@ local function CreateContinuousBar(parent)
     bar.brightnessOverlay:SetBlendMode("ADD")
     bar.brightnessOverlay:Hide()
 
-    -- Optional static tick marker for continuous bars.
+    -- Optional static tick markers for continuous bars.
     bar.tickMarker = bar:CreateTexture(nil, "OVERLAY", nil, 6)
     bar.tickMarker:SetColorTexture(1, 0.84, 0, 1)
     bar.tickMarker:Hide()
+    bar.tickMarkers = { bar.tickMarker }
 
     bar._barType = "continuous"
     return bar

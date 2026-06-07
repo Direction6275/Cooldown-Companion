@@ -82,7 +82,7 @@ local DetermineActiveResources = RB.DetermineActiveResources
 local GetResourceColors = RB.GetResourceColors
 local IsUnitPowerSecret = RB.IsUnitPowerSecret
 local IsUnitPowerMaxSecret = RB.IsUnitPowerMaxSecret
-local GetSegmentedThresholdConfig = RB.GetSegmentedThresholdConfig
+local GetSegmentedThresholdColorForValue = RB.GetSegmentedThresholdColorForValue
 local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
 local IsResourceEnabled = RB.IsResourceEnabled
 local IsSegmentedTextResource = RB.IsSegmentedTextResource
@@ -1025,7 +1025,6 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         and auraMaxStacks
         and auraHasApplications
         and SupportsResourceAuraStackMode(powerType)
-    local thresholdEnabled, thresholdValue, thresholdColor = GetSegmentedThresholdConfig(powerType, settings)
     local fullSegments = segmentedUpdateScratch.GetFullSegments(holder)
     HideRechargeTexts(holder)
 
@@ -1062,7 +1061,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                 readyCount = readyCount + 1
             end
         end
-        local thresholdActive = thresholdEnabled and readyCount >= thresholdValue
+        local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, readyCount)
         local activeReadyColor = allReady and maxColor or (thresholdActive and thresholdColor or readyColor)
         local runeValueTotal = 0
         local showAllRechargeText = IsRechargeTextAllSegmentsMode(holder)
@@ -1124,7 +1123,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
                 displayCurrent = filled + partial
                 local readyColor, rechargingColor, maxColor = GetResourceColors(7, settings)
                 local isMax = (filled == max)
-                local thresholdActive = thresholdEnabled and filled >= thresholdValue
+                local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, filled)
                 local activeReadyColor = isMax and maxColor or (thresholdActive and thresholdColor or readyColor)
                 for i = 1, math_min(#holder.segments, max) do
                     local seg = holder.segments[i]
@@ -1175,7 +1174,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         local displayCurrent = filled + partial
         local readyColor, rechargingColor, maxColor = GetResourceColors(19, settings)
         local isMax = (filled == max)
-        local thresholdActive = thresholdEnabled and filled >= thresholdValue
+        local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, filled)
         local activeReadyColor = isMax and maxColor or (thresholdActive and thresholdColor or readyColor)
         for i = 1, math_min(#holder.segments, max) do
             local seg = holder.segments[i]
@@ -1213,7 +1212,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
 
         local normalColor, maxColor, chargedColor = GetResourceColors(4, settings)
         local isMax = (current == max and max > 0)
-        local thresholdActive = thresholdEnabled and current >= thresholdValue
+        local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, current)
         local baseColor = isMax and maxColor or (thresholdActive and thresholdColor or normalColor)
 
         -- Charged combo points (Rogue only)
@@ -1262,7 +1261,7 @@ local function UpdateSegmentedBar(holder, powerType, settings, auraActiveCache)
         normalColor, maxColor = color, color
     end
     local isMax = (current == max and max > 0)
-    local thresholdActive = thresholdEnabled and current >= thresholdValue
+    local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, current)
     local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or normalColor)
     for i = 1, math_min(#holder.segments, max) do
         local seg = holder.segments[i]
@@ -1288,7 +1287,6 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
     end
 
     -- Read stacks from viewer frame (applications is plain for MW)
-    local thresholdEnabled, thresholdValue, thresholdColor = GetSegmentedThresholdConfig(RESOURCE_MAELSTROM_WEAPON, settings)
     local stacks = 0
     local viewerFrame = CooldownCompanion.viewerAuraFrames and CooldownCompanion.viewerAuraFrames[MW_SPELL_ID]
     local instId = viewerFrame and viewerFrame.auraInstanceID
@@ -1313,7 +1311,7 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
 
     local half = #holder.segments
     local baseColor, overlayColor, maxColor = GetResourceColors(100, settings)
-    local thresholdActive = thresholdEnabled and stacks >= thresholdValue
+    local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(RESOURCE_MAELSTROM_WEAPON, settings, stacks)
     local isMax = stacks > 0 and stacks == mwMaxStacks
 
     for i = 1, half do
@@ -1733,8 +1731,7 @@ local function ApplySegmentedPreviewColors(holder, powerType, settings, previewV
     local filled = math_min(numSegments, math_max(0, math_floor(previewValue)))
     local hasPartial = previewValue > filled and filled < numSegments
 
-    local thresholdEnabled, thresholdValue, thresholdColor = GetSegmentedThresholdConfig(powerType, settings)
-    local thresholdActive = thresholdEnabled and thresholdValue and filled >= thresholdValue
+    local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, filled)
 
     local color1, color2, color3 = GetResourceColors(powerType, settings)
     local filledColor = color1
