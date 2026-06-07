@@ -509,11 +509,18 @@ local function GetCurrentClassSpecInfo()
 
     local specIDs = {}
     local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID) or 0
+    if numSpecs <= 0 then
+        return nil, nil
+    end
+
     for i = 1, numSpecs do
         local specID = GetSpecializationInfoForClassID(classID, i)
         if specID then
             specIDs[specID] = true
         end
+    end
+    if not next(specIDs) then
+        return nil, nil
     end
 
     local currentSpecID = nil
@@ -759,6 +766,8 @@ local function NormalizeResourceAuraOverlayEntriesForCurrentClass(settings)
                         auraActiveColor = CopyResourceAuraOverlayColor(resource.auraActiveColor),
                         auraColorTrackingMode = resource.auraColorTrackingMode,
                         auraColorMaxStacks = resource.auraColorMaxStacks,
+                        auraUnit = resource.auraUnit,
+                        auraUnitExplicit = resource.auraUnitExplicit,
                     },
                 }
                 BackfillLegacyResourceAuraUnit(resource.auraOverlayEntries[currentSpecID])
@@ -1090,6 +1099,67 @@ local function NormalizeScopedBarSettings(systemKey, settings)
     end
 end
 
+local function IsResourceAuraUnitNormalized(auraEntry)
+    if type(auraEntry) ~= "table" then
+        return false
+    end
+    return auraEntry.auraUnit == "player" or auraEntry.auraUnit == "target"
+end
+
+local function ResourceAuraOverlayNeedsNormalization(settings)
+    if type(settings) ~= "table" or type(settings.resources) ~= "table" then
+        return false
+    end
+
+    local allowedSpecIDs = nil
+    local checkedSpecIDs = false
+    local function GetAllowedSpecIDs()
+        if not checkedSpecIDs then
+            allowedSpecIDs = GetCurrentClassSpecInfo()
+            checkedSpecIDs = true
+        end
+        return allowedSpecIDs
+    end
+
+    for _, resource in pairs(settings.resources) do
+        if type(resource) == "table" then
+            if HasLegacyResourceAuraOverlayData(resource) then
+                return true
+            end
+
+            if type(resource.auraOverlayEntries) == "table" then
+                if not next(resource.auraOverlayEntries) then
+                    return true
+                end
+
+                local allowed = GetAllowedSpecIDs()
+                if type(allowed) ~= "table" then
+                    return true
+                end
+
+                for specID, entry in pairs(resource.auraOverlayEntries) do
+                    local numericSpecID = tonumber(specID)
+                    if not numericSpecID
+                        or numericSpecID ~= specID
+                        or allowed[numericSpecID] ~= true
+                        or not IsResourceAuraUnitNormalized(entry) then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+local function NeedsScopedBarNormalization(systemKey, settings)
+    if systemKey == "resourceBars" then
+        return ResourceAuraOverlayNeedsNormalization(settings)
+    end
+    return false
+end
+
 local function SanitizeCopiedOrSeededScopedBarSettings(systemKey, settings)
     if systemKey == "resourceBars" then
         SanitizeResourceBarAnchors(settings)
@@ -1203,6 +1273,8 @@ function CooldownCompanion:GetCharacterScopedSettings(systemKey)
         NormalizeScopedBarSettings(systemKey, settings)
         SanitizeCopiedOrSeededScopedBarSettings(systemKey, settings)
         store[charKey] = settings
+    elseif NeedsScopedBarNormalization(systemKey, settings) then
+        NormalizeScopedBarSettings(systemKey, settings)
     end
 
     return settings
