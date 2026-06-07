@@ -1159,10 +1159,8 @@ HideTalentPicker = function()
         configFrame.col4.frame:Show()
 
         -- Restore column info buttons
-        if not CooldownCompanion.db.profile.hideInfoButtons then
-            if CS.columnInfoButtons[1] then CS.columnInfoButtons[1]:Show() end
-            if CS.columnInfoButtons[3] then CS.columnInfoButtons[3]:Show() end
-        end
+        if CS.columnInfoButtons[1] then CS.columnInfoButtons[1]:Show() end
+        if CS.columnInfoButtons[3] then CS.columnInfoButtons[3]:Show() end
 
         -- Show col1 normal content
         CS.col1Scroll.frame:Show()

@@ -408,12 +408,6 @@ local function BuildBarAppearanceTab(container, group, style)
 
     BuildGroupSettingPresetControls(container, group, "bars", tabInfoButtons)
 
-    -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
-    if CooldownCompanion.db.profile.hideInfoButtons then
-        for _, btn in ipairs(tabInfoButtons) do
-            if not btn._isAdvancedToggle then btn:Hide() end
-        end
-    end
 end
 
 ------------------------------------------------------------------------
@@ -573,12 +567,6 @@ local function BuildBarEffectsTab(container, group, style)
         CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
     end
 
-    -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
-    if CooldownCompanion.db.profile.hideInfoButtons then
-        for _, btn in ipairs(tabInfoButtons) do
-            if not btn._isAdvancedToggle then btn:Hide() end
-        end
-    end
 end
 
 -- Expose for GroupTabs.lua dispatchers

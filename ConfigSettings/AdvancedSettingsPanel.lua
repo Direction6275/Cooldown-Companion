@@ -222,18 +222,6 @@ local function BuildWindowContents()
     advancedWindow:AddChild(scroll)
     activeDescriptor.build(scroll, activeDescriptor)
 
-    if CooldownCompanion.db.profile.hideInfoButtons then
-        for _, buttons in ipairs({ CS.tabInfoButtons, CS.customBarInfoButtons, CS.buttonSettingsInfoButtons, CS.advancedSettingsInfoButtons }) do
-            if type(buttons) == "table" then
-                for _, btn in ipairs(buttons) do
-                    if btn and not btn._isAdvancedToggle then
-                        btn:Hide()
-                    end
-                end
-            end
-        end
-    end
-
     if scroll.ResumeLayout then
         scroll:ResumeLayout()
     end

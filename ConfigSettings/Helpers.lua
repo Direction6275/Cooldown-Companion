@@ -521,7 +521,7 @@ end
 --   Tables {text, r, g, b, wrap} become body lines with color/wrapping.
 --
 -- cleanup: determines lifecycle management.
---   If it's a table:  button is inserted and hideInfoButtons is applied.
+--   If it's a table:  button is inserted for lifecycle cleanup.
 --   If it's an AceGUI widget: button is cleaned up via OnRelease callback.
 local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRelPoint, xOff, yOff, tooltipLines, cleanup)
     local btn = CreateFrame("Button", nil, parentFrame)
@@ -583,7 +583,7 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
             btn:SetParent(nil)
         end)
     else
-        -- Array of buttons: insert and apply hideInfoButtons
+        -- Array of buttons: insert for lifecycle cleanup.
         if CS.advancedSettingsPanelRefreshing then
             CS.advancedSettingsInfoButtons = CS.advancedSettingsInfoButtons or {}
             cleanup = CS.advancedSettingsInfoButtons
@@ -592,9 +592,6 @@ local function CreateInfoButton(parentFrame, anchorFrame, anchorPoint, anchorRel
             return btn
         end
         table.insert(cleanup, btn)
-        if CooldownCompanion.db.profile.hideInfoButtons then
-            btn:Hide()
-        end
     end
 
     return btn

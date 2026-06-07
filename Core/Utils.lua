@@ -487,21 +487,13 @@ end
 -- Runtime Info Buttons
 --------------------------------------------------------------------------------
 
-local runtimeInfoButtons = setmetatable({}, { __mode = "v" })
-
-function ST.AreInfoButtonsHidden()
-    local addon = ST.Addon
-    local profile = addon and addon.db and addon.db.profile
-    return profile and profile.hideInfoButtons == true
-end
-
 function ST.SetRuntimeInfoButtonShown(button, shown)
     if not button then
         return
     end
 
     button._cdcDesiredShown = shown == true
-    local visible = button._cdcDesiredShown and not ST.AreInfoButtonsHidden()
+    local visible = button._cdcDesiredShown
     button:SetShown(visible)
     if not InCombatLockdown or not InCombatLockdown() then
         if button.EnableMouse then
@@ -513,12 +505,6 @@ function ST.SetRuntimeInfoButtonShown(button, shown)
         if button.SetMouseMotionEnabled then
             button:SetMouseMotionEnabled(visible)
         end
-    end
-end
-
-function ST.RefreshRuntimeInfoButtonVisibility()
-    for _, button in pairs(runtimeInfoButtons) do
-        ST.SetRuntimeInfoButtonShown(button, button and button._cdcDesiredShown)
     end
 end
 
@@ -550,7 +536,6 @@ function ST.CreateRuntimeInfoButton(parentFrame, anchorFrame, anchorPoint, ancho
         GameTooltip:Hide()
     end)
 
-    runtimeInfoButtons[#runtimeInfoButtons + 1] = button
     ST.SetRuntimeInfoButtonShown(button, false)
     return button
 end

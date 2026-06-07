@@ -1310,37 +1310,6 @@ local function CreateConfigPanel()
             CS.gearDropdownFrame = CreateFrame("Frame", "CDCGearDropdown", UIParent, "UIDropDownMenuTemplate")
         end
         UIDropDownMenu_Initialize(CS.gearDropdownFrame, function(self, level)
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = "  Hide CDC Tooltips"
-            info.checked = function() return CooldownCompanion.db.profile.hideInfoButtons end
-            info.isNotRadio = true
-            info.keepShownOnClick = true
-            info.func = function()
-                local val = not CooldownCompanion.db.profile.hideInfoButtons
-                CooldownCompanion.db.profile.hideInfoButtons = val
-                local function applyInfoButtonVisibility(buttons)
-                    if type(buttons) ~= "table" then return end
-                    for _, btn in ipairs(buttons) do
-                        if btn and not btn._isAdvancedToggle then
-                            if val then btn:Hide() else btn:Show() end
-                        end
-                    end
-                end
-                for _, buttons in ipairs({
-                    CS.columnInfoButtons,
-                    CS.tabInfoButtons,
-                    CS.customBarInfoButtons,
-                    CS.buttonSettingsInfoButtons,
-                    CS.advancedSettingsInfoButtons,
-                }) do
-                    applyInfoButtonVisibility(buttons)
-                end
-                if ST.RefreshRuntimeInfoButtonVisibility then
-                    ST.RefreshRuntimeInfoButtonVisibility()
-                end
-            end
-            UIDropDownMenu_AddButton(info, level)
-
             local info2 = UIDropDownMenu_CreateInfo()
             info2.text = "  Close on ESC"
             info2.checked = function() return CooldownCompanion.db.profile.escClosesConfig end
@@ -1950,17 +1919,12 @@ local function CreateConfigPanel()
         GameTooltip:Hide()
     end)
 
-    -- Store column header (?) buttons for toggling via "Hide CDC Tooltips"
+    -- Store column header (?) buttons for lifecycle cleanup.
     wipe(CS.columnInfoButtons)
     CS.columnInfoButtons[1] = groupInfoBtn
     CS.columnInfoButtons[2] = infoBtn
     CS.columnInfoButtons[3] = bsInfoBtn
     CS.columnInfoButtons[4] = settingsInfoBtn
-    if CooldownCompanion.db.profile.hideInfoButtons then
-        for _, btn in ipairs(CS.columnInfoButtons) do
-            btn:Hide()
-        end
-    end
 
     -- Static button bar at bottom of column 1 (New Group + New Folder + Import)
     local btnBar = CreateFrame("Frame", nil, col1.content)
@@ -2073,14 +2037,6 @@ local function CreateConfigPanel()
             end
         end
 
-        -- Apply hideInfoButtons setting
-        if CooldownCompanion.db.profile.hideInfoButtons then
-            for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
-                if btn and not btn._isAdvancedToggle then
-                    btn:Hide()
-                end
-            end
-        end
     end)
 
     bsTabGroup.frame:SetParent(col3.content)

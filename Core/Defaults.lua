@@ -24,7 +24,6 @@ local defaults = {
         minimap = {
             hide = false,
         },
-        hideInfoButtons = false,
         escClosesConfig = true,
         profileOnePixelBorders = false,
         profileWideFontEnabled = false,

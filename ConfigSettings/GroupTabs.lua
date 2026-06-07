@@ -1852,12 +1852,6 @@ local function BuildLayoutTab(container)
 
     end -- not strataCollapsed
 
-    -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
-    if CooldownCompanion.db.profile.hideInfoButtons then
-        for _, btn in ipairs(tabInfoButtons) do
-            if not btn._isAdvancedToggle then btn:Hide() end
-        end
-    end
 end
 
 
@@ -2696,12 +2690,6 @@ local function BuildEffectsTab(container)
     end)
     CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
 
-    -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
-    if CooldownCompanion.db.profile.hideInfoButtons then
-        for _, btn in ipairs(tabInfoButtons) do
-            if not btn._isAdvancedToggle then btn:Hide() end
-        end
-    end
 end
 
 local function BuildAppearanceTab(container)
@@ -3434,12 +3422,6 @@ local function BuildAppearanceTab(container)
 
     BuildGroupSettingPresetControls(container, group, "icons", tabInfoButtons)
 
-    -- Apply "Hide CDC Tooltips" to tab info buttons (skip advanced toggles)
-    if CooldownCompanion.db.profile.hideInfoButtons then
-        for _, btn in ipairs(tabInfoButtons) do
-            if not btn._isAdvancedToggle then btn:Hide() end
-        end
-    end
 end
 
 ------------------------------------------------------------------------

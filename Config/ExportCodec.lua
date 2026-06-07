@@ -116,7 +116,6 @@ end
 
 local PROFILE_DEFAULT_KEYS = {
     minimap = "minimap",
-    hideInfoButtons = "hideInfoButtons",
     escClosesConfig = "escClosesConfig",
     showAdvanced = "showAdvanced",
     autoAddPrefs = "autoAddPrefs",
@@ -134,6 +133,14 @@ local PROFILE_DEFAULT_KEYS = {
     castBar = "castBar",
     frameAnchoring = "frameAnchoring",
 }
+
+local RETIRED_PROFILE_KEYS = {
+    hideInfoButtons = true,
+}
+
+local function IsRetiredProfileKey(key)
+    return RETIRED_PROFILE_KEYS[key] == true
+end
 
 local function BuildCurrentCompactProfileDefaults()
     local profileDefaults = ST._defaults and ST._defaults.profile or {}
@@ -791,7 +798,7 @@ local function CompactProfile(profile, formatVersion)
     local compact = {}
 
     for key, value in pairs(profile) do
-        if not IsMigrationSentinelKey(key) then
+        if not IsMigrationSentinelKey(key) and not IsRetiredProfileKey(key) then
             if PROFILE_DEFAULT_KEYS[key] then
                 local compactValue = CompactTableAgainstDefaults(value, profileDefaults[PROFILE_DEFAULT_KEYS[key]])
                 if compactValue ~= nil then
@@ -837,6 +844,10 @@ local function RehydrateProfile(profile, formatVersion)
     end
 
     local profileDefaults = GetDefaultsProfile(formatVersion)
+
+    for key in pairs(RETIRED_PROFILE_KEYS) do
+        profile[key] = nil
+    end
 
     for key, defaultKey in pairs(PROFILE_DEFAULT_KEYS) do
         local defaultValue = profileDefaults[defaultKey]
