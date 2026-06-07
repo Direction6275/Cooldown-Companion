@@ -69,6 +69,12 @@ local DEFAULT_SEG_THRESHOLD_COLOR = RB.DEFAULT_SEG_THRESHOLD_COLOR
 local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
 local DEFAULT_CONTINUOUS_TICK_MODE = RB.DEFAULT_CONTINUOUS_TICK_MODE
 local DEFAULT_CONTINUOUS_TICK_WIDTH = RB.DEFAULT_CONTINUOUS_TICK_WIDTH
+local MAX_RESOURCE_THRESHOLD_TICK_ENTRIES = RB.MAX_RESOURCE_THRESHOLD_TICK_ENTRIES or 3
+local ClampSegmentedThresholdValue = RB.ClampSegmentedThresholdValue
+local ClampContinuousTickPercentValue = RB.ClampContinuousTickPercentValue
+local ClampContinuousTickAbsoluteValue = RB.ClampContinuousTickAbsoluteValue
+local GetNormalizedSegmentedThresholdEntriesFromConfig = RB.GetNormalizedSegmentedThresholdEntriesFromConfig
+local GetNormalizedContinuousTickEntriesFromConfig = RB.GetNormalizedContinuousTickEntriesFromConfig
 local DEFAULT_HEALTH_BAR_COLOR = RB.DEFAULT_HEALTH_BAR_COLOR
 local DEFAULT_HEALTH_BAR_OPACITY = RB.DEFAULT_HEALTH_BAR_OPACITY
 local DEFAULT_HEALTH_BAR_FULL_COLOR = RB.DEFAULT_HEALTH_BAR_FULL_COLOR
@@ -115,6 +121,8 @@ local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local RESOURCE_HEALTH_DISPLAY_KEYS = RB.RESOURCE_HEALTH_DISPLAY_KEYS
 local resourceSpecCopyButton
 local resourceSpecCopyMenu
+local thresholdTickDraftRows = {}
+local thresholdTickEditorErrors = {}
 
 local function IsHeroSpecProxyCondition(cond)
     return type(cond) == "table"
@@ -1314,6 +1322,311 @@ local function BuildResourceColorControls(container, settings, powerType, specID
     return true
 end
 
+local function CopyThresholdTickEntryList(entries)
+    local copied = {}
+    if type(entries) == "table" then
+        for index, entry in ipairs(entries) do
+            copied[index] = {
+                value = entry.value,
+                color = type(entry.color) == "table" and CopyTable(entry.color) or nil,
+            }
+        end
+    end
+    return copied
+end
+
+local function SortThresholdTickEntryList(entries)
+    table.sort(entries, function(a, b)
+        return (tonumber(a.value) or 0) < (tonumber(b.value) or 0)
+    end)
+end
+
+local function HasThresholdTickDuplicateValue(entries, value, skipIndex)
+    for index, entry in ipairs(entries) do
+        if index ~= skipIndex and entry.value == value then
+            return true
+        end
+    end
+    return false
+end
+
+local function RefreshAdvancedSettingsPanelSoon()
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if CS.RefreshAdvancedSettingsPanel then
+                CS.RefreshAdvancedSettingsPanel()
+            else
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        end)
+    elseif CS.RefreshAdvancedSettingsPanel then
+        CS.RefreshAdvancedSettingsPanel()
+    else
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end
+
+local function SetThresholdTickEditorError(errorKey, message)
+    thresholdTickEditorErrors[errorKey] = message
+    RefreshAdvancedSettingsPanelSoon()
+end
+
+local function ClearThresholdTickEditorError(errorKey)
+    thresholdTickEditorErrors[errorKey] = nil
+end
+
+local function AddThresholdTickHelperLabel(container, text)
+    local label = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(label)
+    label:SetText(text)
+    label:SetFullWidth(true)
+    container:AddChild(label)
+end
+
+local function AddThresholdTickSubHeading(container, text)
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(text)
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+end
+
+local function ReadSpecEntryList(settings, powerType, specID, entriesKey, clearedKey)
+    local resource = settings.resources and settings.resources[powerType]
+    if not resource then
+        return nil, false
+    end
+    if specID and type(resource.specOverrides) == "table" then
+        local specData = resource.specOverrides[specID]
+        if type(specData) == "table" then
+            if specData[entriesKey] ~= nil then
+                return specData[entriesKey], specData[clearedKey] == true
+            end
+            if specData[clearedKey] == true then
+                return nil, true
+            end
+        end
+    end
+    return resource[entriesKey], resource[clearedKey] == true
+end
+
+local function GetConfigSegmentedThresholdEntries(settings, powerType, specID)
+    local rawEntries, cleared = ReadSpecEntryList(settings, powerType, specID, "segThresholdEntries", "segThresholdEntriesCleared")
+    local entries = GetNormalizedSegmentedThresholdEntriesFromConfig(rawEntries)
+    if #entries == 0
+        and not cleared
+        and ReadSpecOverrideKey(settings, powerType, specID, "segThresholdEnabled", false) == true then
+        entries[1] = {
+            value = GetSegmentedThresholdValueConfig({
+                segThresholdValue = ReadSpecOverrideKey(settings, powerType, specID, "segThresholdValue", nil),
+            }),
+            color = GetSafeRGBConfig(ReadSpecOverrideKey(settings, powerType, specID, "segThresholdColor", nil), DEFAULT_SEG_THRESHOLD_COLOR),
+        }
+    end
+    return entries
+end
+
+local function GetConfigContinuousTickMode(settings, powerType, specID)
+    return GetContinuousTickModeConfig({
+        continuousTickMode = ReadSpecOverrideKey(settings, powerType, specID, "continuousTickMode", nil),
+    })
+end
+
+local function GetConfigContinuousTickEntries(settings, powerType, specID, mode)
+    local entriesKey = mode == "absolute" and "continuousTickAbsoluteEntries" or "continuousTickPercentEntries"
+    local clearedKey = mode == "absolute" and "continuousTickAbsoluteEntriesCleared" or "continuousTickPercentEntriesCleared"
+    local rawEntries, cleared = ReadSpecEntryList(settings, powerType, specID, entriesKey, clearedKey)
+    local entries = GetNormalizedContinuousTickEntriesFromConfig(rawEntries, mode)
+    if #entries == 0
+        and not cleared
+        and ReadSpecOverrideKey(settings, powerType, specID, "continuousTickEnabled", false) == true then
+        local value
+        if mode == "absolute" then
+            value = GetContinuousTickAbsoluteConfig({
+                continuousTickAbsolute = ReadSpecOverrideKey(settings, powerType, specID, "continuousTickAbsolute", nil),
+            })
+        else
+            value = GetContinuousTickPercentConfig({
+                continuousTickPercent = ReadSpecOverrideKey(settings, powerType, specID, "continuousTickPercent", nil),
+            })
+        end
+        entries[1] = {
+            value = value,
+            color = GetSafeRGBAConfig(ReadSpecOverrideKey(settings, powerType, specID, "continuousTickColor", nil), DEFAULT_CONTINUOUS_TICK_COLOR),
+        }
+    end
+    return entries
+end
+
+local function WriteThresholdTickEntries(settings, powerType, specID, entriesKey, clearedKey, entries)
+    entries = CopyThresholdTickEntryList(entries)
+    SortThresholdTickEntryList(entries)
+    if #entries > 0 then
+        WriteSpecOverrideKey(settings, powerType, specID, entriesKey, entries)
+        WriteSpecOverrideKey(settings, powerType, specID, clearedKey, nil)
+    else
+        WriteSpecOverrideKey(settings, powerType, specID, entriesKey, nil)
+        WriteSpecOverrideKey(settings, powerType, specID, clearedKey, true)
+    end
+end
+
+local function AddThresholdTickEntryEditor(panel, options)
+    local entries = options.entries
+    local rowCount = #entries
+    local draftKey = options.draftKey
+    local draftActive = thresholdTickDraftRows[draftKey] == true
+
+    AddThresholdTickSubHeading(panel, options.heading)
+    if rowCount == 0 and not draftActive then
+        AddThresholdTickHelperLabel(panel, options.emptyText)
+    end
+
+    local function commitValue(index, text, widget)
+        local parsed = options.clampValue(text, nil)
+        local errorKey = options.errorPrefix .. "_" .. tostring(index or "new")
+        if parsed == nil then
+            if widget and index and entries[index] then
+                widget:SetText(tostring(entries[index].value))
+            end
+            SetThresholdTickEditorError(errorKey, options.invalidText)
+            return
+        end
+        if HasThresholdTickDuplicateValue(entries, parsed, index) then
+            if widget and index and entries[index] then
+                widget:SetText(tostring(entries[index].value))
+            end
+            SetThresholdTickEditorError(errorKey, options.duplicateText)
+            return
+        end
+
+        local updated = CopyThresholdTickEntryList(entries)
+        if index then
+            updated[index].value = parsed
+        else
+            updated[#updated + 1] = { value = parsed }
+            thresholdTickDraftRows[draftKey] = nil
+            thresholdTickEditorErrors[options.errorPrefix .. "_new"] = nil
+        end
+        SortThresholdTickEntryList(updated)
+        ClearThresholdTickEditorError(errorKey)
+        options.writeEntries(updated)
+        options.applyBars()
+        RefreshAdvancedSettingsPanelSoon()
+    end
+
+    for index, entry in ipairs(entries) do
+        local errorKey = options.errorPrefix .. "_" .. tostring(index)
+        local row = AceGUI:Create("SimpleGroup")
+        row:SetFullWidth(true)
+        row:SetLayout("Flow")
+
+        local valueEdit = AceGUI:Create("EditBox")
+        if valueEdit.editbox.Instructions then valueEdit.editbox.Instructions:Hide() end
+        valueEdit:SetLabel(options.valueLabel)
+        valueEdit:SetText(tostring(entry.value))
+        valueEdit:SetRelativeWidth(0.68)
+        valueEdit:DisableButton(true)
+        valueEdit:SetCallback("OnEnterPressed", function(widget, event, text)
+            commitValue(index, text, widget)
+        end)
+        row:AddChild(valueEdit)
+
+        local removeBtn = AceGUI:Create("Button")
+        removeBtn:SetText("Remove")
+        removeBtn:SetRelativeWidth(0.3)
+        removeBtn:SetCallback("OnClick", function()
+            local updated = CopyThresholdTickEntryList(entries)
+            table.remove(updated, index)
+            thresholdTickEditorErrors[errorKey] = nil
+            options.writeEntries(updated)
+            options.applyBars()
+            RefreshAdvancedSettingsPanelSoon()
+        end)
+        row:AddChild(removeBtn)
+        panel:AddChild(row)
+
+        if thresholdTickEditorErrors[errorKey] then
+            AddThresholdTickHelperLabel(panel, "|cffff7777" .. thresholdTickEditorErrors[errorKey] .. "|r")
+        end
+
+        local proxyKey = options.colorKey
+        local proxy = {
+            [proxyKey] = type(entry.color) == "table" and CopyTable(entry.color) or CopyTable(options.defaultColor),
+        }
+        AddColorPicker(panel, proxy, proxyKey, options.colorLabel, options.defaultColor, options.hasAlpha,
+            function()
+                local updated = CopyThresholdTickEntryList(entries)
+                if updated[index] then
+                    updated[index].color = proxy[proxyKey]
+                    options.writeEntries(updated)
+                    options.applyBars()
+                end
+            end,
+            function()
+                local updated = CopyThresholdTickEntryList(entries)
+                if updated[index] then
+                    updated[index].color = proxy[proxyKey]
+                    options.writeEntries(updated)
+                end
+            end)
+    end
+
+    if draftActive then
+        local errorKey = options.errorPrefix .. "_new"
+        local draftRow = AceGUI:Create("SimpleGroup")
+        draftRow:SetFullWidth(true)
+        draftRow:SetLayout("Flow")
+
+        local draftEdit = AceGUI:Create("EditBox")
+        if draftEdit.editbox.Instructions then draftEdit.editbox.Instructions:Hide() end
+        draftEdit:SetLabel("New " .. options.valueLabel)
+        draftEdit:SetText("")
+        draftEdit:SetRelativeWidth(0.68)
+        draftEdit:DisableButton(true)
+        draftEdit:SetCallback("OnEnterPressed", function(widget, event, text)
+            commitValue(nil, text, widget)
+        end)
+        draftRow:AddChild(draftEdit)
+
+        local cancelBtn = AceGUI:Create("Button")
+        cancelBtn:SetText("Cancel")
+        cancelBtn:SetRelativeWidth(0.3)
+        cancelBtn:SetCallback("OnClick", function()
+            thresholdTickDraftRows[draftKey] = nil
+            thresholdTickEditorErrors[errorKey] = nil
+            RefreshAdvancedSettingsPanelSoon()
+        end)
+        draftRow:AddChild(cancelBtn)
+        panel:AddChild(draftRow)
+
+        if thresholdTickEditorErrors[errorKey] then
+            AddThresholdTickHelperLabel(panel, "|cffff7777" .. thresholdTickEditorErrors[errorKey] .. "|r")
+        end
+        AddThresholdTickHelperLabel(panel, "|cff888888Enter a valid value to unlock color settings for this row.|r")
+    end
+
+    local addBtn = AceGUI:Create("Button")
+    addBtn:SetText(options.addText)
+    addBtn:SetFullWidth(true)
+    local addDisabled = rowCount >= MAX_RESOURCE_THRESHOLD_TICK_ENTRIES or draftActive
+    if addBtn.SetDisabled then
+        addBtn:SetDisabled(addDisabled)
+    end
+    addBtn:SetCallback("OnClick", function()
+        if rowCount >= MAX_RESOURCE_THRESHOLD_TICK_ENTRIES or draftActive then
+            return
+        end
+        thresholdTickDraftRows[draftKey] = true
+        thresholdTickEditorErrors[options.errorPrefix .. "_new"] = nil
+        RefreshAdvancedSettingsPanelSoon()
+    end)
+    panel:AddChild(addBtn)
+
+    if rowCount >= MAX_RESOURCE_THRESHOLD_TICK_ENTRIES then
+        AddThresholdTickHelperLabel(panel, "|cff888888Maximum of 3 entries configured.|r")
+    end
+end
+
 local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     local settings = CooldownCompanion:GetResourceBarSettings()
 
@@ -1848,9 +2161,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
 
     local thresholdInfoBtn = CreateInfoButton(thresholdHeading.frame, thresholdCollapseBtn, "LEFT", "RIGHT", 4, 0, {
         "Thresholds & Ticks",
-        {"Segmented resources: recolor when current value is at/above a configured threshold.", 1, 1, 1, true},
+        {"Segmented resources: recolor when the current value is at/above configured thresholds. The highest crossed threshold wins.", 1, 1, 1, true},
         " ",
-        {"Continuous resources: draw a static marker by percent or absolute value.", 1, 1, 1, true},
+        {"Continuous resources: draw up to three static markers by percent or absolute value. Each marker can have its own color.", 1, 1, 1, true},
     }, thresholdHeading)
 
     thresholdHeading.right:ClearAllPoints()
@@ -1873,7 +2186,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                 if isSegmented then
                     local thresholdAdvKey = "rbSegThreshold_" .. capturedPt .. "_" .. tostring(_colorSpecID)
                     local thresholdEnableCb = AceGUI:Create("CheckBox")
-                    thresholdEnableCb:SetLabel("Enable " .. resourceName .. " Threshold Color")
+                    thresholdEnableCb:SetLabel("Enable " .. resourceName .. " Threshold Colors")
                     thresholdEnableCb:SetValue(ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdEnabled", false) == true)
                     thresholdEnableCb:SetFullWidth(true)
                     thresholdEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1891,36 +2204,27 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     container:AddChild(thresholdEnableCb)
 
                     local function BuildSegmentedThresholdAdvanced(panel)
-                        local thresholdEdit = AceGUI:Create("EditBox")
-                        if thresholdEdit.editbox.Instructions then thresholdEdit.editbox.Instructions:Hide() end
-                        thresholdEdit:SetLabel(resourceName .. " Threshold Value (>=)")
-                        local _segVal = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdValue", nil)
-                        thresholdEdit:SetText(tostring(GetSegmentedThresholdValueConfig({ segThresholdValue = _segVal })))
-                        thresholdEdit:SetFullWidth(true)
-                        thresholdEdit:DisableButton(true)
-                        thresholdEdit:SetCallback("OnEnterPressed", function(widget, event, text)
-                            local parsed = tonumber(text)
-                            if not parsed then
-                                local curVal = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdValue", nil)
-                                widget:SetText(tostring(GetSegmentedThresholdValueConfig({ segThresholdValue = curVal })))
-                                return
-                            end
-                            parsed = math.floor(parsed)
-                            if parsed < 1 then
-                                parsed = 1
-                            elseif parsed > 99 then
-                                parsed = 99
-                            end
-                            WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdValue", parsed)
-                            widget:SetText(tostring(parsed))
-                            CooldownCompanion:ApplyResourceBars()
-                        end)
-                        panel:AddChild(thresholdEdit)
-
-                        local _pSeg = { segThresholdColor = GetSafeRGBConfig(ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdColor", nil), DEFAULT_SEG_THRESHOLD_COLOR) }
-                        AddColorPicker(panel, _pSeg, "segThresholdColor", resourceName .. " Threshold Color", DEFAULT_SEG_THRESHOLD_COLOR, false,
-                            function() WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdColor", _pSeg.segThresholdColor); applyBars() end,
-                            function() WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdColor", _pSeg.segThresholdColor) end)
+                        local entries = GetConfigSegmentedThresholdEntries(settings, capturedPt, _colorSpecID)
+                        AddThresholdTickEntryEditor(panel, {
+                            heading = "Threshold Colors",
+                            entries = entries,
+                            draftKey = thresholdAdvKey,
+                            errorPrefix = thresholdAdvKey,
+                            valueLabel = resourceName .. " Threshold Value (>=)",
+                            colorKey = "segThresholdColor",
+                            colorLabel = resourceName .. " Threshold Color",
+                            defaultColor = DEFAULT_SEG_THRESHOLD_COLOR,
+                            hasAlpha = false,
+                            addText = "Add Threshold Color",
+                            emptyText = "|cff888888No threshold colors configured. Add a value to make this enabled threshold setting active.|r",
+                            invalidText = "Enter a threshold value from 1 to 99.",
+                            duplicateText = "A threshold color already uses that value.",
+                            clampValue = ClampSegmentedThresholdValue,
+                            writeEntries = function(updated)
+                                WriteThresholdTickEntries(settings, capturedPt, _colorSpecID, "segThresholdEntries", "segThresholdEntriesCleared", updated)
+                            end,
+                            applyBars = applyBars,
+                        })
                     end
 
                     local _segEnabled = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "segThresholdEnabled", false) == true
@@ -1943,7 +2247,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     local tickAdvKey = "rbTickMarker_" .. capturedPt .. "_" .. tostring(_colorSpecID)
                     local _tickEnabled = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickEnabled", false) == true
                     local tickEnableCb = AceGUI:Create("CheckBox")
-                    tickEnableCb:SetLabel("Enable " .. resourceName .. " Tick Marker")
+                    tickEnableCb:SetLabel("Enable " .. resourceName .. " Tick Markers")
                     tickEnableCb:SetValue(_tickEnabled)
                     tickEnableCb:SetFullWidth(true)
                     tickEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -1995,50 +2299,31 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         end)
                         panel:AddChild(modeDrop)
 
-                        if tickMode == "percent" then
-                            local _tickPercentRes = { continuousTickPercent = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickPercent", nil) }
-                            local percentSlider = AceGUI:Create("Slider")
-                            percentSlider:SetLabel(resourceName .. " Tick Percent")
-                            percentSlider:SetSliderValues(0, 100, 1)
-                            percentSlider:SetValue(GetContinuousTickPercentConfig(_tickPercentRes))
-                            percentSlider:SetIsPercent(false)
-                            percentSlider:SetFullWidth(true)
-                            percentSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                                WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickPercent", val)
-                                CooldownCompanion:ApplyResourceBars()
-                            end)
-                            panel:AddChild(percentSlider)
-                        else
-                            local _tickAbsRes = { continuousTickAbsolute = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickAbsolute", nil) }
-                            local absoluteEdit = AceGUI:Create("EditBox")
-                            if absoluteEdit.editbox.Instructions then absoluteEdit.editbox.Instructions:Hide() end
-                            absoluteEdit:SetLabel(resourceName .. " Tick Absolute Value")
-                            absoluteEdit:SetText(tostring(GetContinuousTickAbsoluteConfig(_tickAbsRes)))
-                            absoluteEdit:SetFullWidth(true)
-                            absoluteEdit:DisableButton(true)
-                            absoluteEdit:SetCallback("OnEnterPressed", function(widget, event, text)
-                                local parsed = tonumber(text)
-                                if not parsed then
-                                    local curAbs = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickAbsolute", nil)
-                                    widget:SetText(tostring(GetContinuousTickAbsoluteConfig({ continuousTickAbsolute = curAbs })))
-                                    return
-                                end
-                                if parsed < 0 then
-                                    parsed = 0
-                                end
-                                WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickAbsolute", parsed)
-                                widget:SetText(tostring(parsed))
-                                CooldownCompanion:ApplyResourceBars()
-                            end)
-                            panel:AddChild(absoluteEdit)
-                        end
-
-                        local _tickColorResolved = GetSafeRGBAConfig(ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickColor", nil), DEFAULT_CONTINUOUS_TICK_COLOR)
-                        if _tickColorResolved[4] == nil then _tickColorResolved = { _tickColorResolved[1], _tickColorResolved[2], _tickColorResolved[3], 1 } end
-                        local _pTick = { continuousTickColor = _tickColorResolved }
-                        AddColorPicker(panel, _pTick, "continuousTickColor", resourceName .. " Tick Color", DEFAULT_CONTINUOUS_TICK_COLOR, true,
-                            function() WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickColor", _pTick.continuousTickColor); applyBars() end,
-                            function() WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickColor", _pTick.continuousTickColor) end)
+                        local tickEntries = GetConfigContinuousTickEntries(settings, capturedPt, _colorSpecID, tickMode)
+                        local tickEntriesKey = tickMode == "absolute" and "continuousTickAbsoluteEntries" or "continuousTickPercentEntries"
+                        local tickClearedKey = tickMode == "absolute" and "continuousTickAbsoluteEntriesCleared" or "continuousTickPercentEntriesCleared"
+                        AddThresholdTickEntryEditor(panel, {
+                            heading = "Tick Markers",
+                            entries = tickEntries,
+                            draftKey = tickAdvKey .. "_" .. tickMode,
+                            errorPrefix = tickAdvKey .. "_" .. tickMode,
+                            valueLabel = tickMode == "absolute" and (resourceName .. " Tick Absolute Value") or (resourceName .. " Tick Percent"),
+                            colorKey = "continuousTickColor",
+                            colorLabel = resourceName .. " Tick Color",
+                            defaultColor = DEFAULT_CONTINUOUS_TICK_COLOR,
+                            hasAlpha = true,
+                            addText = "Add Tick Marker",
+                            emptyText = tickMode == "absolute"
+                                and "|cff888888No absolute tick markers configured. Add a value to make this enabled tick setting active in Absolute Value mode.|r"
+                                or "|cff888888No percent tick markers configured. Add a value to make this enabled tick setting active in Percent mode.|r",
+                            invalidText = tickMode == "absolute" and "Enter a tick value of 0 or higher." or "Enter a tick percent from 0 to 100.",
+                            duplicateText = "A tick marker already uses that value.",
+                            clampValue = tickMode == "absolute" and ClampContinuousTickAbsoluteValue or ClampContinuousTickPercentValue,
+                            writeEntries = function(updated)
+                                WriteThresholdTickEntries(settings, capturedPt, _colorSpecID, tickEntriesKey, tickClearedKey, updated)
+                            end,
+                            applyBars = applyBars,
+                        })
 
                         local _tickWidthVal = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickWidth", nil)
                         local tickWidthSlider = AceGUI:Create("Slider")
@@ -2059,7 +2344,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         rbThresholdTickAdvBtns,
                         _tickEnabled,
                         {
-                            title = resourceName .. " Tick Marker Advanced",
+                            title = resourceName .. " Tick Markers Advanced",
                             build = BuildTickMarkerAdvanced,
                             context = {
                                 selectedResourcePowerType = capturedPt,

@@ -138,6 +138,8 @@ local function ForEachSharedCustomBarSpec(entry, callback)
     end
 end
 
+local ResolveSpecOverrideKey
+
 local RESOURCE_SPEC_AURA_KEYS = {
     auraOverlayEnabled = true,
     auraOverlayEntries = true,
@@ -148,6 +150,196 @@ local RESOURCE_SPEC_AURA_KEYS = {
     auraUnit = true,
     auraUnitExplicit = true,
 }
+
+local MAX_RESOURCE_THRESHOLD_TICK_ENTRIES = 3
+
+local function CopyRGBSetting(color)
+    if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
+        return nil
+    end
+    return { color[1], color[2], color[3] }
+end
+
+local function CopyRGBASetting(color)
+    if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
+        return nil
+    end
+    return { color[1], color[2], color[3], color[4] }
+end
+
+local function ClampLegacySegmentedThresholdValue(value, fallback)
+    value = tonumber(value)
+    if not value then
+        return fallback
+    end
+    value = math.floor(value)
+    if value < 1 then
+        value = 1
+    elseif value > 99 then
+        value = 99
+    end
+    return value
+end
+
+local function ClampLegacyTickPercentValue(value, fallback)
+    value = tonumber(value)
+    if not value then
+        return fallback
+    end
+    if value < 0 then
+        value = 0
+    elseif value > 100 then
+        value = 100
+    end
+    return value
+end
+
+local function ClampLegacyTickAbsoluteValue(value, fallback)
+    value = tonumber(value)
+    if not value then
+        return fallback
+    end
+    if value < 0 then
+        value = 0
+    end
+    return value
+end
+
+local function NormalizeSavedEntryList(entries, clampValue, copyColor)
+    local normalized = {}
+    local seen = {}
+    if type(entries) ~= "table" then
+        return normalized
+    end
+
+    local keys = {}
+    for key in pairs(entries) do
+        if type(key) == "number" then
+            keys[#keys + 1] = key
+        end
+    end
+    sort(keys)
+
+    for _, key in ipairs(keys) do
+        local entry = entries[key]
+        local value = type(entry) == "table" and clampValue(entry.value, nil) or nil
+        if value ~= nil then
+            local valueKey = tostring(value)
+            if not seen[valueKey] then
+                seen[valueKey] = true
+                normalized[#normalized + 1] = {
+                    value = value,
+                    color = copyColor(type(entry) == "table" and entry.color or nil),
+                }
+                if #normalized >= MAX_RESOURCE_THRESHOLD_TICK_ENTRIES then
+                    break
+                end
+            end
+        end
+    end
+
+    sort(normalized, function(a, b)
+        return a.value < b.value
+    end)
+    return normalized
+end
+
+local function StoreNormalizedEntries(target, entriesKey, clearedKey, normalized)
+    if #normalized > 0 then
+        target[entriesKey] = normalized
+        target[clearedKey] = nil
+    else
+        target[entriesKey] = nil
+    end
+end
+
+local function NormalizeThresholdEntriesOnTarget(resource, specID, target)
+    if type(target) ~= "table" then
+        return
+    end
+
+    local normalized = NormalizeSavedEntryList(target.segThresholdEntries, ClampLegacySegmentedThresholdValue, CopyRGBSetting)
+    if #normalized == 0
+        and target.segThresholdEntriesCleared ~= true
+        and ResolveSpecOverrideKey(resource, specID, "segThresholdEnabled") == true
+        and (target.segThresholdEnabled ~= nil or target.segThresholdValue ~= nil or target.segThresholdColor ~= nil) then
+        normalized[1] = {
+            value = ClampLegacySegmentedThresholdValue(
+                target.segThresholdValue ~= nil and target.segThresholdValue or ResolveSpecOverrideKey(resource, specID, "segThresholdValue"),
+                1
+            ),
+            color = CopyRGBSetting(target.segThresholdColor) or CopyRGBSetting(ResolveSpecOverrideKey(resource, specID, "segThresholdColor")),
+        }
+    end
+    StoreNormalizedEntries(target, "segThresholdEntries", "segThresholdEntriesCleared", normalized)
+end
+
+local function GetResolvedTickMode(resource, specID, target)
+    local mode = target and target.continuousTickMode or ResolveSpecOverrideKey(resource, specID, "continuousTickMode")
+    if mode == "absolute" then
+        return "absolute"
+    end
+    return "percent"
+end
+
+local function NormalizeTickEntriesOnTarget(resource, specID, target)
+    if type(target) ~= "table" then
+        return
+    end
+
+    local percentEntries = NormalizeSavedEntryList(target.continuousTickPercentEntries, ClampLegacyTickPercentValue, CopyRGBASetting)
+    local absoluteEntries = NormalizeSavedEntryList(target.continuousTickAbsoluteEntries, ClampLegacyTickAbsoluteValue, CopyRGBASetting)
+    local tickEnabled = ResolveSpecOverrideKey(resource, specID, "continuousTickEnabled") == true
+    local mode = GetResolvedTickMode(resource, specID, target)
+    local hasLegacyTickData = target.continuousTickEnabled ~= nil
+        or target.continuousTickMode ~= nil
+        or target.continuousTickPercent ~= nil
+        or target.continuousTickAbsolute ~= nil
+        or target.continuousTickColor ~= nil
+
+    if tickEnabled and hasLegacyTickData then
+        if mode == "absolute" and #absoluteEntries == 0 and target.continuousTickAbsoluteEntriesCleared ~= true then
+            absoluteEntries[1] = {
+                value = ClampLegacyTickAbsoluteValue(
+                    target.continuousTickAbsolute ~= nil and target.continuousTickAbsolute or ResolveSpecOverrideKey(resource, specID, "continuousTickAbsolute"),
+                    50
+                ),
+                color = CopyRGBASetting(target.continuousTickColor) or CopyRGBASetting(ResolveSpecOverrideKey(resource, specID, "continuousTickColor")),
+            }
+        elseif mode == "percent" and #percentEntries == 0 and target.continuousTickPercentEntriesCleared ~= true then
+            percentEntries[1] = {
+                value = ClampLegacyTickPercentValue(
+                    target.continuousTickPercent ~= nil and target.continuousTickPercent or ResolveSpecOverrideKey(resource, specID, "continuousTickPercent"),
+                    50
+                ),
+                color = CopyRGBASetting(target.continuousTickColor) or CopyRGBASetting(ResolveSpecOverrideKey(resource, specID, "continuousTickColor")),
+            }
+        end
+    end
+
+    StoreNormalizedEntries(target, "continuousTickPercentEntries", "continuousTickPercentEntriesCleared", percentEntries)
+    StoreNormalizedEntries(target, "continuousTickAbsoluteEntries", "continuousTickAbsoluteEntriesCleared", absoluteEntries)
+end
+
+local function NormalizeResourceThresholdTickEntries(settings)
+    if type(settings) ~= "table" or type(settings.resources) ~= "table" then
+        return
+    end
+    for _, resource in pairs(settings.resources) do
+        if type(resource) == "table" then
+            NormalizeThresholdEntriesOnTarget(resource, nil, resource)
+            NormalizeTickEntriesOnTarget(resource, nil, resource)
+            if type(resource.specOverrides) == "table" then
+                for specID, specData in pairs(resource.specOverrides) do
+                    if type(specData) == "table" then
+                        NormalizeThresholdEntriesOnTarget(resource, specID, specData)
+                        NormalizeTickEntriesOnTarget(resource, specID, specData)
+                    end
+                end
+            end
+        end
+    end
+end
 
 -- Keep these resource mappings aligned with OtherBars/ResourceBarConstants.lua.
 local RESOURCE_HEALTH = -1
@@ -595,7 +787,7 @@ local function NormalizeResourceAuraOverlayEntriesForCurrentClass(settings)
 end
 
 -- Resolves a per-spec override key: specOverrides[specID][key] -> resource[key] -> nil.
-local function ResolveSpecOverrideKey(resource, specID, key)
+function ResolveSpecOverrideKey(resource, specID, key)
     if specID and type(resource) == "table" then
         local specOverrides = resource.specOverrides
         if type(specOverrides) == "table" then
@@ -897,6 +1089,7 @@ local function NormalizeScopedBarSettings(systemKey, settings)
         NormalizeCustomAuraBarsForCurrentClass(settings)
         NormalizeResourceAuraOverlayEntriesForCurrentClass(settings)
         NormalizeResourceSpecOverridesForCurrentClass(settings)
+        NormalizeResourceThresholdTickEntries(settings)
     end
 end
 

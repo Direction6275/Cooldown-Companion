@@ -13,6 +13,7 @@ local CooldownCompanion = ST.Addon
 
 local math_floor = math.floor
 local string_format = string.format
+local table_sort = table.sort
 local SecretsAPI = C_Secrets
 
 -- Import constants from ResourceBarConstants
@@ -34,6 +35,7 @@ local SPEC_RESOURCES = RB.SPEC_RESOURCES
 local DRUID_FORM_RESOURCES = RB.DRUID_FORM_RESOURCES
 local DRUID_DEFAULT_RESOURCES = RB.DRUID_DEFAULT_RESOURCES
 local DRUID_BALANCE_SPEC_ID = 102
+local MAX_RESOURCE_THRESHOLD_TICK_ENTRIES = 3
 
 local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
 
@@ -1741,6 +1743,135 @@ end
 -- Identical to GetSafeRGBColor; alias kept for call-site clarity (RGB vs RGBA intent)
 local GetSafeRGBAColor = GetSafeRGBColor
 
+local function ClampSegmentedThresholdValue(value, fallback)
+    value = tonumber(value)
+    if not value then
+        return fallback
+    end
+    value = math_floor(value)
+    if value < 1 then
+        value = 1
+    elseif value > 99 then
+        value = 99
+    end
+    return value
+end
+
+local function ClampContinuousTickPercentValue(value, fallback)
+    value = tonumber(value)
+    if not value then
+        return fallback
+    end
+    if value < 0 then
+        value = 0
+    elseif value > 100 then
+        value = 100
+    end
+    return value
+end
+
+local function ClampContinuousTickAbsoluteValue(value, fallback)
+    value = tonumber(value)
+    if not value then
+        return fallback
+    end
+    if value < 0 then
+        value = 0
+    end
+    return value
+end
+
+local function CollectNumericKeys(tbl)
+    local keys = {}
+    if type(tbl) ~= "table" then
+        return keys
+    end
+    for key in pairs(tbl) do
+        if type(key) == "number" then
+            keys[#keys + 1] = key
+        end
+    end
+    table_sort(keys)
+    return keys
+end
+
+local function NormalizeEntryList(entries, clampValue, colorFallback, colorResolver)
+    local normalized = {}
+    local seen = {}
+    if type(entries) ~= "table" then
+        return normalized
+    end
+
+    local keys = CollectNumericKeys(entries)
+    for _, key in ipairs(keys) do
+        local entry = entries[key]
+        local value = type(entry) == "table" and clampValue(entry.value, nil) or nil
+        if value ~= nil then
+            local valueKey = tostring(value)
+            if not seen[valueKey] then
+                seen[valueKey] = true
+                normalized[#normalized + 1] = {
+                    value = value,
+                    color = colorResolver(type(entry) == "table" and entry.color or nil, colorFallback),
+                }
+                if #normalized >= MAX_RESOURCE_THRESHOLD_TICK_ENTRIES then
+                    break
+                end
+            end
+        end
+    end
+
+    table_sort(normalized, function(a, b)
+        return a.value < b.value
+    end)
+    return normalized
+end
+
+local function GetNormalizedSegmentedThresholdEntriesFromConfig(entries)
+    return NormalizeEntryList(entries, ClampSegmentedThresholdValue, DEFAULT_SEG_THRESHOLD_COLOR, GetSafeRGBColor)
+end
+
+local function GetNormalizedContinuousTickEntriesFromConfig(entries, mode)
+    local clamp = mode == "absolute" and ClampContinuousTickAbsoluteValue or ClampContinuousTickPercentValue
+    return NormalizeEntryList(entries, clamp, DEFAULT_CONTINUOUS_TICK_COLOR, GetSafeRGBAColor)
+end
+
+local function BuildLegacySegmentedThresholdEntry(resource, specID)
+    return {
+        value = ClampSegmentedThresholdValue(ResolveSpecOverrideKey(resource, specID, "segThresholdValue"), 1),
+        color = GetSafeRGBColor(ResolveSpecOverrideKey(resource, specID, "segThresholdColor"), DEFAULT_SEG_THRESHOLD_COLOR),
+    }
+end
+
+local function BuildLegacyContinuousTickEntry(resource, specID, mode)
+    local value
+    if mode == "absolute" then
+        value = ClampContinuousTickAbsoluteValue(ResolveSpecOverrideKey(resource, specID, "continuousTickAbsolute"), DEFAULT_CONTINUOUS_TICK_ABSOLUTE)
+    else
+        value = ClampContinuousTickPercentValue(ResolveSpecOverrideKey(resource, specID, "continuousTickPercent"), DEFAULT_CONTINUOUS_TICK_PERCENT)
+    end
+    return {
+        value = value,
+        color = GetSafeRGBAColor(ResolveSpecOverrideKey(resource, specID, "continuousTickColor"), DEFAULT_CONTINUOUS_TICK_COLOR),
+    }
+end
+
+local function ResolveSpecEntryList(resource, specID, entriesKey, clearedKey)
+    if specID and type(resource) == "table" then
+        local specOverrides = resource.specOverrides
+        local specData = type(specOverrides) == "table" and specOverrides[specID] or nil
+        if type(specData) == "table" then
+            if specData[entriesKey] ~= nil then
+                return specData[entriesKey], specData[clearedKey] == true
+            end
+            if specData[clearedKey] == true then
+                return nil, true
+            end
+        end
+    end
+    return resource and resource[entriesKey], resource and resource[clearedKey] == true
+end
+
 local function GetSegmentedThresholdConfig(powerType, settings)
     if powerType ~= RESOURCE_MAELSTROM_WEAPON and SEGMENTED_TYPES[powerType] ~= true then
         return false, nil, nil
@@ -1760,19 +1891,67 @@ local function GetSegmentedThresholdConfig(powerType, settings)
         return false, nil, nil
     end
 
-    local threshold = tonumber(ResolveSpecOverrideKey(resource, specID, "segThresholdValue"))
-    if not threshold then
-        threshold = 1
+    local rawEntries, cleared = ResolveSpecEntryList(resource, specID, "segThresholdEntries", "segThresholdEntriesCleared")
+    local entries = GetNormalizedSegmentedThresholdEntriesFromConfig(rawEntries)
+    if #entries == 0 and not cleared then
+        entries[1] = BuildLegacySegmentedThresholdEntry(resource, specID)
     end
-    threshold = math_floor(threshold)
-    if threshold < 1 then
-        threshold = 1
-    elseif threshold > 99 then
-        threshold = 99
+    if #entries == 0 then
+        return false, nil, nil
     end
 
-    local thresholdColor = GetSafeRGBColor(ResolveSpecOverrideKey(resource, specID, "segThresholdColor"), DEFAULT_SEG_THRESHOLD_COLOR)
-    return true, threshold, thresholdColor
+    local first = entries[1]
+    return true, first.value, first.color
+end
+
+local function GetSegmentedThresholdEntriesConfig(powerType, settings)
+    if powerType ~= RESOURCE_MAELSTROM_WEAPON and SEGMENTED_TYPES[powerType] ~= true then
+        return false, {}
+    end
+    if not settings or not settings.resources then
+        return false, {}
+    end
+
+    local resource = settings.resources[powerType]
+    if type(resource) ~= "table" then
+        return false, {}
+    end
+
+    local specID = GetCurrentSpecID()
+    local enabled = ResolveSpecOverrideKey(resource, specID, "segThresholdEnabled")
+    if enabled ~= true then
+        return false, {}
+    end
+
+    local rawEntries, cleared = ResolveSpecEntryList(resource, specID, "segThresholdEntries", "segThresholdEntriesCleared")
+    local entries = GetNormalizedSegmentedThresholdEntriesFromConfig(rawEntries)
+    if #entries == 0 and not cleared then
+        entries[1] = BuildLegacySegmentedThresholdEntry(resource, specID)
+    end
+    return true, entries
+end
+
+local function GetSegmentedThresholdColorForValue(powerType, settings, currentValue)
+    currentValue = tonumber(currentValue)
+    if not currentValue then
+        return false, nil
+    end
+
+    local enabled, entries = GetSegmentedThresholdEntriesConfig(powerType, settings)
+    if not enabled then
+        return false, nil
+    end
+
+    local activeColor
+    for _, entry in ipairs(entries) do
+        if currentValue >= entry.value then
+            activeColor = entry.color
+        else
+            break
+        end
+    end
+
+    return activeColor ~= nil, activeColor
 end
 
 local function GetContinuousTickConfig(powerType, settings)
@@ -1799,29 +1978,62 @@ local function GetContinuousTickConfig(powerType, settings)
         mode = DEFAULT_CONTINUOUS_TICK_MODE
     end
 
-    local percentValue = tonumber(ResolveSpecOverrideKey(resource, specID, "continuousTickPercent"))
-    if not percentValue then
-        percentValue = DEFAULT_CONTINUOUS_TICK_PERCENT
+    local entriesKey = mode == "absolute" and "continuousTickAbsoluteEntries" or "continuousTickPercentEntries"
+    local clearedKey = mode == "absolute" and "continuousTickAbsoluteEntriesCleared" or "continuousTickPercentEntriesCleared"
+    local rawEntries, cleared = ResolveSpecEntryList(resource, specID, entriesKey, clearedKey)
+    local entries = GetNormalizedContinuousTickEntriesFromConfig(rawEntries, mode)
+    if #entries == 0 and not cleared then
+        entries[1] = BuildLegacyContinuousTickEntry(resource, specID, mode)
     end
-    if percentValue < 0 then
-        percentValue = 0
-    elseif percentValue > 100 then
-        percentValue = 100
-    end
-
-    local absoluteValue = tonumber(ResolveSpecOverrideKey(resource, specID, "continuousTickAbsolute"))
-    if not absoluteValue then
-        absoluteValue = DEFAULT_CONTINUOUS_TICK_ABSOLUTE
-    end
-    if absoluteValue < 0 then
-        absoluteValue = 0
+    if #entries == 0 then
+        return false, mode, nil, nil, nil, nil, nil
     end
 
-    local tickColor = GetSafeRGBAColor(ResolveSpecOverrideKey(resource, specID, "continuousTickColor"), DEFAULT_CONTINUOUS_TICK_COLOR)
+    local entry = entries[1]
+    local percentValue = mode == "percent" and entry.value or nil
+    local absoluteValue = mode == "absolute" and entry.value or nil
     local tickWidth = tonumber(ResolveSpecOverrideKey(resource, specID, "continuousTickWidth")) or DEFAULT_CONTINUOUS_TICK_WIDTH
     if tickWidth < 1 then tickWidth = 1 elseif tickWidth > 10 then tickWidth = 10 end
     local combatOnly = ResolveSpecOverrideKey(resource, specID, "continuousTickCombatOnly") or false
-    return true, mode, percentValue, absoluteValue, tickColor, tickWidth, combatOnly
+    return true, mode, percentValue, absoluteValue, entry.color, tickWidth, combatOnly
+end
+
+local function GetContinuousTickEntriesConfig(powerType, settings)
+    if SEGMENTED_TYPES[powerType] or powerType == RESOURCE_MAELSTROM_WEAPON then
+        return false, nil, {}, nil, nil
+    end
+    if not settings or not settings.resources then
+        return false, nil, {}, nil, nil
+    end
+
+    local resource = settings.resources[powerType]
+    if type(resource) ~= "table" then
+        return false, nil, {}, nil, nil
+    end
+
+    local specID = GetCurrentSpecID()
+    local enabled = ResolveSpecOverrideKey(resource, specID, "continuousTickEnabled")
+    if enabled ~= true then
+        return false, nil, {}, nil, nil
+    end
+
+    local mode = ResolveSpecOverrideKey(resource, specID, "continuousTickMode")
+    if mode ~= "percent" and mode ~= "absolute" then
+        mode = DEFAULT_CONTINUOUS_TICK_MODE
+    end
+
+    local entriesKey = mode == "absolute" and "continuousTickAbsoluteEntries" or "continuousTickPercentEntries"
+    local clearedKey = mode == "absolute" and "continuousTickAbsoluteEntriesCleared" or "continuousTickPercentEntriesCleared"
+    local rawEntries, cleared = ResolveSpecEntryList(resource, specID, entriesKey, clearedKey)
+    local entries = GetNormalizedContinuousTickEntriesFromConfig(rawEntries, mode)
+    if #entries == 0 and not cleared then
+        entries[1] = BuildLegacyContinuousTickEntry(resource, specID, mode)
+    end
+
+    local tickWidth = tonumber(ResolveSpecOverrideKey(resource, specID, "continuousTickWidth")) or DEFAULT_CONTINUOUS_TICK_WIDTH
+    if tickWidth < 1 then tickWidth = 1 elseif tickWidth > 10 then tickWidth = 10 end
+    local combatOnly = ResolveSpecOverrideKey(resource, specID, "continuousTickCombatOnly") or false
+    return true, mode, entries, tickWidth, combatOnly
 end
 
 local function SupportsResourceAuraStackMode(powerType)
@@ -1991,8 +2203,17 @@ RB.IsUnitPowerSecret = IsUnitPowerSecret
 RB.IsUnitPowerMaxSecret = IsUnitPowerMaxSecret
 RB.GetSafeRGBColor = GetSafeRGBColor
 RB.GetSafeRGBAColor = GetSafeRGBAColor
+RB.MAX_RESOURCE_THRESHOLD_TICK_ENTRIES = MAX_RESOURCE_THRESHOLD_TICK_ENTRIES
+RB.ClampSegmentedThresholdValue = ClampSegmentedThresholdValue
+RB.ClampContinuousTickPercentValue = ClampContinuousTickPercentValue
+RB.ClampContinuousTickAbsoluteValue = ClampContinuousTickAbsoluteValue
+RB.GetNormalizedSegmentedThresholdEntriesFromConfig = GetNormalizedSegmentedThresholdEntriesFromConfig
+RB.GetNormalizedContinuousTickEntriesFromConfig = GetNormalizedContinuousTickEntriesFromConfig
 RB.GetSegmentedThresholdConfig = GetSegmentedThresholdConfig
+RB.GetSegmentedThresholdEntriesConfig = GetSegmentedThresholdEntriesConfig
+RB.GetSegmentedThresholdColorForValue = GetSegmentedThresholdColorForValue
 RB.GetContinuousTickConfig = GetContinuousTickConfig
+RB.GetContinuousTickEntriesConfig = GetContinuousTickEntriesConfig
 RB.SupportsResourceAuraStackMode = SupportsResourceAuraStackMode
 RB.IsResourceEnabled = IsResourceEnabled
 RB.IsSegmentedTextResource = IsSegmentedTextResource
