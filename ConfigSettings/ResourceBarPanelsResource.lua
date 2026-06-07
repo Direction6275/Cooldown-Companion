@@ -2075,7 +2075,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     container:AddChild(segmentedSmoothingDrop)
     CreateInfoButton(segmentedSmoothingDrop.frame, segmentedSmoothingDrop.label, "LEFT", "RIGHT", 4, 0, {
         "Segmented Smoothing",
-        {"Controls whether segmented resource bars and segmented or overlay resource custom bars animate smoothly or snap between segment values.", 1, 1, 1, true},
+        {"Controls whether segmented resource bars and segmented or overlay custom bars animate smoothly or snap between segment values.", 1, 1, 1, true},
         " ",
         {"Continuous resources and continuous custom bars are not affected.", 1, 1, 1, true},
     }, segmentedSmoothingDrop)
