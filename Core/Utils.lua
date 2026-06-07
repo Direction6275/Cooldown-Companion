@@ -32,6 +32,8 @@ local statusBarTimerDirection = Enum and Enum.StatusBarTimerDirection
 ST.STATUS_BAR_INTERPOLATION_SMOOTH = statusBarInterpolation and statusBarInterpolation.ExponentialEaseOut
 ST.STATUS_BAR_TIMER_DIRECTION_ELAPSED = statusBarTimerDirection and statusBarTimerDirection.ElapsedTime or 0
 ST.STATUS_BAR_TIMER_DIRECTION_REMAINING = statusBarTimerDirection and statusBarTimerDirection.RemainingTime or 1
+ST.SEGMENTED_SMOOTHING_ON = "on"
+ST.SEGMENTED_SMOOTHING_OFF = "off"
 
 -- Shared edge anchor spec: {point1, relPoint1, point2, relPoint2, x1sign, y1sign, x2sign, y2sign}
 -- Signs: 0 = zero offset, 1 = +size, -1 = -size
@@ -104,6 +106,9 @@ function ST.SetStatusBarImmediateValue(statusBar, value)
 
     ST.ClearStatusBarMotion(statusBar)
     statusBar:SetValue(value)
+    if statusBar.SetToTargetValue then
+        statusBar:SetToTargetValue()
+    end
     return true
 end
 
@@ -133,6 +138,20 @@ function ST.SetStatusBarSmoothValue(statusBar, value)
         statusBar:SetValue(value)
     end
     return true
+end
+
+function ST.NormalizeSegmentedSmoothing(value)
+    if value == ST.SEGMENTED_SMOOTHING_OFF or value == false then
+        return ST.SEGMENTED_SMOOTHING_OFF
+    end
+    return ST.SEGMENTED_SMOOTHING_ON
+end
+
+function ST.SetStatusBarSegmentedValue(statusBar, value, segmentedSmoothing)
+    if ST.NormalizeSegmentedSmoothing(segmentedSmoothing) == ST.SEGMENTED_SMOOTHING_OFF then
+        return ST.SetStatusBarImmediateValue(statusBar, value)
+    end
+    return ST.SetStatusBarSmoothValue(statusBar, value)
 end
 
 function ST.SetStatusBarTimerDuration(statusBar, durationObj, direction)

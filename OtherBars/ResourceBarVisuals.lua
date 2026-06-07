@@ -11,7 +11,7 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
-local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
+local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
 
 local math_floor = math.floor
 local math_min = math.min
@@ -402,13 +402,14 @@ local function ApplyResourceAuraStackSegments(holder, settings, stackValue, maxS
     local auraSegments = EnsureResourceAuraStackSegments(holder, settings)
     if not auraSegments then return end
 
+    local segmentedSmoothing = RB.GetResourceSegmentedSmoothing(settings)
     local count = #auraSegments
     for i = 1, count do
         local seg = auraSegments[i]
         local segMin = ((i - 1) * maxStacks) / count
         local segMax = (i * maxStacks) / count
         SetStatusBarSmoothRange(seg, segMin, segMax)
-        SetStatusBarSmoothValue(seg, stackValue)
+        SetStatusBarSegmentedValue(seg, stackValue, segmentedSmoothing)
         seg:SetAlpha(1)
         seg:SetStatusBarColor(color[1], color[2], color[3], 1)
         seg:Show()

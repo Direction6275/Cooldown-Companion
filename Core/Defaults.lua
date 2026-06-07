@@ -456,6 +456,7 @@ local defaults = {
             borderColor = { 0, 0, 0, 1 },
             borderSize = 1,
             borderRenderMode = "custom",
+            segmentedSmoothing = "on",
             segmentGap = 4,
             hideManaForNonHealer = true,
             resources = {

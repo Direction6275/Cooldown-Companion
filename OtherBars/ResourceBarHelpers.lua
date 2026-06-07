@@ -47,6 +47,7 @@ local RESOURCE_DISPLAY_PROFILE_KEYS = {
     "borderColor",
     "borderSize",
     "borderRenderMode",
+    "segmentedSmoothing",
 }
 
 local RESOURCE_TEXT_DISPLAY_KEYS = {
@@ -1456,6 +1457,7 @@ local function SeedResourceDisplayProfileFromGlobal(profile, settings)
     if profile.borderSize == nil then profile.borderSize = 1 end
     if profile.borderRenderMode == nil then profile.borderRenderMode = ST.BORDER_RENDER_MODE_CUSTOM end
     if profile.classBarBrightness == nil then profile.classBarBrightness = 1.3 end
+    profile.segmentedSmoothing = ST.NormalizeSegmentedSmoothing(profile.segmentedSmoothing)
     return profile
 end
 
@@ -1482,6 +1484,11 @@ local function GetResourceDisplayValue(settings, key, fallback)
         return settings[key]
     end
     return fallback
+end
+
+local function GetResourceSegmentedSmoothing(settings, specID)
+    local profile = GetSpecResourceDisplayProfile(settings, specID)
+    return ST.NormalizeSegmentedSmoothing(profile and profile.segmentedSmoothing or nil)
 end
 
 local function GetResourceDisplayConfig(settings, powerType)
@@ -2107,6 +2114,7 @@ RB.GetSpecLayoutOrder = GetSpecLayoutOrder
 RB.SeedResourceLayoutFromGlobal = SeedResourceLayoutFromGlobal
 RB.GetSpecResourceDisplayProfile = GetSpecResourceDisplayProfile
 RB.GetResourceDisplayValue = GetResourceDisplayValue
+RB.GetResourceSegmentedSmoothing = GetResourceSegmentedSmoothing
 RB.GetResourceDisplayConfig = GetResourceDisplayConfig
 RB.GetResourceSpecOverrideTable = GetResourceSpecOverrideTable
 RB.RESOURCE_TEXT_DISPLAY_KEYS = RESOURCE_TEXT_DISPLAY_KEYS

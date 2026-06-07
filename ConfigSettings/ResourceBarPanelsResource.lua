@@ -2060,6 +2060,26 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         container:AddChild(brightSlider)
     end
 
+    local segmentedSmoothingDrop = AceGUI:Create("Dropdown")
+    segmentedSmoothingDrop:SetLabel("Segmented Smoothing")
+    segmentedSmoothingDrop:SetList({
+        [ST.SEGMENTED_SMOOTHING_ON] = "On",
+        [ST.SEGMENTED_SMOOTHING_OFF] = "Off",
+    }, { ST.SEGMENTED_SMOOTHING_ON, ST.SEGMENTED_SMOOTHING_OFF })
+    segmentedSmoothingDrop:SetValue(ST.NormalizeSegmentedSmoothing(displayProfile.segmentedSmoothing))
+    segmentedSmoothingDrop:SetFullWidth(true)
+    segmentedSmoothingDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        displayProfile.segmentedSmoothing = ST.NormalizeSegmentedSmoothing(val)
+        CooldownCompanion:ApplyResourceBars()
+    end)
+    container:AddChild(segmentedSmoothingDrop)
+    CreateInfoButton(segmentedSmoothingDrop.frame, segmentedSmoothingDrop.label, "LEFT", "RIGHT", 4, 0, {
+        "Segmented Smoothing",
+        {"Controls whether segmented resource bars and segmented or overlay resource custom bars animate smoothly or snap between segment values.", 1, 1, 1, true},
+        " ",
+        {"Continuous resources and continuous custom bars are not affected.", 1, 1, 1, true},
+    }, segmentedSmoothingDrop)
+
     -- Resource Background Color
     AddColorPicker(container, displayProfile, "backgroundColor", "Resource Background Color", { 0, 0, 0, 0.5 }, true, applyBars)
 
