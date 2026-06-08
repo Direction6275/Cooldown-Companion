@@ -530,15 +530,12 @@ function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
         return semanticPandemic
     end
 
-    if owner._pandemicAuraUpdated then
-        ClearPandemicFallbackState(owner)
-        return false
-    end
-
     local pandemicIcon = viewerFrame.PandemicIcon
     if pandemicIcon and pandemicIcon:IsVisible() then
         ClearPandemicFallbackState(owner)
         return true
+    elseif owner._pandemicAuraUpdated then
+        ClearPandemicFallbackState(owner)
     elseif owner._pandemicGraceSuppressed then
         ClearPandemicFallbackState(owner)
     elseif owner._inPandemic then
