@@ -24,10 +24,11 @@ local UNIT_FRAME_OPTIONS = {
     blizzard     = "Blizzard Default",
     uuf          = "UnhaltedUnitFrames",
     elvui        = "ElvUI",
+    ellesmere    = "EllesmereUI Unit Frames",
     msuf         = "Midnight Simple Unit Frames",
     custom       = "Custom",
 }
-local UNIT_FRAME_ORDER = { "", "blizzard", "uuf", "elvui", "msuf", "custom" }
+local UNIT_FRAME_ORDER = { "", "blizzard", "uuf", "elvui", "ellesmere", "msuf", "custom" }
 
 local function ValidateCustomUnitFrameName(frameName)
     if not frameName or frameName == "" then
