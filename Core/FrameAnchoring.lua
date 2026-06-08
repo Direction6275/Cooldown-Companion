@@ -192,29 +192,78 @@ local function ResolveUnitFrameFamily(family)
     return _G[family.player], _G[family.target]
 end
 
-local function ResolveUnitFrameProvider(provider)
+local function IsAutoDetectableUnitFrame(frame)
+    if not frame then
+        return false
+    end
+
+    if frame.GetAttribute then
+        local unit = frame:GetAttribute("unit")
+        if issecretvalue(unit) then
+            return false
+        end
+        if type(unit) == "string" and unit ~= "" then
+            return true
+        end
+    end
+
+    if frame.IsShown then
+        local shown = frame:IsShown()
+        if issecretvalue(shown) then
+            return false
+        end
+        return shown == true
+    end
+
+    return false
+end
+
+local function HasAutoDetectableUnitFrame(playerFrame, targetFrame)
+    return IsAutoDetectableUnitFrame(playerFrame) or IsAutoDetectableUnitFrame(targetFrame)
+end
+
+local function ResolveUnitFrameProvider(provider, options)
     if not provider then
         return nil, nil
     end
+    options = options or {}
 
     local families = provider.families
     if type(families) == "table" then
+        local fallbackPlayerFrame, fallbackTargetFrame
         for _, family in ipairs(families) do
             local playerFrame, targetFrame = ResolveUnitFrameFamily(family)
             if playerFrame or targetFrame then
-                return playerFrame, targetFrame
+                if not fallbackPlayerFrame and not fallbackTargetFrame then
+                    fallbackPlayerFrame, fallbackTargetFrame = playerFrame, targetFrame
+                end
+                if HasAutoDetectableUnitFrame(playerFrame, targetFrame) then
+                    return playerFrame, targetFrame
+                end
             end
+        end
+        if not options.requireAutoDetectable then
+            return fallbackPlayerFrame, fallbackTargetFrame
         end
         return nil, nil
     end
 
-    return ResolveUnitFrameFamily(provider)
+    local playerFrame, targetFrame = ResolveUnitFrameFamily(provider)
+    if options.requireAutoDetectable and not HasAutoDetectableUnitFrame(playerFrame, targetFrame) then
+        return nil, nil
+    end
+    return playerFrame, targetFrame
 end
 
 --- Auto-detect which unit frame addon is active.
 local function AutoDetectUnitFrameAddon()
-    local ellesmerePlayerFrame, ellesmereTargetFrame = ResolveUnitFrameProvider(UNIT_FRAME_PROVIDERS.ellesmere)
-    if ellesmerePlayerFrame or ellesmereTargetFrame then return "ellesmere" end
+    local ellesmerePlayerFrame, ellesmereTargetFrame = ResolveUnitFrameProvider(
+        UNIT_FRAME_PROVIDERS.ellesmere,
+        { requireAutoDetectable = true }
+    )
+    if ellesmerePlayerFrame or ellesmereTargetFrame then
+        return "ellesmere"
+    end
     if _G["ElvUF_Player"] then return "elvui" end
     if _G["UUF_Player"] then return "uuf" end
     if _G["MSUF_player"] then return "msuf" end
@@ -366,6 +415,10 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
     if not playerFrame and not targetFrame then
         self:RevertFrameAnchoring()
         return
+    end
+
+    if isApplied and (playerFrameRef ~= playerFrame or targetFrameRef ~= targetFrame) then
+        self:RevertFrameAnchoring()
     end
 
     if (playerFrame and WouldFrameDependOn(groupFrame, playerFrame))
