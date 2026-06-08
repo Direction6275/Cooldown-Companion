@@ -1,7 +1,7 @@
 --[[
     CooldownCompanion - FrameAnchoring
-    Anchors player and target unit frames (Blizzard, ElvUI, UnhaltedUnitFrames,
-    or custom) to icon groups.
+    Anchors player and target unit frames (Blizzard, ElvUI, EllesmereUI,
+    UnhaltedUnitFrames, Midnight Simple Unit Frames, or custom) to icon groups.
 
     Some unit frame addons (e.g., UnhaltedUnitFrames) use secure templates,
     making their frames protected during combat. All positioning (SetPoint/
@@ -56,10 +56,16 @@ end
 -- Constants
 ------------------------------------------------------------------------
 
-local FRAME_PAIRS = {
+local UNIT_FRAME_PROVIDERS = {
     blizzard = { player = "PlayerFrame",  target = "TargetFrame" },
     uuf      = { player = "UUF_Player",   target = "UUF_Target" },
     elvui    = { player = "ElvUF_Player",  target = "ElvUF_Target" },
+    ellesmere = {
+        families = {
+            { player = "EllesmereUIUnitFrames_Player",  target = "EllesmereUIUnitFrames_Target" },
+            { player = "EUIStandaloneUnitFrames_Player", target = "EUIStandaloneUnitFrames_Target" },
+        },
+    },
     msuf     = { player = "MSUF_player",  target = "MSUF_target" },
 }
 
@@ -179,8 +185,36 @@ local function InstallInheritedAlphaSetHook(frame)
     alphaSetHooksInstalled[frame] = true
 end
 
+local function ResolveUnitFrameFamily(family)
+    if not family then
+        return nil, nil
+    end
+    return _G[family.player], _G[family.target]
+end
+
+local function ResolveUnitFrameProvider(provider)
+    if not provider then
+        return nil, nil
+    end
+
+    local families = provider.families
+    if type(families) == "table" then
+        for _, family in ipairs(families) do
+            local playerFrame, targetFrame = ResolveUnitFrameFamily(family)
+            if playerFrame or targetFrame then
+                return playerFrame, targetFrame
+            end
+        end
+        return nil, nil
+    end
+
+    return ResolveUnitFrameFamily(provider)
+end
+
 --- Auto-detect which unit frame addon is active.
 local function AutoDetectUnitFrameAddon()
+    local ellesmerePlayerFrame, ellesmereTargetFrame = ResolveUnitFrameProvider(UNIT_FRAME_PROVIDERS.ellesmere)
+    if ellesmerePlayerFrame or ellesmereTargetFrame then return "ellesmere" end
     if _G["ElvUF_Player"] then return "elvui" end
     if _G["UUF_Player"] then return "uuf" end
     if _G["MSUF_player"] then return "msuf" end
@@ -219,10 +253,9 @@ local function GetUnitFrames(settings)
         playerFrame = _G["MSUF_player"] or (unitFrames and unitFrames.player)
         targetFrame = _G["MSUF_target"] or (unitFrames and unitFrames.target)
     else
-        local pair = FRAME_PAIRS[addon]
-        if pair then
-            playerFrame = _G[pair.player]
-            targetFrame = _G[pair.target]
+        local provider = UNIT_FRAME_PROVIDERS[addon]
+        if provider then
+            playerFrame, targetFrame = ResolveUnitFrameProvider(provider)
         end
     end
 
