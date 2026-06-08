@@ -59,17 +59,28 @@ local function FindSelectedCustomBar()
 end
 
 local function GetCustomBarEntryTabs(entry)
+    local isEquipmentSlotCustomBar = ST._RB
+        and ST._RB.IsEquipmentSlotCustomBarConfig
+        and ST._RB.IsEquipmentSlotCustomBarConfig(entry) == true
+
     local tabs = {
         { value = "appearance", text = "Appearance" },
-        { value = "indicators", text = "Indicators" },
     }
-
-    tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
+    if not isEquipmentSlotCustomBar then
+        tabs[#tabs + 1] = { value = "indicators", text = "Indicators" }
+        tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
+    end
     tabs[#tabs + 1] = { value = "loadconditions", text = "Load Conditions" }
     return tabs
 end
 
 local function IsCustomBarEntryTabAllowed(entry, tab)
+    if (tab == "indicators" or tab == "soundalerts")
+        and ST._RB
+        and ST._RB.IsEquipmentSlotCustomBarConfig
+        and ST._RB.IsEquipmentSlotCustomBarConfig(entry) == true then
+        return false
+    end
     if tab == "appearance" or tab == "indicators" or tab == "soundalerts" or tab == "loadconditions" then
         return true
     end

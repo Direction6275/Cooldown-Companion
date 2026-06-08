@@ -18,6 +18,7 @@ function RB.CreateResourceBarLifecycleModule(deps)
     local GetEffectiveAnchorGroupId = deps.GetEffectiveAnchorGroupId or RB.GetEffectiveAnchorGroupId
     local GetResourcePrimaryLength = deps.GetResourcePrimaryLength or RB.GetResourcePrimaryLength
     local GetResolvedCustomAuraBarAuraUnit = deps.GetResolvedCustomAuraBarAuraUnit or RB.GetResolvedCustomAuraBarAuraUnit
+    local IsEquipmentSlotCustomBarConfig = deps.IsEquipmentSlotCustomBarConfig or RB.IsEquipmentSlotCustomBarConfig
     local GetLastAppliedPrimaryLength = deps.GetLastAppliedPrimaryLength
     local UpdateMWMaxStacks = deps.UpdateMWMaxStacks
     local RefreshEventDrivenCustomAuraBarsForUnit = deps.RefreshEventDrivenCustomAuraBarsForUnit
@@ -42,6 +43,9 @@ function RB.CreateResourceBarLifecycleModule(deps)
 
     local function IsCustomBarAuraRuntimeTracked(barInfo, cabConfig)
         if not (barInfo and cabConfig) then return false end
+        if IsEquipmentSlotCustomBarConfig and IsEquipmentSlotCustomBarConfig(cabConfig) then
+            return false
+        end
         return barInfo.barType == "custom_continuous"
             or barInfo.barType == "custom_segmented"
             or barInfo.barType == "custom_overlay"
@@ -142,28 +146,29 @@ function RB.CreateResourceBarLifecycleModule(deps)
                         for _, barInfo in ipairs(resourceBarFrames) do
                             local bar = barInfo and barInfo.frame
                             local cabConfig = barInfo and barInfo.cabConfig
-                            local configUnit = cabConfig and GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
                             if IsCustomBarAuraRuntimeTracked(barInfo, cabConfig)
-                                and bar
-                                and (bar._auraUnit == unit or configUnit == unit) then
-                                if removedIDSet
-                                    and bar._auraInstanceID
-                                    and bar._auraUnit == unit
-                                    and removedIDSet[bar._auraInstanceID] then
-                                    ClearCustomBarAuraRuntime(bar, configUnit)
-                                    bar._auraEventRemoved = true
-                                end
-                                if updatedIDSet
-                                    and bar._auraInstanceID
-                                    and bar._auraUnit == unit
-                                    and updatedIDSet[bar._auraInstanceID] then
-                                    bar._inPandemic = false
-                                    bar._pandemicGraceStart = nil
-                                    bar._pandemicGraceSuppressed = true
-                                end
-                                if unit == "target" and bar._targetSwitchAt then
-                                    bar._targetSwitchDataReceived = true
-                                    targetSwitchDataReceived = true
+                                and bar then
+                                local configUnit = GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
+                                if bar._auraUnit == unit or configUnit == unit then
+                                    if removedIDSet
+                                        and bar._auraInstanceID
+                                        and bar._auraUnit == unit
+                                        and removedIDSet[bar._auraInstanceID] then
+                                        ClearCustomBarAuraRuntime(bar, configUnit)
+                                        bar._auraEventRemoved = true
+                                    end
+                                    if updatedIDSet
+                                        and bar._auraInstanceID
+                                        and bar._auraUnit == unit
+                                        and updatedIDSet[bar._auraInstanceID] then
+                                        bar._inPandemic = false
+                                        bar._pandemicGraceStart = nil
+                                        bar._pandemicGraceSuppressed = true
+                                    end
+                                    if unit == "target" and bar._targetSwitchAt then
+                                        bar._targetSwitchDataReceived = true
+                                        targetSwitchDataReceived = true
+                                    end
                                 end
                             end
                         end

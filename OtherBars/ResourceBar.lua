@@ -1849,8 +1849,9 @@ function CooldownCompanion:ApplyResourceBars(opts)
     -- Append enabled Custom Bars
     local customBars = GetSpecCustomAuraBars(settings)
     local customBarLoadDefaults = CooldownCompanion:GetLocalLoadConditionDefaults()
+    local isCustomBarRuntimeEligible = RB.IsCustomBarRuntimeEligible
     for i, cab in ipairs(customBars) do
-        if cab and cab.enabled and cab.spellID
+        if cab and cab.enabled and (isCustomBarRuntimeEligible and isCustomBarRuntimeEligible(cab) or cab.spellID)
             and CooldownCompanion:IsTalentConditionMet(cab)
             and CooldownCompanion:EvaluateLoadConditions(cab.loadConditions, customBarLoadDefaults) then
             table.insert(filtered, {
@@ -2552,9 +2553,15 @@ function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
             barType = barInfo.barType,
             shown = barInfo.frame and barInfo.frame:IsShown() or false,
         }
+        if barInfo.cabConfig then
+            entry.entryType = barInfo.cabConfig.entryType
+        end
         if barInfo.cabConfig and barInfo.cabConfig.spellID then
             entry.spellID = tonumber(barInfo.cabConfig.spellID) or barInfo.cabConfig.spellID
             entry.hideWhenInactive = barInfo.cabConfig.hideWhenInactive == true
+        elseif barInfo.cabConfig and barInfo.cabConfig.entryType == "equipmentSlot" then
+            entry.itemSlot = barInfo.cabConfig.itemSlot
+            entry.itemSlotKind = barInfo.cabConfig.itemSlotKind
         end
         info[#info + 1] = entry
     end

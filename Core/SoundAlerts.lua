@@ -359,6 +359,11 @@ function CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, s
 end
 
 function CooldownCompanion:GetScopedValidSoundAlertEventsForCustomBar(customBar)
+    if ST._RB
+        and ST._RB.IsEquipmentSlotCustomBarConfig
+        and ST._RB.IsEquipmentSlotCustomBarConfig(customBar) == true then
+        return nil
+    end
     if type(customBar) ~= "table" or not customBar.spellID then
         return nil
     end
@@ -409,6 +414,12 @@ end
 
 function CooldownCompanion:GetCustomBarSoundAlertConfig(customBar, createIfMissing)
     if type(customBar) ~= "table" then return nil end
+    if ST._RB
+        and ST._RB.IsEquipmentSlotCustomBarConfig
+        and ST._RB.IsEquipmentSlotCustomBarConfig(customBar) == true then
+        customBar.soundAlerts = nil
+        return nil
+    end
     local cfg = customBar.soundAlerts
     if type(cfg) ~= "table" then
         if not createIfMissing then return nil end

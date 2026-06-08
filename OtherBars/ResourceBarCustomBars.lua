@@ -31,6 +31,8 @@ end
 
 local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
 local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
+local IsEquipmentSlotCustomBarConfig = RB.IsEquipmentSlotCustomBarConfig
+local BuildEquipmentSlotCustomBarButtonData = RB.BuildEquipmentSlotCustomBarButtonData
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
 local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
 local NormalizeCustomAuraStackTextFormat = RB.NormalizeCustomAuraStackTextFormat
@@ -143,6 +145,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
     local function ResolveSpellCustomBarAuraState(barInfo)
         local cabConfig = barInfo and barInfo.cabConfig
+        if IsEquipmentSlotCustomBarConfig and IsEquipmentSlotCustomBarConfig(cabConfig) then
+            return nil
+        end
         local bar = barInfo and barInfo.frame
         local buttonData, spellID = BuildCustomBarAuraButtonData(cabConfig, false)
         if not (buttonData and spellID and bar) then
@@ -504,10 +509,144 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         )
     end
 
+    local function EvaluateEquipmentSlotCustomBarCooldown(cabConfig, bar)
+        local result = {
+            state = ST.CooldownLogic.STATE_READY,
+            source = "equipment-slot-ready",
+            fetchOk = false,
+            itemID = nil,
+            itemCooldownStart = 0,
+            itemCooldownDuration = 0,
+            deferred = false,
+            isOnGCD = false,
+        }
+        local buttonData = BuildEquipmentSlotCustomBarButtonData and BuildEquipmentSlotCustomBarButtonData(cabConfig)
+        if not buttonData then
+            result.source = "equipment-slot-invalid"
+            return result
+        end
+
+        local effectiveItem = CooldownCompanion.ResolveEffectiveItem
+            and CooldownCompanion.ResolveEffectiveItem(buttonData, { requestLoad = true }) or nil
+        result.effectiveItem = effectiveItem
+        result.itemID = effectiveItem and effectiveItem.itemID or nil
+        if not (effectiveItem and effectiveItem.trackable and effectiveItem.itemID) then
+            result.source = "equipment-slot-" .. tostring(effectiveItem and effectiveItem.reason or "unavailable")
+            if bar then
+                bar._customCooldownItemID = nil
+                bar._customCooldownEquipmentSlotTrackable = false
+            end
+            return result
+        end
+
+        local startTime, duration, enableCooldownTimer = C_Item.GetItemCooldown(effectiveItem.itemID)
+        startTime = tonumber(startTime) or 0
+        duration = tonumber(duration) or 0
+        result.fetchOk = true
+        result.itemCooldownStart = startTime
+        result.itemCooldownDuration = duration
+        result.enableCooldownTimer = enableCooldownTimer
+        if bar then
+            bar._customCooldownItemID = effectiveItem.itemID
+            bar._customCooldownEquipmentSlotTrackable = true
+        end
+
+        if not enableCooldownTimer and startTime > 0 then
+            result.state = ST.CooldownLogic.STATE_COOLDOWN
+            result.source = "equipment-slot-deferred"
+            result.itemCooldownStart = 0
+            result.itemCooldownDuration = 0
+            result.deferred = true
+            return result
+        end
+
+        local itemGCDOnly = ST.CooldownLogic.IsItemGCDOnly(startTime, duration, CooldownCompanion._gcdInfo)
+        result.isOnGCD = itemGCDOnly == true
+        if duration > 0 and not itemGCDOnly then
+            result.state = ST.CooldownLogic.STATE_COOLDOWN
+            result.source = "equipment-slot-cooldown"
+        else
+            result.source = itemGCDOnly and "equipment-slot-gcd" or "equipment-slot-ready"
+            result.itemCooldownStart = 0
+            result.itemCooldownDuration = 0
+        end
+        return result
+    end
+
+    local function UpdateEquipmentSlotCustomCooldownBar(barInfo)
+        local cabConfig = barInfo and barInfo.cabConfig
+        local bar = barInfo and barInfo.frame
+        if not (cabConfig and bar) then return end
+
+        local cooldownResult = EvaluateEquipmentSlotCustomBarCooldown(cabConfig, bar)
+        local cooldownActive = cooldownResult
+            and cooldownResult.state == ST.CooldownLogic.STATE_COOLDOWN
+        local barColor = cabConfig.barColor or {0.5, 0.5, 1, 1}
+        local cooldownColor = cabConfig.barCooldownColor or {0.6, 0.13, 0.18, 1}
+        local fillColor = cooldownActive and cooldownColor or barColor
+
+        bar._auraActive = nil
+        bar._auraInstanceID = nil
+        bar._auraUnit = nil
+        bar._inPandemic = nil
+        if barInfo then
+            barInfo._sndInitialized = nil
+            barInfo._sndTransitionOptions = nil
+        end
+        ClearCustomAuraBarIndicatorState(barInfo, false)
+        ClearResourceAuraVisuals(bar)
+
+        SetStatusBarSmoothRange(bar, 0, 1)
+        bar:SetStatusBarColor(fillColor[1], fillColor[2], fillColor[3], fillColor[4] ~= nil and fillColor[4] or 1)
+        local now = GetTime()
+        if cooldownActive and cooldownResult.itemCooldownDuration and cooldownResult.itemCooldownDuration > 0 then
+            local elapsed = now - (cooldownResult.itemCooldownStart or 0)
+            local fraction = elapsed / cooldownResult.itemCooldownDuration
+            if fraction < 0 then fraction = 0 end
+            if fraction > 1 then fraction = 1 end
+            SetStatusBarSmoothValue(bar, fraction)
+        elseif cooldownActive then
+            SetStatusBarImmediateValue(bar, 0)
+        else
+            SetStatusBarImmediateValue(bar, 1)
+        end
+
+        if bar.thresholdOverlay then
+            SetStatusBarImmediateValue(bar.thresholdOverlay, 0)
+            bar.thresholdOverlay:Hide()
+        end
+
+        if bar.text and bar.text:IsShown() then
+            if cooldownActive and cooldownResult.itemCooldownDuration and cooldownResult.itemCooldownDuration > 0 then
+                local remaining = (cooldownResult.itemCooldownStart or 0)
+                    + cooldownResult.itemCooldownDuration
+                    - now
+                if remaining and remaining > 0 then
+                    bar.text:SetText(FormatTime(remaining, cabConfig))
+                else
+                    bar.text:SetText("")
+                end
+            else
+                bar.text:SetText("")
+            end
+        end
+        if bar.stackText and bar.stackText:IsShown() then
+            bar.stackText:SetText("")
+        end
+        if barInfo._maxStacksIndicator then
+            SetStatusBarImmediateValue(barInfo._maxStacksIndicator, 0)
+        end
+    end
+
     function RB.UpdateCustomCooldownBar(barInfo)
         local cabConfig = barInfo and barInfo.cabConfig
         local bar = barInfo and barInfo.frame
-        if not (cabConfig and cabConfig.spellID and bar) then return end
+        if not (cabConfig and bar) then return end
+        if IsEquipmentSlotCustomBarConfig and IsEquipmentSlotCustomBarConfig(cabConfig) then
+            UpdateEquipmentSlotCustomCooldownBar(barInfo)
+            return
+        end
+        if not cabConfig.spellID then return end
 
         local cooldownResult = EntryRuntime.EvaluateSpellCooldownStateForCustomBar(cabConfig, bar)
         local durationObj = cooldownResult and cooldownResult.renderDurationObj
@@ -712,7 +851,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
     end
 
     local function GetHiddenCustomAuraWakeUnit(cabConfig)
-        if not cabConfig or not cabConfig.spellID then
+        if not cabConfig
+            or not cabConfig.spellID
+            or (IsEquipmentSlotCustomBarConfig and IsEquipmentSlotCustomBarConfig(cabConfig)) then
             return nil
         end
         return EnsureCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
@@ -741,6 +882,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
 
         local isTrackedSpellBar = barInfo.barType == "custom_cooldown"
+            and not (IsEquipmentSlotCustomBarConfig and IsEquipmentSlotCustomBarConfig(cabConfig))
             and cabConfig.auraTracking == true
         local isActiveAuraBar = barInfo.barType == "custom_continuous"
             and cabConfig.trackingMode == "active"
@@ -893,7 +1035,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
     local function StyleCustomAuraBar(barInfo, cabConfig)
         local barColor = cabConfig.barColor or {0.5, 0.5, 1}
         local isSpellCustomBar = RB.IsSpellCustomBarConfig(cabConfig)
-        local thresholdEnabled = (not isSpellCustomBar) and IsCustomAuraMaxThresholdEnabled(cabConfig)
+        local isEquipmentSlotCustomBar = IsEquipmentSlotCustomBarConfig and IsEquipmentSlotCustomBarConfig(cabConfig)
+        local isCooldownCustomBar = isSpellCustomBar or isEquipmentSlotCustomBar
+        local thresholdEnabled = (not isCooldownCustomBar) and IsCustomAuraMaxThresholdEnabled(cabConfig)
         local thresholdColor = GetCustomAuraMaxThresholdColor(cabConfig)
 
         if barInfo.barType == "custom_continuous" or barInfo.barType == "custom_cooldown" then
@@ -907,14 +1051,16 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
 
             -- Determine visibility for both text elements
-            local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
+            local spellAuraStackDisplay = (not isEquipmentSlotCustomBar) and RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
             local spellAuraStackActive = spellAuraStackDisplay and barInfo.barType ~= "custom_cooldown"
-            local isActive = isSpellCustomBar and not spellAuraStackActive
-                or ((not isSpellCustomBar) and cabConfig.trackingMode == "active")
+            local isActive = isCooldownCustomBar and not spellAuraStackActive
+                or ((not isCooldownCustomBar) and cabConfig.trackingMode == "active")
             local showDuration = cabConfig.showDurationText == true and not spellAuraStackActive
             local showStack = cabConfig.showStackText
             if isSpellCustomBar then
                 showStack = showStack == true
+            elseif isEquipmentSlotCustomBar then
+                showStack = false
             elseif showStack == nil then
                 -- Backwards compat: fall back to showText for stacks mode
                 if not isActive then
@@ -1074,20 +1220,22 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
         customBarId = customBarId or RB.EnsureCustomBarId(settings, cabConfig)
         local isSpellCustomBar = RB.IsSpellCustomBarConfig(cabConfig)
-        local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
+        local isEquipmentSlotCustomBar = IsEquipmentSlotCustomBarConfig and IsEquipmentSlotCustomBarConfig(cabConfig)
+        local isCooldownCustomBar = isSpellCustomBar or isEquipmentSlotCustomBar
+        local spellAuraStackDisplay = isSpellCustomBar and RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
         local spellAuraStackPresent = spellAuraStackDisplay and GetPreviewActive()
         if spellAuraStackDisplay and not spellAuraStackPresent and barInfo and barInfo.frame then
             local auraState = ResolveSpellCustomBarAuraState(barInfo)
             spellAuraStackPresent = auraState and auraState.ready == true and auraState.auraPresent == true
         end
         local spellAuraStackActive = spellAuraStackDisplay and spellAuraStackPresent
-        local isActive = (isSpellCustomBar and not spellAuraStackActive)
-            or ((not isSpellCustomBar) and cabConfig.trackingMode == "active")
-        local mode = isSpellCustomBar
+        local isActive = (isCooldownCustomBar and not spellAuraStackActive)
+            or ((not isCooldownCustomBar) and cabConfig.trackingMode == "active")
+        local mode = isCooldownCustomBar
             and (spellAuraStackActive and (cabConfig.displayMode or "segmented") or "continuous")
             or (isActive and "continuous" or (cabConfig.displayMode or "segmented"))
         local maxStacks = isActive and 1 or (cabConfig.maxStacks or 1)
-        local targetBarType = (isSpellCustomBar and not spellAuraStackActive)
+        local targetBarType = (isCooldownCustomBar and not spellAuraStackActive)
             and "custom_cooldown"
             or ("custom_" .. mode)
         local customOrientation = isVerticalLayout and "vertical" or "horizontal"
@@ -1228,7 +1376,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         StyleCustomAuraBar(barInfo, cabConfig)
 
         if cabConfig.maxStacksGlowEnabled then
-            if isSpellCustomBar then
+            if isCooldownCustomBar then
                 ClearMaxStacksIndicator(barInfo)
             else
                 EnsureMaxStacksIndicator(barInfo)

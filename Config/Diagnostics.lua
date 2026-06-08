@@ -867,6 +867,12 @@ local function FormatDiagnosticBugReportAsText(diag)
             if entry.spellID then
                 parts[#parts + 1] = "spellID=" .. tostring(entry.spellID)
             end
+            if entry.itemSlot then
+                parts[#parts + 1] = "itemSlot=" .. tostring(entry.itemSlot)
+                if entry.itemSlotKind then
+                    parts[#parts + 1] = "itemSlotKind=" .. tostring(entry.itemSlotKind)
+                end
+            end
             if entry.hideWhenInactive then
                 parts[#parts + 1] = "hideWhenInactive=true"
             end

@@ -50,6 +50,8 @@ local PrepareCustomAuraBar = RB.PrepareCustomAuraBar
 local EnsureCustomBarId = RB.EnsureCustomBarId
 local EnsureCustomBarLayout = RB.EnsureCustomBarLayout
 local GetCustomBarLayout = RB.GetCustomBarLayout
+local IsCustomBarRuntimeEligible = RB.IsCustomBarRuntimeEligible
+local IsEquipmentSlotCustomBarConfig = RB.IsEquipmentSlotCustomBarConfig
 local ApplyPreviewBarState = RB.ApplyPreviewBarState
 local GetMWMaxStacks = RB.GetMWMaxStacks
 local CreatePixelBorders = RB.CreatePixelBorders
@@ -855,10 +857,16 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
 
     if resourceBarsEnabled then
         for customIndex, customAura in ipairs(customBars or {}) do
-            if customAura and customAura.enabled and customAura.spellID then
+            if customAura and customAura.enabled and (IsCustomBarRuntimeEligible and IsCustomBarRuntimeEligible(customAura) or customAura.spellID) then
                 local customBarId = EnsureCustomBarId(rbSettings, customAura)
-                local spellInfo = C_Spell.GetSpellInfo(customAura.spellID)
-                local label = spellInfo and spellInfo.name or customAura.label or ("Custom Bar " .. customIndex)
+                local isEquipmentSlotCustomBar = IsEquipmentSlotCustomBarConfig
+                    and IsEquipmentSlotCustomBarConfig(customAura) == true
+                local spellInfo = (not isEquipmentSlotCustomBar) and C_Spell.GetSpellInfo(customAura.spellID) or nil
+                local label = isEquipmentSlotCustomBar
+                    and (RB.GetEquipmentSlotCustomBarDisplayName and RB.GetEquipmentSlotCustomBarDisplayName(customAura) or customAura.label)
+                    or spellInfo and spellInfo.name
+                    or customAura.label
+                    or ("Custom Bar " .. customIndex)
                 local slotName = "Custom Bar: " .. label
                 local function EnsureLayoutSlot()
                     return EnsureCustomBarLayout(rbSettings, nil, customBarId, 1000 + customIndex)
@@ -879,7 +887,11 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                     label = slotName,
                     shortLabel = GetShortLabel(label),
                     color = CloneColor(customAura.barColor, { 0.52, 0.64, 1.0, 1 }),
-                    icon = C_Spell.GetSpellTexture(customAura.spellID) or LAYOUT_PREVIEW_ICON_FALLBACK,
+                    icon = isEquipmentSlotCustomBar
+                        and ((RB.GetEquipmentSlotCustomBarIcon and RB.GetEquipmentSlotCustomBarIcon(customAura))
+                            or LAYOUT_PREVIEW_ICON_FALLBACK)
+                        or ((customAura.spellID and C_Spell.GetSpellTexture(customAura.spellID))
+                            or LAYOUT_PREVIEW_ICON_FALLBACK),
                     getPos = function()
                         local slot = GetCustomBarLayout(rbSettings, nil, customAura, false)
                         if isVerticalLayout then

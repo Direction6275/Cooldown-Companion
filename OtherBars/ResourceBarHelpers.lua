@@ -205,6 +205,8 @@ end
 
 local customBarContentFields = {
     "spellID",
+    "itemSlot",
+    "itemSlotKind",
     "trackingMode",
     "displayMode",
     "maxStacks",
@@ -302,7 +304,128 @@ local function IsConfiguredCustomBar(cab)
         )
 end
 
+local function ParseEquipmentSlotCustomBarStableKey(value)
+    if type(value) ~= "string" then
+        return nil
+    end
+    local slotKind, slotText = value:match("^equipmentSlot:([^:]+):([^:]+)$")
+    local itemSlot = tonumber(slotText)
+    if slotKind == CooldownCompanion.EQUIPMENT_SLOT_KIND_TRINKET
+        and (itemSlot == CooldownCompanion.TRINKET_SLOT_1 or itemSlot == CooldownCompanion.TRINKET_SLOT_2) then
+        return itemSlot, slotKind
+    end
+    return nil
+end
+
+local function IsValidEquipmentSlotCustomBarIdentity(cab)
+    if type(cab) ~= "table" then
+        return false
+    end
+    local itemSlot = tonumber(cab.itemSlot)
+    return cab.itemSlotKind == CooldownCompanion.EQUIPMENT_SLOT_KIND_TRINKET
+        and (itemSlot == CooldownCompanion.TRINKET_SLOT_1 or itemSlot == CooldownCompanion.TRINKET_SLOT_2)
+end
+
+local function ClearEquipmentSlotCustomBarInapplicableFields(cab)
+    cab.spellID = nil
+    cab.auraSpellID = nil
+    cab.auraTracking = nil
+    cab.auraUnit = nil
+    cab.auraUnitExplicit = nil
+    cab.trackingMode = nil
+    cab.displayMode = nil
+    cab.maxStacks = nil
+    cab.hasCharges = nil
+    cab.maxCharges = nil
+    cab.hideWhenInactive = nil
+    cab.hideWhileAuraActive = nil
+    cab.hideAuraActiveExceptPandemic = nil
+    cab.soundAlerts = nil
+    cab.showText = nil
+    cab.showStackText = nil
+    cab.stackTextFormat = nil
+    cab.stackTextFont = nil
+    cab.stackTextFontSize = nil
+    cab.stackTextFontOutline = nil
+    cab.stackTextFontColor = nil
+    cab.barChargeColor = nil
+    cab.thresholdColorEnabled = nil
+    cab.thresholdMaxColor = nil
+    cab.maxStacksGlowEnabled = nil
+    cab.maxStacksGlowStyle = nil
+    cab.maxStacksGlowColor = nil
+    cab.maxStacksGlowSize = nil
+    cab.maxStacksGlowSpeed = nil
+    cab.maxStacksGlowThickness = nil
+    cab.barAuraColor = nil
+    cab.barAuraEffect = nil
+    cab.barAuraEffectColor = nil
+    cab.barAuraEffectSize = nil
+    cab.barAuraEffectThickness = nil
+    cab.barAuraEffectSpeed = nil
+    cab.barAuraEffectLines = nil
+    cab.auraGlowCombatOnly = nil
+    cab.barAuraPulseEnabled = nil
+    cab.barAuraPulseSpeed = nil
+    cab.barAuraColorShiftEnabled = nil
+    cab.barAuraColorShiftSpeed = nil
+    cab.barAuraColorShiftColor = nil
+    cab.showPandemicGlow = nil
+    cab.barPandemicColor = nil
+    cab.pandemicBarEffect = nil
+    cab.pandemicBarEffectColor = nil
+    cab.pandemicBarEffectSize = nil
+    cab.pandemicBarEffectThickness = nil
+    cab.pandemicBarEffectSpeed = nil
+    cab.pandemicBarEffectLines = nil
+    cab.pandemicGlowCombatOnly = nil
+    cab.pandemicBarPulseEnabled = nil
+    cab.pandemicBarPulseSpeed = nil
+    cab.pandemicBarColorShiftEnabled = nil
+    cab.pandemicBarColorShiftSpeed = nil
+    cab.pandemicBarColorShiftColor = nil
+end
+
+local function NormalizeEquipmentSlotCustomBarConfig(cab)
+    if type(cab) ~= "table" then
+        return false
+    end
+
+    local stableSlot, stableKind = ParseEquipmentSlotCustomBarStableKey(cab.spellID)
+    if stableSlot then
+        cab.itemSlot = stableSlot
+        cab.itemSlotKind = stableKind
+    end
+
+    if cab.entryType == "equipmentSlot" or stableSlot then
+        local itemSlot = tonumber(cab.itemSlot)
+        cab.entryType = "equipmentSlot"
+        cab.itemSlot = itemSlot
+        cab.itemSlotKind = cab.itemSlotKind or CooldownCompanion.EQUIPMENT_SLOT_KIND_TRINKET
+        if not IsValidEquipmentSlotCustomBarIdentity(cab) then
+            return false
+        end
+        if not cab.label or cab.label == "" then
+            local buttonData = {
+                type = CooldownCompanion.EQUIPMENT_SLOT_TYPE,
+                itemSlot = itemSlot,
+                itemSlotKind = cab.itemSlotKind,
+            }
+            cab.label = CooldownCompanion.GetEquipmentSlotDisplayName
+                and CooldownCompanion.GetEquipmentSlotDisplayName(buttonData)
+                or ("Trinket Slot " .. (itemSlot == CooldownCompanion.TRINKET_SLOT_2 and "2" or "1"))
+        end
+        ClearEquipmentSlotCustomBarInapplicableFields(cab)
+        return true
+    end
+
+    return false
+end
+
 local function GetCustomBarEntryType(cab)
+    if NormalizeEquipmentSlotCustomBarConfig(cab) then
+        return "equipmentSlot"
+    end
     if type(cab) == "table" and cab.entryType == "spell" then
         return "spell"
     end
@@ -311,6 +434,64 @@ end
 
 local function IsSpellCustomBarConfig(cab)
     return GetCustomBarEntryType(cab) == "spell"
+end
+
+local function IsEquipmentSlotCustomBarConfig(cab)
+    return GetCustomBarEntryType(cab) == "equipmentSlot"
+end
+
+local function GetCustomBarSourceKind(cab)
+    return GetCustomBarEntryType(cab)
+end
+
+local function IsCustomBarRuntimeEligible(cab)
+    if type(cab) ~= "table" then
+        return false
+    end
+    if IsEquipmentSlotCustomBarConfig(cab) then
+        return true
+    end
+    return cab.spellID ~= nil
+end
+
+local function BuildEquipmentSlotCustomBarButtonData(cab)
+    if not IsEquipmentSlotCustomBarConfig(cab) then
+        return nil
+    end
+    local buttonData = {
+        type = CooldownCompanion.EQUIPMENT_SLOT_TYPE,
+        itemSlot = tonumber(cab.itemSlot),
+        itemSlotKind = cab.itemSlotKind,
+        name = cab.label,
+    }
+    if CooldownCompanion.IsEquipmentSlotEntry
+        and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+        return buttonData
+    end
+    return nil
+end
+
+local function GetEquipmentSlotCustomBarDisplayName(cab)
+    local buttonData = BuildEquipmentSlotCustomBarButtonData(cab)
+    if not buttonData then
+        return nil
+    end
+    local effectiveItem = CooldownCompanion.ResolveEffectiveItem
+        and CooldownCompanion.ResolveEffectiveItem(buttonData, { requestLoad = true }) or nil
+    return (effectiveItem and effectiveItem.itemName)
+        or (CooldownCompanion.GetEquipmentSlotDisplayName
+            and CooldownCompanion.GetEquipmentSlotDisplayName(buttonData))
+        or cab.label
+end
+
+local function GetEquipmentSlotCustomBarIcon(cab)
+    local buttonData = BuildEquipmentSlotCustomBarButtonData(cab)
+    if not buttonData then
+        return nil
+    end
+    local effectiveItem = CooldownCompanion.ResolveEffectiveItem
+        and CooldownCompanion.ResolveEffectiveItem(buttonData, { requestLoad = true }) or nil
+    return effectiveItem and effectiveItem.icon or 134400
 end
 
 local function GetCustomBarTrackingMode(cab, isSpellCustomBar)
@@ -332,6 +513,9 @@ end
 local function NormalizeCustomBarEntryType(cab)
     if type(cab) ~= "table" then
         return "aura"
+    end
+    if NormalizeEquipmentSlotCustomBarConfig(cab) then
+        return cab.entryType
     end
     cab.entryType = GetCustomBarEntryType(cab)
     return cab.entryType
@@ -1202,6 +1386,9 @@ local function HasExplicitCustomAuraBarAuraUnit(cabConfig)
 end
 
 local function GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID)
+    if IsEquipmentSlotCustomBarConfig(cabConfig) then
+        return nil
+    end
     local resolvedSpellID = spellID
     if resolvedSpellID == nil and type(cabConfig) == "table" then
         resolvedSpellID = cabConfig.spellID
@@ -1219,6 +1406,9 @@ local function GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID)
 end
 
 local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit, explicit)
+    if IsEquipmentSlotCustomBarConfig(cabConfig) then
+        return nil
+    end
     local resolvedSpellID = spellID
     if resolvedSpellID == nil and type(cabConfig) == "table" then
         resolvedSpellID = cabConfig.spellID
@@ -1246,6 +1436,9 @@ local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit, explicit)
 end
 
 local function RefreshCustomAuraBarAuraUnitForSpell(cabConfig, spellID)
+    if IsEquipmentSlotCustomBarConfig(cabConfig) then
+        return nil
+    end
     local resolvedSpellID = spellID
     if resolvedSpellID == nil and type(cabConfig) == "table" then
         resolvedSpellID = cabConfig.spellID
@@ -2096,6 +2289,14 @@ RB.EnsureCustomBarLayout = EnsureCustomBarLayout
 RB.IsConfiguredCustomBar = IsConfiguredCustomBar
 RB.GetCustomBarEntryType = GetCustomBarEntryType
 RB.IsSpellCustomBarConfig = IsSpellCustomBarConfig
+RB.IsEquipmentSlotCustomBarConfig = IsEquipmentSlotCustomBarConfig
+RB.GetCustomBarSourceKind = GetCustomBarSourceKind
+RB.IsCustomBarRuntimeEligible = IsCustomBarRuntimeEligible
+RB.ParseEquipmentSlotCustomBarStableKey = ParseEquipmentSlotCustomBarStableKey
+RB.NormalizeEquipmentSlotCustomBarConfig = NormalizeEquipmentSlotCustomBarConfig
+RB.BuildEquipmentSlotCustomBarButtonData = BuildEquipmentSlotCustomBarButtonData
+RB.GetEquipmentSlotCustomBarDisplayName = GetEquipmentSlotCustomBarDisplayName
+RB.GetEquipmentSlotCustomBarIcon = GetEquipmentSlotCustomBarIcon
 RB.GetCustomBarTrackingMode = GetCustomBarTrackingMode
 RB.IsSpellCustomBarAuraStackDisplay = IsSpellCustomBarAuraStackDisplay
 RB.IsValidCustomAuraUnit = IsValidCustomAuraUnit

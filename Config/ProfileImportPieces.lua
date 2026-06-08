@@ -14,6 +14,9 @@ local EMPTY_TABLE = {}
 local CUSTOM_BAR_CONTENT_FIELDS = {
     "name",
     "spellID",
+    "itemSlot",
+    "itemSlotKind",
+    "entryType",
     "auraSpellID",
     "resourceKey",
     "width",

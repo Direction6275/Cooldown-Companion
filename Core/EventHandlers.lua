@@ -64,6 +64,14 @@ function CooldownCompanion:RefreshEquipmentSlotEntries(reason, itemID)
             end
         end
     end
+    if self.IsBarsAndFramesRuntimeFeatureEnabled
+        and self:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars")
+        and self.EvaluateResourceBars then
+        self:EvaluateResourceBars({ reason = reason or "equipment-slot-refresh" })
+        if self.UpdateAnchorStacking then
+            self:UpdateAnchorStacking()
+        end
+    end
     self:RefreshConfigPanel()
 end
 

@@ -141,7 +141,15 @@ local function IsSpellCustomBarConfig(cab)
     return GetCustomBarEntryType and GetCustomBarEntryType(cab) == "spell"
 end
 
+local function IsEquipmentSlotCustomBarConfig(cab)
+    return RB.IsEquipmentSlotCustomBarConfig
+        and RB.IsEquipmentSlotCustomBarConfig(cab)
+end
+
 local function IsCustomBarAuraDisplayConfig(cab, isSpellCustomBar)
+    if IsEquipmentSlotCustomBarConfig(cab) then
+        return false
+    end
     if isSpellCustomBar == nil then
         isSpellCustomBar = IsSpellCustomBarConfig(cab)
     end
