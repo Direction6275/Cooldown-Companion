@@ -7,6 +7,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local EntryRuntime = ST.EntryRuntime
 
 -- Imports from Glows
 local SetBarAuraEffect = ST._SetBarAuraEffect
@@ -300,7 +301,7 @@ local function ClearConditionalVisualPreviewDerivedFields(button)
     end
     if button._conditionalPandemicPreview then
         button._inPandemic = false
-        button._pandemicGraceStart = nil
+        EntryRuntime.ClearAuraPandemicRuntimeState(button)
     end
     button._conditionalPreviewKind = nil
     button._conditionalPreviewStartTime = nil

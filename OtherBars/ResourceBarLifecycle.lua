@@ -157,9 +157,7 @@ function RB.CreateResourceBarLifecycleModule(deps)
                                     and bar._auraInstanceID
                                     and bar._auraUnit == unit
                                     and updatedIDSet[bar._auraInstanceID] then
-                                    bar._inPandemic = false
-                                    bar._pandemicGraceStart = nil
-                                    bar._pandemicGraceSuppressed = true
+                                    EntryRuntime.MarkAuraPandemicStateDirty(bar, unit, bar._auraInstanceID)
                                 end
                                 if unit == "target" and bar._targetSwitchAt then
                                     bar._targetSwitchDataReceived = true
