@@ -494,17 +494,15 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
                 if removedIDSet and removedIDSet[button._auraInstanceID] then
                     button._auraInstanceID = nil
                     button._inPandemic = false
+                    EntryRuntime.ClearAuraPandemicRuntimeState(button)
                     button._auraEventRemoved = true
                 end
-                -- Aura reapplication (pandemic refresh) arrives as an update, not a
-                -- removal + add.  Clear pandemic state and suppress the grace hold so
-                -- the next evaluation clears pandemic immediately instead of holding 0.3s.
+                -- Updates are dirty signals, not proof of refresh. Let the shared
+                -- resolver compare fresh semantic range and readable aura timing.
                 if updatedIDSet
                     and button._auraInstanceID
                     and updatedIDSet[button._auraInstanceID] then
-                    button._inPandemic = false
-                    button._pandemicGraceStart = nil
-                    button._pandemicGraceSuppressed = true
+                    EntryRuntime.MarkAuraPandemicStateDirty(button, unit, button._auraInstanceID)
                 end
             end
             -- Signal that the server has delivered target aura data, so the hold

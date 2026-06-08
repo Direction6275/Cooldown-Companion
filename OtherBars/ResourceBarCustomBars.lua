@@ -264,6 +264,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             enabled = configUnit == "target" and auraPresent,
             previewActive = pandemicPreview == true,
             clearWhenDisabled = true,
+            auraState = auraState,
+            auraUnit = auraUnit,
+            auraInstanceID = instId,
         })
 
         if isActive and bar then
@@ -554,6 +557,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             enabled = configUnit == "target" and auraPresent,
             previewActive = pandemicPreview == true,
             clearWhenDisabled = true,
+            auraState = auraState,
         })
 
         if auraState

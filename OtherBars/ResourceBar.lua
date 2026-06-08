@@ -290,8 +290,7 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
 
     if not auraActive then
         bar._inPandemic = nil
-        bar._pandemicGraceStart = nil
-        bar._pandemicGraceSuppressed = nil
+        EntryRuntime.ClearAuraPandemicRuntimeState(bar)
         ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
         return
     end

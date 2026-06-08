@@ -6,6 +6,7 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
+local EntryRuntime = ST.EntryRuntime
 local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
@@ -1872,8 +1873,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._barAuraVisualSettings = nil
     ClearBarAuraStackVisual(button)
     button._inPandemic = nil
-    button._pandemicGraceStart = nil
-    button._pandemicGraceSuppressed = nil
+    EntryRuntime.ClearAuraPandemicRuntimeState(button)
     button._viewerAuraVisualsActive = nil
     button._auraDisplayName = nil
     button._auraNameOverrideActive = nil
