@@ -1393,6 +1393,12 @@ local function BarModeOnUpdate(self, elapsed)
                 self._durationObj = nil
                 self._auraActive = false
                 self._inPandemic = false
+                self._pandemicAuraUpdated = nil
+                self._pandemicSemanticStartTime = nil
+                self._pandemicSemanticEndTime = nil
+                self._pandemicSemanticValue = nil
+                self._pandemicSuppressedSemanticStartTime = nil
+                self._pandemicSuppressedSemanticEndTime = nil
                 self._barAuraColor = nil
                 local c = self.style.barColor or DEFAULT_BAR_COLOR
                 self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
@@ -1410,6 +1416,12 @@ local function BarModeOnUpdate(self, elapsed)
             self._viewerBar = nil
             self._auraActive = false
             self._inPandemic = false
+            self._pandemicAuraUpdated = nil
+            self._pandemicSemanticStartTime = nil
+            self._pandemicSemanticEndTime = nil
+            self._pandemicSemanticValue = nil
+            self._pandemicSuppressedSemanticStartTime = nil
+            self._pandemicSuppressedSemanticEndTime = nil
             self._barAuraColor = nil
             local c = self.style.barColor or DEFAULT_BAR_COLOR
             self.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
@@ -1874,6 +1886,12 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._inPandemic = nil
     button._pandemicGraceStart = nil
     button._pandemicGraceSuppressed = nil
+    button._pandemicAuraUpdated = nil
+    button._pandemicSemanticStartTime = nil
+    button._pandemicSemanticEndTime = nil
+    button._pandemicSemanticValue = nil
+    button._pandemicSuppressedSemanticStartTime = nil
+    button._pandemicSuppressedSemanticEndTime = nil
     button._viewerAuraVisualsActive = nil
     button._auraDisplayName = nil
     button._auraNameOverrideActive = nil

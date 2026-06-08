@@ -292,6 +292,12 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
         bar._inPandemic = nil
         bar._pandemicGraceStart = nil
         bar._pandemicGraceSuppressed = nil
+        bar._pandemicAuraUpdated = nil
+        bar._pandemicSemanticStartTime = nil
+        bar._pandemicSemanticEndTime = nil
+        bar._pandemicSemanticValue = nil
+        bar._pandemicSuppressedSemanticStartTime = nil
+        bar._pandemicSuppressedSemanticEndTime = nil
         ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
         return
     end

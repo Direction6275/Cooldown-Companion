@@ -15,6 +15,7 @@ local tostring = tostring
 local wipe = wipe
 local issecretvalue = issecretvalue
 local GetTime = GetTime
+local UnitExists = UnitExists
 
 local COOLDOWN_STATE_READY = CooldownLogic.STATE_READY
 local COOLDOWN_STATE_GCD = CooldownLogic.STATE_GCD
@@ -34,6 +35,13 @@ ST.EntryRuntime = EntryRuntime
 local scratchParent = CreateFrame("Frame")
 scratchParent:Hide()
 local scratchCooldown = CreateFrame("Cooldown", nil, scratchParent, "CooldownFrameTemplate")
+
+local function IsCooldownViewerEnabled()
+    if CooldownCompanion._cooldownUpdatePassActive then
+        return CooldownCompanion._cdmViewerEnabled == true
+    end
+    return C_CVar.GetCVarBool("cooldownViewerEnabled") == true
+end
 
 local function DurationObjectShowsCooldown(durationObj)
     if not durationObj then return false end
@@ -164,12 +172,7 @@ local function ResolvePreferredAuraViewerFrame(candidateIDs, configUnit, auraUni
 end
 local function ResolveTrackedAuraViewerFrame(owner, buttonData, auraSpellID, configUnit, auraUnit, now, allowDurationlessAuraInstance, useButtonAuraViewerFallback)
     local viewerFrame
-    local cdmEnabled
-    if CooldownCompanion._cooldownUpdatePassActive then
-        cdmEnabled = CooldownCompanion._cdmViewerEnabled == true
-    else
-        cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled") == true
-    end
+    local cdmEnabled = IsCooldownViewerEnabled()
 
     local orderedStandaloneAuraIDs
     local standaloneOriginalAuraIDs
@@ -203,7 +206,16 @@ local function ResolveTrackedAuraViewerFrame(owner, buttonData, auraSpellID, con
         local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
         if allChildren then
             viewerFrame = allChildren[buttonData.cdmChildSlot]
+            if viewerFrame and type(CooldownCompanion.ResolveAuraTrackingAssociationData) == "function" then
+                local associationData = CooldownCompanion:ResolveAuraTrackingAssociationData(buttonData, viewerFrame)
+                if not (associationData and associationData.trackedBuffViewerFrame == viewerFrame) then
+                    viewerFrame = nil
+                end
+            else
+                viewerFrame = nil
+            end
         end
+        return viewerFrame, cdmEnabled, orderedStandaloneAuraIDs
     end
 
     if not viewerFrame and orderedStandaloneAuraIDs then
@@ -356,7 +368,10 @@ EntryRuntime.AuraDataMatchesTrackedSpell = AuraDataMatchesTrackedSpell
 function EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit, options)
     if not owner then return end
     options = options or {}
-    local inactiveValue = options.useFalseState and false or nil
+    local inactiveValue = nil
+    if options.useFalseState then
+        inactiveValue = false
+    end
 
     owner._auraActive = inactiveValue
     owner._auraHasTimer = inactiveValue
@@ -378,6 +393,12 @@ function EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit, options)
     owner._inPandemic = inactiveValue
     owner._pandemicGraceStart = nil
     owner._pandemicGraceSuppressed = nil
+    owner._pandemicAuraUpdated = nil
+    owner._pandemicSemanticStartTime = nil
+    owner._pandemicSemanticEndTime = nil
+    owner._pandemicSemanticValue = nil
+    owner._pandemicSuppressedSemanticStartTime = nil
+    owner._pandemicSuppressedSemanticEndTime = nil
     if options.clearCustomAuraStacks then
         owner._customAuraStackValue = nil
         owner._customAuraApplicationsValue = nil
@@ -390,9 +411,71 @@ function EntryRuntime.StartTrackedAuraTargetSwitch(owner, now, unit)
     owner._inPandemic = false
     owner._pandemicGraceStart = nil
     owner._pandemicGraceSuppressed = nil
+    owner._pandemicAuraUpdated = nil
+    owner._pandemicSemanticStartTime = nil
+    owner._pandemicSemanticEndTime = nil
+    owner._pandemicSemanticValue = nil
+    owner._pandemicSuppressedSemanticStartTime = nil
+    owner._pandemicSuppressedSemanticEndTime = nil
     owner._targetSwitchAt = now
     owner._targetSwitchDataReceived = nil
     owner._auraUnit = unit or "target"
+end
+
+function EntryRuntime.MarkTrackedAuraUpdated(owner)
+    if not owner then return end
+    owner._pandemicAuraUpdated = true
+end
+
+local function ClearPandemicFallbackState(owner)
+    owner._pandemicGraceStart = nil
+    owner._pandemicGraceSuppressed = nil
+    owner._pandemicAuraUpdated = nil
+end
+
+local function ClearPandemicSemanticState(owner)
+    owner._pandemicSemanticStartTime = nil
+    owner._pandemicSemanticEndTime = nil
+    owner._pandemicSemanticValue = nil
+    owner._pandemicSuppressedSemanticStartTime = nil
+    owner._pandemicSuppressedSemanticEndTime = nil
+end
+
+local function ClearSuppressedPandemicSemanticWindow(owner)
+    owner._pandemicSuppressedSemanticStartTime = nil
+    owner._pandemicSuppressedSemanticEndTime = nil
+end
+
+local function RememberPandemicSemanticWindow(owner, semanticPandemic, pandemicStartTime, pandemicEndTime)
+    owner._pandemicSemanticStartTime = pandemicStartTime
+    owner._pandemicSemanticEndTime = pandemicEndTime
+    owner._pandemicSemanticValue = semanticPandemic == true
+end
+
+local function PandemicSemanticWindowMatches(startA, endA, startB, endB)
+    return startA ~= nil and startA == startB and endA == endB
+end
+
+local function ResolveSemanticPandemicState(viewerFrame, now)
+    if not (viewerFrame and type(viewerFrame.IsInPandemicTime) == "function") then
+        return nil
+    end
+
+    if issecretvalue(now)
+        or issecretvalue(viewerFrame.pandemicStartTime)
+        or issecretvalue(viewerFrame.pandemicEndTime) then
+        return nil
+    end
+
+    local pandemicStartTime = viewerFrame.pandemicStartTime
+    local pandemicEndTime = viewerFrame.pandemicEndTime
+    if not (type(now) == "number"
+        and type(pandemicStartTime) == "number"
+        and type(pandemicEndTime) == "number") then
+        return nil
+    end
+
+    return now >= pandemicStartTime and now <= pandemicEndTime, pandemicStartTime, pandemicEndTime
 end
 
 function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
@@ -405,21 +488,60 @@ function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
 
     if not (options.enabled and viewerFrame) then
         if options.clearWhenDisabled then
-            owner._pandemicGraceStart = nil
-            owner._pandemicGraceSuppressed = nil
+            ClearPandemicFallbackState(owner)
+            ClearPandemicSemanticState(owner)
         end
         return false
     end
 
+    local now = options.now or GetTime()
+    local semanticPandemic, pandemicStartTime, pandemicEndTime = ResolveSemanticPandemicState(viewerFrame, now)
+    if semanticPandemic ~= nil then
+        if semanticPandemic == true
+            and PandemicSemanticWindowMatches(
+                owner._pandemicSuppressedSemanticStartTime,
+                owner._pandemicSuppressedSemanticEndTime,
+                pandemicStartTime,
+                pandemicEndTime
+            ) then
+            ClearPandemicFallbackState(owner)
+            return false
+        end
+
+        if owner._pandemicAuraUpdated == true and semanticPandemic == true then
+            local previousPandemicWindowUnchanged = owner._pandemicSemanticValue == true
+                and PandemicSemanticWindowMatches(
+                    owner._pandemicSemanticStartTime,
+                    owner._pandemicSemanticEndTime,
+                    pandemicStartTime,
+                    pandemicEndTime
+                )
+            if previousPandemicWindowUnchanged then
+                owner._pandemicSuppressedSemanticStartTime = pandemicStartTime
+                owner._pandemicSuppressedSemanticEndTime = pandemicEndTime
+                ClearPandemicFallbackState(owner)
+                return false
+            end
+        end
+
+        RememberPandemicSemanticWindow(owner, semanticPandemic, pandemicStartTime, pandemicEndTime)
+        ClearSuppressedPandemicSemanticWindow(owner)
+        ClearPandemicFallbackState(owner)
+        return semanticPandemic
+    end
+
+    if owner._pandemicAuraUpdated then
+        ClearPandemicFallbackState(owner)
+        return false
+    end
+
     local pandemicIcon = viewerFrame.PandemicIcon
-    if owner._pandemicGraceSuppressed then
-        owner._pandemicGraceSuppressed = nil
-        owner._pandemicGraceStart = nil
-    elseif pandemicIcon and pandemicIcon:IsVisible() then
-        owner._pandemicGraceStart = nil
+    if pandemicIcon and pandemicIcon:IsVisible() then
+        ClearPandemicFallbackState(owner)
         return true
+    elseif owner._pandemicGraceSuppressed then
+        ClearPandemicFallbackState(owner)
     elseif owner._inPandemic then
-        local now = options.now or GetTime()
         if not owner._pandemicGraceStart then
             owner._pandemicGraceStart = now
         end
@@ -500,6 +622,44 @@ function EntryRuntime.EvaluateTrackedAuraState(owner, buttonData, auraSpellID, o
     end
     local auraEventRemoved = owner._auraEventRemoved
     owner._auraEventRemoved = nil
+
+    local targetUnitMissing = configUnit == "target" and UnitExists and not UnitExists("target")
+    if targetUnitMissing then
+        local cdmEnabled = IsCooldownViewerEnabled()
+        local state = {
+            ready = cdmEnabled == true,
+            auraPresent = false,
+            auraTrackingReady = cdmEnabled == true,
+            cdmEnabled = cdmEnabled == true,
+            auraData = nil,
+            auraApplications = nil,
+            auraInstanceID = nil,
+            auraUnit = configUnit,
+            configUnit = configUnit,
+            viewerFrame = nil,
+            viewerBar = nil,
+            durationObj = nil,
+            auraCooldownStart = nil,
+            auraCooldownDuration = nil,
+            auraHasTimer = false,
+            auraGraceHeld = false,
+            activeAuraSpellID = nil,
+            activeAuraSpellIDResolved = false,
+            activeAuraSpellIDFromFallback = nil,
+            activeAuraIcon = nil,
+            activeAuraIconAvailable = false,
+            activeAuraIconResolved = false,
+            allowDurationlessAuraInstance = allowDurationlessAuraInstance,
+            wasAuraActive = wasAuraActive,
+            targetUnitMissing = true,
+        }
+        if mutateOwner then
+            EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit, {
+                useFalseState = true,
+            })
+        end
+        return state
+    end
 
     local viewerFrame, cdmEnabled, orderedStandaloneAuraIDs = ResolveTrackedAuraViewerFrame(
         owner,

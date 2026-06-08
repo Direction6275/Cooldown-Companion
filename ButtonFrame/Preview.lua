@@ -301,6 +301,11 @@ local function ClearConditionalVisualPreviewDerivedFields(button)
     if button._conditionalPandemicPreview then
         button._inPandemic = false
         button._pandemicGraceStart = nil
+        button._pandemicSemanticStartTime = nil
+        button._pandemicSemanticEndTime = nil
+        button._pandemicSemanticValue = nil
+        button._pandemicSuppressedSemanticStartTime = nil
+        button._pandemicSuppressedSemanticEndTime = nil
     end
     button._conditionalPreviewKind = nil
     button._conditionalPreviewStartTime = nil

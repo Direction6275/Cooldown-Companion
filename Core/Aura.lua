@@ -496,15 +496,13 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
                     button._inPandemic = false
                     button._auraEventRemoved = true
                 end
-                -- Aura reapplication (pandemic refresh) arrives as an update, not a
-                -- removal + add.  Clear pandemic state and suppress the grace hold so
-                -- the next evaluation clears pandemic immediately instead of holding 0.3s.
+                -- Aura reapplication can arrive as an update. Keep pandemic
+                -- stable until the resolver asks the selected CDM item for
+                -- fresh truth.
                 if updatedIDSet
                     and button._auraInstanceID
                     and updatedIDSet[button._auraInstanceID] then
-                    button._inPandemic = false
-                    button._pandemicGraceStart = nil
-                    button._pandemicGraceSuppressed = true
+                    EntryRuntime.MarkTrackedAuraUpdated(button)
                 end
             end
             -- Signal that the server has delivered target aura data, so the hold
@@ -547,6 +545,8 @@ function CooldownCompanion:OnTargetChanged()
     if not UnitExists("target") then
         -- Deselected target: clear all target aura state immediately
         self:ClearAuraUnit("target")
+        self:UpdateAllCooldowns()
+        self:ClearCooldownsDirty()
         return
     end
     -- New target: clear stale instance IDs so the viewer path doesn't
@@ -770,7 +770,10 @@ function CooldownCompanion:ResolveAuraTrackingAssociationData(buttonData, viewer
         AddCooldownInfoCandidateIDs(candidateIDs, cooldownInfo)
     end
 
-    if viewerFrame and IsBuffViewerChild(viewerFrame) and type(viewerFrame.cooldownInfo) == "table" then
+    if viewerFrame
+        and IsBuffViewerChild(viewerFrame)
+        and type(viewerFrame.cooldownInfo) == "table"
+        and CooldownInfoMatchesCandidateSet(viewerFrame.cooldownInfo, candidateIDs) then
         data.trackedBuffViewerFrame = viewerFrame
         data.hasAssociatedAura = true
         MergeCooldownInfo(viewerFrame.cooldownInfo)
@@ -1175,9 +1178,13 @@ function CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
     if buttonData.cdmChildSlot then
         local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
         local slotChild = allChildren and allChildren[buttonData.cdmChildSlot]
-        if IsBuffViewerChild(slotChild) then
-            return slotChild
+        if slotChild then
+            local associationData = self:ResolveAuraTrackingAssociationData(buttonData, slotChild)
+            if associationData.trackedBuffViewerFrame == slotChild then
+                return slotChild
+            end
         end
+        return nil
     end
 
     local associationData = self:ResolveAuraTrackingAssociationData(buttonData)
@@ -1248,7 +1255,7 @@ end
 
 function CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
     local enabled = self._cdmViewerEnabled
-    if enabled == nil then enabled = GetCVarBool("cooldownViewerEnabled") end
+    if enabled == nil then enabled = C_CVar.GetCVarBool("cooldownViewerEnabled") end
     if not spellID or spellID == 0 or not enabled then
         return nil
     end

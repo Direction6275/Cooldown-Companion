@@ -305,6 +305,14 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
         SetGlowIntent(aura, true, true, "preview")
         aura.preview = true
         aura.auraIndicatorEnabled = auraIndicatorEnabled
+    elseif button._inPandemic and style.showPandemicGlow ~= false
+        and not (pandemicCombatOnly and not inCombat) then
+        SetGlowIntent(aura, true, true, "pandemic")
+        aura.pandemic = true
+        aura.combatOnly = pandemicCombatOnly and true or false
+        aura.combatSuppressed = false
+        aura.invert = style.auraGlowInvert and true or nil
+        aura.auraIndicatorEnabled = auraIndicatorEnabled
     elseif style.auraGlowInvert then
         if button._auraTrackingReady == true and button._auraSpellID and not button._auraActive then
             if auraIndicatorEnabled or style.auraGlowStyle ~= "none" then
@@ -332,18 +340,6 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
                 aura.invert = true
                 aura.auraIndicatorEnabled = auraIndicatorEnabled
             end
-        elseif button._auraActive and button._inPandemic and style.showPandemicGlow ~= false then
-            SetGlowIntent(
-                aura,
-                true,
-                not (pandemicCombatOnly and not inCombat),
-                pandemicCombatOnly and not inCombat and "pandemic-combat-only" or "pandemic"
-            )
-            aura.pandemic = true
-            aura.combatOnly = pandemicCombatOnly and true or false
-            aura.combatSuppressed = pandemicCombatOnly and not inCombat
-            aura.invert = true
-            aura.auraIndicatorEnabled = auraIndicatorEnabled
         else
             SetGlowIntent(aura, true, false, "inactive")
             aura.invert = true
@@ -382,7 +378,8 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
     end
 
     local procSuppressesReady = procOverlayShown and style.procGlowStyle ~= "none"
-    local auraSuppressesReady = button._auraTrackingReady == true and button._auraActive == true
+    local auraSuppressesReady = button._auraTrackingReady == true
+        and (button._auraActive == true or button._inPandemic == true)
     if not button.readyGlow then
         SetGlowIntent(ready, false, false, "missing-widget")
     elseif button._readyGlowPreview == true then

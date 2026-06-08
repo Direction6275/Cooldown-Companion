@@ -1316,6 +1316,12 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._inPandemic = nil
     button._pandemicGraceStart = nil
     button._pandemicGraceSuppressed = nil
+    button._pandemicAuraUpdated = nil
+    button._pandemicSemanticStartTime = nil
+    button._pandemicSemanticEndTime = nil
+    button._pandemicSemanticValue = nil
+    button._pandemicSuppressedSemanticStartTime = nil
+    button._pandemicSuppressedSemanticEndTime = nil
     button._viewerAuraVisualsActive = nil
     button._auraDisplayName = nil
     button._auraNameOverrideActive = nil

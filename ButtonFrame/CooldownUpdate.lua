@@ -116,6 +116,11 @@ local function ClearConditionalVisualPreviewFields(button)
         if not (buttonData and buttonData.auraTracking) then
             button._inPandemic = false
             button._pandemicGraceStart = nil
+            button._pandemicSemanticStartTime = nil
+            button._pandemicSemanticEndTime = nil
+            button._pandemicSemanticValue = nil
+            button._pandemicSuppressedSemanticStartTime = nil
+            button._pandemicSuppressedSemanticEndTime = nil
         end
     end
     button._conditionalPreviewKind = nil
@@ -1028,6 +1033,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             now = now,
             enabled = auraOverrideActive and (style.showPandemicGlow ~= false or buttonData.hideAuraActiveExceptPandemic),
             previewActive = button._pandemicPreview == true,
+            clearWhenDisabled = true,
         })
 
         -- Pass through aura display names while keeping icon writes owned by UpdateButtonIcon.
