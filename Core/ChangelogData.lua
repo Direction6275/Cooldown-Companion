@@ -47,6 +47,7 @@ ST._changelogData = {
 - **Trinket slot tracking:** Players can add Trinket Slot 1 or Trinket Slot 2 and have the entry follow the on-use trinket currently equipped in that slot.
 - **Multiple resource thresholds and ticks:** Resource bars can now show up to three threshold colors or tick markers per resource and specialization.
 - **Segmented smoothing controls:** Segmented resource bars and Stack Count bars in Segmented or Overlay mode can now keep smooth animation or snap immediately between segment values per spec or entry.
+- **EllesmereUI unit-frame anchoring:** Frame Anchoring now includes one EllesmereUI Unit Frames option for both the full EllesmereUI addon and the standalone unit-frame package, with auto-detect choosing active player and target frames.
 
 ## Polish | QoL
 
@@ -56,6 +57,8 @@ ST._changelogData = {
 
 ## Bug Fixes
 
+- **Pandemic glow timing:** Pandemic glow now stays stable while a tracked aura remains in its pandemic refresh window and clears as soon as a refresh leaves that range. Button panels and resource-attached custom aura bars use the same behavior.
+- **Soul Immolation charges:** Soul Immolation now displays as a charge-based spell when the Devourer Demon Hunter talent gives it 2 charges.
 - **Frame-anchored alpha inheritance:** Panels that inherit alpha now keep that inheritance when anchored through unit frames or other external frames.
 
 ## Performance
