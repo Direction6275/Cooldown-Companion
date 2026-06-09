@@ -280,17 +280,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
     for _, group in pairs(self.db.profile.groups) do
         for _, buttonData in ipairs(group.buttons) do
             if buttonData.type == "spell" and typeFilter ~= "item" then
-                local chargeInfo = C_Spell.GetSpellCharges(buttonData.id)
-                -- Base spell may lack charges when the override has them
-                -- (e.g. Primal Strike base → Stormstrike with 2 charges).
-                local chargeQueryID = buttonData.id
-                if not chargeInfo then
-                    local overrideID = C_Spell.GetOverrideSpell(buttonData.id)
-                    if overrideID and overrideID ~= 0 and overrideID ~= buttonData.id then
-                        chargeInfo = C_Spell.GetSpellCharges(overrideID)
-                        chargeQueryID = overrideID
-                    end
-                end
+                local chargeInfo, chargeQueryID, maxCharges = ST.ResolveSpellChargeInfo(buttonData.id)
                 local hasRealCharges = buttonData.hasCharges and true or nil
                 local hadDisplayCountBehavior = (buttonData._hasDisplayCount == true or hasRealCharges == true)
                 local hadCastCountCandidate = (buttonData._castCountCandidate == true)
@@ -304,8 +294,8 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                     buttonData._castCountEventSpellID = nil
                     buttonData._hasDisplayCount = nil
                     buttonData._displayCountFamily = nil
-                    local mc = chargeInfo.maxCharges
-                    if mc > 1 then
+                    local mc = maxCharges or chargeInfo.maxCharges
+                    if mc and mc > 1 then
                         hasRealCharges = true
                         if mc ~= buttonData.maxCharges then
                             buttonData.maxCharges = mc
