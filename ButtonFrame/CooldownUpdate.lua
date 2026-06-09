@@ -1030,7 +1030,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             previewActive = button._pandemicPreview == true,
             clearWhenDisabled = true,
             auraState = auraState,
-            trackedSpellID = button._auraSpellID,
         })
 
         -- Pass through aura display names while keeping icon writes owned by UpdateButtonIcon.
