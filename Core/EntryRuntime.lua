@@ -592,6 +592,12 @@ local function UpdatedAuraTimingProvesStaleRange(owner, auraUnit, auraInstanceID
         or duration ~= owner._pandemicLatchAuraDuration
 end
 
+local function HasMatchingPandemicDirtyState(owner, auraUnit, auraInstanceID)
+    return CanLatchPandemicRange(auraUnit, auraInstanceID)
+        and owner._pandemicDirtyUnit == auraUnit
+        and owner._pandemicDirtyAuraInstanceID == auraInstanceID
+end
+
 function EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit, options)
     if not owner then return end
     options = options or {}
@@ -650,6 +656,7 @@ function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
     local now = options.now or GetTime()
     local auraUnit, auraInstanceID = GetPandemicAuraIdentity(owner, options)
     local pandemicStartTime, pandemicEndTime, hasReadableRange = GetReadablePandemicRange(viewerFrame)
+    local hasDirtyUpdate = HasMatchingPandemicDirtyState(owner, auraUnit, auraInstanceID)
     if hasReadableRange and viewerFrame.IsInPandemicTime then
         local semanticResult = viewerFrame:IsInPandemicTime(now)
         if not issecretvalue(semanticResult) then
@@ -700,6 +707,10 @@ function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
         owner._pandemicGraceStart = nil
         return true
     elseif owner._inPandemic then
+        if hasDirtyUpdate then
+            ClearAuraPandemicRuntimeState(owner)
+            return false
+        end
         if not owner._pandemicGraceStart then
             owner._pandemicGraceStart = now
         end
