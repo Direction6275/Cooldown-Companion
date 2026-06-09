@@ -133,6 +133,43 @@ function ST.HasChargeCooldownInfo(spellId)
     return false
 end
 
+local function GetReadableMaxCharges(chargeInfo)
+    local maxCharges = chargeInfo and chargeInfo.maxCharges
+    if maxCharges and not (issecretvalue and issecretvalue(maxCharges)) then
+        return tonumber(maxCharges)
+    end
+    return nil
+end
+
+function ST.ResolveSpellChargeInfo(spellId)
+    if not spellId then return nil, spellId, nil end
+
+    local chargeInfo = C_Spell.GetSpellCharges(spellId)
+    local chargeQueryID = spellId
+    local maxCharges = GetReadableMaxCharges(chargeInfo)
+
+    if not maxCharges or maxCharges <= 1 then
+        local overrideID = C_Spell.GetOverrideSpell(spellId)
+        if overrideID and overrideID ~= 0 and overrideID ~= spellId then
+            local overrideInfo = C_Spell.GetSpellCharges(overrideID)
+            local overrideMaxCharges = GetReadableMaxCharges(overrideInfo)
+            if not chargeInfo then
+                chargeQueryID = overrideID
+            end
+            if not chargeInfo and overrideInfo then
+                chargeInfo = overrideInfo
+                maxCharges = overrideMaxCharges
+            elseif overrideInfo and (overrideMaxCharges or 0) > (maxCharges or 0) then
+                chargeInfo = overrideInfo
+                chargeQueryID = overrideID
+                maxCharges = overrideMaxCharges
+            end
+        end
+    end
+
+    return chargeInfo, chargeQueryID, maxCharges
+end
+
 local function IsPositiveReadableNumber(value)
     if issecretvalue and issecretvalue(value) then
         return false
