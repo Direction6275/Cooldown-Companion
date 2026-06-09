@@ -267,6 +267,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             auraState = auraState,
             auraUnit = auraUnit,
             auraInstanceID = instId,
+            trackedSpellID = cabConfig.spellID,
         })
 
         if isActive and bar then
@@ -558,6 +559,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             previewActive = pandemicPreview == true,
             clearWhenDisabled = true,
             auraState = auraState,
+            trackedSpellID = cabConfig.spellID,
         })
 
         if auraState

@@ -396,6 +396,9 @@ local function ClearAuraPandemicRuntimeState(owner)
     owner._pandemicSuppressedAuraInstanceID = nil
     owner._pandemicSuppressedStart = nil
     owner._pandemicSuppressedEnd = nil
+    owner._pandemicSuppressedSource = nil
+    owner._pandemicSuppressedAuraExpirationTime = nil
+    owner._pandemicSuppressedAuraDuration = nil
 end
 EntryRuntime.ClearAuraPandemicRuntimeState = ClearAuraPandemicRuntimeState
 
@@ -487,6 +490,106 @@ local function GetPandemicAuraTiming(options)
     return GetReadableAuraTiming(auraData)
 end
 
+local function GetPandemicAuraExpirationTime(options)
+    local auraState = options and options.auraState
+    local auraData = options and options.auraData
+    local auraDataSecret = issecretvalue(auraData)
+    if auraDataSecret then
+        auraData = nil
+    elseif auraData == nil and auraState then
+        auraData = auraState.auraData
+    end
+
+    local expirationTime = options and options.auraExpirationTime
+    local expirationSecret = issecretvalue(expirationTime)
+    if expirationSecret then
+        expirationTime = nil
+    elseif expirationTime == nil and auraState then
+        expirationTime = auraState.auraExpirationTime
+    end
+
+    expirationSecret = issecretvalue(expirationTime)
+    if expirationSecret then
+        return nil, false
+    end
+    if expirationTime ~= nil then
+        if type(expirationTime) == "number" then
+            return expirationTime, true
+        end
+        return nil, false
+    end
+
+    if auraData then
+        expirationTime = auraData.expirationTime
+        expirationSecret = issecretvalue(expirationTime)
+        if expirationSecret then
+            return nil, false
+        end
+        if expirationTime ~= nil then
+            if type(expirationTime) == "number" then
+                return expirationTime, true
+            end
+            return nil, false
+        end
+    end
+
+    return nil, false
+end
+
+local function GetFreshPandemicSpellID(options)
+    local spellID = options and options.trackedSpellID
+    local spellSecret = issecretvalue(spellID)
+    if spellSecret or spellID == nil then
+        return nil
+    end
+
+    return spellID
+end
+
+local function GetFreshAuraPandemicState(now, auraUnit, auraInstanceID, options)
+    local unitSecret = issecretvalue(auraUnit)
+    local instanceSecret = issecretvalue(auraInstanceID)
+    if unitSecret or instanceSecret or auraUnit == nil or auraInstanceID == nil then
+        return nil
+    end
+
+    local spellID = GetFreshPandemicSpellID(options)
+    if spellID == nil then
+        return nil
+    end
+
+    local expirationTime, expirationReadable = GetPandemicAuraExpirationTime(options)
+    if not expirationReadable then
+        return nil
+    end
+
+    local extendedDuration = C_UnitAuras.GetRefreshExtendedDuration(auraUnit, auraInstanceID, spellID)
+    local extendedSecret = issecretvalue(extendedDuration)
+    if extendedSecret or extendedDuration == nil then
+        return nil
+    end
+    if type(extendedDuration) ~= "number" then
+        return nil
+    end
+
+    local baseDuration = C_UnitAuras.GetAuraBaseDuration(auraUnit, auraInstanceID, spellID)
+    local baseSecret = issecretvalue(baseDuration)
+    if baseSecret or baseDuration == nil then
+        return nil
+    end
+    if type(baseDuration) ~= "number" then
+        return nil
+    end
+
+    local carryover = extendedDuration - baseDuration
+    if carryover <= 0 then
+        return false, expirationTime, expirationTime
+    end
+
+    local startTime = expirationTime - carryover
+    return now >= startTime and now <= expirationTime, startTime, expirationTime
+end
+
 local function CanLatchPandemicRange(auraUnit, auraInstanceID)
     return auraUnit ~= nil and auraInstanceID ~= nil
 end
@@ -505,9 +608,27 @@ local function ClearSuppressedPandemicRange(owner)
     owner._pandemicSuppressedAuraInstanceID = nil
     owner._pandemicSuppressedStart = nil
     owner._pandemicSuppressedEnd = nil
+    owner._pandemicSuppressedSource = nil
+    owner._pandemicSuppressedAuraExpirationTime = nil
+    owner._pandemicSuppressedAuraDuration = nil
 end
 
-local function IsCurrentPandemicRangeSuppressed(owner, auraUnit, auraInstanceID, startTime, endTime, hasReadableRange)
+local function SuppressedAuraTimingChanged(owner, options)
+    if owner._pandemicSuppressedAuraExpirationTime == nil
+        or owner._pandemicSuppressedAuraDuration == nil then
+        return false
+    end
+
+    local expirationTime, duration, timingReadable = GetPandemicAuraTiming(options)
+    if not timingReadable then
+        return false
+    end
+
+    return expirationTime ~= owner._pandemicSuppressedAuraExpirationTime
+        or duration ~= owner._pandemicSuppressedAuraDuration
+end
+
+local function IsCurrentPandemicRangeSuppressed(owner, auraUnit, auraInstanceID, startTime, endTime, hasReadableRange, options)
     if not CanLatchPandemicRange(auraUnit, auraInstanceID) then
         return false
     end
@@ -520,6 +641,15 @@ local function IsCurrentPandemicRangeSuppressed(owner, auraUnit, auraInstanceID,
         or owner._pandemicSuppressedAuraInstanceID ~= auraInstanceID then
         ClearSuppressedPandemicRange(owner)
         return false
+    end
+
+    if owner._pandemicSuppressedSource == "fresh" then
+        if SuppressedAuraTimingChanged(owner, options) then
+            ClearSuppressedPandemicRange(owner)
+            return false
+        end
+
+        return true
     end
 
     if hasReadableRange
@@ -552,7 +682,7 @@ local function RecordAcceptedPandemicRange(owner, auraUnit, auraInstanceID, star
     owner._pandemicLatchAuraDuration = timingReadable and duration or nil
 end
 
-local function RecordSuppressedPandemicRange(owner, auraUnit, auraInstanceID, startTime, endTime)
+local function RecordSuppressedPandemicRange(owner, auraUnit, auraInstanceID, startTime, endTime, options, source)
     owner._pandemicGraceStart = nil
     owner._pandemicGraceSuppressed = nil
     ClearAuraPandemicDirtyState(owner)
@@ -563,17 +693,17 @@ local function RecordSuppressedPandemicRange(owner, auraUnit, auraInstanceID, st
         owner._pandemicSuppressedAuraInstanceID = auraInstanceID
         owner._pandemicSuppressedStart = startTime
         owner._pandemicSuppressedEnd = endTime
+        owner._pandemicSuppressedSource = source
+        local expirationTime, duration, timingReadable = GetPandemicAuraTiming(options)
+        owner._pandemicSuppressedAuraExpirationTime = timingReadable and expirationTime or nil
+        owner._pandemicSuppressedAuraDuration = timingReadable and duration or nil
     else
         ClearSuppressedPandemicRange(owner)
     end
 end
 
-local function UpdatedAuraTimingProvesStaleRange(owner, auraUnit, auraInstanceID, startTime, endTime, options)
+local function CurrentAuraTimingProvesStaleRange(owner, auraUnit, auraInstanceID, startTime, endTime, options)
     if not CanLatchPandemicRange(auraUnit, auraInstanceID) then
-        return false
-    end
-    if owner._pandemicDirtyUnit ~= auraUnit
-        or owner._pandemicDirtyAuraInstanceID ~= auraInstanceID then
         return false
     end
     if not AcceptedPandemicRangeMatches(owner, auraUnit, auraInstanceID, startTime, endTime) then
@@ -590,6 +720,38 @@ local function UpdatedAuraTimingProvesStaleRange(owner, auraUnit, auraInstanceID
 
     return expirationTime ~= owner._pandemicLatchAuraExpirationTime
         or duration ~= owner._pandemicLatchAuraDuration
+end
+
+local function CurrentAuraTimingContradictsPandemicRange(auraUnit, auraInstanceID, _startTime, endTime, options)
+    if not CanLatchPandemicRange(auraUnit, auraInstanceID) then
+        return false
+    end
+
+    local expirationTime, _duration, timingReadable = GetPandemicAuraTiming(options)
+    if not timingReadable then
+        return false
+    end
+
+    return expirationTime ~= endTime
+end
+
+local function HasMatchingPandemicDirtyState(owner, auraUnit, auraInstanceID)
+    return CanLatchPandemicRange(auraUnit, auraInstanceID)
+        and owner._pandemicDirtyUnit == auraUnit
+        and owner._pandemicDirtyAuraInstanceID == auraInstanceID
+end
+
+local function HasMatchingFreshPandemicSuppression(owner, auraUnit, auraInstanceID)
+    return CanLatchPandemicRange(auraUnit, auraInstanceID)
+        and owner._pandemicSuppressedSource == "fresh"
+        and owner._pandemicSuppressedUnit == auraUnit
+        and owner._pandemicSuppressedAuraInstanceID == auraInstanceID
+end
+
+local function ShouldResolveFreshAuraPandemicState(owner, auraUnit, auraInstanceID)
+    return HasMatchingPandemicDirtyState(owner, auraUnit, auraInstanceID)
+        or HasMatchingFreshPandemicSuppression(owner, auraUnit, auraInstanceID)
+        or owner._inPandemic == true
 end
 
 function EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit, options)
@@ -650,23 +812,47 @@ function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
     local now = options.now or GetTime()
     local auraUnit, auraInstanceID = GetPandemicAuraIdentity(owner, options)
     local pandemicStartTime, pandemicEndTime, hasReadableRange = GetReadablePandemicRange(viewerFrame)
+    local hasDirtyUpdate = HasMatchingPandemicDirtyState(owner, auraUnit, auraInstanceID)
+    if ShouldResolveFreshAuraPandemicState(owner, auraUnit, auraInstanceID) then
+        local freshResult, freshStartTime, freshEndTime = GetFreshAuraPandemicState(now, auraUnit, auraInstanceID, options)
+        if freshResult == true then
+            RecordAcceptedPandemicRange(owner, auraUnit, auraInstanceID, freshStartTime, freshEndTime, options)
+            return true
+        elseif freshResult == false then
+            RecordSuppressedPandemicRange(owner, auraUnit, auraInstanceID, freshStartTime, freshEndTime, options, "fresh")
+            return false
+        end
+    end
+
     if hasReadableRange and viewerFrame.IsInPandemicTime then
         local semanticResult = viewerFrame:IsInPandemicTime(now)
         if not issecretvalue(semanticResult) then
             if semanticResult == true then
+                if CurrentAuraTimingContradictsPandemicRange(
+                    auraUnit,
+                    auraInstanceID,
+                    pandemicStartTime,
+                    pandemicEndTime,
+                    options
+                ) then
+                    RecordSuppressedPandemicRange(owner, auraUnit, auraInstanceID, pandemicStartTime, pandemicEndTime, options)
+                    return false
+                end
+
                 if IsCurrentPandemicRangeSuppressed(
                     owner,
                     auraUnit,
                     auraInstanceID,
                     pandemicStartTime,
                     pandemicEndTime,
-                    true
+                    true,
+                    options
                 ) then
                     owner._pandemicGraceStart = nil
                     return false
                 end
 
-                if UpdatedAuraTimingProvesStaleRange(
+                if CurrentAuraTimingProvesStaleRange(
                     owner,
                     auraUnit,
                     auraInstanceID,
@@ -674,7 +860,7 @@ function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
                     pandemicEndTime,
                     options
                 ) then
-                    RecordSuppressedPandemicRange(owner, auraUnit, auraInstanceID, pandemicStartTime, pandemicEndTime)
+                    RecordSuppressedPandemicRange(owner, auraUnit, auraInstanceID, pandemicStartTime, pandemicEndTime, options)
                     return false
                 end
 
@@ -687,7 +873,7 @@ function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
         end
     end
 
-    if IsCurrentPandemicRangeSuppressed(owner, auraUnit, auraInstanceID, pandemicStartTime, pandemicEndTime, hasReadableRange) then
+    if IsCurrentPandemicRangeSuppressed(owner, auraUnit, auraInstanceID, pandemicStartTime, pandemicEndTime, hasReadableRange, options) then
         owner._pandemicGraceStart = nil
         return false
     end
@@ -697,9 +883,40 @@ function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
         owner._pandemicGraceSuppressed = nil
         owner._pandemicGraceStart = nil
     elseif pandemicIcon and pandemicIcon:IsVisible() then
+        if hasReadableRange
+            and CurrentAuraTimingContradictsPandemicRange(
+                auraUnit,
+                auraInstanceID,
+                pandemicStartTime,
+                pandemicEndTime,
+                options
+            ) then
+            RecordSuppressedPandemicRange(owner, auraUnit, auraInstanceID, pandemicStartTime, pandemicEndTime, options)
+            return false
+        end
+
+        if hasReadableRange
+            and CurrentAuraTimingProvesStaleRange(
+                owner,
+                auraUnit,
+                auraInstanceID,
+                pandemicStartTime,
+                pandemicEndTime,
+                options
+            ) then
+            RecordSuppressedPandemicRange(owner, auraUnit, auraInstanceID, pandemicStartTime, pandemicEndTime, options)
+            return false
+        end
         owner._pandemicGraceStart = nil
+        if hasReadableRange then
+            RecordAcceptedPandemicRange(owner, auraUnit, auraInstanceID, pandemicStartTime, pandemicEndTime, options)
+        end
         return true
     elseif owner._inPandemic then
+        if hasDirtyUpdate then
+            ClearAuraPandemicRuntimeState(owner)
+            return false
+        end
         if not owner._pandemicGraceStart then
             owner._pandemicGraceStart = now
         end
