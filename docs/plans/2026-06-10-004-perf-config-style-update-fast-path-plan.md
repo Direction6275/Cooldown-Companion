@@ -83,21 +83,21 @@ The first implementation should avoid widening the config UI surface. Most style
 - **Test scenarios:** Changing icon size, icon spacing, bar length, bar height, text width, text height, colors, fonts, glow sizes, swipe options, and keybind text style should call active button `UpdateStyle()` without invoking `PopulateGroupButtons()`. Changing display mode, rendered button sequence, pool key, icon secondary-cooldown capability from `separateTextPositions` plus aura tracking, or text header visibility should use the fallback path. Protected-combat style edits should not mutate button points, scripts, or active button lists.
 - **Verification:** `luac -p Core/GroupFrame.lua`; focused harness coverage in U3.
 
-### U3. Add focused local regression coverage
+### U3. Run focused local regression coverage
 
 - **Goal:** Prove the shared style fast path and fallback boundaries without a live WoW client.
-- **Files:** `tests/group-style-update-fast-path.lua`.
+- **Files:** Local ignored harness under `tests/`, not committed because that directory is intentionally ignored.
 - **Approach:** Follow the existing lightweight harness pattern from `tests/group-button-frame-pooling.lua`: stub the needed frame/widget methods, load `Core/GroupFrame.lua`, override constructors and addon methods with counters, and exercise `PopulateGroupButtons()` followed by `UpdateGroupStyle()` under compatible and incompatible changes.
 - **Test scenarios:** A compatible style edit does not increase constructor counts, does not add inactive pooled buttons, does not call release cleanup counters, updates each button's style counter, refreshes `button.index` for visible entries after unusable rows, relays out points, refreshes frame bookkeeping, resizes the group, applies previews, updates cooldowns, propagates strata, preserves or safely refreshes Masque membership for enabled icon groups, and updates range registrations. Structural edits for display mode, pool key, rendered button sequence, icon secondary-cooldown capability, and text header visibility fall back to the populate path. Texture and trigger groups preserve hidden alpha on style updates. Protected combat defers without mutating active frames.
-- **Verification:** Run `lua tests/group-style-update-fast-path.lua` or the repo-local Lua equivalent available on the machine.
+- **Verification:** Run the local ignored style-fast-path harness or the repo-local Lua equivalent available on the machine.
 
 ### U4. Run validation and inspect the diff
 
 - **Goal:** Confirm the optimization is narrow, parse-clean, and ready for review.
-- **Files:** No additional source files expected beyond U1-U3.
+- **Files:** No additional committed source files expected beyond U1-U2 and this plan.
 - **Approach:** Run the focused harness, Lua syntax validation for touched Lua files, and whitespace diff checks. Inspect the final diff for accidental config UI behavior changes, `ConfigSettings/*` callback edits, or broad rebuild semantics changes.
-- **Test scenarios:** `git diff --check` passes. `Core/GroupFrame.lua` and the new harness parse. The style fast-path harness passes. Existing `tests/group-button-frame-pooling.lua` still passes because `PopulateGroupButtons()` remains the structural rebuild path.
-- **Verification:** `git diff --check`; `luac -p Core/GroupFrame.lua tests/group-style-update-fast-path.lua`; `lua tests/group-style-update-fast-path.lua`; `lua tests/group-button-frame-pooling.lua`.
+- **Test scenarios:** `git diff --check` passes. `Core/GroupFrame.lua` parses. The local ignored style-fast-path harness passes. Existing `tests/group-button-frame-pooling.lua` still passes because `PopulateGroupButtons()` remains the structural rebuild path.
+- **Verification:** `git diff --check`; `luac -p Core/GroupFrame.lua`; local ignored style-fast-path harness; `lua tests/group-button-frame-pooling.lua`.
 
 ---
 
