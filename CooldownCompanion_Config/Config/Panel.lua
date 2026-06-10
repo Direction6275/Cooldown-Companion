@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - Config/Panel
-    Panel creation + lifecycle (CreateConfigPanel, RefreshConfigPanel, ToggleConfig, GetConfigFrame, SetupConfig).
+    Panel creation and loaded-config implementation hooks.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -8,8 +8,6 @@ local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
 local AceGUI = LibStub("AceGUI-3.0")
-local AceConfig = LibStub("AceConfig-3.0")
-local AceConfigDialog = LibStub("AceConfigDialog-3.0")
 
 -- Imports from earlier Config/ files
 local ResetConfigSelection = ST._ResetConfigSelection
@@ -679,6 +677,10 @@ local function ResetConfigForProfileChange()
     if ST._CancelAutoAddFlow then
         ST._CancelAutoAddFlow()
     end
+end
+
+function CooldownCompanion:_configResetForProfileChangeImpl()
+    ResetConfigForProfileChange()
 end
 
 local function MaybeAutoOpenChangelog()
@@ -2328,7 +2330,7 @@ end
 ------------------------------------------------------------------------
 -- Refresh entire panel
 ------------------------------------------------------------------------
-function CooldownCompanion:RefreshConfigPanel()
+function CooldownCompanion:_configRefreshPanelImpl()
     if not CS.configFrame then return end
     if not CS.configFrame.frame:IsShown() then return end
     if CS.talentPickerMode then return end
@@ -2469,13 +2471,7 @@ end
 ------------------------------------------------------------------------
 -- Toggle config panel open/closed
 ------------------------------------------------------------------------
-function CooldownCompanion:ToggleConfig()
-    if InCombatLockdown() then
-        self._configWasOpen = true
-        self:Print("Config will open after combat ends.")
-        return
-    end
-
+function CooldownCompanion:_configToggleImpl()
     if not CS.configFrame then
         CreateConfigPanel()
         SetPrimaryMode("buttons", { skipRefresh = true })
@@ -2518,135 +2514,6 @@ function CooldownCompanion:ToggleConfig()
     end
 end
 
-function CooldownCompanion:GetConfigFrame()
+function CooldownCompanion:_configGetFrameImpl()
     return CS.configFrame
-end
-
-------------------------------------------------------------------------
--- SetupConfig: Minimal AceConfig registration for Blizzard Settings
-------------------------------------------------------------------------
-function CooldownCompanion:SetupConfig()
-    -- Register a minimal options table so the addon shows in Blizzard's addon list
-    local options = {
-        name = "Cooldown Companion",
-        type = "group",
-        args = {
-            openConfig = {
-                name = "Open Cooldown Companion",
-                desc = "Click to open the configuration panel",
-                type = "execute",
-                order = 1,
-                func = function()
-                    -- Close Blizzard settings first
-                    if Settings and Settings.CloseUI then
-                        Settings.CloseUI()
-                    elseif InterfaceOptionsFrame then
-                        InterfaceOptionsFrame:Hide()
-                    end
-                    C_Timer.After(0.1, function()
-                        CooldownCompanion:ToggleConfig()
-                    end)
-                end,
-            },
-        },
-    }
-
-    AceConfig:RegisterOptionsTable(ADDON_NAME, options)
-    AceConfigDialog:AddToBlizOptions(ADDON_NAME, "Cooldown Companion")
-
-    -- Profile callbacks to refresh on profile change
-    self.db.RegisterCallback(self, "OnProfileChanged", function(db, profileName)
-        ResetConfigForProfileChange()
-        local rawProfile = db and db.sv and type(db.sv.profiles) == "table" and db.sv.profiles[profileName]
-        if type(rawProfile) ~= "table" or next(rawProfile) == nil then
-            CooldownCompanion._allowMissingMigrationCheckpointOnce = true
-        end
-        if not CooldownCompanion:RunAllMigrations() then
-            CooldownCompanion:ClearUnsupportedProfileRuntime()
-            if CS.configFrame and CS.configFrame.frame:IsShown() then
-                self:RefreshConfigPanel()
-            end
-            return
-        end
-
-        if CS.configFrame and CS.configFrame.frame:IsShown() then
-            self:RefreshConfigPanel()
-        end
-        self:RefreshAllGroups()
-        if self.EvaluateBarsAndFramesRuntime then
-            self:EvaluateBarsAndFramesRuntime("profile-changed")
-        end
-    end)
-    self.db.RegisterCallback(self, "OnProfileCopied", function()
-        ResetConfigForProfileChange()
-
-        -- Re-stamp character-scoped groups and folders for copies (Duplicate).
-        -- Suppressed during Rename (preserve ownership, not claiming groups).
-        local suppress = CooldownCompanion._suppressOwnershipRestamp
-        CooldownCompanion._suppressOwnershipRestamp = nil
-        if not suppress then
-            local charKey = CooldownCompanion.db.keys.char
-            if CooldownCompanion.db.profile.groups then
-                for _, group in pairs(CooldownCompanion.db.profile.groups) do
-                    if not group.isGlobal then
-                        group.createdBy = charKey
-                    end
-                end
-            end
-            if CooldownCompanion.db.profile.groupContainers then
-                for _, container in pairs(CooldownCompanion.db.profile.groupContainers) do
-                    if not container.isGlobal then
-                        container.createdBy = charKey
-                    end
-                end
-            end
-            if CooldownCompanion.db.profile.folders then
-                for _, folder in pairs(CooldownCompanion.db.profile.folders) do
-                    if folder.section == "char" then
-                        folder.createdBy = charKey
-                    end
-                end
-            end
-        end
-
-        if not CooldownCompanion:RunAllMigrations() then
-            CooldownCompanion:ClearUnsupportedProfileRuntime()
-            if CS.configFrame and CS.configFrame.frame:IsShown() then
-                self:RefreshConfigPanel()
-            end
-            return
-        end
-
-        if CS.configFrame and CS.configFrame.frame:IsShown() then
-            self:RefreshConfigPanel()
-        end
-        self:RefreshAllGroups()
-        if self.EvaluateBarsAndFramesRuntime then
-            self:EvaluateBarsAndFramesRuntime("profile-copied")
-        end
-    end)
-    self.db.RegisterCallback(self, "OnProfileReset", function()
-        ResetConfigForProfileChange()
-        CooldownCompanion._allowMissingMigrationCheckpointOnce = true
-        if not CooldownCompanion:RunAllMigrations() then
-            CooldownCompanion:ClearUnsupportedProfileRuntime()
-            if CS.configFrame and CS.configFrame.frame:IsShown() then
-                self:RefreshConfigPanel()
-            end
-            return
-        end
-
-        if CS.configFrame and CS.configFrame.frame:IsShown() then
-            self:RefreshConfigPanel()
-        end
-        self:RefreshAllGroups()
-        if self.EvaluateBarsAndFramesRuntime then
-            self:EvaluateBarsAndFramesRuntime("profile-reset")
-        end
-    end)
-    self.db.RegisterCallback(self, "OnProfileDeleted", function()
-        if CS.configFrame and CS.configFrame.frame:IsShown() then
-            self:RefreshConfigPanel()
-        end
-    end)
 end

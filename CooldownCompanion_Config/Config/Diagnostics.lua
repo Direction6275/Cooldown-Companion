@@ -995,6 +995,6 @@ local function OpenDiagnosticDecodePanel()
     end)
 end
 
-function CooldownCompanion:OpenDiagnosticDecodePanel()
+function CooldownCompanion:_configOpenDiagnosticDecodePanelImpl()
     OpenDiagnosticDecodePanel()
 end

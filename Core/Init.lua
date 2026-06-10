@@ -57,7 +57,10 @@ local minimapButton = LDB:NewDataObject(ADDON_NAME, {
     icon = "Interface\\AddOns\\CooldownCompanion\\Media\\cdcminimap",
     OnClick = function(self, button)
         if button == "LeftButton" then
-            CooldownCompanion:ToggleConfig()
+            CooldownCompanion:ToggleConfig({
+                action = "toggle",
+                entryPoint = "minimap",
+            })
         end
     end,
     OnTooltipShow = function(tooltip)
