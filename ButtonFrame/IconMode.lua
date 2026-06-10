@@ -84,6 +84,159 @@ local BLIZZARD_AURA_SWIPE_TEX_LOW = {x = 0.15, y = 0.15}
 local BLIZZARD_AURA_SWIPE_TEX_HIGH = {x = 0.85, y = 0.85}
 local QUESTION_MARK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
+local KPH_INTERVAL = 0.05
+local kphAccumulator = 0
+local kphButtons = {}
+local kphButtonIndexes = {}
+local kphUpdateFrame = CreateFrame("Frame")
+
+local RefreshKeyPressHighlightEnrollment
+local UnregisterKeyPressHighlightButton
+
+local function IsKeyPressHighlightGroupEligible(button)
+    local groupId = button and button._groupId
+    local groups = CooldownCompanion.db and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups
+    local group = groupId and groups and groups[groupId]
+    return group and group.displayMode ~= "bars" and group.displayMode ~= "text" or false
+end
+
+local function HasCachedBindingKeys(button)
+    local keyInfos = button and button._bindingKeyInfos
+    return keyInfos and #keyInfos > 0 or false
+end
+
+local function ShouldEnrollKeyPressHighlightButton(button)
+    if not (button and button.keyPressHighlight and IsKeyPressHighlightGroupEligible(button)) then
+        return false
+    end
+
+    if button._keyPressHighlightPreview then
+        return true
+    end
+
+    local style = button.style
+    local buttonData = button.buttonData
+    return style
+        and style.keyPressHighlightStyle
+        and style.keyPressHighlightStyle ~= "none"
+        and buttonData
+        and buttonData.type ~= "header"
+        and not buttonData.isPassive
+        and HasCachedBindingKeys(button)
+        or false
+end
+
+local function ShouldShowKeyPressHighlight(button, inCombat)
+    if button._keyPressHighlightPreview then
+        return true, inCombat
+    end
+
+    local style = button.style
+    local passedCombatCheck = true
+    if style and style.keyPressHighlightCombatOnly then
+        if inCombat == nil then
+            inCombat = InCombatLockdown()
+        end
+        passedCombatCheck = inCombat
+    end
+
+    if passedCombatCheck then
+        local keyInfos = button._bindingKeyInfos
+        if keyInfos then
+            for _, info in ipairs(keyInfos) do
+                if IsBindingKeyPressed(info) then
+                    return true, inCombat
+                end
+            end
+        end
+    end
+
+    return false, inCombat
+end
+
+local function StopKeyPressHighlightDriver()
+    kphAccumulator = 0
+    kphUpdateFrame:SetScript("OnUpdate", nil)
+end
+
+local function KeyPressHighlightOnUpdate(_, elapsed)
+    kphAccumulator = kphAccumulator + elapsed
+    if kphAccumulator < KPH_INTERVAL then return end
+    kphAccumulator = 0
+
+    local inCombat
+    local index = 1
+    while index <= #kphButtons do
+        local button = kphButtons[index]
+        if ShouldEnrollKeyPressHighlightButton(button) then
+            local showKPH
+            showKPH, inCombat = ShouldShowKeyPressHighlight(button, inCombat)
+            SetKeyPressHighlight(button, showKPH)
+            index = index + 1
+        else
+            UnregisterKeyPressHighlightButton(button)
+        end
+    end
+end
+
+local function StartKeyPressHighlightDriver()
+    if #kphButtons > 0 and not kphUpdateFrame:GetScript("OnUpdate") then
+        kphUpdateFrame:SetScript("OnUpdate", KeyPressHighlightOnUpdate)
+    end
+end
+
+UnregisterKeyPressHighlightButton = function(button)
+    if not button then return end
+
+    local index = kphButtonIndexes[button]
+    if index then
+        local lastIndex = #kphButtons
+        local lastButton = kphButtons[lastIndex]
+        kphButtons[index] = lastButton
+        kphButtons[lastIndex] = nil
+        kphButtonIndexes[button] = nil
+        if lastButton and lastButton ~= button then
+            kphButtonIndexes[lastButton] = index
+        end
+    end
+
+    if button.keyPressHighlight then
+        SetKeyPressHighlight(button, false)
+    end
+    button._keyPressHighlightActive = nil
+
+    if #kphButtons == 0 then
+        StopKeyPressHighlightDriver()
+    end
+end
+
+RefreshKeyPressHighlightEnrollment = function(button)
+    if ShouldEnrollKeyPressHighlightButton(button) then
+        if not kphButtonIndexes[button] then
+            kphButtons[#kphButtons + 1] = button
+            kphButtonIndexes[button] = #kphButtons
+        end
+        StartKeyPressHighlightDriver()
+    else
+        UnregisterKeyPressHighlightButton(button)
+    end
+end
+
+local function RefreshKeyPressHighlightFrame(frame)
+    if not (frame and frame.buttons) then return end
+    for _, button in ipairs(frame.buttons) do
+        RefreshKeyPressHighlightEnrollment(button)
+    end
+end
+
+local function UnregisterKeyPressHighlightFrame(frame)
+    if not (frame and frame.buttons) then return end
+    for _, button in ipairs(frame.buttons) do
+        UnregisterKeyPressHighlightButton(button)
+    end
+end
+
 local function SelectTextureValue(value, knownAvailable)
     if knownAvailable == true then
         return value, true
@@ -708,6 +861,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Store button data
     button.index = index
     button.style = style
+    button._groupId = parent.groupId
 
     -- Cache spell cooldown secrecy level (static per-spell: NeverSecret=0, ContextuallySecret=2)
     if buttonData.type == "spell" then
@@ -747,7 +901,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil
     button._lastVisAlpha = 1
-    button._groupId = parent.groupId
 
     -- Set icon
     self:UpdateButtonIcon(button)
@@ -1484,6 +1637,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
             SetKeyPressHighlight(button, false)
         end
         button._keyPressHighlightActive = nil
+        RefreshKeyPressHighlightEnrollment(button)
     end
 
     -- Apply configurable strata ordering (LoC always on top)
@@ -1577,63 +1731,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 end
 
 -- Exports
--- Throttled key press highlight updater (~20Hz).
--- Polls modifier + key state to light up buttons whose keybind is held.
--- Throttled from per-frame to 0.05s intervals — 50ms latency is imperceptible
--- for a "key held" indicator and avoids thousands of redundant API calls/sec
--- when many buttons are visible.
-local KPH_INTERVAL = 0.05
-local kphAccumulator = 0
-local kphUpdateFrame = CreateFrame("Frame")
-kphUpdateFrame:SetScript("OnUpdate", function(_, elapsed)
-    kphAccumulator = kphAccumulator + elapsed
-    if kphAccumulator < KPH_INTERVAL then return end
-    kphAccumulator = 0
-    local groupFrames = CooldownCompanion.groupFrames
-    if not groupFrames then return end
-    local groups = CooldownCompanion.db and CooldownCompanion.db.profile
-        and CooldownCompanion.db.profile.groups
-    if not groups then return end
-    local inCombat
-    for groupId, groupFrame in pairs(groupFrames) do
-        local group = groups[groupId]
-        if group and group.displayMode ~= "bars" and group.displayMode ~= "text"
-               and groupFrame.buttons then
-            for _, button in ipairs(groupFrame.buttons) do
-                if button.keyPressHighlight then
-                    local style = button.style
-                    local buttonData = button.buttonData
-                    local showKPH = false
-                    if button._keyPressHighlightPreview then
-                        showKPH = true
-                    elseif style and style.keyPressHighlightStyle
-                           and style.keyPressHighlightStyle ~= "none"
-                           and buttonData and buttonData.type ~= "header"
-                           and not buttonData.isPassive then
-                        local passedCombatCheck = true
-                        if style.keyPressHighlightCombatOnly then
-                            if inCombat == nil then inCombat = InCombatLockdown() end
-                            passedCombatCheck = inCombat
-                        end
-                        if passedCombatCheck then
-                            local keyInfos = button._bindingKeyInfos
-                            if keyInfos then
-                                for _, info in ipairs(keyInfos) do
-                                    if IsBindingKeyPressed(info) then
-                                        showKPH = true
-                                        break
-                                    end
-                                end
-                            end
-                        end
-                    end
-                    SetKeyPressHighlight(button, showKPH)
-                end
-            end
-        end
-    end
-end)
-
+ST._RefreshKeyPressHighlightEnrollment = RefreshKeyPressHighlightEnrollment
+ST._UnregisterKeyPressHighlightButton = UnregisterKeyPressHighlightButton
+ST._RefreshKeyPressHighlightFrame = RefreshKeyPressHighlightFrame
+ST._UnregisterKeyPressHighlightFrame = UnregisterKeyPressHighlightFrame
 ST._UpdateIconModeVisuals = UpdateIconModeVisuals
 ST._UpdateIconModeGlows = UpdateIconModeGlows
 ST._ApplyIconCountTextStyle = ApplyCountTextStyle

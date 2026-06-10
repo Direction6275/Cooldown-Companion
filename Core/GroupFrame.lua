@@ -26,6 +26,13 @@ local SetFrameClickThrough = ST.SetFrameClickThrough
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 local HideGlowStyles = ST._HideGlowStyles
 
+local function UnregisterKeyPressHighlightButton(button)
+    local unregister = ST._UnregisterKeyPressHighlightButton
+    if unregister then
+        unregister(button)
+    end
+end
+
 local CURSOR_ANCHOR_TARGET = CooldownCompanion:GetCursorAnchorTargetName()
 local DEFAULT_CURSOR_ANCHOR = CooldownCompanion:GetDefaultCursorPanelAnchor()
 local CURSOR_ANCHOR_POINT = DEFAULT_CURSOR_ANCHOR.point or "BOTTOMLEFT"
@@ -1852,6 +1859,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     -- Clear existing buttons (remove from Masque first if enabled)
     for _, button in ipairs(frame.buttons) do
+        UnregisterKeyPressHighlightButton(button)
         if CooldownCompanion.ReleaseAuraTextureVisual then
             CooldownCompanion:ReleaseAuraTextureVisual(button)
         end

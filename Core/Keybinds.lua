@@ -35,6 +35,13 @@ local ACTION_BAR_BUTTONS = {
     {"MultiBar7Button",           "MULTIACTIONBAR7BUTTON",   12},
 }
 
+local function RefreshKeyPressHighlightEnrollment(button)
+    local refresh = ST._RefreshKeyPressHighlightEnrollment
+    if refresh then
+        refresh(button)
+    end
+end
+
 -- slot → {bindingAction, frameName} reverse lookup, rebuilt on events
 local slotToButtonInfo = {}
 
@@ -293,6 +300,7 @@ local function CacheButtonBindingKeys(button, buttonData)
     local infos = {}
     if not buttonData then
         button._bindingKeyInfos = infos
+        RefreshKeyPressHighlightEnrollment(button)
         return
     end
     local slots
@@ -321,6 +329,7 @@ local function CacheButtonBindingKeys(button, buttonData)
         end
     end
     button._bindingKeyInfos = infos
+    RefreshKeyPressHighlightEnrollment(button)
 end
 
 -- Rebuild the entire item→slot reverse lookup cache by scanning action button frames.

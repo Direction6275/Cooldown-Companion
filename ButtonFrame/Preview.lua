@@ -39,6 +39,19 @@ local activeTriggerPanelEffectPreviews = {}
 local activeConditionalGroupPreviews = {}
 local activeConditionalButtonPreviews = {}
 
+local function RefreshKeyPressHighlightEnrollment(button)
+    local refresh = ST._RefreshKeyPressHighlightEnrollment
+    if refresh then
+        refresh(button)
+    end
+end
+
+local function RefreshKeyPressHighlightPreviewEnrollment(button, previewFlag)
+    if previewFlag == "_keyPressHighlightPreview" then
+        RefreshKeyPressHighlightEnrollment(button)
+    end
+end
+
 local function BumpButtonPreviewToken(tokenStore, groupId, buttonIndex)
     local groupTokens = tokenStore[groupId]
     if not groupTokens then
@@ -168,6 +181,7 @@ local function SetButtonPreview(self, groupId, buttonIndex, show, previewFlag, c
             button[previewFlag] = show or nil
             button[cacheFlag] = cacheValue
             if onToggle then onToggle(button, show) end
+            RefreshKeyPressHighlightPreviewEnrollment(button, previewFlag)
             if updateCooldown and button.UpdateCooldown then
                 button:UpdateCooldown()
             end
@@ -190,6 +204,7 @@ local function SetGroupPreview(self, groupId, show, previewFlag, cacheFlag, cach
         button[previewFlag] = show or nil
         button[cacheFlag] = cacheValue
         if onToggle then onToggle(button, show) end
+        RefreshKeyPressHighlightPreviewEnrollment(button, previewFlag)
         if updateCooldown and button.UpdateCooldown then
             button:UpdateCooldown()
         end
@@ -237,6 +252,7 @@ local function ClearAllPreviews(self, previewFlag, cacheFlag, cacheValue, groupT
             button[previewFlag] = nil
             button[cacheFlag] = cacheValue
             if onClear then onClear(button) end
+            RefreshKeyPressHighlightPreviewEnrollment(button, previewFlag)
             if updateCooldown and button.UpdateCooldown then
                 button:UpdateCooldown()
             end
@@ -759,8 +775,8 @@ end
 
 --------------------------------------------------------------------------------
 -- Key Press Highlight Preview (no per-button methods, no UpdateCooldown)
--- KPH is rendered by the per-frame kphUpdateFrame OnUpdate handler, not by
--- UpdateCooldown — setting the flag and invalidating the cache is sufficient.
+-- KPH is rendered by the idle enrollment driver, not by UpdateCooldown.
+-- Setting the flag and invalidating the cache is sufficient.
 --------------------------------------------------------------------------------
 
 function CooldownCompanion:SetGroupKeyPressHighlightPreview(groupId, show)
@@ -977,6 +993,7 @@ local function ApplyPreviewFlagToButton(button, previewFlag)
         button._readyGlowActive = false
     elseif previewFlag == "_keyPressHighlightPreview" then
         button._keyPressHighlightActive = nil
+        RefreshKeyPressHighlightEnrollment(button)
     elseif previewFlag == "_textureProcPreview"
         or previewFlag == "_textureAuraPreview"
         or previewFlag == "_texturePandemicPreview"
