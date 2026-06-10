@@ -22,6 +22,21 @@ local minimapButton = ST._minimapButton
 -- LibSharedMedia for font/texture selection
 local LSM = LibStub("LibSharedMedia-3.0")
 
+local function MergeCooldownRefreshSource(currentSource, newSource)
+    newSource = newSource or "event"
+    if not currentSource or currentSource == newSource then
+        return newSource
+    end
+    return "event"
+end
+
+local function CooldownRefreshQueueOnUpdate(frame)
+    local addon = frame._cooldownCompanion
+    if addon then
+        addon:FlushQueuedCooldownRefresh()
+    end
+end
+
 -- Viewer frame list used by BuildViewerAuraMap, FindViewerChildForSpell, and OnEnable hooks.
 local VIEWER_NAMES = {
     "EssentialCooldownViewer",
@@ -104,7 +119,9 @@ function CooldownCompanion:EnsureRuntimeInitialized()
                 self.assistedSpellID = AssistedCombatManager.lastNextCastSpellID
             end
 
-            if not self:CanSkipTickerCooldownRefresh() then
+            if self._queuedCooldownRefreshSource then
+                self:FlushQueuedCooldownRefresh()
+            elseif not self:CanSkipTickerCooldownRefresh() then
                 self:RunCooldownRefresh("ticker")
             end
             self:UpdateAllGroupLayouts()
@@ -329,6 +346,83 @@ function CooldownCompanion:RunCooldownRefresh(source)
     self._lastCooldownRefreshSource = source
 end
 
+function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
+    if not self._cooldownRefreshQueueFrame then
+        local frame = CreateFrame("Frame")
+        frame._cooldownCompanion = self
+        self._cooldownRefreshQueueFrame = frame
+    end
+    if not self._cooldownRefreshQueueArmed then
+        self._cooldownRefreshQueueArmed = true
+        self._cooldownRefreshQueueFrame:SetScript("OnUpdate", CooldownRefreshQueueOnUpdate)
+    end
+end
+
+function CooldownCompanion:FlushQueuedCooldownRefresh()
+    if self._cooldownRefreshQueueFrame then
+        self._cooldownRefreshQueueFrame:SetScript("OnUpdate", nil)
+    end
+    self._cooldownRefreshQueueArmed = nil
+    self._cooldownImmediateRefreshThisFrame = nil
+
+    local source = self._queuedCooldownRefreshSource
+    local canSkipTicker = self._queuedCooldownRefreshCanSkipTicker
+    local skipSerial = self._queuedCooldownRefreshSkipSerial
+    self._queuedCooldownRefreshSource = nil
+    self._queuedCooldownRefreshCanSkipTicker = nil
+    self._queuedCooldownRefreshSkipSerial = nil
+    if source then
+        self:RunCooldownRefresh(source)
+        -- Non-dirty queued work should not erase a satisfied cooldown-event
+        -- dirty serial, because that would re-enable the next ticker walk.
+        if canSkipTicker and skipSerial == (self._cooldownDirtySerial or 0) then
+            self._lastCooldownRefreshSource = "cooldown-event"
+            self._lastCooldownRefreshSerial = skipSerial
+        end
+    end
+end
+
+function CooldownCompanion:QueueCooldownRefresh(source)
+    local dirtySerial = self._cooldownDirtySerial or 0
+    local queuedRefreshCanSkipTicker = self._queuedCooldownRefreshCanSkipTicker
+        and self._queuedCooldownRefreshSkipSerial == dirtySerial
+    local lastRefreshCanSkipTicker = self._lastCooldownRefreshSource == "cooldown-event"
+        and self._lastCooldownRefreshSerial == dirtySerial
+    local canSkipTicker = source == "cooldown-event"
+        or queuedRefreshCanSkipTicker
+        or lastRefreshCanSkipTicker
+
+    self._queuedCooldownRefreshSource = MergeCooldownRefreshSource(self._queuedCooldownRefreshSource, source)
+    self._queuedCooldownRefreshCanSkipTicker = canSkipTicker or nil
+    self._queuedCooldownRefreshSkipSerial = canSkipTicker and dirtySerial or nil
+    self:EnsureCooldownRefreshQueueFrame()
+end
+
+function CooldownCompanion:RunImmediateCooldownRefresh(source)
+    if self._cooldownImmediateRefreshThisFrame then
+        self:QueueCooldownRefresh(source)
+        return
+    end
+
+    local dirtySerial = self._cooldownDirtySerial or 0
+    local queuedRefreshCanSkipTicker = self._queuedCooldownRefreshCanSkipTicker
+        and self._queuedCooldownRefreshSkipSerial == dirtySerial
+    local canSkipTicker = source == "cooldown-event" or queuedRefreshCanSkipTicker
+    local skipSerial = canSkipTicker and dirtySerial or nil
+
+    source = MergeCooldownRefreshSource(self._queuedCooldownRefreshSource, source)
+    self._queuedCooldownRefreshSource = nil
+    self._queuedCooldownRefreshCanSkipTicker = nil
+    self._queuedCooldownRefreshSkipSerial = nil
+    self._cooldownImmediateRefreshThisFrame = true
+    self:EnsureCooldownRefreshQueueFrame()
+    self:RunCooldownRefresh(source)
+    if canSkipTicker and skipSerial == (self._cooldownDirtySerial or 0) then
+        self._lastCooldownRefreshSource = "cooldown-event"
+        self._lastCooldownRefreshSerial = skipSerial
+    end
+end
+
 function CooldownCompanion:CanSkipTickerCooldownRefresh()
     -- Only cooldown-event refreshes can satisfy the next ticker pass. Aura,
     -- target, and other dirty paths keep their normal ticker confirmation.
@@ -341,7 +435,7 @@ function CooldownCompanion:OnCooldownStateChanged()
     self:MarkCooldownsDirty()
     -- Preserve immediate cooldown-event accuracy. This refresh only suppresses
     -- the next ticker walk when no other dirty state appears afterward.
-    self:RunCooldownRefresh("cooldown-event")
+    self:RunImmediateCooldownRefresh("cooldown-event")
 end
 
 -- Iterate every button across all groups, calling callback(button, buttonData) for each.
@@ -370,6 +464,15 @@ function CooldownCompanion:OnDisable()
         self._alphaFrame:SetScript("OnUpdate", nil)
         self._alphaFrame = nil
     end
+
+    if self._cooldownRefreshQueueFrame then
+        self._cooldownRefreshQueueFrame:SetScript("OnUpdate", nil)
+    end
+    self._cooldownRefreshQueueArmed = nil
+    self._queuedCooldownRefreshSource = nil
+    self._queuedCooldownRefreshCanSkipTicker = nil
+    self._queuedCooldownRefreshSkipSerial = nil
+    self._cooldownImmediateRefreshThisFrame = nil
 
     -- Disable all range check registrations
     for spellId in pairs(self._rangeCheckSpells) do
@@ -420,18 +523,18 @@ function CooldownCompanion:OnChargesChanged(event, spellID, baseSpellID)
     if self._hasDisplayCountCandidates then
         self:RefreshChargeFlags("spell")
     end
-    self:UpdateAllCooldowns()
+    self:QueueCooldownRefresh("charges-event")
 end
 
 function CooldownCompanion:OnProcGlowShow(event, spellID)
     self.procOverlaySpells[spellID] = true
-    self:UpdateAllCooldowns()
+    self:QueueCooldownRefresh("proc-event")
 end
 
 function CooldownCompanion:OnProcGlowHide(event, spellID)
     self.procOverlaySpells[spellID] = nil
     self:MarkCooldownsDirty()
-    self:UpdateAllCooldowns()
+    self:QueueCooldownRefresh("proc-event")
 end
 
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
@@ -454,14 +557,14 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
         if self.RecordCustomBarSpellCast then
             self:RecordCustomBarSpellCast(spellID)
         end
-        self:UpdateAllCooldowns()
+        self:QueueCooldownRefresh("cast-event")
     end
 end
 
 
 function CooldownCompanion:OnCombatStart()
     self:BeginCombatForcedLock()
-    self:UpdateAllCooldowns()
+    self:QueueCooldownRefresh("combat-event")
     -- Close spellbook during combat to avoid Blizzard secret value errors
     if PlayerSpellsFrame and PlayerSpellsFrame:IsShown() then
         HideUIPanel(PlayerSpellsFrame)
@@ -480,7 +583,7 @@ end
 
 function CooldownCompanion:OnCombatEnd()
     local combatLockSnapshot = self:EndCombatForcedLock()
-    self:UpdateAllCooldowns()
+    self:QueueCooldownRefresh("combat-event")
     self:ApplyCdmAlpha()
     if self._pendingUnsupportedLegacyHide or self._unsupportedLegacyProfile then
         self._pendingUnsupportedLegacyHide = nil
