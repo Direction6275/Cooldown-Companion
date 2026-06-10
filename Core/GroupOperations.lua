@@ -26,12 +26,6 @@ local function ClearButtonVisualState(button)
 end
 
 local function UnregisterKeyPressHighlightFrame(frame)
-    local unregisterFrame = ST._UnregisterKeyPressHighlightFrame
-    if unregisterFrame then
-        unregisterFrame(frame)
-        return
-    end
-
     local unregisterButton = ST._UnregisterKeyPressHighlightButton
     if not (unregisterButton and frame and frame.buttons) then return end
     for _, button in ipairs(frame.buttons) do
@@ -40,12 +34,6 @@ local function UnregisterKeyPressHighlightFrame(frame)
 end
 
 local function RefreshKeyPressHighlightFrame(frame)
-    local refreshFrame = ST._RefreshKeyPressHighlightFrame
-    if refreshFrame then
-        refreshFrame(frame)
-        return
-    end
-
     local refreshButton = ST._RefreshKeyPressHighlightEnrollment
     if not (refreshButton and frame and frame.buttons) then return end
     for _, button in ipairs(frame.buttons) do

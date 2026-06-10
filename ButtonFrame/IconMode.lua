@@ -116,15 +116,16 @@ local function ShouldEnrollKeyPressHighlightButton(button)
     end
 
     local style = button.style
+    if not (style and style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none") then
+        return false
+    end
+
     local buttonData = button.buttonData
-    return style
-        and style.keyPressHighlightStyle
-        and style.keyPressHighlightStyle ~= "none"
-        and buttonData
-        and buttonData.type ~= "header"
-        and not buttonData.isPassive
-        and HasCachedBindingKeys(button)
-        or false
+    if not buttonData or buttonData.type == "header" or buttonData.isPassive then
+        return false
+    end
+
+    return HasCachedBindingKeys(button)
 end
 
 local function ShouldShowKeyPressHighlight(button, inCombat)
@@ -133,21 +134,20 @@ local function ShouldShowKeyPressHighlight(button, inCombat)
     end
 
     local style = button.style
-    local passedCombatCheck = true
     if style and style.keyPressHighlightCombatOnly then
         if inCombat == nil then
             inCombat = InCombatLockdown()
         end
-        passedCombatCheck = inCombat
+        if not inCombat then
+            return false, inCombat
+        end
     end
 
-    if passedCombatCheck then
-        local keyInfos = button._bindingKeyInfos
-        if keyInfos then
-            for _, info in ipairs(keyInfos) do
-                if IsBindingKeyPressed(info) then
-                    return true, inCombat
-                end
+    local keyInfos = button._bindingKeyInfos
+    if keyInfos then
+        for _, info in ipairs(keyInfos) do
+            if IsBindingKeyPressed(info) then
+                return true, inCombat
             end
         end
     end
@@ -219,20 +219,6 @@ RefreshKeyPressHighlightEnrollment = function(button)
         end
         StartKeyPressHighlightDriver()
     else
-        UnregisterKeyPressHighlightButton(button)
-    end
-end
-
-local function RefreshKeyPressHighlightFrame(frame)
-    if not (frame and frame.buttons) then return end
-    for _, button in ipairs(frame.buttons) do
-        RefreshKeyPressHighlightEnrollment(button)
-    end
-end
-
-local function UnregisterKeyPressHighlightFrame(frame)
-    if not (frame and frame.buttons) then return end
-    for _, button in ipairs(frame.buttons) do
         UnregisterKeyPressHighlightButton(button)
     end
 end
@@ -1733,8 +1719,6 @@ end
 -- Exports
 ST._RefreshKeyPressHighlightEnrollment = RefreshKeyPressHighlightEnrollment
 ST._UnregisterKeyPressHighlightButton = UnregisterKeyPressHighlightButton
-ST._RefreshKeyPressHighlightFrame = RefreshKeyPressHighlightFrame
-ST._UnregisterKeyPressHighlightFrame = UnregisterKeyPressHighlightFrame
 ST._UpdateIconModeVisuals = UpdateIconModeVisuals
 ST._UpdateIconModeGlows = UpdateIconModeGlows
 ST._ApplyIconCountTextStyle = ApplyCountTextStyle
