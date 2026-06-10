@@ -126,8 +126,7 @@ function CooldownCompanion:OnEnable()
 
     -- Broader state changes can wait for the regular ticker pass.
     for _, evt in ipairs({
-        "UNIT_POWER_FREQUENT", "LOSS_OF_CONTROL_ADDED", "LOSS_OF_CONTROL_UPDATE",
-        "ITEM_COUNT_CHANGED",
+        "LOSS_OF_CONTROL_ADDED", "LOSS_OF_CONTROL_UPDATE", "ITEM_COUNT_CHANGED",
     }) do
         self:RegisterEvent(evt, "MarkCooldownsDirty")
     end
@@ -136,8 +135,22 @@ function CooldownCompanion:OnEnable()
 
     self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnPlayerEnteringWorld")
 
+    -- High-frequency player-only unit events. RegisterUnitEvent filters before
+    -- dispatch, avoiding global UNIT_* traffic through AceEvent.
+    if not self._playerUnitEventFrame then
+        self._playerUnitEventFrame = CreateFrame("Frame")
+        self._playerUnitEventFrame:SetScript("OnEvent", function(_, event, ...)
+            if event == "UNIT_POWER_FREQUENT" then
+                self:MarkCooldownsDirty()
+            elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+                self:OnSpellCast(event, ...)
+            end
+        end)
+    end
+    self._playerUnitEventFrame:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
+    self._playerUnitEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+
     -- Combat events
-    self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED", "OnSpellCast")
     self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnCombatStart")
     self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnCombatEnd")
 
@@ -367,6 +380,11 @@ function CooldownCompanion:OnDisable()
     -- Unregister UNIT_TARGET frame (keep reference for reuse on re-enable)
     if self._unitTargetFrame then
         self._unitTargetFrame:UnregisterAllEvents()
+    end
+
+    -- Unregister player-only unit events (keep reference for reuse on re-enable)
+    if self._playerUnitEventFrame then
+        self._playerUnitEventFrame:UnregisterAllEvents()
     end
 
     -- Unregister EventRegistry callback (not managed by Ace3)
