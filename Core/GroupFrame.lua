@@ -25,11 +25,31 @@ local wipe = wipe
 local SetFrameClickThrough = ST.SetFrameClickThrough
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 local HideGlowStyles = ST._HideGlowStyles
+local EntryRuntime = ST.EntryRuntime
 
 local function UnregisterKeyPressHighlightButton(button)
     local unregister = ST._UnregisterKeyPressHighlightButton
     if unregister then
         unregister(button)
+    end
+end
+
+local function RefreshButtonKeybindState(button, buttonData)
+    if CooldownCompanion.RefreshResolvedItemKeybindState then
+        CooldownCompanion:RefreshResolvedItemKeybindState(button, buttonData)
+        return
+    end
+
+    local cache = ST._CacheButtonBindingKeys
+    if cache then
+        cache(button, buttonData)
+    end
+end
+
+local function ClearButtonVisualState(button)
+    local clear = ST._ClearButtonVisualState
+    if clear then
+        clear(button)
     end
 end
 
@@ -537,6 +557,380 @@ local function ClearButtonCompactSlotCache(button)
     button._compactSlotAnchor = nil
     button._compactSlotX = nil
     button._compactSlotY = nil
+end
+
+local function NeedsIconSecondaryCooldown(buttonData, style)
+    return style and style.separateTextPositions
+        and buttonData
+        and buttonData.auraTracking
+        and not buttonData.isPassive
+end
+
+local function GetButtonPoolKey(group, buttonData, style)
+    local displayMode = group and group.displayMode
+    if displayMode == "text" then
+        return "text"
+    elseif displayMode == "bars" then
+        return "bars"
+    elseif displayMode == "textures" then
+        return "textures"
+    elseif displayMode == "trigger" then
+        return "trigger"
+    elseif NeedsIconSecondaryCooldown(buttonData, style) then
+        return "icons-secondary"
+    end
+    return "icons"
+end
+
+local function GetExistingButtonPoolKey(button)
+    if button and button._buttonPoolKey then
+        return button._buttonPoolKey
+    end
+    if button and button._isText then
+        return "text"
+    end
+    if button and button._isBar then
+        return "bars"
+    end
+    if button and button.secondaryCooldown then
+        return "icons-secondary"
+    end
+    return "icons"
+end
+
+local function GetButtonPool(frame, poolKey)
+    frame._buttonFramePools = frame._buttonFramePools or {}
+    local pool = frame._buttonFramePools[poolKey]
+    if not pool then
+        pool = {}
+        frame._buttonFramePools[poolKey] = pool
+    end
+    return pool
+end
+
+local function ClearCooldownWidget(widget)
+    if not widget then return end
+    widget:SetScript("OnUpdate", nil)
+    if widget.Clear then
+        widget:Clear()
+    end
+    widget:Hide()
+end
+
+local function HideButtonGlowContainer(container)
+    if container and HideGlowStyles then
+        HideGlowStyles(container)
+    elseif container and container.Hide then
+        container:Hide()
+    end
+end
+
+local function ClearButtonPreviewState(button)
+    button._procGlowPreview = nil
+    button._auraGlowPreview = nil
+    button._pandemicPreview = nil
+    button._readyGlowPreview = nil
+    button._keyPressHighlightPreview = nil
+    button._barAuraEffectPreview = nil
+    button._barPulsePreview = nil
+    button._barColorShiftPreview = nil
+    button._barAuraActivePreview = nil
+    button._textureProcPreview = nil
+    button._textureAuraPreview = nil
+    button._texturePandemicPreview = nil
+    button._textureReadyPreview = nil
+    button._textureUnusablePreview = nil
+    button._textureIndicatorPreviewDirty = false
+    button._triggerEffectsPreview = nil
+    button._auraTexturePreviewSelection = nil
+    button._conditionalPreviewKind = nil
+    button._conditionalPreviewStartTime = nil
+    button._conditionalPreviewDuration = nil
+    button._conditionalPreviewRemaining = nil
+    button._conditionalPreviewLoop = nil
+    button._conditionalPreviewLoopStartTime = nil
+    button._conditionalPreviewLoopDuration = nil
+    button._conditionalPreviewDomain = nil
+    button._conditionalAuraPreview = nil
+    button._conditionalAuraDurationTextPreview = nil
+    button._conditionalAuraStackTextPreview = nil
+    button._conditionalPandemicPreview = nil
+    button._conditionalUnusablePreview = nil
+    button._conditionalOutOfRangePreview = nil
+    button._conditionalReadyPreview = nil
+    button._conditionalBarAuraActivePreview = nil
+    button._conditionalVisualPreview = nil
+    button._forceVisibleByConfig = nil
+    button._prevForceVisibleByConfig = nil
+end
+
+local function ClearReusableButtonRuntime(button)
+    button._resolvedItemId = nil
+    button._resolvedItemAvailableQuantity = nil
+    button._resolvedItemQuantityKind = nil
+    button._resolvedItemMaxCharges = nil
+    button._equipmentSlotTrackable = nil
+    button._displaySpellId = nil
+    button._liveOverrideSpellId = nil
+    button._spellOutOfRange = nil
+    button._lastSpellTexture = nil
+    button._spellTexBaseline = nil
+    button._noCooldown = nil
+    button._noCooldownSpellId = nil
+    button._baseNoCooldown = nil
+    button._baseNoCooldownSpellId = nil
+    button._resourceGateCost = nil
+    button._resourceGateCostSpellId = nil
+    button._baseResourceGateCost = nil
+    button._baseResourceGateCostSpellId = nil
+    button._cooldownDeferred = nil
+    button._durationObj = nil
+    button._chargeDurationObj = nil
+    button._chargeRecharging = nil
+    button._chargeState = nil
+    button._currentReadableCharges = nil
+    button._chargeCountReadable = nil
+    button._chargeText = nil
+    button._chargesSpent = nil
+    button._zeroChargesConfirmed = nil
+    button._nilConfirmPending = nil
+    button._hideCooldownChargesActive = nil
+    button._displayCountZeroUsabilityFallback = nil
+    button._itemCount = nil
+    button._auraSpellID = nil
+    button._auraUnit = nil
+    button._auraActive = false
+    button._auraDurationObj = nil
+    button._auraCooldownStart = nil
+    button._auraCooldownDuration = nil
+    button._auraPrimarySwipeActive = nil
+    button._auraTrackingReady = nil
+    button._showingAuraIcon = false
+    button._auraViewerFrame = nil
+    button._activeAuraSpellID = nil
+    button._activeAuraSpellIDFromFallback = nil
+    button._activeAuraIcon = nil
+    button._activeAuraIconAvailable = nil
+    button._lastViewerTexId = nil
+    button._auraInstanceID = nil
+    button._viewerBar = nil
+    button._viewerAuraVisualsActive = nil
+    button._auraDisplayName = nil
+    button._auraNameOverrideActive = nil
+    button._auraStackText = nil
+    button._auraHasTimer = nil
+    button._textSecretNameActive = nil
+    button._bindingKeyInfos = nil
+    button._keyPressHighlightActive = nil
+    button._visibilityHidden = false
+    button._prevVisibilityHidden = false
+    button._visibilityAlphaOverride = nil
+    button._visibilityFinalMode = nil
+    button._rawVisibilityReasonMode = nil
+    button._rawVisibilityHidden = nil
+    button._rawVisibilityAlphaOverride = nil
+    button._visibilityOverrideSource = nil
+    button._visibilityTriggerSuppressed = nil
+    button._visibilityReasonBits = nil
+    button._rawVisibilityReasonBits = nil
+    button._lastVisAlpha = 1
+    button._desaturated = nil
+    button._iconDesaturationIntent = nil
+    button._iconTintIntent = nil
+    button._iconFillIntent = nil
+    button._iconGlowIntent = nil
+    button._barVisualIntent = nil
+    button._barVisualApplied = nil
+    button._desatCooldownActive = nil
+    button._unusableTintActive = nil
+    button._iconFillActive = nil
+    button._iconFillMode = nil
+    button._iconFillAuraActive = nil
+    button._iconFillColorR = nil
+    button._iconFillColorG = nil
+    button._iconFillColorB = nil
+    button._iconFillColorA = nil
+    button._procGlowActive = nil
+    button._auraGlowActive = nil
+    button._auraGlowPandemic = nil
+    button._readyGlowActive = nil
+    button._readyGlowStartTime = nil
+    button._readyGlowMaxChargesStartTime = nil
+    button._readyGlowMaxChargesActive = nil
+    button._readyGlowMaxChargesSpellID = nil
+    button._barAuraEffectActive = nil
+    button._barPulseActive = nil
+    button._barColorShiftActive = nil
+    button._barAuraStackDisplay = nil
+    button._barAuraStackValue = nil
+    button._barAuraStackValueAvailable = nil
+    button._barAuraStackValueSecret = nil
+    button._barAuraStackValueDirty = nil
+    button._barAuraStackMax = nil
+    button._barAuraStackMode = nil
+    button._barAuraVisualSettings = nil
+    button._barGCDSuppressed = nil
+    button._barCdColor = nil
+    button._barAuraColor = nil
+    button._barReadyTextColor = nil
+    button._barTextMode = nil
+    button._barTextColorDirty = true
+    button._lastBarTimeText = nil
+    button._textVisualIntent = nil
+    button._textVisualApplied = nil
+    button._textModeSecretArgs = nil
+    button._textModeSecretParts = nil
+    button._savedOnUpdate = nil
+    button._inPandemic = nil
+    if EntryRuntime and EntryRuntime.ClearAuraPandemicRuntimeState then
+        EntryRuntime.ClearAuraPandemicRuntimeState(button)
+    end
+    ClearButtonPreviewState(button)
+    ClearButtonVisualState(button)
+    if button.count then button.count:SetText("") end
+    if button.auraStackCount then button.auraStackCount:SetText("") end
+    if button.textString then
+        button.textString:SetText("")
+        button.textString:SetAlpha(1)
+    end
+    if button.nameText then button.nameText:SetText("") end
+    if button.timeText then button.timeText:SetText("") end
+    if button.statusBar then button.statusBar:SetAlpha(1.0) end
+end
+
+local function ResolveReusableButtonEntryState(button, buttonData)
+    if CooldownCompanion.IsEntryItemLike and CooldownCompanion.IsEntryItemLike(buttonData) then
+        local effectiveItem = CooldownCompanion.ResolveEffectiveItem
+            and CooldownCompanion.ResolveEffectiveItem(buttonData, { requestLoad = true })
+            or nil
+        button._resolvedItemId = effectiveItem and effectiveItem.itemID or buttonData.id
+        button._resolvedItemAvailableQuantity = effectiveItem and effectiveItem.availableQuantity or 0
+        button._resolvedItemQuantityKind = effectiveItem and effectiveItem.quantityKind or "stacks"
+        button._equipmentSlotTrackable = CooldownCompanion.IsEquipmentSlotEntry
+            and CooldownCompanion.IsEquipmentSlotEntry(buttonData)
+            and effectiveItem and effectiveItem.trackable == true or nil
+    end
+
+    if buttonData and buttonData.type == "spell" then
+        if buttonData._cooldownSecrecySpellID ~= buttonData.id then
+            buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(buttonData.id)
+            buttonData._cooldownSecrecySpellID = buttonData.id
+        end
+    end
+
+    button._auraSpellID = CooldownCompanion.ResolveAuraSpellID
+        and CooldownCompanion:ResolveAuraSpellID(buttonData)
+        or nil
+    button._auraUnit = buttonData and buttonData.auraUnit or "player"
+    button._auraTrackingReady = buttonData and buttonData.isPassive == true or false
+end
+
+local function DeactivatePooledButton(self, groupId, button)
+    if not button then return end
+    UnregisterKeyPressHighlightButton(button)
+    if self.ReleaseAuraTextureVisual then
+        self:ReleaseAuraTextureVisual(button)
+    end
+    if self.RemoveButtonFromMasque then
+        self:RemoveButtonFromMasque(groupId, button)
+    end
+    button:SetScript("OnUpdate", nil)
+    button:SetScript("OnEnter", nil)
+    button:SetScript("OnLeave", nil)
+    if button._iconBounds then
+        button._iconBounds:SetScript("OnEnter", nil)
+        button._iconBounds:SetScript("OnLeave", nil)
+    end
+    if button.iconFill then
+        button.iconFill:SetScript("OnUpdate", nil)
+        button.iconFill:Hide()
+    end
+    button._iconFillOnUpdateInstalled = nil
+    ClearCooldownWidget(button.cooldown)
+    ClearCooldownWidget(button.locCooldown)
+    ClearCooldownWidget(button.iconGCDCooldown)
+    ClearCooldownWidget(button.secondaryCooldown)
+    ClearCooldownWidget(button.auraBlizzardCooldown)
+    HideButtonGlowContainer(button.assistedHighlight)
+    HideButtonGlowContainer(button.procGlow)
+    HideButtonGlowContainer(button.auraGlow)
+    HideButtonGlowContainer(button.readyGlow)
+    HideButtonGlowContainer(button.keyPressHighlight)
+    HideButtonGlowContainer(button.barAuraEffect)
+    ClearReusableButtonRuntime(button)
+    button._buttonPoolKey = GetExistingButtonPoolKey(button)
+    button._pooled = true
+    button:Hide()
+    button:ClearAllPoints()
+end
+
+local function ReleaseButtonToPool(self, frame, groupId, button)
+    DeactivatePooledButton(self, groupId, button)
+    local pool = GetButtonPool(frame, button._buttonPoolKey)
+    pool[#pool + 1] = button
+end
+
+local function AcquireButtonFromPool(frame, poolKey)
+    local pools = frame._buttonFramePools
+    local pool = pools and pools[poolKey]
+    if not pool then return nil end
+    local button = pool[#pool]
+    if not button then return nil end
+    pool[#pool] = nil
+    button._pooled = nil
+    button:SetParent(frame)
+    return button
+end
+
+local function PreparePooledButtonForUse(self, frame, group, button, index, buttonData, style)
+    button.buttonData = buttonData
+    button.index = index
+    button.style = style
+    button._groupId = frame.groupId
+    ResolveReusableButtonEntryState(button, buttonData)
+    RefreshButtonKeybindState(button, buttonData)
+    if button.UpdateStyle then
+        button:UpdateStyle(style)
+    end
+    if self.UpdateButtonIcon then
+        self:UpdateButtonIcon(button)
+    end
+    if group and (group.displayMode == "textures" or group.displayMode == "trigger") then
+        button:SetAlpha(0)
+        button._lastVisAlpha = 0
+    else
+        button:SetAlpha(1)
+        button._lastVisAlpha = 1
+    end
+end
+
+local function ForEachGroupButtonFrame(frame, callback)
+    if not (frame and callback) then return end
+    if frame.buttons then
+        for _, button in ipairs(frame.buttons) do
+            callback(button, false, button and button._buttonPoolKey)
+        end
+    end
+    if frame._buttonFramePools then
+        for poolKey, pool in pairs(frame._buttonFramePools) do
+            for _, button in ipairs(pool) do
+                callback(button, true, poolKey)
+            end
+        end
+    end
+end
+
+function CooldownCompanion:ReleaseGroupButtonPools(frame)
+    if not (frame and frame._buttonFramePools) then return end
+    local groupId = frame.groupId
+    for poolKey, pool in pairs(frame._buttonFramePools) do
+        for _, button in ipairs(pool) do
+            button._buttonPoolKey = poolKey
+            DeactivatePooledButton(self, groupId, button)
+        end
+        wipe(pool)
+    end
+    frame._buttonFramePools = nil
 end
 
 -- Nudger constants
@@ -1860,17 +2254,9 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local buttonsPerRow = style.buttonsPerRow or 12
     local isTriggerMode = group.displayMode == "trigger"
 
-    -- Clear existing buttons (remove from Masque first if enabled)
+    -- Release existing buttons into bounded per-frame pools.
     for _, button in ipairs(frame.buttons) do
-        UnregisterKeyPressHighlightButton(button)
-        if CooldownCompanion.ReleaseAuraTextureVisual then
-            CooldownCompanion:ReleaseAuraTextureVisual(button)
-        end
-        if group.masqueEnabled then
-            self:RemoveButtonFromMasque(groupId, button)
-        end
-        button:Hide()
-        button:SetParent(nil)
+        ReleaseButtonToPool(self, frame, groupId, button)
     end
     wipe(frame.buttons)
 
@@ -1921,20 +2307,30 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
         if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             visibleIndex = visibleIndex + 1
             local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
-            local button
-            if group.displayMode == "text" then
-                button = self:CreateTextFrame(frame, i, buttonData, effectiveStyle)
-            elseif isBarMode then
-                button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle)
-            else
-                button = self:CreateButtonFrame(frame, i, buttonData, effectiveStyle)
-                if group.displayMode == "textures" or isTriggerMode then
-                    button:SetAlpha(0)
-                    button._lastVisAlpha = 0
+            local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
+            local button = AcquireButtonFromPool(frame, poolKey)
+            local reusedButton = button ~= nil
+            if not button then
+                if group.displayMode == "text" then
+                    button = self:CreateTextFrame(frame, i, buttonData, effectiveStyle)
+                elseif isBarMode then
+                    button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle)
+                else
+                    button = self:CreateButtonFrame(frame, i, buttonData, effectiveStyle)
+                    if group.displayMode == "textures" or isTriggerMode then
+                        button:SetAlpha(0)
+                        button._lastVisAlpha = 0
+                    end
                 end
             end
 
+            button._buttonPoolKey = poolKey
+            table_insert(frame.buttons, button)
+            if reusedButton then
+                PreparePooledButtonForUse(self, frame, group, button, i, buttonData, effectiveStyle)
+            end
             ClearButtonCompactSlotCache(button)
+            button:ClearAllPoints()
             if isTriggerMode then
                 button:SetPoint("CENTER", frame, "CENTER", 0, 0)
             else
@@ -1952,7 +2348,6 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             end
 
             button:Show()
-            table_insert(frame.buttons, button)
 
             -- Add to Masque if enabled (after button is shown and in the list, icons only)
             if group.displayMode == "icons" and group.masqueEnabled then
@@ -2226,11 +2621,9 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
                     self:CreateMasqueGroup(groupId)
                 end
             elseif self.MasqueGroups[groupId] then
-                if frame.buttons then
-                    for _, button in ipairs(frame.buttons) do
-                        self:RemoveButtonFromMasque(groupId, button)
-                    end
-                end
+                ForEachGroupButtonFrame(frame, function(button)
+                    self:RemoveButtonFromMasque(groupId, button)
+                end)
                 self:DeleteMasqueGroup(groupId)
             end
         end
@@ -2562,18 +2955,6 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
 
     if not frame or not group then return end
 
-    local groupStyle = group.style or {}
-
-    -- Update all buttons with per-button effective style
-    for _, button in ipairs(frame.buttons) do
-        local effectiveStyle = self:GetEffectiveStyle(groupStyle, button.buttonData)
-        button:UpdateStyle(effectiveStyle)
-    end
-
-    -- Update group frame clickthrough
-    self:UpdateGroupClickthrough(groupId)
-
-    -- Reposition and resize
     self:PopulateGroupButtons(groupId)
 end
 

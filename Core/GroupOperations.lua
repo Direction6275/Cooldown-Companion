@@ -2345,6 +2345,9 @@ function CooldownCompanion:DiscardDormantFrame(groupId)
                 self:ReleaseAuraTextureVisual(button)
             end
         end
+        if frame and self.ReleaseGroupButtonPools then
+            self:ReleaseGroupButtonPools(frame)
+        end
         self._dormantFrames[groupId] = nil
     end
 end
