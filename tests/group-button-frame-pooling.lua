@@ -527,6 +527,33 @@ local function AssertCooldownWidgetsCleared(button, message)
     end
 end
 
+local function DirtySoundAlertRuntime(button)
+    button._sndInitialized = true
+    button._sndPrevCooldownActive = true
+    button._sndPrevAuraActive = true
+    button._sndPrevCharges = 1
+    button._sndPrevChargeRecharging = true
+    button._sndPrevChargeCooldownStart = 42
+    button._sndTransitionOptions = {
+        playContext = { id = 999 },
+    }
+end
+
+local function AssertSoundAlertRuntimeCleared(button, message)
+    local fields = {
+        "_sndInitialized",
+        "_sndPrevCooldownActive",
+        "_sndPrevAuraActive",
+        "_sndPrevCharges",
+        "_sndPrevChargeRecharging",
+        "_sndPrevChargeCooldownStart",
+        "_sndTransitionOptions",
+    }
+    for _, field in ipairs(fields) do
+        AssertEqual(button[field], nil, message .. " should clear " .. field)
+    end
+end
+
 local function ResetGroup(displayMode, buttons, style)
     CooldownCompanion.db.profile.groups[1] = {
         name = "Pool Test",
@@ -573,6 +600,7 @@ seededReusableIcon._spellOutOfRange = true
 seededReusableIcon._savedOnUpdate = function() end
 seededReusableIcon:SetScript("OnUpdate", function() end)
 seededReusableIcon.iconFill:SetScript("OnUpdate", function() end)
+DirtySoundAlertRuntime(seededReusableIcon)
 DirtyCooldownWidgets(seededReusableIcon)
 
 ResetGroup("icons", {
@@ -586,6 +614,7 @@ AssertEqual(frame.buttons[1], seededReusableIcon, "shrunk icon populate should r
 AssertEqual(frame.buttons[1]:GetScript("OnUpdate"), nil, "reused icon should clear parent OnUpdate")
 AssertEqual(frame.buttons[1].iconFill:GetScript("OnUpdate"), nil, "reused icon should clear icon-fill OnUpdate")
 AssertCooldownWidgetsCleared(frame.buttons[1], "reused icon")
+AssertSoundAlertRuntimeCleared(frame.buttons[1], "reused icon")
 AssertEqual(frame.buttons[1]._savedOnUpdate, nil, "reused icon should clear dormant saved OnUpdate")
 AssertEqual(frame.buttons[1]._auraInstanceID, nil, "reused icon should clear aura instance state")
 AssertEqual(frame.buttons[1]._resolvedItemMaxCharges, nil, "reused icon should clear stale max charges before resolving item")
@@ -733,6 +762,7 @@ assert(discardPooledButton, "discard test should have a pooled icon button")
 discardPooledButton._savedOnUpdate = function() end
 discardPooledButton:SetScript("OnUpdate", function() end)
 discardPooledButton.iconFill:SetScript("OnUpdate", function() end)
+DirtySoundAlertRuntime(discardPooledButton)
 DirtyCooldownWidgets(discardPooledButton)
 masqueMembers[discardPooledButton] = true
 local releaseAuraBeforeDiscard = releaseAuraCount
@@ -746,6 +776,7 @@ AssertEqual(frame._buttonFramePools, nil, "discard should clear all retained gro
 AssertEqual(discardPooledButton:GetScript("OnUpdate"), nil, "discard should clear pooled parent OnUpdate")
 AssertEqual(discardPooledButton.iconFill:GetScript("OnUpdate"), nil, "discard should clear pooled icon-fill OnUpdate")
 AssertCooldownWidgetsCleared(discardPooledButton, "discarded pooled icon")
+AssertSoundAlertRuntimeCleared(discardPooledButton, "discarded pooled icon")
 AssertEqual(discardPooledButton._savedOnUpdate, nil, "discard should clear pooled dormant saved OnUpdate")
 AssertEqual(masqueMembers[discardPooledButton], nil, "discard should remove pooled button Masque membership")
 assert(releaseAuraCount > releaseAuraBeforeDiscard, "discard should release pooled aura texture visuals")
