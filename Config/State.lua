@@ -702,6 +702,8 @@ local function BuildConfigFinderResults()
     return results
 end
 
+local RefreshAlphaDriverForConfigSelection
+
 local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CooldownCompanion:ClearAllConfigPreviews()
     wipe(CS.selectedGroups)
@@ -716,6 +718,7 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CS.selectedButton = buttonIndex
     CS.addingToPanelId = nil
     ClearConfigFinderText()
+    RefreshAlphaDriverForConfigSelection()
     CooldownCompanion:RefreshConfigPanel()
 end
 
@@ -2461,18 +2464,28 @@ local function ClearSelectedButton()
     wipe(CS.selectedButtons)
 end
 
+function RefreshAlphaDriverForConfigSelection()
+    if CooldownCompanion.RefreshAlphaUpdateDriver then
+        CooldownCompanion:RefreshAlphaUpdateDriver()
+    end
+end
+
 local function ClearConfigButtonSelection()
     ClearSelectedButton()
 end
 
-local function ClearConfigPanelSelection()
+local function ClearConfigPanelSelection(opts)
     CS.selectedGroup = nil
     ClearSelectedButton()
+    if not (opts and opts.deferAlphaRefresh) then
+        RefreshAlphaDriverForConfigSelection()
+    end
 end
 
 local function ClearConfigContainerSelection()
     CS.selectedContainer = nil
-    ClearConfigPanelSelection()
+    ClearConfigPanelSelection({ deferAlphaRefresh = true })
+    RefreshAlphaDriverForConfigSelection()
 end
 
 local function ClearConfigPanelMultiSelection(opts)
@@ -2480,10 +2493,12 @@ local function ClearConfigPanelMultiSelection(opts)
     if opts and opts.selectContainerId ~= nil then
         CS.selectedContainer = opts.selectContainerId
     end
+    RefreshAlphaDriverForConfigSelection()
 end
 
 local function ClearConfigContainerMultiSelection()
     wipe(CS.selectedGroups)
+    RefreshAlphaDriverForConfigSelection()
 end
 
 local function ClearConfigResourceSelection()
@@ -2501,6 +2516,7 @@ local function ClearConfigPrimarySelection()
     wipe(CS.selectedGroups)
     wipe(CS.selectedCustomBars)
     ClearConfigResourceSelection()
+    RefreshAlphaDriverForConfigSelection()
 end
 
 local function SelectConfigFolder(folderId)
@@ -2511,6 +2527,7 @@ local function SelectConfigFolder(folderId)
     ClearSelectedButton()
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
+    RefreshAlphaDriverForConfigSelection()
 end
 
 local function SelectConfigContainer(containerId, opts)
@@ -2536,6 +2553,7 @@ local function SelectConfigContainer(containerId, opts)
     if opts and opts.clearFinder then
         ClearConfigFinderText()
     end
+    RefreshAlphaDriverForConfigSelection()
 end
 
 local function ToggleConfigContainerMultiSelect(containerId)
@@ -2555,6 +2573,7 @@ local function ToggleConfigContainerMultiSelect(containerId)
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedCustomBars)
+    RefreshAlphaDriverForConfigSelection()
 end
 
 local function SelectConfigPanel(panelId, opts)
@@ -2573,6 +2592,7 @@ local function SelectConfigPanel(panelId, opts)
     end
 
     ClearSelectedButton()
+    RefreshAlphaDriverForConfigSelection()
 end
 
 local function ToggleConfigPanelMultiSelect(panelId)
@@ -2589,6 +2609,7 @@ local function ToggleConfigPanelMultiSelect(panelId)
     CS.selectedGroup = nil
     ClearSelectedButton()
     CS.addingToPanelId = nil
+    RefreshAlphaDriverForConfigSelection()
 end
 
 local function SelectConfigButton(panelId, buttonIndex, opts)
@@ -2626,6 +2647,7 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
     end
 
     CooldownCompanion:ClearAllConfigPreviews()
+    RefreshAlphaDriverForConfigSelection()
 end
 
 local function SelectConfigButtonPanel(panelId, opts)
@@ -2633,9 +2655,11 @@ local function SelectConfigButtonPanel(panelId, opts)
         CooldownCompanion:ClearAllConfigPreviews()
         CS.selectedGroup = panelId
         ClearSelectedButton()
+        RefreshAlphaDriverForConfigSelection()
     end
     if opts and opts.clearPanelMulti then
         wipe(CS.selectedPanels)
+        RefreshAlphaDriverForConfigSelection()
     end
 end
 
@@ -2806,6 +2830,7 @@ local function ResetConfigSelection(full)
         CS.browseCharKey = nil
         CS.browseContainerId = nil
     end
+    RefreshAlphaDriverForConfigSelection()
 end
 
 local function SetConfigPrimaryMode(mode, opts)

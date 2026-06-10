@@ -1535,6 +1535,9 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     end
 
     self:RefreshCursorAnchorTicker()
+    if self.RefreshAlphaUpdateDriver and not self._creatingAllGroupFrames then
+        self:RefreshAlphaUpdateDriver()
+    end
 
     return frame
 end

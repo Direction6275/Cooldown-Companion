@@ -1139,4 +1139,7 @@ function CooldownCompanion:ClearAllConfigPreviews()
     if ST._RefreshAdvancedSettingsPreviewButtons then
         ST._RefreshAdvancedSettingsPreviewButtons()
     end
+    if self.RefreshAlphaUpdateDriver then
+        self:RefreshAlphaUpdateDriver()
+    end
 end

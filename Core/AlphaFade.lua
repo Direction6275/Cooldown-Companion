@@ -26,6 +26,78 @@ local function FrameAlphaDiffers(frame, alpha)
     return frame:GetAlpha() ~= alpha
 end
 
+local function HasLiveAlphaFrames(frames)
+    if type(frames) ~= "table" then
+        return false
+    end
+    for i = 1, #frames do
+        if frames[i] then
+            return true
+        end
+    end
+    return false
+end
+
+local function AlphaFrameListsEqual(left, right)
+    if left == right then
+        return true
+    end
+    if type(left) ~= "table" or type(right) ~= "table" then
+        return false
+    end
+    if #left ~= #right then
+        return false
+    end
+    for i = 1, #left do
+        if left[i] ~= right[i] then
+            return false
+        end
+    end
+    return true
+end
+
+local function RestoreAlphaFrames(frames)
+    if type(frames) ~= "table" then
+        return
+    end
+    for i = 1, #frames do
+        local frame = frames[i]
+        if frame and frame.SetAlpha then
+            frame:SetAlpha(1)
+        end
+    end
+end
+
+local function AlphaStateNeedsCleanup(self, stateKey)
+    local state = self.alphaState and self.alphaState[stateKey]
+    return state and state.currentAlpha and state.currentAlpha ~= 1 or false
+end
+
+local function ConfigNeedsAlphaUpdate(self, config, stateKey)
+    if ST.HasActiveAlphaSettings and ST.HasActiveAlphaSettings(config) then
+        return true
+    end
+    return AlphaStateNeedsCleanup(self, stateKey)
+end
+
+local function GroupNeedsAlphaUpdate(self, group, groupId, frame)
+    if self.ShouldInheritPanelAnchorAlpha and self:ShouldInheritPanelAnchorAlpha(groupId) then
+        return false
+    end
+    if frame and frame._inheritsExternalAnchorAlpha then
+        return false
+    end
+    if ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(groupId) then
+        return true
+    end
+    return ConfigNeedsAlphaUpdate(self, group, groupId)
+end
+
+local function FrameIsAlphaWorkTarget(frame, isDependencyTarget)
+    return frame
+        and ((frame.IsShown and frame:IsShown()) or isDependencyTarget)
+end
+
 -- Alpha fade system: per-group runtime state
 -- self.alphaState[groupId] = {
 --     currentAlpha   - current interpolated alpha
@@ -364,108 +436,195 @@ function CooldownCompanion:RegisterModuleAlpha(moduleId, config, frames)
     if not self._moduleAlphaTargets then
         self._moduleAlphaTargets = {}
     end
-    self._moduleAlphaTargets[moduleId] = { config = config, frames = frames }
+    local hasActiveSettings = ST.HasActiveAlphaSettings and ST.HasActiveAlphaSettings(config) or false
+    local entry = self._moduleAlphaTargets[moduleId]
+    if entry and entry.config == config and AlphaFrameListsEqual(entry.frames, frames) then
+        if entry.hasActiveSettings ~= hasActiveSettings then
+            entry.hasActiveSettings = hasActiveSettings
+            self:RefreshAlphaUpdateDriver()
+            return
+        end
+        local alphaFrame = self._alphaFrame
+        if alphaFrame and not alphaFrame:GetScript("OnUpdate")
+            and HasLiveAlphaFrames(frames)
+            and ConfigNeedsAlphaUpdate(self, config, moduleId) then
+            self:RefreshAlphaUpdateDriver()
+        end
+        return
+    end
+    self._moduleAlphaTargets[moduleId] = { config = config, frames = frames, hasActiveSettings = hasActiveSettings }
+    if self.RefreshAlphaUpdateDriver then
+        self:RefreshAlphaUpdateDriver()
+    end
 end
 
 function CooldownCompanion:UnregisterModuleAlpha(moduleId, preserveState)
+    local entry = self._moduleAlphaTargets and self._moduleAlphaTargets[moduleId] or nil
+    local frames = entry and entry.frames or nil
+    if not preserveState then
+        RestoreAlphaFrames(frames)
+    end
     if self._moduleAlphaTargets then
         self._moduleAlphaTargets[moduleId] = nil
     end
-    if not preserveState and self.alphaState then
+    if self.alphaState and ((not preserveState) or not HasLiveAlphaFrames(frames)) then
         self.alphaState[moduleId] = nil
+    end
+    if self.RefreshAlphaUpdateDriver then
+        self:RefreshAlphaUpdateDriver()
     end
 end
 
-function CooldownCompanion:InitAlphaUpdateFrame()
-    if self._alphaFrame then return end
-
-    local alphaFrame = CreateFrame("Frame")
-    self._alphaFrame = alphaFrame
-    local accumulator = 0
-    local UPDATE_INTERVAL = 1 / 30 -- ~30Hz for smooth fading
-
-    local function ConfigNeedsAlphaUpdate(config, stateKey)
-        if (config.baselineAlpha or 1) < 1 then return true end
-        if config.forceAlphaInCombat or config.forceAlphaOutOfCombat
-            or config.forceAlphaRegularMounted or config.forceAlphaDragonriding
-            or config.forceAlphaTargetExists or config.forceAlphaFocusExists
-            or config.forceAlphaMouseover then
-            return true
-        end
-        if config.forceHideInCombat or config.forceHideOutOfCombat
-            or config.forceHideRegularMounted or config.forceHideDragonriding then
-            return true
-        end
-        -- Check for stale alpha state that needs cleanup
-        local state = self.alphaState[stateKey]
-        if state and state.currentAlpha and state.currentAlpha ~= 1 then
-            return true
-        end
+function CooldownCompanion:EvaluateAlphaDriverNeedsWork()
+    local profile = self.db and self.db.profile
+    if type(profile) ~= "table" then
         return false
     end
 
-    local function GroupNeedsAlphaUpdate(group, groupId, frame)
-        if self:ShouldInheritPanelAnchorAlpha(groupId) then
-            return false
+    local groups = profile.groups or {}
+    local groupFrames = self.groupFrames or {}
+    local dormantFrames = self._dormantFrames
+    local previousEvaluating = self._evaluatingAlphaDriverNeedsWork
+    self._evaluatingAlphaDriverNeedsWork = true
+    local panelAlphaAnchorTargets = self.GetPanelAlphaDependencyTargets
+        and self:GetPanelAlphaDependencyTargets(groups)
+        or nil
+    self._evaluatingAlphaDriverNeedsWork = previousEvaluating
+
+    for groupId, group in pairs(groups) do
+        local frame = groupFrames[groupId] or (dormantFrames and dormantFrames[groupId])
+        if FrameIsAlphaWorkTarget(frame, panelAlphaAnchorTargets and panelAlphaAnchorTargets[groupId]) then
+            if GroupNeedsAlphaUpdate(self, group, groupId, frame) then
+                return true
+            end
         end
-        if frame and frame._inheritsExternalAnchorAlpha then
-            return false
-        end
-        if ST.IsGroupConfigSelected(groupId) then return true end
-        return ConfigNeedsAlphaUpdate(group, groupId)
     end
 
-    alphaFrame:SetScript("OnUpdate", function(_, dt)
-        accumulator = accumulator + (dt or 0)
-        if accumulator < UPDATE_INTERVAL then return end
-        accumulator = 0
-
-        local now = GetTime()
-        local inCombat = InCombatLockdown()
-        local hasTarget = UnitExists("target")
-        local hasEnemyTarget = hasTarget and UnitCanAttack("player", "target") and true or false
-        local hasFocus = UnitExists("focus")
-        local mounted = IsMounted()
-        local regularMounted, dragonridingMounted = self:ResolveMountedAlphaStates(mounted)
-
-        local inTravelForm = false
-        if self._playerClassID == 11 then -- Druid
-            local fi = GetShapeshiftForm()
-            if fi and fi > 0 then
-                local _, _, _, spellID = GetShapeshiftFormInfo(fi)
-                if spellID == 783 or spellID == 210053 then
-                    inTravelForm = spellID
-                end
+    if self._moduleAlphaTargets then
+        for moduleId, entry in pairs(self._moduleAlphaTargets) do
+            if entry and HasLiveAlphaFrames(entry.frames)
+                and ConfigNeedsAlphaUpdate(self, entry.config, moduleId) then
+                return true
             end
         end
+    end
 
-        local containers = self.db.profile.groupContainers or {}
-        local groups = self.db.profile.groups or {}
-        local panelAlphaAnchorTargets = self:GetPanelAlphaDependencyTargets(groups)
-        for groupId, group in pairs(groups) do
-            local frame = self.groupFrames[groupId] or (self._dormantFrames and self._dormantFrames[groupId])
-            if frame
-                and (frame:IsShown() or (panelAlphaAnchorTargets and panelAlphaAnchorTargets[groupId])) then
-                if GroupNeedsAlphaUpdate(group, groupId, frame) then
-                    local locked = true
-                    if group.parentContainerId then
-                        local c = containers[group.parentContainerId]
-                        if c then locked = c.locked ~= false end
-                    else
-                        locked = group.locked
-                    end
-                    self:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
-                end
+    return false
+end
+
+function CooldownCompanion:AlphaUpdateOnUpdate(dt)
+    local updateInterval = self._alphaUpdateInterval or (1 / 30)
+    self._alphaUpdateAccumulator = (self._alphaUpdateAccumulator or 0) + (dt or 0)
+    if self._alphaUpdateAccumulator < updateInterval then return end
+    self._alphaUpdateAccumulator = 0
+
+    local now = GetTime()
+    local inCombat = InCombatLockdown()
+    local hasTarget = UnitExists("target")
+    local hasEnemyTarget = hasTarget and UnitCanAttack("player", "target") and true or false
+    local hasFocus = UnitExists("focus")
+    local mounted = IsMounted()
+    local regularMounted, dragonridingMounted = self:ResolveMountedAlphaStates(mounted)
+
+    local inTravelForm = false
+    if self._playerClassID == 11 then -- Druid
+        local fi = GetShapeshiftForm()
+        if fi and fi > 0 then
+            local _, _, _, spellID = GetShapeshiftFormInfo(fi)
+            if spellID == 783 or spellID == 210053 then
+                inTravelForm = spellID
             end
         end
+    end
 
-        -- Process registered module alpha targets (resource bars, custom aura bars, texture panels)
-        if self._moduleAlphaTargets then
-            for moduleId, entry in pairs(self._moduleAlphaTargets) do
-                if ConfigNeedsAlphaUpdate(entry.config, moduleId) then
-                    self:UpdateModuleAlpha(moduleId, entry.config, entry.frames, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+    local containers = self.db.profile.groupContainers or {}
+    local groups = self.db.profile.groups or {}
+    local panelAlphaAnchorTargets = self:GetPanelAlphaDependencyTargets(groups)
+    local needsPostPassRefresh = false
+    local processedAlphaWork = false
+    for groupId, group in pairs(groups) do
+        local frame = self.groupFrames[groupId] or (self._dormantFrames and self._dormantFrames[groupId])
+        if FrameIsAlphaWorkTarget(frame, panelAlphaAnchorTargets and panelAlphaAnchorTargets[groupId]) then
+            if GroupNeedsAlphaUpdate(self, group, groupId, frame) then
+                processedAlphaWork = true
+                if not (ST.HasActiveAlphaSettings and ST.HasActiveAlphaSettings(group))
+                    and AlphaStateNeedsCleanup(self, groupId) then
+                    needsPostPassRefresh = true
                 end
+                local locked = true
+                if group.parentContainerId then
+                    local c = containers[group.parentContainerId]
+                    if c then locked = c.locked ~= false end
+                else
+                    locked = group.locked
+                end
+                self:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
             end
         end
-    end)
+    end
+
+    -- Process registered module alpha targets (resource bars, custom aura bars, texture panels)
+    if self._moduleAlphaTargets then
+        for moduleId, entry in pairs(self._moduleAlphaTargets) do
+            if entry and HasLiveAlphaFrames(entry.frames)
+                and ConfigNeedsAlphaUpdate(self, entry.config, moduleId) then
+                processedAlphaWork = true
+                if not (ST.HasActiveAlphaSettings and ST.HasActiveAlphaSettings(entry.config))
+                    and AlphaStateNeedsCleanup(self, moduleId) then
+                    needsPostPassRefresh = true
+                end
+                self:UpdateModuleAlpha(moduleId, entry.config, entry.frames, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+            end
+        end
+    end
+    if needsPostPassRefresh or not processedAlphaWork then
+        self:RefreshAlphaUpdateDriver()
+    end
+end
+
+function CooldownCompanion:RefreshAlphaUpdateDriver()
+    if not self._alphaFrame then
+        if self._initializingAlphaUpdateFrame then
+            return false
+        end
+        if self.InitAlphaUpdateFrame then
+            self:InitAlphaUpdateFrame()
+        end
+    end
+
+    local alphaFrame = self._alphaFrame
+    if not alphaFrame then
+        return false
+    end
+
+    local needsWork = self:EvaluateAlphaDriverNeedsWork()
+    local handler = self._alphaUpdateHandler
+    if needsWork then
+        if not alphaFrame:GetScript("OnUpdate") then
+            alphaFrame:SetScript("OnUpdate", handler)
+        end
+    else
+        if alphaFrame:GetScript("OnUpdate") then
+            alphaFrame:SetScript("OnUpdate", nil)
+        end
+        self._alphaUpdateAccumulator = 0
+    end
+    return needsWork
+end
+
+function CooldownCompanion:InitAlphaUpdateFrame()
+    if self._alphaFrame then
+        self:RefreshAlphaUpdateDriver()
+        return
+    end
+
+    self._initializingAlphaUpdateFrame = true
+    self._alphaFrame = CreateFrame("Frame")
+    self._alphaUpdateAccumulator = 0
+    self._alphaUpdateInterval = 1 / 30 -- ~30Hz for smooth fading
+    self._alphaUpdateHandler = function(_, dt)
+        self:AlphaUpdateOnUpdate(dt)
+    end
+    self._initializingAlphaUpdateFrame = nil
+    self:RefreshAlphaUpdateDriver()
 end

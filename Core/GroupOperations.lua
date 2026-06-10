@@ -1885,13 +1885,19 @@ function CooldownCompanion:RefreshAllGroupsForSpellAvailability()
 end
 
 function CooldownCompanion:CreateAllGroupFrames()
+    local previousCreatingAllGroupFrames = self._creatingAllGroupFrames
+    self._creatingAllGroupFrames = true
     for groupId, _ in pairs(self.db.profile.groups) do
         if self:IsGroupVisibleToCurrentChar(groupId) then
             self:CreateGroupFrame(groupId)
         end
     end
+    self._creatingAllGroupFrames = previousCreatingAllGroupFrames
     self:FinalizePanelAnchors()
     self:FinalizeNonPanelGroupAnchors()
+    if self.RefreshAlphaUpdateDriver then
+        self:RefreshAlphaUpdateDriver()
+    end
 end
 
 function CooldownCompanion:RefreshConfigSelectedGroupFrames()
@@ -1900,6 +1906,9 @@ function CooldownCompanion:RefreshConfigSelectedGroupFrames()
     end
     if InCombatLockdown() then
         self._pendingFullRefresh = true
+        if self.RefreshAlphaUpdateDriver then
+            self:RefreshAlphaUpdateDriver()
+        end
         return
     end
     if not (ST.IsGroupConfigSelected and self.db and self.db.profile and self.db.profile.groups) then
@@ -2032,6 +2041,9 @@ function CooldownCompanion:RefreshAllGroups()
     -- are all blocked. Per-tick cooldown updates continue independently.
     if InCombatLockdown() then
         self._pendingFullRefresh = true
+        if self.RefreshAlphaUpdateDriver then
+            self:RefreshAlphaUpdateDriver()
+        end
         return
     end
     -- Clean up stale container frames (e.g. after profile switch)
@@ -2097,6 +2109,9 @@ function CooldownCompanion:RefreshAllGroups()
     end
     if self.RefreshCursorAnchorTicker then
         self:RefreshCursorAnchorTicker()
+    end
+    if self.RefreshAlphaUpdateDriver then
+        self:RefreshAlphaUpdateDriver()
     end
 end
 
@@ -2213,6 +2228,9 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     if self.RefreshCursorAnchorTicker then
         self:RefreshCursorAnchorTicker()
     end
+    if self.RefreshAlphaUpdateDriver then
+        self:RefreshAlphaUpdateDriver()
+    end
 end
 
 -- Fully unload a group: save/clear button OnUpdate scripts, remove from
@@ -2270,6 +2288,9 @@ function CooldownCompanion:UnloadGroup(groupId)
     self.groupFrames[groupId] = nil
     if self.RefreshCursorAnchorTicker then
         self:RefreshCursorAnchorTicker()
+    end
+    if self.RefreshAlphaUpdateDriver then
+        self:RefreshAlphaUpdateDriver()
     end
 end
 

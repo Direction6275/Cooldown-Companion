@@ -573,6 +573,22 @@ end
 -- Config Selection Helpers
 --------------------------------------------------------------------------------
 
+function ST.HasActiveAlphaSettings(config)
+    return type(config) == "table"
+        and ((config.baselineAlpha or 1) < 1
+            or config.forceAlphaInCombat == true
+            or config.forceAlphaOutOfCombat == true
+            or config.forceAlphaRegularMounted == true
+            or config.forceAlphaDragonriding == true
+            or config.forceAlphaTargetExists == true
+            or config.forceAlphaFocusExists == true
+            or config.forceAlphaMouseover == true
+            or config.forceHideInCombat == true
+            or config.forceHideOutOfCombat == true
+            or config.forceHideRegularMounted == true
+            or config.forceHideDragonriding == true)
+end
+
 -- Returns true when a group/panel frame should be at full alpha because it
 -- (or its parent container) is selected in the Config panel, or because it is
 -- part of an active cursor Layout preview.

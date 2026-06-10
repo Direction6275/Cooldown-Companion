@@ -1304,6 +1304,15 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
     local tabInfoBtns = opts.infoButtons or CS.tabInfoButtons
     local controlsDisabled = opts.disabled == true
 
+    local function ApplyAlphaSettingChange(refreshPanel)
+        if CooldownCompanion.RefreshAlphaUpdateDriver then
+            CooldownCompanion:RefreshAlphaUpdateDriver()
+        end
+        if refreshPanel and refreshFn then
+            refreshFn()
+        end
+    end
+
     local alphaHeading = AceGUI:Create("Heading")
     alphaHeading:SetText("Alpha")
     ColorHeading(alphaHeading)
@@ -1340,6 +1349,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         if opts.onBaselineChanged then
             opts.onBaselineChanged(val)
         end
+        ApplyAlphaSettingChange(false)
     end)
     container:AddChild(baseAlphaSlider)
 
@@ -1376,7 +1386,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
                 if controlsDisabled then return end
                 config[visibleKey] = (newVal == true)
                 config[hiddenKey] = (newVal == nil)
-                refreshFn()
+                ApplyAlphaSettingChange(true)
             end)
             return cb
         end
@@ -1401,6 +1411,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             travelCb:SetCallback("OnValueChanged", function(widget, event, val)
                 if controlsDisabled then return end
                 config.treatTravelFormAsMounted = val
+                ApplyAlphaSettingChange(false)
             end)
             container:AddChild(travelCb)
         end
@@ -1414,7 +1425,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         targetCb:SetCallback("OnValueChanged", function(widget, event, val)
             if controlsDisabled then return end
             config.forceAlphaTargetExists = val
-            refreshFn()
+            ApplyAlphaSettingChange(true)
         end)
         container:AddChild(targetCb)
 
@@ -1428,7 +1439,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             enemyOnlyCb:SetCallback("OnValueChanged", function(widget, event, val)
                 if controlsDisabled then return end
                 config.forceAlphaTargetEnemyOnly = val
-                refreshFn()
+                ApplyAlphaSettingChange(true)
             end)
             container:AddChild(enemyOnlyCb)
             ApplyCheckboxIndent(enemyOnlyCb, 20)
@@ -1443,7 +1454,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         focusCb:SetCallback("OnValueChanged", function(widget, event, val)
             if controlsDisabled then return end
             config.forceAlphaFocusExists = val
-            refreshFn()
+            ApplyAlphaSettingChange(true)
         end)
         container:AddChild(focusCb)
 
@@ -1456,7 +1467,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         mouseoverCb:SetCallback("OnValueChanged", function(widget, event, val)
             if controlsDisabled then return end
             config.forceAlphaMouseover = val
-            refreshFn()
+            ApplyAlphaSettingChange(true)
         end)
         container:AddChild(mouseoverCb)
 
@@ -1473,7 +1484,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         fadeCb:SetCallback("OnValueChanged", function(widget, event, val)
             if controlsDisabled then return end
             config.customFade = val or nil
-            refreshFn()
+            ApplyAlphaSettingChange(true)
         end)
         container:AddChild(fadeCb)
 
@@ -1487,6 +1498,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         fadeDelaySlider:SetCallback("OnValueChanged", function(widget, event, val)
             if controlsDisabled then return end
             config.fadeDelay = val
+            ApplyAlphaSettingChange(false)
         end)
         container:AddChild(fadeDelaySlider)
 
@@ -1499,6 +1511,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         fadeInSlider:SetCallback("OnValueChanged", function(widget, event, val)
             if controlsDisabled then return end
             config.fadeInDuration = val
+            ApplyAlphaSettingChange(false)
         end)
         container:AddChild(fadeInSlider)
 
@@ -1511,6 +1524,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         fadeOutSlider:SetCallback("OnValueChanged", function(widget, event, val)
             if controlsDisabled then return end
             config.fadeOutDuration = val
+            ApplyAlphaSettingChange(false)
         end)
         container:AddChild(fadeOutSlider)
         end -- config.customFade
