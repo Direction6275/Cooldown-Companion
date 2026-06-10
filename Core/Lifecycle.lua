@@ -404,11 +404,23 @@ function CooldownCompanion:RunImmediateCooldownRefresh(source)
         return
     end
 
+    local dirtySerial = self._cooldownDirtySerial or 0
+    local queuedRefreshCanSkipTicker = self._queuedCooldownRefreshCanSkipTicker
+        and self._queuedCooldownRefreshSkipSerial == dirtySerial
+    local canSkipTicker = source == "cooldown-event" or queuedRefreshCanSkipTicker
+    local skipSerial = canSkipTicker and dirtySerial or nil
+
     source = MergeCooldownRefreshSource(self._queuedCooldownRefreshSource, source)
     self._queuedCooldownRefreshSource = nil
+    self._queuedCooldownRefreshCanSkipTicker = nil
+    self._queuedCooldownRefreshSkipSerial = nil
     self._cooldownImmediateRefreshThisFrame = true
     self:EnsureCooldownRefreshQueueFrame()
     self:RunCooldownRefresh(source)
+    if canSkipTicker and skipSerial == (self._cooldownDirtySerial or 0) then
+        self._lastCooldownRefreshSource = "cooldown-event"
+        self._lastCooldownRefreshSerial = skipSerial
+    end
 end
 
 function CooldownCompanion:CanSkipTickerCooldownRefresh()
