@@ -366,14 +366,35 @@ function CooldownCompanion:FlushQueuedCooldownRefresh()
     self._cooldownImmediateRefreshThisFrame = nil
 
     local source = self._queuedCooldownRefreshSource
+    local canSkipTicker = self._queuedCooldownRefreshCanSkipTicker
+    local skipSerial = self._queuedCooldownRefreshSkipSerial
     self._queuedCooldownRefreshSource = nil
+    self._queuedCooldownRefreshCanSkipTicker = nil
+    self._queuedCooldownRefreshSkipSerial = nil
     if source then
         self:RunCooldownRefresh(source)
+        -- Non-dirty queued work should not erase a satisfied cooldown-event
+        -- dirty serial, because that would re-enable the next ticker walk.
+        if canSkipTicker and skipSerial == (self._cooldownDirtySerial or 0) then
+            self._lastCooldownRefreshSource = "cooldown-event"
+            self._lastCooldownRefreshSerial = skipSerial
+        end
     end
 end
 
 function CooldownCompanion:QueueCooldownRefresh(source)
+    local dirtySerial = self._cooldownDirtySerial or 0
+    local queuedRefreshCanSkipTicker = self._queuedCooldownRefreshCanSkipTicker
+        and self._queuedCooldownRefreshSkipSerial == dirtySerial
+    local lastRefreshCanSkipTicker = self._lastCooldownRefreshSource == "cooldown-event"
+        and self._lastCooldownRefreshSerial == dirtySerial
+    local canSkipTicker = source == "cooldown-event"
+        or queuedRefreshCanSkipTicker
+        or lastRefreshCanSkipTicker
+
     self._queuedCooldownRefreshSource = MergeCooldownRefreshSource(self._queuedCooldownRefreshSource, source)
+    self._queuedCooldownRefreshCanSkipTicker = canSkipTicker or nil
+    self._queuedCooldownRefreshSkipSerial = canSkipTicker and dirtySerial or nil
     self:EnsureCooldownRefreshQueueFrame()
 end
 
@@ -437,6 +458,8 @@ function CooldownCompanion:OnDisable()
     end
     self._cooldownRefreshQueueArmed = nil
     self._queuedCooldownRefreshSource = nil
+    self._queuedCooldownRefreshCanSkipTicker = nil
+    self._queuedCooldownRefreshSkipSerial = nil
     self._cooldownImmediateRefreshThisFrame = nil
 
     -- Disable all range check registrations
