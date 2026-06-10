@@ -367,21 +367,6 @@ local function SanitizeScopedExternalAnchors(profile, targetIsCursorRoot)
     end)
 end
 
-local function HasActiveAlphaSettings(group)
-    return (group.baselineAlpha or 1) < 1
-        or group.forceAlphaInCombat == true
-        or group.forceAlphaOutOfCombat == true
-        or group.forceAlphaRegularMounted == true
-        or group.forceAlphaDragonriding == true
-        or group.forceAlphaTargetExists == true
-        or group.forceAlphaFocusExists == true
-        or group.forceAlphaMouseover == true
-        or group.forceHideInCombat == true
-        or group.forceHideOutOfCombat == true
-        or group.forceHideRegularMounted == true
-        or group.forceHideDragonriding == true
-end
-
 local function AddDependent(dependents, name)
     dependents[#dependents + 1] = {
         name = name,
@@ -511,6 +496,9 @@ function CooldownCompanion:RebuildPanelAlphaDependencyTargets(groups)
     local targets = BuildPanelAlphaDependencyTargets(sourceGroups)
     self._panelAlphaDependencyTargets = targets
     self._panelAlphaDependencyGroups = sourceGroups
+    if self.RefreshAlphaUpdateDriver and not self._evaluatingAlphaDriverNeedsWork then
+        self:RefreshAlphaUpdateDriver()
+    end
     return targets
 end
 
@@ -795,7 +783,8 @@ function CooldownCompanion:NormalizePanelAlphaInheritance(profile)
         if type(group) == "table"
             and group.inheritPanelAlpha == nil
             and (self:IsPanelAnchoredToPanel(group) or IsPanelAnchoredToExternalFrame(group))
-            and HasActiveAlphaSettings(group) then
+            and ST.HasActiveAlphaSettings
+            and ST.HasActiveAlphaSettings(group) then
             group.inheritPanelAlpha = false
         end
     end
