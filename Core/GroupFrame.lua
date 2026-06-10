@@ -2244,38 +2244,16 @@ local function GetButtonDimensions(group, buttonUsabilityOptions)
     return w, h, isBarMode
 end
 
-function CooldownCompanion:PopulateGroupButtons(groupId)
-    local frame = self.groupFrames[groupId]
-    local group = self.db.profile.groups[groupId]
-
-    if not frame or not group then return end
-
-    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
-        and self:GetGroupButtonUsabilityOptions(groupId, group)
-        or nil
-    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
-    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions)
-    local style = group.style or {}
-    local spacing = style.buttonSpacing or ST.BUTTON_SPACING
-    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
-    local buttonsPerRow = style.buttonsPerRow or 12
-    local isTriggerMode = group.displayMode == "trigger"
-
-    -- Release existing buttons into bounded per-frame pools.
-    for _, button in ipairs(frame.buttons) do
-        ReleaseButtonToPool(self, frame, groupId, button)
-    end
-    wipe(frame.buttons)
-
-    -- Text mode group header
-    local isTextMode = group.displayMode == "text"
+local function ApplyTextGroupHeader(self, frame, group, style, isTextMode)
+    local showHeader = isTextMode and style.showTextGroupHeader == true
     local headerHeight = 0
-    if isTextMode and style.showTextGroupHeader then
+
+    if showHeader then
         if not frame.textHeader then
             frame.textHeader = frame:CreateFontString(nil, "OVERLAY")
             frame.textHeader:SetJustifyV("TOP")
         end
-        local font = CooldownCompanion:FetchFont(style.textFont or "Friz Quadrata TT")
+        local font = self:FetchFont(style.textFont or "Friz Quadrata TT")
         local fontSize = style.textHeaderFontSize or style.textFontSize or 12
         local fontOutline = ST.GetEffectiveFontOutline(style.textFontOutline or "OUTLINE")
         frame.textHeader:SetFont(font, fontSize, fontOutline)
@@ -2305,14 +2283,191 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     elseif frame.textHeader then
         frame.textHeader:Hide()
     end
-    frame._textHeaderHeight = headerHeight
 
-    -- Create new buttons (skip untalented spells)
+    frame._textHeaderHeight = headerHeight
+    frame._textHeaderShown = showHeader
+    return headerHeight
+end
+
+local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions)
+    local style = group.style or {}
+    local spacing = style.buttonSpacing or ST.BUTTON_SPACING
+    local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
+    local buttonsPerRow = style.buttonsPerRow or 12
+    local isTriggerMode = group.displayMode == "trigger"
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
     local visibleIndex = 0
-    for i, buttonData in ipairs(group.buttons) do
+
+    for _, button in ipairs(frame.buttons) do
+        visibleIndex = visibleIndex + 1
+        ClearButtonCompactSlotCache(button)
+        button:ClearAllPoints()
+        if isTriggerMode then
+            button:SetPoint("CENTER", frame, "CENTER", 0, 0)
+        else
+            local row, col
+            if orientation == "horizontal" then
+                row = math_floor((visibleIndex - 1) / buttonsPerRow)
+                col = (visibleIndex - 1) % buttonsPerRow
+            else
+                col = math_floor((visibleIndex - 1) / buttonsPerRow)
+                row = (visibleIndex - 1) % buttonsPerRow
+            end
+            button:SetPoint(growthAnchor, frame, growthAnchor, xMul * col * (buttonWidth + spacing), yMul * (row * (buttonHeight + spacing) + headerHeight))
+        end
+    end
+
+    frame.visibleButtonCount = isTriggerMode and (visibleIndex > 0 and 1 or 0) or visibleIndex
+    if group.parentContainerId and not group.compactLayout and self.GetGroupLayoutButtonCount then
+        frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
+    else
+        frame.layoutButtonCount = nil
+    end
+    frame._layoutDirty = false
+    frame._lastVisibleCount = visibleIndex
+end
+
+local function FinishGroupButtonRefresh(self, groupId, frame, group)
+    -- Resize the frame to fit visible buttons
+    self:ResizeGroupFrame(groupId)
+
+    -- Reset the sized flag so the next ResizeGroupFrame call skips compact
+    -- anchor compensation and treats the current size as a baseline.
+    frame._hasBeenSized = false
+
+    -- Update clickthrough state
+    self:UpdateGroupClickthrough(groupId)
+
+    if self.ApplyConfigPreviewsToGroup then
+        self:ApplyConfigPreviewsToGroup(groupId)
+    end
+
+    -- Initial cooldown update
+    frame:UpdateCooldowns()
+
+    -- Compact mode: apply reflow immediately so newly rebuilt buttons don't
+    -- briefly appear before the next ticker-driven layout pass.
+    if group.compactLayout then
+        frame._layoutDirty = true
+        self:UpdateGroupLayout(groupId)
+    end
+
+    -- Propagate group frame strata to all button sub-elements
+    local effectiveStrata = group.frameStrata or "MEDIUM"
+    for _, button in ipairs(frame.buttons) do
+        PropagateFrameStrata(button, effectiveStrata)
+    end
+
+    -- Update event-driven range check registrations
+    self:UpdateRangeCheckRegistrations()
+end
+
+local function IsIconMasqueStyleRefreshUnsafe(self, group)
+    local displayMode = group and group.displayMode
+    return self.Masque
+        and group
+        and group.masqueEnabled
+        and (displayMode == nil or displayMode == "icons")
+end
+
+local function ClearStyleUpdateEntries(entries, visibleCount)
+    if not entries then return end
+    local count = math_max(entries.count or 0, visibleCount or 0)
+    for index = 1, count do
+        entries[index] = nil
+    end
+    entries.count = 0
+end
+
+local function GetStyleUpdateEntries(self, groupId, frame, group)
+    if IsIconMasqueStyleRefreshUnsafe(self, group) then
+        return nil
+    end
+
+    local style = group.style or {}
+    local isTextMode = group.displayMode == "text"
+    local headerShown = isTextMode and style.showTextGroupHeader == true
+    if (frame._textHeaderShown == true) ~= headerShown then
+        return nil
+    end
+
+    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
+        and self:GetGroupButtonUsabilityOptions(groupId, group)
+        or nil
+    local entries = frame._styleUpdateEntries
+    if not entries then
+        entries = {}
+        frame._styleUpdateEntries = entries
+    end
+
+    local previousCount = entries.count or 0
+    local visibleIndex = 0
+    for sourceIndex, buttonData in ipairs(group.buttons) do
         if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             visibleIndex = visibleIndex + 1
+            local button = frame.buttons and frame.buttons[visibleIndex]
+            if not button then
+                ClearStyleUpdateEntries(entries, visibleIndex)
+                return nil
+            end
+            local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
+            local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
+            if button.buttonData ~= buttonData
+                or button.index ~= sourceIndex
+                or GetExistingButtonPoolKey(button) ~= poolKey then
+                ClearStyleUpdateEntries(entries, visibleIndex)
+                return nil
+            end
+
+            local entry = entries[visibleIndex]
+            if not entry then
+                entry = {}
+                entries[visibleIndex] = entry
+            end
+            entry.style = effectiveStyle
+        end
+    end
+
+    if #(frame.buttons or {}) ~= visibleIndex then
+        ClearStyleUpdateEntries(entries, visibleIndex)
+        return nil
+    end
+
+    for index = visibleIndex + 1, previousCount do
+        entries[index] = nil
+    end
+    entries.count = visibleIndex
+    return entries, buttonUsabilityOptions
+end
+
+function CooldownCompanion:PopulateGroupButtons(groupId)
+    local frame = self.groupFrames[groupId]
+    local group = self.db.profile.groups[groupId]
+
+    if not frame or not group then return end
+
+    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
+        and self:GetGroupButtonUsabilityOptions(groupId, group)
+        or nil
+    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
+    local isBarMode = group.displayMode == "bars"
+    local style = group.style or {}
+    local isTriggerMode = group.displayMode == "trigger"
+
+    -- Release existing buttons into bounded per-frame pools.
+    for _, button in ipairs(frame.buttons) do
+        ReleaseButtonToPool(self, frame, groupId, button)
+    end
+    wipe(frame.buttons)
+
+    -- Text mode group header
+    local isTextMode = group.displayMode == "text"
+    local headerHeight = ApplyTextGroupHeader(self, frame, group, style, isTextMode)
+
+    -- Create new buttons (skip untalented spells)
+    for i, buttonData in ipairs(group.buttons) do
+        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
             local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
             local button = AcquireButtonFromPool(frame, poolKey)
@@ -2336,23 +2491,6 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             if reusedButton then
                 PreparePooledButtonForUse(self, frame, group, button, i, buttonData, effectiveStyle)
             end
-            ClearButtonCompactSlotCache(button)
-            button:ClearAllPoints()
-            if isTriggerMode then
-                button:SetPoint("CENTER", frame, "CENTER", 0, 0)
-            else
-                -- Position the button using visibleIndex for gap-free layout
-                local yOffset = headerHeight
-                local row, col
-                if orientation == "horizontal" then
-                    row = math_floor((visibleIndex - 1) / buttonsPerRow)
-                    col = (visibleIndex - 1) % buttonsPerRow
-                else
-                    col = math_floor((visibleIndex - 1) / buttonsPerRow)
-                    row = (visibleIndex - 1) % buttonsPerRow
-                end
-                button:SetPoint(growthAnchor, frame, growthAnchor, xMul * col * (buttonWidth + spacing), yMul * (row * (buttonHeight + spacing) + yOffset))
-            end
 
             button:Show()
 
@@ -2363,40 +2501,8 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
         end
     end
 
-    -- Resize the frame to fit visible buttons
-    frame.visibleButtonCount = isTriggerMode and (visibleIndex > 0 and 1 or 0) or visibleIndex
-    if group.parentContainerId and not group.compactLayout and self.GetGroupLayoutButtonCount then
-        frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
-    else
-        frame.layoutButtonCount = nil
-    end
-    frame._layoutDirty = false
-    frame._lastVisibleCount = visibleIndex
-    self:ResizeGroupFrame(groupId)
-
-    -- Reset the sized flag so the next ResizeGroupFrame call skips compact
-    -- anchor compensation and treats the current size as a baseline.
-    -- Callers that just called AnchorGroupFrame need this because the
-    -- anchor was freshly set; other callers (e.g., UpdateGroupStyle)
-    -- accept a baseline reset because the full button set was just rebuilt.
-    frame._hasBeenSized = false
-
-    -- Update clickthrough state
-    self:UpdateGroupClickthrough(groupId)
-
-    if self.ApplyConfigPreviewsToGroup then
-        self:ApplyConfigPreviewsToGroup(groupId)
-    end
-
-    -- Initial cooldown update
-    frame:UpdateCooldowns()
-
-    -- Compact mode: apply reflow immediately so newly rebuilt buttons don't
-    -- briefly appear before the next ticker-driven layout pass.
-    if group.compactLayout then
-        frame._layoutDirty = true
-        self:UpdateGroupLayout(groupId)
-    end
+    ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
+    FinishGroupButtonRefresh(self, groupId, frame, group)
     -- _hasBeenSized is now true if the compact resize ran (set by
     -- ResizeGroupFrame), or still false if all buttons were visible and no
     -- compact resize was needed.  When compactLayout is off, it stays false
@@ -2405,15 +2511,6 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     -- will either compensate (true) relative to the established compact
     -- baseline, or skip compensation (false) to establish a new baseline
     -- when config-forced visibility clears.
-
-    -- Propagate group frame strata to all button sub-elements
-    local effectiveStrata = group.frameStrata or "MEDIUM"
-    for _, button in ipairs(frame.buttons) do
-        PropagateFrameStrata(button, effectiveStrata)
-    end
-
-    -- Update event-driven range check registrations
-    self:UpdateRangeCheckRegistrations()
 end
 
 function CooldownCompanion:ResizeGroupFrame(groupId)
@@ -2962,7 +3059,37 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
 
     if not frame or not group then return end
 
-    self:PopulateGroupButtons(groupId)
+    if InCombatLockdown() and frame:IsProtected() then
+        self._pendingFullRefresh = true
+        return
+    end
+
+    local entries, buttonUsabilityOptions = GetStyleUpdateEntries(self, groupId, frame, group)
+    if not entries then
+        self:PopulateGroupButtons(groupId)
+        return
+    end
+
+    local style = group.style or {}
+    local isTextMode = group.displayMode == "text"
+    local isTriggerMode = group.displayMode == "trigger"
+    local headerHeight = ApplyTextGroupHeader(self, frame, group, style, isTextMode)
+
+    for visibleIndex = 1, entries.count do
+        local entry = entries[visibleIndex]
+        local button = frame.buttons[visibleIndex]
+        if button.UpdateStyle then
+            button:UpdateStyle(entry.style)
+        end
+        if group.displayMode == "textures" or isTriggerMode then
+            button:SetAlpha(0)
+            button._lastVisAlpha = 0
+        end
+    end
+
+    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
+    ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
+    FinishGroupButtonRefresh(self, groupId, frame, group)
 end
 
 function CooldownCompanion:UpdateGroupClickthrough(groupId)
