@@ -34,10 +34,17 @@ local function UnregisterKeyPressHighlightFrame(frame)
 end
 
 local function RefreshKeyPressHighlightFrame(frame)
+    local cacheButtonBindingKeys = ST._CacheButtonBindingKeys
     local refreshButton = ST._RefreshKeyPressHighlightEnrollment
-    if not (refreshButton and frame and frame.buttons) then return end
+    if not (frame and frame.buttons) then return end
+    if not (cacheButtonBindingKeys or refreshButton) then return end
+
     for _, button in ipairs(frame.buttons) do
-        refreshButton(button)
+        if cacheButtonBindingKeys then
+            cacheButtonBindingKeys(button, button.buttonData)
+        else
+            refreshButton(button)
+        end
     end
 end
 

@@ -46,9 +46,41 @@ local function RefreshKeyPressHighlightEnrollment(button)
     end
 end
 
+local function UnregisterKeyPressHighlightButton(button)
+    local unregister = ST._UnregisterKeyPressHighlightButton
+    if unregister then
+        unregister(button)
+    end
+end
+
 local function RefreshKeyPressHighlightPreview(button)
-    button._keyPressHighlightActive = nil
+    button._keyPressHighlightActive = false
     RefreshKeyPressHighlightEnrollment(button)
+end
+
+local function ClearDormantKeyPressHighlightPreviewFrame(frame)
+    if not (frame and frame.buttons) then return end
+    for _, button in ipairs(frame.buttons) do
+        if button._keyPressHighlightPreview or button._keyPressHighlightActive ~= nil then
+            button._keyPressHighlightPreview = nil
+            button._keyPressHighlightActive = false
+            UnregisterKeyPressHighlightButton(button)
+        end
+    end
+end
+
+local function ClearDormantKeyPressHighlightPreviews(self, groupId)
+    local dormantFrames = self and self._dormantFrames
+    if not dormantFrames then return end
+
+    if groupId then
+        ClearDormantKeyPressHighlightPreviewFrame(dormantFrames[groupId])
+        return
+    end
+
+    for _, frame in pairs(dormantFrames) do
+        ClearDormantKeyPressHighlightPreviewFrame(frame)
+    end
 end
 
 local function BumpButtonPreviewToken(tokenStore, groupId, buttonIndex)
@@ -775,7 +807,10 @@ end
 --------------------------------------------------------------------------------
 
 function CooldownCompanion:SetGroupKeyPressHighlightPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_keyPressHighlightPreview", "_keyPressHighlightActive", nil, kphPreviewTokens, nil, RefreshKeyPressHighlightPreview, false)
+    SetGroupPreview(self, groupId, show, "_keyPressHighlightPreview", "_keyPressHighlightActive", false, kphPreviewTokens, nil, RefreshKeyPressHighlightPreview, false)
+    if not show then
+        ClearDormantKeyPressHighlightPreviews(self, groupId)
+    end
 end
 
 function CooldownCompanion:PlayGroupKeyPressHighlightPreview(groupId, durationSeconds)
@@ -783,7 +818,8 @@ function CooldownCompanion:PlayGroupKeyPressHighlightPreview(groupId, durationSe
 end
 
 function CooldownCompanion:ClearAllKeyPressHighlightPreviews()
-    ClearAllPreviews(self, "_keyPressHighlightPreview", "_keyPressHighlightActive", nil, kphPreviewTokens, nil, RefreshKeyPressHighlightPreview, false)
+    ClearAllPreviews(self, "_keyPressHighlightPreview", "_keyPressHighlightActive", false, kphPreviewTokens, nil, RefreshKeyPressHighlightPreview, false)
+    ClearDormantKeyPressHighlightPreviews(self)
 end
 
 --------------------------------------------------------------------------------
