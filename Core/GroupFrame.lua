@@ -2311,6 +2311,9 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     if self.RefreshCursorAnchorTicker then
         self:RefreshCursorAnchorTicker()
     end
+    if self.RefreshAlphaUpdateDriver then
+        self:RefreshAlphaUpdateDriver()
+    end
 end
 
 function CooldownCompanion:WouldCreateCircularAnchor(sourceId, targetId, targetKind, sourceKind)
