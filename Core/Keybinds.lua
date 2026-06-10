@@ -35,6 +35,13 @@ local ACTION_BAR_BUTTONS = {
     {"MultiBar7Button",           "MULTIACTIONBAR7BUTTON",   12},
 }
 
+local function RefreshKeyPressHighlightEnrollment(button)
+    local refresh = ST._RefreshKeyPressHighlightEnrollment
+    if refresh then
+        refresh(button)
+    end
+end
+
 -- slot → {bindingAction, frameName} reverse lookup, rebuilt on events
 local slotToButtonInfo = {}
 
@@ -291,36 +298,36 @@ end
 -- Stores result as button._bindingKeyInfos (array of parsed structs, or empty table).
 local function CacheButtonBindingKeys(button, buttonData)
     local infos = {}
-    if not buttonData then
-        button._bindingKeyInfos = infos
-        return
-    end
-    local slots
-    if buttonData.type == "spell" then
-        slots = GetSpellActionSlots(buttonData.id)
-    elseif buttonData.type == "item" or buttonData.type == "equipmentSlot" then
-        local itemID = button._resolvedItemId or buttonData.id
-        if itemID then
-            local slot = CooldownCompanion._itemSlotCache[itemID]
-            if slot then slots = {slot} end
+    if buttonData then
+        local slots
+        if buttonData.type == "spell" then
+            slots = GetSpellActionSlots(buttonData.id)
+        elseif buttonData.type == "item" or buttonData.type == "equipmentSlot" then
+            local itemID = button._resolvedItemId or buttonData.id
+            if itemID then
+                local slot = CooldownCompanion._itemSlotCache[itemID]
+                if slot then slots = {slot} end
+            end
         end
-    end
-    if slots then
-        local seen = {}
-        for _, slot in ipairs(slots) do
-            local rawKeys = GetRawBindingKeysForSlot(slot)
-            for _, rawKey in ipairs(rawKeys) do
-                if not seen[rawKey] then
-                    seen[rawKey] = true
-                    local parsed = ParseBindingKey(rawKey)
-                    if parsed then
-                        infos[#infos + 1] = parsed
+
+        if slots then
+            local seen = {}
+            for _, slot in ipairs(slots) do
+                local rawKeys = GetRawBindingKeysForSlot(slot)
+                for _, rawKey in ipairs(rawKeys) do
+                    if not seen[rawKey] then
+                        seen[rawKey] = true
+                        local parsed = ParseBindingKey(rawKey)
+                        if parsed then
+                            infos[#infos + 1] = parsed
+                        end
                     end
                 end
             end
         end
     end
     button._bindingKeyInfos = infos
+    RefreshKeyPressHighlightEnrollment(button)
 end
 
 -- Rebuild the entire item→slot reverse lookup cache by scanning action button frames.

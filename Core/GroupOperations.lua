@@ -25,6 +25,29 @@ local function ClearButtonVisualState(button)
     end
 end
 
+local function UnregisterKeyPressHighlightFrame(frame)
+    local unregisterButton = ST._UnregisterKeyPressHighlightButton
+    if not (unregisterButton and frame and frame.buttons) then return end
+    for _, button in ipairs(frame.buttons) do
+        unregisterButton(button)
+    end
+end
+
+local function RefreshKeyPressHighlightFrame(frame)
+    local cacheButtonBindingKeys = ST._CacheButtonBindingKeys
+    local refreshButton = ST._RefreshKeyPressHighlightEnrollment
+    if not (frame and frame.buttons) then return end
+    if not (cacheButtonBindingKeys or refreshButton) then return end
+
+    for _, button in ipairs(frame.buttons) do
+        if cacheButtonBindingKeys then
+            cacheButtonBindingKeys(button, button.buttonData)
+        else
+            refreshButton(button)
+        end
+    end
+end
+
 local LOAD_CONDITION_DEFAULTS = {
     raid = false,
     dungeon = false,
@@ -2046,7 +2069,7 @@ function CooldownCompanion:RefreshAllGroups()
     if self._dormantFrames then
         for groupId, _ in pairs(self._dormantFrames) do
             if not self.db.profile.groups[groupId] then
-                self._dormantFrames[groupId] = nil
+                self:DiscardDormantFrame(groupId)
             end
         end
     end
@@ -2097,7 +2120,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     if self._dormantFrames then
         for groupId, _ in pairs(self._dormantFrames) do
             if not self.db.profile.groups[groupId] then
-                self._dormantFrames[groupId] = nil
+                self:DiscardDormantFrame(groupId)
             end
         end
     end
@@ -2201,6 +2224,7 @@ end
 function CooldownCompanion:UnloadGroup(groupId)
     local frame = self.groupFrames[groupId]
     if not frame then return end
+    UnregisterKeyPressHighlightFrame(frame)
 
     -- Save and clear button OnUpdate scripts, remove from Masque.
     -- Buttons stay attached to the frame for potential reuse.
@@ -2269,6 +2293,7 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
             end
         end
     end
+    RefreshKeyPressHighlightFrame(frame)
 
     -- Recreate Masque group and re-add buttons
     local group = self.db.profile.groups[groupId]
@@ -2293,6 +2318,7 @@ end
 function CooldownCompanion:DiscardDormantFrame(groupId)
     if self._dormantFrames then
         local frame = self._dormantFrames[groupId]
+        UnregisterKeyPressHighlightFrame(frame)
         if frame and frame.buttons and self.ReleaseAuraTextureVisual then
             for _, button in ipairs(frame.buttons) do
                 self:ReleaseAuraTextureVisual(button)
