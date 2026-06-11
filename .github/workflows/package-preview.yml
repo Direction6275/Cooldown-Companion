@@ -77,3 +77,4 @@ jobs:
           name: CooldownCompanion-preview
           path: .release/**/*.zip
           if-no-files-found: error
+          include-hidden-files: true
