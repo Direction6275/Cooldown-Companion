@@ -4,6 +4,7 @@
 ## Author: You
 ## Version: @project-version@
 ## RequiredDeps: CooldownCompanion
+## IconTexture: Interface\AddOns\CooldownCompanion\Media\cdcminimap.tga
 ## OptionalDeps: IconBrowser
 ## LoadOnDemand: 1
 

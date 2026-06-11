@@ -13,6 +13,15 @@ local function ReadFile(path)
     return text
 end
 
+local function FileExists(path)
+    local file = io.open(path, "r")
+    if file then
+        file:close()
+        return true
+    end
+    return false
+end
+
 local function ParseTocEntries(text)
     local entries = {}
     for line in text:gmatch("[^\r\n]+") do
@@ -294,7 +303,7 @@ local function NewHarness()
         _defaults = {},
     }
 
-    assert(loadfile("Core/Init.lua"))("CooldownCompanion", ST)
+    assert(loadfile("CooldownCompanion/Core/Init.lua"))("CooldownCompanion", ST)
     local addon = _G.CooldownCompanion
     addon.ST = ST
     addon.RunAllMigrations = function() return migrationsOk end
@@ -307,8 +316,8 @@ local function NewHarness()
     addon.ApplyCdmAlpha = function() end
     addon.IsContainerVisibleToCurrentChar = function() return false end
 
-    assert(loadfile("Core/ConfigLoader.lua"))("CooldownCompanion", ST)
-    assert(loadfile("Core/Lifecycle.lua"))("CooldownCompanion", ST)
+    assert(loadfile("CooldownCompanion/Core/ConfigLoader.lua"))("CooldownCompanion", ST)
+    assert(loadfile("CooldownCompanion/Core/Lifecycle.lua"))("CooldownCompanion", ST)
     addon:OnInitialize()
 
     local originalSetConfigPrimaryMode = ST._SetConfigPrimaryMode
@@ -560,7 +569,16 @@ for _, scenario in ipairs({
 end
 
 do
-    local mainToc = ReadFile("CooldownCompanion.toc")
+    assert(not FileExists("CooldownCompanion.toc"), "main TOC should not remain at repo root")
+    assert(not FileExists("Core/Init.lua"), "Core files should not remain at repo root")
+    assert(not FileExists("ButtonFrame/IconMode.lua"), "ButtonFrame files should not remain at repo root")
+    assert(not FileExists("OtherBars/ResourceBar.lua"), "OtherBars files should not remain at repo root")
+    assert(not FileExists("Media/cdcminimap.tga"), "Media files should not remain at repo root")
+    assert(FileExists("CooldownCompanion/CooldownCompanion.toc"), "main TOC should live in addon folder")
+    assert(FileExists("CooldownCompanion/Core/Init.lua"), "main Core files should live in addon folder")
+    assert(FileExists("CooldownCompanion/Media/cdcminimap.tga"), "main Media files should live in addon folder")
+
+    local mainToc = ReadFile("CooldownCompanion/CooldownCompanion.toc")
     assert(not mainToc:find("\nConfig\\", 1, true), "main TOC should not load Config files")
     assert(not mainToc:find("\nConfigSettings\\", 1, true), "main TOC should not load ConfigSettings files")
     AssertContains(mainToc, "Core\\ConfigLoader.lua", "main TOC should load config loader")
@@ -615,8 +633,11 @@ do
     }, "config TOC load order")
 
     local packageMeta = ReadFile(".pkgmeta")
+    AssertContains(packageMeta, "CooldownCompanion/CooldownCompanion: CooldownCompanion",
+        "package metadata should flatten main addon folder")
     AssertContains(packageMeta, "CooldownCompanion/CooldownCompanion_Config: CooldownCompanion_Config",
         "package metadata should move companion addon to sibling folder")
+    AssertContains(packageMeta, "- CooldownCompanion/Libs", "package metadata should ignore local nested libs")
     AssertContains(packageMeta, "- tests", "package metadata should not ship local tests")
 end
 

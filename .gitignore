@@ -3,7 +3,7 @@ AGENTS.md
 .agents
 .mcp.json
 .vscode
-Libs/
+CooldownCompanion/Libs/
 nul
 agent-reference/
 .local-tools/
@@ -11,4 +11,5 @@ scripts/
 docs/
 tests/
 STRATEGY.md
-.tmp/vscode-wow-api-audit/
+.release/
+.tmp/

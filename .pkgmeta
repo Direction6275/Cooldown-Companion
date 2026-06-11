@@ -4,6 +4,7 @@ curse-project-id: 1451886
 wago-project-id: 4N2kWd6L
 
 move-folders:
+  CooldownCompanion/CooldownCompanion: CooldownCompanion
   CooldownCompanion/CooldownCompanion_Config: CooldownCompanion_Config
 
 externals:
@@ -25,15 +26,28 @@ externals:
     url: https://github.com/Stanzilla/LibCustomGlow
 
 ignore:
+  - AGENTS.md
   - README.md
   - LICENSE.txt
   - LICENSE.md
+  - STRATEGY.md
   - .github
+  - .agents
+  - .codex
   - CLAUDE.md
   - .claude
+  - agent-reference
+  - docs
+  - scripts
+  - .local-tools
   - .mcp.json
   - .vscode
+  - .worktrees
+  - .tmp
+  - .release
+  - nul
   - tests
+  - CooldownCompanion/Libs
   # Ace3 non-runtime files
   - Libs/Ace3/Ace3.lua
   - Libs/Ace3/Ace3.toc

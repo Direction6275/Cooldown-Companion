@@ -2,7 +2,7 @@ local function ReadFile(path)
     local file = assert(io.open(path, "rb"))
     local text = file:read("*a")
     file:close()
-    return text
+    return text:gsub("\r\n", "\n"):gsub("\r", "\n")
 end
 
 local function Count(text, needle)
@@ -18,11 +18,11 @@ local function Count(text, needle)
     end
 end
 
-local iconMode = ReadFile("ButtonFrame/IconMode.lua")
-local keybinds = ReadFile("Core/Keybinds.lua")
-local preview = ReadFile("ButtonFrame/Preview.lua")
-local groupFrame = ReadFile("Core/GroupFrame.lua")
-local groupOperations = ReadFile("Core/GroupOperations.lua")
+local iconMode = ReadFile("CooldownCompanion/ButtonFrame/IconMode.lua")
+local keybinds = ReadFile("CooldownCompanion/Core/Keybinds.lua")
+local preview = ReadFile("CooldownCompanion/ButtonFrame/Preview.lua")
+local groupFrame = ReadFile("CooldownCompanion/Core/GroupFrame.lua")
+local groupOperations = ReadFile("CooldownCompanion/Core/GroupOperations.lua")
 
 assert(iconMode:find("local kphButtons = {}", 1, true),
     "KPH driver should track enrolled buttons directly")
