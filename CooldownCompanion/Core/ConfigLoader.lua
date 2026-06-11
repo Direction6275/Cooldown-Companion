@@ -11,6 +11,8 @@ local type = type
 local next = next
 
 local CONFIG_ADDON_NAME = ADDON_NAME .. "_Config"
+local SETTINGS_CATEGORY_NAME = "Cooldown Companion"
+local SETTINGS_LAUNCHER_TEXT = "Open Cooldown Companion"
 
 local function SetConfigPrimaryModeWrapper(mode, opts)
     if ST._SetConfigPrimaryModeImpl then
@@ -113,7 +115,6 @@ local function EnsureConfigOpen(addon)
     local configFrame = GetConfigFrameIfLoaded(addon)
     if configFrame and configFrame._miniFrame and configFrame._miniFrame:IsShown() then
         configFrame._miniFrame:Hide()
-        return true
     end
     if not configFrame or not configFrame.frame:IsShown() then
         if not addon._configToggleImpl then
@@ -157,6 +158,12 @@ function CooldownCompanion:RunConfigIntent(intent)
             return false
         end
         ST._SetConfigPrimaryMode(intent.mode or "buttons")
+        return true
+    elseif intent.action == "open" then
+        if not EnsureConfigOpen(self) then
+            self:Print(FormatConfigLoadFailure(entryPoint, "config panel unavailable"))
+            return false
+        end
         return true
     elseif intent.action == "debugimport" then
         if self._configOpenDiagnosticDecodePanelImpl then
@@ -262,50 +269,64 @@ local function RunProfileMigrationAndRefresh(addon, reason)
     end
 end
 
+local function CreateSettingsLauncherFrame(addon)
+    local frame = CreateFrame("Frame")
+    frame.name = SETTINGS_CATEGORY_NAME
+
+    local title = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText(SETTINGS_CATEGORY_NAME)
+
+    local description = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    description:SetJustifyH("LEFT")
+    description:SetText("Open the Cooldown Companion configuration panel.")
+    description:SetWidth(520)
+
+    local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    button:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -16)
+    if button.SetTextToFit then
+        button:SetTextToFit(SETTINGS_LAUNCHER_TEXT)
+    else
+        button:SetText(SETTINGS_LAUNCHER_TEXT)
+        button:SetWidth(190)
+    end
+    button:SetHeight(24)
+    button:SetScript("OnClick", function()
+        addon:ToggleConfig({
+            action = "open",
+            entryPoint = "Blizzard Settings",
+            closeSettings = true,
+        })
+    end)
+
+    return frame
+end
+
+local function RegisterSettingsLauncher(addon)
+    if not (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory) then
+        return
+    end
+
+    local frame = CreateSettingsLauncherFrame(addon)
+    local category = Settings.RegisterCanvasLayoutCategory(frame, SETTINGS_CATEGORY_NAME)
+    if category then
+        Settings.RegisterAddOnCategory(category)
+        if category.GetID then
+            addon._settingsCategoryID = category:GetID()
+        else
+            addon._settingsCategoryID = category.ID
+        end
+    end
+end
+
 function CooldownCompanion:SetupConfig()
     if self._configSetupDone then
         return
     end
     self._configSetupDone = true
 
-    local AceConfig = LibStub("AceConfig-3.0")
-    local AceConfigDialog = LibStub("AceConfigDialog-3.0")
-
-    local options = {
-        name = "Cooldown Companion",
-        type = "group",
-        args = {
-            openConfig = {
-                name = "Open Cooldown Companion",
-                desc = "Click to open the configuration panel",
-                type = "execute",
-                order = 1,
-                func = function()
-                    if InCombatLockdown and InCombatLockdown() then
-                        CooldownCompanion:ToggleConfig({
-                            action = "toggle",
-                            entryPoint = "Blizzard Settings",
-                            closeSettings = true,
-                        })
-                        return
-                    end
-                    if not CooldownCompanion:LoadConfigAddon("Blizzard Settings") then
-                        return
-                    end
-                    CloseBlizzardSettings()
-                    C_Timer.After(0.1, function()
-                        CooldownCompanion:ToggleConfig({
-                            action = "toggle",
-                            entryPoint = "Blizzard Settings",
-                        })
-                    end)
-                end,
-            },
-        },
-    }
-
-    AceConfig:RegisterOptionsTable(ADDON_NAME, options)
-    AceConfigDialog:AddToBlizOptions(ADDON_NAME, "Cooldown Companion")
+    RegisterSettingsLauncher(self)
 
     self.db.RegisterCallback(self, "OnProfileChanged", function(db, profileName)
         ResetLoadedConfigForProfileChange(CooldownCompanion)

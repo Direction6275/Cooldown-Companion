@@ -5,8 +5,15 @@
 ## Version: @project-version@
 ## RequiredDeps: CooldownCompanion
 ## IconTexture: Interface\AddOns\CooldownCompanion\Media\cdcminimap.tga
-## OptionalDeps: IconBrowser
+## OptionalDeps: Ace3, LibDeflate, IconBrowser
 ## LoadOnDemand: 1
+
+#@no-lib-strip@
+# Config UI and import/export libraries
+Libs\Ace3\AceGUI-3.0\AceGUI-3.0.xml
+Libs\Ace3\AceSerializer-3.0\AceSerializer-3.0.xml
+Libs\LibDeflate\lib.xml
+#@end-no-lib-strip@
 
 Bootstrap.lua
 Config\State.lua
