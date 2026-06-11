@@ -1,20 +1,6 @@
 # Cooldown Companion
 An addon that allows you to create custom panels to track spell and item cooldowns with various styling options.
 
-## Local development
-
-This repo is a workspace that contains two WoW addon folders:
-
-- `CooldownCompanion`
-- `CooldownCompanion_Config`
-
-For a live local install, link both folders into the same WoW AddOns directory:
-
-```powershell
-New-Item -ItemType SymbolicLink -Path "C:\Program Files (x86)\World of Warcraft\_retail_\Interface\AddOns\CooldownCompanion" -Target "C:\Users\nicho\Desktop\Cooldown-Companion\CooldownCompanion"
-New-Item -ItemType SymbolicLink -Path "C:\Program Files (x86)\World of Warcraft\_retail_\Interface\AddOns\CooldownCompanion_Config" -Target "C:\Users\nicho\Desktop\Cooldown-Companion\CooldownCompanion_Config"
-```
-
 ## Libraries
 
 Thank you to all the libraries that make the addon possible 🙏
