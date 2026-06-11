@@ -514,11 +514,12 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
         end)
     end
 
-    -- Update immediately — CDM viewer frames registered their event handlers
-    -- before our addon loaded, so by the time this handler fires the CDM has
-    -- already refreshed its children with fresh auraInstanceID data.
+    -- Refresh immediately on the first aura event this frame. CDM viewer
+    -- frames registered their event handlers before our addon loaded, so by
+    -- the time this handler fires the CDM has already refreshed its children
+    -- with fresh auraInstanceID data. Bursts later in the same frame coalesce.
     if unit == "target" or unit == "player" then
-        self:UpdateAllCooldowns()
+        self:RunImmediateCooldownRefresh("aura-event")
     end
 end
 

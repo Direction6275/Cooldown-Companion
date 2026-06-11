@@ -152,20 +152,23 @@ function CooldownCompanion:OnEnable()
 
     self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnPlayerEnteringWorld")
 
-    -- High-frequency player-only unit events. RegisterUnitEvent filters before
-    -- dispatch, avoiding global UNIT_* traffic through AceEvent.
-    if not self._playerUnitEventFrame then
-        self._playerUnitEventFrame = CreateFrame("Frame")
-        self._playerUnitEventFrame:SetScript("OnEvent", function(_, event, ...)
+    -- High-frequency unit events. RegisterUnitEvent filters before dispatch,
+    -- avoiding global UNIT_* traffic through AceEvent.
+    if not self._unitEventFrame then
+        self._unitEventFrame = CreateFrame("Frame")
+        self._unitEventFrame:SetScript("OnEvent", function(_, event, ...)
             if event == "UNIT_POWER_FREQUENT" then
                 self:MarkCooldownsDirty()
             elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
                 self:OnSpellCast(event, ...)
+            elseif event == "UNIT_AURA" then
+                self:OnUnitAura(event, ...)
             end
         end)
     end
-    self._playerUnitEventFrame:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
-    self._playerUnitEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+    self._unitEventFrame:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
+    self._unitEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+    self._unitEventFrame:RegisterUnitEvent("UNIT_AURA", "player", "target")
 
     -- Combat events
     self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnCombatStart")
@@ -222,9 +225,6 @@ function CooldownCompanion:OnEnable()
     -- the vehicle state check to avoid duplicate AceEvent registrations.
     self:RegisterEvent("UNIT_ENTERED_VEHICLE", "OnVehicleUIChanged")
     self:RegisterEvent("UNIT_EXITED_VEHICLE", "OnVehicleUIChanged")
-
-    -- Aura (buff/debuff) changes — drives aura tracking overlay
-    self:RegisterEvent("UNIT_AURA", "OnUnitAura")
 
     -- Target change — marks dirty so ticker reads fresh viewer data next pass
     self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
@@ -485,9 +485,9 @@ function CooldownCompanion:OnDisable()
         self._unitTargetFrame:UnregisterAllEvents()
     end
 
-    -- Unregister player-only unit events (keep reference for reuse on re-enable)
-    if self._playerUnitEventFrame then
-        self._playerUnitEventFrame:UnregisterAllEvents()
+    -- Unregister filtered unit events (keep reference for reuse on re-enable)
+    if self._unitEventFrame then
+        self._unitEventFrame:UnregisterAllEvents()
     end
 
     -- Unregister EventRegistry callback (not managed by Ace3)
