@@ -1,0 +1,79 @@
+name: Package Preview
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package-preview:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone project
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build addon zip without uploading
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -d -g retail
+
+      - name: Show packaged files
+        run: find .release -maxdepth 3 -type f -o -type d
+
+      - name: Verify package layout
+        run: |
+          set -euo pipefail
+
+          zip_path="$(find .release -maxdepth 1 -type f -name 'CooldownCompanion*.zip' | head -n 1)"
+          if [ -z "$zip_path" ]; then
+            echo "No CooldownCompanion zip found in .release."
+            exit 1
+          fi
+
+          unpacked="$(mktemp -d)"
+          unzip -q "$zip_path" -d "$unpacked"
+
+          mapfile -t roots < <(find "$unpacked" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
+          printf 'Package roots:\n%s\n' "${roots[@]}"
+          if [ "${#roots[@]}" -ne 2 ] || [ "${roots[0]}" != "CooldownCompanion" ] || [ "${roots[1]}" != "CooldownCompanion_Config" ]; then
+            echo "Expected exactly CooldownCompanion and CooldownCompanion_Config package roots."
+            exit 1
+          fi
+
+          required_files=(
+            "CooldownCompanion/CooldownCompanion.toc"
+            "CooldownCompanion/LICENSE.txt"
+            "CooldownCompanion/Libs/Ace3/LibStub/LibStub.lua"
+            "CooldownCompanion/Libs/LibSharedMedia-3.0/lib.xml"
+            "CooldownCompanion/Libs/LibDeflate/lib.xml"
+            "CooldownCompanion/Libs/LibCustomGlow/LibCustomGlow-1.0.lua"
+            "CooldownCompanion/Libs/LibDataBroker-1.1/LibDataBroker-1.1.lua"
+            "CooldownCompanion/Libs/LibDBIcon-1.0/LibDBIcon-1.0.lua"
+            "CooldownCompanion_Config/CooldownCompanion_Config.toc"
+          )
+          for file in "${required_files[@]}"; do
+            if [ ! -f "$unpacked/$file" ]; then
+              echo "Missing package file: $file"
+              exit 1
+            fi
+          done
+
+          forbidden_paths=(
+            "CooldownCompanion/CooldownCompanion"
+            "CooldownCompanion/CooldownCompanion_Config"
+            "CooldownCompanion_Config/LICENSE.txt"
+          )
+          for path in "${forbidden_paths[@]}"; do
+            if [ -e "$unpacked/$path" ]; then
+              echo "Unexpected package path: $path"
+              exit 1
+            fi
+          done
+
+      - name: Upload preview zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: CooldownCompanion-preview
+          path: .release/**/*.zip
+          if-no-files-found: error

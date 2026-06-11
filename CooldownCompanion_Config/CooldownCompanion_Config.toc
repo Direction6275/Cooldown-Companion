@@ -1,0 +1,53 @@
+## Interface: 120005
+## Title: Cooldown Companion Config
+## Notes: Load-on-demand configuration UI for Cooldown Companion
+## Author: You
+## Version: @project-version@
+## RequiredDeps: CooldownCompanion
+## IconTexture: Interface\AddOns\CooldownCompanion\Media\cdcminimap.tga
+## OptionalDeps: IconBrowser
+## LoadOnDemand: 1
+
+Bootstrap.lua
+Config\State.lua
+Config\Tutorial.lua
+Config\ExportCodec.lua
+Config\ProfileImport.lua
+Config\Popups.lua
+Config\ProfileImportPieces.lua
+Config\ImportReview.lua
+Config\Diagnostics.lua
+Config\Pickers.lua
+Config\TalentPicker.lua
+Config\SpellItemAdd.lua
+Config\AutoImport.lua
+Config\DragReorderTargets.lua
+Config\DragReorderPreview.lua
+Config\DragReorderLifecycle.lua
+Config\DragReorder.lua
+Config\Column1.lua
+Config\Column2.lua
+Config\Column3.lua
+Config\Column4.lua
+Config\PanelChangelogOverlay.lua
+Config\Panel.lua
+ConfigSettings\Helpers.lua
+ConfigSettings\AdvancedSettingsPanel.lua
+ConfigSettings\SectionBuilders.lua
+ConfigSettings\CastBarPanels.lua
+ConfigSettings\ResourceBarPanelsHelpers.lua
+ConfigSettings\ResourceBarLayoutOrderPreview.lua
+ConfigSettings\ResourceBarPanelsResource.lua
+ConfigSettings\ResourceBarPanelsCustomBars.lua
+ConfigSettings\ResourceBarPanelsLayoutOrder.lua
+ConfigSettings\ResourceBarPanels.lua
+ConfigSettings\FrameAnchoringPanels.lua
+ConfigSettings\AuraTexturePicker.lua
+ConfigSettings\ButtonSettingsMultiSelect.lua
+ConfigSettings\ButtonSettingsOverrides.lua
+ConfigSettings\ButtonSettings.lua
+ConfigSettings\ButtonConditions.lua
+ConfigSettings\BarModeTabs.lua
+ConfigSettings\FormatEditor.lua
+ConfigSettings\TextModeTabs.lua
+ConfigSettings\GroupTabs.lua

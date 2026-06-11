@@ -570,12 +570,12 @@ function CooldownCompanion:OnCombatStart()
         HideUIPanel(PlayerSpellsFrame)
     end
     -- Hide config panel during combat to avoid protected frame errors
-    if self._configWasOpen == nil then
-        self._configWasOpen = false
-    end
     local configFrame = self:GetConfigFrame()
     if configFrame and configFrame.frame:IsShown() then
-        self._configWasOpen = true
+        self._pendingConfigIntent = {
+            action = "toggle",
+            entryPoint = "combat reopen",
+        }
         configFrame.frame:Hide()
         self:Print("Config closed for combat. It will reopen when combat ends.")
     end
@@ -612,10 +612,9 @@ function CooldownCompanion:OnCombatEnd()
             self:UpdateContainerDragHandle(containerId, not container or container.locked)
         end
     end
-    -- Reopen config panel if it was open before combat
-    if self._configWasOpen then
-        self._configWasOpen = false
-        self:ToggleConfig()
+    -- Reopen or complete deferred config work after combat.
+    if self._pendingConfigIntent then
+        self:OpenPendingConfigIntent()
     end
 end
 
@@ -624,26 +623,12 @@ function CooldownCompanion:SlashCommand(input)
     input = tostring(input or ""):lower()
     input = input:match("^%s*(.-)%s*$")
 
-    local function OpenConfigIfNeeded()
-        local configFrame = self:GetConfigFrame()
-        if configFrame and configFrame._miniFrame and configFrame._miniFrame:IsShown() then
-            configFrame._miniFrame:Hide()
-            return
-        end
-        if not configFrame or not configFrame.frame:IsShown() then
-            self:ToggleConfig()
-        end
-    end
-
-    local function SwitchPrimaryConfigMode(mode)
-        if ST._SetConfigPrimaryMode then
-            ST._SetConfigPrimaryMode(mode)
-            return
-        end
-        if ST._configState then
-            ST._configState.resourceBarPanelActive = (mode == "bars")
-        end
-        self:RefreshConfigPanel()
+    local function SwitchPrimaryConfigMode(mode, entryPoint)
+        self:ToggleConfig({
+            action = "mode",
+            mode = mode,
+            entryPoint = entryPoint or ("/cdc " .. mode),
+        })
     end
 
     if input == "lock" or input == "unlock" then
@@ -693,25 +678,17 @@ function CooldownCompanion:SlashCommand(input)
         self:Print("/cdc minimap - Toggle minimap icon")
         self:Print("/cdc reset - Reset profile to defaults")
     elseif input == "bars" or input == "frames" then
-        if InCombatLockdown() then
-            self:ToggleConfig()
-            return
-        end
-        OpenConfigIfNeeded()
-        SwitchPrimaryConfigMode("bars")
+        SwitchPrimaryConfigMode("bars", "/cdc " .. input)
     elseif input == "buttons" then
-        if InCombatLockdown() then
-            self:ToggleConfig()
-            return
-        end
-        OpenConfigIfNeeded()
         SwitchPrimaryConfigMode("buttons")
     elseif input == "reset" then
-        StaticPopup_Show("CDC_RESET_PROFILE", self.db:GetCurrentProfile(),
-            nil, { profileName = self.db:GetCurrentProfile() })
+        self:ShowResetProfilePopup()
     elseif input == "debugimport" then
         self:OpenDiagnosticDecodePanel()
     else
-        self:ToggleConfig()
+        self:ToggleConfig({
+            action = "toggle",
+            entryPoint = "/cdc",
+        })
     end
 end

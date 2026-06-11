@@ -1,5 +1,6 @@
 # Cooldown Companion
 An addon that allows you to create custom panels to track spell and item cooldowns with various styling options.
+
 ## Libraries
 
 Thank you to all the libraries that make the addon possible 🙏
