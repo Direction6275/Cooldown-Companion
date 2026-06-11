@@ -8,54 +8,66 @@ move-folders:
   CooldownCompanion/CooldownCompanion_Config: CooldownCompanion_Config
 
 externals:
-  Libs/Ace3:
-    url: https://repos.wowace.com/wow/ace3/trunk
+  CooldownCompanion/Libs/Ace3/LibStub:
+    url: https://repos.wowace.com/wow/ace3/trunk/LibStub
     tag: latest
-  Libs/LibSharedMedia-3.0:
+  CooldownCompanion/Libs/Ace3/CallbackHandler-1.0:
+    url: https://repos.wowace.com/wow/ace3/trunk/CallbackHandler-1.0
+    tag: latest
+  CooldownCompanion/Libs/Ace3/AceAddon-3.0:
+    url: https://repos.wowace.com/wow/ace3/trunk/AceAddon-3.0
+    tag: latest
+  CooldownCompanion/Libs/Ace3/AceEvent-3.0:
+    url: https://repos.wowace.com/wow/ace3/trunk/AceEvent-3.0
+    tag: latest
+  CooldownCompanion/Libs/Ace3/AceDB-3.0:
+    url: https://repos.wowace.com/wow/ace3/trunk/AceDB-3.0
+    tag: latest
+  CooldownCompanion/Libs/Ace3/AceConsole-3.0:
+    url: https://repos.wowace.com/wow/ace3/trunk/AceConsole-3.0
+    tag: latest
+  CooldownCompanion/Libs/LibSharedMedia-3.0:
     url: https://repos.wowace.com/wow/libsharedmedia-3-0/trunk/LibSharedMedia-3.0
     tag: latest
-  Libs/LibDataBroker-1.1:
+  CooldownCompanion/Libs/LibDataBroker-1.1:
     url: https://github.com/tekkub/libdatabroker-1-1
-  Libs/LibDBIcon-1.0:
+  CooldownCompanion/Libs/LibDBIcon-1.0:
     url: https://repos.wowace.com/wow/libdbicon-1-0/trunk/LibDBIcon-1.0
     tag: latest
-  Libs/LibDeflate:
+  CooldownCompanion/Libs/LibCustomGlow:
+    url: https://github.com/Stanzilla/LibCustomGlow
+  CooldownCompanion_Config/Libs/Ace3/AceGUI-3.0:
+    url: https://repos.wowace.com/wow/ace3/trunk/AceGUI-3.0
+    tag: latest
+  CooldownCompanion_Config/Libs/Ace3/AceSerializer-3.0:
+    url: https://repos.wowace.com/wow/ace3/trunk/AceSerializer-3.0
+    tag: latest
+  CooldownCompanion_Config/Libs/LibDeflate:
     url: https://github.com/SafeteeWoW/LibDeflate
     tag: 1.0.2-release
-  Libs/LibCustomGlow:
-    url: https://github.com/Stanzilla/LibCustomGlow
 
 ignore:
   - README.md
   - .github
-  - CooldownCompanion/Libs
-  # Ace3 non-runtime files
-  - Libs/Ace3/Ace3.lua
-  - Libs/Ace3/Ace3.toc
-  - Libs/Ace3/Bindings.xml
-  - Libs/Ace3/changelog.txt
-  - Libs/Ace3/CHANGES.txt
-  - Libs/Ace3/README.md
-  - Libs/Ace3/LICENSE.txt
   # LibDeflate non-runtime files
-  - Libs/LibDeflate/docs
-  - Libs/LibDeflate/examples
-  - Libs/LibDeflate/LibStub
-  - Libs/LibDeflate/LibDeflate.toc
-  - Libs/LibDeflate/README.md
-  - Libs/LibDeflate/LICENSE.txt
-  - Libs/LibDeflate/changelog.md
-  - "Libs/LibDeflate/libdeflate-*.rockspec"
+  - CooldownCompanion_Config/Libs/LibDeflate/docs
+  - CooldownCompanion_Config/Libs/LibDeflate/examples
+  - CooldownCompanion_Config/Libs/LibDeflate/LibStub
+  - CooldownCompanion_Config/Libs/LibDeflate/LibDeflate.toc
+  - CooldownCompanion_Config/Libs/LibDeflate/README.md
+  - CooldownCompanion_Config/Libs/LibDeflate/LICENSE.txt
+  - CooldownCompanion_Config/Libs/LibDeflate/changelog.md
+  - "CooldownCompanion_Config/Libs/LibDeflate/libdeflate-*.rockspec"
   # LibCustomGlow non-runtime files
-  - Libs/LibCustomGlow/.editorconfig
-  - Libs/LibCustomGlow/.luarc.json
-  - Libs/LibCustomGlow/.pkgmeta
-  - Libs/LibCustomGlow/cspell.json
-  - Libs/LibCustomGlow/LibStub
-  - Libs/LibCustomGlow/LibCustomGlow-1.0.toc
-  - Libs/LibCustomGlow/LibCustomGlow-1.0.xml
-  - Libs/LibCustomGlow/LICENSE
-  - Libs/LibCustomGlow/README.md
+  - CooldownCompanion/Libs/LibCustomGlow/.editorconfig
+  - CooldownCompanion/Libs/LibCustomGlow/.luarc.json
+  - CooldownCompanion/Libs/LibCustomGlow/.pkgmeta
+  - CooldownCompanion/Libs/LibCustomGlow/cspell.json
+  - CooldownCompanion/Libs/LibCustomGlow/LibStub
+  - CooldownCompanion/Libs/LibCustomGlow/LibCustomGlow-1.0.toc
+  - CooldownCompanion/Libs/LibCustomGlow/LibCustomGlow-1.0.xml
+  - CooldownCompanion/Libs/LibCustomGlow/LICENSE
+  - CooldownCompanion/Libs/LibCustomGlow/README.md
   # LibSharedMedia non-runtime files
-  - Libs/LibSharedMedia-3.0/CHANGES.txt
-  - Libs/LibSharedMedia-3.0/LibSharedMedia-3.0.toc
+  - CooldownCompanion/Libs/LibSharedMedia-3.0/CHANGES.txt
+  - CooldownCompanion/Libs/LibSharedMedia-3.0/LibSharedMedia-3.0.toc

@@ -7,7 +7,7 @@
 ## X-Wago-ID: 4N2kWd6L
 ## SavedVariables: CooldownCompanionDB
 ## IconTexture: Interface\AddOns\CooldownCompanion\Media\cdcminimap.tga
-## OptionalDeps: Ace3, LibSharedMedia-3.0, LibDeflate, LibCustomGlow-1.0, LibDataBroker-1.1, LibDBIcon-1.0, Masque, IconBrowser
+## OptionalDeps: Ace3, LibSharedMedia-3.0, LibCustomGlow-1.0, LibDataBroker-1.1, LibDBIcon-1.0, Masque
 
 #@no-lib-strip@
 # Libraries - LibStub must be first
@@ -22,14 +22,6 @@ Libs\Ace3\AceAddon-3.0\AceAddon-3.0.xml
 Libs\Ace3\AceEvent-3.0\AceEvent-3.0.xml
 Libs\Ace3\AceDB-3.0\AceDB-3.0.xml
 Libs\Ace3\AceConsole-3.0\AceConsole-3.0.xml
-
-# Ace3 GUI Libraries
-Libs\Ace3\AceGUI-3.0\AceGUI-3.0.xml
-Libs\Ace3\AceConfig-3.0\AceConfig-3.0.xml
-Libs\Ace3\AceSerializer-3.0\AceSerializer-3.0.xml
-
-# Compression Library
-Libs\LibDeflate\lib.xml
 
 # Custom Glow Library
 Libs\LibCustomGlow\LibCustomGlow-1.0.lua
