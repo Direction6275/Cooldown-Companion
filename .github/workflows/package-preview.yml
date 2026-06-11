@@ -1,0 +1,29 @@
+name: Package Preview
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package-preview:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone project
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build addon zip without uploading
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -d -g retail
+
+      - name: Show packaged files
+        run: find .release -maxdepth 3 -type f -o -type d
+
+      - name: Upload preview zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: CooldownCompanion-preview
+          path: .release/**/*.zip
+          if-no-files-found: error
