@@ -9,6 +9,7 @@ agent-reference/
 .local-tools/
 scripts/
 docs/
+docs/plans/
 tests/
 STRATEGY.md
 .release/
