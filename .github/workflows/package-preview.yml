@@ -19,12 +19,22 @@ jobs:
       - name: Build preview zip
         uses: BigWigsMods/packager@v2
         with:
-          args: -d -g retail
+          args: -d -g retail -r preview-package
 
-      - name: Upload preview zip
-        uses: actions/upload-artifact@v4
+      - name: Select preview zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t zips < <(find preview-package -maxdepth 1 -type f -name 'CooldownCompanion*.zip' | sort)
+          if [ "${#zips[@]}" -ne 1 ]; then
+            echo "Expected exactly one CooldownCompanion preview zip, found ${#zips[@]}."
+            exit 1
+          fi
+          echo "preview_zip=${zips[0]}" >> "$GITHUB_ENV"
+
+      - name: Make preview zip downloadable
+        uses: actions/upload-artifact@v7
         with:
-          name: CooldownCompanion-preview
-          path: .release/CooldownCompanion*.zip
+          path: ${{ env.preview_zip }}
           if-no-files-found: error
-          include-hidden-files: true
+          archive: false
