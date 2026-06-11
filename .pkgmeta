@@ -28,6 +28,7 @@ externals:
 ignore:
   - README.md
   - .github
+  - CooldownCompanion/Libs
   # Ace3 non-runtime files
   - Libs/Ace3/Ace3.lua
   - Libs/Ace3/Ace3.toc
