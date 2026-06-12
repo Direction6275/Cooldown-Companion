@@ -685,21 +685,6 @@ function CooldownCompanion:SlashCommand(input)
         self:ShowResetProfilePopup()
     elseif input == "debugimport" then
         self:OpenDiagnosticDecodePanel()
-    elseif input:match("^pandemicdebug") then
-        -- TEMPORARY pandemic flicker diagnostics (remove before merge).
-        local arg = input:match("^pandemicdebug%s+(%S+)")
-        if not arg or arg == "off" then
-            self._pandemicDebugSpellID = nil
-            self:Print("Pandemic debug trace disabled.")
-        else
-            local spellID = tonumber(arg)
-            if spellID then
-                self._pandemicDebugSpellID = spellID
-                self:Print(("Pandemic debug trace enabled for spell %d. Disable with /cdc pandemicdebug off."):format(spellID))
-            else
-                self:Print("Usage: /cdc pandemicdebug <spellID|off>")
-            end
-        end
     else
         self:ToggleConfig({
             action = "toggle",

@@ -635,16 +635,19 @@ function EntryRuntime.StartTrackedAuraTargetSwitch(owner, now, unit)
     owner._auraUnit = unit or "target"
 end
 
-local function ResolveAuraPandemicStateInner(owner, viewerFrame, options)
+function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
+    if not owner then return false end
+    options = options or {}
+
     if options.previewActive then
-        return true, "preview"
+        return true
     end
 
     if not (options.enabled and viewerFrame) then
         if options.clearWhenDisabled then
             ClearAuraPandemicRuntimeState(owner)
         end
-        return false, viewerFrame and "disabled" or "no-viewer"
+        return false
     end
 
     local now = options.now or GetTime()
@@ -664,7 +667,7 @@ local function ResolveAuraPandemicStateInner(owner, viewerFrame, options)
                     true
                 ) then
                     owner._pandemicGraceStart = nil
-                    return false, "suppressed"
+                    return false
                 end
 
                 if UpdatedAuraTimingProvesStaleRange(
@@ -676,43 +679,42 @@ local function ResolveAuraPandemicStateInner(owner, viewerFrame, options)
                     options
                 ) then
                     RecordSuppressedPandemicRange(owner, auraUnit, auraInstanceID, pandemicStartTime, pandemicEndTime)
-                    return false, "stale-suppress"
+                    return false
                 end
 
                 RecordAcceptedPandemicRange(owner, auraUnit, auraInstanceID, pandemicStartTime, pandemicEndTime, options)
-                return true, "semantic-true"
+                return true
             elseif semanticResult == false then
                 ClearAuraPandemicRuntimeState(owner)
-                return false, "semantic-false"
+                return false
             end
         end
     end
 
     if IsCurrentPandemicRangeSuppressed(owner, auraUnit, auraInstanceID, pandemicStartTime, pandemicEndTime, hasReadableRange) then
         owner._pandemicGraceStart = nil
-        return false, "suppressed-fallback"
+        return false
     end
 
     local pandemicIcon = viewerFrame.PandemicIcon
     if pandemicIcon and pandemicIcon:IsVisible() then
         owner._pandemicGraceStart = nil
-        -- The icon outlived the update event that marked the dirty state, so
-        -- that update did not end the pandemic display. A genuine refresh
-        -- hides the icon in the same event dispatch that marks dirty, so it
-        -- still hard-clears below; a stale mark left over from icon churn
-        -- must not bypass the grace period on a later transient gap.
+        -- An update whose icon survived did not end the pandemic display.
+        -- Consume the dirty mark so it cannot bypass the grace period on a
+        -- later transient icon gap — the CDM tears the icon down and rebuilds
+        -- it on every target aura event, so gaps are routine churn.
         ClearAuraPandemicDirtyState(owner)
-        return true, "icon-visible"
+        return true
     elseif owner._inPandemic then
         if hasDirtyUpdate then
-            -- The CDM nils the pandemic window and rebuilds it on every
-            -- target aura event, so "fresh dirty + hidden icon" alone does
-            -- not prove a refresh — the rebuild can fail transiently and the
-            -- icon returns on the next event. After a successful rebuild the
-            -- window fields hold values (secret in combat); a hidden icon
+            -- A dirty mark with a hidden icon does not prove a refresh: the
+            -- CDM nils the pandemic window and rebuilds it on every target
+            -- aura event, and the rebuild can fail transiently (the icon
+            -- returns on the next event). After a successful rebuild the
+            -- window fields hold values (secret in combat), so a hidden icon
             -- then means the updated aura is genuinely outside its pandemic
-            -- window. Nil fields mean the rebuild failed: keep the dirty
-            -- mark and fall through to the grace hold so the next rebuild
+            -- window — clear immediately. Nil fields mean the rebuild failed:
+            -- keep the dirty mark and ride the grace hold so the next rebuild
             -- settles it (clear if still out, no flicker if it returns).
             local startTime = viewerFrame.pandemicStartTime
             local endTime = viewerFrame.pandemicEndTime
@@ -721,90 +723,19 @@ local function ResolveAuraPandemicStateInner(owner, viewerFrame, options)
                 or (startTime ~= nil and endTime ~= nil)
             if windowExists then
                 ClearAuraPandemicRuntimeState(owner)
-                return false, "dirty-clear"
+                return false
             end
         end
         if not owner._pandemicGraceStart then
             owner._pandemicGraceStart = now
         end
         if now - owner._pandemicGraceStart <= 0.3 then
-            return true, hasDirtyUpdate and "grace-hold-dirty" or "grace-hold"
+            return true
         end
         owner._pandemicGraceStart = nil
-        return false, hasDirtyUpdate and "grace-expired-dirty" or "grace-expired"
     end
 
-    return false, "no-icon"
-end
-
--- TEMPORARY pandemic flicker diagnostics (remove before merge).
--- Gate set via /cdc pandemicdebug <spellID|off>; matches the owner's
--- resolved aura spell ID or its buttonData.id.
-local function PandemicDebugMatches(owner)
-    local debugSpellID = CooldownCompanion._pandemicDebugSpellID
-    if not debugSpellID then return false end
-    if owner._auraSpellID == debugSpellID then return true end
-    local bd = owner.buttonData
-    return bd and bd.id == debugSpellID
-end
-
-local function DescribePandemicIconState(viewerFrame)
-    if not viewerFrame then
-        return "no-viewer"
-    end
-    local icon = viewerFrame.PandemicIcon
-    if not icon then
-        return "icon-nil"
-    end
-    return icon:IsVisible() and "visible" or "hidden"
-end
-
-function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
-    if not owner then return false end
-    options = options or {}
-
-    if not PandemicDebugMatches(owner) then
-        return (ResolveAuraPandemicStateInner(owner, viewerFrame, options))
-    end
-
-    -- Capture mutable inputs before the inner call clears them.
-    local now = options.now or GetTime()
-    local iconState = DescribePandemicIconState(viewerFrame)
-    local _, _, hasReadableRange = GetReadablePandemicRange(viewerFrame)
-    local dirtyInst = owner._pandemicDirtyAuraInstanceID
-    local graceStart = owner._pandemicGraceStart
-
-    local result, reason = ResolveAuraPandemicStateInner(owner, viewerFrame, options)
-
-    if result ~= owner._pdbgLastResult then
-        local sinceFlip = owner._pdbgLastFlipAt and (now - owner._pdbgLastFlipAt)
-        CooldownCompanion:Print(string.format(
-            "|cffff6060PandemicDbg|r %s>%s reason=%s icon=%s range=%s dirty=%s grace=%s inst=%s combat=%s%s",
-            tostring(owner._pdbgLastResult), tostring(result), reason, iconState,
-            hasReadableRange and "readable" or "secret/nil",
-            dirtyInst and tostring(dirtyInst) or "no",
-            graceStart and string.format("%.2f", now - graceStart) or "no",
-            tostring(owner._auraInstanceID),
-            tostring(InCombatLockdown()),
-            sinceFlip and string.format(" +%dms", sinceFlip * 1000) or ""
-        ))
-        owner._pdbgLastFlipAt = now
-        owner._pdbgLastResult = result
-    end
-
-    if iconState ~= owner._pdbgLastIconState then
-        if owner._pdbgLastIconState ~= nil then
-            CooldownCompanion:Print(string.format(
-                "|cffff6060PandemicDbg|r icon %s>%s reason=%s dirty=%s combat=%s",
-                owner._pdbgLastIconState, iconState, reason,
-                dirtyInst and tostring(dirtyInst) or "no",
-                tostring(InCombatLockdown())
-            ))
-        end
-        owner._pdbgLastIconState = iconState
-    end
-
-    return result
+    return false
 end
 
 local function CommitTrackedAuraOwnerState(owner, state)

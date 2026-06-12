@@ -488,19 +488,10 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
     local removedIDSet = BuildAuraInstanceIDSet(removedIDs)
     local updatedIDSet = BuildAuraInstanceIDSet(updatedIDs)
     local isTarget = (unit == "target")
-    -- TEMPORARY pandemic flicker diagnostics (remove before merge).
-    local dbgID = self._pandemicDebugSpellID
     if removedIDs or updatedIDs or isTarget then
         self:ForEachButton(function(button)
-            local dbgMatch = dbgID
-                and (button._auraSpellID == dbgID
-                    or (button.buttonData and button.buttonData.id == dbgID))
             if button._auraInstanceID and button._auraUnit == unit then
                 if removedIDSet and removedIDSet[button._auraInstanceID] then
-                    if dbgMatch then
-                        self:Print(("|cffff6060PandemicDbg|r removed-clear inst=%s unit=%s")
-                            :format(tostring(button._auraInstanceID), unit))
-                    end
                     button._auraInstanceID = nil
                     button._inPandemic = false
                     EntryRuntime.ClearAuraPandemicRuntimeState(button)
@@ -511,10 +502,6 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
                 if updatedIDSet
                     and button._auraInstanceID
                     and updatedIDSet[button._auraInstanceID] then
-                    if dbgMatch then
-                        self:Print(("|cffff6060PandemicDbg|r dirty-mark inst=%s unit=%s")
-                            :format(tostring(button._auraInstanceID), unit))
-                    end
                     EntryRuntime.MarkAuraPandemicStateDirty(button, unit, button._auraInstanceID)
                 end
             end
