@@ -705,17 +705,33 @@ local function ResolveAuraPandemicStateInner(owner, viewerFrame, options)
         return true, "icon-visible"
     elseif owner._inPandemic then
         if hasDirtyUpdate then
-            ClearAuraPandemicRuntimeState(owner)
-            return false, "dirty-clear"
+            -- The CDM nils the pandemic window and rebuilds it on every
+            -- target aura event, so "fresh dirty + hidden icon" alone does
+            -- not prove a refresh — the rebuild can fail transiently and the
+            -- icon returns on the next event. After a successful rebuild the
+            -- window fields hold values (secret in combat); a hidden icon
+            -- then means the updated aura is genuinely outside its pandemic
+            -- window. Nil fields mean the rebuild failed: keep the dirty
+            -- mark and fall through to the grace hold so the next rebuild
+            -- settles it (clear if still out, no flicker if it returns).
+            local startTime = viewerFrame.pandemicStartTime
+            local endTime = viewerFrame.pandemicEndTime
+            local windowExists = issecretvalue(startTime)
+                or issecretvalue(endTime)
+                or (startTime ~= nil and endTime ~= nil)
+            if windowExists then
+                ClearAuraPandemicRuntimeState(owner)
+                return false, "dirty-clear"
+            end
         end
         if not owner._pandemicGraceStart then
             owner._pandemicGraceStart = now
         end
         if now - owner._pandemicGraceStart <= 0.3 then
-            return true, "grace-hold"
+            return true, hasDirtyUpdate and "grace-hold-dirty" or "grace-hold"
         end
         owner._pandemicGraceStart = nil
-        return false, "grace-expired"
+        return false, hasDirtyUpdate and "grace-expired-dirty" or "grace-expired"
     end
 
     return false, "no-icon"
