@@ -107,7 +107,7 @@ function CooldownCompanion:EnsureRuntimeInitialized()
             if self._queuedCooldownRefreshSource then
                 self:FlushQueuedCooldownRefresh()
             elseif not self:CanSkipTickerCooldownRefresh() then
-                self:RunCooldownRefresh("ticker")
+                self:UpdateAllCooldowns()
             end
             self:UpdateAllGroupLayouts()
             self:ClearCooldownsDirty()

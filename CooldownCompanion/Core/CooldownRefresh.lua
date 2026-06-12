@@ -2,31 +2,33 @@
     CooldownCompanion - Core/CooldownRefresh.lua: same-frame cooldown refresh
     coalescing and ticker-skip bookkeeping.
 
-    Current refresh state fields:
+    Refresh state fields:
     - _cooldownsDirty: true when the next ticker pass must confirm cooldown state.
     - _cooldownDirtySerial: monotonic dirty marker bumped by MarkCooldownsDirty.
-    - _lastCooldownRefreshSource/_lastCooldownRefreshSerial: last completed
-      refresh metadata used to let cooldown-event refreshes satisfy one ticker pass.
     - _queuedCooldownRefreshSource: pending queued refresh source; also the
-      queue-pending flag checked by the ticker.
-    - _queuedCooldownRefreshCanSkipTicker/_queuedCooldownRefreshSkipSerial:
-      queued preservation of cooldown-event skip eligibility.
+      queue-pending flag checked by the ticker. Last writer wins; this is only
+      a debug breadcrumb, not skip eligibility.
+    - _queuedCooldownRefreshCooldownEventSerial: dirty serial captured when a
+      queued cooldown-event request enters the queue.
+    - _cooldownRefreshSatisfiedSerial: dirty serial covered by an executed
+      cooldown-event refresh.
     - _cooldownImmediateRefreshThisFrame: latch allowing only the first
       immediate refresh in a frame to walk synchronously.
     - _cooldownRefreshQueueFrame/_cooldownRefreshQueueArmed: hidden frame and
       arm flag used to flush queued work on the next OnUpdate boundary.
+
+    Invariants:
+    - Only cooldown-event requests write _cooldownRefreshSatisfiedSerial.
+    - MarkCooldownsDirty is the only invalidator; stale satisfied serials are
+      inert because they cannot match a later dirty serial.
+    - Queued cooldown-event requests satisfy the serial captured at queue time.
+      If another dirty mark lands before the flush, the later ticker walks
+      instead of skipping. That is intentionally conservative: displays can only
+      be fresher, never staler.
 ]]
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-
-local function MergeCooldownRefreshSource(currentSource, newSource)
-    newSource = newSource or "event"
-    if not currentSource or currentSource == newSource then
-        return newSource
-    end
-    return "event"
-end
 
 local function CooldownRefreshQueueOnUpdate(frame)
     local addon = frame._cooldownCompanion
@@ -42,12 +44,6 @@ end
 
 function CooldownCompanion:ClearCooldownsDirty()
     self._cooldownsDirty = false
-end
-
-function CooldownCompanion:RunCooldownRefresh(source)
-    self:UpdateAllCooldowns()
-    self._lastCooldownRefreshSerial = self._cooldownDirtySerial or 0
-    self._lastCooldownRefreshSource = source
 end
 
 function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
@@ -69,36 +65,23 @@ function CooldownCompanion:FlushQueuedCooldownRefresh()
     self._cooldownRefreshQueueArmed = nil
     self._cooldownImmediateRefreshThisFrame = nil
 
-    local source = self._queuedCooldownRefreshSource
-    local canSkipTicker = self._queuedCooldownRefreshCanSkipTicker
-    local skipSerial = self._queuedCooldownRefreshSkipSerial
+    local queuedSource = self._queuedCooldownRefreshSource
+    local cooldownEventSerial = self._queuedCooldownRefreshCooldownEventSerial
     self._queuedCooldownRefreshSource = nil
-    self._queuedCooldownRefreshCanSkipTicker = nil
-    self._queuedCooldownRefreshSkipSerial = nil
-    if source then
-        self:RunCooldownRefresh(source)
-        -- Non-dirty queued work should not erase a satisfied cooldown-event
-        -- dirty serial, because that would re-enable the next ticker walk.
-        if canSkipTicker and skipSerial == (self._cooldownDirtySerial or 0) then
-            self._lastCooldownRefreshSource = "cooldown-event"
-            self._lastCooldownRefreshSerial = skipSerial
+    self._queuedCooldownRefreshCooldownEventSerial = nil
+    if queuedSource then
+        self:UpdateAllCooldowns()
+        if cooldownEventSerial then
+            self._cooldownRefreshSatisfiedSerial = cooldownEventSerial
         end
     end
 end
 
 function CooldownCompanion:QueueCooldownRefresh(source)
-    local dirtySerial = self._cooldownDirtySerial or 0
-    local queuedRefreshCanSkipTicker = self._queuedCooldownRefreshCanSkipTicker
-        and self._queuedCooldownRefreshSkipSerial == dirtySerial
-    local lastRefreshCanSkipTicker = self._lastCooldownRefreshSource == "cooldown-event"
-        and self._lastCooldownRefreshSerial == dirtySerial
-    local canSkipTicker = source == "cooldown-event"
-        or queuedRefreshCanSkipTicker
-        or lastRefreshCanSkipTicker
-
-    self._queuedCooldownRefreshSource = MergeCooldownRefreshSource(self._queuedCooldownRefreshSource, source)
-    self._queuedCooldownRefreshCanSkipTicker = canSkipTicker or nil
-    self._queuedCooldownRefreshSkipSerial = canSkipTicker and dirtySerial or nil
+    self._queuedCooldownRefreshSource = source or "event"
+    if source == "cooldown-event" then
+        self._queuedCooldownRefreshCooldownEventSerial = self._cooldownDirtySerial or 0
+    end
     self:EnsureCooldownRefreshQueueFrame()
 end
 
@@ -108,22 +91,18 @@ function CooldownCompanion:RunImmediateCooldownRefresh(source)
         return
     end
 
-    local dirtySerial = self._cooldownDirtySerial or 0
-    local queuedRefreshCanSkipTicker = self._queuedCooldownRefreshCanSkipTicker
-        and self._queuedCooldownRefreshSkipSerial == dirtySerial
-    local canSkipTicker = source == "cooldown-event" or queuedRefreshCanSkipTicker
-    local skipSerial = canSkipTicker and dirtySerial or nil
+    local cooldownEventSerial
+    if source == "cooldown-event" then
+        cooldownEventSerial = self._cooldownDirtySerial or 0
+    end
 
-    source = MergeCooldownRefreshSource(self._queuedCooldownRefreshSource, source)
     self._queuedCooldownRefreshSource = nil
-    self._queuedCooldownRefreshCanSkipTicker = nil
-    self._queuedCooldownRefreshSkipSerial = nil
+    self._queuedCooldownRefreshCooldownEventSerial = nil
     self._cooldownImmediateRefreshThisFrame = true
     self:EnsureCooldownRefreshQueueFrame()
-    self:RunCooldownRefresh(source)
-    if canSkipTicker and skipSerial == (self._cooldownDirtySerial or 0) then
-        self._lastCooldownRefreshSource = "cooldown-event"
-        self._lastCooldownRefreshSerial = skipSerial
+    self:UpdateAllCooldowns()
+    if cooldownEventSerial then
+        self._cooldownRefreshSatisfiedSerial = cooldownEventSerial
     end
 end
 
@@ -131,8 +110,7 @@ function CooldownCompanion:CanSkipTickerCooldownRefresh()
     -- Only cooldown-event refreshes can satisfy the next ticker pass. Aura,
     -- target, and other dirty paths keep their normal ticker confirmation.
     return self._cooldownsDirty
-        and self._lastCooldownRefreshSource == "cooldown-event"
-        and self._lastCooldownRefreshSerial == (self._cooldownDirtySerial or 0)
+        and self._cooldownRefreshSatisfiedSerial == (self._cooldownDirtySerial or 0)
 end
 
 function CooldownCompanion:ResetCooldownRefreshState()
@@ -141,7 +119,6 @@ function CooldownCompanion:ResetCooldownRefreshState()
     end
     self._cooldownRefreshQueueArmed = nil
     self._queuedCooldownRefreshSource = nil
-    self._queuedCooldownRefreshCanSkipTicker = nil
-    self._queuedCooldownRefreshSkipSerial = nil
+    self._queuedCooldownRefreshCooldownEventSerial = nil
     self._cooldownImmediateRefreshThisFrame = nil
 end
