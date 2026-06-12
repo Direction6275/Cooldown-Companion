@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.19.1",
         "1.19",
         "1.18",
         "1.17",
@@ -40,6 +41,21 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.19.1"] = {
+            markdown = [[
+## Performance
+
+- **On-demand settings UI:** Normal gameplay can now run without loading the full settings interface until you open it. Release downloads now include the main addon and its companion settings folder, and settings still open from all the usual places.
+- **Focused player updates:** CDC now skips extra power and spell-cast activity from other units, keeping cooldown updates focused on your character.
+- **Fewer duplicate refreshes:** Cooldown displays should stay just as responsive during event-heavy moments while the addon avoids repeating the same refresh work when several updates happen at once.
+- **Lighter key press highlights:** Key press highlights should look and respond the same, while the addon does less background work when no highlight is active.
+- **Quieter alpha updates:** Profiles without active alpha fading or forced alpha rules now stop that background updater until something actually needs it.
+- **Smoother group refreshes:** Group refreshes, mode switches, and visibility changes should do less rebuilding, while reused buttons still start clean.
+- **Faster style-only setting edits:** Changes like icon size, spacing, bar dimensions, text size, and texture styling should update cooldown groups with less rebuilding.
+- **Less unrelated aura work:** Player and target aura tracking should behave the same, while busy group, raid, and other activity from unrelated units creates less background work.
+- **Refresh reliability cleanup:** Cooldown refresh handling was simplified behind the scenes to keep the recent performance work easier to maintain, with no intended gameplay change.
+]],
+        },
         ["1.19"] = {
             markdown = [[
 ## New Features
