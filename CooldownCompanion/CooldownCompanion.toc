@@ -53,6 +53,7 @@ Core\ScopedSettings.lua
 Core\BarsAndFramesRuntime.lua
 Core\SoundAlerts.lua
 Core\StyleOverrides.lua
+Core\CooldownRefresh.lua
 Core\Lifecycle.lua
 Core\Aura.lua
 Core\EventHandlers.lua
