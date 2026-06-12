@@ -388,7 +388,6 @@ local function ClearAuraPandemicRuntimeState(owner)
     if not owner then return end
 
     owner._pandemicGraceStart = nil
-    owner._pandemicGraceSuppressed = nil
     owner._pandemicDirtyUnit = nil
     owner._pandemicDirtyAuraInstanceID = nil
     ClearAcceptedPandemicRange(owner)
@@ -534,7 +533,6 @@ end
 
 local function RecordAcceptedPandemicRange(owner, auraUnit, auraInstanceID, startTime, endTime, options)
     owner._pandemicGraceStart = nil
-    owner._pandemicGraceSuppressed = nil
     ClearAuraPandemicDirtyState(owner)
     ClearSuppressedPandemicRange(owner)
 
@@ -554,7 +552,6 @@ end
 
 local function RecordSuppressedPandemicRange(owner, auraUnit, auraInstanceID, startTime, endTime)
     owner._pandemicGraceStart = nil
-    owner._pandemicGraceSuppressed = nil
     ClearAuraPandemicDirtyState(owner)
     ClearAcceptedPandemicRange(owner)
 
@@ -697,12 +694,14 @@ local function ResolveAuraPandemicStateInner(owner, viewerFrame, options)
     end
 
     local pandemicIcon = viewerFrame.PandemicIcon
-    if owner._pandemicGraceSuppressed then
-        owner._pandemicGraceSuppressed = nil
+    if pandemicIcon and pandemicIcon:IsVisible() then
         owner._pandemicGraceStart = nil
-        return false, "grace-suppressed"
-    elseif pandemicIcon and pandemicIcon:IsVisible() then
-        owner._pandemicGraceStart = nil
+        -- The icon outlived the update event that marked the dirty state, so
+        -- that update did not end the pandemic display. A genuine refresh
+        -- hides the icon in the same event dispatch that marks dirty, so it
+        -- still hard-clears below; a stale mark left over from icon churn
+        -- must not bypass the grace period on a later transient gap.
+        ClearAuraPandemicDirtyState(owner)
         return true, "icon-visible"
     elseif owner._inPandemic then
         if hasDirtyUpdate then
