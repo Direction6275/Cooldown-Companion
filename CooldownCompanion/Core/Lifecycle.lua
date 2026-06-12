@@ -104,11 +104,7 @@ function CooldownCompanion:EnsureRuntimeInitialized()
                 self.assistedSpellID = AssistedCombatManager.lastNextCastSpellID
             end
 
-            if self._queuedCooldownRefreshSource then
-                self:FlushQueuedCooldownRefresh()
-            elseif not self:CanSkipTickerCooldownRefresh() then
-                self:UpdateAllCooldowns()
-            end
+            self:TickCooldownRefresh()
             self:UpdateAllGroupLayouts()
             self:ClearCooldownsDirty()
         end)

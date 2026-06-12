@@ -14,8 +14,9 @@
       cooldown-event refresh.
     - _cooldownImmediateRefreshThisFrame: latch allowing only the first
       immediate refresh in a frame to walk synchronously.
-    - _cooldownRefreshQueueFrame/_cooldownRefreshQueueArmed: hidden frame and
-      arm flag used to flush queued work on the next OnUpdate boundary.
+    - _cooldownRefreshQueueFrame/_cooldownRefreshQueueArmed: parentless helper
+      frame and arm flag used to flush queued work on the next OnUpdate
+      boundary. The frame must stay shown; hidden frames do not receive OnUpdate.
 
     Invariants:
     - Only cooldown-event requests write _cooldownRefreshSatisfiedSerial.
@@ -59,16 +60,10 @@ function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
 end
 
 function CooldownCompanion:FlushQueuedCooldownRefresh()
-    if self._cooldownRefreshQueueFrame then
-        self._cooldownRefreshQueueFrame:SetScript("OnUpdate", nil)
-    end
-    self._cooldownRefreshQueueArmed = nil
-    self._cooldownImmediateRefreshThisFrame = nil
-
     local queuedSource = self._queuedCooldownRefreshSource
     local cooldownEventSerial = self._queuedCooldownRefreshCooldownEventSerial
-    self._queuedCooldownRefreshSource = nil
-    self._queuedCooldownRefreshCooldownEventSerial = nil
+    self:ResetCooldownRefreshState()
+
     if queuedSource then
         self:UpdateAllCooldowns()
         if cooldownEventSerial then
@@ -111,6 +106,18 @@ function CooldownCompanion:CanSkipTickerCooldownRefresh()
     -- target, and other dirty paths keep their normal ticker confirmation.
     return self._cooldownsDirty
         and self._cooldownRefreshSatisfiedSerial == (self._cooldownDirtySerial or 0)
+end
+
+function CooldownCompanion:TickCooldownRefresh()
+    if self._queuedCooldownRefreshSource then
+        self:FlushQueuedCooldownRefresh()
+        return false
+    end
+    if self:CanSkipTickerCooldownRefresh() then
+        return true
+    end
+    self:UpdateAllCooldowns()
+    return false
 end
 
 function CooldownCompanion:ResetCooldownRefreshState()
