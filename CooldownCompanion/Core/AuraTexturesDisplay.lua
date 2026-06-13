@@ -280,6 +280,9 @@ local function StopStandalonePanelAlphaSync(host)
         host._standalonePanelAlphaLastAlpha = nil
         host._standalonePanelAlphaAccumulator = nil
         host._standalonePanelAlphaSyncActive = nil
+        if CooldownCompanion.SetContainerAlphaVisibilityMultiplier then
+            CooldownCompanion:SetContainerAlphaVisibilityMultiplier(host, nil)
+        end
     end
 end
 
@@ -349,6 +352,9 @@ local function StartStandalonePanelAlphaSync(host, targetFrame, visibilityAlpha)
 
     host._standalonePanelAlphaTarget = targetFrame
     host._standalonePanelAlphaVisibilityAlpha = visibilityAlpha
+    if CooldownCompanion.SetContainerAlphaVisibilityMultiplier then
+        CooldownCompanion:SetContainerAlphaVisibilityMultiplier(host, nil)
+    end
     if syncChanged or not wasSyncing then
         host._standalonePanelAlphaAccumulator = 0
         local inheritedAlpha = GetInheritedFrameAlpha(targetFrame)
@@ -820,6 +826,11 @@ local function EnsureAuraTextureHost(button)
     EnsureAuraTextureDragHandle(host)
     button.auraTextureHost = host
     return host
+end
+
+function CooldownCompanion:GetAuraTextureHostForGroupFrame(groupFrame)
+    local button = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
+    return button and button.auraTextureHost or nil
 end
 
 function CooldownCompanion.EnsureTriggerIconVisual(host)
@@ -1413,6 +1424,10 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     local layoutPreviewAlpha = GetTexturePanelLayoutPreviewAlpha(driverButton)
     local visibilityAlpha = Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1)
     local panelAlphaTarget = GetStandalonePanelAlphaTargetFrame(group, sharedSettings, driverButton._groupId)
+    local containerAlphaId, containerAlphaConfig
+    if self.GetPanelContainerAlphaSource then
+        containerAlphaId, containerAlphaConfig = self:GetPanelContainerAlphaSource(driverButton._groupId)
+    end
     if panelAlphaTarget then
         if alphaModuleId then
             self:UnregisterModuleAlpha(alphaModuleId, true)
@@ -1428,6 +1443,17 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         if visibilityState.bypassModuleAlpha then
             self:UnregisterModuleAlpha(alphaModuleId, true)
             host:SetAlpha(layoutPreviewAlpha ~= nil and layoutPreviewAlpha or 1)
+        elseif containerAlphaConfig then
+            self:UnregisterModuleAlpha(alphaModuleId, true)
+            local alpha = self.GetContainerAlphaValue
+                and self:GetContainerAlphaValue(containerAlphaId, containerAlphaConfig)
+                or containerAlphaConfig.baselineAlpha
+                or 1
+            if self.ApplyContainerAlphaToFrame then
+                self:ApplyContainerAlphaToFrame(host, alpha, visibilityAlpha)
+            else
+                host:SetAlpha(Clamp(alpha * visibilityAlpha, 0, 1))
+            end
         else
             self:RegisterModuleAlpha(alphaModuleId, group, { host })
             local alphaState = self.alphaState and self.alphaState[alphaModuleId]
