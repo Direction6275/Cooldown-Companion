@@ -86,23 +86,40 @@ local function GetPanelContainerFrameName(groupId)
 end
 
 -- Resolve lock + alpha for a group frame.
--- Panels use their OWN group.locked (nil = locked); alpha comes from the panel itself.
+-- Panels normally use their own alpha, unless Group Alpha controls panels
+-- anchored directly to their parent container.
 -- Legacy groups (no container) use group.locked and group.baselineAlpha directly.
 local function GetContainerState(groupId)
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     if not profile then return true, 1 end
     local group = profile.groups[groupId]
     if not group then return true, 1 end
-    if CooldownCompanion._combatForcedLock then
-        return true, group.baselineAlpha or 1
-    end
 
     if group.parentContainerId then
+        local containerId, container
+        if CooldownCompanion.GetPanelContainerAlphaSource then
+            containerId, container = CooldownCompanion:GetPanelContainerAlphaSource(groupId)
+        end
+        if container then
+            local alpha = CooldownCompanion.GetContainerAlphaValue
+                and CooldownCompanion:GetContainerAlphaValue(containerId, container)
+                or container.baselineAlpha
+                or 1
+            return CooldownCompanion._combatForcedLock or group.locked ~= false, alpha
+        end
+
+        if CooldownCompanion._combatForcedLock then
+            return true, group.baselineAlpha or 1
+        end
         if IsCursorAnchor(group.anchor) then
             return true, group.baselineAlpha or 1
         end
         -- Panel: own lock state (nil/true = locked, false = unlocked), panel's own alpha
         return group.locked ~= false, group.baselineAlpha or 1
+    end
+
+    if CooldownCompanion._combatForcedLock then
+        return true, group.baselineAlpha or 1
     end
 
     -- Legacy path (no container)
@@ -181,9 +198,11 @@ local function ApplyGroupOwnAlpha(frame)
 
     local locked, baseAlpha = GetContainerState(frame.groupId)
     local alpha = locked and (baseAlpha or 1) or 1
-    local state = CooldownCompanion.alphaState and CooldownCompanion.alphaState[frame.groupId]
-    if locked and state and state.currentAlpha ~= nil then
-        alpha = state.currentAlpha
+    if locked then
+        local currentAlpha, _, hasRuntimeAlpha = CooldownCompanion:GetPanelCurrentAlphaValue(frame.groupId)
+        if hasRuntimeAlpha then
+            alpha = currentAlpha
+        end
     end
 
     if ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(frame.groupId) then
@@ -194,6 +213,13 @@ local function ApplyGroupOwnAlpha(frame)
 
     frame._naturalAlpha = nil
     frame:SetAlpha(alpha)
+end
+
+local function ApplyCurrentAlphaIfPresent(owner, frame, groupId, group)
+    local alpha, _, hasRuntimeAlpha = owner:GetPanelCurrentAlphaValue(groupId, group)
+    if hasRuntimeAlpha then
+        frame:SetAlpha(alpha)
+    end
 end
 
 local function GetAnchorInheritedAlpha(parentFrame)
@@ -1295,10 +1321,7 @@ local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
         if not isActive and not (InCombatLockdown() and frame:IsProtected()) then
             frame:Hide()
         else
-            local alphaState = self.alphaState and self.alphaState[groupId]
-            if alphaState and alphaState.currentAlpha then
-                frame:SetAlpha(alphaState.currentAlpha)
-            end
+            ApplyCurrentAlphaIfPresent(self, frame, groupId, group)
         end
     end
 
@@ -1927,10 +1950,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     }) then
         frame:Show()
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
-        local alphaState = self.alphaState and self.alphaState[groupId]
-        if alphaState and alphaState.currentAlpha then
-            frame:SetAlpha(alphaState.currentAlpha)
-        end
+        ApplyCurrentAlphaIfPresent(self, frame, groupId, group)
     else
         frame:Hide()
     end
@@ -2784,10 +2804,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
             frame:SetAlpha(1)
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
         else
-            local alphaState = CooldownCompanion.alphaState and CooldownCompanion.alphaState[groupId]
-            if alphaState and alphaState.currentAlpha then
-                frame:SetAlpha(alphaState.currentAlpha)
-            end
+            ApplyCurrentAlphaIfPresent(CooldownCompanion, frame, groupId, group)
         end
     else
         self:UnloadGroup(groupId)

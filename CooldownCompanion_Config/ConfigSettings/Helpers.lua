@@ -1298,7 +1298,7 @@ ST._HookSliderEditBox = HookSliderEditBox
 -- config: table with alpha fields (baselineAlpha, forceAlpha*, forceHide*, fade*, etc.)
 -- refreshFn: function called after value changes (typically RefreshConfigPanel)
 -- collapseKey: string key for CS.collapsedSections
--- opts (optional): { onBaselineChanged = fn(val), isGlobal = bool, disabled = bool, disabledText = string, infoButtons = table }
+-- opts (optional): { onBaselineChanged = fn(val), isGlobal = bool, disabled = bool, disabledText = string, infoButtons = table, hideHeading = bool }
 local function BuildAlphaControls(container, config, refreshFn, collapseKey, opts)
     opts = opts or {}
     local tabInfoBtns = opts.infoButtons or CS.tabInfoButtons
@@ -1313,19 +1313,23 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         end
     end
 
-    local alphaHeading = AceGUI:Create("Heading")
-    alphaHeading:SetText("Alpha")
-    ColorHeading(alphaHeading)
-    alphaHeading:SetFullWidth(true)
-    container:AddChild(alphaHeading)
+    if opts.hideHeading ~= true then
+        local alphaHeading = AceGUI:Create("Heading")
+        alphaHeading:SetText("Alpha")
+        ColorHeading(alphaHeading)
+        alphaHeading:SetFullWidth(true)
+        container:AddChild(alphaHeading)
 
-    local alphaCollapsed = CS.collapsedSections[collapseKey]
-    AttachCollapseButton(alphaHeading, alphaCollapsed, function()
-        CS.collapsedSections[collapseKey] = not CS.collapsedSections[collapseKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+        local alphaCollapsed = collapseKey and CS.collapsedSections[collapseKey] or false
+        AttachCollapseButton(alphaHeading, alphaCollapsed, function()
+            if collapseKey then
+                CS.collapsedSections[collapseKey] = not CS.collapsedSections[collapseKey]
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end)
 
-    if alphaCollapsed then return end
+        if alphaCollapsed then return end
+    end
 
     if controlsDisabled and opts.disabledText and opts.disabledText ~= "" then
         local disabledLabel = AceGUI:Create("Label")

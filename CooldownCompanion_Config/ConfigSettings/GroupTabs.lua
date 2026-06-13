@@ -930,6 +930,21 @@ local function BuildLayoutTab(container)
         local target = _G[frameName]
         return type(target) == "table" and type(target.GetObjectType) == "function"
     end
+    local function GetPanelAlphaControlDisabledState(groupId, targetMode, panelAlphaInherited)
+        if CooldownCompanion.GetPanelContainerAlphaSource
+            and CooldownCompanion:GetPanelContainerAlphaSource(groupId) then
+            return true, "Group Alpha is enabled. This panel uses the group's Alpha settings."
+        end
+
+        if panelAlphaInherited then
+            if targetMode == "frame" then
+                return true, "This panel inherits alpha from the target frame. Change the Panel Alpha setting to use custom alpha."
+            end
+            return true, "This panel inherits alpha from the parent panel. Change the parent panel's Alpha settings to affect it."
+        end
+
+        return false, nil
+    end
 
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
     if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
@@ -1271,16 +1286,15 @@ local function BuildLayoutTab(container)
         elseif hasFrameAnchorTarget then
             panelAlphaInherited = group.inheritPanelAlpha ~= false
         end
+        local alphaControlsDisabled, alphaDisabledText = GetPanelAlphaControlDisabledState(textureGroupId, targetMode, panelAlphaInherited)
 
         BuildAlphaControls(container, group, function()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
             CooldownCompanion:RefreshConfigPanel()
         end, "layout_alpha", {
             isGlobal = group.isGlobal,
-            disabled = panelAlphaInherited,
-            disabledText = targetMode == "frame"
-                and "This panel inherits alpha from the target frame. Change the Panel Alpha setting to use custom alpha."
-                or "This panel inherits alpha from the parent panel. Change the parent panel's Alpha settings to affect it.",
+            disabled = alphaControlsDisabled,
+            disabledText = alphaDisabledText,
             onBaselineChanged = function(val)
                 CS.texturePanelAlphaPreview = CS.texturePanelAlphaPreview or {}
                 CS.texturePanelAlphaPreview[textureGroupId] = val
@@ -1363,6 +1377,7 @@ local function BuildLayoutTab(container)
     elseif hasFrameAnchorTarget then
         panelAlphaInherited = group.inheritPanelAlpha ~= false
     end
+    local alphaControlsDisabled, alphaDisabledText = GetPanelAlphaControlDisabledState(CS.selectedGroup, targetMode, panelAlphaInherited)
 
     local anchorTargetDrop = AceGUI:Create("Dropdown")
     anchorTargetDrop:SetLabel("Anchor Target")
@@ -1702,10 +1717,8 @@ local function BuildLayoutTab(container)
         CooldownCompanion:RefreshConfigPanel()
     end, "layout_alpha", {
         isGlobal = group.isGlobal,
-        disabled = panelAlphaInherited,
-        disabledText = targetMode == "frame"
-            and "This panel inherits alpha from the target frame. Change the Panel Alpha setting to use custom alpha."
-            or "This panel inherits alpha from the parent panel. Change the parent panel's Alpha settings to affect it.",
+        disabled = alphaControlsDisabled,
+        disabledText = alphaDisabledText,
         onBaselineChanged = function(val)
             local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
             if frame and frame:IsShown() then
@@ -3558,6 +3571,58 @@ local function BuildContainerGeneralTab(scroll, containerId)
         scroll:AddChild(ySlider)
 
     end -- if not layoutCollapsed
+
+    -- ================================================================
+    -- Group Alpha
+    -- ================================================================
+    local alphaHeading = AceGUI:Create("Heading")
+    alphaHeading:SetText("Group Alpha")
+    ColorHeading(alphaHeading)
+    alphaHeading:SetFullWidth(true)
+    scroll:AddChild(alphaHeading)
+
+    local alphaCollapsed = CS.collapsedSections["container_alpha"]
+    AttachCollapseButton(alphaHeading, alphaCollapsed, function()
+        CS.collapsedSections["container_alpha"] = not CS.collapsedSections["container_alpha"]
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+
+    if not alphaCollapsed then
+        local function RefreshContainerAlphaSettings()
+            RefreshPanels()
+            CooldownCompanion:RefreshConfigPanel()
+        end
+
+        local groupAlphaCb = AceGUI:Create("CheckBox")
+        groupAlphaCb:SetLabel("Enable Group Alpha")
+        groupAlphaCb:SetFullWidth(true)
+        groupAlphaCb:SetValue(container.groupAlphaEnabled == true)
+        groupAlphaCb:SetCallback("OnValueChanged", function(widget, event, value)
+            container.groupAlphaEnabled = value == true
+            if CooldownCompanion.RefreshAlphaUpdateDriver then
+                CooldownCompanion:RefreshAlphaUpdateDriver()
+            end
+            RefreshContainerAlphaSettings()
+        end)
+        scroll:AddChild(groupAlphaCb)
+
+        CreateInfoButton(groupAlphaCb.frame, groupAlphaCb.checkbg, "LEFT", "RIGHT", groupAlphaCb.text:GetStringWidth() + 4, 0, {
+            "Group Alpha",
+            {"When enabled, applies these alpha settings to panels anchored directly to this group. Panels anchored elsewhere keep their own alpha behavior.", 1, 1, 1, true},
+        }, tabInfoButtons)
+
+        if container.groupAlphaEnabled == true then
+            BuildAlphaControls(scroll, container, RefreshContainerAlphaSettings, nil, {
+                isGlobal = container.isGlobal,
+                hideHeading = true,
+                onBaselineChanged = function(val)
+                    if CooldownCompanion.ApplyContainerAlphaPreview then
+                        CooldownCompanion:ApplyContainerAlphaPreview(containerId, val)
+                    end
+                end,
+            })
+        end
+    end -- if not alphaCollapsed
 
     -- ================================================================
     -- Frame Strata

@@ -152,6 +152,11 @@ local function GetActivePanelAnchorRelativeTo(group)
     return type(anchor) == "table" and anchor.relativeTo or anchor
 end
 
+local function GetPanelShellAnchorRelativeTo(group)
+    local anchor = group and group.anchor
+    return type(anchor) == "table" and anchor.relativeTo or anchor
+end
+
 local function GetAddonAnchorGroupId(frameName)
     local kind, id = ParseAddonAnchorFrameName(frameName)
     return kind == "group" and id or nil
@@ -185,6 +190,35 @@ local function BuildPanelAlphaDependencyTargets(groups)
         end
     end
     return targets
+end
+
+local function GetPanelContainerAlphaSource(self, groupOrId)
+    local group = GetGroup(self, groupOrId)
+    if not (group and group.parentContainerId) then
+        return nil
+    end
+
+    local profile = GetProfile(self)
+    local containerId = group.parentContainerId
+    local container = profile and profile.groupContainers and profile.groupContainers[containerId]
+    if not (container and container.groupAlphaEnabled == true) then
+        return nil
+    end
+
+    local relativeTo = GetActivePanelAnchorRelativeTo(group)
+    local kind, id = ParseAddonAnchorFrameName(relativeTo)
+    if kind == "container" and id == containerId then
+        return containerId, container
+    end
+
+    local standalone = GetStandaloneTextureAnchorSettings(group)
+    if type(standalone) == "table" and (relativeTo == "UIParent" or relativeTo == "") then
+        kind, id = ParseAddonAnchorFrameName(GetPanelShellAnchorRelativeTo(group))
+        if kind == "container" and id == containerId then
+            return containerId, container
+        end
+    end
+    return nil
 end
 
 local function AddonAnchorFrameReachesCursorRoot(profile, kind, id, visited)
@@ -539,6 +573,10 @@ function CooldownCompanion:ShouldInheritPanelAnchorAlpha(groupOrId)
     return self:IsPanelAnchoredToPanel(groupOrId)
         and group.inheritPanelAlpha ~= false
         or false
+end
+
+function CooldownCompanion:GetPanelContainerAlphaSource(groupOrId)
+    return GetPanelContainerAlphaSource(self, groupOrId)
 end
 
 function CooldownCompanion:DoesAnchorTargetReachCursorRoot(relativeTo, profile)

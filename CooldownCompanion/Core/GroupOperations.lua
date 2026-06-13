@@ -612,11 +612,8 @@ function CooldownCompanion:BeginCombatForcedLock()
         end
 
         if active then
-            local alphaState = self.alphaState and self.alphaState[groupId]
             local frameAlpha = (group and group.baselineAlpha) or 1
-            if alphaState and alphaState.currentAlpha ~= nil then
-                frameAlpha = alphaState.currentAlpha
-            end
+            frameAlpha = self:GetPanelCurrentAlphaValue(groupId, group)
             frame:SetAlpha(frameAlpha)
         elseif frame:IsProtected() then
             frame:SetAlpha(0)
@@ -2198,9 +2195,9 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                     -- Apply current alpha from the alpha fade system so frame
                     -- doesn't flash at 1.0 when baseline alpha is configured.
                     else
-                        local alphaState = self.alphaState and self.alphaState[groupId]
-                        if alphaState and alphaState.currentAlpha then
-                            frame:SetAlpha(alphaState.currentAlpha)
+                        local frameAlpha, _, hasRuntimeAlpha = self:GetPanelCurrentAlphaValue(groupId, group)
+                        if hasRuntimeAlpha then
+                            frame:SetAlpha(frameAlpha)
                         end
                     end
 

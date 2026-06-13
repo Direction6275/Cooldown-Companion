@@ -80,7 +80,38 @@ local function ConfigNeedsAlphaUpdate(self, config, stateKey)
     return AlphaStateNeedsCleanup(self, stateKey)
 end
 
+local function GetContainerAlphaStateKey(containerId)
+    return "container_alpha:" .. tostring(containerId)
+end
+
+local EMPTY_TABLE = {}
+
+local function HasTableEntries(tbl)
+    if type(tbl) ~= "table" then
+        return false
+    end
+    for _ in pairs(tbl) do
+        return true
+    end
+    return false
+end
+
+local function NeedsContainerAlphaPass(self, containers)
+    for containerId, container in pairs(containers or {}) do
+        if container and container.groupAlphaEnabled == true then
+            return true
+        end
+        if AlphaStateNeedsCleanup(self, GetContainerAlphaStateKey(containerId)) then
+            return true
+        end
+    end
+    return HasTableEntries(self._containerAlphaControlledGroups)
+end
+
 local function GroupNeedsAlphaUpdate(self, group, groupId, frame)
+    if self.GetPanelContainerAlphaSource and self:GetPanelContainerAlphaSource(groupId) then
+        return false
+    end
     if self.ShouldInheritPanelAnchorAlpha and self:ShouldInheritPanelAnchorAlpha(groupId) then
         return false
     end
@@ -96,6 +127,240 @@ end
 local function FrameIsAlphaWorkTarget(frame, isDependencyTarget)
     return frame
         and ((frame.IsShown and frame:IsShown()) or isDependencyTarget)
+end
+
+local function GetGroupAlphaFrame(self, groupId)
+    return (self.groupFrames and self.groupFrames[groupId])
+        or (self._dormantFrames and self._dormantFrames[groupId])
+end
+
+local function GetStandaloneTextureHost(groupFrame)
+    return CooldownCompanion.GetAuraTextureHostForGroupFrame
+        and CooldownCompanion:GetAuraTextureHostForGroupFrame(groupFrame)
+        or nil
+end
+
+local function ClampAlpha(alpha)
+    if alpha < 0 then return 0 end
+    if alpha > 1 then return 1 end
+    return alpha
+end
+
+local function GetFrameAlphaWithContainerMultiplier(frame, alpha)
+    local multiplier = frame and frame._containerAlphaVisibilityAlpha
+    if type(multiplier) == "number" then
+        return ClampAlpha(alpha * multiplier)
+    end
+    return alpha
+end
+
+local function ContainerAlphaIsUnlocked(self, container)
+    return container and container.locked == false and not self._combatForcedLock
+end
+
+local function ApplyContainerAlphaFrame(self, frame, groupId, alpha, naturalAlpha, unlocked, previewAlpha)
+    if not frame then
+        return
+    end
+
+    local configSelected = ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(groupId)
+    local frameAlpha = alpha
+    if previewAlpha then
+        frame._naturalAlpha = naturalAlpha
+        frameAlpha = GetFrameAlphaWithContainerMultiplier(frame, frameAlpha)
+    elseif unlocked then
+        frame._naturalAlpha = nil
+        frameAlpha = 1
+    elseif configSelected then
+        frame._naturalAlpha = naturalAlpha
+        frameAlpha = 1
+    else
+        frame._naturalAlpha = nil
+        frameAlpha = GetFrameAlphaWithContainerMultiplier(frame, frameAlpha)
+    end
+
+    if FrameAlphaDiffers(frame, frameAlpha) then
+        frame:SetAlpha(frameAlpha)
+    end
+end
+
+function CooldownCompanion:GetContainerAlphaValue(containerId, container)
+    local alpha = container and container.baselineAlpha or 1
+    local state = self.alphaState and self.alphaState[GetContainerAlphaStateKey(containerId)]
+    if state and state.currentAlpha ~= nil then
+        alpha = state.currentAlpha
+    end
+    return alpha
+end
+
+function CooldownCompanion:GetPanelCurrentAlphaValue(groupId, group)
+    if self.GetPanelContainerAlphaSource then
+        local containerId, container = self:GetPanelContainerAlphaSource(groupId)
+        if container then
+            return self:GetContainerAlphaValue(containerId, container), true, true
+        end
+    end
+
+    local state = self.alphaState and self.alphaState[groupId]
+    if state and state.currentAlpha ~= nil then
+        return state.currentAlpha, false, true
+    end
+    return group and group.baselineAlpha or 1, false, false
+end
+
+function CooldownCompanion:SetContainerAlphaVisibilityMultiplier(frame, multiplier)
+    if not frame then
+        return
+    end
+    if type(multiplier) == "number" then
+        frame._containerAlphaVisibilityAlpha = ClampAlpha(multiplier)
+    else
+        frame._containerAlphaVisibilityAlpha = nil
+    end
+end
+
+function CooldownCompanion:ApplyContainerAlphaToFrame(frame, alpha, visibilityMultiplier)
+    if not frame then
+        return
+    end
+    if visibilityMultiplier ~= nil then
+        self:SetContainerAlphaVisibilityMultiplier(frame, visibilityMultiplier)
+    end
+    frame:SetAlpha(GetFrameAlphaWithContainerMultiplier(frame, alpha))
+end
+
+function CooldownCompanion:ClearContainerAlphaRuntimeState(containerId)
+    if self.alphaState then
+        self.alphaState[GetContainerAlphaStateKey(containerId)] = nil
+    end
+    self._containerAlphaControlledGroups = nil
+end
+
+local function AddContainerAlphaEntry(entriesByContainer, controlledGroups, containerId, groupId, group, frame)
+    local entries = entriesByContainer[containerId]
+    if not entries then
+        entries = {}
+        entriesByContainer[containerId] = entries
+    end
+    entries[#entries + 1] = {
+        groupId = groupId,
+        group = group,
+        frame = frame,
+    }
+
+    controlledGroups[groupId] = true
+end
+
+local function BuildContainerAlphaEntryMaps(self, groups, panelAlphaAnchorTargets)
+    local entriesByContainer = {}
+    local controlledGroups = {}
+    for groupId, group in pairs(groups or {}) do
+        local sourceContainerId = self.GetPanelContainerAlphaSource
+            and self:GetPanelContainerAlphaSource(groupId)
+            or nil
+        if sourceContainerId then
+            local frame = GetGroupAlphaFrame(self, groupId)
+            if FrameIsAlphaWorkTarget(frame, panelAlphaAnchorTargets and panelAlphaAnchorTargets[groupId]) then
+                AddContainerAlphaEntry(entriesByContainer, controlledGroups, sourceContainerId, groupId, group, frame)
+            end
+
+            local host = GetStandaloneTextureHost(frame)
+            if host and host.IsShown and host:IsShown() then
+                AddContainerAlphaEntry(entriesByContainer, controlledGroups, sourceContainerId, groupId, group, host)
+            end
+        end
+    end
+    return entriesByContainer, controlledGroups
+end
+
+local function GroupSetHasMemberNotInCurrent(previousSet, currentSet)
+    if type(previousSet) ~= "table" then
+        return false
+    end
+    for groupId in pairs(previousSet) do
+        if not (currentSet and currentSet[groupId]) then
+            return true
+        end
+    end
+    return false
+end
+
+local function ContainerAlphaEntryIsUnlocked(self, container, entry)
+    if ContainerAlphaIsUnlocked(self, container) then
+        return true
+    end
+    if self._combatForcedLock then
+        return false
+    end
+
+    local group = entry and entry.group
+    if group and group.locked == false then
+        if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
+            return false
+        end
+        return true
+    end
+    return false
+end
+
+local function ContainerAlphaNeedsUpdate(self, containerId, container, entries)
+    local stateKey = GetContainerAlphaStateKey(containerId)
+    if ConfigNeedsAlphaUpdate(self, container, stateKey) then
+        return true
+    end
+
+    for i = 1, #entries do
+        local entry = entries[i]
+        if ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(entry.groupId) then
+            return true
+        end
+        if ContainerAlphaEntryIsUnlocked(self, container, entry) then
+            if entry.frame and (entry.frame._naturalAlpha ~= nil or FrameAlphaDiffers(entry.frame, 1)) then
+                return true
+            end
+        elseif FrameAlphaDiffers(entry.frame, GetFrameAlphaWithContainerMultiplier(entry.frame, 1)) then
+            return true
+        end
+        if AlphaStateNeedsCleanup(self, entry.groupId) then
+            return true
+        end
+    end
+    return false
+end
+
+local function RestoreReleasedContainerAlphaGroups(self, previousSet, currentSet, groups, containers, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+    if type(previousSet) ~= "table" then
+        return false
+    end
+
+    local restored = false
+    for groupId in pairs(previousSet) do
+        if not (currentSet and currentSet[groupId]) then
+            local group = groups and groups[groupId]
+            local frame = GetGroupAlphaFrame(self, groupId)
+            if group and frame then
+                if (self.ShouldInheritPanelAnchorAlpha and self:ShouldInheritPanelAnchorAlpha(groupId))
+                    or frame._inheritsExternalAnchorAlpha then
+                    if self.alphaState then
+                        self.alphaState[groupId] = nil
+                    end
+                else
+                    local locked = true
+                    if group.parentContainerId then
+                        local container = containers and containers[group.parentContainerId]
+                        if container then
+                            locked = container.locked ~= false
+                        end
+                    else
+                        locked = group.locked
+                    end
+                    self:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+                end
+                restored = true
+            end
+        end
+    end
+    return restored
 end
 
 -- Alpha fade system: per-group runtime state
@@ -384,6 +649,103 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
     end
 end
 
+local function ResetAlphaState(state)
+    if not state then
+        return
+    end
+    state.currentAlpha = 1
+    state.desiredAlpha = 1
+    state.fadeDuration = 0
+    state.lastAlpha = 1
+    state.hoverExpire = nil
+end
+
+local function ResetOwnedGroupAlphaState(self, groupId)
+    if self.alphaState then
+        self.alphaState[groupId] = nil
+    end
+end
+
+function CooldownCompanion:UpdateContainerAlpha(containerId, container, entries, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+    local stateKey = GetContainerAlphaStateKey(containerId)
+    local state = self.alphaState[stateKey]
+    if not state then
+        state = {}
+        self.alphaState[stateKey] = state
+    end
+
+    local forceFull, forceHidden, baseline = EvaluateDesiredAlpha(container, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+
+    if not forceFull and container.forceAlphaMouseover then
+        local isHovering = false
+        for i = 1, #entries do
+            local frame = entries[i].frame
+            if frame and frame.IsShown and frame:IsShown()
+                and frame.IsMouseOver and frame:IsMouseOver() then
+                isHovering = true
+                break
+            end
+        end
+        if isHovering then
+            forceFull = true
+            state.hoverExpire = now + (container.fadeDelay or 1)
+        elseif state.hoverExpire and now < state.hoverExpire then
+            forceFull = true
+        end
+    end
+
+    local desired = forceFull and 1 or (forceHidden and 0 or baseline)
+    local fadeIn = container.fadeInDuration or 0.2
+    local fadeOut = container.fadeOutDuration or 0.2
+    local alpha = UpdateFadedAlpha(state, desired, now, fadeIn, fadeOut)
+
+    for i = 1, #entries do
+        local entry = entries[i]
+        local frame = entry.frame
+        if frame then
+            local unlocked = ContainerAlphaEntryIsUnlocked(self, container, entry)
+            ApplyContainerAlphaFrame(self, frame, entry.groupId, alpha, desired, unlocked)
+            ResetOwnedGroupAlphaState(self, entry.groupId)
+        end
+    end
+
+    state.lastAlpha = alpha
+end
+
+function CooldownCompanion:ApplyContainerAlphaPreview(containerId, alpha)
+    local profile = self.db and self.db.profile
+    local container = profile and profile.groupContainers and profile.groupContainers[containerId] or nil
+    local unlocked = ContainerAlphaIsUnlocked(self, container)
+    local function applyPreviewAlpha(frame, groupId)
+        if not (frame and frame.IsShown and frame:IsShown()) then
+            return
+        end
+        ApplyContainerAlphaFrame(self, frame, groupId, alpha, alpha, unlocked, true)
+    end
+
+    local groups = profile and profile.groups or nil
+    local entriesByContainer = BuildContainerAlphaEntryMaps(self, groups)
+    local entries = entriesByContainer[containerId]
+    for i = 1, #(entries or EMPTY_TABLE) do
+        local entry = entries[i]
+        applyPreviewAlpha(entry.frame, entry.groupId)
+    end
+
+    local stateKey = GetContainerAlphaStateKey(containerId)
+    if self.alphaState then
+        local state = self.alphaState[stateKey]
+        if not state then
+            state = {}
+            self.alphaState[stateKey] = state
+        end
+        state.currentAlpha = alpha
+        state.desiredAlpha = alpha
+        state.fadeStartAlpha = alpha
+        state.lastAlpha = alpha
+        state.fadeDuration = 0
+    end
+end
+
 -- Module alpha: evaluates alpha for non-group frames (resource bars, cast bar).
 -- moduleId: unique string key (e.g., "rb", "cb")
 -- config: table with the same alpha fields as group (baselineAlpha, forceAlpha*, etc.)
@@ -482,6 +844,7 @@ function CooldownCompanion:EvaluateAlphaDriverNeedsWork()
     end
 
     local groups = profile.groups or {}
+    local containers = profile.groupContainers or {}
     local groupFrames = self.groupFrames or {}
     local dormantFrames = self._dormantFrames
     local previousEvaluating = self._evaluatingAlphaDriverNeedsWork
@@ -491,9 +854,32 @@ function CooldownCompanion:EvaluateAlphaDriverNeedsWork()
         or nil
     self._evaluatingAlphaDriverNeedsWork = previousEvaluating
 
+    local entriesByContainer, containerAlphaControlledGroups = EMPTY_TABLE, EMPTY_TABLE
+    if NeedsContainerAlphaPass(self, containers) then
+        entriesByContainer, containerAlphaControlledGroups =
+            BuildContainerAlphaEntryMaps(self, groups, panelAlphaAnchorTargets)
+        if GroupSetHasMemberNotInCurrent(self._containerAlphaControlledGroups, containerAlphaControlledGroups) then
+            return true
+        end
+        for containerId, container in pairs(containers) do
+            local entries = entriesByContainer[containerId]
+            if container and container.groupAlphaEnabled == true
+                and entries
+                and #entries > 0
+                and ContainerAlphaNeedsUpdate(self, containerId, container, entries) then
+                return true
+            end
+
+            if AlphaStateNeedsCleanup(self, GetContainerAlphaStateKey(containerId)) then
+                return true
+            end
+        end
+    end
+
     for groupId, group in pairs(groups) do
         local frame = groupFrames[groupId] or (dormantFrames and dormantFrames[groupId])
-        if FrameIsAlphaWorkTarget(frame, panelAlphaAnchorTargets and panelAlphaAnchorTargets[groupId]) then
+        if not containerAlphaControlledGroups[groupId]
+            and FrameIsAlphaWorkTarget(frame, panelAlphaAnchorTargets and panelAlphaAnchorTargets[groupId]) then
             if GroupNeedsAlphaUpdate(self, group, groupId, frame) then
                 return true
             end
@@ -542,9 +928,48 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
     local panelAlphaAnchorTargets = self:GetPanelAlphaDependencyTargets(groups)
     local needsPostPassRefresh = false
     local processedAlphaWork = false
+    local entriesByContainer, containerAlphaControlledGroups = EMPTY_TABLE, EMPTY_TABLE
+    if NeedsContainerAlphaPass(self, containers) then
+        local previousContainerAlphaGroups = self._containerAlphaControlledGroups
+        entriesByContainer, containerAlphaControlledGroups =
+            BuildContainerAlphaEntryMaps(self, groups, panelAlphaAnchorTargets)
+
+        if RestoreReleasedContainerAlphaGroups(self, previousContainerAlphaGroups, containerAlphaControlledGroups, groups, containers, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm) then
+            processedAlphaWork = true
+            needsPostPassRefresh = true
+        end
+
+        for containerId, container in pairs(containers) do
+            local entries = entriesByContainer[containerId]
+
+            if entries and #entries > 0 then
+                if ContainerAlphaNeedsUpdate(self, containerId, container, entries) then
+                    processedAlphaWork = true
+                    if not (ST.HasActiveAlphaSettings and ST.HasActiveAlphaSettings(container)) then
+                        needsPostPassRefresh = true
+                    end
+                    self:UpdateContainerAlpha(containerId, container, entries, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+                end
+            else
+                local stateKey = GetContainerAlphaStateKey(containerId)
+                local state = AlphaStateNeedsCleanup(self, stateKey)
+                    and self.alphaState
+                    and self.alphaState[stateKey]
+                    or nil
+                if state then
+                    self.alphaState[stateKey] = nil
+                    processedAlphaWork = true
+                    needsPostPassRefresh = true
+                end
+            end
+        end
+    end
+    self._containerAlphaControlledGroups = HasTableEntries(containerAlphaControlledGroups) and containerAlphaControlledGroups or nil
+
     for groupId, group in pairs(groups) do
         local frame = self.groupFrames[groupId] or (self._dormantFrames and self._dormantFrames[groupId])
-        if FrameIsAlphaWorkTarget(frame, panelAlphaAnchorTargets and panelAlphaAnchorTargets[groupId]) then
+        if not containerAlphaControlledGroups[groupId]
+            and FrameIsAlphaWorkTarget(frame, panelAlphaAnchorTargets and panelAlphaAnchorTargets[groupId]) then
             if GroupNeedsAlphaUpdate(self, group, groupId, frame) then
                 processedAlphaWork = true
                 if not (ST.HasActiveAlphaSettings and ST.HasActiveAlphaSettings(group))

@@ -759,9 +759,18 @@ function CooldownCompanion:CreateContainer(name)
         enabled = true,
         locked = true,
         -- Alpha fade defaults
+        groupAlphaEnabled = false,
         baselineAlpha = 1,
+        forceAlphaInCombat = false,
+        forceAlphaOutOfCombat = false,
         forceAlphaRegularMounted = false,
         forceAlphaDragonriding = false,
+        forceAlphaTargetExists = false,
+        forceAlphaTargetEnemyOnly = false,
+        forceAlphaFocusExists = false,
+        forceAlphaMouseover = false,
+        forceHideInCombat = false,
+        forceHideOutOfCombat = false,
         forceHideRegularMounted = false,
         forceHideDragonriding = false,
         treatTravelFormAsMounted = false,
@@ -810,6 +819,9 @@ function CooldownCompanion:DeleteContainer(containerId)
     end
 
     db.groupContainers[containerId] = nil
+    if self.ClearContainerAlphaRuntimeState then
+        self:ClearContainerAlphaRuntimeState(containerId)
+    end
     RefreshPanelAlphaDependencyTargets(self)
 end
 
