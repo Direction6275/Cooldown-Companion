@@ -206,12 +206,14 @@ end
 function CooldownCompanion:UpdateRangeCheckRegistrations()
     local newSet = {}
     self:ForEachButton(function(button, bd)
-        if bd.type == "spell"
+        local spellID = bd._rotationAssistantVirtual == true and bd._rotationAssistantSpellID or bd.id
+        if spellID
+            and bd.type == "spell"
             and not bd.isPassive
             and not bd.isPassiveCooldown
             and ((button.style and button.style.showOutOfRange)
                 or (self.TriggerRowUsesCondition and self:TriggerRowUsesCondition(bd, "rangeActive"))) then
-            newSet[bd.id] = true
+            newSet[spellID] = true
         end
     end)
     -- Enable newly needed range checks
@@ -236,7 +238,8 @@ function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInR
     end
     local changed = false
     self:ForEachButton(function(button, bd)
-        if bd.type == "spell" and bd.id == spellIdentifier then
+        local spellID = bd._rotationAssistantVirtual == true and bd._rotationAssistantSpellID or bd.id
+        if bd.type == "spell" and spellID == spellIdentifier then
             if button._spellOutOfRange ~= outOfRange then
                 button._spellOutOfRange = outOfRange
                 changed = true

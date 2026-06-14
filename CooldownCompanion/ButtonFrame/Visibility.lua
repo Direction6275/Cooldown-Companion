@@ -103,6 +103,14 @@ end
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
 -- Fast path: if no toggles are enabled, zero overhead.
 local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, procOverlayActive, auraOwnsPrimarySwipe)
+    if buttonData and buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
+        button._visibilityHidden = false
+        button._visibilityAlphaOverride = nil
+        button._visibilityReasonBits = 0
+        button._visibilityReasonMode = "visible"
+        return
+    end
+
     if auraOwnsPrimarySwipe == nil then
         auraOwnsPrimarySwipe = auraOverrideActive
     end
@@ -271,6 +279,12 @@ end
 -- returns secret start/duration that SetCooldown will reject after the 12.0.1 hotfix.
 local function UpdateLossOfControl(button)
     if not button.locCooldown then return end
+
+    local buttonData = button.buttonData
+    if buttonData and buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
+        button.locCooldown:SetCooldown(0, 0)
+        return
+    end
 
     if button.style.showLossOfControl and button.buttonData.type == "spell" and not button.buttonData.isPassive then
         local locDuration = C_Spell.GetSpellLossOfControlCooldownDuration(button.buttonData.id)

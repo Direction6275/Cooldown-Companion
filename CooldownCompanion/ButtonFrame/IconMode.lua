@@ -121,7 +121,10 @@ local function ShouldEnrollKeyPressHighlightButton(button)
     end
 
     local buttonData = button.buttonData
-    if not buttonData or buttonData.type == "header" or buttonData.isPassive then
+    if not buttonData
+        or buttonData._rotationAssistantVirtual == true
+        or buttonData.type == "header"
+        or buttonData.isPassive then
         return false
     end
 
@@ -988,6 +991,17 @@ function CooldownCompanion:UpdateButtonIcon(button)
         return selectedAvailable
     end
 
+    if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
+        UseIcon(self:GetRotationAssistantFallbackIcon(), true)
+        button._displaySpellId = nil
+        if hasIcon then
+            button.icon:SetTexture(icon)
+        else
+            button.icon:SetTexture(QUESTION_MARK_ICON)
+        end
+        return
+    end
+
     if buttonData.type == "spell" then
         overrideId = C_Spell.GetOverrideSpell(buttonData.id)
         if overrideId == buttonData.id or overrideId == 0 then
@@ -1326,6 +1340,15 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
 
     -- Loss of control overlay
     UpdateLossOfControl(button)
+
+    if buttonData._rotationAssistantVirtual == true then
+        SetAssistedHighlight(button, false)
+        SetProcGlow(button, false)
+        SetAuraGlow(button, false, false)
+        SetReadyGlow(button, false)
+        SetKeyPressHighlight(button, false)
+        return
+    end
 
     -- Assisted highlight glow
     if button.assistedHighlight then

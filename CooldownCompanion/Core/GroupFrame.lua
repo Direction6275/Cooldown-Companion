@@ -608,6 +608,30 @@ local function GetButtonPoolKey(group, buttonData, style)
     return "icons"
 end
 
+local function GetRuntimeGroupButtonList(self, frame, group)
+    if self:IsRotationAssistantGroup(group) then
+        local buttonData = self:GetRotationAssistantButtonData(frame)
+        local list = frame._rotationAssistantButtonList
+        if not list then
+            list = {}
+            frame._rotationAssistantButtonList = list
+        end
+        list[1] = buttonData
+        for index = 2, #list do
+            list[index] = nil
+        end
+        return list
+    end
+    return group and group.buttons or {}
+end
+
+local function IsRuntimeButtonUsable(self, buttonData, group, opts)
+    if buttonData and buttonData._rotationAssistantVirtual == true then
+        return true
+    end
+    return self:IsButtonUsable(buttonData, group, opts)
+end
+
 local function GetExistingButtonPoolKey(button)
     if button and button._buttonPoolKey then
         return button._buttonPoolKey
@@ -920,6 +944,9 @@ local function PreparePooledButtonForUse(self, frame, group, button, index, butt
     button.index = index
     button.style = style
     button._groupId = frame.groupId
+    if buttonData._rotationAssistantVirtual == true and self.RefreshRotationAssistantButton then
+        self:RefreshRotationAssistantButton(button)
+    end
     ResolveReusableButtonEntryState(button, buttonData)
     RefreshButtonKeybindState(button, buttonData)
     if button.UpdateStyle then
@@ -2415,6 +2442,7 @@ local function GetStyleUpdateEntries(self, groupId, frame, group)
     local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
         and self:GetGroupButtonUsabilityOptions(groupId, group)
         or nil
+    local sourceButtons = GetRuntimeGroupButtonList(self, frame, group)
     local entries = frame._styleUpdateEntries
     if not entries then
         entries = {}
@@ -2423,8 +2451,8 @@ local function GetStyleUpdateEntries(self, groupId, frame, group)
 
     local previousCount = entries.count or 0
     local visibleIndex = 0
-    for sourceIndex, buttonData in ipairs(group.buttons) do
-        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
+    for sourceIndex, buttonData in ipairs(sourceButtons) do
+        if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
             visibleIndex = visibleIndex + 1
             local button = frame.buttons and frame.buttons[visibleIndex]
             if not button then
@@ -2474,6 +2502,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local isBarMode = group.displayMode == "bars"
     local style = group.style or {}
     local isTriggerMode = group.displayMode == "trigger"
+    local sourceButtons = GetRuntimeGroupButtonList(self, frame, group)
 
     -- Release existing buttons into bounded per-frame pools.
     for _, button in ipairs(frame.buttons) do
@@ -2486,8 +2515,8 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local headerHeight = ApplyTextGroupHeader(self, frame, group, style, isTextMode)
 
     -- Create new buttons (skip untalented spells)
-    for i, buttonData in ipairs(group.buttons) do
-        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
+    for i, buttonData in ipairs(sourceButtons) do
+        if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
             local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
             local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
             local button = AcquireButtonFromPool(frame, poolKey)
@@ -2510,6 +2539,8 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             table_insert(frame.buttons, button)
             if reusedButton then
                 PreparePooledButtonForUse(self, frame, group, button, i, buttonData, effectiveStyle)
+            elseif buttonData._rotationAssistantVirtual == true and self.RefreshRotationAssistantButton then
+                self:RefreshRotationAssistantButton(button)
             end
 
             button:Show()
@@ -2548,7 +2579,9 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
     local buttonsPerRow = style.buttonsPerRow or 12
-    local numButtons = frame.visibleButtonCount or #group.buttons
+    local numButtons = frame.visibleButtonCount
+        or (self:IsRotationAssistantGroup(group) and 1)
+        or #group.buttons
     if group.parentContainerId and not group.compactLayout and frame.layoutButtonCount then
         numButtons = math_max(numButtons, frame.layoutButtonCount)
     end
@@ -2759,7 +2792,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     local isLocked, baseAlpha = GetContainerState(groupId)
 
     -- Update drag handle text and lock state
-    local hasButtons = #group.buttons > 0
+    local hasButtons = self:IsRotationAssistantGroup(group) or #group.buttons > 0
     local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     local isCursorLayoutPreviewSelected = isCursorAnchored

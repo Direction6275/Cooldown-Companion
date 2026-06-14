@@ -1083,6 +1083,9 @@ end
 
 function CooldownCompanion:GroupHasUsableButtons(group, opts)
     opts = opts or {}
+    if self:IsRotationAssistantGroup(group) then
+        return true
+    end
     if not (group and group.buttons and #group.buttons > 0) then
         return false
     end
@@ -1112,6 +1115,10 @@ function CooldownCompanion:GetGroupLayoutButtonUsabilityOptions(groupId, group)
 end
 
 function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group)
+    if self:IsRotationAssistantGroup(group) then
+        return 1
+    end
+
     if not (group and group.buttons and #group.buttons > 0) then
         return 0
     end
@@ -1208,7 +1215,7 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
     elseif self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
         return false
     end
-    if group.displayMode ~= "icons" then return false end
+    if self.IsIconLikeDisplayMode and not self:IsIconLikeDisplayMode(group.displayMode) then return false end
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end
     if container and not container.isGlobal and container.anchorEligible == false then return false end

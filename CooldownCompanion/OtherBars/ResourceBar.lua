@@ -1822,7 +1822,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         end
 
         local group = self.db.profile.groups[groupId]
-        if not group or group.displayMode ~= "icons" then
+        if not group or not CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) then
             self:RevertResourceBars()
             return
         end

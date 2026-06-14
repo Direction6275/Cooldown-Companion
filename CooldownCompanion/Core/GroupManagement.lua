@@ -1039,6 +1039,9 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     local db = self.db.profile
     local container = db.groupContainers[containerId]
     if not container then return nil end
+    displayMode = displayMode or "icons"
+    local isRotationAssistant = ST.IsRotationAssistantDisplayMode
+        and ST.IsRotationAssistantDisplayMode(displayMode)
 
     local groupId = db.nextGroupId
     db.nextGroupId = groupId + 1
@@ -1047,7 +1050,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     local containerFrameName = "CooldownCompanionContainer" .. containerId
 
     db.groups[groupId] = {
-        name = "Panel " .. panelOrder,
+        name = isRotationAssistant and ST.ROTATION_ASSISTANT_NAME or ("Panel " .. panelOrder),
         parentContainerId = containerId,
         order = panelOrder,
         anchor = {
@@ -1059,7 +1062,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         },
         buttons = {},
         style = CopyTable(db.globalStyle),
-        displayMode = displayMode or "icons",
+        displayMode = displayMode,
         masqueEnabled = false,
         compactLayout = false,
         maxVisibleButtons = 0,
@@ -1097,6 +1100,23 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.barAuraEffect == nil then style.barAuraEffect = "color" end
     if style.barAuraIndicatorEnabled == nil then
         style.barAuraIndicatorEnabled = (style.barAuraEffect or "none") ~= "none"
+    end
+    if isRotationAssistant then
+        style.orientation = "horizontal"
+        style.growthOrigin = "TOPLEFT"
+        style.buttonsPerRow = 1
+        style.maintainAspectRatio = true
+        style.showCooldownText = false
+        style.showChargeText = false
+        style.showAuraText = false
+        style.showAuraStackText = false
+        style.showAssistedHighlight = false
+        style.procGlowStyle = "none"
+        style.pandemicGlowStyle = "none"
+        style.readyGlowStyle = "none"
+        style.keyPressHighlightStyle = "none"
+        style.iconFillEnabled = false
+        style.auraUseBlizzardSwipe = false
     end
 
     if displayMode == "textures" then
@@ -1215,6 +1235,12 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     if not group then return end
 
     local oldMode = group.displayMode
+    if oldMode ~= newMode
+        and (ST.IsRotationAssistantDisplayMode(oldMode) or ST.IsRotationAssistantDisplayMode(newMode)) then
+        self:Print("Assistant Panels cannot be converted. Create a new Assistant Panel instead.")
+        return false
+    end
+
     if oldMode ~= newMode and (oldMode == "trigger" or newMode == "trigger") then
         self:Print("Trigger Panels cannot be converted. Create a new Trigger Panel instead.")
         return false
@@ -1459,6 +1485,11 @@ end
 function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot)
     local group = self.db.profile.groups[groupId]
     if not group then return end
+
+    if ST.IsRotationAssistantDisplayMode(group.displayMode) then
+        self:Print("Assistant Panels are populated automatically.")
+        return nil
+    end
 
     if group.displayMode == "textures" and #group.buttons >= 1 then
         self:Print("Texture Panels can only hold one entry. Remove the current entry first if you want to replace it.")

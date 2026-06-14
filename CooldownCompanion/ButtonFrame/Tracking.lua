@@ -183,6 +183,9 @@ local function SetTintIntent(target, active, reason, unusableActive, r, g, b, a)
 end
 
 local function IsUnusableVisualActive(button, buttonData)
+    if buttonData and buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
+        return false
+    end
     if buttonData.isPassive or buttonData.isPassiveCooldown then
         return false
     end
@@ -212,6 +215,10 @@ local function ResolveIconTintIntent(button, buttonData, style, target)
     end
 
     style = style or {}
+
+    if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
+        return SetTintIntent(target, false, nil, false, 1, 1, 1, 1)
+    end
 
     if buttonData.isPassive then
         local c

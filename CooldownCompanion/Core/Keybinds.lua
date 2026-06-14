@@ -300,7 +300,11 @@ local function CacheButtonBindingKeys(button, buttonData)
     local infos = {}
     if buttonData then
         local slots
-        if buttonData.type == "spell" then
+        if buttonData._rotationAssistantVirtual == true then
+            if buttonData._rotationAssistantMissing ~= true then
+                slots = GetSpellActionSlots(buttonData._rotationAssistantSpellID or buttonData.id)
+            end
+        elseif buttonData.type == "spell" then
             slots = GetSpellActionSlots(buttonData.id)
         elseif buttonData.type == "item" or buttonData.type == "equipmentSlot" then
             local itemID = button._resolvedItemId or buttonData.id
@@ -429,7 +433,20 @@ end
 function CooldownCompanion:GetKeybindText(buttonData, itemIDOverride)
     if not buttonData then return nil end
 
-    if buttonData.type == "spell" then
+    if buttonData._rotationAssistantVirtual == true then
+        if buttonData._rotationAssistantMissing == true then
+            return nil
+        end
+        local slots = GetSpellActionSlots(buttonData._rotationAssistantSpellID or buttonData.id)
+        if slots then
+            for _, slot in ipairs(slots) do
+                local text = GetKeybindForSlot(slot)
+                if text and text ~= "" then
+                    return text
+                end
+            end
+        end
+    elseif buttonData.type == "spell" then
         local slots = GetSpellActionSlots(buttonData.id)
         if slots then
             for _, slot in ipairs(slots) do
@@ -457,6 +474,10 @@ end
 -- tokens continue reflecting the detected action bar bind only.
 function CooldownCompanion:GetDisplayedKeybindText(buttonData, itemIDOverride)
     if not buttonData then return nil end
+
+    if buttonData._rotationAssistantVirtual == true then
+        return self:GetKeybindText(buttonData, itemIDOverride)
+    end
 
     local customText = buttonData.customKeybindText
     if customText and customText ~= "" then

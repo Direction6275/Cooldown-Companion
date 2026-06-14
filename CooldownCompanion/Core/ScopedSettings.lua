@@ -918,7 +918,7 @@ local function SanitizeAnchorGroupID(groupId)
         return nil
     end
     local container = profile.groupContainers and profile.groupContainers[group.parentContainerId]
-    if group.displayMode ~= "icons" or (container and container.isGlobal) then
+    if not CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) or (container and container.isGlobal) then
         return nil
     end
     if not CooldownCompanion:IsGroupVisibleToCurrentChar(numericGroupID) then
