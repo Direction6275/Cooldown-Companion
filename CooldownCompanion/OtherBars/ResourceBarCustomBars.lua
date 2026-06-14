@@ -40,9 +40,15 @@ local SetCustomAuraMaxThresholdRange = RB.SetCustomAuraMaxThresholdRange
 local ApplyPixelBorders = RB.ApplyPixelBorders
 local HidePixelBorders = RB.HidePixelBorders
 local ClearResourceAuraVisuals = RB.ClearResourceAuraVisuals
+local IsCustomAuraMaxBarEffectEnabled = RB.IsCustomAuraMaxBarEffectEnabled
+local GetCustomAuraMaxBarEffectColor = RB.GetCustomAuraMaxBarEffectColor
+local ApplyCustomAuraMaxBarEffects = RB.ApplyCustomAuraMaxBarEffects
+local ClearCustomAuraMaxBarEffects = RB.ClearCustomAuraMaxBarEffects
+local GetMaxStacksFrameTreatmentStyle = RB.GetMaxStacksFrameTreatmentStyle
 local EnsureMaxStacksIndicator = RB.EnsureMaxStacksIndicator
 local LayoutMaxStacksIndicator = RB.LayoutMaxStacksIndicator
 local ClearMaxStacksIndicator = RB.ClearMaxStacksIndicator
+local SetMaxStacksIndicatorActive = RB.SetMaxStacksIndicatorActive
 local EnsureCustomAuraContinuousThresholdOverlay = RB.EnsureCustomAuraContinuousThresholdOverlay
 local EnsureCustomAuraSegmentThresholdOverlays = RB.EnsureCustomAuraSegmentThresholdOverlays
 local EnsureCustomAuraOverlayThresholdOverlays = RB.EnsureCustomAuraOverlayThresholdOverlays
@@ -310,6 +316,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         local maxStacks = cabConfig.maxStacks or 1
         local thresholdEnabled = (not spellAuraStackDisplay) and IsCustomAuraMaxThresholdEnabled(cabConfig)
+        local maxStackBarEffectsEnabled = (not spellAuraStackDisplay)
+            and IsCustomAuraMaxBarEffectEnabled
+            and IsCustomAuraMaxBarEffectEnabled(cabConfig)
+        local thresholdVisible = thresholdEnabled or maxStackBarEffectsEnabled
 
         if barInfo.barType == "custom_continuous" then
             local bar = barInfo.frame
@@ -334,7 +344,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
 
             if bar.thresholdOverlay then
-                if thresholdEnabled then
+                if thresholdVisible then
                     SetCustomAuraMaxThresholdRange(bar.thresholdOverlay, maxStacks)
                     SetStatusBarSmoothValue(bar.thresholdOverlay, stacks)
                     bar.thresholdOverlay:Show()
@@ -403,7 +413,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if holder.thresholdSegments then
                 for i = 1, #holder.thresholdSegments do
                     local thresholdSeg = holder.thresholdSegments[i]
-                    if thresholdEnabled then
+                    if thresholdVisible then
                         SetCustomAuraMaxThresholdRange(thresholdSeg, maxStacks)
                         SetStatusBarSegmentedValue(thresholdSeg, stacks, segmentedSmoothing)
                         thresholdSeg:Show()
@@ -428,7 +438,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if holder.thresholdSegments then
                 for i = 1, half do
                     local thresholdSeg = holder.thresholdSegments[i]
-                    if thresholdEnabled then
+                    if thresholdVisible then
                         SetCustomAuraMaxThresholdRange(thresholdSeg, maxStacks)
                         SetStatusBarSegmentedValue(thresholdSeg, stacks, segmentedSmoothing)
                         thresholdSeg:Show()
@@ -450,13 +460,19 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
         end
 
-        -- Max stacks indicator: SetValue drives visibility via C-level clamping
-        if cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
-            local indicatorValue = (auraPresent and applications ~= nil) and applications or 0
-            if barInfo.barType == "custom_segmented" or barInfo.barType == "custom_overlay" then
-                SetStatusBarSegmentedValue(barInfo._maxStacksIndicator, indicatorValue, segmentedSmoothing)
-            else
-                SetStatusBarSmoothValue(barInfo._maxStacksIndicator, indicatorValue)
+        -- Max stacks indicator: SetValue drives visibility via C-level clamping.
+        if cabConfig.maxStacksGlowEnabled then
+            local indicatorActive = auraPresent and applications ~= nil
+            local indicatorValue = indicatorActive and applications or 0
+            if barInfo._maxStacksIndicator then
+                if barInfo.barType == "custom_segmented" or barInfo.barType == "custom_overlay" then
+                    SetStatusBarSegmentedValue(barInfo._maxStacksIndicator, indicatorValue, segmentedSmoothing)
+                else
+                    SetStatusBarSmoothValue(barInfo._maxStacksIndicator, indicatorValue)
+                end
+                if SetMaxStacksIndicatorActive then
+                    SetMaxStacksIndicatorActive(barInfo, indicatorActive)
+                end
             end
         end
     end
@@ -636,8 +652,8 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             UpdateSpellCustomBarChargeText(bar, cooldownResult)
             UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPresent)
 
-            if barInfo._maxStacksIndicator then
-                SetStatusBarImmediateValue(barInfo._maxStacksIndicator, 0)
+            if barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
+                SetMaxStacksIndicatorActive(barInfo, false)
             end
 
             UpdateSpellCustomBarSounds(auraPresent)
@@ -680,8 +696,8 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         UpdateSpellCustomBarChargeText(bar, cooldownResult)
 
-        if barInfo._maxStacksIndicator then
-            SetStatusBarImmediateValue(barInfo._maxStacksIndicator, 0)
+        if barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
+            SetMaxStacksIndicatorActive(barInfo, false)
         end
 
         UpdateSpellCustomBarSounds(false)
@@ -898,7 +914,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local barColor = cabConfig.barColor or {0.5, 0.5, 1}
         local isSpellCustomBar = RB.IsSpellCustomBarConfig(cabConfig)
         local thresholdEnabled = (not isSpellCustomBar) and IsCustomAuraMaxThresholdEnabled(cabConfig)
-        local thresholdColor = GetCustomAuraMaxThresholdColor(cabConfig)
+        local maxStackBarEffectsEnabled = (not isSpellCustomBar)
+            and IsCustomAuraMaxBarEffectEnabled
+            and IsCustomAuraMaxBarEffectEnabled(cabConfig)
+        local thresholdVisible = thresholdEnabled or maxStackBarEffectsEnabled
+        local thresholdColor = maxStackBarEffectsEnabled and GetCustomAuraMaxBarEffectColor(cabConfig)
+            or GetCustomAuraMaxThresholdColor(cabConfig)
 
         if barInfo.barType == "custom_continuous" or barInfo.barType == "custom_cooldown" then
             local bar = barInfo.frame
@@ -907,7 +928,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], 1)
             if bar.thresholdOverlay then
                 bar.thresholdOverlay:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], 1)
-                bar.thresholdOverlay:SetShown(thresholdEnabled)
+                if maxStackBarEffectsEnabled and ApplyCustomAuraMaxBarEffects then
+                    ApplyCustomAuraMaxBarEffects(bar.thresholdOverlay, cabConfig, thresholdColor)
+                elseif ClearCustomAuraMaxBarEffects then
+                    ClearCustomAuraMaxBarEffects(bar.thresholdOverlay, thresholdColor)
+                end
+                bar.thresholdOverlay:SetShown(thresholdVisible)
             end
 
             -- Determine visibility for both text elements
@@ -972,7 +998,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if holder.thresholdSegments then
                 for _, seg in ipairs(holder.thresholdSegments) do
                     seg:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], 1)
-                    seg:SetShown(thresholdEnabled)
+                    if maxStackBarEffectsEnabled and ApplyCustomAuraMaxBarEffects then
+                        ApplyCustomAuraMaxBarEffects(seg, cabConfig, thresholdColor)
+                    elseif ClearCustomAuraMaxBarEffects then
+                        ClearCustomAuraMaxBarEffects(seg, thresholdColor)
+                    end
+                    seg:SetShown(thresholdVisible)
                 end
             end
 
@@ -986,8 +1017,14 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                     holder.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
                     holder.overlaySegments[i]:Show()
                     if holder.thresholdSegments and holder.thresholdSegments[i] then
-                        holder.thresholdSegments[i]:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], 1)
-                        holder.thresholdSegments[i]:SetShown(thresholdEnabled)
+                        local thresholdSeg = holder.thresholdSegments[i]
+                        thresholdSeg:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], 1)
+                        if maxStackBarEffectsEnabled and ApplyCustomAuraMaxBarEffects then
+                            ApplyCustomAuraMaxBarEffects(thresholdSeg, cabConfig, thresholdColor)
+                        elseif ClearCustomAuraMaxBarEffects then
+                            ClearCustomAuraMaxBarEffects(thresholdSeg, thresholdColor)
+                        end
+                        thresholdSeg:SetShown(thresholdVisible)
                     end
                 end
             end
@@ -1235,12 +1272,20 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if isSpellCustomBar then
                 ClearMaxStacksIndicator(barInfo)
             else
-                EnsureMaxStacksIndicator(barInfo)
                 local indBorderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
                 local indBorderSize = GetResourceDisplayValue(settings, "borderSize", 1)
                 local indBorderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM)
                 local indBarTexture = CooldownCompanion:FetchEffectiveBarTexture(GetResourceDisplayValue(settings, "barTexture", "Solid"))
-                LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, indBarTexture, indBorderStyle, indBorderSize, indBorderRenderMode)
+                local frameTreatmentStyle = GetMaxStacksFrameTreatmentStyle and GetMaxStacksFrameTreatmentStyle(cabConfig) or "solidBorder"
+                if frameTreatmentStyle ~= "none" then
+                    EnsureMaxStacksIndicator(barInfo)
+                end
+                if barInfo._maxStacksIndicator then
+                    LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, indBarTexture, indBorderStyle, indBorderSize, indBorderRenderMode)
+                end
+                if frameTreatmentStyle == "none" then
+                    ClearMaxStacksIndicator(barInfo)
+                end
             end
         else
             ClearMaxStacksIndicator(barInfo)

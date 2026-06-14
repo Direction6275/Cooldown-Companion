@@ -338,11 +338,13 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         end,
         barActiveAura = function(container, styleTable, onChange, opts)
             BuildBarActiveAuraControls(container, styleTable, onChange, opts)
-            local auraEffect = styleTable.barAuraEffect
-            if auraEffect == nil and opts and opts.fallbackStyle then
-                auraEffect = opts.fallbackStyle.barAuraEffect
+            local auraStyle = styleTable
+            if rawget(styleTable, "barAuraIndicatorEnabled") == nil
+                and rawget(styleTable, "barAuraEffect") == nil
+                and opts and opts.fallbackStyle then
+                auraStyle = opts.fallbackStyle
             end
-            if (auraEffect or "none") ~= "none" then
+            if ST.IsBarAuraIndicatorEnabled(auraStyle) then
                 BuildBarAuraPulseControls(container, styleTable, onChange, opts)
             end
         end,
@@ -389,7 +391,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                         elseif sectionId == "pandemicGlow" and GetEffectiveOverrideValue("showPandemicGlow") ~= false then
                             AddSelectedButtonPreviewToggle(panel, "Preview Pandemic Glow", "_pandemicPreview", CooldownCompanion.SetPandemicPreview)
                         elseif sectionId == "barActiveAura" then
-                            AddSelectedBarAuraActivePreviewToggle(panel, "Preview Active Aura Effects")
+                            AddSelectedBarAuraActivePreviewToggle(panel, "Preview Active Aura Indicator")
                         elseif sectionId == "pandemicBar" then
                             AddSelectedButtonPreviewToggle(panel, "Preview Pandemic Effects", "_pandemicPreview", CooldownCompanion.SetPandemicPreview)
                         elseif sectionId == "readyGlow" and overrides.readyGlowStyle and overrides.readyGlowStyle ~= "none" then

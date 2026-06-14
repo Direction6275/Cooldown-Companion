@@ -55,6 +55,7 @@ local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
 local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
+local BuildMaxStacksIndicatorAdvancedControls = ST._BuildMaxStacksIndicatorAdvancedControls
 local BuildBarColorsControls = ST._BuildBarColorsControls
 local BuildBarNameTextControls = ST._BuildBarNameTextControls
 local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
@@ -1230,9 +1231,6 @@ local function BuildBarPanelAuraDisplaySection(scroll, buttonData, infoButtons)
     displayModeDrop:SetFullWidth(true)
     displayModeDrop:SetCallback("OnValueChanged", function(_, _, value)
         CooldownCompanion:SetBarPanelAuraStackDisplayMode(buttonData, value)
-        if value ~= "continuous" and auraBar.maxStacksGlowStyle == "pulsingOverlay" then
-            auraBar.maxStacksGlowStyle = "solidBorder"
-        end
         RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true, refreshConfig = true })
     end)
     scroll:AddChild(displayModeDrop)
@@ -1307,7 +1305,7 @@ local function BuildBarPanelAuraDisplaySection(scroll, buttonData, infoButtons)
     end
 
     local indicatorCb = AceGUI:Create("CheckBox")
-    indicatorCb:SetLabel("Max Stack Indicator")
+    indicatorCb:SetLabel("Enable Max Stack Indicator")
     indicatorCb:SetValue(auraBar.maxStacksGlowEnabled == true)
     indicatorCb:SetFullWidth(true)
     indicatorCb:SetCallback("OnValueChanged", function(_, _, value)
@@ -1317,64 +1315,12 @@ local function BuildBarPanelAuraDisplaySection(scroll, buttonData, infoButtons)
     scroll:AddChild(indicatorCb)
 
     local function BuildMaxStackIndicatorAdvanced(panel)
-        local currentStyle = auraBar.maxStacksGlowStyle or "solidBorder"
-        local isContinuousDisplay = stackDisplayMode == "continuous"
-        if currentStyle == "pulsingOverlay" and not isContinuousDisplay then
-            currentStyle = "solidBorder"
-        end
-
-        local styleList = {
-            solidBorder = "Solid Border",
-            pulsingBorder = "Pulsing Border",
-        }
-        local styleOrder = { "solidBorder", "pulsingBorder" }
-        if isContinuousDisplay then
-            styleList.pulsingOverlay = "Pulsing Overlay"
-            styleOrder = { "solidBorder", "pulsingBorder", "pulsingOverlay" }
-        end
-
-        local indicatorStyleDrop = AceGUI:Create("Dropdown")
-        indicatorStyleDrop:SetLabel("Indicator Style")
-        indicatorStyleDrop:SetList(styleList, styleOrder)
-        indicatorStyleDrop:SetValue(currentStyle)
-        indicatorStyleDrop:SetFullWidth(true)
-        indicatorStyleDrop:SetCallback("OnValueChanged", function(_, _, value)
-            auraBar.maxStacksGlowStyle = value
+        BuildMaxStacksIndicatorAdvancedControls(panel, auraBar, function()
             RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true, refreshConfig = true })
         end)
-        panel:AddChild(indicatorStyleDrop)
-
-        AddColorPicker(panel, auraBar, "maxStacksGlowColor", "Indicator Color", {1, 0.84, 0, 0.9}, true,
-            function() RefreshSelectedBarPanelAuraDisplay({ updateCooldowns = true }) end)
-
-        if currentStyle ~= "pulsingOverlay" then
-            local sizeSlider = AceGUI:Create("Slider")
-            sizeSlider:SetLabel("Border Size")
-            sizeSlider:SetSliderValues(1, 8, 1)
-            sizeSlider:SetValue(auraBar.maxStacksGlowSize or 2)
-            sizeSlider:SetFullWidth(true)
-            sizeSlider:SetCallback("OnValueChanged", function(_, _, value)
-                auraBar.maxStacksGlowSize = value
-                RefreshSelectedBarPanelAuraButton()
-            end)
-            panel:AddChild(sizeSlider)
-        end
-
-        if currentStyle == "pulsingBorder" or currentStyle == "pulsingOverlay" then
-            local speedSlider = AceGUI:Create("Slider")
-            speedSlider:SetLabel("Pulse Duration")
-            speedSlider:SetSliderValues(0.1, 2.0, 0.1)
-            speedSlider:SetValue(auraBar.maxStacksGlowSpeed or 0.5)
-            speedSlider:SetFullWidth(true)
-            speedSlider:SetCallback("OnValueChanged", function(_, _, value)
-                auraBar.maxStacksGlowSpeed = value
-                RefreshSelectedBarPanelAuraButton()
-            end)
-            panel:AddChild(speedSlider)
-        end
     end
 
-    local indicatorAdvExpanded, indicatorAdvBtn = AddAdvancedToggle(indicatorCb, "barPanelAuraMaxStacksIndicator_" .. CS.selectedGroup .. "_" .. CS.selectedButton, infoButtons, auraBar.maxStacksGlowEnabled == true, {
+    local _, indicatorAdvBtn = AddAdvancedToggle(indicatorCb, "barPanelAuraMaxStacksIndicator_" .. CS.selectedGroup .. "_" .. CS.selectedButton, infoButtons, auraBar.maxStacksGlowEnabled == true, {
         title = "Max Stack Indicator Advanced",
         build = BuildMaxStackIndicatorAdvanced,
     })
@@ -1383,8 +1329,6 @@ local function BuildBarPanelAuraDisplaySection(scroll, buttonData, infoButtons)
         {"Due to combat restrictions, individual bar segments cannot be highlighted independently.", 1, 1, 1, true},
         " ",
         {"The indicator covers the whole bar entry and appears automatically when the aura reaches its maximum stack count.", 1, 1, 1, true},
-        " ",
-        {"The Pulsing Overlay style is only available for continuous display mode.", 1, 1, 1, true},
     }, indicatorCb)
 
 end

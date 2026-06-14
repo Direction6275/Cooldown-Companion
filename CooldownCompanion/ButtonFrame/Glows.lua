@@ -34,6 +34,7 @@ local DEFAULT_AURA_GLOW_COLOR = {1, 0.84, 0, 0.9}
 local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}
 local DEFAULT_KEY_PRESS_COLOR = {1, 1, 1, 0.4}
 local DEFAULT_GLOW_SIZES = {solid = 5, pixel = 8, glow = 30, autocast = 2}
+local BAR_AURA_GLOW_SIZES = {solid = 2, pixel = 8, glow = 30, autocast = 2}
 
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
@@ -61,9 +62,30 @@ local function NormalizeGlowStyle(style)
     return style
 end
 
+local function NormalizeBarAuraEffectStyle(style)
+    if style == "color" then
+        return "none"
+    end
+    return style
+end
+
+local function IsBarAuraIndicatorEnabled(style)
+    if type(style) ~= "table" then
+        return false
+    end
+    local enabled = rawget(style, "barAuraIndicatorEnabled")
+    if enabled ~= nil then
+        return enabled == true
+    end
+    if rawget(style, "barAuraEffect") == nil and style.barAuraIndicatorEnabled ~= nil then
+        return style.barAuraIndicatorEnabled == true
+    end
+    return (style.barAuraEffect or "none") ~= "none"
+end
+
 local function GetGlowSize(styleTable, sizeKey, glowStyle, defaults)
     local size = styleTable and styleTable[sizeKey]
-    if glowStyle == "solid" then
+    if glowStyle == "solid" or glowStyle == "pulsingBorder" then
         return size or defaults.solid
     elseif glowStyle == "pixel" then
         return size or defaults.pixel
@@ -89,7 +111,38 @@ local function SpeedToPixelFrequency(speed)
 end
 
 local function UsesGlowSpeed(glowStyle)
-    return glowStyle == "pixel" or IsLibCustomGlowStyle(glowStyle)
+    return glowStyle == "pixel" or glowStyle == "pulsingBorder" or IsLibCustomGlowStyle(glowStyle)
+end
+
+local function StopSolidBorderPulse(container)
+    local frame = container and container.solidFrame
+    if frame and frame._solidPulseAG then
+        frame._solidPulseAG:Stop()
+    end
+    if frame then
+        frame:SetAlpha(1)
+    end
+end
+
+local function StartSolidBorderPulse(container, speed, restart)
+    local frame = container and container.solidFrame
+    if not frame then return end
+    if not frame._solidPulseAG then
+        local ag = frame:CreateAnimationGroup()
+        ag:SetLooping("BOUNCE")
+        local anim = ag:CreateAnimation("Alpha")
+        frame._solidPulseAG = ag
+        frame._solidPulseAnim = anim
+    end
+    frame._solidPulseAnim:SetDuration(speed or 0.5)
+    frame._solidPulseAnim:SetFromAlpha(1.0)
+    frame._solidPulseAnim:SetToAlpha(0.3)
+    if restart then
+        frame._solidPulseAG:Stop()
+        frame._solidPulseAG:Play()
+    elseif not frame._solidPulseAG:IsPlaying() then
+        frame._solidPulseAG:Play()
+    end
 end
 
 -- ButtonGlow_Stop is frame-scoped (no key), so keep per-target ownership to
@@ -251,6 +304,7 @@ end
 local function HideGlowStyles(container)
     StopLibCustomGlow(container)
     if container.solidTextures then
+        StopSolidBorderPulse(container)
         for _, tex in ipairs(container.solidTextures) do tex:Hide() end
     end
     if container.procFrame then
@@ -284,11 +338,16 @@ local function ShowGlowStyle(container, style, button, color, params)
         -- Library unavailable (or failed start): fall back to built-in proc glow.
         style = "glow"
     end
-    if style == "solid" then
+    if style == "solid" or style == "pulsingBorder" then
         ApplyEdgePositions(container.solidTextures, button, size or 2)
         for _, tex in ipairs(container.solidTextures) do
             tex:SetColorTexture(color[1], color[2], color[3], color[4] or defaultAlpha)
             tex:Show()
+        end
+        if style == "pulsingBorder" then
+            StartSolidBorderPulse(container, params.speed, true)
+        else
+            StopSolidBorderPulse(container)
         end
     elseif style == "pixel" then
         if LCG and LCG.PixelGlow_Start then
@@ -385,11 +444,16 @@ local function IsGlowAnimationAlive(container)
 end
 
 local function TryUpdateGlowStyleInPlace(container, style, button, color, params)
-    if style == "solid" then
+    if style == "solid" or style == "pulsingBorder" then
         ApplyEdgePositions(container.solidTextures, button, params.size or 2)
         for _, tex in ipairs(container.solidTextures) do
             tex:SetColorTexture(color[1], color[2], color[3], color[4] or params.defaultAlpha or 1)
             tex:Show()
+        end
+        if style == "pulsingBorder" then
+            StartSolidBorderPulse(container, params.speed, false)
+        else
+            StopSolidBorderPulse(container)
         end
         return true
     elseif style == "glow" and container.procFrame and container.procFrame:IsShown() then
@@ -470,6 +534,7 @@ local function MakeGlowSetter(cfg)
     local defaultAlpha     = cfg.defaultAlpha or 1
     local includeFreqScale = cfg.includeFrequencyScale
     local optsDefaultAlpha = cfg.optsDefaultAlpha
+    local defaultSizes     = cfg.defaultSizes or DEFAULT_GLOW_SIZES
 
     -- Style keys: normal path
     local styleKey    = cfg.styleKey
@@ -550,7 +615,7 @@ local function MakeGlowSetter(cfg)
                 -- Resolve size
                 if useGetGlowSize then
                     local sk = (hasPandemic and pandemicOverride) and panSizeKey or sizeKey
-                    sz = GetGlowSize(btnStyle, sk, glowStyle, DEFAULT_GLOW_SIZES)
+                    sz = GetGlowSize(btnStyle, sk, glowStyle, defaultSizes)
                 elseif sizeOnlyForSolid then
                     sz = (glowStyle == "solid") and ((btnStyle and btnStyle[sizeKey]) or defSize) or 0
                 end
@@ -866,9 +931,11 @@ end
 local SetBarAuraEffect = MakeGlowSetter({
     containerKey       = "barAuraEffect",
     hasPandemic        = true,
+    normalizeStyle     = NormalizeBarAuraEffectStyle,
     noneIsOff          = true,
     fullParams         = true,
     useGetGlowSize     = true,
+    defaultSizes        = BAR_AURA_GLOW_SIZES,
     defaultAlpha       = 0.9,
     includeFrequencyScale = false,
     optsDefaultAlpha   = 0.9,
@@ -904,6 +971,7 @@ ST._CreateGlowContainer = CreateGlowContainer
 ST._CreateAssistedHighlight = CreateAssistedHighlight
 ST._GetViewerAuraStackText = GetViewerAuraStackText
 ST._SetupTooltipScripts = SetupTooltipScripts
+ST.IsBarAuraIndicatorEnabled = IsBarAuraIndicatorEnabled
 ST._SetBarAuraEffect = SetBarAuraEffect
 ST._SetReadyGlow = SetReadyGlow
 ST._SetKeyPressHighlight = SetKeyPressHighlight

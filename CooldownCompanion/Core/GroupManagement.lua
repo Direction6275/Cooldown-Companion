@@ -1095,6 +1095,9 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.iconFillCooldownColor == nil then style.iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55} end
     if style.iconFillAuraColor == nil then style.iconFillAuraColor = {0.2, 1.0, 0.2, 0.55} end
     if style.barAuraEffect == nil then style.barAuraEffect = "color" end
+    if style.barAuraIndicatorEnabled == nil then
+        style.barAuraIndicatorEnabled = (style.barAuraEffect or "none") ~= "none"
+    end
 
     if displayMode == "textures" then
         db.groups[groupId].textureSettings = {

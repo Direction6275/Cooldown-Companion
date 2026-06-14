@@ -16,7 +16,11 @@ local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
 local math_floor = math.floor
 local math_min = math.min
 local math_max = math.max
+local math_sin = math.sin
+local math_pi = math.pi
 local issecretvalue = issecretvalue
+local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
+local MAX_STACKS_PIXEL_GLOW_KEY = "CooldownCompanionMaxStacks"
 
 -- Import from ResourceBarConstants & ResourceBarHelpers
 local RB = ST._RB
@@ -614,6 +618,92 @@ end
 -- below max → fill=0% (invisible), at max → fill=100% (visible).
 ------------------------------------------------------------------------
 
+local function IsMaxStacksPixelGlowAvailable()
+    return LCG ~= nil and LCG.PixelGlow_Start ~= nil and LCG.PixelGlow_Stop ~= nil
+end
+
+local function GetMaxStacksFrameTreatmentStyle(cabConfig)
+    local style = cabConfig and cabConfig.maxStacksGlowStyle or "solidBorder"
+    if style == "none" or style == "pulsingOverlay" then
+        return "none"
+    elseif style == "pixelGlow" then
+        return IsMaxStacksPixelGlowAvailable() and "pixelGlow" or "solidBorder"
+    elseif style == "solidBorder" or style == "pulsingBorder" then
+        return style
+    end
+    return "solidBorder"
+end
+
+local function IsMaxStacksLegacyOverlay(cabConfig)
+    return cabConfig and cabConfig.maxStacksGlowStyle == "pulsingOverlay"
+end
+
+local function MaxStacksColorShiftEnabled(cabConfig)
+    if not cabConfig then return false end
+    if cabConfig.maxStacksBarColorShiftEnabled ~= nil then
+        return cabConfig.maxStacksBarColorShiftEnabled == true
+    end
+    return IsMaxStacksLegacyOverlay(cabConfig)
+end
+
+local function HasMaxStacksBarEffects(cabConfig)
+    return cabConfig and (
+        cabConfig.maxStacksBarPulseEnabled == true
+        or MaxStacksColorShiftEnabled(cabConfig)
+    ) or false
+end
+
+local function IsCustomAuraMaxBarEffectEnabled(cabConfig)
+    return cabConfig
+        and cabConfig.trackingMode ~= "active"
+        and cabConfig.maxStacksGlowEnabled == true
+        and HasMaxStacksBarEffects(cabConfig)
+end
+
+local function CopyColorWithAlpha(color, alpha)
+    color = color or DEFAULT_CUSTOM_AURA_MAX_COLOR
+    return {color[1] or 1, color[2] or 0.84, color[3] or 0, alpha}
+end
+
+local function GetCustomAuraMaxBarEffectColor(cabConfig)
+    local color = cabConfig and cabConfig.maxStacksGlowColor or DEFAULT_CUSTOM_AURA_MAX_COLOR
+    if IsCustomAuraMaxThresholdEnabled(cabConfig) then
+        color = GetCustomAuraMaxThresholdColor(cabConfig)
+    end
+    if IsMaxStacksLegacyOverlay(cabConfig) and cabConfig.maxStacksBarColorShiftEnabled == nil then
+        return CopyColorWithAlpha(color, 0)
+    end
+    return color
+end
+
+local function GetMaxStacksBarEffectShiftColor(cabConfig)
+    if cabConfig and cabConfig.maxStacksBarColorShiftColor then
+        return cabConfig.maxStacksBarColorShiftColor
+    elseif IsMaxStacksLegacyOverlay(cabConfig) then
+        return cabConfig.maxStacksGlowColor or DEFAULT_CUSTOM_AURA_MAX_COLOR
+    end
+    return {1, 1, 1, 1}
+end
+
+local function MaxStacksPixelFrequency(speed)
+    speed = tonumber(speed) or 50
+    if speed < 10 then
+        speed = 50
+    end
+    return math_max(speed, 1) / 120
+end
+
+local function LayoutWholeBarFrame(frameToLayout, frame, borderStyle, borderSize, borderRenderMode)
+    frameToLayout:ClearAllPoints()
+    if borderStyle == "pixel" then
+        local inset = ST.GetEffectiveBorderLayoutSize(frame, borderSize, borderRenderMode)
+        frameToLayout:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)
+        frameToLayout:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset, inset)
+    else
+        frameToLayout:SetAllPoints(frame)
+    end
+end
+
 local function EnsureMaxStacksIndicator(barInfo)
     if barInfo._maxStacksIndicator then return barInfo._maxStacksIndicator end
     local indicator = CreateFrame("StatusBar", nil, barInfo.frame)
@@ -624,11 +714,260 @@ local function EnsureMaxStacksIndicator(barInfo)
     return indicator
 end
 
+local function StopMaxStacksPixelGlow(indicator)
+    if indicator and indicator._maxStacksPixelGlowTarget then
+        if IsMaxStacksPixelGlowAvailable() then
+            LCG.PixelGlow_Stop(indicator._maxStacksPixelGlowTarget, MAX_STACKS_PIXEL_GLOW_KEY)
+        end
+        indicator._maxStacksPixelGlowTarget = nil
+    end
+end
+
+local function EnsureMaxStacksPixelGlowTarget(indicator)
+    local clip = indicator._maxStacksPixelGlowClip
+    if not clip then
+        clip = CreateFrame("Frame", nil, indicator)
+        clip:SetClipsChildren(true)
+        clip:EnableMouse(false)
+        indicator._maxStacksPixelGlowClip = clip
+    end
+
+    local target = indicator._maxStacksPixelGlowFrame
+    if not target then
+        target = CreateFrame("Frame", nil, clip)
+        target:EnableMouse(false)
+        indicator._maxStacksPixelGlowFrame = target
+    end
+
+    return clip, target
+end
+
+local function ConfigureMaxStacksPixelGlow(indicator, cabConfig)
+    if not IsMaxStacksPixelGlowAvailable() then
+        StopMaxStacksPixelGlow(indicator)
+        if indicator then
+            indicator._maxStacksPixelGlowConfig = nil
+        end
+        return
+    end
+
+    local fillTexture = indicator:GetStatusBarTexture()
+    if not fillTexture then
+        StopMaxStacksPixelGlow(indicator)
+        indicator._maxStacksPixelGlowConfig = nil
+        return
+    end
+
+    indicator._maxStacksPixelGlowConfig = cabConfig
+
+    local clip, target = EnsureMaxStacksPixelGlowTarget(indicator)
+    clip:ClearAllPoints()
+    clip:SetPoint("TOPLEFT", fillTexture, "TOPLEFT", 0, 0)
+    clip:SetPoint("BOTTOMRIGHT", fillTexture, "BOTTOMRIGHT", 0, 0)
+    clip:SetFrameLevel(indicator:GetFrameLevel() + 1)
+    clip:Show()
+
+    target:ClearAllPoints()
+    target:SetAllPoints(indicator)
+    target:SetFrameLevel(clip:GetFrameLevel() + 1)
+    target:Show()
+
+    StopMaxStacksPixelGlow(indicator)
+    local color = cabConfig.maxStacksGlowColor or {1, 0.84, 0, 0.9}
+    LCG.PixelGlow_Start(
+        target,
+        color,
+        cabConfig.maxStacksGlowLines or 8,
+        MaxStacksPixelFrequency(cabConfig.maxStacksGlowSpeed),
+        cabConfig.maxStacksGlowSize or 8,
+        cabConfig.maxStacksGlowThickness or 4,
+        0,
+        0,
+        false,
+        MAX_STACKS_PIXEL_GLOW_KEY,
+        1
+    )
+    indicator._maxStacksPixelGlowTarget = target
+end
+
+local function ClearMaxStacksFrameTreatment(barInfo)
+    local indicator = barInfo and barInfo._maxStacksIndicator
+    if not indicator then return end
+    StopMaxStacksPixelGlow(indicator)
+    indicator._maxStacksFrameTreatmentStyle = nil
+    indicator._maxStacksPixelGlowConfig = nil
+    indicator._maxStacksPulseSuspended = nil
+    indicator._maxStacksIndicatorActive = nil
+    if indicator._maxStacksPixelGlowClip then
+        indicator._maxStacksPixelGlowClip:Hide()
+    end
+    indicator:Hide()
+    if indicator._pulseAG then
+        indicator._pulseAG:Stop()
+    end
+    indicator:SetAlpha(1)
+    SetStatusBarImmediateValue(indicator, 0)
+end
+
+local function SetMaxStacksIndicatorActive(barInfo, active)
+    local indicator = barInfo and barInfo._maxStacksIndicator
+    if not indicator then return end
+    local style = indicator._maxStacksFrameTreatmentStyle
+    active = active == true
+
+    if active then
+        if style ~= "pixelGlow" and style ~= "solidBorder" and style ~= "pulsingBorder" then
+            return
+        end
+        if indicator._maxStacksIndicatorActive == true then
+            if style ~= "pixelGlow" or indicator._maxStacksPixelGlowTarget then
+                return
+            end
+        end
+        indicator._maxStacksIndicatorActive = true
+        indicator:Show()
+        if style == "pixelGlow" then
+            if indicator._maxStacksPixelGlowConfig and not indicator._maxStacksPixelGlowTarget then
+                ConfigureMaxStacksPixelGlow(indicator, indicator._maxStacksPixelGlowConfig)
+            elseif indicator._maxStacksPixelGlowClip then
+                indicator._maxStacksPixelGlowClip:Show()
+                if indicator._maxStacksPixelGlowFrame then
+                    indicator._maxStacksPixelGlowFrame:Show()
+                end
+            end
+        elseif style == "pulsingBorder"
+            and indicator._maxStacksPulseSuspended
+            and indicator._pulseAG then
+            indicator._maxStacksPulseSuspended = nil
+            indicator._pulseAG:Play()
+        end
+        return
+    end
+
+    if indicator._maxStacksIndicatorActive == false then
+        return
+    end
+    indicator._maxStacksIndicatorActive = false
+    SetStatusBarImmediateValue(indicator, 0)
+    if style == "pixelGlow" then
+        StopMaxStacksPixelGlow(indicator)
+        if indicator._maxStacksPixelGlowClip then
+            indicator._maxStacksPixelGlowClip:Hide()
+        end
+        if indicator._maxStacksPixelGlowFrame then
+            indicator._maxStacksPixelGlowFrame:Hide()
+        end
+    elseif style == "pulsingBorder" and indicator._pulseAG then
+        indicator._pulseAG:Stop()
+        indicator._maxStacksPulseSuspended = true
+    end
+    indicator:Hide()
+end
+
+local function AnimateMaxStacksBarEffect(target)
+    if not target then return end
+
+    local pulseActive = target._maxStacksBarEffectPulseActive == true
+    local colorShiftActive = target._maxStacksBarEffectColorShiftActive == true
+    if not pulseActive and not colorShiftActive then
+        target:SetScript("OnUpdate", nil)
+        return
+    end
+
+    local now = GetTime()
+    local fillTexture = target.GetStatusBarTexture and target:GetStatusBarTexture()
+    if pulseActive then
+        local speed = target._maxStacksBarEffectPulseSpeed or 0.5
+        if fillTexture and fillTexture.SetAlpha then
+            fillTexture:SetAlpha(0.6 + 0.4 * math_sin(now * 2 * math_pi / speed))
+        end
+    elseif fillTexture and fillTexture.SetAlpha then
+        fillTexture:SetAlpha(1)
+    end
+
+    if colorShiftActive then
+        local base = target._maxStacksBarEffectBaseColor
+        local shift = target._maxStacksBarEffectShiftColor
+        if base and shift then
+            local speed = target._maxStacksBarEffectShiftSpeed or 0.5
+            local t = 0.5 + 0.5 * math_sin(now * 2 * math_pi / speed)
+            local baseAlpha = base[4] or 1
+            target:SetStatusBarColor(
+                base[1] + (shift[1] - base[1]) * t,
+                base[2] + (shift[2] - base[2]) * t,
+                base[3] + (shift[3] - base[3]) * t,
+                baseAlpha + ((shift[4] or 1) - baseAlpha) * t
+            )
+        else
+            target._maxStacksBarEffectColorShiftActive = nil
+        end
+    end
+end
+
+local function ClearCustomAuraMaxBarEffects(target, color)
+    if not target then return end
+    target:SetScript("OnUpdate", nil)
+    target._maxStacksBarEffectPulseActive = nil
+    target._maxStacksBarEffectColorShiftActive = nil
+    target._maxStacksBarEffectBaseColor = nil
+    target._maxStacksBarEffectShiftColor = nil
+    target._maxStacksBarEffectPulseSpeed = nil
+    target._maxStacksBarEffectShiftSpeed = nil
+    local fillTexture = target.GetStatusBarTexture and target:GetStatusBarTexture()
+    if fillTexture and fillTexture.SetAlpha then
+        fillTexture:SetAlpha(1)
+    end
+    target:SetAlpha(1)
+    if color then
+        target:SetStatusBarColor(color[1], color[2], color[3], color[4] or 1)
+    end
+end
+
+local function ApplyCustomAuraMaxBarEffects(target, cabConfig, baseColor)
+    if not target then return end
+    baseColor = baseColor or GetCustomAuraMaxBarEffectColor(cabConfig)
+    if not IsCustomAuraMaxBarEffectEnabled(cabConfig) then
+        ClearCustomAuraMaxBarEffects(target, baseColor)
+        return
+    end
+
+    target:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
+    target._maxStacksBarEffectBaseColor = baseColor
+
+    target._maxStacksBarEffectPulseActive = cabConfig.maxStacksBarPulseEnabled == true or nil
+    target._maxStacksBarEffectPulseSpeed = cabConfig.maxStacksBarPulseSpeed or 0.5
+
+    if MaxStacksColorShiftEnabled(cabConfig) then
+        target._maxStacksBarEffectColorShiftActive = true
+        target._maxStacksBarEffectShiftColor = GetMaxStacksBarEffectShiftColor(cabConfig)
+        target._maxStacksBarEffectShiftSpeed = cabConfig.maxStacksBarColorShiftSpeed
+            or (IsMaxStacksLegacyOverlay(cabConfig) and cabConfig.maxStacksGlowSpeed)
+            or 0.5
+    else
+        target._maxStacksBarEffectColorShiftActive = nil
+        target._maxStacksBarEffectShiftColor = nil
+        target._maxStacksBarEffectShiftSpeed = nil
+    end
+
+    if target._maxStacksBarEffectPulseActive or target._maxStacksBarEffectColorShiftActive then
+        target:SetScript("OnUpdate", AnimateMaxStacksBarEffect)
+    else
+        target:SetScript("OnUpdate", nil)
+    end
+end
+
 local function LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, barTexture, borderStyle, borderSize, borderRenderMode)
     local indicator = barInfo._maxStacksIndicator
     if not indicator then return end
 
-    local style = cabConfig.maxStacksGlowStyle or "solidBorder"
+    local style = GetMaxStacksFrameTreatmentStyle(cabConfig)
+    if style == "none" then
+        ClearMaxStacksFrameTreatment(barInfo)
+        return
+    end
+    indicator._maxStacksFrameTreatmentStyle = style
+    indicator._maxStacksIndicatorActive = nil
+
     local color = cabConfig.maxStacksGlowColor or {1, 0.84, 0, 0.9}
     local size = cabConfig.maxStacksGlowSize or 2
     local frame = barInfo.frame
@@ -636,24 +975,27 @@ local function LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, barTextur
 
     -- Positioning
     indicator:ClearAllPoints()
-    if style == "pulsingOverlay" then
+    if style == "pixelGlow" then
         indicator:SetFrameLevel(frame:GetFrameLevel() + 3)
-        if borderStyle == "pixel" then
-            local inset = ST.GetEffectiveBorderLayoutSize(frame, borderSize, borderRenderMode)
-            indicator:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)
-            indicator:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset, inset)
-        else
-            indicator:SetAllPoints(frame)
-        end
+        LayoutWholeBarFrame(indicator, frame, borderStyle, borderSize, borderRenderMode)
     else
         -- solidBorder / pulsingBorder: sit behind the bar
+        StopMaxStacksPixelGlow(indicator)
+        indicator._maxStacksPixelGlowConfig = nil
+        if indicator._maxStacksPixelGlowClip then
+            indicator._maxStacksPixelGlowClip:Hide()
+        end
         indicator:SetFrameLevel(frame:GetFrameLevel() - 1)
         indicator:SetPoint("TOPLEFT", frame, "TOPLEFT", -size, size)
         indicator:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", size, -size)
     end
 
     -- Color
-    indicator:SetStatusBarColor(color[1], color[2], color[3], color[4] or 0.9)
+    if style == "pixelGlow" then
+        indicator:SetStatusBarColor(1, 1, 1, 0)
+    else
+        indicator:SetStatusBarColor(color[1], color[2], color[3], color[4] or 0.9)
+    end
 
     -- Texture & orientation
     indicator:SetStatusBarTexture(barTexture or "Interface\\Buttons\\WHITE8x8")
@@ -665,9 +1007,18 @@ local function LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, barTextur
     -- Ensure visible (ClearMaxStacksIndicator hides the frame; SetValue controls render)
     indicator:Show()
 
+    if style == "pixelGlow" then
+        if indicator._pulseAG then
+            indicator._pulseAG:Stop()
+        end
+        indicator._maxStacksPulseSuspended = nil
+        indicator:SetAlpha(1)
+        ConfigureMaxStacksPixelGlow(indicator, cabConfig)
+        return
+    end
+
     -- Animation
-    local needsPulse = (style == "pulsingBorder" or style == "pulsingOverlay")
-    if needsPulse then
+    if style == "pulsingBorder" then
         local speed = cabConfig.maxStacksGlowSpeed or 0.5
         if not indicator._pulseAG then
             local ag = indicator:CreateAnimationGroup()
@@ -678,31 +1029,22 @@ local function LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, barTextur
         end
         -- Update duration and alpha range (stop+play to apply changes)
         indicator._pulseAnim:SetDuration(speed)
-        if style == "pulsingOverlay" then
-            indicator._pulseAnim:SetFromAlpha(1.0)
-            indicator._pulseAnim:SetToAlpha(0.0)
-        else
-            indicator._pulseAnim:SetFromAlpha(1.0)
-            indicator._pulseAnim:SetToAlpha(0.3)
-        end
+        indicator._pulseAnim:SetFromAlpha(1.0)
+        indicator._pulseAnim:SetToAlpha(0.3)
         indicator._pulseAG:Stop()
         indicator._pulseAG:Play()
+        indicator._maxStacksPulseSuspended = nil
     else
         if indicator._pulseAG then
             indicator._pulseAG:Stop()
         end
+        indicator._maxStacksPulseSuspended = nil
         indicator:SetAlpha(1)
     end
 end
 
 local function ClearMaxStacksIndicator(barInfo)
-    local indicator = barInfo._maxStacksIndicator
-    if not indicator then return end
-    indicator:Hide()
-    if indicator._pulseAG then
-        indicator._pulseAG:Stop()
-    end
-    SetStatusBarImmediateValue(indicator, 0)
+    ClearMaxStacksFrameTreatment(barInfo)
 end
 
 local function EnsureCustomAuraContinuousThresholdOverlay(bar)
@@ -1177,9 +1519,16 @@ RB.HidePixelBorders = HidePixelBorders
 RB.IsCustomAuraMaxThresholdEnabled = IsCustomAuraMaxThresholdEnabled
 RB.GetCustomAuraMaxThresholdColor = GetCustomAuraMaxThresholdColor
 RB.SetCustomAuraMaxThresholdRange = SetCustomAuraMaxThresholdRange
+RB.HasMaxStacksBarEffects = HasMaxStacksBarEffects
+RB.IsCustomAuraMaxBarEffectEnabled = IsCustomAuraMaxBarEffectEnabled
+RB.GetCustomAuraMaxBarEffectColor = GetCustomAuraMaxBarEffectColor
+RB.ApplyCustomAuraMaxBarEffects = ApplyCustomAuraMaxBarEffects
+RB.ClearCustomAuraMaxBarEffects = ClearCustomAuraMaxBarEffects
+RB.GetMaxStacksFrameTreatmentStyle = GetMaxStacksFrameTreatmentStyle
 RB.EnsureMaxStacksIndicator = EnsureMaxStacksIndicator
 RB.LayoutMaxStacksIndicator = LayoutMaxStacksIndicator
 RB.ClearMaxStacksIndicator = ClearMaxStacksIndicator
+RB.SetMaxStacksIndicatorActive = SetMaxStacksIndicatorActive
 RB.EnsureCustomAuraContinuousThresholdOverlay = EnsureCustomAuraContinuousThresholdOverlay
 RB.EnsureCustomAuraSegmentThresholdOverlays = EnsureCustomAuraSegmentThresholdOverlays
 RB.EnsureCustomAuraOverlayThresholdOverlays = EnsureCustomAuraOverlayThresholdOverlays
