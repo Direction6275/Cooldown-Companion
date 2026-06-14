@@ -688,7 +688,8 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
         return false
     end
 
-    if not (group.buttons and #group.buttons > 0) then
+    local isRotationAssistant = self:IsRotationAssistantGroup(group)
+    if not isRotationAssistant and not (group.buttons and #group.buttons > 0) then
         return false
     end
 
@@ -696,7 +697,7 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     if groupFrame == nil and groupId then
         groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
     end
-    if groupFrame and (not groupFrame.buttons or #groupFrame.buttons == 0) then
+    if groupFrame and not isRotationAssistant and (not groupFrame.buttons or #groupFrame.buttons == 0) then
         return false
     end
 
@@ -1084,7 +1085,11 @@ end
 function CooldownCompanion:GroupHasUsableButtons(group, opts)
     opts = opts or {}
     if self:IsRotationAssistantGroup(group) then
-        return true
+        if opts.checkLoadConditions == false then
+            return true
+        end
+        local entrySettings = self:GetRotationAssistantEntrySettings(group, false)
+        return self:IsButtonLoadConditionMet(entrySettings or {}, group)
     end
     if not (group and group.buttons and #group.buttons > 0) then
         return false
@@ -1772,6 +1777,12 @@ function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group)
     local frame = GetFrameForButtonSetComparison(self, groupId)
     if not frame or not frame.buttons then
         return false
+    end
+    if self:IsRotationAssistantGroup(group) then
+        local buttonData = self:GetRotationAssistantButtonData(frame)
+        return #frame.buttons ~= 1
+            or not frame.buttons[1]
+            or frame.buttons[1].buttonData ~= buttonData
     end
     if not group.buttons then
         return #frame.buttons > 0

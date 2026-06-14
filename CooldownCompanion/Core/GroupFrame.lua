@@ -627,6 +627,12 @@ end
 
 local function IsRuntimeButtonUsable(self, buttonData, group, opts)
     if buttonData and buttonData._rotationAssistantVirtual == true then
+        if opts and opts.checkLoadConditions == false then
+            return true
+        end
+        if not self:IsButtonLoadConditionMet(buttonData, group) then
+            return false
+        end
         return true
     end
     return self:IsButtonUsable(buttonData, group, opts)
@@ -1839,7 +1845,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
 
     local isCursorAnchored = IsCursorAnchor(group.anchor)
-    self:SetGroupDragControlsShown(frame, (not isLocked) and #group.buttons > 0 and not isTextureMode and not isCursorAnchored)
+    local hasDragEntry = self:IsRotationAssistantGroup(group) or #group.buttons > 0
+    self:SetGroupDragControlsShown(frame, (not isLocked) and hasDragEntry and not isTextureMode and not isCursorAnchored)
 
     -- Drag scripts (check lock state at drag time)
     frame:SetScript("OnDragStart", function(self)

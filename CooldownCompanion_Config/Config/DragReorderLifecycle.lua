@@ -404,8 +404,10 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
     local sourceGroup = db.groups[sourcePanelId]
     local targetGroup = db.groups[targetPanelId]
     if not sourceGroup or not targetGroup then return nil end
-    if targetGroup.displayMode == "textures" and #targetGroup.buttons >= 1 then
-        CooldownCompanion:Print("Texture Panels can only hold one entry.")
+    local rejectMessage = CooldownCompanion.GetPanelManualEntryRejectMessage
+        and CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup)
+    if rejectMessage then
+        CooldownCompanion:Print(rejectMessage)
         return nil
     end
     local buttonData = table.remove(sourceGroup.buttons, sourceIndex)
@@ -594,19 +596,26 @@ local function FinishButtonDrag(state)
             CooldownCompanion:RefreshGroupFrame(state.groupId)
         else
             local sourceGroup = CooldownCompanion.db.profile.groups[state.groupId]
-            local buttonData = sourceGroup and sourceGroup.buttons[state.sourceIndex]
-            if buttonData and ButtonHasOverrides(buttonData) then
-                ShowPopupAboveConfig("CDC_CROSS_PANEL_STRIP_OVERRIDES", buttonData.name or "this button", {
-                    sourcePanelId = state.groupId,
-                    sourceIndex = state.sourceIndex,
-                    targetPanelId = dt.targetPanelId,
-                    targetIndex = resolvedIndex,
-                })
-                return
+            local targetGroup = CooldownCompanion.db.profile.groups[dt.targetPanelId]
+            local rejectMessage = CooldownCompanion.GetPanelManualEntryRejectMessage
+                and CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup)
+            if rejectMessage then
+                CooldownCompanion:Print(rejectMessage)
+            else
+                local buttonData = sourceGroup and sourceGroup.buttons[state.sourceIndex]
+                if buttonData and ButtonHasOverrides(buttonData) then
+                    ShowPopupAboveConfig("CDC_CROSS_PANEL_STRIP_OVERRIDES", buttonData.name or "this button", {
+                        sourcePanelId = state.groupId,
+                        sourceIndex = state.sourceIndex,
+                        targetPanelId = dt.targetPanelId,
+                        targetIndex = resolvedIndex,
+                    })
+                    return
+                end
+                PerformCrossPanelMove(state.groupId, state.sourceIndex, dt.targetPanelId, resolvedIndex)
+                CooldownCompanion:RefreshGroupFrame(state.groupId)
+                CooldownCompanion:RefreshGroupFrame(dt.targetPanelId)
             end
-            PerformCrossPanelMove(state.groupId, state.sourceIndex, dt.targetPanelId, resolvedIndex)
-            CooldownCompanion:RefreshGroupFrame(state.groupId)
-            CooldownCompanion:RefreshGroupFrame(dt.targetPanelId)
         end
     else
         PerformButtonReorder(state.groupId, state.sourceIndex, state.dropIndex or state.sourceIndex)

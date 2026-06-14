@@ -14,6 +14,19 @@ local function GroupUsesTriggerPanelEntries(group)
     return group and group.displayMode == "trigger"
 end
 
+local function GetManualMoveRejectMessage(group, count)
+    if CooldownCompanion.GetPanelManualEntryRejectMessage then
+        local message = CooldownCompanion:GetPanelManualEntryRejectMessage(group)
+        if message then
+            return message
+        end
+    end
+    if group and group.displayMode == "textures" and (count or 0) > 1 then
+        return "Texture Panels can only hold one entry. Move one entry at a time."
+    end
+    return nil
+end
+
 function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, uniformType)
     for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
         btn:ClearAllPoints()
@@ -75,7 +88,9 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
             local containers = db.groupContainers or {}
             local folderGroups, looseGroups = {}, {}
             for id, groupInfo in pairs(db.groups) do
-                if id ~= sourceGroupId and CooldownCompanion:IsGroupVisibleToCurrentChar(id) then
+                if id ~= sourceGroupId
+                    and CooldownCompanion:IsGroupVisibleToCurrentChar(id)
+                    and not GetManualMoveRejectMessage(groupInfo, multiCount) then
                     local groupName = groupInfo.name or ("Group " .. id)
                     local cid = groupInfo.parentContainerId
                     local container = cid and containers[cid]
@@ -111,8 +126,14 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                     local info = UIDropDownMenu_CreateInfo()
                     info.text = groupEntry.name
                     info.func = function()
+                        local targetGroup = db.groups[groupEntry.id]
+                        local rejectMessage = GetManualMoveRejectMessage(targetGroup, multiCount)
+                        if rejectMessage then
+                            CooldownCompanion:Print(rejectMessage)
+                            return
+                        end
                         for _, idx in ipairs(indices) do
-                            table.insert(db.groups[groupEntry.id].buttons, db.groups[sourceGroupId].buttons[idx])
+                            table.insert(targetGroup.buttons, db.groups[sourceGroupId].buttons[idx])
                         end
                         table.sort(indices, function(a, b) return a > b end)
                         for _, idx in ipairs(indices) do
@@ -140,8 +161,14 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                     local info = UIDropDownMenu_CreateInfo()
                     info.text = groupEntry.name
                     info.func = function()
+                        local targetGroup = db.groups[groupEntry.id]
+                        local rejectMessage = GetManualMoveRejectMessage(targetGroup, multiCount)
+                        if rejectMessage then
+                            CooldownCompanion:Print(rejectMessage)
+                            return
+                        end
                         for _, idx in ipairs(indices) do
-                            table.insert(db.groups[groupEntry.id].buttons, db.groups[sourceGroupId].buttons[idx])
+                            table.insert(targetGroup.buttons, db.groups[sourceGroupId].buttons[idx])
                         end
                         table.sort(indices, function(a, b) return a > b end)
                         for _, idx in ipairs(indices) do

@@ -1486,13 +1486,9 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
-    if ST.IsRotationAssistantDisplayMode(group.displayMode) then
-        self:Print("Assistant Panels are populated automatically.")
-        return nil
-    end
-
-    if group.displayMode == "textures" and #group.buttons >= 1 then
-        self:Print("Texture Panels can only hold one entry. Remove the current entry first if you want to replace it.")
+    local rejectMessage = self:GetPanelManualEntryRejectMessage(group)
+    if rejectMessage then
+        self:Print(rejectMessage)
         return nil
     end
 
@@ -1681,8 +1677,9 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
-    if group.displayMode == "textures" and #group.buttons >= 1 then
-        self:Print("Texture Panels can only hold one entry. Remove the current entry first if you want to replace it.")
+    local rejectMessage = self:GetPanelManualEntryRejectMessage(group)
+    if rejectMessage then
+        self:Print(rejectMessage)
         return nil
     end
 
@@ -1851,7 +1848,10 @@ function CooldownCompanion:GetCharacterContainers(charKey)
             -- Skip empty containers (no panels with buttons)
             local hasButtons = false
             for _, group in pairs(db.groups) do
-                if group.parentContainerId == containerId and group.buttons and #group.buttons > 0 then
+                if group.parentContainerId == containerId and self:GroupHasUsableButtons(group, {
+                    checkLoadConditions = false,
+                    ignoreSpellAvailability = true,
+                }) then
                     hasButtons = true
                     break
                 end

@@ -203,10 +203,20 @@ function CooldownCompanion:OnSpellUpdateIcon()
     end)
 end
 
+local function GetRangeCheckSpellID(buttonData)
+    if not buttonData then
+        return nil
+    end
+    if buttonData._rotationAssistantVirtual == true then
+        return buttonData._rotationAssistantSpellID
+    end
+    return buttonData.id
+end
+
 function CooldownCompanion:UpdateRangeCheckRegistrations()
     local newSet = {}
     self:ForEachButton(function(button, bd)
-        local spellID = bd._rotationAssistantVirtual == true and bd._rotationAssistantSpellID or bd.id
+        local spellID = GetRangeCheckSpellID(bd)
         if spellID
             and bd.type == "spell"
             and not bd.isPassive
@@ -238,7 +248,7 @@ function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInR
     end
     local changed = false
     self:ForEachButton(function(button, bd)
-        local spellID = bd._rotationAssistantVirtual == true and bd._rotationAssistantSpellID or bd.id
+        local spellID = GetRangeCheckSpellID(bd)
         if bd.type == "spell" and spellID == spellIdentifier then
             if button._spellOutOfRange ~= outOfRange then
                 button._spellOutOfRange = outOfRange

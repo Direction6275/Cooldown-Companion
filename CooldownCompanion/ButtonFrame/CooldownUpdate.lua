@@ -606,7 +606,7 @@ end
 
 function CooldownCompanion:RefreshResolvedItemKeybindState(button, buttonData)
     if button.keybindText then
-        local text = self:GetDisplayedKeybindText(buttonData, button._resolvedItemId)
+        local text = self:GetDisplayedKeybindText(buttonData, button._resolvedItemId, button)
         button.keybindText:SetText(text or "")
         button.keybindText:SetShown(button.style and button.style.showKeybindText and text ~= nil)
     end
@@ -865,6 +865,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
             CooldownCompanion:UpdateButtonIcon(button)
             button._forceBaseDisplaySpellId = nil
+            if buttonData._rotationAssistantVirtual == true and CooldownCompanion.RefreshResolvedItemKeybindState then
+                CooldownCompanion:RefreshResolvedItemKeybindState(button, buttonData)
+            end
             cooldownSpellId = forceBaseDisplayId and buttonData.id
                 or liveOverrideId
                 or button._displaySpellId

@@ -384,7 +384,7 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
     elseif tokenName == "aura" then
         return button._auraActive == true or auraIsSecret or (auraRemaining and auraRemaining > 0)
     elseif tokenName == "keybind" then
-        local kb = CooldownCompanion:GetKeybindText(button.buttonData, button._resolvedItemId)
+        local kb = CooldownCompanion:GetKeybindText(button.buttonData, button._resolvedItemId, button)
         return kb and kb ~= ""
     elseif tokenName == "pandemic" then
         return button._inPandemic == true
@@ -630,7 +630,7 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
                 end
 
             elseif token == "keybind" then
-                local kb = CooldownCompanion:GetKeybindText(buttonData, button._resolvedItemId)
+                local kb = CooldownCompanion:GetKeybindText(buttonData, button._resolvedItemId, button)
                 if kb and kb ~= "" then
                     parts[#parts + 1] = WrapColor(kb, colorOverride or baseColor)
                 end

@@ -348,8 +348,15 @@ local function FinalizeCreatedPanel(newPanelId, displayMode, opts)
     end
 
     SelectConfigPanel(newPanelId)
-    CS.addingToPanelId = newPanelId
-    CS.pendingEditBoxFocus = true
+    local acceptsManualEntries = not CooldownCompanion.CanPanelAcceptManualEntry
+        or CooldownCompanion:CanPanelAcceptManualEntry(group)
+    if acceptsManualEntries then
+        CS.addingToPanelId = newPanelId
+        CS.pendingEditBoxFocus = true
+    else
+        CS.addingToPanelId = nil
+        CS.pendingEditBoxFocus = false
+    end
     CooldownCompanion:RefreshConfigPanel()
 
     if opts and opts.notifyTutorial and NotifyTutorialAction then
@@ -927,8 +934,18 @@ local function IsAuraTrackingConfigReady(buttonData, cdmEnabled)
     return auraStatus.ready == true, auraStatus
 end
 
-local function CanTexturePanelAcceptEntry(group)
-    return not (group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1)
+local function GetPanelManualEntryRejectMessage(group)
+    if CooldownCompanion.GetPanelManualEntryRejectMessage then
+        return CooldownCompanion:GetPanelManualEntryRejectMessage(group)
+    end
+    if group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1 then
+        return "Texture Panels can only hold one entry. Remove the current entry first if you want to replace it."
+    end
+    return nil
+end
+
+local function CanPanelAcceptManualEntry(group)
+    return GetPanelManualEntryRejectMessage(group) == nil
 end
 
 IsTriggerPanelGroup = function(group)
@@ -1021,8 +1038,9 @@ local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGrou
     if not targetGroup then
         return false
     end
-    if not CanTexturePanelAcceptEntry(targetGroup) then
-        CooldownCompanion:Print("Texture Panels can only hold one entry.")
+    local rejectMessage = GetPanelManualEntryRejectMessage(targetGroup)
+    if rejectMessage then
+        CooldownCompanion:Print(rejectMessage)
         return false
     end
 
@@ -1046,7 +1064,7 @@ local function BuildEntryMoveDestinationSections(db, sourceGroupId)
     for groupId, group in pairs(db.groups or {}) do
         if groupId ~= sourceGroupId
             and CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
-            and CanTexturePanelAcceptEntry(group)
+            and CanPanelAcceptManualEntry(group)
         then
             local containerId = group.parentContainerId
             local container = containerId and containers[containerId]

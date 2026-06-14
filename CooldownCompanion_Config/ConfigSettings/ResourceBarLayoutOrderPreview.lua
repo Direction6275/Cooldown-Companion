@@ -534,6 +534,21 @@ local function GetConfiguredPreviewIconSize(group)
 end
 
 local function GetSavedPreviewButtons(group)
+    if CooldownCompanion:IsRotationAssistantGroup(group) then
+        return {
+            {
+                buttonData = {
+                    type = "spell",
+                    id = CooldownCompanion:GetRotationAssistantActionSpellID(),
+                    name = ST.ROTATION_ASSISTANT_NAME,
+                    manualIcon = CooldownCompanion:GetRotationAssistantFallbackIcon(),
+                    _rotationAssistantVirtual = true,
+                    _rotationAssistantMissing = true,
+                },
+            },
+        }
+    end
+
     local buttons = {}
     local fallbackButtons = {}
 

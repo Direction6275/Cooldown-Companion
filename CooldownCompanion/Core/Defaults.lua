@@ -654,11 +654,25 @@ function CooldownCompanion:IsIconLikeDisplayMode(displayMode)
     return ST.IsIconLikeDisplayMode(displayMode)
 end
 
+function CooldownCompanion:GetPanelManualEntryRejectMessage(group)
+    if self:IsRotationAssistantGroup(group) then
+        return "Assistant Panels are populated automatically."
+    end
+    if group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1 then
+        return "Texture Panels can only hold one entry. Remove the current entry first if you want to replace it."
+    end
+    return nil
+end
+
+function CooldownCompanion:CanPanelAcceptManualEntry(group)
+    return self:GetPanelManualEntryRejectMessage(group) == nil
+end
+
 function CooldownCompanion:GetRotationAssistantActionSpellID()
     local assistedCombat = C_AssistedCombat
     if assistedCombat and assistedCombat.GetActionSpell then
         local spellID = assistedCombat.GetActionSpell()
-        if type(spellID) == "number" and spellID > 0 and not issecretvalue(spellID) then
+        if type(spellID) == "number" and not issecretvalue(spellID) and spellID > 0 then
             return spellID
         end
     end
@@ -674,6 +688,31 @@ function CooldownCompanion:GetRotationAssistantFallbackIcon()
         end
     end
     return ST.ROTATION_ASSISTANT_FALLBACK_ICON
+end
+
+function CooldownCompanion:GetRotationAssistantEntrySettings(group, create)
+    if not group then return nil end
+    local entry = group.rotationAssistantEntry
+    if type(entry) ~= "table" then
+        if create == false then
+            return nil
+        end
+        entry = {}
+        group.rotationAssistantEntry = entry
+    end
+    return entry
+end
+
+function CooldownCompanion:GetRotationAssistantConfigButtonData(group)
+    local entry = self:GetRotationAssistantEntrySettings(group, true)
+    if not entry then return nil end
+    entry.type = "spell"
+    entry.id = self:GetRotationAssistantActionSpellID()
+    entry.name = ST.ROTATION_ASSISTANT_NAME
+    entry.manualIcon = self:GetRotationAssistantFallbackIcon()
+    entry._rotationAssistantVirtual = true
+    entry._rotationAssistantMissing = true
+    return entry
 end
 
 function CooldownCompanion:GetRotationAssistantRecommendationSpellID()
@@ -697,7 +736,7 @@ function CooldownCompanion:GetRotationAssistantRecommendationSpellID()
     end
 
     local spellID = assistedCombat.GetNextCastSpell(false)
-    if type(spellID) == "number" and spellID > 0 and not issecretvalue(spellID) then
+    if type(spellID) == "number" and not issecretvalue(spellID) and spellID > 0 then
         return spellID
     end
     return nil
@@ -705,6 +744,9 @@ end
 
 function CooldownCompanion:GetRotationAssistantButtonData(frame)
     if not frame then return nil end
+    local groups = self.db and self.db.profile and self.db.profile.groups
+    local group = frame._groupId and groups and groups[frame._groupId]
+    local entrySettings = self:GetRotationAssistantEntrySettings(group, false)
     local buttonData = frame._rotationAssistantButtonData
     if not buttonData then
         buttonData = {
@@ -716,6 +758,7 @@ function CooldownCompanion:GetRotationAssistantButtonData(frame)
         }
         frame._rotationAssistantButtonData = buttonData
     end
+    buttonData.loadConditions = entrySettings and entrySettings.loadConditions or nil
     return buttonData
 end
 

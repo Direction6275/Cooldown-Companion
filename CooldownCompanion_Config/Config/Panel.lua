@@ -2003,7 +2003,14 @@ local function CreateConfigPanel()
         if group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
             and CS.selectedRotationAssistantEntry == true then
             if tab == "loadconditions" then
-                ST._BuildLoadConditionsTab(scroll)
+                local buttonData = CooldownCompanion:GetRotationAssistantConfigButtonData(group)
+                ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            end
+            if CS.browseMode then
+                ST._DisableAllWidgets(scroll)
+                for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
+                    if btn.Disable then btn:Disable() end
+                end
             end
             return
         end

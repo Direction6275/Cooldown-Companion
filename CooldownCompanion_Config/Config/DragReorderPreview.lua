@@ -66,6 +66,8 @@ local function ApplyPreviewModeBadge(texture, displayMode)
         texture:SetTexture(134400)
     elseif displayMode == "trigger" then
         texture:SetTexture(134400)
+    elseif displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+        texture:SetTexture(CooldownCompanion:GetRotationAssistantFallbackIcon())
     else
         texture:SetAtlas("UI-QuestPoi-QuestNumber-SuperTracked", false)
     end

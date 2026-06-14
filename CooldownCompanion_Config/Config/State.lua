@@ -728,6 +728,9 @@ end
 -- Helper: Get icon for a group (from its first button)
 ------------------------------------------------------------------------
 local function GetGroupIcon(group)
+    if group and group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+        return CooldownCompanion:GetRotationAssistantFallbackIcon()
+    end
     if group.buttons and group.buttons[1] then
         return GetButtonIcon(group.buttons[1])
     end
