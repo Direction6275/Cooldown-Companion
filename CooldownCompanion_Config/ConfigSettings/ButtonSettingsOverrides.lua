@@ -10,8 +10,7 @@ local CreateRevertButton = ST._CreateRevertButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
-local IsNoCooldownSpellID = ST.IsNoCooldownSpell
-local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
+local CanButtonUseConfigOverrideSection = ST._CanButtonUseConfigOverrideSection
 
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
 local BuildAuraTextControls = ST._BuildAuraTextControls
@@ -48,13 +47,34 @@ local BuildTextBackgroundControls = ST._BuildTextBackgroundControls
 local AddPreviewToggleButton = ST._AddPreviewToggleButton
 local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 
-local function CanButtonUseOverrideSection(buttonData, sectionId)
-    if ST.CanButtonUseOverrideSection then
-        return ST.CanButtonUseOverrideSection(buttonData, sectionId)
+local function GetHiddenOverrideReasonText(reason)
+    if reason == "noCooldown" then
+        return "Saved for this button, but inactive because this spell does not have a real cooldown."
+    elseif reason == "entryType" then
+        return "Saved for this button, but inactive because this entry type cannot use it."
+    elseif reason == "displayMode" then
+        return "Saved for this button, but inactive in the current display mode."
     end
-    return not (buttonData and buttonData.type == "equipmentSlot"
-        and ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS
-        and ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId])
+    return "Saved for this button, but inactive for this entry right now."
+end
+
+local function AddHiddenOverrideSection(scroll, buttonData, hiddenSection, infoButtons)
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(hiddenSection.sectionDef.label .. " (inactive)")
+    if heading.label then
+        heading.label:SetTextColor(0.55, 0.55, 0.55)
+    end
+    heading:SetFullWidth(true)
+    scroll:AddChild(heading)
+
+    local revertBtn = CreateRevertButton(heading, buttonData, hiddenSection.sectionId)
+    table.insert(infoButtons, revertBtn)
+
+    local reasonLabel = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(reasonLabel)
+    reasonLabel:SetText("|cff888888" .. GetHiddenOverrideReasonText(hiddenSection.reason) .. "|r")
+    reasonLabel:SetFullWidth(true)
+    scroll:AddChild(reasonLabel)
 end
 
 local function PrimeSelectedReadyGlowCappedChargeTransition(groupId, buttonIndex)
@@ -246,6 +266,69 @@ local function BuildSingleBarColorControl(key, label, defaultColor)
     end
 end
 
+local function BuildBarIconControls(container, styleTable, onChange)
+    local showIconCb = AceGUI:Create("CheckBox")
+    showIconCb:SetLabel("Show Icon")
+    showIconCb:SetValue(styleTable.showBarIcon ~= false)
+    showIconCb:SetFullWidth(true)
+    showIconCb:SetCallback("OnValueChanged", function(_, _, val)
+        styleTable.showBarIcon = val
+        onChange()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(showIconCb)
+
+    if styleTable.showBarIcon == false then
+        return
+    end
+
+    local flipIconCheck = AceGUI:Create("CheckBox")
+    flipIconCheck:SetLabel("Flip Icon Side")
+    flipIconCheck:SetValue(styleTable.barIconReverse or false)
+    flipIconCheck:SetFullWidth(true)
+    flipIconCheck:SetCallback("OnValueChanged", function(_, _, val)
+        styleTable.barIconReverse = val == true
+        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(flipIconCheck)
+
+    local iconOffsetSlider = AceGUI:Create("Slider")
+    iconOffsetSlider:SetLabel("Icon Offset")
+    iconOffsetSlider:SetSliderValues(-5, 50, 0.1)
+    iconOffsetSlider:SetValue(styleTable.barIconOffset or 0)
+    iconOffsetSlider:SetFullWidth(true)
+    iconOffsetSlider:SetCallback("OnValueChanged", function(_, _, val)
+        styleTable.barIconOffset = val
+        onChange()
+    end)
+    container:AddChild(iconOffsetSlider)
+
+    local customIconSizeCb = AceGUI:Create("CheckBox")
+    customIconSizeCb:SetLabel("Custom Icon Size")
+    customIconSizeCb:SetValue(styleTable.barIconSizeOverride or false)
+    customIconSizeCb:SetFullWidth(true)
+    customIconSizeCb:SetCallback("OnValueChanged", function(_, _, val)
+        styleTable.barIconSizeOverride = val
+        onChange()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(customIconSizeCb)
+
+    if styleTable.barIconSizeOverride then
+        local iconSizeSlider = AceGUI:Create("Slider")
+        iconSizeSlider:SetLabel("Icon Size")
+        iconSizeSlider:SetSliderValues(5, 100, 0.1)
+        iconSizeSlider:SetValue(styleTable.barIconSize or 20)
+        iconSizeSlider:SetFullWidth(true)
+        iconSizeSlider:SetCallback("OnValueChanged", function(_, _, val)
+            styleTable.barIconSize = val
+            onChange()
+        end)
+        container:AddChild(iconSizeSlider)
+    end
+end
+
 function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
@@ -285,7 +368,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         "borderSettings", "cooldownText", "auraText", "auraStackText",
         "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
         "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "auraIndicator", "pandemicGlow", "readyGlow", "keyPressHighlight",
-        "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
+        "barIcon", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText", "pandemicBar", "barActiveAura",
         "textFont", "textColors", "textBackground",
     }
 
@@ -320,6 +403,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         end,
         readyGlow = BuildReadyGlowControls,
         keyPressHighlight = BuildKeyPressHighlightControls,
+        barIcon = BuildBarIconControls,
         barColor = BuildSingleBarColorControl("barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}),
         barCooldownColor = BuildSingleBarColorControl("barCooldownColor", "Bar Cooldown Color", {0.6, 0.6, 0.6, 1.0}),
         barChargeColor = BuildSingleBarColorControl("barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1.0}),
@@ -353,17 +437,14 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         textBackground = BuildTextBackgroundControls,
     }
 
-    local isNoCooldownSpell = false
-    if buttonData.type == "spell" and not buttonData.isPassive and not UsesChargeBehavior(buttonData) then
-        isNoCooldownSpell = IsNoCooldownSpellID(buttonData.id)
-    end
-
+    local visibleOverrideSections = 0
+    local hiddenOverrideSections = {}
     for _, sectionId in ipairs(sectionOrder) do
-        if buttonData.overrideSections[sectionId]
-            and CanButtonUseOverrideSection(buttonData, sectionId)
-            and not (isNoCooldownSpell and (sectionId == "readyGlow" or sectionId == "desaturation")) then
+        if buttonData.overrideSections[sectionId] then
             local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
-            if sectionDef and sectionDef.modes[displayMode] then
+            local sectionAllowed, sectionUnavailableReason = CanButtonUseConfigOverrideSection(buttonData, sectionId)
+            if sectionDef and sectionAllowed and sectionDef.modes[displayMode] then
+                visibleOverrideSections = visibleOverrideSections + 1
                 local heading = AceGUI:Create("Heading")
                 heading:SetText(sectionDef.label)
                 ColorHeading(heading)
@@ -566,7 +647,25 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
 
                     end
                 end
+            elseif sectionDef then
+                table.insert(hiddenOverrideSections, {
+                    sectionId = sectionId,
+                    sectionDef = sectionDef,
+                    reason = sectionAllowed and "displayMode" or sectionUnavailableReason,
+                })
             end
         end
+    end
+
+    if visibleOverrideSections == 0 and displayMode ~= "text" then
+        local noVisibleOverridesLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(noVisibleOverridesLabel)
+        noVisibleOverridesLabel:SetText("|cff888888No appearance overrides are currently available for this entry.\n\nSome saved overrides may be hidden because they do not apply to this entry type or spell cooldown behavior.|r")
+        noVisibleOverridesLabel:SetFullWidth(true)
+        scroll:AddChild(noVisibleOverridesLabel)
+    end
+
+    for _, hiddenSection in ipairs(hiddenOverrideSections) do
+        AddHiddenOverrideSection(scroll, buttonData, hiddenSection, infoButtons)
     end
 end

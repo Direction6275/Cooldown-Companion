@@ -4,6 +4,8 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
+local IsNoCooldownSpellID = ST.IsNoCooldownSpell
+local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
 -- Helper: tint AceGUI Heading labels with player class color
 local function ColorHeading(heading)
@@ -247,13 +249,35 @@ local function GroupSupportsPerButtonOverrides(group)
     return group and (group.displayMode or "icons") ~= "textures"
 end
 
-local function CanButtonUseOverrideSection(buttonData, sectionId)
+local function CanButtonUseConfigOverrideSection(buttonData, sectionId)
     if ST.CanButtonUseOverrideSection then
-        return ST.CanButtonUseOverrideSection(buttonData, sectionId)
-    end
-    return not (buttonData and buttonData.type == "equipmentSlot"
+        local allowed, reason = ST.CanButtonUseOverrideSection(buttonData, sectionId)
+        if not allowed then
+            return false, reason
+        end
+    elseif buttonData and buttonData.type == "equipmentSlot"
         and ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS
-        and ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId])
+        and ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId] then
+        return false, "entryType"
+    end
+
+    if not (ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS
+        and ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS[sectionId]
+        and buttonData
+        and buttonData.type == "spell"
+        and not buttonData.isPassive) then
+        return true
+    end
+
+    if UsesChargeBehavior and UsesChargeBehavior(buttonData) then
+        return true
+    end
+
+    if IsNoCooldownSpellID and IsNoCooldownSpellID(buttonData.id) == true then
+        return false, "noCooldown"
+    end
+
+    return true
 end
 
 local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupStyle)
@@ -279,7 +303,7 @@ local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupSt
     if CS.selectedButtons then
         for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
     end
-    local sectionAllowed = CanButtonUseOverrideSection(buttonData, sectionId)
+    local sectionAllowed, sectionUnavailableReason = CanButtonUseConfigOverrideSection(buttonData, sectionId)
     local canPromote = CS.selectedButton ~= nil and multiCount < 2
         and buttonData ~= nil
         and sectionAllowed
@@ -300,6 +324,8 @@ local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupSt
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if canPromote then
             GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
+        elseif buttonData and sectionUnavailableReason == "noCooldown" then
+            GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
         elseif buttonData and not sectionAllowed then
             GameTooltip:AddLine("This override is not available for equipment slots", 0.5, 0.5, 0.5)
         else
@@ -379,7 +405,7 @@ local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId
     if CS.selectedButtons then
         for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
     end
-    local sectionAllowed = CanButtonUseOverrideSection(btnData, sectionId)
+    local sectionAllowed, sectionUnavailableReason = CanButtonUseConfigOverrideSection(btnData, sectionId)
     local canPromote = CS.selectedButton ~= nil and multiCount < 2
         and btnData ~= nil
         and sectionAllowed
@@ -400,6 +426,8 @@ local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if canPromote then
             GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
+        elseif btnData and sectionUnavailableReason == "noCooldown" then
+            GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
         elseif btnData and not sectionAllowed then
             GameTooltip:AddLine("This override is not available for equipment slots", 0.5, 0.5, 0.5)
         else
@@ -448,7 +476,7 @@ local function CreateColorPickerPromoteButton(colorPickerWidget, sectionId, grou
     if CS.selectedButtons then
         for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
     end
-    local sectionAllowed = CanButtonUseOverrideSection(btnData, sectionId)
+    local sectionAllowed, sectionUnavailableReason = CanButtonUseConfigOverrideSection(btnData, sectionId)
     local canPromote = CS.selectedButton ~= nil and multiCount < 2
         and btnData ~= nil
         and sectionAllowed
@@ -469,6 +497,8 @@ local function CreateColorPickerPromoteButton(colorPickerWidget, sectionId, grou
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if canPromote then
             GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
+        elseif btnData and sectionUnavailableReason == "noCooldown" then
+            GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
         elseif btnData and not sectionAllowed then
             GameTooltip:AddLine("This override is not available for equipment slots", 0.5, 0.5, 0.5)
         else
@@ -1257,6 +1287,7 @@ ST._CreatePromoteButton = CreatePromoteButton
 ST._CreateRevertButton = CreateRevertButton
 ST._CreateCheckboxPromoteButton = CreateCheckboxPromoteButton
 ST._CreateColorPickerPromoteButton = CreateColorPickerPromoteButton
+ST._CanButtonUseConfigOverrideSection = CanButtonUseConfigOverrideSection
 ST._CreateInfoButton = CreateInfoButton
 ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls
