@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.19.2",
         "1.19.1",
         "1.19",
         "1.18",
@@ -41,6 +42,25 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.19.2"] = {
+            markdown = [[
+## New Features
+
+- **Group Alpha:** Panel groups can now use one Group Alpha setting for directly anchored panels, including texture and trigger panels in the default group anchor mode.
+
+## Polish | QoL
+
+- **Clearer bar indicators:** Active aura and max stack indicators now share the same advanced settings layout, with border choices grouped together and bar effects separated into their own controls.
+- **Max stack Pixel Glow controls:** Max stack Pixel Glow can now use the same line controls as active aura indicators, including the number of glow lines.
+- **Bar Icon overrides:** Bar-mode buttons can now edit per-button Bar Icon overrides, and promoted Bar Icon overrides keep their flip, offset, and size behavior if group defaults change later.
+- **Smaller default solid borders:** Newly enabled solid borders now start at a less oversized default.
+
+## Bug Fixes
+
+- **Duplicated profiles:** Duplicating a profile now keeps character-only groups assigned to their original characters instead of loading every copied character's groups on the current character.
+- **Appearance Overrides tabs:** Saved overrides that are inactive for the selected button now show as inactive rows with Revert buttons instead of leaving the tab blank.
+]],
+        },
         ["1.19.1"] = {
             markdown = [[
 ## Performance
