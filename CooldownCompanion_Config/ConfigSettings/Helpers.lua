@@ -249,6 +249,32 @@ local function GroupSupportsPerButtonOverrides(group)
     return group and (group.displayMode or "icons") ~= "textures"
 end
 
+local function GetSelectedRuntimeButton(buttonData)
+    local groupId = CS.selectedGroup
+    local buttonIndex = CS.selectedButton
+    if not (buttonData and groupId and buttonIndex) then
+        return nil
+    end
+
+    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
+    local group = profile and profile.groups and profile.groups[groupId]
+    if not (group and group.buttons and group.buttons[buttonIndex] == buttonData) then
+        return nil
+    end
+
+    local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
+    if not (frame and frame.buttons) then
+        return nil
+    end
+
+    for _, button in ipairs(frame.buttons) do
+        if button and button.buttonData == buttonData then
+            return button
+        end
+    end
+    return nil
+end
+
 local function CanButtonUseConfigOverrideSection(buttonData, sectionId)
     if ST.CanButtonUseOverrideSection then
         local allowed, reason = ST.CanButtonUseOverrideSection(buttonData, sectionId)
@@ -273,7 +299,17 @@ local function CanButtonUseConfigOverrideSection(buttonData, sectionId)
         return true
     end
 
-    if IsNoCooldownSpellID and IsNoCooldownSpellID(buttonData.id) == true then
+    local cooldownSpellId = buttonData.id
+    local button = GetSelectedRuntimeButton(buttonData)
+    if button then
+        local displaySpellId = button._displaySpellId or buttonData.id
+        if button._noCooldown ~= nil and button._noCooldownSpellId == displaySpellId then
+            return not button._noCooldown, button._noCooldown and "noCooldown" or nil
+        end
+        cooldownSpellId = displaySpellId
+    end
+
+    if IsNoCooldownSpellID and IsNoCooldownSpellID(cooldownSpellId) == true then
         return false, "noCooldown"
     end
 

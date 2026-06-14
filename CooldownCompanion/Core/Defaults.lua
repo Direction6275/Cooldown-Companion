@@ -758,6 +758,13 @@ ST.OVERRIDE_SECTIONS = {
     barIcon = {
         label = "Bar Icon",
         keys = {"showBarIcon", "barIconReverse", "barIconOffset", "barIconSizeOverride", "barIconSize"},
+        defaults = {
+            showBarIcon = true,
+            barIconReverse = false,
+            barIconOffset = 0,
+            barIconSizeOverride = false,
+            barIconSize = 20,
+        },
         modes = {bars = true},
     },
     barColor = {
