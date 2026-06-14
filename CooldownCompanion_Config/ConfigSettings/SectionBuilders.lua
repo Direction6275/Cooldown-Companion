@@ -1174,6 +1174,15 @@ local function ApplyBorderIndicatorDefaultSize(styleTable, sizeKey, oldStyle, ne
     end
 end
 
+local function ApplyBorderIndicatorDefaultSpeed(styleTable, speedKey, oldStyle, newStyle, pulseDefault, pixelDefault)
+    if not styleTable or not speedKey then return end
+    if newStyle == "pulsingBorder" and oldStyle ~= "pulsingBorder" then
+        styleTable[speedKey] = pulseDefault or 0.5
+    elseif IsPixelBorderIndicator(newStyle) and not IsPixelBorderIndicator(oldStyle) then
+        styleTable[speedKey] = pixelDefault or 50
+    end
+end
+
 -- Generic glow style builder (Group A): style dropdown + color picker +
 -- conditional sliders. Replaces BuildProcGlowControls,
 -- BuildPandemicGlowControls, BuildAuraIndicatorControls.
@@ -1184,9 +1193,15 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     local isOverrideMode = opts and opts.isOverride == true
     local isEnabled
     if cfg.enableKey then
-        local enabledVal = styleTable[cfg.enableKey]
+        local enabledVal = rawget(styleTable, cfg.enableKey)
+        if enabledVal == nil and cfg.deriveEnableFromEffect and rawget(styleTable, cfg.effectKey) ~= nil then
+            enabledVal = (styleTable[cfg.effectKey] or "none") ~= "none"
+        end
         if enabledVal == nil and opts and opts.fallbackStyle then
             enabledVal = opts.fallbackStyle[cfg.enableKey]
+            if enabledVal == nil and cfg.deriveEnableFromEffect then
+                enabledVal = (opts.fallbackStyle[cfg.effectKey] or "none") ~= "none"
+            end
         end
         isEnabled = enabledVal ~= false
     else
@@ -1271,9 +1286,15 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
     local isOverrideMode = opts and opts.isOverride == true
     local isEnabled
     if cfg.enableKey then
-        local enabledVal = styleTable[cfg.enableKey]
+        local enabledVal = rawget(styleTable, cfg.enableKey)
+        if enabledVal == nil and cfg.deriveEnableFromEffect and rawget(styleTable, cfg.effectKey) ~= nil then
+            enabledVal = (styleTable[cfg.effectKey] or "none") ~= "none"
+        end
         if enabledVal == nil and opts and opts.fallbackStyle then
             enabledVal = opts.fallbackStyle[cfg.enableKey]
+            if enabledVal == nil and cfg.deriveEnableFromEffect then
+                enabledVal = (opts.fallbackStyle[cfg.effectKey] or "none") ~= "none"
+            end
         end
         isEnabled = enabledVal ~= false
     else
@@ -1339,6 +1360,14 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
             val,
             cfg.effectSolidSizeDefault,
             cfg.effectPixelSizeDefault
+        )
+        ApplyBorderIndicatorDefaultSpeed(
+            styleTable,
+            cfg.effectSpeedKey,
+            oldEffect,
+            val,
+            cfg.effectPulseSpeedDefault,
+            cfg.effectPixelSpeedDefault
         )
         refreshCallback()
         if val == "none" and IsAdvancedSettingsPanelContainer(container) and CS.CloseAdvancedSettingsPanel then
@@ -1438,6 +1467,8 @@ end
 
 local function BuildBarActiveAuraControls(container, styleTable, refreshCallback, opts)
     BuildBarEffectControls(container, styleTable, refreshCallback, {
+        enableKey = "barAuraIndicatorEnabled", enableLabel = "Enable Active Aura Indicator",
+        deriveEnableFromEffect = true,
         colorKey = "barAuraColor", colorLabel = "Active Aura Color",
         primaryColorSectionLabel = "Active Aura Color",
         defaultColor = {0.2, 1.0, 0.2, 1.0},
@@ -1452,6 +1483,8 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         effectSpeedKey = "barAuraEffectSpeed", effectLinesKey = "barAuraEffectLines",
         effectSolidSizeDefault = 2,
         effectPixelSizeDefault = 8,
+        effectPulseSpeedDefault = 0.5,
+        effectPixelSpeedDefault = 50,
     }, opts)
 end
 
@@ -1566,6 +1599,7 @@ local function BuildMaxStacksIndicatorAdvancedControls(container, styleTable, re
         local oldStyle = NormalizeMaxStackIndicatorSettings(styleTable)
         styleTable.maxStacksGlowStyle = val
         ApplyBorderIndicatorDefaultSize(styleTable, "maxStacksGlowSize", oldStyle, val, 2, 8)
+        ApplyBorderIndicatorDefaultSpeed(styleTable, "maxStacksGlowSpeed", oldStyle, val, 0.5, 50)
         refreshCallback()
         RefreshStructuralControls(container)
     end)

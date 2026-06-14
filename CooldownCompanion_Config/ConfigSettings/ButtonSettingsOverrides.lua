@@ -341,7 +341,9 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
             local auraEnabled
             if ST.IsBarAuraIndicatorEnabled then
                 auraEnabled = ST.IsBarAuraIndicatorEnabled(styleTable)
-                if styleTable.barAuraIndicatorEnabled == nil and opts and opts.fallbackStyle then
+                if rawget(styleTable, "barAuraIndicatorEnabled") == nil
+                    and rawget(styleTable, "barAuraEffect") == nil
+                    and opts and opts.fallbackStyle then
                     auraEnabled = ST.IsBarAuraIndicatorEnabled(opts.fallbackStyle)
                 end
             else

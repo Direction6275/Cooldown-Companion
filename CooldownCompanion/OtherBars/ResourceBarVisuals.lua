@@ -626,7 +626,9 @@ local function GetMaxStacksFrameTreatmentStyle(cabConfig)
     local style = cabConfig and cabConfig.maxStacksGlowStyle or "solidBorder"
     if style == "none" or style == "pulsingOverlay" then
         return "none"
-    elseif style == "pixelGlow" or style == "solidBorder" or style == "pulsingBorder" then
+    elseif style == "pixelGlow" then
+        return IsMaxStacksPixelGlowAvailable() and "pixelGlow" or "solidBorder"
+    elseif style == "solidBorder" or style == "pulsingBorder" then
         return style
     end
     return "solidBorder"
@@ -652,7 +654,10 @@ local function HasMaxStacksBarEffects(cabConfig)
 end
 
 local function IsCustomAuraMaxBarEffectEnabled(cabConfig)
-    return cabConfig and cabConfig.maxStacksGlowEnabled == true and HasMaxStacksBarEffects(cabConfig)
+    return cabConfig
+        and cabConfig.trackingMode ~= "active"
+        and cabConfig.maxStacksGlowEnabled == true
+        and HasMaxStacksBarEffects(cabConfig)
 end
 
 local function CopyColorWithAlpha(color, alpha)
@@ -665,7 +670,7 @@ local function GetCustomAuraMaxBarEffectColor(cabConfig)
     if IsCustomAuraMaxThresholdEnabled(cabConfig) then
         color = GetCustomAuraMaxThresholdColor(cabConfig)
     end
-    if IsMaxStacksLegacyOverlay(cabConfig) and cabConfig.maxStacksBarColorShiftEnabled ~= true then
+    if IsMaxStacksLegacyOverlay(cabConfig) and cabConfig.maxStacksBarColorShiftEnabled == nil then
         return CopyColorWithAlpha(color, 0)
     end
     return color

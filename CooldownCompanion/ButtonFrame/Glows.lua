@@ -73,7 +73,11 @@ local function IsBarAuraIndicatorEnabled(style)
     if type(style) ~= "table" then
         return false
     end
-    if style.barAuraIndicatorEnabled ~= nil then
+    local enabled = rawget(style, "barAuraIndicatorEnabled")
+    if enabled ~= nil then
+        return enabled == true
+    end
+    if rawget(style, "barAuraEffect") == nil and style.barAuraIndicatorEnabled ~= nil then
         return style.barAuraIndicatorEnabled == true
     end
     return (style.barAuraEffect or "none") ~= "none"
