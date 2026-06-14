@@ -758,6 +758,13 @@ ST.OVERRIDE_SECTIONS = {
     barIcon = {
         label = "Bar Icon",
         keys = {"showBarIcon", "barIconReverse", "barIconOffset", "barIconSizeOverride", "barIconSize"},
+        defaults = {
+            showBarIcon = true,
+            barIconReverse = false,
+            barIconOffset = 0,
+            barIconSizeOverride = false,
+            barIconSize = 20,
+        },
         modes = {bars = true},
     },
     barColor = {
@@ -830,9 +837,17 @@ ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
     barActiveAura = true,
 }
 
+ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS = {
+    desaturation = true,
+    readyGlow = true,
+}
+
 function ST.CanButtonUseOverrideSection(buttonData, sectionId)
     if buttonData and buttonData.type == "equipmentSlot" then
-        return not ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId]
+        if ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId] then
+            return false, "entryType"
+        end
+        return true
     end
     return true
 end
