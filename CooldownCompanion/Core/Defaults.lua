@@ -177,6 +177,7 @@ local defaults = {
                         keyPressHighlightColor = {1, 1, 1, 0.4},
                         keyPressHighlightSize = 5,
                         keyPressHighlightCombatOnly = false,
+                        barAuraIndicatorEnabled = true,
                         barAuraColor = {0.2, 1.0, 0.2, 1.0},
                         barAuraEffect = "color",
                         barAuraEffectColor = {1, 0.84, 0, 0.9},
@@ -352,6 +353,7 @@ local defaults = {
             keyPressHighlightColor = {1, 1, 1, 0.4},
             keyPressHighlightSize = 5,
             keyPressHighlightCombatOnly = false,
+            barAuraIndicatorEnabled = true,
             barAuraColor = {0.2, 1.0, 0.2, 1.0},
             barAuraEffect = "color",
             barAuraEffectColor = {1, 0.84, 0, 0.9},
@@ -752,7 +754,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     barActiveAura = {
         label = "Active Aura Indicator",
-        keys = {"barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed", "barAuraEffectLines", "auraGlowCombatOnly", "barAuraPulseEnabled", "barAuraPulseSpeed", "barAuraColorShiftEnabled", "barAuraColorShiftSpeed", "barAuraColorShiftColor"},
+        keys = {"barAuraIndicatorEnabled", "barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed", "barAuraEffectLines", "auraGlowCombatOnly", "barAuraPulseEnabled", "barAuraPulseSpeed", "barAuraColorShiftEnabled", "barAuraColorShiftSpeed", "barAuraColorShiftColor"},
         modes = {bars = true},
     },
     barIcon = {

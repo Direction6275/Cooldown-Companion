@@ -35,6 +35,14 @@ local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
 local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
+local BuildMaxStacksIndicatorAdvancedControls = ST._BuildMaxStacksIndicatorAdvancedControls
+local IsBarAuraIndicatorEnabled = ST.IsBarAuraIndicatorEnabled or function(style)
+    if not style then return false end
+    if style.barAuraIndicatorEnabled ~= nil then
+        return style.barAuraIndicatorEnabled == true
+    end
+    return (style.barAuraEffect or "none") ~= "none"
+end
 local AddPreviewToggleButton = ST._AddPreviewToggleButton
 local AddPreviewBadge = ST._AddPreviewBadge
 local RefreshConfigPanelForPreviewToggle = ST._RefreshConfigPanelForPreviewToggle
@@ -2082,21 +2090,17 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
         indicatorsHeading:SetFullWidth(true)
         container:AddChild(indicatorsHeading)
 
-        local activeAuraEnabled = (cab.barAuraEffect or "none") ~= "none"
+        local activeAuraEnabled = IsBarAuraIndicatorEnabled(cab)
 
         local activeAuraCb = AceGUI:Create("CheckBox")
-        activeAuraCb:SetLabel("Show Active Aura Indicator")
+        activeAuraCb:SetLabel("Enable Active Aura Indicator")
         activeAuraCb:SetValue(activeAuraEnabled)
         activeAuraCb:SetFullWidth(true)
         activeAuraCb:SetCallback("OnValueChanged", function(widget, event, val)
-            if val then
-                local effect = customBars[cabIdx].barAuraEffect
-                if effect == nil or effect == "none" then
-                    effect = "pixel"
-                end
-                customBars[cabIdx].barAuraEffect = effect
-            else
-                customBars[cabIdx].barAuraEffect = "none"
+            customBars[cabIdx].barAuraIndicatorEnabled = val and true or false
+            local effect = customBars[cabIdx].barAuraEffect
+            if val and (effect == nil or effect == "none") then
+                customBars[cabIdx].barAuraEffect = "color"
             end
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:RefreshConfigPanel()
@@ -2114,9 +2118,7 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
             end)
             panel:AddChild(activeAuraCombatCb)
 
-            BuildBarActiveAuraControls(panel, customBars[cabIdx], cabApplyBars, {
-                hidePrimaryColorPicker = not isSpellCustomBar,
-            })
+            BuildBarActiveAuraControls(panel, customBars[cabIdx], cabApplyBars)
             BuildBarAuraPulseControls(panel, customBars[cabIdx], cabApplyBars)
         end
 
@@ -2125,7 +2127,7 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
             build = BuildCustomBarActiveAuraAdvanced,
         })
         if previewsEnabled then
-            AddPreviewBadge(activeAuraCb, activeAuraAdvBtn, "Preview Active Aura Effects", function()
+            AddPreviewBadge(activeAuraCb, activeAuraAdvBtn, "Preview Active Aura Indicator", function()
                 return CooldownCompanion:IsCustomAuraBarActivePreviewActive(customBars[cabIdx])
             end, function(show)
                 CooldownCompanion:SetCustomAuraBarActivePreview(customBars[cabIdx], show)
@@ -2217,7 +2219,7 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
         container:AddChild(indicatorsHeading)
 
         local glowCb = AceGUI:Create("CheckBox")
-        glowCb:SetLabel("Max Stack Indicator")
+        glowCb:SetLabel("Enable Max Stack Indicator")
         glowCb:SetValue(cab.maxStacksGlowEnabled == true)
         glowCb:SetFullWidth(true)
         glowCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -2228,70 +2230,7 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
         container:AddChild(glowCb)
 
         local function BuildMaxStackIndicatorAdvanced(panel)
-            local isContinuousDisplay = (cab.trackingMode == "active") or (cab.displayMode == "continuous")
-            local currentStyle = cab.maxStacksGlowStyle or "solidBorder"
-            if currentStyle == "pulsingOverlay" and not isContinuousDisplay then
-                currentStyle = "solidBorder"
-                customBars[cabIdx].maxStacksGlowStyle = "solidBorder"
-            end
-
-            local styleList, styleOrder
-            if isContinuousDisplay then
-                styleList = {
-                    solidBorder = "Solid Border",
-                    pulsingBorder = "Pulsing Border",
-                    pulsingOverlay = "Pulsing Overlay",
-                }
-                styleOrder = { "solidBorder", "pulsingBorder", "pulsingOverlay" }
-            else
-                styleList = {
-                    solidBorder = "Solid Border",
-                    pulsingBorder = "Pulsing Border",
-                }
-                styleOrder = { "solidBorder", "pulsingBorder" }
-            end
-            local styleDrop = AceGUI:Create("Dropdown")
-            styleDrop:SetLabel("Indicator Style")
-            styleDrop:SetList(styleList, styleOrder)
-            styleDrop:SetValue(currentStyle)
-            styleDrop:SetFullWidth(true)
-            styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
-                customBars[cabIdx].maxStacksGlowStyle = val
-                CooldownCompanion:ApplyResourceBars()
-                if CS.RefreshAdvancedSettingsPanel then
-                    CS.RefreshAdvancedSettingsPanel()
-                end
-            end)
-            panel:AddChild(styleDrop)
-
-            AddColorPicker(panel, customBars[cabIdx], "maxStacksGlowColor", "Indicator Color", {1, 0.84, 0, 0.9}, true,
-                cabApplyBars, cabApplyBars)
-
-            if currentStyle ~= "pulsingOverlay" then
-                local sizeSlider = AceGUI:Create("Slider")
-                sizeSlider:SetLabel("Border Size")
-                sizeSlider:SetSliderValues(1, 8, 1)
-                sizeSlider:SetValue(cab.maxStacksGlowSize or 2)
-                sizeSlider:SetFullWidth(true)
-                sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                    customBars[cabIdx].maxStacksGlowSize = val
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                panel:AddChild(sizeSlider)
-            end
-
-            if currentStyle == "pulsingBorder" or currentStyle == "pulsingOverlay" then
-                local speedSlider = AceGUI:Create("Slider")
-                speedSlider:SetLabel("Pulse Duration")
-                speedSlider:SetSliderValues(0.1, 2.0, 0.1)
-                speedSlider:SetValue(cab.maxStacksGlowSpeed or 0.5)
-                speedSlider:SetFullWidth(true)
-                speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                    customBars[cabIdx].maxStacksGlowSpeed = val
-                    CooldownCompanion:ApplyResourceBars()
-                end)
-                panel:AddChild(speedSlider)
-            end
+            BuildMaxStacksIndicatorAdvancedControls(panel, customBars[cabIdx], cabApplyBars)
         end
 
         local _, glowAdvBtn = AddAdvancedToggle(glowCb, "rbCabMaxStacksIndicator_" .. capturedKey, infoButtons, cab.maxStacksGlowEnabled == true, {
@@ -2324,8 +2263,6 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
             {"Due to combat restrictions, individual bar segments cannot be highlighted independently.", 1, 1, 1, true},
             " ",
             {"The indicator covers the entire resource bar and appears automatically when your buff reaches its maximum stack count.", 1, 1, 1, true},
-            " ",
-            {"The Pulsing Overlay style is only available for continuous display mode.", 1, 1, 1, true},
         }, glowCb)
 
     end

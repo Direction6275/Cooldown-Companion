@@ -413,16 +413,32 @@ end
 ------------------------------------------------------------------------
 -- EFFECTS TAB (Glows / Indicators)
 ------------------------------------------------------------------------
+local function ResolveBarAuraIndicatorEnabled(style)
+    if ST.IsBarAuraIndicatorEnabled then
+        return ST.IsBarAuraIndicatorEnabled(style)
+    end
+    if not style then return false end
+    if style.barAuraIndicatorEnabled ~= nil then
+        return style.barAuraIndicatorEnabled == true
+    end
+    return (style.barAuraEffect or "none") ~= "none"
+end
+
 local function BuildBarEffectsTab(container, group, style)
+    local activeAuraEnabled = ResolveBarAuraIndicatorEnabled(style)
+
     -- ================================================================
-    -- Show Active Aura Indicator
+    -- Enable Active Aura Indicator
     -- ================================================================
     local barAuraEnableCb = AceGUI:Create("CheckBox")
-    barAuraEnableCb:SetLabel("Show Active Aura Indicator")
-    barAuraEnableCb:SetValue(style.barAuraEffect ~= "none")
+    barAuraEnableCb:SetLabel("Enable Active Aura Indicator")
+    barAuraEnableCb:SetValue(activeAuraEnabled)
     barAuraEnableCb:SetFullWidth(true)
     barAuraEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.barAuraEffect = val and "color" or "none"
+        style.barAuraIndicatorEnabled = val and true or false
+        if val and (style.barAuraEffect == nil or style.barAuraEffect == "none") then
+            style.barAuraEffect = "color"
+        end
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
@@ -448,20 +464,20 @@ local function BuildBarEffectsTab(container, group, style)
         end)
     end
 
-    local _, barAuraAdvBtn = AddAdvancedToggle(barAuraEnableCb, "barActiveAura", tabInfoButtons, style.barAuraEffect ~= "none", {
+    local _, barAuraAdvBtn = AddAdvancedToggle(barAuraEnableCb, "barActiveAura", tabInfoButtons, activeAuraEnabled, {
         title = "Active Aura Indicator Advanced",
         build = BuildBarActiveAuraAdvanced,
     })
     local barAuraPromoteBtn = CreateCheckboxPromoteButton(barAuraEnableCb, barAuraAdvBtn, "barActiveAura", group, style)
-    AddPreviewBadge(barAuraEnableCb, barAuraPromoteBtn or barAuraAdvBtn, "Preview Active Aura Effects", function()
+    AddPreviewBadge(barAuraEnableCb, barAuraPromoteBtn or barAuraAdvBtn, "Preview Active Aura Indicator", function()
         return CS.selectedGroup and CooldownCompanion:IsBarAuraActivePreviewActive(CS.selectedGroup, nil)
     end, function(show)
         if CS.selectedGroup then
             CooldownCompanion:SetBarAuraActivePreview(CS.selectedGroup, nil, show)
         end
-    end, style.barAuraEffect ~= "none")
+    end, activeAuraEnabled)
 
-    if style.barAuraEffect == "none" and CS.selectedGroup then
+    if not activeAuraEnabled and CS.selectedGroup then
         CooldownCompanion:SetBarAuraActivePreview(CS.selectedGroup, nil, false)
     end -- barAuraAdvExpanded
 

@@ -127,6 +127,7 @@ local CreateGlowContainer = ST._CreateGlowContainer
 local ShowGlowStyle = ST._ShowGlowStyle
 local HideGlowStyles = ST._HideGlowStyles
 local SetBarAuraEffect = ST._SetBarAuraEffect
+local IsBarAuraIndicatorEnabled = ST.IsBarAuraIndicatorEnabled
 local DEFAULT_BAR_PANDEMIC_COLOR = ST._DEFAULT_BAR_PANDEMIC_COLOR
 
 ------------------------------------------------------------------------
@@ -163,7 +164,14 @@ local HEALTH_EFFECTS = RB.HealthEffects
 local lifecycleModule = nil
 
 local function HasCustomAuraBarAuraVisuals(cabConfig)
-    return cabConfig and (cabConfig.barAuraEffect or "none") ~= "none"
+    if IsBarAuraIndicatorEnabled then
+        return IsBarAuraIndicatorEnabled(cabConfig)
+    end
+    if not cabConfig then return false end
+    if cabConfig.barAuraIndicatorEnabled ~= nil then
+        return cabConfig.barAuraIndicatorEnabled == true
+    end
+    return (cabConfig.barAuraEffect or "none") ~= "none"
 end
 
 local function ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)
@@ -302,8 +310,8 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
     local pandemicCombatAllowed = not cabConfig.pandemicGlowCombatOnly or inCombat
 
     local wantAuraColor
-    local activeAuraColor = isSpellCustomCooldown
-        and (cabConfig.barAuraColor or {0.2, 1.0, 0.2, 1.0})
+    local activeAuraColor = cabConfig.barAuraColor
+        or (isSpellCustomCooldown and {0.2, 1.0, 0.2, 1.0})
         or (cabConfig.barColor or {0.5, 0.5, 1})
 
     if pandemicPreview then

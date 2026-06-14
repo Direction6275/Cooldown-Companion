@@ -338,11 +338,20 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         end,
         barActiveAura = function(container, styleTable, onChange, opts)
             BuildBarActiveAuraControls(container, styleTable, onChange, opts)
-            local auraEffect = styleTable.barAuraEffect
-            if auraEffect == nil and opts and opts.fallbackStyle then
-                auraEffect = opts.fallbackStyle.barAuraEffect
+            local auraEnabled
+            if ST.IsBarAuraIndicatorEnabled then
+                auraEnabled = ST.IsBarAuraIndicatorEnabled(styleTable)
+                if styleTable.barAuraIndicatorEnabled == nil and opts and opts.fallbackStyle then
+                    auraEnabled = ST.IsBarAuraIndicatorEnabled(opts.fallbackStyle)
+                end
+            else
+                local auraEffect = styleTable.barAuraEffect
+                if auraEffect == nil and opts and opts.fallbackStyle then
+                    auraEffect = opts.fallbackStyle.barAuraEffect
+                end
+                auraEnabled = (auraEffect or "none") ~= "none"
             end
-            if (auraEffect or "none") ~= "none" then
+            if auraEnabled then
                 BuildBarAuraPulseControls(container, styleTable, onChange, opts)
             end
         end,
@@ -389,7 +398,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                         elseif sectionId == "pandemicGlow" and GetEffectiveOverrideValue("showPandemicGlow") ~= false then
                             AddSelectedButtonPreviewToggle(panel, "Preview Pandemic Glow", "_pandemicPreview", CooldownCompanion.SetPandemicPreview)
                         elseif sectionId == "barActiveAura" then
-                            AddSelectedBarAuraActivePreviewToggle(panel, "Preview Active Aura Effects")
+                            AddSelectedBarAuraActivePreviewToggle(panel, "Preview Active Aura Indicator")
                         elseif sectionId == "pandemicBar" then
                             AddSelectedButtonPreviewToggle(panel, "Preview Pandemic Effects", "_pandemicPreview", CooldownCompanion.SetPandemicPreview)
                         elseif sectionId == "readyGlow" and overrides.readyGlowStyle and overrides.readyGlowStyle ~= "none" then

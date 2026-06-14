@@ -20,7 +20,12 @@ local HideResourceAuraStackSegments = RB.HideResourceAuraStackSegments
 local ApplyResourceAuraStackSegments = RB.ApplyResourceAuraStackSegments
 local ClearResourceAuraVisuals = RB.ClearResourceAuraVisuals
 local IsCustomAuraMaxThresholdEnabled = RB.IsCustomAuraMaxThresholdEnabled
+local IsCustomAuraMaxBarEffectEnabled = RB.IsCustomAuraMaxBarEffectEnabled
+local GetCustomAuraMaxBarEffectColor = RB.GetCustomAuraMaxBarEffectColor
+local ApplyCustomAuraMaxBarEffects = RB.ApplyCustomAuraMaxBarEffects
+local ClearCustomAuraMaxBarEffects = RB.ClearCustomAuraMaxBarEffects
 local SetCustomAuraMaxThresholdRange = RB.SetCustomAuraMaxThresholdRange
+local SetMaxStacksIndicatorActive = RB.SetMaxStacksIndicatorActive
 local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
 local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
 local GetResourceColors = RB.GetResourceColors
@@ -204,12 +209,19 @@ function RB.CreateResourceBarPreviewModule(deps)
             ClearCustomAuraBarIndicatorState(barInfo, true)
             if barInfo._maxStacksIndicator then
                 SetStatusBarImmediateValue(barInfo._maxStacksIndicator, 0)
+                if SetMaxStacksIndicatorActive then
+                    SetMaxStacksIndicatorActive(barInfo, false)
+                end
             end
         elseif barInfo.barType == "custom_continuous" then
             local cabConfig = barInfo.cabConfig
             local isActive = cabConfig and cabConfig.trackingMode == "active"
             local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
             local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
+            local maxStackBarEffectsEnabled = IsCustomAuraMaxBarEffectEnabled and IsCustomAuraMaxBarEffectEnabled(cabConfig)
+            local thresholdVisible = thresholdEnabled or maxStackBarEffectsEnabled
+            local thresholdColor = maxStackBarEffectsEnabled and GetCustomAuraMaxBarEffectColor
+                and GetCustomAuraMaxBarEffectColor(cabConfig)
             local indicatorPreview = cabConfig and cabConfig.maxStacksGlowEnabled
             ClearCustomAuraBarIndicatorState(barInfo, false)
             local previewValue
@@ -223,11 +235,22 @@ function RB.CreateResourceBarPreviewModule(deps)
                 SetStatusBarSmoothValue(barInfo.frame, previewValue)
             end
             if barInfo.frame.thresholdOverlay then
-                if thresholdEnabled then
+                if thresholdVisible then
                     SetCustomAuraMaxThresholdRange(barInfo.frame.thresholdOverlay, maxStacks)
+                    if thresholdColor then
+                        barInfo.frame.thresholdOverlay:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], thresholdColor[4] or 1)
+                    end
+                    if maxStackBarEffectsEnabled and ApplyCustomAuraMaxBarEffects then
+                        ApplyCustomAuraMaxBarEffects(barInfo.frame.thresholdOverlay, cabConfig, thresholdColor)
+                    elseif ClearCustomAuraMaxBarEffects then
+                        ClearCustomAuraMaxBarEffects(barInfo.frame.thresholdOverlay, thresholdColor)
+                    end
                     SetStatusBarSmoothValue(barInfo.frame.thresholdOverlay, previewValue or 0)
                     barInfo.frame.thresholdOverlay:Show()
                 else
+                    if ClearCustomAuraMaxBarEffects then
+                        ClearCustomAuraMaxBarEffects(barInfo.frame.thresholdOverlay, thresholdColor)
+                    end
                     SetStatusBarImmediateValue(barInfo.frame.thresholdOverlay, 0)
                     barInfo.frame.thresholdOverlay:Hide()
                 end
@@ -249,11 +272,20 @@ function RB.CreateResourceBarPreviewModule(deps)
             end
             if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
                 SetStatusBarSmoothValue(barInfo._maxStacksIndicator, maxStacks)
+                if SetMaxStacksIndicatorActive then
+                    SetMaxStacksIndicatorActive(barInfo, true)
+                end
+            elseif barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
+                SetMaxStacksIndicatorActive(barInfo, false)
             end
         elseif barInfo.barType == "custom_segmented" then
             local cabConfig = barInfo.cabConfig
             local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
             local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
+            local maxStackBarEffectsEnabled = IsCustomAuraMaxBarEffectEnabled and IsCustomAuraMaxBarEffectEnabled(cabConfig)
+            local thresholdVisible = thresholdEnabled or maxStackBarEffectsEnabled
+            local thresholdColor = maxStackBarEffectsEnabled and GetCustomAuraMaxBarEffectColor
+                and GetCustomAuraMaxBarEffectColor(cabConfig)
             local indicatorPreview = cabConfig and cabConfig.maxStacksGlowEnabled
             local n = #barInfo.frame.segments
             local fill = indicatorPreview and n or math.ceil(n * 0.6)
@@ -262,11 +294,22 @@ function RB.CreateResourceBarPreviewModule(deps)
             end
             if barInfo.frame.thresholdSegments then
                 for _, seg in ipairs(barInfo.frame.thresholdSegments) do
-                    if thresholdEnabled then
+                    if thresholdVisible then
                         SetCustomAuraMaxThresholdRange(seg, maxStacks)
+                        if thresholdColor then
+                            seg:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], thresholdColor[4] or 1)
+                        end
+                        if maxStackBarEffectsEnabled and ApplyCustomAuraMaxBarEffects then
+                            ApplyCustomAuraMaxBarEffects(seg, cabConfig, thresholdColor)
+                        elseif ClearCustomAuraMaxBarEffects then
+                            ClearCustomAuraMaxBarEffects(seg, thresholdColor)
+                        end
                         SetStatusBarSegmentedValue(seg, fill, segmentedSmoothing)
                         seg:Show()
                     else
+                        if ClearCustomAuraMaxBarEffects then
+                            ClearCustomAuraMaxBarEffects(seg, thresholdColor)
+                        end
                         SetStatusBarImmediateValue(seg, 0)
                         seg:Hide()
                     end
@@ -274,6 +317,11 @@ function RB.CreateResourceBarPreviewModule(deps)
             end
             if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
                 SetStatusBarSegmentedValue(barInfo._maxStacksIndicator, maxStacks, segmentedSmoothing)
+                if SetMaxStacksIndicatorActive then
+                    SetMaxStacksIndicatorActive(barInfo, true)
+                end
+            elseif barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
+                SetMaxStacksIndicatorActive(barInfo, false)
             end
         elseif barInfo.barType == "custom_overlay" then
             local cabConfig = barInfo.cabConfig
@@ -281,17 +329,32 @@ function RB.CreateResourceBarPreviewModule(deps)
             local indicatorPreview = cabConfig and cabConfig.maxStacksGlowEnabled
             local previewStacks = indicatorPreview and maxStacks or math.ceil(maxStacks * 0.7)
             local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
+            local maxStackBarEffectsEnabled = IsCustomAuraMaxBarEffectEnabled and IsCustomAuraMaxBarEffectEnabled(cabConfig)
+            local thresholdVisible = thresholdEnabled or maxStackBarEffectsEnabled
+            local thresholdColor = maxStackBarEffectsEnabled and GetCustomAuraMaxBarEffectColor
+                and GetCustomAuraMaxBarEffectColor(cabConfig)
             local half = barInfo.halfSegments or 1
             for i = 1, half do
                 SetStatusBarSegmentedValue(barInfo.frame.segments[i], previewStacks, segmentedSmoothing)
                 SetStatusBarSegmentedValue(barInfo.frame.overlaySegments[i], previewStacks, segmentedSmoothing)
                 if barInfo.frame.thresholdSegments and barInfo.frame.thresholdSegments[i] then
                     local seg = barInfo.frame.thresholdSegments[i]
-                    if thresholdEnabled then
+                    if thresholdVisible then
                         SetCustomAuraMaxThresholdRange(seg, maxStacks)
+                        if thresholdColor then
+                            seg:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], thresholdColor[4] or 1)
+                        end
+                        if maxStackBarEffectsEnabled and ApplyCustomAuraMaxBarEffects then
+                            ApplyCustomAuraMaxBarEffects(seg, cabConfig, thresholdColor)
+                        elseif ClearCustomAuraMaxBarEffects then
+                            ClearCustomAuraMaxBarEffects(seg, thresholdColor)
+                        end
                         SetStatusBarSegmentedValue(seg, previewStacks, segmentedSmoothing)
                         seg:Show()
                     else
+                        if ClearCustomAuraMaxBarEffects then
+                            ClearCustomAuraMaxBarEffects(seg, thresholdColor)
+                        end
                         SetStatusBarImmediateValue(seg, 0)
                         seg:Hide()
                     end
@@ -299,6 +362,11 @@ function RB.CreateResourceBarPreviewModule(deps)
             end
             if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
                 SetStatusBarSegmentedValue(barInfo._maxStacksIndicator, maxStacks, segmentedSmoothing)
+                if SetMaxStacksIndicatorActive then
+                    SetMaxStacksIndicatorActive(barInfo, true)
+                end
+            elseif barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
+                SetMaxStacksIndicatorActive(barInfo, false)
             end
         end
     end
@@ -332,7 +400,9 @@ function RB.CreateResourceBarPreviewModule(deps)
         SetPreviewActive(false)
         wipe(HEALTH_EFFECTS.preview)
         HEALTH_EFFECTS.forcedPreview = nil
-        -- Resume live updates on next OnUpdate tick
+        if self.ApplyResourceBars then
+            self:ApplyResourceBars()
+        end
     end
 
     function CooldownCompanion:IsResourceBarPreviewActive()

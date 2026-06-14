@@ -52,6 +52,18 @@ local DEFAULT_CUSTOM_AURA_MAX_COLOR = {1, 0.84, 0, 1}
 -- Imports from Glows
 local CreateGlowContainer = ST._CreateGlowContainer
 local SetBarAuraEffect = ST._SetBarAuraEffect
+local IsBarAuraIndicatorEnabled = ST.IsBarAuraIndicatorEnabled
+
+local function ResolveBarAuraIndicatorEnabled(style)
+    if IsBarAuraIndicatorEnabled then
+        return IsBarAuraIndicatorEnabled(style)
+    end
+    if not style then return false end
+    if style.barAuraIndicatorEnabled ~= nil then
+        return style.barAuraIndicatorEnabled == true
+    end
+    return (style.barAuraEffect or "none") ~= "none"
+end
 
 -- Imports from Visibility
 local UpdateLossOfControl = ST._UpdateLossOfControl
@@ -333,8 +345,23 @@ local function ClearBarAuraStackVisual(button, keepIndicator)
         button._barAuraStackOverlay:Hide()
     end
     if button.statusBar and button.statusBar.thresholdOverlay then
+        if RB and RB.ClearCustomAuraMaxBarEffects then
+            RB.ClearCustomAuraMaxBarEffects(button.statusBar.thresholdOverlay)
+        end
         button.statusBar.thresholdOverlay:Hide()
         SetStatusBarImmediateValue(button.statusBar.thresholdOverlay, 0)
+    end
+    if button._barAuraStackSegments and button._barAuraStackSegments.thresholdSegments
+        and RB and RB.ClearCustomAuraMaxBarEffects then
+        for _, segment in ipairs(button._barAuraStackSegments.thresholdSegments) do
+            RB.ClearCustomAuraMaxBarEffects(segment)
+        end
+    end
+    if button._barAuraStackOverlay and button._barAuraStackOverlay.thresholdSegments
+        and RB and RB.ClearCustomAuraMaxBarEffects then
+        for _, segment in ipairs(button._barAuraStackOverlay.thresholdSegments) do
+            RB.ClearCustomAuraMaxBarEffects(segment)
+        end
     end
     if button.statusBar then
         SetStatusBarImmediateRange(button.statusBar, 0, 1)
@@ -539,10 +566,14 @@ local function ApplyBarAuraStackValuesOnly(button, mode, stackValue, valueAvaila
 
     local info = mode == "continuous" and button._barAuraStackContinuousInfo or button._barAuraStackIndicatorInfo
     if info and info._maxStacksIndicator then
+        local RB = GetResourceBarVisuals()
         if mode == "continuous" then
             SetStatusBarSmoothValue(info._maxStacksIndicator, widgetValue)
         else
             SetStatusBarSegmentedValue(info._maxStacksIndicator, widgetValue, segmentedSmoothing)
+        end
+        if RB and RB.SetMaxStacksIndicatorActive then
+            RB.SetMaxStacksIndicatorActive(info, valueAvailable == true)
         end
     end
 end
@@ -600,8 +631,14 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
 
     local style = button.style or {}
     local auraBar = button.buttonData and button.buttonData.auraBar or nil
+    local RB = GetResourceBarVisuals()
     local stackBarColor, overlayColor, thresholdColor = GetBarAuraStackColors(button)
-    local showThreshold = auraBar and auraBar.thresholdColorEnabled == true
+    local maxStackBarEffectsEnabled = auraBar and RB and RB.IsCustomAuraMaxBarEffectEnabled
+        and RB.IsCustomAuraMaxBarEffectEnabled(auraBar)
+    if maxStackBarEffectsEnabled and RB.GetCustomAuraMaxBarEffectColor then
+        thresholdColor = RB.GetCustomAuraMaxBarEffectColor(auraBar)
+    end
+    local showThreshold = auraBar and (auraBar.thresholdColorEnabled == true or maxStackBarEffectsEnabled)
     local segmentedSmoothing = mode ~= "continuous" and CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(button.buttonData) or nil
     local state = button._barAuraStackAppliedState
     local layoutDirty = state == nil
@@ -630,12 +667,19 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
         or state.maxStacksGlowStyle ~= (auraBar and auraBar.maxStacksGlowStyle or nil)
         or state.maxStacksGlowSize ~= (auraBar and auraBar.maxStacksGlowSize or nil)
         or state.maxStacksGlowSpeed ~= (auraBar and auraBar.maxStacksGlowSpeed or nil)
+        or state.maxStacksGlowThickness ~= (auraBar and auraBar.maxStacksGlowThickness or nil)
+        or state.maxStacksGlowLines ~= (auraBar and auraBar.maxStacksGlowLines or nil)
+        or state.maxStacksBarPulseEnabled ~= (auraBar and auraBar.maxStacksBarPulseEnabled == true)
+        or state.maxStacksBarPulseSpeed ~= (auraBar and auraBar.maxStacksBarPulseSpeed or nil)
+        or state.maxStacksBarColorShiftEnabled ~= (auraBar and auraBar.maxStacksBarColorShiftEnabled == true)
+        or state.maxStacksBarColorShiftSpeed ~= (auraBar and auraBar.maxStacksBarColorShiftSpeed or nil)
         or BarAuraColorStateChanged(state, "barBgR", "barBgG", "barBgB", "barBgA", style.barBgColor)
         or BarAuraColorStateChanged(state, "borderR", "borderG", "borderB", "borderA", style.borderColor)
         or BarAuraColorStateChanged(state, "stackR", "stackG", "stackB", "stackA", stackBarColor)
         or BarAuraColorStateChanged(state, "overlayR", "overlayG", "overlayB", "overlayA", overlayColor)
         or BarAuraColorStateChanged(state, "thresholdR", "thresholdG", "thresholdB", "thresholdA", thresholdColor)
         or BarAuraColorStateChanged(state, "glowR", "glowG", "glowB", "glowA", auraBar and auraBar.maxStacksGlowColor)
+        or BarAuraColorStateChanged(state, "maxShiftR", "maxShiftG", "maxShiftB", "maxShiftA", auraBar and auraBar.maxStacksBarColorShiftColor)
 
     local stackValueIsSecret = valueAvailable and issecretvalue and issecretvalue(stackValue)
     local valueDirty = button._barAuraStackValueDirty == true
@@ -668,12 +712,19 @@ local function GetBarAuraStackVisualDirtyState(button, mode, maxStacks, stackVal
         state.maxStacksGlowStyle = auraBar and auraBar.maxStacksGlowStyle or nil
         state.maxStacksGlowSize = auraBar and auraBar.maxStacksGlowSize or nil
         state.maxStacksGlowSpeed = auraBar and auraBar.maxStacksGlowSpeed or nil
+        state.maxStacksGlowThickness = auraBar and auraBar.maxStacksGlowThickness or nil
+        state.maxStacksGlowLines = auraBar and auraBar.maxStacksGlowLines or nil
+        state.maxStacksBarPulseEnabled = auraBar and auraBar.maxStacksBarPulseEnabled == true
+        state.maxStacksBarPulseSpeed = auraBar and auraBar.maxStacksBarPulseSpeed or nil
+        state.maxStacksBarColorShiftEnabled = auraBar and auraBar.maxStacksBarColorShiftEnabled == true
+        state.maxStacksBarColorShiftSpeed = auraBar and auraBar.maxStacksBarColorShiftSpeed or nil
         StoreBarAuraColorState(state, "barBgR", "barBgG", "barBgB", "barBgA", style.barBgColor)
         StoreBarAuraColorState(state, "borderR", "borderG", "borderB", "borderA", style.borderColor)
         StoreBarAuraColorState(state, "stackR", "stackG", "stackB", "stackA", stackBarColor)
         StoreBarAuraColorState(state, "overlayR", "overlayG", "overlayB", "overlayA", overlayColor)
         StoreBarAuraColorState(state, "thresholdR", "thresholdG", "thresholdB", "thresholdA", thresholdColor)
         StoreBarAuraColorState(state, "glowR", "glowG", "glowB", "glowA", auraBar and auraBar.maxStacksGlowColor)
+        StoreBarAuraColorState(state, "maxShiftR", "maxShiftG", "maxShiftB", "maxShiftA", auraBar and auraBar.maxStacksBarColorShiftColor)
     end
 
     state.stackValueAvailable = valueAvailable or false
@@ -692,7 +743,12 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
 
     local auraBar = button.buttonData and button.buttonData.auraBar or nil
     local stackBarColor, overlayColor, thresholdColor = GetBarAuraStackColors(button)
-    local showThreshold = auraBar and auraBar.thresholdColorEnabled == true
+    local maxStackBarEffectsEnabled = auraBar and RB.IsCustomAuraMaxBarEffectEnabled
+        and RB.IsCustomAuraMaxBarEffectEnabled(auraBar)
+    if maxStackBarEffectsEnabled and RB.GetCustomAuraMaxBarEffectColor then
+        thresholdColor = RB.GetCustomAuraMaxBarEffectColor(auraBar)
+    end
+    local showThreshold = auraBar and (auraBar.thresholdColorEnabled == true or maxStackBarEffectsEnabled)
     local surface = mode == "continuous" and button.statusBar or GetBarAuraStackSurface(button)
     local width = surface and surface:GetWidth() or button.statusBar:GetWidth() or 0
     local height = surface and surface:GetHeight() or button.statusBar:GetHeight() or 0
@@ -734,10 +790,18 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
             if overlay then
                 RB.SetCustomAuraMaxThresholdRange(overlay, maxStacks)
                 overlay:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], thresholdColor[4] or 1)
+                if maxStackBarEffectsEnabled and RB.ApplyCustomAuraMaxBarEffects then
+                    RB.ApplyCustomAuraMaxBarEffects(overlay, auraBar, thresholdColor)
+                elseif RB.ClearCustomAuraMaxBarEffects then
+                    RB.ClearCustomAuraMaxBarEffects(overlay, thresholdColor)
+                end
                 SetStatusBarSmoothValue(overlay, GetBarAuraStackWidgetValue(stackValue, valueAvailable))
                 overlay:Show()
             end
         elseif button.statusBar.thresholdOverlay then
+            if RB.ClearCustomAuraMaxBarEffects then
+                RB.ClearCustomAuraMaxBarEffects(button.statusBar.thresholdOverlay, thresholdColor)
+            end
             button.statusBar.thresholdOverlay:Hide()
             SetStatusBarImmediateValue(button.statusBar.thresholdOverlay, 0)
         end
@@ -751,6 +815,9 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
     button._barAuraStackVisualMode = mode
     HideBarAuraBaseFill(button)
     if button.statusBar.thresholdOverlay then
+        if RB.ClearCustomAuraMaxBarEffects then
+            RB.ClearCustomAuraMaxBarEffects(button.statusBar.thresholdOverlay, thresholdColor)
+        end
         button.statusBar.thresholdOverlay:Hide()
         SetStatusBarImmediateValue(button.statusBar.thresholdOverlay, 0)
     end
@@ -788,9 +855,17 @@ local function LayoutBarAuraStackVisual(button, mode, maxStacks, stackValue, val
                     RB.SetCustomAuraMaxThresholdRange(segment, maxStacks)
                     segment:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], thresholdColor[4] or 1)
                 end
+                if maxStackBarEffectsEnabled and RB.ApplyCustomAuraMaxBarEffects then
+                    RB.ApplyCustomAuraMaxBarEffects(segment, auraBar, thresholdColor)
+                elseif RB.ClearCustomAuraMaxBarEffects then
+                    RB.ClearCustomAuraMaxBarEffects(segment, thresholdColor)
+                end
                 SetStatusBarSegmentedValue(segment, GetBarAuraStackWidgetValue(stackValue, valueAvailable), segmentedSmoothing)
                 segment:Show()
             elseif layoutChanged then
+                if RB.ClearCustomAuraMaxBarEffects then
+                    RB.ClearCustomAuraMaxBarEffects(segment, thresholdColor)
+                end
                 SetStatusBarImmediateValue(segment, 0)
                 segment:Hide()
             end
@@ -809,6 +884,13 @@ local function BuildBarAuraStackIndicatorKey(button, info, glowConfig, mode, max
         BarAuraColorKey(glowConfig.maxStacksGlowColor),
         tostring(glowConfig.maxStacksGlowSize or 2),
         tostring(glowConfig.maxStacksGlowSpeed or 0.5),
+        tostring(glowConfig.maxStacksGlowThickness or 4),
+        tostring(glowConfig.maxStacksGlowLines or 8),
+        tostring(glowConfig.maxStacksBarPulseEnabled == true),
+        tostring(glowConfig.maxStacksBarPulseSpeed or 0.5),
+        tostring(glowConfig.maxStacksBarColorShiftEnabled == true),
+        tostring(glowConfig.maxStacksBarColorShiftSpeed or 0.5),
+        BarAuraColorKey(glowConfig.maxStacksBarColorShiftColor),
         tostring(ST.GetEffectiveBarTextureName(style.barTexture or "Solid")),
         tostring(style.borderStyle or "pixel"),
         tostring(style.borderSize or ST.DEFAULT_BORDER_SIZE or 1),
@@ -863,35 +945,45 @@ local function UpdateBarAuraStackIndicator(button, mode, maxStacks, stackValue, 
     end
 
     local glowConfig = auraBar
-    if mode ~= "continuous" and glowConfig.maxStacksGlowStyle == "pulsingOverlay" then
-        glowConfig = {}
-        for k, v in pairs(auraBar) do
-            glowConfig[k] = v
-        end
-        glowConfig.maxStacksGlowStyle = "solidBorder"
+    local barTexture = CooldownCompanion:FetchEffectiveBarTexture(button.style and button.style.barTexture or "Solid")
+    local borderStyle = button.style and button.style.borderStyle or "pixel"
+    local borderSize = button.style and button.style.borderSize or ST.DEFAULT_BORDER_SIZE or 1
+    local borderRenderMode = ST.GetBorderRenderMode(button.style)
+    local frameTreatmentStyle = RB.GetMaxStacksFrameTreatmentStyle and RB.GetMaxStacksFrameTreatmentStyle(glowConfig) or "solidBorder"
+
+    if frameTreatmentStyle ~= "none" then
+        RB.EnsureMaxStacksIndicator(info)
     end
 
-    RB.EnsureMaxStacksIndicator(info)
     local indicatorKey = BuildBarAuraStackIndicatorKey(button, info, glowConfig, mode, maxStacks)
     if info._barAuraStackIndicatorKey ~= indicatorKey then
-        RB.LayoutMaxStacksIndicator(
-            info,
-            glowConfig,
-            maxStacks,
-            CooldownCompanion:FetchEffectiveBarTexture(button.style and button.style.barTexture or "Solid"),
-            button.style and button.style.borderStyle or "pixel",
-            button.style and button.style.borderSize or ST.DEFAULT_BORDER_SIZE or 1,
-            ST.GetBorderRenderMode(button.style)
-        )
+        if info._maxStacksIndicator then
+            RB.LayoutMaxStacksIndicator(
+                info,
+                glowConfig,
+                maxStacks,
+                barTexture,
+                borderStyle,
+                borderSize,
+                borderRenderMode
+            )
+        end
+        if frameTreatmentStyle == "none" then
+            RB.ClearMaxStacksIndicator(info)
+        end
         info._barAuraStackIndicatorKey = indicatorKey
     end
+
+    local indicatorValue = GetBarAuraStackWidgetValue(stackValue, stackValueAvailable)
     if info._maxStacksIndicator then
-        local indicatorValue = GetBarAuraStackWidgetValue(stackValue, stackValueAvailable)
         local segmentedSmoothing = mode ~= "continuous" and CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(button.buttonData) or nil
         if mode == "continuous" then
             SetStatusBarSmoothValue(info._maxStacksIndicator, indicatorValue)
         else
             SetStatusBarSegmentedValue(info._maxStacksIndicator, indicatorValue, segmentedSmoothing)
+        end
+        if RB.SetMaxStacksIndicatorActive then
+            RB.SetMaxStacksIndicatorActive(info, stackValueAvailable == true)
         end
     end
 end
@@ -1225,8 +1317,9 @@ local function UpdateBarDisplay(button)
     -- Loss of control overlay on bar icon
     UpdateLossOfControl(button)
 
-    -- Bar aura visuals in bar mode are driven by barAuraEffect, not icon-mode aura flags.
-    local barAuraVisualsEnabled = style.barAuraEffect ~= "none" and not barAuraStackDisplay
+    -- Bar aura visuals in bar mode are driven by the bar aura parent state,
+    -- with Border Indicator handled separately from active color and effects.
+    local barAuraVisualsEnabled = ResolveBarAuraIndicatorEnabled(style) and not barAuraStackDisplay
     local inCombat = InCombatLockdown()
 
     -- Bar aura color: override bar fill when aura is active (pandemic overrides aura color)
