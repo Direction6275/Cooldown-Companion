@@ -284,6 +284,99 @@ function CooldownCompanion:OnPetChanged()
     self:RefreshConfigPanel()
 end
 
+function CooldownCompanion:UpdateSpellChargeMetadata(buttonData, spellID, opts)
+    if not (buttonData and buttonData.type == "spell") then
+        return
+    end
+
+    local chargeInfo, chargeQueryID, maxCharges = ST.ResolveSpellChargeInfo(spellID or buttonData.id)
+    local hasRealCharges = buttonData.hasCharges and true or nil
+    local hadDisplayCountBehavior = (buttonData._hasDisplayCount == true or hasRealCharges == true)
+    local hadCastCountCandidate = (buttonData._castCountCandidate == true)
+    local castCountSelf = buttonData._castCountSelf
+    local castCountEventSpellID = buttonData._castCountEventSpellID
+    buttonData._castCountConfirmed = nil
+    buttonData._castCountSeeded = nil
+
+    if chargeInfo then
+        buttonData._castCountCandidate = nil
+        buttonData._castCountSelf = nil
+        buttonData._castCountEventSpellID = nil
+        buttonData._hasDisplayCount = nil
+        buttonData._displayCountFamily = nil
+        local mc = maxCharges or chargeInfo.maxCharges
+        if mc and mc > 1 then
+            hasRealCharges = true
+            if mc ~= buttonData.maxCharges then
+                buttonData.maxCharges = mc
+            end
+            -- Auto-enable charge text when first promoted to charge-based.
+            if buttonData.showChargeText == nil then
+                buttonData.showChargeText = true
+            end
+        else
+            hasRealCharges = nil
+            -- Reset stored maxCharges to reflect the current API value
+            -- (e.g. after Strafing Run buff fades, maxCharges returns from 2 to 1).
+            buttonData.maxCharges = mc
+        end
+    else
+        -- chargeInfo nil: check if spell has "use count" (brez shared
+        -- pool, etc.). GetSpellDisplayCount returns "" when inactive,
+        -- "N" when the pool is active.
+        hasRealCharges = nil
+        self._hasDisplayCountCandidates = true
+        local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)
+        if not issecretvalue(rawDisplayCount) then
+            local displayCount = tonumber(rawDisplayCount)
+            if displayCount ~= nil then
+                buttonData._hasDisplayCount = true
+                buttonData._displayCountFamily = true
+                if displayCount > (buttonData.maxCharges or 0) then
+                    buttonData.maxCharges = displayCount
+                end
+            else
+                buttonData._hasDisplayCount = nil
+                if opts and opts.clearInactiveMaxCharges then
+                    buttonData._displayCountFamily = nil
+                end
+            end
+        elseif hadDisplayCountBehavior then
+            -- Preserve legacy display-count classification when the
+            -- API is secret during refresh (e.g. /reload into combat)
+            -- so the button does not temporarily fall out of the
+            -- count-bearing path until the value becomes readable.
+            buttonData._hasDisplayCount = true
+            buttonData._displayCountFamily = true
+        end
+        -- Auto-enable count text when a spell exposes a readable display count.
+        if buttonData._hasDisplayCount and buttonData.showChargeText == nil then
+            buttonData.showChargeText = true
+        end
+        if buttonData._hasDisplayCount then
+            buttonData._castCountCandidate = nil
+            buttonData._castCountSelf = nil
+            buttonData._castCountEventSpellID = nil
+        elseif hadCastCountCandidate then
+            buttonData._castCountCandidate = true
+            buttonData._castCountSelf = castCountSelf
+            buttonData._castCountEventSpellID = castCountEventSpellID
+        else
+            buttonData._castCountCandidate = nil
+            buttonData._castCountSelf = nil
+            buttonData._castCountEventSpellID = nil
+        end
+        if opts and opts.clearInactiveMaxCharges
+            and not buttonData._hasDisplayCount
+            and not buttonData._displayCountFamily
+        then
+            buttonData.maxCharges = nil
+        end
+    end
+
+    buttonData.hasCharges = hasRealCharges
+end
+
 -- Re-evaluate hasCharges on every spell button (talents can add/remove charges).
 -- Treat a spell as charge-based only when max charges is greater than 1.
 function CooldownCompanion:RefreshChargeFlags(typeFilter)
@@ -293,81 +386,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
     for _, group in pairs(self.db.profile.groups) do
         for _, buttonData in ipairs(group.buttons) do
             if buttonData.type == "spell" and typeFilter ~= "item" then
-                local chargeInfo, chargeQueryID, maxCharges = ST.ResolveSpellChargeInfo(buttonData.id)
-                local hasRealCharges = buttonData.hasCharges and true or nil
-                local hadDisplayCountBehavior = (buttonData._hasDisplayCount == true or hasRealCharges == true)
-                local hadCastCountCandidate = (buttonData._castCountCandidate == true)
-                local castCountSelf = buttonData._castCountSelf
-                local castCountEventSpellID = buttonData._castCountEventSpellID
-                buttonData._castCountConfirmed = nil
-                buttonData._castCountSeeded = nil
-                if chargeInfo then
-                    buttonData._castCountCandidate = nil
-                    buttonData._castCountSelf = nil
-                    buttonData._castCountEventSpellID = nil
-                    buttonData._hasDisplayCount = nil
-                    buttonData._displayCountFamily = nil
-                    local mc = maxCharges or chargeInfo.maxCharges
-                    if mc and mc > 1 then
-                        hasRealCharges = true
-                        if mc ~= buttonData.maxCharges then
-                            buttonData.maxCharges = mc
-                        end
-                        -- Auto-enable charge text when first promoted to charge-based.
-                        if buttonData.showChargeText == nil then
-                            buttonData.showChargeText = true
-                        end
-                    else
-                        hasRealCharges = nil
-                        -- Reset stored maxCharges to reflect the current API value
-                        -- (e.g. after Strafing Run buff fades, maxCharges returns from 2 to 1).
-                        buttonData.maxCharges = mc
-                    end
-                else
-                    -- chargeInfo nil: check if spell has "use count" (brez shared
-                    -- pool, etc.). GetSpellDisplayCount returns "" when inactive,
-                    -- "N" when the pool is active.
-                    hasRealCharges = nil
-                    self._hasDisplayCountCandidates = true
-                    local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)
-                    if not issecretvalue(rawDisplayCount) then
-                        local displayCount = tonumber(rawDisplayCount)
-                        if displayCount ~= nil then
-                            buttonData._hasDisplayCount = true
-                            buttonData._displayCountFamily = true
-                            if displayCount > (buttonData.maxCharges or 0) then
-                                buttonData.maxCharges = displayCount
-                            end
-                        else
-                            buttonData._hasDisplayCount = nil
-                        end
-                    elseif hadDisplayCountBehavior then
-                        -- Preserve legacy display-count classification when the
-                        -- API is secret during refresh (e.g. /reload into combat)
-                        -- so the button does not temporarily fall out of the
-                        -- count-bearing path until the value becomes readable.
-                        buttonData._hasDisplayCount = true
-                        buttonData._displayCountFamily = true
-                    end
-                    -- Auto-enable count text when a spell exposes a readable display count.
-                    if buttonData._hasDisplayCount and buttonData.showChargeText == nil then
-                        buttonData.showChargeText = true
-                    end
-                    if buttonData._hasDisplayCount then
-                        buttonData._castCountCandidate = nil
-                        buttonData._castCountSelf = nil
-                        buttonData._castCountEventSpellID = nil
-                    elseif hadCastCountCandidate then
-                        buttonData._castCountCandidate = true
-                        buttonData._castCountSelf = castCountSelf
-                        buttonData._castCountEventSpellID = castCountEventSpellID
-                    else
-                        buttonData._castCountCandidate = nil
-                        buttonData._castCountSelf = nil
-                        buttonData._castCountEventSpellID = nil
-                    end
-                end
-                buttonData.hasCharges = hasRealCharges
+                self:UpdateSpellChargeMetadata(buttonData, buttonData.id)
             elseif buttonData.type == "item" and typeFilter ~= "spell" then
                 -- Never clear hasCharges for items; unavailable charged items can
                 -- be indistinguishable from unowned items through count APIs.

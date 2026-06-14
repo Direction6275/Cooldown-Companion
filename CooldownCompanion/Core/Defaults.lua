@@ -679,8 +679,8 @@ function CooldownCompanion:GetRotationAssistantActionSpellID()
     return ST.ROTATION_ASSISTANT_ACTION_SPELL_ID
 end
 
-function CooldownCompanion:GetRotationAssistantFallbackIcon()
-    local spellID = self:GetRotationAssistantActionSpellID()
+function CooldownCompanion:GetRotationAssistantFallbackIcon(spellID)
+    spellID = spellID or self:GetRotationAssistantActionSpellID()
     if spellID and C_Spell and C_Spell.GetSpellTexture then
         local icon = C_Spell.GetSpellTexture(spellID)
         if icon and not issecretvalue(icon) then
@@ -745,7 +745,8 @@ end
 function CooldownCompanion:GetRotationAssistantButtonData(frame)
     if not frame then return nil end
     local groups = self.db and self.db.profile and self.db.profile.groups
-    local group = frame._groupId and groups and groups[frame._groupId]
+    local groupId = frame.groupId or frame._groupId
+    local group = groupId and groups and groups[groupId]
     local entrySettings = self:GetRotationAssistantEntrySettings(group, false)
     local buttonData = frame._rotationAssistantButtonData
     if not buttonData then
@@ -806,6 +807,11 @@ function CooldownCompanion:RefreshRotationAssistantButton(button)
     buttonData._rotationAssistantSpellID = recommendedSpellID
     buttonData._rotationAssistantMissing = missing
     buttonData.name = recommendedSpellID and C_Spell.GetSpellName(recommendedSpellID) or ST.ROTATION_ASSISTANT_NAME
+    if self.UpdateSpellChargeMetadata then
+        self:UpdateSpellChargeMetadata(buttonData, displaySpellID, {
+            clearInactiveMaxCharges = true,
+        })
+    end
     button._rotationAssistantSpellID = recommendedSpellID
 
     if changed then

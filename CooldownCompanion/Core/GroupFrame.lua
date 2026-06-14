@@ -627,13 +627,7 @@ end
 
 local function IsRuntimeButtonUsable(self, buttonData, group, opts)
     if buttonData and buttonData._rotationAssistantVirtual == true then
-        if opts and opts.checkLoadConditions == false then
-            return true
-        end
-        if not self:IsButtonLoadConditionMet(buttonData, group) then
-            return false
-        end
-        return true
+        return (opts and opts.checkLoadConditions == false) or self:IsButtonLoadConditionMet(buttonData, group)
     end
     return self:IsButtonUsable(buttonData, group, opts)
 end

@@ -348,8 +348,7 @@ local function FinalizeCreatedPanel(newPanelId, displayMode, opts)
     end
 
     SelectConfigPanel(newPanelId)
-    local acceptsManualEntries = not CooldownCompanion.CanPanelAcceptManualEntry
-        or CooldownCompanion:CanPanelAcceptManualEntry(group)
+    local acceptsManualEntries = CooldownCompanion:CanPanelAcceptManualEntry(group)
     if acceptsManualEntries then
         CS.addingToPanelId = newPanelId
         CS.pendingEditBoxFocus = true
@@ -934,20 +933,6 @@ local function IsAuraTrackingConfigReady(buttonData, cdmEnabled)
     return auraStatus.ready == true, auraStatus
 end
 
-local function GetPanelManualEntryRejectMessage(group)
-    if CooldownCompanion.GetPanelManualEntryRejectMessage then
-        return CooldownCompanion:GetPanelManualEntryRejectMessage(group)
-    end
-    if group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1 then
-        return "Texture Panels can only hold one entry. Remove the current entry first if you want to replace it."
-    end
-    return nil
-end
-
-local function CanPanelAcceptManualEntry(group)
-    return GetPanelManualEntryRejectMessage(group) == nil
-end
-
 IsTriggerPanelGroup = function(group)
     return group and group.displayMode == "trigger"
 end
@@ -1038,7 +1023,7 @@ local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGrou
     if not targetGroup then
         return false
     end
-    local rejectMessage = GetPanelManualEntryRejectMessage(targetGroup)
+    local rejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup)
     if rejectMessage then
         CooldownCompanion:Print(rejectMessage)
         return false
@@ -1064,7 +1049,7 @@ local function BuildEntryMoveDestinationSections(db, sourceGroupId)
     for groupId, group in pairs(db.groups or {}) do
         if groupId ~= sourceGroupId
             and CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
-            and CanPanelAcceptManualEntry(group)
+            and CooldownCompanion:CanPanelAcceptManualEntry(group)
         then
             local containerId = group.parentContainerId
             local container = containerId and containers[containerId]
@@ -2561,15 +2546,10 @@ local function RefreshColumn2()
                 addBtn.icon:SetAtlas(isAdding and "common-icon-minus" or "common-icon-plus", false)
                 addBtn.icon:SetVertexColor(0.3, 0.8, 0.3)
                 local addBtnPanelId = panelId
-                local isRotationAssistantPanel = panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
-                local addBtnTextureFull = panel.displayMode == "textures" and btnCount >= 1
+                local addBtnRejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(panel)
                 addBtn:SetScript("OnClick", function()
-                    if isRotationAssistantPanel then
-                        CooldownCompanion:Print("Assistant Panels are populated automatically.")
-                        return
-                    end
-                    if addBtnTextureFull then
-                        CooldownCompanion:Print("Texture Panels can only hold one entry.")
+                    if addBtnRejectMessage then
+                        CooldownCompanion:Print(addBtnRejectMessage)
                         return
                     end
                     if CS.addingToPanelId == addBtnPanelId then
@@ -2582,7 +2562,7 @@ local function RefreshColumn2()
                     end
                     CooldownCompanion:RefreshConfigPanel()
                 end)
-                addBtn:SetShown(not addBtnTextureFull and not isRotationAssistantPanel)
+                addBtn:SetShown(not addBtnRejectMessage)
 
                 panelContainer:AddChild(header)
                 table.insert(col2RenderedRows, { kind = "header", panelId = panelId, isCollapsed = isCollapsed, widget = header })

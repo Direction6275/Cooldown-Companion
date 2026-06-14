@@ -79,12 +79,8 @@ local function GroupUsesTriggerPanelEntries(group)
     return group and group.displayMode == "trigger"
 end
 
-local function GroupUsesRotationAssistantEntry(group)
-    return group and group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
-end
-
 local function BuildButtonSettingsTabs(group, buttonData)
-    if GroupUsesRotationAssistantEntry(group) then
+    if CooldownCompanion:IsRotationAssistantGroup(group) then
         return {
             { value = "loadconditions", text = "Load Conditions" },
         }
@@ -2361,7 +2357,7 @@ local function RefreshButtonSettingsColumn()
     local hasSelection = false
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local rotationAssistantSelection = group
-        and GroupUsesRotationAssistantEntry(group)
+        and CooldownCompanion:IsRotationAssistantGroup(group)
         and CS.selectedRotationAssistantEntry == true
     if rotationAssistantSelection then
         hasSelection = true

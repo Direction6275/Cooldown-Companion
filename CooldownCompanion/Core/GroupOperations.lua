@@ -1779,7 +1779,7 @@ function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group)
         return false
     end
     if self:IsRotationAssistantGroup(group) then
-        local buttonData = self:GetRotationAssistantButtonData(frame)
+        local buttonData = frame._rotationAssistantButtonData
         return #frame.buttons ~= 1
             or not frame.buttons[1]
             or frame.buttons[1].buttonData ~= buttonData

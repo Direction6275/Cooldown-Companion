@@ -535,13 +535,14 @@ end
 
 local function GetSavedPreviewButtons(group)
     if CooldownCompanion:IsRotationAssistantGroup(group) then
+        local spellID = CooldownCompanion:GetRotationAssistantActionSpellID()
         return {
             {
                 buttonData = {
                     type = "spell",
-                    id = CooldownCompanion:GetRotationAssistantActionSpellID(),
+                    id = spellID,
                     name = ST.ROTATION_ASSISTANT_NAME,
-                    manualIcon = CooldownCompanion:GetRotationAssistantFallbackIcon(),
+                    manualIcon = CooldownCompanion:GetRotationAssistantFallbackIcon(spellID),
                     _rotationAssistantVirtual = true,
                     _rotationAssistantMissing = true,
                 },

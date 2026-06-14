@@ -135,16 +135,10 @@ local function FindPreviousPanelId(renderedRows, currentIndex)
     return nil
 end
 
-local function PanelAcceptsEntryDrop(panelId)
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    local group = panelId and db and db.groups and db.groups[panelId]
-    if not group then return false end
-    return not CooldownCompanion.GetPanelManualEntryRejectMessage
-        or CooldownCompanion:GetPanelManualEntryRejectMessage(group) == nil
-end
-
 local function BuildCol2EntryDropTarget(action, targetPanelId, targetIndex, anchorFrame, anchorAbove)
-    if not PanelAcceptsEntryDrop(targetPanelId) then
+    local groups = CooldownCompanion.db and CooldownCompanion.db.profile and CooldownCompanion.db.profile.groups
+    local group = targetPanelId and groups and groups[targetPanelId]
+    if not group or not CooldownCompanion:CanPanelAcceptManualEntry(group) then
         return nil
     end
     return {
