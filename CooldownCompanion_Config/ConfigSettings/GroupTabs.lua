@@ -2864,7 +2864,13 @@ local function BuildAppearanceTab(container)
         end
 
         BuildBorderControls(container, style, refreshStyle)
-        BuildKeybindTextControls(container, style, refreshStyle)
+        BuildKeybindTextControls(container, style, refreshStyle, {
+            label = "Show Keybind Text",
+            tooltip = {
+                "Show Keybind Text",
+                {"Shows detected keybind text for the current recommendation.", 1, 1, 1, true},
+            },
+        })
         return
     end
 
