@@ -797,6 +797,7 @@ local function ClearMaxStacksFrameTreatment(barInfo)
     indicator._maxStacksFrameTreatmentStyle = nil
     indicator._maxStacksPixelGlowConfig = nil
     indicator._maxStacksPulseSuspended = nil
+    indicator._maxStacksIndicatorActive = nil
     if indicator._maxStacksPixelGlowClip then
         indicator._maxStacksPixelGlowClip:Hide()
     end
@@ -812,11 +813,18 @@ local function SetMaxStacksIndicatorActive(barInfo, active)
     local indicator = barInfo and barInfo._maxStacksIndicator
     if not indicator then return end
     local style = indicator._maxStacksFrameTreatmentStyle
+    active = active == true
 
     if active then
         if style ~= "pixelGlow" and style ~= "solidBorder" and style ~= "pulsingBorder" then
             return
         end
+        if indicator._maxStacksIndicatorActive == true then
+            if style ~= "pixelGlow" or indicator._maxStacksPixelGlowTarget then
+                return
+            end
+        end
+        indicator._maxStacksIndicatorActive = true
         indicator:Show()
         if style == "pixelGlow" then
             if indicator._maxStacksPixelGlowConfig and not indicator._maxStacksPixelGlowTarget then
@@ -836,6 +844,10 @@ local function SetMaxStacksIndicatorActive(barInfo, active)
         return
     end
 
+    if indicator._maxStacksIndicatorActive == false then
+        return
+    end
+    indicator._maxStacksIndicatorActive = false
     SetStatusBarImmediateValue(indicator, 0)
     if style == "pixelGlow" then
         StopMaxStacksPixelGlow(indicator)
@@ -954,6 +966,7 @@ local function LayoutMaxStacksIndicator(barInfo, cabConfig, maxStacks, barTextur
         return
     end
     indicator._maxStacksFrameTreatmentStyle = style
+    indicator._maxStacksIndicatorActive = nil
 
     local color = cabConfig.maxStacksGlowColor or {1, 0.84, 0, 0.9}
     local size = cabConfig.maxStacksGlowSize or 2

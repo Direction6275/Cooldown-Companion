@@ -652,11 +652,8 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             UpdateSpellCustomBarChargeText(bar, cooldownResult)
             UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPresent)
 
-            if barInfo._maxStacksIndicator then
-                SetStatusBarImmediateValue(barInfo._maxStacksIndicator, 0)
-                if SetMaxStacksIndicatorActive then
-                    SetMaxStacksIndicatorActive(barInfo, false)
-                end
+            if barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
+                SetMaxStacksIndicatorActive(barInfo, false)
             end
 
             UpdateSpellCustomBarSounds(auraPresent)
@@ -699,11 +696,8 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         UpdateSpellCustomBarChargeText(bar, cooldownResult)
 
-        if barInfo._maxStacksIndicator then
-            SetStatusBarImmediateValue(barInfo._maxStacksIndicator, 0)
-            if SetMaxStacksIndicatorActive then
-                SetMaxStacksIndicatorActive(barInfo, false)
-            end
+        if barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
+            SetMaxStacksIndicatorActive(barInfo, false)
         end
 
         UpdateSpellCustomBarSounds(false)

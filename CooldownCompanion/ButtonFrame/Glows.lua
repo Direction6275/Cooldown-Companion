@@ -124,6 +124,27 @@ local function StopSolidBorderPulse(container)
     end
 end
 
+local function StartSolidBorderPulse(container, speed, restart)
+    local frame = container and container.solidFrame
+    if not frame then return end
+    if not frame._solidPulseAG then
+        local ag = frame:CreateAnimationGroup()
+        ag:SetLooping("BOUNCE")
+        local anim = ag:CreateAnimation("Alpha")
+        frame._solidPulseAG = ag
+        frame._solidPulseAnim = anim
+    end
+    frame._solidPulseAnim:SetDuration(speed or 0.5)
+    frame._solidPulseAnim:SetFromAlpha(1.0)
+    frame._solidPulseAnim:SetToAlpha(0.3)
+    if restart then
+        frame._solidPulseAG:Stop()
+        frame._solidPulseAG:Play()
+    elseif not frame._solidPulseAG:IsPlaying() then
+        frame._solidPulseAG:Play()
+    end
+end
+
 -- ButtonGlow_Stop is frame-scoped (no key), so keep per-target ownership to
 -- avoid one channel stopping another channel's active lcgButton glow.
 local lcgButtonOwnersByTarget = setmetatable({}, {__mode = "k"})
@@ -324,21 +345,7 @@ local function ShowGlowStyle(container, style, button, color, params)
             tex:Show()
         end
         if style == "pulsingBorder" then
-            local frame = container.solidFrame
-            if frame then
-                if not frame._solidPulseAG then
-                    local ag = frame:CreateAnimationGroup()
-                    ag:SetLooping("BOUNCE")
-                    local anim = ag:CreateAnimation("Alpha")
-                    frame._solidPulseAG = ag
-                    frame._solidPulseAnim = anim
-                end
-                frame._solidPulseAnim:SetDuration(params.speed or 0.5)
-                frame._solidPulseAnim:SetFromAlpha(1.0)
-                frame._solidPulseAnim:SetToAlpha(0.3)
-                frame._solidPulseAG:Stop()
-                frame._solidPulseAG:Play()
-            end
+            StartSolidBorderPulse(container, params.speed, true)
         else
             StopSolidBorderPulse(container)
         end
@@ -444,22 +451,7 @@ local function TryUpdateGlowStyleInPlace(container, style, button, color, params
             tex:Show()
         end
         if style == "pulsingBorder" then
-            local frame = container.solidFrame
-            if frame then
-                if not frame._solidPulseAG then
-                    local ag = frame:CreateAnimationGroup()
-                    ag:SetLooping("BOUNCE")
-                    local anim = ag:CreateAnimation("Alpha")
-                    frame._solidPulseAG = ag
-                    frame._solidPulseAnim = anim
-                end
-                frame._solidPulseAnim:SetDuration(params.speed or 0.5)
-                frame._solidPulseAnim:SetFromAlpha(1.0)
-                frame._solidPulseAnim:SetToAlpha(0.3)
-                if not frame._solidPulseAG:IsPlaying() then
-                    frame._solidPulseAG:Play()
-                end
-            end
+            StartSolidBorderPulse(container, params.speed, false)
         else
             StopSolidBorderPulse(container)
         end

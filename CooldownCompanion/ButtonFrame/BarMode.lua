@@ -54,17 +54,6 @@ local CreateGlowContainer = ST._CreateGlowContainer
 local SetBarAuraEffect = ST._SetBarAuraEffect
 local IsBarAuraIndicatorEnabled = ST.IsBarAuraIndicatorEnabled
 
-local function ResolveBarAuraIndicatorEnabled(style)
-    if IsBarAuraIndicatorEnabled then
-        return IsBarAuraIndicatorEnabled(style)
-    end
-    if not style then return false end
-    if style.barAuraIndicatorEnabled ~= nil then
-        return style.barAuraIndicatorEnabled == true
-    end
-    return (style.barAuraEffect or "none") ~= "none"
-end
-
 -- Imports from Visibility
 local UpdateLossOfControl = ST._UpdateLossOfControl
 
@@ -1319,7 +1308,7 @@ local function UpdateBarDisplay(button)
 
     -- Bar aura visuals in bar mode are driven by the bar aura parent state,
     -- with Border Indicator handled separately from active color and effects.
-    local barAuraVisualsEnabled = ResolveBarAuraIndicatorEnabled(style) and not barAuraStackDisplay
+    local barAuraVisualsEnabled = IsBarAuraIndicatorEnabled(style) and not barAuraStackDisplay
     local inCombat = InCombatLockdown()
 
     -- Bar aura color: override bar fill when aura is active (pandemic overrides aura color)

@@ -2,6 +2,7 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
+local RB = ST._RB
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
@@ -1147,15 +1148,6 @@ local function NormalizeMaxStackIndicatorSettings(styleTable)
     return "solidBorder"
 end
 
-local function MaxStacksBarEffectEnabledForSettings(styleTable)
-    if not styleTable then return false end
-    local colorShiftEnabled = styleTable.maxStacksBarColorShiftEnabled
-    if colorShiftEnabled == nil then
-        colorShiftEnabled = styleTable.maxStacksGlowStyle == "pulsingOverlay"
-    end
-    return styleTable.maxStacksBarPulseEnabled == true or colorShiftEnabled == true
-end
-
 local function IsSolidLikeBorderIndicator(style)
     return style == "solid" or style == "pulsingBorder"
         or style == "solidBorder"
@@ -1370,11 +1362,7 @@ local function BuildBarEffectControls(container, styleTable, refreshCallback, cf
             cfg.effectPixelSpeedDefault
         )
         refreshCallback()
-        if val == "none" and IsAdvancedSettingsPanelContainer(container) and CS.CloseAdvancedSettingsPanel then
-            RefreshStructuralControls(container)
-        else
-            RefreshStructuralControls(container)
-        end
+        RefreshStructuralControls(container)
     end)
     container:AddChild(effectDrop)
 
@@ -1586,7 +1574,7 @@ local function BuildPandemicBarPulseControls(container, styleTable, refreshCallb
     }, opts)
 end
 
-local function BuildMaxStacksIndicatorAdvancedControls(container, styleTable, refreshCallback, opts)
+local function BuildMaxStacksIndicatorAdvancedControls(container, styleTable, refreshCallback)
     AddIndicatorSettingsHeading(container, "Border Indicator")
 
     local currentStyle = NormalizeMaxStackIndicatorSettings(styleTable)
@@ -1609,42 +1597,17 @@ local function BuildMaxStacksIndicatorAdvancedControls(container, styleTable, re
         AddColorPicker(container, styleTable, "maxStacksGlowColor", "Border Color", {1, 0.84, 0, 0.9}, true,
             refreshCallback, refreshCallback)
 
-        if currentStyle == "pixelGlow" then
-            BuildGlowSliders(container, styleTable, "pixel", {
-                size = "maxStacksGlowSize",
-                thickness = "maxStacksGlowThickness",
-                speed = "maxStacksGlowSpeed",
-                lines = "maxStacksGlowLines",
-            }, refreshCallback, 2)
-        else
-            local sizeSlider = AceGUI:Create("Slider")
-            sizeSlider:SetLabel("Border Size")
-            sizeSlider:SetSliderValues(1, 8, 0.1)
-            sizeSlider:SetValue(styleTable.maxStacksGlowSize or 2)
-            sizeSlider:SetFullWidth(true)
-            sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                styleTable.maxStacksGlowSize = val
-                refreshCallback()
-            end)
-            container:AddChild(sizeSlider)
-        end
-
-        if currentStyle == "pulsingBorder" then
-            local speedSlider = AceGUI:Create("Slider")
-            speedSlider:SetLabel("Pulse Duration")
-            speedSlider:SetSliderValues(0.1, 2.0, 0.05)
-            speedSlider:SetValue(styleTable.maxStacksGlowSpeed or 0.5)
-            speedSlider:SetFullWidth(true)
-            speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-                styleTable.maxStacksGlowSpeed = val
-                refreshCallback()
-            end)
-            container:AddChild(speedSlider)
-        end
+        BuildGlowSliders(container, styleTable, currentStyle == "pixelGlow" and "pixel" or currentStyle == "solidBorder" and "solid" or currentStyle, {
+            size = "maxStacksGlowSize",
+            thickness = "maxStacksGlowThickness",
+            speed = "maxStacksGlowSpeed",
+            lines = "maxStacksGlowLines",
+            solidSizeDefault = 2,
+        }, refreshCallback, 2)
     end
 
     AddIndicatorSettingsHeading(container, "Bar Effect")
-    if currentStyle == "none" and MaxStacksBarEffectEnabledForSettings(styleTable) then
+    if currentStyle == "none" and RB.HasMaxStacksBarEffects(styleTable) then
         AddColorPicker(container, styleTable, "maxStacksGlowColor", "Bar Effect Color", {1, 0.84, 0, 0.9}, true,
             refreshCallback, refreshCallback)
     end
@@ -1845,8 +1808,6 @@ ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
 ST._BuildBarAuraPulseControls = BuildBarAuraPulseControls
 ST._BuildPandemicBarPulseControls = BuildPandemicBarPulseControls
 ST._BuildMaxStacksIndicatorAdvancedControls = BuildMaxStacksIndicatorAdvancedControls
-ST._NormalizeActiveAuraIndicatorSettings = NormalizeActiveAuraIndicatorSettings
-ST._NormalizeMaxStackIndicatorSettings = NormalizeMaxStackIndicatorSettings
 ST._BuildBarColorsControls = BuildBarColorsControls
 ST._BuildBarNameTextControls = BuildBarNameTextControls
 ST._BuildBarReadyTextControls = BuildBarReadyTextControls

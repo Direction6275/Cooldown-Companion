@@ -413,19 +413,8 @@ end
 ------------------------------------------------------------------------
 -- EFFECTS TAB (Glows / Indicators)
 ------------------------------------------------------------------------
-local function ResolveBarAuraIndicatorEnabled(style)
-    if ST.IsBarAuraIndicatorEnabled then
-        return ST.IsBarAuraIndicatorEnabled(style)
-    end
-    if not style then return false end
-    if style.barAuraIndicatorEnabled ~= nil then
-        return style.barAuraIndicatorEnabled == true
-    end
-    return (style.barAuraEffect or "none") ~= "none"
-end
-
 local function BuildBarEffectsTab(container, group, style)
-    local activeAuraEnabled = ResolveBarAuraIndicatorEnabled(style)
+    local activeAuraEnabled = ST.IsBarAuraIndicatorEnabled(style)
 
     -- ================================================================
     -- Enable Active Aura Indicator

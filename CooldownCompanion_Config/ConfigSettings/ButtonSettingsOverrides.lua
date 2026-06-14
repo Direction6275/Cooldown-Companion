@@ -338,22 +338,13 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         end,
         barActiveAura = function(container, styleTable, onChange, opts)
             BuildBarActiveAuraControls(container, styleTable, onChange, opts)
-            local auraEnabled
-            if ST.IsBarAuraIndicatorEnabled then
-                auraEnabled = ST.IsBarAuraIndicatorEnabled(styleTable)
-                if rawget(styleTable, "barAuraIndicatorEnabled") == nil
-                    and rawget(styleTable, "barAuraEffect") == nil
-                    and opts and opts.fallbackStyle then
-                    auraEnabled = ST.IsBarAuraIndicatorEnabled(opts.fallbackStyle)
-                end
-            else
-                local auraEffect = styleTable.barAuraEffect
-                if auraEffect == nil and opts and opts.fallbackStyle then
-                    auraEffect = opts.fallbackStyle.barAuraEffect
-                end
-                auraEnabled = (auraEffect or "none") ~= "none"
+            local auraStyle = styleTable
+            if rawget(styleTable, "barAuraIndicatorEnabled") == nil
+                and rawget(styleTable, "barAuraEffect") == nil
+                and opts and opts.fallbackStyle then
+                auraStyle = opts.fallbackStyle
             end
-            if auraEnabled then
+            if ST.IsBarAuraIndicatorEnabled(auraStyle) then
                 BuildBarAuraPulseControls(container, styleTable, onChange, opts)
             end
         end,

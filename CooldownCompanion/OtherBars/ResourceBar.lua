@@ -164,14 +164,7 @@ local HEALTH_EFFECTS = RB.HealthEffects
 local lifecycleModule = nil
 
 local function HasCustomAuraBarAuraVisuals(cabConfig)
-    if IsBarAuraIndicatorEnabled then
-        return IsBarAuraIndicatorEnabled(cabConfig)
-    end
-    if not cabConfig then return false end
-    if cabConfig.barAuraIndicatorEnabled ~= nil then
-        return cabConfig.barAuraIndicatorEnabled == true
-    end
-    return (cabConfig.barAuraEffect or "none") ~= "none"
+    return IsBarAuraIndicatorEnabled(cabConfig)
 end
 
 local function ResetCustomAuraBarIndicatorVisuals(bar, cabConfig)

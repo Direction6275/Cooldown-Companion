@@ -1320,7 +1320,7 @@ local function BuildBarPanelAuraDisplaySection(scroll, buttonData, infoButtons)
         end)
     end
 
-    local indicatorAdvExpanded, indicatorAdvBtn = AddAdvancedToggle(indicatorCb, "barPanelAuraMaxStacksIndicator_" .. CS.selectedGroup .. "_" .. CS.selectedButton, infoButtons, auraBar.maxStacksGlowEnabled == true, {
+    local _, indicatorAdvBtn = AddAdvancedToggle(indicatorCb, "barPanelAuraMaxStacksIndicator_" .. CS.selectedGroup .. "_" .. CS.selectedButton, infoButtons, auraBar.maxStacksGlowEnabled == true, {
         title = "Max Stack Indicator Advanced",
         build = BuildMaxStackIndicatorAdvanced,
     })

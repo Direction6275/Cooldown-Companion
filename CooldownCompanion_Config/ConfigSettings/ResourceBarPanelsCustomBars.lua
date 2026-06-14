@@ -36,13 +36,7 @@ local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
 local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
 local BuildMaxStacksIndicatorAdvancedControls = ST._BuildMaxStacksIndicatorAdvancedControls
-local IsBarAuraIndicatorEnabled = ST.IsBarAuraIndicatorEnabled or function(style)
-    if not style then return false end
-    if style.barAuraIndicatorEnabled ~= nil then
-        return style.barAuraIndicatorEnabled == true
-    end
-    return (style.barAuraEffect or "none") ~= "none"
-end
+local IsBarAuraIndicatorEnabled = ST.IsBarAuraIndicatorEnabled
 local AddPreviewToggleButton = ST._AddPreviewToggleButton
 local AddPreviewBadge = ST._AddPreviewBadge
 local RefreshConfigPanelForPreviewToggle = ST._RefreshConfigPanelForPreviewToggle
