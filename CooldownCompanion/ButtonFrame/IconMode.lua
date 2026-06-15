@@ -1151,6 +1151,9 @@ function CooldownCompanion:UpdateButtonIcon(button)
     -- Update cooldown secrecy when override spell changes (e.g. Command Demon → pet ability)
     if displayId ~= prevDisplayId and buttonData.type == "spell" then
         buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(displayId)
+        if CooldownCompanion.InvalidateCastButtonIndex then
+            CooldownCompanion:InvalidateCastButtonIndex()
+        end
     end
 
     -- Update bar name text when the display spell changes (e.g. transform)

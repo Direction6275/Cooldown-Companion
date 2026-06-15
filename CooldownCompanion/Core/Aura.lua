@@ -16,6 +16,66 @@ local select = select
 local wipe = wipe
 local tostring = tostring
 local tonumber = tonumber
+local type = type
+local table_insert = table.insert
+
+function CooldownCompanion:InvalidateAuraButtonIndex()
+    self._auraButtonIndexDirty = true
+end
+
+local function RebuildAuraButtonIndex(addon)
+    local buttons = addon._auraButtons
+    if buttons then
+        wipe(buttons)
+    else
+        buttons = {}
+        addon._auraButtons = buttons
+    end
+
+    for _, frame in pairs(addon.groupFrames or {}) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                local buttonData = button and button.buttonData
+                if buttonData and (buttonData.auraTracking or buttonData.isPassive) then
+                    table_insert(buttons, button)
+                end
+            end
+        end
+    end
+
+    addon._auraButtonIndexDirty = nil
+    return buttons
+end
+
+local function ForEachAuraButton(addon, callback)
+    if not callback then
+        return
+    end
+
+    local buttons = addon._auraButtons
+    if addon._auraButtonIndexDirty or type(buttons) ~= "table" then
+        buttons = RebuildAuraButtonIndex(addon)
+    end
+
+    local foundStaleEntry = false
+    for _, button in ipairs(buttons or {}) do
+        local groupId = button and button._groupId
+        local frame = groupId and addon.groupFrames and addon.groupFrames[groupId] or nil
+        local buttonData = button and button.buttonData
+        if frame and frame.buttons
+                and button._pooled ~= true
+                and buttonData
+                and (buttonData.auraTracking or buttonData.isPassive) then
+            callback(button, buttonData)
+        else
+            foundStaleEntry = true
+        end
+    end
+
+    if foundStaleEntry then
+        addon._auraButtonIndexDirty = true
+    end
+end
 
 -- Import cross-file variables (viewer system)
 local VIEWER_NAMES = ST._VIEWER_NAMES
@@ -489,7 +549,7 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
     local updatedIDSet = BuildAuraInstanceIDSet(updatedIDs)
     local isTarget = (unit == "target")
     if removedIDs or updatedIDs or isTarget then
-        self:ForEachButton(function(button)
+        ForEachAuraButton(self, function(button)
             if button._auraInstanceID and button._auraUnit == unit then
                 if removedIDSet and removedIDSet[button._auraInstanceID] then
                     button._auraInstanceID = nil
@@ -526,17 +586,15 @@ end
 -- Clear aura state on buttons tracking a unit when that unit changes (target/focus switch).
 -- The viewer will re-evaluate on its next tick; this ensures stale data is cleared promptly.
 function CooldownCompanion:ClearAuraUnit(unitToken)
-    self:ForEachButton(function(button, bd)
-        if bd.auraTracking or bd.isPassive then
-            local configUnit = bd.auraUnit or "player"
-            local shouldClear = button._auraUnit == unitToken
-            if not shouldClear and configUnit == unitToken then
-                shouldClear = true
-            end
-            if shouldClear then
-                EntryRuntime.ClearTrackedAuraOwnerState(button, configUnit, { useFalseState = true })
-                button._auraPrimarySwipeActive = nil
-            end
+    ForEachAuraButton(self, function(button, bd)
+        local configUnit = bd.auraUnit or "player"
+        local shouldClear = button._auraUnit == unitToken
+        if not shouldClear and configUnit == unitToken then
+            shouldClear = true
+        end
+        if shouldClear then
+            EntryRuntime.ClearTrackedAuraOwnerState(button, configUnit, { useFalseState = true })
+            button._auraPrimarySwipeActive = nil
         end
     end)
     self:MarkCooldownsDirty()
@@ -546,28 +604,26 @@ function CooldownCompanion:OnTargetChanged()
     if not UnitExists("target") then
         -- Deselected target: clear all target aura state immediately
         self:ClearAuraUnit("target")
+        self:QueueCooldownRefresh("target-event")
         return
     end
     -- New target: clear stale instance IDs so the viewer path doesn't
     -- read old auraInstanceIDs.  Keep _auraActive so the hold can
     -- maintain visual continuity while CDM refreshes.
     local now = GetTime()
-    self:ForEachButton(function(button, bd)
-        if bd.auraTracking or bd.isPassive then
-            local configUnit = bd.auraUnit or "player"
-            local isTarget = button._auraUnit == "target"
-                or configUnit == "target"
-            if isTarget then
-                EntryRuntime.StartTrackedAuraTargetSwitch(button, now, "target")
-            end
+    ForEachAuraButton(self, function(button, bd)
+        local configUnit = bd.auraUnit or "player"
+        local isTarget = button._auraUnit == "target"
+            or configUnit == "target"
+        if isTarget then
+            EntryRuntime.StartTrackedAuraTargetSwitch(button, now, "target")
         end
     end)
-    -- Synchronous probe: CDM viewer frames register their event handlers on
-    -- Blizzard frames created before addons load.  If UNIT_TARGET has already
-    -- been processed by the time PLAYER_TARGET_CHANGED fires, the CDM children
-    -- will have fresh auraInstanceID data.  Probing immediately lets the
-    -- primary path clear _targetSwitchAt in the same frame — zero hold.
-    self:UpdateAllCooldowns()
+    -- CDM viewer frames register their event handlers on Blizzard frames
+    -- created before addons load. Queue the target refresh to the frame
+    -- boundary so PLAYER_TARGET_CHANGED and UNIT_TARGET collapse to one walk
+    -- after the viewer has had a chance to process the same target switch.
+    self:QueueCooldownRefresh("target-event")
 end
 
 

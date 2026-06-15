@@ -361,6 +361,12 @@ local function MatchesConditionalCastCountEvent(buttonData, spellID, baseSpellID
 end
 CooldownCompanion.MatchesConditionalCastCountEvent = MatchesConditionalCastCountEvent
 
+local function GetConditionalCastCountEventSpells(buttonData)
+    local family = GetConditionalCastCountFamily(buttonData)
+    return family and family.eventSpells or nil
+end
+CooldownCompanion.GetConditionalCastCountEventSpells = GetConditionalCastCountEventSpells
+
 local function GetConditionalCastCountSpellID(buttonData, currentSpellID)
     local family = GetConditionalCastCountFamily(buttonData)
     if not family or not currentSpellID then return nil end

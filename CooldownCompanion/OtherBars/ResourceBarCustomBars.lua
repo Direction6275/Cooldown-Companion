@@ -704,8 +704,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
     end
 
     function CooldownCompanion:RecordCustomBarSpellCast(spellID)
-        if not spellID then return end
+        if not spellID then return false end
 
+        local recorded = false
         for _, barInfo in ipairs(resourceBarFrames) do
             local bar = barInfo and barInfo.frame
             local cabConfig = barInfo and barInfo.cabConfig
@@ -726,9 +727,11 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                 if (maxCharges or 0) > 1
                     and (spellID == baseSpellID or spellID == runtimeSpellID) then
                     EntryRuntime.RecordChargeSpent(bar)
+                    recorded = true
                 end
             end
         end
+        return recorded
     end
 
     local function GetHiddenCustomAuraWakeUnit(cabConfig)

@@ -13,6 +13,7 @@ local wipe = wipe
 local select = select
 local next = next
 local type = type
+local table_insert = table.insert
 local UnitExists = UnitExists
 local UnitCanAttack = UnitCanAttack
 local InCombatLockdown = InCombatLockdown
@@ -45,6 +46,180 @@ local function RefreshKeyPressHighlightFrame(frame)
         else
             refreshButton(button)
         end
+    end
+end
+
+local function DurationObjectNeedsPeriodicRefresh(durationObj)
+    if not durationObj then
+        return false
+    end
+    if durationObj.HasSecretValues and durationObj:HasSecretValues() then
+        return true
+    end
+    if durationObj.GetRemainingDuration then
+        local remaining = durationObj:GetRemainingDuration()
+        return remaining and remaining > 0
+    end
+    return true
+end
+
+local function ItemCooldownNeedsPeriodicRefresh(button)
+    local startTime = button._itemCdStart
+    local duration = button._itemCdDuration
+    if not (startTime and duration and duration > 0) then
+        return false
+    end
+    if type(GetTime) ~= "function" then
+        return true
+    end
+    return GetTime() < startTime + duration
+end
+
+local function ReadyGlowWindowNeedsPeriodicRefresh(button, startField)
+    local startTime = button and button[startField]
+    if not startTime then
+        return false
+    end
+    local style = button.style
+    if not (style and style.readyGlowStyle and style.readyGlowStyle ~= "none") then
+        return false
+    end
+    local duration = style.readyGlowDuration or 0
+    if duration <= 0 then
+        return false
+    end
+    if type(GetTime) ~= "function" then
+        return true
+    end
+    return GetTime() - startTime <= duration
+end
+
+local function GetButtonPeriodicCooldownRefreshReason(button)
+    if not button then
+        return nil
+    end
+    if DurationObjectNeedsPeriodicRefresh(button._durationObj) then return "duration" end
+    if DurationObjectNeedsPeriodicRefresh(button._auraDurationObj) then return "aura-duration" end
+    if DurationObjectNeedsPeriodicRefresh(button._chargeDurationObj) then return "charge-duration" end
+    if ItemCooldownNeedsPeriodicRefresh(button) then return "item-cooldown" end
+    if button._cooldownDeferred == true then return "deferred-cooldown" end
+    if button._chargeRecharging == true then return "charge-recharging" end
+    if button._chargeCooldownVisualActive == true then return "charge-visual" end
+    if button._secondaryCdActive == true then return "secondary-cooldown" end
+    if button._desatCooldownActive == true then return "desat-cooldown" end
+    if button._auraActive == true then return "aura-active" end
+    if button._auraGraceStart ~= nil then return "aura-grace" end
+    if button._targetSwitchAt ~= nil then return "target-switch-hold" end
+    if ReadyGlowWindowNeedsPeriodicRefresh(button, "_readyGlowStartTime") then return "ready-glow-window" end
+    if ReadyGlowWindowNeedsPeriodicRefresh(button, "_readyGlowMaxChargesStartTime") then return "ready-glow-max-charges-window" end
+    if button._conditionalPreviewRemaining ~= nil then return "conditional-preview" end
+    return nil
+end
+
+local function RebuildCooldownPeriodicRefreshIndex(addon)
+    local activeButtons = addon._cooldownPeriodicRefreshButtons
+    if activeButtons then
+        wipe(activeButtons)
+    else
+        activeButtons = {}
+        addon._cooldownPeriodicRefreshButtons = activeButtons
+    end
+
+    local count = 0
+
+    for _, frame in pairs(addon.groupFrames or {}) do
+        if frame and frame.IsShown and frame:IsShown() and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                local reason = GetButtonPeriodicCooldownRefreshReason(button)
+                if reason then
+                    count = count + 1
+                    activeButtons[count] = button
+                end
+            end
+        end
+    end
+
+    addon._cooldownPeriodicRefreshButtonsDirty = nil
+    addon._cooldownPeriodicRefreshActive = count > 0 or nil
+    return count
+end
+
+function CooldownCompanion:InvalidateCooldownRefreshIndexes()
+    self._cooldownPeriodicRefreshButtonsDirty = true
+    self._itemCooldownEventButtonsDirty = true
+    if self.InvalidatePowerSensitiveButtonIndex then
+        self:InvalidatePowerSensitiveButtonIndex()
+    end
+    if self.InvalidateCastButtonIndex then
+        self:InvalidateCastButtonIndex()
+    end
+    if self.InvalidateCastCountEventIndex then
+        self:InvalidateCastCountEventIndex()
+    end
+    if self.InvalidateRangeCheckButtonIndex then
+        self:InvalidateRangeCheckButtonIndex()
+    end
+    if self.InvalidateAuraButtonIndex then
+        self:InvalidateAuraButtonIndex()
+    end
+end
+
+local function RebuildItemCooldownEventButtonIndex(addon)
+    local buttons = addon._itemCooldownEventButtons
+    if buttons then
+        wipe(buttons)
+    else
+        buttons = {}
+        addon._itemCooldownEventButtons = buttons
+    end
+
+    local isEntryItemLike = addon.IsEntryItemLike
+    if type(isEntryItemLike) ~= "function" then
+        addon._itemCooldownEventButtonsDirty = nil
+        return buttons
+    end
+
+    for _, frame in pairs(addon.groupFrames or {}) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                local buttonData = button and button.buttonData
+                if buttonData and isEntryItemLike(buttonData) and button.UpdateCooldown then
+                    table_insert(buttons, button)
+                end
+            end
+        end
+    end
+
+    addon._itemCooldownEventButtonsDirty = nil
+    return buttons
+end
+
+local function PrepareCooldownUpdatePass(addon)
+    addon._gcdInfo = C_Spell.GetSpellCooldown(61304)
+    -- GCD activity: isActive is NeverSecret (12.0.1 hotfix)
+    addon._gcdActive = addon._gcdInfo and addon._gcdInfo.isActive or false
+    -- Cache for GCD overlay display in CooldownUpdate (only when GCD is active)
+    addon._gcdDurationObj = addon._gcdActive and C_Spell.GetSpellCooldownDuration(61304) or nil
+
+    -- Assisted highlight target gate:
+    -- hard target has priority; if none exists, allow soft enemy fallback.
+    local hasHostileTarget = false
+    if UnitExists("target") then
+        hasHostileTarget = UnitCanAttack("player", "target") and true or false
+    elseif UnitExists("softenemy") then
+        hasHostileTarget = UnitCanAttack("player", "softenemy") and true or false
+    end
+    addon._assistedHighlightHasHostileTarget = hasHostileTarget
+
+    -- Cache CDM viewer CVar once per pass.
+    addon._cdmViewerEnabled = C_CVar_GetCVarBool("cooldownViewerEnabled") == true
+    addon._cooldownUpdatePassActive = true
+end
+
+local function FinishCooldownUpdatePass(addon)
+    addon._cooldownUpdatePassActive = nil
+    if type(GetTime) == "function" then
+        addon._lastCooldownMaintenanceRefreshAt = GetTime()
     end
 end
 
@@ -2283,6 +2458,9 @@ function CooldownCompanion:UnloadGroup(groupId)
     self._dormantFrames = self._dormantFrames or {}
     self._dormantFrames[groupId] = frame
     self.groupFrames[groupId] = nil
+    if self.InvalidateCooldownRefreshIndexes then
+        self:InvalidateCooldownRefreshIndexes()
+    end
     if self.RefreshCursorAnchorTicker then
         self:RefreshCursorAnchorTicker()
     end
@@ -2301,6 +2479,9 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
 
     self._dormantFrames[groupId] = nil
     self.groupFrames[groupId] = frame
+    if self.InvalidateCooldownRefreshIndexes then
+        self:InvalidateCooldownRefreshIndexes()
+    end
 
     -- Restore button OnUpdate scripts
     if frame.buttons then
@@ -2346,29 +2527,107 @@ function CooldownCompanion:DiscardDormantFrame(groupId)
             self:ReleaseGroupButtonPools(frame)
         end
         self._dormantFrames[groupId] = nil
+        if self.InvalidateCooldownRefreshIndexes then
+            self:InvalidateCooldownRefreshIndexes()
+        end
     end
 end
 
-function CooldownCompanion:UpdateAllCooldowns()
-    self._gcdInfo = C_Spell.GetSpellCooldown(61304)
-    -- GCD activity: isActive is NeverSecret (12.0.1 hotfix)
-    self._gcdActive = self._gcdInfo and self._gcdInfo.isActive or false
-    -- Cache for GCD overlay display in CooldownUpdate (only when GCD is active)
-    self._gcdDurationObj = self._gcdActive and C_Spell.GetSpellCooldownDuration(61304) or nil
-
-    -- Assisted highlight target gate:
-    -- hard target has priority; if none exists, allow soft enemy fallback.
-    local hasHostileTarget = false
-    if UnitExists("target") then
-        hasHostileTarget = UnitCanAttack("player", "target") and true or false
-    elseif UnitExists("softenemy") then
-        hasHostileTarget = UnitCanAttack("player", "softenemy") and true or false
+function CooldownCompanion:UpdateCooldownButtonsForSpellEvent(spellID, baseSpellID)
+    if not self.CollectCooldownEventButtonsForSpell then
+        return false
     end
-    self._assistedHighlightHasHostileTarget = hasHostileTarget
 
-    -- Cache CDM viewer CVar once per tick (avoids per-button GetCVarBool in ResolveBuffViewerFrameForSpell)
-    self._cdmViewerEnabled = C_CVar_GetCVarBool("cooldownViewerEnabled") == true
-    self._cooldownUpdatePassActive = true
+    local buttons = self:CollectCooldownEventButtonsForSpell(spellID, baseSpellID)
+    if not buttons then
+        return false
+    end
+
+    PrepareCooldownUpdatePass(self)
+
+    local updated = false
+    for _, button in ipairs(buttons) do
+        local groupId = button and button._groupId
+        local frame = groupId and self.groupFrames and self.groupFrames[groupId] or nil
+        if frame and frame.IsShown and frame:IsShown()
+                and button.UpdateCooldown
+                and button._pooled ~= true then
+            button:UpdateCooldown()
+            updated = true
+        end
+    end
+
+    RebuildCooldownPeriodicRefreshIndex(self)
+    FinishCooldownUpdatePass(self)
+
+    return updated
+end
+
+function CooldownCompanion:UpdateItemCooldownButtonsForEvent()
+    local isEntryItemLike = self.IsEntryItemLike
+    if type(isEntryItemLike) ~= "function" then
+        return false
+    end
+
+    local indexedButtons = self._itemCooldownEventButtons
+    if self._itemCooldownEventButtonsDirty or type(indexedButtons) ~= "table" then
+        indexedButtons = RebuildItemCooldownEventButtonIndex(self)
+    end
+    if #indexedButtons == 0 then
+        return false
+    end
+
+    local foundStaleEntry = false
+    local visibleButtons = self._itemCooldownEventVisibleButtons
+    if visibleButtons then
+        wipe(visibleButtons)
+    else
+        visibleButtons = {}
+        self._itemCooldownEventVisibleButtons = visibleButtons
+    end
+    for _, button in ipairs(indexedButtons) do
+        local groupId = button and button._groupId
+        local frame = groupId and self.groupFrames and self.groupFrames[groupId] or nil
+        local buttonData = button and button.buttonData
+        if frame and button.UpdateCooldown
+                and button._pooled ~= true
+                and isEntryItemLike(buttonData) then
+            if frame.IsShown and frame:IsShown() then
+                table_insert(visibleButtons, button)
+            end
+        else
+            foundStaleEntry = true
+        end
+    end
+
+    if foundStaleEntry then
+        self._itemCooldownEventButtonsDirty = true
+    end
+
+    if #visibleButtons == 0 then
+        return false
+    end
+
+    PrepareCooldownUpdatePass(self)
+
+    local updated = false
+    for _, button in ipairs(visibleButtons) do
+        local groupId = button and button._groupId
+        local frame = groupId and self.groupFrames and self.groupFrames[groupId] or nil
+        if frame then
+            button:UpdateCooldown()
+            updated = true
+        end
+    end
+
+    RebuildCooldownPeriodicRefreshIndex(self)
+    FinishCooldownUpdatePass(self)
+
+    return updated
+end
+
+function CooldownCompanion:UpdateAllCooldowns()
+    PrepareCooldownUpdatePass(self)
 
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
@@ -2376,7 +2635,52 @@ function CooldownCompanion:UpdateAllCooldowns()
         end
     end
 
-    self._cooldownUpdatePassActive = nil
+    RebuildCooldownPeriodicRefreshIndex(self)
+    FinishCooldownUpdatePass(self)
+end
+
+function CooldownCompanion:UpdateActiveCooldownButtons()
+    local periodicRefreshActive = false
+
+    PrepareCooldownUpdatePass(self)
+
+    if self._cooldownPeriodicRefreshButtonsDirty
+            or type(self._cooldownPeriodicRefreshButtons) ~= "table" then
+        RebuildCooldownPeriodicRefreshIndex(self)
+    end
+
+    local activeButtons = self._cooldownPeriodicRefreshButtons
+    local nextActiveButtons = self._cooldownPeriodicRefreshButtonsNext
+    if nextActiveButtons then
+        wipe(nextActiveButtons)
+    else
+        nextActiveButtons = {}
+    end
+    for _, button in ipairs(activeButtons or {}) do
+        local groupId = button and button._groupId
+        local frame = groupId and self.groupFrames and self.groupFrames[groupId] or nil
+        if frame and frame.IsShown and frame:IsShown()
+                and button.UpdateCooldown
+                and button._pooled ~= true then
+            local reason = GetButtonPeriodicCooldownRefreshReason(button)
+            if reason then
+                button:UpdateCooldown()
+
+                reason = GetButtonPeriodicCooldownRefreshReason(button)
+                if reason then
+                    table_insert(nextActiveButtons, button)
+                    if not periodicRefreshActive then
+                        periodicRefreshActive = true
+                    end
+                end
+            end
+        end
+    end
+
+    FinishCooldownUpdatePass(self)
+    self._cooldownPeriodicRefreshButtonsNext = activeButtons
+    self._cooldownPeriodicRefreshButtons = nextActiveButtons
+    self._cooldownPeriodicRefreshActive = periodicRefreshActive or nil
 end
 
 function CooldownCompanion:UpdateAllGroupLayouts()

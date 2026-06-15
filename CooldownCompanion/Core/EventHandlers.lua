@@ -11,6 +11,7 @@ local ipairs = ipairs
 local tonumber = tonumber
 local select = select
 local wipe = wipe
+local table_insert = table.insert
 
 -- Some talent swaps briefly report pre-final spell charge state. Coalesce a
 -- delayed second pass so charge flags settle without duplicate refresh storms.
@@ -205,6 +206,7 @@ end
 
 function CooldownCompanion:UpdateRangeCheckRegistrations()
     local newSet = {}
+    local newButtonsBySpell = {}
     self:ForEachButton(function(button, bd)
         if bd.type == "spell"
             and not bd.isPassive
@@ -212,6 +214,12 @@ function CooldownCompanion:UpdateRangeCheckRegistrations()
             and ((button.style and button.style.showOutOfRange)
                 or (self.TriggerRowUsesCondition and self:TriggerRowUsesCondition(bd, "rangeActive"))) then
             newSet[bd.id] = true
+            local buttons = newButtonsBySpell[bd.id]
+            if not buttons then
+                buttons = {}
+                newButtonsBySpell[bd.id] = buttons
+            end
+            table_insert(buttons, button)
         end
     end)
     -- Enable newly needed range checks
@@ -227,22 +235,32 @@ function CooldownCompanion:UpdateRangeCheckRegistrations()
         end
     end
     self._rangeCheckSpells = newSet
+    self._rangeCheckButtonsBySpell = newButtonsBySpell
+    self._rangeCheckButtonIndexDirty = nil
+end
+
+function CooldownCompanion:InvalidateRangeCheckButtonIndex()
+    self._rangeCheckButtonIndexDirty = true
 end
 
 function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInRange, checksRange)
+    if self._rangeCheckButtonIndexDirty or not self._rangeCheckButtonsBySpell then
+        self:UpdateRangeCheckRegistrations()
+    end
+
     local outOfRange = nil
     if checksRange then
         outOfRange = not isInRange
     end
     local changed = false
-    self:ForEachButton(function(button, bd)
-        if bd.type == "spell" and bd.id == spellIdentifier then
-            if button._spellOutOfRange ~= outOfRange then
-                button._spellOutOfRange = outOfRange
-                changed = true
-            end
+
+    local buttons = self._rangeCheckButtonsBySpell and self._rangeCheckButtonsBySpell[spellIdentifier]
+    for _, button in ipairs(buttons or {}) do
+        if button and button._pooled ~= true and button._spellOutOfRange ~= outOfRange then
+            button._spellOutOfRange = outOfRange
+            changed = true
         end
-    end)
+    end
     if changed then
         self:MarkCooldownsDirty()
     end

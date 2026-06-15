@@ -13,6 +13,9 @@ local pairs = pairs
 local wipe = wipe
 local ipairs = ipairs
 local select = select
+local table_insert = table.insert
+local type = type
+local GetTime = GetTime
 
 -- Import cross-file variables
 local defaults = ST._defaults
@@ -21,6 +24,9 @@ local minimapButton = ST._minimapButton
 
 -- LibSharedMedia for font/texture selection
 local LSM = LibStub("LibSharedMedia-3.0")
+
+local SatisfyQueuedActionbarCooldownRefresh
+local ACTIONBAR_COOLDOWN_FALLBACK_INTERVAL = 0.5
 
 -- Viewer frame list used by BuildViewerAuraMap, FindViewerChildForSpell, and OnEnable hooks.
 local VIEWER_NAMES = {
@@ -139,7 +145,7 @@ function CooldownCompanion:OnEnable()
         self._unitEventFrame = CreateFrame("Frame")
         self._unitEventFrame:SetScript("OnEvent", function(_, event, ...)
             if event == "UNIT_POWER_FREQUENT" then
-                self:MarkCooldownsDirty()
+                self:OnUnitPowerFrequent(event, ...)
             elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
                 self:OnSpellCast(event, ...)
             elseif event == "UNIT_AURA" then
@@ -211,16 +217,15 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
 
     -- UNIT_TARGET requires RegisterUnitEvent (plain RegisterEvent does not
-    -- receive it).  Marks dirty so the next ticker pass reads fresh CDM viewer
-    -- data; catches pet/focus target changes that don't fire PLAYER_TARGET_CHANGED.
+    -- receive it). PLAYER_TARGET_CHANGED is the authoritative player-target
+    -- signal; this handler is kept for inherited unit-frame alpha resync
+    -- without forcing a duplicate cooldown walk.
     if not self._unitTargetFrame then
         self._unitTargetFrame = CreateFrame("Frame")
-        self._unitTargetFrame:SetScript("OnEvent", function(_, event, unitToken)
+        self._unitTargetFrame:SetScript("OnEvent", function()
             if ST._QueueInheritedUnitFrameAlphaResync then
                 ST._QueueInheritedUnitFrameAlphaResync()
             end
-            self:MarkCooldownsDirty()
-            self:UpdateAllCooldowns()
         end)
     end
     self._unitTargetFrame:RegisterUnitEvent("UNIT_TARGET", "player")
@@ -312,11 +317,114 @@ function CooldownCompanion:OnEnable()
     self:FinalizeContainerAnchorsToScreenOffsets()
 end
 
-function CooldownCompanion:OnCooldownStateChanged()
+function CooldownCompanion:OnCooldownStateChanged(event, spellID, baseSpellID, category, startRecoveryCategory)
+    if self:ShouldSkipActionbarCooldownEvent(event) then
+        return
+    end
+
+    if self:ShouldSkipStartRecoveryOnlyCooldownEvent(event, spellID, category, startRecoveryCategory) then
+        SatisfyQueuedActionbarCooldownRefresh(self)
+        return
+    end
+
+    if self.UpdateItemCooldownButtonsForEvent
+            and (
+                event == "BAG_UPDATE_COOLDOWN"
+                or (event == "ACTIONBAR_UPDATE_COOLDOWN" and not self:HasGCDSwipeRefreshConsumers())
+            ) then
+        self:UpdateItemCooldownButtonsForEvent()
+        return
+    end
+
     self:MarkCooldownsDirty()
+    if event == "SPELL_UPDATE_COOLDOWN"
+            and spellID
+            and (not category or category == 0)
+            and not self:HasGCDSwipeRefreshConsumers()
+            and self.UpdateCooldownButtonsForSpellEvent then
+        if self:UpdateCooldownButtonsForSpellEvent(spellID, baseSpellID) then
+            if not SatisfyQueuedActionbarCooldownRefresh(self) then
+                self._cooldownRefreshSatisfiedSerial = self._cooldownDirtySerial or 0
+            end
+        else
+            SatisfyQueuedActionbarCooldownRefresh(self)
+            self._cooldownRefreshSatisfiedSerial = self._cooldownDirtySerial or 0
+        end
+        return
+    end
+
     -- Preserve immediate cooldown-event accuracy. This refresh only suppresses
     -- the next ticker walk when no other dirty state appears afterward.
-    self:RunImmediateCooldownRefresh("cooldown-event")
+    if event == "SPELL_UPDATE_COOLDOWN" and spellID then
+        self:RunImmediateCooldownRefresh("cooldown-event")
+    else
+        self:QueueCooldownRefresh("cooldown-event", event)
+    end
+end
+
+function CooldownCompanion:HasGCDSwipeRefreshConsumers()
+    local groups = self.db and self.db.profile and self.db.profile.groups
+    local groupFrames = self.groupFrames
+    if type(groups) ~= "table" or type(groupFrames) ~= "table" then
+        return true
+    end
+
+    for groupId, frame in pairs(groupFrames) do
+        if frame and frame.IsShown and frame:IsShown() then
+            local group = groups[groupId]
+            local style = group and group.style
+            if style and style.showGCDSwipe == true then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function CooldownCompanion:ShouldSkipStartRecoveryOnlyCooldownEvent(event, spellID, category, startRecoveryCategory)
+    if event ~= "SPELL_UPDATE_COOLDOWN" or not spellID or not startRecoveryCategory then
+        return false
+    end
+    if category and category ~= 0 then
+        return false
+    end
+    return not self:HasGCDSwipeRefreshConsumers()
+end
+
+function CooldownCompanion:ShouldSkipActionbarCooldownEvent(event)
+    if event ~= "ACTIONBAR_UPDATE_COOLDOWN" then
+        return false
+    end
+    if self:HasGCDSwipeRefreshConsumers() then
+        return false
+    end
+
+    local gcdInfo = C_Spell.GetSpellCooldown(61304)
+    if gcdInfo and gcdInfo.isActive == true then
+        return true, "gcd-only-actionbar-event"
+    end
+
+    local now = type(GetTime) == "function" and GetTime() or nil
+    if not now then
+        return false
+    end
+
+    local lastFallbackAt = self._lastActionbarCooldownFallbackAt
+    local interval = self._actionbarCooldownFallbackInterval or ACTIONBAR_COOLDOWN_FALLBACK_INTERVAL
+    if lastFallbackAt and now - lastFallbackAt < interval then
+        return true, "actionbar-fallback-throttle"
+    end
+
+    self._lastActionbarCooldownFallbackAt = now
+    return false
+end
+
+function CooldownCompanion:OnUnitPowerFrequent(event, unitTarget, powerType)
+    if self.RefreshPowerSensitiveButtonStates then
+        self:RefreshPowerSensitiveButtonStates()
+    else
+        self:MarkCooldownsDirty()
+    end
 end
 
 -- Iterate every button across all groups, calling callback(button, buttonData) for each.
@@ -331,6 +439,258 @@ function CooldownCompanion:ForEachButton(callback)
             end
         end
     end
+end
+
+function CooldownCompanion:InvalidateCastButtonIndex()
+    self._castButtonIndexDirty = true
+end
+
+local function AddCastButtonIndexEntry(index, spellID, button)
+    if not spellID then
+        return
+    end
+
+    local buttons = index[spellID]
+    if not buttons then
+        buttons = {}
+        index[spellID] = buttons
+    end
+    table_insert(buttons, button)
+end
+
+local function RebuildCastButtonIndex(addon)
+    local index = {}
+    for _, frame in pairs(addon.groupFrames or {}) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                local buttonData = button and button.buttonData
+                if buttonData and buttonData.type == "spell" and not buttonData.isPassive then
+                    AddCastButtonIndexEntry(index, buttonData.id, button)
+                    local overrideID = C_Spell
+                        and C_Spell.GetOverrideSpell
+                        and C_Spell.GetOverrideSpell(buttonData.id)
+                    if overrideID and overrideID ~= 0 and overrideID ~= buttonData.id then
+                        AddCastButtonIndexEntry(index, overrideID, button)
+                    end
+                    local baseID = C_Spell
+                        and C_Spell.GetBaseSpell
+                        and C_Spell.GetBaseSpell(buttonData.id)
+                    if baseID and baseID ~= 0 and baseID ~= buttonData.id then
+                        AddCastButtonIndexEntry(index, baseID, button)
+                    end
+                    if button._displaySpellId and button._displaySpellId ~= buttonData.id then
+                        AddCastButtonIndexEntry(index, button._displaySpellId, button)
+                    end
+                end
+            end
+        end
+    end
+    addon._castButtonIndex = index
+    addon._castButtonIndexDirty = nil
+    return index
+end
+
+local function RecordChargeSpentForCastButton(addon, button, buttonData, spellID)
+    if not (buttonData and buttonData.type == "spell" and not buttonData.isPassive) then
+        return false
+    end
+
+    local displaySpellID = button._displaySpellId or buttonData.id
+    if spellID ~= buttonData.id and spellID ~= displaySpellID then
+        return false
+    end
+
+    if addon.UsesChargeBehavior(buttonData) and buttonData.hasCharges then
+        -- Track charge consumption for restricted-mode color heuristic.
+        -- _chargeRecharging at event time reflects the PRE-cast state:
+        --   false = casting from full charges -> reset to 1
+        --   true  = already recharging -> increment
+        EntryRuntime.RecordChargeSpent(button)
+        return true
+    end
+    return false
+end
+
+local function VisitIndexedCastButtons(addon, spellID, baseSpellID, callback)
+    local index = addon._castButtonIndex
+    if addon._castButtonIndexDirty or type(index) ~= "table" then
+        index = RebuildCastButtonIndex(addon)
+    end
+
+    local seen = addon._castButtonVisitSeen
+    if seen then
+        wipe(seen)
+    else
+        seen = {}
+        addon._castButtonVisitSeen = seen
+    end
+
+    local handled = false
+    local foundStaleEntry = false
+
+    local function visit(eventSpellID)
+        local buttons = eventSpellID and index[eventSpellID]
+        if not buttons then
+            return
+        end
+
+        for _, button in ipairs(buttons) do
+            if button and not seen[button] then
+                seen[button] = true
+                local groupId = button._groupId
+                local frame = groupId and addon.groupFrames and addon.groupFrames[groupId] or nil
+                local buttonData = button.buttonData
+                if frame and frame.buttons and buttonData and button._pooled ~= true then
+                    handled = callback(button, buttonData, frame, eventSpellID) or handled
+                else
+                    foundStaleEntry = true
+                end
+            end
+        end
+    end
+
+    visit(spellID)
+    if baseSpellID ~= spellID then
+        visit(baseSpellID)
+    end
+
+    if foundStaleEntry then
+        addon._castButtonIndexDirty = true
+    end
+    return handled
+end
+
+local function RecordIndexedCastButtons(addon, spellID)
+    if not spellID then
+        return false
+    end
+
+    return VisitIndexedCastButtons(addon, spellID, nil, function(button, buttonData)
+        return RecordChargeSpentForCastButton(addon, button, buttonData, spellID)
+    end)
+end
+
+function CooldownCompanion:CollectCooldownEventButtonsForSpell(spellID, baseSpellID)
+    if not spellID and not baseSpellID then
+        return nil
+    end
+
+    local collected = self._cooldownEventButtonsScratch
+    if collected then
+        wipe(collected)
+    else
+        collected = {}
+        self._cooldownEventButtonsScratch = collected
+    end
+
+    VisitIndexedCastButtons(self, spellID, baseSpellID, function(button, _, frame)
+        if frame and frame.IsShown and frame:IsShown() and button.UpdateCooldown then
+            table_insert(collected, button)
+            return true
+        end
+        return false
+    end)
+
+    return #collected > 0 and collected or nil
+end
+
+function SatisfyQueuedActionbarCooldownRefresh(addon)
+    local queuedEvent = addon._queuedCooldownRefreshEvent
+    if queuedEvent == "ACTIONBAR_UPDATE_COOLDOWN"
+            and addon.SatisfyQueuedCooldownRefresh then
+        addon:SatisfyQueuedCooldownRefresh("cooldown-event")
+        return true
+    end
+    return false
+end
+
+function CooldownCompanion:InvalidateCastCountEventIndex()
+    self._castCountEventIndexDirty = true
+end
+
+local function AddCastCountEventIndexEntry(index, eventSpellID, buttonData)
+    if not eventSpellID then
+        return
+    end
+
+    local entries = index[eventSpellID]
+    if not entries then
+        entries = {}
+        index[eventSpellID] = entries
+    end
+    table_insert(entries, buttonData)
+end
+
+local function RebuildCastCountEventIndex(addon)
+    local index = {}
+    local getEventSpells = addon.GetConditionalCastCountEventSpells
+    local groups = addon.db and addon.db.profile and addon.db.profile.groups
+    if getEventSpells and groups then
+        for _, group in pairs(groups) do
+            for _, buttonData in ipairs(group.buttons or {}) do
+                if buttonData.type == "spell" and not buttonData.hasCharges then
+                    local eventSpells = getEventSpells(buttonData)
+                    if eventSpells then
+                        for eventSpellID in pairs(eventSpells) do
+                            AddCastCountEventIndexEntry(index, eventSpellID, buttonData)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    addon._castCountEventIndex = index
+    addon._castCountEventIndexDirty = nil
+    return index
+end
+
+local function MarkConditionalCastCountCandidates(addon, spellID, baseSpellID)
+    local matchesConditionalCastCountEvent = addon.MatchesConditionalCastCountEvent
+    if not matchesConditionalCastCountEvent then
+        return false
+    end
+
+    local index = addon._castCountEventIndex
+    if addon._castCountEventIndexDirty or type(index) ~= "table" then
+        index = RebuildCastCountEventIndex(addon)
+    end
+
+    local seen = addon._castCountEventSeen
+    if seen then
+        wipe(seen)
+    else
+        seen = {}
+        addon._castCountEventSeen = seen
+    end
+
+    local matched = false
+    local function markEntriesFor(eventSpellID)
+        local entries = eventSpellID and index[eventSpellID]
+        if not entries then
+            return
+        end
+
+        for _, buttonData in ipairs(entries) do
+            if not seen[buttonData] then
+                seen[buttonData] = true
+                if buttonData.type == "spell"
+                        and not buttonData.hasCharges
+                        and matchesConditionalCastCountEvent(buttonData, spellID, baseSpellID) then
+                    buttonData._castCountCandidate = true
+                    buttonData._castCountEventSpellID = spellID
+                    buttonData._castCountSelf = (buttonData.id == spellID) or nil
+                    matched = true
+                end
+            end
+        end
+    end
+
+    markEntriesFor(spellID)
+    if baseSpellID ~= spellID then
+        markEntriesFor(baseSpellID)
+    end
+    return matched
 end
 
 function CooldownCompanion:OnDisable()
@@ -375,22 +735,7 @@ end
 
 function CooldownCompanion:OnChargesChanged(event, spellID, baseSpellID)
     if event == "SPELL_UPDATE_USES" and spellID then
-        local matchesConditionalCastCountEvent = CooldownCompanion.MatchesConditionalCastCountEvent
-        local matchedCastCountButton = false
-        for _, group in pairs(self.db.profile.groups) do
-            for _, bd in ipairs(group.buttons) do
-                if bd.type == "spell"
-                        and not bd.hasCharges
-                        and matchesConditionalCastCountEvent
-                        and matchesConditionalCastCountEvent(bd, spellID, baseSpellID) then
-                    bd._castCountCandidate = true
-                    bd._castCountEventSpellID = spellID
-                    bd._castCountSelf = (bd.id == spellID) or nil
-                    matchedCastCountButton = true
-                end
-            end
-        end
-        if matchedCastCountButton then
+        if MarkConditionalCastCountCandidates(self, spellID, baseSpellID) then
             self._hasDisplayCountCandidates = true
         end
     end
@@ -413,25 +758,14 @@ end
 
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
-        self:ForEachButton(function(button, buttonData)
-            if buttonData.type == "spell"
-                and not buttonData.isPassive then
-                local displaySpellID = button._displaySpellId or buttonData.id
-                if spellID == buttonData.id or spellID == displaySpellID then
-                    if self.UsesChargeBehavior(buttonData) and buttonData.hasCharges then
-                        -- Track charge consumption for restricted-mode color heuristic.
-                        -- _chargeRecharging at event time reflects the PRE-cast state:
-                        --   false = casting from full charges → reset to 1
-                        --   true  = already recharging → increment
-                        EntryRuntime.RecordChargeSpent(button)
-                    end
-                end
-            end
-        end)
+        local recordedCastState = RecordIndexedCastButtons(self, spellID)
+        local recordedCustomBarState = false
         if self.RecordCustomBarSpellCast then
-            self:RecordCustomBarSpellCast(spellID)
+            recordedCustomBarState = self:RecordCustomBarSpellCast(spellID) == true
         end
-        self:QueueCooldownRefresh("cast-event")
+        if recordedCastState or recordedCustomBarState then
+            self:QueueCooldownRefresh("cast-event")
+        end
     end
 end
 

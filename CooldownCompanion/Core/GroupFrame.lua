@@ -2365,6 +2365,9 @@ local function FinishGroupButtonRefresh(self, groupId, frame, group)
 
     -- Initial cooldown update
     frame:UpdateCooldowns()
+    if self.InvalidateCooldownRefreshIndexes then
+        self:InvalidateCooldownRefreshIndexes()
+    end
 
     -- Compact mode: apply reflow immediately so newly rebuilt buttons don't
     -- briefly appear before the next ticker-driven layout pass.

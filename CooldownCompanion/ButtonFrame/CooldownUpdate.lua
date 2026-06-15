@@ -13,6 +13,9 @@ local GetTime = GetTime
 local tonumber = tonumber
 local tostring = tostring
 local ipairs = ipairs
+local pairs = pairs
+local wipe = wipe
+local table_insert = table.insert
 local type = type
 local issecretvalue = issecretvalue
 local math_max = math.max
@@ -45,6 +48,8 @@ local GetConditionalVisualPreview = ST._GetConditionalVisualPreview
 local UpdateChargeTracking = ST._UpdateChargeTracking
 local UpdateDisplayCountTracking = ST._UpdateDisplayCountTracking
 local UpdateItemChargeTracking = ST._UpdateItemChargeTracking
+local UpdateIconTint = ST._UpdateIconTint
+local EvaluateDesaturation = ST._EvaluateDesaturation
 
 -- Imports from IconMode
 local ApplyIconCountTextStyle = ST._ApplyIconCountTextStyle
@@ -1773,4 +1778,232 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if shouldCaptureVisualState then
         CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
     end
+end
+
+local function HasUnusableVisualStyle(style)
+    return style
+        and style.showUnusable == true
+        and (
+            ST.UnusableVisualUsesDimTint(style)
+            or ST.UnusableVisualUsesDesaturation(style)
+        )
+        or false
+end
+
+local function IsPowerSensitiveSpellButton(button, buttonData)
+    if not (button and buttonData and buttonData.type == "spell") then
+        return false
+    end
+    if buttonData.isPassive or buttonData.isPassiveCooldown then
+        return false
+    end
+
+    return button._isText == true
+        or buttonData.hideWhileUnusable == true
+        or HasUnusableVisualStyle(button.style)
+end
+
+function CooldownCompanion:InvalidatePowerSensitiveButtonIndex()
+    self._powerSensitiveButtonIndexDirty = true
+end
+
+local function RebuildPowerSensitiveButtonIndex(addon)
+    local buttons = addon._powerSensitiveButtons
+    if buttons then
+        wipe(buttons)
+    else
+        buttons = {}
+        addon._powerSensitiveButtons = buttons
+    end
+
+    local groupFrames = addon.groupFrames
+    if type(groupFrames) ~= "table" then
+        addon._powerSensitiveButtonIndexDirty = nil
+        return buttons
+    end
+
+    for _, frame in pairs(groupFrames) do
+        if frame and frame.IsShown and frame:IsShown() and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                local buttonData = button and button.buttonData
+                if IsPowerSensitiveSpellButton(button, buttonData) then
+                    table_insert(buttons, button)
+                end
+            end
+        end
+    end
+
+    addon._powerSensitiveButtonIndexDirty = nil
+    return buttons
+end
+
+local function UpdatePowerUnusableTextState(button, buttonData)
+    if not button._isText then
+        button._isUnusable = false
+        button._isOutOfRange = false
+        return
+    end
+
+    local spellID = button._displaySpellId or buttonData.id
+    button._isUnusable = not C_Spell_IsSpellUsable(spellID)
+    button._isOutOfRange = button._spellOutOfRange or false
+end
+
+local function ApplyLightweightPowerVisibility(button, buttonData, conditionalPreview)
+    local auraOverrideActive = button._auraActive == true
+    local procOverlayActive = button._procOverlayActive == true
+    local auraOwnsPrimarySwipe = button._auraPrimarySwipeActive
+
+    EvaluateButtonVisibility(button, buttonData, auraOverrideActive, procOverlayActive, auraOwnsPrimarySwipe)
+    button._rawVisibilityHidden = button._visibilityHidden
+    button._rawVisibilityAlphaOverride = button._visibilityAlphaOverride
+    button._rawVisibilityReasonBits = button._visibilityReasonBits
+    button._rawVisibilityReasonMode = button._visibilityReasonMode
+
+    local group = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
+    local isTriggerPanel = group and group.displayMode == "trigger"
+    local forceVisibleByUnlockPreview = group
+        and group.parentContainerId
+        and CooldownCompanion.IsContainerUnlockPreviewActive
+        and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
+        and not isTriggerPanel
+    local forceVisibleByConfig = type(IsConfigButtonForceVisible) == "function"
+        and IsConfigButtonForceVisible(button)
+        or false
+    local forceVisibleByPreview = conditionalPreview ~= nil and not isTriggerPanel
+    local visibilityOverrideSource
+
+    if isTriggerPanel then
+        button._visibilityHidden = true
+        button._visibilityAlphaOverride = 0
+        visibilityOverrideSource = "trigger"
+    end
+    if forceVisibleByUnlockPreview or forceVisibleByPreview then
+        button._visibilityHidden = false
+        button._visibilityAlphaOverride = 1
+        visibilityOverrideSource = forceVisibleByUnlockPreview and "unlock-preview" or "conditional-preview"
+    elseif forceVisibleByConfig and not isTriggerPanel then
+        button._visibilityHidden = false
+        button._visibilityAlphaOverride = 1
+        visibilityOverrideSource = "config"
+    end
+
+    button._forceVisibleByConfig = ((forceVisibleByConfig or forceVisibleByUnlockPreview or forceVisibleByPreview) and not isTriggerPanel) or nil
+    if button._visibilityHidden == true then
+        button._visibilityFinalMode = "hidden"
+    elseif button._visibilityAlphaOverride ~= nil and button._visibilityAlphaOverride ~= 1 then
+        button._visibilityFinalMode = "dimmed"
+    else
+        button._visibilityFinalMode = "visible"
+    end
+    button._visibilityOverrideSource = visibilityOverrideSource
+    button._visibilityTriggerSuppressed = visibilityOverrideSource == "trigger" or nil
+    button._visibilityCompactLayout = group and group.compactLayout == true or nil
+
+    local visibilityChanged = button._visibilityHidden ~= button._prevVisibilityHidden
+    if visibilityChanged then
+        button._prevVisibilityHidden = button._visibilityHidden
+    end
+    local forceVisibleChanged = button._forceVisibleByConfig ~= button._prevForceVisibleByConfig
+    if forceVisibleChanged then
+        button._prevForceVisibleByConfig = button._forceVisibleByConfig
+    end
+    if visibilityChanged or forceVisibleChanged then
+        local groupFrame = button.GetParent and button:GetParent() or nil
+        if groupFrame then
+            groupFrame._layoutDirty = true
+        end
+    end
+
+    if button._visibilityHidden then
+        if button.cooldown then
+            button.cooldown:Hide()
+        end
+        HideIconFillForHiddenButton(button)
+        if group and group.compactLayout then
+            DispatchStandaloneTextureVisual(button)
+        else
+            if button.SetAlpha and button._lastVisAlpha ~= 0 then
+                button:SetAlpha(0)
+            end
+            button._lastVisAlpha = 0
+            DispatchStandaloneTextureVisual(button)
+        end
+        return false
+    end
+
+    local targetAlpha = button._visibilityAlphaOverride or 1
+    if button.SetAlpha and button._lastVisAlpha ~= targetAlpha then
+        button:SetAlpha(targetAlpha)
+    end
+    button._lastVisAlpha = targetAlpha
+    return true
+end
+
+local function RefreshPowerSensitiveButton(button, buttonData)
+    local style = button.style
+    local conditionalPreview = GetConditionalVisualPreview and GetConditionalVisualPreview(button)
+
+    ClearConditionalVisualPreviewFields(button)
+    ApplyConditionalVisualPreview(
+        button,
+        buttonData,
+        style,
+        conditionalPreview,
+        GetTime and GetTime() or 0,
+        UsesChargeBehavior(buttonData)
+    )
+
+    local isVisible = ApplyLightweightPowerVisibility(button, buttonData, conditionalPreview)
+    UpdatePowerUnusableTextState(button, buttonData)
+    if not isVisible then
+        return
+    end
+
+    if button._isText then
+        UpdateTextDisplay(button)
+    else
+        if type(EvaluateDesaturation) == "function" then
+            EvaluateDesaturation(button, buttonData, style)
+        end
+        if type(UpdateIconTint) == "function" then
+            UpdateIconTint(button, buttonData, style)
+        end
+        DispatchStandaloneTextureVisual(button)
+    end
+end
+
+function CooldownCompanion:RefreshPowerSensitiveButtonStates()
+    local groupFrames = self.groupFrames
+    if type(groupFrames) ~= "table" then
+        return false
+    end
+
+    local indexedButtons = self._powerSensitiveButtons
+    if self._powerSensitiveButtonIndexDirty or type(indexedButtons) ~= "table" then
+        indexedButtons = RebuildPowerSensitiveButtonIndex(self)
+    end
+
+    local updated = false
+    local foundStaleEntry = false
+    for _, button in ipairs(indexedButtons) do
+        local groupId = button and button._groupId
+        local frame = groupId and groupFrames[groupId] or nil
+        local buttonData = button and button.buttonData
+        if frame and frame.IsShown and frame:IsShown()
+                and button._pooled ~= true
+                and IsPowerSensitiveSpellButton(button, buttonData) then
+            RefreshPowerSensitiveButton(button, buttonData)
+            updated = true
+        else
+            foundStaleEntry = true
+        end
+    end
+
+    if foundStaleEntry then
+        self._powerSensitiveButtonIndexDirty = true
+    end
+
+    return updated
 end
