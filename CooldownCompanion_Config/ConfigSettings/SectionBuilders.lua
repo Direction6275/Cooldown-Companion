@@ -440,9 +440,11 @@ local function BuildAuraStackTextControls(container, styleTable, refreshCallback
     end
 end
 
-local function BuildKeybindTextControls(container, styleTable, refreshCallback)
+local function BuildKeybindTextControls(container, styleTable, refreshCallback, opts)
+    local label = opts and opts.label or KEYBIND_CUSTOM_LABEL
+    local tooltip = opts and opts.tooltip or KEYBIND_CUSTOM_TOOLTIP
     local kbCb = AceGUI:Create("CheckBox")
-    kbCb:SetLabel(KEYBIND_CUSTOM_LABEL)
+    kbCb:SetLabel(label)
     kbCb:SetValue(styleTable.showKeybindText or false)
     kbCb:SetFullWidth(true)
     kbCb:SetCallback("OnValueChanged", function(widget, event, val)
@@ -452,7 +454,7 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback)
     end)
     container:AddChild(kbCb)
 
-    CreateInfoButton(kbCb.frame, kbCb.checkbg, "LEFT", "RIGHT", kbCb.text:GetStringWidth() + 4, 0, KEYBIND_CUSTOM_TOOLTIP, kbCb)
+    CreateInfoButton(kbCb.frame, kbCb.checkbg, "LEFT", "RIGHT", kbCb.text:GetStringWidth() + 4, 0, tooltip, kbCb)
 
     if styleTable.showKeybindText then
         AddAnchorDropdown(container, styleTable, "keybindAnchor", "TOPRIGHT", refreshCallback)

@@ -294,13 +294,37 @@ local function GetSpellActionSlots(spellID)
     return #slots > 0 and slots or nil
 end
 
+local function IsBindableSpellID(spellID)
+    return type(spellID) == "number" and not issecretvalue(spellID) and spellID > 0
+end
+
+local function GetRotationAssistantKeybindSpellID(buttonData, button)
+    if not buttonData or buttonData._rotationAssistantMissing == true then
+        return nil
+    end
+
+    local displayedSpellID = button and (button._liveOverrideSpellId or button._displaySpellId)
+    if IsBindableSpellID(displayedSpellID) then
+        return displayedSpellID
+    end
+
+    local recommendedSpellID = buttonData._rotationAssistantSpellID or buttonData.id
+    if IsBindableSpellID(recommendedSpellID) then
+        return recommendedSpellID
+    end
+
+    return nil
+end
+
 -- Resolve and cache parsed binding key info for a CC button.
 -- Stores result as button._bindingKeyInfos (array of parsed structs, or empty table).
 local function CacheButtonBindingKeys(button, buttonData)
     local infos = {}
     if buttonData then
         local slots
-        if buttonData.type == "spell" then
+        if buttonData._rotationAssistantVirtual == true then
+            slots = GetSpellActionSlots(GetRotationAssistantKeybindSpellID(buttonData, button))
+        elseif buttonData.type == "spell" then
             slots = GetSpellActionSlots(buttonData.id)
         elseif buttonData.type == "item" or buttonData.type == "equipmentSlot" then
             local itemID = button._resolvedItemId or buttonData.id
@@ -426,10 +450,20 @@ function CooldownCompanion:RebuildAddonSlotBindings()
 end
 
 -- Return the formatted keybind text for a button, or nil if none found.
-function CooldownCompanion:GetKeybindText(buttonData, itemIDOverride)
+function CooldownCompanion:GetKeybindText(buttonData, itemIDOverride, displayButton)
     if not buttonData then return nil end
 
-    if buttonData.type == "spell" then
+    if buttonData._rotationAssistantVirtual == true then
+        local slots = GetSpellActionSlots(GetRotationAssistantKeybindSpellID(buttonData, displayButton))
+        if slots then
+            for _, slot in ipairs(slots) do
+                local text = GetKeybindForSlot(slot)
+                if text and text ~= "" then
+                    return text
+                end
+            end
+        end
+    elseif buttonData.type == "spell" then
         local slots = GetSpellActionSlots(buttonData.id)
         if slots then
             for _, slot in ipairs(slots) do
@@ -455,15 +489,19 @@ end
 -- Return the icon-only display text for keybind overlays.
 -- This intentionally leaves GetKeybindText unchanged so text-mode {keybind}
 -- tokens continue reflecting the detected action bar bind only.
-function CooldownCompanion:GetDisplayedKeybindText(buttonData, itemIDOverride)
+function CooldownCompanion:GetDisplayedKeybindText(buttonData, itemIDOverride, displayButton)
     if not buttonData then return nil end
+
+    if buttonData._rotationAssistantVirtual == true then
+        return self:GetKeybindText(buttonData, itemIDOverride, displayButton)
+    end
 
     local customText = buttonData.customKeybindText
     if customText and customText ~= "" then
         return customText
     end
 
-    return self:GetKeybindText(buttonData, itemIDOverride)
+    return self:GetKeybindText(buttonData, itemIDOverride, displayButton)
 end
 
 function CooldownCompanion:RefreshKeybindState()
@@ -477,7 +515,7 @@ end
 function CooldownCompanion:OnKeybindsChanged()
     self:ForEachButton(function(button, buttonData)
         if button.keybindText then
-            local text = CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId)
+            local text = CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId, button)
             button.keybindText:SetText(text or "")
             button.keybindText:SetShown(button.style.showKeybindText and text ~= nil)
         end

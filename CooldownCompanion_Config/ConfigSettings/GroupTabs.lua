@@ -2482,6 +2482,36 @@ local function BuildEffectsTab(container)
         return
     end
 
+    if displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+        AddIndicatorsHeading(container, "Timers")
+        BuildCooldownSwipeControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        BuildShowGCDSwipeControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+
+        AddIndicatorsHeading(container, "States")
+        BuildDesaturationControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        BuildShowOutOfRangeControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        BuildLossOfControlControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        BuildUnusableDimmingControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        BuildShowTooltipsControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        return
+    end
+
     if displayMode == "textures" then
         BuildTextureEffectsTab(container, group)
         return
@@ -2766,6 +2796,82 @@ local function BuildAppearanceTab(container)
             BuildTriggerTextAppearanceTab(container, group)
             return
         end
+    end
+
+    if group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+        local heading = AceGUI:Create("Heading")
+        heading:SetText("Assistant Panel")
+        ColorHeading(heading)
+        heading:SetFullWidth(true)
+        container:AddChild(heading)
+
+        local squareCb = AceGUI:Create("CheckBox")
+        squareCb:SetLabel("Square Icons")
+        squareCb:SetValue(style.maintainAspectRatio ~= false)
+        squareCb:SetFullWidth(true)
+        squareCb:SetCallback("OnValueChanged", function(widget, event, value)
+            style.maintainAspectRatio = value ~= false
+            style.buttonsPerRow = 1
+            if not style.maintainAspectRatio then
+                local size = style.buttonSize or ST.BUTTON_SIZE
+                style.iconWidth = style.iconWidth or size
+                style.iconHeight = style.iconHeight or size
+            end
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(squareCb)
+
+        if style.maintainAspectRatio ~= false then
+            local sizeSlider = AceGUI:Create("Slider")
+            sizeSlider:SetLabel("Button Size")
+            sizeSlider:SetSliderValues(10, 150, 0.1)
+            sizeSlider:SetValue(style.buttonSize or ST.BUTTON_SIZE)
+            sizeSlider:SetFullWidth(true)
+            sizeSlider:SetCallback("OnValueChanged", function(widget, event, value)
+                style.buttonSize = value
+                style.buttonsPerRow = 1
+                refreshStyle()
+            end)
+            HookSliderEditBox(sizeSlider)
+            container:AddChild(sizeSlider)
+        else
+            local widthSlider = AceGUI:Create("Slider")
+            widthSlider:SetLabel("Icon Width")
+            widthSlider:SetSliderValues(10, 150, 0.1)
+            widthSlider:SetValue(style.iconWidth or style.buttonSize or ST.BUTTON_SIZE)
+            widthSlider:SetFullWidth(true)
+            widthSlider:SetCallback("OnValueChanged", function(widget, event, value)
+                style.iconWidth = value
+                style.buttonsPerRow = 1
+                refreshStyle()
+            end)
+            HookSliderEditBox(widthSlider)
+            container:AddChild(widthSlider)
+
+            local heightSlider = AceGUI:Create("Slider")
+            heightSlider:SetLabel("Icon Height")
+            heightSlider:SetSliderValues(10, 150, 0.1)
+            heightSlider:SetValue(style.iconHeight or style.buttonSize or ST.BUTTON_SIZE)
+            heightSlider:SetFullWidth(true)
+            heightSlider:SetCallback("OnValueChanged", function(widget, event, value)
+                style.iconHeight = value
+                style.buttonsPerRow = 1
+                refreshStyle()
+            end)
+            HookSliderEditBox(heightSlider)
+            container:AddChild(heightSlider)
+        end
+
+        BuildBorderControls(container, style, refreshStyle)
+        BuildKeybindTextControls(container, style, refreshStyle, {
+            label = "Show Keybind Text",
+            tooltip = {
+                "Show Keybind Text",
+                {"Shows detected keybind text for the current recommendation.", 1, 1, 1, true},
+            },
+        })
+        return
     end
 
     if group.displayMode == "textures" or group.displayMode == "trigger" then

@@ -1118,8 +1118,8 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
             return
         end
 
-        -- Only anchor to icon-mode groups
-        if group.displayMode ~= "icons" then
+        -- Only anchor to icon-like groups
+        if not CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) then
             self:RevertCastBar()
             return
         end

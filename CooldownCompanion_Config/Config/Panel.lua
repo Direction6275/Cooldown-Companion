@@ -2000,6 +2000,21 @@ local function CreateConfigPanel()
         local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
         if not group then return end
 
+        if group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
+            and CS.selectedRotationAssistantEntry == true then
+            if tab == "loadconditions" then
+                local buttonData = CooldownCompanion:GetRotationAssistantConfigButtonData(group)
+                ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            end
+            if CS.browseMode then
+                ST._DisableAllWidgets(scroll)
+                for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
+                    if btn.Disable then btn:Disable() end
+                end
+            end
+            return
+        end
+
         local buttonData = CS.selectedButton and group.buttons[CS.selectedButton]
         if not buttonData then return end
 

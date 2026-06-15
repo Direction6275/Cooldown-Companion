@@ -135,6 +135,21 @@ local function FindPreviousPanelId(renderedRows, currentIndex)
     return nil
 end
 
+local function BuildCol2EntryDropTarget(action, targetPanelId, targetIndex, anchorFrame, anchorAbove)
+    local groups = CooldownCompanion.db and CooldownCompanion.db.profile and CooldownCompanion.db.profile.groups
+    local group = targetPanelId and groups and groups[targetPanelId]
+    if not group or not CooldownCompanion:CanPanelAcceptManualEntry(group) then
+        return nil
+    end
+    return {
+        action = action,
+        targetPanelId = targetPanelId,
+        targetIndex = targetIndex,
+        anchorFrame = anchorFrame,
+        anchorAbove = anchorAbove,
+    }
+end
+
 local function GetCol2DropTarget(cursorY, renderedRows)
     if not renderedRows or #renderedRows == 0 then return nil end
 
@@ -148,40 +163,16 @@ local function GetCol2DropTarget(cursorY, renderedRows)
 
                 if rowMeta.kind == "button" then
                     if cursorY > mid then
-                        return {
-                            action = "insert",
-                            targetPanelId = rowMeta.panelId,
-                            targetIndex = rowMeta.buttonIndex,
-                            anchorFrame = frame,
-                            anchorAbove = true,
-                        }
+                        return BuildCol2EntryDropTarget("insert", rowMeta.panelId, rowMeta.buttonIndex, frame, true)
                     else
-                        return {
-                            action = "insert",
-                            targetPanelId = rowMeta.panelId,
-                            targetIndex = rowMeta.buttonIndex + 1,
-                            anchorFrame = frame,
-                            anchorAbove = false,
-                        }
+                        return BuildCol2EntryDropTarget("insert", rowMeta.panelId, rowMeta.buttonIndex + 1, frame, false)
                     end
                 elseif rowMeta.kind == "header" then
                     if rowMeta.isCollapsed then
                         -- Drop onto collapsed header = append to that panel
-                        return {
-                            action = "append-to-collapsed",
-                            targetPanelId = rowMeta.panelId,
-                            targetIndex = nil, -- will resolve to #buttons+1
-                            anchorFrame = frame,
-                            anchorAbove = false,
-                        }
+                        return BuildCol2EntryDropTarget("append-to-collapsed", rowMeta.panelId, nil, frame, false)
                     else
-                        return {
-                            action = "insert",
-                            targetPanelId = rowMeta.panelId,
-                            targetIndex = 1,
-                            anchorFrame = frame,
-                            anchorAbove = true,
-                        }
+                        return BuildCol2EntryDropTarget("insert", rowMeta.panelId, 1, frame, true)
                     end
                 end
             end
@@ -201,50 +192,26 @@ local function GetCol2DropTarget(cursorY, renderedRows)
                 local gapMid = (prevBottom + nextTop) / 2
                 if nextMeta.kind == "header" and prevMeta.panelId ~= nextMeta.panelId then
                     if cursorY > gapMid then
-                        return {
-                            action = "append",
-                            targetPanelId = prevMeta.panelId,
-                            targetIndex = nil,
-                            anchorFrame = prevFrame,
-                            anchorAbove = false,
-                        }
+                        return BuildCol2EntryDropTarget("append", prevMeta.panelId, nil, prevFrame, false)
                     end
 
                     if nextMeta.isCollapsed then
-                        return {
-                            action = "append-to-collapsed",
-                            targetPanelId = nextMeta.panelId,
-                            targetIndex = nil,
-                            anchorFrame = nextFrame,
-                            anchorAbove = true,
-                        }
+                        return BuildCol2EntryDropTarget("append-to-collapsed", nextMeta.panelId, nil, nextFrame, true)
                     end
 
-                    return {
-                        action = "insert",
-                        targetPanelId = nextMeta.panelId,
-                        targetIndex = 1,
-                        anchorFrame = nextFrame,
-                        anchorAbove = true,
-                    }
+                    return BuildCol2EntryDropTarget("insert", nextMeta.panelId, 1, nextFrame, true)
                 end
 
                 if nextMeta.kind == "button" then
-                    return {
-                        action = "insert",
-                        targetPanelId = nextMeta.panelId,
-                        targetIndex = nextMeta.buttonIndex,
-                        anchorFrame = nextFrame,
-                        anchorAbove = true,
-                    }
+                    return BuildCol2EntryDropTarget("insert", nextMeta.panelId, nextMeta.buttonIndex, nextFrame, true)
                 elseif nextMeta.kind == "header" then
-                    return {
-                        action = nextMeta.isCollapsed and "append-to-collapsed" or "insert",
-                        targetPanelId = nextMeta.panelId,
-                        targetIndex = nextMeta.isCollapsed and nil or 1,
-                        anchorFrame = nextFrame,
-                        anchorAbove = true,
-                    }
+                    return BuildCol2EntryDropTarget(
+                        nextMeta.isCollapsed and "append-to-collapsed" or "insert",
+                        nextMeta.panelId,
+                        nextMeta.isCollapsed and nil or 1,
+                        nextFrame,
+                        true
+                    )
                 end
             end
         end
@@ -256,13 +223,7 @@ local function GetCol2DropTarget(cursorY, renderedRows)
         local panelId = lastRow.panelId
         local lastFrame = lastRow.widget and lastRow.widget.frame
         if lastFrame and lastFrame:IsShown() then
-            return {
-                action = "append",
-                targetPanelId = panelId,
-                targetIndex = nil,
-                anchorFrame = lastFrame,
-                anchorAbove = false,
-            }
+            return BuildCol2EntryDropTarget("append", panelId, nil, lastFrame, false)
         end
     end
     return nil

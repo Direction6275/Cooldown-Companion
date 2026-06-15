@@ -202,6 +202,7 @@ ST._configState = {
     selectedContainer = nil,     -- containerId selected in Column 1
     selectedGroup = nil,         -- panelId (groupId) selected in Column 2 panel list
     selectedButton = nil,
+    selectedRotationAssistantEntry = nil,
     selectedButtons = {},
     selectedPanels = {},         -- multi-selected panel IDs (within a container)
     selectedGroups = {},         -- multi-selected container IDs
@@ -716,6 +717,7 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CS.selectedContainer = containerId
     CS.selectedGroup = panelId
     CS.selectedButton = buttonIndex
+    CS.selectedRotationAssistantEntry = nil
     CS.addingToPanelId = nil
     ClearConfigFinderText()
     RefreshAlphaDriverForConfigSelection()
@@ -726,6 +728,9 @@ end
 -- Helper: Get icon for a group (from its first button)
 ------------------------------------------------------------------------
 local function GetGroupIcon(group)
+    if group and group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+        return CooldownCompanion:GetRotationAssistantFallbackIcon()
+    end
     if group.buttons and group.buttons[1] then
         return GetButtonIcon(group.buttons[1])
     end
@@ -2461,6 +2466,7 @@ end
 
 local function ClearSelectedButton()
     CS.selectedButton = nil
+    CS.selectedRotationAssistantEntry = nil
     wipe(CS.selectedButtons)
 end
 
@@ -2585,7 +2591,10 @@ local function SelectConfigPanel(panelId, opts)
         wipe(CS.selectedPanels)
     end
 
-    if opts and opts.toggle and CS.selectedGroup == panelId and not CS.selectedButton then
+    if opts and opts.toggle
+        and CS.selectedGroup == panelId
+        and not CS.selectedButton
+        and not CS.selectedRotationAssistantEntry then
         CS.selectedGroup = nil
     else
         CS.selectedGroup = panelId
@@ -2635,8 +2644,10 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
             CS.selectedButtons[CS.selectedButton] = true
         end
         CS.selectedButton = nil
+        CS.selectedRotationAssistantEntry = nil
     else
         wipe(CS.selectedButtons)
+        CS.selectedRotationAssistantEntry = nil
         if opts and opts.force then
             CS.selectedButton = buttonIndex
         elseif not panelChanged and CS.selectedButton == buttonIndex then
@@ -2646,6 +2657,23 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
         end
     end
 
+    CooldownCompanion:ClearAllConfigPreviews()
+    RefreshAlphaDriverForConfigSelection()
+end
+
+local function SelectConfigRotationAssistantEntry(panelId, opts)
+    if opts and opts.containerId ~= nil then
+        CS.selectedContainer = opts.containerId
+    end
+    if not (opts and opts.keepPanelMulti) then
+        wipe(CS.selectedPanels)
+    end
+
+    CS.selectedGroup = panelId
+    CS.selectedButton = nil
+    CS.selectedRotationAssistantEntry = true
+    wipe(CS.selectedButtons)
+    CS.buttonSettingsTab = "loadconditions"
     CooldownCompanion:ClearAllConfigPreviews()
     RefreshAlphaDriverForConfigSelection()
 end
@@ -2708,6 +2736,7 @@ local function SelectConfigCustomBar(customBarId, opts)
     end
     wipe(CS.selectedCustomBars)
     if opts and opts.clearButtonMulti then
+        CS.selectedRotationAssistantEntry = nil
         wipe(CS.selectedButtons)
     end
     return selectionChanged
@@ -2762,6 +2791,7 @@ local function SelectConfigResource(powerType, opts)
     wipe(CS.selectedCustomBars)
     SetConfigCustomBarSettingsTab("appearance")
     if opts and opts.clearButtonMulti then
+        CS.selectedRotationAssistantEntry = nil
         wipe(CS.selectedButtons)
     end
 
@@ -2812,6 +2842,7 @@ local function ResetConfigSelection(full)
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedFolder = nil
     CS.selectedButton = nil
+    CS.selectedRotationAssistantEntry = nil
     CS.selectedCustomBarId = nil
     CS.customBarSpecExpandedId = nil
     CS.customBarSettingsTab = "appearance"
@@ -3051,6 +3082,7 @@ ST._ToggleConfigContainerMultiSelect = ToggleConfigContainerMultiSelect
 ST._SelectConfigPanel = SelectConfigPanel
 ST._ToggleConfigPanelMultiSelect = ToggleConfigPanelMultiSelect
 ST._SelectConfigButton = SelectConfigButton
+ST._SelectConfigRotationAssistantEntry = SelectConfigRotationAssistantEntry
 ST._SelectConfigButtonPanel = SelectConfigButtonPanel
 ST._ClearConfigCustomBarPreviewState = ClearConfigCustomBarPreviewState
 ST._SetConfigCustomBarSettingsTab = SetConfigCustomBarSettingsTab

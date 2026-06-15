@@ -516,6 +516,79 @@ local function DispatchStandaloneTextureVisual(button)
     CooldownCompanion:UpdateAuraTextureVisual(button)
 end
 
+local function ClearCooldownWidget(widget)
+    if not widget then return end
+    if widget.SetCooldown then
+        widget:SetCooldown(0, 0)
+    end
+    if widget.Hide then
+        widget:Hide()
+    end
+end
+
+local function ClearRotationAssistantMissingState(button, buttonData, style)
+    button._durationObj = nil
+    button._auraDurationObj = nil
+    button._auraCooldownStart = nil
+    button._auraCooldownDuration = nil
+    button._auraPrimarySwipeActive = nil
+    button._cooldownDeferred = nil
+    button._cooldownState = COOLDOWN_STATE_READY
+    button._chargeState = nil
+    button._chargeCooldownVisualActive = nil
+    button._currentReadableCharges = nil
+    button._desatCooldownActive = false
+    button._spellOutOfRange = nil
+    button._isUnusable = false
+    button._isOutOfRange = false
+    button._procOverlayActive = false
+    button._auraActive = false
+    button._auraStackText = ""
+    button._visibilityHidden = false
+    button._visibilityAlphaOverride = nil
+    button._visibilityReasonBits = 0
+    button._visibilityReasonMode = "visible"
+
+    ClearCooldownWidget(button.cooldown)
+    ClearCooldownWidget(button.secondaryCooldown)
+    ClearCooldownWidget(button.auraBlizzardCooldown)
+    ClearCooldownWidget(button.locCooldown)
+    ClearCooldownWidget(button.iconGCDCooldown)
+    if ClearIconFillVisualState then
+        ClearIconFillVisualState(button)
+    end
+
+    if button.icon then
+        button.icon:SetDesaturated(false)
+        button.icon:SetVertexColor(1, 1, 1, 1)
+    end
+    if button.count then
+        button.count:SetText("")
+    end
+    if button.auraStackCount then
+        button.auraStackCount:SetText("")
+    end
+    if button.keybindText then
+        button.keybindText:SetText("")
+        button.keybindText:SetShown(false)
+    end
+    if button._cdTextRegion then
+        button._cdTextRegion:SetTextColor(0, 0, 0, 0)
+    end
+    if button._secondaryCdTextRegion then
+        button._secondaryCdTextRegion:SetTextColor(0, 0, 0, 0)
+    end
+    if button.SetAlpha and button._lastVisAlpha ~= 1 then
+        button:SetAlpha(1)
+        button._lastVisAlpha = 1
+    end
+
+    if UpdateIconModeGlows then
+        UpdateIconModeGlows(button, buttonData, style or {}, false)
+    end
+    DispatchStandaloneTextureVisual(button)
+end
+
 local function IsReadyGlowMaxChargeEligible(buttonData)
     return buttonData
         and buttonData.type == "spell"
@@ -533,7 +606,7 @@ end
 
 function CooldownCompanion:RefreshResolvedItemKeybindState(button, buttonData)
     if button.keybindText then
-        local text = self:GetDisplayedKeybindText(buttonData, button._resolvedItemId)
+        local text = self:GetDisplayedKeybindText(buttonData, button._resolvedItemId, button)
         button.keybindText:SetText(text or "")
         button.keybindText:SetShown(button.style and button.style.showKeybindText and text ~= nil)
     end
@@ -711,6 +784,10 @@ end
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
+    if buttonData and buttonData._rotationAssistantVirtual == true and self.RefreshRotationAssistantButton then
+        self:RefreshRotationAssistantButton(button)
+        buttonData = button.buttonData
+    end
     local barAuraStackConfigured = button._isBar and CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
     local barAuraStackDisplay = false
     local previousBarAuraStackValue = button._barAuraStackValue
@@ -726,6 +803,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
     local buttonDisplayMode = buttonGroup and (buttonGroup.displayMode or "icons") or "icons"
     ClearConditionalVisualPreviewFields(button)
+
+    if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
+        ClearRotationAssistantMissingState(button, buttonData, style)
+        return
+    end
 
     if UpdateResolvedItemState(button, buttonData) then
         CooldownCompanion:UpdateButtonIcon(button)
@@ -783,6 +865,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
             CooldownCompanion:UpdateButtonIcon(button)
             button._forceBaseDisplaySpellId = nil
+            if buttonData._rotationAssistantVirtual == true and CooldownCompanion.RefreshResolvedItemKeybindState then
+                CooldownCompanion:RefreshResolvedItemKeybindState(button, buttonData)
+            end
             cooldownSpellId = forceBaseDisplayId and buttonData.id
                 or liveOverrideId
                 or button._displaySpellId
@@ -1536,7 +1621,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)
 
     -- Per-button sound alerts (Blizzard-scoped events, CDM-valid only).
-    if buttonData.type == "spell" then
+    if buttonData.type == "spell" and buttonData._rotationAssistantVirtual ~= true then
         local soundCfg = buttonData.soundAlerts
         local hasSoundConfig = soundCfg and type(soundCfg.events) == "table" and next(soundCfg.events) ~= nil
         if hasSoundConfig then

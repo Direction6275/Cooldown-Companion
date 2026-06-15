@@ -80,6 +80,12 @@ local function GroupUsesTriggerPanelEntries(group)
 end
 
 local function BuildButtonSettingsTabs(group, buttonData)
+    if CooldownCompanion:IsRotationAssistantGroup(group) then
+        return {
+            { value = "loadconditions", text = "Load Conditions" },
+        }
+    end
+
     local isEquipmentSlot = CooldownCompanion.IsEquipmentSlotEntry
         and CooldownCompanion.IsEquipmentSlotEntry(buttonData)
     if GroupUsesTriggerPanelEntries(group) then
@@ -2349,21 +2355,27 @@ local function RefreshButtonSettingsColumn()
 
     -- Check if a valid single button is selected
     local hasSelection = false
-    if CS.selectedGroup and CS.selectedButton then
-        local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local rotationAssistantSelection = group
+        and CooldownCompanion:IsRotationAssistantGroup(group)
+        and CS.selectedRotationAssistantEntry == true
+    if rotationAssistantSelection then
+        hasSelection = true
+    elseif CS.selectedGroup and CS.selectedButton then
         if group and group.buttons[CS.selectedButton] then
             hasSelection = true
         end
     end
 
     if hasSelection then
-        local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
         local buttonData = group and group.buttons and group.buttons[CS.selectedButton]
         bsCol.bsTabGroup:SetTabs(BuildButtonSettingsTabs(group, buttonData))
         local isEquipmentSlot = CooldownCompanion.IsEquipmentSlotEntry
             and CooldownCompanion.IsEquipmentSlotEntry(buttonData)
 
-        if GroupUsesTriggerPanelEntries(group)
+        if rotationAssistantSelection then
+            CS.buttonSettingsTab = "loadconditions"
+        elseif GroupUsesTriggerPanelEntries(group)
             and CS.buttonSettingsTab ~= "settings"
             and CS.buttonSettingsTab ~= "loadconditions"
             and (CS.buttonSettingsTab ~= "soundalerts" or isEquipmentSlot) then
@@ -2381,7 +2393,7 @@ local function RefreshButtonSettingsColumn()
 
         if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
         bsCol.bsTabGroup.frame:Show()
-        bsCol.bsTabGroup:SelectTab(CS.buttonSettingsTab or "settings")
+        bsCol.bsTabGroup:SelectTab(CS.buttonSettingsTab or (rotationAssistantSelection and "loadconditions" or "settings"))
     else
         bsCol.bsTabGroup.frame:Hide()
         if bsCol.bsPlaceholder then

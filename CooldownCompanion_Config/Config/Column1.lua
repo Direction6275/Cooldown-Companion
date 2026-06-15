@@ -315,6 +315,7 @@ local PANEL_CREATION_MODES = {
     { mode = "text", label = "Text Panel" },
     { mode = "textures", label = "Texture Panel" },
     { mode = "trigger", label = "Trigger Panel" },
+    { mode = ST.DISPLAY_MODE_ROTATION_ASSISTANT, label = ST.ROTATION_ASSISTANT_NAME or "Assistant Panel" },
 }
 
 local function BuildContainerExportPayload(db, containerId, container)
@@ -406,7 +407,10 @@ local function BuildColumn1ContainerStats(db, containerIds)
             end
 
             stats.panelCount = stats.panelCount + 1
-            if group.buttons and #group.buttons > 0 then
+            if CooldownCompanion:GroupHasUsableButtons(group, {
+                checkLoadConditions = false,
+                ignoreSpellAvailability = true,
+            }) then
                 stats.hasButtons = true
 
                 local container = containers[containerId]
@@ -644,8 +648,16 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
                             containerId = containerId,
                             keepPanelMulti = true,
                         })
-                        CS.addingToPanelId = newPanelId
-                        CS.pendingEditBoxFocus = true
+                        local newPanel = CooldownCompanion.db.profile.groups[newPanelId]
+                        local acceptsManualEntries = not CooldownCompanion.CanPanelAcceptManualEntry
+                            or CooldownCompanion:CanPanelAcceptManualEntry(newPanel)
+                        if acceptsManualEntries then
+                            CS.addingToPanelId = newPanelId
+                            CS.pendingEditBoxFocus = true
+                        else
+                            CS.addingToPanelId = nil
+                            CS.pendingEditBoxFocus = false
+                        end
                         CooldownCompanion:RefreshConfigPanel()
                     end
                 end

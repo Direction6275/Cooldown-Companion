@@ -43,6 +43,7 @@ local SelectConfigPanel = ST._SelectConfigPanel
 local ToggleConfigPanelMultiSelect = ST._ToggleConfigPanelMultiSelect
 local SelectConfigButton = ST._SelectConfigButton
 local SelectConfigButtonPanel = ST._SelectConfigButtonPanel
+local SelectConfigRotationAssistantEntry = ST._SelectConfigRotationAssistantEntry
 
 local IsTriggerPanelGroup
 
@@ -84,6 +85,10 @@ local PANEL_TYPE_TOOLTIPS = {
     trigger = {
         title = "Trigger Panel",
         description = "Add spell or item entries, then set conditions on each one. The display appears only when every enabled entry meets its conditions.",
+    },
+    rotationAssistant = {
+        title = "Assistant Panel",
+        description = "Shows one locked recommendation icon from the in-game assistant.",
     },
 }
 
@@ -134,6 +139,13 @@ local function BuildPanelHeaderText(panel, panelId, buttonCount, countColor)
 
     return panelName .. " |cff" .. (countColor or "666666") .. "(" ..
         tostring(buttonCount or 0) .. ")|r"
+end
+
+local function GetConfigPanelButtonCount(panel)
+    if panel and panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+        return 1
+    end
+    return panel and panel.buttons and #panel.buttons or 0
 end
 
 local function EnsurePanelTypeTooltipTarget(header)
@@ -273,7 +285,13 @@ local function ConfigurePanelTypeBadge(header, displayMode, textWidth)
         modeBadge:SetDesaturated(false)
     end
     modeBadge:SetVertexColor(1, 1, 1, 1)
-    modeBadge:SetAtlas(GetPanelTypeBadgeAtlas(displayMode), false)
+    if displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+        modeBadge:SetTexture(CooldownCompanion:GetRotationAssistantFallbackIcon())
+        modeBadge:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    else
+        modeBadge:SetAtlas(GetPanelTypeBadgeAtlas(displayMode), false)
+        modeBadge:SetTexCoord(0, 1, 0, 1)
+    end
     if displayMode == "trigger" then
         if modeBadge.SetDesaturated then
             modeBadge:SetDesaturated(true)
@@ -330,8 +348,14 @@ local function FinalizeCreatedPanel(newPanelId, displayMode, opts)
     end
 
     SelectConfigPanel(newPanelId)
-    CS.addingToPanelId = newPanelId
-    CS.pendingEditBoxFocus = true
+    local acceptsManualEntries = CooldownCompanion:CanPanelAcceptManualEntry(group)
+    if acceptsManualEntries then
+        CS.addingToPanelId = newPanelId
+        CS.pendingEditBoxFocus = true
+    else
+        CS.addingToPanelId = nil
+        CS.pendingEditBoxFocus = false
+    end
     CooldownCompanion:RefreshConfigPanel()
 
     if opts and opts.notifyTutorial and NotifyTutorialAction then
@@ -448,6 +472,16 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
                 CreatePanelInSelectedContainer("trigger")
             end
             UIDropDownMenu_AddButton(info, level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Assistant Panel"
+            info.notCheckable = true
+            AddPanelTypeMenuTooltip(info, "rotationAssistant")
+            info.func = function()
+                CloseDropDownMenus()
+                CreatePanelInSelectedContainer(ST.DISPLAY_MODE_ROTATION_ASSISTANT)
+            end
+            UIDropDownMenu_AddButton(info, level)
         end, "MENU")
         menu:SetFrameStrata("FULLSCREEN_DIALOG")
         ToggleDropDownMenu(1, nil, menu, "cursor", 0, 0)
@@ -525,6 +559,7 @@ local function RenderColumn2NoPanelsState(classColor)
         PANEL_TYPE_TOOLTIPS.text,
         PANEL_TYPE_TOOLTIPS.textures,
         PANEL_TYPE_TOOLTIPS.trigger,
+        PANEL_TYPE_TOOLTIPS.rotationAssistant,
     }
 
     for index, entry in ipairs(helpEntries) do
@@ -707,7 +742,9 @@ local function ConfigureInlineAddInstructions(inputBox, placeholderText)
 end
 
 local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId, btnCount)
-    if CS.addingToPanelId ~= panelId or (panel.displayMode == "textures" and btnCount >= 1) then
+    if panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
+        or CS.addingToPanelId ~= panelId
+        or (panel.displayMode == "textures" and btnCount >= 1) then
         return
     end
 
@@ -804,6 +841,27 @@ local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId,
 
 end
 
+local function AddRotationAssistantLockedRow(panelContainer, panelId, opts)
+    local entry = AceGUI:Create("InteractiveLabel")
+    CleanRecycledEntry(entry)
+    entry:SetText(ST.ROTATION_ASSISTANT_NAME)
+    entry:SetFullWidth(true)
+    entry:SetFontObject(GameFontHighlight)
+    ApplyConfigRowIcon(entry, CooldownCompanion:GetRotationAssistantFallbackIcon())
+    entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    if CS.selectedGroup == panelId and CS.selectedRotationAssistantEntry == true then
+        entry:SetColor(0.4, 0.7, 1.0)
+    end
+    entry:SetCallback("OnClick", function()
+        SelectConfigRotationAssistantEntry(panelId, {
+            containerId = opts and opts.containerId or CS.selectedContainer,
+        })
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    panelContainer:AddChild(entry)
+    return entry
+end
+
 local function EnsureRowBadge(frame, key, atlas, iconSize)
     local badge = frame[key]
     if not badge then
@@ -873,10 +931,6 @@ local function IsAuraTrackingConfigReady(buttonData, cdmEnabled)
     local viewerFrame = CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
     local auraStatus = CooldownCompanion:ResolveAuraTrackingConfigStatus(buttonData, cdmEnabled, viewerFrame)
     return auraStatus.ready == true, auraStatus
-end
-
-local function CanTexturePanelAcceptEntry(group)
-    return not (group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1)
 end
 
 IsTriggerPanelGroup = function(group)
@@ -969,8 +1023,9 @@ local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGrou
     if not targetGroup then
         return false
     end
-    if not CanTexturePanelAcceptEntry(targetGroup) then
-        CooldownCompanion:Print("Texture Panels can only hold one entry.")
+    local rejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup)
+    if rejectMessage then
+        CooldownCompanion:Print(rejectMessage)
         return false
     end
 
@@ -980,6 +1035,7 @@ local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGrou
     CooldownCompanion:RefreshGroupFrame(sourceGroupId)
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedButton = nil
+    CS.selectedRotationAssistantEntry = nil
     wipe(CS.selectedButtons)
     CooldownCompanion:RefreshConfigPanel()
     return true
@@ -993,7 +1049,7 @@ local function BuildEntryMoveDestinationSections(db, sourceGroupId)
     for groupId, group in pairs(db.groups or {}) do
         if groupId ~= sourceGroupId
             and CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
-            and CanTexturePanelAcceptEntry(group)
+            and CooldownCompanion:CanPanelAcceptManualEntry(group)
         then
             local containerId = group.parentContainerId
             local container = containerId and containers[containerId]
@@ -1446,7 +1502,7 @@ local function RefreshColumn2()
             CS.col2Scroll:AddChild(panelContainer)
 
             -- Panel header (same badge pattern as normal Column 2 panel headers)
-            local buttonCount = panel.buttons and #panel.buttons or 0
+            local buttonCount = GetConfigPanelButtonCount(panel)
             local headerText = BuildPanelHeaderText(panel, nil, buttonCount, "888888")
 
             local header = AceGUI:Create("InteractiveLabel")
@@ -1478,7 +1534,9 @@ local function RefreshColumn2()
 
             if panel.enabled == false then
                 header:SetColor(0.5, 0.5, 0.5)
-            elseif CS.selectedGroup == panelGroupId and not CS.selectedButton then
+            elseif CS.selectedGroup == panelGroupId
+                and not CS.selectedButton
+                and not CS.selectedRotationAssistantEntry then
                 header:SetColor(0, 1, 0)
             end
             header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
@@ -1496,7 +1554,11 @@ local function RefreshColumn2()
             panelContainer:AddChild(headerSpacer)
 
             -- Button list (read-only)
-            if panel.buttons then
+            if panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+                AddRotationAssistantLockedRow(panelContainer, panelGroupId, {
+                    containerId = CS.browseContainerId,
+                })
+            elseif panel.buttons then
                 for buttonIndex, buttonData in ipairs(panel.buttons) do
                     local entry = AceGUI:Create("InteractiveLabel")
                     CleanRecycledEntry(entry)
@@ -1977,7 +2039,7 @@ local function RefreshColumn2()
             end
 
             -- Panel header
-                local btnCount = panel.buttons and #panel.buttons or 0
+                local btnCount = GetConfigPanelButtonCount(panel)
                 local headerText = BuildPanelHeaderText(panel, panelId, btnCount, "666666")
 
                 local header = AceGUI:Create("InteractiveLabel")
@@ -2126,7 +2188,9 @@ local function RefreshColumn2()
                     header:SetColor(0.4, 0.7, 1.0)
                 elseif panel.enabled == false then
                     header:SetColor(0.5, 0.5, 0.5)
-                elseif CS.selectedGroup == panelId and not CS.selectedButton then
+                elseif CS.selectedGroup == panelId
+                    and not CS.selectedButton
+                    and not CS.selectedRotationAssistantEntry then
                     header:SetColor(0, 1, 0)
                 end
 
@@ -2251,29 +2315,31 @@ local function RefreshColumn2()
                                 UIDropDownMenu_AddButton(info, level)
                             end
 
-                            local switchModes = {
-                                { mode = "icons", label = "Icons" },
-                                { mode = "bars", label = "Bars" },
-                                { mode = "text", label = "Text" },
-                                { mode = "textures", label = "Textures" },
-                            }
-                            for _, m in ipairs(switchModes) do
-                                if ctxPanel.displayMode ~= m.mode then
-                                    info = UIDropDownMenu_CreateInfo()
-                                    info.text = "Switch to " .. m.label
-                                    info.notCheckable = true
-                                    local targetMode = m.mode
-                                    info.func = function()
-                                        CloseDropDownMenus()
-                                        if CooldownCompanion:ChangePanelDisplayMode(ctxPanelId, targetMode) then
-                                            if targetMode == "textures" then
-                                                CS.pendingTexturePickerOpen = ctxPanelId
-                                                SelectConfigPanel(ctxPanelId)
+                            if ctxPanel.displayMode ~= ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+                                local switchModes = {
+                                    { mode = "icons", label = "Icons" },
+                                    { mode = "bars", label = "Bars" },
+                                    { mode = "text", label = "Text" },
+                                    { mode = "textures", label = "Textures" },
+                                }
+                                for _, m in ipairs(switchModes) do
+                                    if ctxPanel.displayMode ~= m.mode then
+                                        info = UIDropDownMenu_CreateInfo()
+                                        info.text = "Switch to " .. m.label
+                                        info.notCheckable = true
+                                        local targetMode = m.mode
+                                        info.func = function()
+                                            CloseDropDownMenus()
+                                            if CooldownCompanion:ChangePanelDisplayMode(ctxPanelId, targetMode) then
+                                                if targetMode == "textures" then
+                                                    CS.pendingTexturePickerOpen = ctxPanelId
+                                                    SelectConfigPanel(ctxPanelId)
+                                                end
+                                                CooldownCompanion:RefreshConfigPanel()
                                             end
-                                            CooldownCompanion:RefreshConfigPanel()
                                         end
+                                        UIDropDownMenu_AddButton(info, level)
                                     end
-                                    UIDropDownMenu_AddButton(info, level)
                                 end
                             end
 
@@ -2480,10 +2546,10 @@ local function RefreshColumn2()
                 addBtn.icon:SetAtlas(isAdding and "common-icon-minus" or "common-icon-plus", false)
                 addBtn.icon:SetVertexColor(0.3, 0.8, 0.3)
                 local addBtnPanelId = panelId
-                local addBtnTextureFull = panel.displayMode == "textures" and btnCount >= 1
+                local addBtnRejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(panel)
                 addBtn:SetScript("OnClick", function()
-                    if addBtnTextureFull then
-                        CooldownCompanion:Print("Texture Panels can only hold one entry.")
+                    if addBtnRejectMessage then
+                        CooldownCompanion:Print(addBtnRejectMessage)
                         return
                     end
                     if CS.addingToPanelId == addBtnPanelId then
@@ -2496,7 +2562,7 @@ local function RefreshColumn2()
                     end
                     CooldownCompanion:RefreshConfigPanel()
                 end)
-                addBtn:SetShown(not addBtnTextureFull)
+                addBtn:SetShown(not addBtnRejectMessage)
 
                 panelContainer:AddChild(header)
                 table.insert(col2RenderedRows, { kind = "header", panelId = panelId, isCollapsed = isCollapsed, widget = header })
@@ -2514,7 +2580,12 @@ local function RefreshColumn2()
             if not isCollapsed then
                 local panelButtons = panel.buttons or {}
 
-                for i, buttonData in ipairs(panelButtons) do
+                if panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+                    AddRotationAssistantLockedRow(panelContainer, panelId, {
+                        containerId = CS.selectedContainer,
+                    })
+                else
+                    for i, buttonData in ipairs(panelButtons) do
                     local entry = AceGUI:Create("InteractiveLabel")
                     CleanRecycledEntry(entry)
                     local usable = CooldownCompanion:IsButtonUsable(buttonData, panel)
@@ -2657,6 +2728,7 @@ local function RefreshColumn2()
                             if CS.selectedGroup ~= panelId then
                                 CS.selectedGroup = panelId
                                 CS.selectedButton = nil
+                                CS.selectedRotationAssistantEntry = nil
                                 wipe(CS.selectedButtons)
                             end
                             local cursorX, cursorY = GetScaledCursorPosition(CS.col2Scroll)
@@ -2825,7 +2897,8 @@ local function RefreshColumn2()
                         },
                         imageSize = entry.image and select(1, entry.image:GetSize()) or 32,
                     })
-                end -- button loop
+                    end -- button loop
+                end
 
                 BuildInlineAddControls(panelContainer, panelMeta, panel, panelId, btnCount)
             end -- not collapsed

@@ -121,7 +121,10 @@ local function ShouldEnrollKeyPressHighlightButton(button)
     end
 
     local buttonData = button.buttonData
-    if not buttonData or buttonData.type == "header" or buttonData.isPassive then
+    if not buttonData
+        or buttonData._rotationAssistantVirtual == true
+        or buttonData.type == "header"
+        or buttonData.isPassive then
         return false
     end
 
@@ -834,7 +837,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         local xOff = style.keybindXOffset or -2
         local yOff = style.keybindYOffset or -2
         button.keybindText:SetPoint(anchor, xOff, yOff)
-        local text = CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId)
+        local text = CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId, button)
         button.keybindText:SetText(text or "")
         button.keybindText:SetShown(style.showKeybindText and text ~= nil)
     end
@@ -986,6 +989,17 @@ function CooldownCompanion:UpdateButtonIcon(button)
             hasIcon = true
         end
         return selectedAvailable
+    end
+
+    if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
+        UseIcon(self:GetRotationAssistantFallbackIcon(), true)
+        button._displaySpellId = nil
+        if hasIcon then
+            button.icon:SetTexture(icon)
+        else
+            button.icon:SetTexture(QUESTION_MARK_ICON)
+        end
+        return
     end
 
     if buttonData.type == "spell" then
@@ -1327,6 +1341,15 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
     -- Loss of control overlay
     UpdateLossOfControl(button)
 
+    if buttonData._rotationAssistantVirtual == true then
+        SetAssistedHighlight(button, false)
+        SetProcGlow(button, false)
+        SetAuraGlow(button, false, false)
+        SetReadyGlow(button, false)
+        SetKeyPressHighlight(button, false)
+        return
+    end
+
     -- Assisted highlight glow
     if button.assistedHighlight then
         local assistedSpellID = CooldownCompanion.assistedSpellID
@@ -1565,7 +1588,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         local xOff = style.keybindXOffset or -2
         local yOff = style.keybindYOffset or -2
         button.keybindText:SetPoint(anchor, xOff, yOff)
-        local text = CooldownCompanion:GetDisplayedKeybindText(button.buttonData, button._resolvedItemId)
+        local text = CooldownCompanion:GetDisplayedKeybindText(button.buttonData, button._resolvedItemId, button)
         button.keybindText:SetText(text or "")
         button.keybindText:SetShown(style.showKeybindText and text ~= nil)
     end

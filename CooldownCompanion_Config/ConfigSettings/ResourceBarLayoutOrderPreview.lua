@@ -534,6 +534,22 @@ local function GetConfiguredPreviewIconSize(group)
 end
 
 local function GetSavedPreviewButtons(group)
+    if CooldownCompanion:IsRotationAssistantGroup(group) then
+        local spellID = CooldownCompanion:GetRotationAssistantActionSpellID()
+        return {
+            {
+                buttonData = {
+                    type = "spell",
+                    id = spellID,
+                    name = ST.ROTATION_ASSISTANT_NAME,
+                    manualIcon = CooldownCompanion:GetRotationAssistantFallbackIcon(spellID),
+                    _rotationAssistantVirtual = true,
+                    _rotationAssistantMissing = true,
+                },
+            },
+        }
+    end
+
     local buttons = {}
     local fallbackButtons = {}
 
@@ -563,8 +579,8 @@ local function GetSavedPreviewButtons(group)
 end
 
 local function BuildSourcePanelData(groupId, group, visibleButtons, frame)
-    if not group or group.displayMode ~= "icons" then
-        return nil, "The current attached anchor panel is not an icon-mode panel, so there is no icon row to mirror."
+    if not group or not CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) then
+        return nil, "The current attached anchor panel is not an icon-like panel, so there is no icon row to mirror."
     end
 
     if #visibleButtons == 0 then
@@ -618,7 +634,7 @@ local function IsGroupConfigAvailableForPreview(groupId, checkLoadConditions)
     local group = CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[groupId]
     if not group then return false end
     if not group.parentContainerId then return false end
-    if group.displayMode ~= "icons" then return false end
+    if not CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) then return false end
     if CooldownCompanion.DoesAnchorTargetReachCursorRoot
         and CooldownCompanion:DoesAnchorTargetReachCursorRoot("CooldownCompanionGroup" .. tostring(groupId)) then
         return false

@@ -688,7 +688,8 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
         return false
     end
 
-    if not (group.buttons and #group.buttons > 0) then
+    local isRotationAssistant = self:IsRotationAssistantGroup(group)
+    if not isRotationAssistant and not (group.buttons and #group.buttons > 0) then
         return false
     end
 
@@ -696,7 +697,7 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     if groupFrame == nil and groupId then
         groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
     end
-    if groupFrame and (not groupFrame.buttons or #groupFrame.buttons == 0) then
+    if groupFrame and not isRotationAssistant and (not groupFrame.buttons or #groupFrame.buttons == 0) then
         return false
     end
 
@@ -1083,6 +1084,13 @@ end
 
 function CooldownCompanion:GroupHasUsableButtons(group, opts)
     opts = opts or {}
+    if self:IsRotationAssistantGroup(group) then
+        if opts.checkLoadConditions == false then
+            return true
+        end
+        local entrySettings = self:GetRotationAssistantEntrySettings(group, false)
+        return self:IsButtonLoadConditionMet(entrySettings or {}, group)
+    end
     if not (group and group.buttons and #group.buttons > 0) then
         return false
     end
@@ -1112,6 +1120,10 @@ function CooldownCompanion:GetGroupLayoutButtonUsabilityOptions(groupId, group)
 end
 
 function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group)
+    if self:IsRotationAssistantGroup(group) then
+        return 1
+    end
+
     if not (group and group.buttons and #group.buttons > 0) then
         return 0
     end
@@ -1208,7 +1220,7 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
     elseif self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
         return false
     end
-    if group.displayMode ~= "icons" then return false end
+    if self.IsIconLikeDisplayMode and not self:IsIconLikeDisplayMode(group.displayMode) then return false end
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end
     if container and not container.isGlobal and container.anchorEligible == false then return false end
@@ -1765,6 +1777,12 @@ function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group)
     local frame = GetFrameForButtonSetComparison(self, groupId)
     if not frame or not frame.buttons then
         return false
+    end
+    if self:IsRotationAssistantGroup(group) then
+        local buttonData = frame._rotationAssistantButtonData
+        return #frame.buttons ~= 1
+            or not frame.buttons[1]
+            or frame.buttons[1].buttonData ~= buttonData
     end
     if not group.buttons then
         return #frame.buttons > 0

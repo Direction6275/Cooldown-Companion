@@ -3,6 +3,12 @@
 ]]
 
 local ADDON_NAME, ST = ...
+local CooldownCompanion = ST.Addon
+
+ST.DISPLAY_MODE_ROTATION_ASSISTANT = "rotationAssistant"
+ST.ROTATION_ASSISTANT_NAME = "Assistant Panel"
+ST.ROTATION_ASSISTANT_ACTION_SPELL_ID = 1229376
+ST.ROTATION_ASSISTANT_FALLBACK_ICON = 6718291
 
 -- Default database structure
 local defaults = {
@@ -626,6 +632,204 @@ local defaults = {
 
 ST._defaults = defaults
 
+function ST.IsRotationAssistantDisplayMode(displayMode)
+    return displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
+end
+
+function ST.IsIconLikeDisplayMode(displayMode)
+    return displayMode == nil
+        or displayMode == "icons"
+        or displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
+end
+
+function CooldownCompanion:IsRotationAssistantGroup(group)
+    return group and ST.IsRotationAssistantDisplayMode(group.displayMode) or false
+end
+
+function CooldownCompanion:IsRotationAssistantButtonData(buttonData)
+    return buttonData and buttonData._rotationAssistantVirtual == true or false
+end
+
+function CooldownCompanion:IsIconLikeDisplayMode(displayMode)
+    return ST.IsIconLikeDisplayMode(displayMode)
+end
+
+function CooldownCompanion:GetPanelManualEntryRejectMessage(group)
+    if self:IsRotationAssistantGroup(group) then
+        return "Assistant Panels are populated automatically."
+    end
+    if group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1 then
+        return "Texture Panels can only hold one entry. Remove the current entry first if you want to replace it."
+    end
+    return nil
+end
+
+function CooldownCompanion:CanPanelAcceptManualEntry(group)
+    return self:GetPanelManualEntryRejectMessage(group) == nil
+end
+
+function CooldownCompanion:GetRotationAssistantActionSpellID()
+    local assistedCombat = C_AssistedCombat
+    if assistedCombat and assistedCombat.GetActionSpell then
+        local spellID = assistedCombat.GetActionSpell()
+        if type(spellID) == "number" and not issecretvalue(spellID) and spellID > 0 then
+            return spellID
+        end
+    end
+    return ST.ROTATION_ASSISTANT_ACTION_SPELL_ID
+end
+
+function CooldownCompanion:GetRotationAssistantFallbackIcon(spellID)
+    spellID = spellID or self:GetRotationAssistantActionSpellID()
+    if spellID and C_Spell and C_Spell.GetSpellTexture then
+        local icon = C_Spell.GetSpellTexture(spellID)
+        if icon and not issecretvalue(icon) then
+            return icon
+        end
+    end
+    return ST.ROTATION_ASSISTANT_FALLBACK_ICON
+end
+
+function CooldownCompanion:GetRotationAssistantEntrySettings(group, create)
+    if not group then return nil end
+    local entry = group.rotationAssistantEntry
+    if type(entry) ~= "table" then
+        if create == false then
+            return nil
+        end
+        entry = {}
+        group.rotationAssistantEntry = entry
+    end
+    return entry
+end
+
+function CooldownCompanion:GetRotationAssistantConfigButtonData(group)
+    local entry = self:GetRotationAssistantEntrySettings(group, true)
+    if not entry then return nil end
+    entry.type = "spell"
+    entry.id = self:GetRotationAssistantActionSpellID()
+    entry.name = ST.ROTATION_ASSISTANT_NAME
+    entry.manualIcon = self:GetRotationAssistantFallbackIcon()
+    entry._rotationAssistantVirtual = true
+    entry._rotationAssistantMissing = true
+    return entry
+end
+
+function CooldownCompanion:GetRotationAssistantRecommendationSpellID()
+    local assistedCombat = C_AssistedCombat
+    if not (assistedCombat and assistedCombat.GetNextCastSpell) then
+        self._rotationAssistantAvailable = false
+        self._rotationAssistantUnavailableReason = "apiUnavailable"
+        return nil
+    end
+
+    if assistedCombat.IsAvailable then
+        local available, reason = assistedCombat.IsAvailable()
+        self._rotationAssistantAvailable = available == true
+        self._rotationAssistantUnavailableReason = reason
+        if available ~= true then
+            return nil
+        end
+    else
+        self._rotationAssistantAvailable = true
+        self._rotationAssistantUnavailableReason = nil
+    end
+
+    local spellID = assistedCombat.GetNextCastSpell(false)
+    if type(spellID) == "number" and not issecretvalue(spellID) and spellID > 0 then
+        return spellID
+    end
+    return nil
+end
+
+function CooldownCompanion:GetRotationAssistantButtonData(frame)
+    if not frame then return nil end
+    local groups = self.db and self.db.profile and self.db.profile.groups
+    local groupId = frame.groupId or frame._groupId
+    local group = groupId and groups and groups[groupId]
+    local entrySettings = self:GetRotationAssistantEntrySettings(group, false)
+    local buttonData = frame._rotationAssistantButtonData
+    if not buttonData then
+        buttonData = {
+            type = "spell",
+            id = self:GetRotationAssistantActionSpellID(),
+            name = ST.ROTATION_ASSISTANT_NAME,
+            _rotationAssistantVirtual = true,
+            _rotationAssistantMissing = true,
+        }
+        frame._rotationAssistantButtonData = buttonData
+    end
+    buttonData.loadConditions = entrySettings and entrySettings.loadConditions or nil
+    return buttonData
+end
+
+function CooldownCompanion:ClearRotationAssistantButtonRuntime(button)
+    if not button then return end
+    button._displaySpellId = nil
+    button._liveOverrideSpellId = nil
+    button._lastSpellTexture = nil
+    button._spellTexBaseline = nil
+    button._baseNoCooldown = nil
+    button._baseNoCooldownSpellId = nil
+    button._noCooldown = nil
+    button._noCooldownSpellId = nil
+    button._resourceGateCost = nil
+    button._resourceGateCostSpellId = nil
+    button._baseResourceGateCost = nil
+    button._baseResourceGateCostSpellId = nil
+    button._spellOutOfRange = nil
+    button._auraActive = false
+    button._auraDurationObj = nil
+    button._auraCooldownStart = nil
+    button._auraCooldownDuration = nil
+    button._auraPrimarySwipeActive = nil
+    button._activeAuraSpellID = nil
+    button._activeAuraSpellIDFromFallback = nil
+    button._activeAuraIcon = nil
+    button._activeAuraIconAvailable = nil
+    button._procOverlayActive = false
+end
+
+function CooldownCompanion:RefreshRotationAssistantButton(button)
+    local buttonData = button and button.buttonData
+    if not self:IsRotationAssistantButtonData(buttonData) then
+        return false
+    end
+
+    local recommendedSpellID = self:GetRotationAssistantRecommendationSpellID()
+    local missing = recommendedSpellID == nil
+    local displaySpellID = recommendedSpellID or self:GetRotationAssistantActionSpellID()
+    local changed = buttonData.id ~= displaySpellID
+        or buttonData._rotationAssistantSpellID ~= recommendedSpellID
+        or buttonData._rotationAssistantMissing ~= missing
+
+    buttonData.id = displaySpellID
+    buttonData._rotationAssistantSpellID = recommendedSpellID
+    buttonData._rotationAssistantMissing = missing
+    buttonData.name = recommendedSpellID and C_Spell.GetSpellName(recommendedSpellID) or ST.ROTATION_ASSISTANT_NAME
+    if self.UpdateSpellChargeMetadata then
+        self:UpdateSpellChargeMetadata(buttonData, displaySpellID, {
+            clearInactiveMaxCharges = true,
+        })
+    end
+    button._rotationAssistantSpellID = recommendedSpellID
+
+    if changed then
+        self:ClearRotationAssistantButtonRuntime(button)
+        if self.UpdateButtonIcon then
+            self:UpdateButtonIcon(button)
+        end
+        if self.RefreshResolvedItemKeybindState then
+            self:RefreshResolvedItemKeybindState(button, buttonData)
+        end
+        if self.UpdateRangeCheckRegistrations then
+            self:UpdateRangeCheckRegistrations()
+        end
+    end
+
+    return changed
+end
+
 ------------------------------------------------------------------------
 -- OVERRIDE SECTIONS REGISTRY
 -- Maps section IDs to their labels, style keys, and applicable display modes.
@@ -636,7 +840,7 @@ ST.OVERRIDE_SECTIONS = {
     borderSettings = {
         label = "Border",
         keys = {"borderSize", "borderRenderMode", "borderColor"},
-        modes = {icons = true, bars = true},
+        modes = {icons = true, bars = true, rotationAssistant = true},
     },
     cooldownText = {
         label = "Cooldown Text",
@@ -656,7 +860,7 @@ ST.OVERRIDE_SECTIONS = {
     keybindText = {
         label = "Keybind Text",
         keys = {"showKeybindText", "keybindFont", "keybindFontSize", "keybindFontOutline", "keybindFontColor", "keybindAnchor", "keybindXOffset", "keybindYOffset"},
-        modes = {icons = true},
+        modes = {icons = true, rotationAssistant = true},
     },
     chargeText = {
         label = "Charge Text",
@@ -667,37 +871,37 @@ ST.OVERRIDE_SECTIONS = {
     desaturation = {
         label = "Desaturation",
         keys = {"desaturateOnCooldown"},
-        modes = {icons = true, bars = true},
+        modes = {icons = true, bars = true, rotationAssistant = true},
     },
     cooldownSwipe = {
         label = "Cooldown Swipe",
         keys = {"showCooldownSwipe", "showCooldownSwipeFill", "cooldownSwipeReverse", "showCooldownSwipeEdge", "cooldownSwipeAlpha", "cooldownSwipeEdgeColor"},
-        modes = {icons = true},
+        modes = {icons = true, rotationAssistant = true},
     },
     showGCDSwipe = {
         label = "Show GCD Swipe",
         keys = {"showGCDSwipe"},
-        modes = {icons = true, bars = true},
+        modes = {icons = true, bars = true, rotationAssistant = true},
     },
     showOutOfRange = {
         label = "Show Out of Range",
         keys = {"showOutOfRange"},
-        modes = {icons = true},
+        modes = {icons = true, rotationAssistant = true},
     },
     showTooltips = {
         label = "Show Tooltips",
         keys = {"showTooltips"},
-        modes = {icons = true, bars = true},
+        modes = {icons = true, bars = true, rotationAssistant = true},
     },
     lossOfControl = {
         label = "Loss of Control",
         keys = {"showLossOfControl"},
-        modes = {icons = true, bars = true},
+        modes = {icons = true, bars = true, rotationAssistant = true},
     },
     unusableDimming = {
         label = "Unusable Visual",
         keys = {"showUnusable", "unusableVisualMode", "iconUnusableTintColor"},
-        modes = {icons = true, bars = true},
+        modes = {icons = true, bars = true, rotationAssistant = true},
     },
     iconTint = {
         label = "Icon Tint",

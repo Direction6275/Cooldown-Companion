@@ -400,7 +400,7 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
     end
 
     local group = self.db.profile.groups[groupId]
-    if not group or group.displayMode ~= "icons" then
+    if not group or not self:IsIconLikeDisplayMode(group.displayMode) then
         self:RevertFrameAnchoring()
         return
     end
