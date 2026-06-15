@@ -519,7 +519,12 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
     -- the time this handler fires the CDM has already refreshed its children
     -- with fresh auraInstanceID data. Bursts later in the same frame coalesce.
     if unit == "target" or unit == "player" then
-        self:RunImmediateCooldownRefresh("aura-event")
+        self:RunImmediateCooldownRefresh({
+            kind = "unit-aura",
+            source = "aura-event",
+            event = event,
+            unit = unit,
+        })
     end
 end
 
@@ -567,7 +572,12 @@ function CooldownCompanion:OnTargetChanged()
     -- been processed by the time PLAYER_TARGET_CHANGED fires, the CDM children
     -- will have fresh auraInstanceID data.  Probing immediately lets the
     -- primary path clear _targetSwitchAt in the same frame — zero hold.
-    self:UpdateAllCooldowns()
+    self:UpdateAllCooldowns({
+        kind = "target-changed",
+        source = "target-event",
+        event = "PLAYER_TARGET_CHANGED",
+        unit = "target",
+    })
 end
 
 

@@ -1948,10 +1948,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     end)
 
     -- Update functions
-    frame.UpdateCooldowns = function(self)
-        for _, button in ipairs(self.buttons) do
-            button:UpdateCooldown()
-        end
+    frame.UpdateCooldowns = function(self, refreshReason, collectStats)
+        return CooldownCompanion:UpdateGroupFrameCooldownButtons(self, refreshReason, collectStats)
     end
     
     frame.Refresh = function(self)
