@@ -5,8 +5,11 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local CooldownLogic = ST.CooldownLogic or {}
+local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL or "full"
 
 local SCOPED_REASON_KINDS = {
+    ["periodic"] = true,
     ["target-changed"] = true,
     ["unit-target"] = true,
     ["unit-aura"] = true,
@@ -46,6 +49,14 @@ function CooldownCompanion:NormalizeCooldownRefreshReason(reasonOrSource, fallba
         reason.origin = reason.origin or fallbackOrigin
         reason.broad = true
         reason.fallbackReason = reason.fallbackReason or "unsupported-kind"
+        return reason
+    end
+
+    if kind == "periodic" then
+        local reason = CopyReason(reasonOrSource) or {}
+        reason.source = reason.source or "ticker"
+        reason.origin = reason.origin or fallbackOrigin
+        reason.broad = false
         return reason
     end
 
@@ -194,12 +205,110 @@ local function ButtonUsesTargetRangeOrUsability(addon, button, buttonData)
     return false
 end
 
+local function ButtonUsesReadyGlowDuration(button)
+    local style = button and button.style
+    if not style then
+        return false, nil, 0
+    end
+    local duration = style.readyGlowDuration or 0
+    if duration <= 0 then
+        return false, nil, 0
+    end
+    if not style.readyGlowStyle or style.readyGlowStyle == "none" then
+        return false, nil, 0
+    end
+    return true, style, duration
+end
+
+local function ReadyGlowStartWithinWindow(startTime, duration)
+    if startTime == nil then
+        return false
+    end
+    local now = type(GetTime) == "function" and GetTime() or nil
+    if not now then
+        return true
+    end
+    return now - startTime <= duration + 0.2
+end
+
+local function ButtonUsesMaxChargeReadyGlow(buttonData, style)
+    return style
+        and style.readyGlowOnlyAtMaxCharges == true
+        and buttonData
+        and buttonData.type == "spell"
+        and buttonData.hasCharges == true
+        and not buttonData._hasDisplayCount
+end
+
+local function ButtonNeedsReadyGlowPeriodicRefresh(button, buttonData)
+    local enabled, style, duration = ButtonUsesReadyGlowDuration(button)
+    if not enabled then
+        return false
+    end
+    if ButtonUsesMaxChargeReadyGlow(buttonData, style) then
+        if ReadyGlowStartWithinWindow(button._readyGlowMaxChargesStartTime, duration) then
+            return true
+        end
+        if button._readyGlowActive == true then
+            return true
+        end
+        return button._chargeState ~= nil and button._chargeState ~= CHARGE_STATE_FULL
+    end
+    return ReadyGlowStartWithinWindow(button._readyGlowStartTime, duration)
+        or button._readyGlowActive == true
+        or button._desatCooldownActive == true
+end
+
+local function ButtonNeedsPeriodicCooldownRefresh(button, buttonData)
+    if not buttonData then
+        return false
+    end
+    if buttonData._rotationAssistantVirtual == true then
+        return true
+    end
+    if not button then
+        return false
+    end
+    if button._isText == true then
+        return true
+    end
+    if button._cooldownDeferred == true then
+        return true
+    end
+    if button._auraGraceStart ~= nil or button._targetSwitchAt ~= nil then
+        return true
+    end
+    if ButtonNeedsReadyGlowPeriodicRefresh(button, buttonData) then
+        return true
+    end
+    return false
+end
+
+function CooldownCompanion:HasPeriodicCooldownRefreshCandidates()
+    if not self.groupFrames then
+        return false
+    end
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons and frame:IsShown() then
+            for _, button in ipairs(frame.buttons) do
+                if ButtonNeedsPeriodicCooldownRefresh(button, button.buttonData) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
 function CooldownCompanion:ButtonMatchesCooldownRefreshReason(button, buttonData, reason)
     if not self:IsScopedCooldownRefreshReason(reason) then
         return true
     end
     if not buttonData then
         return false
+    end
+    if reason.kind == "periodic" then
+        return ButtonNeedsPeriodicCooldownRefresh(button, buttonData)
     end
     if buttonData._rotationAssistantVirtual == true then
         return true

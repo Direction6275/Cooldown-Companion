@@ -28,6 +28,8 @@
       If another dirty mark lands before the flush, the later ticker walks
       instead of skipping. That is intentionally conservative: displays can only
       be fresher, never staler.
+    - Clean ticker passes do not perform a full cooldown walk. They only run the
+      scoped periodic path when active buttons have semantic polling needs.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -134,8 +136,18 @@ function CooldownCompanion:TickCooldownRefresh()
     if self:CanSkipTickerCooldownRefresh() then
         return true
     end
-    self:UpdateAllCooldowns()
-    return false
+    if self._cooldownsDirty then
+        self:UpdateAllCooldowns()
+        return false
+    end
+    if self:HasPeriodicCooldownRefreshCandidates() then
+        self:UpdateAllCooldowns({
+            kind = "periodic",
+            source = "ticker",
+        })
+        return false
+    end
+    return true
 end
 
 function CooldownCompanion:ResetCooldownRefreshState()

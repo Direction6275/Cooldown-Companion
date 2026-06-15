@@ -117,7 +117,7 @@ function CooldownCompanion:OnEnable()
     -- Cooldown events can expose very short ready windows, so refresh them
     -- immediately instead of waiting for the ticker.
     for _, evt in ipairs({
-        "SPELL_UPDATE_COOLDOWN", "BAG_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_COOLDOWN",
+        "SPELL_UPDATE_COOLDOWN", "BAG_UPDATE_COOLDOWN",
     }) do
         self:RegisterEvent(evt, "OnCooldownStateChanged")
     end
@@ -317,7 +317,11 @@ function CooldownCompanion:OnEnable()
     self:FinalizeContainerAnchorsToScreenOffsets()
 end
 
-function CooldownCompanion:OnCooldownStateChanged()
+function CooldownCompanion:OnCooldownStateChanged(event)
+    if event == "ACTIONBAR_UPDATE_COOLDOWN" then
+        return
+    end
+
     self:MarkCooldownsDirty()
     -- Preserve immediate cooldown-event accuracy. This refresh only suppresses
     -- the next ticker walk when no other dirty state appears afterward.
