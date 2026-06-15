@@ -1790,7 +1790,7 @@ local function HasUnusableVisualStyle(style)
         or false
 end
 
-local function IsPowerSensitiveSpellButton(button, buttonData)
+local function IsPowerSensitiveSpellButton(addon, button, buttonData)
     if not (button and buttonData and buttonData.type == "spell") then
         return false
     end
@@ -1801,6 +1801,7 @@ local function IsPowerSensitiveSpellButton(button, buttonData)
     return button._isText == true
         or buttonData.hideWhileUnusable == true
         or HasUnusableVisualStyle(button.style)
+        or (addon.TriggerRowUsesCondition and addon:TriggerRowUsesCondition(buttonData, "usable"))
 end
 
 function CooldownCompanion:InvalidatePowerSensitiveButtonIndex()
@@ -1826,7 +1827,7 @@ local function RebuildPowerSensitiveButtonIndex(addon)
         if frame and frame.IsShown and frame:IsShown() and frame.buttons then
             for _, button in ipairs(frame.buttons) do
                 local buttonData = button and button.buttonData
-                if IsPowerSensitiveSpellButton(button, buttonData) then
+                if IsPowerSensitiveSpellButton(addon, button, buttonData) then
                     table_insert(buttons, button)
                 end
             end
@@ -1944,7 +1945,10 @@ end
 local function RefreshPowerSensitiveButton(button, buttonData)
     local style = button.style
     local conditionalPreview = GetConditionalVisualPreview and GetConditionalVisualPreview(button)
+    local wasHidden = button._visibilityHidden == true
 
+    local isVisible = ApplyLightweightPowerVisibility(button, buttonData, conditionalPreview)
+    UpdatePowerUnusableTextState(button, buttonData)
     ClearConditionalVisualPreviewFields(button)
     ApplyConditionalVisualPreview(
         button,
@@ -1954,10 +1958,11 @@ local function RefreshPowerSensitiveButton(button, buttonData)
         GetTime and GetTime() or 0,
         UsesChargeBehavior(buttonData)
     )
-
-    local isVisible = ApplyLightweightPowerVisibility(button, buttonData, conditionalPreview)
-    UpdatePowerUnusableTextState(button, buttonData)
     if not isVisible then
+        return
+    end
+    if wasHidden and button._visibilityHidden ~= true and button.UpdateCooldown then
+        button:UpdateCooldown()
         return
     end
 
@@ -1974,6 +1979,25 @@ local function RefreshPowerSensitiveButton(button, buttonData)
     end
 end
 
+local function AddPowerSensitiveTriggerFrame(addon, triggerFrames, frame, groupId)
+    local group = addon.db and addon.db.profile
+        and addon.db.profile.groups and addon.db.profile.groups[groupId] or nil
+    if group and group.displayMode == "trigger" then
+        triggerFrames[frame] = true
+    end
+end
+
+local function RefreshPowerSensitiveTriggerFrames(addon, triggerFrames)
+    if not addon.UpdateAuraTextureVisual then
+        return
+    end
+    for frame in pairs(triggerFrames) do
+        if frame.buttons and frame.buttons[1] then
+            addon:UpdateAuraTextureVisual(frame.buttons[1])
+        end
+    end
+end
+
 function CooldownCompanion:RefreshPowerSensitiveButtonStates()
     local groupFrames = self.groupFrames
     if type(groupFrames) ~= "table" then
@@ -1987,19 +2011,30 @@ function CooldownCompanion:RefreshPowerSensitiveButtonStates()
 
     local updated = false
     local foundStaleEntry = false
+    local triggerFrames = self._powerSensitiveTriggerFrames
+    if triggerFrames then
+        wipe(triggerFrames)
+    else
+        triggerFrames = {}
+        self._powerSensitiveTriggerFrames = triggerFrames
+    end
+
     for _, button in ipairs(indexedButtons) do
         local groupId = button and button._groupId
         local frame = groupId and groupFrames[groupId] or nil
         local buttonData = button and button.buttonData
         if frame and frame.IsShown and frame:IsShown()
                 and button._pooled ~= true
-                and IsPowerSensitiveSpellButton(button, buttonData) then
+                and IsPowerSensitiveSpellButton(self, button, buttonData) then
             RefreshPowerSensitiveButton(button, buttonData)
+            AddPowerSensitiveTriggerFrame(self, triggerFrames, frame, groupId)
             updated = true
         else
             foundStaleEntry = true
         end
     end
+
+    RefreshPowerSensitiveTriggerFrames(self, triggerFrames)
 
     if foundStaleEntry then
         self._powerSensitiveButtonIndexDirty = true

@@ -15,7 +15,6 @@ local ipairs = ipairs
 local select = select
 local table_insert = table.insert
 local type = type
-local GetTime = GetTime
 
 -- Import cross-file variables
 local defaults = ST._defaults
@@ -26,7 +25,6 @@ local minimapButton = ST._minimapButton
 local LSM = LibStub("LibSharedMedia-3.0")
 
 local SatisfyQueuedActionbarCooldownRefresh
-local ACTIONBAR_COOLDOWN_FALLBACK_INTERVAL = 0.5
 
 -- Viewer frame list used by BuildViewerAuraMap, FindViewerChildForSpell, and OnEnable hooks.
 local VIEWER_NAMES = {
@@ -318,24 +316,27 @@ function CooldownCompanion:OnEnable()
 end
 
 function CooldownCompanion:OnCooldownStateChanged(event, spellID, baseSpellID, category, startRecoveryCategory)
-    if self:ShouldSkipActionbarCooldownEvent(event) then
-        return
-    end
-
     if self:ShouldSkipStartRecoveryOnlyCooldownEvent(event, spellID, category, startRecoveryCategory) then
         SatisfyQueuedActionbarCooldownRefresh(self)
         return
     end
 
-    if self.UpdateItemCooldownButtonsForEvent
-            and (
-                event == "BAG_UPDATE_COOLDOWN"
-                or (event == "ACTIONBAR_UPDATE_COOLDOWN" and not self:HasGCDSwipeRefreshConsumers())
-            ) then
+    if event == "BAG_UPDATE_COOLDOWN" and self.UpdateItemCooldownButtonsForEvent then
         self:UpdateItemCooldownButtonsForEvent()
         return
     end
 
+    if event == "ACTIONBAR_UPDATE_COOLDOWN" and not self:HasGCDSwipeRefreshConsumers() then
+        if self.UpdateItemCooldownButtonsForEvent then
+            self:UpdateItemCooldownButtonsForEvent()
+        end
+        if self.UpdateCooldownButtonsForActionbarEvent then
+            self:UpdateCooldownButtonsForActionbarEvent()
+        end
+        return
+    end
+
+    local hadPendingDirty = self._cooldownsDirty == true
     self:MarkCooldownsDirty()
     if event == "SPELL_UPDATE_COOLDOWN"
             and spellID
@@ -343,12 +344,15 @@ function CooldownCompanion:OnCooldownStateChanged(event, spellID, baseSpellID, c
             and not self:HasGCDSwipeRefreshConsumers()
             and self.UpdateCooldownButtonsForSpellEvent then
         if self:UpdateCooldownButtonsForSpellEvent(spellID, baseSpellID) then
-            if not SatisfyQueuedActionbarCooldownRefresh(self) then
-                self._cooldownRefreshSatisfiedSerial = self._cooldownDirtySerial or 0
+            if not hadPendingDirty then
+                if not SatisfyQueuedActionbarCooldownRefresh(self) then
+                    self._cooldownRefreshSatisfiedSerial = self._cooldownDirtySerial or 0
+                end
             end
         else
-            SatisfyQueuedActionbarCooldownRefresh(self)
-            self._cooldownRefreshSatisfiedSerial = self._cooldownDirtySerial or 0
+            if not hadPendingDirty then
+                SatisfyQueuedActionbarCooldownRefresh(self)
+            end
         end
         return
     end
@@ -376,46 +380,22 @@ function CooldownCompanion:HasGCDSwipeRefreshConsumers()
             if style and style.showGCDSwipe == true then
                 return true
             end
+            for _, button in ipairs(frame.buttons or {}) do
+                local buttonStyle = button and button.style
+                if button and button._pooled ~= true
+                        and buttonStyle and buttonStyle.showGCDSwipe == true then
+                    return true
+                end
+            end
         end
     end
     return false
 end
 
 function CooldownCompanion:ShouldSkipStartRecoveryOnlyCooldownEvent(event, spellID, category, startRecoveryCategory)
-    if event ~= "SPELL_UPDATE_COOLDOWN" or not spellID or not startRecoveryCategory then
-        return false
-    end
-    if category and category ~= 0 then
-        return false
-    end
-    return not self:HasGCDSwipeRefreshConsumers()
-end
-
-function CooldownCompanion:ShouldSkipActionbarCooldownEvent(event)
-    if event ~= "ACTIONBAR_UPDATE_COOLDOWN" then
-        return false
-    end
-    if self:HasGCDSwipeRefreshConsumers() then
-        return false
-    end
-
-    local gcdInfo = C_Spell.GetSpellCooldown(61304)
-    if gcdInfo and gcdInfo.isActive == true then
-        return true, "gcd-only-actionbar-event"
-    end
-
-    local now = type(GetTime) == "function" and GetTime() or nil
-    if not now then
-        return false
-    end
-
-    local lastFallbackAt = self._lastActionbarCooldownFallbackAt
-    local interval = self._actionbarCooldownFallbackInterval or ACTIONBAR_COOLDOWN_FALLBACK_INTERVAL
-    if lastFallbackAt and now - lastFallbackAt < interval then
-        return true, "actionbar-fallback-throttle"
-    end
-
-    self._lastActionbarCooldownFallbackAt = now
+    -- Conservatively keep these events on the normal spell refresh path. The
+    -- payload alone does not prove that a start-recovery category excludes a
+    -- real tracked spell cooldown, especially for no-category cooldowns.
     return false
 end
 
@@ -508,7 +488,9 @@ local function RecordChargeSpentForCastButton(addon, button, buttonData, spellID
         EntryRuntime.RecordChargeSpent(button)
         return true
     end
-    return false
+    return addon.HasCastCountText
+        and addon.HasCastCountText(buttonData)
+        or false
 end
 
 local function VisitIndexedCastButtons(addon, spellID, baseSpellID, callback)
@@ -591,6 +573,55 @@ function CooldownCompanion:CollectCooldownEventButtonsForSpell(spellID, baseSpel
         return false
     end)
 
+    return #collected > 0 and collected or nil
+end
+
+function CooldownCompanion:CollectCooldownEventButtonsForActionbar()
+    local index = self._castButtonIndex
+    if self._castButtonIndexDirty or type(index) ~= "table" then
+        index = RebuildCastButtonIndex(self)
+    end
+
+    local collected = self._cooldownEventActionbarButtonsScratch
+    if collected then
+        wipe(collected)
+    else
+        collected = {}
+        self._cooldownEventActionbarButtonsScratch = collected
+    end
+
+    local seen = self._cooldownEventActionbarButtonsSeen
+    if seen then
+        wipe(seen)
+    else
+        seen = {}
+        self._cooldownEventActionbarButtonsSeen = seen
+    end
+
+    local foundStaleEntry = false
+    for _, buttons in pairs(index) do
+        for _, button in ipairs(buttons) do
+            if button and not seen[button] then
+                seen[button] = true
+                local groupId = button._groupId
+                local frame = groupId and self.groupFrames and self.groupFrames[groupId] or nil
+                local buttonData = button.buttonData
+                if frame and frame.IsShown and frame:IsShown()
+                        and frame.buttons
+                        and buttonData
+                        and button.UpdateCooldown
+                        and button._pooled ~= true then
+                    table_insert(collected, button)
+                else
+                    foundStaleEntry = true
+                end
+            end
+        end
+    end
+
+    if foundStaleEntry then
+        self._castButtonIndexDirty = true
+    end
     return #collected > 0 and collected or nil
 end
 

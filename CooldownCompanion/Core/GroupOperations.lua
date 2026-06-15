@@ -113,6 +113,7 @@ local function GetButtonPeriodicCooldownRefreshReason(button)
     if ReadyGlowWindowNeedsPeriodicRefresh(button, "_readyGlowStartTime") then return "ready-glow-window" end
     if ReadyGlowWindowNeedsPeriodicRefresh(button, "_readyGlowMaxChargesStartTime") then return "ready-glow-max-charges-window" end
     if button._conditionalPreviewRemaining ~= nil then return "conditional-preview" end
+    if button.style and button.style.showAssistedHighlight == true then return "assisted-highlight" end
     return nil
 end
 
@@ -142,6 +143,25 @@ local function RebuildCooldownPeriodicRefreshIndex(addon)
     addon._cooldownPeriodicRefreshButtonsDirty = nil
     addon._cooldownPeriodicRefreshActive = count > 0 or nil
     return count
+end
+
+local function AddTriggerFrameForButton(addon, triggerFrames, frame, groupId)
+    local group = addon.db and addon.db.profile
+        and addon.db.profile.groups and addon.db.profile.groups[groupId] or nil
+    if group and group.displayMode == "trigger" then
+        triggerFrames[frame] = true
+    end
+end
+
+local function RefreshTriggerFrames(addon, triggerFrames)
+    if not addon.UpdateAuraTextureVisual then
+        return
+    end
+    for frame in pairs(triggerFrames) do
+        if frame.buttons and frame.buttons[1] then
+            addon:UpdateAuraTextureVisual(frame.buttons[1])
+        end
+    end
 end
 
 function CooldownCompanion:InvalidateCooldownRefreshIndexes()
@@ -216,9 +236,9 @@ local function PrepareCooldownUpdatePass(addon)
     addon._cooldownUpdatePassActive = true
 end
 
-local function FinishCooldownUpdatePass(addon)
+local function FinishCooldownUpdatePass(addon, recordsMaintenanceRefresh)
     addon._cooldownUpdatePassActive = nil
-    if type(GetTime) == "function" then
+    if recordsMaintenanceRefresh and type(GetTime) == "function" then
         addon._lastCooldownMaintenanceRefreshAt = GetTime()
     end
 end
@@ -2382,6 +2402,9 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                         if frame.UpdateCooldowns then
                             frame:UpdateCooldowns()
                         end
+                        if self.InvalidateCooldownRefreshIndexes then
+                            self:InvalidateCooldownRefreshIndexes()
+                        end
                         if group.compactLayout then
                             frame._layoutDirty = true
                             self:UpdateGroupLayout(groupId)
@@ -2533,34 +2556,56 @@ function CooldownCompanion:DiscardDormantFrame(groupId)
     end
 end
 
+local function UpdateCollectedCooldownButtons(addon, buttons)
+    if not buttons then
+        return false
+    end
+
+    PrepareCooldownUpdatePass(addon)
+
+    local updated = false
+    local triggerFrames = addon._cooldownEventTriggerFrames
+    if triggerFrames then
+        wipe(triggerFrames)
+    else
+        triggerFrames = {}
+        addon._cooldownEventTriggerFrames = triggerFrames
+    end
+
+    for _, button in ipairs(buttons) do
+        local groupId = button and button._groupId
+        local frame = groupId and addon.groupFrames and addon.groupFrames[groupId] or nil
+        if frame and frame.IsShown and frame:IsShown()
+                and button.UpdateCooldown
+                and button._pooled ~= true then
+            button:UpdateCooldown()
+            AddTriggerFrameForButton(addon, triggerFrames, frame, groupId)
+            updated = true
+        end
+    end
+
+    RefreshTriggerFrames(addon, triggerFrames)
+
+    RebuildCooldownPeriodicRefreshIndex(addon)
+    FinishCooldownUpdatePass(addon)
+
+    return updated
+end
+
 function CooldownCompanion:UpdateCooldownButtonsForSpellEvent(spellID, baseSpellID)
     if not self.CollectCooldownEventButtonsForSpell then
         return false
     end
 
-    local buttons = self:CollectCooldownEventButtonsForSpell(spellID, baseSpellID)
-    if not buttons then
+    return UpdateCollectedCooldownButtons(self, self:CollectCooldownEventButtonsForSpell(spellID, baseSpellID))
+end
+
+function CooldownCompanion:UpdateCooldownButtonsForActionbarEvent()
+    if not self.CollectCooldownEventButtonsForActionbar then
         return false
     end
 
-    PrepareCooldownUpdatePass(self)
-
-    local updated = false
-    for _, button in ipairs(buttons) do
-        local groupId = button and button._groupId
-        local frame = groupId and self.groupFrames and self.groupFrames[groupId] or nil
-        if frame and frame.IsShown and frame:IsShown()
-                and button.UpdateCooldown
-                and button._pooled ~= true then
-            button:UpdateCooldown()
-            updated = true
-        end
-    end
-
-    RebuildCooldownPeriodicRefreshIndex(self)
-    FinishCooldownUpdatePass(self)
-
-    return updated
+    return UpdateCollectedCooldownButtons(self, self:CollectCooldownEventButtonsForActionbar())
 end
 
 function CooldownCompanion:UpdateItemCooldownButtonsForEvent()
@@ -2611,15 +2656,25 @@ function CooldownCompanion:UpdateItemCooldownButtonsForEvent()
     PrepareCooldownUpdatePass(self)
 
     local updated = false
+    local triggerFrames = self._cooldownEventTriggerFrames
+    if triggerFrames then
+        wipe(triggerFrames)
+    else
+        triggerFrames = {}
+        self._cooldownEventTriggerFrames = triggerFrames
+    end
+
     for _, button in ipairs(visibleButtons) do
         local groupId = button and button._groupId
         local frame = groupId and self.groupFrames and self.groupFrames[groupId] or nil
         if frame then
             button:UpdateCooldown()
+            AddTriggerFrameForButton(self, triggerFrames, frame, groupId)
             updated = true
         end
     end
 
+    RefreshTriggerFrames(self, triggerFrames)
     RebuildCooldownPeriodicRefreshIndex(self)
     FinishCooldownUpdatePass(self)
 
@@ -2636,7 +2691,7 @@ function CooldownCompanion:UpdateAllCooldowns()
     end
 
     RebuildCooldownPeriodicRefreshIndex(self)
-    FinishCooldownUpdatePass(self)
+    FinishCooldownUpdatePass(self, true)
 end
 
 function CooldownCompanion:UpdateActiveCooldownButtons()
@@ -2656,27 +2711,33 @@ function CooldownCompanion:UpdateActiveCooldownButtons()
     else
         nextActiveButtons = {}
     end
+    local triggerFrames = self._cooldownEventTriggerFrames
+    if triggerFrames then
+        wipe(triggerFrames)
+    else
+        triggerFrames = {}
+        self._cooldownEventTriggerFrames = triggerFrames
+    end
     for _, button in ipairs(activeButtons or {}) do
         local groupId = button and button._groupId
         local frame = groupId and self.groupFrames and self.groupFrames[groupId] or nil
         if frame and frame.IsShown and frame:IsShown()
                 and button.UpdateCooldown
                 and button._pooled ~= true then
+            button:UpdateCooldown()
+            AddTriggerFrameForButton(self, triggerFrames, frame, groupId)
+
             local reason = GetButtonPeriodicCooldownRefreshReason(button)
             if reason then
-                button:UpdateCooldown()
-
-                reason = GetButtonPeriodicCooldownRefreshReason(button)
-                if reason then
-                    table_insert(nextActiveButtons, button)
-                    if not periodicRefreshActive then
-                        periodicRefreshActive = true
-                    end
+                table_insert(nextActiveButtons, button)
+                if not periodicRefreshActive then
+                    periodicRefreshActive = true
                 end
             end
         end
     end
 
+    RefreshTriggerFrames(self, triggerFrames)
     FinishCooldownUpdatePass(self)
     self._cooldownPeriodicRefreshButtonsNext = activeButtons
     self._cooldownPeriodicRefreshButtons = nextActiveButtons

@@ -206,20 +206,22 @@ end
 
 function CooldownCompanion:UpdateRangeCheckRegistrations()
     local newSet = {}
+    local allButtonsBySpell = {}
     local newButtonsBySpell = {}
     self:ForEachButton(function(button, bd)
         if bd.type == "spell"
             and not bd.isPassive
-            and not bd.isPassiveCooldown
-            and ((button.style and button.style.showOutOfRange)
-                or (self.TriggerRowUsesCondition and self:TriggerRowUsesCondition(bd, "rangeActive"))) then
-            newSet[bd.id] = true
-            local buttons = newButtonsBySpell[bd.id]
+            and not bd.isPassiveCooldown then
+            local buttons = allButtonsBySpell[bd.id]
             if not buttons then
                 buttons = {}
-                newButtonsBySpell[bd.id] = buttons
+                allButtonsBySpell[bd.id] = buttons
             end
             table_insert(buttons, button)
+            if (button.style and button.style.showOutOfRange)
+                    or (self.TriggerRowUsesCondition and self:TriggerRowUsesCondition(bd, "rangeActive")) then
+                newSet[bd.id] = true
+            end
         end
     end)
     -- Enable newly needed range checks
@@ -233,6 +235,9 @@ function CooldownCompanion:UpdateRangeCheckRegistrations()
         if not newSet[spellId] then
             C_Spell.EnableSpellRangeCheck(spellId, false)
         end
+    end
+    for spellId in pairs(newSet) do
+        newButtonsBySpell[spellId] = allButtonsBySpell[spellId]
     end
     self._rangeCheckSpells = newSet
     self._rangeCheckButtonsBySpell = newButtonsBySpell

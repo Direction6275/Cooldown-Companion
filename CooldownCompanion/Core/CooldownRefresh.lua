@@ -100,6 +100,9 @@ function CooldownCompanion:QueueCooldownRefresh(source, eventName)
     self._queuedCooldownRefreshEvent = eventName
     if RefreshSourceSatisfiesDirty(source) then
         self._queuedCooldownRefreshSatisfiedSerial = self._cooldownDirtySerial or 0
+    else
+        self._queuedCooldownRefreshSatisfiedSerial = nil
+        self._cooldownRefreshSatisfiedSerial = nil
     end
     self:EnsureCooldownRefreshQueueFrame()
 end
@@ -110,8 +113,9 @@ function CooldownCompanion:SatisfyQueuedCooldownRefresh(source)
         return false
     end
 
+    local satisfiedSerial = self._queuedCooldownRefreshSatisfiedSerial
     self:ResetCooldownRefreshState()
-    self._cooldownRefreshSatisfiedSerial = self._cooldownDirtySerial or 0
+    self._cooldownRefreshSatisfiedSerial = satisfiedSerial
     return true
 end
 
@@ -146,7 +150,7 @@ function CooldownCompanion:CanSkipTickerCooldownRefresh()
 end
 
 function CooldownCompanion:ShouldRunTickerCooldownRefresh()
-    if self._cooldownsDirty or self._cooldownPeriodicRefreshActive then
+    if self._cooldownsDirty then
         return true
     end
 
@@ -172,13 +176,16 @@ function CooldownCompanion:TickCooldownRefresh()
     if self:CanSkipTickerCooldownRefresh() then
         return true
     end
-    if self._cooldownPeriodicRefreshActive and not self._cooldownsDirty then
+    local shouldRunFullRefresh = self:ShouldRunTickerCooldownRefresh()
+    if self._cooldownPeriodicRefreshActive
+            and not self._cooldownsDirty
+            and not shouldRunFullRefresh then
         if self.UpdateActiveCooldownButtons then
             self:UpdateActiveCooldownButtons()
             return false
         end
     end
-    if not self:ShouldRunTickerCooldownRefresh() then
+    if not shouldRunFullRefresh then
         return true
     end
     RunCooldownRefresh(self)
