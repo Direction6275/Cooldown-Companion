@@ -220,7 +220,12 @@ function CooldownCompanion:OnEnable()
                 ST._QueueInheritedUnitFrameAlphaResync()
             end
             self:MarkCooldownsDirty()
-            self:UpdateAllCooldowns()
+            self:UpdateAllCooldowns({
+                kind = "unit-target",
+                source = "target-event",
+                event = event,
+                unit = "target",
+            })
         end)
     end
     self._unitTargetFrame:RegisterUnitEvent("UNIT_TARGET", "player")

@@ -8,6 +8,8 @@
     - _queuedCooldownRefreshSource: pending queued refresh source; also the
       queue-pending flag checked by the ticker. Last writer wins; this is only
       a debug breadcrumb, not skip eligibility.
+    - _queuedCooldownRefreshReason: structured pending reason passed to the
+      eventual refresh walk. Ambiguous combinations escalate to full refresh.
     - _queuedCooldownRefreshCooldownEventSerial: dirty serial captured when a
       queued cooldown-event request enters the queue.
     - _cooldownRefreshSatisfiedSerial: dirty serial covered by an executed
@@ -61,11 +63,12 @@ end
 
 function CooldownCompanion:FlushQueuedCooldownRefresh()
     local queuedSource = self._queuedCooldownRefreshSource
+    local queuedReason = self._queuedCooldownRefreshReason
     local cooldownEventSerial = self._queuedCooldownRefreshCooldownEventSerial
     self:ResetCooldownRefreshState()
 
     if queuedSource then
-        self:UpdateAllCooldowns()
+        self:UpdateAllCooldowns(queuedReason)
         if cooldownEventSerial then
             self._cooldownRefreshSatisfiedSerial = cooldownEventSerial
         end
@@ -73,7 +76,11 @@ function CooldownCompanion:FlushQueuedCooldownRefresh()
 end
 
 function CooldownCompanion:QueueCooldownRefresh(source)
-    self._queuedCooldownRefreshSource = source or "event"
+    local reason = self:NormalizeCooldownRefreshReason(source, "queued-refresh")
+    self._queuedCooldownRefreshReason = self:CombineCooldownRefreshReasons(self._queuedCooldownRefreshReason, reason)
+    self._queuedCooldownRefreshSource = self:GetCooldownRefreshReasonSource(self._queuedCooldownRefreshReason or source)
+
+    source = self:GetCooldownRefreshReasonSource(source)
     if source == "cooldown-event" then
         self._queuedCooldownRefreshCooldownEventSerial = self._cooldownDirtySerial or 0
     end
@@ -86,16 +93,23 @@ function CooldownCompanion:RunImmediateCooldownRefresh(source)
         return
     end
 
-    local cooldownEventSerial
-    if source == "cooldown-event" then
+    local reason = self:NormalizeCooldownRefreshReason(source, "immediate-refresh")
+    if self._queuedCooldownRefreshSource then
+        reason = self:CombineCooldownRefreshReasons(self._queuedCooldownRefreshReason, reason)
+    end
+
+    local refreshSource = self:GetCooldownRefreshReasonSource(source)
+    local cooldownEventSerial = self._queuedCooldownRefreshCooldownEventSerial
+    if refreshSource == "cooldown-event" then
         cooldownEventSerial = self._cooldownDirtySerial or 0
     end
 
     self._queuedCooldownRefreshSource = nil
+    self._queuedCooldownRefreshReason = nil
     self._queuedCooldownRefreshCooldownEventSerial = nil
     self._cooldownImmediateRefreshThisFrame = true
     self:EnsureCooldownRefreshQueueFrame()
-    self:UpdateAllCooldowns()
+    self:UpdateAllCooldowns(reason)
     if cooldownEventSerial then
         self._cooldownRefreshSatisfiedSerial = cooldownEventSerial
     end
@@ -110,7 +124,11 @@ end
 
 function CooldownCompanion:TickCooldownRefresh()
     if self._queuedCooldownRefreshSource then
+        local queuedReasonScoped = self:IsScopedCooldownRefreshReason(self._queuedCooldownRefreshReason)
         self:FlushQueuedCooldownRefresh()
+        if queuedReasonScoped and self._cooldownsDirty and not self:CanSkipTickerCooldownRefresh() then
+            self:UpdateAllCooldowns()
+        end
         return false
     end
     if self:CanSkipTickerCooldownRefresh() then
@@ -126,6 +144,7 @@ function CooldownCompanion:ResetCooldownRefreshState()
     end
     self._cooldownRefreshQueueArmed = nil
     self._queuedCooldownRefreshSource = nil
+    self._queuedCooldownRefreshReason = nil
     self._queuedCooldownRefreshCooldownEventSerial = nil
     self._cooldownImmediateRefreshThisFrame = nil
 end

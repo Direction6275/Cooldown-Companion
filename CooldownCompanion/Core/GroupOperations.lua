@@ -2367,7 +2367,11 @@ function CooldownCompanion:DiscardDormantFrame(groupId)
     end
 end
 
-function CooldownCompanion:UpdateAllCooldowns()
+function CooldownCompanion:UpdateAllCooldowns(refreshReason)
+    if refreshReason ~= nil and self.NormalizeCooldownRefreshReason then
+        refreshReason = self:NormalizeCooldownRefreshReason(refreshReason, "update-all")
+    end
+
     self._gcdInfo = C_Spell.GetSpellCooldown(61304)
     -- GCD activity: isActive is NeverSecret (12.0.1 hotfix)
     self._gcdActive = self._gcdInfo and self._gcdInfo.isActive or false
@@ -2387,14 +2391,40 @@ function CooldownCompanion:UpdateAllCooldowns()
     -- Cache CDM viewer CVar once per tick (avoids per-button GetCVarBool in ResolveBuffViewerFrameForSpell)
     self._cdmViewerEnabled = C_CVar_GetCVarBool("cooldownViewerEnabled") == true
     self._cooldownUpdatePassActive = true
+    local scoped = self.IsScopedCooldownRefreshReason
+        and self:IsScopedCooldownRefreshReason(refreshReason)
+    local collectStats = scoped or self._collectCooldownRefreshStats == true
+    local stats
+    if collectStats then
+        stats = {
+            reason = refreshReason,
+            updatedGroupCount = 0,
+            skippedGroupCount = 0,
+            updatedButtonCount = 0,
+            skippedButtonCount = 0,
+        }
+    end
 
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
-            frame:UpdateCooldowns()
+            local updatedButtons, skippedButtons = frame:UpdateCooldowns(refreshReason, collectStats)
+            if stats then
+                updatedButtons = updatedButtons or 0
+                skippedButtons = skippedButtons or 0
+                if updatedButtons > 0 then
+                    stats.updatedGroupCount = stats.updatedGroupCount + 1
+                else
+                    stats.skippedGroupCount = stats.skippedGroupCount + 1
+                end
+                stats.updatedButtonCount = stats.updatedButtonCount + updatedButtons
+                stats.skippedButtonCount = stats.skippedButtonCount + skippedButtons
+            end
         end
     end
 
     self._cooldownUpdatePassActive = nil
+    self._lastCooldownRefreshStats = stats
+    return stats
 end
 
 function CooldownCompanion:UpdateAllGroupLayouts()
