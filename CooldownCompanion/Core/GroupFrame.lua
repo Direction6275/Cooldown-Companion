@@ -36,14 +36,14 @@ end
 
 local function RefreshButtonKeybindState(button, buttonData)
     if CooldownCompanion.RefreshResolvedItemKeybindState then
-        CooldownCompanion:RefreshResolvedItemKeybindState(button, buttonData)
-        return
+        return CooldownCompanion:RefreshResolvedItemKeybindState(button, buttonData)
     end
 
     local cache = ST._CacheButtonBindingKeys
     if cache then
-        cache(button, buttonData)
+        return cache(button, buttonData)
     end
+    return false
 end
 
 local function ClearButtonVisualState(button)

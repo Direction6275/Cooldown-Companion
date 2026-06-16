@@ -611,8 +611,9 @@ function CooldownCompanion:RefreshResolvedItemKeybindState(button, buttonData)
         button.keybindText:SetShown(button.style and button.style.showKeybindText and text ~= nil)
     end
     if CacheButtonBindingKeys then
-        CacheButtonBindingKeys(button, buttonData)
+        return CacheButtonBindingKeys(button, buttonData)
     end
+    return false
 end
 
 local function GetLiveOverrideSpellID(buttonData)

@@ -320,6 +320,7 @@ end
 -- Stores result as button._bindingKeyInfos (array of parsed structs, or empty table).
 local function CacheButtonBindingKeys(button, buttonData)
     local infos = {}
+    local actionSlotCooldownCandidateChanged = false
     if buttonData then
         local slots
         if buttonData._rotationAssistantVirtual == true then
@@ -351,11 +352,17 @@ local function CacheButtonBindingKeys(button, buttonData)
         end
 
         if buttonData.type == "spell" or buttonData._rotationAssistantVirtual == true then
-            button._actionSlotCooldownCandidate = slots ~= nil or nil
+            local actionSlotCooldownCandidate = slots ~= nil or nil
+            actionSlotCooldownCandidateChanged = button._actionSlotCooldownCandidate ~= actionSlotCooldownCandidate
+            button._actionSlotCooldownCandidate = actionSlotCooldownCandidate
+        elseif button._actionSlotCooldownCandidate ~= nil then
+            actionSlotCooldownCandidateChanged = true
+            button._actionSlotCooldownCandidate = nil
         end
     end
     button._bindingKeyInfos = infos
     RefreshKeyPressHighlightEnrollment(button)
+    return actionSlotCooldownCandidateChanged
 end
 
 -- Rebuild the entire item→slot reverse lookup cache by scanning action button frames.
@@ -512,11 +519,12 @@ function CooldownCompanion:RefreshKeybindState()
     self:RebuildSlotMapping()
     self:RebuildItemSlotCache()
     self:RebuildAddonSlotBindings()
-    self:OnKeybindsChanged()
+    return self:OnKeybindsChanged()
 end
 
 -- Refresh keybind text and binding key caches on all buttons.
 function CooldownCompanion:OnKeybindsChanged()
+    local actionSlotCooldownCandidateChanged = false
     self:ForEachButton(function(button, buttonData)
         if button.keybindText then
             local text = CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId, button)
@@ -524,8 +532,11 @@ function CooldownCompanion:OnKeybindsChanged()
             button.keybindText:SetShown(button.style.showKeybindText and text ~= nil)
         end
         -- Rebuild key press highlight binding cache
-        CacheButtonBindingKeys(button, buttonData)
+        if CacheButtonBindingKeys(button, buttonData) then
+            actionSlotCooldownCandidateChanged = true
+        end
     end)
+    return actionSlotCooldownCandidateChanged
 end
 
 -- Exports for key press highlight
