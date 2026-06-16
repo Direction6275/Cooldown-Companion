@@ -1238,6 +1238,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 spellCooldownDuration = spellCooldownResult.durationObj
                 spellRealCooldownShown = spellCooldownResult.realCooldownShown == true
                 isOnGCD = spellCooldownResult.isOnGCD or false
+                button._actionSlotCooldownFallback = spellCooldownResult.slotProbe ~= nil or nil
+                if spellCooldownResult.slotProbe then
+                    button._actionSlotCooldownCandidate = true
+                end
                 button._cooldownState = spellCooldownResult.state or COOLDOWN_STATE_READY
                 local renderDurationObj = spellCooldownResult.renderDurationObj
                 button._cooldownDeferred = spellCooldownResult.deferred or nil
@@ -1264,6 +1268,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
                 fetchOk = true
             elseif not fetchOk or auraOverrideActive then
+                button._actionSlotCooldownFallback = nil
                 button.cooldown:SetCooldown(0, 0)
             end
         elseif IsEntryItemLike(buttonData) then

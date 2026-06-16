@@ -130,6 +130,11 @@ function CooldownCompanion:TickCooldownRefresh()
         self:FlushQueuedCooldownRefresh()
         if queuedReasonScoped and self._cooldownsDirty and not self:CanSkipTickerCooldownRefresh() then
             self:UpdateAllCooldowns()
+        elseif not self._cooldownsDirty and self:HasPeriodicCooldownRefreshCandidates() then
+            self:UpdateAllCooldowns({
+                kind = "periodic",
+                source = "ticker",
+            })
         end
         return false
     end

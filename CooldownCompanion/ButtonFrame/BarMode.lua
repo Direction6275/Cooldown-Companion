@@ -1917,6 +1917,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._noCooldownSpellId = nil
     button._baseNoCooldown = nil
     button._baseNoCooldownSpellId = nil
+    button._actionSlotCooldownFallback = nil
     button._resourceGateCost = nil
     button._resourceGateCostSpellId = nil
     button._baseResourceGateCost = nil

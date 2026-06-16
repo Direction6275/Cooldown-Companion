@@ -729,6 +729,8 @@ local function ClearReusableButtonRuntime(button)
     button._noCooldownSpellId = nil
     button._baseNoCooldown = nil
     button._baseNoCooldownSpellId = nil
+    button._actionSlotCooldownCandidate = nil
+    button._actionSlotCooldownFallback = nil
     button._resourceGateCost = nil
     button._resourceGateCostSpellId = nil
     button._baseResourceGateCost = nil
@@ -2540,6 +2542,9 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
                 PreparePooledButtonForUse(self, frame, group, button, i, buttonData, effectiveStyle)
             elseif buttonData._rotationAssistantVirtual == true and self.RefreshRotationAssistantButton then
                 self:RefreshRotationAssistantButton(button)
+            end
+            if not reusedButton then
+                RefreshButtonKeybindState(button, buttonData)
             end
 
             button:Show()

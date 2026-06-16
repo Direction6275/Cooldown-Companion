@@ -121,6 +121,7 @@ function CooldownCompanion:OnEnable()
     }) do
         self:RegisterEvent(evt, "OnCooldownStateChanged")
     end
+    self:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN", "OnActionBarCooldownChanged")
     self:RegisterEvent("SPELL_UPDATE_USABLE", "OnSpellUsabilityChanged")
 
     -- Broader state changes can wait for the regular ticker pass.
@@ -329,6 +330,13 @@ function CooldownCompanion:OnSpellUsabilityChanged()
     self:QueueCooldownRefresh({
         kind = "spell-usability",
         source = "spell-usability-event",
+    })
+end
+
+function CooldownCompanion:OnActionBarCooldownChanged()
+    self:QueueCooldownRefresh({
+        kind = "actionbar-cooldown",
+        source = "actionbar-cooldown-event",
     })
 end
 

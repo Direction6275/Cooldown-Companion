@@ -773,6 +773,8 @@ function CooldownCompanion:ClearRotationAssistantButtonRuntime(button)
     button._baseNoCooldownSpellId = nil
     button._noCooldown = nil
     button._noCooldownSpellId = nil
+    button._actionSlotCooldownCandidate = nil
+    button._actionSlotCooldownFallback = nil
     button._resourceGateCost = nil
     button._resourceGateCostSpellId = nil
     button._baseResourceGateCost = nil

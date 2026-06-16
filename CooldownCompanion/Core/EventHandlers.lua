@@ -603,11 +603,13 @@ function CooldownCompanion:OnActionBarSlotChanged(_, slot)
         wipe(pendingSlotChangedSlots)
         self:RebuildAddonSlotBindings()
         self:OnKeybindsChanged()
+        self:QueueCooldownRefresh("actionbar-layout-event")
     end)
 end
 
 function CooldownCompanion:OnActionBarLayoutChanged()
     self:RefreshKeybindState()
+    self:QueueCooldownRefresh("actionbar-layout-event")
     -- UPDATE_OVERRIDE_ACTIONBAR / UPDATE_VEHICLE_ACTIONBAR also route here for
     -- keybind rebuilds; piggyback vehicle UI state check to avoid duplicate
     -- AceEvent registrations (AceEvent allows only one handler per event).

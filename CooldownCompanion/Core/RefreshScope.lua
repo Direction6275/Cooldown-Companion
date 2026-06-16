@@ -14,6 +14,7 @@ local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO or "zero"
 local SCOPED_REASON_KINDS = {
     ["periodic"] = true,
     ["spell-usability"] = true,
+    ["actionbar-cooldown"] = true,
     ["target-changed"] = true,
     ["unit-target"] = true,
     ["unit-aura"] = true,
@@ -65,6 +66,15 @@ function CooldownCompanion:NormalizeCooldownRefreshReason(reasonOrSource, fallba
     end
 
     if kind == "spell-usability" then
+        local reason = CopyReason(reasonOrSource) or {}
+        reason.source = reason.source or "event"
+        reason.origin = reason.origin or fallbackOrigin
+        reason.unit = nil
+        reason.broad = false
+        return reason
+    end
+
+    if kind == "actionbar-cooldown" then
         local reason = CopyReason(reasonOrSource) or {}
         reason.source = reason.source or "event"
         reason.origin = reason.origin or fallbackOrigin
@@ -236,6 +246,33 @@ local function ButtonUsesTargetRangeOrUsability(addon, button, buttonData)
     return false
 end
 
+local function ButtonUsesActionbarCooldown(addon, button, buttonData)
+    if not buttonData then
+        return false
+    end
+
+    local isItemLike = addon.IsEntryItemLike and addon.IsEntryItemLike(buttonData)
+    if isItemLike or buttonData.type == "equipitem" then
+        return true
+    end
+
+    if buttonData.type ~= "spell"
+        or buttonData.isPassive == true
+        or buttonData.isPassiveCooldown == true
+        or buttonData.hasCharges == true then
+        return false
+    end
+
+    if buttonData._cooldownSecrecy ~= nil and buttonData._cooldownSecrecy ~= 0 then
+        return true
+    end
+
+    return button
+        and button._noCooldown ~= true
+        and (button._actionSlotCooldownCandidate == true
+            or button._actionSlotCooldownFallback == true)
+end
+
 local function ButtonUsesSpellUsability(addon, button, buttonData)
     if not (buttonData and buttonData.type == "spell")
         or buttonData.isPassive == true
@@ -366,6 +403,9 @@ local function ButtonHasCooldownDrivenIconFeature(button, buttonData, style)
         return true
     end
     if buttonData.hideWhileOnCooldown == true or buttonData.hideWhileNotOnCooldown == true then
+        return true
+    end
+    if buttonData.hideWhileZeroCharges == true then
         return true
     end
     local soundAlerts = buttonData.soundAlerts
@@ -529,6 +569,10 @@ local function ButtonNeedsTriggerConditionPeriodicRefresh(addon, button, buttonD
         and (button._desatCooldownActive == true or button._cooldownState == COOLDOWN_STATE_COOLDOWN) then
         return true
     end
+    if addon:TriggerRowUsesCondition(buttonData, "auraActive")
+        and button._auraActive == true then
+        return true
+    end
     if addon:TriggerRowUsesCondition(buttonData, "chargesRecharging")
         and button._chargeRecharging == true then
         return true
@@ -684,6 +728,9 @@ function CooldownCompanion:ButtonMatchesCooldownRefreshReason(button, buttonData
     end
     if reason.kind == "spell-usability" then
         return ButtonUsesSpellUsability(self, button, buttonData)
+    end
+    if reason.kind == "actionbar-cooldown" then
+        return ButtonUsesActionbarCooldown(self, button, buttonData)
     end
     if buttonData._rotationAssistantVirtual == true then
         return true

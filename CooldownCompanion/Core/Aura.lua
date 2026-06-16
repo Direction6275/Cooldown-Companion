@@ -1251,6 +1251,7 @@ function CooldownCompanion:QueueBuildViewerAuraMap()
     C_Timer.After(0, function()
         if pendingViewerAuraMapToken ~= token then return end
         self:BuildViewerAuraMap()
+        self:QueueCooldownRefresh("viewer-map-event")
         self:RefreshConfigPanel()
     end)
 end

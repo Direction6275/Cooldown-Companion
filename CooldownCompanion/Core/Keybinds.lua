@@ -349,6 +349,10 @@ local function CacheButtonBindingKeys(button, buttonData)
                 end
             end
         end
+
+        if buttonData.type == "spell" or buttonData._rotationAssistantVirtual == true then
+            button._actionSlotCooldownCandidate = slots ~= nil or nil
+        end
     end
     button._bindingKeyInfos = infos
     RefreshKeyPressHighlightEnrollment(button)
