@@ -121,6 +121,7 @@ function CooldownCompanion:OnEnable()
     }) do
         self:RegisterEvent(evt, "OnCooldownStateChanged")
     end
+    self:RegisterEvent("SPELL_UPDATE_USABLE", "OnSpellUsabilityChanged")
 
     -- Broader state changes can wait for the regular ticker pass.
     for _, evt in ipairs({
@@ -317,15 +318,18 @@ function CooldownCompanion:OnEnable()
     self:FinalizeContainerAnchorsToScreenOffsets()
 end
 
-function CooldownCompanion:OnCooldownStateChanged(event)
-    if event == "ACTIONBAR_UPDATE_COOLDOWN" then
-        return
-    end
-
+function CooldownCompanion:OnCooldownStateChanged()
     self:MarkCooldownsDirty()
     -- Preserve immediate cooldown-event accuracy. This refresh only suppresses
     -- the next ticker walk when no other dirty state appears afterward.
     self:RunImmediateCooldownRefresh("cooldown-event")
+end
+
+function CooldownCompanion:OnSpellUsabilityChanged()
+    self:QueueCooldownRefresh({
+        kind = "spell-usability",
+        source = "spell-usability-event",
+    })
 end
 
 -- Iterate every button across all groups, calling callback(button, buttonData) for each.

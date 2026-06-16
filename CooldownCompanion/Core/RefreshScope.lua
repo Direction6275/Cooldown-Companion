@@ -6,10 +6,14 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic or {}
+local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN or "cooldown"
 local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL or "full"
+local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING or "missing"
+local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO or "zero"
 
 local SCOPED_REASON_KINDS = {
     ["periodic"] = true,
+    ["spell-usability"] = true,
     ["target-changed"] = true,
     ["unit-target"] = true,
     ["unit-aura"] = true,
@@ -56,6 +60,15 @@ function CooldownCompanion:NormalizeCooldownRefreshReason(reasonOrSource, fallba
         local reason = CopyReason(reasonOrSource) or {}
         reason.source = reason.source or "ticker"
         reason.origin = reason.origin or fallbackOrigin
+        reason.broad = false
+        return reason
+    end
+
+    if kind == "spell-usability" then
+        local reason = CopyReason(reasonOrSource) or {}
+        reason.source = reason.source or "event"
+        reason.origin = reason.origin or fallbackOrigin
+        reason.unit = nil
         reason.broad = false
         return reason
     end
@@ -152,6 +165,21 @@ local function ButtonUsesAssistedTargetGate(button, buttonData)
         and style.assistedHighlightHostileTargetOnly ~= false
 end
 
+local function ButtonUsesAssistedHighlight(button, buttonData)
+    if not (button and button.assistedHighlight and buttonData and buttonData.type == "spell") then
+        return false
+    end
+    local style = button.style
+    return style and style.showAssistedHighlight == true
+end
+
+local function ButtonUsesTextureUnusableIndicator(button)
+    local style = button and button.style
+    local indicators = style and style.textureIndicators
+    local unusable = indicators and indicators.unusable
+    return type(unusable) == "table" and unusable.enabled == true
+end
+
 local function ButtonUsesUnusableTargetGate(button, buttonData)
     if buttonData.isPassive == true or buttonData.isPassiveCooldown == true then
         return false
@@ -192,6 +220,9 @@ local function ButtonUsesTargetRangeOrUsability(addon, button, buttonData)
     if ButtonUsesUnusableTargetGate(button, buttonData) then
         return true
     end
+    if ButtonUsesTextureUnusableIndicator(button) then
+        return true
+    end
     if button and button._isText and (
         TextSegmentsUseToken(button._textSegments, "oor")
         or TextSegmentsUseToken(button._textSegments, "unusable")
@@ -203,6 +234,26 @@ local function ButtonUsesTargetRangeOrUsability(addon, button, buttonData)
             or addon:TriggerRowUsesCondition(buttonData, "usable")
     end
     return false
+end
+
+local function ButtonUsesSpellUsability(addon, button, buttonData)
+    if not (buttonData and buttonData.type == "spell")
+        or buttonData.isPassive == true
+        or buttonData.isPassiveCooldown == true then
+        return false
+    end
+    if ButtonUsesUnusableTargetGate(button, buttonData) then
+        return true
+    end
+    if ButtonUsesTextureUnusableIndicator(button) then
+        return true
+    end
+    if button and button._isText and TextSegmentsUseToken(button._textSegments, "unusable") then
+        return true
+    end
+    return addon
+        and addon.TriggerRowUsesCondition
+        and addon:TriggerRowUsesCondition(buttonData, "usable")
 end
 
 local function ButtonUsesReadyGlowDuration(button)
@@ -259,39 +310,360 @@ local function ButtonNeedsReadyGlowPeriodicRefresh(button, buttonData)
         or button._desatCooldownActive == true
 end
 
-local function ButtonNeedsPeriodicCooldownRefresh(button, buttonData)
-    if not buttonData then
+local function ButtonNeedsIconCooldownTextPeriodicRefresh(button)
+    if not (button and button._cdTextRegion and not button._isText and not button._isBar) then
         return false
     end
-    if buttonData._rotationAssistantVirtual == true then
-        return true
-    end
-    if not button then
+    local style = button.style
+    if not style then
         return false
     end
-    if button._isText == true then
+    if button._auraPrimarySwipeActive == true or button._conditionalAuraDurationTextPreview == true then
+        return style.showAuraText ~= false
+    end
+    if button._secondaryCdTextRegion and button._secondaryCdActive == true then
+        return style.showCooldownText == true
+    end
+    return button._desatCooldownActive == true
+        and style.showCooldownText == true
+        and button._hideCooldownChargesActive ~= true
+end
+
+local function ButtonNeedsBarPeriodicRefresh(button)
+    if not (button and button._isBar == true) then
+        return false
+    end
+    if button._desatCooldownActive == true or button._cooldownState == COOLDOWN_STATE_COOLDOWN then
         return true
     end
-    if button._cooldownDeferred == true then
+    if button._chargeState == CHARGE_STATE_ZERO or button._chargeState == CHARGE_STATE_MISSING then
         return true
     end
-    if button._auraGraceStart ~= nil or button._targetSwitchAt ~= nil then
+    return button._auraActive == true
+        and (button._durationObj ~= nil or button._viewerBar ~= nil or button._conditionalPreviewRemaining ~= nil)
+end
+
+local function TextureIndicatorEnabled(style, sectionKey)
+    local indicators = style and style.textureIndicators
+    local section = indicators and indicators[sectionKey]
+    return type(section) == "table" and section.enabled == true
+end
+
+local function ButtonHasCooldownDrivenIconFeature(button, buttonData, style)
+    if style.showCooldownSwipe ~= false
+        and (style.showCooldownSwipeFill ~= false or style.showCooldownSwipeEdge ~= false) then
         return true
     end
-    if ButtonNeedsReadyGlowPeriodicRefresh(button, buttonData) then
+    if style.desaturateOnCooldown == true or buttonData.desaturateWhileZeroCharges == true then
+        return true
+    end
+    if style.iconFillEnabled == true then
+        return true
+    end
+    if TextureIndicatorEnabled(style, "cooldown")
+        or TextureIndicatorEnabled(style, "ready")
+        or TextureIndicatorEnabled(style, "unusable") then
+        return true
+    end
+    if buttonData.hideWhileOnCooldown == true or buttonData.hideWhileNotOnCooldown == true then
+        return true
+    end
+    local soundAlerts = buttonData.soundAlerts
+    if soundAlerts and type(soundAlerts.events) == "table" and next(soundAlerts.events) ~= nil then
+        return true
+    end
+    if style.readyGlowStyle and style.readyGlowStyle ~= "none" then
         return true
     end
     return false
+end
+
+local function ButtonNeedsIconCooldownStatePeriodicRefresh(button, buttonData)
+    if not (button and buttonData and not button._isText and not button._isBar) then
+        return false
+    end
+    local style = button.style
+    if not style then
+        return false
+    end
+    if button._desatCooldownActive ~= true
+        and button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
+        and button._chargeState ~= CHARGE_STATE_ZERO
+        and button._chargeState ~= CHARGE_STATE_MISSING then
+        return false
+    end
+    return ButtonHasCooldownDrivenIconFeature(button, buttonData, style)
+end
+
+local function ButtonUsesActiveAuraIcon(buttonData)
+    return buttonData
+        and (buttonData.auraShowAuraIcon == true
+            or buttonData.addedAs == "aura"
+            or buttonData.isPassive == true)
+end
+
+local function ButtonNeedsAuraIconVisualPeriodicRefresh(button, buttonData)
+    if not (button and buttonData and not button._isText and not button._isBar) then
+        return false
+    end
+    return buttonData.type == "spell"
+        and buttonData.auraTracking == true
+        and ButtonUsesActiveAuraIcon(buttonData)
+        and button._auraSpellID ~= nil
+end
+
+local function ButtonNeedsAuraPandemicPeriodicRefresh(button, buttonData)
+    if not (button and buttonData and not button._isText and not button._isBar) then
+        return false
+    end
+    if buttonData.type ~= "spell"
+        or buttonData.auraTracking ~= true
+        or button._auraSpellID == nil
+        or button._auraActive ~= true then
+        return false
+    end
+    local style = button.style
+    if not style then
+        return false
+    end
+    return style.showPandemicGlow ~= false
+        or buttonData.hideAuraActiveExceptPandemic == true
+end
+
+local function GetLiveOverrideSpellID(buttonData)
+    if not (C_Spell and C_Spell.GetOverrideSpell and buttonData and buttonData.id) then
+        return nil
+    end
+    local overrideID = C_Spell.GetOverrideSpell(buttonData.id)
+    if overrideID and overrideID ~= 0 and overrideID ~= buttonData.id then
+        return overrideID
+    end
+    return nil
+end
+
+local function GetSpellTexture(buttonData)
+    if not (C_Spell and C_Spell.GetSpellTexture and buttonData and buttonData.id) then
+        return nil
+    end
+    return C_Spell.GetSpellTexture(buttonData.id)
+end
+
+local function ButtonCanPollSpellVisuals(button, buttonData)
+    return button
+        and buttonData
+        and buttonData.type == "spell"
+        and buttonData.isPassive ~= true
+        and buttonData.isPassiveCooldown ~= true
+        and not buttonData.cdmChildSlot
+end
+
+local function ButtonNeedsSpellVisualPeriodicRefresh(button, buttonData)
+    if not ButtonCanPollSpellVisuals(button, buttonData) then
+        return false
+    end
+
+    local liveOverrideID = GetLiveOverrideSpellID(buttonData)
+    local spellTexture = GetSpellTexture(buttonData)
+    local previousOverrideID = button._periodicLiveOverrideSpellId
+    if previousOverrideID == nil then
+        previousOverrideID = button._liveOverrideSpellId
+    end
+    local previousTexture = button._periodicSpellTexture
+    if previousTexture == nil then
+        previousTexture = button._lastSpellTexture
+    end
+
+    if previousOverrideID ~= liveOverrideID
+        or (spellTexture ~= nil and spellTexture ~= previousTexture)
+        or (previousTexture ~= nil and spellTexture == nil) then
+        button._spellVisualRefreshPending = true
+        return true
+    end
+
+    return button._spellVisualRefreshPending == true
+end
+
+local function ButtonNeedsAssistedHighlightPeriodicRefresh(addon, button, buttonData)
+    if not ButtonUsesAssistedHighlight(button, buttonData) then
+        return false
+    end
+    return button._periodicAssistedSpellID ~= addon.assistedSpellID
+        or button._periodicAssistedHighlightHasHostileTarget ~= addon._assistedHighlightHasHostileTarget
+end
+
+local function ButtonNeedsItemRangeOrUsabilityPeriodicRefresh(addon, button, buttonData)
+    if not (buttonData and button) then
+        return false
+    end
+    local isItemLike = addon.IsEntryItemLike and addon.IsEntryItemLike(buttonData)
+    if not (isItemLike or buttonData.type == "equipitem") then
+        return false
+    end
+    return ButtonUsesTargetRangeOrUsability(addon, button, buttonData)
+end
+
+local function ButtonNeedsItemFallbackPeriodicRefresh(addon, buttonData)
+    if not (addon and addon.HasItemFallbacks and buttonData) then
+        return false
+    end
+    return (buttonData.type == "item" or buttonData.type == "equipitem")
+        and addon.HasItemFallbacks(buttonData) == true
+end
+
+local function CountTextIsActive(button)
+    if not (button and button.count and button.count.GetText) then
+        return false
+    end
+    local countText = button.count:GetText()
+    if type(issecretvalue) == "function" and issecretvalue(countText) then
+        return true
+    end
+    return countText ~= nil and countText ~= ""
+end
+
+local function ButtonNeedsTriggerConditionPeriodicRefresh(addon, button, buttonData)
+    if not (addon and addon.TriggerRowUsesCondition and button and buttonData) then
+        return false
+    end
+    if addon:TriggerRowUsesCondition(buttonData, "cooldownActive")
+        and (button._desatCooldownActive == true or button._cooldownState == COOLDOWN_STATE_COOLDOWN) then
+        return true
+    end
+    if addon:TriggerRowUsesCondition(buttonData, "chargesRecharging")
+        and button._chargeRecharging == true then
+        return true
+    end
+    if addon:TriggerRowUsesCondition(buttonData, "chargeState")
+        and button._chargeState ~= nil
+        and button._chargeState ~= CHARGE_STATE_FULL then
+        return true
+    end
+    if addon:TriggerRowUsesCondition(buttonData, "countTextActive")
+        and CountTextIsActive(button) then
+        return true
+    end
+    if addon:TriggerRowUsesCondition(buttonData, "countState")
+        and button._currentReadableCharges ~= nil then
+        return true
+    end
+    return false
+end
+
+local PERIODIC_REFRESH_CONTRACTS = {
+    {
+        tag = "assistant-runtime",
+        matches = function(addon, button, buttonData)
+            return buttonData._rotationAssistantVirtual == true
+                or ButtonNeedsAssistedHighlightPeriodicRefresh(addon, button, buttonData)
+        end,
+    },
+    {
+        tag = "text-runtime",
+        matches = function(_, button)
+            return button and button._isText == true
+        end,
+    },
+    {
+        tag = "cooldown-state",
+        matches = function(_, button, buttonData)
+            return button
+                and (button._cooldownDeferred == true
+                    or ButtonNeedsReadyGlowPeriodicRefresh(button, buttonData)
+                    or ButtonNeedsIconCooldownTextPeriodicRefresh(button)
+                    or ButtonNeedsIconCooldownStatePeriodicRefresh(button, buttonData)
+                    or ButtonNeedsBarPeriodicRefresh(button))
+        end,
+    },
+    {
+        tag = "aura-runtime",
+        matches = function(_, button, buttonData)
+            return button
+                and (button._auraGraceStart ~= nil
+                    or button._targetSwitchAt ~= nil
+                    or ButtonNeedsAuraIconVisualPeriodicRefresh(button, buttonData)
+                    or ButtonNeedsAuraPandemicPeriodicRefresh(button, buttonData))
+        end,
+    },
+    {
+        tag = "spell-visual",
+        matches = function(_, button, buttonData)
+            return button
+                and (button._iconDirty == true
+                    or ButtonNeedsSpellVisualPeriodicRefresh(button, buttonData))
+        end,
+    },
+    {
+        tag = "item-runtime",
+        matches = function(addon, button, buttonData)
+            return ButtonNeedsItemRangeOrUsabilityPeriodicRefresh(addon, button, buttonData)
+                or ButtonNeedsItemFallbackPeriodicRefresh(addon, buttonData)
+        end,
+    },
+    {
+        tag = "trigger-runtime",
+        matches = ButtonNeedsTriggerConditionPeriodicRefresh,
+    },
+}
+
+local function GetPeriodicRefreshContractTag(addon, button, buttonData)
+    if not buttonData then
+        return nil
+    end
+    for _, contract in ipairs(PERIODIC_REFRESH_CONTRACTS) do
+        if contract.matches(addon, button, buttonData) then
+            return contract.tag
+        end
+    end
+    return nil
+end
+
+local function CaptureButtonRefreshPollingState(addon, button, buttonData)
+    if not button then
+        return
+    end
+    if ButtonUsesAssistedHighlight(button, buttonData) then
+        button._periodicAssistedSpellID = addon.assistedSpellID
+        button._periodicAssistedHighlightHasHostileTarget = addon._assistedHighlightHasHostileTarget
+    end
+    if ButtonCanPollSpellVisuals(button, buttonData) then
+        button._periodicLiveOverrideSpellId = GetLiveOverrideSpellID(buttonData)
+        button._periodicSpellTexture = GetSpellTexture(buttonData)
+        button._spellVisualRefreshPending = nil
+    end
+end
+
+local function ButtonNeedsPeriodicCooldownRefresh(addon, button, buttonData)
+    return GetPeriodicRefreshContractTag(addon, button, buttonData) ~= nil
+end
+
+function CooldownCompanion:GetPeriodicCooldownRefreshContract(button, buttonData)
+    return GetPeriodicRefreshContractTag(self, button, buttonData)
+end
+
+function CooldownCompanion:RefreshAssistedHighlightHostileTargetState()
+    local hasHostileTarget = false
+    if type(UnitExists) == "function" and type(UnitCanAttack) == "function" then
+        if UnitExists("target") then
+            hasHostileTarget = UnitCanAttack("player", "target") and true or false
+        elseif UnitExists("softenemy") then
+            hasHostileTarget = UnitCanAttack("player", "softenemy") and true or false
+        end
+    end
+    self._assistedHighlightHasHostileTarget = hasHostileTarget
+    return hasHostileTarget
 end
 
 function CooldownCompanion:HasPeriodicCooldownRefreshCandidates()
     if not self.groupFrames then
         return false
     end
+    if self.RefreshAssistedHighlightHostileTargetState then
+        self:RefreshAssistedHighlightHostileTargetState()
+    end
     for _, frame in pairs(self.groupFrames) do
         if frame and frame.buttons and frame:IsShown() then
             for _, button in ipairs(frame.buttons) do
-                if ButtonNeedsPeriodicCooldownRefresh(button, button.buttonData) then
+                if ButtonNeedsPeriodicCooldownRefresh(self, button, button.buttonData) then
                     return true
                 end
             end
@@ -308,7 +680,10 @@ function CooldownCompanion:ButtonMatchesCooldownRefreshReason(button, buttonData
         return false
     end
     if reason.kind == "periodic" then
-        return ButtonNeedsPeriodicCooldownRefresh(button, buttonData)
+        return ButtonNeedsPeriodicCooldownRefresh(self, button, buttonData)
+    end
+    if reason.kind == "spell-usability" then
+        return ButtonUsesSpellUsability(self, button, buttonData)
     end
     if buttonData._rotationAssistantVirtual == true then
         return true
@@ -326,12 +701,39 @@ function CooldownCompanion:ButtonMatchesCooldownRefreshReason(button, buttonData
     return true
 end
 
+local function IsTriggerRefreshFrame(addon, frame)
+    if not (addon and frame) then
+        return false
+    end
+    if frame.displayMode == "trigger" then
+        return true
+    end
+
+    local groupId = frame.groupId
+    local profile = addon.db and addon.db.profile
+    local group = profile and profile.groups and groupId and profile.groups[groupId]
+    return group and group.displayMode == "trigger"
+end
+
+local function TriggerFrameMatchesCooldownRefreshReason(addon, frame, refreshReason)
+    for _, button in ipairs(frame.buttons) do
+        if addon:ButtonMatchesCooldownRefreshReason(button, button.buttonData, refreshReason) then
+            return true
+        end
+    end
+    return false
+end
+
 function CooldownCompanion:UpdateGroupFrameCooldownButtons(frame, refreshReason, collectStats)
     local scoped = self:IsScopedCooldownRefreshReason(refreshReason)
     local canFilter = scoped and self.ButtonMatchesCooldownRefreshReason
+    local forceWholeFrame = canFilter
+        and IsTriggerRefreshFrame(self, frame)
+        and TriggerFrameMatchesCooldownRefreshReason(self, frame, refreshReason)
     if not canFilter and not collectStats then
         for _, button in ipairs(frame.buttons) do
             button:UpdateCooldown()
+            CaptureButtonRefreshPollingState(self, button, button.buttonData)
         end
         return nil, nil
     end
@@ -339,9 +741,11 @@ function CooldownCompanion:UpdateGroupFrameCooldownButtons(frame, refreshReason,
     local updatedCount = 0
     local skippedCount = 0
     for _, button in ipairs(frame.buttons) do
-        if not canFilter
+        if forceWholeFrame
+            or not canFilter
             or self:ButtonMatchesCooldownRefreshReason(button, button.buttonData, refreshReason) then
             button:UpdateCooldown()
+            CaptureButtonRefreshPollingState(self, button, button.buttonData)
             updatedCount = updatedCount + 1
         else
             skippedCount = skippedCount + 1

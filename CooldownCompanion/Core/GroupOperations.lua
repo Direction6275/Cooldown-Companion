@@ -2380,13 +2380,9 @@ function CooldownCompanion:UpdateAllCooldowns(refreshReason)
 
     -- Assisted highlight target gate:
     -- hard target has priority; if none exists, allow soft enemy fallback.
-    local hasHostileTarget = false
-    if UnitExists("target") then
-        hasHostileTarget = UnitCanAttack("player", "target") and true or false
-    elseif UnitExists("softenemy") then
-        hasHostileTarget = UnitCanAttack("player", "softenemy") and true or false
+    if self.RefreshAssistedHighlightHostileTargetState then
+        self:RefreshAssistedHighlightHostileTargetState()
     end
-    self._assistedHighlightHasHostileTarget = hasHostileTarget
 
     -- Cache CDM viewer CVar once per tick (avoids per-button GetCVarBool in ResolveBuffViewerFrameForSpell)
     self._cdmViewerEnabled = C_CVar_GetCVarBool("cooldownViewerEnabled") == true
