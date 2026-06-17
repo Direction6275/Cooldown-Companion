@@ -608,6 +608,9 @@ end
 
 function CooldownCompanion:OnActionBarLayoutChanged()
     self:RefreshKeybindState()
+    if self.InvalidateCooldownRefreshEligibility then
+        self:InvalidateCooldownRefreshEligibility("actionbar-layout-changed")
+    end
     -- UPDATE_OVERRIDE_ACTIONBAR / UPDATE_VEHICLE_ACTIONBAR also route here for
     -- keybind rebuilds; piggyback vehicle UI state check to avoid duplicate
     -- AceEvent registrations (AceEvent allows only one handler per event).

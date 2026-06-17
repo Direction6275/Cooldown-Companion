@@ -803,9 +803,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
     local buttonDisplayMode = buttonGroup and (buttonGroup.displayMode or "icons") or "icons"
     ClearConditionalVisualPreviewFields(button)
+    button._actionSlotCooldownCandidate = nil
+    button._actionSlotCooldownFallback = nil
 
     if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
         ClearRotationAssistantMissingState(button, buttonData, style)
+        if self.RecordButtonCooldownRefreshEligibility then
+            self:RecordButtonCooldownRefreshEligibility(button, buttonData, buttonDisplayMode)
+        end
         return
     end
 
@@ -1238,6 +1243,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 spellCooldownDuration = spellCooldownResult.durationObj
                 spellRealCooldownShown = spellCooldownResult.realCooldownShown == true
                 isOnGCD = spellCooldownResult.isOnGCD or false
+                local slotProbe = spellCooldownResult.slotProbe
+                button._actionSlotCooldownCandidate = slotProbe and slotProbe.sawAnySlot == true or nil
+                button._actionSlotCooldownFallback = (spellCooldownResult.source == "action-slot-real-fallback"
+                    or spellCooldownResult.source == "action-slot-real-no-spell-info") or nil
                 button._cooldownState = spellCooldownResult.state or COOLDOWN_STATE_READY
                 local renderDurationObj = spellCooldownResult.renderDurationObj
                 button._cooldownDeferred = spellCooldownResult.deferred or nil
@@ -1854,6 +1863,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
         UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         DispatchStandaloneTextureVisual(button)
+    end
+    if self.RecordButtonCooldownRefreshEligibility then
+        self:RecordButtonCooldownRefreshEligibility(button, buttonData, buttonDisplayMode)
     end
     if shouldCaptureVisualState then
         CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
