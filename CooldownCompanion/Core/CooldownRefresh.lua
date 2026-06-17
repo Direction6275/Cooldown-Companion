@@ -67,6 +67,20 @@ local function IsTargetRefreshSource(source)
     return TARGET_REFRESH_SOURCES[source] == true
 end
 
+local function CaptureTargetRefreshState()
+    if type(UnitExists) ~= "function" or not UnitExists("target") then
+        return false, nil, true
+    end
+    if type(UnitGUID) ~= "function" then
+        return true, nil, false
+    end
+    local guid = UnitGUID("target")
+    if not guid then
+        return true, nil, false
+    end
+    return true, guid, true
+end
+
 local function HasSoundAlerts(buttonData)
     local cfg = buttonData and buttonData.soundAlerts
     return cfg and type(cfg.events) == "table" and next(cfg.events) ~= nil
@@ -264,6 +278,8 @@ function CooldownCompanion:BeginTargetCooldownRefreshTransition(reason)
     self._targetRefreshSatisfiedTransitionSerial = nil
     self._targetRefreshSatisfiedDirtySerial = nil
     self._targetRefreshSatisfiedSource = nil
+    self._targetRefreshSatisfiedTargetExists = nil
+    self._targetRefreshSatisfiedTargetGUID = nil
     self._targetRefreshCleanTickerSkipTransitionSerial = nil
     self._targetRefreshPendingTransitionSerial = nil
     return self._targetRefreshTransitionSerial
@@ -286,6 +302,17 @@ function CooldownCompanion:RecordTargetCooldownRefreshSatisfied(source, transiti
         return
     end
 
+    local targetExists, targetGUID, targetStateKnown = CaptureTargetRefreshState()
+    if not targetStateKnown then
+        self._targetRefreshSatisfiedTransitionSerial = nil
+        self._targetRefreshSatisfiedDirtySerial = nil
+        self._targetRefreshSatisfiedSource = nil
+        self._targetRefreshSatisfiedTargetExists = nil
+        self._targetRefreshSatisfiedTargetGUID = nil
+        self._targetRefreshCleanTickerSkipTransitionSerial = nil
+        return
+    end
+
     if dirtySerial == nil and self._cooldownsDirty then
         dirtySerial = self._cooldownDirtySerial or 0
     end
@@ -293,6 +320,8 @@ function CooldownCompanion:RecordTargetCooldownRefreshSatisfied(source, transiti
     self._targetRefreshSatisfiedTransitionSerial = transitionSerial
     self._targetRefreshSatisfiedDirtySerial = dirtySerial
     self._targetRefreshSatisfiedSource = source
+    self._targetRefreshSatisfiedTargetExists = targetExists
+    self._targetRefreshSatisfiedTargetGUID = targetGUID
 
     if transitionSerial and self._targetRefreshPendingTransitionSerial == transitionSerial then
         self._targetRefreshPendingTransitionSerial = nil
@@ -302,12 +331,29 @@ function CooldownCompanion:RecordTargetCooldownRefreshSatisfied(source, transiti
     end
 end
 
+function CooldownCompanion:IsTargetCooldownRefreshStateSatisfied()
+    if self._targetRefreshSatisfiedTargetExists == nil then
+        return false
+    end
+    local targetExists, targetGUID, targetStateKnown = CaptureTargetRefreshState()
+    if not targetStateKnown or targetExists ~= self._targetRefreshSatisfiedTargetExists then
+        return false
+    end
+    if not targetExists then
+        return true
+    end
+    return targetGUID == self._targetRefreshSatisfiedTargetGUID
+end
+
 function CooldownCompanion:CanSkipTargetRefreshDuplicate(source)
     if not IsTargetRefreshSource(source) then return false end
     if self._queuedCooldownRefreshSource then return false end
 
     local transitionSerial = self._targetRefreshTransitionSerial
     if not transitionSerial or self._targetRefreshSatisfiedTransitionSerial ~= transitionSerial then
+        return false
+    end
+    if not self:IsTargetCooldownRefreshStateSatisfied() then
         return false
     end
 
@@ -324,14 +370,24 @@ end
 
 function CooldownCompanion:CanSkipTargetTickerCooldownRefresh()
     if self._queuedCooldownRefreshSource then return false end
-    if self._cooldownsDirty then
-        return self._targetRefreshSatisfiedDirtySerial == (self._cooldownDirtySerial or 0)
+    if self._activeCooldownPeriodicMaintenanceRequired then return false end
+    if not self:IsTargetCooldownRefreshStateSatisfied() then
+        return false
     end
 
     local transitionSerial = self._targetRefreshTransitionSerial
-    return transitionSerial ~= nil
-        and self._targetRefreshSatisfiedTransitionSerial == transitionSerial
-        and self._targetRefreshCleanTickerSkipTransitionSerial == transitionSerial
+    if self._cooldownsDirty then
+        if self._targetRefreshSatisfiedTransitionSerial
+            and self._targetRefreshSatisfiedTransitionSerial ~= transitionSerial then
+            return false
+        end
+        return self._targetRefreshSatisfiedDirtySerial == (self._cooldownDirtySerial or 0)
+    end
+
+    if not transitionSerial or self._targetRefreshSatisfiedTransitionSerial ~= transitionSerial then
+        return false
+    end
+    return self._targetRefreshCleanTickerSkipTransitionSerial == transitionSerial
 end
 
 function CooldownCompanion:ConsumeTargetTickerCooldownRefreshSkip()
@@ -373,6 +429,8 @@ function CooldownCompanion:FlushQueuedCooldownRefresh()
         end
         if targetSource then
             self:RecordTargetCooldownRefreshSatisfied(targetSource, targetTransitionSerial, targetDirtySerial)
+        else
+            self:RecordTargetPendingTickerRefreshSatisfied()
         end
     end
 end
