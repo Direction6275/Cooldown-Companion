@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.19.3",
         "1.19.2",
         "1.19.1",
         "1.19",
@@ -42,6 +43,17 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.19.3"] = {
+            markdown = [[
+## New Features
+
+- **Assistant Panels:** A new Assistant Panel type can show the in-game rotation assistant's recommended next action as a simple locked icon. It supports the display behavior players expect from a cooldown icon, including cooldown timing, range, keybinds, charges, tooltips, and a fallback icon, while keeping setup focused and avoiding normal manual-entry controls.
+
+## Other
+
+- 12.0.7 ToC Update
+]],
+        },
         ["1.19.2"] = {
             markdown = [[
 ## New Features
