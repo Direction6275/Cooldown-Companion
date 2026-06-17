@@ -47,7 +47,7 @@ ST._changelogData = {
             markdown = [[
 ## New Features
 
-- **Assistant Panels:** A new Assistant Panel type can show the in-game rotation assistant's recommended next action as a simple locked icon. It supports the display behavior players expect from a cooldown icon, including cooldown timing, range, keybinds, charges, tooltips, and a fallback icon, while keeping setup focused and avoiding normal manual-entry controls.
+- **Assistant Panels:** A new Assistant Panel type can show the in-game rotation assistant's recommended next action as a simple locked icon. It supports the display behavior players expect from a cooldown icon while keeping setup focused and avoiding normal manual-entry controls.
 
 ## Other
 
