@@ -36,6 +36,10 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local CooldownLogic = ST.CooldownLogic or {}
+local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN or "cooldown"
+local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING or "missing"
+local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO or "zero"
 
 local function HasSoundAlerts(buttonData)
     local cfg = buttonData and buttonData.soundAlerts
@@ -85,6 +89,44 @@ local function HasActiveIconCooldownText(button, buttonData)
         or button._auraCooldownStart ~= nil
         or button._chargeCooldownVisualActive == true
         or button._secondaryCdActive == true
+end
+
+local function HasCooldownDrivenVisualMaintenance(button, buttonData)
+    if not (button and buttonData) then return false end
+
+    local style = button.style or {}
+    local cooldownActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+        or button._desatCooldownActive == true
+    local chargeState = button._chargeState
+    local chargeMissingOrZero = chargeState == CHARGE_STATE_ZERO
+        or chargeState == CHARGE_STATE_MISSING
+    local chargeTransitionActive = chargeMissingOrZero
+        or button._chargeRecharging == true
+        or button._chargeCooldownVisualActive == true
+        or button._hideCooldownChargesActive ~= nil
+
+    if cooldownActive
+        and (style.desaturateOnCooldown
+            or style.iconCooldownTintEnabled
+            or buttonData.hideWhileOnCooldown
+            or buttonData.hideWhileNotOnCooldown) then
+        return true
+    end
+
+    if chargeTransitionActive
+        and (buttonData.hideWhileOnCooldown
+            or buttonData.hideWhileNotOnCooldown
+            or buttonData.hideCooldownWithCharges) then
+        return true
+    end
+
+    if chargeState == CHARGE_STATE_ZERO
+        and (buttonData.hideWhileZeroCharges
+            or buttonData.desaturateWhileZeroCharges) then
+        return true
+    end
+
+    return false
 end
 
 local function IsTriggerRuntime(button, displayMode)
@@ -140,6 +182,9 @@ function CooldownCompanion:RecordButtonCooldownRefreshEligibility(button, button
     end
 
     if HasActiveIconCooldownText(button, buttonData) then
+        build.periodicMaintenanceRequired = true
+    end
+    if HasCooldownDrivenVisualMaintenance(button, buttonData) then
         build.periodicMaintenanceRequired = true
     end
     if button._isText == true then
