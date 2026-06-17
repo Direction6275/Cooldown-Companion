@@ -803,9 +803,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
     local buttonDisplayMode = buttonGroup and (buttonGroup.displayMode or "icons") or "icons"
     ClearConditionalVisualPreviewFields(button)
+    button._actionSlotCooldownCandidate = nil
+    button._actionSlotCooldownFallback = nil
 
     if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
         ClearRotationAssistantMissingState(button, buttonData, style)
+        self:RecordButtonCooldownRefreshEligibility(button, buttonData, buttonDisplayMode)
         return
     end
 
@@ -1238,6 +1241,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 spellCooldownDuration = spellCooldownResult.durationObj
                 spellRealCooldownShown = spellCooldownResult.realCooldownShown == true
                 isOnGCD = spellCooldownResult.isOnGCD or false
+                local slotProbe = spellCooldownResult.slotProbe
+                button._actionSlotCooldownCandidate = slotProbe and slotProbe.sawAnySlot == true or nil
+                button._actionSlotCooldownFallback = (spellCooldownResult.source == "action-slot-real-fallback"
+                    or spellCooldownResult.source == "action-slot-real-no-spell-info") or nil
                 button._cooldownState = spellCooldownResult.state or COOLDOWN_STATE_READY
                 local renderDurationObj = spellCooldownResult.renderDurationObj
                 button._cooldownDeferred = spellCooldownResult.deferred or nil
@@ -1439,6 +1446,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- this path and the isActive fallback.
             local slotProbe = spellCooldownResult and spellCooldownResult.slotProbe
                 or EntryRuntime.ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
+            if slotProbe.sawAnySlot then
+                button._actionSlotCooldownCandidate = true
+            end
             if slotProbe.shown ~= nil then
                 button._mainCDShown = slotProbe.realShown == true
             elseif not auraOwnsPrimarySwipe then
@@ -1768,6 +1778,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if shouldCaptureVisualState then
                 CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
             end
+            self:RecordButtonCooldownRefreshEligibility(button, buttonData, buttonDisplayMode)
             return  -- Skip all visual updates
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -1788,6 +1799,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if shouldCaptureVisualState then
                 CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
             end
+            self:RecordButtonCooldownRefreshEligibility(button, buttonData, buttonDisplayMode)
             return  -- Skip visual updates for hidden buttons
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -1855,6 +1867,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         DispatchStandaloneTextureVisual(button)
     end
+    self:RecordButtonCooldownRefreshEligibility(button, buttonData, buttonDisplayMode)
     if shouldCaptureVisualState then
         CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
     end
