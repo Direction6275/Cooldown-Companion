@@ -135,9 +135,7 @@ function CooldownCompanion:RecordButtonCooldownRefreshEligibility(button, button
     local build = self._cooldownRefreshEligibilityBuild
     if not build or not button then return end
 
-    if button._actionSlotCooldownFallback == true then
-        build.actionbarFallbackRequired = true
-    elseif button._actionSlotCooldownCandidate == true then
+    if button._actionSlotCooldownFallback == true or button._actionSlotCooldownCandidate == true then
         build.actionbarFallbackRequired = true
     end
 
