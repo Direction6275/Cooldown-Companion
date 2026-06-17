@@ -1,4 +1,4 @@
-## Interface: 120005
+## Interface: 120007
 ## Title: Cooldown Companion
 ## Notes: Track spells and items with customizable action bar style panels
 ## Author: You
