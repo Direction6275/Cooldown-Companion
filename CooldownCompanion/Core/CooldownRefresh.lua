@@ -103,7 +103,6 @@ local function HasCooldownDrivenVisualMaintenance(button, buttonData)
     local chargeTransitionActive = chargeMissingOrZero
         or button._chargeRecharging == true
         or button._chargeCooldownVisualActive == true
-        or button._hideCooldownChargesActive ~= nil
 
     if cooldownActive
         and (style.desaturateOnCooldown
