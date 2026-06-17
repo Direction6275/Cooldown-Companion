@@ -22,6 +22,23 @@ local pendingSpellAvailabilityRefreshToken = 0
 -- Same token pattern as QueueTalentChargeRefresh.
 local pendingSlotChangeToken = 0
 local pendingSlotChangedSlots = {}
+local actionbarSlotSignatures = {}
+
+local function GetActionbarSlotSignature(slot)
+    if type(slot) ~= "number" then return nil end
+    if not C_ActionBar.HasAction(slot) then return "empty" end
+    local actionType, id, subType = GetActionInfo(slot)
+    return tostring(actionType) .. "\001" .. tostring(id) .. "\001" .. tostring(subType)
+end
+
+local function ActionbarSlotContentChanged(slot)
+    local signature = GetActionbarSlotSignature(slot)
+    if actionbarSlotSignatures[slot] == signature then
+        return false
+    end
+    actionbarSlotSignatures[slot] = signature
+    return true
+end
 
 local function QueueTalentChargeRefresh(addon)
     pendingTalentChargeRefreshToken = pendingTalentChargeRefreshToken + 1
@@ -592,17 +609,25 @@ function CooldownCompanion:OnActionBarSlotChanged(_, slot)
     local token = pendingSlotChangeToken
     C_Timer.After(0, function()
         if pendingSlotChangeToken ~= token then return end
+        local slotContentChanged = pendingSlotChangedSlots._fullRebuild == true
         self:RebuildSlotMapping()
         if pendingSlotChangedSlots._fullRebuild then
+            wipe(actionbarSlotSignatures)
             self:RebuildItemSlotCache()
         else
             for s in pairs(pendingSlotChangedSlots) do
+                if ActionbarSlotContentChanged(s) then
+                    slotContentChanged = true
+                end
                 self:UpdateItemSlotCache(s)
             end
         end
         wipe(pendingSlotChangedSlots)
         self:RebuildAddonSlotBindings()
         self:OnKeybindsChanged()
+        if slotContentChanged and self.InvalidateCooldownRefreshEligibility then
+            self:InvalidateCooldownRefreshEligibility("actionbar-slot-changed")
+        end
     end)
 end
 

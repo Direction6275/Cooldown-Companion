@@ -2138,12 +2138,14 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
         self:ClearUnsupportedProfileRuntime()
         return
     end
+    local cooldownEligibilityChanged = false
 
     -- Fully unload frames for groups not in the current profile
     for groupId, _ in pairs(self.groupFrames) do
         if not self.db.profile.groups[groupId] then
             self:UnloadGroup(groupId)
             self:DiscardDormantFrame(groupId)
+            cooldownEligibilityChanged = true
         end
     end
     -- Also discard dormant frames for deleted groups
@@ -2151,6 +2153,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
         for groupId, _ in pairs(self._dormantFrames) do
             if not self.db.profile.groups[groupId] then
                 self:DiscardDormantFrame(groupId)
+                cooldownEligibilityChanged = true
             end
         end
     end
@@ -2158,6 +2161,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     for groupId, group in pairs(self.db.profile.groups) do
         if not self:IsGroupVisibleToCurrentChar(groupId) then
             self:UnloadGroup(groupId)
+            cooldownEligibilityChanged = true
         else
             local active = self:IsGroupActive(groupId, {
                 group = group,
@@ -2168,23 +2172,32 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
 
             if not active then
                 self:UnloadGroup(groupId)
+                cooldownEligibilityChanged = true
             else
                 local frame = self.groupFrames[groupId]
                 if frame and self:GroupButtonSetNeedsRebuild(groupId, group) then
                     self:RefreshGroupFrame(groupId)
+                    cooldownEligibilityChanged = true
                     frame = self.groupFrames[groupId]
                 elseif not frame then
                     if self:GroupButtonSetNeedsRebuild(groupId, group) then
                         self:DiscardDormantFrame(groupId)
+                        cooldownEligibilityChanged = true
                     end
                     -- Recover dormant frame with buttons intact (no repopulation needed)
                     frame = self:RecoverDormantFrame(groupId)
+                    if frame then
+                        cooldownEligibilityChanged = true
+                    end
                 end
                 if not frame then
                     if InCombatLockdown() then
                         self._pendingVisibilityRefresh = true
                     else
                         frame = self:CreateGroupFrame(groupId)
+                        if frame then
+                            cooldownEligibilityChanged = true
+                        end
                     end
                 end
 
@@ -2225,6 +2238,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                         if frame.UpdateCooldowns then
                             frame:UpdateCooldowns()
                         end
+                        cooldownEligibilityChanged = true
                         if group.compactLayout then
                             frame._layoutDirty = true
                             self:UpdateGroupLayout(groupId)
@@ -2245,6 +2259,9 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     end
     if self.RefreshAlphaUpdateDriver then
         self:RefreshAlphaUpdateDriver()
+    end
+    if cooldownEligibilityChanged and self.InvalidateCooldownRefreshEligibility then
+        self:InvalidateCooldownRefreshEligibility("visibility-only-refresh")
     end
 end
 

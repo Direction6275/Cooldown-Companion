@@ -78,6 +78,12 @@ local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
+local function RecordCooldownRefreshEligibility(addon, button, buttonData, displayMode)
+    if addon.RecordButtonCooldownRefreshEligibility then
+        addon:RecordButtonCooldownRefreshEligibility(button, buttonData, displayMode)
+    end
+end
+
 function CooldownCompanion:ShouldRefreshButtonVisualStateSnapshot()
     local isEnabled = ST._AreButtonVisualStateSnapshotsEnabled
     return isEnabled and isEnabled() == true
@@ -808,9 +814,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
         ClearRotationAssistantMissingState(button, buttonData, style)
-        if self.RecordButtonCooldownRefreshEligibility then
-            self:RecordButtonCooldownRefreshEligibility(button, buttonData, buttonDisplayMode)
-        end
+        RecordCooldownRefreshEligibility(self, button, buttonData, buttonDisplayMode)
         return
     end
 
@@ -1448,6 +1452,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- this path and the isActive fallback.
             local slotProbe = spellCooldownResult and spellCooldownResult.slotProbe
                 or EntryRuntime.ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
+            if slotProbe.sawAnySlot then
+                button._actionSlotCooldownCandidate = true
+            end
             if slotProbe.shown ~= nil then
                 button._mainCDShown = slotProbe.realShown == true
             elseif not auraOwnsPrimarySwipe then
@@ -1777,6 +1784,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if shouldCaptureVisualState then
                 CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
             end
+            RecordCooldownRefreshEligibility(self, button, buttonData, buttonDisplayMode)
             return  -- Skip all visual updates
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -1797,6 +1805,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if shouldCaptureVisualState then
                 CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
             end
+            RecordCooldownRefreshEligibility(self, button, buttonData, buttonDisplayMode)
             return  -- Skip visual updates for hidden buttons
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -1864,9 +1873,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         DispatchStandaloneTextureVisual(button)
     end
-    if self.RecordButtonCooldownRefreshEligibility then
-        self:RecordButtonCooldownRefreshEligibility(button, buttonData, buttonDisplayMode)
-    end
+    RecordCooldownRefreshEligibility(self, button, buttonData, buttonDisplayMode)
     if shouldCaptureVisualState then
         CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
     end

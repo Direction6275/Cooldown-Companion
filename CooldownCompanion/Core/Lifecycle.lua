@@ -321,7 +321,7 @@ function CooldownCompanion:OnCooldownStateChanged()
 end
 
 function CooldownCompanion:OnActionBarCooldownChanged(event)
-    self:RecordActionbarCooldownPulse(event or "ACTIONBAR_UPDATE_COOLDOWN")
+    self:RecordActionbarCooldownPulse()
 end
 
 -- Iterate every button across all groups, calling callback(button, buttonData) for each.

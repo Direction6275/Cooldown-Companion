@@ -37,15 +37,14 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
-local function AddReason(reasons, seen, reason)
-    if not reason or seen[reason] then return end
-    seen[reason] = true
-    reasons[#reasons + 1] = reason
-end
-
 local function HasSoundAlerts(buttonData)
     local cfg = buttonData and buttonData.soundAlerts
     return cfg and type(cfg.events) == "table" and next(cfg.events) ~= nil
+end
+
+local function ReadyGlowWindowNeedsRefresh(startTime, now, duration, active)
+    if startTime == nil then return false end
+    return (now - startTime) <= duration or active == true
 end
 
 local function HasTimedReadyGlow(button)
@@ -57,13 +56,35 @@ local function HasTimedReadyGlow(button)
     end
 
     local now = GetTime()
-    local function WindowNeedsRefresh(startTime)
-        if startTime == nil then return false end
-        return (now - startTime) <= duration or button._readyGlowActive == true
+    return ReadyGlowWindowNeedsRefresh(button._readyGlowStartTime, now, duration, button._readyGlowActive)
+        or ReadyGlowWindowNeedsRefresh(button._readyGlowMaxChargesStartTime, now, duration, button._readyGlowActive)
+end
+
+local function HasActiveIconCooldownText(button, buttonData)
+    if not (button and button._cdTextRegion) then return false end
+    if button._isBar or button._isText then return false end
+
+    local style = button.style or {}
+    local auraTextActive = button._auraPrimarySwipeActive == true
+        or button._conditionalAuraDurationTextPreview == true
+    if auraTextActive then
+        if style.showAuraText == false then
+            return false
+        end
+    else
+        if style.showCooldownText == false or button._hideCooldownChargesActive then
+            return false
+        end
+        if buttonData and buttonData.isPassive then
+            return false
+        end
     end
 
-    return WindowNeedsRefresh(button._readyGlowStartTime)
-        or WindowNeedsRefresh(button._readyGlowMaxChargesStartTime)
+    return button._durationObj ~= nil
+        or button._auraDurationObj ~= nil
+        or button._auraCooldownStart ~= nil
+        or button._chargeCooldownVisualActive == true
+        or button._secondaryCdActive == true
 end
 
 local function IsTriggerRuntime(button, displayMode)
@@ -96,17 +117,18 @@ function CooldownCompanion:InvalidateCooldownRefreshEligibility(reason)
     self._cooldownRefreshEligibilityInvalidationReason = reason or "unknown"
     self._activeActionbarCooldownFallbackRequired = nil
     self._activeCooldownPeriodicMaintenanceRequired = nil
-    self._activeActionbarCooldownFallbackReasons = nil
-    self._activeCooldownPeriodicMaintenanceReasons = nil
 end
 
 function CooldownCompanion:BeginCooldownRefreshEligibilityBuild()
-    self._cooldownRefreshEligibilityBuild = {
-        actionbarFallbackReasons = {},
-        actionbarFallbackSeen = {},
-        periodicMaintenanceReasons = {},
-        periodicMaintenanceSeen = {},
-    }
+    local build = self._cooldownRefreshEligibilityBuildCache
+    if not build then
+        build = {}
+        self._cooldownRefreshEligibilityBuildCache = build
+    else
+        build.actionbarFallbackRequired = nil
+        build.periodicMaintenanceRequired = nil
+    end
+    self._cooldownRefreshEligibilityBuild = build
 end
 
 function CooldownCompanion:RecordButtonCooldownRefreshEligibility(button, buttonData, displayMode)
@@ -114,29 +136,34 @@ function CooldownCompanion:RecordButtonCooldownRefreshEligibility(button, button
     if not build or not button then return end
 
     if button._actionSlotCooldownFallback == true then
-        AddReason(build.actionbarFallbackReasons, build.actionbarFallbackSeen, "action-slot-fallback")
+        build.actionbarFallbackRequired = true
+    elseif button._actionSlotCooldownCandidate == true then
+        build.actionbarFallbackRequired = true
     end
 
+    if HasActiveIconCooldownText(button, buttonData) then
+        build.periodicMaintenanceRequired = true
+    end
     if button._isText == true then
-        AddReason(build.periodicMaintenanceReasons, build.periodicMaintenanceSeen, "text-mode")
+        build.periodicMaintenanceRequired = true
     end
     if button._cooldownDeferred == true then
-        AddReason(build.periodicMaintenanceReasons, build.periodicMaintenanceSeen, "deferred-cooldown")
+        build.periodicMaintenanceRequired = true
     end
     if button._auraGraceStart ~= nil or button._targetSwitchAt ~= nil then
-        AddReason(build.periodicMaintenanceReasons, build.periodicMaintenanceSeen, "pending-aura-hold")
+        build.periodicMaintenanceRequired = true
     end
     if HasTimedReadyGlow(button) then
-        AddReason(build.periodicMaintenanceReasons, build.periodicMaintenanceSeen, "ready-glow-window")
+        build.periodicMaintenanceRequired = true
     end
     if HasSoundAlerts(buttonData) then
-        AddReason(build.periodicMaintenanceReasons, build.periodicMaintenanceSeen, "sound-alert")
+        build.periodicMaintenanceRequired = true
     end
     if buttonData and buttonData._rotationAssistantVirtual == true then
-        AddReason(build.periodicMaintenanceReasons, build.periodicMaintenanceSeen, "rotation-assistant")
+        build.periodicMaintenanceRequired = true
     end
     if IsTriggerRuntime(button, displayMode) then
-        AddReason(build.periodicMaintenanceReasons, build.periodicMaintenanceSeen, "trigger-runtime")
+        build.periodicMaintenanceRequired = true
     end
 end
 
@@ -150,21 +177,8 @@ function CooldownCompanion:FinishCooldownRefreshEligibilityBuild()
 
     self._cooldownRefreshEligibilityKnown = true
     self._cooldownRefreshEligibilityInvalidationReason = nil
-    self._activeActionbarCooldownFallbackRequired = #build.actionbarFallbackReasons > 0 or nil
-    self._activeCooldownPeriodicMaintenanceRequired = #build.periodicMaintenanceReasons > 0 or nil
-    self._activeActionbarCooldownFallbackReasons = #build.actionbarFallbackReasons > 0 and build.actionbarFallbackReasons or nil
-    self._activeCooldownPeriodicMaintenanceReasons = #build.periodicMaintenanceReasons > 0 and build.periodicMaintenanceReasons or nil
-end
-
-function CooldownCompanion:GetActionbarCooldownEligibilityInfo()
-    return {
-        known = self._cooldownRefreshEligibilityKnown == true,
-        invalidationReason = self._cooldownRefreshEligibilityInvalidationReason,
-        actionbarFallbackRequired = self._activeActionbarCooldownFallbackRequired == true,
-        actionbarFallbackReasons = self._activeActionbarCooldownFallbackReasons,
-        periodicMaintenanceRequired = self._activeCooldownPeriodicMaintenanceRequired == true,
-        periodicMaintenanceReasons = self._activeCooldownPeriodicMaintenanceReasons,
-    }
+    self._activeActionbarCooldownFallbackRequired = build.actionbarFallbackRequired == true or nil
+    self._activeCooldownPeriodicMaintenanceRequired = build.periodicMaintenanceRequired == true or nil
 end
 
 function CooldownCompanion:MarkCooldownsDirty()
@@ -191,7 +205,7 @@ end
 function CooldownCompanion:FlushQueuedCooldownRefresh()
     local queuedSource = self._queuedCooldownRefreshSource
     local cooldownEventSerial = self._queuedCooldownRefreshCooldownEventSerial
-    self:ResetCooldownRefreshState()
+    self:ResetCooldownRefreshState(queuedSource == nil)
 
     if queuedSource then
         self:UpdateAllCooldowns()
@@ -237,56 +251,34 @@ function CooldownCompanion:CanSkipTickerCooldownRefresh()
         and self._cooldownRefreshSatisfiedSerial == (self._cooldownDirtySerial or 0)
 end
 
-function CooldownCompanion:RecordActionbarCooldownPulse(event)
+function CooldownCompanion:RecordActionbarCooldownPulse()
     self._actionbarCooldownPulsePending = true
-    self._actionbarCooldownPulseEvent = event or "ACTIONBAR_UPDATE_COOLDOWN"
-    self._actionbarCooldownPulseCount = (self._actionbarCooldownPulseCount or 0) + 1
 end
 
 function CooldownCompanion:ClearActionbarCooldownPulse()
     self._actionbarCooldownPulsePending = nil
-    self._actionbarCooldownPulseEvent = nil
-    self._actionbarCooldownPulseCount = nil
 end
 
-function CooldownCompanion:GetActionbarCooldownPulseDecision()
+function CooldownCompanion:GetActionbarCooldownPulseDecision(cooldownEventSatisfied)
     if not self._actionbarCooldownPulsePending then
-        return false, "no-actionbar-pulse"
+        return false
     end
     if self._queuedCooldownRefreshSource then
-        return false, "queued-refresh"
+        return false
     end
-    if self._cooldownsDirty then
-        return false, "dirty"
+    if self._cooldownsDirty and not cooldownEventSatisfied then
+        return false
     end
     if not self._cooldownRefreshEligibilityKnown then
-        return false, self._cooldownRefreshEligibilityInvalidationReason or "eligibility-unknown"
+        return false
     end
     if self._activeActionbarCooldownFallbackRequired then
-        return false, "actionbar-fallback-required"
+        return false
     end
-    if self._activeCooldownPeriodicMaintenanceRequired then
-        return false, "periodic-maintenance-required"
+    if self._activeCooldownPeriodicMaintenanceRequired and not cooldownEventSatisfied then
+        return false
     end
-    return true, "pulse-only"
-end
-
-function CooldownCompanion:GetActionbarCooldownFallbackReason(decision)
-    local eligibility = self:GetActionbarCooldownEligibilityInfo()
-    return {
-        kind = "actionbar-cooldown",
-        source = "actionbar-cooldown-event",
-        event = self._actionbarCooldownPulseEvent or "ACTIONBAR_UPDATE_COOLDOWN",
-        origin = "ticker",
-        broad = true,
-        actionbarPulseDecision = decision,
-        actionbarPulseCount = self._actionbarCooldownPulseCount,
-        actionbarFallbackRequired = eligibility.actionbarFallbackRequired,
-        actionbarFallbackReasons = eligibility.actionbarFallbackReasons,
-        periodicMaintenanceRequired = eligibility.periodicMaintenanceRequired,
-        periodicMaintenanceReasons = eligibility.periodicMaintenanceReasons,
-        eligibilityKnown = eligibility.known,
-    }
+    return true
 end
 
 function CooldownCompanion:TickCooldownRefresh()
@@ -294,27 +286,29 @@ function CooldownCompanion:TickCooldownRefresh()
         self:FlushQueuedCooldownRefresh()
         return false
     end
-    if self:CanSkipTickerCooldownRefresh() then
-        self:ClearActionbarCooldownPulse()
-        return true
-    end
 
-    local actionbarOnlyReason
-    if self._actionbarCooldownPulsePending and not self._cooldownsDirty then
-        local canSkipActionbarPulse, decision = self:GetActionbarCooldownPulseDecision()
+    local cooldownEventSatisfied = self:CanSkipTickerCooldownRefresh()
+    local actionbarFallbackRequired = false
+    if self._actionbarCooldownPulsePending and (not self._cooldownsDirty or cooldownEventSatisfied) then
+        local canSkipActionbarPulse = self:GetActionbarCooldownPulseDecision(cooldownEventSatisfied)
         if canSkipActionbarPulse then
             self:ClearActionbarCooldownPulse()
             return true
         end
-        actionbarOnlyReason = self:GetActionbarCooldownFallbackReason(decision)
+        actionbarFallbackRequired = true
     end
 
-    self:UpdateAllCooldowns(actionbarOnlyReason)
+    if cooldownEventSatisfied and not actionbarFallbackRequired then
+        self:ClearActionbarCooldownPulse()
+        return true
+    end
+
+    self:UpdateAllCooldowns()
     self:ClearActionbarCooldownPulse()
     return false
 end
 
-function CooldownCompanion:ResetCooldownRefreshState()
+function CooldownCompanion:ResetCooldownRefreshState(preserveActionbarPulse)
     if self._cooldownRefreshQueueFrame then
         self._cooldownRefreshQueueFrame:SetScript("OnUpdate", nil)
     end
@@ -322,5 +316,7 @@ function CooldownCompanion:ResetCooldownRefreshState()
     self._queuedCooldownRefreshSource = nil
     self._queuedCooldownRefreshCooldownEventSerial = nil
     self._cooldownImmediateRefreshThisFrame = nil
-    self:ClearActionbarCooldownPulse()
+    if not preserveActionbarPulse then
+        self:ClearActionbarCooldownPulse()
+    end
 end

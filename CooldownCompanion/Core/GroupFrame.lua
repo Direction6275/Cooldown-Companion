@@ -3144,6 +3144,9 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
     local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
     ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
     FinishGroupButtonRefresh(self, groupId, frame, group)
+    if self.InvalidateCooldownRefreshEligibility then
+        self:InvalidateCooldownRefreshEligibility("group-style-updated")
+    end
 end
 
 function CooldownCompanion:UpdateGroupClickthrough(groupId)

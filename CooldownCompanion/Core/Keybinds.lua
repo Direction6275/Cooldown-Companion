@@ -512,7 +512,7 @@ function CooldownCompanion:RefreshKeybindState()
 end
 
 -- Refresh keybind text and binding key caches on all buttons.
-function CooldownCompanion:OnKeybindsChanged(invalidationReason)
+function CooldownCompanion:OnKeybindsChanged()
     self:ForEachButton(function(button, buttonData)
         if button.keybindText then
             local text = CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId, button)
@@ -522,9 +522,6 @@ function CooldownCompanion:OnKeybindsChanged(invalidationReason)
         -- Rebuild key press highlight binding cache
         CacheButtonBindingKeys(button, buttonData)
     end)
-    if invalidationReason and self.InvalidateCooldownRefreshEligibility then
-        self:InvalidateCooldownRefreshEligibility(invalidationReason)
-    end
 end
 
 -- Exports for key press highlight
