@@ -37,6 +37,10 @@
     - _cooldownRefreshEligibilityKnown: true after a broad pass has rebuilt
       cached active-surface eligibility for actionbar fallback and periodic
       maintenance. Unknown eligibility falls back to broad work.
+    - _activePowerCooldownRefreshMode: active-surface contract for
+      UNIT_POWER_FREQUENT. Unknown or broad-required keeps the existing dirty
+      ticker path; simple icon usability visuals can run focused maintenance;
+      none skips because no loaded display consumes power-only visual state.
 
     Invariants:
     - Only cooldown-event requests write _cooldownRefreshSatisfiedSerial.
@@ -62,6 +66,21 @@ local TARGET_REFRESH_SOURCES = {
     ["target-aura-event"] = true,
     ["unit-target-event"] = true,
     ["target-ticker"] = true,
+}
+local POWER_REFRESH_MODE_NONE = "none"
+local POWER_REFRESH_MODE_FOCUSED = "simple-usability-visual"
+local POWER_REFRESH_MODE_BROAD = "broad-required"
+local POWER_REFRESH_MODE_UNKNOWN = "unknown"
+local POWER_REFRESH_MODE_PRECEDENCE = {
+    [POWER_REFRESH_MODE_NONE] = 0,
+    [POWER_REFRESH_MODE_FOCUSED] = 1,
+    [POWER_REFRESH_MODE_BROAD] = 2,
+    [POWER_REFRESH_MODE_UNKNOWN] = 2,
+}
+local POWER_TEXT_TOKENS = {
+    unusable = true,
+    usable = true,
+    isUsable = true,
 }
 
 local function IsTargetRefreshSource(source)
@@ -154,6 +173,8 @@ local function ClearReasonTracking(build)
     ClearTable(build.safeTextWidgetMaintenanceSeen)
     ClearTable(build.unprovenIconTextMaintenanceReasons)
     ClearTable(build.unprovenIconTextMaintenanceSeen)
+    ClearTable(build.powerRefreshReasons)
+    ClearTable(build.powerRefreshSeen)
 end
 
 local function EnsureReasonTracking(build)
@@ -163,6 +184,8 @@ local function EnsureReasonTracking(build)
     build.safeTextWidgetMaintenanceSeen = build.safeTextWidgetMaintenanceSeen or {}
     build.unprovenIconTextMaintenanceReasons = build.unprovenIconTextMaintenanceReasons or {}
     build.unprovenIconTextMaintenanceSeen = build.unprovenIconTextMaintenanceSeen or {}
+    build.powerRefreshReasons = build.powerRefreshReasons or {}
+    build.powerRefreshSeen = build.powerRefreshSeen or {}
 end
 
 local function CopyReasonList(list)
@@ -172,6 +195,24 @@ local function CopyReasonList(list)
         copy[i] = list[i]
     end
     return copy
+end
+
+local function RecordPowerRefreshMode(build, mode, reason)
+    if not build or mode == POWER_REFRESH_MODE_NONE then
+        return
+    end
+
+    EnsureReasonTracking(build)
+    local currentMode = build.powerRefreshMode or POWER_REFRESH_MODE_NONE
+    if (POWER_REFRESH_MODE_PRECEDENCE[mode] or 0) > (POWER_REFRESH_MODE_PRECEDENCE[currentMode] or 0)
+        or (currentMode == POWER_REFRESH_MODE_UNKNOWN and mode == POWER_REFRESH_MODE_BROAD) then
+        build.powerRefreshMode = mode
+    end
+    AddUniqueReason(build.powerRefreshReasons, build.powerRefreshSeen, reason or mode)
+end
+
+local function PowerModeRequiresBroad(mode)
+    return mode == POWER_REFRESH_MODE_BROAD or mode == POWER_REFRESH_MODE_UNKNOWN
 end
 
 local function IsSafeTextWidgetMaintenanceOnly(button, buttonData)
@@ -324,6 +365,140 @@ local function IsTriggerRuntime(button, displayMode)
         or buttonData and type(buttonData.triggerConditions) == "table"
 end
 
+local function GetButtonDisplayMode(button)
+    if not button then
+        return nil
+    end
+
+    local groupId = button._groupId or button.groupID
+    local group = groupId
+        and CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups
+        and CooldownCompanion.db.profile.groups[groupId]
+        or nil
+    return group and group.displayMode
+end
+
+local function IsPowerSensitiveSpellEntry(buttonData)
+    return buttonData
+        and buttonData.type == "spell"
+        and buttonData.isPassive ~= true
+        and buttonData.isPassiveCooldown ~= true
+end
+
+local function StyleUsesUnusableIconVisual(style)
+    if not (style and style.showUnusable == true) then
+        return false
+    end
+
+    local hasVisualContract = false
+    if type(ST.UnusableVisualUsesDimTint) == "function" then
+        hasVisualContract = ST.UnusableVisualUsesDimTint(style) or hasVisualContract
+    else
+        hasVisualContract = true
+    end
+    if type(ST.UnusableVisualUsesDesaturation) == "function" then
+        hasVisualContract = ST.UnusableVisualUsesDesaturation(style) or hasVisualContract
+    else
+        hasVisualContract = true
+    end
+
+    return hasVisualContract
+end
+
+local function HasUnusableTextureContract(button, style)
+    if button and (button._conditionalUnusablePreview == true or button._textureUnusablePreview == true) then
+        return true
+    end
+    if not style then
+        return false
+    end
+    if style.textureIndicators
+        and style.textureIndicators.unusable
+        and style.textureIndicators.unusable.enabled == true then
+        return true
+    end
+    return style.unusableTexture ~= nil
+        or style.unusableTextureID ~= nil
+        or style.unusableTextureId ~= nil
+        or style.unusableAtlas ~= nil
+        or style.showUnusableTexture == true
+        or style.useUnusableTexture == true
+end
+
+local function TextSegmentsRequirePowerRefresh(button)
+    if not (button and button._textSegments) then
+        return false
+    end
+
+    for _, segment in ipairs(button._textSegments) do
+        if segment then
+            if POWER_TEXT_TOKENS[segment.token]
+                or POWER_TEXT_TOKENS[segment.type]
+                or POWER_TEXT_TOKENS[segment.kind]
+                or POWER_TEXT_TOKENS[segment.value] then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function IsFocusedPowerIconDisplayMode(displayMode)
+    return displayMode == nil or displayMode == "icons"
+end
+
+local function ClassifyPowerCooldownRefresh(button, buttonData, displayMode)
+    if not button then
+        return POWER_REFRESH_MODE_UNKNOWN, "missing-button"
+    end
+    if not buttonData then
+        return POWER_REFRESH_MODE_UNKNOWN, "missing-button-data"
+    end
+    displayMode = displayMode or GetButtonDisplayMode(button)
+
+    if buttonData._rotationAssistantVirtual == true then
+        return POWER_REFRESH_MODE_BROAD, "rotation-assistant"
+    end
+    if IsTriggerRuntime(button, displayMode) then
+        return POWER_REFRESH_MODE_BROAD, "trigger-runtime"
+    end
+    if button._resourceGateCost == true or button._baseResourceGateCost == true then
+        return POWER_REFRESH_MODE_BROAD, "resource-gated-cooldown-surface"
+    end
+
+    if not IsPowerSensitiveSpellEntry(buttonData) then
+        return POWER_REFRESH_MODE_NONE
+    end
+
+    local style = button.style or {}
+    if buttonData.hideWhileUnusable == true then
+        return POWER_REFRESH_MODE_BROAD, "visibility-usability"
+    end
+    if button._isText == true then
+        if TextSegmentsRequirePowerRefresh(button) or style.showUnusable == true then
+            return POWER_REFRESH_MODE_BROAD, "text-usability"
+        end
+        return POWER_REFRESH_MODE_NONE
+    end
+    if HasUnusableTextureContract(button, style) then
+        return POWER_REFRESH_MODE_BROAD, "texture-usability"
+    end
+    if not StyleUsesUnusableIconVisual(style) then
+        return POWER_REFRESH_MODE_NONE
+    end
+    if not IsFocusedPowerIconDisplayMode(displayMode) or button._isBar == true then
+        return POWER_REFRESH_MODE_BROAD, "non-icon-usability-visual"
+    end
+    if not CanRunSafeTextWidgetVisualMaintenance(button) then
+        return POWER_REFRESH_MODE_NONE, "hidden-simple-usability-visual"
+    end
+
+    return POWER_REFRESH_MODE_FOCUSED, "simple-usability-visual"
+end
+
 local function CooldownRefreshQueueOnUpdate(frame)
     local addon = frame._cooldownCompanion
     if addon then
@@ -345,6 +520,11 @@ function CooldownCompanion:InvalidateCooldownRefreshEligibility(reason)
     self._activeSafeTextWidgetMaintenanceReasons = nil
     self._activeUnprovenIconTextMaintenanceReasons = nil
     self._lastSafeTextWidgetMaintenanceCount = nil
+    self._activePowerCooldownRefreshMode = nil
+    self._activePowerCooldownRefreshReasons = nil
+    self._lastPowerIconVisualMaintenanceCount = nil
+    self._lastPowerIconVisualMaintenanceEligibleCount = nil
+    self._lastPowerEventCooldownRefreshDecision = nil
 end
 
 function CooldownCompanion:BeginCooldownRefreshEligibilityBuild()
@@ -360,6 +540,7 @@ function CooldownCompanion:BeginCooldownRefreshEligibilityBuild()
         build.safeTextWidgetMaintenanceRequired = nil
         build.unprovenIconTextMaintenanceRequired = nil
         build.otherPeriodicMaintenanceRequired = nil
+        build.powerRefreshMode = nil
         ClearReasonTracking(build)
     end
     EnsureReasonTracking(build)
@@ -425,6 +606,9 @@ function CooldownCompanion:RecordButtonCooldownRefreshEligibility(button, button
     if IsTriggerRuntime(button, displayMode) then
         RecordPeriodicMaintenance(build, false, "trigger-runtime")
     end
+
+    local powerMode, powerReason = ClassifyPowerCooldownRefresh(button, buttonData, displayMode)
+    RecordPowerRefreshMode(build, powerMode, powerReason)
 end
 
 function CooldownCompanion:FinishCooldownRefreshEligibilityBuild()
@@ -447,6 +631,8 @@ function CooldownCompanion:FinishCooldownRefreshEligibilityBuild()
     self._activeCooldownPeriodicMaintenanceReasons = CopyReasonList(build.periodicMaintenanceReasons)
     self._activeSafeTextWidgetMaintenanceReasons = CopyReasonList(build.safeTextWidgetMaintenanceReasons)
     self._activeUnprovenIconTextMaintenanceReasons = CopyReasonList(build.unprovenIconTextMaintenanceReasons)
+    self._activePowerCooldownRefreshMode = build.powerRefreshMode or POWER_REFRESH_MODE_NONE
+    self._activePowerCooldownRefreshReasons = CopyReasonList(build.powerRefreshReasons)
 end
 
 function CooldownCompanion:HasOnlySafeTextWidgetMaintenance()
@@ -473,6 +659,23 @@ function CooldownCompanion:GetActionbarCooldownEligibilityInfo()
         safeTextWidgetMaintenanceReasons = self._activeSafeTextWidgetMaintenanceReasons,
         unprovenIconTextMaintenanceReasons = self._activeUnprovenIconTextMaintenanceReasons,
         lastSafeTextWidgetMaintenanceCount = self._lastSafeTextWidgetMaintenanceCount,
+        powerRefreshMode = self._activePowerCooldownRefreshMode,
+        powerRefreshReasons = self._activePowerCooldownRefreshReasons,
+        lastPowerIconVisualMaintenanceCount = self._lastPowerIconVisualMaintenanceCount,
+        lastPowerIconVisualMaintenanceEligibleCount = self._lastPowerIconVisualMaintenanceEligibleCount,
+        lastPowerEventCooldownRefreshDecision = self._lastPowerEventCooldownRefreshDecision,
+    }
+end
+
+function CooldownCompanion:GetPowerCooldownEligibilityInfo()
+    return {
+        known = self._cooldownRefreshEligibilityKnown == true,
+        invalidationReason = self._cooldownRefreshEligibilityInvalidationReason,
+        powerRefreshMode = self._activePowerCooldownRefreshMode,
+        powerRefreshReasons = self._activePowerCooldownRefreshReasons,
+        lastPowerIconVisualMaintenanceCount = self._lastPowerIconVisualMaintenanceCount,
+        lastPowerIconVisualMaintenanceEligibleCount = self._lastPowerIconVisualMaintenanceEligibleCount,
+        lastPowerEventCooldownRefreshDecision = self._lastPowerEventCooldownRefreshDecision,
     }
 end
 
@@ -739,6 +942,68 @@ function CooldownCompanion:RunSafeTextWidgetMaintenance()
     end
 
     self._lastSafeTextWidgetMaintenanceCount = updated
+    return true
+end
+
+function CooldownCompanion:RunPowerIconVisualMaintenance()
+    if type(self.ApplyPowerIconUsabilityVisualMaintenance) ~= "function" then
+        return false
+    end
+
+    local updated = 0
+    local eligible = 0
+    if type(self.groupFrames) == "table" then
+        for _, frame in pairs(self.groupFrames) do
+            if frame and frame.IsShown and frame:IsShown() and type(frame.buttons) == "table" then
+                for _, button in ipairs(frame.buttons) do
+                    local buttonData = button and button.buttonData
+                    local mode = ClassifyPowerCooldownRefresh(button, buttonData, GetButtonDisplayMode(button))
+                    if PowerModeRequiresBroad(mode) then
+                        return false
+                    end
+                    if mode == POWER_REFRESH_MODE_FOCUSED then
+                        eligible = eligible + 1
+                        if CanRunSafeTextWidgetVisualMaintenance(button) then
+                            if self:ApplyPowerIconUsabilityVisualMaintenance(button, buttonData) == false then
+                                return false
+                            end
+                            updated = updated + 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    self._lastPowerIconVisualMaintenanceCount = updated
+    self._lastPowerIconVisualMaintenanceEligibleCount = eligible
+    return true
+end
+
+function CooldownCompanion:OnPowerEventCooldownRefresh()
+    if not self._cooldownRefreshEligibilityKnown then
+        self._lastPowerEventCooldownRefreshDecision = "broad-unknown-eligibility"
+        self:MarkCooldownsDirty()
+        return true
+    end
+
+    local mode = self._activePowerCooldownRefreshMode or POWER_REFRESH_MODE_NONE
+    if mode == POWER_REFRESH_MODE_NONE then
+        self._lastPowerEventCooldownRefreshDecision = "skipped-none"
+        return false
+    end
+    if mode == POWER_REFRESH_MODE_FOCUSED then
+        if self:RunPowerIconVisualMaintenance() then
+            self._lastPowerEventCooldownRefreshDecision = "focused-simple-usability-visual"
+            return false
+        end
+        self._lastPowerEventCooldownRefreshDecision = "broad-focused-fallback"
+        self:MarkCooldownsDirty()
+        return true
+    end
+
+    self._lastPowerEventCooldownRefreshDecision = "broad-required"
+    self:MarkCooldownsDirty()
     return true
 end
 
