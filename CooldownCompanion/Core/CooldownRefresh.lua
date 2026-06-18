@@ -216,6 +216,15 @@ local function SafeTextWidgetTimingStillActive(button)
     return not sawTimingSource
 end
 
+local function CanRunSafeTextWidgetVisualMaintenance(button)
+    if not button then return false end
+    if button._visibilityHidden == true then return false end
+    if type(button.IsShown) == "function" and not button:IsShown() then
+        return false
+    end
+    return true
+end
+
 local function RecordIconCooldownTextMaintenance(build, button, buttonData)
     if not HasActiveIconCooldownText(button, buttonData) then
         return
@@ -715,12 +724,14 @@ function CooldownCompanion:RunSafeTextWidgetMaintenance()
         for _, frame in pairs(self.groupFrames) do
             if frame and frame.IsShown and frame:IsShown() and type(frame.buttons) == "table" then
                 for _, button in ipairs(frame.buttons) do
-                    if IsSafeTextWidgetMaintenanceOnly(button, button.buttonData)
-                        and SafeTextWidgetTimingStillActive(button)
-                        and self:ApplySafeIconTextWidgetMaintenance(button, button.buttonData) ~= false then
-                        updated = updated + 1
-                    elseif IsSafeTextWidgetMaintenanceOnly(button, button.buttonData) then
-                        return false
+                    if IsSafeTextWidgetMaintenanceOnly(button, button.buttonData) then
+                        if not SafeTextWidgetTimingStillActive(button) then
+                            return false
+                        end
+                        if CanRunSafeTextWidgetVisualMaintenance(button)
+                            and self:ApplySafeIconTextWidgetMaintenance(button, button.buttonData) ~= false then
+                            updated = updated + 1
+                        end
                     end
                 end
             end
