@@ -1450,6 +1450,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button._actionSlotCooldownCandidate = true
             end
             if slotProbe.shown ~= nil then
+                button._actionSlotCooldownFallback = true
                 button._mainCDShown = slotProbe.realShown == true
             elseif not auraOwnsPrimarySwipe then
                 -- No action bar slot found; use the ignoreGCD-backed real cooldown state.
