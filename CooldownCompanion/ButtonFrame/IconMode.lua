@@ -1348,6 +1348,20 @@ function CooldownCompanion:ApplySafeIconTextWidgetMaintenance(button, buttonData
     return true
 end
 
+function CooldownCompanion:ApplyPowerIconUsabilityVisualMaintenance(button, buttonData)
+    if not (button and buttonData and button.icon) then
+        return false
+    end
+    if button._isBar or button._isText then
+        return false
+    end
+
+    local style = button.style or {}
+    ApplyIconDesaturationIntent(button, buttonData, style)
+    UpdateIconTint(button, buttonData, style)
+    return true
+end
+
 -- Update icon-mode glow effects: loss of control, assisted highlight, proc glow, aura glow.
 local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
     local inCombat = InCombatLockdown()

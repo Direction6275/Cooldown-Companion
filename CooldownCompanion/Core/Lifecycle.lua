@@ -140,7 +140,7 @@ function CooldownCompanion:OnEnable()
         self._unitEventFrame = CreateFrame("Frame")
         self._unitEventFrame:SetScript("OnEvent", function(_, event, ...)
             if event == "UNIT_POWER_FREQUENT" then
-                self:MarkCooldownsDirty()
+                self:OnPowerEventCooldownRefresh()
             elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
                 self:OnSpellCast(event, ...)
             elseif event == "UNIT_AURA" then
