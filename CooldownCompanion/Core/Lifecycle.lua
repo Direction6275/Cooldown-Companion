@@ -208,20 +208,25 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("UNIT_ENTERED_VEHICLE", "OnVehicleUIChanged")
     self:RegisterEvent("UNIT_EXITED_VEHICLE", "OnVehicleUIChanged")
 
-    -- Target change — marks dirty so ticker reads fresh viewer data next pass
+    -- Target change — probes or clears target aura state through OnTargetChanged.
     self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
 
     -- UNIT_TARGET requires RegisterUnitEvent (plain RegisterEvent does not
-    -- receive it).  Marks dirty so the next ticker pass reads fresh CDM viewer
-    -- data; catches pet/focus target changes that don't fire PLAYER_TARGET_CHANGED.
+    -- receive it).  It stays a conservative broad fallback unless the current
+    -- target transition was already covered by PLAYER_TARGET_CHANGED or target
+    -- aura work.
     if not self._unitTargetFrame then
         self._unitTargetFrame = CreateFrame("Frame")
         self._unitTargetFrame:SetScript("OnEvent", function(_, event, unitToken)
             if ST._QueueInheritedUnitFrameAlphaResync then
                 ST._QueueInheritedUnitFrameAlphaResync()
             end
+            if self:CanSkipTargetRefreshDuplicate("unit-target-event") then
+                return
+            end
             self:MarkCooldownsDirty()
             self:UpdateAllCooldowns()
+            self:RecordTargetCooldownRefreshSatisfied("unit-target-event")
         end)
     end
     self._unitTargetFrame:RegisterUnitEvent("UNIT_TARGET", "player")

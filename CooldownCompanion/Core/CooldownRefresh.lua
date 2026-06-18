@@ -10,8 +10,22 @@
       a debug breadcrumb, not skip eligibility.
     - _queuedCooldownRefreshCooldownEventSerial: dirty serial captured when a
       queued cooldown-event request enters the queue.
+    - _queuedCooldownRefreshTargetDirtySerial/_queuedCooldownRefreshTargetTransitionSerial:
+      target-family state captured when a queued target request enters the
+      queue.
+    - _queuedCooldownRefreshTargetSource: first queued target-family source
+      covered by the pending broad flush.
     - _cooldownRefreshSatisfiedSerial: dirty serial covered by an executed
       cooldown-event refresh.
+    - _targetRefreshTransitionSerial: monotonic target-state marker bumped by
+      PLAYER_TARGET_CHANGED.
+    - _targetRefreshSatisfiedTransitionSerial/_targetRefreshSatisfiedDirtySerial:
+      target-family broad work that covered the current transition and, when
+      dirty, the serial it covered.
+    - _targetRefreshCleanTickerSkipTransitionSerial: one-shot clean ticker
+      confirmation covered by the target-exists synchronous probe.
+    - _targetRefreshPendingTransitionSerial: target-clear dirty confirmation
+      waiting for its first broad pass.
     - _cooldownImmediateRefreshThisFrame: latch allowing only the first
       immediate refresh in a frame to walk synchronously.
     - _cooldownRefreshQueueFrame/_cooldownRefreshQueueArmed: parentless helper
@@ -32,6 +46,8 @@
       If another dirty mark lands before the flush, the later ticker walks
       instead of skipping. That is intentionally conservative: displays can only
       be fresher, never staler.
+    - Target-family duplicate skips require either the same target transition or
+      the exact dirty serial already covered by a target-family broad pass.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -40,6 +56,30 @@ local CooldownLogic = ST.CooldownLogic or {}
 local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN or "cooldown"
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING or "missing"
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO or "zero"
+local TARGET_REFRESH_SOURCES = {
+    ["target-event"] = true,
+    ["target-aura-event"] = true,
+    ["unit-target-event"] = true,
+    ["target-ticker"] = true,
+}
+
+local function IsTargetRefreshSource(source)
+    return TARGET_REFRESH_SOURCES[source] == true
+end
+
+local function CaptureTargetRefreshState()
+    if type(UnitExists) ~= "function" or not UnitExists("target") then
+        return false, nil, true
+    end
+    if type(UnitGUID) ~= "function" then
+        return true, nil, false
+    end
+    local guid = UnitGUID("target")
+    if not guid then
+        return true, nil, false
+    end
+    return true, guid, true
+end
 
 local function HasSoundAlerts(buttonData)
     local cfg = buttonData and buttonData.soundAlerts
@@ -158,6 +198,8 @@ function CooldownCompanion:InvalidateCooldownRefreshEligibility(reason)
     self._cooldownRefreshEligibilityInvalidationReason = reason or "unknown"
     self._activeActionbarCooldownFallbackRequired = nil
     self._activeCooldownPeriodicMaintenanceRequired = nil
+    self._activeTargetCooldownMaintenanceRequired = nil
+    self._activeNonTargetCooldownMaintenanceRequired = nil
 end
 
 function CooldownCompanion:BeginCooldownRefreshEligibilityBuild()
@@ -168,8 +210,19 @@ function CooldownCompanion:BeginCooldownRefreshEligibilityBuild()
     else
         build.actionbarFallbackRequired = nil
         build.periodicMaintenanceRequired = nil
+        build.targetMaintenanceRequired = nil
+        build.nonTargetMaintenanceRequired = nil
     end
     self._cooldownRefreshEligibilityBuild = build
+end
+
+local function RecordPeriodicMaintenance(build, targetMaintenance)
+    build.periodicMaintenanceRequired = true
+    if targetMaintenance then
+        build.targetMaintenanceRequired = true
+    else
+        build.nonTargetMaintenanceRequired = true
+    end
 end
 
 function CooldownCompanion:RecordButtonCooldownRefreshEligibility(button, buttonData, displayMode)
@@ -181,31 +234,34 @@ function CooldownCompanion:RecordButtonCooldownRefreshEligibility(button, button
     end
 
     if HasActiveIconCooldownText(button, buttonData) then
-        build.periodicMaintenanceRequired = true
+        RecordPeriodicMaintenance(build)
     end
     if HasCooldownDrivenVisualMaintenance(button, buttonData) then
-        build.periodicMaintenanceRequired = true
+        RecordPeriodicMaintenance(build)
     end
     if button._isText == true then
-        build.periodicMaintenanceRequired = true
+        RecordPeriodicMaintenance(build)
     end
     if button._cooldownDeferred == true then
-        build.periodicMaintenanceRequired = true
+        RecordPeriodicMaintenance(build)
     end
-    if button._auraGraceStart ~= nil or button._targetSwitchAt ~= nil then
-        build.periodicMaintenanceRequired = true
+    if button._auraGraceStart ~= nil then
+        RecordPeriodicMaintenance(build)
+    end
+    if button._targetSwitchAt ~= nil then
+        RecordPeriodicMaintenance(build, true)
     end
     if HasTimedReadyGlow(button) then
-        build.periodicMaintenanceRequired = true
+        RecordPeriodicMaintenance(build)
     end
     if HasSoundAlerts(buttonData) then
-        build.periodicMaintenanceRequired = true
+        RecordPeriodicMaintenance(build)
     end
     if buttonData and buttonData._rotationAssistantVirtual == true then
-        build.periodicMaintenanceRequired = true
+        RecordPeriodicMaintenance(build)
     end
     if IsTriggerRuntime(button, displayMode) then
-        build.periodicMaintenanceRequired = true
+        RecordPeriodicMaintenance(build)
     end
 end
 
@@ -221,6 +277,8 @@ function CooldownCompanion:FinishCooldownRefreshEligibilityBuild()
     self._cooldownRefreshEligibilityInvalidationReason = nil
     self._activeActionbarCooldownFallbackRequired = build.actionbarFallbackRequired == true or nil
     self._activeCooldownPeriodicMaintenanceRequired = build.periodicMaintenanceRequired == true or nil
+    self._activeTargetCooldownMaintenanceRequired = build.targetMaintenanceRequired == true or nil
+    self._activeNonTargetCooldownMaintenanceRequired = build.nonTargetMaintenanceRequired == true or nil
 end
 
 function CooldownCompanion:MarkCooldownsDirty()
@@ -230,6 +288,143 @@ end
 
 function CooldownCompanion:ClearCooldownsDirty()
     self._cooldownsDirty = false
+end
+
+function CooldownCompanion:BeginTargetCooldownRefreshTransition(reason)
+    self._targetRefreshTransitionSerial = (self._targetRefreshTransitionSerial or 0) + 1
+    self._targetRefreshTransitionReason = reason or "target"
+    self._targetRefreshSatisfiedTransitionSerial = nil
+    self._targetRefreshSatisfiedDirtySerial = nil
+    self._targetRefreshSatisfiedSource = nil
+    self._targetRefreshSatisfiedTargetExists = nil
+    self._targetRefreshSatisfiedTargetGUID = nil
+    self._targetRefreshCleanTickerSkipTransitionSerial = nil
+    self._targetRefreshPendingTransitionSerial = nil
+    return self._targetRefreshTransitionSerial
+end
+
+function CooldownCompanion:MarkTargetCooldownRefreshPending(transitionSerial)
+    transitionSerial = transitionSerial or self._targetRefreshTransitionSerial
+    if transitionSerial then
+        self._targetRefreshPendingTransitionSerial = transitionSerial
+    end
+end
+
+function CooldownCompanion:RecordTargetCooldownRefreshSatisfied(source, transitionSerial, dirtySerial, options)
+    if not IsTargetRefreshSource(source) then return end
+
+    transitionSerial = transitionSerial or self._targetRefreshTransitionSerial
+    if transitionSerial
+        and self._targetRefreshTransitionSerial
+        and transitionSerial ~= self._targetRefreshTransitionSerial then
+        return
+    end
+
+    local targetExists, targetGUID, targetStateKnown = CaptureTargetRefreshState()
+    if not targetStateKnown then
+        self._targetRefreshSatisfiedTransitionSerial = nil
+        self._targetRefreshSatisfiedDirtySerial = nil
+        self._targetRefreshSatisfiedSource = nil
+        self._targetRefreshSatisfiedTargetExists = nil
+        self._targetRefreshSatisfiedTargetGUID = nil
+        self._targetRefreshCleanTickerSkipTransitionSerial = nil
+        return
+    end
+
+    if dirtySerial == nil and self._cooldownsDirty then
+        dirtySerial = self._cooldownDirtySerial or 0
+    end
+
+    self._targetRefreshSatisfiedTransitionSerial = transitionSerial
+    self._targetRefreshSatisfiedDirtySerial = dirtySerial
+    self._targetRefreshSatisfiedSource = source
+    self._targetRefreshSatisfiedTargetExists = targetExists
+    self._targetRefreshSatisfiedTargetGUID = targetGUID
+
+    if transitionSerial and self._targetRefreshPendingTransitionSerial == transitionSerial then
+        self._targetRefreshPendingTransitionSerial = nil
+    end
+    if options and options.allowCleanTickerSkip and transitionSerial and dirtySerial == nil then
+        self._targetRefreshCleanTickerSkipTransitionSerial = transitionSerial
+    end
+end
+
+function CooldownCompanion:IsTargetCooldownRefreshStateSatisfied()
+    if self._targetRefreshSatisfiedTargetExists == nil then
+        return false
+    end
+    local targetExists, targetGUID, targetStateKnown = CaptureTargetRefreshState()
+    if not targetStateKnown or targetExists ~= self._targetRefreshSatisfiedTargetExists then
+        return false
+    end
+    if not targetExists then
+        return true
+    end
+    return targetGUID == self._targetRefreshSatisfiedTargetGUID
+end
+
+function CooldownCompanion:CanSkipTargetRefreshDuplicate(source)
+    if not IsTargetRefreshSource(source) then return false end
+    if self._queuedCooldownRefreshSource then return false end
+    if source == "unit-target-event"
+        and (not self._cooldownRefreshEligibilityKnown
+            or self._activeTargetCooldownMaintenanceRequired) then
+        return false
+    end
+
+    local transitionSerial = self._targetRefreshTransitionSerial
+    if not transitionSerial or self._targetRefreshSatisfiedTransitionSerial ~= transitionSerial then
+        return false
+    end
+    if not self:IsTargetCooldownRefreshStateSatisfied() then
+        return false
+    end
+
+    if self._cooldownsDirty then
+        return self._targetRefreshSatisfiedDirtySerial == (self._cooldownDirtySerial or 0)
+    end
+    return true
+end
+
+function CooldownCompanion:CanSkipCooldownEventTickerRefresh()
+    return self._cooldownsDirty
+        and self._cooldownRefreshSatisfiedSerial == (self._cooldownDirtySerial or 0)
+end
+
+function CooldownCompanion:CanSkipTargetTickerCooldownRefresh()
+    if self._queuedCooldownRefreshSource then return false end
+    if not self._cooldownRefreshEligibilityKnown then return false end
+    if self._activeTargetCooldownMaintenanceRequired then return false end
+    if self._activeNonTargetCooldownMaintenanceRequired then return false end
+    if not self:IsTargetCooldownRefreshStateSatisfied() then
+        return false
+    end
+
+    local transitionSerial = self._targetRefreshTransitionSerial
+    if self._cooldownsDirty then
+        if self._targetRefreshSatisfiedTransitionSerial
+            and self._targetRefreshSatisfiedTransitionSerial ~= transitionSerial then
+            return false
+        end
+        return self._targetRefreshSatisfiedDirtySerial == (self._cooldownDirtySerial or 0)
+    end
+
+    if not transitionSerial or self._targetRefreshSatisfiedTransitionSerial ~= transitionSerial then
+        return false
+    end
+    return self._targetRefreshCleanTickerSkipTransitionSerial == transitionSerial
+end
+
+function CooldownCompanion:ConsumeTargetTickerCooldownRefreshSkip()
+    self._targetRefreshCleanTickerSkipTransitionSerial = nil
+end
+
+function CooldownCompanion:RecordTargetPendingTickerRefreshSatisfied()
+    local transitionSerial = self._targetRefreshPendingTransitionSerial
+    if transitionSerial and transitionSerial == self._targetRefreshTransitionSerial then
+        self:RecordTargetCooldownRefreshSatisfied("target-ticker", transitionSerial)
+    end
+    self._targetRefreshCleanTickerSkipTransitionSerial = nil
 end
 
 function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
@@ -247,12 +442,20 @@ end
 function CooldownCompanion:FlushQueuedCooldownRefresh()
     local queuedSource = self._queuedCooldownRefreshSource
     local cooldownEventSerial = self._queuedCooldownRefreshCooldownEventSerial
+    local targetSource = self._queuedCooldownRefreshTargetSource
+    local targetDirtySerial = self._queuedCooldownRefreshTargetDirtySerial
+    local targetTransitionSerial = self._queuedCooldownRefreshTargetTransitionSerial
     self:ResetCooldownRefreshState(queuedSource == nil)
 
     if queuedSource then
         self:UpdateAllCooldowns()
         if cooldownEventSerial then
             self._cooldownRefreshSatisfiedSerial = cooldownEventSerial
+        end
+        if targetSource then
+            self:RecordTargetCooldownRefreshSatisfied(targetSource, targetTransitionSerial, targetDirtySerial)
+        else
+            self:RecordTargetPendingTickerRefreshSatisfied()
         end
     end
 end
@@ -261,6 +464,11 @@ function CooldownCompanion:QueueCooldownRefresh(source)
     self._queuedCooldownRefreshSource = source or "event"
     if source == "cooldown-event" then
         self._queuedCooldownRefreshCooldownEventSerial = self._cooldownDirtySerial or 0
+    end
+    if IsTargetRefreshSource(source) then
+        self._queuedCooldownRefreshTargetSource = source
+        self._queuedCooldownRefreshTargetDirtySerial = self._cooldownsDirty and (self._cooldownDirtySerial or 0) or nil
+        self._queuedCooldownRefreshTargetTransitionSerial = self._targetRefreshTransitionSerial
     end
     self:EnsureCooldownRefreshQueueFrame()
 end
@@ -275,22 +483,32 @@ function CooldownCompanion:RunImmediateCooldownRefresh(source)
     if source == "cooldown-event" then
         cooldownEventSerial = self._cooldownDirtySerial or 0
     end
+    local targetDirtySerial
+    local targetTransitionSerial
+    if IsTargetRefreshSource(source) then
+        targetDirtySerial = self._cooldownsDirty and (self._cooldownDirtySerial or 0) or nil
+        targetTransitionSerial = self._targetRefreshTransitionSerial
+    end
 
     self._queuedCooldownRefreshSource = nil
     self._queuedCooldownRefreshCooldownEventSerial = nil
+    self._queuedCooldownRefreshTargetSource = nil
+    self._queuedCooldownRefreshTargetDirtySerial = nil
+    self._queuedCooldownRefreshTargetTransitionSerial = nil
     self._cooldownImmediateRefreshThisFrame = true
     self:EnsureCooldownRefreshQueueFrame()
     self:UpdateAllCooldowns()
     if cooldownEventSerial then
         self._cooldownRefreshSatisfiedSerial = cooldownEventSerial
     end
+    if IsTargetRefreshSource(source) then
+        self:RecordTargetCooldownRefreshSatisfied(source, targetTransitionSerial, targetDirtySerial)
+    end
 end
 
 function CooldownCompanion:CanSkipTickerCooldownRefresh()
-    -- Only cooldown-event refreshes can satisfy the next ticker pass. Aura,
-    -- target, and other dirty paths keep their normal ticker confirmation.
-    return self._cooldownsDirty
-        and self._cooldownRefreshSatisfiedSerial == (self._cooldownDirtySerial or 0)
+    return self:CanSkipCooldownEventTickerRefresh()
+        or self:CanSkipTargetTickerCooldownRefresh()
 end
 
 function CooldownCompanion:RecordActionbarCooldownPulse()
@@ -301,14 +519,14 @@ function CooldownCompanion:ClearActionbarCooldownPulse()
     self._actionbarCooldownPulsePending = nil
 end
 
-function CooldownCompanion:GetActionbarCooldownPulseDecision(cooldownEventSatisfied)
+function CooldownCompanion:GetActionbarCooldownPulseDecision(cooldownEventSatisfied, targetRefreshSatisfied)
     if not self._actionbarCooldownPulsePending then
         return false
     end
     if self._queuedCooldownRefreshSource then
         return false
     end
-    if self._cooldownsDirty and not cooldownEventSatisfied then
+    if self._cooldownsDirty and not (cooldownEventSatisfied or targetRefreshSatisfied) then
         return false
     end
     if not self._cooldownRefreshEligibilityKnown then
@@ -329,23 +547,32 @@ function CooldownCompanion:TickCooldownRefresh()
         return false
     end
 
-    local cooldownEventSatisfied = self:CanSkipTickerCooldownRefresh()
+    local cooldownEventSatisfied = self:CanSkipCooldownEventTickerRefresh()
+    local targetRefreshSatisfied = self:CanSkipTargetTickerCooldownRefresh()
+    local tickerRefreshSatisfied = cooldownEventSatisfied or targetRefreshSatisfied
     local actionbarFallbackRequired = false
-    if self._actionbarCooldownPulsePending and (not self._cooldownsDirty or cooldownEventSatisfied) then
-        local canSkipActionbarPulse = self:GetActionbarCooldownPulseDecision(cooldownEventSatisfied)
+    if self._actionbarCooldownPulsePending and (not self._cooldownsDirty or tickerRefreshSatisfied) then
+        local canSkipActionbarPulse = self:GetActionbarCooldownPulseDecision(cooldownEventSatisfied, targetRefreshSatisfied)
         if canSkipActionbarPulse then
             self:ClearActionbarCooldownPulse()
+            if targetRefreshSatisfied then
+                self:ConsumeTargetTickerCooldownRefreshSkip()
+            end
             return true
         end
         actionbarFallbackRequired = true
     end
 
-    if cooldownEventSatisfied and not actionbarFallbackRequired then
+    if tickerRefreshSatisfied and not actionbarFallbackRequired then
         self:ClearActionbarCooldownPulse()
+        if targetRefreshSatisfied then
+            self:ConsumeTargetTickerCooldownRefreshSkip()
+        end
         return true
     end
 
     self:UpdateAllCooldowns()
+    self:RecordTargetPendingTickerRefreshSatisfied()
     self:ClearActionbarCooldownPulse()
     return false
 end
@@ -357,6 +584,9 @@ function CooldownCompanion:ResetCooldownRefreshState(preserveActionbarPulse)
     self._cooldownRefreshQueueArmed = nil
     self._queuedCooldownRefreshSource = nil
     self._queuedCooldownRefreshCooldownEventSerial = nil
+    self._queuedCooldownRefreshTargetSource = nil
+    self._queuedCooldownRefreshTargetDirtySerial = nil
+    self._queuedCooldownRefreshTargetTransitionSerial = nil
     self._cooldownImmediateRefreshThisFrame = nil
     if not preserveActionbarPulse then
         self:ClearActionbarCooldownPulse()

@@ -518,7 +518,9 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
     -- frames registered their event handlers before our addon loaded, so by
     -- the time this handler fires the CDM has already refreshed its children
     -- with fresh auraInstanceID data. Bursts later in the same frame coalesce.
-    if unit == "target" or unit == "player" then
+    if unit == "target" then
+        self:RunImmediateCooldownRefresh("target-aura-event")
+    elseif unit == "player" then
         self:RunImmediateCooldownRefresh("aura-event")
     end
 end
@@ -544,10 +546,13 @@ end
 
 function CooldownCompanion:OnTargetChanged()
     if not UnitExists("target") then
+        local transitionSerial = self:BeginTargetCooldownRefreshTransition("target-clear")
         -- Deselected target: clear all target aura state immediately
         self:ClearAuraUnit("target")
+        self:MarkTargetCooldownRefreshPending(transitionSerial)
         return
     end
+    local transitionSerial = self:BeginTargetCooldownRefreshTransition("target-exists")
     -- New target: clear stale instance IDs so the viewer path doesn't
     -- read old auraInstanceIDs.  Keep _auraActive so the hold can
     -- maintain visual continuity while CDM refreshes.
@@ -568,6 +573,9 @@ function CooldownCompanion:OnTargetChanged()
     -- will have fresh auraInstanceID data.  Probing immediately lets the
     -- primary path clear _targetSwitchAt in the same frame — zero hold.
     self:UpdateAllCooldowns()
+    self:RecordTargetCooldownRefreshSatisfied("target-event", transitionSerial, nil, {
+        allowCleanTickerSkip = true,
+    })
 end
 
 
