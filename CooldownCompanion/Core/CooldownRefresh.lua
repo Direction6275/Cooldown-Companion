@@ -366,7 +366,9 @@ end
 function CooldownCompanion:CanSkipTargetRefreshDuplicate(source)
     if not IsTargetRefreshSource(source) then return false end
     if self._queuedCooldownRefreshSource then return false end
-    if source == "unit-target-event" and self._activeTargetCooldownMaintenanceRequired then
+    if source == "unit-target-event"
+        and (not self._cooldownRefreshEligibilityKnown
+            or self._activeTargetCooldownMaintenanceRequired) then
         return false
     end
 
@@ -391,6 +393,8 @@ end
 
 function CooldownCompanion:CanSkipTargetTickerCooldownRefresh()
     if self._queuedCooldownRefreshSource then return false end
+    if not self._cooldownRefreshEligibilityKnown then return false end
+    if self._activeTargetCooldownMaintenanceRequired then return false end
     if self._activeNonTargetCooldownMaintenanceRequired then return false end
     if not self:IsTargetCooldownRefreshStateSatisfied() then
         return false
