@@ -366,6 +366,9 @@ end
 function CooldownCompanion:CanSkipTargetRefreshDuplicate(source)
     if not IsTargetRefreshSource(source) then return false end
     if self._queuedCooldownRefreshSource then return false end
+    if source == "unit-target-event" and self._activeTargetCooldownMaintenanceRequired then
+        return false
+    end
 
     local transitionSerial = self._targetRefreshTransitionSerial
     if not transitionSerial or self._targetRefreshSatisfiedTransitionSerial ~= transitionSerial then
