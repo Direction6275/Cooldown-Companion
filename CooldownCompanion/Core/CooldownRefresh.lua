@@ -526,7 +526,7 @@ function CooldownCompanion:GetActionbarCooldownPulseDecision(cooldownEventSatisf
     if self._queuedCooldownRefreshSource then
         return false
     end
-    if self._cooldownsDirty and not cooldownEventSatisfied then
+    if self._cooldownsDirty and not (cooldownEventSatisfied or targetRefreshSatisfied) then
         return false
     end
     if not self._cooldownRefreshEligibilityKnown then
@@ -535,11 +535,7 @@ function CooldownCompanion:GetActionbarCooldownPulseDecision(cooldownEventSatisf
     if self._activeActionbarCooldownFallbackRequired then
         return false
     end
-    if self._activeCooldownPeriodicMaintenanceRequired
-        and not cooldownEventSatisfied
-        and not (targetRefreshSatisfied
-            and self._activeTargetCooldownMaintenanceRequired
-            and not self._activeNonTargetCooldownMaintenanceRequired) then
+    if self._activeCooldownPeriodicMaintenanceRequired and not cooldownEventSatisfied then
         return false
     end
     return true
