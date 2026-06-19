@@ -17,6 +17,8 @@
       covered by the pending broad flush.
     - _cooldownRefreshSatisfiedSerial: dirty serial covered by an executed
       cooldown-event refresh.
+    - _spellAvailabilityRefreshSatisfiedSerial: dirty serial covered by an
+      executed spell-availability broad refresh.
     - _targetRefreshTransitionSerial: monotonic target-state marker bumped by
       PLAYER_TARGET_CHANGED.
     - _targetRefreshSatisfiedTransitionSerial/_targetRefreshSatisfiedDirtySerial:
@@ -44,6 +46,9 @@
 
     Invariants:
     - Only cooldown-event requests write _cooldownRefreshSatisfiedSerial.
+    - Spell-availability satisfaction only covers the dirty serial created by
+      the direct spell-availability broad pass, and only while the active
+      cooldown eligibility snapshot remains valid.
     - MarkCooldownsDirty is the only invalidator; stale satisfied serials are
       inert because they cannot match a later dirty serial.
     - Queued cooldown-event requests satisfy the serial captured at queue time.
@@ -627,6 +632,7 @@ end
 function CooldownCompanion:InvalidateCooldownRefreshEligibility(reason)
     self._cooldownRefreshEligibilityKnown = nil
     self._cooldownRefreshEligibilityInvalidationReason = reason or "unknown"
+    self._spellAvailabilityRefreshSatisfiedSerial = nil
     self._activeActionbarCooldownFallbackRequired = nil
     self._activeCooldownPeriodicMaintenanceRequired = nil
     self._activeTargetCooldownMaintenanceRequired = nil
@@ -946,6 +952,22 @@ function CooldownCompanion:CanSkipCooldownEventTickerRefresh()
         and self._cooldownRefreshSatisfiedSerial == (self._cooldownDirtySerial or 0)
 end
 
+function CooldownCompanion:RecordSpellAvailabilityCooldownRefreshSatisfied(dirtySerial)
+    if not self._cooldownRefreshEligibilityKnown then return end
+    if dirtySerial == nil then
+        if not self._cooldownsDirty then return end
+        dirtySerial = self._cooldownDirtySerial or 0
+    end
+    self._spellAvailabilityRefreshSatisfiedSerial = dirtySerial
+end
+
+function CooldownCompanion:CanSkipSpellAvailabilityTickerCooldownRefresh()
+    if self._queuedCooldownRefreshSource then return false end
+    if not self._cooldownRefreshEligibilityKnown then return false end
+    return self._cooldownsDirty
+        and self._spellAvailabilityRefreshSatisfiedSerial == (self._cooldownDirtySerial or 0)
+end
+
 function CooldownCompanion:CanSkipTargetTickerCooldownRefresh()
     if self._queuedCooldownRefreshSource then return false end
     if not self._cooldownRefreshEligibilityKnown then return false end
@@ -1063,6 +1085,7 @@ end
 
 function CooldownCompanion:CanSkipTickerCooldownRefresh()
     return self:CanSkipCooldownEventTickerRefresh()
+        or self:CanSkipSpellAvailabilityTickerCooldownRefresh()
         or self:CanSkipTargetTickerCooldownRefresh()
 end
 
@@ -1274,14 +1297,16 @@ function CooldownCompanion:OnPowerEventCooldownRefresh()
     return true
 end
 
-function CooldownCompanion:GetActionbarCooldownPulseDecision(cooldownEventSatisfied, targetRefreshSatisfied)
+function CooldownCompanion:GetActionbarCooldownPulseDecision(cooldownEventSatisfied, targetRefreshSatisfied, spellAvailabilitySatisfied)
     if not self._actionbarCooldownPulsePending then
         return false
     end
     if self._queuedCooldownRefreshSource then
         return false
     end
-    if self._cooldownsDirty and not (cooldownEventSatisfied or targetRefreshSatisfied) then
+    local broadRefreshSatisfied = cooldownEventSatisfied == true
+    local dirtyRefreshSatisfied = broadRefreshSatisfied or spellAvailabilitySatisfied or targetRefreshSatisfied
+    if self._cooldownsDirty and not dirtyRefreshSatisfied then
         return false
     end
     if not self._cooldownRefreshEligibilityKnown then
@@ -1290,7 +1315,7 @@ function CooldownCompanion:GetActionbarCooldownPulseDecision(cooldownEventSatisf
     if self._activeActionbarCooldownFallbackRequired then
         return false
     end
-    if self._activeCooldownPeriodicMaintenanceRequired and not cooldownEventSatisfied then
+    if self._activeCooldownPeriodicMaintenanceRequired and not broadRefreshSatisfied then
         if not self:HasOnlySkippableVisualMaintenance() then
             return false
         end
@@ -1314,14 +1339,16 @@ function CooldownCompanion:TickCooldownRefresh()
     end
 
     local cooldownEventSatisfied = self:CanSkipCooldownEventTickerRefresh()
+    local spellAvailabilitySatisfied = self:CanSkipSpellAvailabilityTickerCooldownRefresh()
     local targetRefreshSatisfied = self:CanSkipTargetTickerCooldownRefresh()
-    local tickerRefreshSatisfied = cooldownEventSatisfied or targetRefreshSatisfied
+    local tickerRefreshSatisfied = cooldownEventSatisfied or spellAvailabilitySatisfied or targetRefreshSatisfied
+    local broadRefreshSatisfied = cooldownEventSatisfied == true
     local actionbarFallbackRequired = false
     if self._actionbarCooldownPulsePending and (not self._cooldownsDirty or tickerRefreshSatisfied) then
-        local canSkipActionbarPulse = self:GetActionbarCooldownPulseDecision(cooldownEventSatisfied, targetRefreshSatisfied)
+        local canSkipActionbarPulse = self:GetActionbarCooldownPulseDecision(cooldownEventSatisfied, targetRefreshSatisfied, spellAvailabilitySatisfied)
         if canSkipActionbarPulse then
             if self._activeChargeCooldownVisualMaintenanceRequired
-                and not cooldownEventSatisfied
+                and not broadRefreshSatisfied
                 and not self:RunChargeCooldownVisualMaintenance() then
                 self:UpdateAllCooldowns()
                 self:RecordTargetPendingTickerRefreshSatisfied()
@@ -1329,7 +1356,7 @@ function CooldownCompanion:TickCooldownRefresh()
                 return false
             end
             if self._activeSafeTextWidgetMaintenanceRequired
-                and not cooldownEventSatisfied
+                and not broadRefreshSatisfied
                 and not self:RunSafeTextWidgetMaintenance() then
                 self:UpdateAllCooldowns()
                 self:RecordTargetPendingTickerRefreshSatisfied()

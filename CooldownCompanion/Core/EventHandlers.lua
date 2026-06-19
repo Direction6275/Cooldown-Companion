@@ -51,12 +51,38 @@ local function QueueTalentChargeRefresh(addon)
     end)
 end
 
+local function RefreshSpellAvailabilitySettlingState(addon)
+    addon:CachePlayerState()
+    addon:CacheCurrentSpec()
+    addon._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
+    addon:RebuildTalentNodeCache()
+
+    local chargeFlagsChanged = addon:RefreshChargeFlags("spell") == true
+    local groupSurfaceChanged
+    if addon.AnyGroupSurfaceNeedsSpellAvailabilityRefresh then
+        groupSurfaceChanged = addon:AnyGroupSurfaceNeedsSpellAvailabilityRefresh()
+    else
+        groupSurfaceChanged = addon:AnyGroupButtonSetNeedsRebuild()
+    end
+    if not chargeFlagsChanged and not groupSurfaceChanged then
+        addon._lastSpellAvailabilitySettlingDecision = "skipped-clean"
+        return
+    end
+
+    addon._lastSpellAvailabilitySettlingDecision = chargeFlagsChanged
+        and (groupSurfaceChanged and "refreshed-charge-and-surface" or "refreshed-charge")
+        or "refreshed-surface"
+    addon:RefreshAllGroupsForSpellAvailability()
+    addon:RefreshKeybindState()
+    addon:RefreshConfigPanel()
+end
+
 local function QueueSpellAvailabilitySettlingRefresh(addon)
     pendingSpellAvailabilityRefreshToken = pendingSpellAvailabilityRefreshToken + 1
     local token = pendingSpellAvailabilityRefreshToken
     C_Timer.After(0.2, function()
         if pendingSpellAvailabilityRefreshToken ~= token then return end
-        addon:RefreshSpellAvailabilityState({ skipSettlingRefresh = true })
+        RefreshSpellAvailabilitySettlingState(addon)
     end)
 end
 
@@ -394,23 +420,101 @@ function CooldownCompanion:UpdateSpellChargeMetadata(buttonData, spellID, opts)
     buttonData.hasCharges = hasRealCharges
 end
 
+local function CaptureChargeFlagState(buttonData)
+    return buttonData.hasCharges,
+        buttonData.maxCharges,
+        buttonData.showChargeText,
+        buttonData._hasDisplayCount,
+        buttonData._displayCountFamily,
+        buttonData._castCountCandidate,
+        buttonData._castCountSelf,
+        buttonData._castCountEventSpellID,
+        buttonData._castCountConfirmed,
+        buttonData._castCountSeeded
+end
+
+local function ChargeFlagStateChanged(
+    buttonData,
+    hasCharges,
+    maxCharges,
+    showChargeText,
+    hasDisplayCount,
+    displayCountFamily,
+    castCountCandidate,
+    castCountSelf,
+    castCountEventSpellID,
+    castCountConfirmed,
+    castCountSeeded
+)
+    return buttonData.hasCharges ~= hasCharges
+        or buttonData.maxCharges ~= maxCharges
+        or buttonData.showChargeText ~= showChargeText
+        or buttonData._hasDisplayCount ~= hasDisplayCount
+        or buttonData._displayCountFamily ~= displayCountFamily
+        or buttonData._castCountCandidate ~= castCountCandidate
+        or buttonData._castCountSelf ~= castCountSelf
+        or buttonData._castCountEventSpellID ~= castCountEventSpellID
+        or buttonData._castCountConfirmed ~= castCountConfirmed
+        or buttonData._castCountSeeded ~= castCountSeeded
+end
+
 -- Re-evaluate hasCharges on every spell button (talents can add/remove charges).
 -- Treat a spell as charge-based only when max charges is greater than 1.
 function CooldownCompanion:RefreshChargeFlags(typeFilter)
+    local changed = false
     if typeFilter ~= "item" then
         self._hasDisplayCountCandidates = false
     end
     for _, group in pairs(self.db.profile.groups) do
         for _, buttonData in ipairs(group.buttons) do
             if buttonData.type == "spell" and typeFilter ~= "item" then
+                local hasCharges, maxCharges, showChargeText, hasDisplayCount,
+                    displayCountFamily, castCountCandidate, castCountSelf,
+                    castCountEventSpellID, castCountConfirmed,
+                    castCountSeeded = CaptureChargeFlagState(buttonData)
                 self:UpdateSpellChargeMetadata(buttonData, buttonData.id)
+                if ChargeFlagStateChanged(
+                    buttonData,
+                    hasCharges,
+                    maxCharges,
+                    showChargeText,
+                    hasDisplayCount,
+                    displayCountFamily,
+                    castCountCandidate,
+                    castCountSelf,
+                    castCountEventSpellID,
+                    castCountConfirmed,
+                    castCountSeeded
+                ) then
+                    changed = true
+                end
             elseif buttonData.type == "item" and typeFilter ~= "spell" then
                 -- Never clear hasCharges for items; unavailable charged items can
                 -- be indistinguishable from unowned items through count APIs.
+                local hasCharges, maxCharges, showChargeText, hasDisplayCount,
+                    displayCountFamily, castCountCandidate, castCountSelf,
+                    castCountEventSpellID, castCountConfirmed,
+                    castCountSeeded = CaptureChargeFlagState(buttonData)
                 self.UpdateItemChargeMetadata(buttonData, buttonData.id)
+                if ChargeFlagStateChanged(
+                    buttonData,
+                    hasCharges,
+                    maxCharges,
+                    showChargeText,
+                    hasDisplayCount,
+                    displayCountFamily,
+                    castCountCandidate,
+                    castCountSelf,
+                    castCountEventSpellID,
+                    castCountConfirmed,
+                    castCountSeeded
+                ) then
+                    changed = true
+                end
             end
         end
     end
+    return changed
 end
 
 function CooldownCompanion:CacheCurrentSpec()

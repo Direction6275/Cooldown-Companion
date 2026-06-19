@@ -1836,6 +1836,62 @@ function CooldownCompanion:AnyGroupButtonSetNeedsRebuild()
     return false
 end
 
+function CooldownCompanion:GroupSurfaceNeedsSpellAvailabilityRefresh(groupId, group)
+    local frame = self.groupFrames and self.groupFrames[groupId] or nil
+    local dormantFrame = self._dormantFrames and self._dormantFrames[groupId] or nil
+    if not self:IsGroupVisibleToCurrentChar(groupId) then
+        return frame ~= nil or dormantFrame ~= nil
+    end
+
+    local active = self:IsGroupActive(groupId, {
+        group = group,
+        checkCharVisibility = true,
+        checkLoadConditions = true,
+        requireButtons = true,
+    })
+
+    if not active then
+        return frame ~= nil or dormantFrame ~= nil
+    end
+    if not frame then
+        return true
+    end
+    if type(frame.IsShown) == "function" and not frame:IsShown() then
+        return true
+    end
+
+    return self:GroupButtonSetNeedsRebuild(groupId, group)
+end
+
+function CooldownCompanion:AnyGroupSurfaceNeedsSpellAvailabilityRefresh()
+    if not self.db or not self.db.profile or not self.db.profile.groups then
+        return false
+    end
+
+    if self.groupFrames then
+        for groupId, _ in pairs(self.groupFrames) do
+            if not self.db.profile.groups[groupId] then
+                return true
+            end
+        end
+    end
+    if self._dormantFrames then
+        for groupId, _ in pairs(self._dormantFrames) do
+            if not self.db.profile.groups[groupId] then
+                return true
+            end
+        end
+    end
+
+    for groupId, group in pairs(self.db.profile.groups) do
+        if self:GroupSurfaceNeedsSpellAvailabilityRefresh(groupId, group) then
+            return true
+        end
+    end
+
+    return false
+end
+
 function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
     local function resetFrameButtons(frame)
         if not frame or not frame.buttons then return end
@@ -1896,7 +1952,11 @@ function CooldownCompanion:RefreshAllGroupsForSpellAvailability()
         self:RefreshAllGroupsVisibilityOnly()
     end
 
+    local spellAvailabilityDirtySerial = self._cooldownsDirty and (self._cooldownDirtySerial or 0) or nil
     self:UpdateAllCooldowns()
+    if self.RecordSpellAvailabilityCooldownRefreshSatisfied then
+        self:RecordSpellAvailabilityCooldownRefreshSatisfied(spellAvailabilityDirtySerial)
+    end
 end
 
 function CooldownCompanion:CreateAllGroupFrames()
