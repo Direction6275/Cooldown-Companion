@@ -171,6 +171,8 @@ local function ClearReasonTracking(build)
     ClearTable(build.periodicMaintenanceSeen)
     ClearTable(build.safeTextWidgetMaintenanceReasons)
     ClearTable(build.safeTextWidgetMaintenanceSeen)
+    ClearTable(build.chargeCooldownVisualMaintenanceReasons)
+    ClearTable(build.chargeCooldownVisualMaintenanceSeen)
     ClearTable(build.unprovenIconTextMaintenanceReasons)
     ClearTable(build.unprovenIconTextMaintenanceSeen)
     ClearTable(build.powerRefreshReasons)
@@ -182,6 +184,8 @@ local function EnsureReasonTracking(build)
     build.periodicMaintenanceSeen = build.periodicMaintenanceSeen or {}
     build.safeTextWidgetMaintenanceReasons = build.safeTextWidgetMaintenanceReasons or {}
     build.safeTextWidgetMaintenanceSeen = build.safeTextWidgetMaintenanceSeen or {}
+    build.chargeCooldownVisualMaintenanceReasons = build.chargeCooldownVisualMaintenanceReasons or {}
+    build.chargeCooldownVisualMaintenanceSeen = build.chargeCooldownVisualMaintenanceSeen or {}
     build.unprovenIconTextMaintenanceReasons = build.unprovenIconTextMaintenanceReasons or {}
     build.unprovenIconTextMaintenanceSeen = build.unprovenIconTextMaintenanceSeen or {}
     build.powerRefreshReasons = build.powerRefreshReasons or {}
@@ -215,15 +219,20 @@ local function PowerModeRequiresBroad(mode)
     return mode == POWER_REFRESH_MODE_BROAD or mode == POWER_REFRESH_MODE_UNKNOWN
 end
 
+local function HasSafeTextWidgetTiming(button)
+    if not button then return false end
+    return (button._durationObj ~= nil and button._durationObj ~= button._chargeDurationObj)
+        or button._auraDurationObj ~= nil
+        or button._auraCooldownStart ~= nil
+end
+
 local function IsSafeTextWidgetMaintenanceOnly(button, buttonData)
     if not buttonData then return false end
     if not HasActiveIconCooldownText(button, buttonData) then return false end
-    if button._chargeCooldownVisualActive == true or button._secondaryCdActive == true then
+    if button._secondaryCdActive == true then
         return false
     end
-    return button._durationObj ~= nil
-        or button._auraDurationObj ~= nil
-        or button._auraCooldownStart ~= nil
+    return HasSafeTextWidgetTiming(button)
 end
 
 local function SafeTextWidgetTimingStillActive(button)
@@ -234,7 +243,7 @@ local function SafeTextWidgetTimingStillActive(button)
     end
 
     local sawTimingSource = false
-    if button._durationObj ~= nil then
+    if button._durationObj ~= nil and button._durationObj ~= button._chargeDurationObj then
         sawTimingSource = true
         if durationObjectShowsCooldown(button._durationObj) then
             return true
@@ -257,6 +266,17 @@ local function SafeTextWidgetTimingStillActive(button)
     return not sawTimingSource
 end
 
+local function ChargeCooldownVisualTimingStillActive(button)
+    if not button or button._chargeCooldownVisualActive ~= true or button._chargeDurationObj == nil then
+        return false
+    end
+    local durationObjectShowsCooldown = EntryRuntime.DurationObjectShowsCooldown
+    if type(durationObjectShowsCooldown) ~= "function" then
+        return false
+    end
+    return durationObjectShowsCooldown(button._chargeDurationObj) == true
+end
+
 local function CanRunSafeTextWidgetVisualMaintenance(button)
     if not button then return false end
     if button._visibilityHidden == true then return false end
@@ -264,6 +284,74 @@ local function CanRunSafeTextWidgetVisualMaintenance(button)
         return false
     end
     return true
+end
+
+local function HasIconChargeCooldownVisualTail(button, buttonData)
+    if not buttonData then return false end
+    if not button then return false end
+    if button._isBar or button._isText then return false end
+    if buttonData.isPassive then return false end
+    if button._hideCooldownChargesActive == true then return false end
+    if button._chargeCooldownVisualActive ~= true then return false end
+    if button._chargeDurationObj == nil then return false end
+    if button._secondaryCdActive == true then return false end
+    return true
+end
+
+local function IsChargeCooldownVisualMaintenanceOnly(button, buttonData)
+    return HasIconChargeCooldownVisualTail(button, buttonData)
+end
+
+local StyleUsesUnusableIconVisual
+local HasUnusableTextureContract
+
+local function HasChargeBroadVisualContract(button, buttonData)
+    if not buttonData then return false end
+
+    local style = button and button.style or nil
+    return buttonData.hideWhileOnCooldown
+        or buttonData.hideWhileNotOnCooldown
+        or buttonData.hideCooldownWithCharges
+        or buttonData.hideWhileZeroCharges
+        or buttonData.desaturateWhileZeroCharges
+        or buttonData.hideWhileUnusable
+        or (HasUnusableTextureContract and HasUnusableTextureContract(button, style))
+end
+
+local function StyleUsesReadyTextureIndicator(style)
+    local indicators = style and style.textureIndicators
+    local ready = indicators and indicators.ready
+    return ready and ready.enabled == true
+end
+
+local function ChargeCooldownVisualNeedsSafeIconMaintenance(button, buttonData)
+    return IsChargeCooldownVisualMaintenanceOnly(button, buttonData)
+        and HasActiveIconCooldownText(button, buttonData)
+        and not IsSafeTextWidgetMaintenanceOnly(button, buttonData)
+end
+
+local function ChargeCooldownVisualNeedsFocusedRefresh(button, buttonData)
+    if not IsChargeCooldownVisualMaintenanceOnly(button, buttonData) then return false end
+    if HasChargeBroadVisualContract(button, buttonData) then return false end
+
+    local style = button.style or {}
+    return style.desaturateOnCooldown == true
+        or style.iconCooldownTintEnabled == true
+        or (StyleUsesUnusableIconVisual and StyleUsesUnusableIconVisual(style))
+        or (style.readyGlowDuration or 0) > 0
+        or style.readyGlowOnlyAtMaxCharges == true
+        or style.iconFillEnabled == true
+        or StyleUsesReadyTextureIndicator(style)
+end
+
+local function FocusedChargeRefreshBroadFallbackReason(button)
+    if not button then return "missing-button-fallback" end
+    if button._actionSlotCooldownFallback == true then return "actionbar-fallback" end
+    if button._secondaryCdActive == true then return "secondary-cooldown-fallback" end
+    if button._cooldownDeferred == true then return "deferred-cooldown-fallback" end
+    if not ChargeCooldownVisualTimingStillActive(button) then return "settle-fallback" end
+    if HasTimedReadyGlow(button) then return "ready-glow-fallback" end
+    return nil
 end
 
 local function RecordIconCooldownTextMaintenance(build, button, buttonData)
@@ -277,8 +365,9 @@ local function RecordIconCooldownTextMaintenance(build, button, buttonData)
     end
 
     local safeTextWidget = false
+    local chargeVisualMaintenance = false
     local unproven = false
-    if button._durationObj ~= nil then
+    if button._durationObj ~= nil and button._durationObj ~= button._chargeDurationObj then
         safeTextWidget = true
         AddUniqueReason(build.safeTextWidgetMaintenanceReasons, build.safeTextWidgetMaintenanceSeen, "duration-object")
     end
@@ -291,21 +380,34 @@ local function RecordIconCooldownTextMaintenance(build, button, buttonData)
         AddUniqueReason(build.safeTextWidgetMaintenanceReasons, build.safeTextWidgetMaintenanceSeen, "aura-cooldown-start")
     end
     if button._chargeCooldownVisualActive == true then
-        unproven = true
-        AddUniqueReason(build.unprovenIconTextMaintenanceReasons, build.unprovenIconTextMaintenanceSeen, "charge-cooldown-visual")
+        if IsChargeCooldownVisualMaintenanceOnly(button, buttonData) then
+            chargeVisualMaintenance = true
+            AddUniqueReason(
+                build.chargeCooldownVisualMaintenanceReasons,
+                build.chargeCooldownVisualMaintenanceSeen,
+                "active-charge-duration-object"
+            )
+        else
+            unproven = true
+            AddUniqueReason(build.unprovenIconTextMaintenanceReasons, build.unprovenIconTextMaintenanceSeen, "charge-cooldown-visual")
+        end
     end
     if button._secondaryCdActive == true then
         unproven = true
         AddUniqueReason(build.unprovenIconTextMaintenanceReasons, build.unprovenIconTextMaintenanceSeen, "secondary-cooldown-text")
     end
-    if not safeTextWidget and not unproven then
+    if not safeTextWidget and not chargeVisualMaintenance and not unproven then
         unproven = true
         AddUniqueReason(build.unprovenIconTextMaintenanceReasons, build.unprovenIconTextMaintenanceSeen, "unknown-icon-text")
     end
 
     if safeTextWidget and not unproven then
         RecordPeriodicMaintenance(build, false, "safe-text-widget", true)
-    else
+    end
+    if chargeVisualMaintenance and not unproven then
+        RecordPeriodicMaintenance(build, false, "charge-cooldown-visual-active-tail", false, false, true)
+    end
+    if unproven or (not safeTextWidget and not chargeVisualMaintenance) then
         RecordPeriodicMaintenance(build, false, "unproven-icon-text", false, true)
     end
 end
@@ -331,10 +433,7 @@ local function HasCooldownDrivenVisualMaintenance(button, buttonData)
         return true
     end
 
-    if chargeTransitionActive
-        and (buttonData.hideWhileOnCooldown
-            or buttonData.hideWhileNotOnCooldown
-            or buttonData.hideCooldownWithCharges) then
+    if chargeTransitionActive and HasChargeBroadVisualContract(button, buttonData) then
         return true
     end
 
@@ -344,7 +443,26 @@ local function HasCooldownDrivenVisualMaintenance(button, buttonData)
         return true
     end
 
-    return false
+    return ChargeCooldownVisualNeedsFocusedRefresh(button, buttonData)
+end
+
+local function HasChargeDrivenVisualMaintenance(button, buttonData)
+    if not (button and buttonData) then return false end
+
+    local chargeState = button._chargeState
+    local chargeMissingOrZero = chargeState == CHARGE_STATE_ZERO
+        or chargeState == CHARGE_STATE_MISSING
+    local chargeTransitionActive = chargeMissingOrZero
+        or button._chargeRecharging == true
+        or button._chargeCooldownVisualActive == true
+
+    if chargeTransitionActive and HasChargeBroadVisualContract(button, buttonData) then
+        return true
+    end
+
+    return chargeState == CHARGE_STATE_ZERO
+        and (buttonData.hideWhileZeroCharges
+            or buttonData.desaturateWhileZeroCharges)
 end
 
 local function IsTriggerRuntime(button, displayMode)
@@ -387,7 +505,7 @@ local function IsPowerSensitiveSpellEntry(buttonData)
         and buttonData.isPassiveCooldown ~= true
 end
 
-local function StyleUsesUnusableIconVisual(style)
+StyleUsesUnusableIconVisual = function(style)
     if not (style and style.showUnusable == true) then
         return false
     end
@@ -407,7 +525,7 @@ local function StyleUsesUnusableIconVisual(style)
     return hasVisualContract
 end
 
-local function HasUnusableTextureContract(button, style)
+HasUnusableTextureContract = function(button, style)
     if button and (button._conditionalUnusablePreview == true or button._textureUnusablePreview == true) then
         return true
     end
@@ -514,12 +632,19 @@ function CooldownCompanion:InvalidateCooldownRefreshEligibility(reason)
     self._activeTargetCooldownMaintenanceRequired = nil
     self._activeNonTargetCooldownMaintenanceRequired = nil
     self._activeSafeTextWidgetMaintenanceRequired = nil
+    self._activeChargeCooldownVisualMaintenanceRequired = nil
     self._activeUnprovenIconTextMaintenanceRequired = nil
     self._activeOtherPeriodicMaintenanceRequired = nil
     self._activeCooldownPeriodicMaintenanceReasons = nil
     self._activeSafeTextWidgetMaintenanceReasons = nil
+    self._activeChargeCooldownVisualMaintenanceReasons = nil
     self._activeUnprovenIconTextMaintenanceReasons = nil
     self._lastSafeTextWidgetMaintenanceCount = nil
+    self._lastChargeCooldownVisualMaintenanceCount = nil
+    self._lastChargeCooldownVisualMaintenanceEligibleCount = nil
+    self._lastChargeCooldownVisualMaintenanceDecision = nil
+    self._lastChargeCooldownVisualMaintenanceFocusedCount = nil
+    self._lastChargeCooldownVisualMaintenanceSafeCount = nil
     self._activePowerCooldownRefreshMode = nil
     self._activePowerCooldownRefreshReasons = nil
     self._lastPowerIconVisualMaintenanceCount = nil
@@ -538,6 +663,7 @@ function CooldownCompanion:BeginCooldownRefreshEligibilityBuild()
         build.targetMaintenanceRequired = nil
         build.nonTargetMaintenanceRequired = nil
         build.safeTextWidgetMaintenanceRequired = nil
+        build.chargeCooldownVisualMaintenanceRequired = nil
         build.unprovenIconTextMaintenanceRequired = nil
         build.otherPeriodicMaintenanceRequired = nil
         build.powerRefreshMode = nil
@@ -547,12 +673,14 @@ function CooldownCompanion:BeginCooldownRefreshEligibilityBuild()
     self._cooldownRefreshEligibilityBuild = build
 end
 
-RecordPeriodicMaintenance = function(build, targetMaintenance, reason, safeTextWidget, unprovenIconText)
+RecordPeriodicMaintenance = function(build, targetMaintenance, reason, safeTextWidget, unprovenIconText, chargeCooldownVisual)
     EnsureReasonTracking(build)
     build.periodicMaintenanceRequired = true
     AddUniqueReason(build.periodicMaintenanceReasons, build.periodicMaintenanceSeen, reason or "unknown")
     if safeTextWidget then
         build.safeTextWidgetMaintenanceRequired = true
+    elseif chargeCooldownVisual then
+        build.chargeCooldownVisualMaintenanceRequired = true
     elseif unprovenIconText then
         build.unprovenIconTextMaintenanceRequired = true
     else
@@ -575,9 +703,17 @@ function CooldownCompanion:RecordButtonCooldownRefreshEligibility(button, button
 
     RecordIconCooldownTextMaintenance(build, button, buttonData)
     if HasCooldownDrivenVisualMaintenance(button, buttonData) then
-        if IsSafeTextWidgetMaintenanceOnly(button, buttonData) then
+        if not HasChargeDrivenVisualMaintenance(button, buttonData)
+            and IsSafeTextWidgetMaintenanceOnly(button, buttonData) then
             AddUniqueReason(build.safeTextWidgetMaintenanceReasons, build.safeTextWidgetMaintenanceSeen, "icon-visual-presentation")
             RecordPeriodicMaintenance(build, false, "safe-icon-visual-presentation", true)
+        elseif ChargeCooldownVisualNeedsFocusedRefresh(button, buttonData) then
+            AddUniqueReason(
+                build.chargeCooldownVisualMaintenanceReasons,
+                build.chargeCooldownVisualMaintenanceSeen,
+                "focused-charge-presentation"
+            )
+            RecordPeriodicMaintenance(build, false, "focused-charge-presentation", false, false, true)
         else
             RecordPeriodicMaintenance(build, false, "cooldown-driven-visual")
         end
@@ -626,10 +762,12 @@ function CooldownCompanion:FinishCooldownRefreshEligibilityBuild()
     self._activeTargetCooldownMaintenanceRequired = build.targetMaintenanceRequired == true or nil
     self._activeNonTargetCooldownMaintenanceRequired = build.nonTargetMaintenanceRequired == true or nil
     self._activeSafeTextWidgetMaintenanceRequired = build.safeTextWidgetMaintenanceRequired == true or nil
+    self._activeChargeCooldownVisualMaintenanceRequired = build.chargeCooldownVisualMaintenanceRequired == true or nil
     self._activeUnprovenIconTextMaintenanceRequired = build.unprovenIconTextMaintenanceRequired == true or nil
     self._activeOtherPeriodicMaintenanceRequired = build.otherPeriodicMaintenanceRequired == true or nil
     self._activeCooldownPeriodicMaintenanceReasons = CopyReasonList(build.periodicMaintenanceReasons)
     self._activeSafeTextWidgetMaintenanceReasons = CopyReasonList(build.safeTextWidgetMaintenanceReasons)
+    self._activeChargeCooldownVisualMaintenanceReasons = CopyReasonList(build.chargeCooldownVisualMaintenanceReasons)
     self._activeUnprovenIconTextMaintenanceReasons = CopyReasonList(build.unprovenIconTextMaintenanceReasons)
     self._activePowerCooldownRefreshMode = build.powerRefreshMode or POWER_REFRESH_MODE_NONE
     self._activePowerCooldownRefreshReasons = CopyReasonList(build.powerRefreshReasons)
@@ -637,6 +775,15 @@ end
 
 function CooldownCompanion:HasOnlySafeTextWidgetMaintenance()
     return self._activeSafeTextWidgetMaintenanceRequired == true
+        and not self._activeChargeCooldownVisualMaintenanceRequired
+        and not self._activeUnprovenIconTextMaintenanceRequired
+        and not self._activeOtherPeriodicMaintenanceRequired
+        and not self._activeTargetCooldownMaintenanceRequired
+end
+
+function CooldownCompanion:HasOnlySkippableVisualMaintenance()
+    return (self._activeSafeTextWidgetMaintenanceRequired == true
+            or self._activeChargeCooldownVisualMaintenanceRequired == true)
         and not self._activeUnprovenIconTextMaintenanceRequired
         and not self._activeOtherPeriodicMaintenanceRequired
         and not self._activeTargetCooldownMaintenanceRequired
@@ -644,6 +791,7 @@ end
 
 function CooldownCompanion:GetActionbarCooldownEligibilityInfo()
     local safeTextOnly = self:HasOnlySafeTextWidgetMaintenance()
+    local skippableVisualOnly = self:HasOnlySkippableVisualMaintenance()
     return {
         known = self._cooldownRefreshEligibilityKnown == true,
         invalidationReason = self._cooldownRefreshEligibilityInvalidationReason,
@@ -653,12 +801,21 @@ function CooldownCompanion:GetActionbarCooldownEligibilityInfo()
         nonTargetMaintenanceRequired = self._activeNonTargetCooldownMaintenanceRequired == true,
         safeTextWidgetMaintenanceRequired = self._activeSafeTextWidgetMaintenanceRequired == true,
         safeTextWidgetMaintenanceOnly = safeTextOnly == true,
+        chargeCooldownVisualMaintenanceRequired = self._activeChargeCooldownVisualMaintenanceRequired == true,
+        chargeCooldownVisualMaintenanceOnly = self._activeChargeCooldownVisualMaintenanceRequired == true
+            and not self._activeSafeTextWidgetMaintenanceRequired
+            and skippableVisualOnly == true,
+        skippableVisualMaintenanceOnly = skippableVisualOnly == true,
         unprovenIconTextMaintenanceRequired = self._activeUnprovenIconTextMaintenanceRequired == true,
         otherPeriodicMaintenanceRequired = self._activeOtherPeriodicMaintenanceRequired == true,
         periodicMaintenanceReasons = self._activeCooldownPeriodicMaintenanceReasons,
         safeTextWidgetMaintenanceReasons = self._activeSafeTextWidgetMaintenanceReasons,
+        chargeCooldownVisualMaintenanceReasons = self._activeChargeCooldownVisualMaintenanceReasons,
         unprovenIconTextMaintenanceReasons = self._activeUnprovenIconTextMaintenanceReasons,
         lastSafeTextWidgetMaintenanceCount = self._lastSafeTextWidgetMaintenanceCount,
+        lastChargeCooldownVisualMaintenanceCount = self._lastChargeCooldownVisualMaintenanceCount,
+        lastChargeCooldownVisualMaintenanceEligibleCount = self._lastChargeCooldownVisualMaintenanceEligibleCount,
+        lastChargeCooldownVisualMaintenanceDecision = self._lastChargeCooldownVisualMaintenanceDecision,
         powerRefreshMode = self._activePowerCooldownRefreshMode,
         powerRefreshReasons = self._activePowerCooldownRefreshReasons,
         lastPowerIconVisualMaintenanceCount = self._lastPowerIconVisualMaintenanceCount,
@@ -945,6 +1102,116 @@ function CooldownCompanion:RunSafeTextWidgetMaintenance()
     return true
 end
 
+function CooldownCompanion:CanSkipChargeCooldownVisualMaintenance()
+    local eligible = 0
+    local active = 0
+    if type(self.groupFrames) == "table" then
+        for _, frame in pairs(self.groupFrames) do
+            if frame and frame.IsShown and frame:IsShown() and type(frame.buttons) == "table" then
+                for _, button in ipairs(frame.buttons) do
+                    local buttonData = button and button.buttonData
+                    if IsChargeCooldownVisualMaintenanceOnly(button, buttonData) then
+                        eligible = eligible + 1
+                        local needsFocusedRefresh = ChargeCooldownVisualNeedsFocusedRefresh(button, buttonData)
+                        if not ChargeCooldownVisualTimingStillActive(button) then
+                            self._lastChargeCooldownVisualMaintenanceCount = active
+                            self._lastChargeCooldownVisualMaintenanceEligibleCount = eligible
+                            self._lastChargeCooldownVisualMaintenanceDecision = "settle-fallback"
+                            return false
+                        end
+                        if needsFocusedRefresh and type(self.UpdateButtonCooldown) ~= "function" then
+                            self._lastChargeCooldownVisualMaintenanceCount = active
+                            self._lastChargeCooldownVisualMaintenanceEligibleCount = eligible
+                            self._lastChargeCooldownVisualMaintenanceDecision = "focused-refresh-unavailable"
+                            return false
+                        end
+                        if not needsFocusedRefresh
+                            and ChargeCooldownVisualNeedsSafeIconMaintenance(button, buttonData)
+                            and type(self.ApplySafeIconTextWidgetMaintenance) ~= "function" then
+                            self._lastChargeCooldownVisualMaintenanceCount = active
+                            self._lastChargeCooldownVisualMaintenanceEligibleCount = eligible
+                            self._lastChargeCooldownVisualMaintenanceDecision = "safe-icon-maintenance-unavailable"
+                            return false
+                        end
+                        active = active + 1
+                    end
+                end
+            end
+        end
+    end
+
+    self._lastChargeCooldownVisualMaintenanceCount = active
+    self._lastChargeCooldownVisualMaintenanceEligibleCount = eligible
+    self._lastChargeCooldownVisualMaintenanceDecision = "active-duration-object-tail"
+    return true
+end
+
+function CooldownCompanion:RunChargeCooldownVisualMaintenance()
+    if type(self.UpdateButtonCooldown) ~= "function" then
+        return self:CanSkipChargeCooldownVisualMaintenance()
+    end
+
+    local eligible = 0
+    local active = 0
+    local focused = 0
+    local safe = 0
+    if type(self.groupFrames) == "table" then
+        for _, frame in pairs(self.groupFrames) do
+            if frame and frame.IsShown and frame:IsShown() and type(frame.buttons) == "table" then
+                for _, button in ipairs(frame.buttons) do
+                    local buttonData = button and button.buttonData
+                    if IsChargeCooldownVisualMaintenanceOnly(button, buttonData) then
+                        eligible = eligible + 1
+                        if not ChargeCooldownVisualTimingStillActive(button) then
+                            self._lastChargeCooldownVisualMaintenanceCount = active
+                            self._lastChargeCooldownVisualMaintenanceEligibleCount = eligible
+                            self._lastChargeCooldownVisualMaintenanceDecision = "settle-fallback"
+                            self._lastChargeCooldownVisualMaintenanceFocusedCount = focused
+                            return false
+                        end
+                        active = active + 1
+                        if ChargeCooldownVisualNeedsFocusedRefresh(button, buttonData) then
+                            self:UpdateButtonCooldown(button)
+                            focused = focused + 1
+                            local fallbackReason = FocusedChargeRefreshBroadFallbackReason(button)
+                            if fallbackReason then
+                                self._lastChargeCooldownVisualMaintenanceCount = active
+                                self._lastChargeCooldownVisualMaintenanceEligibleCount = eligible
+                                self._lastChargeCooldownVisualMaintenanceDecision = fallbackReason
+                                self._lastChargeCooldownVisualMaintenanceFocusedCount = focused
+                                self._lastChargeCooldownVisualMaintenanceSafeCount = safe
+                                return false
+                            end
+                        elseif ChargeCooldownVisualNeedsSafeIconMaintenance(button, buttonData)
+                            and CanRunSafeTextWidgetVisualMaintenance(button) then
+                            if type(self.ApplySafeIconTextWidgetMaintenance) ~= "function"
+                                or self:ApplySafeIconTextWidgetMaintenance(button, buttonData) == false then
+                                self._lastChargeCooldownVisualMaintenanceCount = active
+                                self._lastChargeCooldownVisualMaintenanceEligibleCount = eligible
+                                self._lastChargeCooldownVisualMaintenanceDecision = "safe-icon-maintenance-fallback"
+                                self._lastChargeCooldownVisualMaintenanceFocusedCount = focused
+                                self._lastChargeCooldownVisualMaintenanceSafeCount = safe
+                                return false
+                            end
+                            safe = safe + 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    self._lastChargeCooldownVisualMaintenanceCount = active
+    self._lastChargeCooldownVisualMaintenanceEligibleCount = eligible
+    self._lastChargeCooldownVisualMaintenanceDecision = focused > 0
+        and "focused-charge-visual-refresh"
+        or safe > 0 and "safe-charge-icon-maintenance"
+        or "active-duration-object-tail"
+    self._lastChargeCooldownVisualMaintenanceFocusedCount = focused
+    self._lastChargeCooldownVisualMaintenanceSafeCount = safe
+    return true
+end
+
 function CooldownCompanion:RunPowerIconVisualMaintenance()
     if type(self.ApplyPowerIconUsabilityVisualMaintenance) ~= "function" then
         return false
@@ -1024,8 +1291,18 @@ function CooldownCompanion:GetActionbarCooldownPulseDecision(cooldownEventSatisf
         return false
     end
     if self._activeCooldownPeriodicMaintenanceRequired and not cooldownEventSatisfied then
-        return self:HasOnlySafeTextWidgetMaintenance()
-            and type(self.ApplySafeIconTextWidgetMaintenance) == "function"
+        if not self:HasOnlySkippableVisualMaintenance() then
+            return false
+        end
+        if self._activeSafeTextWidgetMaintenanceRequired
+            and type(self.ApplySafeIconTextWidgetMaintenance) ~= "function" then
+            return false
+        end
+        if self._activeChargeCooldownVisualMaintenanceRequired
+            and not self:CanSkipChargeCooldownVisualMaintenance() then
+            return false
+        end
+        return true
     end
     return true
 end
@@ -1043,6 +1320,14 @@ function CooldownCompanion:TickCooldownRefresh()
     if self._actionbarCooldownPulsePending and (not self._cooldownsDirty or tickerRefreshSatisfied) then
         local canSkipActionbarPulse = self:GetActionbarCooldownPulseDecision(cooldownEventSatisfied, targetRefreshSatisfied)
         if canSkipActionbarPulse then
+            if self._activeChargeCooldownVisualMaintenanceRequired
+                and not cooldownEventSatisfied
+                and not self:RunChargeCooldownVisualMaintenance() then
+                self:UpdateAllCooldowns()
+                self:RecordTargetPendingTickerRefreshSatisfied()
+                self:ClearActionbarCooldownPulse()
+                return false
+            end
             if self._activeSafeTextWidgetMaintenanceRequired
                 and not cooldownEventSatisfied
                 and not self:RunSafeTextWidgetMaintenance() then
