@@ -63,7 +63,6 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic or {}
 local EntryRuntime = ST.EntryRuntime or {}
-local C_CVar_GetCVarBool = C_CVar and C_CVar.GetCVarBool
 local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN or "cooldown"
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING or "missing"
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO or "zero"
@@ -360,21 +359,6 @@ local function FocusedChargeRefreshBroadFallbackReason(button)
     return nil
 end
 
-local function IsActionbarCooldownMaintenanceEntry(button, buttonData)
-    if not (button and buttonData) then return false end
-    local entryType = buttonData.type
-    if entryType == "item" or entryType == "equipitem" or entryType == "equipmentSlot" then
-        return true
-    end
-    if entryType ~= "spell" or buttonData.isPassive == true or buttonData.isPassiveCooldown == true then
-        return false
-    end
-    if button._noCooldown == true then
-        return false
-    end
-    return button._actionSlotCooldownCandidate == true or button._actionSlotCooldownFallback == true
-end
-
 local function RecordIconCooldownTextMaintenance(build, button, buttonData)
     if not HasActiveIconCooldownText(button, buttonData) then
         return
@@ -650,8 +634,6 @@ function CooldownCompanion:InvalidateCooldownRefreshEligibility(reason)
     self._cooldownRefreshEligibilityInvalidationReason = reason or "unknown"
     self._spellAvailabilityRefreshSatisfiedSerial = nil
     self._activeActionbarCooldownFallbackRequired = nil
-    self._activeActionbarCooldownMaintenanceRequired = nil
-    self._activeActionbarCooldownMaintenanceCount = nil
     self._activeCooldownPeriodicMaintenanceRequired = nil
     self._activeTargetCooldownMaintenanceRequired = nil
     self._activeNonTargetCooldownMaintenanceRequired = nil
@@ -669,9 +651,6 @@ function CooldownCompanion:InvalidateCooldownRefreshEligibility(reason)
     self._lastChargeCooldownVisualMaintenanceDecision = nil
     self._lastChargeCooldownVisualMaintenanceFocusedCount = nil
     self._lastChargeCooldownVisualMaintenanceSafeCount = nil
-    self._lastActionbarCooldownMaintenanceCount = nil
-    self._lastActionbarCooldownMaintenanceEligibleCount = nil
-    self._lastActionbarCooldownMaintenanceDecision = nil
     self._activePowerCooldownRefreshMode = nil
     self._activePowerCooldownRefreshReasons = nil
     self._lastPowerIconVisualMaintenanceCount = nil
@@ -686,8 +665,6 @@ function CooldownCompanion:BeginCooldownRefreshEligibilityBuild()
         self._cooldownRefreshEligibilityBuildCache = build
     else
         build.actionbarFallbackRequired = nil
-        build.actionbarCooldownMaintenanceRequired = nil
-        build.actionbarCooldownMaintenanceCount = nil
         build.periodicMaintenanceRequired = nil
         build.targetMaintenanceRequired = nil
         build.nonTargetMaintenanceRequired = nil
@@ -728,10 +705,6 @@ function CooldownCompanion:RecordButtonCooldownRefreshEligibility(button, button
 
     if button._actionSlotCooldownFallback == true then
         build.actionbarFallbackRequired = true
-    end
-    if IsActionbarCooldownMaintenanceEntry(button, buttonData) then
-        build.actionbarCooldownMaintenanceRequired = true
-        build.actionbarCooldownMaintenanceCount = (build.actionbarCooldownMaintenanceCount or 0) + 1
     end
 
     RecordIconCooldownTextMaintenance(build, button, buttonData)
@@ -791,8 +764,6 @@ function CooldownCompanion:FinishCooldownRefreshEligibilityBuild()
     self._cooldownRefreshEligibilityKnown = true
     self._cooldownRefreshEligibilityInvalidationReason = nil
     self._activeActionbarCooldownFallbackRequired = build.actionbarFallbackRequired == true or nil
-    self._activeActionbarCooldownMaintenanceRequired = build.actionbarCooldownMaintenanceRequired == true or nil
-    self._activeActionbarCooldownMaintenanceCount = build.actionbarCooldownMaintenanceCount
     self._activeCooldownPeriodicMaintenanceRequired = build.periodicMaintenanceRequired == true or nil
     self._activeTargetCooldownMaintenanceRequired = build.targetMaintenanceRequired == true or nil
     self._activeNonTargetCooldownMaintenanceRequired = build.nonTargetMaintenanceRequired == true or nil
@@ -831,11 +802,6 @@ function CooldownCompanion:GetActionbarCooldownEligibilityInfo()
         known = self._cooldownRefreshEligibilityKnown == true,
         invalidationReason = self._cooldownRefreshEligibilityInvalidationReason,
         actionbarFallbackRequired = self._activeActionbarCooldownFallbackRequired == true,
-        actionbarCooldownMaintenanceRequired = self._activeActionbarCooldownMaintenanceRequired == true,
-        actionbarCooldownMaintenanceCount = self._activeActionbarCooldownMaintenanceCount,
-        lastActionbarCooldownMaintenanceCount = self._lastActionbarCooldownMaintenanceCount,
-        lastActionbarCooldownMaintenanceEligibleCount = self._lastActionbarCooldownMaintenanceEligibleCount,
-        lastActionbarCooldownMaintenanceDecision = self._lastActionbarCooldownMaintenanceDecision,
         periodicMaintenanceRequired = self._activeCooldownPeriodicMaintenanceRequired == true,
         targetMaintenanceRequired = self._activeTargetCooldownMaintenanceRequired == true,
         nonTargetMaintenanceRequired = self._activeNonTargetCooldownMaintenanceRequired == true,
@@ -1304,72 +1270,6 @@ function CooldownCompanion:RunPowerIconVisualMaintenance()
     return true
 end
 
-local function RefreshFocusedCooldownPassCaches(addon)
-    if C_Spell and C_Spell.GetSpellCooldown then
-        addon._gcdInfo = C_Spell.GetSpellCooldown(61304)
-        addon._gcdActive = addon._gcdInfo and addon._gcdInfo.isActive or false
-        addon._gcdDurationObj = addon._gcdActive
-            and C_Spell.GetSpellCooldownDuration
-            and C_Spell.GetSpellCooldownDuration(61304)
-            or nil
-    end
-
-    local hasHostileTarget = false
-    if UnitExists and UnitCanAttack then
-        if UnitExists("target") then
-            hasHostileTarget = UnitCanAttack("player", "target") and true or false
-        elseif UnitExists("softenemy") then
-            hasHostileTarget = UnitCanAttack("player", "softenemy") and true or false
-        end
-    end
-    addon._assistedHighlightHasHostileTarget = hasHostileTarget
-
-    if C_CVar_GetCVarBool then
-        addon._cdmViewerEnabled = C_CVar_GetCVarBool("cooldownViewerEnabled") == true
-    end
-end
-
-function CooldownCompanion:RunActionbarCooldownMaintenance()
-    if type(self.UpdateButtonCooldown) ~= "function" then
-        self._lastActionbarCooldownMaintenanceDecision = "focused-refresh-unavailable"
-        return false
-    end
-
-    RefreshFocusedCooldownPassCaches(self)
-
-    local eligible = 0
-    local updated = 0
-    local fallbackAfterFocusedUpdate
-    if type(self.groupFrames) == "table" then
-        for _, frame in pairs(self.groupFrames) do
-            if frame and frame.IsShown and frame:IsShown() and type(frame.buttons) == "table" then
-                for _, button in ipairs(frame.buttons) do
-                    local buttonData = button and button.buttonData
-                    if IsActionbarCooldownMaintenanceEntry(button, buttonData) then
-                        eligible = eligible + 1
-                        self:UpdateButtonCooldown(button)
-                        updated = updated + 1
-                        if button._actionSlotCooldownFallback == true then
-                            fallbackAfterFocusedUpdate = true
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    self._lastActionbarCooldownMaintenanceCount = updated
-    self._lastActionbarCooldownMaintenanceEligibleCount = eligible
-    if fallbackAfterFocusedUpdate then
-        self._lastActionbarCooldownMaintenanceDecision = "actionbar-fallback-after-focused-refresh"
-        return false
-    end
-    self._lastActionbarCooldownMaintenanceDecision = updated > 0
-        and "focused-actionbar-cooldown-refresh"
-        or "no-actionbar-dependent-buttons"
-    return true
-end
-
 function CooldownCompanion:OnPowerEventCooldownRefresh()
     if not self._cooldownRefreshEligibilityKnown then
         self._lastPowerEventCooldownRefreshDecision = "broad-unknown-eligibility"
@@ -1415,9 +1315,6 @@ function CooldownCompanion:GetActionbarCooldownPulseDecision(cooldownEventSatisf
     if self._activeActionbarCooldownFallbackRequired then
         return false
     end
-    if self._activeActionbarCooldownMaintenanceRequired and type(self.UpdateButtonCooldown) ~= "function" then
-        return false
-    end
     if self._activeCooldownPeriodicMaintenanceRequired and not broadRefreshSatisfied then
         if not self:HasOnlySkippableVisualMaintenance() then
             return false
@@ -1450,14 +1347,6 @@ function CooldownCompanion:TickCooldownRefresh()
     if self._actionbarCooldownPulsePending and (not self._cooldownsDirty or tickerRefreshSatisfied) then
         local canSkipActionbarPulse = self:GetActionbarCooldownPulseDecision(cooldownEventSatisfied, targetRefreshSatisfied, spellAvailabilitySatisfied)
         if canSkipActionbarPulse then
-            if self._activeActionbarCooldownMaintenanceRequired
-                and not broadRefreshSatisfied
-                and not self:RunActionbarCooldownMaintenance() then
-                self:UpdateAllCooldowns()
-                self:RecordTargetPendingTickerRefreshSatisfied()
-                self:ClearActionbarCooldownPulse()
-                return false
-            end
             if self._activeChargeCooldownVisualMaintenanceRequired
                 and not broadRefreshSatisfied
                 and not self:RunChargeCooldownVisualMaintenance() then

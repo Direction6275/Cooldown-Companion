@@ -26,8 +26,8 @@ local actionbarSlotSignatures = {}
 
 local function GetActionbarSlotSignature(slot)
     if type(slot) ~= "number" then return nil end
+    if not C_ActionBar.HasAction(slot) then return "empty" end
     local actionType, id, subType = GetActionInfo(slot)
-    if not actionType then return "empty" end
     return tostring(actionType) .. "\001" .. tostring(id) .. "\001" .. tostring(subType)
 end
 
@@ -54,6 +54,7 @@ end
 local function RefreshSpellAvailabilitySettlingState(addon)
     addon:CachePlayerState()
     addon:CacheCurrentSpec()
+    addon._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
     addon:RebuildTalentNodeCache()
 
     local chargeFlagsChanged = addon:RefreshChargeFlags("spell") == true
