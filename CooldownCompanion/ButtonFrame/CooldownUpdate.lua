@@ -1016,12 +1016,18 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if auraOverrideActive then
             if auraState.durationObj then
                 button._auraDurationObj = auraState.durationObj
-                if auraPrimarySwipeAllowed then
+                if auraHasTimer and auraPrimarySwipeAllowed then
                     button._durationObj = auraState.durationObj
                     button.cooldown:SetCooldownFromDurationObject(auraState.durationObj)
+                elseif auraPrimarySwipeAllowed then
+                    button.cooldown:SetCooldown(0, 0)
+                    button.cooldown:Hide()
                 end
             elseif auraState.auraCooldownStart and auraState.auraCooldownDuration and auraPrimarySwipeAllowed then
                 button.cooldown:SetCooldown(auraState.auraCooldownStart, auraState.auraCooldownDuration)
+            elseif auraPrimarySwipeAllowed then
+                button.cooldown:SetCooldown(0, 0)
+                button.cooldown:Hide()
             end
             fetchOk = true
         end
