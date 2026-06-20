@@ -703,7 +703,7 @@ function CooldownCompanion:OnActionBarSlotChanged(_, slot)
     -- Coalesce: modifier-reactive macros fire this event per affected slot in
     -- the same frame. Accumulate slots and defer the rebuild to next frame so
     -- N simultaneous changes collapse into one pass.
-    if slot then
+    if type(slot) == "number" and slot > 0 then
         pendingSlotChangedSlots[slot] = true
     else
         pendingSlotChangedSlots._fullRebuild = true
