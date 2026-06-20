@@ -22,23 +22,6 @@ local pendingSpellAvailabilityRefreshToken = 0
 -- Same token pattern as QueueTalentChargeRefresh.
 local pendingSlotChangeToken = 0
 local pendingSlotChangedSlots = {}
-local actionbarSlotSignatures = {}
-
-local function GetActionbarSlotSignature(slot)
-    if type(slot) ~= "number" then return nil end
-    if not C_ActionBar.HasAction(slot) then return "empty" end
-    local actionType, id, subType = GetActionInfo(slot)
-    return tostring(actionType) .. "\001" .. tostring(id) .. "\001" .. tostring(subType)
-end
-
-local function ActionbarSlotContentChanged(slot)
-    local signature = GetActionbarSlotSignature(slot)
-    if actionbarSlotSignatures[slot] == signature then
-        return false
-    end
-    actionbarSlotSignatures[slot] = signature
-    return true
-end
 
 local function QueueTalentChargeRefresh(addon)
     pendingTalentChargeRefreshToken = pendingTalentChargeRefreshToken + 1
@@ -51,38 +34,12 @@ local function QueueTalentChargeRefresh(addon)
     end)
 end
 
-local function RefreshSpellAvailabilitySettlingState(addon)
-    addon:CachePlayerState()
-    addon:CacheCurrentSpec()
-    addon._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
-    addon:RebuildTalentNodeCache()
-
-    local chargeFlagsChanged = addon:RefreshChargeFlags("spell") == true
-    local groupSurfaceChanged
-    if addon.AnyGroupSurfaceNeedsSpellAvailabilityRefresh then
-        groupSurfaceChanged = addon:AnyGroupSurfaceNeedsSpellAvailabilityRefresh()
-    else
-        groupSurfaceChanged = addon:AnyGroupButtonSetNeedsRebuild()
-    end
-    if not chargeFlagsChanged and not groupSurfaceChanged then
-        addon._lastSpellAvailabilitySettlingDecision = "skipped-clean"
-        return
-    end
-
-    addon._lastSpellAvailabilitySettlingDecision = chargeFlagsChanged
-        and (groupSurfaceChanged and "refreshed-charge-and-surface" or "refreshed-charge")
-        or "refreshed-surface"
-    addon:RefreshAllGroupsForSpellAvailability()
-    addon:RefreshKeybindState()
-    addon:RefreshConfigPanel()
-end
-
 local function QueueSpellAvailabilitySettlingRefresh(addon)
     pendingSpellAvailabilityRefreshToken = pendingSpellAvailabilityRefreshToken + 1
     local token = pendingSpellAvailabilityRefreshToken
     C_Timer.After(0.2, function()
         if pendingSpellAvailabilityRefreshToken ~= token then return end
-        RefreshSpellAvailabilitySettlingState(addon)
+        addon:RefreshSpellAvailabilityState({ skipSettlingRefresh = true })
     end)
 end
 
@@ -420,101 +377,23 @@ function CooldownCompanion:UpdateSpellChargeMetadata(buttonData, spellID, opts)
     buttonData.hasCharges = hasRealCharges
 end
 
-local function CaptureChargeFlagState(buttonData)
-    return buttonData.hasCharges,
-        buttonData.maxCharges,
-        buttonData.showChargeText,
-        buttonData._hasDisplayCount,
-        buttonData._displayCountFamily,
-        buttonData._castCountCandidate,
-        buttonData._castCountSelf,
-        buttonData._castCountEventSpellID,
-        buttonData._castCountConfirmed,
-        buttonData._castCountSeeded
-end
-
-local function ChargeFlagStateChanged(
-    buttonData,
-    hasCharges,
-    maxCharges,
-    showChargeText,
-    hasDisplayCount,
-    displayCountFamily,
-    castCountCandidate,
-    castCountSelf,
-    castCountEventSpellID,
-    castCountConfirmed,
-    castCountSeeded
-)
-    return buttonData.hasCharges ~= hasCharges
-        or buttonData.maxCharges ~= maxCharges
-        or buttonData.showChargeText ~= showChargeText
-        or buttonData._hasDisplayCount ~= hasDisplayCount
-        or buttonData._displayCountFamily ~= displayCountFamily
-        or buttonData._castCountCandidate ~= castCountCandidate
-        or buttonData._castCountSelf ~= castCountSelf
-        or buttonData._castCountEventSpellID ~= castCountEventSpellID
-        or buttonData._castCountConfirmed ~= castCountConfirmed
-        or buttonData._castCountSeeded ~= castCountSeeded
-end
-
 -- Re-evaluate hasCharges on every spell button (talents can add/remove charges).
 -- Treat a spell as charge-based only when max charges is greater than 1.
 function CooldownCompanion:RefreshChargeFlags(typeFilter)
-    local changed = false
     if typeFilter ~= "item" then
         self._hasDisplayCountCandidates = false
     end
     for _, group in pairs(self.db.profile.groups) do
         for _, buttonData in ipairs(group.buttons) do
             if buttonData.type == "spell" and typeFilter ~= "item" then
-                local hasCharges, maxCharges, showChargeText, hasDisplayCount,
-                    displayCountFamily, castCountCandidate, castCountSelf,
-                    castCountEventSpellID, castCountConfirmed,
-                    castCountSeeded = CaptureChargeFlagState(buttonData)
                 self:UpdateSpellChargeMetadata(buttonData, buttonData.id)
-                if ChargeFlagStateChanged(
-                    buttonData,
-                    hasCharges,
-                    maxCharges,
-                    showChargeText,
-                    hasDisplayCount,
-                    displayCountFamily,
-                    castCountCandidate,
-                    castCountSelf,
-                    castCountEventSpellID,
-                    castCountConfirmed,
-                    castCountSeeded
-                ) then
-                    changed = true
-                end
             elseif buttonData.type == "item" and typeFilter ~= "spell" then
                 -- Never clear hasCharges for items; unavailable charged items can
                 -- be indistinguishable from unowned items through count APIs.
-                local hasCharges, maxCharges, showChargeText, hasDisplayCount,
-                    displayCountFamily, castCountCandidate, castCountSelf,
-                    castCountEventSpellID, castCountConfirmed,
-                    castCountSeeded = CaptureChargeFlagState(buttonData)
                 self.UpdateItemChargeMetadata(buttonData, buttonData.id)
-                if ChargeFlagStateChanged(
-                    buttonData,
-                    hasCharges,
-                    maxCharges,
-                    showChargeText,
-                    hasDisplayCount,
-                    displayCountFamily,
-                    castCountCandidate,
-                    castCountSelf,
-                    castCountEventSpellID,
-                    castCountConfirmed,
-                    castCountSeeded
-                ) then
-                    changed = true
-                end
             end
         end
     end
-    return changed
 end
 
 function CooldownCompanion:CacheCurrentSpec()
@@ -713,33 +592,22 @@ function CooldownCompanion:OnActionBarSlotChanged(_, slot)
     local token = pendingSlotChangeToken
     C_Timer.After(0, function()
         if pendingSlotChangeToken ~= token then return end
-        local slotContentChanged = pendingSlotChangedSlots._fullRebuild == true
         self:RebuildSlotMapping()
         if pendingSlotChangedSlots._fullRebuild then
-            wipe(actionbarSlotSignatures)
             self:RebuildItemSlotCache()
         else
             for s in pairs(pendingSlotChangedSlots) do
-                if ActionbarSlotContentChanged(s) then
-                    slotContentChanged = true
-                end
                 self:UpdateItemSlotCache(s)
             end
         end
         wipe(pendingSlotChangedSlots)
         self:RebuildAddonSlotBindings()
         self:OnKeybindsChanged()
-        if slotContentChanged and self.InvalidateCooldownRefreshEligibility then
-            self:InvalidateCooldownRefreshEligibility("actionbar-slot-changed")
-        end
     end)
 end
 
 function CooldownCompanion:OnActionBarLayoutChanged()
     self:RefreshKeybindState()
-    if self.InvalidateCooldownRefreshEligibility then
-        self:InvalidateCooldownRefreshEligibility("actionbar-layout-changed")
-    end
     -- UPDATE_OVERRIDE_ACTIONBAR / UPDATE_VEHICLE_ACTIONBAR also route here for
     -- keybind rebuilds; piggyback vehicle UI state check to avoid duplicate
     -- AceEvent registrations (AceEvent allows only one handler per event).

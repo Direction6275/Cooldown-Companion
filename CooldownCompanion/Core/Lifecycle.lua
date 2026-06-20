@@ -117,11 +117,10 @@ function CooldownCompanion:OnEnable()
     -- Cooldown events can expose very short ready windows, so refresh them
     -- immediately instead of waiting for the ticker.
     for _, evt in ipairs({
-        "SPELL_UPDATE_COOLDOWN", "BAG_UPDATE_COOLDOWN",
+        "SPELL_UPDATE_COOLDOWN", "BAG_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_COOLDOWN",
     }) do
         self:RegisterEvent(evt, "OnCooldownStateChanged")
     end
-    self:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN", "OnActionBarCooldownChanged")
 
     -- Broader state changes can wait for the regular ticker pass.
     for _, evt in ipairs({
@@ -140,7 +139,7 @@ function CooldownCompanion:OnEnable()
         self._unitEventFrame = CreateFrame("Frame")
         self._unitEventFrame:SetScript("OnEvent", function(_, event, ...)
             if event == "UNIT_POWER_FREQUENT" then
-                self:OnPowerEventCooldownRefresh()
+                self:MarkCooldownsDirty()
             elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
                 self:OnSpellCast(event, ...)
             elseif event == "UNIT_AURA" then
@@ -208,25 +207,20 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("UNIT_ENTERED_VEHICLE", "OnVehicleUIChanged")
     self:RegisterEvent("UNIT_EXITED_VEHICLE", "OnVehicleUIChanged")
 
-    -- Target change — probes or clears target aura state through OnTargetChanged.
+    -- Target change — marks dirty so ticker reads fresh viewer data next pass
     self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
 
     -- UNIT_TARGET requires RegisterUnitEvent (plain RegisterEvent does not
-    -- receive it).  It stays a conservative broad fallback unless the current
-    -- target transition was already covered by PLAYER_TARGET_CHANGED or target
-    -- aura work.
+    -- receive it).  Marks dirty so the next ticker pass reads fresh CDM viewer
+    -- data; catches pet/focus target changes that don't fire PLAYER_TARGET_CHANGED.
     if not self._unitTargetFrame then
         self._unitTargetFrame = CreateFrame("Frame")
         self._unitTargetFrame:SetScript("OnEvent", function(_, event, unitToken)
             if ST._QueueInheritedUnitFrameAlphaResync then
                 ST._QueueInheritedUnitFrameAlphaResync()
             end
-            if self:CanSkipTargetRefreshDuplicate("unit-target-event") then
-                return
-            end
             self:MarkCooldownsDirty()
             self:UpdateAllCooldowns()
-            self:RecordTargetCooldownRefreshSatisfied("unit-target-event")
         end)
     end
     self._unitTargetFrame:RegisterUnitEvent("UNIT_TARGET", "player")
@@ -323,10 +317,6 @@ function CooldownCompanion:OnCooldownStateChanged()
     -- Preserve immediate cooldown-event accuracy. This refresh only suppresses
     -- the next ticker walk when no other dirty state appears afterward.
     self:RunImmediateCooldownRefresh("cooldown-event")
-end
-
-function CooldownCompanion:OnActionBarCooldownChanged(event)
-    self:RecordActionbarCooldownPulse()
 end
 
 -- Iterate every button across all groups, calling callback(button, buttonData) for each.

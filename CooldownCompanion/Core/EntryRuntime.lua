@@ -1242,10 +1242,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
     if needsRealCooldownFallback
         and options.allowActionSlotRealFallback then
         local slotProbe = ProbeActionSlotCooldownForSpell(baseSpellID or spellID, spellID)
-        if slotProbe.sawAnySlot then
-            result.slotProbe = slotProbe
-        end
         if slotProbe.realShown == true and slotProbe.realDurationObj then
+            result.slotProbe = slotProbe
             result.normalCooldownShown = slotProbe.shown == true or result.normalCooldownShown
             result.realCooldownShown = true
             result.durationObj = slotProbe.durationObj or result.durationObj

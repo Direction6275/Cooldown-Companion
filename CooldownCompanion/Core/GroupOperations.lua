@@ -1836,62 +1836,6 @@ function CooldownCompanion:AnyGroupButtonSetNeedsRebuild()
     return false
 end
 
-function CooldownCompanion:GroupSurfaceNeedsSpellAvailabilityRefresh(groupId, group)
-    local frame = self.groupFrames and self.groupFrames[groupId] or nil
-    local dormantFrame = self._dormantFrames and self._dormantFrames[groupId] or nil
-    if not self:IsGroupVisibleToCurrentChar(groupId) then
-        return frame ~= nil or dormantFrame ~= nil
-    end
-
-    local active = self:IsGroupActive(groupId, {
-        group = group,
-        checkCharVisibility = true,
-        checkLoadConditions = true,
-        requireButtons = true,
-    })
-
-    if not active then
-        return frame ~= nil or dormantFrame ~= nil
-    end
-    if not frame then
-        return true
-    end
-    if type(frame.IsShown) == "function" and not frame:IsShown() then
-        return true
-    end
-
-    return self:GroupButtonSetNeedsRebuild(groupId, group)
-end
-
-function CooldownCompanion:AnyGroupSurfaceNeedsSpellAvailabilityRefresh()
-    if not self.db or not self.db.profile or not self.db.profile.groups then
-        return false
-    end
-
-    if self.groupFrames then
-        for groupId, _ in pairs(self.groupFrames) do
-            if not self.db.profile.groups[groupId] then
-                return true
-            end
-        end
-    end
-    if self._dormantFrames then
-        for groupId, _ in pairs(self._dormantFrames) do
-            if not self.db.profile.groups[groupId] then
-                return true
-            end
-        end
-    end
-
-    for groupId, group in pairs(self.db.profile.groups) do
-        if self:GroupSurfaceNeedsSpellAvailabilityRefresh(groupId, group) then
-            return true
-        end
-    end
-
-    return false
-end
-
 function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
     local function resetFrameButtons(frame)
         if not frame or not frame.buttons then return end
@@ -1952,11 +1896,7 @@ function CooldownCompanion:RefreshAllGroupsForSpellAvailability()
         self:RefreshAllGroupsVisibilityOnly()
     end
 
-    local spellAvailabilityDirtySerial = self._cooldownsDirty and (self._cooldownDirtySerial or 0) or nil
     self:UpdateAllCooldowns()
-    if self.RecordSpellAvailabilityCooldownRefreshSatisfied then
-        self:RecordSpellAvailabilityCooldownRefreshSatisfied(spellAvailabilityDirtySerial)
-    end
 end
 
 function CooldownCompanion:CreateAllGroupFrames()
@@ -2198,14 +2138,12 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
         self:ClearUnsupportedProfileRuntime()
         return
     end
-    local cooldownEligibilityChanged = false
 
     -- Fully unload frames for groups not in the current profile
     for groupId, _ in pairs(self.groupFrames) do
         if not self.db.profile.groups[groupId] then
             self:UnloadGroup(groupId)
             self:DiscardDormantFrame(groupId)
-            cooldownEligibilityChanged = true
         end
     end
     -- Also discard dormant frames for deleted groups
@@ -2213,7 +2151,6 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
         for groupId, _ in pairs(self._dormantFrames) do
             if not self.db.profile.groups[groupId] then
                 self:DiscardDormantFrame(groupId)
-                cooldownEligibilityChanged = true
             end
         end
     end
@@ -2221,7 +2158,6 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     for groupId, group in pairs(self.db.profile.groups) do
         if not self:IsGroupVisibleToCurrentChar(groupId) then
             self:UnloadGroup(groupId)
-            cooldownEligibilityChanged = true
         else
             local active = self:IsGroupActive(groupId, {
                 group = group,
@@ -2232,32 +2168,23 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
 
             if not active then
                 self:UnloadGroup(groupId)
-                cooldownEligibilityChanged = true
             else
                 local frame = self.groupFrames[groupId]
                 if frame and self:GroupButtonSetNeedsRebuild(groupId, group) then
                     self:RefreshGroupFrame(groupId)
-                    cooldownEligibilityChanged = true
                     frame = self.groupFrames[groupId]
                 elseif not frame then
                     if self:GroupButtonSetNeedsRebuild(groupId, group) then
                         self:DiscardDormantFrame(groupId)
-                        cooldownEligibilityChanged = true
                     end
                     -- Recover dormant frame with buttons intact (no repopulation needed)
                     frame = self:RecoverDormantFrame(groupId)
-                    if frame then
-                        cooldownEligibilityChanged = true
-                    end
                 end
                 if not frame then
                     if InCombatLockdown() then
                         self._pendingVisibilityRefresh = true
                     else
                         frame = self:CreateGroupFrame(groupId)
-                        if frame then
-                            cooldownEligibilityChanged = true
-                        end
                     end
                 end
 
@@ -2298,7 +2225,6 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                         if frame.UpdateCooldowns then
                             frame:UpdateCooldowns()
                         end
-                        cooldownEligibilityChanged = true
                         if group.compactLayout then
                             frame._layoutDirty = true
                             self:UpdateGroupLayout(groupId)
@@ -2319,9 +2245,6 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     end
     if self.RefreshAlphaUpdateDriver then
         self:RefreshAlphaUpdateDriver()
-    end
-    if cooldownEligibilityChanged and self.InvalidateCooldownRefreshEligibility then
-        self:InvalidateCooldownRefreshEligibility("visibility-only-refresh")
     end
 end
 
@@ -2464,9 +2387,6 @@ function CooldownCompanion:UpdateAllCooldowns()
     -- Cache CDM viewer CVar once per tick (avoids per-button GetCVarBool in ResolveBuffViewerFrameForSpell)
     self._cdmViewerEnabled = C_CVar_GetCVarBool("cooldownViewerEnabled") == true
     self._cooldownUpdatePassActive = true
-    if self.BeginCooldownRefreshEligibilityBuild then
-        self:BeginCooldownRefreshEligibilityBuild()
-    end
 
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
@@ -2474,9 +2394,6 @@ function CooldownCompanion:UpdateAllCooldowns()
         end
     end
 
-    if self.FinishCooldownRefreshEligibilityBuild then
-        self:FinishCooldownRefreshEligibilityBuild()
-    end
     self._cooldownUpdatePassActive = nil
 end
 
