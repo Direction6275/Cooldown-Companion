@@ -64,7 +64,6 @@ local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic or {}
 local EntryRuntime = ST.EntryRuntime or {}
 local C_CVar_GetCVarBool = C_CVar and C_CVar.GetCVarBool
-local issecretvalue = issecretvalue
 local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN or "cooldown"
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING or "missing"
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO or "zero"
@@ -95,14 +94,7 @@ local function IsTargetRefreshSource(source)
 end
 
 local function CaptureTargetRefreshState()
-    if type(UnitExists) ~= "function" then
-        return false, nil, true
-    end
-    local targetExists = UnitExists("target")
-    if issecretvalue and issecretvalue(targetExists) then
-        return false, nil, false
-    end
-    if not targetExists then
+    if type(UnitExists) ~= "function" or not UnitExists("target") then
         return false, nil, true
     end
     if type(UnitGUID) ~= "function" then
@@ -110,10 +102,6 @@ local function CaptureTargetRefreshState()
     end
     local guid = UnitGUID("target")
     if not guid then
-        return true, nil, false
-    end
-    -- Secret GUIDs cannot be stored or compared; fall back to broad refresh.
-    if issecretvalue and issecretvalue(guid) then
         return true, nil, false
     end
     return true, guid, true
