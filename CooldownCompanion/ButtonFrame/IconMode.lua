@@ -1196,6 +1196,84 @@ local function ApplyIconDesaturationIntent(button, buttonData, style)
     end
 end
 
+local function ApplyIconCooldownTextWidgetStyle(button, buttonData, style)
+    if button._secondaryCdTextRegion and button._cdTextRegion then
+        local wantAuraPos = button._auraPrimarySwipeActive == true or button._conditionalAuraDurationTextPreview == true
+        if button._cdTextAtAuraPos ~= wantAuraPos then
+            button._cdTextAtAuraPos = wantAuraPos
+            button._cdTextRegion:ClearAllPoints()
+            if wantAuraPos then
+                local auraAnchor = style.auraTextAnchor or "TOPLEFT"
+                local auraXOff = style.auraTextXOffset or 2
+                local auraYOff = style.auraTextYOffset or -2
+                button._cdTextRegion:SetPoint(auraAnchor, button.overlayFrame, auraAnchor, auraXOff, auraYOff)
+            else
+                local cdAnchor = style.cooldownTextAnchor or "CENTER"
+                local cdXOff = style.cooldownTextXOffset or 0
+                local cdYOff = style.cooldownTextYOffset or 0
+                button._cdTextRegion:SetPoint(cdAnchor, button.overlayFrame, cdAnchor, cdXOff, cdYOff)
+            end
+        end
+    end
+
+    -- Color is reapplied because WoW's CooldownFrame may reset it while ticking.
+    if button._cdTextRegion then
+        local showText, fontColor, wantFont, wantSize, wantOutline
+        local auraTextPreview = button._conditionalAuraDurationTextPreview == true
+        local auraTextActive = button._auraPrimarySwipeActive == true or auraTextPreview
+        if auraTextActive then
+            showText = style.showAuraText ~= false
+            fontColor = style.auraTextFontColor or DEFAULT_AURA_TEXT_COLOR
+            wantFont = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
+            wantSize = style.auraTextFontSize or 12
+            wantOutline = ST.GetEffectiveFontOutline(style.auraTextFontOutline or "OUTLINE")
+        elseif buttonData.isPassive then
+            button._cdTextRegion:SetTextColor(0, 0, 0, 0)
+        else
+            showText = style.showCooldownText
+            if showText and button._hideCooldownChargesActive then
+                showText = false
+            end
+            fontColor = style.cooldownFontColor or DEFAULT_WHITE
+            wantFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
+            wantSize = style.cooldownFontSize or 12
+            wantOutline = ST.GetEffectiveFontOutline(style.cooldownFontOutline or "OUTLINE")
+        end
+        if showText then
+            local cc = fontColor
+            button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+            local mode = auraTextActive and "aura" or "cd"
+            if button._cdTextMode ~= mode then
+                button._cdTextMode = mode
+                button._cdTextRegion:SetFont(wantFont, wantSize, wantOutline)
+            end
+        else
+            button._cdTextRegion:SetTextColor(0, 0, 0, 0)
+        end
+
+        local wantHide = not showText
+        if button._cdTextHidden ~= wantHide then
+            button._cdTextHidden = wantHide
+            button.cooldown:SetHideCountdownNumbers(wantHide)
+        end
+    end
+
+    if button._secondaryCdTextRegion then
+        local showSecondary = button._auraPrimarySwipeActive and button._secondaryCdActive and style.showCooldownText
+        if showSecondary then
+            local cc = style.cooldownFontColor or DEFAULT_WHITE
+            button._secondaryCdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
+        else
+            button._secondaryCdTextRegion:SetTextColor(0, 0, 0, 0)
+        end
+        local wantHideSecondary = not showSecondary
+        if button._secondaryCdTextHidden ~= wantHideSecondary then
+            button._secondaryCdTextHidden = wantHideSecondary
+            button.secondaryCooldown:SetHideCountdownNumbers(wantHideSecondary)
+        end
+    end
+end
+
 -- Update icon-mode visuals: GCD suppression, cooldown text, desaturation, and vertex color.
 local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
     -- GCD suppression (isOnGCD is NeverSecret, always readable)
@@ -1247,91 +1325,41 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     UpdateIconFill(button, buttonData, style)
     UpdateBlizzardAuraSwipe(button, style)
 
-    -- When separate text positions: move primary text to aura anchor during aura, cooldown anchor otherwise
-    if button._secondaryCdTextRegion and button._cdTextRegion then
-        local wantAuraPos = button._auraPrimarySwipeActive == true or button._conditionalAuraDurationTextPreview == true
-        if button._cdTextAtAuraPos ~= wantAuraPos then
-            button._cdTextAtAuraPos = wantAuraPos
-            button._cdTextRegion:ClearAllPoints()
-            if wantAuraPos then
-                local auraAnchor = style.auraTextAnchor or "TOPLEFT"
-                local auraXOff = style.auraTextXOffset or 2
-                local auraYOff = style.auraTextYOffset or -2
-                button._cdTextRegion:SetPoint(auraAnchor, button.overlayFrame, auraAnchor, auraXOff, auraYOff)
-            else
-                local cdAnchor = style.cooldownTextAnchor or "CENTER"
-                local cdXOff = style.cooldownTextXOffset or 0
-                local cdYOff = style.cooldownTextYOffset or 0
-                button._cdTextRegion:SetPoint(cdAnchor, button.overlayFrame, cdAnchor, cdXOff, cdYOff)
-            end
-        end
-    end
-
-    -- Cooldown/aura text: pick font + visibility based on current state.
-    -- Color is reapplied each tick because WoW's CooldownFrame may reset it.
-    if button._cdTextRegion then
-        local showText, fontColor, wantFont, wantSize, wantOutline
-        local auraTextPreview = button._conditionalAuraDurationTextPreview == true
-        local auraTextActive = button._auraPrimarySwipeActive == true or auraTextPreview
-        if auraTextActive then
-            showText = style.showAuraText ~= false
-            fontColor = style.auraTextFontColor or DEFAULT_AURA_TEXT_COLOR
-            wantFont = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
-            wantSize = style.auraTextFontSize or 12
-            wantOutline = ST.GetEffectiveFontOutline(style.auraTextFontOutline or "OUTLINE")
-        elseif buttonData.isPassive then
-            -- Inactive passive aura: no text (cooldown frame hidden)
-            button._cdTextRegion:SetTextColor(0, 0, 0, 0)
-        else
-            showText = style.showCooldownText
-            if showText and button._hideCooldownChargesActive then
-                showText = false
-            end
-            fontColor = style.cooldownFontColor or DEFAULT_WHITE
-            wantFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
-            wantSize = style.cooldownFontSize or 12
-            wantOutline = ST.GetEffectiveFontOutline(style.cooldownFontOutline or "OUTLINE")
-        end
-        if showText then
-            local cc = fontColor
-            button._cdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-            -- Only call SetFont when mode changes to avoid per-tick overhead
-            local mode = auraTextActive and "aura" or "cd"
-            if button._cdTextMode ~= mode then
-                button._cdTextMode = mode
-                button._cdTextRegion:SetFont(wantFont, wantSize, wantOutline)
-            end
-        else
-            button._cdTextRegion:SetTextColor(0, 0, 0, 0)
-        end
-        -- Properly hide/show countdown numbers via API (alpha=0 alone is unreliable
-        -- because WoW's CooldownFrame animation resets text color each tick)
-        local wantHide = not showText
-        if button._cdTextHidden ~= wantHide then
-            button._cdTextHidden = wantHide
-            button.cooldown:SetHideCountdownNumbers(wantHide)
-        end
-    end
-
-    -- Secondary cooldown text: visible only when aura owns primary text and a real cooldown is running.
-    if button._secondaryCdTextRegion then
-        local showSecondary = button._auraPrimarySwipeActive and button._secondaryCdActive and style.showCooldownText
-        if showSecondary then
-            local cc = style.cooldownFontColor or DEFAULT_WHITE
-            button._secondaryCdTextRegion:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-        else
-            button._secondaryCdTextRegion:SetTextColor(0, 0, 0, 0)
-        end
-        local wantHideSecondary = not showSecondary
-        if button._secondaryCdTextHidden ~= wantHideSecondary then
-            button._secondaryCdTextHidden = wantHideSecondary
-            button.secondaryCooldown:SetHideCountdownNumbers(wantHideSecondary)
-        end
-    end
+    ApplyIconCooldownTextWidgetStyle(button, buttonData, style)
 
     ApplyIconDesaturationIntent(button, buttonData, style)
 
     UpdateIconTint(button, buttonData, style)
+end
+
+function CooldownCompanion:ApplySafeIconTextWidgetMaintenance(button, buttonData)
+    if not (button and buttonData and button._cdTextRegion and button.cooldown) then
+        return false
+    end
+    if button._isBar or button._isText then
+        return false
+    end
+    local style = button.style or {}
+    UpdateIconFill(button, buttonData, style)
+    UpdateBlizzardAuraSwipe(button, style)
+    ApplyIconCooldownTextWidgetStyle(button, buttonData, style)
+    ApplyIconDesaturationIntent(button, buttonData, style)
+    UpdateIconTint(button, buttonData, style)
+    return true
+end
+
+function CooldownCompanion:ApplyPowerIconUsabilityVisualMaintenance(button, buttonData)
+    if not (button and buttonData and button.icon) then
+        return false
+    end
+    if button._isBar or button._isText then
+        return false
+    end
+
+    local style = button.style or {}
+    ApplyIconDesaturationIntent(button, buttonData, style)
+    UpdateIconTint(button, buttonData, style)
+    return true
 end
 
 -- Update icon-mode glow effects: loss of control, assisted highlight, proc glow, aura glow.

@@ -2555,6 +2555,9 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
     FinishGroupButtonRefresh(self, groupId, frame, group)
+    if self.InvalidateCooldownRefreshEligibility then
+        self:InvalidateCooldownRefreshEligibility("group-buttons-populated")
+    end
     -- _hasBeenSized is now true if the compact resize ran (set by
     -- ResizeGroupFrame), or still false if all buttons were visible and no
     -- compact resize was needed.  When compactLayout is off, it stays false
@@ -3141,6 +3144,9 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
     local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
     ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
     FinishGroupButtonRefresh(self, groupId, frame, group)
+    if self.InvalidateCooldownRefreshEligibility then
+        self:InvalidateCooldownRefreshEligibility("group-style-updated")
+    end
 end
 
 function CooldownCompanion:UpdateGroupClickthrough(groupId)
