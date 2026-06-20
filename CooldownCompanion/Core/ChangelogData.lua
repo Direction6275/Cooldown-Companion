@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.19.4",
         "1.19.3",
         "1.19.2",
         "1.19.1",
@@ -43,6 +44,14 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.19.4"] = {
+            markdown = [[
+## Bug Fixes
+
+- **Timerless Active Auras:** Active auras with no visible duration, such as Sweeping Strikes, now keep their steady active-aura icon instead of briefly showing a cooldown swipe.
+- **Unavailable Spell Entries:** Unknown, unlearned, or otherwise unavailable spells no longer stay in live displays or reserve attached-bar space just because their config panel is selected.
+]],
+        },
         ["1.19.3"] = {
             markdown = [[
 ## New Features
