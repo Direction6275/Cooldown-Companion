@@ -72,10 +72,6 @@ local LOCAL_LOAD_CONDITION_DEFAULTS = {
     vehicleUI = false,
 }
 
-local IGNORE_SPELL_AVAILABILITY_OPTIONS = {
-    ignoreSpellAvailability = true,
-}
-
 local function GetFrameName(frame)
     if not frame then
         return nil
@@ -1100,23 +1096,6 @@ function CooldownCompanion:GroupHasUsableButtons(group, opts)
         end
     end
     return false
-end
-
-function CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)
-    if group
-        and group.parentContainerId
-        and ST.IsGroupConfigSelected
-        and ST.IsGroupConfigSelected(groupId) then
-        return IGNORE_SPELL_AVAILABILITY_OPTIONS
-    end
-    return nil
-end
-
-function CooldownCompanion:GetGroupLayoutButtonUsabilityOptions(groupId, group)
-    if group and group.parentContainerId and not group.compactLayout then
-        return IGNORE_SPELL_AVAILABILITY_OPTIONS
-    end
-    return nil
 end
 
 function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group)
