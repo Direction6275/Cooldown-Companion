@@ -19,6 +19,9 @@ local CDM_VIEWER_NAMES = ST._CDM_VIEWER_NAMES
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local SelectConfigPanel = ST._SelectConfigPanel
 local SelectConfigButton = ST._SelectConfigButton
+local IsConcreteSpellID = ST.IsConcreteSpellID
+local ResolveCDMAuraSpellID = ST.ResolveCDMAuraSpellID
+local IsDistinctCDMAuraIdentity = ST.IsDistinctCDMAuraIdentity
 
 -- After a successful add, set selection state to the new button so the
 -- next RefreshConfigPanel shows its settings in Column 3.
@@ -58,26 +61,6 @@ local function IsTriggerPanelTarget(groupId)
     return group and group.displayMode == "trigger"
 end
 
-local function IsConcreteSpellID(spellID)
-    return type(spellID) == "number" and spellID > 0 and not issecretvalue(spellID)
-end
-
-local function ResolveCDMAuraSpellID(cooldownInfo)
-    if type(cooldownInfo) ~= "table" then
-        return nil
-    end
-    if IsConcreteSpellID(cooldownInfo.overrideTooltipSpellID) then
-        return cooldownInfo.overrideTooltipSpellID
-    end
-    if IsConcreteSpellID(cooldownInfo.overrideSpellID) then
-        return cooldownInfo.overrideSpellID
-    end
-    if IsConcreteSpellID(cooldownInfo.spellID) then
-        return cooldownInfo.spellID
-    end
-    return nil
-end
-
 local function CDMAuraChildrenShareResolvedSpellID(children)
     local resolvedID
     for _, child in ipairs(children or {}) do
@@ -90,6 +73,26 @@ local function CDMAuraChildrenShareResolvedSpellID(children)
         end
     end
     return resolvedID ~= nil
+end
+
+local function TrackedCDMAuraIdentitiesAreDistinct(spellID)
+    local found = false
+    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
+            for _, cdID in ipairs(ids) do
+                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                if info and info.spellID == spellID then
+                    found = true
+                    local auraID = ResolveCDMAuraSpellID(info)
+                    if not (auraID and IsDistinctCDMAuraIdentity(spellID, auraID)) then
+                        return false
+                    end
+                end
+            end
+        end
+    end
+    return found
 end
 
 -- File-local state
@@ -369,7 +372,8 @@ local function TryAdd(input)
         if spellFound and not passiveOrProc then
             if IsSpellInCDMBuffBar(id)
                 and not IsSpellInCDMCooldown(id)
-                and not IsPassiveCooldownSpell(id) then
+                and not IsPassiveCooldownSpell(id)
+                and not TrackedCDMAuraIdentitiesAreDistinct(id) then
                 return TryAddSpell(tostring(id), nil, true)
             end
             local forceAura = nil
@@ -467,7 +471,8 @@ local function TryAdd(input)
             else
                 if IsSpellInCDMBuffBar(spellId)
                     and not IsSpellInCDMCooldown(spellId)
-                    and not IsPassiveCooldownSpell(spellId) then
+                    and not IsPassiveCooldownSpell(spellId)
+                    and not TrackedCDMAuraIdentitiesAreDistinct(spellId) then
                     return TryAddSpell(tostring(spellId), nil, true)
                 end
                 local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName)
@@ -621,6 +626,7 @@ local function BuildAutocompleteCache()
     end
 
     local cdmDistinctAuraBaseSet = {}
+    local cdmAllAuraIDsDistinctByBase = {}
     local cdmAuraIDsByBase = {}
     for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
         local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
@@ -642,13 +648,18 @@ local function BuildAutocompleteCache()
         end
     end
     for baseID, auraIDs in pairs(cdmAuraIDsByBase) do
-        local firstID
+        local sawAuraID = false
+        local allDistinct = true
         for auraID in pairs(auraIDs) do
-            if firstID and firstID ~= auraID then
+            sawAuraID = true
+            if IsDistinctCDMAuraIdentity(baseID, auraID) then
                 cdmDistinctAuraBaseSet[baseID] = true
-                break
+            else
+                allDistinct = false
             end
-            firstID = auraID
+        end
+        if sawAuraID and allDistinct then
+            cdmAllAuraIDsDistinctByBase[baseID] = true
         end
     end
 
@@ -671,6 +682,9 @@ local function BuildAutocompleteCache()
                 then
                     local isAura = IsPassiveOrProc(id)
                     local isBuffOnlyCDMSpell = not passiveCooldown and cdmBuffSet[id] and not cdmCooldownSet[id]
+                    if isBuffOnlyCDMSpell and cdmAllAuraIDsDistinctByBase[id] then
+                        isBuffOnlyCDMSpell = false
+                    end
                     if ShouldSuppressSpellbookEntry(id, lineIdx, isAura) then
                         -- Omit filtered entries to reduce autocomplete noise.
                     elseif not seen[id] then

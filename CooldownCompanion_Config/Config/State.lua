@@ -6,6 +6,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local ResolveViewerChildForSpellDisplay = ST.ResolveViewerChildForSpellDisplay
 
 local AceGUI = LibStub("AceGUI-3.0")
 local LSM = LibStub("LibSharedMedia-3.0")
@@ -481,13 +482,7 @@ local function GetConfigEntryDisplayName(buttonData, opts)
     if isEquipmentSlot then
         entryName = entryName or ("Unknown " .. tostring(buttonData.type))
     elseif buttonData.type == "spell" then
-        local child
-        if buttonData.cdmChildSlot then
-            local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
-            child = allChildren and allChildren[buttonData.cdmChildSlot]
-        else
-            child = CooldownCompanion.viewerAuraFrames[buttonData.id]
-        end
+        local child = ResolveViewerChildForSpellDisplay(CooldownCompanion, buttonData)
 
         if not buttonData.customName then
             local displayId = GetCooldownInfoDisplaySpellID(child and child.cooldownInfo)

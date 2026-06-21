@@ -28,6 +28,7 @@ local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local NormalizeItemFallbacks = CooldownCompanion.NormalizeItemFallbacks
 local UpdateItemChargeMetadata = CooldownCompanion.UpdateItemChargeMetadata
+local IsDistinctAuraViewerFrameForSpell = ST.IsDistinctAuraViewerFrameForSpell
 
 -- Imports from SectionBuilders.lua (used by BuildOverridesTab)
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
@@ -756,9 +757,14 @@ local function BuildAuraTrackingSettingsSection(scroll, buttonData, infoButtons,
     local useCollapse = options.useCollapse == true
     local showHeading = options.showHeading ~= false
     local isIconGroup = group and (group.displayMode or "icons") == "icons"
+    local hasDistinctAuraViewerFrame = hasViewerFrame
+        and IsDistinctAuraViewerFrameForSpell(buttonData, viewerFrame)
 
     -- Auto-enable aura tracking for viewer-backed spells.
-    if hasViewerFrame and buttonData.auraTracking == nil then
+    if hasDistinctAuraViewerFrame and buttonData.auraTracking == nil then
+        buttonData.auraTracking = false
+        buttonData.auraIndicatorEnabled = false
+    elseif hasViewerFrame and buttonData.auraTracking == nil then
         buttonData.auraTracking = true
         local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
         if overrideBuffs and not isAuraEntry and not buttonData.auraSpellID then

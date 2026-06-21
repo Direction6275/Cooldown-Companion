@@ -13,6 +13,7 @@ local InCombatLockdown = InCombatLockdown
 local math_floor = math.floor
 local table_sort = table.sort
 local table_remove = table.remove
+local IsDistinctAuraViewerFrameForSpell = ST.IsDistinctAuraViewerFrameForSpell
 local GROUP_SETTING_PRESET_MODES = {
     icons = true,
     bars = true,
@@ -1607,6 +1608,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         if buttonType == "spell" then
             local newButton = group.buttons[buttonIndex]
             local viewerFrame
+            local foundViaAbilityBuffOverride = false
             local resolvedAuraId = C_UnitAuras.GetCooldownAuraBySpellID(id)
             viewerFrame = (resolvedAuraId and resolvedAuraId ~= 0
                     and self.viewerAuraFrames[resolvedAuraId])
@@ -1623,7 +1625,10 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 if overrideBuffs then
                     for buffId in overrideBuffs:gmatch("%d+") do
                         viewerFrame = self.viewerAuraFrames[tonumber(buffId)]
-                        if viewerFrame then break end
+                        if viewerFrame then
+                            foundViaAbilityBuffOverride = true
+                            break
+                        end
                     end
                 end
             end
@@ -1632,6 +1637,13 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 local parent = viewerFrame:GetParent()
                 local parentName = parent and parent:GetName()
                 hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
+            end
+            if hasViewerFrame
+                and not foundViaAbilityBuffOverride
+                and IsDistinctAuraViewerFrameForSpell(newButton, viewerFrame) then
+                newButton.auraTracking = false
+                newButton.auraIndicatorEnabled = false
+                hasViewerFrame = false
             end
             if hasViewerFrame then
                 newButton.auraTracking = true
