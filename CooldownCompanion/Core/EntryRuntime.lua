@@ -1653,8 +1653,15 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
                 and baseNoCooldown == true
                 and baseResourceGateCost == true))
 
+    local allowActionSlotRealFallback = not hasCharges
+        and (noCooldown ~= true
+            or (cooldownSpellID ~= spellID and baseNoCooldown ~= true))
+    local allowActionSlotReadyFallback = allowActionSlotRealFallback
+        and cooldownSpellID ~= spellID
+
     local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, {
-        allowActionSlotRealFallback = not hasCharges and cooldownSpellID == spellID and noCooldown ~= true,
+        allowActionSlotRealFallback = allowActionSlotRealFallback,
+        allowActionSlotReadyFallback = allowActionSlotReadyFallback,
         suppressCooldownSurface = resourceGatedNoCooldown == true,
     })
     result.baseSpellID = spellID
