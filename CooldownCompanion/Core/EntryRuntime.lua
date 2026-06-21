@@ -1283,7 +1283,9 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
     end
 
     local needsRealCooldownFallback = result.state ~= COOLDOWN_STATE_COOLDOWN
-        and (result.isOnGCD == true or result.normalCooldownShown == true)
+        and (result.isOnGCD == true
+            or result.normalCooldownShown == true
+            or options.allowActionSlotReadyFallback == true)
 
     if needsRealCooldownFallback
         and options.allowActionSlotRealFallback then
@@ -1309,11 +1311,14 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldo
                 and baseNoCooldown == true
                 and baseResourceGateCost == true))
     local allowActionSlotRealFallback = buttonData.hasCharges ~= true
-        and cooldownSpellId == buttonData.id
-        and noCooldown ~= true
+        and (noCooldown ~= true
+            or (cooldownSpellId ~= buttonData.id and baseNoCooldown ~= true))
+    local allowActionSlotReadyFallback = allowActionSlotRealFallback
+        and cooldownSpellId ~= buttonData.id
 
     return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id, {
         allowActionSlotRealFallback = allowActionSlotRealFallback,
+        allowActionSlotReadyFallback = allowActionSlotReadyFallback,
         suppressCooldownSurface = resourceGatedNoCooldown == true,
     })
 end
@@ -1648,8 +1653,15 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
                 and baseNoCooldown == true
                 and baseResourceGateCost == true))
 
+    local allowActionSlotRealFallback = not hasCharges
+        and (noCooldown ~= true
+            or (cooldownSpellID ~= spellID and baseNoCooldown ~= true))
+    local allowActionSlotReadyFallback = allowActionSlotRealFallback
+        and cooldownSpellID ~= spellID
+
     local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, {
-        allowActionSlotRealFallback = not hasCharges and cooldownSpellID == spellID and noCooldown ~= true,
+        allowActionSlotRealFallback = allowActionSlotRealFallback,
+        allowActionSlotReadyFallback = allowActionSlotReadyFallback,
         suppressCooldownSurface = resourceGatedNoCooldown == true,
     })
     result.baseSpellID = spellID
