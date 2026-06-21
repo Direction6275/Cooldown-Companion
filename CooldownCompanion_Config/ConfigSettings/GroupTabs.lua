@@ -3800,6 +3800,7 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
     AddCharacterEligibilityControls(scroll, {
         target = container,
         inheritedSources = inheritedSources,
+        eligibilitySubjectLabel = "group",
         allowClassEligibility = container.isGlobal == true,
         ownerCharKey = container.createdBy,
         characterCollapsedKey = "container_loadconditions_character",
@@ -3836,6 +3837,7 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
         AddClassSpecEligibilityControls(scroll, {
             target = container,
             inheritedSources = inheritedSources,
+            eligibilitySubjectLabel = "group",
             allowClassEligibility = container.isGlobal == true,
             ownerCharKey = container.createdBy,
             useSpecAllowlist = hasFolderSpecs,
@@ -3952,6 +3954,7 @@ local function BuildFolderLoadConditionsTab(scroll, folderId)
     AddCharacterEligibilityControls(scroll, {
         target = folder,
         inheritedSources = {},
+        eligibilitySubjectLabel = "folder",
         allowClassEligibility = folder.section == "global",
         ownerCharKey = folder.createdBy,
         characterCollapsedKey = "folder_loadconditions_character",
@@ -3974,6 +3977,7 @@ local function BuildFolderLoadConditionsTab(scroll, folderId)
         AddClassSpecEligibilityControls(scroll, {
             target = folder,
             inheritedSources = {},
+            eligibilitySubjectLabel = "folder",
             allowClassEligibility = folder.section == "global",
             ownerCharKey = folder.createdBy,
             onChanged = RefreshFolderDependents,

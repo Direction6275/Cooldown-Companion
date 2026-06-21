@@ -574,6 +574,66 @@ local function AttachEligibilityTooltip(widget, title, text)
     end)
 end
 
+local function AddDropdownInfoButton(dropdown, tooltipLines)
+    if not (dropdown and dropdown.frame and dropdown.label and tooltipLines) then return end
+    CreateInfoButton(dropdown.frame, dropdown.label, "LEFT", "RIGHT", 4, 0, tooltipLines, dropdown)
+end
+
+local function GetEligibilitySubjectLabel(opts)
+    return opts and opts.eligibilitySubjectLabel or "selection"
+end
+
+local function GetEligibilitySubjectPluralLabel(opts)
+    return opts and opts.eligibilitySubjectPluralLabel
+        or ((GetEligibilitySubjectLabel(opts)) .. "s")
+end
+
+local function BuildCharacterEligibilityTooltip(subjectLabel)
+    local subjectPluralLabel = GetEligibilitySubjectPluralLabel({ eligibilitySubjectLabel = subjectLabel })
+    return {
+        "Character Eligibility",
+        {"Choose which characters can use this " .. subjectLabel .. ".", 1, 1, 1, true},
+        " ",
+        {"Leave empty for no character limit.", 1, 1, 1, true},
+        " ",
+        {"Class-scoped " .. subjectPluralLabel .. " only show same-class characters.", 1, 1, 1, true},
+    }
+end
+
+local function BuildClassEligibilityTooltip(subjectLabel)
+    local subjectPluralLabel = GetEligibilitySubjectPluralLabel({ eligibilitySubjectLabel = subjectLabel })
+    return {
+        "Class Eligibility",
+        {"Global " .. subjectPluralLabel .. " can be limited to selected classes.", 1, 1, 1, true},
+        " ",
+        {"Leave empty to allow all classes.", 1, 1, 1, true},
+        " ",
+        {"Pick a class first to add its specializations.", 1, 1, 1, true},
+    }
+end
+
+local function BuildSpecializationEligibilityTooltip(subjectLabel)
+    return {
+        "Specialization Eligibility",
+        {"Limit this " .. subjectLabel .. " to selected specializations.", 1, 1, 1, true},
+        " ",
+        {"Specializations come from eligible classes.", 1, 1, 1, true},
+        " ",
+        {"Leave empty to allow all specs for those classes.", 1, 1, 1, true},
+    }
+end
+
+local function BuildHeroTalentEligibilityTooltip(subjectLabel)
+    return {
+        "Hero Talent Eligibility",
+        {"Limit this " .. subjectLabel .. " to specific hero talent trees.", 1, 1, 1, true},
+        " ",
+        {"Hero talents come from selected specializations.", 1, 1, 1, true},
+        " ",
+        {"Leave empty to allow any hero talent for that spec.", 1, 1, 1, true},
+    }
+end
+
 local function ResolveOwnerClassChoice(opts)
     if opts.ownerClassChoice then
         return opts.ownerClassChoice
@@ -777,6 +837,7 @@ end
 local function AddCharacterEligibilityControls(container, opts)
     local target = opts.target
     if type(target) ~= "table" then return end
+    local subjectLabel = GetEligibilitySubjectLabel(opts)
 
     local inheritedMap, inheritedRestricted = GetInheritedAllowlist(opts.inheritedSources, "characterAllowlist", "character")
     local scopeClassChoice
@@ -847,6 +908,7 @@ local function AddCharacterEligibilityControls(container, opts)
     picker:SetLabel("Add Character")
     picker:SetFullWidth(true)
     picker:SetList(dropdownValues, dropdownOrder)
+    AddDropdownInfoButton(picker, BuildCharacterEligibilityTooltip(subjectLabel))
     if #dropdownOrder == 0 then
         picker:SetDisabled(true)
     else
@@ -862,11 +924,6 @@ local function AddCharacterEligibilityControls(container, opts)
     SortChoices(selected)
 
     if #selected == 0 then
-        local unrestrictedLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(unrestrictedLabel)
-        unrestrictedLabel:SetText("|cff888888No local character restriction.|r")
-        unrestrictedLabel:SetFullWidth(true)
-        container:AddChild(unrestrictedLabel)
         return
     end
 
@@ -1082,17 +1139,59 @@ end
 
 local function FormatEligibilitySpecLabel(specInfo, includeClass)
     if not specInfo then return "" end
+    local classKey = specInfo.classKey
+    if not classKey then
+        local classChoice = GetSpecClassChoice(specInfo.id)
+        classKey = classChoice and classChoice.key or nil
+    end
+    local specLabel = WrapClassColoredText(specInfo.name or specInfo.label or tostring(specInfo.id), classKey)
     if includeClass and specInfo.classLabel then
         local classChoice = GetClassChoiceByFilename(specInfo.classKey)
         local classLabel = GetClassDisplayLabel(classChoice) or specInfo.classLabel
-        return classLabel .. ": " .. (specInfo.name or specInfo.label or tostring(specInfo.id))
+        return classLabel .. ": " .. specLabel
     end
-    return specInfo.name or specInfo.label or tostring(specInfo.id)
+    return specLabel
+end
+
+local function FormatSpecIconPrefix(specInfo)
+    local icon = specInfo and specInfo.icon
+    if not icon then return "" end
+    return ("|T%s:14:14:0:0:64:64:5:59:5:59|t "):format(tostring(icon))
+end
+
+local function FormatSpecDropdownLabel(specInfo)
+    local label = specInfo and specInfo.label or ""
+    if specInfo and specInfo.classKey then
+        label = WrapClassColoredText(label, specInfo.classKey)
+    end
+    return FormatSpecIconPrefix(specInfo) .. label
+end
+
+local function FormatEligibilitySpecRowLabel(specInfo, includeClass)
+    return FormatSpecIconPrefix(specInfo) .. FormatEligibilitySpecLabel(specInfo, includeClass)
+end
+
+local function FormatHeroTalentIconPrefix(heroInfo)
+    local atlas = heroInfo and heroInfo.iconAtlas
+    if not atlas then return "" end
+    return ("|A:%s:14:14|a "):format(tostring(atlas))
+end
+
+local function FormatEligibilityHeroName(heroInfo)
+    return FormatHeroTalentIconPrefix(heroInfo) .. (heroInfo and (heroInfo.label or tostring(heroInfo.id)) or "")
 end
 
 local function FormatEligibilityHeroLabel(heroInfo, specInfo, includeClass)
     local specLabel = FormatEligibilitySpecLabel(specInfo, includeClass)
-    return specLabel .. " - " .. (heroInfo.label or tostring(heroInfo.id))
+    return specLabel .. " - " .. FormatEligibilityHeroName(heroInfo)
+end
+
+local function FormatEligibilityHeroDropdownLabel(heroInfo, specInfo, includeClass)
+    return FormatSpecIconPrefix(specInfo) .. FormatEligibilityHeroLabel(heroInfo, specInfo, includeClass)
+end
+
+local function FormatEligibilityHeroRowLabel(heroInfo, specInfo, includeClass)
+    return FormatSpecIconPrefix(specInfo) .. FormatEligibilityHeroLabel(heroInfo, specInfo, includeClass)
 end
 
 local function AddEligibilitySelectedRow(container, rowInfo, onRemove)
@@ -1123,6 +1222,7 @@ local function AddClassSpecEligibilityControls(container, opts)
     opts = opts or {}
     local target = opts.target
     if type(target) ~= "table" then return end
+    local subjectLabel = GetEligibilitySubjectLabel(opts)
 
     local allowClassEligibility = opts.allowClassEligibility == true
     local scopeClassChoice
@@ -1165,6 +1265,7 @@ local function AddClassSpecEligibilityControls(container, opts)
         classPicker:SetLabel("Add Class")
         classPicker:SetFullWidth(true)
         classPicker:SetList(classValues, classOrder)
+        AddDropdownInfoButton(classPicker, BuildClassEligibilityTooltip(subjectLabel))
         if #classOrder == 0 then
             classPicker:SetDisabled(true)
         else
@@ -1200,7 +1301,7 @@ local function AddClassSpecEligibilityControls(container, opts)
         local localSelected = type(selectedSpecMap) == "table" and selectedSpecMap[specId] == true
         local outsideAllowed = allowedSpecRestricted and not (allowedSpecMap and allowedSpecMap[specId])
         if specId and not localSelected and not outsideAllowed then
-            specValues[specId] = specInfo.label
+            specValues[specId] = FormatSpecDropdownLabel(specInfo)
             specSortLabels[specId] = (specInfo.classLabel or "") .. (specInfo.name or specInfo.label or tostring(specId))
             specOrder[#specOrder + 1] = specId
         end
@@ -1209,17 +1310,12 @@ local function AddClassSpecEligibilityControls(container, opts)
         return tostring(specSortLabels[a] or a) < tostring(specSortLabels[b] or b)
     end)
 
-    if #specChoices == 0 then
-        local emptyLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(emptyLabel)
-        emptyLabel:SetText(allowClassEligibility and "|cff888888Select a class to choose specialization eligibility.|r" or "|cff888888No specializations available for this scope.|r")
-        emptyLabel:SetFullWidth(true)
-        container:AddChild(emptyLabel)
-    else
+    if #specChoices > 0 then
         local specPicker = AceGUI:Create("Dropdown")
         specPicker:SetLabel("Add Specialization")
         specPicker:SetFullWidth(true)
         specPicker:SetList(specValues, specOrder)
+        AddDropdownInfoButton(specPicker, BuildSpecializationEligibilityTooltip(subjectLabel))
         if #specOrder == 0 then
             specPicker:SetDisabled(true)
         else
@@ -1246,7 +1342,7 @@ local function AddClassSpecEligibilityControls(container, opts)
             local selected = type(heroTalentsSource) == "table" and heroTalentsSource[heroInfo.id] == true
             if not selected then
                 local specInfo = specById[heroInfo.specId]
-                heroValues[heroInfo.id] = FormatEligibilityHeroLabel(heroInfo, specInfo, allowClassEligibility)
+                heroValues[heroInfo.id] = FormatEligibilityHeroDropdownLabel(heroInfo, specInfo, allowClassEligibility)
                 heroSortLabels[heroInfo.id] = (heroInfo.classLabel or "") .. (heroInfo.specLabel or "") .. (heroInfo.label or "")
                 heroOrder[#heroOrder + 1] = heroInfo.id
             end
@@ -1261,6 +1357,7 @@ local function AddClassSpecEligibilityControls(container, opts)
         heroPicker:SetLabel("Add Hero Talent")
         heroPicker:SetFullWidth(true)
         heroPicker:SetList(heroValues, heroOrder)
+        AddDropdownInfoButton(heroPicker, BuildHeroTalentEligibilityTooltip(subjectLabel))
         if #heroOrder == 0 then
             heroPicker:SetDisabled(true)
         else
@@ -1330,7 +1427,7 @@ local function AddClassSpecEligibilityControls(container, opts)
                 end)
                 for _, heroInfo in ipairs(heroRows) do
                     rows[#rows + 1] = {
-                        label = FormatEligibilityHeroLabel(heroInfo, specInfo, allowClassEligibility),
+                        label = FormatEligibilityHeroRowLabel(heroInfo, specInfo, allowClassEligibility),
                         sortLabel = (specInfo.classLabel or "") .. (specInfo.name or "") .. (heroInfo.label or ""),
                         disabled = opts.disableHeroTalents == true,
                         onRemove = function()
@@ -1342,7 +1439,7 @@ local function AddClassSpecEligibilityControls(container, opts)
             else
                 local outsideAllowed = allowedSpecRestricted and not (allowedSpecMap and allowedSpecMap[specId])
                 rows[#rows + 1] = {
-                    label = FormatEligibilitySpecLabel(specInfo, allowClassEligibility)
+                    label = FormatEligibilitySpecRowLabel(specInfo, allowClassEligibility)
                         .. (outsideAllowed and " |cff888888(unavailable from parent)|r" or ""),
                     sortLabel = (specInfo.classLabel or "") .. (specInfo.name or specInfo.label or tostring(specId)),
                     onRemove = function()
@@ -1361,13 +1458,7 @@ local function AddClassSpecEligibilityControls(container, opts)
         return tostring(a.sortLabel or a.label) < tostring(b.sortLabel or b.label)
     end)
 
-    if #rows == 0 then
-        local unrestrictedLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(unrestrictedLabel)
-        unrestrictedLabel:SetText(allowClassEligibility and "|cff888888No local class or specialization restriction.|r" or "|cff888888No local specialization restriction.|r")
-        unrestrictedLabel:SetFullWidth(true)
-        container:AddChild(unrestrictedLabel)
-    else
+    if #rows > 0 then
         for _, row in ipairs(rows) do
             AddEligibilitySelectedRow(container, row, row.onRemove)
         end
@@ -2812,6 +2903,7 @@ local function BuildLoadConditionsTab(container)
     AddCharacterEligibilityControls(container, {
         target = group,
         inheritedSources = inheritedSources,
+        eligibilitySubjectLabel = "panel",
         allowClassEligibility = scopeIsGlobal,
         ownerCharKey = ownerCharKey,
         characterCollapsedKey = "loadconditions_panel_character",
@@ -2845,6 +2937,7 @@ local function BuildLoadConditionsTab(container)
         AddClassSpecEligibilityControls(container, {
             target = group,
             inheritedSources = inheritedSources,
+            eligibilitySubjectLabel = "panel",
             allowClassEligibility = scopeIsGlobal,
             ownerCharKey = ownerCharKey,
             useSpecAllowlist = inheritedSpecFilter,
