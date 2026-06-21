@@ -475,7 +475,18 @@ local function GetClassChoiceByFilename(classFilename)
 end
 
 local function GetCurrentClassChoice()
-    local className, classFilename, classID = UnitClass("player")
+    local classFilename = CooldownCompanion._playerClassFilename
+    local classID = CooldownCompanion._playerClassID
+    local className
+    if classID and GetClassInfo then
+        className = GetClassInfo(classID)
+    end
+    if (not classFilename or not className) and UnitClass then
+        local unitClassName, unitClassFilename, unitClassID = UnitClass("player")
+        className = className or unitClassName
+        classFilename = classFilename or unitClassFilename
+        classID = classID or unitClassID
+    end
     local classKey = NormalizeAllowlistKey("class", classFilename)
     if not classKey then return nil end
     return {
@@ -518,13 +529,16 @@ local function SplitCharacterKey(charKey)
     return charKey, nil
 end
 
-local function GetCharacterEligibilityInfo(charKey)
+local function GetCharacterEligibilityInfo(charKey, fallbackInfo)
     local db = CooldownCompanion.db
     local info = charKey
         and db and db.global and db.global.characterInfo
         and db.global.characterInfo[charKey]
     if type(info) == "table" then
         return info
+    end
+    if type(fallbackInfo) == "table" and fallbackInfo.charKey == charKey then
+        return fallbackInfo
     end
 
     local characters = CooldownCompanion.EnumerateActiveProfileCharacters
@@ -538,8 +552,8 @@ local function GetCharacterEligibilityInfo(charKey)
     return nil
 end
 
-local function BuildCharacterChoice(charKey)
-    local info = GetCharacterEligibilityInfo(charKey)
+local function BuildCharacterChoice(charKey, fallbackInfo)
+    local info = GetCharacterEligibilityInfo(charKey, fallbackInfo)
     local name, realm = SplitCharacterKey(charKey)
     local classFilename = info and NormalizeAllowlistKey("class", info.classFilename)
     local label = WrapClassColoredText(name, classFilename)
@@ -583,13 +597,12 @@ local function GetEligibilitySubjectLabel(opts)
     return opts and opts.eligibilitySubjectLabel or "selection"
 end
 
-local function GetEligibilitySubjectPluralLabel(opts)
-    return opts and opts.eligibilitySubjectPluralLabel
-        or ((GetEligibilitySubjectLabel(opts)) .. "s")
+local function GetEligibilitySubjectPluralLabel(subjectLabel)
+    return (subjectLabel or "selection") .. "s"
 end
 
 local function BuildCharacterEligibilityTooltip(subjectLabel)
-    local subjectPluralLabel = GetEligibilitySubjectPluralLabel({ eligibilitySubjectLabel = subjectLabel })
+    local subjectPluralLabel = GetEligibilitySubjectPluralLabel(subjectLabel)
     return {
         "Character Eligibility",
         {"Choose which characters can use this " .. subjectLabel .. ".", 1, 1, 1, true},
@@ -601,7 +614,7 @@ local function BuildCharacterEligibilityTooltip(subjectLabel)
 end
 
 local function BuildClassEligibilityTooltip(subjectLabel)
-    local subjectPluralLabel = GetEligibilitySubjectPluralLabel({ eligibilitySubjectLabel = subjectLabel })
+    local subjectPluralLabel = GetEligibilitySubjectPluralLabel(subjectLabel)
     return {
         "Class Eligibility",
         {"Global " .. subjectPluralLabel .. " can be limited to selected classes.", 1, 1, 1, true},
@@ -704,7 +717,7 @@ local function BuildCharacterChoices(target, inheritedMap, scopeClassKey, ownerC
         and CooldownCompanion:EnumerateActiveProfileCharacters()
         or {}
     for _, info in ipairs(characters) do
-        local choice = BuildCharacterChoice(info.charKey)
+        local choice = BuildCharacterChoice(info.charKey, info)
         choice.classFilename = choice.classFilename or info.classFilename
         choice.classID = choice.classID or info.classID
         if CharacterChoiceMatchesScopeClass(choice, scopeClassKey, ownerCharKey) then
@@ -834,6 +847,30 @@ local function CreateEligibilityRemoveBadge(onRemove)
     return removeBadge
 end
 
+local function AddEligibilitySelectedRow(container, rowInfo, onRemove)
+    local row = AceGUI:Create("SimpleGroup")
+    row:SetFullWidth(true)
+    row:SetLayout("Flow")
+
+    local label = AceGUI:Create("Label")
+    label:SetText(rowInfo.label)
+    label:SetRelativeWidth(0.92)
+    AttachEligibilityTooltip(label, rowInfo.tooltipTitle or rowInfo.label, rowInfo.tooltipText)
+    row:AddChild(label)
+
+    if rowInfo.disabled then
+        local locked = AceGUI:Create("Label")
+        locked:SetText("|cff888888locked|r")
+        locked:SetRelativeWidth(0.1)
+        row:AddChild(locked)
+    else
+        local removeBtn = CreateEligibilityRemoveBadge(onRemove)
+        row:AddChild(removeBtn)
+    end
+
+    container:AddChild(row)
+end
+
 local function AddCharacterEligibilityControls(container, opts)
     local target = opts.target
     if type(target) ~= "table" then return end
@@ -928,23 +965,10 @@ local function AddCharacterEligibilityControls(container, opts)
     end
 
     for _, choice in ipairs(selected) do
-        local row = AceGUI:Create("SimpleGroup")
-        row:SetFullWidth(true)
-        row:SetLayout("Flow")
-
-        local label = AceGUI:Create("Label")
-        label:SetText(choice.label)
-        label:SetRelativeWidth(0.92)
-        AttachEligibilityTooltip(label, choice.tooltipTitle or choice.label, choice.tooltipText)
-        row:AddChild(label)
-
-        local removeBtn = CreateEligibilityRemoveBadge(function()
+        AddEligibilitySelectedRow(container, choice, function()
             SetAllowlistValue(target, "characterAllowlist", "character", choice.key, false)
             if opts.onChanged then opts.onChanged() end
         end)
-        row:AddChild(removeBtn)
-
-        container:AddChild(row)
     end
 end
 
@@ -1186,36 +1210,8 @@ local function FormatEligibilityHeroLabel(heroInfo, specInfo, includeClass)
     return specLabel .. " - " .. FormatEligibilityHeroName(heroInfo)
 end
 
-local function FormatEligibilityHeroDropdownLabel(heroInfo, specInfo, includeClass)
+local function FormatEligibilityHeroChoiceLabel(heroInfo, specInfo, includeClass)
     return FormatSpecIconPrefix(specInfo) .. FormatEligibilityHeroLabel(heroInfo, specInfo, includeClass)
-end
-
-local function FormatEligibilityHeroRowLabel(heroInfo, specInfo, includeClass)
-    return FormatSpecIconPrefix(specInfo) .. FormatEligibilityHeroLabel(heroInfo, specInfo, includeClass)
-end
-
-local function AddEligibilitySelectedRow(container, rowInfo, onRemove)
-    local row = AceGUI:Create("SimpleGroup")
-    row:SetFullWidth(true)
-    row:SetLayout("Flow")
-
-    local label = AceGUI:Create("Label")
-    label:SetText(rowInfo.label)
-    label:SetRelativeWidth(0.92)
-    AttachEligibilityTooltip(label, rowInfo.tooltipTitle or rowInfo.label, rowInfo.tooltipText)
-    row:AddChild(label)
-
-    if rowInfo.disabled then
-        local locked = AceGUI:Create("Label")
-        locked:SetText("|cff888888locked|r")
-        locked:SetRelativeWidth(0.1)
-        row:AddChild(locked)
-    else
-        local removeBtn = CreateEligibilityRemoveBadge(onRemove)
-        row:AddChild(removeBtn)
-    end
-
-    container:AddChild(row)
 end
 
 local function AddClassSpecEligibilityControls(container, opts)
@@ -1342,7 +1338,7 @@ local function AddClassSpecEligibilityControls(container, opts)
             local selected = type(heroTalentsSource) == "table" and heroTalentsSource[heroInfo.id] == true
             if not selected then
                 local specInfo = specById[heroInfo.specId]
-                heroValues[heroInfo.id] = FormatEligibilityHeroDropdownLabel(heroInfo, specInfo, allowClassEligibility)
+                heroValues[heroInfo.id] = FormatEligibilityHeroChoiceLabel(heroInfo, specInfo, allowClassEligibility)
                 heroSortLabels[heroInfo.id] = (heroInfo.classLabel or "") .. (heroInfo.specLabel or "") .. (heroInfo.label or "")
                 heroOrder[#heroOrder + 1] = heroInfo.id
             end
@@ -1427,7 +1423,7 @@ local function AddClassSpecEligibilityControls(container, opts)
                 end)
                 for _, heroInfo in ipairs(heroRows) do
                     rows[#rows + 1] = {
-                        label = FormatEligibilityHeroRowLabel(heroInfo, specInfo, allowClassEligibility),
+                        label = FormatEligibilityHeroChoiceLabel(heroInfo, specInfo, allowClassEligibility),
                         sortLabel = (specInfo.classLabel or "") .. (specInfo.name or "") .. (heroInfo.label or ""),
                         disabled = opts.disableHeroTalents == true,
                         onRemove = function()
@@ -2999,8 +2995,6 @@ ST._BuildVisibilitySettings = BuildVisibilitySettings
 ST._BuildLoadConditionsTab = BuildLoadConditionsTab
 ST._BuildEntryLoadConditionsTab = BuildEntryLoadConditionsTab
 ST._AddScopedLoadConditionToggles = AddScopedLoadConditionToggles
-ST._SetSpecFilterValue = SetSpecFilterValue
-ST._SetSpecAllowlistValue = SetSpecAllowlistValue
 ST._AddCharacterEligibilityControls = AddCharacterEligibilityControls
 ST._AddClassSpecEligibilityControls = AddClassSpecEligibilityControls
 ST._GetConditionDisplayName = GetConditionDisplayName

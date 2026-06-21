@@ -1720,6 +1720,15 @@ local function AddLoadConditionSource(sources, label, entity, defaults, allowCla
     end
 end
 
+local function HasEligibilityAllowlist(loadConditions, allowClassEligibility)
+    if type(loadConditions) ~= "table" then return false end
+    if allowClassEligibility and loadConditions.classAllowlist ~= nil then
+        return true
+    end
+    return loadConditions.specAllowlist ~= nil
+        or loadConditions.characterAllowlist ~= nil
+end
+
 local function IsFolderGlobalScope(folder)
     return type(folder) == "table" and folder.section == "global"
 end
@@ -1768,15 +1777,19 @@ function CooldownCompanion:GetLoadConditionSourcesForEntry(buttonData, group)
 end
 
 function CooldownCompanion:EvaluateLoadConditionSources(sources)
-    local eligibility = {}
-    local identity = self:GetCurrentEligibilityIdentity()
+    local eligibility
+    local identity
 
     for _, source in ipairs(sources or {}) do
         if not self:EvaluateLoadConditions(source.loadConditions, source.defaults) then
             return false, source.label
         end
         local loadConditions = source.loadConditions
-        if type(loadConditions) == "table" then
+        if HasEligibilityAllowlist(loadConditions, source.allowClassEligibility) then
+            if not eligibility then
+                eligibility = {}
+                identity = self:GetCurrentEligibilityIdentity()
+            end
             if source.allowClassEligibility then
                 MergeEligibilityAllowlist(eligibility, "class", loadConditions.classAllowlist, NormalizeClassKey)
             end
