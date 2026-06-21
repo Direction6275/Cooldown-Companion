@@ -16,6 +16,8 @@ local IsSpellInCDMCooldown = ST._IsSpellInCDMCooldown
 local IsNeverTrackableSpell = ST._IsNeverTrackableSpell
 local ShouldSuppressSpellbookEntry = ST._ShouldSuppressSpellbookEntry
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
+local ResolveCDMAuraSpellID = ST.ResolveCDMAuraSpellID
+local IsDistinctCDMAuraIdentity = ST.IsDistinctCDMAuraIdentity
 
 local ICON_FALLBACK = 134400
 local ACTION_BAR_COUNT = 6
@@ -35,22 +37,6 @@ local SOURCE_GROUP_ORDER_GENERAL = 4000
 
 local function IsConcreteSpellID(spellID)
     return type(spellID) == "number" and spellID > 0 and not issecretvalue(spellID)
-end
-
-local function ResolveCDMAuraSpellID(cooldownInfo)
-    if type(cooldownInfo) ~= "table" then
-        return nil
-    end
-    if IsConcreteSpellID(cooldownInfo.overrideTooltipSpellID) then
-        return cooldownInfo.overrideTooltipSpellID
-    end
-    if IsConcreteSpellID(cooldownInfo.overrideSpellID) then
-        return cooldownInfo.overrideSpellID
-    end
-    if IsConcreteSpellID(cooldownInfo.spellID) then
-        return cooldownInfo.spellID
-    end
-    return nil
 end
 
 local function CooldownInfoReferencesSpellID(cooldownInfo, spellID)
@@ -281,7 +267,11 @@ local function BuildActionBarPreview(selectedBars)
                                 -- Omit known non-trackable spells from preview.
                             else
                                 local cdmAuraSpellID, ambiguousCDMAuras, hasTrackedCDMAura = ResolveTrackedCDMAuraSpellIDForSpell(spellID)
-                                local isBuffOnlyCDMSpell = hasTrackedCDMAura and not IsSpellInCDMCooldown(spellID)
+                                local isDistinctCDMAura = cdmAuraSpellID
+                                    and IsDistinctCDMAuraIdentity(spellID, cdmAuraSpellID)
+                                local isBuffOnlyCDMSpell = hasTrackedCDMAura
+                                    and not IsSpellInCDMCooldown(spellID)
+                                    and not isDistinctCDMAura
                                 local isAura = IsPassiveOrProc(spellID) or isBuffOnlyCDMSpell
                                 if ambiguousCDMAuras then
                                     AddSkipped(result, sourceLabel, "Choose a specific CDM aura.", spellName)

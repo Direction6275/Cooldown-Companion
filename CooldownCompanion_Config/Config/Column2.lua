@@ -29,6 +29,7 @@ local TryReceiveCursorDrop = ST._TryReceiveCursorDrop
 local OnAutocompleteSelect = ST._OnAutocompleteSelect
 local SearchAutocomplete = ST._SearchAutocomplete
 local OpenAutoAddFlow = ST._OpenAutoAddFlow
+local ResolveViewerChildForSpellDisplay = ST.ResolveViewerChildForSpellDisplay
 local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
@@ -993,13 +994,7 @@ local function ResolveColumn2TooltipSpellId(buttonData)
         return nil
     end
 
-    local child
-    if buttonData.cdmChildSlot then
-        local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
-        child = allChildren and allChildren[buttonData.cdmChildSlot]
-    else
-        child = CooldownCompanion.viewerAuraFrames[buttonData.id]
-    end
+    local child = ResolveViewerChildForSpellDisplay(CooldownCompanion, buttonData)
 
     if child and child.cooldownInfo then
         if child.cooldownInfo.overrideTooltipSpellID then

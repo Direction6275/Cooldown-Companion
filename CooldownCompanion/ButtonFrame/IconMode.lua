@@ -27,6 +27,7 @@ local FitHighlightFrame = ST._FitHighlightFrame
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
 local HasItemFallbacks = CooldownCompanion.HasItemFallbacks
+local ResolveViewerChildForSpellDisplay = ST.ResolveViewerChildForSpellDisplay
 
 -- Imports from VisualState
 local ClearButtonVisualState = ST._ClearButtonVisualState
@@ -1014,24 +1015,8 @@ function CooldownCompanion:UpdateButtonIcon(button)
         -- For override spells (ability→buff mapping), viewerAuraFrames may point
         -- to a BuffIcon/BuffBar child whose spellID is the buff, not the ability.
         -- Scan for an Essential/Utility child that tracks the transforming spell.
-        local child
-        if buttonData.cdmChildSlot then
-            local allChildren = CooldownCompanion.viewerAuraAllChildren[buttonData.id]
-            child = allChildren and allChildren[buttonData.cdmChildSlot]
-        else
-            child = CooldownCompanion.viewerAuraFrames[buttonData.id]
-        end
+        local child = ResolveViewerChildForSpellDisplay(CooldownCompanion, buttonData)
         if child and child.cooldownInfo and not forceBaseDisplay then
-            -- For multi-slot buttons, keep the slot-specific buff viewer child —
-            -- FindCooldownViewerChild is not slot-aware and would lose differentiation.
-            if not buttonData.cdmChildSlot then
-                local parentName = child:GetParent() and child:GetParent():GetName()
-                if parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer" then
-                    -- This is a buff viewer — look for a cooldown viewer instead for icon/name
-                    local cdChild = CooldownCompanion:FindCooldownViewerChild(buttonData.id)
-                    if cdChild then child = cdChild end
-                end
-            end
             -- Track the current override for display name and aura lookups
             if child.cooldownInfo.overrideSpellID then
                 displayId = child.cooldownInfo.overrideSpellID

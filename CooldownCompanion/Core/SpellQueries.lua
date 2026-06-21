@@ -10,6 +10,110 @@ local tonumber = tonumber
 local issecretvalue = issecretvalue
 local Enum = Enum
 
+local function IsConcreteSpellID(spellID)
+    return type(spellID) == "number"
+        and spellID > 0
+        and not (issecretvalue and issecretvalue(spellID))
+end
+ST.IsConcreteSpellID = IsConcreteSpellID
+
+function ST.ResolveCDMAuraSpellID(cooldownInfo)
+    if type(cooldownInfo) ~= "table" then
+        return nil
+    end
+    if IsConcreteSpellID(cooldownInfo.overrideTooltipSpellID) then
+        return cooldownInfo.overrideTooltipSpellID
+    end
+    if IsConcreteSpellID(cooldownInfo.overrideSpellID) then
+        return cooldownInfo.overrideSpellID
+    end
+    if IsConcreteSpellID(cooldownInfo.spellID) then
+        return cooldownInfo.spellID
+    end
+    return nil
+end
+
+function ST.IsDistinctCDMAuraIdentity(spellID, auraID)
+    if not IsConcreteSpellID(spellID) or not IsConcreteSpellID(auraID) then
+        return false
+    end
+    if auraID == spellID then
+        return false
+    end
+
+    local auraBase = C_Spell.GetBaseSpell(auraID)
+    if auraBase ~= nil then
+        if issecretvalue and issecretvalue(auraBase) then
+            return false
+        end
+        if auraBase ~= 0 then
+            if not IsConcreteSpellID(auraBase) then
+                return false
+            end
+            if auraBase == spellID then
+                return false
+            end
+        end
+    end
+
+    local spellName = C_Spell.GetSpellName(spellID)
+    local auraName = C_Spell.GetSpellName(auraID)
+    if type(spellName) ~= "string"
+        or type(auraName) ~= "string"
+        or (issecretvalue and (issecretvalue(spellName) or issecretvalue(auraName))) then
+        return false
+    end
+
+    return spellName ~= auraName
+end
+
+function ST.IsCDMBuffViewerChild(frame)
+    if not (frame and frame.GetParent) then
+        return false
+    end
+    local parent = frame:GetParent()
+    local parentName = parent and parent.GetName and parent:GetName()
+    local buffViewerSet = ST._BUFF_VIEWER_SET
+    return buffViewerSet and buffViewerSet[parentName] == true
+end
+
+function ST.IsPlainSpellEntry(buttonData)
+    return buttonData
+        and buttonData.type == "spell"
+        and buttonData.addedAs ~= "aura"
+        and not buttonData.isPassive
+        and not buttonData.cdmChildSlot
+end
+
+function ST.IsDistinctAuraViewerFrameForSpell(buttonData, frame)
+    if not (ST.IsPlainSpellEntry(buttonData) and ST.IsCDMBuffViewerChild(frame)) then
+        return false
+    end
+
+    local auraID = ST.ResolveCDMAuraSpellID(frame.cooldownInfo)
+    return auraID and ST.IsDistinctCDMAuraIdentity(buttonData.id, auraID) or false
+end
+
+function ST.ResolveViewerChildForSpellDisplay(addon, buttonData)
+    if not (addon and buttonData and buttonData.type == "spell") then
+        return nil
+    end
+
+    local child
+    if buttonData.cdmChildSlot then
+        local allChildren = addon.viewerAuraAllChildren and addon.viewerAuraAllChildren[buttonData.id]
+        child = allChildren and allChildren[buttonData.cdmChildSlot]
+    else
+        child = addon.viewerAuraFrames and addon.viewerAuraFrames[buttonData.id]
+    end
+
+    if child and ST.IsDistinctAuraViewerFrameForSpell(buttonData, child) then
+        return addon.FindCooldownViewerChild and addon:FindCooldownViewerChild(buttonData.id) or nil
+    end
+
+    return child
+end
+
 --------------------------------------------------------------------------------
 -- Spell Resolution
 --------------------------------------------------------------------------------

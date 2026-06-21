@@ -22,6 +22,7 @@ local VIEWER_NAMES = ST._VIEWER_NAMES
 local COOLDOWN_VIEWER_NAMES = ST._COOLDOWN_VIEWER_NAMES
 local BUFF_VIEWER_SET = ST._BUFF_VIEWER_SET
 local cdmAlphaGuard = ST._cdmAlphaGuard
+local IsDistinctCDMAuraIdentity = ST.IsDistinctCDMAuraIdentity
 local pendingViewerAuraMapToken = 0
 local FindChildInViewers
 local TRACKED_AURA_CATEGORIES = {
@@ -183,6 +184,14 @@ local function HasBuffSuffixName(name)
     return type(name) == "string" and name:match("%s%([Bb]uff%)$") ~= nil
 end
 
+local function IsDistinctAuraIdentityForButton(buttonData, auraID)
+    return ST.IsPlainSpellEntry
+        and ST.IsPlainSpellEntry(buttonData)
+        and auraID
+        and IsDistinctCDMAuraIdentity
+        and IsDistinctCDMAuraIdentity(buttonData.id, auraID)
+end
+
 local function NormalizeResolvedAuraSpellID(baseId, auraSpellID)
     local numericAuraID = tonumber(auraSpellID)
     if not numericAuraID or numericAuraID == 0 then
@@ -341,7 +350,7 @@ local function BuildOrderedAuraCandidateIDs(buttonData)
         AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, baseId)
 
         local resolvedAuraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
-        if resolvedAuraId then
+        if resolvedAuraId and not IsDistinctAuraIdentityForButton(buttonData, resolvedAuraId) then
             AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, resolvedAuraId)
         end
     end
@@ -583,7 +592,7 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
     end
     if buttonData.type == "spell" then
         local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
-        if directAuraID then
+        if directAuraID and not IsDistinctAuraIdentityForButton(buttonData, directAuraID) then
             return directAuraID
         end
         -- Resolve through base spell so form-variant spells (e.g. Stampeding
@@ -591,7 +600,7 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
         -- buff is always applied as the base spell regardless of form.
         local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
         local auraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
-        if auraId then
+        if auraId and not IsDistinctAuraIdentityForButton(buttonData, auraId) then
             return auraId
         end
         -- Many spells share the same ID for cast and buff; fall back to the base spell ID
@@ -615,13 +624,15 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
     end
 
     local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
-    if directAuraID then
+    if directAuraID and not IsDistinctAuraIdentityForButton(buttonData, directAuraID) then
         return tostring(directAuraID)
     end
 
     local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
     local resolvedAuraId = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
-    if resolvedAuraId and resolvedAuraId ~= buttonData.id then
+    if resolvedAuraId
+        and resolvedAuraId ~= buttonData.id
+        and not IsDistinctAuraIdentityForButton(buttonData, resolvedAuraId) then
         return tostring(resolvedAuraId)
     end
 
@@ -635,14 +646,22 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
             info.overrideTooltipSpellID,
         }) do
             local numericID = tonumber(spellID)
-            if numericID and numericID ~= 0 and numericID ~= buttonData.id and numericID ~= baseId then
+            if numericID
+                and numericID ~= 0
+                and numericID ~= buttonData.id
+                and numericID ~= baseId
+                and not IsDistinctAuraIdentityForButton(buttonData, numericID) then
                 distinctAuraIDs[numericID] = true
             end
         end
         if info.linkedSpellIDs then
             for _, linkedSpellID in ipairs(info.linkedSpellIDs) do
                 local numericID = tonumber(linkedSpellID)
-                if numericID and numericID ~= 0 and numericID ~= buttonData.id and numericID ~= baseId then
+                if numericID
+                    and numericID ~= 0
+                    and numericID ~= buttonData.id
+                    and numericID ~= baseId
+                    and not IsDistinctAuraIdentityForButton(buttonData, numericID) then
                     distinctAuraIDs[numericID] = true
                 end
             end
@@ -692,12 +711,12 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
     end
 
     local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
-    if directAuraID then
+    if directAuraID and not IsDistinctAuraIdentityForButton(buttonData, directAuraID) then
         return directAuraID
     end
 
     local resolvedAuraID = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
-    if resolvedAuraID then
+    if resolvedAuraID and not IsDistinctAuraIdentityForButton(buttonData, resolvedAuraID) then
         return resolvedAuraID
     end
 
@@ -711,7 +730,11 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
     local metadataCandidate
     for _, spellID in ipairs({info.spellID, info.overrideSpellID, info.overrideTooltipSpellID}) do
         local numericID = tonumber(spellID)
-        if numericID and numericID ~= 0 and numericID ~= buttonData.id and numericID ~= baseId then
+        if numericID
+            and numericID ~= 0
+            and numericID ~= buttonData.id
+            and numericID ~= baseId
+            and not IsDistinctAuraIdentityForButton(buttonData, numericID) then
             if metadataCandidate and metadataCandidate ~= numericID then
                 return nil
             end
@@ -721,7 +744,11 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
     if info.linkedSpellIDs then
         for _, linkedSpellID in ipairs(info.linkedSpellIDs) do
             local numericID = tonumber(linkedSpellID)
-            if numericID and numericID ~= 0 and numericID ~= buttonData.id and numericID ~= baseId then
+            if numericID
+                and numericID ~= 0
+                and numericID ~= buttonData.id
+                and numericID ~= baseId
+                and not IsDistinctAuraIdentityForButton(buttonData, numericID) then
                 if metadataCandidate and metadataCandidate ~= numericID then
                     return nil
                 end
