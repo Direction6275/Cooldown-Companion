@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.19.5",
         "1.19.4",
         "1.19.3",
         "1.19.2",
@@ -44,6 +45,14 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.19.5"] = {
+            markdown = [[
+## Bug Fixes
+
+- **Death Strike Tracking:** Blood Death Knights can add Death Strike as a normal spell entry again, without it turning into Coagulating Blood unless that aura is intentionally tracked.
+- **Surging Totem Cooldowns:** Enhancement Shamans should no longer see Surging Totem as ready while its real cooldown is still running, including in Spell Custom Bars while the totem is active.
+]],
+        },
         ["1.19.4"] = {
             markdown = [[
 ## Bug Fixes
