@@ -75,6 +75,37 @@ local function CDMAuraChildrenShareResolvedSpellID(children)
     return resolvedID ~= nil
 end
 
+local function CooldownInfoReferencesSpellID(cooldownInfo, spellID)
+    if type(cooldownInfo) ~= "table" or not IsConcreteSpellID(spellID) then
+        return false
+    end
+    if cooldownInfo.spellID == spellID
+        or cooldownInfo.overrideSpellID == spellID
+        or cooldownInfo.overrideTooltipSpellID == spellID then
+        return true
+    end
+    if cooldownInfo.linkedSpellIDs then
+        for _, linkedSpellID in ipairs(cooldownInfo.linkedSpellIDs) do
+            if linkedSpellID == spellID then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function AddCDMAuraIDForReferencedSpell(cdmAuraIDsByBase, spellID, auraID)
+    if not (IsConcreteSpellID(spellID) and auraID) then
+        return
+    end
+    local byBase = cdmAuraIDsByBase[spellID]
+    if not byBase then
+        byBase = {}
+        cdmAuraIDsByBase[spellID] = byBase
+    end
+    byBase[auraID] = true
+end
+
 local function TrackedCDMAuraIdentitiesAreDistinct(spellID)
     local found = false
     for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
@@ -82,7 +113,7 @@ local function TrackedCDMAuraIdentitiesAreDistinct(spellID)
         if ids then
             for _, cdID in ipairs(ids) do
                 local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info and info.spellID == spellID then
+                if CooldownInfoReferencesSpellID(info, spellID) then
                     found = true
                     local auraID = ResolveCDMAuraSpellID(info)
                     if not (auraID and IsDistinctCDMAuraIdentity(spellID, auraID)) then
@@ -633,15 +664,17 @@ local function BuildAutocompleteCache()
         if ids then
             for _, cdID in ipairs(ids) do
                 local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info and IsConcreteSpellID(info.spellID) then
+                if info then
                     local auraID = ResolveCDMAuraSpellID(info)
                     if auraID then
-                        local byBase = cdmAuraIDsByBase[info.spellID]
-                        if not byBase then
-                            byBase = {}
-                            cdmAuraIDsByBase[info.spellID] = byBase
+                        AddCDMAuraIDForReferencedSpell(cdmAuraIDsByBase, info.spellID, auraID)
+                        AddCDMAuraIDForReferencedSpell(cdmAuraIDsByBase, info.overrideSpellID, auraID)
+                        AddCDMAuraIDForReferencedSpell(cdmAuraIDsByBase, info.overrideTooltipSpellID, auraID)
+                        if info.linkedSpellIDs then
+                            for _, linkedSpellID in ipairs(info.linkedSpellIDs) do
+                                AddCDMAuraIDForReferencedSpell(cdmAuraIDsByBase, linkedSpellID, auraID)
+                            end
                         end
-                        byBase[auraID] = true
                     end
                 end
             end
