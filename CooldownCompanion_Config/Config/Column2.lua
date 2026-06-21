@@ -48,6 +48,13 @@ local SelectConfigRotationAssistantEntry = ST._SelectConfigRotationAssistantEntr
 
 local IsTriggerPanelGroup
 
+local function OpenPanelLoadConditions(panelId, containerId)
+    SelectConfigPanel(panelId, { containerId = containerId })
+    CS.selectedTab = "loadconditions"
+    CS.panelSettingsTab = "loadconditions"
+    CooldownCompanion:RefreshConfigPanel()
+end
+
 local function HideAllBarWidgets(col2)
     if col2._barsStylingScroll then col2._barsStylingScroll.frame:Hide() end
     if col2._resourceStylingTabGroup then col2._resourceStylingTabGroup.frame:Hide() end
@@ -2240,6 +2247,11 @@ local function RefreshColumn2()
                             return
                         end
 
+                        if IsShiftKeyDown() then
+                            OpenPanelLoadConditions(panelId, CS.selectedContainer)
+                            return
+                        end
+
                         SelectConfigPanel(panelId, { toggle = true })
                         CooldownCompanion:RefreshConfigPanel()
                         return
@@ -2287,6 +2299,15 @@ local function RefreshColumn2()
                                 ctxPanel.enabled = not (ctxPanel.enabled ~= false)
                                 CooldownCompanion:RefreshGroupFrame(ctxPanelId)
                                 CooldownCompanion:RefreshConfigPanel()
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+
+                            info = UIDropDownMenu_CreateInfo()
+                            info.text = "Load Conditions"
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                OpenPanelLoadConditions(ctxPanelId, ctxContainerId)
                             end
                             UIDropDownMenu_AddButton(info, level)
 

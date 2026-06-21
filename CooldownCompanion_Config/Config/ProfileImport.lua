@@ -162,6 +162,21 @@ local function MarkForeignCharKey(foreignKeys, importerCharInfo, charKey, create
     end
 end
 
+local function MarkForeignAllowlistKeys(foreignKeys, importerCharInfo, charKey, entity)
+    local allowlist = type(entity) == "table"
+        and type(entity.loadConditions) == "table"
+        and entity.loadConditions.characterAllowlist
+        or nil
+    if type(allowlist) ~= "table" then
+        return
+    end
+    for allowlistKey, enabled in pairs(allowlist) do
+        if enabled == true then
+            MarkForeignCharKey(foreignKeys, importerCharInfo, charKey, allowlistKey)
+        end
+    end
+end
+
 local function CollectForeignCharacterKeys(profile, importerCharInfo, charKey)
     local foreignKeys = {}
     if type(profile.groups) == "table" then
@@ -169,6 +184,7 @@ local function CollectForeignCharacterKeys(profile, importerCharInfo, charKey)
             if type(group) == "table" and not group.isGlobal then
                 MarkForeignCharKey(foreignKeys, importerCharInfo, charKey, group.createdBy)
             end
+            MarkForeignAllowlistKeys(foreignKeys, importerCharInfo, charKey, group)
         end
     end
     if type(profile.groupContainers) == "table" then
@@ -176,6 +192,7 @@ local function CollectForeignCharacterKeys(profile, importerCharInfo, charKey)
             if type(container) == "table" and not container.isGlobal then
                 MarkForeignCharKey(foreignKeys, importerCharInfo, charKey, container.createdBy)
             end
+            MarkForeignAllowlistKeys(foreignKeys, importerCharInfo, charKey, container)
         end
     end
     if type(profile.folders) == "table" then
@@ -183,6 +200,7 @@ local function CollectForeignCharacterKeys(profile, importerCharInfo, charKey)
             if type(folder) == "table" and folder.section == "char" then
                 MarkForeignCharKey(foreignKeys, importerCharInfo, charKey, folder.createdBy)
             end
+            MarkForeignAllowlistKeys(foreignKeys, importerCharInfo, charKey, folder)
         end
     end
     return foreignKeys
@@ -227,11 +245,31 @@ local function BuildForeignCharacterRenames(foreignKeys, exportedCharInfo, impor
 end
 
 local function ApplyCharacterRenames(profile, renames)
+    local function RenameAllowlist(entity)
+        local allowlist = type(entity) == "table"
+            and type(entity.loadConditions) == "table"
+            and entity.loadConditions.characterAllowlist
+            or nil
+        if type(allowlist) ~= "table" then
+            return
+        end
+        for oldKey, newKey in pairs(renames or {}) do
+            if allowlist[oldKey] == true then
+                allowlist[newKey] = true
+                allowlist[oldKey] = nil
+            end
+        end
+        if not next(allowlist) then
+            entity.loadConditions.characterAllowlist = nil
+        end
+    end
+
     if type(profile.groups) == "table" then
         for _, group in pairs(profile.groups) do
             if type(group) == "table" and group.createdBy and renames[group.createdBy] then
                 group.createdBy = renames[group.createdBy]
             end
+            RenameAllowlist(group)
         end
     end
     if type(profile.groupContainers) == "table" then
@@ -239,6 +277,7 @@ local function ApplyCharacterRenames(profile, renames)
             if type(container) == "table" and container.createdBy and renames[container.createdBy] then
                 container.createdBy = renames[container.createdBy]
             end
+            RenameAllowlist(container)
         end
     end
     if type(profile.folders) == "table" then
@@ -246,6 +285,7 @@ local function ApplyCharacterRenames(profile, renames)
             if type(folder) == "table" and folder.createdBy and renames[folder.createdBy] then
                 folder.createdBy = renames[folder.createdBy]
             end
+            RenameAllowlist(folder)
         end
     end
 end
@@ -309,6 +349,11 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
 
     local charKey = db.keys and db.keys.char
     RemapCurrentCharacterEntities(db.profile, charKey, exporterCharKey)
+    if type(exporterCharKey) == "string" and exporterCharKey ~= ""
+        and type(charKey) == "string" and charKey ~= ""
+    then
+        ApplyCharacterRenames(db.profile, { [exporterCharKey] = charKey })
+    end
     RemapCharacterScopedStores(db.profile, charKey, exporterCharKey)
 
     if options.renameForeignCharacters then

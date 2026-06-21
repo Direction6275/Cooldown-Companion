@@ -72,6 +72,12 @@ local LOCAL_LOAD_CONDITION_DEFAULTS = {
     vehicleUI = false,
 }
 
+local LOAD_CONDITION_ALLOWLIST_KEYS = {
+    classAllowlist = true,
+    specAllowlist = true,
+    characterAllowlist = true,
+}
+
 local function GetFrameName(frame)
     if not frame then
         return nil
@@ -83,6 +89,121 @@ local function GetFrameName(frame)
         return "CooldownCompanionGroup" .. frame.groupId
     end
     return frame.name
+end
+
+local function NormalizeClassKey(key)
+    if type(key) ~= "string" or key == "" then return nil end
+    return string.upper(key)
+end
+
+local function NormalizeSpecKey(key)
+    local specId = tonumber(key)
+    if not specId then return nil end
+    return specId
+end
+
+local function NormalizeCharacterKey(key)
+    if type(key) ~= "string" or key == "" then return nil end
+    return key
+end
+
+local function NormalizeTruthyMap(map, normalizer, failClosed)
+    if map == nil then return nil, false, false end
+    if type(map) ~= "table" then return nil, true, true end
+
+    local normalized = {}
+    local sawEntry = false
+    for key, enabled in pairs(map) do
+        sawEntry = true
+        if enabled == true then
+            local normalizedKey = normalizer(key)
+            if normalizedKey ~= nil then
+                normalized[normalizedKey] = true
+            end
+        end
+    end
+
+    if next(normalized) then
+        return normalized, false, true
+    end
+    if sawEntry and failClosed then
+        return {}, false, true
+    end
+    return nil, false, false
+end
+
+local function CopyTruthyMap(map)
+    if not map then return nil end
+    local copy = {}
+    for key in pairs(map) do
+        copy[key] = true
+    end
+    return copy
+end
+
+local function IntersectTruthyMaps(left, right)
+    local intersection = {}
+    for key in pairs(left or {}) do
+        if right and right[key] then
+            intersection[key] = true
+        end
+    end
+    return intersection
+end
+
+local function AddEffectiveSource(sources, map, inherited, normalizer)
+    local normalized, _, hasRestriction = NormalizeTruthyMap(map, normalizer, true)
+    if hasRestriction then
+        sources[#sources + 1] = {
+            values = normalized or {},
+            inherited = inherited and true or false,
+        }
+    end
+end
+
+local function ResolveEffectiveSources(sources)
+    local effective
+    local inherited = false
+    local hasRestriction = false
+
+    for _, source in ipairs(sources or {}) do
+        hasRestriction = true
+        if source.inherited then inherited = true end
+        if effective == nil then
+            effective = CopyTruthyMap(source.values) or {}
+        else
+            effective = IntersectTruthyMaps(effective, source.values)
+        end
+    end
+
+    return effective, inherited, hasRestriction
+end
+
+local function MergeEligibilityAllowlist(state, key, map, normalizer)
+    local normalized, malformed, hasRestriction = NormalizeTruthyMap(map, normalizer, true)
+    if malformed then
+        state[key .. "Restricted"] = true
+        state[key .. "NoMatch"] = true
+        state[key] = {}
+        return false
+    end
+    if not hasRestriction then return true end
+
+    local restrictedKey = key .. "Restricted"
+    state[restrictedKey] = true
+    if state[key] == nil then
+        state[key] = CopyTruthyMap(normalized) or {}
+    else
+        state[key] = IntersectTruthyMaps(state[key], normalized)
+    end
+    return true
+end
+
+local function AllowlistMatches(state, key, currentValue)
+    if not state[key .. "Restricted"] then return true end
+    if state[key .. "NoMatch"] then return false end
+    if currentValue == nil then return false end
+    return state[key] and state[key][currentValue] == true
 end
 
 local function GetCurrentAnchorTargetName(frame)
@@ -705,8 +826,8 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
         return false
     end
 
-    local effectiveSpecs = self:GetEffectiveSpecs(group)
-    if effectiveSpecs and next(effectiveSpecs) then
+    local effectiveSpecs, _, hasSpecFilter = self:GetEffectiveSpecs(group)
+    if hasSpecFilter then
         if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
             return false
         end
@@ -732,61 +853,57 @@ end
 function CooldownCompanion:GetEffectiveSpecs(group)
     if not group then return nil, false end
 
-    -- Panel: container specs (includes stamped folder specs) → panel's own
+    local sources = {}
+
     local container = self:GetParentContainer(group)
     if container then
-        if container.specs and next(container.specs) then
-            return container.specs, true
+        local folderId = container.folderId
+        if folderId then
+            local folders = self.db and self.db.profile and self.db.profile.folders
+            local folder = folders and folders[folderId]
+            AddEffectiveSource(sources, folder and folder.specs, true, NormalizeSpecKey)
         end
-        -- Fall through to panel's own
-        return group.specs, false
+        AddEffectiveSource(sources, container.specs, true, NormalizeSpecKey)
+        AddEffectiveSource(sources, group.specs, false, NormalizeSpecKey)
+    else
+        local folderId = group.folderId
+        if folderId then
+            local folders = self.db and self.db.profile and self.db.profile.folders
+            local folder = folders and folders[folderId]
+            AddEffectiveSource(sources, folder and folder.specs, true, NormalizeSpecKey)
+        end
+        AddEffectiveSource(sources, group.specs, false, NormalizeSpecKey)
     end
 
-    -- Non-panel group: check folder cascade
-    local folderId = group.folderId
-    if folderId then
-        local folders = self.db and self.db.profile and self.db.profile.folders
-        local folder = folders and folders[folderId]
-        if folder and folder.specs and next(folder.specs) then
-            return folder.specs, true
-        end
-    end
-    return group.specs, false
+    return ResolveEffectiveSources(sources)
 end
 
 function CooldownCompanion:GetEffectiveHeroTalents(group)
     if not group then return nil, false end
 
-    -- Panel cascade: folder → container → panel's own heroTalents
+    local sources = {}
+
     local container = self:GetParentContainer(group)
     if container then
-        -- Check folder first
         local folderId = container.folderId
         if folderId then
             local folders = self.db and self.db.profile and self.db.profile.folders
             local folder = folders and folders[folderId]
-            if folder and folder.heroTalents and next(folder.heroTalents) then
-                return folder.heroTalents, true
-            end
+            AddEffectiveSource(sources, folder and folder.heroTalents, true, NormalizeSpecKey)
         end
-        -- Then container's own heroTalents
-        if container.heroTalents and next(container.heroTalents) then
-            return container.heroTalents, true
+        AddEffectiveSource(sources, container.heroTalents, true, NormalizeSpecKey)
+        AddEffectiveSource(sources, group.heroTalents, false, NormalizeSpecKey)
+    else
+        local folderId = group.folderId
+        if folderId then
+            local folders = self.db and self.db.profile and self.db.profile.folders
+            local folder = folders and folders[folderId]
+            AddEffectiveSource(sources, folder and folder.heroTalents, true, NormalizeSpecKey)
         end
-        -- Fall through to panel's own
-        return group.heroTalents, false
+        AddEffectiveSource(sources, group.heroTalents, false, NormalizeSpecKey)
     end
 
-    -- Non-panel container: check folder cascade
-    local folderId = group.folderId
-    if folderId then
-        local folders = self.db and self.db.profile and self.db.profile.folders
-        local folder = folders and folders[folderId]
-        if folder and folder.heroTalents and next(folder.heroTalents) then
-            return folder.heroTalents, true
-        end
-    end
-    return group.heroTalents, false
+    return ResolveEffectiveSources(sources)
 end
 
 local function CopyTalentCondition(cond)
@@ -1071,8 +1188,8 @@ function CooldownCompanion:SetFolderHeroTalent(folderId, subTreeID, enabled)
 end
 
 function CooldownCompanion:IsHeroTalentAllowed(group)
-    local effectiveHeroTalents = self:GetEffectiveHeroTalents(group)
-    if not (effectiveHeroTalents and next(effectiveHeroTalents)) then return true end
+    local effectiveHeroTalents, _, hasHeroTalentFilter = self:GetEffectiveHeroTalents(group)
+    if not hasHeroTalentFilter then return true end
     local heroSpecId = self._currentHeroSpecId
     if not heroSpecId then return true end  -- low level, no hero talent selected
     return effectiveHeroTalents[heroSpecId] == true
@@ -1154,8 +1271,8 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
     end
 
     -- Spec and hero talent filtering (GetEffectiveSpecs already delegates to container)
-    local effectiveSpecs = self:GetEffectiveSpecs(group)
-    if effectiveSpecs and next(effectiveSpecs) then
+    local effectiveSpecs, _, hasSpecFilter = self:GetEffectiveSpecs(group)
+    if hasSpecFilter then
         if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
             return false
         end
@@ -1521,8 +1638,11 @@ function CooldownCompanion:HasLocalLoadConditions(entity)
     if not (type(entity) == "table" and type(entity.loadConditions) == "table") then
         return false
     end
-    for _, value in pairs(entity.loadConditions) do
+    for key, value in pairs(entity.loadConditions) do
         if value == true then
+            return true
+        end
+        if LOAD_CONDITION_ALLOWLIST_KEYS[key] and type(value) == "table" and next(value) then
             return true
         end
     end
@@ -1573,18 +1693,39 @@ function CooldownCompanion:EvaluateLoadConditions(loadConditions, defaults)
     return true
 end
 
+function CooldownCompanion:GetCurrentEligibilityIdentity()
+    local classFilename = self._playerClassFilename
+    if not classFilename and UnitClass then
+        classFilename = select(2, UnitClass("player"))
+    end
+    return {
+        classFilename = NormalizeClassKey(classFilename),
+        specId = self._currentSpecId,
+        charKey = self.db and self.db.keys and self.db.keys.char or nil,
+    }
+end
+
 function CooldownCompanion:CheckLoadConditions(group)
     return self:EvaluateLoadConditions(group and group.loadConditions)
 end
 
-local function AddLoadConditionSource(sources, label, entity, defaults)
+local function AddLoadConditionSource(sources, label, entity, defaults, allowClassEligibility)
     if type(entity) == "table" and type(entity.loadConditions) == "table" then
         sources[#sources + 1] = {
             label = label,
             loadConditions = entity.loadConditions,
             defaults = defaults,
+            allowClassEligibility = allowClassEligibility == true,
         }
     end
+end
+
+local function IsFolderGlobalScope(folder)
+    return type(folder) == "table" and folder.section == "global"
+end
+
+local function IsContainerGlobalScope(container)
+    return type(container) == "table" and container.isGlobal == true
 end
 
 function CooldownCompanion:GetInheritedLoadConditionSources(group)
@@ -1595,34 +1736,58 @@ function CooldownCompanion:GetInheritedLoadConditionSources(group)
     local container = self:GetParentContainer(group)
     if container then
         local folder = container.folderId and db.folders and db.folders[container.folderId]
-        AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS)
-        AddLoadConditionSource(sources, "Group", container, LOAD_CONDITION_DEFAULTS)
+        AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS, IsFolderGlobalScope(folder))
+        AddLoadConditionSource(sources, "Group", container, LOAD_CONDITION_DEFAULTS, IsContainerGlobalScope(container))
         return sources
     end
 
     local folder = group.folderId and db.folders and db.folders[group.folderId]
-    AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS)
+    AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS, IsFolderGlobalScope(folder))
     return sources
 end
 
 function CooldownCompanion:GetLoadConditionSourcesForGroup(group)
     local sources = self:GetInheritedLoadConditionSources(group)
     if group then
-        AddLoadConditionSource(sources, group.parentContainerId and "Panel" or "Group", group, LOAD_CONDITION_DEFAULTS)
+        local container = self:GetParentContainer(group)
+        local allowClassEligibility
+        if container then
+            allowClassEligibility = IsContainerGlobalScope(container)
+        else
+            allowClassEligibility = group.isGlobal == true
+        end
+        AddLoadConditionSource(sources, group.parentContainerId and "Panel" or "Group", group, LOAD_CONDITION_DEFAULTS, allowClassEligibility)
     end
     return sources
 end
 
 function CooldownCompanion:GetLoadConditionSourcesForEntry(buttonData, group)
     local sources = self:GetLoadConditionSourcesForGroup(group)
-    AddLoadConditionSource(sources, "Entry", buttonData, LOCAL_LOAD_CONDITION_DEFAULTS)
+    AddLoadConditionSource(sources, "Entry", buttonData, LOCAL_LOAD_CONDITION_DEFAULTS, false)
     return sources
 end
 
 function CooldownCompanion:EvaluateLoadConditionSources(sources)
+    local eligibility = {}
+    local identity = self:GetCurrentEligibilityIdentity()
+
     for _, source in ipairs(sources or {}) do
         if not self:EvaluateLoadConditions(source.loadConditions, source.defaults) then
             return false, source.label
+        end
+        local loadConditions = source.loadConditions
+        if type(loadConditions) == "table" then
+            if source.allowClassEligibility then
+                MergeEligibilityAllowlist(eligibility, "class", loadConditions.classAllowlist, NormalizeClassKey)
+            end
+            MergeEligibilityAllowlist(eligibility, "spec", loadConditions.specAllowlist, NormalizeSpecKey)
+            MergeEligibilityAllowlist(eligibility, "character", loadConditions.characterAllowlist, NormalizeCharacterKey)
+            if not AllowlistMatches(eligibility, "class", identity.classFilename)
+                or not AllowlistMatches(eligibility, "spec", identity.specId)
+                or not AllowlistMatches(eligibility, "character", identity.charKey)
+            then
+                return false, source.label
+            end
         end
     end
     return true, nil

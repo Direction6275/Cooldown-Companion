@@ -17,11 +17,55 @@ local UNSUPPORTED_COMPACT_FORMATS = {
     compact2 = true,
 }
 
+local LOAD_CONDITION_ALLOWLIST_KEYS = {
+    classAllowlist = "class",
+    specAllowlist = "spec",
+    characterAllowlist = "character",
+}
+
 local function CopyValue(value)
     if type(value) == "table" then
         return CopyTable(value)
     end
     return value
+end
+
+local function NormalizeAllowlistKey(kind, key)
+    if kind == "class" then
+        if type(key) ~= "string" or key == "" then return nil end
+        return string.upper(key)
+    elseif kind == "spec" then
+        return tonumber(key)
+    elseif kind == "character" then
+        if type(key) ~= "string" or key == "" then return nil end
+        return key
+    end
+    return nil
+end
+
+local function CopyAllowlistMap(map, kind)
+    if type(map) ~= "table" then return nil end
+    local copy = {}
+    for key, enabled in pairs(map) do
+        if enabled == true then
+            local normalizedKey = NormalizeAllowlistKey(kind, key)
+            if normalizedKey ~= nil then
+                copy[normalizedKey] = true
+            end
+        end
+    end
+    return next(copy) and copy or nil
+end
+
+local function NormalizeLoadConditionAllowlists(loadConditions)
+    if type(loadConditions) ~= "table" then return loadConditions end
+    local normalized = CopyTable(loadConditions)
+    for key, kind in pairs(LOAD_CONDITION_ALLOWLIST_KEYS or {}) do
+        if normalized[key] ~= nil then
+            normalized[key] = CopyAllowlistMap(normalized[key], kind)
+        end
+    end
+    return normalized
 end
 
 local LOAD_CONDITIONS_DEFAULTS = {
@@ -423,7 +467,8 @@ local function CompactLoadConditions(loadConditions, formatVersion, localScope)
     if type(loadConditions) ~= "table" then
         return nil
     end
-    local compact = CompactTableAgainstDefaults(loadConditions, GetLoadConditionsDefaults(formatVersion, localScope))
+    local normalized = NormalizeLoadConditionAllowlists(loadConditions)
+    local compact = CompactTableAgainstDefaults(normalized, GetLoadConditionsDefaults(formatVersion, localScope))
     if localScope then
         return compact
     end
@@ -439,6 +484,11 @@ local function RehydrateLoadConditions(loadConditions, formatVersion, localScope
         for key, value in pairs(loadConditions) do
             if value == true then
                 localOnly[key] = true
+            elseif LOAD_CONDITION_ALLOWLIST_KEYS[key] then
+                local allowlist = CopyAllowlistMap(value, LOAD_CONDITION_ALLOWLIST_KEYS[key])
+                if allowlist then
+                    localOnly[key] = allowlist
+                end
             end
         end
         return next(localOnly) and localOnly or nil
