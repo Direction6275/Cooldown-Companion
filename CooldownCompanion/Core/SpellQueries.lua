@@ -42,11 +42,18 @@ function ST.IsDistinctCDMAuraIdentity(spellID, auraID)
     end
 
     local auraBase = C_Spell.GetBaseSpell(auraID)
-    if auraBase ~= nil and not IsConcreteSpellID(auraBase) then
-        return false
-    end
-    if auraBase == spellID then
-        return false
+    if auraBase ~= nil then
+        if issecretvalue and issecretvalue(auraBase) then
+            return false
+        end
+        if auraBase ~= 0 then
+            if not IsConcreteSpellID(auraBase) then
+                return false
+            end
+            if auraBase == spellID then
+                return false
+            end
+        end
     end
 
     local spellName = C_Spell.GetSpellName(spellID)

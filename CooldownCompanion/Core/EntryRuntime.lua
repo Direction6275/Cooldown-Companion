@@ -8,6 +8,8 @@ local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
 local IsNoCooldownSpell = ST.IsNoCooldownSpell
 local HasPositiveResourceGateCost = ST.HasPositiveResourceGateCost
+local IsDistinctAuraViewerFrameForSpell = ST.IsDistinctAuraViewerFrameForSpell
+local ResolveCDMAuraSpellID = ST.ResolveCDMAuraSpellID
 
 local ipairs = ipairs
 local tonumber = tonumber
@@ -149,10 +151,50 @@ local function GetParsedAuraIDs(owner, buttonData)
     return owner._parsedAuraIDs, owner._parsedAuraIDsIncludeButtonID == true
 end
 
-local function ResolvePreferredAuraViewerFrame(candidateIDs, configUnit, auraUnit, now, allowDurationlessAuraInstance)
+local function ButtonExplicitlyTracksViewerAura(buttonData, viewerFrame)
+    if not (buttonData and buttonData.auraSpellID and viewerFrame) then
+        return false
+    end
+
+    local auraID = ResolveCDMAuraSpellID and ResolveCDMAuraSpellID(viewerFrame.cooldownInfo)
+    if not auraID then
+        return false
+    end
+
+    for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
+        if tonumber(id) == auraID then
+            return true
+        end
+    end
+    return false
+end
+
+local function ResolveAllowedBuffViewerFrameForSpell(buttonData, spellID)
+    local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
+    if viewerFrame
+        and IsDistinctAuraViewerFrameForSpell
+        and IsDistinctAuraViewerFrameForSpell(buttonData, viewerFrame)
+        and not ButtonExplicitlyTracksViewerAura(buttonData, viewerFrame) then
+        return nil
+    end
+    return viewerFrame
+end
+
+local function ResolveAllowedButtonAuraViewerFrame(buttonData)
+    local viewerFrame = CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
+    if viewerFrame
+        and IsDistinctAuraViewerFrameForSpell
+        and IsDistinctAuraViewerFrameForSpell(buttonData, viewerFrame)
+        and not ButtonExplicitlyTracksViewerAura(buttonData, viewerFrame) then
+        return nil
+    end
+    return viewerFrame
+end
+
+local function ResolvePreferredAuraViewerFrame(buttonData, candidateIDs, configUnit, auraUnit, now, allowDurationlessAuraInstance)
     local firstTrackedFrame
     for _, spellID in ipairs(candidateIDs or {}) do
-        local viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
+        local viewerFrame = ResolveAllowedBuffViewerFrameForSpell(buttonData, spellID)
         if viewerFrame then
             if ViewerFrameHasActiveAuraProof(viewerFrame, configUnit, auraUnit, now, allowDurationlessAuraInstance) then
                 return viewerFrame, firstTrackedFrame
@@ -162,6 +204,7 @@ local function ResolvePreferredAuraViewerFrame(candidateIDs, configUnit, auraUni
     end
     return nil, firstTrackedFrame
 end
+
 local function ResolveTrackedAuraViewerFrame(owner, buttonData, auraSpellID, configUnit, auraUnit, now, allowDurationlessAuraInstance, useButtonAuraViewerFallback)
     local viewerFrame
     local cdmEnabled
@@ -208,6 +251,7 @@ local function ResolveTrackedAuraViewerFrame(owner, buttonData, auraSpellID, con
 
     if not viewerFrame and orderedStandaloneAuraIDs then
         local originalActiveFrame, firstOriginalFrame = ResolvePreferredAuraViewerFrame(
+            buttonData,
             standaloneOriginalAuraIDs,
             configUnit,
             auraUnit,
@@ -217,6 +261,7 @@ local function ResolveTrackedAuraViewerFrame(owner, buttonData, auraSpellID, con
         viewerFrame = originalActiveFrame
         if not viewerFrame then
             local fallbackActiveFrame, firstFallbackFrame = ResolvePreferredAuraViewerFrame(
+                buttonData,
                 standaloneFallbackAuraIDs,
                 configUnit,
                 auraUnit,
@@ -228,6 +273,7 @@ local function ResolveTrackedAuraViewerFrame(owner, buttonData, auraSpellID, con
     elseif not viewerFrame and buttonData.auraSpellID then
         local ids = GetParsedAuraIDs(owner, buttonData)
         local activeFrame, firstTrackedFrame = ResolvePreferredAuraViewerFrame(
+            buttonData,
             ids,
             configUnit,
             auraUnit,
@@ -238,20 +284,20 @@ local function ResolveTrackedAuraViewerFrame(owner, buttonData, auraSpellID, con
     end
 
     if not viewerFrame then
-        viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(auraSpellID)
+        viewerFrame = ResolveAllowedBuffViewerFrameForSpell(buttonData, auraSpellID)
         if not viewerFrame then
-            viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(buttonData.id)
-                or (owner._displaySpellId and CooldownCompanion:ResolveBuffViewerFrameForSpell(owner._displaySpellId))
+            viewerFrame = ResolveAllowedBuffViewerFrameForSpell(buttonData, buttonData.id)
+                or (owner._displaySpellId and ResolveAllowedBuffViewerFrameForSpell(buttonData, owner._displaySpellId))
             if not viewerFrame then
                 local baseId = C_Spell.GetBaseSpell(buttonData.id)
                 if baseId and baseId ~= buttonData.id and baseId ~= auraSpellID then
-                    viewerFrame = CooldownCompanion:ResolveBuffViewerFrameForSpell(baseId)
+                    viewerFrame = ResolveAllowedBuffViewerFrameForSpell(buttonData, baseId)
                 end
             end
         end
     end
     if not viewerFrame and useButtonAuraViewerFallback then
-        viewerFrame = CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
+        viewerFrame = ResolveAllowedButtonAuraViewerFrame(buttonData)
     end
 
     return viewerFrame, cdmEnabled, orderedStandaloneAuraIDs
