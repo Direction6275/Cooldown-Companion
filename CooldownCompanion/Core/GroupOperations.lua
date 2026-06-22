@@ -78,6 +78,8 @@ local LOAD_CONDITION_ALLOWLIST_KEYS = {
     characterAllowlist = true,
 }
 
+local CLASS_SCAN_LIMIT = 30
+
 local function GetFrameName(frame)
     if not frame then
         return nil
@@ -209,10 +211,7 @@ local function ResolveEffectiveSources(sources)
         elseif effective == nil then
             effective = CopyTruthyMap(source.values) or {}
         else
-            local intersection = IntersectTruthyMaps(effective, source.values)
-            if next(intersection) then
-                effective = intersection
-            end
+            effective = IntersectTruthyMaps(effective, source.values)
         end
     end
 
@@ -234,10 +233,7 @@ local function MergeEligibilityAllowlist(state, key, map, normalizer)
     if state[key] == nil then
         state[key] = CopyTruthyMap(normalized) or {}
     else
-        local intersection = IntersectTruthyMaps(state[key], normalized)
-        if next(intersection) then
-            state[key] = intersection
-        end
+        state[key] = IntersectTruthyMaps(state[key], normalized)
     end
     return true
 end
@@ -1393,6 +1389,17 @@ local function GetClassKeyFromClassID(classID)
     return NormalizeClassKey(classFilename)
 end
 
+local function GetClassIDFromClassKey(classKey)
+    classKey = NormalizeClassKey(classKey)
+    if not (classKey and GetClassInfo) then return nil end
+    for classID = 1, CLASS_SCAN_LIMIT do
+        if GetClassKeyFromClassID(classID) == classKey then
+            return classID
+        end
+    end
+    return nil
+end
+
 local function GetCurrentScopeClassKey(addon)
     local classFilename = addon and addon._playerClassFilename
     if not classFilename and UnitClass then
@@ -1412,6 +1419,43 @@ local function SpecBelongsToClass(specId, classKey)
     if not classKey then return true end
     local specClassKey = GetSpecClassKey(specId)
     return specClassKey == classKey
+end
+
+local function HeroTalentBelongsToClass(subTreeID, classKey)
+    subTreeID = tonumber(subTreeID)
+    if not classKey then return true end
+    if not (subTreeID
+        and C_ClassTalents
+        and C_ClassTalents.GetHeroTalentSpecsForClassSpec
+        and C_SpecializationInfo
+        and C_SpecializationInfo.GetNumSpecializationsForClassID
+        and C_SpecializationInfo.GetSpecializationInfo)
+    then
+        return false
+    end
+
+    local classID = GetClassIDFromClassKey(classKey)
+    if not classID then return false end
+
+    local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID) or 0
+    for specIndex = 1, numSpecs do
+        local specId = C_SpecializationInfo.GetSpecializationInfo(
+            specIndex,
+            false,
+            false,
+            nil,
+            nil,
+            nil,
+            classID
+        )
+        local subTreeIDs = specId and C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
+        for _, availableSubTreeID in ipairs(subTreeIDs or {}) do
+            if tonumber(availableSubTreeID) == subTreeID then
+                return true
+            end
+        end
+    end
+    return false
 end
 
 local function GetCharacterClassKey(addon, charKey)
@@ -1481,6 +1525,31 @@ local function PruneCharacterMapToClass(addon, map, classKey, ownerCharKey)
     return changed
 end
 
+local function PruneHeroTalentMapToClass(entity, classKey)
+    if type(entity) ~= "table" or type(entity.heroTalents) ~= "table" or not classKey then return false end
+    local changed = false
+    for subTreeID in pairs(entity.heroTalents) do
+        local normalizedSubTreeID = tonumber(subTreeID)
+        if normalizedSubTreeID and HeroTalentBelongsToClass(normalizedSubTreeID, classKey) then
+            if subTreeID ~= normalizedSubTreeID then
+                entity.heroTalents[normalizedSubTreeID] = true
+                entity.heroTalents[subTreeID] = nil
+                changed = true
+            end
+        else
+            entity.heroTalents[subTreeID] = nil
+            if normalizedSubTreeID then
+                entity.heroTalents[normalizedSubTreeID] = nil
+            end
+            changed = true
+        end
+    end
+    if not next(entity.heroTalents) then
+        entity.heroTalents = nil
+    end
+    return changed
+end
+
 local function WithOwnerCharKey(opts, ownerCharKey)
     if opts and opts.ownerCharKey then return opts end
     local scopedOpts = opts and CopyTable(opts) or {}
@@ -1505,6 +1574,7 @@ function CooldownCompanion:NormalizeEligibilityForCharacterScope(entity, opts)
             entity.specs = nil
         end
     end
+    changed = PruneHeroTalentMapToClass(entity, classKey) or changed
 
     local loadConditions = entity.loadConditions
     if type(loadConditions) == "table" then

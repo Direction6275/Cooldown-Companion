@@ -96,6 +96,17 @@ local function RefreshPanelAlphaDependencyTargets(self)
     end
 end
 
+local function NormalizeCopiedEntityForContainerScope(self, entity, container)
+    if type(entity) ~= "table" or not container or container.isGlobal == true then
+        return
+    end
+    if self.NormalizeEligibilityForCharacterScope then
+        self:NormalizeEligibilityForCharacterScope(entity, {
+            ownerCharKey = container.createdBy or (self.db and self.db.keys and self.db.keys.char),
+        })
+    end
+end
+
 function CooldownCompanion:NormalizeContainerAnchor(anchor, resolveAddonFrames)
     local normalized = type(anchor) == "table" and anchor or {}
     local point = normalized.point or "CENTER"
@@ -967,6 +978,7 @@ function CooldownCompanion:DuplicateContainer(containerId)
     newContainer.specOrders = nil
     newContainer.createdBy = self.db.keys.char
     newContainer.isGlobal = false
+    NormalizeCopiedEntityForContainerScope(self, newContainer, newContainer)
 
     -- If source was global, clear folderId on the copy
     if sourceContainer.isGlobal and newContainer.folderId then
@@ -1001,6 +1013,7 @@ function CooldownCompanion:DuplicateContainer(containerId)
                 x = group.anchor and group.anchor.x or 0,
                 y = group.anchor and group.anchor.y or 0,
             }
+            NormalizeCopiedEntityForContainerScope(self, newPanel, newContainer)
 
             db.groups[newGroupId] = newPanel
             groupIdMap[groupId] = newGroupId
@@ -1165,6 +1178,7 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
     local db = self.db.profile
     local sourcePanel = db.groups[groupId]
     if not sourcePanel or sourcePanel.parentContainerId ~= containerId then return nil end
+    local container = db.groupContainers[containerId]
 
     local newGroupId = db.nextGroupId
     db.nextGroupId = newGroupId + 1
@@ -1173,6 +1187,7 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
     newPanel.name = sourcePanel.name .. " (Copy)"
     newPanel.order = self:GetPanelCount(containerId) + 1
     ResetCopiedStandalonePanelAnchor(newPanel, db.groups, groupId, containerId, containerId)
+    NormalizeCopiedEntityForContainerScope(self, newPanel, container)
 
     db.groups[newGroupId] = newPanel
     self:CreateGroupFrame(newGroupId)
@@ -1364,6 +1379,7 @@ function CooldownCompanion:DuplicateGroup(id)
     newGroup.order = newGroupId
     newGroup.createdBy = self.db.keys.char
     newGroup.isGlobal = false
+    NormalizeCopiedEntityForContainerScope(self, newGroup, newGroup)
     if sourceGroup.isGlobal and newGroup.folderId then
         newGroup.folderId = nil
     end
@@ -1967,7 +1983,8 @@ function CooldownCompanion:CopyPanelToContainer(sourceGroupId, targetContainerId
     local db = self.db.profile
     local sourcePanel = db.groups[sourceGroupId]
     if not sourcePanel then return nil end
-    if not db.groupContainers[targetContainerId] then return nil end
+    local targetContainer = db.groupContainers[targetContainerId]
+    if not targetContainer then return nil end
 
     local newGroupId = db.nextGroupId
     db.nextGroupId = newGroupId + 1
@@ -1985,6 +2002,7 @@ function CooldownCompanion:CopyPanelToContainer(sourceGroupId, targetContainerId
         y = 0,
     }
     ResetCopiedStandalonePanelAnchor(newPanel, db.groups, sourceGroupId, sourcePanel.parentContainerId, targetContainerId)
+    NormalizeCopiedEntityForContainerScope(self, newPanel, targetContainer)
 
     db.groups[newGroupId] = newPanel
     self:CreateGroupFrame(newGroupId)
@@ -2000,6 +2018,7 @@ function CooldownCompanion:CopyPanelAsNewGroup(sourceGroupId, sourceName)
 
     -- Create a new container
     local containerId = self:CreateContainer(sourceName or "Copied Group")
+    local container = db.groupContainers[containerId]
 
     -- Create container frame
     if self.CreateContainerFrame then
@@ -2024,6 +2043,7 @@ function CooldownCompanion:CopyPanelAsNewGroup(sourceGroupId, sourceName)
         y = 0,
     }
     ResetCopiedStandalonePanelAnchor(newPanel, db.groups, sourceGroupId, sourcePanel.parentContainerId, containerId)
+    NormalizeCopiedEntityForContainerScope(self, newPanel, container)
 
     db.groups[newGroupId] = newPanel
     self:CreateGroupFrame(newGroupId)

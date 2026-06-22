@@ -34,6 +34,7 @@ local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
+local BuildEligibilityBadgeMap = ST._BuildEligibilityBadgeMap
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local IsConfigFinderActive = ST._IsConfigFinderActive
@@ -2111,21 +2112,31 @@ local function RefreshColumn2()
                     sb:Hide()
                 end
 
-                local containerSpecs = container.specs
+                local containerSpecs = BuildEligibilityBadgeMap(
+                    container.specs,
+                    container.loadConditions and container.loadConditions.specAllowlist
+                )
                 local containerHeroTalents = container.heroTalents
                 local folderSpecs, folderHeroTalents
                 if container.folderId and profile.folders then
                     local folder = profile.folders[container.folderId]
                     if folder then
-                        folderSpecs = folder.specs
+                        folderSpecs = BuildEligibilityBadgeMap(
+                            folder.specs,
+                            folder.loadConditions and folder.loadConditions.specAllowlist
+                        )
                         folderHeroTalents = folder.heroTalents
                     end
                 end
 
                 local specBadgeIdx = 0
+                local panelSpecs = BuildEligibilityBadgeMap(
+                    panel.specs,
+                    panel.loadConditions and panel.loadConditions.specAllowlist
+                )
 
-                if panel.specs then
-                    for specId in pairs(panel.specs) do
+                if panelSpecs then
+                    for specId in pairs(panelSpecs) do
                         if not (containerSpecs and containerSpecs[specId])
                            and not (folderSpecs and folderSpecs[specId]) then
                             local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)

@@ -3929,10 +3929,14 @@ local function BuildFolderLoadConditionsTab(scroll, folderId)
     local folder = db.folders and db.folders[folderId]
     if not folder then return end
 
-    local function RefreshFolderDependents()
-        CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
+    local function RefreshFolderOnly()
         CooldownCompanion:RefreshAllGroups()
         CooldownCompanion:RefreshConfigPanel()
+    end
+
+    local function RefreshFolderSpecDependents()
+        CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
+        RefreshFolderOnly()
     end
 
     AddScopedLoadConditionToggles(scroll, {
@@ -3958,7 +3962,7 @@ local function BuildFolderLoadConditionsTab(scroll, folderId)
         allowClassEligibility = folder.section == "global",
         ownerCharKey = folder.createdBy,
         characterCollapsedKey = "folder_loadconditions_character",
-        onChanged = RefreshFolderDependents,
+        onChanged = RefreshFolderOnly,
     })
 
     local specHeading = AceGUI:Create("Heading")
@@ -3980,7 +3984,7 @@ local function BuildFolderLoadConditionsTab(scroll, folderId)
             eligibilitySubjectLabel = "folder",
             allowClassEligibility = folder.section == "global",
             ownerCharKey = folder.createdBy,
-            onChanged = RefreshFolderDependents,
+            onChanged = RefreshFolderSpecDependents,
         })
 
         if folder.specs or folder.heroTalents then
@@ -3993,7 +3997,7 @@ local function BuildFolderLoadConditionsTab(scroll, folderId)
                 if type(folder.loadConditions) == "table" then
                     folder.loadConditions.specAllowlist = nil
                 end
-                RefreshFolderDependents()
+                RefreshFolderSpecDependents()
             end)
             scroll:AddChild(clearSpecsBtn)
         end

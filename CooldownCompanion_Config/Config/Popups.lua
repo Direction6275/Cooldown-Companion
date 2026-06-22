@@ -449,7 +449,7 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
 }
 
 StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
-    text = "This will remove all spec filters and turn '%s' into a group for your current character. Continue?",
+    text = "This will remove foreign eligibility filters and turn '%s' into a group for your current character. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -475,7 +475,7 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
 }
 
 StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
-    text = "This will remove foreign spec filters and turn '%s' into a character group. Continue?",
+    text = "This will remove foreign eligibility filters and turn '%s' into a character group. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -520,7 +520,7 @@ StaticPopupDialogs["CDC_CROSS_PANEL_STRIP_OVERRIDES"] = {
 }
 
 StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
-    text = "This folder contains groups with foreign spec filters. Moving to character will remove those filters. Continue?",
+    text = "This folder contains groups with foreign eligibility filters. Moving to character will remove those filters. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -537,7 +537,7 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
 }
 
 StaticPopupDialogs["CDC_UNGLOBAL_FOLDER"] = {
-    text = "This folder contains groups with foreign spec filters. Moving '%s' to character will remove those filters. Continue?",
+    text = "This folder contains groups with foreign eligibility filters. Moving '%s' to character will remove those filters. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -595,7 +595,7 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_CUSTOM_BARS"] = {
 }
 
 StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
-    text = "Some selected groups have foreign spec filters. Moving to character will remove those filters. Continue?",
+    text = "Some selected groups have foreign eligibility filters. Moving to character will remove those filters. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -1234,6 +1234,8 @@ local function ApplyCustomBarsImportData(data, options)
     if RejectUnsupportedImportPayload(data, "custom bars import") then
         return false
     end
+    local importState = options and options.importState or NewGroupImportState()
+    StripImportCharacterEligibility(data, importState)
 
     local rb = ST._RB
     local settings = CooldownCompanion:GetResourceBarSettings()
@@ -1249,6 +1251,7 @@ local function ApplyCustomBarsImportData(data, options)
     if not (options and options.silentSuccess) then
         CooldownCompanion:Print(message)
     end
+    PrintImportSanitizerNotes(importState)
     CooldownCompanion:ApplyResourceBars()
     CooldownCompanion:UpdateAnchorStacking()
     CooldownCompanion:RefreshConfigPanel()
