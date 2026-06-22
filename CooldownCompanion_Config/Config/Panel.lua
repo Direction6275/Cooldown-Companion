@@ -1227,6 +1227,9 @@ local function CreateConfigPanel()
     otherClassBrowseBtn:SetScript("OnClick", function()
         CloseDropDownMenus()
         if CS.otherClassLibraryActive then
+            if ClearConfigPrimarySelection then
+                ClearConfigPrimarySelection()
+            end
             CS.otherClassLibraryActive = false
             CS.otherClassLibraryClassKey = nil
             CooldownCompanion:RefreshConfigPanel()
@@ -1237,6 +1240,9 @@ local function CreateConfigPanel()
         end
         if CS.resourceBarPanelActive then
             SetPrimaryMode("buttons", { skipRefresh = true })
+        end
+        if ClearConfigPrimarySelection then
+            ClearConfigPrimarySelection()
         end
         CS.otherClassLibraryActive = true
         CS.otherClassLibraryClassKey = nil
