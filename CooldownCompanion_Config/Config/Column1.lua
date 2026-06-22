@@ -1696,7 +1696,7 @@ local function RefreshColumn1(preserveDrag)
             section = {
                 key = scope.sectionKey,
                 classKey = scope.ownerClassKey,
-                title = GetClassDisplayName(scope.ownerClassKey) .. " Groups",
+                title = GetClassDisplayName(scope.ownerClassKey),
                 color = cc and { cc.r, cc.g, cc.b } or { 1, 1, 1 },
                 containerIds = {},
                 count = 0,
