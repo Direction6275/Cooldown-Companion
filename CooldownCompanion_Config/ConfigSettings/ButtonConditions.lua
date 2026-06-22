@@ -25,6 +25,7 @@ local appearanceTabElements = CS.appearanceTabElements
 
 local LOAD_CONDITION_OPTIONS = ST.LOAD_CONDITION_OPTIONS
 local REMOVE_BADGE_WIDGET_TYPE = "CDCEligibilityRemoveBadge"
+local VIEW_TRAIT_CONFIG_ID = (Constants and Constants.TraitConsts and Constants.TraitConsts.VIEW_TRAIT_CONFIG_ID) or -3
 
 if AceGUI and not AceGUI:GetWidgetVersion(REMOVE_BADGE_WIDGET_TYPE) then
     local function Badge_OnClick(frame, button)
@@ -1035,19 +1036,63 @@ local function BuildSpecChoiceIndex(specChoices)
     return bySpecId, byClassKey
 end
 
+local function EnsureHeroTalentViewConfig(specId)
+    if not (specId
+        and C_ClassTalents
+        and C_ClassTalents.InitializeViewLoadout
+        and C_Traits
+        and C_Traits.GetConfigInfo) then
+        return nil
+    end
+
+    local playerLevel = UnitLevel and UnitLevel("player") or nil
+    if not playerLevel or playerLevel < 1 then
+        return nil
+    end
+
+    C_ClassTalents.InitializeViewLoadout(specId, playerLevel)
+    if C_Traits.GetConfigInfo(VIEW_TRAIT_CONFIG_ID) then
+        return VIEW_TRAIT_CONFIG_ID
+    end
+
+    return nil
+end
+
+local function GetHeroTalentSubTreesForSpec(specId, configID)
+    if not (specId and C_ClassTalents and C_ClassTalents.GetHeroTalentSpecsForClassSpec) then
+        return nil, configID
+    end
+
+    local subTreeIDs = configID and C_ClassTalents.GetHeroTalentSpecsForClassSpec(configID, specId) or nil
+    if subTreeIDs and #subTreeIDs > 0 then
+        return subTreeIDs, configID
+    end
+
+    subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
+    if subTreeIDs and #subTreeIDs > 0 then
+        return subTreeIDs, configID
+    end
+
+    local viewConfigID = EnsureHeroTalentViewConfig(specId)
+    subTreeIDs = viewConfigID and C_ClassTalents.GetHeroTalentSpecsForClassSpec(viewConfigID, specId) or nil
+    if subTreeIDs and #subTreeIDs > 0 then
+        return subTreeIDs, viewConfigID
+    end
+
+    return nil, configID
+end
+
 local function BuildHeroTalentChoicesForSpecs(specChoices, selectedSpecMap, configID)
     local choices = {}
     local bySubTreeID = {}
-    if not (configID and C_ClassTalents and C_ClassTalents.GetHeroTalentSpecsForClassSpec) then
-        return choices, bySubTreeID
-    end
 
     for _, specInfo in ipairs(specChoices or {}) do
         local specId = specInfo.id
         if specId and selectedSpecMap and selectedSpecMap[specId] then
-            local subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
+            local subTreeIDs, subTreeConfigID = GetHeroTalentSubTreesForSpec(specId, configID)
             for _, subTreeID in ipairs(subTreeIDs or {}) do
-                local subTreeInfo = C_Traits and C_Traits.GetSubTreeInfo and C_Traits.GetSubTreeInfo(configID, subTreeID) or nil
+                local subTreeInfo = subTreeConfigID and C_Traits and C_Traits.GetSubTreeInfo
+                    and C_Traits.GetSubTreeInfo(subTreeConfigID, subTreeID) or nil
                 local heroName = subTreeInfo and subTreeInfo.name or ("Hero " .. tostring(subTreeID))
                 local heroChoice = {
                     id = subTreeID,
