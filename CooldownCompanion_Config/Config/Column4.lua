@@ -571,9 +571,6 @@ local function RefreshColumn4(container)
 
                 ST._BuildFolderLoadConditionsTab(scroll, CS.selectedFolder)
 
-                if CS.browseMode then
-                    ST._DisableAllWidgets(scroll)
-                end
             end)
             tabGroup.frame:SetParent(container)
             tabGroup.frame:ClearAllPoints()
@@ -618,9 +615,6 @@ local function RefreshColumn4(container)
                     ST._BuildContainerLoadConditionsTab(scroll, CS.selectedContainer)
                 end
 
-                if CS.browseMode then
-                    ST._DisableAllWidgets(scroll)
-                end
             end)
             tabGroup.frame:SetParent(container)
             tabGroup.frame:ClearAllPoints()
@@ -710,12 +704,6 @@ local function RefreshColumn4(container)
                 ST._BuildLoadConditionsTab(scroll)
             end
 
-            if CS.browseMode then
-                ST._DisableAllWidgets(scroll)
-                for _, btn in ipairs(CS.tabInfoButtons) do
-                    if btn.Disable then btn:Disable() end
-                end
-            end
         end)
 
         -- Parent the AceGUI widget frame to our raw column frame

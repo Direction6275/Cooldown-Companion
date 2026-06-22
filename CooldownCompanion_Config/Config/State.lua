@@ -257,12 +257,6 @@ ST._configState = {
     col2PanelTypeMenu = nil,
     charCopyMenu = nil,
 
-    -- Cross-character browse mode
-    browseMode = false,
-    browseCharKey = nil,
-    browseContainerId = nil,
-    browseContextMenu = nil,
-
     -- Drag-reorder state
     dragState = nil,
     dragIndicator = nil,
@@ -281,6 +275,8 @@ ST._configState = {
     collapsedSections = {},
     collapsedFolders = {},
     collapsedPanels = {},
+    otherClassLibraryActive = false,
+    otherClassLibraryClassKey = nil,
     panelClickTimes = {},
     addingToPanelId = nil,
     folderAccentBars = {},
@@ -298,10 +294,6 @@ ST._configState = {
     configFinderBox = nil,
     configFinderSuppressTextChanged = false,
     compactConfigRows = false,
-
-    -- Spec filter inline expansion
-    specExpandedGroupId = nil,
-    specExpandedFolderId = nil,
 
     -- Auto Add flow state (Column 3 wizard mode)
     autoAddFlowActive = false,
@@ -550,7 +542,6 @@ end
 
 local function IsConfigFinderAvailable()
     return not CS.resourceBarPanelActive
-        and not CS.browseMode
         and not CS.talentPickerMode
         and not CooldownCompanion._unsupportedLegacyProfile
 end
@@ -559,8 +550,12 @@ local function IsConfigFinderActive()
     return IsConfigFinderAvailable() and NormalizeConfigFinderText(CS.configSearchText) ~= ""
 end
 
+local ClearConfigPrimarySelection
+
 local function SetConfigFinderText(text, opts)
     text = type(text) == "string" and text or ""
+    local wasSearching = NormalizeConfigFinderText(CS.configSearchText) ~= ""
+    local willSearch = NormalizeConfigFinderText(text) ~= ""
     if CS.configSearchText ~= text then
         CS._configFinderResults = nil
         CS._configFinderResultsQuery = nil
@@ -568,6 +563,13 @@ local function SetConfigFinderText(text, opts)
         CS._configFinderResultsCharKey = nil
     end
     CS.configSearchText = text
+    if wasSearching and not willSearch and CS.otherClassLibraryActive then
+        if not (opts and opts.preservePrimarySelection) and ClearConfigPrimarySelection then
+            ClearConfigPrimarySelection()
+        end
+        CS.otherClassLibraryActive = false
+        CS.otherClassLibraryClassKey = nil
+    end
 
     if opts and opts.syncWidget == false then
         return
@@ -598,6 +600,10 @@ end
 local function IsContainerVisibleInConfig(container, charKey)
     if not container then
         return false
+    end
+    if CooldownCompanion.ResolveContainerClassScope then
+        local scope = CooldownCompanion:ResolveContainerClassScope(container)
+        return scope.isInvalid ~= true
     end
     return container.isGlobal or container.createdBy == charKey
 end
@@ -700,8 +706,31 @@ end
 
 local RefreshAlphaDriverForConfigSelection
 
+local function ResolveConfigContainerClassScope(containerId)
+    local selectedContainer = containerId
+        and CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groupContainers
+        and CooldownCompanion.db.profile.groupContainers[containerId]
+        or nil
+    if not (selectedContainer and CooldownCompanion.ResolveContainerClassScope) then
+        return nil
+    end
+    return CooldownCompanion:ResolveContainerClassScope(selectedContainer)
+end
+
+local function RestoreOtherClassLibraryForScope(scope)
+    if scope and scope.isOtherClass then
+        CS.otherClassLibraryActive = true
+        CS.otherClassLibraryClassKey = scope.ownerClassKey
+        return true
+    end
+    return false
+end
+
 local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CooldownCompanion:ClearAllConfigPreviews()
+    local selectedScope = ResolveConfigContainerClassScope(containerId)
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
     wipe(CS.selectedButtons)
@@ -714,7 +743,8 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CS.selectedButton = buttonIndex
     CS.selectedRotationAssistantEntry = nil
     CS.addingToPanelId = nil
-    ClearConfigFinderText()
+    ClearConfigFinderText({ preservePrimarySelection = true })
+    RestoreOtherClassLibraryForScope(selectedScope)
     RefreshAlphaDriverForConfigSelection()
     CooldownCompanion:RefreshConfigPanel()
 end
@@ -2533,7 +2563,7 @@ local function ClearConfigResourceSelection()
     CS.resourceSettingsSpecID = nil
 end
 
-local function ClearConfigPrimarySelection()
+ClearConfigPrimarySelection = function()
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedFolder = nil
     CS.selectedContainer = nil
@@ -2578,7 +2608,9 @@ local function SelectConfigContainer(containerId, opts)
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     if opts and opts.clearFinder then
-        ClearConfigFinderText()
+        local selectedScope = ResolveConfigContainerClassScope(CS.selectedContainer)
+        ClearConfigFinderText({ preservePrimarySelection = true })
+        RestoreOtherClassLibraryForScope(selectedScope)
     end
     RefreshAlphaDriverForConfigSelection()
 end
@@ -2877,10 +2909,8 @@ local function ResetConfigSelection(full)
         wipe(CS.selectedGroups)
         wipe(CS.selectedCustomBars)
         CS.addingToPanelId = nil
-        -- Exit browse mode on full reset
-        CS.browseMode = false
-        CS.browseCharKey = nil
-        CS.browseContainerId = nil
+        CS.otherClassLibraryActive = false
+        CS.otherClassLibraryClassKey = nil
     end
     RefreshAlphaDriverForConfigSelection()
 end
@@ -2899,12 +2929,16 @@ local function SetConfigPrimaryMode(mode, opts)
     if toBars and not wasBars then
         -- Preserve existing behavior when entering Bars & Frames mode.
         ResetConfigSelection(true)
+        CS.otherClassLibraryActive = false
+        CS.otherClassLibraryClassKey = nil
     elseif (not toBars) and wasBars then
         -- Stop preview loops when returning to button settings mode.
         CooldownCompanion:ClearAllConfigPreviews()
         CS.selectedCustomBarId = nil
         CS.customBarSettingsTab = "appearance"
         ClearConfigResourceSelection()
+        CS.otherClassLibraryActive = false
+        CS.otherClassLibraryClassKey = nil
     end
 
     CS.resourceBarPanelActive = toBars
@@ -3014,8 +3048,14 @@ local function CharacterInfoClassKey(charKey)
         return string.upper(info.classFilename)
     end
     local classID = tonumber(info.classID)
-    if classID and GetClassInfo then
-        local _, classFilename = GetClassInfo(classID)
+    if classID then
+        local classInfo = C_CreatureInfo and C_CreatureInfo.GetClassInfo
+            and C_CreatureInfo.GetClassInfo(classID)
+            or nil
+        local classFilename = type(classInfo) == "table" and classInfo.classFile or nil
+        if not classFilename and GetClassInfo then
+            classFilename = select(2, GetClassInfo(classID))
+        end
         if type(classFilename) == "string" and classFilename ~= "" then
             return string.upper(classFilename)
         end

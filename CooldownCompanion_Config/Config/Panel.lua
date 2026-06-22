@@ -30,6 +30,7 @@ local IsConfigFinderActive = ST._IsConfigFinderActive
 local SetConfigFinderText = ST._SetConfigFinderText
 local ClearConfigFinderText = ST._ClearConfigFinderText
 local InvalidateConfigFinderResults = ST._InvalidateConfigFinderResults
+local BuildConfigFinderResults = ST._BuildConfigFinderResults
 local MaybeAutoStartFirstIconPanelTutorial = ST._MaybeAutoStartFirstIconPanelTutorial
 local StartFirstIconPanelTutorial = ST._StartFirstIconPanelTutorial
 local CancelFirstIconPanelTutorial = ST._CancelFirstIconPanelTutorial
@@ -245,6 +246,38 @@ local function SetPrimaryMode(mode, opts)
     return true
 end
 
+local function HasOtherClassInventory()
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if not db then return false, false, false end
+
+    local searchFiltered = IsConfigFinderActive and IsConfigFinderActive() and BuildConfigFinderResults ~= nil
+    local searchResults = searchFiltered and BuildConfigFinderResults() or nil
+    local hasOtherInventory = false
+
+    if CooldownCompanion.ResolveContainerClassScope then
+        for id, container in pairs(db.groupContainers or {}) do
+            local scope = CooldownCompanion:ResolveContainerClassScope(container or id)
+            if scope and scope.scope == "other-class" then
+                hasOtherInventory = true
+                if not searchFiltered or (searchResults and searchResults.containerMatches and searchResults.containerMatches[id]) then
+                    return true, searchFiltered == true, true
+                end
+            end
+        end
+    end
+
+    if not searchFiltered and CooldownCompanion.ResolveFolderClassScope then
+        for folderId, folder in pairs(db.folders or {}) do
+            local scope = CooldownCompanion:ResolveFolderClassScope(folder or folderId)
+            if scope and scope.scope == "other-class" then
+                return true, false, true
+            end
+        end
+    end
+
+    return false, searchFiltered == true, hasOtherInventory
+end
+
 local GetClassColoredText = ST._GetClassColoredText
 
 local function GetLayoutOrderColumnTitle()
@@ -436,9 +469,6 @@ end
 local function ApplyConfigColumnTitles(frame)
     if CS.resourceBarPanelActive then
         frame.col1:SetTitle("Bars & Frames")
-    elseif CS.browseMode then
-        frame.col1:SetTitle("Browse Characters")
-        frame.col2:SetTitle("Preview")
     elseif IsConfigFinderActive and IsConfigFinderActive() then
         frame.col1:SetTitle("Groups")
         frame.col2:SetTitle("Search Results")
@@ -538,7 +568,7 @@ local function IsConfigSpellOverrideRefreshMode()
     if not IsConfigFrameOpenForRefresh() then
         return false
     end
-    if CS.browseMode or CS.resourceBarPanelActive then
+    if CS.resourceBarPanelActive then
         return false
     end
     if CountSelections(CS.selectedGroups) >= 2 then
@@ -903,6 +933,9 @@ local function CreateConfigPanel()
         end
         if not CS.previewToggleRefreshActive then
             CooldownCompanion:ClearAllConfigPreviews()
+            if CooldownCompanion.RefreshConfigSelectedGroupFrames then
+                CooldownCompanion:RefreshConfigSelectedGroupFrames()
+            end
         end
         if ClearConfigShiftTooltipHover then
             ClearConfigShiftTooltipHover()
@@ -1132,90 +1165,111 @@ local function CreateConfigPanel()
     end)
     cdmDisplayBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- Cross-character browse button — between the CDM display toggle and CDM button
-    local browseBtn = CreateFrame("Button", nil, content)
-    browseBtn:SetSize(16, 16)
-    if browseBtn.SetMotionScriptsWhileDisabled then
-        browseBtn:SetMotionScriptsWhileDisabled(true)
+    -- Other Classes browse button — between the Changelog and CDM buttons
+    local otherClassBrowseBtn = CreateFrame("Button", nil, content)
+    otherClassBrowseBtn:SetSize(16, 16)
+    if otherClassBrowseBtn.SetMotionScriptsWhileDisabled then
+        otherClassBrowseBtn:SetMotionScriptsWhileDisabled(true)
     end
-    local browseIcon = browseBtn:CreateTexture(nil, "ARTWORK")
-    browseIcon:SetAtlas("BattleBar-SwapPetIcon", false)
-    browseIcon:SetAllPoints()
-    browseBtn:SetHighlightAtlas("BattleBar-SwapPetIcon")
-    browseBtn:GetHighlightTexture():SetAlpha(0.3)
-    local browseBtnBorder = nil
-    local browseBtnAvailable = false
+    local otherClassBrowseIcon = otherClassBrowseBtn:CreateTexture(nil, "ARTWORK")
+    otherClassBrowseIcon:SetAtlas("BattleBar-SwapPetIcon", false)
+    otherClassBrowseIcon:SetAllPoints()
+    otherClassBrowseBtn:SetHighlightAtlas("BattleBar-SwapPetIcon")
+    otherClassBrowseBtn:GetHighlightTexture():SetAlpha(0.3)
 
-    local function UpdateBrowseBtnHighlight()
-        local shouldHighlight = browseBtnAvailable and CS.browseMode == true
+    local otherClassBrowseBtnBorder = nil
+    local otherClassBrowseAvailable = false
+    local otherClassBrowseActionAvailable = false
+    local otherClassBrowseSearchFiltered = false
+    local otherClassBrowseHasInventory = false
+
+    local function UpdateOtherClassBrowseBtnHighlight()
+        local shouldHighlight = otherClassBrowseActionAvailable and CS.otherClassLibraryActive == true
         if shouldHighlight then
-            if not browseBtnBorder then
-                browseBtnBorder = browseBtn:CreateTexture(nil, "OVERLAY")
-                browseBtnBorder:SetPoint("TOPLEFT", -1, 1)
-                browseBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
-                browseBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
+            if not otherClassBrowseBtnBorder then
+                otherClassBrowseBtnBorder = otherClassBrowseBtn:CreateTexture(nil, "OVERLAY")
+                otherClassBrowseBtnBorder:SetPoint("TOPLEFT", -1, 1)
+                otherClassBrowseBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
+                otherClassBrowseBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
             end
-            browseBtnBorder:Show()
-        elseif browseBtnBorder then
-            browseBtnBorder:Hide()
+            otherClassBrowseBtnBorder:Show()
+        elseif otherClassBrowseBtnBorder then
+            otherClassBrowseBtnBorder:Hide()
         end
     end
 
-    local function UpdateBrowseBtnState()
-        local browseChars = CooldownCompanion:EnumerateBrowseCharacters()
-        browseBtnAvailable = #browseChars > 0
+    local function UpdateOtherClassBrowseButtonState()
+        otherClassBrowseAvailable, otherClassBrowseSearchFiltered, otherClassBrowseHasInventory = HasOtherClassInventory()
+        otherClassBrowseActionAvailable = otherClassBrowseAvailable or CS.otherClassLibraryActive == true
 
-        if browseBtn.SetEnabled then
-            browseBtn:SetEnabled(browseBtnAvailable)
+        if otherClassBrowseBtn.SetEnabled then
+            otherClassBrowseBtn:SetEnabled(otherClassBrowseActionAvailable)
+        elseif otherClassBrowseActionAvailable and otherClassBrowseBtn.Enable then
+            otherClassBrowseBtn:Enable()
+        elseif otherClassBrowseBtn.Disable then
+            otherClassBrowseBtn:Disable()
         end
-        if browseIcon.SetDesaturated then
-            browseIcon:SetDesaturated(not browseBtnAvailable)
+        if otherClassBrowseIcon.SetDesaturated then
+            otherClassBrowseIcon:SetDesaturated(not otherClassBrowseActionAvailable)
         end
-        if browseBtnAvailable then
-            browseBtn:SetAlpha(1)
-            browseIcon:SetVertexColor(1, 1, 1, 1)
-            if browseBtn:GetHighlightTexture() then
-                browseBtn:GetHighlightTexture():SetAlpha(0.3)
+        if otherClassBrowseActionAvailable then
+            otherClassBrowseBtn:SetAlpha(1)
+            otherClassBrowseIcon:SetVertexColor(1, 1, 1, 1)
+            if otherClassBrowseBtn:GetHighlightTexture() then
+                otherClassBrowseBtn:GetHighlightTexture():SetAlpha(0.3)
             end
         else
-            browseBtn:SetAlpha(0.75)
-            browseIcon:SetVertexColor(0.6, 0.6, 0.6, 1)
-            if browseBtn:GetHighlightTexture() then
-                browseBtn:GetHighlightTexture():SetAlpha(0)
+            otherClassBrowseBtn:SetAlpha(0.75)
+            otherClassBrowseIcon:SetVertexColor(0.6, 0.6, 0.6, 1)
+            if otherClassBrowseBtn:GetHighlightTexture() then
+                otherClassBrowseBtn:GetHighlightTexture():SetAlpha(0)
             end
         end
 
-        UpdateBrowseBtnHighlight()
+        UpdateOtherClassBrowseBtnHighlight()
     end
 
-    browseBtn:SetScript("OnClick", function()
-        if not browseBtnAvailable then
+    otherClassBrowseBtn:SetScript("OnClick", function()
+        CloseDropDownMenus()
+        if CS.otherClassLibraryActive then
+            if ClearConfigPrimarySelection then
+                ClearConfigPrimarySelection()
+            end
+            CS.otherClassLibraryActive = false
+            CS.otherClassLibraryClassKey = nil
+            CooldownCompanion:RefreshConfigPanel()
             return
         end
-        CloseDropDownMenus()
-        -- Browse mode lives in the normal button-settings layout, not Bars & Frames.
+        if not otherClassBrowseAvailable then
+            return
+        end
         if CS.resourceBarPanelActive then
             SetPrimaryMode("buttons", { skipRefresh = true })
         end
-        CS.browseMode = true
-        CS.browseCharKey = nil
-        CS.browseContainerId = nil
-        ClearConfigPrimarySelection()
+        if ClearConfigPrimarySelection then
+            ClearConfigPrimarySelection()
+        end
+        CS.otherClassLibraryActive = true
+        CS.otherClassLibraryClassKey = nil
         CooldownCompanion:RefreshConfigPanel()
     end)
-    browseBtn:SetScript("OnEnter", function(self)
+    otherClassBrowseBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("Browse Other Characters")
-        if not browseBtnAvailable then
-            GameTooltip:AddLine("No other characters on this profile currently have groups to browse.", 1, 1, 1, true)
-        elseif CS.browseMode then
-            GameTooltip:AddLine("Browse mode is active. Click to return to the character list and browse groups from other characters on this profile.", 1, 1, 1, true)
+        GameTooltip:AddLine("Browse Other Classes")
+        if CS.otherClassLibraryActive then
+            GameTooltip:AddLine("Class library is open. Click to return to the regular config view.", 1, 1, 1, true)
+        elseif not otherClassBrowseActionAvailable then
+            if otherClassBrowseSearchFiltered and otherClassBrowseHasInventory then
+                GameTooltip:AddLine("No other classes match the current search.", 1, 1, 1, true)
+            else
+                GameTooltip:AddLine("No other classes on this profile currently have groups to browse.", 1, 1, 1, true)
+            end
         else
-            GameTooltip:AddLine("View and copy groups from other characters on this profile.", 1, 1, 1, true)
+            GameTooltip:AddLine("View and edit groups saved for other classes on this profile.", 1, 1, 1, true)
         end
         GameTooltip:Show()
     end)
-    browseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    otherClassBrowseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     local changelogOverlay
     local changelogBtn
@@ -1261,9 +1315,9 @@ local function CreateConfigPanel()
     gearBtn:SetSize(20, 20)
     gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -4, 0)
     changelogBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
-    cdmBtn:SetPoint("RIGHT", changelogBtn, "LEFT", -4, 0)
-    browseBtn:SetPoint("RIGHT", cdmBtn, "LEFT", -4, 0)
-    cdmDisplayBtn:SetPoint("RIGHT", browseBtn, "LEFT", -4, 0)
+    otherClassBrowseBtn:SetPoint("RIGHT", changelogBtn, "LEFT", -4, 0)
+    cdmBtn:SetPoint("RIGHT", otherClassBrowseBtn, "LEFT", -4, 0)
+    cdmDisplayBtn:SetPoint("RIGHT", cdmBtn, "LEFT", -4, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
@@ -2006,12 +2060,6 @@ local function CreateConfigPanel()
                 local buttonData = CooldownCompanion:GetRotationAssistantConfigButtonData(group)
                 ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
             end
-            if CS.browseMode then
-                ST._DisableAllWidgets(scroll)
-                for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
-                    if btn.Disable then btn:Disable() end
-                end
-            end
             return
         end
 
@@ -2045,13 +2093,6 @@ local function CreateConfigPanel()
             ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         elseif tab == "overrides" then
             ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
-        end
-
-        if CS.browseMode then
-            ST._DisableAllWidgets(scroll)
-            for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
-                if btn.Disable then btn:Disable() end
-            end
         end
 
     end)
@@ -2261,6 +2302,10 @@ local function CreateConfigPanel()
 
         if CS.configFinderBox then
             if finderAvailable then
+                CS.configFinderBox.frame:ClearAllPoints()
+                CS.configFinderBox.frame:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
+                CS.configFinderBox.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
+                CS.configFinderBox.frame:SetHeight(CONFIG_FINDER_BOX_HEIGHT)
                 CS.configFinderBox.frame:Show()
             else
                 CS.configFinderBox.frame:Hide()
@@ -2270,15 +2315,10 @@ local function CreateConfigPanel()
             end
         end
         if CS.col1Scroll and CS.col1Scroll.frame then
+            local bottomInset = finderAvailable and (30 + CONFIG_FINDER_RESERVED_HEIGHT) or 30
             CS.col1Scroll.frame:ClearAllPoints()
             CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-            CS.col1Scroll.frame:SetPoint(
-                "BOTTOMRIGHT",
-                col1.content,
-                "BOTTOMRIGHT",
-                0,
-                finderAvailable and (30 + CONFIG_FINDER_RESERVED_HEIGHT) or 30
-            )
+            CS.col1Scroll.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, bottomInset)
         end
 
         col1.frame:ClearAllPoints()
@@ -2326,6 +2366,7 @@ local function CreateConfigPanel()
     frame.modeStatusRow = modeStatusRow
     frame.profileGear = profileGear
     frame.changelogOverlay = changelogOverlay
+    frame.otherClassBrowseButton = otherClassBrowseBtn
     frame.col1 = col1
     frame.col2 = col2
     frame.col3 = col3
@@ -2334,9 +2375,9 @@ local function CreateConfigPanel()
     frame.LayoutColumns = LayoutColumns
     frame.UpdateCompactConfigRows = UpdateCompactConfigRows
     frame.UpdateModeNavigationUI = UpdateModeNavigationUI
-    frame.UpdateBrowseButtonState = UpdateBrowseBtnState
-    UpdateBrowseBtnState()
+    frame.UpdateOtherClassBrowseButtonState = UpdateOtherClassBrowseButtonState
     UpdateModeNavigationUI()
+    UpdateOtherClassBrowseButtonState()
 
     CS.configFrame = frame
     return frame
@@ -2422,8 +2463,8 @@ function CooldownCompanion:_configRefreshPanelImpl()
     if CS.configFrame.UpdateModeNavigationUI then
         CS.configFrame.UpdateModeNavigationUI()
     end
-    if CS.configFrame.UpdateBrowseButtonState then
-        CS.configFrame.UpdateBrowseButtonState()
+    if CS.configFrame.UpdateOtherClassBrowseButtonState then
+        CS.configFrame.UpdateOtherClassBrowseButtonState()
     end
     if CS.configFrame.LayoutColumns then
         CS.configFrame.LayoutColumns()

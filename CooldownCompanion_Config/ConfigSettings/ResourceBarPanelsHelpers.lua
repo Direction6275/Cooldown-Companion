@@ -337,9 +337,6 @@ local function ConfigureResourceAuraClearButton(button, onClear)
     button.icon:SetAtlas("common-icon-redx", false)
     button.icon:Show()
     button:SetScript("OnClick", function()
-        if CS.browseMode then
-            return
-        end
         if onClear then
             onClear()
         end
@@ -1011,7 +1008,7 @@ local function AddResourceAuraEntryFields(container, powerType, resourceName, en
     end
 
     auraEditBox:SetCallback("OnTextChanged", function(widget, _, text)
-        if spellID or CS.browseMode then
+        if spellID then
             CS.HideAutocomplete()
             return
         end
@@ -1024,7 +1021,7 @@ local function AddResourceAuraEntryFields(container, powerType, resourceName, en
         end
     end)
     auraEditBox:SetCallback("OnEnterPressed", function(widget, _, text)
-        if spellID or CS.browseMode then
+        if spellID then
             CS.HideAutocomplete()
             return
         end

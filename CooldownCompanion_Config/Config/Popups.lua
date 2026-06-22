@@ -449,7 +449,7 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
 }
 
 StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
-    text = "This will remove foreign eligibility filters and turn '%s' into a group for your current character. Continue?",
+    text = "This will remove foreign eligibility filters and move '%s' into your current class. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -475,7 +475,7 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
 }
 
 StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
-    text = "This will remove foreign eligibility filters and turn '%s' into a character group. Continue?",
+    text = "This will remove foreign eligibility filters and move '%s' into your current class. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -520,7 +520,7 @@ StaticPopupDialogs["CDC_CROSS_PANEL_STRIP_OVERRIDES"] = {
 }
 
 StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
-    text = "This folder contains groups with foreign eligibility filters. Moving to character will remove those filters. Continue?",
+    text = "This folder contains groups with foreign eligibility filters. Moving to your current class will remove those filters. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -537,7 +537,7 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
 }
 
 StaticPopupDialogs["CDC_UNGLOBAL_FOLDER"] = {
-    text = "This folder contains groups with foreign eligibility filters. Moving '%s' to character will remove those filters. Continue?",
+    text = "This folder contains groups with foreign eligibility filters. Moving '%s' to your current class will remove those filters. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -595,7 +595,7 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_CUSTOM_BARS"] = {
 }
 
 StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
-    text = "Some selected groups have foreign eligibility filters. Moving to character will remove those filters. Continue?",
+    text = "Some selected groups have foreign eligibility filters. Moving to your current class will remove those filters. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
