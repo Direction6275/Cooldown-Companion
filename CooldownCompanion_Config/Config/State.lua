@@ -703,6 +703,16 @@ local RefreshAlphaDriverForConfigSelection
 
 local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CooldownCompanion:ClearAllConfigPreviews()
+    local selectedContainer = containerId
+        and CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groupContainers
+        and CooldownCompanion.db.profile.groupContainers[containerId]
+        or nil
+    local selectedScope = selectedContainer
+        and CooldownCompanion.ResolveContainerClassScope
+        and CooldownCompanion:ResolveContainerClassScope(selectedContainer)
+        or nil
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
     wipe(CS.selectedButtons)
@@ -716,6 +726,10 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CS.selectedRotationAssistantEntry = nil
     CS.addingToPanelId = nil
     ClearConfigFinderText()
+    if selectedScope and selectedScope.isOtherClass then
+        CS.otherClassLibraryActive = true
+        CS.otherClassLibraryClassKey = selectedScope.ownerClassKey
+    end
     RefreshAlphaDriverForConfigSelection()
     CooldownCompanion:RefreshConfigPanel()
 end

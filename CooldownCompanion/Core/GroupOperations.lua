@@ -1628,6 +1628,57 @@ function CooldownCompanion:CanMoveContainerToFolder(containerOrContainerId, fold
     return false, "scope-mismatch"
 end
 
+function CooldownCompanion:CanMovePanelToContainer(groupOrGroupId, targetContainerOrContainerId)
+    local db = self.db and self.db.profile
+    if not (db and db.groups and db.groupContainers) then
+        return false, "missing-profile"
+    end
+
+    local group = groupOrGroupId
+    if type(groupOrGroupId) ~= "table" then
+        group = db.groups[groupOrGroupId]
+    end
+    if type(group) ~= "table" or not group.parentContainerId then
+        return false, "missing-source-panel"
+    end
+
+    local targetContainer = targetContainerOrContainerId
+    local targetContainerId
+    if type(targetContainerOrContainerId) ~= "table" then
+        targetContainerId = targetContainerOrContainerId
+        targetContainer = db.groupContainers[targetContainerOrContainerId]
+    else
+        for containerId, container in pairs(db.groupContainers) do
+            if container == targetContainer then
+                targetContainerId = containerId
+                break
+            end
+        end
+    end
+    if type(targetContainer) ~= "table" then
+        return false, "missing-target-container"
+    end
+    if targetContainerId and group.parentContainerId == targetContainerId then
+        return false, "same-container"
+    end
+
+    local sourceScope = self:ResolveContainerClassScope(group.parentContainerId)
+    local targetScope = self:ResolveContainerClassScope(targetContainer)
+    if sourceScope.isInvalid or targetScope.isInvalid then
+        return false, "invalid-class-scope"
+    end
+    if sourceScope.scope ~= targetScope.scope then
+        return false, "scope-mismatch"
+    end
+    if sourceScope.scope == "global" then
+        return true
+    end
+    if sourceScope.ownerClassKey == targetScope.ownerClassKey then
+        return true
+    end
+    return false, "mixed-class-panel"
+end
+
 local function PruneSpecMapToClass(addon, entity, map, classKey)
     if type(map) ~= "table" or not classKey then return false end
     local changed = false

@@ -18,6 +18,22 @@ local function IsContainerVisibleInConfig(containerOrContainerId)
     return CooldownCompanion:IsContainerVisibleToCurrentChar(containerOrContainerId)
 end
 
+local function CanAllPanelsMoveToContainer(panelIds, containerId)
+    if not IsContainerVisibleInConfig(containerId) then
+        return false
+    end
+    if not CooldownCompanion.CanMovePanelToContainer then
+        return true
+    end
+    for _, panelId in ipairs(panelIds or {}) do
+        local ok = CooldownCompanion:CanMovePanelToContainer(panelId, containerId)
+        if not ok then
+            return false
+        end
+    end
+    return true
+end
+
 local function GroupUsesTriggerPanelEntries(group)
     return group and group.displayMode == "trigger"
 end
@@ -319,7 +335,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
 
     local hasOtherContainer = false
     for cid in pairs(db.groupContainers) do
-        if cid ~= containerId and IsContainerVisibleInConfig(cid) then
+        if cid ~= containerId and CanAllPanelsMoveToContainer(multiPanelIds, cid) then
             hasOtherContainer = true
             break
         end
@@ -337,7 +353,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
                 local containers = db.groupContainers or {}
                 local folderContainers, looseContainers = {}, {}
                 for cid, ctr in pairs(containers) do
-                    if cid ~= containerId and IsContainerVisibleInConfig(cid) then
+                    if cid ~= containerId and CanAllPanelsMoveToContainer(multiPanelIds, cid) then
                         local name = ctr.name or ("Group " .. cid)
                         local fid = ctr.folderId
                         if fid and db.folders[fid] then

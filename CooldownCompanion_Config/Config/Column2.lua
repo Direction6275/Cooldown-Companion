@@ -57,6 +57,17 @@ local function IsContainerVisibleInConfig(containerOrContainerId)
     return CooldownCompanion:IsContainerVisibleToCurrentChar(containerOrContainerId)
 end
 
+local function CanPanelMoveToContainer(panelId, containerId)
+    if not IsContainerVisibleInConfig(containerId) then
+        return false
+    end
+    if CooldownCompanion.CanMovePanelToContainer then
+        local ok = CooldownCompanion:CanMovePanelToContainer(panelId, containerId)
+        return ok == true
+    end
+    return true
+end
+
 local function CanAllContainersMoveToFolder(containerIds, folderId)
     if not CooldownCompanion.CanMoveContainerToFolder then
         return true
@@ -2158,7 +2169,7 @@ local function RefreshColumn2()
                             local db = CooldownCompanion.db.profile
                             local hasOtherContainer = false
                             for cid, _ in pairs(db.groupContainers) do
-                                if cid ~= ctxContainerId and IsContainerVisibleInConfig(cid) then
+                                if cid ~= ctxContainerId and CanPanelMoveToContainer(ctxPanelId, cid) then
                                     hasOtherContainer = true
                                     break
                                 end
@@ -2239,7 +2250,7 @@ local function RefreshColumn2()
                             local containers = db.groupContainers or {}
                             local folderContainers, looseContainers = {}, {}
                             for cid, ctr in pairs(containers) do
-                                if cid ~= ctxContainerId and IsContainerVisibleInConfig(cid) then
+                                if cid ~= ctxContainerId and CanPanelMoveToContainer(ctxPanelId, cid) then
                                     local cName = ctr.name or ("Group " .. cid)
                                     local fid = ctr.folderId
                                     if fid and db.folders[fid] then

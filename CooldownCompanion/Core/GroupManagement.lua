@@ -107,6 +107,22 @@ local function NormalizeCopiedEntityForContainerScope(self, entity, container)
     end
 end
 
+local function ClearInvalidCopiedFolderId(self, entity, sourceEntity)
+    if type(entity) ~= "table" or not entity.folderId then
+        return
+    end
+    if sourceEntity and sourceEntity.isGlobal then
+        entity.folderId = nil
+        return
+    end
+    if self.CanMoveContainerToFolder then
+        local ok = self:CanMoveContainerToFolder(entity, entity.folderId)
+        if not ok then
+            entity.folderId = nil
+        end
+    end
+end
+
 function CooldownCompanion:NormalizeContainerAnchor(anchor, resolveAddonFrames)
     local normalized = type(anchor) == "table" and anchor or {}
     local point = normalized.point or "CENTER"
@@ -984,11 +1000,7 @@ function CooldownCompanion:DuplicateContainer(containerId)
     newContainer.createdBy = self.db.keys.char
     newContainer.isGlobal = false
     NormalizeCopiedEntityForContainerScope(self, newContainer, newContainer)
-
-    -- If source was global, clear folderId on the copy
-    if sourceContainer.isGlobal and newContainer.folderId then
-        newContainer.folderId = nil
-    end
+    ClearInvalidCopiedFolderId(self, newContainer, sourceContainer)
 
     db.groupContainers[newContainerId] = newContainer
 
@@ -1208,6 +1220,15 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
 
     local sourceContainerId = group.parentContainerId
     if sourceContainerId == targetContainerId then return false end
+    if self.CanMovePanelToContainer then
+        local ok = self:CanMovePanelToContainer(groupId, targetContainerId)
+        if not ok then
+            if self.Print then
+                self:Print("Panels cannot be moved into groups owned by another class.")
+            end
+            return false
+        end
+    end
 
     -- Reassign to target container
     group.parentContainerId = targetContainerId
@@ -1385,9 +1406,7 @@ function CooldownCompanion:DuplicateGroup(id)
     newGroup.createdBy = self.db.keys.char
     newGroup.isGlobal = false
     NormalizeCopiedEntityForContainerScope(self, newGroup, newGroup)
-    if sourceGroup.isGlobal and newGroup.folderId then
-        newGroup.folderId = nil
-    end
+    ClearInvalidCopiedFolderId(self, newGroup, sourceGroup)
 
     self.db.profile.groups[newGroupId] = newGroup
     self:CreateGroupFrame(newGroupId)

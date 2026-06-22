@@ -3895,8 +3895,8 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
             clearBtn:SetText("Clear All Spec Filters")
             clearBtn:SetFullWidth(true)
             clearBtn:SetCallback("OnClick", function()
-                if folderSpecs then
-                    container.specs = CopyTable(folderSpecs)
+                if folder and type(folder.specs) == "table" and next(folder.specs) then
+                    container.specs = CopyTable(folder.specs)
                 else
                     container.specs = nil
                 end
