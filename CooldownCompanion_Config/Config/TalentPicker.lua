@@ -547,8 +547,10 @@ local function EnsurePickerViewConfig(specID)
 end
 
 local function BuildSpecDropdownOptions(group)
-    local effectiveSpecs = group and CooldownCompanion:GetEffectiveSpecs(group) or nil
-    local hasSpecFilter = effectiveSpecs and next(effectiveSpecs) ~= nil
+    local effectiveSpecs, _, hasSpecFilter
+    if group then
+        effectiveSpecs, _, hasSpecFilter = CooldownCompanion:GetEffectiveSpecs(group)
+    end
     local values = {}
     local order = {}
 
@@ -568,8 +570,10 @@ local function BuildHeroDropdownOptions(configID, specID, group)
         return {}, {}, nil
     end
 
-    local effectiveHeroTalents = group and CooldownCompanion:GetEffectiveHeroTalents(group) or nil
-    local hasHeroFilter = effectiveHeroTalents and next(effectiveHeroTalents) ~= nil
+    local effectiveHeroTalents, _, hasHeroFilter
+    if group then
+        effectiveHeroTalents, _, hasHeroFilter = CooldownCompanion:GetEffectiveHeroTalents(group)
+    end
     local values = {}
     local order = {}
     local preferredSubTreeID = nil

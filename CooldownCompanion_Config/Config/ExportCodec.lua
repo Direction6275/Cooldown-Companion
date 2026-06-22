@@ -11,6 +11,7 @@ local LibDeflate = LibStub("LibDeflate")
 
 local COMPRESSION_CONFIG = { level = 9 }
 local COMPACT_FORMAT_KEY = "_cdcExportFormat"
+local STRIPPED_CHARACTER_ELIGIBILITY_KEY = "_cdcCharacterEligibilityStripped"
 local CURRENT_COMPACT_FORMAT_VALUE = "compact3"
 local UNSUPPORTED_COMPACT_FORMATS = {
     compact1 = true,
@@ -20,7 +21,6 @@ local UNSUPPORTED_COMPACT_FORMATS = {
 local LOAD_CONDITION_ALLOWLIST_KEYS = {
     classAllowlist = "class",
     specAllowlist = "spec",
-    characterAllowlist = "character",
 }
 
 local function CopyValue(value)
@@ -57,9 +57,94 @@ local function CopyAllowlistMap(map, kind)
     return next(copy) and copy or nil
 end
 
+local function StripCharacterEligibilityFromLoadConditions(loadConditions)
+    if type(loadConditions) ~= "table" then return 0 end
+    if loadConditions.characterAllowlist == nil then return 0 end
+    loadConditions.characterAllowlist = nil
+    return 1
+end
+
+local function StripCharacterEligibilityFromEntity(entity)
+    if type(entity) ~= "table" then return 0 end
+    local stripped = StripCharacterEligibilityFromLoadConditions(entity.loadConditions)
+    if type(entity.buttons) == "table" then
+        for _, button in ipairs(entity.buttons) do
+            stripped = stripped + StripCharacterEligibilityFromEntity(button)
+        end
+    end
+    if type(entity.loadConditions) == "table" and not next(entity.loadConditions) then
+        entity.loadConditions = nil
+    end
+    return stripped
+end
+
+local function StripCharacterEligibilityFromContainerEntry(entry)
+    if type(entry) ~= "table" then return 0 end
+    local stripped = StripCharacterEligibilityFromEntity(entry.container)
+    if type(entry.panels) == "table" then
+        for _, panel in ipairs(entry.panels) do
+            stripped = stripped + StripCharacterEligibilityFromEntity(panel)
+        end
+    end
+    return stripped
+end
+
+local function StripCharacterEligibilityFromProfile(profile)
+    if type(profile) ~= "table" then return 0 end
+    local stripped = 0
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            stripped = stripped + StripCharacterEligibilityFromEntity(group)
+        end
+    end
+    if type(profile.groupContainers) == "table" then
+        for _, container in pairs(profile.groupContainers) do
+            stripped = stripped + StripCharacterEligibilityFromEntity(container)
+        end
+    end
+    if type(profile.folders) == "table" then
+        for _, folder in pairs(profile.folders) do
+            stripped = stripped + StripCharacterEligibilityFromEntity(folder)
+        end
+    end
+    return stripped
+end
+
+local function StripCharacterEligibilityFromPayload(payload)
+    if type(payload) ~= "table" then return 0 end
+    local stripped = 0
+    stripped = stripped + StripCharacterEligibilityFromProfile(payload)
+    stripped = stripped + StripCharacterEligibilityFromProfile(payload.profile)
+    stripped = stripped + StripCharacterEligibilityFromEntity(payload.group)
+    stripped = stripped + StripCharacterEligibilityFromEntity(payload.container)
+    stripped = stripped + StripCharacterEligibilityFromEntity(payload.folder)
+    if type(payload.groups) == "table" then
+        for _, group in ipairs(payload.groups) do
+            stripped = stripped + StripCharacterEligibilityFromEntity(group)
+        end
+    end
+    if type(payload.panels) == "table" then
+        for _, panel in ipairs(payload.panels) do
+            stripped = stripped + StripCharacterEligibilityFromEntity(panel)
+        end
+    end
+    if type(payload.containers) == "table" then
+        for _, entry in ipairs(payload.containers) do
+            stripped = stripped + StripCharacterEligibilityFromContainerEntry(entry)
+        end
+    end
+    if type(payload.bars) == "table" then
+        for _, bar in ipairs(payload.bars) do
+            stripped = stripped + StripCharacterEligibilityFromEntity(bar)
+        end
+    end
+    return stripped
+end
+
 local function NormalizeLoadConditionAllowlists(loadConditions)
     if type(loadConditions) ~= "table" then return loadConditions end
     local normalized = CopyTable(loadConditions)
+    normalized.characterAllowlist = nil
     for key, kind in pairs(LOAD_CONDITION_ALLOWLIST_KEYS or {}) do
         if normalized[key] ~= nil then
             normalized[key] = CopyAllowlistMap(normalized[key], kind)
@@ -479,6 +564,7 @@ local function RehydrateLoadConditions(loadConditions, formatVersion, localScope
     if type(loadConditions) ~= "table" then
         return nil
     end
+    loadConditions.characterAllowlist = nil
     if localScope then
         local localOnly = {}
         for key, value in pairs(loadConditions) do
@@ -1126,6 +1212,8 @@ local function EncodeSharedPayload(payload, exportKind)
     local exportData = CopyTable(payload)
     local formatVersion = CURRENT_COMPACT_FORMAT_VALUE
 
+    StripCharacterEligibilityFromPayload(exportData)
+
     if CooldownCompanion.StampExportPayloadCheckpoint then
         CooldownCompanion:StampExportPayloadCheckpoint(exportData, exportKind)
     end
@@ -1181,9 +1269,18 @@ local function DecodeSharedPayload(text)
         data = NormalizeTextureLibraryPayload(data)
     end
 
+    local strippedCharacterEligibility = StripCharacterEligibilityFromPayload(data)
+    if strippedCharacterEligibility > 0 then
+        data[STRIPPED_CHARACTER_ELIGIBILITY_KEY] = strippedCharacterEligibility
+    end
+
     return true, data
 end
 
+ST._StripCharacterEligibilityFromLoadConditions = StripCharacterEligibilityFromLoadConditions
+ST._StripCharacterEligibilityFromEntity = StripCharacterEligibilityFromEntity
+ST._StripCharacterEligibilityFromProfile = StripCharacterEligibilityFromProfile
+ST._StripCharacterEligibilityFromPayload = StripCharacterEligibilityFromPayload
 ST._EncodeSharedPayload = EncodeSharedPayload
 ST._DecodeSharedPayload = DecodeSharedPayload
 ST._PrepareSharedImportText = PrepareSharedImportText

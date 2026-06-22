@@ -7,10 +7,12 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
 local ResetConfigSelection = ST._ResetConfigSelection
+local StripCharacterEligibilityFromProfile = ST._StripCharacterEligibilityFromProfile
 
 local PROFILE_IMPORT_METADATA_KEYS = {
     _exporterCharKey = true,
     _characterInfo = true,
+    _cdcCharacterEligibilityStripped = true,
 }
 
 local SCOPED_STORE_KEYS = {
@@ -341,7 +343,11 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
         exportedCharInfo = data._characterInfo
     end
 
+    local strippedCharacterEligibility = tonumber(data._cdcCharacterEligibilityStripped) or 0
     CopyProfileDataIntoActiveProfile(db.profile, data)
+    strippedCharacterEligibility = strippedCharacterEligibility + (StripCharacterEligibilityFromProfile
+        and StripCharacterEligibilityFromProfile(db.profile)
+        or 0)
 
     if ResetConfigSelection then
         ResetConfigSelection(true)
@@ -379,6 +385,9 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
     end
     if self.EvaluateBarsAndFramesRuntime then
         self:EvaluateBarsAndFramesRuntime(options.runtimeReason or "profile-import")
+    end
+    if strippedCharacterEligibility > 0 and self.Print then
+        self:Print("Character eligibility is local and was not imported.")
     end
 
     return true

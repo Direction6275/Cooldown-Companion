@@ -569,22 +569,19 @@ local function BuildCharacterChoice(charKey, fallbackInfo)
 end
 
 local function AttachEligibilityTooltip(widget, title, text)
-    if not (widget and widget.frame and text and text ~= "") then return end
-    widget.frame:EnableMouse(true)
-    widget.frame:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    if not (widget and text and text ~= "") then return end
+    widget:SetCallback("OnEnter", function(hoveredWidget)
+        if not (hoveredWidget and hoveredWidget.frame) then return end
+        GameTooltip:SetOwner(hoveredWidget.frame, "ANCHOR_RIGHT")
         GameTooltip:AddLine(title or "")
         GameTooltip:AddLine(text, 1, 1, 1, true)
         GameTooltip:Show()
     end)
-    widget.frame:SetScript("OnLeave", function()
+    widget:SetCallback("OnLeave", function()
         GameTooltip:Hide()
     end)
-    widget:SetCallback("OnRelease", function(releasedWidget)
-        if releasedWidget and releasedWidget.frame then
-            releasedWidget.frame:SetScript("OnEnter", nil)
-            releasedWidget.frame:SetScript("OnLeave", nil)
-        end
+    widget:SetCallback("OnRelease", function()
+        GameTooltip:Hide()
     end)
 end
 
@@ -852,7 +849,8 @@ local function AddEligibilitySelectedRow(container, rowInfo, onRemove)
     row:SetFullWidth(true)
     row:SetLayout("Flow")
 
-    local label = AceGUI:Create("Label")
+    local hasTooltip = rowInfo.tooltipText and rowInfo.tooltipText ~= ""
+    local label = AceGUI:Create(hasTooltip and "InteractiveLabel" or "Label")
     label:SetText(rowInfo.label)
     label:SetRelativeWidth(0.92)
     AttachEligibilityTooltip(label, rowInfo.tooltipTitle or rowInfo.label, rowInfo.tooltipText)
@@ -880,9 +878,6 @@ local function AddCharacterEligibilityControls(container, opts)
     local scopeClassChoice
     if opts.allowClassEligibility == false then
         scopeClassChoice = ResolveOwnerClassChoice(opts)
-        if scopeClassChoice then
-            PruneCharacterAllowlistToScopeClass(target, scopeClassChoice.key, opts.ownerCharKey)
-        end
     end
     local choices = BuildCharacterChoices(target, inheritedMap, scopeClassChoice and scopeClassChoice.key or nil, opts.ownerCharKey)
     if #choices == 0 then return end
@@ -1054,7 +1049,6 @@ local function BuildEligibilitySpecChoices(opts)
         AddClassesForSpecMap(classChoices, classByKey, target.loadConditions and target.loadConditions.specAllowlist)
         AddClassesForSpecMap(classChoices, classByKey, opts.effectiveSpecs)
     else
-        ClearClassAllowlistWhenScoped(target, false)
         local choice = ResolveOwnerClassChoice(opts)
         if choice then
             classByKey[choice.key] = true
@@ -1224,7 +1218,6 @@ local function AddClassSpecEligibilityControls(container, opts)
     local scopeClassChoice
     if not allowClassEligibility then
         scopeClassChoice = ResolveOwnerClassChoice(opts)
-        PruneClassScopedEligibility(target, scopeClassChoice, opts.ownerCharKey)
     end
 
     local inheritedClassMap, inheritedClassRestricted = GetInheritedAllowlist(opts.inheritedSources, "classAllowlist", "class")

@@ -15,6 +15,7 @@ local ClearConfigContainerSelection = ST._ClearConfigContainerSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
 local EncodeSharedPayload = ST._EncodeSharedPayload
+local StripCharacterEligibilityFromPayload = ST._StripCharacterEligibilityFromPayload
 
 local LOAD_CONDITION_ALLOWLIST_KEYS = {
     classAllowlist = "class",
@@ -736,6 +737,64 @@ local function BuildContainerExportData(container)
     return data
 end
 
+local function HasTrueMapValue(map)
+    if type(map) ~= "table" then return false end
+    for _, enabled in pairs(map) do
+        if enabled == true then
+            return true
+        end
+    end
+    return false
+end
+
+local function EntityHasPortableEligibility(entity)
+    if type(entity) ~= "table" then return false end
+    local loadConditions = entity.loadConditions
+    if type(loadConditions) == "table" then
+        if CopyAllowlistMap(loadConditions.classAllowlist, "class")
+            or CopyAllowlistMap(loadConditions.specAllowlist, "spec")
+        then
+            return true
+        end
+    end
+    return CopyAllowlistMap(entity.specs, "spec") ~= nil
+        or HasTrueMapValue(entity.heroTalents)
+end
+
+local function ContainerEntryHasPortableEligibility(entry)
+    if type(entry) ~= "table" then return false end
+    if EntityHasPortableEligibility(entry.container) then
+        return true
+    end
+    for _, panel in ipairs(entry.panels or {}) do
+        if EntityHasPortableEligibility(panel) then
+            return true
+        end
+    end
+    return false
+end
+
+local function ContainersHavePortableEligibility(entries)
+    if type(entries) ~= "table" then return false end
+    for _, entry in ipairs(entries) do
+        if ContainerEntryHasPortableEligibility(entry) then
+            return true
+        end
+    end
+    return false
+end
+
+local function StripImportCharacterEligibility(data, importState)
+    local stripped = type(data) == "table" and tonumber(data._cdcCharacterEligibilityStripped) or 0
+    stripped = stripped + (StripCharacterEligibilityFromPayload
+        and StripCharacterEligibilityFromPayload(data)
+        or 0)
+    if stripped > 0 and importState then
+        importState.characterEligibilityStripped = (importState.characterEligibilityStripped or 0) + stripped
+    end
+    return stripped
+end
+
 ST._BuildGroupExportData = BuildGroupExportData
 ST._BuildContainerExportData = BuildContainerExportData
 ST._EncodeExportData = EncodeExportData
@@ -824,11 +883,14 @@ local function NewGroupImportState()
         importedGroupIds = {},
         containerCount = 0,
         panelCount = 0,
+        characterEligibilityStripped = 0,
+        globalizedEligibilityImports = 0,
     }
 end
 
-local function ImportContainerEntries(db, entries, charKey, folderId, importState)
+local function ImportContainerEntries(db, entries, charKey, folderId, importState, options)
     importState = importState or NewGroupImportState()
+    options = options or {}
     local firstContainerIndex = #importState.importedContainerIds + 1
     local startContainerCount = importState.containerCount
     local startPanelCount = importState.panelCount
@@ -842,12 +904,17 @@ local function ImportContainerEntries(db, entries, charKey, folderId, importStat
         end
 
         local container = CopyTable(entry.container)
+        local importAsGlobal = options.forceGlobalScope == true
+            or ContainerEntryHasPortableEligibility(entry)
         container.createdBy = charKey
-        container.isGlobal = false
+        container.isGlobal = importAsGlobal
         container.order = containerId
         container.specOrders = nil
         container.folderId = folderId
         container.locked = true
+        if importAsGlobal then
+            importState.globalizedEligibilityImports = (importState.globalizedEligibilityImports or 0) + 1
+        end
         db.groupContainers[containerId] = container
         CooldownCompanion:CreateContainerFrame(containerId)
 
@@ -904,6 +971,18 @@ local function RemapImportedContainerAnchors(db, importState, preserveContainerR
                 end
             end
         end
+    end
+end
+
+local function PrintImportSanitizerNotes(importState)
+    if not (importState and CooldownCompanion and CooldownCompanion.Print) then
+        return
+    end
+    if (importState.characterEligibilityStripped or 0) > 0 then
+        CooldownCompanion:Print("Character eligibility is local and was not imported.")
+    end
+    if (importState.globalizedEligibilityImports or 0) > 0 then
+        CooldownCompanion:Print("Class, specialization, and hero talent eligibility were preserved in Global Groups.")
     end
 end
 
@@ -1001,6 +1080,7 @@ ST._FinishGroupImportBatch = function(token, remapAnchors)
             CooldownCompanion:SanitizeCursorAnchorPolicy(db)
         end
     end
+    PrintImportSanitizerNotes(importState)
 end
 
 ST._AttachGroupImportBatch = function(payload, token)
@@ -1027,7 +1107,9 @@ local function ApplyGroupImportData(data)
     local db = CooldownCompanion.db.profile
     local charKey = CooldownCompanion.db.keys.char
     local sharedImportState = batchToken and activeGroupImportBatches[batchToken] or nil
+    local rootImportState = sharedImportState or NewGroupImportState()
     local deferAnchorRemap = sharedImportState ~= nil
+    StripImportCharacterEligibility(data, rootImportState)
 
     if data.type == "group" and data.group then
         CooldownCompanion:NotifyLegacySupportCutoff("group import")
@@ -1038,7 +1120,7 @@ local function ApplyGroupImportData(data)
         return false
 
     elseif data.type == "containers" and data.containers then
-        local importState, containerCount = ImportContainerEntries(db, data.containers, charKey, nil, sharedImportState)
+        local importState, containerCount = ImportContainerEntries(db, data.containers, charKey, nil, rootImportState)
         if not deferAnchorRemap then
             RemapImportedContainerAnchors(db, importState, true)
             RemapImportedPanelAnchors(db, importState)
@@ -1103,20 +1185,32 @@ local function ApplyGroupImportData(data)
                 importedLoadConditions = nil
             end
         end
+        local folderUsesGlobalEligibility = importedSpecs
+            or importedHeroTalents
+            or (importedLoadConditions and (
+                importedLoadConditions.classAllowlist
+                    or importedLoadConditions.specAllowlist
+            ))
+            or ContainersHavePortableEligibility(data.containers)
         db.folders[folderId] = {
             name = data.folder.name or "Imported Folder",
             order = folderId,
-            section = "char",
+            section = folderUsesGlobalEligibility and "global" or "char",
             createdBy = charKey,
             manualIcon = importedManualIcon,
             specs = importedSpecs,
             heroTalents = importedHeroTalents,
             loadConditions = importedLoadConditions,
         }
+        if folderUsesGlobalEligibility then
+            rootImportState.globalizedEligibilityImports = (rootImportState.globalizedEligibilityImports or 0) + 1
+        end
         local count = 0
         if data.containers then
             local importState, _, panelCount = ImportContainerEntries(
-                db, data.containers, charKey, folderId, sharedImportState
+                db, data.containers, charKey, folderId, rootImportState, {
+                    forceGlobalScope = folderUsesGlobalEligibility and true or false,
+                }
             )
             if not deferAnchorRemap then
                 RemapImportedContainerAnchors(db, importState, true)
@@ -1131,7 +1225,7 @@ local function ApplyGroupImportData(data)
             container = data.container,
             panels = data.panels,
             _originalContainerId = data._originalContainerId,
-        }}, charKey, nil, sharedImportState)
+        }}, charKey, nil, rootImportState)
         local container = db.groupContainers[containerId]
         if not deferAnchorRemap then
             RemapImportedContainerAnchors(db, importState, false)
@@ -1157,6 +1251,9 @@ local function ApplyGroupImportData(data)
 
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:RefreshAllGroups()
+    if not deferAnchorRemap then
+        PrintImportSanitizerNotes(rootImportState)
+    end
     return true
 end
 

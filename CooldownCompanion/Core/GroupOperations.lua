@@ -862,17 +862,47 @@ function CooldownCompanion:GetEffectiveSpecs(group)
             local folders = self.db and self.db.profile and self.db.profile.folders
             local folder = folders and folders[folderId]
             AddEffectiveSource(sources, folder and folder.specs, true, NormalizeSpecKey)
+            AddEffectiveSource(
+                sources,
+                folder and folder.loadConditions and folder.loadConditions.specAllowlist,
+                true,
+                NormalizeSpecKey
+            )
         end
         AddEffectiveSource(sources, container.specs, true, NormalizeSpecKey)
+        AddEffectiveSource(
+            sources,
+            container.loadConditions and container.loadConditions.specAllowlist,
+            true,
+            NormalizeSpecKey
+        )
         AddEffectiveSource(sources, group.specs, false, NormalizeSpecKey)
+        AddEffectiveSource(
+            sources,
+            group.loadConditions and group.loadConditions.specAllowlist,
+            false,
+            NormalizeSpecKey
+        )
     else
         local folderId = group.folderId
         if folderId then
             local folders = self.db and self.db.profile and self.db.profile.folders
             local folder = folders and folders[folderId]
             AddEffectiveSource(sources, folder and folder.specs, true, NormalizeSpecKey)
+            AddEffectiveSource(
+                sources,
+                folder and folder.loadConditions and folder.loadConditions.specAllowlist,
+                true,
+                NormalizeSpecKey
+            )
         end
         AddEffectiveSource(sources, group.specs, false, NormalizeSpecKey)
+        AddEffectiveSource(
+            sources,
+            group.loadConditions and group.loadConditions.specAllowlist,
+            false,
+            NormalizeSpecKey
+        )
     end
 
     return ResolveEffectiveSources(sources)
@@ -1260,16 +1290,6 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         if group.enabled == false then return false end
     end
 
-    local buttonUsabilityOptions = opts.buttonUsabilityOptions
-        or (self.GetGroupButtonUsabilityOptions and self:GetGroupButtonUsabilityOptions(groupId, group))
-
-    if opts.requireButtons and not self:GroupHasUsableButtons(group, {
-        checkLoadConditions = opts.checkLoadConditions,
-        ignoreSpellAvailability = buttonUsabilityOptions and buttonUsabilityOptions.ignoreSpellAvailability,
-    }) then
-        return false
-    end
-
     -- Spec and hero talent filtering (GetEffectiveSpecs already delegates to container)
     local effectiveSpecs, _, hasSpecFilter = self:GetEffectiveSpecs(group)
     if hasSpecFilter then
@@ -1290,6 +1310,16 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         if not self:IsGroupLoadConditionMet(group) then
             return false
         end
+    end
+
+    local buttonUsabilityOptions = opts.buttonUsabilityOptions
+        or (self.GetGroupButtonUsabilityOptions and self:GetGroupButtonUsabilityOptions(groupId, group))
+
+    if opts.requireButtons and not self:GroupHasUsableButtons(group, {
+        checkLoadConditions = opts.checkLoadConditions,
+        ignoreSpellAvailability = buttonUsabilityOptions and buttonUsabilityOptions.ignoreSpellAvailability,
+    }) then
+        return false
     end
 
     return true
