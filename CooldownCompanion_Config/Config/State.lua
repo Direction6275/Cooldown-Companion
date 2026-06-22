@@ -3017,8 +3017,14 @@ local function CharacterInfoClassKey(charKey)
         return string.upper(info.classFilename)
     end
     local classID = tonumber(info.classID)
-    if classID and GetClassInfo then
-        local _, classFilename = GetClassInfo(classID)
+    if classID then
+        local classInfo = C_CreatureInfo and C_CreatureInfo.GetClassInfo
+            and C_CreatureInfo.GetClassInfo(classID)
+            or nil
+        local classFilename = type(classInfo) == "table" and classInfo.classFile or nil
+        if not classFilename and GetClassInfo then
+            classFilename = select(2, GetClassInfo(classID))
+        end
         if type(classFilename) == "string" and classFilename ~= "" then
             return string.upper(classFilename)
         end

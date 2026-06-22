@@ -63,10 +63,65 @@ local function EntityHasPortableEligibility(entity)
             or HasPortableEligibilityMap(loadConditions.specAllowlist))
 end
 
-local function ContainerHasPortableEligibility(profile, containerId, container)
+local function AddIndexedEntity(indexMap, key, entity)
+    if key == nil then return end
+    local bucket = indexMap[key]
+    if not bucket then
+        bucket = {}
+        indexMap[key] = bucket
+    end
+    bucket[#bucket + 1] = entity
+end
+
+local function BuildPortableEligibilityIndex(profile)
+    local index = {
+        panelsByContainerId = {},
+        looseGroupsByFolderId = {},
+        containersByFolderId = {},
+    }
+    if type(profile) ~= "table" then return index end
+
+    local groups = type(profile.groups) == "table" and profile.groups or {}
+    for _, group in pairs(groups) do
+        if type(group) == "table" then
+            if group.parentContainerId ~= nil then
+                AddIndexedEntity(index.panelsByContainerId, group.parentContainerId, group)
+            elseif group.folderId ~= nil then
+                AddIndexedEntity(index.looseGroupsByFolderId, group.folderId, group)
+            end
+        end
+    end
+
+    local groupContainers = type(profile.groupContainers) == "table" and profile.groupContainers or {}
+    for containerId, container in pairs(groupContainers) do
+        if type(container) == "table" and container.folderId ~= nil then
+            AddIndexedEntity(index.containersByFolderId, container.folderId, {
+                id = containerId,
+                container = container,
+            })
+        end
+    end
+
+    return index
+end
+
+local function ContainerHasPortableEligibility(profile, containerId, container, eligibilityIndex)
     if EntityHasPortableEligibility(container) then
         return true
     end
+
+    local indexedGroups = eligibilityIndex and eligibilityIndex.panelsByContainerId[containerId]
+    if indexedGroups then
+        for _, group in ipairs(indexedGroups) do
+            if EntityHasPortableEligibility(group) then
+                return true
+            end
+        end
+        return false
+    elseif eligibilityIndex then
+        return false
+    end
+
     local groups = type(profile.groups) == "table" and profile.groups or {}
     for _, group in pairs(groups) do
         if type(group) == "table"
@@ -79,19 +134,42 @@ local function ContainerHasPortableEligibility(profile, containerId, container)
     return false
 end
 
-local function FolderHasPortableEligibility(profile, folderId, folder)
+local function FolderHasPortableEligibility(profile, folderId, folder, eligibilityIndex)
     if EntityHasPortableEligibility(folder) then
         return true
     end
-    local groupContainers = type(profile.groupContainers) == "table" and profile.groupContainers or {}
-    for containerId, container in pairs(groupContainers) do
-        if type(container) == "table"
-            and container.folderId == folderId
-            and ContainerHasPortableEligibility(profile, containerId, container)
-        then
-            return true
+
+    local indexedContainers = eligibilityIndex and eligibilityIndex.containersByFolderId[folderId]
+    if indexedContainers then
+        for _, entry in ipairs(indexedContainers) do
+            if ContainerHasPortableEligibility(profile, entry.id, entry.container, eligibilityIndex) then
+                return true
+            end
+        end
+    elseif not eligibilityIndex then
+        local groupContainers = type(profile.groupContainers) == "table" and profile.groupContainers or {}
+        for containerId, container in pairs(groupContainers) do
+            if type(container) == "table"
+                and container.folderId == folderId
+                and ContainerHasPortableEligibility(profile, containerId, container)
+            then
+                return true
+            end
         end
     end
+
+    local indexedLooseGroups = eligibilityIndex and eligibilityIndex.looseGroupsByFolderId[folderId]
+    if indexedLooseGroups then
+        for _, group in ipairs(indexedLooseGroups) do
+            if EntityHasPortableEligibility(group) then
+                return true
+            end
+        end
+        return false
+    elseif eligibilityIndex then
+        return false
+    end
+
     local groups = type(profile.groups) == "table" and profile.groups or {}
     for _, group in pairs(groups) do
         if type(group) == "table"
@@ -110,11 +188,12 @@ local function GlobalizePortableCharacterScopedEligibility(profile)
 
     local globalized = 0
     local globalFolders = {}
+    local eligibilityIndex = BuildPortableEligibilityIndex(profile)
     local folders = type(profile.folders) == "table" and profile.folders or {}
     for folderId, folder in pairs(folders) do
         if type(folder) == "table"
             and folder.section == "char"
-            and FolderHasPortableEligibility(profile, folderId, folder)
+            and FolderHasPortableEligibility(profile, folderId, folder, eligibilityIndex)
         then
             folder.section = "global"
             globalFolders[folderId] = true
@@ -127,7 +206,7 @@ local function GlobalizePortableCharacterScopedEligibility(profile)
         if type(container) == "table"
             and container.isGlobal ~= true
             and (globalFolders[container.folderId]
-                or ContainerHasPortableEligibility(profile, containerId, container))
+                or ContainerHasPortableEligibility(profile, containerId, container, eligibilityIndex))
         then
             container.isGlobal = true
             globalized = globalized + 1
@@ -326,7 +405,12 @@ local function BuildForeignCharacterRenames(foreignKeys, exportedCharInfo, impor
     for foreignKey in pairs(foreignKeys) do
         local info = type(exportedCharInfo) == "table" and exportedCharInfo[foreignKey] or nil
         local classID = info and info.classID
-        local className = classID and GetClassInfo(classID) or "Character"
+        local classInfo = classID and C_CreatureInfo and C_CreatureInfo.GetClassInfo
+            and C_CreatureInfo.GetClassInfo(classID)
+            or nil
+        local className = type(classInfo) == "table" and classInfo.className
+            or (classID and GetClassInfo and GetClassInfo(classID))
+            or "Character"
         classCounts[className] = (classCounts[className] or 0) + 1
         classEntries[foreignKey] = {
             className = className,

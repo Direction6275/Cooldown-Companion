@@ -57,6 +57,19 @@ local function IsContainerVisibleInConfig(containerOrContainerId)
     return CooldownCompanion:IsContainerVisibleToCurrentChar(containerOrContainerId)
 end
 
+local function CanAllContainersMoveToFolder(containerIds, folderId)
+    if not CooldownCompanion.CanMoveContainerToFolder then
+        return true
+    end
+    for _, containerId in ipairs(containerIds or {}) do
+        local ok = CooldownCompanion:CanMoveContainerToFolder(containerId, folderId)
+        if not ok then
+            return false
+        end
+    end
+    return true
+end
+
 local function OpenPanelLoadConditions(panelId, containerId)
     SelectConfigPanel(panelId, { containerId = containerId })
     CS.selectedTab = "loadconditions"
@@ -1534,7 +1547,9 @@ local function RefreshColumn2()
                     local folderScope = CooldownCompanion.ResolveFolderClassScope
                         and CooldownCompanion:ResolveFolderClassScope(folder)
                         or nil
-                    if not (folderScope and folderScope.isInvalid) then
+                    if not (folderScope and folderScope.isInvalid)
+                        and CanAllContainersMoveToFolder(multiContainerIds, fid)
+                    then
                         local sectionKey = folderScope and folderScope.sectionKey or folder.section
                         table.insert(folderList, {
                             id = fid,
@@ -1564,6 +1579,12 @@ local function RefreshColumn2()
                     info.notCheckable = true
                     info.func = function()
                         CloseDropDownMenus()
+                        if not CanAllContainersMoveToFolder(multiContainerIds, f.id) then
+                            if CooldownCompanion.Print then
+                                CooldownCompanion:Print("Groups cannot be moved into folders owned by another class.")
+                            end
+                            return
+                        end
                         for _, cid in ipairs(multiContainerIds) do
                             CooldownCompanion:MoveGroupToFolder(cid, f.id)
                         end

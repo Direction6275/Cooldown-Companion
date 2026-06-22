@@ -449,10 +449,25 @@ end
 
 local MAX_CLASS_SCAN_ID = 20
 
+local function GetClassInfoByID(classID)
+    classID = tonumber(classID)
+    if not classID then return nil, nil, nil end
+    if C_CreatureInfo and C_CreatureInfo.GetClassInfo then
+        local classInfo = C_CreatureInfo.GetClassInfo(classID)
+        if type(classInfo) == "table" then
+            return classInfo.className, classInfo.classFile, classInfo.classID
+        end
+    end
+    if GetClassInfo then
+        return GetClassInfo(classID)
+    end
+    return nil, nil, nil
+end
+
 local function GetClassChoiceByID(classID)
     classID = tonumber(classID)
     if not classID then return nil end
-    local className, classFilename = GetClassInfo(classID)
+    local className, classFilename = GetClassInfoByID(classID)
     local classKey = NormalizeAllowlistKey("class", classFilename)
     if not classKey then return nil end
     return {
@@ -483,8 +498,8 @@ local function GetCurrentClassChoice()
     local classFilename = CooldownCompanion._playerClassFilename
     local classID = CooldownCompanion._playerClassID
     local className
-    if classID and GetClassInfo then
-        className = GetClassInfo(classID)
+    if classID then
+        className = GetClassInfoByID(classID)
     end
     if (not classFilename or not className) and UnitClass then
         local unitClassName, unitClassFilename, unitClassID = UnitClass("player")
@@ -1767,7 +1782,7 @@ local function ResolveConditionClassName(cond)
     end
 
     if cond.classID then
-        local name = GetClassInfo(cond.classID)
+        local name = GetClassInfoByID(cond.classID)
         return name or ("Class " .. cond.classID)
     end
 

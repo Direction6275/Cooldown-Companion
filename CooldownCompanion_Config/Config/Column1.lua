@@ -1616,14 +1616,27 @@ local function RefreshColumn1(preserveDrag)
         RenderItems(unloadedItems, "unloaded")
     end
 
+    local function GetClassInfoByID(classID)
+        classID = tonumber(classID)
+        if not classID then return nil, nil, nil end
+        if C_CreatureInfo and C_CreatureInfo.GetClassInfo then
+            local classInfo = C_CreatureInfo.GetClassInfo(classID)
+            if type(classInfo) == "table" then
+                return classInfo.className, classInfo.classFile, classInfo.classID
+            end
+        end
+        if GetClassInfo then
+            return GetClassInfo(classID)
+        end
+        return nil, nil, nil
+    end
+
     local function GetClassDisplayName(classKey)
         if type(classKey) ~= "string" then return "Class" end
-        if GetClassInfo then
-            for classID = 1, 30 do
-                local className, classFilename = GetClassInfo(classID)
-                if classFilename and string.upper(classFilename) == classKey then
-                    return className or classKey
-                end
+        for classID = 1, 30 do
+            local className, classFilename = GetClassInfoByID(classID)
+            if classFilename and string.upper(classFilename) == classKey then
+                return className or classKey
             end
         end
         return classKey:sub(1, 1) .. string.lower(classKey:sub(2))
@@ -1766,6 +1779,9 @@ local function RefreshColumn1(preserveDrag)
         RenderNavigationRow("other-class-library-back", "|A:common-icon-backarrow:14:14|a  Back to Groups", {
             section = "other-classes",
             onClick = function()
+                if ClearConfigPrimarySelection then
+                    ClearConfigPrimarySelection()
+                end
                 CS.otherClassLibraryActive = false
                 CS.otherClassLibraryClassKey = nil
                 CooldownCompanion:RefreshConfigPanel()
@@ -1879,21 +1895,23 @@ local function RefreshColumn1(preserveDrag)
         CS.col1Scroll:AddChild(desc)
     else
         local statsContainerIds = {}
-        for _, id in ipairs(globalIds) do
-            if not searchResults or searchResults.containerMatches[id] then
-                statsContainerIds[id] = true
+        local function IncludeVisibleStats(containerId)
+            if not searchResults or searchResults.containerMatches[containerId] then
+                statsContainerIds[containerId] = true
             end
+        end
+        for _, id in ipairs(globalIds) do
+            IncludeVisibleStats(id)
         end
         for _, id in ipairs(charIds) do
-            if not searchResults or searchResults.containerMatches[id] then
-                statsContainerIds[id] = true
-            end
+            IncludeVisibleStats(id)
         end
-        for _, section in ipairs(otherSectionOrder) do
-            for _, id in ipairs(section.containerIds) do
-                if not searchResults or searchResults.containerMatches[id] then
-                    statsContainerIds[id] = true
-                end
+        local selectedOtherSection = CS.otherClassLibraryActive
+            and FindOtherClassSectionByClassKey(otherSectionOrder, CS.otherClassLibraryClassKey)
+            or nil
+        if selectedOtherSection then
+            for _, id in ipairs(selectedOtherSection.containerIds) do
+                IncludeVisibleStats(id)
             end
         end
         for id in pairs(CS.selectedGroups) do

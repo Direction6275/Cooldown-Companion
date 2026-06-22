@@ -1383,15 +1383,29 @@ local function ClearEmptyCoreLoadConditions(entity)
     end
 end
 
+local function GetClassInfoByID(classID)
+    classID = tonumber(classID)
+    if not classID then return nil, nil, nil end
+    if C_CreatureInfo and C_CreatureInfo.GetClassInfo then
+        local classInfo = C_CreatureInfo.GetClassInfo(classID)
+        if type(classInfo) == "table" then
+            return classInfo.className, classInfo.classFile, classInfo.classID
+        end
+    end
+    if GetClassInfo then
+        return GetClassInfo(classID)
+    end
+    return nil, nil, nil
+end
+
 local function GetClassKeyFromClassID(classID)
-    if not (classID and GetClassInfo) then return nil end
-    local _, classFilename = GetClassInfo(classID)
+    local _, classFilename = GetClassInfoByID(classID)
     return NormalizeClassKey(classFilename)
 end
 
 local function GetClassIDFromClassKey(classKey)
     classKey = NormalizeClassKey(classKey)
-    if not (classKey and GetClassInfo) then return nil end
+    if not classKey then return nil end
     for classID = 1, CLASS_SCAN_LIMIT do
         if GetClassKeyFromClassID(classID) == classKey then
             return classID
