@@ -1272,7 +1272,7 @@ local function AddClassSpecEligibilityControls(container, opts)
         effectiveSpecs = opts.effectiveSpecs,
         choiceSpecMap = opts.choiceSpecMap,
     })
-    local specById, specsByClassKey = BuildSpecChoiceIndex(specChoices)
+    local specById = BuildSpecChoiceIndex(specChoices)
 
     local specValues = {}
     local specOrder = {}
@@ -1314,7 +1314,7 @@ local function AddClassSpecEligibilityControls(container, opts)
     if type(heroTalentsSource) ~= "table" then
         heroTalentsSource = nil
     end
-    local heroChoices, heroById = BuildHeroTalentChoicesForSpecs(specChoices, selectedSpecMap, configID)
+    local heroChoices = BuildHeroTalentChoicesForSpecs(specChoices, selectedSpecMap, configID)
     local heroValues = {}
     local heroOrder = {}
     local heroSortLabels = {}
@@ -1434,7 +1434,7 @@ local function AddActiveClassSpecEligibilityRows(rows, opts)
         effectiveSpecs = opts.effectiveSpecs,
         choiceSpecMap = opts.choiceSpecMap,
     })
-    local specById, specsByClassKey = BuildSpecChoiceIndex(specChoices)
+    local _, specsByClassKey = BuildSpecChoiceIndex(specChoices)
     local configID = opts.configID or (C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID())
     local heroTalentsSource = opts.useHeroTalentsSource and opts.heroTalentsSource or target.heroTalents
     if type(heroTalentsSource) ~= "table" then

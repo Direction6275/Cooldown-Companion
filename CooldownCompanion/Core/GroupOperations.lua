@@ -1479,7 +1479,6 @@ local function BuildClassScopeResult(scope, opts)
         sectionKey = opts.sectionKey,
         ownerCharKey = opts.ownerCharKey,
         ownerClassKey = opts.ownerClassKey,
-        classFilename = opts.ownerClassKey,
         currentClassKey = opts.currentClassKey,
         currentCharKey = opts.currentCharKey,
         isGlobal = scope == "global",
@@ -1769,9 +1768,16 @@ function CooldownCompanion:NormalizeFolderEligibilityForCharacterScope(folderId,
     opts = WithOwnerCharKey(opts, folder.createdBy or (self.db and self.db.keys and self.db.keys.char))
 
     local changed = self:NormalizeEligibilityForCharacterScope(folder, opts)
+    local childContainerIds = {}
     for containerId, container in pairs(db.groupContainers or {}) do
         if type(container) == "table" and container.folderId == folderId then
-            changed = self:NormalizeContainerEligibilityForCharacterScope(containerId, opts) or changed
+            childContainerIds[containerId] = true
+            changed = self:NormalizeEligibilityForCharacterScope(container, opts) or changed
+        end
+    end
+    for _, group in pairs(db.groups or {}) do
+        if type(group) == "table" and childContainerIds[group.parentContainerId] then
+            changed = self:NormalizeEligibilityForCharacterScope(group, opts) or changed
         end
     end
     return changed
