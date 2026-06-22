@@ -1085,7 +1085,19 @@ local function GetSpecSelectionMap(target, useSpecAllowlist)
     if useSpecAllowlist then
         return target.loadConditions and target.loadConditions.specAllowlist
     end
-    return target.specs
+    local specs = CopyAllowlist(target.specs, "spec")
+    local loadConditionSpecs = CopyAllowlist(
+        target.loadConditions and target.loadConditions.specAllowlist,
+        "spec"
+    )
+    if not loadConditionSpecs then
+        return specs
+    end
+    specs = specs or {}
+    for specId in pairs(loadConditionSpecs) do
+        specs[specId] = true
+    end
+    return next(specs) and specs or nil
 end
 
 local function SetSpecEligibilityValue(target, specId, value, useSpecAllowlist)
