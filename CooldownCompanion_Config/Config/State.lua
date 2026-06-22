@@ -228,10 +228,6 @@ ST._configState = {
     -- Column content frames
     col1Scroll = nil,
     col1ButtonBar = nil,
-    col1FooterDoorway = nil,
-    col1FooterDoorwayVisible = false,
-    lastCol1FooterDoorwayRow = nil,
-    UpdateColumn1FooterLayout = nil,
     col2Scroll = nil,
     col2ButtonBar = nil,
     col4Container = nil,

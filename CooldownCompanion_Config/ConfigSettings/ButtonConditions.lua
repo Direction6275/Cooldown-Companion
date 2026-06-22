@@ -690,6 +690,24 @@ local function CharacterChoiceMatchesScopeClass(choice, scopeClassKey, ownerChar
     return classKey == scopeClassKey
 end
 
+local function AddKnownScopeClassCharacterChoices(choices, byKey, scopeClassKey, ownerCharKey)
+    if not scopeClassKey then return end
+    local db = CooldownCompanion.db
+    local characterInfo = db and db.global and db.global.characterInfo
+    if type(characterInfo) ~= "table" then return end
+
+    for charKey, info in pairs(characterInfo) do
+        if type(charKey) == "string" and charKey ~= "" then
+            local choice = BuildCharacterChoice(charKey, info)
+            choice.classFilename = choice.classFilename or NormalizeAllowlistKey("class", info and info.classFilename)
+            choice.classID = choice.classID or (info and info.classID) or nil
+            if CharacterChoiceMatchesScopeClass(choice, scopeClassKey, ownerCharKey) then
+                AddChoice(choices, byKey, choice.key, choice.label, choice)
+            end
+        end
+    end
+end
+
 local function BuildClassChoices(target, inheritedMap)
     local choices, byKey = {}, {}
     for classID = 1, MAX_CLASS_SCAN_ID do
@@ -725,6 +743,7 @@ local function BuildCharacterChoices(target, inheritedMap, scopeClassKey, ownerC
             AddChoice(choices, byKey, choice.key, choice.label, choice)
         end
     end
+    AddKnownScopeClassCharacterChoices(choices, byKey, scopeClassKey, ownerCharKey)
     local localMap = target.loadConditions and target.loadConditions.characterAllowlist
     local copiedLocal = CopyAllowlist(localMap, "character")
     for key in pairs(copiedLocal or {}) do

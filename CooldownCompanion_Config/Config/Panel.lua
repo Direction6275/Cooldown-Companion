@@ -30,6 +30,7 @@ local IsConfigFinderActive = ST._IsConfigFinderActive
 local SetConfigFinderText = ST._SetConfigFinderText
 local ClearConfigFinderText = ST._ClearConfigFinderText
 local InvalidateConfigFinderResults = ST._InvalidateConfigFinderResults
+local BuildConfigFinderResults = ST._BuildConfigFinderResults
 local MaybeAutoStartFirstIconPanelTutorial = ST._MaybeAutoStartFirstIconPanelTutorial
 local StartFirstIconPanelTutorial = ST._StartFirstIconPanelTutorial
 local CancelFirstIconPanelTutorial = ST._CancelFirstIconPanelTutorial
@@ -37,8 +38,6 @@ local RebuildTutorialAnchors = ST._RebuildTutorialAnchors
 local RefreshTutorialPlacement = ST._RefreshTutorialPlacement
 local SetupChangelogOverlay = ST._SetupChangelogOverlay
 local RefreshVisibleConfigCompactRows = ST._RefreshVisibleConfigCompactRows
-local CleanRecycledEntry = ST._CleanRecycledEntry
-local ApplyConfigTextRow = ST._ApplyConfigTextRow
 
 local function GetAddonVersionText()
     if ST._GetAddonVersion then
@@ -67,8 +66,6 @@ local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
 local CONFIG_FINDER_BOX_HEIGHT = 28
 local CONFIG_FINDER_BUTTON_GAP = 3
 local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
-local COLUMN1_FOOTER_DOORWAY_HEIGHT = 24
-local COLUMN1_FOOTER_DOORWAY_RESERVED_HEIGHT = COLUMN1_FOOTER_DOORWAY_HEIGHT + CONFIG_FINDER_BUTTON_GAP
 local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
 local CONFIG_NESTED_INLINE_GROUP_INSET = 20
 local CONFIG_DRAG_ALPHA = 0.40
@@ -247,6 +244,38 @@ local function SetPrimaryMode(mode, opts)
         CooldownCompanion:RefreshConfigPanel()
     end
     return true
+end
+
+local function HasOtherClassInventory()
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if not db then return false, false, false end
+
+    local searchFiltered = IsConfigFinderActive and IsConfigFinderActive() and BuildConfigFinderResults ~= nil
+    local searchResults = searchFiltered and BuildConfigFinderResults() or nil
+    local hasOtherInventory = false
+
+    if CooldownCompanion.ResolveContainerClassScope then
+        for id, container in pairs(db.groupContainers or {}) do
+            local scope = CooldownCompanion:ResolveContainerClassScope(container or id)
+            if scope and scope.scope == "other-class" then
+                hasOtherInventory = true
+                if not searchFiltered or (searchResults and searchResults.containerMatches and searchResults.containerMatches[id]) then
+                    return true, searchFiltered == true, true
+                end
+            end
+        end
+    end
+
+    if not searchFiltered and CooldownCompanion.ResolveFolderClassScope then
+        for folderId, folder in pairs(db.folders or {}) do
+            local scope = CooldownCompanion:ResolveFolderClassScope(folder or folderId)
+            if scope and scope.scope == "other-class" then
+                return true, false, true
+            end
+        end
+    end
+
+    return false, searchFiltered == true, hasOtherInventory
 end
 
 local GetClassColoredText = ST._GetClassColoredText
@@ -1133,6 +1162,104 @@ local function CreateConfigPanel()
     end)
     cdmDisplayBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+    -- Other Classes browse button — between the Changelog and CDM buttons
+    local otherClassBrowseBtn = CreateFrame("Button", nil, content)
+    otherClassBrowseBtn:SetSize(16, 16)
+    if otherClassBrowseBtn.SetMotionScriptsWhileDisabled then
+        otherClassBrowseBtn:SetMotionScriptsWhileDisabled(true)
+    end
+    local otherClassBrowseIcon = otherClassBrowseBtn:CreateTexture(nil, "ARTWORK")
+    otherClassBrowseIcon:SetAtlas("BattleBar-SwapPetIcon", false)
+    otherClassBrowseIcon:SetAllPoints()
+    otherClassBrowseBtn:SetHighlightAtlas("BattleBar-SwapPetIcon")
+    otherClassBrowseBtn:GetHighlightTexture():SetAlpha(0.3)
+
+    local otherClassBrowseBtnBorder = nil
+    local otherClassBrowseAvailable = false
+    local otherClassBrowseSearchFiltered = false
+    local otherClassBrowseHasInventory = false
+
+    local function UpdateOtherClassBrowseBtnHighlight()
+        local shouldHighlight = otherClassBrowseAvailable and CS.otherClassLibraryActive == true
+        if shouldHighlight then
+            if not otherClassBrowseBtnBorder then
+                otherClassBrowseBtnBorder = otherClassBrowseBtn:CreateTexture(nil, "OVERLAY")
+                otherClassBrowseBtnBorder:SetPoint("TOPLEFT", -1, 1)
+                otherClassBrowseBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
+                otherClassBrowseBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
+            end
+            otherClassBrowseBtnBorder:Show()
+        elseif otherClassBrowseBtnBorder then
+            otherClassBrowseBtnBorder:Hide()
+        end
+    end
+
+    local function UpdateOtherClassBrowseButtonState()
+        otherClassBrowseAvailable, otherClassBrowseSearchFiltered, otherClassBrowseHasInventory = HasOtherClassInventory()
+
+        if otherClassBrowseBtn.SetEnabled then
+            otherClassBrowseBtn:SetEnabled(otherClassBrowseAvailable)
+        elseif otherClassBrowseAvailable and otherClassBrowseBtn.Enable then
+            otherClassBrowseBtn:Enable()
+        elseif otherClassBrowseBtn.Disable then
+            otherClassBrowseBtn:Disable()
+        end
+        if otherClassBrowseIcon.SetDesaturated then
+            otherClassBrowseIcon:SetDesaturated(not otherClassBrowseAvailable)
+        end
+        if otherClassBrowseAvailable then
+            otherClassBrowseBtn:SetAlpha(1)
+            otherClassBrowseIcon:SetVertexColor(1, 1, 1, 1)
+            if otherClassBrowseBtn:GetHighlightTexture() then
+                otherClassBrowseBtn:GetHighlightTexture():SetAlpha(0.3)
+            end
+        else
+            otherClassBrowseBtn:SetAlpha(0.75)
+            otherClassBrowseIcon:SetVertexColor(0.6, 0.6, 0.6, 1)
+            if otherClassBrowseBtn:GetHighlightTexture() then
+                otherClassBrowseBtn:GetHighlightTexture():SetAlpha(0)
+            end
+        end
+
+        UpdateOtherClassBrowseBtnHighlight()
+    end
+
+    otherClassBrowseBtn:SetScript("OnClick", function()
+        CloseDropDownMenus()
+        if CS.otherClassLibraryActive then
+            CS.otherClassLibraryActive = false
+            CS.otherClassLibraryClassKey = nil
+            CooldownCompanion:RefreshConfigPanel()
+            return
+        end
+        if not otherClassBrowseAvailable then
+            return
+        end
+        if CS.resourceBarPanelActive then
+            SetPrimaryMode("buttons", { skipRefresh = true })
+        end
+        CS.otherClassLibraryActive = true
+        CS.otherClassLibraryClassKey = nil
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    otherClassBrowseBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Browse Other Classes")
+        if not otherClassBrowseAvailable then
+            if otherClassBrowseSearchFiltered and otherClassBrowseHasInventory then
+                GameTooltip:AddLine("No other classes match the current search.", 1, 1, 1, true)
+            else
+                GameTooltip:AddLine("No other classes on this profile currently have groups to browse.", 1, 1, 1, true)
+            end
+        elseif CS.otherClassLibraryActive then
+            GameTooltip:AddLine("Class library is open. Click to return to the regular config view.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("View and edit groups saved for other classes on this profile.", 1, 1, 1, true)
+        end
+        GameTooltip:Show()
+    end)
+    otherClassBrowseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     local changelogOverlay
     local changelogBtn
     local changelogBtnBorder = nil
@@ -1177,7 +1304,8 @@ local function CreateConfigPanel()
     gearBtn:SetSize(20, 20)
     gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -4, 0)
     changelogBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
-    cdmBtn:SetPoint("RIGHT", changelogBtn, "LEFT", -4, 0)
+    otherClassBrowseBtn:SetPoint("RIGHT", changelogBtn, "LEFT", -4, 0)
+    cdmBtn:SetPoint("RIGHT", otherClassBrowseBtn, "LEFT", -4, 0)
     cdmDisplayBtn:SetPoint("RIGHT", cdmBtn, "LEFT", -4, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
@@ -1720,19 +1848,6 @@ local function CreateConfigPanel()
     end
     CS.configFinderBox = configFinder
 
-    local otherClassesDoorway = AceGUI:Create("InteractiveLabel")
-    CleanRecycledEntry(otherClassesDoorway)
-    otherClassesDoorway:SetText("")
-    otherClassesDoorway:SetFullWidth(true)
-    otherClassesDoorway:SetFontObject(GameFontHighlight)
-    ApplyConfigTextRow(otherClassesDoorway)
-    otherClassesDoorway:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-    otherClassesDoorway.frame:SetParent(col1.content)
-    otherClassesDoorway.frame:ClearAllPoints()
-    otherClassesDoorway.frame:SetHeight(COLUMN1_FOOTER_DOORWAY_HEIGHT)
-    otherClassesDoorway.frame:Hide()
-    CS.col1FooterDoorway = otherClassesDoorway
-
     -- Column 3: Button Settings
     local col3 = AceGUI:Create("InlineGroup")
     col3:SetTitle("Button Settings")
@@ -2131,65 +2246,6 @@ local function CreateConfigPanel()
         end
     end
 
-    local function PositionColumn1FooterControls(finderAvailable)
-        finderAvailable = finderAvailable == true
-
-        if CS.configFinderBox and CS.configFinderBox.frame then
-            CS.configFinderBox.frame:ClearAllPoints()
-            CS.configFinderBox.frame:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
-            CS.configFinderBox.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
-            CS.configFinderBox.frame:SetHeight(CONFIG_FINDER_BOX_HEIGHT)
-        end
-
-        local doorwayVisible = finderAvailable
-            and CS.col1FooterDoorwayVisible == true
-            and CS.col1FooterDoorway
-            and CS.col1FooterDoorway.frame
-
-        if CS.col1FooterDoorway and CS.col1FooterDoorway.frame then
-            local doorwayFrame = CS.col1FooterDoorway.frame
-            doorwayFrame:ClearAllPoints()
-            doorwayFrame:SetPoint(
-                "BOTTOMLEFT",
-                col1.content,
-                "BOTTOMLEFT",
-                0,
-                30 + CONFIG_FINDER_RESERVED_HEIGHT + CONFIG_FINDER_BUTTON_GAP
-            )
-            doorwayFrame:SetPoint(
-                "BOTTOMRIGHT",
-                col1.content,
-                "BOTTOMRIGHT",
-                0,
-                30 + CONFIG_FINDER_RESERVED_HEIGHT + CONFIG_FINDER_BUTTON_GAP
-            )
-            doorwayFrame:SetHeight(COLUMN1_FOOTER_DOORWAY_HEIGHT)
-            if doorwayVisible then
-                doorwayFrame:Show()
-            else
-                doorwayFrame:Hide()
-            end
-        end
-
-        if CS.col1Scroll and CS.col1Scroll.frame then
-            local bottomInset = 30
-            if finderAvailable then
-                bottomInset = bottomInset + CONFIG_FINDER_RESERVED_HEIGHT
-                if doorwayVisible then
-                    bottomInset = bottomInset + COLUMN1_FOOTER_DOORWAY_RESERVED_HEIGHT
-                end
-            end
-
-            CS.col1Scroll.frame:ClearAllPoints()
-            CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-            CS.col1Scroll.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, bottomInset)
-        end
-    end
-
-    CS.UpdateColumn1FooterLayout = function()
-        PositionColumn1FooterControls(IsConfigFinderAvailable and IsConfigFinderAvailable())
-    end
-
     -- Layout columns on size change
     local function LayoutColumns()
         local w = colParent:GetWidth()
@@ -2206,11 +2262,6 @@ local function CreateConfigPanel()
         if CS.talentPickerMode then
             if CS.configFinderBox then
                 CS.configFinderBox.frame:Hide()
-            end
-            CS.col1FooterDoorwayVisible = false
-            CS.lastCol1FooterDoorwayRow = nil
-            if CS.col1FooterDoorway and CS.col1FooterDoorway.frame then
-                CS.col1FooterDoorway.frame:Hide()
             end
             if ClearConfigFinderText then
                 ClearConfigFinderText()
@@ -2240,6 +2291,10 @@ local function CreateConfigPanel()
 
         if CS.configFinderBox then
             if finderAvailable then
+                CS.configFinderBox.frame:ClearAllPoints()
+                CS.configFinderBox.frame:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
+                CS.configFinderBox.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
+                CS.configFinderBox.frame:SetHeight(CONFIG_FINDER_BOX_HEIGHT)
                 CS.configFinderBox.frame:Show()
             else
                 CS.configFinderBox.frame:Hide()
@@ -2248,7 +2303,12 @@ local function CreateConfigPanel()
                 end
             end
         end
-        PositionColumn1FooterControls(finderAvailable)
+        if CS.col1Scroll and CS.col1Scroll.frame then
+            local bottomInset = finderAvailable and (30 + CONFIG_FINDER_RESERVED_HEIGHT) or 30
+            CS.col1Scroll.frame:ClearAllPoints()
+            CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
+            CS.col1Scroll.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, bottomInset)
+        end
 
         col1.frame:ClearAllPoints()
         col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
@@ -2295,6 +2355,7 @@ local function CreateConfigPanel()
     frame.modeStatusRow = modeStatusRow
     frame.profileGear = profileGear
     frame.changelogOverlay = changelogOverlay
+    frame.otherClassBrowseButton = otherClassBrowseBtn
     frame.col1 = col1
     frame.col2 = col2
     frame.col3 = col3
@@ -2303,7 +2364,9 @@ local function CreateConfigPanel()
     frame.LayoutColumns = LayoutColumns
     frame.UpdateCompactConfigRows = UpdateCompactConfigRows
     frame.UpdateModeNavigationUI = UpdateModeNavigationUI
+    frame.UpdateOtherClassBrowseButtonState = UpdateOtherClassBrowseButtonState
     UpdateModeNavigationUI()
+    UpdateOtherClassBrowseButtonState()
 
     CS.configFrame = frame
     return frame
@@ -2388,6 +2451,9 @@ function CooldownCompanion:_configRefreshPanelImpl()
     CS.configFrame.versionText:SetText(GetVersionFooterText())
     if CS.configFrame.UpdateModeNavigationUI then
         CS.configFrame.UpdateModeNavigationUI()
+    end
+    if CS.configFrame.UpdateOtherClassBrowseButtonState then
+        CS.configFrame.UpdateOtherClassBrowseButtonState()
     end
     if CS.configFrame.LayoutColumns then
         CS.configFrame.LayoutColumns()

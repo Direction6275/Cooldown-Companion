@@ -750,61 +750,6 @@ local function PopulateColumn1ButtonBar()
     end)
 end
 
-local function RefreshColumn1FooterLayout()
-    if CS.UpdateColumn1FooterLayout then
-        CS.UpdateColumn1FooterLayout()
-    end
-end
-
-local function ClearOtherClassesFooterDoorway()
-    CS.col1FooterDoorwayVisible = false
-    CS.lastCol1FooterDoorwayRow = nil
-    local row = CS.col1FooterDoorway
-    if row and row.frame then
-        row.frame:SetScript("OnMouseUp", nil)
-        row.frame:Hide()
-    end
-    RefreshColumn1FooterLayout()
-end
-
-local function SetOtherClassesFooterDoorway(text, stableCount, onClick)
-    local row = CS.col1FooterDoorway
-    if not (row and row.frame) then
-        ClearOtherClassesFooterDoorway()
-        return false
-    end
-
-    CleanRecycledEntry(row)
-    row:SetText(text)
-    row:SetFullWidth(true)
-    row:SetFontObject(GameFontHighlight)
-    ApplyConfigTextRow(row, "CENTER")
-    row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-    row.frame:SetScript("OnMouseUp", function(_, button)
-        if CS.dragState and CS.dragState.phase == "active" then return end
-        if button == "LeftButton" and onClick then
-            onClick()
-        end
-    end)
-
-    CS.col1FooterDoorwayVisible = true
-    CS.lastCol1FooterDoorwayRow = {
-        kind = "other-classes-doorway",
-        widget = row,
-        section = "other-classes",
-        loadBucket = "marker",
-        acceptsDrop = false,
-        keepVisibleDuringPreview = false,
-        previewProxy = false,
-        isMarker = true,
-        stableCount = stableCount,
-        visible = true,
-    }
-    row.frame:Show()
-    RefreshColumn1FooterLayout()
-    return true
-end
-
 ------------------------------------------------------------------------
 -- COLUMN 1: Groups
 ------------------------------------------------------------------------
@@ -815,7 +760,6 @@ local function RefreshColumn1(preserveDrag)
     if CS.resourceBarPanelActive then
         CS.otherClassLibraryActive = false
         CS.otherClassLibraryClassKey = nil
-        ClearOtherClassesFooterDoorway()
         CancelDrag()
         CS.HideAutocomplete()
         CS.col1Scroll.frame:Hide()
@@ -897,7 +841,6 @@ local function RefreshColumn1(preserveDrag)
     if CooldownCompanion._unsupportedLegacyProfile then
         CS.otherClassLibraryActive = false
         CS.otherClassLibraryClassKey = nil
-        ClearOtherClassesFooterDoorway()
         if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
 
         local spacer = AceGUI:Create("SimpleGroup")
@@ -1774,24 +1717,6 @@ local function RefreshColumn1(preserveDrag)
         return row
     end
 
-    local function UpdateOtherClassesFooterDoorway(otherSectionOrder)
-        local totalCount, classCount = GetOtherClassSummary(otherSectionOrder)
-        if totalCount <= 0 or classCount <= 0 then
-            ClearOtherClassesFooterDoorway()
-            return false
-        end
-
-        return SetOtherClassesFooterDoorway(
-            "Browse Other Classes",
-            totalCount,
-            function()
-                CS.otherClassLibraryActive = true
-                CS.otherClassLibraryClassKey = nil
-                CooldownCompanion:RefreshConfigPanel()
-            end
-        )
-    end
-
     local function FindOtherClassSectionByClassKey(otherSectionOrder, classKey)
         if not classKey then return nil end
         for _, section in ipairs(otherSectionOrder or {}) do
@@ -1807,11 +1732,8 @@ local function RefreshColumn1(preserveDrag)
         if totalCount <= 0 or classCount <= 0 then
             CS.otherClassLibraryActive = false
             CS.otherClassLibraryClassKey = nil
-            ClearOtherClassesFooterDoorway()
             return false
         end
-
-        ClearOtherClassesFooterDoorway()
 
         local selectedSection = FindOtherClassSectionByClassKey(otherSectionOrder, CS.otherClassLibraryClassKey)
         if selectedSection and GetOtherClassVisibleCount(selectedSection) <= 0 then
@@ -1905,7 +1827,6 @@ local function RefreshColumn1(preserveDrag)
     end)
 
     if searchResults and not next(searchResults.containerMatches) then
-        ClearOtherClassesFooterDoorway()
         local label = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(label)
         label:SetText("|cff888888No matching groups.|r")
@@ -1923,7 +1844,6 @@ local function RefreshColumn1(preserveDrag)
     if showNewUserEmptyState then
         CS.otherClassLibraryActive = false
         CS.otherClassLibraryClassKey = nil
-        ClearOtherClassesFooterDoorway()
 
         local spacer = AceGUI:Create("SimpleGroup")
         spacer:SetFullWidth(true)
@@ -2029,8 +1949,6 @@ local function RefreshColumn1(preserveDrag)
                     { preferUnloadedHeading = not hasGlobalContent }
                 )
             end
-
-            UpdateOtherClassesFooterDoorway(otherSectionOrder)
         end
     end
 
