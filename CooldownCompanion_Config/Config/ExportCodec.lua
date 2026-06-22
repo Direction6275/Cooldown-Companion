@@ -89,6 +89,37 @@ local function StripCharacterEligibilityFromContainerEntry(entry)
     return stripped
 end
 
+local function StripCharacterEligibilityFromCustomBarTree(value, seen)
+    if type(value) ~= "table" then return 0 end
+    seen = seen or {}
+    if seen[value] then return 0 end
+    seen[value] = true
+
+    local stripped = StripCharacterEligibilityFromEntity(value)
+    for _, child in pairs(value) do
+        stripped = stripped + StripCharacterEligibilityFromCustomBarTree(child, seen)
+    end
+    return stripped
+end
+
+local function StripCharacterEligibilityFromResourceBarSettings(settings)
+    if type(settings) ~= "table" then return 0 end
+    return StripCharacterEligibilityFromCustomBarTree(settings.customBars)
+        + StripCharacterEligibilityFromCustomBarTree(settings.customAuraBars)
+end
+
+local function StripCharacterEligibilityFromResourceBarStores(profile)
+    if type(profile) ~= "table" then return 0 end
+    local stripped = StripCharacterEligibilityFromResourceBarSettings(profile.resourceBars)
+        + StripCharacterEligibilityFromResourceBarSettings(profile.legacyResourceBarsSeed)
+    if type(profile.resourceBarsByChar) == "table" then
+        for _, settings in pairs(profile.resourceBarsByChar) do
+            stripped = stripped + StripCharacterEligibilityFromResourceBarSettings(settings)
+        end
+    end
+    return stripped
+end
+
 local function StripCharacterEligibilityFromProfile(profile)
     if type(profile) ~= "table" then return 0 end
     local stripped = 0
@@ -107,6 +138,7 @@ local function StripCharacterEligibilityFromProfile(profile)
             stripped = stripped + StripCharacterEligibilityFromEntity(folder)
         end
     end
+    stripped = stripped + StripCharacterEligibilityFromResourceBarStores(profile)
     return stripped
 end
 

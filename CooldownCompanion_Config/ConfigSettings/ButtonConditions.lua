@@ -958,7 +958,7 @@ local function BuildEligibilitySpecChoices(opts)
 
         AddClassesForSpecMap(classChoices, classByKey, target.specs)
         AddClassesForSpecMap(classChoices, classByKey, target.loadConditions and target.loadConditions.specAllowlist)
-        AddClassesForSpecMap(classChoices, classByKey, opts.effectiveSpecs)
+        AddClassesForSpecMap(classChoices, classByKey, opts.choiceSpecMap or opts.effectiveSpecs)
     else
         local choice = ResolveOwnerClassChoice(opts)
         if choice then
@@ -1202,6 +1202,7 @@ local function AddClassSpecEligibilityControls(container, opts)
         ownerClassID = opts.ownerClassID,
         ownerClassFilename = opts.ownerClassFilename,
         effectiveSpecs = opts.effectiveSpecs,
+        choiceSpecMap = opts.choiceSpecMap,
     })
     local specById, specsByClassKey = BuildSpecChoiceIndex(specChoices)
 
@@ -2786,7 +2787,8 @@ local function BuildLoadConditionsTab(container)
             vehicleUI = true,
         }
     end
-    local effectiveSpecs, inheritedSpecFilter = CooldownCompanion:GetEffectiveSpecs(group)
+    local effectiveSpecs = CooldownCompanion:GetEffectiveSpecs(group)
+    local inheritedSpecs, inheritedSpecFilter = CooldownCompanion:GetInheritedEffectiveSpecs(group)
     local effectiveHeroTalents, inheritedHeroFilter = CooldownCompanion:GetEffectiveHeroTalents(group)
     local inheritedSources = CooldownCompanion:GetInheritedLoadConditionSources(group)
     local parentContainer = CooldownCompanion:GetParentContainer(group)
@@ -2854,8 +2856,9 @@ local function BuildLoadConditionsTab(container)
             ownerCharKey = ownerCharKey,
             useSpecAllowlist = inheritedSpecFilter,
             allowedSpecRestricted = inheritedSpecFilter,
-            allowedSpecMap = effectiveSpecs,
+            allowedSpecMap = inheritedSpecs,
             effectiveSpecs = effectiveSpecs,
+            choiceSpecMap = inheritedSpecs,
             heroTalentsSource = effectiveHeroTalents,
             useHeroTalentsSource = inheritedHeroFilter,
             disableHeroTalents = inheritedHeroFilter,

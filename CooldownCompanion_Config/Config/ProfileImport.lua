@@ -37,6 +37,118 @@ local function ShouldRemapExporterOwned(createdBy, exporterCharKey)
     return exporterCharKey == nil or createdBy == exporterCharKey
 end
 
+local function HasPortableEligibilityMap(map)
+    if type(map) ~= "table" then
+        return map ~= nil
+    end
+    for _, enabled in pairs(map) do
+        if enabled == true then
+            return true
+        end
+    end
+    return false
+end
+
+local function EntityHasPortableEligibility(entity)
+    if type(entity) ~= "table" then return false end
+    if HasPortableEligibilityMap(entity.specs)
+        or HasPortableEligibilityMap(entity.heroTalents)
+    then
+        return true
+    end
+
+    local loadConditions = entity.loadConditions
+    return type(loadConditions) == "table"
+        and (HasPortableEligibilityMap(loadConditions.classAllowlist)
+            or HasPortableEligibilityMap(loadConditions.specAllowlist))
+end
+
+local function ContainerHasPortableEligibility(profile, containerId, container)
+    if EntityHasPortableEligibility(container) then
+        return true
+    end
+    local groups = type(profile.groups) == "table" and profile.groups or {}
+    for _, group in pairs(groups) do
+        if type(group) == "table"
+            and group.parentContainerId == containerId
+            and EntityHasPortableEligibility(group)
+        then
+            return true
+        end
+    end
+    return false
+end
+
+local function FolderHasPortableEligibility(profile, folderId, folder)
+    if EntityHasPortableEligibility(folder) then
+        return true
+    end
+    local groupContainers = type(profile.groupContainers) == "table" and profile.groupContainers or {}
+    for containerId, container in pairs(groupContainers) do
+        if type(container) == "table"
+            and container.folderId == folderId
+            and ContainerHasPortableEligibility(profile, containerId, container)
+        then
+            return true
+        end
+    end
+    local groups = type(profile.groups) == "table" and profile.groups or {}
+    for _, group in pairs(groups) do
+        if type(group) == "table"
+            and group.folderId == folderId
+            and not group.parentContainerId
+            and EntityHasPortableEligibility(group)
+        then
+            return true
+        end
+    end
+    return false
+end
+
+local function GlobalizePortableCharacterScopedEligibility(profile)
+    if type(profile) ~= "table" then return 0 end
+
+    local globalized = 0
+    local globalFolders = {}
+    local folders = type(profile.folders) == "table" and profile.folders or {}
+    for folderId, folder in pairs(folders) do
+        if type(folder) == "table"
+            and folder.section == "char"
+            and FolderHasPortableEligibility(profile, folderId, folder)
+        then
+            folder.section = "global"
+            globalFolders[folderId] = true
+            globalized = globalized + 1
+        end
+    end
+
+    local groupContainers = type(profile.groupContainers) == "table" and profile.groupContainers or {}
+    for containerId, container in pairs(groupContainers) do
+        if type(container) == "table"
+            and container.isGlobal ~= true
+            and (globalFolders[container.folderId]
+                or ContainerHasPortableEligibility(profile, containerId, container))
+        then
+            container.isGlobal = true
+            globalized = globalized + 1
+        end
+    end
+
+    local groups = type(profile.groups) == "table" and profile.groups or {}
+    for _, group in pairs(groups) do
+        if type(group) == "table"
+            and not group.parentContainerId
+            and group.isGlobal ~= true
+            and (globalFolders[group.folderId] or EntityHasPortableEligibility(group))
+        then
+            group.isGlobal = true
+            globalized = globalized + 1
+        end
+    end
+
+    return globalized
+end
+
 local function RemapCurrentCharacterEntities(profile, charKey, exporterCharKey)
     if type(profile) ~= "table" or type(charKey) ~= "string" or charKey == "" then
         return
@@ -366,6 +478,7 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
         local importerCharInfo = db.global and db.global.characterInfo or {}
         RenameForeignCharacters(db.profile, charKey, exportedCharInfo, importerCharInfo)
     end
+    local globalizedEligibilityImports = GlobalizePortableCharacterScopedEligibility(db.profile)
 
     if self.ClearMigrationSentinels then
         self:ClearMigrationSentinels()
@@ -388,6 +501,9 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
     end
     if strippedCharacterEligibility > 0 and self.Print then
         self:Print("Character eligibility is local and was not imported.")
+    end
+    if globalizedEligibilityImports > 0 and self.Print then
+        self:Print("Class, specialization, and hero talent eligibility were preserved in Global Groups.")
     end
 
     return true

@@ -29,6 +29,7 @@ local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local AddScopedLoadConditionToggles = ST._AddScopedLoadConditionToggles
 local AddCharacterEligibilityControls = ST._AddCharacterEligibilityControls
 local AddClassSpecEligibilityControls = ST._AddClassSpecEligibilityControls
+local BuildEligibilityBadgeMap = ST._BuildEligibilityBadgeMap
 
 -- Imports from SectionBuilders.lua
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
@@ -3780,7 +3781,10 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
     end
     local inheritedSources = CooldownCompanion:GetInheritedLoadConditionSources(container)
     local folder = container.folderId and db.folders and db.folders[container.folderId]
-    local folderSpecs = folder and folder.specs
+    local folderSpecs = folder and BuildEligibilityBadgeMap(
+        folder.specs,
+        folder.loadConditions and folder.loadConditions.specAllowlist
+    )
     local folderHeroTalents = folder and folder.heroTalents
 
     AddScopedLoadConditionToggles(scroll, {
@@ -3855,13 +3859,21 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
 
         -- Only show Clear All when container has specs/hero-talents beyond folder cascade
         local hasOwnSpecs = false
-        if container.specs then
-            for specId in pairs(container.specs) do
-                if not (folderSpecs and folderSpecs[specId]) then
-                    hasOwnSpecs = true
-                    break
+        local function CheckOwnSpecs(specs)
+            if type(specs) ~= "table" then
+                return specs ~= nil
+            end
+            for specId in pairs(specs) do
+                if not (folderSpecs and folderSpecs[tonumber(specId) or specId]) then
+                    return true
                 end
             end
+            return false
+        end
+        if CheckOwnSpecs(container.specs)
+            or CheckOwnSpecs(container.loadConditions and container.loadConditions.specAllowlist)
+        then
+            hasOwnSpecs = true
         end
         if not hasOwnSpecs and container.heroTalents and next(container.heroTalents) then
             hasOwnSpecs = true

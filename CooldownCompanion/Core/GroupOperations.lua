@@ -218,6 +218,22 @@ local function ResolveEffectiveSources(sources)
     return effective, inherited, hasRestriction
 end
 
+local function AddEntityEffectiveSpecSource(sources, entity, inherited)
+    AddCombinedEffectiveSource(
+        sources,
+        inherited,
+        NormalizeSpecKey,
+        entity and entity.specs,
+        entity and entity.loadConditions and entity.loadConditions.specAllowlist
+    )
+end
+
+local function AddFolderEffectiveSpecSource(sources, profile, folderId)
+    local folders = profile and profile.folders
+    local folder = folderId and folders and folders[folderId]
+    AddEntityEffectiveSpecSource(sources, folder, true)
+end
+
 local function MergeEligibilityAllowlist(state, key, map, normalizer)
     local normalized, malformed, hasRestriction = NormalizeTruthyMap(map, normalizer, true)
     if malformed then
@@ -865,6 +881,10 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
         return false
     end
 
+    if self.IsGroupEligibilityMet and not self:IsGroupEligibilityMet(group) then
+        return false
+    end
+
     local effectiveSpecs, _, hasSpecFilter = self:GetEffectiveSpecs(group)
     if hasSpecFilter then
         if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
@@ -893,55 +913,33 @@ function CooldownCompanion:GetEffectiveSpecs(group)
     if not group then return nil, false end
 
     local sources = {}
+    local profile = self.db and self.db.profile
 
     local container = self:GetParentContainer(group)
     if container then
-        local folderId = container.folderId
-        if folderId then
-            local folders = self.db and self.db.profile and self.db.profile.folders
-            local folder = folders and folders[folderId]
-            AddCombinedEffectiveSource(
-                sources,
-                true,
-                NormalizeSpecKey,
-                folder and folder.specs,
-                folder and folder.loadConditions and folder.loadConditions.specAllowlist
-            )
-        end
-        AddCombinedEffectiveSource(
-            sources,
-            true,
-            NormalizeSpecKey,
-            container.specs,
-            container.loadConditions and container.loadConditions.specAllowlist
-        )
-        AddCombinedEffectiveSource(
-            sources,
-            false,
-            NormalizeSpecKey,
-            group.specs,
-            group.loadConditions and group.loadConditions.specAllowlist
-        )
+        AddFolderEffectiveSpecSource(sources, profile, container.folderId)
+        AddEntityEffectiveSpecSource(sources, container, true)
+        AddEntityEffectiveSpecSource(sources, group, false)
     else
-        local folderId = group.folderId
-        if folderId then
-            local folders = self.db and self.db.profile and self.db.profile.folders
-            local folder = folders and folders[folderId]
-            AddCombinedEffectiveSource(
-                sources,
-                true,
-                NormalizeSpecKey,
-                folder and folder.specs,
-                folder and folder.loadConditions and folder.loadConditions.specAllowlist
-            )
-        end
-        AddCombinedEffectiveSource(
-            sources,
-            false,
-            NormalizeSpecKey,
-            group.specs,
-            group.loadConditions and group.loadConditions.specAllowlist
-        )
+        AddFolderEffectiveSpecSource(sources, profile, group.folderId)
+        AddEntityEffectiveSpecSource(sources, group, false)
+    end
+
+    return ResolveEffectiveSources(sources)
+end
+
+function CooldownCompanion:GetInheritedEffectiveSpecs(group)
+    if not group then return nil, false end
+
+    local sources = {}
+    local profile = self.db and self.db.profile
+
+    local container = self:GetParentContainer(group)
+    if container then
+        AddFolderEffectiveSpecSource(sources, profile, container.folderId)
+        AddEntityEffectiveSpecSource(sources, container, true)
+    else
+        AddFolderEffectiveSpecSource(sources, profile, group.folderId)
     end
 
     return ResolveEffectiveSources(sources)
@@ -2103,12 +2101,15 @@ function CooldownCompanion:GetLoadConditionSourcesForEntry(buttonData, group)
     return sources
 end
 
-function CooldownCompanion:EvaluateLoadConditionSources(sources)
+function CooldownCompanion:EvaluateLoadConditionSources(sources, opts)
+    opts = opts or {}
     local eligibility
     local identity
 
     for _, source in ipairs(sources or {}) do
-        if not self:EvaluateLoadConditions(source.loadConditions, source.defaults) then
+        if opts.eligibilityOnly ~= true
+            and not self:EvaluateLoadConditions(source.loadConditions, source.defaults)
+        then
             return false, source.label
         end
         local loadConditions = source.loadConditions
@@ -2137,8 +2138,20 @@ function CooldownCompanion:IsGroupLoadConditionMet(group)
     return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForGroup(group))
 end
 
+function CooldownCompanion:IsGroupEligibilityMet(group)
+    return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForGroup(group), {
+        eligibilityOnly = true,
+    })
+end
+
 function CooldownCompanion:IsButtonLoadConditionMet(buttonData, group)
     return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForEntry(buttonData, group))
+end
+
+function CooldownCompanion:IsCustomBarLoadConditionMet(customBar)
+    local sources = {}
+    AddLoadConditionSource(sources, "Custom Bar", customBar, LOCAL_LOAD_CONDITION_DEFAULTS, true)
+    return self:EvaluateLoadConditionSources(sources)
 end
 
 

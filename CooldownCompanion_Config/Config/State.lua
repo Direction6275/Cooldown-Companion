@@ -1972,7 +1972,10 @@ local function SetupFolderRowIndicators(entry, folder)
 
     local badgeIndex = 0
     local SPEC_BADGE_SIZE = 16
-    local specs = folder and folder.specs
+    local specs = folder and BuildEligibilityBadgeMap(
+        folder.specs,
+        folder.loadConditions and folder.loadConditions.specAllowlist
+    )
     if specs and next(specs) then
         for specId in pairs(specs) do
             local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
