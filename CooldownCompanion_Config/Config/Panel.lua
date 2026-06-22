@@ -1176,11 +1176,12 @@ local function CreateConfigPanel()
 
     local otherClassBrowseBtnBorder = nil
     local otherClassBrowseAvailable = false
+    local otherClassBrowseActionAvailable = false
     local otherClassBrowseSearchFiltered = false
     local otherClassBrowseHasInventory = false
 
     local function UpdateOtherClassBrowseBtnHighlight()
-        local shouldHighlight = otherClassBrowseAvailable and CS.otherClassLibraryActive == true
+        local shouldHighlight = otherClassBrowseActionAvailable and CS.otherClassLibraryActive == true
         if shouldHighlight then
             if not otherClassBrowseBtnBorder then
                 otherClassBrowseBtnBorder = otherClassBrowseBtn:CreateTexture(nil, "OVERLAY")
@@ -1196,18 +1197,19 @@ local function CreateConfigPanel()
 
     local function UpdateOtherClassBrowseButtonState()
         otherClassBrowseAvailable, otherClassBrowseSearchFiltered, otherClassBrowseHasInventory = HasOtherClassInventory()
+        otherClassBrowseActionAvailable = otherClassBrowseAvailable or CS.otherClassLibraryActive == true
 
         if otherClassBrowseBtn.SetEnabled then
-            otherClassBrowseBtn:SetEnabled(otherClassBrowseAvailable)
-        elseif otherClassBrowseAvailable and otherClassBrowseBtn.Enable then
+            otherClassBrowseBtn:SetEnabled(otherClassBrowseActionAvailable)
+        elseif otherClassBrowseActionAvailable and otherClassBrowseBtn.Enable then
             otherClassBrowseBtn:Enable()
         elseif otherClassBrowseBtn.Disable then
             otherClassBrowseBtn:Disable()
         end
         if otherClassBrowseIcon.SetDesaturated then
-            otherClassBrowseIcon:SetDesaturated(not otherClassBrowseAvailable)
+            otherClassBrowseIcon:SetDesaturated(not otherClassBrowseActionAvailable)
         end
-        if otherClassBrowseAvailable then
+        if otherClassBrowseActionAvailable then
             otherClassBrowseBtn:SetAlpha(1)
             otherClassBrowseIcon:SetVertexColor(1, 1, 1, 1)
             if otherClassBrowseBtn:GetHighlightTexture() then
@@ -1251,14 +1253,14 @@ local function CreateConfigPanel()
     otherClassBrowseBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
         GameTooltip:AddLine("Browse Other Classes")
-        if not otherClassBrowseAvailable then
+        if CS.otherClassLibraryActive then
+            GameTooltip:AddLine("Class library is open. Click to return to the regular config view.", 1, 1, 1, true)
+        elseif not otherClassBrowseActionAvailable then
             if otherClassBrowseSearchFiltered and otherClassBrowseHasInventory then
                 GameTooltip:AddLine("No other classes match the current search.", 1, 1, 1, true)
             else
                 GameTooltip:AddLine("No other classes on this profile currently have groups to browse.", 1, 1, 1, true)
             end
-        elseif CS.otherClassLibraryActive then
-            GameTooltip:AddLine("Class library is open. Click to return to the regular config view.", 1, 1, 1, true)
         else
             GameTooltip:AddLine("View and edit groups saved for other classes on this profile.", 1, 1, 1, true)
         end

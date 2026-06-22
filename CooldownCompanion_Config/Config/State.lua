@@ -550,6 +550,8 @@ local function IsConfigFinderActive()
     return IsConfigFinderAvailable() and NormalizeConfigFinderText(CS.configSearchText) ~= ""
 end
 
+local ClearConfigPrimarySelection
+
 local function SetConfigFinderText(text, opts)
     text = type(text) == "string" and text or ""
     local wasSearching = NormalizeConfigFinderText(CS.configSearchText) ~= ""
@@ -562,6 +564,9 @@ local function SetConfigFinderText(text, opts)
     end
     CS.configSearchText = text
     if wasSearching and not willSearch and CS.otherClassLibraryActive then
+        if not (opts and opts.preservePrimarySelection) and ClearConfigPrimarySelection then
+            ClearConfigPrimarySelection()
+        end
         CS.otherClassLibraryActive = false
         CS.otherClassLibraryClassKey = nil
     end
@@ -701,18 +706,31 @@ end
 
 local RefreshAlphaDriverForConfigSelection
 
-local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
-    CooldownCompanion:ClearAllConfigPreviews()
+local function ResolveConfigContainerClassScope(containerId)
     local selectedContainer = containerId
         and CooldownCompanion.db
         and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groupContainers
         and CooldownCompanion.db.profile.groupContainers[containerId]
         or nil
-    local selectedScope = selectedContainer
-        and CooldownCompanion.ResolveContainerClassScope
-        and CooldownCompanion:ResolveContainerClassScope(selectedContainer)
-        or nil
+    if not (selectedContainer and CooldownCompanion.ResolveContainerClassScope) then
+        return nil
+    end
+    return CooldownCompanion:ResolveContainerClassScope(selectedContainer)
+end
+
+local function RestoreOtherClassLibraryForScope(scope)
+    if scope and scope.isOtherClass then
+        CS.otherClassLibraryActive = true
+        CS.otherClassLibraryClassKey = scope.ownerClassKey
+        return true
+    end
+    return false
+end
+
+local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
+    CooldownCompanion:ClearAllConfigPreviews()
+    local selectedScope = ResolveConfigContainerClassScope(containerId)
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
     wipe(CS.selectedButtons)
@@ -725,11 +743,8 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CS.selectedButton = buttonIndex
     CS.selectedRotationAssistantEntry = nil
     CS.addingToPanelId = nil
-    ClearConfigFinderText()
-    if selectedScope and selectedScope.isOtherClass then
-        CS.otherClassLibraryActive = true
-        CS.otherClassLibraryClassKey = selectedScope.ownerClassKey
-    end
+    ClearConfigFinderText({ preservePrimarySelection = true })
+    RestoreOtherClassLibraryForScope(selectedScope)
     RefreshAlphaDriverForConfigSelection()
     CooldownCompanion:RefreshConfigPanel()
 end
@@ -2548,7 +2563,7 @@ local function ClearConfigResourceSelection()
     CS.resourceSettingsSpecID = nil
 end
 
-local function ClearConfigPrimarySelection()
+ClearConfigPrimarySelection = function()
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedFolder = nil
     CS.selectedContainer = nil
@@ -2593,7 +2608,9 @@ local function SelectConfigContainer(containerId, opts)
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     if opts and opts.clearFinder then
-        ClearConfigFinderText()
+        local selectedScope = ResolveConfigContainerClassScope(CS.selectedContainer)
+        ClearConfigFinderText({ preservePrimarySelection = true })
+        RestoreOtherClassLibraryForScope(selectedScope)
     end
     RefreshAlphaDriverForConfigSelection()
 end
