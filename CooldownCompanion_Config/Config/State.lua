@@ -2903,24 +2903,53 @@ end
 local function SpecSetHasForeignSpecs(specs, playerSpecIds)
     if not specs then return false end
     for specId in pairs(specs) do
-        if not playerSpecIds[specId] then
+        local normalizedSpecId = tonumber(specId)
+        if normalizedSpecId and not playerSpecIds[normalizedSpecId] then
             return true
         end
     end
     return false
 end
 
-local function GetEffectiveContainerSpecFilter(container, db)
-    if not container then return nil end
-    return container.specs
+local function BuildPlayerClassKey()
+    if not UnitClass then return nil end
+    local _, classFilename = UnitClass("player")
+    return type(classFilename) == "string" and string.upper(classFilename) or nil
+end
+
+local function ClassAllowlistHasForeignClasses(classAllowlist, playerClassKey)
+    if type(classAllowlist) ~= "table" or not playerClassKey then return false end
+    for classKey, enabled in pairs(classAllowlist) do
+        if enabled == true
+            and type(classKey) == "string"
+            and string.upper(classKey) ~= playerClassKey
+        then
+            return true
+        end
+    end
+    return false
+end
+
+local function EntityHasForeignEligibility(entity, playerSpecIds, playerClassKey)
+    if type(entity) ~= "table" then return false end
+    local loadConditions = entity.loadConditions
+    return SpecSetHasForeignSpecs(entity.specs, playerSpecIds)
+        or SpecSetHasForeignSpecs(
+            type(loadConditions) == "table" and loadConditions.specAllowlist or nil,
+            playerSpecIds
+        )
+        or ClassAllowlistHasForeignClasses(
+            type(loadConditions) == "table" and loadConditions.classAllowlist or nil,
+            playerClassKey
+        )
 end
 
 local function ContainersHaveForeignSpecs(containers, requireGlobal)
     local playerSpecIds = BuildPlayerSpecSet()
+    local playerClassKey = BuildPlayerClassKey()
     for _, c in ipairs(containers) do
         if not requireGlobal or c.isGlobal then
-            local effectiveSpecs = GetEffectiveContainerSpecFilter(c)
-            if SpecSetHasForeignSpecs(effectiveSpecs, playerSpecIds) then
+            if EntityHasForeignEligibility(c, playerSpecIds, playerClassKey) then
                 return true
             end
         end
@@ -2930,9 +2959,10 @@ end
 
 local function GroupsHaveForeignSpecs(groups, requireGlobal)
     local playerSpecIds = BuildPlayerSpecSet()
+    local playerClassKey = BuildPlayerClassKey()
     for _, g in ipairs(groups) do
         if not requireGlobal or g.isGlobal then
-            if SpecSetHasForeignSpecs(g.specs, playerSpecIds) then
+            if EntityHasForeignEligibility(g, playerSpecIds, playerClassKey) then
                 return true
             end
         end
@@ -2948,12 +2978,16 @@ local function FolderHasForeignSpecs(folderId)
     if not folder then return false end
 
     local playerSpecIds = BuildPlayerSpecSet()
+    local playerClassKey = BuildPlayerClassKey()
+    if EntityHasForeignEligibility(folder, playerSpecIds, playerClassKey) then
+        return true
+    end
     -- Post-migration: specs live on containers, not folders
     local containers = db.groupContainers
     if containers then
         for _, container in pairs(containers) do
             if container.folderId == folderId then
-                if SpecSetHasForeignSpecs(container.specs, playerSpecIds) then
+                if EntityHasForeignEligibility(container, playerSpecIds, playerClassKey) then
                     return true
                 end
             end

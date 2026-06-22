@@ -80,31 +80,6 @@ local function ShowPopupOverConfig(which, textArg1, data)
     return StaticPopup_Show(which, textArg1, nil, data)
 end
 
-local function ClearFolderFiltersForUnglobal(folderId)
-    if not folderId then return end
-
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    if not db then return end
-
-    local folder = db.folders and db.folders[folderId]
-    if folder then
-        folder.specs = nil
-        folder.heroTalents = nil
-        CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
-        return
-    end
-
-    -- Fallback: clear specs on child containers (folderId lives on containers post-migration)
-    if db.groupContainers then
-        for _, container in pairs(db.groupContainers) do
-            if container.folderId == folderId and (container.specs or container.heroTalents) then
-                container.specs = nil
-                container.heroTalents = nil
-            end
-        end
-    end
-end
-
 local function PruneDeletedFolderSelection(folderId)
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
     if not db then return end
@@ -482,16 +457,12 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
         if data.containerId then
             local container = CooldownCompanion.db.profile.groupContainers[data.containerId]
             if container then
-                container.specs = nil
-                container.heroTalents = nil
                 CooldownCompanion:ToggleGroupGlobal(data.containerId)
                 CooldownCompanion:RefreshConfigPanel()
             end
         elseif data.groupId then
             local group = CooldownCompanion.db.profile.groups[data.groupId]
             if group then
-                group.specs = nil
-                group.heroTalents = nil
                 CooldownCompanion:ToggleGroupGlobal(data.groupId)
                 CooldownCompanion:RefreshConfigPanel()
             end
@@ -512,8 +483,6 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
             local db = CooldownCompanion.db.profile
             local container = db.groupContainers[data.dragState.sourceGroupId]
             if container then
-                container.specs = nil
-                container.heroTalents = nil
                 ST._ApplyCol1Drop(data.dragState)
                 CooldownCompanion:RefreshConfigPanel()
             end
@@ -556,8 +525,6 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.dragState then
-            local folderId = data.dragState.sourceFolderId
-            ClearFolderFiltersForUnglobal(folderId)
             ST._ApplyCol1Drop(data.dragState)
             CooldownCompanion:RefreshAllGroups()
             CooldownCompanion:RefreshConfigPanel()
@@ -575,7 +542,6 @@ StaticPopupDialogs["CDC_UNGLOBAL_FOLDER"] = {
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.folderId then
-            ClearFolderFiltersForUnglobal(data.folderId)
             CooldownCompanion:ToggleFolderGlobal(data.folderId)
             CooldownCompanion:RefreshConfigPanel()
         end
@@ -634,28 +600,6 @@ StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.callback then
-            -- Strip foreign specs from affected containers before executing the operation
-            if data.groupIds then
-                local db = CooldownCompanion.db.profile
-                local numSpecs = GetNumSpecializations()
-                local playerSpecIds = {}
-                for i = 1, numSpecs do
-                    local specId = C_SpecializationInfo.GetSpecializationInfo(i)
-                    if specId then playerSpecIds[specId] = true end
-                end
-                for _, cid in ipairs(data.groupIds) do
-                    local container = db.groupContainers[cid]
-                    if container and container.specs then
-                        for specId in pairs(container.specs) do
-                            if not playerSpecIds[specId] then
-                                container.specs = nil
-                                container.heroTalents = nil
-                                break
-                            end
-                        end
-                    end
-                end
-            end
             data.callback()
         end
     end,

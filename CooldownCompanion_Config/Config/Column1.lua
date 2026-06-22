@@ -469,7 +469,7 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
-                if container.isGlobal and container.specs and ContainersHaveForeignSpecs({ container }, false) then
+                if container.isGlobal and ContainersHaveForeignSpecs({ container }, false) then
                     ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", container.name, { containerId = containerId })
                     return
                 end

@@ -149,6 +149,9 @@ local function SetSpecFilterValue(target, specId, value)
         local loadConditions = EnsureLoadConditions(target)
         if type(loadConditions.specAllowlist) ~= "table" then
             loadConditions.specAllowlist = {}
+            for existingSpecId in pairs(target.specs or {}) do
+                loadConditions.specAllowlist[existingSpecId] = true
+            end
         end
         loadConditions.specAllowlist[specId] = true
     else
@@ -738,98 +741,6 @@ local function BuildCharacterChoices(target, inheritedMap, scopeClassKey, ownerC
     end
     SortChoices(choices)
     return choices
-end
-
-local function ClearEmptyLoadConditions(target)
-    if type(target) ~= "table" or type(target.loadConditions) ~= "table" then return end
-    if not next(target.loadConditions) then
-        target.loadConditions = nil
-    end
-end
-
-local function ClearClassAllowlistWhenScoped(target, allowClassEligibility)
-    if allowClassEligibility or type(target) ~= "table" then return false end
-    local loadConditions = target.loadConditions
-    if type(loadConditions) ~= "table" or loadConditions.classAllowlist == nil then
-        return false
-    end
-    loadConditions.classAllowlist = nil
-    ClearEmptyLoadConditions(target)
-    return true
-end
-
-local function PruneCharacterAllowlistToScopeClass(target, scopeClassKey, ownerCharKey)
-    if type(target) ~= "table" or not scopeClassKey then return false end
-    local loadConditions = target.loadConditions
-    local map = loadConditions and loadConditions.characterAllowlist
-    if type(map) ~= "table" then return false end
-
-    local changed = false
-    for key in pairs(map) do
-        local normalizedKey = NormalizeAllowlistKey("character", key)
-        local choice = normalizedKey and BuildCharacterChoice(normalizedKey) or nil
-        if not (normalizedKey and CharacterChoiceMatchesScopeClass(choice, scopeClassKey, ownerCharKey)) then
-            map[key] = nil
-            changed = true
-        end
-    end
-    if not next(map) then
-        loadConditions.characterAllowlist = nil
-    end
-    ClearEmptyLoadConditions(target)
-    return changed
-end
-
-local function SpecMatchesScopeClass(specId, scopeClassKey)
-    if not scopeClassKey then return true end
-    local classChoice = GetSpecClassChoice(specId)
-    return not classChoice or classChoice.key == scopeClassKey
-end
-
-local function PruneSpecMapToScopeClass(target, map, scopeClassKey)
-    if type(map) ~= "table" or not scopeClassKey then return false end
-    local changed = false
-    for key in pairs(map) do
-        local specId = NormalizeAllowlistKey("spec", key)
-        if not (specId and SpecMatchesScopeClass(specId, scopeClassKey)) then
-            map[key] = nil
-            if specId and map[specId] ~= nil then
-                map[specId] = nil
-            end
-            if specId and CooldownCompanion.CleanHeroTalentsForSpec then
-                CooldownCompanion:CleanHeroTalentsForSpec(target, specId)
-            end
-            changed = true
-        end
-    end
-    return changed
-end
-
-local function PruneClassScopedEligibility(target, scopeClassChoice, ownerCharKey)
-    if type(target) ~= "table" or not scopeClassChoice then return false end
-    local scopeClassKey = scopeClassChoice.key
-    local changed = ClearClassAllowlistWhenScoped(target, false)
-    changed = PruneCharacterAllowlistToScopeClass(target, scopeClassKey, ownerCharKey) or changed
-
-    if PruneSpecMapToScopeClass(target, target.specs, scopeClassKey) then
-        changed = true
-        if type(target.specs) == "table" and not next(target.specs) then
-            target.specs = nil
-        end
-    end
-
-    local loadConditions = target.loadConditions
-    if type(loadConditions) == "table" then
-        if PruneSpecMapToScopeClass(target, loadConditions.specAllowlist, scopeClassKey) then
-            changed = true
-            if type(loadConditions.specAllowlist) == "table" and not next(loadConditions.specAllowlist) then
-                loadConditions.specAllowlist = nil
-            end
-        end
-    end
-
-    ClearEmptyLoadConditions(target)
-    return changed
 end
 
 local function CreateEligibilityRemoveBadge(onRemove)

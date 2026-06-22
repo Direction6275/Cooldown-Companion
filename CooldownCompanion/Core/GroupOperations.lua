@@ -113,18 +113,24 @@ local function NormalizeTruthyMap(map, normalizer, failClosed)
 
     local normalized = {}
     local sawEntry = false
+    local invalidEnabledEntry = false
     for key, enabled in pairs(map) do
         sawEntry = true
         if enabled == true then
             local normalizedKey = normalizer(key)
             if normalizedKey ~= nil then
                 normalized[normalizedKey] = true
+            else
+                invalidEnabledEntry = true
             end
         end
     end
 
     if next(normalized) then
         return normalized, false, true
+    end
+    if invalidEnabledEntry and failClosed then
+        return {}, true, true
     end
     if sawEntry and failClosed then
         return {}, false, true
@@ -152,11 +158,40 @@ local function IntersectTruthyMaps(left, right)
 end
 
 local function AddEffectiveSource(sources, map, inherited, normalizer)
-    local normalized, _, hasRestriction = NormalizeTruthyMap(map, normalizer, true)
+    local normalized, malformed, hasRestriction = NormalizeTruthyMap(map, normalizer, true)
     if hasRestriction then
         sources[#sources + 1] = {
             values = normalized or {},
             inherited = inherited and true or false,
+            malformed = malformed and true or false,
+        }
+    end
+end
+
+local function AddCombinedEffectiveSource(sources, inherited, normalizer, ...)
+    local values
+    local hasRestriction = false
+    local malformed = false
+
+    for index = 1, select("#", ...) do
+        local normalized, sourceMalformed, sourceHasRestriction = NormalizeTruthyMap(select(index, ...), normalizer, true)
+        if sourceMalformed then
+            malformed = true
+        end
+        if sourceHasRestriction then
+            hasRestriction = true
+            values = values or {}
+            for key in pairs(normalized or {}) do
+                values[key] = true
+            end
+        end
+    end
+
+    if hasRestriction then
+        sources[#sources + 1] = {
+            values = values,
+            inherited = inherited and true or false,
+            malformed = malformed,
         }
     end
 end
@@ -169,10 +204,15 @@ local function ResolveEffectiveSources(sources)
     for _, source in ipairs(sources or {}) do
         hasRestriction = true
         if source.inherited then inherited = true end
-        if effective == nil then
+        if source.malformed then
+            effective = {}
+        elseif effective == nil then
             effective = CopyTruthyMap(source.values) or {}
         else
-            effective = IntersectTruthyMaps(effective, source.values)
+            local intersection = IntersectTruthyMaps(effective, source.values)
+            if next(intersection) then
+                effective = intersection
+            end
         end
     end
 
@@ -194,7 +234,10 @@ local function MergeEligibilityAllowlist(state, key, map, normalizer)
     if state[key] == nil then
         state[key] = CopyTruthyMap(normalized) or {}
     else
-        state[key] = IntersectTruthyMaps(state[key], normalized)
+        local intersection = IntersectTruthyMaps(state[key], normalized)
+        if next(intersection) then
+            state[key] = intersection
+        end
     end
     return true
 end
@@ -861,47 +904,47 @@ function CooldownCompanion:GetEffectiveSpecs(group)
         if folderId then
             local folders = self.db and self.db.profile and self.db.profile.folders
             local folder = folders and folders[folderId]
-            AddEffectiveSource(sources, folder and folder.specs, true, NormalizeSpecKey)
-            AddEffectiveSource(
+            AddCombinedEffectiveSource(
                 sources,
-                folder and folder.loadConditions and folder.loadConditions.specAllowlist,
                 true,
-                NormalizeSpecKey
+                NormalizeSpecKey,
+                folder and folder.specs,
+                folder and folder.loadConditions and folder.loadConditions.specAllowlist
             )
         end
-        AddEffectiveSource(sources, container.specs, true, NormalizeSpecKey)
-        AddEffectiveSource(
+        AddCombinedEffectiveSource(
             sources,
-            container.loadConditions and container.loadConditions.specAllowlist,
             true,
-            NormalizeSpecKey
+            NormalizeSpecKey,
+            container.specs,
+            container.loadConditions and container.loadConditions.specAllowlist
         )
-        AddEffectiveSource(sources, group.specs, false, NormalizeSpecKey)
-        AddEffectiveSource(
+        AddCombinedEffectiveSource(
             sources,
-            group.loadConditions and group.loadConditions.specAllowlist,
             false,
-            NormalizeSpecKey
+            NormalizeSpecKey,
+            group.specs,
+            group.loadConditions and group.loadConditions.specAllowlist
         )
     else
         local folderId = group.folderId
         if folderId then
             local folders = self.db and self.db.profile and self.db.profile.folders
             local folder = folders and folders[folderId]
-            AddEffectiveSource(sources, folder and folder.specs, true, NormalizeSpecKey)
-            AddEffectiveSource(
+            AddCombinedEffectiveSource(
                 sources,
-                folder and folder.loadConditions and folder.loadConditions.specAllowlist,
                 true,
-                NormalizeSpecKey
+                NormalizeSpecKey,
+                folder and folder.specs,
+                folder and folder.loadConditions and folder.loadConditions.specAllowlist
             )
         end
-        AddEffectiveSource(sources, group.specs, false, NormalizeSpecKey)
-        AddEffectiveSource(
+        AddCombinedEffectiveSource(
             sources,
-            group.loadConditions and group.loadConditions.specAllowlist,
             false,
-            NormalizeSpecKey
+            NormalizeSpecKey,
+            group.specs,
+            group.loadConditions and group.loadConditions.specAllowlist
         )
     end
 
@@ -1335,6 +1378,190 @@ function CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
     if not next(group.heroTalents) then
         group.heroTalents = nil
     end
+end
+
+local function ClearEmptyCoreLoadConditions(entity)
+    if type(entity) ~= "table" or type(entity.loadConditions) ~= "table" then return end
+    if not next(entity.loadConditions) then
+        entity.loadConditions = nil
+    end
+end
+
+local function GetClassKeyFromClassID(classID)
+    if not (classID and GetClassInfo) then return nil end
+    local _, classFilename = GetClassInfo(classID)
+    return NormalizeClassKey(classFilename)
+end
+
+local function GetCurrentScopeClassKey(addon)
+    local classFilename = addon and addon._playerClassFilename
+    if not classFilename and UnitClass then
+        classFilename = select(2, UnitClass("player"))
+    end
+    return NormalizeClassKey(classFilename)
+end
+
+local function GetSpecClassKey(specId)
+    if not (C_SpecializationInfo and C_SpecializationInfo.GetClassIDFromSpecID) then
+        return nil
+    end
+    return GetClassKeyFromClassID(C_SpecializationInfo.GetClassIDFromSpecID(tonumber(specId)))
+end
+
+local function SpecBelongsToClass(specId, classKey)
+    if not classKey then return true end
+    local specClassKey = GetSpecClassKey(specId)
+    return specClassKey == classKey
+end
+
+local function GetCharacterClassKey(addon, charKey)
+    local info = charKey
+        and addon
+        and addon.db
+        and addon.db.global
+        and addon.db.global.characterInfo
+        and addon.db.global.characterInfo[charKey]
+    if type(info) ~= "table" then
+        return nil
+    end
+    return NormalizeClassKey(info.classFilename)
+        or GetClassKeyFromClassID(info.classID)
+end
+
+local function PruneSpecMapToClass(addon, entity, map, classKey)
+    if type(map) ~= "table" or not classKey then return false end
+    local changed = false
+    for key in pairs(map) do
+        local specId = NormalizeSpecKey(key)
+        if specId and SpecBelongsToClass(specId, classKey) then
+            if key ~= specId then
+                map[specId] = true
+                map[key] = nil
+                changed = true
+            end
+        else
+            map[key] = nil
+            if specId then
+                map[specId] = nil
+                if addon and addon.CleanHeroTalentsForSpec then
+                    addon:CleanHeroTalentsForSpec(entity, specId)
+                end
+            end
+            changed = true
+        end
+    end
+    return changed
+end
+
+local function CharacterKeyMatchesClass(addon, charKey, classKey, ownerCharKey)
+    if not classKey then return true end
+    if charKey and ownerCharKey and charKey == ownerCharKey then
+        return true
+    end
+    local currentCharKey = addon and addon.db and addon.db.keys and addon.db.keys.char
+    if charKey and currentCharKey and charKey == currentCharKey then
+        return true
+    end
+    return GetCharacterClassKey(addon, charKey) == classKey
+end
+
+local function PruneCharacterMapToClass(addon, map, classKey, ownerCharKey)
+    if type(map) ~= "table" or not classKey then return false end
+    local changed = false
+    for key in pairs(map) do
+        local charKey = NormalizeCharacterKey(key)
+        if not (charKey and CharacterKeyMatchesClass(addon, charKey, classKey, ownerCharKey)) then
+            map[key] = nil
+            if charKey then
+                map[charKey] = nil
+            end
+            changed = true
+        end
+    end
+    return changed
+end
+
+local function WithOwnerCharKey(opts, ownerCharKey)
+    if opts and opts.ownerCharKey then return opts end
+    local scopedOpts = opts and CopyTable(opts) or {}
+    scopedOpts.ownerCharKey = ownerCharKey
+    return scopedOpts
+end
+
+function CooldownCompanion:NormalizeEligibilityForCharacterScope(entity, opts)
+    if type(entity) ~= "table" then return false end
+    opts = opts or {}
+    local ownerCharKey = opts.ownerCharKey
+        or entity.createdBy
+        or (self.db and self.db.keys and self.db.keys.char)
+    local classKey = NormalizeClassKey(opts.scopeClassKey)
+        or GetCharacterClassKey(self, ownerCharKey)
+        or GetCurrentScopeClassKey(self)
+    local changed = false
+
+    if PruneSpecMapToClass(self, entity, entity.specs, classKey) then
+        changed = true
+        if type(entity.specs) == "table" and not next(entity.specs) then
+            entity.specs = nil
+        end
+    end
+
+    local loadConditions = entity.loadConditions
+    if type(loadConditions) == "table" then
+        if loadConditions.classAllowlist ~= nil then
+            loadConditions.classAllowlist = nil
+            changed = true
+        end
+        if PruneSpecMapToClass(self, entity, loadConditions.specAllowlist, classKey) then
+            changed = true
+            if type(loadConditions.specAllowlist) == "table" and not next(loadConditions.specAllowlist) then
+                loadConditions.specAllowlist = nil
+            end
+        end
+        if PruneCharacterMapToClass(self, loadConditions.characterAllowlist, classKey, ownerCharKey) then
+            changed = true
+            if type(loadConditions.characterAllowlist) == "table"
+                and not next(loadConditions.characterAllowlist)
+            then
+                loadConditions.characterAllowlist = nil
+            end
+        end
+        ClearEmptyCoreLoadConditions(entity)
+    end
+
+    return changed
+end
+
+function CooldownCompanion:NormalizeContainerEligibilityForCharacterScope(containerId, opts)
+    local db = self.db and self.db.profile
+    if not (db and db.groupContainers) then return false end
+    local container = db.groupContainers[containerId]
+    if not container then return false end
+    opts = WithOwnerCharKey(opts, container.createdBy or (self.db and self.db.keys and self.db.keys.char))
+
+    local changed = self:NormalizeEligibilityForCharacterScope(container, opts)
+    for _, group in pairs(db.groups or {}) do
+        if type(group) == "table" and group.parentContainerId == containerId then
+            changed = self:NormalizeEligibilityForCharacterScope(group, opts) or changed
+        end
+    end
+    return changed
+end
+
+function CooldownCompanion:NormalizeFolderEligibilityForCharacterScope(folderId, opts)
+    local db = self.db and self.db.profile
+    if not (db and db.folders) then return false end
+    local folder = db.folders[folderId]
+    if not folder then return false end
+    opts = WithOwnerCharKey(opts, folder.createdBy or (self.db and self.db.keys and self.db.keys.char))
+
+    local changed = self:NormalizeEligibilityForCharacterScope(folder, opts)
+    for containerId, container in pairs(db.groupContainers or {}) do
+        if type(container) == "table" and container.folderId == folderId then
+            changed = self:NormalizeContainerEligibilityForCharacterScope(containerId, opts) or changed
+        end
+    end
+    return changed
 end
 
 function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)

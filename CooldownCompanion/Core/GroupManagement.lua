@@ -1466,6 +1466,9 @@ function CooldownCompanion:ToggleFolderGlobal(folderId)
             end
         end
     end
+    if newSection == "char" and self.NormalizeFolderEligibilityForCharacterScope then
+        self:NormalizeFolderEligibilityForCharacterScope(folderId)
+    end
     self:RefreshAllGroups()
 end
 
@@ -1478,6 +1481,9 @@ function CooldownCompanion:ToggleGroupGlobal(containerId)
     container.isGlobal = newGlobal
     if not newGlobal then
         container.createdBy = self.db.keys.char
+        if self.NormalizeContainerEligibilityForCharacterScope then
+            self:NormalizeContainerEligibilityForCharacterScope(containerId)
+        end
     end
 
     self:RefreshAllGroups()

@@ -141,6 +141,14 @@ local function StripCharacterEligibilityFromPayload(payload)
     return stripped
 end
 
+local function StripAndTagCharacterEligibility(payload)
+    local stripped = StripCharacterEligibilityFromPayload(payload)
+    if stripped > 0 then
+        payload[STRIPPED_CHARACTER_ELIGIBILITY_KEY] = stripped
+    end
+    return stripped
+end
+
 local function NormalizeLoadConditionAllowlists(loadConditions)
     if type(loadConditions) ~= "table" then return loadConditions end
     local normalized = CopyTable(loadConditions)
@@ -1212,7 +1220,7 @@ local function EncodeSharedPayload(payload, exportKind)
     local exportData = CopyTable(payload)
     local formatVersion = CURRENT_COMPACT_FORMAT_VALUE
 
-    StripCharacterEligibilityFromPayload(exportData)
+    StripAndTagCharacterEligibility(exportData)
 
     if CooldownCompanion.StampExportPayloadCheckpoint then
         CooldownCompanion:StampExportPayloadCheckpoint(exportData, exportKind)
@@ -1269,10 +1277,7 @@ local function DecodeSharedPayload(text)
         data = NormalizeTextureLibraryPayload(data)
     end
 
-    local strippedCharacterEligibility = StripCharacterEligibilityFromPayload(data)
-    if strippedCharacterEligibility > 0 then
-        data[STRIPPED_CHARACTER_ELIGIBILITY_KEY] = strippedCharacterEligibility
-    end
+    StripAndTagCharacterEligibility(data)
 
     return true, data
 end
