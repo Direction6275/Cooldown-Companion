@@ -228,6 +228,10 @@ ST._configState = {
     -- Column content frames
     col1Scroll = nil,
     col1ButtonBar = nil,
+    col1FooterDoorway = nil,
+    col1FooterDoorwayVisible = false,
+    lastCol1FooterDoorwayRow = nil,
+    UpdateColumn1FooterLayout = nil,
     col2Scroll = nil,
     col2ButtonBar = nil,
     col4Container = nil,
@@ -257,12 +261,6 @@ ST._configState = {
     col2PanelTypeMenu = nil,
     charCopyMenu = nil,
 
-    -- Cross-character browse mode
-    browseMode = false,
-    browseCharKey = nil,
-    browseContainerId = nil,
-    browseContextMenu = nil,
-
     -- Drag-reorder state
     dragState = nil,
     dragIndicator = nil,
@@ -281,6 +279,8 @@ ST._configState = {
     collapsedSections = {},
     collapsedFolders = {},
     collapsedPanels = {},
+    otherClassLibraryActive = false,
+    otherClassLibraryClassKey = nil,
     panelClickTimes = {},
     addingToPanelId = nil,
     folderAccentBars = {},
@@ -298,10 +298,6 @@ ST._configState = {
     configFinderBox = nil,
     configFinderSuppressTextChanged = false,
     compactConfigRows = false,
-
-    -- Spec filter inline expansion
-    specExpandedGroupId = nil,
-    specExpandedFolderId = nil,
 
     -- Auto Add flow state (Column 3 wizard mode)
     autoAddFlowActive = false,
@@ -550,7 +546,6 @@ end
 
 local function IsConfigFinderAvailable()
     return not CS.resourceBarPanelActive
-        and not CS.browseMode
         and not CS.talentPickerMode
         and not CooldownCompanion._unsupportedLegacyProfile
 end
@@ -561,6 +556,8 @@ end
 
 local function SetConfigFinderText(text, opts)
     text = type(text) == "string" and text or ""
+    local wasSearching = NormalizeConfigFinderText(CS.configSearchText) ~= ""
+    local willSearch = NormalizeConfigFinderText(text) ~= ""
     if CS.configSearchText ~= text then
         CS._configFinderResults = nil
         CS._configFinderResultsQuery = nil
@@ -568,6 +565,10 @@ local function SetConfigFinderText(text, opts)
         CS._configFinderResultsCharKey = nil
     end
     CS.configSearchText = text
+    if wasSearching and not willSearch and CS.otherClassLibraryActive then
+        CS.otherClassLibraryActive = false
+        CS.otherClassLibraryClassKey = nil
+    end
 
     if opts and opts.syncWidget == false then
         return
@@ -598,6 +599,10 @@ end
 local function IsContainerVisibleInConfig(container, charKey)
     if not container then
         return false
+    end
+    if CooldownCompanion.ResolveContainerClassScope then
+        local scope = CooldownCompanion:ResolveContainerClassScope(container)
+        return scope.isInvalid ~= true
     end
     return container.isGlobal or container.createdBy == charKey
 end
@@ -2877,10 +2882,8 @@ local function ResetConfigSelection(full)
         wipe(CS.selectedGroups)
         wipe(CS.selectedCustomBars)
         CS.addingToPanelId = nil
-        -- Exit browse mode on full reset
-        CS.browseMode = false
-        CS.browseCharKey = nil
-        CS.browseContainerId = nil
+        CS.otherClassLibraryActive = false
+        CS.otherClassLibraryClassKey = nil
     end
     RefreshAlphaDriverForConfigSelection()
 end
@@ -2899,12 +2902,16 @@ local function SetConfigPrimaryMode(mode, opts)
     if toBars and not wasBars then
         -- Preserve existing behavior when entering Bars & Frames mode.
         ResetConfigSelection(true)
+        CS.otherClassLibraryActive = false
+        CS.otherClassLibraryClassKey = nil
     elseif (not toBars) and wasBars then
         -- Stop preview loops when returning to button settings mode.
         CooldownCompanion:ClearAllConfigPreviews()
         CS.selectedCustomBarId = nil
         CS.customBarSettingsTab = "appearance"
         ClearConfigResourceSelection()
+        CS.otherClassLibraryActive = false
+        CS.otherClassLibraryClassKey = nil
     end
 
     CS.resourceBarPanelActive = toBars

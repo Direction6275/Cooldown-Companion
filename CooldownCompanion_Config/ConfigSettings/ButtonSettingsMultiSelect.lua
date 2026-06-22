@@ -10,6 +10,14 @@ local EncodeExportData = ST._EncodeExportData
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 
+local function IsContainerVisibleInConfig(containerOrContainerId)
+    if CooldownCompanion.ResolveContainerClassScope then
+        local scope = CooldownCompanion:ResolveContainerClassScope(containerOrContainerId)
+        return scope.isInvalid ~= true
+    end
+    return CooldownCompanion:IsContainerVisibleToCurrentChar(containerOrContainerId)
+end
+
 local function GroupUsesTriggerPanelEntries(group)
     return group and group.displayMode == "trigger"
 end
@@ -311,7 +319,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
 
     local hasOtherContainer = false
     for cid in pairs(db.groupContainers) do
-        if cid ~= containerId and CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
+        if cid ~= containerId and IsContainerVisibleInConfig(cid) then
             hasOtherContainer = true
             break
         end
@@ -329,7 +337,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
                 local containers = db.groupContainers or {}
                 local folderContainers, looseContainers = {}, {}
                 for cid, ctr in pairs(containers) do
-                    if cid ~= containerId and CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
+                    if cid ~= containerId and IsContainerVisibleInConfig(cid) then
                         local name = ctr.name or ("Group " .. cid)
                         local fid = ctr.folderId
                         if fid and db.folders[fid] then

@@ -37,6 +37,8 @@ local RebuildTutorialAnchors = ST._RebuildTutorialAnchors
 local RefreshTutorialPlacement = ST._RefreshTutorialPlacement
 local SetupChangelogOverlay = ST._SetupChangelogOverlay
 local RefreshVisibleConfigCompactRows = ST._RefreshVisibleConfigCompactRows
+local CleanRecycledEntry = ST._CleanRecycledEntry
+local ApplyConfigTextRow = ST._ApplyConfigTextRow
 
 local function GetAddonVersionText()
     if ST._GetAddonVersion then
@@ -65,6 +67,8 @@ local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
 local CONFIG_FINDER_BOX_HEIGHT = 28
 local CONFIG_FINDER_BUTTON_GAP = 3
 local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
+local COLUMN1_FOOTER_DOORWAY_HEIGHT = 24
+local COLUMN1_FOOTER_DOORWAY_RESERVED_HEIGHT = COLUMN1_FOOTER_DOORWAY_HEIGHT + CONFIG_FINDER_BUTTON_GAP
 local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
 local CONFIG_NESTED_INLINE_GROUP_INSET = 20
 local CONFIG_DRAG_ALPHA = 0.40
@@ -436,9 +440,6 @@ end
 local function ApplyConfigColumnTitles(frame)
     if CS.resourceBarPanelActive then
         frame.col1:SetTitle("Bars & Frames")
-    elseif CS.browseMode then
-        frame.col1:SetTitle("Browse Characters")
-        frame.col2:SetTitle("Preview")
     elseif IsConfigFinderActive and IsConfigFinderActive() then
         frame.col1:SetTitle("Groups")
         frame.col2:SetTitle("Search Results")
@@ -538,7 +539,7 @@ local function IsConfigSpellOverrideRefreshMode()
     if not IsConfigFrameOpenForRefresh() then
         return false
     end
-    if CS.browseMode or CS.resourceBarPanelActive then
+    if CS.resourceBarPanelActive then
         return false
     end
     if CountSelections(CS.selectedGroups) >= 2 then
@@ -1132,91 +1133,6 @@ local function CreateConfigPanel()
     end)
     cdmDisplayBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- Cross-character browse button — between the CDM display toggle and CDM button
-    local browseBtn = CreateFrame("Button", nil, content)
-    browseBtn:SetSize(16, 16)
-    if browseBtn.SetMotionScriptsWhileDisabled then
-        browseBtn:SetMotionScriptsWhileDisabled(true)
-    end
-    local browseIcon = browseBtn:CreateTexture(nil, "ARTWORK")
-    browseIcon:SetAtlas("BattleBar-SwapPetIcon", false)
-    browseIcon:SetAllPoints()
-    browseBtn:SetHighlightAtlas("BattleBar-SwapPetIcon")
-    browseBtn:GetHighlightTexture():SetAlpha(0.3)
-    local browseBtnBorder = nil
-    local browseBtnAvailable = false
-
-    local function UpdateBrowseBtnHighlight()
-        local shouldHighlight = browseBtnAvailable and CS.browseMode == true
-        if shouldHighlight then
-            if not browseBtnBorder then
-                browseBtnBorder = browseBtn:CreateTexture(nil, "OVERLAY")
-                browseBtnBorder:SetPoint("TOPLEFT", -1, 1)
-                browseBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
-                browseBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
-            end
-            browseBtnBorder:Show()
-        elseif browseBtnBorder then
-            browseBtnBorder:Hide()
-        end
-    end
-
-    local function UpdateBrowseBtnState()
-        local browseChars = CooldownCompanion:EnumerateBrowseCharacters()
-        browseBtnAvailable = #browseChars > 0
-
-        if browseBtn.SetEnabled then
-            browseBtn:SetEnabled(browseBtnAvailable)
-        end
-        if browseIcon.SetDesaturated then
-            browseIcon:SetDesaturated(not browseBtnAvailable)
-        end
-        if browseBtnAvailable then
-            browseBtn:SetAlpha(1)
-            browseIcon:SetVertexColor(1, 1, 1, 1)
-            if browseBtn:GetHighlightTexture() then
-                browseBtn:GetHighlightTexture():SetAlpha(0.3)
-            end
-        else
-            browseBtn:SetAlpha(0.75)
-            browseIcon:SetVertexColor(0.6, 0.6, 0.6, 1)
-            if browseBtn:GetHighlightTexture() then
-                browseBtn:GetHighlightTexture():SetAlpha(0)
-            end
-        end
-
-        UpdateBrowseBtnHighlight()
-    end
-
-    browseBtn:SetScript("OnClick", function()
-        if not browseBtnAvailable then
-            return
-        end
-        CloseDropDownMenus()
-        -- Browse mode lives in the normal button-settings layout, not Bars & Frames.
-        if CS.resourceBarPanelActive then
-            SetPrimaryMode("buttons", { skipRefresh = true })
-        end
-        CS.browseMode = true
-        CS.browseCharKey = nil
-        CS.browseContainerId = nil
-        ClearConfigPrimarySelection()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    browseBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("Browse Other Characters")
-        if not browseBtnAvailable then
-            GameTooltip:AddLine("No other characters on this profile currently have groups to browse.", 1, 1, 1, true)
-        elseif CS.browseMode then
-            GameTooltip:AddLine("Browse mode is active. Click to return to the character list and browse groups from other characters on this profile.", 1, 1, 1, true)
-        else
-            GameTooltip:AddLine("View and copy groups from other characters on this profile.", 1, 1, 1, true)
-        end
-        GameTooltip:Show()
-    end)
-    browseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
     local changelogOverlay
     local changelogBtn
     local changelogBtnBorder = nil
@@ -1262,8 +1178,7 @@ local function CreateConfigPanel()
     gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -4, 0)
     changelogBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
     cdmBtn:SetPoint("RIGHT", changelogBtn, "LEFT", -4, 0)
-    browseBtn:SetPoint("RIGHT", cdmBtn, "LEFT", -4, 0)
-    cdmDisplayBtn:SetPoint("RIGHT", browseBtn, "LEFT", -4, 0)
+    cdmDisplayBtn:SetPoint("RIGHT", cdmBtn, "LEFT", -4, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
@@ -1805,6 +1720,19 @@ local function CreateConfigPanel()
     end
     CS.configFinderBox = configFinder
 
+    local otherClassesDoorway = AceGUI:Create("InteractiveLabel")
+    CleanRecycledEntry(otherClassesDoorway)
+    otherClassesDoorway:SetText("")
+    otherClassesDoorway:SetFullWidth(true)
+    otherClassesDoorway:SetFontObject(GameFontHighlight)
+    ApplyConfigTextRow(otherClassesDoorway)
+    otherClassesDoorway:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    otherClassesDoorway.frame:SetParent(col1.content)
+    otherClassesDoorway.frame:ClearAllPoints()
+    otherClassesDoorway.frame:SetHeight(COLUMN1_FOOTER_DOORWAY_HEIGHT)
+    otherClassesDoorway.frame:Hide()
+    CS.col1FooterDoorway = otherClassesDoorway
+
     -- Column 3: Button Settings
     local col3 = AceGUI:Create("InlineGroup")
     col3:SetTitle("Button Settings")
@@ -2006,12 +1934,6 @@ local function CreateConfigPanel()
                 local buttonData = CooldownCompanion:GetRotationAssistantConfigButtonData(group)
                 ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
             end
-            if CS.browseMode then
-                ST._DisableAllWidgets(scroll)
-                for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
-                    if btn.Disable then btn:Disable() end
-                end
-            end
             return
         end
 
@@ -2045,13 +1967,6 @@ local function CreateConfigPanel()
             ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         elseif tab == "overrides" then
             ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
-        end
-
-        if CS.browseMode then
-            ST._DisableAllWidgets(scroll)
-            for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
-                if btn.Disable then btn:Disable() end
-            end
         end
 
     end)
@@ -2216,6 +2131,65 @@ local function CreateConfigPanel()
         end
     end
 
+    local function PositionColumn1FooterControls(finderAvailable)
+        finderAvailable = finderAvailable == true
+
+        if CS.configFinderBox and CS.configFinderBox.frame then
+            CS.configFinderBox.frame:ClearAllPoints()
+            CS.configFinderBox.frame:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
+            CS.configFinderBox.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
+            CS.configFinderBox.frame:SetHeight(CONFIG_FINDER_BOX_HEIGHT)
+        end
+
+        local doorwayVisible = finderAvailable
+            and CS.col1FooterDoorwayVisible == true
+            and CS.col1FooterDoorway
+            and CS.col1FooterDoorway.frame
+
+        if CS.col1FooterDoorway and CS.col1FooterDoorway.frame then
+            local doorwayFrame = CS.col1FooterDoorway.frame
+            doorwayFrame:ClearAllPoints()
+            doorwayFrame:SetPoint(
+                "BOTTOMLEFT",
+                col1.content,
+                "BOTTOMLEFT",
+                0,
+                30 + CONFIG_FINDER_RESERVED_HEIGHT + CONFIG_FINDER_BUTTON_GAP
+            )
+            doorwayFrame:SetPoint(
+                "BOTTOMRIGHT",
+                col1.content,
+                "BOTTOMRIGHT",
+                0,
+                30 + CONFIG_FINDER_RESERVED_HEIGHT + CONFIG_FINDER_BUTTON_GAP
+            )
+            doorwayFrame:SetHeight(COLUMN1_FOOTER_DOORWAY_HEIGHT)
+            if doorwayVisible then
+                doorwayFrame:Show()
+            else
+                doorwayFrame:Hide()
+            end
+        end
+
+        if CS.col1Scroll and CS.col1Scroll.frame then
+            local bottomInset = 30
+            if finderAvailable then
+                bottomInset = bottomInset + CONFIG_FINDER_RESERVED_HEIGHT
+                if doorwayVisible then
+                    bottomInset = bottomInset + COLUMN1_FOOTER_DOORWAY_RESERVED_HEIGHT
+                end
+            end
+
+            CS.col1Scroll.frame:ClearAllPoints()
+            CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
+            CS.col1Scroll.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, bottomInset)
+        end
+    end
+
+    CS.UpdateColumn1FooterLayout = function()
+        PositionColumn1FooterControls(IsConfigFinderAvailable and IsConfigFinderAvailable())
+    end
+
     -- Layout columns on size change
     local function LayoutColumns()
         local w = colParent:GetWidth()
@@ -2232,6 +2206,11 @@ local function CreateConfigPanel()
         if CS.talentPickerMode then
             if CS.configFinderBox then
                 CS.configFinderBox.frame:Hide()
+            end
+            CS.col1FooterDoorwayVisible = false
+            CS.lastCol1FooterDoorwayRow = nil
+            if CS.col1FooterDoorway and CS.col1FooterDoorway.frame then
+                CS.col1FooterDoorway.frame:Hide()
             end
             if ClearConfigFinderText then
                 ClearConfigFinderText()
@@ -2269,17 +2248,7 @@ local function CreateConfigPanel()
                 end
             end
         end
-        if CS.col1Scroll and CS.col1Scroll.frame then
-            CS.col1Scroll.frame:ClearAllPoints()
-            CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-            CS.col1Scroll.frame:SetPoint(
-                "BOTTOMRIGHT",
-                col1.content,
-                "BOTTOMRIGHT",
-                0,
-                finderAvailable and (30 + CONFIG_FINDER_RESERVED_HEIGHT) or 30
-            )
-        end
+        PositionColumn1FooterControls(finderAvailable)
 
         col1.frame:ClearAllPoints()
         col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
@@ -2334,8 +2303,6 @@ local function CreateConfigPanel()
     frame.LayoutColumns = LayoutColumns
     frame.UpdateCompactConfigRows = UpdateCompactConfigRows
     frame.UpdateModeNavigationUI = UpdateModeNavigationUI
-    frame.UpdateBrowseButtonState = UpdateBrowseBtnState
-    UpdateBrowseBtnState()
     UpdateModeNavigationUI()
 
     CS.configFrame = frame
@@ -2421,9 +2388,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
     CS.configFrame.versionText:SetText(GetVersionFooterText())
     if CS.configFrame.UpdateModeNavigationUI then
         CS.configFrame.UpdateModeNavigationUI()
-    end
-    if CS.configFrame.UpdateBrowseButtonState then
-        CS.configFrame.UpdateBrowseButtonState()
     end
     if CS.configFrame.LayoutColumns then
         CS.configFrame.LayoutColumns()

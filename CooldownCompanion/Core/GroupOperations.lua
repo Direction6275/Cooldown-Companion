@@ -587,8 +587,10 @@ function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
     end
 
     -- Legacy path (no container)
-    if group.isGlobal then return true end
-    return group.createdBy == self.db.keys.char
+    local scope = self:ResolveProfileEntityClassScope(group, {
+        isGlobal = group.isGlobal == true,
+    })
+    return scope.runtimeVisible == true
 end
 
 -- Resolve the container for a panel group, or nil if the group has no container.
@@ -1468,6 +1470,149 @@ local function GetCharacterClassKey(addon, charKey)
     end
     return NormalizeClassKey(info.classFilename)
         or GetClassKeyFromClassID(info.classID)
+end
+
+local function BuildClassScopeResult(scope, opts)
+    opts = opts or {}
+    return {
+        scope = scope,
+        sectionKey = opts.sectionKey,
+        ownerCharKey = opts.ownerCharKey,
+        ownerClassKey = opts.ownerClassKey,
+        classFilename = opts.ownerClassKey,
+        currentClassKey = opts.currentClassKey,
+        currentCharKey = opts.currentCharKey,
+        isGlobal = scope == "global",
+        isCurrentClass = scope == "current-class",
+        isOtherClass = scope == "other-class",
+        isInvalid = scope == "invalid",
+        runtimeVisible = scope == "global" or scope == "current-class",
+        invalidReason = opts.invalidReason,
+    }
+end
+
+local function ResolveProfileEntityClassScope(addon, entity, opts)
+    opts = opts or {}
+    local currentCharKey = opts.currentCharKey
+        or addon and addon.db and addon.db.keys and addon.db.keys.char
+        or nil
+    local currentClassKey = NormalizeClassKey(opts.currentClassKey)
+        or GetCurrentScopeClassKey(addon)
+
+    if type(entity) ~= "table" then
+        return BuildClassScopeResult("invalid", {
+            currentCharKey = currentCharKey,
+            currentClassKey = currentClassKey,
+            sectionKey = "invalid",
+            invalidReason = "missing-entity",
+        })
+    end
+
+    if opts.isGlobal == true then
+        return BuildClassScopeResult("global", {
+            currentCharKey = currentCharKey,
+            currentClassKey = currentClassKey,
+            sectionKey = "global",
+        })
+    end
+
+    local ownerCharKey = opts.ownerCharKey or entity.createdBy
+    if type(ownerCharKey) ~= "string" or ownerCharKey == "" then
+        return BuildClassScopeResult("invalid", {
+            currentCharKey = currentCharKey,
+            currentClassKey = currentClassKey,
+            sectionKey = "invalid",
+            invalidReason = "missing-owner",
+        })
+    end
+
+    local ownerClassKey = GetCharacterClassKey(addon, ownerCharKey)
+    if not ownerClassKey then
+        return BuildClassScopeResult("invalid", {
+            ownerCharKey = ownerCharKey,
+            currentCharKey = currentCharKey,
+            currentClassKey = currentClassKey,
+            sectionKey = "invalid",
+            invalidReason = "missing-owner-class",
+        })
+    end
+
+    if ownerClassKey == currentClassKey then
+        return BuildClassScopeResult("current-class", {
+            ownerCharKey = ownerCharKey,
+            ownerClassKey = ownerClassKey,
+            currentCharKey = currentCharKey,
+            currentClassKey = currentClassKey,
+            sectionKey = "char",
+        })
+    end
+
+    return BuildClassScopeResult("other-class", {
+        ownerCharKey = ownerCharKey,
+        ownerClassKey = ownerClassKey,
+        currentCharKey = currentCharKey,
+        currentClassKey = currentClassKey,
+        sectionKey = "class:" .. ownerClassKey,
+    })
+end
+
+function CooldownCompanion:ResolveProfileEntityClassScope(entity, opts)
+    return ResolveProfileEntityClassScope(self, entity, opts)
+end
+
+function CooldownCompanion:ResolveContainerClassScope(containerOrContainerId, opts)
+    local container = containerOrContainerId
+    if type(containerOrContainerId) == "number" then
+        local db = self.db and self.db.profile
+        container = db and db.groupContainers and db.groupContainers[containerOrContainerId] or nil
+    end
+    opts = opts and CopyTable(opts) or {}
+    opts.isGlobal = type(container) == "table" and container.isGlobal == true
+    return ResolveProfileEntityClassScope(self, container, opts)
+end
+
+function CooldownCompanion:ResolveFolderClassScope(folderOrFolderId, opts)
+    local folder = folderOrFolderId
+    if type(folderOrFolderId) == "number" then
+        local db = self.db and self.db.profile
+        folder = db and db.folders and db.folders[folderOrFolderId] or nil
+    end
+    opts = opts and CopyTable(opts) or {}
+    opts.isGlobal = type(folder) == "table" and folder.section == "global"
+    return ResolveProfileEntityClassScope(self, folder, opts)
+end
+
+function CooldownCompanion:CanMoveContainerToFolder(containerOrContainerId, folderOrFolderId, opts)
+    opts = opts or {}
+    if folderOrFolderId == nil then
+        return true
+    end
+
+    local containerScope = self:ResolveContainerClassScope(containerOrContainerId)
+    local folderScope = self:ResolveFolderClassScope(folderOrFolderId)
+    if containerScope.isInvalid or folderScope.isInvalid then
+        return false, "invalid-class-scope"
+    end
+
+    if containerScope.scope == folderScope.scope then
+        if containerScope.scope == "global" then
+            return true
+        end
+        return containerScope.ownerClassKey == folderScope.ownerClassKey, "mixed-class-folder"
+    end
+
+    if opts.allowScopeChange == true then
+        if containerScope.scope == "global" and folderScope.scope == "current-class" then
+            return true
+        end
+        if folderScope.scope == "global"
+            and (containerScope.scope == "current-class" or containerScope.scope == "other-class")
+        then
+            return true
+        end
+    end
+
+    return false, "scope-mismatch"
 end
 
 local function PruneSpecMapToClass(addon, entity, map, classKey)

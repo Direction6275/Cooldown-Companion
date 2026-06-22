@@ -4225,10 +4225,11 @@ function CooldownCompanion:SaveContainerPosition(containerId)
 end
 
 function CooldownCompanion:IsContainerVisibleToCurrentChar(containerId)
-    local container = self.db.profile.groupContainers[containerId]
-    if not container then return false end
-    if container.isGlobal then return true end
-    return container.createdBy == self.db.keys.char
+    if not (self.ResolveContainerClassScope and self.db and self.db.profile and self.db.profile.groupContainers) then
+        return false
+    end
+    local scope = self:ResolveContainerClassScope(containerId)
+    return scope.runtimeVisible == true
 end
 
 function CooldownCompanion:CreateAllContainerFrames()

@@ -10,7 +10,6 @@ local CS = ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
 
 -- Imports from earlier Config/ files
-local BuildHeroTalentSubTreeCheckboxes = ST._BuildHeroTalentSubTreeCheckboxes
 local CleanRecycledEntry = ST._CleanRecycledEntry
 local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local ApplyConfigTextRow = ST._ApplyConfigTextRow
@@ -35,7 +34,6 @@ local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
 local ContainersHaveForeignSpecs = ST._ContainersHaveForeignSpecs
 local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
-local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
@@ -48,16 +46,12 @@ local SelectConfigPanel = ST._SelectConfigPanel
 local GenerateGroupName
 
 local function OpenContainerLoadConditions(containerId)
-    CS.specExpandedGroupId = nil
-    CS.specExpandedFolderId = nil
     SelectConfigContainer(containerId)
     CS.selectedContainerTab = "loadconditions"
     CooldownCompanion:RefreshConfigPanel()
 end
 
 local function OpenFolderLoadConditions(folderId)
-    CS.specExpandedGroupId = nil
-    CS.specExpandedFolderId = nil
     SelectConfigFolder(folderId)
     CooldownCompanion:RefreshConfigPanel()
 end
@@ -126,204 +120,6 @@ local function ConfigureGenericGroupRenameBadge(entry, container, containerId, n
     badge:Show()
 end
 
-------------------------------------------------------------------------
--- Browse mode: class-colored name helper
-------------------------------------------------------------------------
-local function GetClassColoredCharName(charKey, classFilename)
-    local name = charKey:match("^(.-)%s*%-") or charKey
-    if classFilename then
-        local cc = C_ClassColor.GetClassColor(classFilename)
-        if cc then
-            return cc:WrapTextInColorCode(name), cc
-        end
-    end
-    return name, nil
-end
-
-------------------------------------------------------------------------
--- Browse mode: render cross-character browsing UI in Column 1
-------------------------------------------------------------------------
-local function RenderBrowseMode()
-    if not CS.col1Scroll then return end
-    CS.col1Scroll:ReleaseChildren()
-
-    -- Hide button bar in browse mode
-    if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
-
-    local db = CooldownCompanion.db.profile
-
-    if not CS.browseCharKey then
-        -- Phase A: Character list
-        local backBtn = AceGUI:Create("InteractiveLabel")
-        CleanRecycledEntry(backBtn)
-        backBtn:SetText("|A:common-icon-backarrow:14:14|a  Back to My Groups")
-        backBtn:SetFullWidth(true)
-        backBtn:SetFontObject(GameFontHighlight)
-        ApplyConfigTextRow(backBtn)
-        backBtn:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-        backBtn:SetCallback("OnClick", function()
-            CS.browseMode = false
-            CS.browseCharKey = nil
-            CS.browseContainerId = nil
-            ClearConfigPrimarySelection()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        CS.col1Scroll:AddChild(backBtn)
-
-        local heading = AceGUI:Create("Heading")
-        heading:SetText("Other Characters")
-        heading:SetFullWidth(true)
-        CS.col1Scroll:AddChild(heading)
-
-        local chars = CooldownCompanion:EnumerateBrowseCharacters()
-        if #chars == 0 then
-            local emptyLabel = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(emptyLabel)
-            emptyLabel:SetText("|cff888888No other characters have groups on this profile.|r")
-            emptyLabel:SetFullWidth(true)
-            CS.col1Scroll:AddChild(emptyLabel)
-            return
-        end
-
-        for _, charInfo in ipairs(chars) do
-            local entry = AceGUI:Create("InteractiveLabel")
-            CleanRecycledEntry(entry)
-            local displayName, cc = GetClassColoredCharName(charInfo.charKey, charInfo.classFilename)
-
-            entry:SetText(displayName)
-            entry:SetFullWidth(true)
-            entry:SetFontObject(GameFontHighlight)
-            -- Class icon (use individual atlas to avoid tiled-sheet border)
-            if charInfo.classFilename then
-                ApplyConfigRowIcon(entry, 134400, { atlas = "classicon-" .. strlower(charInfo.classFilename) })
-            else
-                ApplyConfigRowIcon(entry, 134400)
-            end
-            entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-            entry:SetCallback("OnClick", function()
-                CS.browseCharKey = charInfo.charKey
-                CS.browseContainerId = nil
-                ClearConfigPrimarySelection()
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            CS.col1Scroll:AddChild(entry)
-        end
-    else
-        -- Phase B: Selected character's groups
-        local backBtn = AceGUI:Create("InteractiveLabel")
-        CleanRecycledEntry(backBtn)
-        backBtn:SetText("|A:common-icon-backarrow:14:14|a  Back to Characters")
-        backBtn:SetFullWidth(true)
-        backBtn:SetFontObject(GameFontHighlight)
-        ApplyConfigTextRow(backBtn)
-        backBtn:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-        backBtn:SetCallback("OnClick", function()
-            CS.browseCharKey = nil
-            CS.browseContainerId = nil
-            ClearConfigPrimarySelection()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        CS.col1Scroll:AddChild(backBtn)
-
-        -- Character heading with class color
-        local charInfo = CooldownCompanion.db.global.characterInfo and CooldownCompanion.db.global.characterInfo[CS.browseCharKey]
-        local classFilename = charInfo and charInfo.classFilename
-        local charName = CS.browseCharKey:match("^(.-)%s*%-") or CS.browseCharKey
-        local displayHeading = charName .. "'s Groups"
-
-        local heading = AceGUI:Create("Heading")
-        heading:SetText(displayHeading)
-        heading:SetFullWidth(true)
-        if classFilename then
-            local cc = C_ClassColor.GetClassColor(classFilename)
-            if cc then heading.label:SetTextColor(cc.r, cc.g, cc.b) end
-        end
-        CS.col1Scroll:AddChild(heading)
-
-        local containers = CooldownCompanion:GetCharacterContainers(CS.browseCharKey)
-        if #containers == 0 then
-            local emptyLabel = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(emptyLabel)
-            emptyLabel:SetText("|cff888888This character has no groups.|r")
-            emptyLabel:SetFullWidth(true)
-            CS.col1Scroll:AddChild(emptyLabel)
-            return
-        end
-
-        for _, item in ipairs(containers) do
-            local containerId = item.containerId
-            local container = item.container
-
-            local entry = AceGUI:Create("InteractiveLabel")
-            CleanRecycledEntry(entry)
-
-            local panelCount = CooldownCompanion:GetPanelCount(containerId)
-            local displayName = container.name
-            if panelCount > 1 then
-                displayName = displayName .. "  |cff888888(" .. panelCount .. " panels)|r"
-            end
-
-            entry:SetText(displayName)
-            entry:SetFullWidth(true)
-            entry:SetFontObject(GameFontHighlight)
-            ApplyConfigRowIcon(entry, GetContainerIcon(containerId, db))
-            entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-
-            -- Green highlight for selected browse container
-            if CS.browseContainerId == containerId then
-                entry:SetColor(0, 1, 0)
-            end
-
-            -- Neutralize built-in OnClick
-            entry:SetCallback("OnClick", function() end)
-
-            -- Left-click: select for preview; Right-click: copy context menu
-            entry.frame:SetScript("OnMouseUp", function(self, button)
-                if button == "LeftButton" then
-                    if CS.browseContainerId == containerId then
-                        CS.browseContainerId = nil
-                        SelectConfigContainer(nil, { keepContainerMulti = true })
-                    else
-                        CS.browseContainerId = containerId
-                        SelectConfigContainer(containerId, { keepContainerMulti = true })
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                elseif button == "RightButton" then
-                    -- Verify source still exists
-                    if not db.groupContainers[containerId] then return end
-                    if not CS.browseContextMenu then
-                        CS.browseContextMenu = CreateFrame("Frame", "CDCBrowseContextMenu", UIParent, "UIDropDownMenuTemplate")
-                    end
-                    UIDropDownMenu_Initialize(CS.browseContextMenu, function(self, level)
-                        local info = UIDropDownMenu_CreateInfo()
-                        info.text = "Copy Entire Group"
-                        info.notCheckable = true
-                        info.func = function()
-                            CloseDropDownMenus()
-                            if not db.groupContainers[containerId] then return end
-                            local newId = CooldownCompanion:CopyContainerFromBrowse(containerId)
-                            if newId then
-                                CS.browseMode = false
-                                CS.browseCharKey = nil
-                                CS.browseContainerId = nil
-                                SelectConfigContainer(newId)
-                                CooldownCompanion:RefreshConfigPanel()
-                                CooldownCompanion:Print("Group copied successfully.")
-                            end
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-                    end, "MENU")
-                    CS.browseContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
-                    ToggleDropDownMenu(1, nil, CS.browseContextMenu, "cursor", 0, 0)
-                end
-            end)
-
-            CS.col1Scroll:AddChild(entry)
-            SetupGroupRowIndicators(entry, container)
-        end
-    end
-end
-
 local PANEL_CREATION_MODES = {
     { mode = "icons", label = "Icon Panel" },
     { mode = "bars", label = "Bar Panel" },
@@ -383,19 +179,44 @@ local function BuildSelectedContainersExportPayload(db, selectedGroups)
     }
 end
 
+local function ResolveContainerScopeForConfig(containerId, container, charKey)
+    if CooldownCompanion.ResolveContainerClassScope then
+        return CooldownCompanion:ResolveContainerClassScope(container or containerId)
+    end
+    if container and container.isGlobal then
+        return { scope = "global", sectionKey = "global", runtimeVisible = true }
+    end
+    if container and container.createdBy == charKey then
+        return { scope = "current-class", sectionKey = "char", runtimeVisible = true }
+    end
+    return { scope = "invalid", sectionKey = "invalid", runtimeVisible = false }
+end
+
+local function ResolveFolderScopeForConfig(folderId, folder, charKey)
+    if CooldownCompanion.ResolveFolderClassScope then
+        return CooldownCompanion:ResolveFolderClassScope(folder or folderId)
+    end
+    if folder and folder.section == "global" then
+        return { scope = "global", sectionKey = "global", runtimeVisible = true }
+    end
+    if folder and folder.createdBy == charKey then
+        return { scope = "current-class", sectionKey = "char", runtimeVisible = true }
+    end
+    return { scope = "invalid", sectionKey = "invalid", runtimeVisible = false }
+end
+
 local function GetFolderTargetsForSection(db, charKey, section)
     local folderList = {}
     for fid, folder in pairs(db.folders) do
-        if folder.section == section then
-            if section == "char" and folder.createdBy and folder.createdBy ~= charKey then
-                -- skip: belongs to another character
-            else
-                folderList[#folderList + 1] = {
-                    id = fid,
-                    name = folder.name,
-                    order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, fid),
-                }
-            end
+        local scope = ResolveFolderScopeForConfig(fid, folder, charKey)
+        local folderSection = scope and scope.sectionKey
+            or (folder.section == "global" and "global" or "char")
+        if folderSection == section then
+            folderList[#folderList + 1] = {
+                id = fid,
+                name = folder.name,
+                order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, fid),
+            }
         end
     end
     table.sort(folderList, function(a, b) return a.order < b.order end)
@@ -465,7 +286,7 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
             UIDropDownMenu_AddButton(info, level)
 
             info = UIDropDownMenu_CreateInfo()
-            info.text = container.isGlobal and "Make Character-Only" or "Make Global"
+            info.text = container.isGlobal and "Move to Current Class" or "Make Global"
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
@@ -478,7 +299,8 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
             end
             UIDropDownMenu_AddButton(info, level)
 
-            local containerSection = container.isGlobal and "global" or "char"
+            local containerScope = ResolveContainerScopeForConfig(containerId, container, charKey)
+            local containerSection = containerScope.sectionKey or (container.isGlobal and "global" or "char")
             local folderTargets = GetFolderTargetsForSection(db, charKey, containerSection)
             if #folderTargets > 0 or container.folderId then
                 info = UIDropDownMenu_CreateInfo()
@@ -631,7 +453,8 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
             end
             UIDropDownMenu_AddButton(info, level)
 
-            local containerSection = container.isGlobal and "global" or "char"
+            local containerScope = ResolveContainerScopeForConfig(containerId, container, charKey)
+            local containerSection = containerScope.sectionKey or (container.isGlobal and "global" or "char")
             for _, folderTarget in ipairs(GetFolderTargetsForSection(db, charKey, containerSection)) do
                 info = UIDropDownMenu_CreateInfo()
                 info.text = folderTarget.name
@@ -699,8 +522,18 @@ local function ShowFolderContextMenu(db, folderId, folder)
         info.notCheckable = true
         info.func = function()
             CloseDropDownMenus()
+            local charKey = CooldownCompanion.db and CooldownCompanion.db.keys and CooldownCompanion.db.keys.char
+            local folderScope = ResolveFolderScopeForConfig(folderId, folder, charKey)
+            if folderScope.scope == "other-class" then
+                CooldownCompanion:Print("Create new groups in your current class, then move them to Global if needed.")
+                return
+            end
             local containerId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
-            CooldownCompanion:MoveGroupToFolder(containerId, folderId)
+            local container = db.groupContainers and db.groupContainers[containerId]
+            if container and folderScope.scope == "global" then
+                container.isGlobal = true
+            end
+            CooldownCompanion:MoveGroupToFolder(containerId, folderId, { allowScopeChange = true })
             SelectConfigContainer(containerId)
             CooldownCompanion:RefreshConfigPanel()
         end
@@ -731,7 +564,7 @@ local function ShowFolderContextMenu(db, folderId, folder)
         end
 
         info = UIDropDownMenu_CreateInfo()
-        info.text = folder.section == "global" and "Make Character Folder" or "Make Global Folder"
+        info.text = folder.section == "global" and "Move to Current Class Folder" or "Make Global Folder"
         info.notCheckable = true
         info.func = function()
             CloseDropDownMenus()
@@ -917,6 +750,61 @@ local function PopulateColumn1ButtonBar()
     end)
 end
 
+local function RefreshColumn1FooterLayout()
+    if CS.UpdateColumn1FooterLayout then
+        CS.UpdateColumn1FooterLayout()
+    end
+end
+
+local function ClearOtherClassesFooterDoorway()
+    CS.col1FooterDoorwayVisible = false
+    CS.lastCol1FooterDoorwayRow = nil
+    local row = CS.col1FooterDoorway
+    if row and row.frame then
+        row.frame:SetScript("OnMouseUp", nil)
+        row.frame:Hide()
+    end
+    RefreshColumn1FooterLayout()
+end
+
+local function SetOtherClassesFooterDoorway(text, stableCount, onClick)
+    local row = CS.col1FooterDoorway
+    if not (row and row.frame) then
+        ClearOtherClassesFooterDoorway()
+        return false
+    end
+
+    CleanRecycledEntry(row)
+    row:SetText(text)
+    row:SetFullWidth(true)
+    row:SetFontObject(GameFontHighlight)
+    ApplyConfigTextRow(row, "CENTER")
+    row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    row.frame:SetScript("OnMouseUp", function(_, button)
+        if CS.dragState and CS.dragState.phase == "active" then return end
+        if button == "LeftButton" and onClick then
+            onClick()
+        end
+    end)
+
+    CS.col1FooterDoorwayVisible = true
+    CS.lastCol1FooterDoorwayRow = {
+        kind = "other-classes-doorway",
+        widget = row,
+        section = "other-classes",
+        loadBucket = "marker",
+        acceptsDrop = false,
+        keepVisibleDuringPreview = false,
+        previewProxy = false,
+        isMarker = true,
+        stableCount = stableCount,
+        visible = true,
+    }
+    row.frame:Show()
+    RefreshColumn1FooterLayout()
+    return true
+end
+
 ------------------------------------------------------------------------
 -- COLUMN 1: Groups
 ------------------------------------------------------------------------
@@ -925,6 +813,9 @@ local function RefreshColumn1(preserveDrag)
 
     -- Bars & Frames panel mode: take over col1 with the bar/frame tab group
     if CS.resourceBarPanelActive then
+        CS.otherClassLibraryActive = false
+        CS.otherClassLibraryClassKey = nil
+        ClearOtherClassesFooterDoorway()
         CancelDrag()
         CS.HideAutocomplete()
         CS.col1Scroll.frame:Hide()
@@ -983,13 +874,6 @@ local function RefreshColumn1(preserveDrag)
     end
     CS.col1Scroll.frame:Show()
 
-    -- Cross-character browse mode: render browse UI instead of normal groups
-    if CS.browseMode then
-        CancelDrag()
-        RenderBrowseMode()
-        return
-    end
-
     if CS.col1ButtonBar then CS.col1ButtonBar:Show() end
 
     if not preserveDrag then CancelDrag() end
@@ -1011,6 +895,9 @@ local function RefreshColumn1(preserveDrag)
     if not db.folders then db.folders = {} end
 
     if CooldownCompanion._unsupportedLegacyProfile then
+        CS.otherClassLibraryActive = false
+        CS.otherClassLibraryClassKey = nil
+        ClearOtherClassesFooterDoorway()
         if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
 
         local spacer = AceGUI:Create("SimpleGroup")
@@ -1080,18 +967,44 @@ local function RefreshColumn1(preserveDrag)
         })
     end
 
+    local function ResolveContainerScope(containerId, container)
+        if CooldownCompanion.ResolveContainerClassScope then
+            return CooldownCompanion:ResolveContainerClassScope(container or containerId)
+        end
+        if container and container.isGlobal then
+            return { scope = "global", sectionKey = "global", runtimeVisible = true }
+        end
+        if container and container.createdBy == charKey then
+            return { scope = "current-class", sectionKey = "char", runtimeVisible = true }
+        end
+        return { scope = "invalid", sectionKey = "invalid", runtimeVisible = false }
+    end
+
+    local function ResolveFolderScope(folderId, folder)
+        if CooldownCompanion.ResolveFolderClassScope then
+            return CooldownCompanion:ResolveFolderClassScope(folder or folderId)
+        end
+        if folder and folder.section == "global" then
+            return { scope = "global", sectionKey = "global", runtimeVisible = true }
+        end
+        if folder and folder.createdBy == charKey then
+            return { scope = "current-class", sectionKey = "char", runtimeVisible = true }
+        end
+        return { scope = "invalid", sectionKey = "invalid", runtimeVisible = false }
+    end
+
+    local function ScopeMatchesSection(scope, section)
+        return scope and scope.sectionKey == section
+    end
+
     -- Build top-level items for a section (folders + loose containers), sorted by order
     local function BuildSectionItems(section, sectionContainerIds)
         -- Collect folders for this section
         local sectionFolderIds = {}
         for fid, folder in pairs(db.folders) do
-            if folder.section == section then
-                -- Character folders: only show if owned by current character
-                if section == "char" and folder.createdBy and folder.createdBy ~= charKey then
-                    -- skip: belongs to another character
-                else
-                    table.insert(sectionFolderIds, fid)
-                end
+            local scope = ResolveFolderScope(fid, folder)
+            if ScopeMatchesSection(scope, section) then
+                table.insert(sectionFolderIds, fid)
             end
         end
 
@@ -1209,9 +1122,10 @@ local function RefreshColumn1(preserveDrag)
     end
 
     -- Helper: render a single container row (reused by both sections)
-    local function RenderContainerRow(containerId, inFolder, sectionTag, loadBucket)
+    local function RenderContainerRow(containerId, inFolder, sectionTag, loadBucket, options)
         local container = db.groupContainers[containerId]
         if not container then return end
+        local disableDrag = options and options.disableDrag == true
 
         local entry = AceGUI:Create("InteractiveLabel")
         CleanRecycledEntry(entry)
@@ -1265,32 +1179,34 @@ local function RefreshColumn1(preserveDrag)
             ConfigureGenericGroupRenameBadge(entry, container, containerId, groupNameWidth)
         end
 
-        entry:SetCallback("OnClick", function(widget, event, mouseButton)
-            if mouseButton == "LeftButton"
-                and not searchResults
-                and not IsShiftKeyDown()
-                and not IsControlKeyDown()
-                and not GetCursorInfo()
-            then
-                local isMulti = next(CS.selectedGroups) and CS.selectedGroups[containerId]
-                local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
-                CS.dragState = {
-                    kind = isMulti and "multi-group" or (inFolder and "folder-group" or "group"),
-                    phase = "pending",
-                    sourceGroupId = containerId,
-                    sourceGroupIds = isMulti and CopyTable(CS.selectedGroups) or nil,
-                    sourceSection = sectionTag,
-                    sourceFolderId = inFolder and container.folderId or nil,
-                    sourceLoadBucket = isMulti and ResolveSelectedDragLoadBucket(loadBucket) or (loadBucket or "loaded"),
-                    scrollWidget = CS.col1Scroll,
-                    widget = entry,
-                    startX = cursorX,
-                    startY = cursorY,
-                    col1RenderedRows = col1RenderedRows,
-                }
-                StartDragTracking()
-            end
-        end)
+        if not disableDrag then
+            entry:SetCallback("OnClick", function(widget, event, mouseButton)
+                if mouseButton == "LeftButton"
+                    and not searchResults
+                    and not IsShiftKeyDown()
+                    and not IsControlKeyDown()
+                    and not GetCursorInfo()
+                then
+                    local isMulti = next(CS.selectedGroups) and CS.selectedGroups[containerId]
+                    local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
+                    CS.dragState = {
+                        kind = isMulti and "multi-group" or (inFolder and "folder-group" or "group"),
+                        phase = "pending",
+                        sourceGroupId = containerId,
+                        sourceGroupIds = isMulti and CopyTable(CS.selectedGroups) or nil,
+                        sourceSection = sectionTag,
+                        sourceFolderId = inFolder and container.folderId or nil,
+                        sourceLoadBucket = isMulti and ResolveSelectedDragLoadBucket(loadBucket) or (loadBucket or "loaded"),
+                        scrollWidget = CS.col1Scroll,
+                        widget = entry,
+                        startX = cursorX,
+                        startY = cursorY,
+                        col1RenderedRows = col1RenderedRows,
+                    }
+                    StartDragTracking()
+                end
+            end)
+        end
 
         -- Handle clicks via OnMouseUp
         entry.frame:SetScript("OnMouseUp", function(self, button)
@@ -1338,165 +1254,10 @@ local function RefreshColumn1(preserveDrag)
             inFolder = inFolder and container.folderId or nil,
             section = sectionTag,
             loadBucket = loadBucket or "loaded",
-            acceptsDrop = (loadBucket or "loaded") ~= "unloaded",
-            previewDraggable = true,
+            acceptsDrop = (not disableDrag) and (loadBucket or "loaded") ~= "unloaded",
+            previewDraggable = not disableDrag,
             previewProxy = true,
         })
-
-        -- Inline spec filter panel (expanded via Shift+Left-click)
-        if CS.specExpandedGroupId == containerId then
-            local numSpecs = GetNumSpecializations()
-            local configID = C_ClassTalents.GetActiveConfigID()
-            local htIndent = inFolder and 32 or 20
-            local folder = container.folderId and db.folders and db.folders[container.folderId]
-            local folderSpecs = folder and folder.specs
-            local folderHeroTalents = folder and folder.heroTalents
-            local effectiveSpecs
-            if folderSpecs or container.specs then
-                effectiveSpecs = {}
-                if folderSpecs then for k in pairs(folderSpecs) do effectiveSpecs[k] = true end end
-                if container.specs then for k in pairs(container.specs) do effectiveSpecs[k] = true end end
-                if not next(effectiveSpecs) then effectiveSpecs = nil end
-            end
-            for i = 1, numSpecs do
-                local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
-                local lockedByFolder = folderSpecs and folderSpecs[specId]
-                local cb = AceGUI:Create("CheckBox")
-                cb:SetLabel(name)
-                cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92)
-                cb:SetFullWidth(true)
-                cb:SetValue(lockedByFolder or (container.specs and container.specs[specId]) or false)
-                if folderSpecs then
-                    cb:SetDisabled(true)
-                else
-                    cb:SetCallback("OnValueChanged", function(widget, event, value)
-                        if value then
-                            if not container.specs then container.specs = {} end
-                            container.specs[specId] = true
-                        else
-                            if container.specs then
-                                container.specs[specId] = nil
-                                if not next(container.specs) then
-                                    container.specs = nil
-                                end
-                            end
-                            CooldownCompanion:CleanHeroTalentsForSpec(container, specId)
-                        end
-                        CooldownCompanion:RefreshContainerPanels(containerId)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end)
-                end
-                AddAuxWidget(cb, sectionTag, "container", containerId, inFolder and container.folderId or nil)
-                ApplyCheckboxIndent(cb, inFolder and 12 or 0)
-
-                local htOpts = nil
-                if folderHeroTalents and next(folderHeroTalents) then
-                    htOpts = {
-                        heroTalentsSource = folderHeroTalents,
-                        useHeroTalentsSource = true,
-                        disableToggles = true,
-                    }
-                end
-                htOpts = htOpts or {}
-                if effectiveSpecs then
-                    htOpts.specsSource = effectiveSpecs
-                end
-                htOpts.onChanged = function()
-                    CooldownCompanion:RefreshContainerPanels(containerId)
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-                local heroWidgets = BuildHeroTalentSubTreeCheckboxes(CS.col1Scroll, container, configID, specId, htIndent, containerId, htOpts)
-                for _, heroWidget in ipairs(heroWidgets or {}) do
-                    TrackRenderedRow({
-                        kind = "aux-block",
-                        widget = heroWidget,
-                        section = sectionTag,
-                        loadBucket = "aux",
-                        acceptsDrop = false,
-                        previewProxy = false,
-                        layoutOnly = true,
-                        ownerKind = "container",
-                        ownerId = containerId,
-                        ownerFolderId = inFolder and container.folderId or nil,
-                    })
-                end
-            end
-
-            local playerSpecIds = {}
-            for i = 1, numSpecs do
-                local specId = C_SpecializationInfo.GetSpecializationInfo(i)
-                if specId then playerSpecIds[specId] = true end
-            end
-
-            local foreignSpecs = {}
-            if container.specs then
-                for specId in pairs(container.specs) do
-                    if not playerSpecIds[specId] then
-                        table.insert(foreignSpecs, specId)
-                    end
-                end
-            end
-
-            if #foreignSpecs > 0 then
-                table.sort(foreignSpecs)
-                for _, specId in ipairs(foreignSpecs) do
-                    local _, name, _, icon = GetSpecializationInfoForSpecID(specId)
-                    if name then
-                        local fcb = AceGUI:Create("CheckBox")
-                        fcb:SetLabel(name)
-                        if icon then fcb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
-                        fcb:SetFullWidth(true)
-                        fcb:SetValue(true)
-                        fcb:SetCallback("OnValueChanged", function(widget, event, value)
-                            if not value then
-                                if container.specs then
-                                    container.specs[specId] = nil
-                                    if not next(container.specs) then
-                                        container.specs = nil
-                                    end
-                                end
-                            else
-                                if not container.specs then container.specs = {} end
-                                container.specs[specId] = true
-                            end
-                            CooldownCompanion:RefreshContainerPanels(containerId)
-                            CooldownCompanion:RefreshConfigPanel()
-                        end)
-                        AddAuxWidget(fcb, sectionTag, "container", containerId, inFolder and container.folderId or nil)
-                        ApplyCheckboxIndent(fcb, inFolder and 12 or 0)
-                    end
-                end
-            end
-
-            local hasOwnSpecs = false
-            if container.specs then
-                for specId in pairs(container.specs) do
-                    if not (folderSpecs and folderSpecs[specId]) then
-                        hasOwnSpecs = true
-                        break
-                    end
-                end
-            end
-            if not hasOwnSpecs and container.heroTalents and next(container.heroTalents) then
-                hasOwnSpecs = true
-            end
-            if hasOwnSpecs then
-                local clearBtn = AceGUI:Create("Button")
-                clearBtn:SetText("Clear All")
-                clearBtn:SetFullWidth(true)
-                clearBtn:SetCallback("OnClick", function()
-                    if folderSpecs then
-                        container.specs = CopyTable(folderSpecs)
-                    else
-                        container.specs = nil
-                    end
-                    container.heroTalents = nil
-                    CooldownCompanion:RefreshContainerPanels(containerId)
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
-                AddAuxWidget(clearBtn, sectionTag, "container", containerId, inFolder and container.folderId or nil)
-            end
-        end
 
         return entry
     end
@@ -1521,9 +1282,10 @@ local function RefreshColumn1(preserveDrag)
     end
 
     -- Helper: render a folder header row
-    local function RenderFolderRow(folderId, sectionTag, childContainerIds, loadBucket)
+    local function RenderFolderRow(folderId, sectionTag, childContainerIds, loadBucket, options)
         local folder = db.folders[folderId]
         if not folder then return end
+        local disableDrag = options and options.disableDrag == true
 
         local isCollapsed = CS.collapsedFolders[folderId]
         local function ToggleFolderCollapsed()
@@ -1615,29 +1377,31 @@ local function RefreshColumn1(preserveDrag)
             widget = entry,
             section = sectionTag,
             loadBucket = loadBucket or "loaded",
-            acceptsDrop = (loadBucket or "loaded") ~= "unloaded",
-            previewDraggable = true,
+            acceptsDrop = (not disableDrag) and (loadBucket or "loaded") ~= "unloaded",
+            previewDraggable = not disableDrag,
             previewProxy = true,
         })
 
-        entry:SetCallback("OnClick", function(widget, event, mouseButton)
-            if mouseButton == "LeftButton" and not searchResults and not IsShiftKeyDown() and not GetCursorInfo() then
-                local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
-                CS.dragState = {
-                    kind = "folder",
-                    phase = "pending",
-                    sourceFolderId = folderId,
-                    sourceSection = sectionTag,
-                    sourceLoadBucket = loadBucket or "loaded",
-                    scrollWidget = CS.col1Scroll,
-                    widget = entry,
-                    startX = cursorX,
-                    startY = cursorY,
-                    col1RenderedRows = col1RenderedRows,
-                }
-                StartDragTracking()
-            end
-        end)
+        if not disableDrag then
+            entry:SetCallback("OnClick", function(widget, event, mouseButton)
+                if mouseButton == "LeftButton" and not searchResults and not IsShiftKeyDown() and not GetCursorInfo() then
+                    local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
+                    CS.dragState = {
+                        kind = "folder",
+                        phase = "pending",
+                        sourceFolderId = folderId,
+                        sourceSection = sectionTag,
+                        sourceLoadBucket = loadBucket or "loaded",
+                        scrollWidget = CS.col1Scroll,
+                        widget = entry,
+                        startX = cursorX,
+                        startY = cursorY,
+                        col1RenderedRows = col1RenderedRows,
+                    }
+                    StartDragTracking()
+                end
+            end)
+        end
 
         -- Handle clicks via OnMouseUp
         entry.frame:SetScript("OnMouseUp", function(self, button)
@@ -1680,126 +1444,103 @@ local function RefreshColumn1(preserveDrag)
 
     end
 
-    local function RenderFolderSpecPanel(folderId, sectionTag)
-        local folder = db.folders[folderId]
-        if not folder then return end
-
-        local function BuildFolderSpecs(nextSpecId, enabled)
-            local nextSpecs = folder.specs and CopyTable(folder.specs) or {}
-            if enabled then
-                nextSpecs[nextSpecId] = true
-            else
-                nextSpecs[nextSpecId] = nil
-            end
-            if not next(nextSpecs) then
-                nextSpecs = nil
-            end
-            return nextSpecs
-        end
-
-        local numSpecs = GetNumSpecializations()
-        local configID = C_ClassTalents.GetActiveConfigID()
-        local htIndent = 32
-        for i = 1, numSpecs do
-            local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
-            local cb = AceGUI:Create("CheckBox")
-            cb:SetLabel(name)
-            cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92)
-            cb:SetFullWidth(true)
-            cb:SetValue(folder.specs and folder.specs[specId] or false)
-            cb:SetCallback("OnValueChanged", function(widget, event, value)
-                CooldownCompanion:SetFolderSpecs(folderId, BuildFolderSpecs(specId, value))
-            end)
-            AddAuxWidget(cb, sectionTag, "folder", folderId, folderId)
-            ApplyCheckboxIndent(cb, 12)
-
-            if configID and folder.specs and folder.specs[specId] then
-                local subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
-                if subTreeIDs then
-                    for _, subTreeID in ipairs(subTreeIDs) do
-                        local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
-                        if subTreeInfo then
-                            local htCb = AceGUI:Create("CheckBox")
-                            htCb:SetLabel(subTreeInfo.name or ("Hero " .. subTreeID))
-                            htCb:SetFullWidth(true)
-                            htCb:SetValue(folder.heroTalents and folder.heroTalents[subTreeID] or false)
-                            htCb:SetCallback("OnValueChanged", function(widget, event, value)
-                                CooldownCompanion:SetFolderHeroTalent(folderId, subTreeID, value)
-                            end)
-                            AddAuxWidget(htCb, sectionTag, "folder", folderId, folderId)
-                            ApplyCheckboxIndent(htCb, htIndent)
-                            if subTreeInfo.iconElementID then
-                                htCb:SetImage(136235)
-                                htCb.image:SetAtlas(subTreeInfo.iconElementID, false)
-                                htCb.image:SetTexCoord(0, 1, 0, 1)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-
-        local playerSpecIds = {}
-        for i = 1, numSpecs do
-            local specId = C_SpecializationInfo.GetSpecializationInfo(i)
-            if specId then playerSpecIds[specId] = true end
-        end
-
-        local foreignSpecs = {}
-        if folder.specs then
-            for specId in pairs(folder.specs) do
-                if not playerSpecIds[specId] then
-                    table.insert(foreignSpecs, specId)
-                end
-            end
-        end
-
-        if #foreignSpecs > 0 then
-            table.sort(foreignSpecs)
-            for _, specId in ipairs(foreignSpecs) do
-                local _, name, _, icon = GetSpecializationInfoForSpecID(specId)
-                if name then
-                    local fcb = AceGUI:Create("CheckBox")
-                    fcb:SetLabel(name)
-                    if icon then fcb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
-                    fcb:SetFullWidth(true)
-                    fcb:SetValue(true)
-                    fcb:SetCallback("OnValueChanged", function(widget, event, value)
-                        CooldownCompanion:SetFolderSpecs(folderId, BuildFolderSpecs(specId, value))
-                    end)
-                    AddAuxWidget(fcb, sectionTag, "folder", folderId, folderId)
-                    ApplyCheckboxIndent(fcb, 12)
-                end
-            end
-        end
-
-        local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear All")
-        clearBtn:SetFullWidth(true)
-        clearBtn:SetCallback("OnClick", function()
-            CooldownCompanion:SetFolderSpecs(folderId, nil)
-        end)
-        AddAuxWidget(clearBtn, sectionTag, "folder", folderId, folderId)
+    local function RenderSectionMarker(section, headingText, headingColor)
+        local heading = AceGUI:Create("Label")
+        heading:SetFullWidth(true)
+        heading:SetHeight(18)
+        CS.col1Scroll:AddChild(heading)
+        SetupColumn1MarkerRow(heading, {
+            text = headingText,
+            color = headingColor,
+        })
+        TrackRenderedRow({
+            kind = "section-title",
+            widget = heading,
+            section = section,
+            loadBucket = "marker",
+            acceptsDrop = false,
+            keepVisibleDuringPreview = true,
+            previewProxy = true,
+            isMarker = true,
+        })
     end
 
-    -- Render a section (global or character)
+    -- Render a section (global, current class, or another class)
     local function RenderSection(section, sectionGroupIds, headingText, headingColor, options)
         local items, folderChildContainers = BuildSectionItems(section, sectionGroupIds)
+        local isClassSection = options and options.classSection == true
+        local stableCount = options and options.stableCount or nil
+
+        if isClassSection then
+            local isCollapsed = CS.collapsedSections[section] ~= false
+            local function ToggleClassSection()
+                local currentlyCollapsed = CS.collapsedSections[section] ~= false
+                if currentlyCollapsed then
+                    CS.collapsedSections[section] = false
+                else
+                    CS.collapsedSections[section] = true
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end
+            local header = AceGUI:Create("InteractiveLabel")
+            CleanRecycledEntry(header)
+            local countText = stableCount and (" |cff888888(" .. tostring(stableCount) .. ")|r") or ""
+            header:SetText((isCollapsed and "|A:common-icon-plus:12:12|a " or "|A:common-icon-minus:12:12|a ")
+                .. headingText .. countText)
+            header:SetFullWidth(true)
+            header:SetFontObject(GameFontHighlight)
+            if headingColor then
+                header:SetColor(headingColor[1], headingColor[2], headingColor[3])
+            end
+            if options and options.classKey then
+                ApplyConfigRowIcon(header, 134400, { atlas = "classicon-" .. string.lower(options.classKey) })
+            else
+                ApplyConfigTextRow(header)
+            end
+            header:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+            if header.frame then
+                header.frame:SetScript("OnMouseUp", function(_, button)
+                    if CS.dragState and CS.dragState.phase == "active" then return end
+                    if button == "LeftButton" then
+                        ToggleClassSection()
+                    end
+                end)
+            end
+            CS.col1Scroll:AddChild(header)
+            TrackRenderedRow({
+                kind = "class-header",
+                widget = header,
+                section = section,
+                loadBucket = "marker",
+                acceptsDrop = false,
+                keepVisibleDuringPreview = true,
+                previewProxy = true,
+                isMarker = true,
+                stableCount = stableCount,
+            })
+            if isCollapsed and not searchResults then
+                return
+            end
+        end
 
         -- Partition into loaded (active) and unloaded (inactive)
         local loadedItems = {}
         local unloadedItems = {}
         for _, item in ipairs(items) do
-            local isInactive
-            if item.kind == "folder" then
-                isInactive = IsFolderFullyInactive(item.id, folderChildContainers[item.id])
-            else
-                isInactive = IsContainerInactive(item.id, db.groupContainers[item.id])
-            end
-            if isInactive then
-                table.insert(unloadedItems, item)
-            else
+            if options and options.noLoadBuckets then
                 table.insert(loadedItems, item)
+            else
+                local isInactive
+                if item.kind == "folder" then
+                    isInactive = IsFolderFullyInactive(item.id, folderChildContainers[item.id])
+                else
+                    isInactive = IsContainerInactive(item.id, db.groupContainers[item.id])
+                end
+                if isInactive then
+                    table.insert(unloadedItems, item)
+                else
+                    table.insert(loadedItems, item)
+                end
             end
         end
 
@@ -1811,25 +1552,27 @@ local function RefreshColumn1(preserveDrag)
             and #loadedItems == 0
             and #unloadedItems > 0
 
-        local heading = AceGUI:Create("Label")
-        heading:SetFullWidth(true)
-        heading:SetHeight(18)
-        CS.col1Scroll:AddChild(heading)
-        SetupColumn1MarkerRow(heading, {
-            text = useUnloadedOnlyHeading and "Unloaded Groups" or headingText,
-            color = useUnloadedOnlyHeading and { 0.53, 0.53, 0.53 } or headingColor,
-        })
+        if not isClassSection then
+            local heading = AceGUI:Create("Label")
+            heading:SetFullWidth(true)
+            heading:SetHeight(18)
+            CS.col1Scroll:AddChild(heading)
+            SetupColumn1MarkerRow(heading, {
+                text = useUnloadedOnlyHeading and "Unloaded Groups" or headingText,
+                color = useUnloadedOnlyHeading and { 0.53, 0.53, 0.53 } or headingColor,
+            })
 
-        TrackRenderedRow({
-            kind = "section-header",
-            widget = heading,
-            section = section,
-            loadBucket = "marker",
-            acceptsDrop = false,
-            keepVisibleDuringPreview = true,
-            previewProxy = true,
-            isMarker = true,
-        })
+            TrackRenderedRow({
+                kind = "section-header",
+                widget = heading,
+                section = section,
+                loadBucket = "marker",
+                acceptsDrop = false,
+                keepVisibleDuringPreview = true,
+                previewProxy = true,
+                isMarker = true,
+            })
+        end
 
         if isEmpty and CS.showPhantomSections then
             local placeholder = AceGUI:Create("Label")
@@ -1855,22 +1598,20 @@ local function RefreshColumn1(preserveDrag)
         end
 
         -- Class color for accent bars
-        local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+        local classColor = options and options.classKey and C_ClassColor.GetClassColor(options.classKey)
+            or C_ClassColor.GetClassColor(select(2, UnitClass("player")))
 
         local function RenderItems(itemList, loadBucket)
             for _, item in ipairs(itemList) do
                 if item.kind == "folder" then
-                    RenderFolderRow(item.id, section, folderChildContainers[item.id], loadBucket)
-                    if CS.specExpandedFolderId == item.id then
-                        RenderFolderSpecPanel(item.id, section)
-                    end
+                    RenderFolderRow(item.id, section, folderChildContainers[item.id], loadBucket, options)
                     -- If expanded, render children with accent bar
                     if searchResults or not CS.collapsedFolders[item.id] then
                         local children = folderChildContainers[item.id]
                         if children and #children > 0 then
                             local firstEntry, lastEntry
                             for _, cid in ipairs(children) do
-                                local entry = RenderContainerRow(cid, true, section, loadBucket)
+                                local entry = RenderContainerRow(cid, true, section, loadBucket, options)
                                 if entry then
                                     if not firstEntry then firstEntry = entry end
                                     lastEntry = entry
@@ -1900,7 +1641,7 @@ local function RefreshColumn1(preserveDrag)
                         end
                     end
                 elseif item.kind == "container" then
-                    RenderContainerRow(item.id, false, section, loadBucket)
+                    RenderContainerRow(item.id, false, section, loadBucket, options)
                 end
             end
         end
@@ -1932,31 +1673,258 @@ local function RefreshColumn1(preserveDrag)
         RenderItems(unloadedItems, "unloaded")
     end
 
-    -- Split containers into global and character-owned
+    local function GetClassDisplayName(classKey)
+        if type(classKey) ~= "string" then return "Class" end
+        if GetClassInfo then
+            for classID = 1, 30 do
+                local className, classFilename = GetClassInfo(classID)
+                if classFilename and string.upper(classFilename) == classKey then
+                    return className or classKey
+                end
+            end
+        end
+        return classKey:sub(1, 1) .. string.lower(classKey:sub(2))
+    end
+
+    local function EnsureOtherClassSection(otherSections, otherSectionOrder, scope)
+        if not (scope and scope.ownerClassKey and scope.sectionKey) then
+            return nil
+        end
+        local section = otherSections[scope.sectionKey]
+        if not section then
+            local cc = C_ClassColor.GetClassColor(scope.ownerClassKey)
+            section = {
+                key = scope.sectionKey,
+                classKey = scope.ownerClassKey,
+                title = GetClassDisplayName(scope.ownerClassKey) .. " Groups",
+                color = cc and { cc.r, cc.g, cc.b } or { 1, 1, 1 },
+                containerIds = {},
+                count = 0,
+            }
+            otherSections[scope.sectionKey] = section
+            otherSectionOrder[#otherSectionOrder + 1] = section
+        end
+        return section
+    end
+
+    local function GetOtherClassVisibleCount(section)
+        if not section then return 0 end
+        if not searchResults then
+            return section.count or 0
+        end
+
+        local count = 0
+        for _, containerId in ipairs(section.containerIds or {}) do
+            if searchResults.containerMatches[containerId] then
+                count = count + 1
+            end
+        end
+        return count
+    end
+
+    local function GetOtherClassSummary(otherSectionOrder)
+        local totalCount = 0
+        local classCount = 0
+        for _, section in ipairs(otherSectionOrder or {}) do
+            local visibleCount = GetOtherClassVisibleCount(section)
+            if visibleCount > 0 then
+                totalCount = totalCount + visibleCount
+                classCount = classCount + 1
+            end
+        end
+        return totalCount, classCount
+    end
+
+    local function RenderNavigationRow(kind, text, options)
+        local row = AceGUI:Create("InteractiveLabel")
+        CleanRecycledEntry(row)
+        row:SetText(text)
+        row:SetFullWidth(true)
+        row:SetFontObject(GameFontHighlight)
+        if options and options.color then
+            row:SetColor(options.color[1], options.color[2], options.color[3])
+        end
+        if options and options.classKey then
+            ApplyConfigRowIcon(row, 134400, { atlas = "classicon-" .. string.lower(options.classKey) })
+        else
+            ApplyConfigTextRow(row)
+        end
+        row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        if row.frame then
+            row.frame:SetScript("OnMouseUp", function(_, button)
+                if CS.dragState and CS.dragState.phase == "active" then return end
+                if button == "LeftButton" and options and options.onClick then
+                    options.onClick()
+                end
+            end)
+        end
+        CS.col1Scroll:AddChild(row)
+        TrackRenderedRow({
+            kind = kind,
+            widget = row,
+            section = options and options.section or nil,
+            classKey = options and options.classKey or nil,
+            loadBucket = "marker",
+            acceptsDrop = false,
+            keepVisibleDuringPreview = true,
+            previewProxy = true,
+            isMarker = true,
+            stableCount = options and options.stableCount or nil,
+        })
+        return row
+    end
+
+    local function UpdateOtherClassesFooterDoorway(otherSectionOrder)
+        local totalCount, classCount = GetOtherClassSummary(otherSectionOrder)
+        if totalCount <= 0 or classCount <= 0 then
+            ClearOtherClassesFooterDoorway()
+            return false
+        end
+
+        return SetOtherClassesFooterDoorway(
+            "Browse Other Classes",
+            totalCount,
+            function()
+                CS.otherClassLibraryActive = true
+                CS.otherClassLibraryClassKey = nil
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        )
+    end
+
+    local function FindOtherClassSectionByClassKey(otherSectionOrder, classKey)
+        if not classKey then return nil end
+        for _, section in ipairs(otherSectionOrder or {}) do
+            if section.classKey == classKey then
+                return section
+            end
+        end
+        return nil
+    end
+
+    local function RenderOtherClassLibrary(otherSectionOrder)
+        local totalCount, classCount = GetOtherClassSummary(otherSectionOrder)
+        if totalCount <= 0 or classCount <= 0 then
+            CS.otherClassLibraryActive = false
+            CS.otherClassLibraryClassKey = nil
+            ClearOtherClassesFooterDoorway()
+            return false
+        end
+
+        ClearOtherClassesFooterDoorway()
+
+        local selectedSection = FindOtherClassSectionByClassKey(otherSectionOrder, CS.otherClassLibraryClassKey)
+        if selectedSection and GetOtherClassVisibleCount(selectedSection) <= 0 then
+            selectedSection = nil
+            CS.otherClassLibraryClassKey = nil
+        end
+
+        if selectedSection then
+            RenderNavigationRow("other-class-library-back", "|A:common-icon-backarrow:14:14|a  Back to Other Classes", {
+                section = "other-classes",
+                onClick = function()
+                    CS.otherClassLibraryClassKey = nil
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+            RenderSection(
+                selectedSection.key,
+                selectedSection.containerIds,
+                selectedSection.title,
+                selectedSection.color,
+                {
+                    classKey = selectedSection.classKey,
+                    noLoadBuckets = true,
+                    disableDrag = true,
+                }
+            )
+            return true
+        end
+
+        RenderNavigationRow("other-class-library-back", "|A:common-icon-backarrow:14:14|a  Back to Groups", {
+            section = "other-classes",
+            onClick = function()
+                CS.otherClassLibraryActive = false
+                CS.otherClassLibraryClassKey = nil
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        for _, section in ipairs(otherSectionOrder or {}) do
+            local visibleCount = GetOtherClassVisibleCount(section)
+            if visibleCount > 0 then
+                RenderNavigationRow("other-class-library-class", section.title
+                    .. " |cff888888(" .. tostring(visibleCount) .. ")|r", {
+                    section = section.key,
+                    classKey = section.classKey,
+                    color = section.color,
+                    stableCount = visibleCount,
+                    onClick = function()
+                        CS.otherClassLibraryClassKey = section.classKey
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                })
+            end
+        end
+        return true
+    end
+
+    -- Split containers into global, current-class, and other-class inventory.
     local containers = db.groupContainers or {}
     local showNewUserEmptyState = not next(containers) and not next(db.folders)
     local globalIds = {}
     local charIds = {}
+    local otherSections = {}
+    local otherSectionOrder = {}
     for id, container in pairs(containers) do
-        if container.isGlobal then
+        local scope = ResolveContainerScope(id, container)
+        if scope.scope == "global" then
             table.insert(globalIds, id)
-        elseif container.createdBy == charKey then
+        elseif scope.scope == "current-class" then
             table.insert(charIds, id)
+        elseif scope.scope == "other-class" then
+            local section = EnsureOtherClassSection(otherSections, otherSectionOrder, scope)
+            if section then
+                table.insert(section.containerIds, id)
+                section.count = section.count + 1
+            end
         end
     end
 
+    for folderId, folder in pairs(db.folders or {}) do
+        local scope = ResolveFolderScope(folderId, folder)
+        if scope.scope == "other-class" then
+            local section = EnsureOtherClassSection(otherSections, otherSectionOrder, scope)
+            if section then
+                section.count = section.count + 1
+            end
+        end
+    end
+    table.sort(otherSectionOrder, function(a, b)
+        return (a.title or a.classKey or a.key) < (b.title or b.classKey or b.key)
+    end)
+
     if searchResults and not next(searchResults.containerMatches) then
+        ClearOtherClassesFooterDoorway()
         local label = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(label)
         label:SetText("|cff888888No matching groups.|r")
         label:SetFullWidth(true)
         CS.col1Scroll:AddChild(label)
         CS.lastCol1RenderedRows = col1RenderedRows
-        PopulateColumn1ButtonBar()
+        if CS.otherClassLibraryActive then
+            if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
+        else
+            PopulateColumn1ButtonBar()
+        end
         return
     end
 
     if showNewUserEmptyState then
+        CS.otherClassLibraryActive = false
+        CS.otherClassLibraryClassKey = nil
+        ClearOtherClassesFooterDoorway()
+
         local spacer = AceGUI:Create("SimpleGroup")
         spacer:SetFullWidth(true)
         spacer:SetHeight(20)
@@ -2001,6 +1969,13 @@ local function RefreshColumn1(preserveDrag)
                 statsContainerIds[id] = true
             end
         end
+        for _, section in ipairs(otherSectionOrder) do
+            for _, id in ipairs(section.containerIds) do
+                if not searchResults or searchResults.containerMatches[id] then
+                    statsContainerIds[id] = true
+                end
+            end
+        end
         for id in pairs(CS.selectedGroups) do
             if containers[id] then
                 statsContainerIds[id] = true
@@ -2009,47 +1984,63 @@ local function RefreshColumn1(preserveDrag)
         containerStats = BuildColumn1ContainerStats(db, statsContainerIds)
 
         -- Render sections
-        local hasGlobalContent = #globalIds > 0
-        if not hasGlobalContent then
-            for _, folder in pairs(db.folders) do
-                if folder.section == "global" then
-                    hasGlobalContent = true
-                    break
-                end
-            end
+        local renderedOtherClassLibrary = false
+        if CS.otherClassLibraryActive then
+            renderedOtherClassLibrary = RenderOtherClassLibrary(otherSectionOrder)
         end
 
-        if #globalIds > 0 or next(db.folders) or CS.showPhantomSections then
-            if hasGlobalContent or CS.showPhantomSections then
-                RenderSection("global", globalIds, "Global Groups", { 0.4, 0.67, 1.0 })
-            end
-        end
-
-        local charName = charKey:match("^(.-)%s*%-") or charKey
-        local hasCharContent = #charIds > 0
-        if not hasCharContent then
-            for _, folder in pairs(db.folders) do
-                if folder.section == "char" and (not folder.createdBy or folder.createdBy == charKey) then
-                    hasCharContent = true
-                    break
+        if not renderedOtherClassLibrary then
+            local hasGlobalContent = #globalIds > 0
+            if not hasGlobalContent then
+                for folderId, folder in pairs(db.folders) do
+                    local scope = ResolveFolderScope(folderId, folder)
+                    if scope.scope == "global" then
+                        hasGlobalContent = true
+                        break
+                    end
                 end
             end
-        end
-        if hasCharContent or CS.showPhantomSections then
-            local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
-            RenderSection(
-                "char",
-                charIds,
-                charName .. "'s Groups",
-                cc and { cc.r, cc.g, cc.b } or { 1, 1, 1 },
-                { preferUnloadedHeading = not hasGlobalContent }
-            )
+
+            if #globalIds > 0 or next(db.folders) or CS.showPhantomSections then
+                if hasGlobalContent or CS.showPhantomSections then
+                    RenderSection("global", globalIds, "Global Groups", { 0.4, 0.67, 1.0 })
+                end
+            end
+
+            local _, playerClassKey = UnitClass("player")
+            local currentClassName = GetClassDisplayName(playerClassKey)
+            local hasCharContent = #charIds > 0
+            if not hasCharContent then
+                for folderId, folder in pairs(db.folders) do
+                    local scope = ResolveFolderScope(folderId, folder)
+                    if scope.scope == "current-class" then
+                        hasCharContent = true
+                        break
+                    end
+                end
+            end
+            if hasCharContent or CS.showPhantomSections then
+                local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+                RenderSection(
+                    "char",
+                    charIds,
+                    currentClassName .. " Groups",
+                    cc and { cc.r, cc.g, cc.b } or { 1, 1, 1 },
+                    { preferUnloadedHeading = not hasGlobalContent }
+                )
+            end
+
+            UpdateOtherClassesFooterDoorway(otherSectionOrder)
         end
     end
 
     CS.lastCol1RenderedRows = col1RenderedRows
 
-    PopulateColumn1ButtonBar()
+    if CS.otherClassLibraryActive then
+        if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
+    else
+        PopulateColumn1ButtonBar()
+    end
 end
 
 ------------------------------------------------------------------------

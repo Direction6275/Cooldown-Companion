@@ -1046,7 +1046,7 @@ local function BuildCustomBarTrackedAuraRowText(auraID, rowIndex)
 end
 
 local function ConfigureCustomBarTrackedAuraMoveButton(button, rotation, tooltipTitle, tooltipBody, disabled, onClick)
-    local isDisabled = disabled or CS.browseMode
+    local isDisabled = disabled
     button:SetSize(18, 18)
     if button.text then
         button.text:Hide()
@@ -1129,10 +1129,6 @@ local function EnsureCustomBarTrackedAuraMoveButtons(entry, cab, spellID, rowInd
 end
 
 local function ShowCustomBarTrackedAuraRowMenu(cab, spellID, rowIndex)
-    if CS.browseMode then
-        return
-    end
-
     if not CS.customBarTrackedAuraContextMenu then
         CS.customBarTrackedAuraContextMenu = CreateFrame("Frame", "CDCCustomBarTrackedAuraContextMenu", UIParent, "UIDropDownMenuTemplate")
     end
@@ -1157,9 +1153,6 @@ end
 
 local function InstallCustomBarTrackedAuraRowMenu(entry, cab, spellID, rowIndex)
     entry.frame:SetScript("OnMouseUp", function(_, button)
-        if CS.browseMode then
-            return
-        end
         if button == "RightButton" then
             ShowCustomBarTrackedAuraRowMenu(cab, spellID, rowIndex)
         end
@@ -1341,10 +1334,6 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
         RefreshCustomBarTrackedAuraEntry(cab, spellID)
     end
     auraEditBox:SetCallback("OnTextChanged", function(widget, _, text)
-        if CS.browseMode then
-            CS.HideAutocomplete()
-            return
-        end
         if text and #text >= 1 and CS.SearchCDMAuraAutocomplete then
             CS.ShowAutocompleteResults(CS.SearchCDMAuraAutocomplete(text), widget, function(entry)
                 CommitCustomBarTrackedAuraEntry(widget, entry)
@@ -1354,10 +1343,6 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
         end
     end)
     auraEditBox:SetCallback("OnEnterPressed", function(widget, _, text)
-        if CS.browseMode then
-            CS.HideAutocomplete()
-            return
-        end
         if CS.ConsumeAutocompleteEnter and CS.ConsumeAutocompleteEnter() then
             return
         end

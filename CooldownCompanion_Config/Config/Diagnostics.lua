@@ -192,8 +192,6 @@ local function BuildConfigDiagnosticSummary(profile, groupFrameStates, container
         selectedPanels = CS and SortedSelectionString(CS.selectedPanels) or "",
         selectedGroups = CS and SortedSelectionString(CS.selectedGroups) or "",
         selectedCustomBars = CS and SortedSelectionString(CS.selectedCustomBars) or "",
-        browseMode = CS and CS.browseMode == true,
-        browseCharKey = CS and CS.browseCharKey or nil,
         selectedContainerSummary = SummarizeContainer(selectedContainerId, containers and selectedContainerId and containers[selectedContainerId] or nil),
         selectedPanelSummary = SummarizePanel(selectedPanelId, selectedPanel),
         selectedButtonSummary = SummarizeButton(selectedButton),
@@ -789,9 +787,6 @@ local function FormatDiagnosticBugReportAsText(diag)
             c.selectedPanels ~= "" and c.selectedPanels or "none",
             c.selectedGroups ~= "" and c.selectedGroups or "none",
             c.selectedCustomBars ~= "" and c.selectedCustomBars or "none"))
-    end
-    if c.browseMode then
-        add("Browse Mode: " .. tostring(c.browseCharKey or "unknown"))
     end
     if c.selectedContainerSummary then
         local container = c.selectedContainerSummary

@@ -798,6 +798,11 @@ function CooldownCompanion:CreateContainer(name)
             y = 0,
         },
     }
+    if self._currentSpecId then
+        db.groupContainers[containerId].specs = {
+            [self._currentSpecId] = true,
+        }
+    end
 
     return containerId
 end
@@ -1428,7 +1433,7 @@ function CooldownCompanion:RenameFolder(folderId, newName)
     return true
 end
 
-function CooldownCompanion:MoveGroupToFolder(id, folderId)
+function CooldownCompanion:MoveGroupToFolder(id, folderId, opts)
     local db = self.db.profile
 
     -- Resolve to container (id may be containerId or panel groupId)
@@ -1442,6 +1447,16 @@ function CooldownCompanion:MoveGroupToFolder(id, folderId)
         end
     end
     if not container then return end
+
+    if folderId and self.CanMoveContainerToFolder then
+        local ok = self:CanMoveContainerToFolder(containerId, folderId, opts)
+        if not ok then
+            if self.Print then
+                self:Print("Groups cannot be moved into folders owned by another class.")
+            end
+            return false
+        end
+    end
 
     container.folderId = folderId  -- nil = loose (no folder)
 
@@ -1460,6 +1475,7 @@ function CooldownCompanion:MoveGroupToFolder(id, folderId)
     for _, p in ipairs(panels) do
         self:RefreshGroupFrame(p.groupId)
     end
+    return true
 end
 
 function CooldownCompanion:ToggleFolderGlobal(folderId)
@@ -1843,35 +1859,6 @@ function CooldownCompanion:FindTalentSpellByName(name)
     return nil
 end
 
-------------------------------------------------------------------------
--- Cross-Character Browse Helpers
-------------------------------------------------------------------------
-
---- Scan profile containers for unique createdBy values other than current char.
---- Returns sorted array of { charKey, classFilename, classID }.
-function CooldownCompanion:EnumerateBrowseCharacters()
-    local db = self.db.profile
-    local currentChar = self.db.keys.char
-    local seen = {}
-    local result = {}
-
-    for _, container in pairs(db.groupContainers) do
-        local key = container.createdBy
-        if key and key ~= currentChar and not container.isGlobal and not seen[key] then
-            seen[key] = true
-            local info = self.db.global.characterInfo and self.db.global.characterInfo[key]
-            result[#result + 1] = {
-                charKey = key,
-                classFilename = info and info.classFilename or nil,
-                classID = info and info.classID or nil,
-            }
-        end
-    end
-
-    table_sort(result, function(a, b) return a.charKey < b.charKey end)
-    return result
-end
-
 --- Return sorted active-profile character choices for Load Conditions.
 --- Includes the current character, AceDB profile keys that point at the active
 --- profile, and owners referenced by entities in the active profile.
@@ -1931,51 +1918,6 @@ function CooldownCompanion:EnumerateActiveProfileCharacters()
 
     table_sort(result, function(a, b) return a.charKey < b.charKey end)
     return result
-end
-
---- Return sorted array of { containerId, container } for a given character key.
-function CooldownCompanion:GetCharacterContainers(charKey)
-    local db = self.db.profile
-    local result = {}
-
-    for containerId, container in pairs(db.groupContainers) do
-        if container.createdBy == charKey and not container.isGlobal then
-            -- Skip empty containers (no panels with buttons)
-            local hasButtons = false
-            for _, group in pairs(db.groups) do
-                if group.parentContainerId == containerId and self:GroupHasUsableButtons(group, {
-                    checkLoadConditions = false,
-                    ignoreSpellAvailability = true,
-                }) then
-                    hasButtons = true
-                    break
-                end
-            end
-            if hasButtons then
-                result[#result + 1] = { containerId = containerId, container = container }
-            end
-        end
-    end
-
-    local specId = self._currentSpecId
-    table_sort(result, function(a, b)
-        return self:GetOrderForSpec(a.container, specId, a.containerId) < self:GetOrderForSpec(b.container, specId, b.containerId)
-    end)
-    return result
-end
-
---- Copy a container from browse mode. Reuses DuplicateContainer, renames to original name.
-function CooldownCompanion:CopyContainerFromBrowse(sourceContainerId)
-    local sourceContainer = self.db.profile.groupContainers[sourceContainerId]
-    if not sourceContainer then return nil end
-
-    local originalName = sourceContainer.name
-    local newContainerId = self:DuplicateContainer(sourceContainerId)
-    if newContainerId then
-        -- Rename from "X (Copy)" back to original name
-        self.db.profile.groupContainers[newContainerId].name = originalName
-    end
-    return newContainerId
 end
 
 --- Copy a panel into an existing container owned by the current character.
