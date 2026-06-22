@@ -68,6 +68,13 @@ local function CanPanelMoveToContainer(panelId, containerId)
     return true
 end
 
+local function CanMoveEntryToGroup(sourceGroupId, targetGroupId)
+    if CooldownCompanion.CanMoveEntryToGroup then
+        return CooldownCompanion:CanMoveEntryToGroup(sourceGroupId, targetGroupId) == true
+    end
+    return CooldownCompanion:IsGroupVisibleToCurrentChar(targetGroupId)
+end
+
 local function CanAllContainersMoveToFolder(containerIds, folderId)
     if not CooldownCompanion.CanMoveContainerToFolder then
         return true
@@ -1058,6 +1065,9 @@ local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGrou
     if not targetGroup then
         return false
     end
+    if not CanMoveEntryToGroup(sourceGroupId, targetGroupId) then
+        return false
+    end
     local rejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup)
     if rejectMessage then
         CooldownCompanion:Print(rejectMessage)
@@ -1083,7 +1093,7 @@ local function BuildEntryMoveDestinationSections(db, sourceGroupId)
 
     for groupId, group in pairs(db.groups or {}) do
         if groupId ~= sourceGroupId
-            and CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
+            and CanMoveEntryToGroup(sourceGroupId, groupId)
             and CooldownCompanion:CanPanelAcceptManualEntry(group)
         then
             local containerId = group.parentContainerId
@@ -2718,4 +2728,5 @@ end
 ------------------------------------------------------------------------
 -- ST._ exports
 ------------------------------------------------------------------------
+ST._BuildEntryMoveDestinationSections = BuildEntryMoveDestinationSections
 ST._RefreshColumn2 = RefreshColumn2

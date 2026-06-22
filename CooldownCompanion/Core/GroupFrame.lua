@@ -1969,12 +1969,14 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Create buttons
     self:PopulateGroupButtons(groupId)
     
-    -- Show/hide based on enabled state, spec filter, hero talent filter, character visibility, and load conditions
+    -- Show/hide based on runtime activity, plus selected off-class config previews.
     if self:IsGroupActive(groupId, {
         group = group,
         checkCharVisibility = true,
         checkLoadConditions = true,
         requireButtons = true,
+    }) or self:IsGroupEligibleForConfigPreview(groupId, {
+        group = group,
     }) then
         frame:Show()
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
@@ -2818,12 +2820,15 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     )
     self:UpdateGroupClickthrough(groupId)
 
-    -- Update visibility — unload if disabled, no buttons, wrong spec/hero, wrong character, or load conditions
+    -- Update visibility: runtime-active groups show normally; selected off-class
+    -- groups can also show as config previews without becoming runtime-visible.
     local isActive = CooldownCompanion:IsGroupActive(groupId, {
         group = group,
         checkCharVisibility = true,
         checkLoadConditions = true,
         requireButtons = true,
+    }) or CooldownCompanion:IsGroupEligibleForConfigPreview(groupId, {
+        group = group,
     })
     if isActive then
         if InCombatLockdown() and frame:IsProtected() then

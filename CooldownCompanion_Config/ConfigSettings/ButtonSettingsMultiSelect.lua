@@ -34,6 +34,13 @@ local function CanAllPanelsMoveToContainer(panelIds, containerId)
     return true
 end
 
+local function CanMoveEntryToGroup(sourceGroupId, targetGroupId)
+    if CooldownCompanion.CanMoveEntryToGroup then
+        return CooldownCompanion:CanMoveEntryToGroup(sourceGroupId, targetGroupId) == true
+    end
+    return CooldownCompanion:IsGroupVisibleToCurrentChar(targetGroupId)
+end
+
 local function GroupUsesTriggerPanelEntries(group)
     return group and group.displayMode == "trigger"
 end
@@ -113,7 +120,7 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
             local folderGroups, looseGroups = {}, {}
             for id, groupInfo in pairs(db.groups) do
                 if id ~= sourceGroupId
-                    and CooldownCompanion:IsGroupVisibleToCurrentChar(id)
+                    and CanMoveEntryToGroup(sourceGroupId, id)
                     and not GetManualMoveRejectMessage(groupInfo, multiCount) then
                     local groupName = groupInfo.name or ("Group " .. id)
                     local cid = groupInfo.parentContainerId
@@ -150,6 +157,9 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                     local info = UIDropDownMenu_CreateInfo()
                     info.text = groupEntry.name
                     info.func = function()
+                        if not CanMoveEntryToGroup(sourceGroupId, groupEntry.id) then
+                            return
+                        end
                         local targetGroup = db.groups[groupEntry.id]
                         local rejectMessage = GetManualMoveRejectMessage(targetGroup, multiCount)
                         if rejectMessage then
@@ -185,6 +195,9 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                     local info = UIDropDownMenu_CreateInfo()
                     info.text = groupEntry.name
                     info.func = function()
+                        if not CanMoveEntryToGroup(sourceGroupId, groupEntry.id) then
+                            return
+                        end
                         local targetGroup = db.groups[groupEntry.id]
                         local rejectMessage = GetManualMoveRejectMessage(targetGroup, multiCount)
                         if rejectMessage then

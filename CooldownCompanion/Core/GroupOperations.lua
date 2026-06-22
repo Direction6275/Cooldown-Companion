@@ -1308,7 +1308,8 @@ end
 
 function CooldownCompanion:IsGroupActive(groupId, opts)
     opts = opts or {}
-    local group = opts.group or self.db.profile.groups[groupId]
+    local db = self.db and self.db.profile
+    local group = opts.group or (db and db.groups and db.groups[groupId])
     if not group then return false end
 
     -- If this panel has a parent container, check container-level state first
@@ -1362,6 +1363,38 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
     end
 
     return true
+end
+
+function CooldownCompanion:IsGroupEligibleForConfigPreview(groupId, opts)
+    opts = opts or {}
+    if not (groupId and ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(groupId)) then
+        return false
+    end
+
+    local db = self.db and self.db.profile
+    local group = opts.group or (db and db.groups and db.groups[groupId])
+    if not group then return false end
+
+    local container = self:GetParentContainer(group)
+    if container then
+        if container.enabled == false or group.enabled == false then return false end
+    elseif group.enabled == false then
+        return false
+    end
+
+    if not self:IsRotationAssistantGroup(group) and not (group.buttons and #group.buttons > 0) then
+        return false
+    end
+
+    if not self.ResolveContainerClassScope then
+        return false
+    end
+    if not group.parentContainerId then
+        return false
+    end
+
+    local scope = self:ResolveContainerClassScope(group.parentContainerId)
+    return scope and scope.isOtherClass == true and scope.isInvalid ~= true
 end
 
 function CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
@@ -1677,6 +1710,41 @@ function CooldownCompanion:CanMovePanelToContainer(groupOrGroupId, targetContain
         return true
     end
     return false, "mixed-class-panel"
+end
+
+function CooldownCompanion:CanMoveEntryToGroup(sourceGroupId, targetGroupId)
+    local db = self.db and self.db.profile
+    if not (db and db.groups) then
+        return false
+    end
+    if sourceGroupId == targetGroupId then
+        return false
+    end
+
+    local sourceGroup = db.groups[sourceGroupId]
+    local targetGroup = db.groups[targetGroupId]
+    if not (sourceGroup and targetGroup and sourceGroup.parentContainerId and targetGroup.parentContainerId) then
+        return false
+    end
+
+    if not self.ResolveContainerClassScope then
+        return self:IsGroupVisibleToCurrentChar(targetGroupId)
+    end
+
+    local sourceScope = self:ResolveContainerClassScope(sourceGroup.parentContainerId)
+    if not sourceScope or sourceScope.isInvalid then
+        return false
+    end
+
+    if sourceScope.isOtherClass then
+        local targetScope = self:ResolveContainerClassScope(targetGroup.parentContainerId)
+        return targetScope
+            and targetScope.isInvalid ~= true
+            and targetScope.isOtherClass == true
+            and targetScope.ownerClassKey == sourceScope.ownerClassKey
+    end
+
+    return self:IsGroupVisibleToCurrentChar(targetGroupId)
 end
 
 local function PruneSpecMapToClass(addon, entity, map, classKey)
@@ -2675,6 +2743,8 @@ function CooldownCompanion:RefreshConfigSelectedGroupFrames()
                 checkCharVisibility = true,
                 checkLoadConditions = true,
                 requireButtons = true,
+            }) or self:IsGroupEligibleForConfigPreview(groupId, {
+                group = group,
             })
             if (active or (wasPreviewed and frame))
                 and (not frame
