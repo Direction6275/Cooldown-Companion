@@ -96,6 +96,17 @@ local function RefreshPanelAlphaDependencyTargets(self)
     end
 end
 
+local function NormalizeCopiedEntityForContainerScope(self, entity, container)
+    if type(entity) ~= "table" or not container or container.isGlobal == true then
+        return
+    end
+    if self.NormalizeEligibilityForCharacterScope then
+        self:NormalizeEligibilityForCharacterScope(entity, {
+            ownerCharKey = container.createdBy or (self.db and self.db.keys and self.db.keys.char),
+        })
+    end
+end
+
 function CooldownCompanion:NormalizeContainerAnchor(anchor, resolveAddonFrames)
     local normalized = type(anchor) == "table" and anchor or {}
     local point = normalized.point or "CENTER"
@@ -967,6 +978,7 @@ function CooldownCompanion:DuplicateContainer(containerId)
     newContainer.specOrders = nil
     newContainer.createdBy = self.db.keys.char
     newContainer.isGlobal = false
+    NormalizeCopiedEntityForContainerScope(self, newContainer, newContainer)
 
     -- If source was global, clear folderId on the copy
     if sourceContainer.isGlobal and newContainer.folderId then
@@ -1001,6 +1013,7 @@ function CooldownCompanion:DuplicateContainer(containerId)
                 x = group.anchor and group.anchor.x or 0,
                 y = group.anchor and group.anchor.y or 0,
             }
+            NormalizeCopiedEntityForContainerScope(self, newPanel, newContainer)
 
             db.groups[newGroupId] = newPanel
             groupIdMap[groupId] = newGroupId
@@ -1165,6 +1178,7 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
     local db = self.db.profile
     local sourcePanel = db.groups[groupId]
     if not sourcePanel or sourcePanel.parentContainerId ~= containerId then return nil end
+    local container = db.groupContainers[containerId]
 
     local newGroupId = db.nextGroupId
     db.nextGroupId = newGroupId + 1
@@ -1173,6 +1187,7 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
     newPanel.name = sourcePanel.name .. " (Copy)"
     newPanel.order = self:GetPanelCount(containerId) + 1
     ResetCopiedStandalonePanelAnchor(newPanel, db.groups, groupId, containerId, containerId)
+    NormalizeCopiedEntityForContainerScope(self, newPanel, container)
 
     db.groups[newGroupId] = newPanel
     self:CreateGroupFrame(newGroupId)
@@ -1364,6 +1379,7 @@ function CooldownCompanion:DuplicateGroup(id)
     newGroup.order = newGroupId
     newGroup.createdBy = self.db.keys.char
     newGroup.isGlobal = false
+    NormalizeCopiedEntityForContainerScope(self, newGroup, newGroup)
     if sourceGroup.isGlobal and newGroup.folderId then
         newGroup.folderId = nil
     end
@@ -1466,6 +1482,9 @@ function CooldownCompanion:ToggleFolderGlobal(folderId)
             end
         end
     end
+    if newSection == "char" and self.NormalizeFolderEligibilityForCharacterScope then
+        self:NormalizeFolderEligibilityForCharacterScope(folderId)
+    end
     self:RefreshAllGroups()
 end
 
@@ -1478,6 +1497,9 @@ function CooldownCompanion:ToggleGroupGlobal(containerId)
     container.isGlobal = newGlobal
     if not newGlobal then
         container.createdBy = self.db.keys.char
+        if self.NormalizeContainerEligibilityForCharacterScope then
+            self:NormalizeContainerEligibilityForCharacterScope(containerId)
+        end
     end
 
     self:RefreshAllGroups()
@@ -1850,6 +1872,67 @@ function CooldownCompanion:EnumerateBrowseCharacters()
     return result
 end
 
+--- Return sorted active-profile character choices for Load Conditions.
+--- Includes the current character, AceDB profile keys that point at the active
+--- profile, and owners referenced by entities in the active profile.
+function CooldownCompanion:EnumerateActiveProfileCharacters()
+    local db = self.db
+    local profile = db and db.profile
+    local currentChar = db and db.keys and db.keys.char
+    local currentProfile = db and db.keys and db.keys.profile
+    if db and db.GetCurrentProfile then
+        currentProfile = db:GetCurrentProfile() or currentProfile
+    end
+
+    local seen = {}
+    local result = {}
+
+    local function AddCharKey(charKey)
+        if type(charKey) ~= "string" or charKey == "" or seen[charKey] then
+            return
+        end
+        seen[charKey] = true
+        local info = db and db.global and db.global.characterInfo and db.global.characterInfo[charKey]
+        result[#result + 1] = {
+            charKey = charKey,
+            classFilename = info and info.classFilename or nil,
+            classID = info and info.classID or nil,
+        }
+    end
+
+    AddCharKey(currentChar)
+
+    local profileKeys = db and db.sv and db.sv.profileKeys
+    if type(profileKeys) == "table" and type(currentProfile) == "string" then
+        for charKey, profileKey in pairs(profileKeys) do
+            if profileKey == currentProfile then
+                AddCharKey(charKey)
+            end
+        end
+    end
+
+    if type(profile) == "table" then
+        for _, group in pairs(profile.groups or {}) do
+            if type(group) == "table" and not group.isGlobal then
+                AddCharKey(group.createdBy)
+            end
+        end
+        for _, container in pairs(profile.groupContainers or {}) do
+            if type(container) == "table" and not container.isGlobal then
+                AddCharKey(container.createdBy)
+            end
+        end
+        for _, folder in pairs(profile.folders or {}) do
+            if type(folder) == "table" and folder.section == "char" then
+                AddCharKey(folder.createdBy)
+            end
+        end
+    end
+
+    table_sort(result, function(a, b) return a.charKey < b.charKey end)
+    return result
+end
+
 --- Return sorted array of { containerId, container } for a given character key.
 function CooldownCompanion:GetCharacterContainers(charKey)
     local db = self.db.profile
@@ -1900,7 +1983,8 @@ function CooldownCompanion:CopyPanelToContainer(sourceGroupId, targetContainerId
     local db = self.db.profile
     local sourcePanel = db.groups[sourceGroupId]
     if not sourcePanel then return nil end
-    if not db.groupContainers[targetContainerId] then return nil end
+    local targetContainer = db.groupContainers[targetContainerId]
+    if not targetContainer then return nil end
 
     local newGroupId = db.nextGroupId
     db.nextGroupId = newGroupId + 1
@@ -1918,6 +2002,7 @@ function CooldownCompanion:CopyPanelToContainer(sourceGroupId, targetContainerId
         y = 0,
     }
     ResetCopiedStandalonePanelAnchor(newPanel, db.groups, sourceGroupId, sourcePanel.parentContainerId, targetContainerId)
+    NormalizeCopiedEntityForContainerScope(self, newPanel, targetContainer)
 
     db.groups[newGroupId] = newPanel
     self:CreateGroupFrame(newGroupId)
@@ -1933,6 +2018,7 @@ function CooldownCompanion:CopyPanelAsNewGroup(sourceGroupId, sourceName)
 
     -- Create a new container
     local containerId = self:CreateContainer(sourceName or "Copied Group")
+    local container = db.groupContainers[containerId]
 
     -- Create container frame
     if self.CreateContainerFrame then
@@ -1957,6 +2043,7 @@ function CooldownCompanion:CopyPanelAsNewGroup(sourceGroupId, sourceName)
         y = 0,
     }
     ResetCopiedStandalonePanelAnchor(newPanel, db.groups, sourceGroupId, sourcePanel.parentContainerId, containerId)
+    NormalizeCopiedEntityForContainerScope(self, newPanel, container)
 
     db.groups[newGroupId] = newPanel
     self:CreateGroupFrame(newGroupId)

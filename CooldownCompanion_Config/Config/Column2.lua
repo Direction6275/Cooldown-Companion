@@ -34,6 +34,7 @@ local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
+local BuildEligibilityBadgeMap = ST._BuildEligibilityBadgeMap
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local IsConfigFinderActive = ST._IsConfigFinderActive
@@ -47,6 +48,13 @@ local SelectConfigButtonPanel = ST._SelectConfigButtonPanel
 local SelectConfigRotationAssistantEntry = ST._SelectConfigRotationAssistantEntry
 
 local IsTriggerPanelGroup
+
+local function OpenPanelLoadConditions(panelId, containerId)
+    SelectConfigPanel(panelId, { containerId = containerId })
+    CS.selectedTab = "loadconditions"
+    CS.panelSettingsTab = "loadconditions"
+    CooldownCompanion:RefreshConfigPanel()
+end
 
 local function HideAllBarWidgets(col2)
     if col2._barsStylingScroll then col2._barsStylingScroll.frame:Hide() end
@@ -2104,21 +2112,31 @@ local function RefreshColumn2()
                     sb:Hide()
                 end
 
-                local containerSpecs = container.specs
+                local containerSpecs = BuildEligibilityBadgeMap(
+                    container.specs,
+                    container.loadConditions and container.loadConditions.specAllowlist
+                )
                 local containerHeroTalents = container.heroTalents
                 local folderSpecs, folderHeroTalents
                 if container.folderId and profile.folders then
                     local folder = profile.folders[container.folderId]
                     if folder then
-                        folderSpecs = folder.specs
+                        folderSpecs = BuildEligibilityBadgeMap(
+                            folder.specs,
+                            folder.loadConditions and folder.loadConditions.specAllowlist
+                        )
                         folderHeroTalents = folder.heroTalents
                     end
                 end
 
                 local specBadgeIdx = 0
+                local panelSpecs = BuildEligibilityBadgeMap(
+                    panel.specs,
+                    panel.loadConditions and panel.loadConditions.specAllowlist
+                )
 
-                if panel.specs then
-                    for specId in pairs(panel.specs) do
+                if panelSpecs then
+                    for specId in pairs(panelSpecs) do
                         if not (containerSpecs and containerSpecs[specId])
                            and not (folderSpecs and folderSpecs[specId]) then
                             local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
@@ -2240,6 +2258,11 @@ local function RefreshColumn2()
                             return
                         end
 
+                        if IsShiftKeyDown() then
+                            OpenPanelLoadConditions(panelId, CS.selectedContainer)
+                            return
+                        end
+
                         SelectConfigPanel(panelId, { toggle = true })
                         CooldownCompanion:RefreshConfigPanel()
                         return
@@ -2287,6 +2310,15 @@ local function RefreshColumn2()
                                 ctxPanel.enabled = not (ctxPanel.enabled ~= false)
                                 CooldownCompanion:RefreshGroupFrame(ctxPanelId)
                                 CooldownCompanion:RefreshConfigPanel()
+                            end
+                            UIDropDownMenu_AddButton(info, level)
+
+                            info = UIDropDownMenu_CreateInfo()
+                            info.text = "Load Conditions"
+                            info.notCheckable = true
+                            info.func = function()
+                                CloseDropDownMenus()
+                                OpenPanelLoadConditions(ctxPanelId, ctxContainerId)
                             end
                             UIDropDownMenu_AddButton(info, level)
 

@@ -15,6 +15,40 @@ local ClearConfigContainerSelection = ST._ClearConfigContainerSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
 local EncodeSharedPayload = ST._EncodeSharedPayload
+local StripCharacterEligibilityFromPayload = ST._StripCharacterEligibilityFromPayload
+
+local LOAD_CONDITION_ALLOWLIST_KEYS = {
+    classAllowlist = "class",
+    specAllowlist = "spec",
+    characterAllowlist = "character",
+}
+
+local function NormalizeAllowlistKey(kind, key)
+    if kind == "class" then
+        if type(key) ~= "string" or key == "" then return nil end
+        return string.upper(key)
+    elseif kind == "spec" then
+        return tonumber(key)
+    elseif kind == "character" then
+        if type(key) ~= "string" or key == "" then return nil end
+        return key
+    end
+    return nil
+end
+
+local function CopyAllowlistMap(map, kind)
+    if type(map) ~= "table" then return nil end
+    local copy = {}
+    for key, enabled in pairs(map) do
+        if enabled == true then
+            local normalizedKey = NormalizeAllowlistKey(kind, key)
+            if normalizedKey ~= nil then
+                copy[normalizedKey] = true
+            end
+        end
+    end
+    return next(copy) and copy or nil
+end
 
 -- Check whether a profile name already exists (case-exact match).
 local function ProfileNameExists(name)
@@ -44,31 +78,6 @@ local function ShowPopupOverConfig(which, textArg1, data)
         return showFn(which, textArg1, data)
     end
     return StaticPopup_Show(which, textArg1, nil, data)
-end
-
-local function ClearFolderFiltersForUnglobal(folderId)
-    if not folderId then return end
-
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    if not db then return end
-
-    local folder = db.folders and db.folders[folderId]
-    if folder then
-        folder.specs = nil
-        folder.heroTalents = nil
-        CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
-        return
-    end
-
-    -- Fallback: clear specs on child containers (folderId lives on containers post-migration)
-    if db.groupContainers then
-        for _, container in pairs(db.groupContainers) do
-            if container.folderId == folderId and (container.specs or container.heroTalents) then
-                container.specs = nil
-                container.heroTalents = nil
-            end
-        end
-    end
 end
 
 local function PruneDeletedFolderSelection(folderId)
@@ -440,7 +449,7 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
 }
 
 StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
-    text = "This will remove all spec filters and turn '%s' into a group for your current character. Continue?",
+    text = "This will remove foreign eligibility filters and turn '%s' into a group for your current character. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -448,16 +457,12 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
         if data.containerId then
             local container = CooldownCompanion.db.profile.groupContainers[data.containerId]
             if container then
-                container.specs = nil
-                container.heroTalents = nil
                 CooldownCompanion:ToggleGroupGlobal(data.containerId)
                 CooldownCompanion:RefreshConfigPanel()
             end
         elseif data.groupId then
             local group = CooldownCompanion.db.profile.groups[data.groupId]
             if group then
-                group.specs = nil
-                group.heroTalents = nil
                 CooldownCompanion:ToggleGroupGlobal(data.groupId)
                 CooldownCompanion:RefreshConfigPanel()
             end
@@ -470,7 +475,7 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
 }
 
 StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
-    text = "This will remove foreign spec filters and turn '%s' into a character group. Continue?",
+    text = "This will remove foreign eligibility filters and turn '%s' into a character group. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -478,8 +483,6 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
             local db = CooldownCompanion.db.profile
             local container = db.groupContainers[data.dragState.sourceGroupId]
             if container then
-                container.specs = nil
-                container.heroTalents = nil
                 ST._ApplyCol1Drop(data.dragState)
                 CooldownCompanion:RefreshConfigPanel()
             end
@@ -517,13 +520,11 @@ StaticPopupDialogs["CDC_CROSS_PANEL_STRIP_OVERRIDES"] = {
 }
 
 StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
-    text = "This folder contains groups with foreign spec filters. Moving to character will remove those filters. Continue?",
+    text = "This folder contains groups with foreign eligibility filters. Moving to character will remove those filters. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.dragState then
-            local folderId = data.dragState.sourceFolderId
-            ClearFolderFiltersForUnglobal(folderId)
             ST._ApplyCol1Drop(data.dragState)
             CooldownCompanion:RefreshAllGroups()
             CooldownCompanion:RefreshConfigPanel()
@@ -536,12 +537,11 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
 }
 
 StaticPopupDialogs["CDC_UNGLOBAL_FOLDER"] = {
-    text = "This folder contains groups with foreign spec filters. Moving '%s' to character will remove those filters. Continue?",
+    text = "This folder contains groups with foreign eligibility filters. Moving '%s' to character will remove those filters. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.folderId then
-            ClearFolderFiltersForUnglobal(data.folderId)
             CooldownCompanion:ToggleFolderGlobal(data.folderId)
             CooldownCompanion:RefreshConfigPanel()
         end
@@ -595,33 +595,11 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_CUSTOM_BARS"] = {
 }
 
 StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
-    text = "Some selected groups have foreign spec filters. Moving to character will remove those filters. Continue?",
+    text = "Some selected groups have foreign eligibility filters. Moving to character will remove those filters. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.callback then
-            -- Strip foreign specs from affected containers before executing the operation
-            if data.groupIds then
-                local db = CooldownCompanion.db.profile
-                local numSpecs = GetNumSpecializations()
-                local playerSpecIds = {}
-                for i = 1, numSpecs do
-                    local specId = C_SpecializationInfo.GetSpecializationInfo(i)
-                    if specId then playerSpecIds[specId] = true end
-                end
-                for _, cid in ipairs(data.groupIds) do
-                    local container = db.groupContainers[cid]
-                    if container and container.specs then
-                        for specId in pairs(container.specs) do
-                            if not playerSpecIds[specId] then
-                                container.specs = nil
-                                container.heroTalents = nil
-                                break
-                            end
-                        end
-                    end
-                end
-            end
             data.callback()
         end
     end,
@@ -701,6 +679,64 @@ local function BuildContainerExportData(container)
     data.folderId = nil
     data.isGlobal = nil
     return data
+end
+
+local function HasTrueMapValue(map)
+    if type(map) ~= "table" then return false end
+    for _, enabled in pairs(map) do
+        if enabled == true then
+            return true
+        end
+    end
+    return false
+end
+
+local function EntityHasPortableEligibility(entity)
+    if type(entity) ~= "table" then return false end
+    local loadConditions = entity.loadConditions
+    if type(loadConditions) == "table" then
+        if CopyAllowlistMap(loadConditions.classAllowlist, "class")
+            or CopyAllowlistMap(loadConditions.specAllowlist, "spec")
+        then
+            return true
+        end
+    end
+    return CopyAllowlistMap(entity.specs, "spec") ~= nil
+        or HasTrueMapValue(entity.heroTalents)
+end
+
+local function ContainerEntryHasPortableEligibility(entry)
+    if type(entry) ~= "table" then return false end
+    if EntityHasPortableEligibility(entry.container) then
+        return true
+    end
+    for _, panel in ipairs(entry.panels or {}) do
+        if EntityHasPortableEligibility(panel) then
+            return true
+        end
+    end
+    return false
+end
+
+local function ContainersHavePortableEligibility(entries)
+    if type(entries) ~= "table" then return false end
+    for _, entry in ipairs(entries) do
+        if ContainerEntryHasPortableEligibility(entry) then
+            return true
+        end
+    end
+    return false
+end
+
+local function StripImportCharacterEligibility(data, importState)
+    local stripped = type(data) == "table" and tonumber(data._cdcCharacterEligibilityStripped) or 0
+    stripped = stripped + (StripCharacterEligibilityFromPayload
+        and StripCharacterEligibilityFromPayload(data)
+        or 0)
+    if stripped > 0 and importState then
+        importState.characterEligibilityStripped = (importState.characterEligibilityStripped or 0) + stripped
+    end
+    return stripped
 end
 
 ST._BuildGroupExportData = BuildGroupExportData
@@ -791,11 +827,14 @@ local function NewGroupImportState()
         importedGroupIds = {},
         containerCount = 0,
         panelCount = 0,
+        characterEligibilityStripped = 0,
+        globalizedEligibilityImports = 0,
     }
 end
 
-local function ImportContainerEntries(db, entries, charKey, folderId, importState)
+local function ImportContainerEntries(db, entries, charKey, folderId, importState, options)
     importState = importState or NewGroupImportState()
+    options = options or {}
     local firstContainerIndex = #importState.importedContainerIds + 1
     local startContainerCount = importState.containerCount
     local startPanelCount = importState.panelCount
@@ -809,12 +848,17 @@ local function ImportContainerEntries(db, entries, charKey, folderId, importStat
         end
 
         local container = CopyTable(entry.container)
+        local importAsGlobal = options.forceGlobalScope == true
+            or ContainerEntryHasPortableEligibility(entry)
         container.createdBy = charKey
-        container.isGlobal = false
+        container.isGlobal = importAsGlobal
         container.order = containerId
         container.specOrders = nil
         container.folderId = folderId
         container.locked = true
+        if importAsGlobal then
+            importState.globalizedEligibilityImports = (importState.globalizedEligibilityImports or 0) + 1
+        end
         db.groupContainers[containerId] = container
         CooldownCompanion:CreateContainerFrame(containerId)
 
@@ -871,6 +915,18 @@ local function RemapImportedContainerAnchors(db, importState, preserveContainerR
                 end
             end
         end
+    end
+end
+
+local function PrintImportSanitizerNotes(importState)
+    if not (importState and CooldownCompanion and CooldownCompanion.Print) then
+        return
+    end
+    if (importState.characterEligibilityStripped or 0) > 0 then
+        CooldownCompanion:Print("Character eligibility is local and was not imported.")
+    end
+    if (importState.globalizedEligibilityImports or 0) > 0 then
+        CooldownCompanion:Print("Class, specialization, and hero talent eligibility were preserved in Global Groups.")
     end
 end
 
@@ -968,6 +1024,7 @@ ST._FinishGroupImportBatch = function(token, remapAnchors)
             CooldownCompanion:SanitizeCursorAnchorPolicy(db)
         end
     end
+    PrintImportSanitizerNotes(importState)
 end
 
 ST._AttachGroupImportBatch = function(payload, token)
@@ -994,7 +1051,9 @@ local function ApplyGroupImportData(data)
     local db = CooldownCompanion.db.profile
     local charKey = CooldownCompanion.db.keys.char
     local sharedImportState = batchToken and activeGroupImportBatches[batchToken] or nil
+    local rootImportState = sharedImportState or NewGroupImportState()
     local deferAnchorRemap = sharedImportState ~= nil
+    StripImportCharacterEligibility(data, rootImportState)
 
     if data.type == "group" and data.group then
         CooldownCompanion:NotifyLegacySupportCutoff("group import")
@@ -1005,7 +1064,7 @@ local function ApplyGroupImportData(data)
         return false
 
     elseif data.type == "containers" and data.containers then
-        local importState, containerCount = ImportContainerEntries(db, data.containers, charKey, nil, sharedImportState)
+        local importState, containerCount = ImportContainerEntries(db, data.containers, charKey, nil, rootImportState)
         if not deferAnchorRemap then
             RemapImportedContainerAnchors(db, importState, true)
             RemapImportedPanelAnchors(db, importState)
@@ -1059,26 +1118,43 @@ local function ApplyGroupImportData(data)
             for key, enabled in pairs(data.folder.loadConditions) do
                 if enabled == true then
                     importedLoadConditions[key] = true
+                elseif LOAD_CONDITION_ALLOWLIST_KEYS[key] then
+                    local allowlist = CopyAllowlistMap(enabled, LOAD_CONDITION_ALLOWLIST_KEYS[key])
+                    if allowlist then
+                        importedLoadConditions[key] = allowlist
+                    end
                 end
             end
             if not next(importedLoadConditions) then
                 importedLoadConditions = nil
             end
         end
+        local folderUsesGlobalEligibility = importedSpecs
+            or importedHeroTalents
+            or (importedLoadConditions and (
+                importedLoadConditions.classAllowlist
+                    or importedLoadConditions.specAllowlist
+            ))
+            or ContainersHavePortableEligibility(data.containers)
         db.folders[folderId] = {
             name = data.folder.name or "Imported Folder",
             order = folderId,
-            section = "char",
+            section = folderUsesGlobalEligibility and "global" or "char",
             createdBy = charKey,
             manualIcon = importedManualIcon,
             specs = importedSpecs,
             heroTalents = importedHeroTalents,
             loadConditions = importedLoadConditions,
         }
+        if folderUsesGlobalEligibility then
+            rootImportState.globalizedEligibilityImports = (rootImportState.globalizedEligibilityImports or 0) + 1
+        end
         local count = 0
         if data.containers then
             local importState, _, panelCount = ImportContainerEntries(
-                db, data.containers, charKey, folderId, sharedImportState
+                db, data.containers, charKey, folderId, rootImportState, {
+                    forceGlobalScope = folderUsesGlobalEligibility and true or false,
+                }
             )
             if not deferAnchorRemap then
                 RemapImportedContainerAnchors(db, importState, true)
@@ -1093,7 +1169,7 @@ local function ApplyGroupImportData(data)
             container = data.container,
             panels = data.panels,
             _originalContainerId = data._originalContainerId,
-        }}, charKey, nil, sharedImportState)
+        }}, charKey, nil, rootImportState)
         local container = db.groupContainers[containerId]
         if not deferAnchorRemap then
             RemapImportedContainerAnchors(db, importState, false)
@@ -1119,6 +1195,9 @@ local function ApplyGroupImportData(data)
 
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:RefreshAllGroups()
+    if not deferAnchorRemap then
+        PrintImportSanitizerNotes(rootImportState)
+    end
     return true
 end
 
@@ -1155,6 +1234,8 @@ local function ApplyCustomBarsImportData(data, options)
     if RejectUnsupportedImportPayload(data, "custom bars import") then
         return false
     end
+    local importState = options and options.importState or NewGroupImportState()
+    StripImportCharacterEligibility(data, importState)
 
     local rb = ST._RB
     local settings = CooldownCompanion:GetResourceBarSettings()
@@ -1170,6 +1251,7 @@ local function ApplyCustomBarsImportData(data, options)
     if not (options and options.silentSuccess) then
         CooldownCompanion:Print(message)
     end
+    PrintImportSanitizerNotes(importState)
     CooldownCompanion:ApplyResourceBars()
     CooldownCompanion:UpdateAnchorStacking()
     CooldownCompanion:RefreshConfigPanel()

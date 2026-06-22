@@ -47,6 +47,21 @@ local SelectConfigPanel = ST._SelectConfigPanel
 
 local GenerateGroupName
 
+local function OpenContainerLoadConditions(containerId)
+    CS.specExpandedGroupId = nil
+    CS.specExpandedFolderId = nil
+    SelectConfigContainer(containerId)
+    CS.selectedContainerTab = "loadconditions"
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function OpenFolderLoadConditions(folderId)
+    CS.specExpandedGroupId = nil
+    CS.specExpandedFolderId = nil
+    SelectConfigFolder(folderId)
+    CooldownCompanion:RefreshConfigPanel()
+end
+
 local function TrimGroupName(name)
     if name == nil then return "" end
     return tostring(name):match("^%s*(.-)%s*$") or ""
@@ -454,7 +469,7 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
-                if container.isGlobal and container.specs and ContainersHaveForeignSpecs({ container }, false) then
+                if container.isGlobal and ContainersHaveForeignSpecs({ container }, false) then
                     ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", container.name, { containerId = containerId })
                     return
                 end
@@ -560,13 +575,7 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
-                if CS.specExpandedGroupId == containerId then
-                    CS.specExpandedGroupId = nil
-                else
-                    CS.specExpandedGroupId = containerId
-                    CS.specExpandedFolderId = nil
-                end
-                CooldownCompanion:RefreshConfigPanel()
+                OpenContainerLoadConditions(containerId)
             end
             UIDropDownMenu_AddButton(info, level)
 
@@ -766,13 +775,7 @@ local function ShowFolderContextMenu(db, folderId, folder)
         info.notCheckable = true
         info.func = function()
             CloseDropDownMenus()
-            if CS.specExpandedFolderId == folderId then
-                CS.specExpandedFolderId = nil
-            else
-                CS.specExpandedFolderId = folderId
-                CS.specExpandedGroupId = nil
-            end
-            CooldownCompanion:RefreshConfigPanel()
+            OpenFolderLoadConditions(folderId)
         end
         UIDropDownMenu_AddButton(info, level)
 
@@ -1299,13 +1302,7 @@ local function RefreshColumn1(preserveDrag)
                     return
                 end
                 if IsShiftKeyDown() then
-                    if CS.specExpandedGroupId == containerId then
-                        CS.specExpandedGroupId = nil
-                    else
-                        CS.specExpandedGroupId = containerId
-                        CS.specExpandedFolderId = nil
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
+                    OpenContainerLoadConditions(containerId)
                     return
                 elseif IsControlKeyDown() then
                     -- Ctrl+click: toggle multi-select (container IDs)
@@ -1650,13 +1647,7 @@ local function RefreshColumn1(preserveDrag)
                     return
                 end
                 if IsShiftKeyDown() then
-                    if CS.specExpandedFolderId == folderId then
-                        CS.specExpandedFolderId = nil
-                    else
-                        CS.specExpandedFolderId = folderId
-                        CS.specExpandedGroupId = nil
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
+                    OpenFolderLoadConditions(folderId)
                     return
                 end
                 SelectConfigFolder(folderId)

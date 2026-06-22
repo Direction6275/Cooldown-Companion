@@ -1829,6 +1829,23 @@ local function AcquireBadge(frame, index)
     return badge
 end
 
+local function BuildEligibilityBadgeMap(...)
+    local badgeMap
+    for i = 1, select("#", ...) do
+        local source = select(i, ...)
+        if type(source) == "table" then
+            for key, enabled in pairs(source) do
+                local numericKey = tonumber(key)
+                if enabled == true and numericKey then
+                    badgeMap = badgeMap or {}
+                    badgeMap[numericKey] = true
+                end
+            end
+        end
+    end
+    return badgeMap
+end
+
 local function SetupGroupRowIndicators(entry, group)
     local frame = entry.frame
     if frame._cdcBadges then
@@ -1875,14 +1892,20 @@ local function SetupGroupRowIndicators(entry, group)
             and CooldownCompanion.db.profile.folders
         local folder = folders and folders[folderId]
         if folder then
-            folderSpecs = folder.specs
+            folderSpecs = BuildEligibilityBadgeMap(
+                folder.specs,
+                folder.loadConditions and folder.loadConditions.specAllowlist
+            )
             folderHeroTalents = folder.heroTalents
         end
     end
 
     -- Spec filter badges: show own specs, skip any that exist at folder level
     local SPEC_BADGE_SIZE = 16
-    local specs = group.specs
+    local specs = BuildEligibilityBadgeMap(
+        group.specs,
+        group.loadConditions and group.loadConditions.specAllowlist
+    )
     if specs then
         for specId in pairs(specs) do
             if not (folderSpecs and folderSpecs[specId]) then
@@ -1949,7 +1972,10 @@ local function SetupFolderRowIndicators(entry, folder)
 
     local badgeIndex = 0
     local SPEC_BADGE_SIZE = 16
-    local specs = folder and folder.specs
+    local specs = folder and BuildEligibilityBadgeMap(
+        folder.specs,
+        folder.loadConditions and folder.loadConditions.specAllowlist
+    )
     if specs and next(specs) then
         for specId in pairs(specs) do
             local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
@@ -2903,24 +2929,179 @@ end
 local function SpecSetHasForeignSpecs(specs, playerSpecIds)
     if not specs then return false end
     for specId in pairs(specs) do
-        if not playerSpecIds[specId] then
+        local normalizedSpecId = tonumber(specId)
+        if normalizedSpecId and not playerSpecIds[normalizedSpecId] then
             return true
         end
     end
     return false
 end
 
-local function GetEffectiveContainerSpecFilter(container, db)
-    if not container then return nil end
-    return container.specs
+local function BuildPlayerHeroTalentSet(playerSpecIds)
+    local playerHeroTalentIds = {}
+    if not (C_ClassTalents and C_ClassTalents.GetHeroTalentSpecsForClassSpec) then
+        return playerHeroTalentIds, false
+    end
+    for specId in pairs(playerSpecIds or {}) do
+        local subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
+        for _, subTreeID in ipairs(subTreeIDs or {}) do
+            local normalizedSubTreeID = tonumber(subTreeID)
+            if normalizedSubTreeID then
+                playerHeroTalentIds[normalizedSubTreeID] = true
+            end
+        end
+    end
+    return playerHeroTalentIds, true
+end
+
+local function HasEnabledMapValue(map)
+    if type(map) ~= "table" then return false end
+    for _, enabled in pairs(map) do
+        if enabled == true then return true end
+    end
+    return false
+end
+
+local function HeroTalentSetHasForeignHeroTalents(heroTalents, playerHeroTalentIds, hasHeroTalentData)
+    if type(heroTalents) ~= "table" then return false end
+    if not hasHeroTalentData then
+        return HasEnabledMapValue(heroTalents)
+    end
+    for subTreeID, enabled in pairs(heroTalents) do
+        local normalizedSubTreeID = tonumber(subTreeID)
+        if enabled == true and (not normalizedSubTreeID or not playerHeroTalentIds[normalizedSubTreeID]) then
+            return true
+        end
+    end
+    return false
+end
+
+local function BuildPlayerClassKey()
+    if not UnitClass then return nil end
+    local _, classFilename = UnitClass("player")
+    return type(classFilename) == "string" and string.upper(classFilename) or nil
+end
+
+local function BuildPlayerCharacterKey()
+    return CooldownCompanion.db
+        and CooldownCompanion.db.keys
+        and CooldownCompanion.db.keys.char
+        or nil
+end
+
+local function ClassAllowlistHasForeignClasses(classAllowlist, playerClassKey)
+    if type(classAllowlist) ~= "table" or not playerClassKey then return false end
+    for classKey, enabled in pairs(classAllowlist) do
+        if enabled == true
+            and type(classKey) == "string"
+            and string.upper(classKey) ~= playerClassKey
+        then
+            return true
+        end
+    end
+    return false
+end
+
+local function CharacterInfoClassKey(charKey)
+    local info = charKey
+        and CooldownCompanion.db
+        and CooldownCompanion.db.global
+        and CooldownCompanion.db.global.characterInfo
+        and CooldownCompanion.db.global.characterInfo[charKey]
+        or nil
+    if type(info) ~= "table" then return nil end
+    if type(info.classFilename) == "string" and info.classFilename ~= "" then
+        return string.upper(info.classFilename)
+    end
+    local classID = tonumber(info.classID)
+    if classID and GetClassInfo then
+        local _, classFilename = GetClassInfo(classID)
+        if type(classFilename) == "string" and classFilename ~= "" then
+            return string.upper(classFilename)
+        end
+    end
+    return nil
+end
+
+local function CharacterAllowlistHasForeignClasses(characterAllowlist, playerClassKey, playerCharKey)
+    if type(characterAllowlist) ~= "table" or not playerClassKey then return false end
+    for charKey, enabled in pairs(characterAllowlist) do
+        if enabled == true then
+            if type(charKey) ~= "string" or charKey == "" then
+                return true
+            end
+            if not (playerCharKey and charKey == playerCharKey) then
+                local characterClassKey = CharacterInfoClassKey(charKey)
+                if characterClassKey ~= playerClassKey then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function EntityHasForeignEligibility(entity, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData)
+    if type(entity) ~= "table" then return false end
+    local loadConditions = entity.loadConditions
+    return SpecSetHasForeignSpecs(entity.specs, playerSpecIds)
+        or HeroTalentSetHasForeignHeroTalents(entity.heroTalents, playerHeroTalentIds, hasHeroTalentData)
+        or SpecSetHasForeignSpecs(
+            type(loadConditions) == "table" and loadConditions.specAllowlist or nil,
+            playerSpecIds
+        )
+        or ClassAllowlistHasForeignClasses(
+            type(loadConditions) == "table" and loadConditions.classAllowlist or nil,
+            playerClassKey
+        )
+        or CharacterAllowlistHasForeignClasses(
+            type(loadConditions) == "table" and loadConditions.characterAllowlist or nil,
+            playerClassKey,
+            playerCharKey
+        )
+end
+
+local function FindContainerId(db, container)
+    if not (db and db.groupContainers and type(container) == "table") then return nil end
+    for containerId, candidate in pairs(db.groupContainers) do
+        if candidate == container then
+            return containerId
+        end
+    end
+    return nil
+end
+
+local function ContainerPanelsHaveForeignEligibility(containerId, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if not (db and db.groups and containerId) then return false end
+    for _, group in pairs(db.groups) do
+        if type(group) == "table"
+            and group.parentContainerId == containerId
+            and EntityHasForeignEligibility(group, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData)
+        then
+            return true
+        end
+    end
+    return false
+end
+
+local function EntityOrChildPanelsHaveForeignEligibility(entity, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData)
+    if EntityHasForeignEligibility(entity, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData) then
+        return true
+    end
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local containerId = FindContainerId(db, entity)
+    return ContainerPanelsHaveForeignEligibility(containerId, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData)
 end
 
 local function ContainersHaveForeignSpecs(containers, requireGlobal)
     local playerSpecIds = BuildPlayerSpecSet()
+    local playerClassKey = BuildPlayerClassKey()
+    local playerCharKey = BuildPlayerCharacterKey()
+    local playerHeroTalentIds, hasHeroTalentData = BuildPlayerHeroTalentSet(playerSpecIds)
     for _, c in ipairs(containers) do
         if not requireGlobal or c.isGlobal then
-            local effectiveSpecs = GetEffectiveContainerSpecFilter(c)
-            if SpecSetHasForeignSpecs(effectiveSpecs, playerSpecIds) then
+            if EntityOrChildPanelsHaveForeignEligibility(c, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData) then
                 return true
             end
         end
@@ -2930,9 +3111,12 @@ end
 
 local function GroupsHaveForeignSpecs(groups, requireGlobal)
     local playerSpecIds = BuildPlayerSpecSet()
+    local playerClassKey = BuildPlayerClassKey()
+    local playerCharKey = BuildPlayerCharacterKey()
+    local playerHeroTalentIds, hasHeroTalentData = BuildPlayerHeroTalentSet(playerSpecIds)
     for _, g in ipairs(groups) do
         if not requireGlobal or g.isGlobal then
-            if SpecSetHasForeignSpecs(g.specs, playerSpecIds) then
+            if EntityOrChildPanelsHaveForeignEligibility(g, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData) then
                 return true
             end
         end
@@ -2948,12 +3132,18 @@ local function FolderHasForeignSpecs(folderId)
     if not folder then return false end
 
     local playerSpecIds = BuildPlayerSpecSet()
+    local playerClassKey = BuildPlayerClassKey()
+    local playerCharKey = BuildPlayerCharacterKey()
+    local playerHeroTalentIds, hasHeroTalentData = BuildPlayerHeroTalentSet(playerSpecIds)
+    if EntityHasForeignEligibility(folder, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData) then
+        return true
+    end
     -- Post-migration: specs live on containers, not folders
     local containers = db.groupContainers
     if containers then
         for _, container in pairs(containers) do
             if container.folderId == folderId then
-                if SpecSetHasForeignSpecs(container.specs, playerSpecIds) then
+                if EntityOrChildPanelsHaveForeignEligibility(container, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData) then
                     return true
                 end
             end
@@ -3021,6 +3211,7 @@ ST._ApplyConfigRowIcon = ApplyConfigRowIcon
 ST._ApplyConfigTextRow = ApplyConfigTextRow
 ST._RefreshVisibleConfigCompactRows = RefreshVisibleConfigCompactRows
 ST._AcquireBadge = AcquireBadge
+ST._BuildEligibilityBadgeMap = BuildEligibilityBadgeMap
 ST._SetupGroupRowIndicators = SetupGroupRowIndicators
 ST._SetupFolderRowIndicators = SetupFolderRowIndicators
 ST._GetConfigRowBadgeReserve = GetConfigRowBadgeReserve

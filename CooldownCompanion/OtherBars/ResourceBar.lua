@@ -1848,11 +1848,10 @@ function CooldownCompanion:ApplyResourceBars(opts)
 
     -- Append enabled Custom Bars
     local customBars = GetSpecCustomAuraBars(settings)
-    local customBarLoadDefaults = CooldownCompanion:GetLocalLoadConditionDefaults()
     for i, cab in ipairs(customBars) do
         if cab and cab.enabled and cab.spellID
             and CooldownCompanion:IsTalentConditionMet(cab)
-            and CooldownCompanion:EvaluateLoadConditions(cab.loadConditions, customBarLoadDefaults) then
+            and CooldownCompanion:IsCustomBarLoadConditionMet(cab) then
             table.insert(filtered, {
                 kind = "custom",
                 customBarIndex = i,

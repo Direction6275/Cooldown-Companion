@@ -268,6 +268,13 @@ local function ReviewUsesSelectedPieces(review)
     return IsProfileReviewKind(review) and review.mode == "selected"
 end
 
+local function AddCharacterEligibilityNotice(lines, data)
+    local stripped = type(data) == "table" and tonumber(data._cdcCharacterEligibilityStripped) or 0
+    if stripped and stripped > 0 then
+        AddLine(lines, "Character eligibility is local and will not be imported.")
+    end
+end
+
 local function RecountSelectedPieces(review)
     if not (review and review.pieces) then
         return 0
@@ -298,6 +305,7 @@ local function BuildSelectedPiecesSummaryLines(review, selectedCount)
     if pieces and pieces.customBarCount and pieces.customBarCount > 0 then
         AddLine(lines, FormatCount("Custom Bars", pieces.customBarCount))
     end
+    AddCharacterEligibilityNotice(lines, review and (review.diagnostic or review.data))
     return lines
 end
 
@@ -353,34 +361,41 @@ local function BuildCustomBarsSummaryLines(data)
         FormatCount("Layout specs", CountPairs(data.layouts)),
     }
     AddLine(lines, data.classFilename and "Class: " .. tostring(data.classFilename))
+    AddCharacterEligibilityNotice(lines, data)
     return lines
 end
 
 local function BuildContainerSummaryLines(data)
-    return {
+    local lines = {
         "Group export",
         "Name: " .. tostring(data.container and data.container.name or "Unnamed"),
         FormatCount("Panels", type(data.panels) == "table" and #data.panels or 0),
     }
+    AddCharacterEligibilityNotice(lines, data)
+    return lines
 end
 
 local function BuildContainersSummaryLines(data)
     local containers = type(data.containers) == "table" and data.containers or {}
-    return {
+    local lines = {
         "Groups export",
         FormatCount("Groups", #containers),
         FormatCount("Panels", CountContainerPanels(containers)),
     }
+    AddCharacterEligibilityNotice(lines, data)
+    return lines
 end
 
 local function BuildFolderSummaryLines(data)
     local containers = type(data.containers) == "table" and data.containers or {}
-    return {
+    local lines = {
         "Folder export",
         "Name: " .. tostring(data.folder and data.folder.name or "Unnamed"),
         FormatCount("Groups", #containers),
         FormatCount("Panels", CountContainerPanels(containers)),
     }
+    AddCharacterEligibilityNotice(lines, data)
+    return lines
 end
 
 local function ValidateProfilePayload(data)
@@ -404,8 +419,11 @@ local function ClassifyProfilePayload(data)
         exporterCharKey = data._exporterCharKey,
     }) or nil
 
+    local lines = BuildProfileSummaryLines(data, "Profile backup export", pieces and pieces.customBarCount)
+    AddCharacterEligibilityNotice(lines, data)
+
     return BuildReview("profile", data, "Profile Backup", "Restore Backup",
-        BuildProfileSummaryLines(data, "Profile backup export", pieces and pieces.customBarCount), {
+        lines, {
         destructive = true,
         mode = DefaultProfileImportMode(pieces),
         pieces = pieces,
@@ -436,6 +454,7 @@ local function ClassifyDiagnosticPayload(data)
     if meta and meta.charName then
         table.insert(lines, 2, "Source: " .. tostring(meta.charName))
     end
+    AddCharacterEligibilityNotice(lines, data)
 
     return BuildReview("diagnostic", data.profile, "Diagnostic Restore",
         "Restore Diagnostic", lines, {

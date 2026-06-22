@@ -81,6 +81,9 @@ local function ApplyCol1Drop(state)
                 else
                     container.isGlobal = false
                     container.createdBy = CooldownCompanion.db.keys.char
+                    if CooldownCompanion.NormalizeContainerEligibilityForCharacterScope then
+                        CooldownCompanion:NormalizeContainerEligibilityForCharacterScope(sourceContainerId)
+                    end
                 end
             end
 
@@ -177,6 +180,9 @@ local function ApplyCol1Drop(state)
                     else
                         c.isGlobal = false
                         c.createdBy = CooldownCompanion.db.keys.char
+                        if CooldownCompanion.NormalizeContainerEligibilityForCharacterScope then
+                            CooldownCompanion:NormalizeContainerEligibilityForCharacterScope(cid)
+                        end
                     end
                 end
             end
@@ -317,6 +323,9 @@ local function ApplyCol1Drop(state)
                         container.createdBy = CooldownCompanion.db.keys.char
                     end
                 end
+            end
+            if section == "char" and CooldownCompanion.NormalizeFolderEligibilityForCharacterScope then
+                CooldownCompanion:NormalizeFolderEligibilityForCharacterScope(sourceFolderId)
             end
         end
 
@@ -515,7 +524,7 @@ local function FinishCol1FolderAwareDrag(state)
         local sourceContainer = CooldownCompanion.db.profile.groupContainers[state.sourceGroupId]
         if targetSection and targetSection ~= state.sourceSection
            and state.sourceSection == "global"
-           and sourceContainer and sourceContainer.specs
+           and sourceContainer
            and GroupsHaveForeignSpecs({ sourceContainer }, false) then
             ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_GROUP", sourceContainer.name, {
                 dragState = state,

@@ -9,7 +9,6 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 -- Imports from Helpers.lua and State.lua
-local BuildHeroTalentSubTreeCheckboxes = ST._BuildHeroTalentSubTreeCheckboxes
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local CreateInfoButton = ST._CreateInfoButton
@@ -25,6 +24,89 @@ local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 
 local LOAD_CONDITION_OPTIONS = ST.LOAD_CONDITION_OPTIONS
+local REMOVE_BADGE_WIDGET_TYPE = "CDCEligibilityRemoveBadge"
+local VIEW_TRAIT_CONFIG_ID = (Constants and Constants.TraitConsts and Constants.TraitConsts.VIEW_TRAIT_CONFIG_ID) or -3
+
+if AceGUI and not AceGUI:GetWidgetVersion(REMOVE_BADGE_WIDGET_TYPE) then
+    local function Badge_OnClick(frame, button)
+        frame.obj:Fire("OnClick", button)
+        AceGUI:ClearFocus()
+    end
+
+    local function Badge_OnEnter(frame)
+        frame.obj:Fire("OnEnter")
+    end
+
+    local function Badge_OnLeave(frame)
+        frame.obj:Fire("OnLeave")
+    end
+
+    local badgeMethods = {
+        OnAcquire = function(self)
+            self:SetWidth(19)
+            self:SetHeight(19)
+            self:SetDisabled(false)
+            if self.icon then
+                self.icon:SetAtlas("common-icon-redx", false)
+                self.icon:ClearAllPoints()
+                self.icon:SetSize(19, 19)
+                self.icon:SetPoint("CENTER")
+            end
+            if self.frame.SetHighlightAtlas then
+                self.frame:SetHighlightAtlas("common-icon-redx")
+                if self.frame.GetHighlightTexture and self.frame:GetHighlightTexture() then
+                    self.frame:GetHighlightTexture():SetAlpha(0.3)
+                end
+            end
+        end,
+
+        SetDisabled = function(self, disabled)
+            if disabled then
+                self.frame:Disable()
+                if self.icon then self.icon:SetVertexColor(0.5, 0.5, 0.5, 0.5) end
+            else
+                self.frame:Enable()
+                if self.icon then self.icon:SetVertexColor(1, 1, 1, 1) end
+            end
+        end,
+    }
+
+    local function BadgeConstructor()
+        local frame = CreateFrame("Button", nil, UIParent)
+        frame:Hide()
+        frame:SetSize(19, 19)
+        frame:EnableMouse(true)
+        frame:RegisterForClicks("AnyUp")
+        frame:SetScript("OnClick", Badge_OnClick)
+        frame:SetScript("OnEnter", Badge_OnEnter)
+        frame:SetScript("OnLeave", Badge_OnLeave)
+
+        local icon = frame:CreateTexture(nil, "ARTWORK")
+        icon:SetAtlas("common-icon-redx", false)
+        icon:SetSize(19, 19)
+        icon:SetPoint("CENTER")
+
+        if frame.SetHighlightAtlas then
+            frame:SetHighlightAtlas("common-icon-redx")
+            if frame.GetHighlightTexture and frame:GetHighlightTexture() then
+                frame:GetHighlightTexture():SetAlpha(0.3)
+            end
+        end
+
+        local widget = {
+            frame = frame,
+            icon = icon,
+            type = REMOVE_BADGE_WIDGET_TYPE,
+        }
+        for method, func in pairs(badgeMethods) do
+            widget[method] = func
+        end
+
+        return AceGUI:RegisterAsWidget(widget)
+    end
+
+    AceGUI:RegisterWidgetType(REMOVE_BADGE_WIDGET_TYPE, BadgeConstructor, 1)
+end
 
 local function GetLoadConditionValue(loadConditions, key, defaults, optionDefault)
     if type(loadConditions) ~= "table" then return false end
@@ -49,6 +131,83 @@ local function SetLoadConditionValue(loadConditions, key, value, defaults, optio
         loadConditions[key] = nil
     else
         loadConditions[key] = value == true
+    end
+end
+
+local function EnsureLoadConditions(target)
+    if type(target) ~= "table" then return nil end
+    if type(target.loadConditions) ~= "table" then
+        target.loadConditions = {}
+    end
+    return target.loadConditions
+end
+
+local function SetSpecFilterValue(target, specId, value)
+    if type(target) ~= "table" or not specId then return end
+    if value then
+        if not target.specs then target.specs = {} end
+        target.specs[specId] = true
+        local loadConditions = EnsureLoadConditions(target)
+        if type(loadConditions.specAllowlist) ~= "table" then
+            loadConditions.specAllowlist = {}
+            for existingSpecId in pairs(target.specs or {}) do
+                loadConditions.specAllowlist[existingSpecId] = true
+            end
+        end
+        loadConditions.specAllowlist[specId] = true
+    else
+        if target.specs then
+            target.specs[specId] = nil
+            if not next(target.specs) then
+                target.specs = nil
+            end
+        end
+        local loadConditions = target.loadConditions
+        if type(loadConditions) == "table" and type(loadConditions.specAllowlist) == "table" then
+            loadConditions.specAllowlist[specId] = nil
+            if not next(loadConditions.specAllowlist) then
+                loadConditions.specAllowlist = nil
+            end
+        end
+    end
+end
+
+local function SetSpecAllowlistValue(target, specId, value)
+    if type(target) ~= "table" or not specId then return end
+    if value then
+        local loadConditions = EnsureLoadConditions(target)
+        if type(loadConditions.specAllowlist) ~= "table" then
+            loadConditions.specAllowlist = {}
+        end
+        loadConditions.specAllowlist[specId] = true
+        return
+    end
+
+    local loadConditions = target.loadConditions
+    if type(loadConditions) == "table" and type(loadConditions.specAllowlist) == "table" then
+        loadConditions.specAllowlist[specId] = nil
+        if not next(loadConditions.specAllowlist) then
+            loadConditions.specAllowlist = nil
+        end
+    end
+end
+
+local function SetHeroTalentValue(target, subTreeID, value)
+    subTreeID = tonumber(subTreeID)
+    if type(target) ~= "table" or not subTreeID then return end
+    if value then
+        if type(target.heroTalents) ~= "table" then
+            target.heroTalents = {}
+        end
+        target.heroTalents[subTreeID] = true
+        return
+    end
+
+    if type(target.heroTalents) == "table" then
+        target.heroTalents[subTreeID] = nil
+        if not next(target.heroTalents) then
+            target.heroTalents = nil
+        end
     end
 end
 
@@ -175,6 +334,1092 @@ local function AddScopedLoadConditionToggles(container, opts)
             end)
         end
         container:AddChild(cb)
+    end
+end
+
+local function NormalizeAllowlistKey(kind, key)
+    if kind == "class" then
+        if type(key) ~= "string" or key == "" then return nil end
+        return string.upper(key)
+    elseif kind == "spec" then
+        local specId = tonumber(key)
+        if not specId then return nil end
+        return specId
+    elseif kind == "character" then
+        if type(key) ~= "string" or key == "" then return nil end
+        return key
+    end
+    return nil
+end
+
+local function CopyAllowlist(map, kind)
+    if type(map) ~= "table" then return nil, false end
+    local copy = {}
+    local sawEntry = false
+    for key, enabled in pairs(map) do
+        sawEntry = true
+        if enabled == true then
+            local normalizedKey = NormalizeAllowlistKey(kind, key)
+            if normalizedKey ~= nil then
+                copy[normalizedKey] = true
+            end
+        end
+    end
+    if next(copy) then return copy, true end
+    return nil, sawEntry
+end
+
+local function IntersectAllowlists(left, right)
+    local intersection = {}
+    for key in pairs(left or {}) do
+        if right and right[key] then
+            intersection[key] = true
+        end
+    end
+    return intersection
+end
+
+local function GetInheritedAllowlist(sources, field, kind)
+    local inherited
+    local restricted = false
+    for _, source in ipairs(sources or {}) do
+        local copied, hasRestriction = CopyAllowlist(source.loadConditions and source.loadConditions[field], kind)
+        if hasRestriction then
+            restricted = true
+            if inherited == nil then
+                inherited = copied or {}
+            else
+                inherited = IntersectAllowlists(inherited, copied or {})
+            end
+        end
+    end
+    return inherited, restricted
+end
+
+local function SetAllowlistValue(target, field, kind, key, value)
+    local normalizedKey = NormalizeAllowlistKey(kind, key)
+    if not (type(target) == "table" and normalizedKey ~= nil) then return end
+
+    if value then
+        local loadConditions = EnsureLoadConditions(target)
+        if type(loadConditions[field]) ~= "table" then
+            loadConditions[field] = {}
+        end
+        loadConditions[field][normalizedKey] = true
+        return
+    end
+
+    local loadConditions = target.loadConditions
+    if type(loadConditions) == "table" and type(loadConditions[field]) == "table" then
+        loadConditions[field][normalizedKey] = nil
+        if not next(loadConditions[field]) then
+            loadConditions[field] = nil
+        end
+    end
+end
+
+local function AddChoice(choices, byKey, key, label, meta)
+    if key == nil or byKey[key] then return end
+    byKey[key] = true
+    local choice = {
+        key = key,
+        label = label or tostring(key),
+    }
+    if type(meta) == "table" then
+        for metaKey, metaValue in pairs(meta) do
+            choice[metaKey] = metaValue
+        end
+    end
+    choices[#choices + 1] = choice
+end
+
+local function AddAllowlistKeysAsChoices(choices, byKey, map, kind, labelPrefix)
+    local copied = CopyAllowlist(map, kind)
+    for key in pairs(copied or {}) do
+        AddChoice(choices, byKey, key, (labelPrefix or "") .. tostring(key))
+    end
+end
+
+local function SortChoices(choices)
+    table.sort(choices, function(a, b)
+        return tostring(a.sortLabel or a.label or a.key) < tostring(b.sortLabel or b.label or b.key)
+    end)
+end
+
+local MAX_CLASS_SCAN_ID = 20
+
+local function GetClassChoiceByID(classID)
+    classID = tonumber(classID)
+    if not classID then return nil end
+    local className, classFilename = GetClassInfo(classID)
+    local classKey = NormalizeAllowlistKey("class", classFilename)
+    if not classKey then return nil end
+    return {
+        key = classKey,
+        label = className or classKey,
+        classID = classID,
+        classFilename = classKey,
+    }
+end
+
+local function GetClassChoiceByFilename(classFilename)
+    local classKey = NormalizeAllowlistKey("class", classFilename)
+    if not classKey then return nil end
+    for classID = 1, MAX_CLASS_SCAN_ID do
+        local choice = GetClassChoiceByID(classID)
+        if choice and choice.key == classKey then
+            return choice
+        end
+    end
+    return {
+        key = classKey,
+        label = classKey,
+        classFilename = classKey,
+    }
+end
+
+local function GetCurrentClassChoice()
+    local classFilename = CooldownCompanion._playerClassFilename
+    local classID = CooldownCompanion._playerClassID
+    local className
+    if classID and GetClassInfo then
+        className = GetClassInfo(classID)
+    end
+    if (not classFilename or not className) and UnitClass then
+        local unitClassName, unitClassFilename, unitClassID = UnitClass("player")
+        className = className or unitClassName
+        classFilename = classFilename or unitClassFilename
+        classID = classID or unitClassID
+    end
+    local classKey = NormalizeAllowlistKey("class", classFilename)
+    if not classKey then return nil end
+    return {
+        key = classKey,
+        label = className or classKey,
+        classID = classID,
+        classFilename = classKey,
+    }
+end
+
+local function WrapClassColoredText(text, classFilename)
+    if classFilename and C_ClassColor then
+        local classColor = C_ClassColor.GetClassColor(classFilename)
+        if classColor and classColor.WrapTextInColorCode then
+            return classColor:WrapTextInColorCode(text)
+        end
+    end
+    return text
+end
+
+local function GetClassDisplayLabel(classChoice)
+    if not classChoice then return nil end
+    return WrapClassColoredText(classChoice.label or classChoice.key, classChoice.classFilename or classChoice.key)
+end
+
+local function GetSpecClassChoice(specId)
+    if not (C_SpecializationInfo and C_SpecializationInfo.GetClassIDFromSpecID) then
+        return nil
+    end
+    local classID = C_SpecializationInfo.GetClassIDFromSpecID(tonumber(specId))
+    return GetClassChoiceByID(classID)
+end
+
+local function SplitCharacterKey(charKey)
+    if type(charKey) ~= "string" then return "", nil end
+    local name, realm = charKey:match("^(.-)%s+%-%s+(.+)$")
+    if name and name ~= "" then
+        return name, realm
+    end
+    return charKey, nil
+end
+
+local function GetCharacterEligibilityInfo(charKey, fallbackInfo)
+    local db = CooldownCompanion.db
+    local info = charKey
+        and db and db.global and db.global.characterInfo
+        and db.global.characterInfo[charKey]
+    if type(info) == "table" then
+        return info
+    end
+    if type(fallbackInfo) == "table" and fallbackInfo.charKey == charKey then
+        return fallbackInfo
+    end
+
+    local characters = CooldownCompanion.EnumerateActiveProfileCharacters
+        and CooldownCompanion:EnumerateActiveProfileCharacters()
+        or {}
+    for _, characterInfo in ipairs(characters) do
+        if characterInfo.charKey == charKey then
+            return characterInfo
+        end
+    end
+    return nil
+end
+
+local function BuildCharacterChoice(charKey, fallbackInfo)
+    local info = GetCharacterEligibilityInfo(charKey, fallbackInfo)
+    local name, realm = SplitCharacterKey(charKey)
+    local classFilename = info and NormalizeAllowlistKey("class", info.classFilename)
+    local label = WrapClassColoredText(name, classFilename)
+    return {
+        key = charKey,
+        label = label,
+        sortLabel = name,
+        tooltipTitle = label,
+        tooltipText = realm,
+        classFilename = classFilename,
+        classID = info and info.classID or nil,
+    }
+end
+
+local function AttachEligibilityTooltip(widget, title, text)
+    if not (widget and text and text ~= "") then return end
+    widget:SetCallback("OnEnter", function(hoveredWidget)
+        if not (hoveredWidget and hoveredWidget.frame) then return end
+        GameTooltip:SetOwner(hoveredWidget.frame, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(title or "")
+        GameTooltip:AddLine(text, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    widget:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    widget:SetCallback("OnRelease", function()
+        GameTooltip:Hide()
+    end)
+end
+
+local function AddDropdownInfoButton(dropdown, tooltipLines)
+    if not (dropdown and dropdown.frame and dropdown.label and tooltipLines) then return end
+    CreateInfoButton(dropdown.frame, dropdown.label, "LEFT", "RIGHT", 4, 0, tooltipLines, dropdown)
+end
+
+local function GetEligibilitySubjectLabel(opts)
+    return opts and opts.eligibilitySubjectLabel or "selection"
+end
+
+local function GetEligibilitySubjectPluralLabel(subjectLabel)
+    return (subjectLabel or "selection") .. "s"
+end
+
+local function BuildCharacterEligibilityTooltip(subjectLabel)
+    local subjectPluralLabel = GetEligibilitySubjectPluralLabel(subjectLabel)
+    return {
+        "Character Eligibility",
+        {"Choose which characters can use this " .. subjectLabel .. ".", 1, 1, 1, true},
+        " ",
+        {"Leave empty for no character limit.", 1, 1, 1, true},
+        " ",
+        {"Class-scoped " .. subjectPluralLabel .. " only show same-class characters.", 1, 1, 1, true},
+    }
+end
+
+local function BuildClassEligibilityTooltip(subjectLabel)
+    local subjectPluralLabel = GetEligibilitySubjectPluralLabel(subjectLabel)
+    return {
+        "Class Eligibility",
+        {"Global " .. subjectPluralLabel .. " can be limited to selected classes.", 1, 1, 1, true},
+        " ",
+        {"Leave empty to allow all classes.", 1, 1, 1, true},
+        " ",
+        {"Pick a class first to add its specializations.", 1, 1, 1, true},
+    }
+end
+
+local function BuildSpecializationEligibilityTooltip(subjectLabel)
+    return {
+        "Specialization Eligibility",
+        {"Limit this " .. subjectLabel .. " to selected specializations.", 1, 1, 1, true},
+        " ",
+        {"Specializations come from eligible classes.", 1, 1, 1, true},
+        " ",
+        {"Leave empty to allow all specs for those classes.", 1, 1, 1, true},
+    }
+end
+
+local function BuildHeroTalentEligibilityTooltip(subjectLabel)
+    return {
+        "Hero Talent Eligibility",
+        {"Limit this " .. subjectLabel .. " to specific hero talent trees.", 1, 1, 1, true},
+        " ",
+        {"Hero talents come from selected specializations.", 1, 1, 1, true},
+        " ",
+        {"Leave empty to allow any hero talent for that spec.", 1, 1, 1, true},
+    }
+end
+
+local function ResolveOwnerClassChoice(opts)
+    if opts.ownerClassChoice then
+        return opts.ownerClassChoice
+    end
+    if opts.ownerClassID then
+        local choice = GetClassChoiceByID(opts.ownerClassID)
+        if choice then return choice end
+    end
+    if opts.ownerClassFilename then
+        local choice = GetClassChoiceByFilename(opts.ownerClassFilename)
+        if choice then return choice end
+    end
+
+    local db = CooldownCompanion.db
+    local charKey = opts.ownerCharKey
+        or (type(opts.target) == "table" and opts.target.createdBy)
+    local info = charKey
+        and db and db.global and db.global.characterInfo
+        and db.global.characterInfo[charKey]
+    if type(info) == "table" then
+        if info.classID then
+            local choice = GetClassChoiceByID(info.classID)
+            if choice then return choice end
+        end
+        if info.classFilename then
+            local choice = GetClassChoiceByFilename(info.classFilename)
+            if choice then return choice end
+        end
+    end
+
+    return GetCurrentClassChoice()
+end
+
+local function CharacterChoiceMatchesScopeClass(choice, scopeClassKey, ownerCharKey)
+    if not scopeClassKey then return true end
+    if choice and ownerCharKey and choice.key == ownerCharKey then
+        return true
+    end
+    local classKey = choice and NormalizeAllowlistKey("class", choice.classFilename)
+    return classKey == scopeClassKey
+end
+
+local function BuildClassChoices(target, inheritedMap)
+    local choices, byKey = {}, {}
+    for classID = 1, MAX_CLASS_SCAN_ID do
+        local choice = GetClassChoiceByID(classID)
+        if choice then
+            AddChoice(choices, byKey, choice.key, choice.label, choice)
+        end
+    end
+    local localMap = target.loadConditions and target.loadConditions.classAllowlist
+    AddAllowlistKeysAsChoices(choices, byKey, localMap, "class")
+    AddAllowlistKeysAsChoices(choices, byKey, inheritedMap, "class")
+    table.sort(choices, function(a, b)
+        if a.classID and b.classID then
+            return a.classID < b.classID
+        end
+        if a.classID then return true end
+        if b.classID then return false end
+        return tostring(a.label or a.key) < tostring(b.label or b.key)
+    end)
+    return choices
+end
+
+local function BuildCharacterChoices(target, inheritedMap, scopeClassKey, ownerCharKey)
+    local choices, byKey = {}, {}
+    local characters = CooldownCompanion.EnumerateActiveProfileCharacters
+        and CooldownCompanion:EnumerateActiveProfileCharacters()
+        or {}
+    for _, info in ipairs(characters) do
+        local choice = BuildCharacterChoice(info.charKey, info)
+        choice.classFilename = choice.classFilename or info.classFilename
+        choice.classID = choice.classID or info.classID
+        if CharacterChoiceMatchesScopeClass(choice, scopeClassKey, ownerCharKey) then
+            AddChoice(choices, byKey, choice.key, choice.label, choice)
+        end
+    end
+    local localMap = target.loadConditions and target.loadConditions.characterAllowlist
+    local copiedLocal = CopyAllowlist(localMap, "character")
+    for key in pairs(copiedLocal or {}) do
+        local choice = BuildCharacterChoice(key)
+        if CharacterChoiceMatchesScopeClass(choice, scopeClassKey, ownerCharKey) then
+            AddChoice(choices, byKey, choice.key, choice.label, choice)
+        end
+    end
+    local copiedInherited = CopyAllowlist(inheritedMap, "character")
+    for key in pairs(copiedInherited or {}) do
+        local choice = BuildCharacterChoice(key)
+        if CharacterChoiceMatchesScopeClass(choice, scopeClassKey, ownerCharKey) then
+            AddChoice(choices, byKey, choice.key, choice.label, choice)
+        end
+    end
+    SortChoices(choices)
+    return choices
+end
+
+local function CreateEligibilityRemoveBadge(onRemove)
+    local removeBadge = AceGUI:Create(REMOVE_BADGE_WIDGET_TYPE)
+    removeBadge:SetWidth(19)
+    removeBadge:SetHeight(19)
+    removeBadge:SetCallback("OnClick", function(widget, event, button)
+        if button == "LeftButton" and onRemove then
+            onRemove()
+        end
+    end)
+    return removeBadge
+end
+
+local function AddEligibilitySelectedRow(container, rowInfo, onRemove)
+    local row = AceGUI:Create("SimpleGroup")
+    row:SetFullWidth(true)
+    row:SetLayout("Flow")
+
+    local hasTooltip = rowInfo.tooltipText and rowInfo.tooltipText ~= ""
+    local label = AceGUI:Create(hasTooltip and "InteractiveLabel" or "Label")
+    label:SetText(rowInfo.label)
+    label:SetRelativeWidth(0.92)
+    AttachEligibilityTooltip(label, rowInfo.tooltipTitle or rowInfo.label, rowInfo.tooltipText)
+    row:AddChild(label)
+
+    if rowInfo.disabled then
+        local locked = AceGUI:Create("Label")
+        locked:SetText("|cff888888locked|r")
+        locked:SetRelativeWidth(0.1)
+        row:AddChild(locked)
+    else
+        local removeBtn = CreateEligibilityRemoveBadge(onRemove)
+        row:AddChild(removeBtn)
+    end
+
+    container:AddChild(row)
+end
+
+local function AddCharacterEligibilityControls(container, opts)
+    local target = opts.target
+    if type(target) ~= "table" then return end
+    local subjectLabel = GetEligibilitySubjectLabel(opts)
+
+    local inheritedMap, inheritedRestricted = GetInheritedAllowlist(opts.inheritedSources, "characterAllowlist", "character")
+    local scopeClassChoice
+    if opts.allowClassEligibility == false then
+        scopeClassChoice = ResolveOwnerClassChoice(opts)
+    end
+    local choices = BuildCharacterChoices(target, inheritedMap, scopeClassChoice and scopeClassChoice.key or nil, opts.ownerCharKey)
+    if #choices == 0 then return end
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(opts.characterHeadingText or "Character Eligibility")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    local collapsed = opts.characterCollapsedKey and CS.collapsedSections[opts.characterCollapsedKey]
+    if opts.characterCollapsedKey then
+        AttachCollapseButton(heading, collapsed, function()
+            CS.collapsedSections[opts.characterCollapsedKey] = not CS.collapsedSections[opts.characterCollapsedKey]
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+    end
+    if collapsed then return end
+
+    if inheritedRestricted then
+        local inheritedLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(inheritedLabel)
+        inheritedLabel:SetText("|cff888888Parent eligibility limits which characters can load here.|r")
+        inheritedLabel:SetFullWidth(true)
+        container:AddChild(inheritedLabel)
+    end
+
+    local localMap = target.loadConditions and target.loadConditions.characterAllowlist
+    local selected = {}
+    local selectedByKey = {}
+    local dropdownValues = {}
+    local dropdownOrder = {}
+    local dropdownSortLabels = {}
+
+    for _, choice in ipairs(choices) do
+        local key = choice.key
+        local localSelected = type(localMap) == "table" and localMap[key] == true
+        local outsideInherited = inheritedRestricted and not (inheritedMap and inheritedMap[key])
+        if localSelected then
+            selectedByKey[key] = true
+            selected[#selected + 1] = {
+                key = key,
+                label = outsideInherited and (choice.label .. " |cff888888(unavailable from parent)|r") or choice.label,
+                tooltipTitle = choice.tooltipTitle,
+                tooltipText = choice.tooltipText,
+                sortLabel = choice.sortLabel,
+            }
+        elseif not outsideInherited then
+            dropdownValues[key] = choice.label
+            dropdownSortLabels[key] = choice.sortLabel or choice.label
+            dropdownOrder[#dropdownOrder + 1] = key
+        end
+    end
+
+    table.sort(dropdownOrder, function(a, b)
+        return tostring(dropdownSortLabels[a] or a) < tostring(dropdownSortLabels[b] or b)
+    end)
+
+    local picker = AceGUI:Create("Dropdown")
+    picker:SetLabel("Add Character")
+    picker:SetFullWidth(true)
+    picker:SetList(dropdownValues, dropdownOrder)
+    AddDropdownInfoButton(picker, BuildCharacterEligibilityTooltip(subjectLabel))
+    if #dropdownOrder == 0 then
+        picker:SetDisabled(true)
+    else
+        picker:SetCallback("OnValueChanged", function(widget, event, value)
+            if value ~= nil and not selectedByKey[value] then
+                SetAllowlistValue(target, "characterAllowlist", "character", value, true)
+                if opts.onChanged then opts.onChanged() end
+            end
+        end)
+    end
+    container:AddChild(picker)
+
+    SortChoices(selected)
+
+    if #selected == 0 then
+        return
+    end
+
+    for _, choice in ipairs(selected) do
+        AddEligibilitySelectedRow(container, choice, function()
+            SetAllowlistValue(target, "characterAllowlist", "character", choice.key, false)
+            if opts.onChanged then opts.onChanged() end
+        end)
+    end
+end
+
+local function AddClassForSpecId(classChoices, classByKey, specId)
+    if not (C_SpecializationInfo and C_SpecializationInfo.GetClassIDFromSpecID) then
+        return
+    end
+    local classID = C_SpecializationInfo.GetClassIDFromSpecID(tonumber(specId))
+    local choice = GetClassChoiceByID(classID)
+    if choice and not classByKey[choice.key] then
+        classByKey[choice.key] = true
+        classChoices[#classChoices + 1] = choice
+    end
+end
+
+local function AddClassesForSpecMap(classChoices, classByKey, specMap)
+    local copied = CopyAllowlist(specMap, "spec")
+    for specId in pairs(copied or {}) do
+        AddClassForSpecId(classChoices, classByKey, specId)
+    end
+end
+
+local function AddSpecsForClass(specChoices, seenSpecs, classChoice)
+    local classID = classChoice and classChoice.classID
+    if not (classID and C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID) then
+        return
+    end
+
+    local currentClass = GetCurrentClassChoice()
+    local currentClassKey = currentClass and currentClass.key
+    local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID) or 0
+    for specIndex = 1, numSpecs do
+        local specId, specName, _, specIcon = C_SpecializationInfo.GetSpecializationInfo(
+            specIndex,
+            false,
+            false,
+            nil,
+            nil,
+            nil,
+            classID
+        )
+        if specId and not seenSpecs[specId] then
+            seenSpecs[specId] = true
+            specChoices[#specChoices + 1] = {
+                id = specId,
+                name = specName or ("Spec " .. tostring(specId)),
+                label = specName or ("Spec " .. tostring(specId)),
+                icon = specIcon,
+                classID = classID,
+                classKey = classChoice.key,
+                classLabel = classChoice.label,
+                isCurrentClass = classChoice.key == currentClassKey,
+            }
+        end
+    end
+end
+
+local function BuildEligibilitySpecChoices(opts)
+    opts = opts or {}
+    local target = opts.target
+    if type(target) ~= "table" then return {} end
+
+    local classChoices = {}
+    local classByKey = {}
+
+    if opts.allowClassEligibility then
+        local inheritedMap, inheritedRestricted = GetInheritedAllowlist(opts.inheritedSources, "classAllowlist", "class")
+        local localMap = CopyAllowlist(target.loadConditions and target.loadConditions.classAllowlist, "class")
+        local seedMap = localMap and next(localMap) and localMap or nil
+        if not seedMap and inheritedRestricted then
+            seedMap = inheritedMap
+        end
+
+        for classKey in pairs(seedMap or {}) do
+            local choice = GetClassChoiceByFilename(classKey)
+            if choice and not classByKey[choice.key] then
+                classByKey[choice.key] = true
+                classChoices[#classChoices + 1] = choice
+            end
+        end
+
+        AddClassesForSpecMap(classChoices, classByKey, target.specs)
+        AddClassesForSpecMap(classChoices, classByKey, target.loadConditions and target.loadConditions.specAllowlist)
+        AddClassesForSpecMap(classChoices, classByKey, opts.choiceSpecMap or opts.effectiveSpecs)
+    else
+        local choice = ResolveOwnerClassChoice(opts)
+        if choice then
+            classByKey[choice.key] = true
+            classChoices[#classChoices + 1] = choice
+        end
+    end
+
+    table.sort(classChoices, function(a, b)
+        if a.classID and b.classID then
+            return a.classID < b.classID
+        end
+        if a.classID then return true end
+        if b.classID then return false end
+        return tostring(a.label or a.key) < tostring(b.label or b.key)
+    end)
+
+    local specs = {}
+    local seenSpecs = {}
+    for _, classChoice in ipairs(classChoices) do
+        AddSpecsForClass(specs, seenSpecs, classChoice)
+    end
+
+    local classCount = #classChoices
+    for _, spec in ipairs(specs) do
+        if opts.allowClassEligibility and classCount > 1 then
+            spec.label = (spec.classLabel or spec.classKey or "Class") .. ": " .. spec.name
+        end
+    end
+    return specs
+end
+
+local function GetSpecSelectionMap(target, useSpecAllowlist)
+    if type(target) ~= "table" then return nil end
+    if useSpecAllowlist then
+        return target.loadConditions and target.loadConditions.specAllowlist
+    end
+    local specs = CopyAllowlist(target.specs, "spec")
+    local loadConditionSpecs = CopyAllowlist(
+        target.loadConditions and target.loadConditions.specAllowlist,
+        "spec"
+    )
+    if not loadConditionSpecs then
+        return specs
+    end
+    specs = specs or {}
+    for specId in pairs(loadConditionSpecs) do
+        specs[specId] = true
+    end
+    return next(specs) and specs or nil
+end
+
+local function SetSpecEligibilityValue(target, specId, value, useSpecAllowlist)
+    if useSpecAllowlist then
+        SetSpecAllowlistValue(target, specId, value)
+    else
+        SetSpecFilterValue(target, specId, value)
+    end
+end
+
+local function BuildSpecChoiceIndex(specChoices)
+    local bySpecId = {}
+    local byClassKey = {}
+    for _, specInfo in ipairs(specChoices or {}) do
+        if specInfo.id then
+            bySpecId[specInfo.id] = specInfo
+            local classKey = specInfo.classKey
+            if classKey then
+                byClassKey[classKey] = byClassKey[classKey] or {}
+                byClassKey[classKey][#byClassKey[classKey] + 1] = specInfo
+            end
+        end
+    end
+    return bySpecId, byClassKey
+end
+
+local function EnsureHeroTalentViewConfig(specId)
+    if not (specId
+        and C_ClassTalents
+        and C_ClassTalents.InitializeViewLoadout
+        and C_Traits
+        and C_Traits.GetConfigInfo) then
+        return nil
+    end
+
+    local playerLevel = UnitLevel and UnitLevel("player") or nil
+    if not playerLevel or playerLevel < 1 then
+        return nil
+    end
+
+    C_ClassTalents.InitializeViewLoadout(specId, playerLevel)
+    if C_Traits.GetConfigInfo(VIEW_TRAIT_CONFIG_ID) then
+        return VIEW_TRAIT_CONFIG_ID
+    end
+
+    return nil
+end
+
+local function GetHeroTalentSubTreesForSpec(specId, configID)
+    if not (specId and C_ClassTalents and C_ClassTalents.GetHeroTalentSpecsForClassSpec) then
+        return nil, configID
+    end
+
+    local subTreeIDs = configID and C_ClassTalents.GetHeroTalentSpecsForClassSpec(configID, specId) or nil
+    if subTreeIDs and #subTreeIDs > 0 then
+        return subTreeIDs, configID
+    end
+
+    subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
+    if subTreeIDs and #subTreeIDs > 0 then
+        return subTreeIDs, configID
+    end
+
+    local viewConfigID = EnsureHeroTalentViewConfig(specId)
+    subTreeIDs = viewConfigID and C_ClassTalents.GetHeroTalentSpecsForClassSpec(viewConfigID, specId) or nil
+    if subTreeIDs and #subTreeIDs > 0 then
+        return subTreeIDs, viewConfigID
+    end
+
+    return nil, configID
+end
+
+local function BuildHeroTalentChoicesForSpecs(specChoices, selectedSpecMap, configID)
+    local choices = {}
+    local bySubTreeID = {}
+
+    for _, specInfo in ipairs(specChoices or {}) do
+        local specId = specInfo.id
+        if specId and selectedSpecMap and selectedSpecMap[specId] then
+            local subTreeIDs, subTreeConfigID = GetHeroTalentSubTreesForSpec(specId, configID)
+            for _, subTreeID in ipairs(subTreeIDs or {}) do
+                local subTreeInfo = subTreeConfigID and C_Traits and C_Traits.GetSubTreeInfo
+                    and C_Traits.GetSubTreeInfo(subTreeConfigID, subTreeID) or nil
+                local heroName = subTreeInfo and subTreeInfo.name or ("Hero " .. tostring(subTreeID))
+                local heroChoice = {
+                    id = subTreeID,
+                    label = heroName,
+                    sortLabel = heroName,
+                    specId = specId,
+                    specLabel = specInfo.name,
+                    classKey = specInfo.classKey,
+                    classLabel = specInfo.classLabel,
+                    iconAtlas = subTreeInfo and subTreeInfo.iconElementID or nil,
+                }
+                choices[#choices + 1] = heroChoice
+                bySubTreeID[subTreeID] = heroChoice
+            end
+        end
+    end
+
+    table.sort(choices, function(a, b)
+        local aClass = tostring(a.classLabel or a.classKey or "")
+        local bClass = tostring(b.classLabel or b.classKey or "")
+        if aClass ~= bClass then return aClass < bClass end
+        local aSpec = tostring(a.specLabel or a.specId or "")
+        local bSpec = tostring(b.specLabel or b.specId or "")
+        if aSpec ~= bSpec then return aSpec < bSpec end
+        return tostring(a.sortLabel or a.label or a.id) < tostring(b.sortLabel or b.label or b.id)
+    end)
+
+    return choices, bySubTreeID
+end
+
+local function FormatEligibilitySpecLabel(specInfo, includeClass)
+    if not specInfo then return "" end
+    local classKey = specInfo.classKey
+    if not classKey then
+        local classChoice = GetSpecClassChoice(specInfo.id)
+        classKey = classChoice and classChoice.key or nil
+    end
+    local specLabel = WrapClassColoredText(specInfo.name or specInfo.label or tostring(specInfo.id), classKey)
+    if includeClass and specInfo.classLabel then
+        local classChoice = GetClassChoiceByFilename(specInfo.classKey)
+        local classLabel = GetClassDisplayLabel(classChoice) or specInfo.classLabel
+        return classLabel .. ": " .. specLabel
+    end
+    return specLabel
+end
+
+local function FormatSpecIconPrefix(specInfo)
+    local icon = specInfo and specInfo.icon
+    if not icon then return "" end
+    return ("|T%s:14:14:0:0:64:64:5:59:5:59|t "):format(tostring(icon))
+end
+
+local function FormatSpecDropdownLabel(specInfo)
+    local label = specInfo and specInfo.label or ""
+    if specInfo and specInfo.classKey then
+        label = WrapClassColoredText(label, specInfo.classKey)
+    end
+    return FormatSpecIconPrefix(specInfo) .. label
+end
+
+local function FormatEligibilitySpecRowLabel(specInfo, includeClass)
+    return FormatSpecIconPrefix(specInfo) .. FormatEligibilitySpecLabel(specInfo, includeClass)
+end
+
+local function FormatHeroTalentIconPrefix(heroInfo)
+    local atlas = heroInfo and heroInfo.iconAtlas
+    if not atlas then return "" end
+    return ("|A:%s:14:14|a "):format(tostring(atlas))
+end
+
+local function FormatEligibilityHeroName(heroInfo)
+    return FormatHeroTalentIconPrefix(heroInfo) .. (heroInfo and (heroInfo.label or tostring(heroInfo.id)) or "")
+end
+
+local function FormatEligibilityHeroLabel(heroInfo, specInfo, includeClass)
+    local specLabel = FormatEligibilitySpecLabel(specInfo, includeClass)
+    return specLabel .. " - " .. FormatEligibilityHeroName(heroInfo)
+end
+
+local function FormatEligibilityHeroChoiceLabel(heroInfo, specInfo, includeClass)
+    return FormatSpecIconPrefix(specInfo) .. FormatEligibilityHeroLabel(heroInfo, specInfo, includeClass)
+end
+
+local function AddClassSpecEligibilityControls(container, opts)
+    opts = opts or {}
+    local target = opts.target
+    if type(target) ~= "table" then return end
+    local subjectLabel = GetEligibilitySubjectLabel(opts)
+
+    local allowClassEligibility = opts.allowClassEligibility == true
+    local scopeClassChoice
+    if not allowClassEligibility then
+        scopeClassChoice = ResolveOwnerClassChoice(opts)
+    end
+
+    local inheritedClassMap, inheritedClassRestricted = GetInheritedAllowlist(opts.inheritedSources, "classAllowlist", "class")
+    local classChoices = BuildClassChoices(target, inheritedClassMap)
+    local localClassMap = target.loadConditions and target.loadConditions.classAllowlist
+
+    if allowClassEligibility then
+        if inheritedClassRestricted then
+            local inheritedLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(inheritedLabel)
+            inheritedLabel:SetText("|cff888888Parent eligibility limits which classes can load here.|r")
+            inheritedLabel:SetFullWidth(true)
+            container:AddChild(inheritedLabel)
+        end
+
+        local classValues = {}
+        local classOrder = {}
+        local classSortLabels = {}
+        for _, choice in ipairs(classChoices) do
+            local key = choice.key
+            local localSelected = type(localClassMap) == "table" and localClassMap[key] == true
+            local outsideInherited = inheritedClassRestricted and not (inheritedClassMap and inheritedClassMap[key])
+            if not localSelected and not outsideInherited then
+                classValues[key] = GetClassDisplayLabel(choice) or choice.label
+                classSortLabels[key] = choice.label or key
+                classOrder[#classOrder + 1] = key
+            end
+        end
+        table.sort(classOrder, function(a, b)
+            return tostring(classSortLabels[a] or a) < tostring(classSortLabels[b] or b)
+        end)
+
+        local classPicker = AceGUI:Create("Dropdown")
+        classPicker:SetLabel("Add Class")
+        classPicker:SetFullWidth(true)
+        classPicker:SetList(classValues, classOrder)
+        AddDropdownInfoButton(classPicker, BuildClassEligibilityTooltip(subjectLabel))
+        if #classOrder == 0 then
+            classPicker:SetDisabled(true)
+        else
+            classPicker:SetCallback("OnValueChanged", function(widget, event, value)
+                SetAllowlistValue(target, "classAllowlist", "class", value, true)
+                if opts.onChanged then opts.onChanged() end
+            end)
+        end
+        container:AddChild(classPicker)
+    end
+
+    local useSpecAllowlist = opts.useSpecAllowlist == true
+    local selectedSpecMap = GetSpecSelectionMap(target, useSpecAllowlist)
+    local allowedSpecMap = opts.allowedSpecMap
+    local allowedSpecRestricted = opts.allowedSpecRestricted == true
+    local specChoices = BuildEligibilitySpecChoices({
+        target = target,
+        inheritedSources = opts.inheritedSources,
+        allowClassEligibility = allowClassEligibility,
+        ownerClassChoice = scopeClassChoice,
+        ownerCharKey = opts.ownerCharKey,
+        ownerClassID = opts.ownerClassID,
+        ownerClassFilename = opts.ownerClassFilename,
+        effectiveSpecs = opts.effectiveSpecs,
+        choiceSpecMap = opts.choiceSpecMap,
+    })
+    local specById, specsByClassKey = BuildSpecChoiceIndex(specChoices)
+
+    local specValues = {}
+    local specOrder = {}
+    local specSortLabels = {}
+    for _, specInfo in ipairs(specChoices) do
+        local specId = specInfo.id
+        local localSelected = type(selectedSpecMap) == "table" and selectedSpecMap[specId] == true
+        local outsideAllowed = allowedSpecRestricted and not (allowedSpecMap and allowedSpecMap[specId])
+        if specId and not localSelected and not outsideAllowed then
+            specValues[specId] = FormatSpecDropdownLabel(specInfo)
+            specSortLabels[specId] = (specInfo.classLabel or "") .. (specInfo.name or specInfo.label or tostring(specId))
+            specOrder[#specOrder + 1] = specId
+        end
+    end
+    table.sort(specOrder, function(a, b)
+        return tostring(specSortLabels[a] or a) < tostring(specSortLabels[b] or b)
+    end)
+
+    if #specChoices > 0 then
+        local specPicker = AceGUI:Create("Dropdown")
+        specPicker:SetLabel("Add Specialization")
+        specPicker:SetFullWidth(true)
+        specPicker:SetList(specValues, specOrder)
+        AddDropdownInfoButton(specPicker, BuildSpecializationEligibilityTooltip(subjectLabel))
+        if #specOrder == 0 then
+            specPicker:SetDisabled(true)
+        else
+            specPicker:SetCallback("OnValueChanged", function(widget, event, value)
+                SetSpecEligibilityValue(target, value, true, useSpecAllowlist)
+                if opts.onChanged then opts.onChanged() end
+            end)
+        end
+        container:AddChild(specPicker)
+    end
+
+    local configID = opts.configID or (C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID())
+    local mutableHeroTalents = opts.disableHeroTalents ~= true
+    local heroTalentsSource = opts.useHeroTalentsSource and opts.heroTalentsSource or target.heroTalents
+    if type(heroTalentsSource) ~= "table" then
+        heroTalentsSource = nil
+    end
+    local heroChoices, heroById = BuildHeroTalentChoicesForSpecs(specChoices, selectedSpecMap, configID)
+    local heroValues = {}
+    local heroOrder = {}
+    local heroSortLabels = {}
+    if mutableHeroTalents then
+        for _, heroInfo in ipairs(heroChoices) do
+            local selected = type(heroTalentsSource) == "table" and heroTalentsSource[heroInfo.id] == true
+            if not selected then
+                local specInfo = specById[heroInfo.specId]
+                heroValues[heroInfo.id] = FormatEligibilityHeroChoiceLabel(heroInfo, specInfo, allowClassEligibility)
+                heroSortLabels[heroInfo.id] = (heroInfo.classLabel or "") .. (heroInfo.specLabel or "") .. (heroInfo.label or "")
+                heroOrder[#heroOrder + 1] = heroInfo.id
+            end
+        end
+    end
+    table.sort(heroOrder, function(a, b)
+        return tostring(heroSortLabels[a] or a) < tostring(heroSortLabels[b] or b)
+    end)
+
+    if #heroChoices > 0 and mutableHeroTalents then
+        local heroPicker = AceGUI:Create("Dropdown")
+        heroPicker:SetLabel("Add Hero Talent")
+        heroPicker:SetFullWidth(true)
+        heroPicker:SetList(heroValues, heroOrder)
+        AddDropdownInfoButton(heroPicker, BuildHeroTalentEligibilityTooltip(subjectLabel))
+        if #heroOrder == 0 then
+            heroPicker:SetDisabled(true)
+        else
+            heroPicker:SetCallback("OnValueChanged", function(widget, event, value)
+                SetHeroTalentValue(target, value, true)
+                if opts.onChanged then opts.onChanged() end
+            end)
+        end
+        container:AddChild(heroPicker)
+    elseif opts.disableHeroTalents and type(heroTalentsSource) == "table" and next(heroTalentsSource) then
+        local inheritedLabel = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(inheritedLabel)
+        inheritedLabel:SetText("|cff888888Hero talent eligibility is inherited here.|r")
+        inheritedLabel:SetFullWidth(true)
+        container:AddChild(inheritedLabel)
+    end
+
+    local rows = {}
+    local selectedHeroBySpec = {}
+    for subTreeID in pairs(heroTalentsSource or {}) do
+        local heroInfo = heroById[subTreeID]
+        if heroInfo then
+            selectedHeroBySpec[heroInfo.specId] = selectedHeroBySpec[heroInfo.specId] or {}
+            selectedHeroBySpec[heroInfo.specId][#selectedHeroBySpec[heroInfo.specId] + 1] = heroInfo
+        end
+    end
+
+    if allowClassEligibility then
+        for _, classChoice in ipairs(classChoices) do
+            local classKey = classChoice.key
+            local classSelected = type(localClassMap) == "table" and localClassMap[classKey] == true
+            if classSelected then
+                local classSpecs = specsByClassKey[classKey] or {}
+                local selectedSpecs = {}
+                for _, specInfo in ipairs(classSpecs) do
+                    if type(selectedSpecMap) == "table" and selectedSpecMap[specInfo.id] == true then
+                        selectedSpecs[#selectedSpecs + 1] = specInfo
+                    end
+                end
+                if #selectedSpecs == 0 then
+                    rows[#rows + 1] = {
+                        label = GetClassDisplayLabel(classChoice) or classChoice.label,
+                        sortLabel = classChoice.label or classKey,
+                        onRemove = function()
+                            SetAllowlistValue(target, "classAllowlist", "class", classKey, false)
+                            for _, specInfo in ipairs(classSpecs) do
+                                SetSpecEligibilityValue(target, specInfo.id, false, useSpecAllowlist)
+                                if CooldownCompanion.CleanHeroTalentsForSpec then
+                                    CooldownCompanion:CleanHeroTalentsForSpec(target, specInfo.id)
+                                end
+                            end
+                            if opts.onChanged then opts.onChanged() end
+                        end,
+                    }
+                end
+            end
+        end
+    end
+
+    for _, specInfo in ipairs(specChoices) do
+        local specId = specInfo.id
+        if type(selectedSpecMap) == "table" and selectedSpecMap[specId] == true then
+            local heroRows = selectedHeroBySpec[specId]
+            if heroRows and #heroRows > 0 then
+                table.sort(heroRows, function(a, b)
+                    return tostring(a.label or a.id) < tostring(b.label or b.id)
+                end)
+                for _, heroInfo in ipairs(heroRows) do
+                    rows[#rows + 1] = {
+                        label = FormatEligibilityHeroChoiceLabel(heroInfo, specInfo, allowClassEligibility),
+                        sortLabel = (specInfo.classLabel or "") .. (specInfo.name or "") .. (heroInfo.label or ""),
+                        disabled = opts.disableHeroTalents == true,
+                        onRemove = function()
+                            SetHeroTalentValue(target, heroInfo.id, false)
+                            if opts.onChanged then opts.onChanged() end
+                        end,
+                    }
+                end
+            else
+                local outsideAllowed = allowedSpecRestricted and not (allowedSpecMap and allowedSpecMap[specId])
+                rows[#rows + 1] = {
+                    label = FormatEligibilitySpecRowLabel(specInfo, allowClassEligibility)
+                        .. (outsideAllowed and " |cff888888(unavailable from parent)|r" or ""),
+                    sortLabel = (specInfo.classLabel or "") .. (specInfo.name or specInfo.label or tostring(specId)),
+                    onRemove = function()
+                        SetSpecEligibilityValue(target, specId, false, useSpecAllowlist)
+                        if CooldownCompanion.CleanHeroTalentsForSpec then
+                            CooldownCompanion:CleanHeroTalentsForSpec(target, specId)
+                        end
+                        if opts.onChanged then opts.onChanged() end
+                    end,
+                }
+            end
+        end
+    end
+
+    table.sort(rows, function(a, b)
+        return tostring(a.sortLabel or a.label) < tostring(b.sortLabel or b.label)
+    end)
+
+    if #rows > 0 then
+        for _, row in ipairs(rows) do
+            AddEligibilitySelectedRow(container, row, row.onRemove)
+        end
     end
 end
 
@@ -1587,14 +2832,23 @@ local function BuildLoadConditionsTab(container)
             vehicleUI = true,
         }
     end
-    local lc = group.loadConditions
-    local effectiveSpecs, inheritedSpecFilter = CooldownCompanion:GetEffectiveSpecs(group)
+    local effectiveSpecs = CooldownCompanion:GetEffectiveSpecs(group)
+    local inheritedSpecs, inheritedSpecFilter = CooldownCompanion:GetInheritedEffectiveSpecs(group)
     local effectiveHeroTalents, inheritedHeroFilter = CooldownCompanion:GetEffectiveHeroTalents(group)
+    local inheritedSources = CooldownCompanion:GetInheritedLoadConditionSources(group)
+    local parentContainer = CooldownCompanion:GetParentContainer(group)
+    local scopeIsGlobal
+    if parentContainer then
+        scopeIsGlobal = parentContainer.isGlobal == true
+    else
+        scopeIsGlobal = group.isGlobal == true
+    end
+    local ownerCharKey = parentContainer and parentContainer.createdBy or group.createdBy
 
     AddScopedLoadConditionToggles(container, {
         target = group,
         defaults = CooldownCompanion:GetDefaultLoadConditions(),
-        inheritedSources = CooldownCompanion:GetInheritedLoadConditionSources(group),
+        inheritedSources = inheritedSources,
         headingText = "Hide This Panel In",
         headingTextWhenInherited = "Also Hide This Panel In",
         inheritedCollapsedKey = "loadconditions_panel_inherited",
@@ -1605,9 +2859,21 @@ local function BuildLoadConditionsTab(container)
         end,
     })
 
-    -- Specialization heading
+    AddCharacterEligibilityControls(container, {
+        target = group,
+        inheritedSources = inheritedSources,
+        eligibilitySubjectLabel = "panel",
+        allowClassEligibility = scopeIsGlobal,
+        ownerCharKey = ownerCharKey,
+        characterCollapsedKey = "loadconditions_panel_character",
+        onChanged = function()
+            CooldownCompanion:RefreshGroupFrame(groupId)
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
     local specHeading = AceGUI:Create("Heading")
-    specHeading:SetText("Specialization Filter")
+    specHeading:SetText("Class & Specialization Eligibility")
     ColorHeading(specHeading)
     specHeading:SetFullWidth(true)
     container:AddChild(specHeading)
@@ -1619,112 +2885,33 @@ local function BuildLoadConditionsTab(container)
     end)
 
     if not specCollapsed then
-    if inheritedSpecFilter or inheritedHeroFilter then
-        local inheritedLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(inheritedLabel)
-        inheritedLabel:SetText("|cff888888Some filters inherited from group settings.|r")
-        inheritedLabel:SetFullWidth(true)
-        container:AddChild(inheritedLabel)
-    end
-
-    -- Current class spec checkboxes
-    local numSpecs = GetNumSpecializations()
-    local configID = C_ClassTalents.GetActiveConfigID()
-    for i = 1, numSpecs do
-        local specId, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
-        if specId then
-            local cb = AceGUI:Create("CheckBox")
-            cb:SetLabel(name)
-            if icon then cb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
-            cb:SetFullWidth(true)
-            if inheritedSpecFilter then
-                cb:SetValue(effectiveSpecs and effectiveSpecs[specId] or false)
-            else
-                cb:SetValue(group.specs and group.specs[specId] or false)
-            end
-            if inheritedSpecFilter then
-                cb:SetDisabled(true)
-            else
-                cb:SetCallback("OnValueChanged", function(widget, event, value)
-                    if value then
-                        if not group.specs then group.specs = {} end
-                        group.specs[specId] = true
-                    else
-                        if group.specs then
-                            group.specs[specId] = nil
-                            if not next(group.specs) then
-                                group.specs = nil
-                            end
-                        end
-                        CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
-                    end
-                    CooldownCompanion:RefreshGroupFrame(groupId)
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
-            end
-            container:AddChild(cb)
-            ApplyCheckboxIndent(cb, 0)
-
-            -- Hero talent sub-tree checkboxes (indented, only when spec is checked)
-            BuildHeroTalentSubTreeCheckboxes(container, group, configID, specId, 20, groupId, {
-                specsSource = effectiveSpecs,
-                heroTalentsSource = effectiveHeroTalents,
-                useHeroTalentsSource = inheritedHeroFilter,
-                disableToggles = inheritedHeroFilter,
-            })
+        if inheritedSpecFilter or inheritedHeroFilter then
+            local inheritedLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(inheritedLabel)
+            inheritedLabel:SetText("|cff888888Some filters inherited from group settings.|r")
+            inheritedLabel:SetFullWidth(true)
+            container:AddChild(inheritedLabel)
         end
-    end
 
-    -- Foreign specs (from global groups that may have specs from other classes)
-    local playerSpecIds = {}
-    for i = 1, numSpecs do
-        local specId = C_SpecializationInfo.GetSpecializationInfo(i)
-        if specId then playerSpecIds[specId] = true end
-    end
-
-    local foreignSpecs = {}
-    if effectiveSpecs then
-        for specId in pairs(effectiveSpecs) do
-            if not playerSpecIds[specId] then
-                table.insert(foreignSpecs, specId)
-            end
-        end
-    end
-
-    if #foreignSpecs > 0 then
-        table.sort(foreignSpecs)
-        for _, specId in ipairs(foreignSpecs) do
-            local _, name, _, icon = GetSpecializationInfoForSpecID(specId)
-            if name then
-                local fcb = AceGUI:Create("CheckBox")
-                fcb:SetLabel(name)
-                if icon then fcb:SetImage(icon, 0.08, 0.92, 0.08, 0.92) end
-                fcb:SetFullWidth(true)
-                fcb:SetValue(true)
-                if inheritedSpecFilter then
-                    fcb:SetDisabled(true)
-                else
-                    fcb:SetCallback("OnValueChanged", function(widget, event, value)
-                        if not value then
-                            if group.specs then
-                                group.specs[specId] = nil
-                                if not next(group.specs) then
-                                    group.specs = nil
-                                end
-                            end
-                        else
-                            if not group.specs then group.specs = {} end
-                            group.specs[specId] = true
-                        end
-                        CooldownCompanion:RefreshGroupFrame(groupId)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end)
-                end
-                container:AddChild(fcb)
-                ApplyCheckboxIndent(fcb, 0)
-            end
-        end
-    end
+        AddClassSpecEligibilityControls(container, {
+            target = group,
+            inheritedSources = inheritedSources,
+            eligibilitySubjectLabel = "panel",
+            allowClassEligibility = scopeIsGlobal,
+            ownerCharKey = ownerCharKey,
+            useSpecAllowlist = inheritedSpecFilter,
+            allowedSpecRestricted = inheritedSpecFilter,
+            allowedSpecMap = inheritedSpecs,
+            effectiveSpecs = effectiveSpecs,
+            choiceSpecMap = inheritedSpecs,
+            heroTalentsSource = effectiveHeroTalents,
+            useHeroTalentsSource = inheritedHeroFilter,
+            disableHeroTalents = inheritedHeroFilter,
+            onChanged = function()
+                CooldownCompanion:RefreshGroupFrame(groupId)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
     end -- not specCollapsed
 end
 
@@ -1772,5 +2959,7 @@ ST._BuildVisibilitySettings = BuildVisibilitySettings
 ST._BuildLoadConditionsTab = BuildLoadConditionsTab
 ST._BuildEntryLoadConditionsTab = BuildEntryLoadConditionsTab
 ST._AddScopedLoadConditionToggles = AddScopedLoadConditionToggles
+ST._AddCharacterEligibilityControls = AddCharacterEligibilityControls
+ST._AddClassSpecEligibilityControls = AddClassSpecEligibilityControls
 ST._GetConditionDisplayName = GetConditionDisplayName
 ST._GetConditionListContextSuffix = GetConditionListContextSuffix
