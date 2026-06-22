@@ -383,6 +383,52 @@ local function GroupMatchesDirectStyleCopyMode(group, mode)
     return group.displayMode == nil or group.displayMode == "icons"
 end
 
+function CooldownCompanion:CanCopyDirectStyleFromPanel(mode, sourceGroupId, targetGroupId)
+    sourceGroupId = tonumber(sourceGroupId)
+    targetGroupId = tonumber(targetGroupId)
+    if not IsValidDirectStyleCopyMode(mode) then
+        return false, "invalid_mode"
+    end
+
+    local db = self.db and self.db.profile
+    local sourceGroup = db and db.groups and db.groups[sourceGroupId]
+    local targetGroup = db and db.groups and db.groups[targetGroupId]
+    if not sourceGroup or not targetGroup then
+        return false, "missing_group"
+    end
+    if sourceGroupId == targetGroupId then
+        return false, "same_group"
+    end
+    if not GroupMatchesDirectStyleCopyMode(sourceGroup, mode)
+        or not GroupMatchesDirectStyleCopyMode(targetGroup, mode) then
+        return false, "mode_mismatch"
+    end
+
+    if self.ResolveContainerClassScope
+        and sourceGroup.parentContainerId
+        and targetGroup.parentContainerId then
+        local sourceScope = self:ResolveContainerClassScope(sourceGroup.parentContainerId)
+        local targetScope = self:ResolveContainerClassScope(targetGroup.parentContainerId)
+        if not sourceScope or not targetScope or sourceScope.isInvalid or targetScope.isInvalid then
+            return false, "invalid_class_scope"
+        end
+        if sourceScope.runtimeVisible == true then
+            return true
+        end
+        if sourceScope.isOtherClass
+            and targetScope.isOtherClass
+            and sourceScope.ownerClassKey == targetScope.ownerClassKey then
+            return true
+        end
+        return false, "source_unavailable"
+    end
+
+    if self:IsGroupVisibleToCurrentChar(sourceGroupId) then
+        return true
+    end
+    return false, "source_unavailable"
+end
+
 local function CopyCompactLayoutSettings(sourceGroup, targetGroup)
     targetGroup.compactLayout = sourceGroup.compactLayout == true
     targetGroup.compactGrowthDirection = sourceGroup.compactGrowthDirection or "center"
@@ -634,7 +680,7 @@ function CooldownCompanion:GetDirectStyleCopyPanelList(mode, targetGroupId)
     for groupId, group in pairs(db.groups or {}) do
         if groupId ~= targetGroupId
             and GroupMatchesDirectStyleCopyMode(group, mode)
-            and self:IsGroupVisibleToCurrentChar(groupId) then
+            and self:CanCopyDirectStyleFromPanel(mode, groupId, targetGroupId) then
             local parentContainer = self:GetParentContainer(group)
             local containerName = parentContainer and parentContainer.name
                 or group.name
@@ -693,8 +739,9 @@ function CooldownCompanion:CopyDirectStyleFromPanel(mode, sourceGroupId, targetG
         or not GroupMatchesDirectStyleCopyMode(targetGroup, mode) then
         return false, "mode_mismatch"
     end
-    if not self:IsGroupVisibleToCurrentChar(sourceGroupId) then
-        return false, "source_unavailable"
+    local canCopy, reason = self:CanCopyDirectStyleFromPanel(mode, sourceGroupId, targetGroupId)
+    if not canCopy then
+        return false, reason
     end
 
     local oldMasqueEnabled = targetGroup.masqueEnabled and true or false

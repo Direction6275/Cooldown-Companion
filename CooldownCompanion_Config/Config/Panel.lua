@@ -933,6 +933,9 @@ local function CreateConfigPanel()
         end
         if not CS.previewToggleRefreshActive then
             CooldownCompanion:ClearAllConfigPreviews()
+            if CooldownCompanion.RefreshConfigSelectedGroupFrames then
+                CooldownCompanion:RefreshConfigSelectedGroupFrames()
+            end
         end
         if ClearConfigShiftTooltipHover then
             ClearConfigShiftTooltipHover()
