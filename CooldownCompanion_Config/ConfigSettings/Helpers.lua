@@ -1027,19 +1027,6 @@ local CHARACTER_COPY_TOOLTIP_DETAILS = {
         "Copies: enable state, anchor/position mode, styling, icon, text, and cast effects.",
         "Does not copy: Resource Bars, Unit Frames, panels, or panel contents.",
     },
-    resourceBars = {
-        "Copies broad Resource Bar defaults from another character without replacing this character's spec-specific setup.",
-        "",
-        "What is copied:",
-        "- Enable state and panel anchor target",
-        "- Shared appearance defaults, like texture, text, and default colors",
-        "- Resource options that apply to this class",
-        "",
-        "What is not copied:",
-        "- The current spec's Layout tab or bar order",
-        "- Custom Bars",
-        "- Aura overlays and per-spec resource overrides",
-    },
 }
 
 local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)

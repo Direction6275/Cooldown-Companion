@@ -16,7 +16,6 @@ local PROFILE_IMPORT_METADATA_KEYS = {
 }
 
 local SCOPED_STORE_KEYS = {
-    "resourceBarsByChar",
     "castBarByChar",
     "frameAnchoringByChar",
 }
@@ -564,10 +563,14 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
     end
     local globalizedEligibilityImports = GlobalizePortableCharacterScopedEligibility(db.profile)
 
+    self._resourceBarImportCharacterInfo = exportedCharInfo
+
     if self.ClearMigrationSentinels then
         self:ClearMigrationSentinels()
     end
-    if self.RunAllMigrations and not self:RunAllMigrations() then
+    local migrationsOk = not self.RunAllMigrations or self:RunAllMigrations()
+    self._resourceBarImportCharacterInfo = nil
+    if not migrationsOk then
         return false
     end
     if self.SanitizeCursorAnchorPolicy then

@@ -23,7 +23,6 @@ local PruneConfigCustomBarSelection = ST._PruneConfigCustomBarSelection
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
-local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
@@ -51,6 +50,17 @@ local function RefreshLayoutOrderPreview()
         return
     end
     ST._RefreshColumn4(CS.col4Container)
+end
+
+local function BlockCustomBarExportForResourceBarConflict()
+    if CooldownCompanion.GetPendingResourceBarConflictExportMessage then
+        local message = CooldownCompanion:GetPendingResourceBarConflictExportMessage()
+        if message then
+            CooldownCompanion:Print(message)
+            return true
+        end
+    end
+    return false
 end
 
 -- Shared constants from ResourceBarConstants
@@ -164,6 +174,7 @@ local RefreshCustomAuraBarAuraUnitForSpell = RB.RefreshCustomAuraBarAuraUnitForS
 local RBP = ST._RBP
 local resourceBarCollapsedSections = RBP.collapsedSections
 local BuildResourceAuraOverlaySection = RBP.BuildResourceAuraOverlaySection
+local BuildResourceBarConflictGate = RBP.BuildResourceBarConflictGate
 local GetConfigActiveResources = RBP.GetConfigActiveResources
 local GetCurrentConfigSpecID = RBP.GetCurrentConfigSpecID
 local ReadSpecOverrideKey = RBP.ReadSpecOverrideKey
@@ -659,6 +670,9 @@ local function OpenCustomBarRowMenu(customBars, specID, customBarId, entry)
         exportInfo.notCheckable = true
         exportInfo.func = function()
             CloseDropDownMenus()
+            if BlockCustomBarExportForResourceBarConflict() then
+                return
+            end
             local exportSettings = CooldownCompanion:GetResourceBarSettings()
             local payload = RB.BuildCustomBarsExportPayload and RB.BuildCustomBarsExportPayload(exportSettings, { entry })
             local exportString = payload and ST._EncodeExportData and ST._EncodeExportData(payload)
@@ -1650,6 +1664,10 @@ ST._AddResourceSettingsListSection = function(container, settings)
 end
 
 local function BuildCustomBarsListPanel(container)
+    if BuildResourceBarConflictGate(container, "Custom Bars", false) then
+        return
+    end
+
     local settings = CooldownCompanion:GetResourceBarSettings()
     if not (settings and settings.enabled) then
         ST._AddResourceSettingsListSection(container, nil)
@@ -1842,6 +1860,9 @@ local function BuildCustomBarsListPanel(container)
     local exportAllBtn = AceGUI:Create("Button")
     exportAllBtn:SetText("Export All")
     exportAllBtn:SetCallback("OnClick", function()
+        if BlockCustomBarExportForResourceBarConflict() then
+            return
+        end
         local payload = RB.BuildCustomBarsExportPayload and RB.BuildCustomBarsExportPayload(settings, customBars)
         local exportString = payload and ST._EncodeExportData and ST._EncodeExportData(payload)
         if exportString then
@@ -2256,6 +2277,10 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
 end
 
 local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
+    if BuildResourceBarConflictGate(container, "Custom Bars", false) then
+        return
+    end
+
     local settings = CooldownCompanion:GetResourceBarSettings()
     if not (settings and settings.enabled) then
         AddResourceBarsDisabledLabel(container, "Enable Resource Bars to configure Custom Bar settings.")

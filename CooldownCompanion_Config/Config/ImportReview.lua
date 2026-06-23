@@ -248,14 +248,32 @@ local function BuildProfileSummaryLines(profile, heading, customBarCount)
         AddLine(lines, FormatCount("Custom Bars", customBarCount))
     end
 
-    local scoped = {}
+    local classScoped = {}
+    local characterScoped = {}
+    local legacyScoped = {}
     if type(profile) == "table" then
-        if type(profile.resourceBarsByChar) == "table" then scoped[#scoped + 1] = "Resource/Custom Bars" end
-        if type(profile.castBarByChar) == "table" then scoped[#scoped + 1] = "Cast Bar" end
-        if type(profile.frameAnchoringByChar) == "table" then scoped[#scoped + 1] = "Frame Anchoring" end
+        if type(profile.resourceBarsByClass) == "table" then classScoped[#classScoped + 1] = "Resource/Custom Bars" end
+        if type(profile.resourceBarsByChar) == "table" then legacyScoped[#legacyScoped + 1] = "legacy Resource/Custom Bars" end
+        if type(profile.castBarByChar) == "table" then characterScoped[#characterScoped + 1] = "Cast Bar" end
+        if type(profile.frameAnchoringByChar) == "table" then characterScoped[#characterScoped + 1] = "Frame Anchoring" end
     end
-    if #scoped > 0 then
-        AddLine(lines, "Character-scoped settings: " .. table.concat(scoped, ", "))
+    if #classScoped > 0 then
+        AddLine(lines, "Class-scoped settings: " .. table.concat(classScoped, ", "))
+    end
+    if #characterScoped > 0 then
+        AddLine(lines, "Character-scoped settings: " .. table.concat(characterScoped, ", "))
+    end
+    if #legacyScoped > 0 then
+        AddLine(lines, "Unresolved legacy settings: " .. table.concat(legacyScoped, ", "))
+    end
+    local migration = type(profile) == "table" and profile.resourceBarMigration or nil
+    local conflicts = type(migration) == "table" and migration.conflicts or nil
+    local unsafe = type(migration) == "table" and migration.unsafeCharKeys or nil
+    if CountPairs(conflicts) > 0 then
+        AddLine(lines, FormatCount("Pending Resource Bar conflicts", CountPairs(conflicts)))
+    end
+    if CountPairs(unsafe) > 0 then
+        AddLine(lines, FormatCount("Resource Bar buckets missing class metadata", CountPairs(unsafe)))
     end
     return lines
 end
@@ -567,6 +585,7 @@ function CooldownCompanion:ApplyReviewedImport(review)
             local meta = GetDiagnosticMeta(review.diagnostic)
             options.dataLabel = "diagnostic profile"
             options.exporterCharKey = meta and meta.charKey
+            options.exportedCharInfo = BuildDiagnosticSourceCharacterInfo(meta)
             options.runtimeReason = "diagnostic-profile-import"
             options.renameForeignCharacters = false
             successMessage = "Diagnostic profile restored."

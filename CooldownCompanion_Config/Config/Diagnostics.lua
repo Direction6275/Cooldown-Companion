@@ -368,8 +368,10 @@ local function BuildDiagnosticSnapshot()
     for _, folder in pairs(db.profile.folders) do
         cacheSpecsFromTable(folder.specs)
     end
-    local resourceStores = rawget(db.profile, "resourceBarsByChar")
-    if type(resourceStores) == "table" then
+    local function cacheSpecsFromResourceStores(resourceStores)
+        if type(resourceStores) ~= "table" then
+            return
+        end
         for _, resourceSettings in pairs(resourceStores) do
             local customBars = type(resourceSettings) == "table"
                 and (type(resourceSettings.customBars) == "table" and resourceSettings.customBars or resourceSettings.customAuraBars)
@@ -396,6 +398,8 @@ local function BuildDiagnosticSnapshot()
             end
         end
     end
+    cacheSpecsFromResourceStores(rawget(db.profile, "resourceBarsByClass"))
+    cacheSpecsFromResourceStores(rawget(db.profile, "resourceBarsByChar"))
     snapshot.meta.specNameCache = specNameCache
 
     -- Keep the decoded report compact while attaching an importable profile.

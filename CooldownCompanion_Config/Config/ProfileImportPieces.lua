@@ -330,15 +330,40 @@ local function GetOwnerInfo(profile, ownerKey, sourceCharacterInfo)
     return type(globalInfo) == "table" and globalInfo[ownerKey] or nil
 end
 
+local function NormalizeClassKey(classKey)
+    if type(classKey) ~= "string" or classKey == "" then return nil end
+    return string.upper(classKey)
+end
+
 local function ClassesMatch(currentInfo, ownerInfo)
     if type(currentInfo) ~= "table" or type(ownerInfo) ~= "table" then
         return nil
     end
-    if currentInfo.classFilename and ownerInfo.classFilename then
-        return currentInfo.classFilename == ownerInfo.classFilename
+    local currentClassKey = NormalizeClassKey(currentInfo.classFilename or currentInfo.classFile or currentInfo.className)
+    local ownerClassKey = NormalizeClassKey(ownerInfo.classFilename or ownerInfo.classFile or ownerInfo.className)
+    if currentClassKey and ownerClassKey then
+        return currentClassKey == ownerClassKey
     end
     if currentInfo.classID and ownerInfo.classID then
         return currentInfo.classID == ownerInfo.classID
+    end
+    return nil
+end
+
+local function ClassKeyFromInfo(info)
+    if type(info) ~= "table" then return nil end
+    local classKey = NormalizeClassKey(info.classFilename or info.classFile or info.className)
+    if classKey then return classKey end
+    local classID = tonumber(info.classID)
+    if classID and C_CreatureInfo and C_CreatureInfo.GetClassInfo then
+        local classInfo = C_CreatureInfo.GetClassInfo(classID)
+        if type(classInfo) == "table" then
+            return NormalizeClassKey(classInfo.classFile)
+        end
+    end
+    if classID and GetClassInfo then
+        local _, classFilename = GetClassInfo(classID)
+        return NormalizeClassKey(classFilename)
     end
     return nil
 end
@@ -347,7 +372,7 @@ local function ClassLabel(info)
     if type(info) ~= "table" then
         return "Unknown class"
     end
-    return info.classFilename or (info.classID and ("Class " .. tostring(info.classID))) or "Unknown class"
+    return info.classFilename or info.classFile or (info.classID and ("Class " .. tostring(info.classID))) or "Unknown class"
 end
 
 local function ResolveOwnerKey(entity, defaultOwnerKey)
@@ -372,6 +397,18 @@ local function BuildEligibility(profile, ownerKey, currentCharKey, currentInfo, 
     end
     if matches == nil then
         return false, false, "Source class unknown"
+    end
+    return true, true, nil
+end
+
+local function BuildClassStoreEligibility(sourceClassKey, currentInfo)
+    sourceClassKey = NormalizeClassKey(sourceClassKey)
+    local currentClassKey = ClassKeyFromInfo(currentInfo)
+    if not sourceClassKey or not currentClassKey then
+        return false, false, "Source class unknown"
+    end
+    if sourceClassKey ~= currentClassKey then
+        return false, false, sourceClassKey .. " content"
     end
     return true, true, nil
 end
@@ -580,13 +617,18 @@ local function AddCustomBarInfo(infos, profile, settings, sourceStoreKey, entryK
     end
     options = options or {}
     local ownerKey = sourceStoreKey
-    local eligible, selected, reason = BuildEligibility(
-        profile,
-        ownerKey,
-        options.currentCharKey,
-        options.currentInfo,
-        options.sourceCharacterInfo
-    )
+    local eligible, selected, reason
+    if options.sourceClassKey then
+        eligible, selected, reason = BuildClassStoreEligibility(options.sourceClassKey, options.currentInfo)
+    else
+        eligible, selected, reason = BuildEligibility(
+            profile,
+            ownerKey,
+            options.currentCharKey,
+            options.currentInfo,
+            options.sourceCharacterInfo
+        )
+    end
     local rawId = type(entry.customBarId) == "string" and entry.customBarId ~= "" and entry.customBarId
         or (type(entryKey) == "string" and entryKey or nil)
     local specs = CollectEntrySpecs(entry, options.fallbackSpecID)
@@ -648,6 +690,7 @@ local function AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey,
                     currentCharKey = options.currentCharKey,
                     currentInfo = options.currentInfo,
                     sourceCharacterInfo = options.sourceCharacterInfo,
+                    sourceClassKey = options.sourceClassKey,
                     infoByRawId = options.infoByRawId,
                     order = order,
                 })
@@ -661,6 +704,7 @@ local function AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey,
                 currentCharKey = options.currentCharKey,
                 currentInfo = options.currentInfo,
                 sourceCharacterInfo = options.sourceCharacterInfo,
+                sourceClassKey = options.sourceClassKey,
                 infoByRawId = options.infoByRawId,
                 order = order,
             })
@@ -682,6 +726,7 @@ local function AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreK
                         currentCharKey = options.currentCharKey,
                         currentInfo = options.currentInfo,
                         sourceCharacterInfo = options.sourceCharacterInfo,
+                        sourceClassKey = options.sourceClassKey,
                         fallbackSpecID = specID,
                         infoByRawId = options.infoByRawId,
                         legacyAuraSlots = options.legacyAuraSlots,
@@ -695,37 +740,68 @@ end
 
 local function BuildCustomBarInfos(profile, currentCharKey, currentInfo, sourceCharacterInfo)
     local infos = {}
-    local stores = type(profile) == "table" and profile.resourceBarsByChar or nil
-    if type(stores) ~= "table" then
-        return infos
-    end
+    local classStores = type(profile) == "table" and profile.resourceBarsByClass or nil
+    local legacyStores = type(profile) == "table" and profile.resourceBarsByChar or nil
+    local resolvedClassStores = {}
 
-    for sourceStoreKey, settings in pairs(stores) do
+    local function addFromSettings(sourceStoreKey, settings, options)
         if type(settings) == "table" then
             local infoByRawId = {}
             local customBars = settings.customBars
             if IsSharedCustomBarsStore(customBars) then
                 AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey, customBars, {
-                    currentCharKey = currentCharKey,
-                    currentInfo = currentInfo,
-                    sourceCharacterInfo = sourceCharacterInfo,
+                    currentCharKey = options.currentCharKey,
+                    currentInfo = options.currentInfo,
+                    sourceCharacterInfo = options.sourceCharacterInfo,
+                    sourceClassKey = options.sourceClassKey,
                     infoByRawId = infoByRawId,
                 })
             elseif type(customBars) == "table" then
                 AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreKey, customBars, {
-                    currentCharKey = currentCharKey,
-                    currentInfo = currentInfo,
-                    sourceCharacterInfo = sourceCharacterInfo,
+                    currentCharKey = options.currentCharKey,
+                    currentInfo = options.currentInfo,
+                    sourceCharacterInfo = options.sourceCharacterInfo,
+                    sourceClassKey = options.sourceClassKey,
                     infoByRawId = infoByRawId,
                 })
             end
             if type(settings.customAuraBars) == "table" then
                 AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreKey, settings.customAuraBars, {
+                    currentCharKey = options.currentCharKey,
+                    currentInfo = options.currentInfo,
+                    sourceCharacterInfo = options.sourceCharacterInfo,
+                    sourceClassKey = options.sourceClassKey,
+                    infoByRawId = infoByRawId,
+                    legacyAuraSlots = true,
+                })
+            end
+        end
+    end
+
+    if type(classStores) == "table" then
+        for sourceClassKey, settings in pairs(classStores) do
+            local normalizedClassKey = NormalizeClassKey(sourceClassKey)
+            if normalizedClassKey and type(settings) == "table" then
+                resolvedClassStores[normalizedClassKey] = true
+                addFromSettings(normalizedClassKey, settings, {
                     currentCharKey = currentCharKey,
                     currentInfo = currentInfo,
                     sourceCharacterInfo = sourceCharacterInfo,
-                    infoByRawId = infoByRawId,
-                    legacyAuraSlots = true,
+                    sourceClassKey = normalizedClassKey,
+                })
+            end
+        end
+    end
+
+    if type(legacyStores) == "table" then
+        for sourceStoreKey, settings in pairs(legacyStores) do
+            local ownerInfo = GetOwnerInfo(profile, sourceStoreKey, sourceCharacterInfo)
+            local ownerClassKey = ClassKeyFromInfo(ownerInfo)
+            if not ownerClassKey or not resolvedClassStores[ownerClassKey] then
+                addFromSettings(sourceStoreKey, settings, {
+                    currentCharKey = currentCharKey,
+                    currentInfo = currentInfo,
+                    sourceCharacterInfo = sourceCharacterInfo,
                 })
             end
         end

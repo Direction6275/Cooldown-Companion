@@ -16,6 +16,7 @@ local SetConfigCustomBarSettingsTab = ST._SetConfigCustomBarSettingsTab
 local PruneConfigCustomBarSelection = ST._PruneConfigCustomBarSelection
 local SetConfigResourceSettingsSpecID = ST._SetConfigResourceSettingsSpecID
 local PruneConfigResourceSelection = ST._PruneConfigResourceSelection
+local BlockCustomBarExportForResourceBarConflict = ST._BlockCustomBarExportForResourceBarConflict
 
 ------------------------------------------------------------------------
 -- COLUMN 4: Group / Panel Settings Column
@@ -244,6 +245,9 @@ local function ShowCustomBarMultiSelect(container, selectedIds, selectedEntries)
     exportBtn:SetText("Export Selected")
     exportBtn:SetFullWidth(true)
     exportBtn:SetCallback("OnClick", function()
+        if BlockCustomBarExportForResourceBarConflict and BlockCustomBarExportForResourceBarConflict() then
+            return
+        end
         local settings = CooldownCompanion:GetResourceBarSettings()
         local payload = ST._RB.BuildCustomBarsExportPayload and ST._RB.BuildCustomBarsExportPayload(settings, selectedEntries)
         local exportString = payload and ST._EncodeExportData and ST._EncodeExportData(payload)
