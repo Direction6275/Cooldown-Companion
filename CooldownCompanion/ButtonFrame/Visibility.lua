@@ -148,12 +148,9 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         elseif UsesChargeBehavior(buttonData) then
-            if chargePresentationSuppressed then
-                if button._cooldownState == COOLDOWN_STATE_COOLDOWN and not auraOwnsPrimarySwipe then
-                    hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
-                end
-            elseif button._chargeState == CHARGE_STATE_ZERO
-                    or button._chargeState == CHARGE_STATE_MISSING then
+            if not chargePresentationSuppressed
+                    and (button._chargeState == CHARGE_STATE_ZERO
+                    or button._chargeState == CHARGE_STATE_MISSING) then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         elseif IsEntryItemLike(buttonData) then
@@ -174,11 +171,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         elseif UsesChargeBehavior(buttonData) then
-            if chargePresentationSuppressed then
-                if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN and not auraOwnsPrimarySwipe then
-                    hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
-                end
-            elseif button._chargeState == CHARGE_STATE_FULL then
+            if not chargePresentationSuppressed and button._chargeState == CHARGE_STATE_FULL then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         elseif IsEntryItemLike(buttonData) then

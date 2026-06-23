@@ -386,6 +386,8 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
 
     local procSuppressesReady = procOverlayShown and style.procGlowStyle ~= "none"
     local auraSuppressesReady = button._auraTrackingReady == true and button._auraActive == true
+    local cooldownPresentationSuppressed = button._cooldownPresentationSuppressed == true
+        or button._chargePresentationSuppressed == true
     if not button.readyGlow then
         SetGlowIntent(ready, false, false, "missing-widget")
     elseif button._readyGlowPreview == true then
@@ -397,6 +399,9 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
         SetGlowIntent(ready, true, false, "passive")
     elseif button._noCooldown then
         SetGlowIntent(ready, true, false, "no-cooldown")
+    elseif cooldownPresentationSuppressed then
+        SetGlowIntent(ready, true, false, "presentation-suppressed")
+        ready.cooldownSuppressed = true
     elseif style.readyGlowCombatOnly and not inCombat then
         SetGlowIntent(ready, true, false, "combat-only")
         ready.combatOnly = true
