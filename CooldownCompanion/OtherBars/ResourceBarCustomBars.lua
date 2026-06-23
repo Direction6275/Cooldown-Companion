@@ -721,7 +721,15 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         return maxCharges ~= nil and maxCharges > 1
     end
 
-    local function CustomBarHasChargeBehavior(bar, cabConfig, baseSpellID)
+    local function GetRuntimeSpellID(baseSpellID)
+        local runtimeSpellID = C_Spell.GetOverrideSpell and C_Spell.GetOverrideSpell(baseSpellID)
+        if not runtimeSpellID or runtimeSpellID == 0 then
+            runtimeSpellID = baseSpellID
+        end
+        return tonumber(runtimeSpellID)
+    end
+
+    local function CustomBarHasChargeBehavior(bar, cabConfig, baseSpellID, runtimeSpellID)
         if bar and bar._customCooldownHasCharges == true then
             return true
         end
@@ -739,7 +747,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         if bar and SpellHasDirectMultiChargeInfo(bar._chargeSpellId) then
             return true
         end
-        return SpellHasDirectMultiChargeInfo(baseSpellID)
+        if SpellHasDirectMultiChargeInfo(baseSpellID) then
+            return true
+        end
+        return runtimeSpellID
+            and runtimeSpellID ~= baseSpellID
+            and SpellHasDirectMultiChargeInfo(runtimeSpellID)
     end
 
     local function CustomBarCastConsumesTrackedCharge(bar, cabConfig, spellID)
@@ -748,7 +761,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         if not castSpellID or not baseSpellID then
             return false
         end
-        if not CustomBarHasChargeBehavior(bar, cabConfig, baseSpellID) then
+
+        local runtimeSpellID = GetRuntimeSpellID(baseSpellID)
+        if not CustomBarHasChargeBehavior(bar, cabConfig, baseSpellID, runtimeSpellID) then
             return false
         end
 
@@ -761,11 +776,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             return true
         end
 
-        local runtimeSpellID = C_Spell.GetOverrideSpell and C_Spell.GetOverrideSpell(baseSpellID)
-        if not runtimeSpellID or runtimeSpellID == 0 then
-            runtimeSpellID = baseSpellID
-        end
-        runtimeSpellID = tonumber(runtimeSpellID)
         return runtimeSpellID
             and runtimeSpellID ~= baseSpellID
             and castSpellID == runtimeSpellID

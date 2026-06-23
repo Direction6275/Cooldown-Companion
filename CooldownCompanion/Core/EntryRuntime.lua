@@ -1458,6 +1458,30 @@ local function InferCurrentChargesFromSpent(maxCharges, spent)
     return current
 end
 
+local function SyncSpentChargesFromReadableCount(owner, maxCharges, currentCharges)
+    if not owner or currentCharges == nil then
+        return
+    end
+    if (issecretvalue and issecretvalue(maxCharges))
+        or (issecretvalue and issecretvalue(currentCharges)) then
+        return
+    end
+
+    maxCharges = tonumber(maxCharges)
+    currentCharges = tonumber(currentCharges)
+    if not maxCharges or maxCharges <= 1 or not currentCharges then
+        return
+    end
+
+    local spent = maxCharges - currentCharges
+    if spent < 0 then
+        spent = 0
+    elseif spent > maxCharges then
+        spent = maxCharges
+    end
+    owner._chargesSpent = spent
+end
+
 local function SyncCustomBarChargeMetadata(customBar, charges, maxCharges)
     if not customBar then return end
 
@@ -1519,6 +1543,7 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
         owner._chargeRecharging = result.chargeRecharging
         owner._chargeSpellId = cooldownSpellID
         owner._chargeInfoFromFallback = result.preserveReadableCharges or nil
+        SyncSpentChargesFromReadableCount(owner, maxCharges, currentCharges)
     end
 
     local mainCDShown = false
@@ -1536,7 +1561,9 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
 
     if owner then
         owner._mainCDShown = mainCDShown
-        if result.chargeRecharging and not owner._chargesSpent then
+        if currentCharges ~= nil then
+            -- Readable charge counts already synced _chargesSpent above.
+        elseif result.chargeRecharging and not owner._chargesSpent then
             owner._chargesSpent = maxCharges or 0
         elseif result.chargeRecharging == false then
             owner._chargesSpent = nil

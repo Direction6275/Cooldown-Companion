@@ -32,6 +32,29 @@ local function GetReadableMaxCharges(charges)
     return nil
 end
 
+local function SyncSpentChargesFromReadableCount(owner, maxCharges, currentCharges)
+    if not owner or currentCharges == nil then
+        return
+    end
+    if issecretvalue and (issecretvalue(maxCharges) or issecretvalue(currentCharges)) then
+        return
+    end
+
+    maxCharges = tonumber(maxCharges)
+    currentCharges = tonumber(currentCharges)
+    if not maxCharges or maxCharges <= 1 or not currentCharges then
+        return
+    end
+
+    local spent = maxCharges - currentCharges
+    if spent < 0 then
+        spent = 0
+    elseif spent > maxCharges then
+        spent = maxCharges
+    end
+    owner._chargesSpent = spent
+end
+
 local function ResolveRuntimeChargeInfo(buttonData, chargeSpellID)
     local spellID = chargeSpellID or buttonData.id
     local charges = C_Spell.GetSpellCharges(spellID)
@@ -99,10 +122,12 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
         button._lastReadableCharges = nil
         button._chargeSpellId = nil
         button._chargeInfoFromFallback = nil
+        button._chargesSpent = nil
         return nil
     end
 
     local mx = buttonData.maxCharges
+    SyncSpentChargesFromReadableCount(button, mx, cur)
 
     -- Recharge DurationObject for multi-charge spells.
     -- GetSpellChargeDuration returns nil for maxCharges=1 (Blizzard doesn't treat
