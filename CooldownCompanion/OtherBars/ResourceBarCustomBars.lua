@@ -534,8 +534,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         local cooldownResult = EntryRuntime.EvaluateSpellCooldownStateForCustomBar(cabConfig, bar)
         local durationObj = cooldownResult and cooldownResult.renderDurationObj
+        local chargePresentationSuppressed = cooldownResult and cooldownResult.chargePresentationSuppressed == true
         local cooldownActive = cooldownResult
             and cooldownResult.state == ST.CooldownLogic.STATE_COOLDOWN
+            and not chargePresentationSuppressed
         local auraState = ResolveSpellCustomBarAuraState(barInfo)
         local auraPresent = auraState and auraState.ready == true and auraState.auraPresent == true
         local auraPreview = bar._barAuraActivePreview == true
@@ -549,7 +551,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local cooldownColor = cabConfig.barCooldownColor or {0.6, 0.13, 0.18, 1}
         local rechargeColor = cabConfig.barChargeColor or {1.0, 0.82, 0.0, 1}
         local chargeState = cooldownResult and cooldownResult.chargeState
-        local chargePresentationSuppressed = cooldownResult and cooldownResult.chargePresentationSuppressed == true
         local fillColor = barColor
         if cooldownResult and cooldownResult.hasCharges == true and not chargePresentationSuppressed then
             if chargeState == ST.CooldownLogic.CHARGE_STATE_ZERO then

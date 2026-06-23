@@ -698,12 +698,18 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
     end
 
     if conditionKey == "chargesRecharging" then
+        if button._chargePresentationSuppressed == true then
+            return false
+        end
         return button._chargeRecharging == true
     end
 
     if conditionKey == "chargeState" then
         local buttonData = button.buttonData
         if not buttonData or buttonData.hasCharges ~= true then
+            return nil
+        end
+        if button._chargePresentationSuppressed == true then
             return nil
         end
 

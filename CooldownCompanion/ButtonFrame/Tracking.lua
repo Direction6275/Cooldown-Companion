@@ -432,6 +432,7 @@ local function ResolveDesaturationIntent(button, buttonData, style, target)
         end
         if not target.active and buttonData.desaturateWhileZeroCharges
                 and not CooldownCompanion.HasItemFallbacks(buttonData)
+                and button._chargePresentationSuppressed ~= true
                 and button._chargeState == CHARGE_STATE_ZERO then
             target.active = true
             target.reason = "zero-charges"

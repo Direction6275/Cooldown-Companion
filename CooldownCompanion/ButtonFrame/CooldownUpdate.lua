@@ -1458,7 +1458,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
            and button._lastReadableCharges ~= nil then
             if button._chargeRecharging == true then
                 if button._lastReadableCharges <= 0 then
-                    button._mainCDShown = true
+                    if button._chargePresentationSuppressed == true then
+                        button._mainCDShown = true
+                    else
+                        local slotProbe = spellCooldownResult and spellCooldownResult.slotProbe
+                            or EntryRuntime.ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
+                        if slotProbe.shown ~= nil then
+                            button._mainCDShown = slotProbe.realShown == true
+                        else
+                            button._mainCDShown = true
+                        end
+                    end
                 else
                     local maxCharges = buttonData.maxCharges
                     local spent = button._chargesSpent
