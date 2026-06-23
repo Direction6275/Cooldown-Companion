@@ -895,6 +895,7 @@ local function UpdateCooldownSoundAlertTransitions(state, enabledEvents, opts)
     local chargeRecharging = opts.chargeRecharging and true or false
     local currentCharges = opts.currentCharges
     local chargeCooldownStartTime = opts.chargeCooldownStartTime
+    local suppressChargeAvailable = opts.suppressChargeAvailable == true
 
     if not state._sndInitialized then
         state._sndInitialized = true
@@ -922,7 +923,7 @@ local function UpdateCooldownSoundAlertTransitions(state, enabledEvents, opts)
         opts.play(opts.playContext, "onCooldown")
     end
 
-    if enabledEvents.available then
+    if enabledEvents.available and not suppressChargeAvailable then
         if opts.usesChargeBehavior then
             if DidGainChargeSincePreviousState(state, cooldownActive, currentCharges, chargeRecharging, chargeCooldownStartTime) then
                 opts.play(opts.playContext, "available")
@@ -956,11 +957,21 @@ function CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, auraActive, coold
     end
 
     if customBar and customBar.entryType == "spell" then
-        local chargeRecharging = cooldownResult and cooldownResult.chargeRecharging == true
-        local currentCharges = cooldownResult and cooldownResult.currentCharges
+        local chargePresentationSuppressed = cooldownResult
+            and cooldownResult.chargePresentationSuppressed == true
+        if chargePresentationSuppressed and barInfo then
+            barInfo._sndInitialized = nil
+        end
+        local chargeRecharging = (not chargePresentationSuppressed)
+            and cooldownResult and cooldownResult.chargeRecharging == true
+            or false
+        local currentCharges = (not chargePresentationSuppressed)
+            and cooldownResult and cooldownResult.currentCharges
+            or nil
         local chargeCooldownStartTime
         local charges = cooldownResult and cooldownResult.charges
-        if charges and charges.cooldownStartTime ~= nil and not issecretvalue(charges.cooldownStartTime) then
+        if not chargePresentationSuppressed
+                and charges and charges.cooldownStartTime ~= nil and not issecretvalue(charges.cooldownStartTime) then
             chargeCooldownStartTime = charges.cooldownStartTime
         end
 
@@ -976,6 +987,7 @@ function CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, auraActive, coold
         opts.chargeCooldownStartTime = chargeCooldownStartTime
         opts.includeAuraEvents = customBar.auraTracking == true
         opts.usesChargeBehavior = cooldownResult and cooldownResult.hasCharges == true
+        opts.suppressChargeAvailable = chargePresentationSuppressed
         opts.play = PlayCustomBarTransitionSound
         opts.playContext = customBar
         UpdateCooldownSoundAlertTransitions(barInfo, enabledEvents, opts)
@@ -1018,6 +1030,11 @@ function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, _isO
         return
     end
 
+    local chargePresentationSuppressed = button._chargePresentationSuppressed == true
+    if chargePresentationSuppressed then
+        button._sndInitialized = nil
+    end
+
     local opts = button._sndTransitionOptions
     if not opts then
         opts = {}
@@ -1025,11 +1042,12 @@ function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, _isO
     end
     opts.cooldownActive = cooldownActive
     opts.auraActive = auraActive
-    opts.currentCharges = currentCharges
-    opts.chargeRecharging = chargeRecharging
-    opts.chargeCooldownStartTime = chargeCooldownStartTime
+    opts.currentCharges = chargePresentationSuppressed and nil or currentCharges
+    opts.chargeRecharging = chargePresentationSuppressed and false or chargeRecharging
+    opts.chargeCooldownStartTime = chargePresentationSuppressed and nil or chargeCooldownStartTime
     opts.includeAuraEvents = true
     opts.usesChargeBehavior = UsesChargeBehavior(buttonData)
+    opts.suppressChargeAvailable = chargePresentationSuppressed
     opts.play = PlayButtonTransitionSound
     opts.playContext = buttonData
     UpdateCooldownSoundAlertTransitions(button, enabledEvents, opts)

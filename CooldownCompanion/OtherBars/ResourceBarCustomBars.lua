@@ -565,11 +565,17 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local function UpdateSpellCustomBarSounds(soundAuraActive)
             if CooldownCompanion.UpdateCustomBarSoundAlerts then
                 local soundCooldownActive = cooldownActive
+                local soundCooldownResult = cooldownResult
+                if chargePresentationSuppressed then
+                    soundCooldownActive = false
+                    soundCooldownResult = nil
+                    barInfo._sndInitialized = nil
+                end
                 if cooldownResult and cooldownResult.hasCharges == true and not chargePresentationSuppressed then
                     soundCooldownActive = cooldownResult.chargeState == ST.CooldownLogic.CHARGE_STATE_ZERO
                         or (cooldownResult.chargeState == nil and cooldownActive)
                 end
-                CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, soundAuraActive, soundCooldownActive, cooldownResult)
+                CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, soundAuraActive, soundCooldownActive, soundCooldownResult)
             end
         end
 

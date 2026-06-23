@@ -192,6 +192,9 @@ local function IsReadyGlowAtMaxCharges(button, buttonData)
     if not (button and IsReadyGlowMaxChargeEligible(buttonData)) then
         return false
     end
+    if button._chargePresentationSuppressed == true then
+        return false
+    end
 
     return button._chargeState == CHARGE_STATE_FULL
 end

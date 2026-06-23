@@ -600,6 +600,9 @@ local function IsReadyGlowAtMaxCharges(button, buttonData)
     if not (button and IsReadyGlowMaxChargeEligible(buttonData)) then
         return false
     end
+    if button._chargePresentationSuppressed == true then
+        return false
+    end
 
     return button._chargeState == CHARGE_STATE_FULL
 end
@@ -1411,6 +1414,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             and style.showGCDSwipe == true
             and buttonData.type == "spell"
             and isOnGCD == true
+            and button._chargePresentationSuppressed ~= true
+            and button._cooldownPresentationSuppressed ~= true
         if showBarGCDSwipe then
             local gcdDurationObj = CooldownCompanion._gcdDurationObj
             if not gcdDurationObj and spellCooldownDuration then
@@ -1679,7 +1684,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local maxCharges
             local chargeRecharging = false
             local chargeCooldownStartTime
-            if usesChargeBehavior then
+            local chargePresentationSuppressed = usesChargeBehavior
+                and button._chargePresentationSuppressed == true
+            if usesChargeBehavior and not chargePresentationSuppressed then
                 if button._currentReadableCharges ~= nil then
                     currentCharges = button._currentReadableCharges
                 elseif charges and charges.currentCharges ~= nil
@@ -1698,6 +1705,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                    and not issecretvalue(charges.cooldownStartTime) then
                     chargeCooldownStartTime = charges.cooldownStartTime
                 end
+            elseif chargePresentationSuppressed then
+                button._sndInitialized = nil
             end
 
             local cooldownActive
