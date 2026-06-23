@@ -117,6 +117,11 @@ local function StripCharacterEligibilityFromResourceBarStores(profile)
             stripped = stripped + StripCharacterEligibilityFromResourceBarSettings(settings)
         end
     end
+    if type(profile.resourceBarsByClass) == "table" then
+        for _, settings in pairs(profile.resourceBarsByClass) do
+            stripped = stripped + StripCharacterEligibilityFromResourceBarSettings(settings)
+        end
+    end
     return stripped
 end
 
@@ -300,6 +305,7 @@ local PROFILE_DEFAULT_KEYS = {
     globalStyle = "globalStyle",
     locked = "locked",
     cdmHidden = "cdmHidden",
+    resourceBarMigration = "resourceBarMigration",
     resourceBars = "resourceBars",
     castBar = "castBar",
     frameAnchoring = "frameAnchoring",
@@ -338,6 +344,7 @@ local SCOPED_SYSTEM_DEFAULTS = {
 }
 
 local SCOPED_STORE_KEYS = {
+    resourceBarsByClass = "resourceBars",
     resourceBarsByChar = "resourceBars",
     castBarByChar = "castBar",
     frameAnchoringByChar = "frameAnchoring",

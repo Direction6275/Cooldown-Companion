@@ -1483,6 +1483,54 @@ local function GetResourceGapFieldConfig(settings, layout)
     return "yOffset", "Y Offset"
 end
 
+local function OpenResourceBarConflictChooser(force)
+    local classKey = CooldownCompanion.GetCurrentResourceBarClassKey and CooldownCompanion:GetCurrentResourceBarClassKey()
+    local showChooser = ST._ShowResourceBarConflictChooser
+    if showChooser then
+        return showChooser(classKey, { force = force })
+    end
+    CooldownCompanion:Print("Resource Bar conflict chooser is unavailable.")
+    return false
+end
+
+local function BuildResourceBarConflictGate(container, editSurface, autoOpen)
+    local conflict = CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict()
+    if not conflict then
+        return false
+    end
+
+    local classKey = CooldownCompanion.GetCurrentResourceBarClassKey and CooldownCompanion:GetCurrentResourceBarClassKey() or "current class"
+    local label = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(label)
+    label:SetText("Resource Bars for " .. tostring(classKey) .. " have multiple legacy setups. Choose one setup before editing " .. (editSurface or "Resource Bars") .. ".")
+    label:SetFullWidth(true)
+    container:AddChild(label)
+
+    local resolveBtn = AceGUI:Create("Button")
+    resolveBtn:SetText("Resolve Resource Bars")
+    resolveBtn:SetFullWidth(true)
+    resolveBtn:SetCallback("OnClick", function()
+        OpenResourceBarConflictChooser(true)
+    end)
+    container:AddChild(resolveBtn)
+    CS.resourceBarConflictResolveButton = resolveBtn
+
+    if autoOpen and not (CS.resourceBarConflictChooserDismissed and CS.resourceBarConflictChooserDismissed[classKey]) then
+        local function openIfStillPending()
+            if CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict() then
+                OpenResourceBarConflictChooser(false)
+            end
+        end
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0, openIfStillPending)
+        else
+            openIfStillPending()
+        end
+    end
+
+    return true
+end
+
 ------------------------------------------------------------------------
 -- Export via ST._RBP
 ------------------------------------------------------------------------
@@ -1530,4 +1578,5 @@ ST._RBP = {
     IsResourceBarVerticalConfig = IsResourceBarVerticalConfig,
     GetResourceThicknessFieldConfig = GetResourceThicknessFieldConfig,
     GetResourceGapFieldConfig = GetResourceGapFieldConfig,
+    BuildResourceBarConflictGate = BuildResourceBarConflictGate,
 }

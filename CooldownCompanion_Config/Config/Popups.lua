@@ -7,6 +7,7 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
+local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 
 local ResetConfigSelection = ST._ResetConfigSelection
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
@@ -79,6 +80,283 @@ local function ShowPopupOverConfig(which, textArg1, data)
     end
     return StaticPopup_Show(which, textArg1, nil, data)
 end
+
+local function CountTableEntries(value)
+    local count = 0
+    if type(value) ~= "table" then
+        return count
+    end
+    for _ in pairs(value) do
+        count = count + 1
+    end
+    return count
+end
+
+local function ResourceBarCandidateDetail(settings)
+    if type(settings) ~= "table" then
+        return "Unavailable"
+    end
+    local customBars = settings.customBars
+    local customBarCount = 0
+    if type(customBars) == "table" then
+        if type(customBars.entries) == "table" then
+            customBarCount = CountTableEntries(customBars.entries)
+        else
+            for _, specBars in pairs(customBars) do
+                customBarCount = customBarCount + CountTableEntries(specBars)
+            end
+        end
+    end
+    return ("%d resources, %d custom bars"):format(CountTableEntries(settings.resources), customBarCount)
+end
+
+local function AddResourceBarConflictSpacer(chooser, height)
+    local spacer = AceGUI:Create("SimpleGroup")
+    spacer:SetFullWidth(true)
+    spacer:SetHeight(height)
+    spacer:SetLayout(nil)
+    chooser:AddChild(spacer)
+end
+
+local function AddResourceBarConflictText(chooser, text, fontObject)
+    local label = AceGUI:Create("Label")
+    label:SetText(text)
+    label:SetFullWidth(true)
+    if fontObject then
+        label:SetFontObject(fontObject)
+    end
+    chooser:AddChild(label)
+end
+
+local function ReturnResourceBarConflictFocus()
+    local button = CS and CS.resourceBarConflictResolveButton
+    if button and button.frame and button.frame.SetFocus then
+        button.frame:SetFocus()
+    end
+end
+
+local function AnchorResourceBarConflictChooser(chooser)
+    local frame = chooser and chooser.frame
+    if not frame then
+        return
+    end
+
+    frame:SetParent(UIParent)
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+end
+
+local function RaiseResourceBarConflictChooser(chooser)
+    local frame = chooser and chooser.frame
+    if not frame then
+        return
+    end
+
+    frame:SetParent(UIParent)
+    frame:SetFrameStrata("TOOLTIP")
+    frame:SetToplevel(true)
+    if frame.SetFrameLevel then
+        frame:SetFrameLevel(1000)
+    end
+    if frame.Raise then
+        frame:Raise()
+    end
+end
+
+local function HideResourceBarConflictChooser(markDismissed)
+    local chooser = CS and CS.resourceBarConflictChooser
+    if not chooser then
+        return
+    end
+    if markDismissed and chooser.classKey then
+        CS.resourceBarConflictChooserDismissed = CS.resourceBarConflictChooserDismissed or {}
+        CS.resourceBarConflictChooserDismissed[chooser.classKey] = true
+    end
+    chooser:Hide()
+    if chooser.frame then
+        chooser.frame:SetScript("OnKeyDown", nil)
+        chooser.frame:EnableKeyboard(false)
+        if chooser.frame.SetPropagateKeyboardInput then
+            chooser.frame:SetPropagateKeyboardInput(true)
+        end
+    end
+    ReturnResourceBarConflictFocus()
+end
+
+local function ShowResourceBarConflictChooser(classKey, opts)
+    opts = opts or {}
+    classKey = classKey or (CooldownCompanion.GetCurrentResourceBarClassKey and CooldownCompanion:GetCurrentResourceBarClassKey())
+    local conflict = classKey and CooldownCompanion.GetResourceBarConflict and CooldownCompanion:GetResourceBarConflict(classKey) or nil
+    if not conflict then
+        return false
+    end
+    CS.resourceBarConflictChooserDismissed = CS.resourceBarConflictChooserDismissed or {}
+    if CS.resourceBarConflictChooserDismissed[classKey] and not opts.force then
+        return false
+    end
+    if not AceGUI then
+        CooldownCompanion:Print("Resource Bar conflict chooser is unavailable.")
+        return false
+    end
+
+    local chooser = CS.resourceBarConflictChooser
+    if not chooser then
+        chooser = AceGUI:Create("Window")
+        chooser:SetTitle("Resolve Resource Bars")
+        chooser:SetWidth(560)
+        chooser:SetHeight(360)
+        chooser:SetLayout("List")
+        chooser:EnableResize(false)
+        chooser:SetCallback("OnClose", function()
+            HideResourceBarConflictChooser(true)
+        end)
+        CS.resourceBarConflictChooser = chooser
+    else
+        chooser:Show()
+        chooser:ReleaseChildren()
+    end
+
+    chooser.classKey = classKey
+    chooser.selectedIndex = 1
+
+    local legacyStore = CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.resourceBarsByChar
+        or nil
+    local classStore = CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.resourceBarsByClass
+        or nil
+    local existingClassSettings = conflict.includeExistingClass
+        and type(classStore) == "table"
+        and classStore[classKey]
+        or nil
+    local rows = {}
+    local candidateCharKeys = conflict.candidateCharKeys or {}
+    local candidateCount = #candidateCharKeys + (type(existingClassSettings) == "table" and 1 or 0)
+
+    AddResourceBarConflictText(chooser,
+        "Choose the Resource Bar setup to |cffffd100KEEP|r for " .. tostring(classKey) .. ".",
+        GameFontHighlight)
+    AddResourceBarConflictSpacer(chooser, 14)
+
+    local bullets = {
+        "The Resource settings and Resource Aura overlays from the setup you KEEP will be saved for the whole class.",
+        "Custom Bars from every listed same-class setup will be preserved and added to the saved class setup.",
+        "The other listed character Resource settings and Resource Aura overlays will be removed.",
+        "Going forward, every character of this class will use the saved setup.",
+        "Per-spec layouts, resource overrides, and aura overlays still work inside that class setup.",
+    }
+    for index, text in ipairs(bullets) do
+        AddResourceBarConflictText(chooser, "- " .. text, GameFontHighlight)
+        if index < #bullets then
+            AddResourceBarConflictSpacer(chooser, 14)
+        end
+    end
+    AddResourceBarConflictSpacer(chooser, 24)
+
+    local function selectRow(index)
+        chooser.selectedIndex = index
+        for rowIndex, row in ipairs(rows) do
+            if row.SetText then
+                local prefix = rowIndex == index and "> " or "  "
+                row:SetText(prefix .. (row.candidateText or ""))
+            end
+        end
+    end
+
+    local function chooseRow(index)
+        local row = rows[index]
+        if not row then
+            return
+        end
+        local options = row.keepExistingClassStore and { keepExistingClassStore = true } or nil
+        local ok, reason = CooldownCompanion:ResolveResourceBarConflict(classKey, row.sourceCharKey, options)
+        if not ok then
+            CooldownCompanion:Print("Resource Bar resolution failed: " .. tostring(reason or "unknown error"))
+            return
+        end
+        HideResourceBarConflictChooser(false)
+        if CooldownCompanion.ApplyResourceBars then
+            CooldownCompanion:ApplyResourceBars()
+        end
+        if CooldownCompanion.UpdateAnchorStacking then
+            CooldownCompanion:UpdateAnchorStacking()
+        end
+        if CooldownCompanion.RefreshConfigPanel then
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end
+
+    local function addCandidateRow(sourceCharKey, candidateText, options)
+        local index = #rows + 1
+        local row = AceGUI:Create("Button")
+        row.sourceCharKey = sourceCharKey
+        row.keepExistingClassStore = options and options.keepExistingClassStore == true
+        row.candidateText = candidateText
+        row:SetFullWidth(true)
+        row:SetText("  " .. candidateText)
+        row:SetCallback("OnClick", function()
+            chooseRow(index)
+        end)
+        rows[index] = row
+        chooser:AddChild(row)
+        if index < candidateCount then
+            AddResourceBarConflictSpacer(chooser, 10)
+        end
+    end
+
+    if type(existingClassSettings) == "table" then
+        addCandidateRow(nil,
+            "Current class setup - " .. ResourceBarCandidateDetail(existingClassSettings),
+            { keepExistingClassStore = true })
+    end
+
+    for _, sourceCharKey in ipairs(candidateCharKeys) do
+        addCandidateRow(sourceCharKey,
+            sourceCharKey .. " - "
+                .. ResourceBarCandidateDetail(type(legacyStore) == "table" and legacyStore[sourceCharKey] or nil))
+    end
+
+    AddResourceBarConflictSpacer(chooser, 14)
+
+    local closeButton = AceGUI:Create("Button")
+    closeButton:SetText("Later")
+    closeButton:SetWidth(90)
+    closeButton:SetCallback("OnClick", function()
+        HideResourceBarConflictChooser(true)
+    end)
+    chooser:AddChild(closeButton)
+
+    chooser:SetHeight(math.max(460, 390 + (candidateCount * 38) + (math.max(candidateCount - 1, 0) * 10)))
+    chooser.frame:SetScript("OnKeyDown", function(_, key)
+        if key == "ESCAPE" then
+            HideResourceBarConflictChooser(true)
+        elseif key == "ENTER" or key == "SPACE" then
+            chooseRow(chooser.selectedIndex or 1)
+        elseif key == "DOWN" or key == "TAB" then
+            local nextIndex = (chooser.selectedIndex or 1) + 1
+            if nextIndex > candidateCount then nextIndex = 1 end
+            selectRow(nextIndex)
+        elseif key == "UP" then
+            local nextIndex = (chooser.selectedIndex or 1) - 1
+            if nextIndex < 1 then nextIndex = candidateCount end
+            selectRow(nextIndex)
+        end
+    end)
+    chooser.frame:EnableKeyboard(true)
+    if chooser.frame.SetPropagateKeyboardInput then
+        chooser.frame:SetPropagateKeyboardInput(false)
+    end
+    chooser:Show()
+    AnchorResourceBarConflictChooser(chooser)
+    RaiseResourceBarConflictChooser(chooser)
+    selectRow(1)
+    return true
+end
+
+ST._ShowResourceBarConflictChooser = ShowResourceBarConflictChooser
+ST._HideResourceBarConflictChooser = HideResourceBarConflictChooser
 
 local function PruneDeletedFolderSelection(folderId)
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
@@ -431,6 +709,18 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
     button1 = "Close",
     hasEditBox = true,
     OnShow = function(self)
+        if CooldownCompanion.GetCurrentResourceBarConflictExportMessage then
+            local blockMessage = CooldownCompanion:GetCurrentResourceBarConflictExportMessage()
+            if blockMessage then
+                self.EditBox:SetText(blockMessage)
+                self.EditBox:HighlightText()
+                self.EditBox:SetFocus()
+                if CooldownCompanion.Print then
+                    CooldownCompanion:Print(blockMessage)
+                end
+                return
+            end
+        end
         local db = CooldownCompanion.db
         local exportData = CopyTable(db.profile)
         exportData._exporterCharKey = db.keys.char
@@ -657,6 +947,24 @@ StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
 -- Group/Folder Export and Apply
 ------------------------------------------------------------------------
 
+local function GetCustomBarExportConflictBlockMessage()
+    if CooldownCompanion.GetCurrentResourceBarConflictExportMessage then
+        return CooldownCompanion:GetCurrentResourceBarConflictExportMessage()
+    end
+    return nil
+end
+
+local function BlockCustomBarExportForResourceBarConflict()
+    local message = GetCustomBarExportConflictBlockMessage()
+    if message then
+        if CooldownCompanion.Print then
+            CooldownCompanion:Print(message)
+        end
+        return true, message
+    end
+    return false, nil
+end
+
 local function BuildGroupExportData(group)
     local data = CopyTable(group)
     data.createdBy = nil
@@ -668,6 +976,12 @@ local function BuildGroupExportData(group)
 end
 
 local function EncodeExportData(payload)
+    if type(payload) == "table" and payload.type == "customBars" then
+        local blocked = BlockCustomBarExportForResourceBarConflict()
+        if blocked then
+            return nil
+        end
+    end
     return EncodeSharedPayload(payload, "entity")
 end
 
@@ -742,6 +1056,7 @@ end
 ST._BuildGroupExportData = BuildGroupExportData
 ST._BuildContainerExportData = BuildContainerExportData
 ST._EncodeExportData = EncodeExportData
+ST._BlockCustomBarExportForResourceBarConflict = BlockCustomBarExportForResourceBarConflict
 
 local function BuildImportedRootAnchor(relativeTo)
     return {
@@ -1223,6 +1538,27 @@ StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
     preferredIndex = 3,
 }
 
+local function BlockCustomBarsImportForResourceBarConflict()
+    local classKey = CooldownCompanion.GetCurrentResourceBarClassKey
+        and CooldownCompanion:GetCurrentResourceBarClassKey()
+        or nil
+    local conflict = CooldownCompanion.GetCurrentResourceBarConflict
+        and CooldownCompanion:GetCurrentResourceBarConflict()
+        or nil
+    if not conflict then
+        return false
+    end
+
+    local message = "Resolve the pending Resource Bar conflict"
+        .. (classKey and (" for " .. tostring(classKey)) or "")
+        .. " before importing Custom Bars. Choose the setup to keep, then import again."
+    CooldownCompanion:Print(message)
+    if ST._ShowResourceBarConflictChooser then
+        ST._ShowResourceBarConflictChooser(classKey, { force = true })
+    end
+    return true
+end
+
 local function ApplyCustomBarsImportData(data, options)
     if type(data) ~= "table" or data.type ~= "customBars" then
         if RejectUnsupportedImportPayload(data, "custom bars import") then
@@ -1232,6 +1568,9 @@ local function ApplyCustomBarsImportData(data, options)
         return false
     end
     if RejectUnsupportedImportPayload(data, "custom bars import") then
+        return false
+    end
+    if BlockCustomBarsImportForResourceBarConflict() then
         return false
     end
     local importState = options and options.importState or NewGroupImportState()
@@ -1258,6 +1597,7 @@ local function ApplyCustomBarsImportData(data, options)
     return true
 end
 
+ST._BlockCustomBarsImportForResourceBarConflict = BlockCustomBarsImportForResourceBarConflict
 ST._ApplyCustomBarsImportData = ApplyCustomBarsImportData
 
 StaticPopupDialogs["CDC_EXPORT_CUSTOM_BARS"] = {
@@ -1265,6 +1605,13 @@ StaticPopupDialogs["CDC_EXPORT_CUSTOM_BARS"] = {
     button1 = "Close",
     hasEditBox = true,
     OnShow = function(self)
+        local blocked, blockMessage = BlockCustomBarExportForResourceBarConflict()
+        if blocked then
+            self.EditBox:SetText(blockMessage or "Resolve pending Resource Bar conflicts before exporting Custom Bars.")
+            self.EditBox:HighlightText()
+            self.EditBox:SetFocus()
+            return
+        end
         if self.data and self.data.exportString then
             self.EditBox:SetText(self.data.exportString)
             self.EditBox:HighlightText()
