@@ -564,12 +564,14 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
     local globalizedEligibilityImports = GlobalizePortableCharacterScopedEligibility(db.profile)
 
     self._resourceBarImportCharacterInfo = exportedCharInfo
+    self._resourceBarImportExporterCharKey = exporterCharKey
 
     if self.ClearMigrationSentinels then
         self:ClearMigrationSentinels()
     end
     local migrationsOk = not self.RunAllMigrations or self:RunAllMigrations()
     self._resourceBarImportCharacterInfo = nil
+    self._resourceBarImportExporterCharKey = nil
     if not migrationsOk then
         return false
     end

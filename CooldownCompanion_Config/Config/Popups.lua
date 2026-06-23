@@ -1596,6 +1596,7 @@ local function ApplyCustomBarsImportData(data, options)
     return true
 end
 
+ST._BlockCustomBarsImportForResourceBarConflict = BlockCustomBarsImportForResourceBarConflict
 ST._ApplyCustomBarsImportData = ApplyCustomBarsImportData
 
 StaticPopupDialogs["CDC_EXPORT_CUSTOM_BARS"] = {

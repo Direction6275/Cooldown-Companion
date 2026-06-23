@@ -756,18 +756,16 @@ local function NormalizeResourceSpecOverridesForClass(settings, classKey)
     end
 end
 
-local function NormalizeCustomAuraBarsForClass(settings, classKey)
-    if type(settings) ~= "table" then
+local function ClearCustomBarLegacySpecFields(entry)
+    if type(entry) ~= "table" then
         return
     end
-    local barsBySpec = type(settings.customBars) == "table" and settings.customBars or settings.customAuraBars
-    if type(barsBySpec) ~= "table" then return end
+    entry.specID = nil
+    entry.spec = nil
+    entry.sourceSpecID = nil
+end
 
-    local allowedSpecIDs = GetClassSpecInfo(classKey)
-    if type(allowedSpecIDs) ~= "table" then
-        return
-    end
-
+local function NormalizeCustomBarStoreForClass(barsBySpec, allowedSpecIDs)
     local filtered = {}
     if IsSharedCustomBarsStore(barsBySpec) then
         filtered.entries = {}
@@ -787,6 +785,7 @@ local function NormalizeCustomAuraBarsForClass(settings, classKey)
                 end)
                 if not sawSpec or next(normalizedSpecs) then
                     copiedEntry.specs = normalizedSpecs
+                    ClearCustomBarLegacySpecFields(copiedEntry)
                     local customBarId = type(copiedEntry.customBarId) == "string" and copiedEntry.customBarId or key
                     if type(customBarId) == "string" and customBarId ~= "" then
                         filtered.entries[customBarId] = copiedEntry
@@ -812,15 +811,33 @@ local function NormalizeCustomAuraBarsForClass(settings, classKey)
             if type(specBars) == "table" and (
                 numericSpecID and allowedSpecIDs[numericSpecID]
             ) then
-                filtered[numericSpecID or key] = CopyTable(specBars)
+                local copiedSpecBars = CopyTable(specBars)
+                for _, entry in pairs(copiedSpecBars) do
+                    ClearCustomBarLegacySpecFields(entry)
+                end
+                filtered[numericSpecID or key] = copiedSpecBars
             end
         end
     end
 
+    return filtered
+end
+
+local function NormalizeCustomAuraBarsForClass(settings, classKey)
+    if type(settings) ~= "table" then
+        return
+    end
+
+    local allowedSpecIDs = GetClassSpecInfo(classKey)
+    if type(allowedSpecIDs) ~= "table" then
+        return
+    end
+
     if type(settings.customBars) == "table" then
-        settings.customBars = filtered
-    else
-        settings.customAuraBars = filtered
+        settings.customBars = NormalizeCustomBarStoreForClass(settings.customBars, allowedSpecIDs)
+    end
+    if type(settings.customAuraBars) == "table" then
+        settings.customAuraBars = NormalizeCustomBarStoreForClass(settings.customAuraBars, allowedSpecIDs)
     end
 end
 
@@ -862,11 +879,6 @@ local function SanitizeResourceBarAnchors(settings)
         settings.independentAnchor = nil
     end
 
-    local customBarsBySpec = type(settings.customBars) == "table" and settings.customBars or settings.customAuraBars
-    if type(customBarsBySpec) ~= "table" then
-        return
-    end
-
     local ensureCustomAuraBarAuraUnit = GetEnsureCustomAuraBarAuraUnit()
     local function sanitizeCustomBar(customAuraBar)
         if type(customAuraBar) == "table" then
@@ -885,20 +897,29 @@ local function SanitizeResourceBarAnchors(settings)
         end
     end
 
-    if IsSharedCustomBarsStore(customBarsBySpec) then
-        local entries = type(customBarsBySpec.entries) == "table" and customBarsBySpec.entries or {}
-        for _, customAuraBar in pairs(entries) do
-            sanitizeCustomBar(customAuraBar)
+    local function sanitizeCustomBarStore(customBarsBySpec)
+        if type(customBarsBySpec) ~= "table" then
+            return
         end
-    else
-        for _, specBars in pairs(customBarsBySpec) do
-            if type(specBars) == "table" then
-                for _, customAuraBar in pairs(specBars) do
-                    sanitizeCustomBar(customAuraBar)
+
+        if IsSharedCustomBarsStore(customBarsBySpec) then
+            local entries = type(customBarsBySpec.entries) == "table" and customBarsBySpec.entries or {}
+            for _, customAuraBar in pairs(entries) do
+                sanitizeCustomBar(customAuraBar)
+            end
+        else
+            for _, specBars in pairs(customBarsBySpec) do
+                if type(specBars) == "table" then
+                    for _, customAuraBar in pairs(specBars) do
+                        sanitizeCustomBar(customAuraBar)
+                    end
                 end
             end
         end
     end
+
+    sanitizeCustomBarStore(settings.customBars)
+    sanitizeCustomBarStore(settings.customAuraBars)
 end
 
 local function SanitizeCastBarAnchors(settings)
@@ -1113,6 +1134,14 @@ local function GetImportResourceBarCharacterInfo(addon)
     return addon and addon._resourceBarImportCharacterInfo
 end
 
+local function GetImportResourceBarExporterCharKey(addon)
+    local charKey = addon and addon._resourceBarImportExporterCharKey
+    if type(charKey) == "string" and charKey ~= "" then
+        return charKey
+    end
+    return nil
+end
+
 local function ResolveResourceBarCandidateClassKey(addon, charKey)
     local currentCharKey = addon and addon.db and addon.db.keys and addon.db.keys.char
     if charKey == currentCharKey then
@@ -1127,6 +1156,41 @@ local function ResolveResourceBarCandidateClassKey(addon, charKey)
 
     local globalInfo = addon and addon.db and addon.db.global and addon.db.global.characterInfo
     return NormalizeClassKeyFromInfo(type(globalInfo) == "table" and globalInfo[charKey] or nil)
+end
+
+local function ClearLegacyResourceBarSeed(profile)
+    if type(profile) ~= "table" then
+        return
+    end
+    profile[RESOURCE_BAR_SYSTEM_SPEC.legacyKey] = nil
+    profile[RESOURCE_BAR_SYSTEM_SPEC.seedKey] = nil
+end
+
+local function SeedImportedLegacyResourceBarBucket(addon, profile)
+    local exporterCharKey = GetImportResourceBarExporterCharKey(addon)
+    if not exporterCharKey then
+        return false
+    end
+
+    local seed = CaptureLegacyScopedBarSystemSeed(profile, RESOURCE_BAR_SYSTEM_SPEC)
+    if type(seed) ~= "table" then
+        return true
+    end
+
+    local store = GetResourceBarLegacyStore(profile, false)
+    if not (type(store) == "table" and type(store[exporterCharKey]) == "table") then
+        local settings = CopyTable(seed)
+        local classKey = ResolveResourceBarCandidateClassKey(addon, exporterCharKey)
+        if classKey then
+            NormalizeResourceBarSettingsForClass(settings, classKey)
+        end
+        SanitizeResourceBarAnchors(settings)
+        store = GetResourceBarLegacyStore(profile, true)
+        store[exporterCharKey] = settings
+    end
+
+    ClearLegacyResourceBarSeed(profile)
+    return true
 end
 
 local function SeedCurrentLegacyResourceBarBucket(addon, profile)
@@ -1168,6 +1232,7 @@ end
 local function CopyNormalizedResourceBarCandidate(settings, classKey)
     local normalized = CopyTable(settings)
     NormalizeResourceBarSettingsForClass(normalized, classKey)
+    SanitizeResourceBarAnchors(normalized)
     return normalized
 end
 
@@ -1245,6 +1310,7 @@ end
 local function PromoteResourceBarClassSettings(classStore, classKey, settings)
     classStore[classKey] = CopyTable(settings)
     NormalizeResourceBarSettingsForClass(classStore[classKey], classKey)
+    SanitizeResourceBarAnchors(classStore[classKey])
 end
 
 local function MigrateResourceBarClass(profile, classStore, state, classKey, candidates)
@@ -1256,6 +1322,7 @@ local function MigrateResourceBarClass(profile, classStore, state, classKey, can
 
     if type(classStore[classKey]) == "table" then
         NormalizeResourceBarSettingsForClass(classStore[classKey], classKey)
+        SanitizeResourceBarAnchors(classStore[classKey])
         if IsDefaultResourceBarClassSettings(classStore[classKey], classKey) then
             classStore[classKey] = nil
         else
@@ -1490,12 +1557,17 @@ function CooldownCompanion:RunResourceBarClassScopeMigration()
 
     local state = EnsureResourceBarMigrationState(profile)
     state.unsafeCharKeys = {}
-    SeedCurrentLegacyResourceBarBucket(self, profile)
+    if GetImportResourceBarExporterCharKey(self) then
+        SeedImportedLegacyResourceBarBucket(self, profile)
+    else
+        SeedCurrentLegacyResourceBarBucket(self, profile)
+    end
 
     local classStore = EnsureResourceBarClassStore(profile)
     for classKey, settings in pairs(classStore) do
         if type(settings) == "table" then
             NormalizeResourceBarSettingsForClass(settings, classKey)
+            SanitizeResourceBarAnchors(settings)
         end
     end
 

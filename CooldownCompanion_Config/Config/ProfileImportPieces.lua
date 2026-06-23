@@ -9,6 +9,7 @@ local CooldownCompanion = ST.Addon
 local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
 local ApplyCustomBarsImportData = ST._ApplyCustomBarsImportData
+local BlockCustomBarsImportForResourceBarConflict = ST._BlockCustomBarsImportForResourceBarConflict
 
 local EMPTY_TABLE = {}
 local CUSTOM_BAR_CONTENT_FIELDS = {
@@ -1034,6 +1035,12 @@ local function ApplyCustomBarsPayload(profile, payload)
     }) == true
 end
 
+local function ShouldBlockSelectedCustomBarsImport()
+    local block = BlockCustomBarsImportForResourceBarConflict
+        or ST._BlockCustomBarsImportForResourceBarConflict
+    return block and block() == true
+end
+
 local function SetChildSelection(row, selected)
     if not (row and row.eligible) then
         return
@@ -1076,6 +1083,11 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
     end
 
     local selectedFolders, selectedContainers, selectedPanels, selectedCustomBars, deselectedContainers, deselectedPanels = SelectionSets(model)
+    local selectedCustomBarsPayload = BuildSelectedCustomBarsPayload(model, selectedCustomBars)
+    if selectedCustomBarsPayload and ShouldBlockSelectedCustomBarsImport() then
+        return false
+    end
+
     local importedContainers = {}
     local batchToken = BeginImportBatch()
     local applied = false
@@ -1132,7 +1144,6 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
         failed = failed or not ok
     end
 
-    local selectedCustomBarsPayload = BuildSelectedCustomBarsPayload(model, selectedCustomBars)
     if selectedCustomBarsPayload then
         local ok = ApplyCustomBarsPayload(profile, selectedCustomBarsPayload)
         applied = ok or applied
