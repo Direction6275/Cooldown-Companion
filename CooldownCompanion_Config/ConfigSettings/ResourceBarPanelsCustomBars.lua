@@ -23,7 +23,6 @@ local PruneConfigCustomBarSelection = ST._PruneConfigCustomBarSelection
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
-local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
@@ -51,6 +50,17 @@ local function RefreshLayoutOrderPreview()
         return
     end
     ST._RefreshColumn4(CS.col4Container)
+end
+
+local function BlockCustomBarExportForResourceBarConflict()
+    if CooldownCompanion.GetCurrentResourceBarConflictExportMessage then
+        local message = CooldownCompanion:GetCurrentResourceBarConflictExportMessage()
+        if message then
+            CooldownCompanion:Print(message)
+            return true
+        end
+    end
+    return false
 end
 
 -- Shared constants from ResourceBarConstants
@@ -164,6 +174,7 @@ local RefreshCustomAuraBarAuraUnitForSpell = RB.RefreshCustomAuraBarAuraUnitForS
 local RBP = ST._RBP
 local resourceBarCollapsedSections = RBP.collapsedSections
 local BuildResourceAuraOverlaySection = RBP.BuildResourceAuraOverlaySection
+local BuildResourceBarConflictGate = RBP.BuildResourceBarConflictGate
 local GetConfigActiveResources = RBP.GetConfigActiveResources
 local GetCurrentConfigSpecID = RBP.GetCurrentConfigSpecID
 local ReadSpecOverrideKey = RBP.ReadSpecOverrideKey
@@ -659,6 +670,9 @@ local function OpenCustomBarRowMenu(customBars, specID, customBarId, entry)
         exportInfo.notCheckable = true
         exportInfo.func = function()
             CloseDropDownMenus()
+            if BlockCustomBarExportForResourceBarConflict() then
+                return
+            end
             local exportSettings = CooldownCompanion:GetResourceBarSettings()
             local payload = RB.BuildCustomBarsExportPayload and RB.BuildCustomBarsExportPayload(exportSettings, { entry })
             local exportString = payload and ST._EncodeExportData and ST._EncodeExportData(payload)
@@ -1046,7 +1060,7 @@ local function BuildCustomBarTrackedAuraRowText(auraID, rowIndex)
 end
 
 local function ConfigureCustomBarTrackedAuraMoveButton(button, rotation, tooltipTitle, tooltipBody, disabled, onClick)
-    local isDisabled = disabled or CS.browseMode
+    local isDisabled = disabled
     button:SetSize(18, 18)
     if button.text then
         button.text:Hide()
@@ -1129,10 +1143,6 @@ local function EnsureCustomBarTrackedAuraMoveButtons(entry, cab, spellID, rowInd
 end
 
 local function ShowCustomBarTrackedAuraRowMenu(cab, spellID, rowIndex)
-    if CS.browseMode then
-        return
-    end
-
     if not CS.customBarTrackedAuraContextMenu then
         CS.customBarTrackedAuraContextMenu = CreateFrame("Frame", "CDCCustomBarTrackedAuraContextMenu", UIParent, "UIDropDownMenuTemplate")
     end
@@ -1157,9 +1167,6 @@ end
 
 local function InstallCustomBarTrackedAuraRowMenu(entry, cab, spellID, rowIndex)
     entry.frame:SetScript("OnMouseUp", function(_, button)
-        if CS.browseMode then
-            return
-        end
         if button == "RightButton" then
             ShowCustomBarTrackedAuraRowMenu(cab, spellID, rowIndex)
         end
@@ -1341,10 +1348,6 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
         RefreshCustomBarTrackedAuraEntry(cab, spellID)
     end
     auraEditBox:SetCallback("OnTextChanged", function(widget, _, text)
-        if CS.browseMode then
-            CS.HideAutocomplete()
-            return
-        end
         if text and #text >= 1 and CS.SearchCDMAuraAutocomplete then
             CS.ShowAutocompleteResults(CS.SearchCDMAuraAutocomplete(text), widget, function(entry)
                 CommitCustomBarTrackedAuraEntry(widget, entry)
@@ -1354,10 +1357,6 @@ local function BuildCustomBarAuraTrackingSection(container, cab, resolvedAuraUni
         end
     end)
     auraEditBox:SetCallback("OnEnterPressed", function(widget, _, text)
-        if CS.browseMode then
-            CS.HideAutocomplete()
-            return
-        end
         if CS.ConsumeAutocompleteEnter and CS.ConsumeAutocompleteEnter() then
             return
         end
@@ -1665,6 +1664,10 @@ ST._AddResourceSettingsListSection = function(container, settings)
 end
 
 local function BuildCustomBarsListPanel(container)
+    if BuildResourceBarConflictGate(container, "Custom Bars", false) then
+        return
+    end
+
     local settings = CooldownCompanion:GetResourceBarSettings()
     if not (settings and settings.enabled) then
         ST._AddResourceSettingsListSection(container, nil)
@@ -1857,6 +1860,9 @@ local function BuildCustomBarsListPanel(container)
     local exportAllBtn = AceGUI:Create("Button")
     exportAllBtn:SetText("Export All")
     exportAllBtn:SetCallback("OnClick", function()
+        if BlockCustomBarExportForResourceBarConflict() then
+            return
+        end
         local payload = RB.BuildCustomBarsExportPayload and RB.BuildCustomBarsExportPayload(settings, customBars)
         local exportString = payload and ST._EncodeExportData and ST._EncodeExportData(payload)
         if exportString then
@@ -2271,6 +2277,10 @@ local function BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, c
 end
 
 local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
+    if BuildResourceBarConflictGate(container, "Custom Bars", false) then
+        return
+    end
+
     local settings = CooldownCompanion:GetResourceBarSettings()
     if not (settings and settings.enabled) then
         AddResourceBarsDisabledLabel(container, "Enable Resource Bars to configure Custom Bar settings.")

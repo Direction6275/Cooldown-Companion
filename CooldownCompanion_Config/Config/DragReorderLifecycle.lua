@@ -53,6 +53,58 @@ local FindCol1TopLevelInsertPos = DR.FindCol1TopLevelInsertPos
 local AssignCol1TopLevelOrders = DR.AssignCol1TopLevelOrders
 local PartitionSelectedContainersByLoadBucket = DR.PartitionSelectedContainersByLoadBucket
 
+local function IsCol1OwnershipMoveAllowed(sourceSection, targetSection)
+    if not targetSection or sourceSection == targetSection then
+        return true
+    end
+    if targetSection == "global" and sourceSection ~= "global" then
+        return true
+    end
+    return sourceSection == "global" and targetSection == "char"
+end
+
+local function GetContainerSection(container)
+    if not container then return nil end
+    if container.isGlobal then return "global" end
+    if CooldownCompanion.ResolveContainerClassScope then
+        local scope = CooldownCompanion:ResolveContainerClassScope(container)
+        return scope and scope.sectionKey or "invalid"
+    end
+    return "char"
+end
+
+local function ApplyContainerSection(containerId, container, targetSection)
+    if targetSection == "global" then
+        container.isGlobal = true
+        return true
+    end
+    if targetSection == "char" then
+        container.isGlobal = false
+        container.createdBy = CooldownCompanion.db.keys.char
+        if CooldownCompanion.NormalizeContainerEligibilityForCharacterScope then
+            CooldownCompanion:NormalizeContainerEligibilityForCharacterScope(containerId)
+        end
+        return true
+    end
+    return targetSection == GetContainerSection(container)
+end
+
+local function ApplyFolderSection(folderId, folder, targetSection)
+    if targetSection == "global" then
+        folder.section = "global"
+        return true
+    end
+    if targetSection == "char" then
+        folder.section = "char"
+        folder.createdBy = CooldownCompanion.db.keys.char
+        if CooldownCompanion.NormalizeFolderEligibilityForCharacterScope then
+            CooldownCompanion:NormalizeFolderEligibilityForCharacterScope(folderId)
+        end
+        return true
+    end
+    return false
+end
+
 ------------------------------------------------------------------------
 -- Apply a column-1 folder-aware drop result
 ------------------------------------------------------------------------
@@ -71,17 +123,19 @@ local function ApplyCol1Drop(state)
         if dropTarget.action == "into-folder" or dropTarget.action == "reorder-before" or dropTarget.action == "reorder-after" then
             local targetRow = dropTarget.targetRow
             local targetFolderId = ResolveCol1GroupDropTargetFolderId(state, dropTarget)
-            CooldownCompanion:MoveGroupToFolder(sourceContainerId, targetFolderId)
+            local targetSection = targetRow.section or state.sourceSection
+            if not IsCol1OwnershipMoveAllowed(state.sourceSection, targetSection) then
+                return
+            end
 
             -- Cross-section move: toggle global/character status
-            local targetSection = targetRow.section or state.sourceSection
             if targetSection ~= state.sourceSection then
-                if targetSection == "global" then
-                    container.isGlobal = true
-                else
-                    container.isGlobal = false
-                    container.createdBy = CooldownCompanion.db.keys.char
+                if not ApplyContainerSection(sourceContainerId, container, targetSection) then
+                    return
                 end
+            end
+            if CooldownCompanion:MoveGroupToFolder(sourceContainerId, targetFolderId, { allowScopeChange = true }) == false then
+                return
             end
 
             -- Reassign order values for all items in the target section
@@ -169,15 +223,17 @@ local function ApplyCol1Drop(state)
         for cid in pairs(sourceContainerIds) do
             local c = db.groupContainers[cid]
             if c then
-                CooldownCompanion:MoveGroupToFolder(cid, targetFolderId)
-                local containerSection = c.isGlobal and "global" or "char"
+                local containerSection = GetContainerSection(c)
+                if not IsCol1OwnershipMoveAllowed(containerSection, targetSection) then
+                    return
+                end
                 if containerSection ~= targetSection then
-                    if targetSection == "global" then
-                        c.isGlobal = true
-                    else
-                        c.isGlobal = false
-                        c.createdBy = CooldownCompanion.db.keys.char
+                    if not ApplyContainerSection(cid, c, targetSection) then
+                        return
                     end
+                end
+                if CooldownCompanion:MoveGroupToFolder(cid, targetFolderId, { allowScopeChange = true }) == false then
+                    return
                 end
             end
         end
@@ -301,20 +357,19 @@ local function ApplyCol1Drop(state)
         local dropTarget = state.dropTarget
         local targetRow = dropTarget.targetRow
         local section = targetRow.section or state.sourceSection
+        if not IsCol1OwnershipMoveAllowed(state.sourceSection, section) then
+            return
+        end
 
         -- Cross-section move: toggle folder section and update all child containers
         if section ~= state.sourceSection then
-            folder.section = section
-            if section == "char" then
-                folder.createdBy = CooldownCompanion.db.keys.char
+            if not ApplyFolderSection(sourceFolderId, folder, section) then
+                return
             end
             for containerId, container in pairs(db.groupContainers) do
                 if container.folderId == sourceFolderId then
-                    if section == "global" then
-                        container.isGlobal = true
-                    else
-                        container.isGlobal = false
-                        container.createdBy = CooldownCompanion.db.keys.char
+                    if not ApplyContainerSection(containerId, container, section) then
+                        return
                     end
                 end
             end
@@ -512,10 +567,14 @@ local function FinishCol1FolderAwareDrag(state)
 
     if dropTarget and (state.kind == "group" or state.kind == "folder-group") then
         local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
+        if targetSection and not IsCol1OwnershipMoveAllowed(state.sourceSection, targetSection) then
+            return
+        end
         local sourceContainer = CooldownCompanion.db.profile.groupContainers[state.sourceGroupId]
         if targetSection and targetSection ~= state.sourceSection
            and state.sourceSection == "global"
-           and sourceContainer and sourceContainer.specs
+           and targetSection == "char"
+           and sourceContainer
            and GroupsHaveForeignSpecs({ sourceContainer }, false) then
             ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_GROUP", sourceContainer.name, {
                 dragState = state,
@@ -526,6 +585,15 @@ local function FinishCol1FolderAwareDrag(state)
 
     if dropTarget and state.kind == "multi-group" and state.sourceGroupIds then
         local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
+        if targetSection then
+            local db = CooldownCompanion.db.profile
+            for cid in pairs(state.sourceGroupIds) do
+                local sourceContainer = db.groupContainers[cid]
+                if sourceContainer and not IsCol1OwnershipMoveAllowed(GetContainerSection(sourceContainer), targetSection) then
+                    return
+                end
+            end
+        end
         if targetSection == "char" then
             local db = CooldownCompanion.db.profile
             local groupList = {}
@@ -553,8 +621,12 @@ local function FinishCol1FolderAwareDrag(state)
 
     if dropTarget and state.kind == "folder" then
         local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
+        if targetSection and not IsCol1OwnershipMoveAllowed(state.sourceSection, targetSection) then
+            return
+        end
         if targetSection and targetSection ~= state.sourceSection
            and state.sourceSection == "global"
+           and targetSection == "char"
            and FolderHasForeignSpecs
            and FolderHasForeignSpecs(state.sourceFolderId) then
             ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_FOLDER", nil, {

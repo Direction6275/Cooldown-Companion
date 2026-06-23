@@ -7,6 +7,7 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
+local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 
 local ResetConfigSelection = ST._ResetConfigSelection
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
@@ -15,6 +16,40 @@ local ClearConfigContainerSelection = ST._ClearConfigContainerSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
 local EncodeSharedPayload = ST._EncodeSharedPayload
+local StripCharacterEligibilityFromPayload = ST._StripCharacterEligibilityFromPayload
+
+local LOAD_CONDITION_ALLOWLIST_KEYS = {
+    classAllowlist = "class",
+    specAllowlist = "spec",
+    characterAllowlist = "character",
+}
+
+local function NormalizeAllowlistKey(kind, key)
+    if kind == "class" then
+        if type(key) ~= "string" or key == "" then return nil end
+        return string.upper(key)
+    elseif kind == "spec" then
+        return tonumber(key)
+    elseif kind == "character" then
+        if type(key) ~= "string" or key == "" then return nil end
+        return key
+    end
+    return nil
+end
+
+local function CopyAllowlistMap(map, kind)
+    if type(map) ~= "table" then return nil end
+    local copy = {}
+    for key, enabled in pairs(map) do
+        if enabled == true then
+            local normalizedKey = NormalizeAllowlistKey(kind, key)
+            if normalizedKey ~= nil then
+                copy[normalizedKey] = true
+            end
+        end
+    end
+    return next(copy) and copy or nil
+end
 
 -- Check whether a profile name already exists (case-exact match).
 local function ProfileNameExists(name)
@@ -46,30 +81,282 @@ local function ShowPopupOverConfig(which, textArg1, data)
     return StaticPopup_Show(which, textArg1, nil, data)
 end
 
-local function ClearFolderFiltersForUnglobal(folderId)
-    if not folderId then return end
-
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    if not db then return end
-
-    local folder = db.folders and db.folders[folderId]
-    if folder then
-        folder.specs = nil
-        folder.heroTalents = nil
-        CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
-        return
+local function CountTableEntries(value)
+    local count = 0
+    if type(value) ~= "table" then
+        return count
     end
+    for _ in pairs(value) do
+        count = count + 1
+    end
+    return count
+end
 
-    -- Fallback: clear specs on child containers (folderId lives on containers post-migration)
-    if db.groupContainers then
-        for _, container in pairs(db.groupContainers) do
-            if container.folderId == folderId and (container.specs or container.heroTalents) then
-                container.specs = nil
-                container.heroTalents = nil
+local function ResourceBarCandidateDetail(settings)
+    if type(settings) ~= "table" then
+        return "Unavailable"
+    end
+    local customBars = settings.customBars
+    local customBarCount = 0
+    if type(customBars) == "table" then
+        if type(customBars.entries) == "table" then
+            customBarCount = CountTableEntries(customBars.entries)
+        else
+            for _, specBars in pairs(customBars) do
+                customBarCount = customBarCount + CountTableEntries(specBars)
             end
         end
     end
+    return ("%d resources, %d custom bars"):format(CountTableEntries(settings.resources), customBarCount)
 end
+
+local function AddResourceBarConflictSpacer(chooser, height)
+    local spacer = AceGUI:Create("SimpleGroup")
+    spacer:SetFullWidth(true)
+    spacer:SetHeight(height)
+    spacer:SetLayout(nil)
+    chooser:AddChild(spacer)
+end
+
+local function AddResourceBarConflictText(chooser, text, fontObject)
+    local label = AceGUI:Create("Label")
+    label:SetText(text)
+    label:SetFullWidth(true)
+    if fontObject then
+        label:SetFontObject(fontObject)
+    end
+    chooser:AddChild(label)
+end
+
+local function ReturnResourceBarConflictFocus()
+    local button = CS and CS.resourceBarConflictResolveButton
+    if button and button.frame and button.frame.SetFocus then
+        button.frame:SetFocus()
+    end
+end
+
+local function AnchorResourceBarConflictChooser(chooser)
+    local frame = chooser and chooser.frame
+    if not frame then
+        return
+    end
+
+    frame:SetParent(UIParent)
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+end
+
+local function RaiseResourceBarConflictChooser(chooser)
+    local frame = chooser and chooser.frame
+    if not frame then
+        return
+    end
+
+    frame:SetParent(UIParent)
+    frame:SetFrameStrata("TOOLTIP")
+    frame:SetToplevel(true)
+    if frame.SetFrameLevel then
+        frame:SetFrameLevel(1000)
+    end
+    if frame.Raise then
+        frame:Raise()
+    end
+end
+
+local function HideResourceBarConflictChooser(markDismissed)
+    local chooser = CS and CS.resourceBarConflictChooser
+    if not chooser then
+        return
+    end
+    if markDismissed and chooser.classKey then
+        CS.resourceBarConflictChooserDismissed = CS.resourceBarConflictChooserDismissed or {}
+        CS.resourceBarConflictChooserDismissed[chooser.classKey] = true
+    end
+    chooser:Hide()
+    if chooser.frame then
+        chooser.frame:SetScript("OnKeyDown", nil)
+        chooser.frame:EnableKeyboard(false)
+        if chooser.frame.SetPropagateKeyboardInput then
+            chooser.frame:SetPropagateKeyboardInput(true)
+        end
+    end
+    ReturnResourceBarConflictFocus()
+end
+
+local function ShowResourceBarConflictChooser(classKey, opts)
+    opts = opts or {}
+    classKey = classKey or (CooldownCompanion.GetCurrentResourceBarClassKey and CooldownCompanion:GetCurrentResourceBarClassKey())
+    local conflict = classKey and CooldownCompanion.GetResourceBarConflict and CooldownCompanion:GetResourceBarConflict(classKey) or nil
+    if not conflict then
+        return false
+    end
+    CS.resourceBarConflictChooserDismissed = CS.resourceBarConflictChooserDismissed or {}
+    if CS.resourceBarConflictChooserDismissed[classKey] and not opts.force then
+        return false
+    end
+    if not AceGUI then
+        CooldownCompanion:Print("Resource Bar conflict chooser is unavailable.")
+        return false
+    end
+
+    local chooser = CS.resourceBarConflictChooser
+    if not chooser then
+        chooser = AceGUI:Create("Window")
+        chooser:SetTitle("Resolve Resource Bars")
+        chooser:SetWidth(560)
+        chooser:SetHeight(360)
+        chooser:SetLayout("List")
+        chooser:EnableResize(false)
+        chooser:SetCallback("OnClose", function()
+            HideResourceBarConflictChooser(true)
+        end)
+        CS.resourceBarConflictChooser = chooser
+    else
+        chooser:Show()
+        chooser:ReleaseChildren()
+    end
+
+    chooser.classKey = classKey
+    chooser.selectedIndex = 1
+
+    local legacyStore = CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.resourceBarsByChar
+        or nil
+    local classStore = CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.resourceBarsByClass
+        or nil
+    local existingClassSettings = conflict.includeExistingClass
+        and type(classStore) == "table"
+        and classStore[classKey]
+        or nil
+    local rows = {}
+    local candidateCharKeys = conflict.candidateCharKeys or {}
+    local candidateCount = #candidateCharKeys + (type(existingClassSettings) == "table" and 1 or 0)
+
+    AddResourceBarConflictText(chooser,
+        "Choose the Resource Bar setup to |cffffd100KEEP|r for " .. tostring(classKey) .. ".",
+        GameFontHighlight)
+    AddResourceBarConflictSpacer(chooser, 14)
+
+    local bullets = {
+        "The Resource settings and Resource Aura overlays from the setup you KEEP will be saved for the whole class.",
+        "Custom Bars from every listed same-class setup will be preserved and added to the saved class setup.",
+        "The other listed character Resource settings and Resource Aura overlays will be removed.",
+        "Going forward, every character of this class will use the saved setup.",
+        "Per-spec layouts, resource overrides, and aura overlays still work inside that class setup.",
+    }
+    for index, text in ipairs(bullets) do
+        AddResourceBarConflictText(chooser, "- " .. text, GameFontHighlight)
+        if index < #bullets then
+            AddResourceBarConflictSpacer(chooser, 14)
+        end
+    end
+    AddResourceBarConflictSpacer(chooser, 24)
+
+    local function selectRow(index)
+        chooser.selectedIndex = index
+        for rowIndex, row in ipairs(rows) do
+            if row.SetText then
+                local prefix = rowIndex == index and "> " or "  "
+                row:SetText(prefix .. (row.candidateText or ""))
+            end
+        end
+    end
+
+    local function chooseRow(index)
+        local row = rows[index]
+        if not row then
+            return
+        end
+        local options = row.keepExistingClassStore and { keepExistingClassStore = true } or nil
+        local ok, reason = CooldownCompanion:ResolveResourceBarConflict(classKey, row.sourceCharKey, options)
+        if not ok then
+            CooldownCompanion:Print("Resource Bar resolution failed: " .. tostring(reason or "unknown error"))
+            return
+        end
+        HideResourceBarConflictChooser(false)
+        if CooldownCompanion.ApplyResourceBars then
+            CooldownCompanion:ApplyResourceBars()
+        end
+        if CooldownCompanion.UpdateAnchorStacking then
+            CooldownCompanion:UpdateAnchorStacking()
+        end
+        if CooldownCompanion.RefreshConfigPanel then
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end
+
+    local function addCandidateRow(sourceCharKey, candidateText, options)
+        local index = #rows + 1
+        local row = AceGUI:Create("Button")
+        row.sourceCharKey = sourceCharKey
+        row.keepExistingClassStore = options and options.keepExistingClassStore == true
+        row.candidateText = candidateText
+        row:SetFullWidth(true)
+        row:SetText("  " .. candidateText)
+        row:SetCallback("OnClick", function()
+            chooseRow(index)
+        end)
+        rows[index] = row
+        chooser:AddChild(row)
+        if index < candidateCount then
+            AddResourceBarConflictSpacer(chooser, 10)
+        end
+    end
+
+    if type(existingClassSettings) == "table" then
+        addCandidateRow(nil,
+            "Current class setup - " .. ResourceBarCandidateDetail(existingClassSettings),
+            { keepExistingClassStore = true })
+    end
+
+    for _, sourceCharKey in ipairs(candidateCharKeys) do
+        addCandidateRow(sourceCharKey,
+            sourceCharKey .. " - "
+                .. ResourceBarCandidateDetail(type(legacyStore) == "table" and legacyStore[sourceCharKey] or nil))
+    end
+
+    AddResourceBarConflictSpacer(chooser, 14)
+
+    local closeButton = AceGUI:Create("Button")
+    closeButton:SetText("Later")
+    closeButton:SetWidth(90)
+    closeButton:SetCallback("OnClick", function()
+        HideResourceBarConflictChooser(true)
+    end)
+    chooser:AddChild(closeButton)
+
+    chooser:SetHeight(math.max(460, 390 + (candidateCount * 38) + (math.max(candidateCount - 1, 0) * 10)))
+    chooser.frame:SetScript("OnKeyDown", function(_, key)
+        if key == "ESCAPE" then
+            HideResourceBarConflictChooser(true)
+        elseif key == "ENTER" or key == "SPACE" then
+            chooseRow(chooser.selectedIndex or 1)
+        elseif key == "DOWN" or key == "TAB" then
+            local nextIndex = (chooser.selectedIndex or 1) + 1
+            if nextIndex > candidateCount then nextIndex = 1 end
+            selectRow(nextIndex)
+        elseif key == "UP" then
+            local nextIndex = (chooser.selectedIndex or 1) - 1
+            if nextIndex < 1 then nextIndex = candidateCount end
+            selectRow(nextIndex)
+        end
+    end)
+    chooser.frame:EnableKeyboard(true)
+    if chooser.frame.SetPropagateKeyboardInput then
+        chooser.frame:SetPropagateKeyboardInput(false)
+    end
+    chooser:Show()
+    AnchorResourceBarConflictChooser(chooser)
+    RaiseResourceBarConflictChooser(chooser)
+    selectRow(1)
+    return true
+end
+
+ST._ShowResourceBarConflictChooser = ShowResourceBarConflictChooser
+ST._HideResourceBarConflictChooser = HideResourceBarConflictChooser
 
 local function PruneDeletedFolderSelection(folderId)
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
@@ -422,6 +709,18 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
     button1 = "Close",
     hasEditBox = true,
     OnShow = function(self)
+        if CooldownCompanion.GetPendingResourceBarConflictExportMessage then
+            local blockMessage = CooldownCompanion:GetPendingResourceBarConflictExportMessage()
+            if blockMessage then
+                self.EditBox:SetText(blockMessage)
+                self.EditBox:HighlightText()
+                self.EditBox:SetFocus()
+                if CooldownCompanion.Print then
+                    CooldownCompanion:Print(blockMessage)
+                end
+                return
+            end
+        end
         local db = CooldownCompanion.db
         local exportData = CopyTable(db.profile)
         exportData._exporterCharKey = db.keys.char
@@ -440,7 +739,7 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
 }
 
 StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
-    text = "This will remove all spec filters and turn '%s' into a group for your current character. Continue?",
+    text = "This will remove foreign eligibility filters and move '%s' into your current class. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -448,16 +747,12 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
         if data.containerId then
             local container = CooldownCompanion.db.profile.groupContainers[data.containerId]
             if container then
-                container.specs = nil
-                container.heroTalents = nil
                 CooldownCompanion:ToggleGroupGlobal(data.containerId)
                 CooldownCompanion:RefreshConfigPanel()
             end
         elseif data.groupId then
             local group = CooldownCompanion.db.profile.groups[data.groupId]
             if group then
-                group.specs = nil
-                group.heroTalents = nil
                 CooldownCompanion:ToggleGroupGlobal(data.groupId)
                 CooldownCompanion:RefreshConfigPanel()
             end
@@ -470,7 +765,7 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
 }
 
 StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
-    text = "This will remove foreign spec filters and turn '%s' into a character group. Continue?",
+    text = "This will remove foreign eligibility filters and move '%s' into your current class. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -478,8 +773,6 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
             local db = CooldownCompanion.db.profile
             local container = db.groupContainers[data.dragState.sourceGroupId]
             if container then
-                container.specs = nil
-                container.heroTalents = nil
                 ST._ApplyCol1Drop(data.dragState)
                 CooldownCompanion:RefreshConfigPanel()
             end
@@ -517,13 +810,11 @@ StaticPopupDialogs["CDC_CROSS_PANEL_STRIP_OVERRIDES"] = {
 }
 
 StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
-    text = "This folder contains groups with foreign spec filters. Moving to character will remove those filters. Continue?",
+    text = "This folder contains groups with foreign eligibility filters. Moving to your current class will remove those filters. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.dragState then
-            local folderId = data.dragState.sourceFolderId
-            ClearFolderFiltersForUnglobal(folderId)
             ST._ApplyCol1Drop(data.dragState)
             CooldownCompanion:RefreshAllGroups()
             CooldownCompanion:RefreshConfigPanel()
@@ -536,12 +827,11 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
 }
 
 StaticPopupDialogs["CDC_UNGLOBAL_FOLDER"] = {
-    text = "This folder contains groups with foreign spec filters. Moving '%s' to character will remove those filters. Continue?",
+    text = "This folder contains groups with foreign eligibility filters. Moving '%s' to your current class will remove those filters. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.folderId then
-            ClearFolderFiltersForUnglobal(data.folderId)
             CooldownCompanion:ToggleFolderGlobal(data.folderId)
             CooldownCompanion:RefreshConfigPanel()
         end
@@ -595,33 +885,11 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_CUSTOM_BARS"] = {
 }
 
 StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
-    text = "Some selected groups have foreign spec filters. Moving to character will remove those filters. Continue?",
+    text = "Some selected groups have foreign eligibility filters. Moving to your current class will remove those filters. Continue?",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.callback then
-            -- Strip foreign specs from affected containers before executing the operation
-            if data.groupIds then
-                local db = CooldownCompanion.db.profile
-                local numSpecs = GetNumSpecializations()
-                local playerSpecIds = {}
-                for i = 1, numSpecs do
-                    local specId = C_SpecializationInfo.GetSpecializationInfo(i)
-                    if specId then playerSpecIds[specId] = true end
-                end
-                for _, cid in ipairs(data.groupIds) do
-                    local container = db.groupContainers[cid]
-                    if container and container.specs then
-                        for specId in pairs(container.specs) do
-                            if not playerSpecIds[specId] then
-                                container.specs = nil
-                                container.heroTalents = nil
-                                break
-                            end
-                        end
-                    end
-                end
-            end
             data.callback()
         end
     end,
@@ -679,6 +947,24 @@ StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
 -- Group/Folder Export and Apply
 ------------------------------------------------------------------------
 
+local function GetCustomBarExportConflictBlockMessage()
+    if CooldownCompanion.GetCurrentResourceBarConflictExportMessage then
+        return CooldownCompanion:GetCurrentResourceBarConflictExportMessage()
+    end
+    return nil
+end
+
+local function BlockCustomBarExportForResourceBarConflict()
+    local message = GetCustomBarExportConflictBlockMessage()
+    if message then
+        if CooldownCompanion.Print then
+            CooldownCompanion:Print(message)
+        end
+        return true, message
+    end
+    return false, nil
+end
+
 local function BuildGroupExportData(group)
     local data = CopyTable(group)
     data.createdBy = nil
@@ -690,6 +976,12 @@ local function BuildGroupExportData(group)
 end
 
 local function EncodeExportData(payload)
+    if type(payload) == "table" and payload.type == "customBars" then
+        local blocked = BlockCustomBarExportForResourceBarConflict()
+        if blocked then
+            return nil
+        end
+    end
     return EncodeSharedPayload(payload, "entity")
 end
 
@@ -703,9 +995,68 @@ local function BuildContainerExportData(container)
     return data
 end
 
+local function HasTrueMapValue(map)
+    if type(map) ~= "table" then return false end
+    for _, enabled in pairs(map) do
+        if enabled == true then
+            return true
+        end
+    end
+    return false
+end
+
+local function EntityHasPortableEligibility(entity)
+    if type(entity) ~= "table" then return false end
+    local loadConditions = entity.loadConditions
+    if type(loadConditions) == "table" then
+        if CopyAllowlistMap(loadConditions.classAllowlist, "class")
+            or CopyAllowlistMap(loadConditions.specAllowlist, "spec")
+        then
+            return true
+        end
+    end
+    return CopyAllowlistMap(entity.specs, "spec") ~= nil
+        or HasTrueMapValue(entity.heroTalents)
+end
+
+local function ContainerEntryHasPortableEligibility(entry)
+    if type(entry) ~= "table" then return false end
+    if EntityHasPortableEligibility(entry.container) then
+        return true
+    end
+    for _, panel in ipairs(entry.panels or {}) do
+        if EntityHasPortableEligibility(panel) then
+            return true
+        end
+    end
+    return false
+end
+
+local function ContainersHavePortableEligibility(entries)
+    if type(entries) ~= "table" then return false end
+    for _, entry in ipairs(entries) do
+        if ContainerEntryHasPortableEligibility(entry) then
+            return true
+        end
+    end
+    return false
+end
+
+local function StripImportCharacterEligibility(data, importState)
+    local stripped = type(data) == "table" and tonumber(data._cdcCharacterEligibilityStripped) or 0
+    stripped = stripped + (StripCharacterEligibilityFromPayload
+        and StripCharacterEligibilityFromPayload(data)
+        or 0)
+    if stripped > 0 and importState then
+        importState.characterEligibilityStripped = (importState.characterEligibilityStripped or 0) + stripped
+    end
+    return stripped
+end
+
 ST._BuildGroupExportData = BuildGroupExportData
 ST._BuildContainerExportData = BuildContainerExportData
 ST._EncodeExportData = EncodeExportData
+ST._BlockCustomBarExportForResourceBarConflict = BlockCustomBarExportForResourceBarConflict
 
 local function BuildImportedRootAnchor(relativeTo)
     return {
@@ -791,11 +1142,14 @@ local function NewGroupImportState()
         importedGroupIds = {},
         containerCount = 0,
         panelCount = 0,
+        characterEligibilityStripped = 0,
+        globalizedEligibilityImports = 0,
     }
 end
 
-local function ImportContainerEntries(db, entries, charKey, folderId, importState)
+local function ImportContainerEntries(db, entries, charKey, folderId, importState, options)
     importState = importState or NewGroupImportState()
+    options = options or {}
     local firstContainerIndex = #importState.importedContainerIds + 1
     local startContainerCount = importState.containerCount
     local startPanelCount = importState.panelCount
@@ -809,12 +1163,17 @@ local function ImportContainerEntries(db, entries, charKey, folderId, importStat
         end
 
         local container = CopyTable(entry.container)
+        local importAsGlobal = options.forceGlobalScope == true
+            or ContainerEntryHasPortableEligibility(entry)
         container.createdBy = charKey
-        container.isGlobal = false
+        container.isGlobal = importAsGlobal
         container.order = containerId
         container.specOrders = nil
         container.folderId = folderId
         container.locked = true
+        if importAsGlobal then
+            importState.globalizedEligibilityImports = (importState.globalizedEligibilityImports or 0) + 1
+        end
         db.groupContainers[containerId] = container
         CooldownCompanion:CreateContainerFrame(containerId)
 
@@ -871,6 +1230,18 @@ local function RemapImportedContainerAnchors(db, importState, preserveContainerR
                 end
             end
         end
+    end
+end
+
+local function PrintImportSanitizerNotes(importState)
+    if not (importState and CooldownCompanion and CooldownCompanion.Print) then
+        return
+    end
+    if (importState.characterEligibilityStripped or 0) > 0 then
+        CooldownCompanion:Print("Character eligibility is local and was not imported.")
+    end
+    if (importState.globalizedEligibilityImports or 0) > 0 then
+        CooldownCompanion:Print("Class, specialization, and hero talent eligibility were preserved in Global Groups.")
     end
 end
 
@@ -968,6 +1339,7 @@ ST._FinishGroupImportBatch = function(token, remapAnchors)
             CooldownCompanion:SanitizeCursorAnchorPolicy(db)
         end
     end
+    PrintImportSanitizerNotes(importState)
 end
 
 ST._AttachGroupImportBatch = function(payload, token)
@@ -994,7 +1366,9 @@ local function ApplyGroupImportData(data)
     local db = CooldownCompanion.db.profile
     local charKey = CooldownCompanion.db.keys.char
     local sharedImportState = batchToken and activeGroupImportBatches[batchToken] or nil
+    local rootImportState = sharedImportState or NewGroupImportState()
     local deferAnchorRemap = sharedImportState ~= nil
+    StripImportCharacterEligibility(data, rootImportState)
 
     if data.type == "group" and data.group then
         CooldownCompanion:NotifyLegacySupportCutoff("group import")
@@ -1005,7 +1379,7 @@ local function ApplyGroupImportData(data)
         return false
 
     elseif data.type == "containers" and data.containers then
-        local importState, containerCount = ImportContainerEntries(db, data.containers, charKey, nil, sharedImportState)
+        local importState, containerCount = ImportContainerEntries(db, data.containers, charKey, nil, rootImportState)
         if not deferAnchorRemap then
             RemapImportedContainerAnchors(db, importState, true)
             RemapImportedPanelAnchors(db, importState)
@@ -1059,26 +1433,43 @@ local function ApplyGroupImportData(data)
             for key, enabled in pairs(data.folder.loadConditions) do
                 if enabled == true then
                     importedLoadConditions[key] = true
+                elseif LOAD_CONDITION_ALLOWLIST_KEYS[key] then
+                    local allowlist = CopyAllowlistMap(enabled, LOAD_CONDITION_ALLOWLIST_KEYS[key])
+                    if allowlist then
+                        importedLoadConditions[key] = allowlist
+                    end
                 end
             end
             if not next(importedLoadConditions) then
                 importedLoadConditions = nil
             end
         end
+        local folderUsesGlobalEligibility = importedSpecs
+            or importedHeroTalents
+            or (importedLoadConditions and (
+                importedLoadConditions.classAllowlist
+                    or importedLoadConditions.specAllowlist
+            ))
+            or ContainersHavePortableEligibility(data.containers)
         db.folders[folderId] = {
             name = data.folder.name or "Imported Folder",
             order = folderId,
-            section = "char",
+            section = folderUsesGlobalEligibility and "global" or "char",
             createdBy = charKey,
             manualIcon = importedManualIcon,
             specs = importedSpecs,
             heroTalents = importedHeroTalents,
             loadConditions = importedLoadConditions,
         }
+        if folderUsesGlobalEligibility then
+            rootImportState.globalizedEligibilityImports = (rootImportState.globalizedEligibilityImports or 0) + 1
+        end
         local count = 0
         if data.containers then
             local importState, _, panelCount = ImportContainerEntries(
-                db, data.containers, charKey, folderId, sharedImportState
+                db, data.containers, charKey, folderId, rootImportState, {
+                    forceGlobalScope = folderUsesGlobalEligibility and true or false,
+                }
             )
             if not deferAnchorRemap then
                 RemapImportedContainerAnchors(db, importState, true)
@@ -1093,7 +1484,7 @@ local function ApplyGroupImportData(data)
             container = data.container,
             panels = data.panels,
             _originalContainerId = data._originalContainerId,
-        }}, charKey, nil, sharedImportState)
+        }}, charKey, nil, rootImportState)
         local container = db.groupContainers[containerId]
         if not deferAnchorRemap then
             RemapImportedContainerAnchors(db, importState, false)
@@ -1119,6 +1510,9 @@ local function ApplyGroupImportData(data)
 
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:RefreshAllGroups()
+    if not deferAnchorRemap then
+        PrintImportSanitizerNotes(rootImportState)
+    end
     return true
 end
 
@@ -1144,6 +1538,27 @@ StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
     preferredIndex = 3,
 }
 
+local function BlockCustomBarsImportForResourceBarConflict()
+    local classKey = CooldownCompanion.GetCurrentResourceBarClassKey
+        and CooldownCompanion:GetCurrentResourceBarClassKey()
+        or nil
+    local conflict = CooldownCompanion.GetCurrentResourceBarConflict
+        and CooldownCompanion:GetCurrentResourceBarConflict()
+        or nil
+    if not conflict then
+        return false
+    end
+
+    local message = "Resolve the pending Resource Bar conflict"
+        .. (classKey and (" for " .. tostring(classKey)) or "")
+        .. " before importing Custom Bars. Choose the setup to keep, then import again."
+    CooldownCompanion:Print(message)
+    if ST._ShowResourceBarConflictChooser then
+        ST._ShowResourceBarConflictChooser(classKey, { force = true })
+    end
+    return true
+end
+
 local function ApplyCustomBarsImportData(data, options)
     if type(data) ~= "table" or data.type ~= "customBars" then
         if RejectUnsupportedImportPayload(data, "custom bars import") then
@@ -1155,6 +1570,11 @@ local function ApplyCustomBarsImportData(data, options)
     if RejectUnsupportedImportPayload(data, "custom bars import") then
         return false
     end
+    if BlockCustomBarsImportForResourceBarConflict() then
+        return false
+    end
+    local importState = options and options.importState or NewGroupImportState()
+    StripImportCharacterEligibility(data, importState)
 
     local rb = ST._RB
     local settings = CooldownCompanion:GetResourceBarSettings()
@@ -1170,12 +1590,14 @@ local function ApplyCustomBarsImportData(data, options)
     if not (options and options.silentSuccess) then
         CooldownCompanion:Print(message)
     end
+    PrintImportSanitizerNotes(importState)
     CooldownCompanion:ApplyResourceBars()
     CooldownCompanion:UpdateAnchorStacking()
     CooldownCompanion:RefreshConfigPanel()
     return true
 end
 
+ST._BlockCustomBarsImportForResourceBarConflict = BlockCustomBarsImportForResourceBarConflict
 ST._ApplyCustomBarsImportData = ApplyCustomBarsImportData
 
 StaticPopupDialogs["CDC_EXPORT_CUSTOM_BARS"] = {
@@ -1183,6 +1605,13 @@ StaticPopupDialogs["CDC_EXPORT_CUSTOM_BARS"] = {
     button1 = "Close",
     hasEditBox = true,
     OnShow = function(self)
+        local blocked, blockMessage = BlockCustomBarExportForResourceBarConflict()
+        if blocked then
+            self.EditBox:SetText(blockMessage or "Resolve pending Resource Bar conflicts before exporting Custom Bars.")
+            self.EditBox:HighlightText()
+            self.EditBox:SetFocus()
+            return
+        end
         if self.data and self.data.exportString then
             self.EditBox:SetText(self.data.exportString)
             self.EditBox:HighlightText()

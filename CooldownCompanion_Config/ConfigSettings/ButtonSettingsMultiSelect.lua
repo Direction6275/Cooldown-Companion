@@ -10,6 +10,37 @@ local EncodeExportData = ST._EncodeExportData
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 
+local function IsContainerVisibleInConfig(containerOrContainerId)
+    if CooldownCompanion.ResolveContainerClassScope then
+        local scope = CooldownCompanion:ResolveContainerClassScope(containerOrContainerId)
+        return scope.isInvalid ~= true
+    end
+    return CooldownCompanion:IsContainerVisibleToCurrentChar(containerOrContainerId)
+end
+
+local function CanAllPanelsMoveToContainer(panelIds, containerId)
+    if not IsContainerVisibleInConfig(containerId) then
+        return false
+    end
+    if not CooldownCompanion.CanMovePanelToContainer then
+        return true
+    end
+    for _, panelId in ipairs(panelIds or {}) do
+        local ok = CooldownCompanion:CanMovePanelToContainer(panelId, containerId)
+        if not ok then
+            return false
+        end
+    end
+    return true
+end
+
+local function CanMoveEntryToGroup(sourceGroupId, targetGroupId)
+    if CooldownCompanion.CanMoveEntryToGroup then
+        return CooldownCompanion:CanMoveEntryToGroup(sourceGroupId, targetGroupId) == true
+    end
+    return CooldownCompanion:IsGroupVisibleToCurrentChar(targetGroupId)
+end
+
 local function GroupUsesTriggerPanelEntries(group)
     return group and group.displayMode == "trigger"
 end
@@ -89,7 +120,7 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
             local folderGroups, looseGroups = {}, {}
             for id, groupInfo in pairs(db.groups) do
                 if id ~= sourceGroupId
-                    and CooldownCompanion:IsGroupVisibleToCurrentChar(id)
+                    and CanMoveEntryToGroup(sourceGroupId, id)
                     and not GetManualMoveRejectMessage(groupInfo, multiCount) then
                     local groupName = groupInfo.name or ("Group " .. id)
                     local cid = groupInfo.parentContainerId
@@ -126,6 +157,9 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                     local info = UIDropDownMenu_CreateInfo()
                     info.text = groupEntry.name
                     info.func = function()
+                        if not CanMoveEntryToGroup(sourceGroupId, groupEntry.id) then
+                            return
+                        end
                         local targetGroup = db.groups[groupEntry.id]
                         local rejectMessage = GetManualMoveRejectMessage(targetGroup, multiCount)
                         if rejectMessage then
@@ -161,6 +195,9 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
                     local info = UIDropDownMenu_CreateInfo()
                     info.text = groupEntry.name
                     info.func = function()
+                        if not CanMoveEntryToGroup(sourceGroupId, groupEntry.id) then
+                            return
+                        end
                         local targetGroup = db.groups[groupEntry.id]
                         local rejectMessage = GetManualMoveRejectMessage(targetGroup, multiCount)
                         if rejectMessage then
@@ -311,7 +348,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
 
     local hasOtherContainer = false
     for cid in pairs(db.groupContainers) do
-        if cid ~= containerId and CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
+        if cid ~= containerId and CanAllPanelsMoveToContainer(multiPanelIds, cid) then
             hasOtherContainer = true
             break
         end
@@ -329,7 +366,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
                 local containers = db.groupContainers or {}
                 local folderContainers, looseContainers = {}, {}
                 for cid, ctr in pairs(containers) do
-                    if cid ~= containerId and CooldownCompanion:IsContainerVisibleToCurrentChar(cid) then
+                    if cid ~= containerId and CanAllPanelsMoveToContainer(multiPanelIds, cid) then
                         local name = ctr.name or ("Group " .. cid)
                         local fid = ctr.folderId
                         if fid and db.folders[fid] then

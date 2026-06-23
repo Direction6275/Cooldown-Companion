@@ -65,8 +65,6 @@ local function BuildContext(extra)
         selectedCustomBarId = CS.selectedCustomBarId,
         selectedResourcePowerType = CS.selectedResourcePowerType,
         resourceSettingsSpecID = CS.resourceSettingsSpecID,
-        browseMode = BoolValue(CS.browseMode),
-        browseCharKey = CS.browseCharKey,
         autoAddFlowActive = BoolValue(CS.autoAddFlowActive),
         talentPickerMode = BoolValue(CS.talentPickerMode),
     }

@@ -284,12 +284,14 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("PET_BAR_UPDATE", "OnActionBarLayoutChanged")
 
     -- Cache player identity for class/race-specific checks.
-    self._playerClassID = select(3, UnitClass("player"))
+    local _, classFilename, classID = UnitClass("player")
+    self._playerClassFilename = classFilename
+    self._playerClassID = classID
     self._isDracthyr = (select(2, UnitRace("player")) == "Dracthyr")
 
     -- Store class info in global scope for cross-character browse mode
     self.db.global.characterInfo[self.db.keys.char] = {
-        classFilename = select(2, UnitClass("player")),
+        classFilename = classFilename,
         classID = self._playerClassID,
     }
 

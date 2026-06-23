@@ -17,7 +17,6 @@ local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
-local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
@@ -167,6 +166,7 @@ local RefreshCustomAuraBarAuraUnitForSpell = RB.RefreshCustomAuraBarAuraUnitForS
 local RBP = ST._RBP
 local resourceBarCollapsedSections = RBP.collapsedSections
 local BuildResourceAuraOverlaySection = RBP.BuildResourceAuraOverlaySection
+local BuildResourceBarConflictGate = RBP.BuildResourceBarConflictGate
 local AddResourceAuraOverrideControls = RBP.AddResourceAuraOverrideControls
 local GetConfigActiveResources = RBP.GetConfigActiveResources
 local GetCurrentConfigSpecID = RBP.GetCurrentConfigSpecID
@@ -993,7 +993,7 @@ end
 
 CS.healthResourceUI = HealthResource
 
-local function AddResourceSpecCopyButton(enableCb, characterCopyButton)
+local function AddResourceSpecCopyButton(enableCb)
     local _, initialSpecOrder, currentSpecID = CooldownCompanion:GetResourceBarSpecCopyOptions()
     if not currentSpecID or #initialSpecOrder == 0 then
         return
@@ -1018,11 +1018,7 @@ local function AddResourceSpecCopyButton(enableCb, characterCopyButton)
     end
 
     btn:ClearAllPoints()
-    if characterCopyButton then
-        btn:SetPoint("LEFT", characterCopyButton, "RIGHT", 2, 0)
-    else
-        btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
-    end
+    btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
     btn:Show()
 
     btn:SetScript("OnEnter", function(self)
@@ -1090,6 +1086,10 @@ local function AddResourceSpecCopyButton(enableCb, characterCopyButton)
 end
 
 local function BuildResourceBarAnchoringPanel(container)
+    if BuildResourceBarConflictGate(container, "Resource Bars", true) then
+        return
+    end
+
     local db = CooldownCompanion.db.profile
     local settings = CooldownCompanion:GetResourceBarSettings()
     local layout = CooldownCompanion:GetSpecLayoutOrder()
@@ -1108,12 +1108,7 @@ local function BuildResourceBarAnchoringPanel(container)
     end)
     container:AddChild(enableCb)
 
-    local characterCopyButton = CreateCharacterCopyButton(enableCb, "resourceBars", "Resource Bars", function()
-        CooldownCompanion:EvaluateResourceBars()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    AddResourceSpecCopyButton(enableCb, characterCopyButton)
+    AddResourceSpecCopyButton(enableCb)
 
     if not settings.enabled then return end
     if not settings.resources then settings.resources = {} end
@@ -1220,6 +1215,10 @@ end
 ------------------------------------------------------------------------
 
 local function BuildResourceBarPositioningPanel(container)
+    if BuildResourceBarConflictGate(container, "Resource Bars", true) then
+        return
+    end
+
     local settings = CooldownCompanion:GetResourceBarSettings()
     local layout = CooldownCompanion:GetSpecLayoutOrder()
 
@@ -1983,6 +1982,10 @@ local function AddThresholdTickEntryEditor(panel, options)
 end
 
 local function BuildResourceBarStylingPanel(container, sectionMode, opts)
+    if BuildResourceBarConflictGate(container, "Resource Bars", true) then
+        return
+    end
+
     local settings = CooldownCompanion:GetResourceBarSettings()
 
     if not settings.enabled then

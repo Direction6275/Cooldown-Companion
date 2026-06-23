@@ -322,6 +322,9 @@ function CooldownCompanion:RunAllMigrations()
     self:StampImportCheckpoint(self.db and self.db.profile)
     NormalizePassiveCooldownButtons(self.db and self.db.profile)
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
+    if self.RunResourceBarClassScopeMigration then
+        self:RunResourceBarClassScopeMigration()
+    end
     if self.SanitizeCursorAnchorPolicy and not self._deferCursorAnchorPolicySanitizer then
         self:SanitizeCursorAnchorPolicy(self.db and self.db.profile)
     end

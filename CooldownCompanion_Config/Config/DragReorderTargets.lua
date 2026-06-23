@@ -11,6 +11,17 @@ ST._DragReorder = DR
 
 local COL1_HIT_X_PAD = 6
 local FindCol1SectionDividerTarget
+local activeCol1DropSourceSection
+
+local function IsCol1OwnershipMoveAllowed(sourceSection, targetSection)
+    if not targetSection or sourceSection == targetSection then
+        return true
+    end
+    if targetSection == "global" and sourceSection ~= "global" then
+        return true
+    end
+    return sourceSection == "global" and targetSection == "char"
+end
 
 local function FindCol1FolderBlockRange(rows, folderId)
     local headerIndex
@@ -698,6 +709,11 @@ local function BuildCol1DropResult(action, rowIndex, rowMeta, extra)
     if not (rowMeta and frame and frame:IsShown()) then
         return nil
     end
+    if activeCol1DropSourceSection
+        and not IsCol1OwnershipMoveAllowed(activeCol1DropSourceSection, rowMeta.section)
+    then
+        return nil
+    end
 
     local result = {
         action = action,
@@ -1140,6 +1156,7 @@ end
 
 local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, sourceKind, sourceSection, sourceFolderId, sourceLoadBucket, previousDropTarget)
     if not renderedRows or #renderedRows == 0 then return nil end
+    activeCol1DropSourceSection = sourceSection
     local sourceIsMixed = IsCol1MixedDragSource(sourceLoadBucket)
     local sourceIsUnloaded = IsCol1UnloadedDragSource(sourceLoadBucket)
     local contentLeft, contentRight = GetCol1HorizontalBounds(scrollWidget, renderedRows)

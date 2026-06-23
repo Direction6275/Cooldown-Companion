@@ -445,6 +445,11 @@ local defaults = {
         },
         locked = false,
         cdmHidden = false,
+        resourceBarsByClass = {},
+        resourceBarMigration = {
+            conflicts = {},
+            unsafeCharKeys = {},
+        },
         resourceBars = {
             enabled = false,
             anchorGroupId = nil,

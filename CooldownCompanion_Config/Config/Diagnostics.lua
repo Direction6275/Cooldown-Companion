@@ -192,8 +192,6 @@ local function BuildConfigDiagnosticSummary(profile, groupFrameStates, container
         selectedPanels = CS and SortedSelectionString(CS.selectedPanels) or "",
         selectedGroups = CS and SortedSelectionString(CS.selectedGroups) or "",
         selectedCustomBars = CS and SortedSelectionString(CS.selectedCustomBars) or "",
-        browseMode = CS and CS.browseMode == true,
-        browseCharKey = CS and CS.browseCharKey or nil,
         selectedContainerSummary = SummarizeContainer(selectedContainerId, containers and selectedContainerId and containers[selectedContainerId] or nil),
         selectedPanelSummary = SummarizePanel(selectedPanelId, selectedPanel),
         selectedButtonSummary = SummarizeButton(selectedButton),
@@ -370,8 +368,10 @@ local function BuildDiagnosticSnapshot()
     for _, folder in pairs(db.profile.folders) do
         cacheSpecsFromTable(folder.specs)
     end
-    local resourceStores = rawget(db.profile, "resourceBarsByChar")
-    if type(resourceStores) == "table" then
+    local function cacheSpecsFromResourceStores(resourceStores)
+        if type(resourceStores) ~= "table" then
+            return
+        end
         for _, resourceSettings in pairs(resourceStores) do
             local customBars = type(resourceSettings) == "table"
                 and (type(resourceSettings.customBars) == "table" and resourceSettings.customBars or resourceSettings.customAuraBars)
@@ -398,6 +398,8 @@ local function BuildDiagnosticSnapshot()
             end
         end
     end
+    cacheSpecsFromResourceStores(rawget(db.profile, "resourceBarsByClass"))
+    cacheSpecsFromResourceStores(rawget(db.profile, "resourceBarsByChar"))
     snapshot.meta.specNameCache = specNameCache
 
     -- Keep the decoded report compact while attaching an importable profile.
@@ -789,9 +791,6 @@ local function FormatDiagnosticBugReportAsText(diag)
             c.selectedPanels ~= "" and c.selectedPanels or "none",
             c.selectedGroups ~= "" and c.selectedGroups or "none",
             c.selectedCustomBars ~= "" and c.selectedCustomBars or "none"))
-    end
-    if c.browseMode then
-        add("Browse Mode: " .. tostring(c.browseCharKey or "unknown"))
     end
     if c.selectedContainerSummary then
         local container = c.selectedContainerSummary

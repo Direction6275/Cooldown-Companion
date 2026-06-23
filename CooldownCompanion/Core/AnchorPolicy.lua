@@ -38,6 +38,8 @@ local EXTERNAL_ANCHOR_STORES = {
         legacyName = "Resource Bars Seed",
         scopedKey = "resourceBarsByChar",
         scopedNamePrefix = "Resource Bars ",
+        classScopedKey = "resourceBarsByClass",
+        classScopedNamePrefix = "Resource Bars Class ",
     },
     frameAnchoring = {
         rootKey = "frameAnchoring",
@@ -385,6 +387,13 @@ local function ForEachExternalAnchorSettings(profile, store, apply)
     if type(stores) == "table" then
         for charKey, settings in pairs(stores) do
             apply(settings, store.scopedNamePrefix .. tostring(charKey))
+        end
+    end
+
+    local classStores = store.classScopedKey and profile[store.classScopedKey] or nil
+    if type(classStores) == "table" then
+        for classKey, settings in pairs(classStores) do
+            apply(settings, store.classScopedNamePrefix .. tostring(classKey))
         end
     end
 end

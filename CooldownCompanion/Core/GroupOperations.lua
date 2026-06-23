@@ -72,6 +72,14 @@ local LOCAL_LOAD_CONDITION_DEFAULTS = {
     vehicleUI = false,
 }
 
+local LOAD_CONDITION_ALLOWLIST_KEYS = {
+    classAllowlist = true,
+    specAllowlist = true,
+    characterAllowlist = true,
+}
+
+local CLASS_SCAN_LIMIT = 30
+
 local function GetFrameName(frame)
     if not frame then
         return nil
@@ -83,6 +91,174 @@ local function GetFrameName(frame)
         return "CooldownCompanionGroup" .. frame.groupId
     end
     return frame.name
+end
+
+local function NormalizeClassKey(key)
+    if type(key) ~= "string" or key == "" then return nil end
+    return string.upper(key)
+end
+
+local function NormalizeSpecKey(key)
+    local specId = tonumber(key)
+    if not specId then return nil end
+    return specId
+end
+
+local function NormalizeCharacterKey(key)
+    if type(key) ~= "string" or key == "" then return nil end
+    return key
+end
+
+local function NormalizeTruthyMap(map, normalizer, failClosed)
+    if map == nil then return nil, false, false end
+    if type(map) ~= "table" then return nil, true, true end
+
+    local normalized = {}
+    local sawEntry = false
+    local invalidEnabledEntry = false
+    for key, enabled in pairs(map) do
+        sawEntry = true
+        if enabled == true then
+            local normalizedKey = normalizer(key)
+            if normalizedKey ~= nil then
+                normalized[normalizedKey] = true
+            else
+                invalidEnabledEntry = true
+            end
+        end
+    end
+
+    if next(normalized) then
+        return normalized, false, true
+    end
+    if invalidEnabledEntry and failClosed then
+        return {}, true, true
+    end
+    if sawEntry and failClosed then
+        return {}, false, true
+    end
+    return nil, false, false
+end
+
+local function CopyTruthyMap(map)
+    if not map then return nil end
+    local copy = {}
+    for key in pairs(map) do
+        copy[key] = true
+    end
+    return copy
+end
+
+local function IntersectTruthyMaps(left, right)
+    local intersection = {}
+    for key in pairs(left or {}) do
+        if right and right[key] then
+            intersection[key] = true
+        end
+    end
+    return intersection
+end
+
+local function AddEffectiveSource(sources, map, inherited, normalizer)
+    local normalized, malformed, hasRestriction = NormalizeTruthyMap(map, normalizer, true)
+    if hasRestriction then
+        sources[#sources + 1] = {
+            values = normalized or {},
+            inherited = inherited and true or false,
+            malformed = malformed and true or false,
+        }
+    end
+end
+
+local function AddCombinedEffectiveSource(sources, inherited, normalizer, ...)
+    local values
+    local hasRestriction = false
+    local malformed = false
+
+    for index = 1, select("#", ...) do
+        local normalized, sourceMalformed, sourceHasRestriction = NormalizeTruthyMap(select(index, ...), normalizer, true)
+        if sourceMalformed then
+            malformed = true
+        end
+        if sourceHasRestriction then
+            hasRestriction = true
+            values = values or {}
+            for key in pairs(normalized or {}) do
+                values[key] = true
+            end
+        end
+    end
+
+    if hasRestriction then
+        sources[#sources + 1] = {
+            values = values,
+            inherited = inherited and true or false,
+            malformed = malformed,
+        }
+    end
+end
+
+local function ResolveEffectiveSources(sources)
+    local effective
+    local inherited = false
+    local hasRestriction = false
+
+    for _, source in ipairs(sources or {}) do
+        hasRestriction = true
+        if source.inherited then inherited = true end
+        if source.malformed then
+            effective = {}
+        elseif effective == nil then
+            effective = CopyTruthyMap(source.values) or {}
+        else
+            effective = IntersectTruthyMaps(effective, source.values)
+        end
+    end
+
+    return effective, inherited, hasRestriction
+end
+
+local function AddEntityEffectiveSpecSource(sources, entity, inherited)
+    AddCombinedEffectiveSource(
+        sources,
+        inherited,
+        NormalizeSpecKey,
+        entity and entity.specs,
+        entity and entity.loadConditions and entity.loadConditions.specAllowlist
+    )
+end
+
+local function AddFolderEffectiveSpecSource(sources, profile, folderId)
+    local folders = profile and profile.folders
+    local folder = folderId and folders and folders[folderId]
+    AddEntityEffectiveSpecSource(sources, folder, true)
+end
+
+local function MergeEligibilityAllowlist(state, key, map, normalizer)
+    local normalized, malformed, hasRestriction = NormalizeTruthyMap(map, normalizer, true)
+    if malformed then
+        state[key .. "Restricted"] = true
+        state[key .. "NoMatch"] = true
+        state[key] = {}
+        return false
+    end
+    if not hasRestriction then return true end
+
+    local restrictedKey = key .. "Restricted"
+    state[restrictedKey] = true
+    if state[key] == nil then
+        state[key] = CopyTruthyMap(normalized) or {}
+    else
+        state[key] = IntersectTruthyMaps(state[key], normalized)
+    end
+    return true
+end
+
+local function AllowlistMatches(state, key, currentValue)
+    if not state[key .. "Restricted"] then return true end
+    if state[key .. "NoMatch"] then return false end
+    if currentValue == nil then return false end
+    return state[key] and state[key][currentValue] == true
 end
 
 local function GetCurrentAnchorTargetName(frame)
@@ -411,8 +587,10 @@ function CooldownCompanion:IsGroupVisibleToCurrentChar(groupId)
     end
 
     -- Legacy path (no container)
-    if group.isGlobal then return true end
-    return group.createdBy == self.db.keys.char
+    local scope = self:ResolveProfileEntityClassScope(group, {
+        isGlobal = group.isGlobal == true,
+    })
+    return scope.runtimeVisible == true
 end
 
 -- Resolve the container for a panel group, or nil if the group has no container.
@@ -705,8 +883,12 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
         return false
     end
 
-    local effectiveSpecs = self:GetEffectiveSpecs(group)
-    if effectiveSpecs and next(effectiveSpecs) then
+    if self.IsGroupEligibilityMet and not self:IsGroupEligibilityMet(group) then
+        return false
+    end
+
+    local effectiveSpecs, _, hasSpecFilter = self:GetEffectiveSpecs(group)
+    if hasSpecFilter then
         if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
             return false
         end
@@ -732,61 +914,65 @@ end
 function CooldownCompanion:GetEffectiveSpecs(group)
     if not group then return nil, false end
 
-    -- Panel: container specs (includes stamped folder specs) → panel's own
+    local sources = {}
+    local profile = self.db and self.db.profile
+
     local container = self:GetParentContainer(group)
     if container then
-        if container.specs and next(container.specs) then
-            return container.specs, true
-        end
-        -- Fall through to panel's own
-        return group.specs, false
+        AddFolderEffectiveSpecSource(sources, profile, container.folderId)
+        AddEntityEffectiveSpecSource(sources, container, true)
+        AddEntityEffectiveSpecSource(sources, group, false)
+    else
+        AddFolderEffectiveSpecSource(sources, profile, group.folderId)
+        AddEntityEffectiveSpecSource(sources, group, false)
     end
 
-    -- Non-panel group: check folder cascade
-    local folderId = group.folderId
-    if folderId then
-        local folders = self.db and self.db.profile and self.db.profile.folders
-        local folder = folders and folders[folderId]
-        if folder and folder.specs and next(folder.specs) then
-            return folder.specs, true
-        end
+    return ResolveEffectiveSources(sources)
+end
+
+function CooldownCompanion:GetInheritedEffectiveSpecs(group)
+    if not group then return nil, false end
+
+    local sources = {}
+    local profile = self.db and self.db.profile
+
+    local container = self:GetParentContainer(group)
+    if container then
+        AddFolderEffectiveSpecSource(sources, profile, container.folderId)
+        AddEntityEffectiveSpecSource(sources, container, true)
+    else
+        AddFolderEffectiveSpecSource(sources, profile, group.folderId)
     end
-    return group.specs, false
+
+    return ResolveEffectiveSources(sources)
 end
 
 function CooldownCompanion:GetEffectiveHeroTalents(group)
     if not group then return nil, false end
 
-    -- Panel cascade: folder → container → panel's own heroTalents
+    local sources = {}
+
     local container = self:GetParentContainer(group)
     if container then
-        -- Check folder first
         local folderId = container.folderId
         if folderId then
             local folders = self.db and self.db.profile and self.db.profile.folders
             local folder = folders and folders[folderId]
-            if folder and folder.heroTalents and next(folder.heroTalents) then
-                return folder.heroTalents, true
-            end
+            AddEffectiveSource(sources, folder and folder.heroTalents, true, NormalizeSpecKey)
         end
-        -- Then container's own heroTalents
-        if container.heroTalents and next(container.heroTalents) then
-            return container.heroTalents, true
+        AddEffectiveSource(sources, container.heroTalents, true, NormalizeSpecKey)
+        AddEffectiveSource(sources, group.heroTalents, false, NormalizeSpecKey)
+    else
+        local folderId = group.folderId
+        if folderId then
+            local folders = self.db and self.db.profile and self.db.profile.folders
+            local folder = folders and folders[folderId]
+            AddEffectiveSource(sources, folder and folder.heroTalents, true, NormalizeSpecKey)
         end
-        -- Fall through to panel's own
-        return group.heroTalents, false
+        AddEffectiveSource(sources, group.heroTalents, false, NormalizeSpecKey)
     end
 
-    -- Non-panel container: check folder cascade
-    local folderId = group.folderId
-    if folderId then
-        local folders = self.db and self.db.profile and self.db.profile.folders
-        local folder = folders and folders[folderId]
-        if folder and folder.heroTalents and next(folder.heroTalents) then
-            return folder.heroTalents, true
-        end
-    end
-    return group.heroTalents, false
+    return ResolveEffectiveSources(sources)
 end
 
 local function CopyTalentCondition(cond)
@@ -1071,8 +1257,8 @@ function CooldownCompanion:SetFolderHeroTalent(folderId, subTreeID, enabled)
 end
 
 function CooldownCompanion:IsHeroTalentAllowed(group)
-    local effectiveHeroTalents = self:GetEffectiveHeroTalents(group)
-    if not (effectiveHeroTalents and next(effectiveHeroTalents)) then return true end
+    local effectiveHeroTalents, _, hasHeroTalentFilter = self:GetEffectiveHeroTalents(group)
+    if not hasHeroTalentFilter then return true end
     local heroSpecId = self._currentHeroSpecId
     if not heroSpecId then return true end  -- low level, no hero talent selected
     return effectiveHeroTalents[heroSpecId] == true
@@ -1122,7 +1308,8 @@ end
 
 function CooldownCompanion:IsGroupActive(groupId, opts)
     opts = opts or {}
-    local group = opts.group or self.db.profile.groups[groupId]
+    local db = self.db and self.db.profile
+    local group = opts.group or (db and db.groups and db.groups[groupId])
     if not group then return false end
 
     -- If this panel has a parent container, check container-level state first
@@ -1143,19 +1330,9 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         if group.enabled == false then return false end
     end
 
-    local buttonUsabilityOptions = opts.buttonUsabilityOptions
-        or (self.GetGroupButtonUsabilityOptions and self:GetGroupButtonUsabilityOptions(groupId, group))
-
-    if opts.requireButtons and not self:GroupHasUsableButtons(group, {
-        checkLoadConditions = opts.checkLoadConditions,
-        ignoreSpellAvailability = buttonUsabilityOptions and buttonUsabilityOptions.ignoreSpellAvailability,
-    }) then
-        return false
-    end
-
     -- Spec and hero talent filtering (GetEffectiveSpecs already delegates to container)
-    local effectiveSpecs = self:GetEffectiveSpecs(group)
-    if effectiveSpecs and next(effectiveSpecs) then
+    local effectiveSpecs, _, hasSpecFilter = self:GetEffectiveSpecs(group)
+    if hasSpecFilter then
         if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
             return false
         end
@@ -1175,7 +1352,49 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         end
     end
 
+    local buttonUsabilityOptions = opts.buttonUsabilityOptions
+        or (self.GetGroupButtonUsabilityOptions and self:GetGroupButtonUsabilityOptions(groupId, group))
+
+    if opts.requireButtons and not self:GroupHasUsableButtons(group, {
+        checkLoadConditions = opts.checkLoadConditions,
+        ignoreSpellAvailability = buttonUsabilityOptions and buttonUsabilityOptions.ignoreSpellAvailability,
+    }) then
+        return false
+    end
+
     return true
+end
+
+function CooldownCompanion:IsGroupEligibleForConfigPreview(groupId, opts)
+    opts = opts or {}
+    if not (groupId and ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(groupId)) then
+        return false
+    end
+
+    local db = self.db and self.db.profile
+    local group = opts.group or (db and db.groups and db.groups[groupId])
+    if not group then return false end
+
+    local container = self:GetParentContainer(group)
+    if container then
+        if container.enabled == false or group.enabled == false then return false end
+    elseif group.enabled == false then
+        return false
+    end
+
+    if not self:IsRotationAssistantGroup(group) and not (group.buttons and #group.buttons > 0) then
+        return false
+    end
+
+    if not self.ResolveContainerClassScope then
+        return false
+    end
+    if not group.parentContainerId then
+        return false
+    end
+
+    local scope = self:ResolveContainerClassScope(group.parentContainerId)
+    return scope and scope.isOtherClass == true and scope.isInvalid ~= true
 end
 
 function CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
@@ -1188,6 +1407,513 @@ function CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
     if not next(group.heroTalents) then
         group.heroTalents = nil
     end
+end
+
+local function ClearEmptyCoreLoadConditions(entity)
+    if type(entity) ~= "table" or type(entity.loadConditions) ~= "table" then return end
+    if not next(entity.loadConditions) then
+        entity.loadConditions = nil
+    end
+end
+
+local function GetClassInfoByID(classID)
+    classID = tonumber(classID)
+    if not classID then return nil, nil, nil end
+    if C_CreatureInfo and C_CreatureInfo.GetClassInfo then
+        local classInfo = C_CreatureInfo.GetClassInfo(classID)
+        if type(classInfo) == "table" then
+            return classInfo.className, classInfo.classFile, classInfo.classID
+        end
+    end
+    if GetClassInfo then
+        return GetClassInfo(classID)
+    end
+    return nil, nil, nil
+end
+
+local function GetClassKeyFromClassID(classID)
+    local _, classFilename = GetClassInfoByID(classID)
+    return NormalizeClassKey(classFilename)
+end
+
+local function GetClassIDFromClassKey(classKey)
+    classKey = NormalizeClassKey(classKey)
+    if not classKey then return nil end
+    for classID = 1, CLASS_SCAN_LIMIT do
+        if GetClassKeyFromClassID(classID) == classKey then
+            return classID
+        end
+    end
+    return nil
+end
+
+local function GetCurrentScopeClassKey(addon)
+    local classFilename = addon and addon._playerClassFilename
+    if not classFilename and UnitClass then
+        classFilename = select(2, UnitClass("player"))
+    end
+    return NormalizeClassKey(classFilename)
+end
+
+local function GetSpecClassKey(specId)
+    if not (C_SpecializationInfo and C_SpecializationInfo.GetClassIDFromSpecID) then
+        return nil
+    end
+    return GetClassKeyFromClassID(C_SpecializationInfo.GetClassIDFromSpecID(tonumber(specId)))
+end
+
+local function SpecBelongsToClass(specId, classKey)
+    if not classKey then return true end
+    local specClassKey = GetSpecClassKey(specId)
+    return specClassKey == classKey
+end
+
+local function HeroTalentBelongsToClass(subTreeID, classKey)
+    subTreeID = tonumber(subTreeID)
+    if not classKey then return true end
+    if not (subTreeID
+        and C_ClassTalents
+        and C_ClassTalents.GetHeroTalentSpecsForClassSpec
+        and C_SpecializationInfo
+        and C_SpecializationInfo.GetNumSpecializationsForClassID
+        and C_SpecializationInfo.GetSpecializationInfo)
+    then
+        return false
+    end
+
+    local classID = GetClassIDFromClassKey(classKey)
+    if not classID then return false end
+
+    local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID) or 0
+    for specIndex = 1, numSpecs do
+        local specId = C_SpecializationInfo.GetSpecializationInfo(
+            specIndex,
+            false,
+            false,
+            nil,
+            nil,
+            nil,
+            classID
+        )
+        local subTreeIDs = specId and C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
+        for _, availableSubTreeID in ipairs(subTreeIDs or {}) do
+            if tonumber(availableSubTreeID) == subTreeID then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function GetCharacterClassKey(addon, charKey)
+    local info = charKey
+        and addon
+        and addon.db
+        and addon.db.global
+        and addon.db.global.characterInfo
+        and addon.db.global.characterInfo[charKey]
+    if type(info) ~= "table" then
+        return nil
+    end
+    return NormalizeClassKey(info.classFilename)
+        or GetClassKeyFromClassID(info.classID)
+end
+
+local function BuildClassScopeResult(scope, opts)
+    opts = opts or {}
+    return {
+        scope = scope,
+        sectionKey = opts.sectionKey,
+        ownerCharKey = opts.ownerCharKey,
+        ownerClassKey = opts.ownerClassKey,
+        currentClassKey = opts.currentClassKey,
+        currentCharKey = opts.currentCharKey,
+        isGlobal = scope == "global",
+        isCurrentClass = scope == "current-class",
+        isOtherClass = scope == "other-class",
+        isInvalid = scope == "invalid",
+        runtimeVisible = scope == "global" or scope == "current-class",
+        invalidReason = opts.invalidReason,
+    }
+end
+
+local function ResolveProfileEntityClassScope(addon, entity, opts)
+    opts = opts or {}
+    local currentCharKey = opts.currentCharKey
+        or addon and addon.db and addon.db.keys and addon.db.keys.char
+        or nil
+    local currentClassKey = NormalizeClassKey(opts.currentClassKey)
+        or GetCurrentScopeClassKey(addon)
+
+    if type(entity) ~= "table" then
+        return BuildClassScopeResult("invalid", {
+            currentCharKey = currentCharKey,
+            currentClassKey = currentClassKey,
+            sectionKey = "invalid",
+            invalidReason = "missing-entity",
+        })
+    end
+
+    if opts.isGlobal == true then
+        return BuildClassScopeResult("global", {
+            currentCharKey = currentCharKey,
+            currentClassKey = currentClassKey,
+            sectionKey = "global",
+        })
+    end
+
+    local ownerCharKey = opts.ownerCharKey or entity.createdBy
+    if type(ownerCharKey) ~= "string" or ownerCharKey == "" then
+        return BuildClassScopeResult("invalid", {
+            currentCharKey = currentCharKey,
+            currentClassKey = currentClassKey,
+            sectionKey = "invalid",
+            invalidReason = "missing-owner",
+        })
+    end
+
+    local ownerClassKey = GetCharacterClassKey(addon, ownerCharKey)
+    if not ownerClassKey then
+        return BuildClassScopeResult("invalid", {
+            ownerCharKey = ownerCharKey,
+            currentCharKey = currentCharKey,
+            currentClassKey = currentClassKey,
+            sectionKey = "invalid",
+            invalidReason = "missing-owner-class",
+        })
+    end
+
+    if ownerClassKey == currentClassKey then
+        return BuildClassScopeResult("current-class", {
+            ownerCharKey = ownerCharKey,
+            ownerClassKey = ownerClassKey,
+            currentCharKey = currentCharKey,
+            currentClassKey = currentClassKey,
+            sectionKey = "char",
+        })
+    end
+
+    return BuildClassScopeResult("other-class", {
+        ownerCharKey = ownerCharKey,
+        ownerClassKey = ownerClassKey,
+        currentCharKey = currentCharKey,
+        currentClassKey = currentClassKey,
+        sectionKey = "class:" .. ownerClassKey,
+    })
+end
+
+function CooldownCompanion:ResolveProfileEntityClassScope(entity, opts)
+    return ResolveProfileEntityClassScope(self, entity, opts)
+end
+
+function CooldownCompanion:ResolveContainerClassScope(containerOrContainerId, opts)
+    local container = containerOrContainerId
+    if type(containerOrContainerId) == "number" then
+        local db = self.db and self.db.profile
+        container = db and db.groupContainers and db.groupContainers[containerOrContainerId] or nil
+    end
+    opts = opts and CopyTable(opts) or {}
+    opts.isGlobal = type(container) == "table" and container.isGlobal == true
+    return ResolveProfileEntityClassScope(self, container, opts)
+end
+
+function CooldownCompanion:ResolveFolderClassScope(folderOrFolderId, opts)
+    local folder = folderOrFolderId
+    if type(folderOrFolderId) == "number" then
+        local db = self.db and self.db.profile
+        folder = db and db.folders and db.folders[folderOrFolderId] or nil
+    end
+    opts = opts and CopyTable(opts) or {}
+    opts.isGlobal = type(folder) == "table" and folder.section == "global"
+    return ResolveProfileEntityClassScope(self, folder, opts)
+end
+
+function CooldownCompanion:CanMoveContainerToFolder(containerOrContainerId, folderOrFolderId, opts)
+    opts = opts or {}
+    if folderOrFolderId == nil then
+        return true
+    end
+
+    local containerScope = self:ResolveContainerClassScope(containerOrContainerId)
+    local folderScope = self:ResolveFolderClassScope(folderOrFolderId)
+    if containerScope.isInvalid or folderScope.isInvalid then
+        return false, "invalid-class-scope"
+    end
+
+    if containerScope.scope == folderScope.scope then
+        if containerScope.scope == "global" then
+            return true
+        end
+        return containerScope.ownerClassKey == folderScope.ownerClassKey, "mixed-class-folder"
+    end
+
+    if opts.allowScopeChange == true then
+        if containerScope.scope == "global" and folderScope.scope == "current-class" then
+            return true
+        end
+        if folderScope.scope == "global"
+            and (containerScope.scope == "current-class" or containerScope.scope == "other-class")
+        then
+            return true
+        end
+    end
+
+    return false, "scope-mismatch"
+end
+
+function CooldownCompanion:CanMovePanelToContainer(groupOrGroupId, targetContainerOrContainerId)
+    local db = self.db and self.db.profile
+    if not (db and db.groups and db.groupContainers) then
+        return false, "missing-profile"
+    end
+
+    local group = groupOrGroupId
+    if type(groupOrGroupId) ~= "table" then
+        group = db.groups[groupOrGroupId]
+    end
+    if type(group) ~= "table" or not group.parentContainerId then
+        return false, "missing-source-panel"
+    end
+
+    local targetContainer = targetContainerOrContainerId
+    local targetContainerId
+    if type(targetContainerOrContainerId) ~= "table" then
+        targetContainerId = targetContainerOrContainerId
+        targetContainer = db.groupContainers[targetContainerOrContainerId]
+    else
+        for containerId, container in pairs(db.groupContainers) do
+            if container == targetContainer then
+                targetContainerId = containerId
+                break
+            end
+        end
+    end
+    if type(targetContainer) ~= "table" then
+        return false, "missing-target-container"
+    end
+    if targetContainerId and group.parentContainerId == targetContainerId then
+        return false, "same-container"
+    end
+
+    local sourceScope = self:ResolveContainerClassScope(group.parentContainerId)
+    local targetScope = self:ResolveContainerClassScope(targetContainer)
+    if sourceScope.isInvalid or targetScope.isInvalid then
+        return false, "invalid-class-scope"
+    end
+    if sourceScope.scope ~= targetScope.scope then
+        return false, "scope-mismatch"
+    end
+    if sourceScope.scope == "global" then
+        return true
+    end
+    if sourceScope.ownerClassKey == targetScope.ownerClassKey then
+        return true
+    end
+    return false, "mixed-class-panel"
+end
+
+function CooldownCompanion:CanMoveEntryToGroup(sourceGroupId, targetGroupId)
+    local db = self.db and self.db.profile
+    if not (db and db.groups) then
+        return false
+    end
+    if sourceGroupId == targetGroupId then
+        return false
+    end
+
+    local sourceGroup = db.groups[sourceGroupId]
+    local targetGroup = db.groups[targetGroupId]
+    if not (sourceGroup and targetGroup and sourceGroup.parentContainerId and targetGroup.parentContainerId) then
+        return false
+    end
+
+    if not self.ResolveContainerClassScope then
+        return self:IsGroupVisibleToCurrentChar(targetGroupId)
+    end
+
+    local sourceScope = self:ResolveContainerClassScope(sourceGroup.parentContainerId)
+    if not sourceScope or sourceScope.isInvalid then
+        return false
+    end
+
+    if sourceScope.isOtherClass then
+        local targetScope = self:ResolveContainerClassScope(targetGroup.parentContainerId)
+        return targetScope
+            and targetScope.isInvalid ~= true
+            and targetScope.isOtherClass == true
+            and targetScope.ownerClassKey == sourceScope.ownerClassKey
+    end
+
+    return self:IsGroupVisibleToCurrentChar(targetGroupId)
+end
+
+local function PruneSpecMapToClass(addon, entity, map, classKey)
+    if type(map) ~= "table" or not classKey then return false end
+    local changed = false
+    for key in pairs(map) do
+        local specId = NormalizeSpecKey(key)
+        if specId and SpecBelongsToClass(specId, classKey) then
+            if key ~= specId then
+                map[specId] = true
+                map[key] = nil
+                changed = true
+            end
+        else
+            map[key] = nil
+            if specId then
+                map[specId] = nil
+                if addon and addon.CleanHeroTalentsForSpec then
+                    addon:CleanHeroTalentsForSpec(entity, specId)
+                end
+            end
+            changed = true
+        end
+    end
+    return changed
+end
+
+local function CharacterKeyMatchesClass(addon, charKey, classKey, ownerCharKey)
+    if not classKey then return true end
+    if charKey and ownerCharKey and charKey == ownerCharKey then
+        return true
+    end
+    local currentCharKey = addon and addon.db and addon.db.keys and addon.db.keys.char
+    if charKey and currentCharKey and charKey == currentCharKey then
+        return true
+    end
+    return GetCharacterClassKey(addon, charKey) == classKey
+end
+
+local function PruneCharacterMapToClass(addon, map, classKey, ownerCharKey)
+    if type(map) ~= "table" or not classKey then return false end
+    local changed = false
+    for key in pairs(map) do
+        local charKey = NormalizeCharacterKey(key)
+        if not (charKey and CharacterKeyMatchesClass(addon, charKey, classKey, ownerCharKey)) then
+            map[key] = nil
+            if charKey then
+                map[charKey] = nil
+            end
+            changed = true
+        end
+    end
+    return changed
+end
+
+local function PruneHeroTalentMapToClass(entity, classKey)
+    if type(entity) ~= "table" or type(entity.heroTalents) ~= "table" or not classKey then return false end
+    local changed = false
+    for subTreeID in pairs(entity.heroTalents) do
+        local normalizedSubTreeID = tonumber(subTreeID)
+        if normalizedSubTreeID and HeroTalentBelongsToClass(normalizedSubTreeID, classKey) then
+            if subTreeID ~= normalizedSubTreeID then
+                entity.heroTalents[normalizedSubTreeID] = true
+                entity.heroTalents[subTreeID] = nil
+                changed = true
+            end
+        else
+            entity.heroTalents[subTreeID] = nil
+            if normalizedSubTreeID then
+                entity.heroTalents[normalizedSubTreeID] = nil
+            end
+            changed = true
+        end
+    end
+    if not next(entity.heroTalents) then
+        entity.heroTalents = nil
+    end
+    return changed
+end
+
+local function WithOwnerCharKey(opts, ownerCharKey)
+    if opts and opts.ownerCharKey then return opts end
+    local scopedOpts = opts and CopyTable(opts) or {}
+    scopedOpts.ownerCharKey = ownerCharKey
+    return scopedOpts
+end
+
+function CooldownCompanion:NormalizeEligibilityForCharacterScope(entity, opts)
+    if type(entity) ~= "table" then return false end
+    opts = opts or {}
+    local ownerCharKey = opts.ownerCharKey
+        or entity.createdBy
+        or (self.db and self.db.keys and self.db.keys.char)
+    local classKey = NormalizeClassKey(opts.scopeClassKey)
+        or GetCharacterClassKey(self, ownerCharKey)
+        or GetCurrentScopeClassKey(self)
+    local changed = false
+
+    if PruneSpecMapToClass(self, entity, entity.specs, classKey) then
+        changed = true
+        if type(entity.specs) == "table" and not next(entity.specs) then
+            entity.specs = nil
+        end
+    end
+    changed = PruneHeroTalentMapToClass(entity, classKey) or changed
+
+    local loadConditions = entity.loadConditions
+    if type(loadConditions) == "table" then
+        if loadConditions.classAllowlist ~= nil then
+            loadConditions.classAllowlist = nil
+            changed = true
+        end
+        if PruneSpecMapToClass(self, entity, loadConditions.specAllowlist, classKey) then
+            changed = true
+            if type(loadConditions.specAllowlist) == "table" and not next(loadConditions.specAllowlist) then
+                loadConditions.specAllowlist = nil
+            end
+        end
+        if PruneCharacterMapToClass(self, loadConditions.characterAllowlist, classKey, ownerCharKey) then
+            changed = true
+            if type(loadConditions.characterAllowlist) == "table"
+                and not next(loadConditions.characterAllowlist)
+            then
+                loadConditions.characterAllowlist = nil
+            end
+        end
+        ClearEmptyCoreLoadConditions(entity)
+    end
+
+    return changed
+end
+
+function CooldownCompanion:NormalizeContainerEligibilityForCharacterScope(containerId, opts)
+    local db = self.db and self.db.profile
+    if not (db and db.groupContainers) then return false end
+    local container = db.groupContainers[containerId]
+    if not container then return false end
+    opts = WithOwnerCharKey(opts, container.createdBy or (self.db and self.db.keys and self.db.keys.char))
+
+    local changed = self:NormalizeEligibilityForCharacterScope(container, opts)
+    for _, group in pairs(db.groups or {}) do
+        if type(group) == "table" and group.parentContainerId == containerId then
+            changed = self:NormalizeEligibilityForCharacterScope(group, opts) or changed
+        end
+    end
+    return changed
+end
+
+function CooldownCompanion:NormalizeFolderEligibilityForCharacterScope(folderId, opts)
+    local db = self.db and self.db.profile
+    if not (db and db.folders) then return false end
+    local folder = db.folders[folderId]
+    if not folder then return false end
+    opts = WithOwnerCharKey(opts, folder.createdBy or (self.db and self.db.keys and self.db.keys.char))
+
+    local changed = self:NormalizeEligibilityForCharacterScope(folder, opts)
+    local childContainerIds = {}
+    for containerId, container in pairs(db.groupContainers or {}) do
+        if type(container) == "table" and container.folderId == folderId then
+            childContainerIds[containerId] = true
+            changed = self:NormalizeEligibilityForCharacterScope(container, opts) or changed
+        end
+    end
+    for _, group in pairs(db.groups or {}) do
+        if type(group) == "table" and childContainerIds[group.parentContainerId] then
+            changed = self:NormalizeEligibilityForCharacterScope(group, opts) or changed
+        end
+    end
+    return changed
 end
 
 function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
@@ -1521,8 +2247,11 @@ function CooldownCompanion:HasLocalLoadConditions(entity)
     if not (type(entity) == "table" and type(entity.loadConditions) == "table") then
         return false
     end
-    for _, value in pairs(entity.loadConditions) do
+    for key, value in pairs(entity.loadConditions) do
         if value == true then
+            return true
+        end
+        if LOAD_CONDITION_ALLOWLIST_KEYS[key] and type(value) == "table" and next(value) then
             return true
         end
     end
@@ -1573,18 +2302,48 @@ function CooldownCompanion:EvaluateLoadConditions(loadConditions, defaults)
     return true
 end
 
+function CooldownCompanion:GetCurrentEligibilityIdentity()
+    local classFilename = self._playerClassFilename
+    if not classFilename and UnitClass then
+        classFilename = select(2, UnitClass("player"))
+    end
+    return {
+        classFilename = NormalizeClassKey(classFilename),
+        specId = self._currentSpecId,
+        charKey = self.db and self.db.keys and self.db.keys.char or nil,
+    }
+end
+
 function CooldownCompanion:CheckLoadConditions(group)
     return self:EvaluateLoadConditions(group and group.loadConditions)
 end
 
-local function AddLoadConditionSource(sources, label, entity, defaults)
+local function AddLoadConditionSource(sources, label, entity, defaults, allowClassEligibility)
     if type(entity) == "table" and type(entity.loadConditions) == "table" then
         sources[#sources + 1] = {
             label = label,
             loadConditions = entity.loadConditions,
             defaults = defaults,
+            allowClassEligibility = allowClassEligibility == true,
         }
     end
+end
+
+local function HasEligibilityAllowlist(loadConditions, allowClassEligibility)
+    if type(loadConditions) ~= "table" then return false end
+    if allowClassEligibility and loadConditions.classAllowlist ~= nil then
+        return true
+    end
+    return loadConditions.specAllowlist ~= nil
+        or loadConditions.characterAllowlist ~= nil
+end
+
+local function IsFolderGlobalScope(folder)
+    return type(folder) == "table" and folder.section == "global"
+end
+
+local function IsContainerGlobalScope(container)
+    return type(container) == "table" and container.isGlobal == true
 end
 
 function CooldownCompanion:GetInheritedLoadConditionSources(group)
@@ -1595,34 +2354,65 @@ function CooldownCompanion:GetInheritedLoadConditionSources(group)
     local container = self:GetParentContainer(group)
     if container then
         local folder = container.folderId and db.folders and db.folders[container.folderId]
-        AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS)
-        AddLoadConditionSource(sources, "Group", container, LOAD_CONDITION_DEFAULTS)
+        AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS, IsFolderGlobalScope(folder))
+        AddLoadConditionSource(sources, "Group", container, LOAD_CONDITION_DEFAULTS, IsContainerGlobalScope(container))
         return sources
     end
 
     local folder = group.folderId and db.folders and db.folders[group.folderId]
-    AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS)
+    AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS, IsFolderGlobalScope(folder))
     return sources
 end
 
 function CooldownCompanion:GetLoadConditionSourcesForGroup(group)
     local sources = self:GetInheritedLoadConditionSources(group)
     if group then
-        AddLoadConditionSource(sources, group.parentContainerId and "Panel" or "Group", group, LOAD_CONDITION_DEFAULTS)
+        local container = self:GetParentContainer(group)
+        local allowClassEligibility
+        if container then
+            allowClassEligibility = IsContainerGlobalScope(container)
+        else
+            allowClassEligibility = group.isGlobal == true
+        end
+        AddLoadConditionSource(sources, group.parentContainerId and "Panel" or "Group", group, LOAD_CONDITION_DEFAULTS, allowClassEligibility)
     end
     return sources
 end
 
 function CooldownCompanion:GetLoadConditionSourcesForEntry(buttonData, group)
     local sources = self:GetLoadConditionSourcesForGroup(group)
-    AddLoadConditionSource(sources, "Entry", buttonData, LOCAL_LOAD_CONDITION_DEFAULTS)
+    AddLoadConditionSource(sources, "Entry", buttonData, LOCAL_LOAD_CONDITION_DEFAULTS, false)
     return sources
 end
 
-function CooldownCompanion:EvaluateLoadConditionSources(sources)
+function CooldownCompanion:EvaluateLoadConditionSources(sources, opts)
+    opts = opts or {}
+    local eligibility
+    local identity
+
     for _, source in ipairs(sources or {}) do
-        if not self:EvaluateLoadConditions(source.loadConditions, source.defaults) then
+        if opts.eligibilityOnly ~= true
+            and not self:EvaluateLoadConditions(source.loadConditions, source.defaults)
+        then
             return false, source.label
+        end
+        local loadConditions = source.loadConditions
+        if HasEligibilityAllowlist(loadConditions, source.allowClassEligibility) then
+            if not eligibility then
+                eligibility = {}
+                identity = self:GetCurrentEligibilityIdentity()
+            end
+            if source.allowClassEligibility then
+                MergeEligibilityAllowlist(eligibility, "class", loadConditions.classAllowlist, NormalizeClassKey)
+            end
+            MergeEligibilityAllowlist(eligibility, "spec", loadConditions.specAllowlist, NormalizeSpecKey)
+            MergeEligibilityAllowlist(eligibility, "character", loadConditions.characterAllowlist, NormalizeCharacterKey)
+            if not AllowlistMatches(eligibility, "class", identity.classFilename)
+                or not AllowlistMatches(eligibility, "spec", identity.specId)
+                or not AllowlistMatches(eligibility, "character", identity.charKey)
+            then
+                return false, source.label
+            end
         end
     end
     return true, nil
@@ -1632,8 +2422,20 @@ function CooldownCompanion:IsGroupLoadConditionMet(group)
     return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForGroup(group))
 end
 
+function CooldownCompanion:IsGroupEligibilityMet(group)
+    return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForGroup(group), {
+        eligibilityOnly = true,
+    })
+end
+
 function CooldownCompanion:IsButtonLoadConditionMet(buttonData, group)
     return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForEntry(buttonData, group))
+end
+
+function CooldownCompanion:IsCustomBarLoadConditionMet(customBar)
+    local sources = {}
+    AddLoadConditionSource(sources, "Custom Bar", customBar, LOCAL_LOAD_CONDITION_DEFAULTS, true)
+    return self:EvaluateLoadConditionSources(sources)
 end
 
 
@@ -1941,6 +2743,8 @@ function CooldownCompanion:RefreshConfigSelectedGroupFrames()
                 checkCharVisibility = true,
                 checkLoadConditions = true,
                 requireButtons = true,
+            }) or self:IsGroupEligibleForConfigPreview(groupId, {
+                group = group,
             })
             if (active or (wasPreviewed and frame))
                 and (not frame
@@ -2135,7 +2939,14 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     end
 
     for groupId, group in pairs(self.db.profile.groups) do
-        if not self:IsGroupVisibleToCurrentChar(groupId) then
+        local visible = self:IsGroupVisibleToCurrentChar(groupId)
+        local previewEligible = false
+        if not visible then
+            previewEligible = self:IsGroupEligibleForConfigPreview(groupId, {
+                group = group,
+            })
+        end
+        if not visible and not previewEligible then
             self:UnloadGroup(groupId)
         else
             local active = self:IsGroupActive(groupId, {
@@ -2143,7 +2954,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                 checkCharVisibility = true,
                 checkLoadConditions = true,
                 requireButtons = true,
-            })
+            }) or previewEligible
 
             if not active then
                 self:UnloadGroup(groupId)

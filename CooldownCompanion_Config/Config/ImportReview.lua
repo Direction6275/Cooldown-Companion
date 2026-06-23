@@ -248,14 +248,32 @@ local function BuildProfileSummaryLines(profile, heading, customBarCount)
         AddLine(lines, FormatCount("Custom Bars", customBarCount))
     end
 
-    local scoped = {}
+    local classScoped = {}
+    local characterScoped = {}
+    local legacyScoped = {}
     if type(profile) == "table" then
-        if type(profile.resourceBarsByChar) == "table" then scoped[#scoped + 1] = "Resource/Custom Bars" end
-        if type(profile.castBarByChar) == "table" then scoped[#scoped + 1] = "Cast Bar" end
-        if type(profile.frameAnchoringByChar) == "table" then scoped[#scoped + 1] = "Frame Anchoring" end
+        if CountPairs(profile.resourceBarsByClass) > 0 then classScoped[#classScoped + 1] = "Resource/Custom Bars" end
+        if type(profile.resourceBarsByChar) == "table" then legacyScoped[#legacyScoped + 1] = "legacy Resource/Custom Bars" end
+        if type(profile.castBarByChar) == "table" then characterScoped[#characterScoped + 1] = "Cast Bar" end
+        if type(profile.frameAnchoringByChar) == "table" then characterScoped[#characterScoped + 1] = "Frame Anchoring" end
     end
-    if #scoped > 0 then
-        AddLine(lines, "Character-scoped settings: " .. table.concat(scoped, ", "))
+    if #classScoped > 0 then
+        AddLine(lines, "Class-scoped settings: " .. table.concat(classScoped, ", "))
+    end
+    if #characterScoped > 0 then
+        AddLine(lines, "Character-scoped settings: " .. table.concat(characterScoped, ", "))
+    end
+    if #legacyScoped > 0 then
+        AddLine(lines, "Unresolved legacy settings: " .. table.concat(legacyScoped, ", "))
+    end
+    local migration = type(profile) == "table" and profile.resourceBarMigration or nil
+    local conflicts = type(migration) == "table" and migration.conflicts or nil
+    local unsafe = type(migration) == "table" and migration.unsafeCharKeys or nil
+    if CountPairs(conflicts) > 0 then
+        AddLine(lines, FormatCount("Pending Resource Bar conflicts", CountPairs(conflicts)))
+    end
+    if CountPairs(unsafe) > 0 then
+        AddLine(lines, FormatCount("Resource Bar buckets missing class metadata", CountPairs(unsafe)))
     end
     return lines
 end
@@ -266,6 +284,13 @@ end
 
 local function ReviewUsesSelectedPieces(review)
     return IsProfileReviewKind(review) and review.mode == "selected"
+end
+
+local function AddCharacterEligibilityNotice(lines, data)
+    local stripped = type(data) == "table" and tonumber(data._cdcCharacterEligibilityStripped) or 0
+    if stripped and stripped > 0 then
+        AddLine(lines, "Character eligibility is local and will not be imported.")
+    end
 end
 
 local function RecountSelectedPieces(review)
@@ -298,6 +323,7 @@ local function BuildSelectedPiecesSummaryLines(review, selectedCount)
     if pieces and pieces.customBarCount and pieces.customBarCount > 0 then
         AddLine(lines, FormatCount("Custom Bars", pieces.customBarCount))
     end
+    AddCharacterEligibilityNotice(lines, review and (review.diagnostic or review.data))
     return lines
 end
 
@@ -353,34 +379,41 @@ local function BuildCustomBarsSummaryLines(data)
         FormatCount("Layout specs", CountPairs(data.layouts)),
     }
     AddLine(lines, data.classFilename and "Class: " .. tostring(data.classFilename))
+    AddCharacterEligibilityNotice(lines, data)
     return lines
 end
 
 local function BuildContainerSummaryLines(data)
-    return {
+    local lines = {
         "Group export",
         "Name: " .. tostring(data.container and data.container.name or "Unnamed"),
         FormatCount("Panels", type(data.panels) == "table" and #data.panels or 0),
     }
+    AddCharacterEligibilityNotice(lines, data)
+    return lines
 end
 
 local function BuildContainersSummaryLines(data)
     local containers = type(data.containers) == "table" and data.containers or {}
-    return {
+    local lines = {
         "Groups export",
         FormatCount("Groups", #containers),
         FormatCount("Panels", CountContainerPanels(containers)),
     }
+    AddCharacterEligibilityNotice(lines, data)
+    return lines
 end
 
 local function BuildFolderSummaryLines(data)
     local containers = type(data.containers) == "table" and data.containers or {}
-    return {
+    local lines = {
         "Folder export",
         "Name: " .. tostring(data.folder and data.folder.name or "Unnamed"),
         FormatCount("Groups", #containers),
         FormatCount("Panels", CountContainerPanels(containers)),
     }
+    AddCharacterEligibilityNotice(lines, data)
+    return lines
 end
 
 local function ValidateProfilePayload(data)
@@ -404,8 +437,11 @@ local function ClassifyProfilePayload(data)
         exporterCharKey = data._exporterCharKey,
     }) or nil
 
+    local lines = BuildProfileSummaryLines(data, "Profile backup export", pieces and pieces.customBarCount)
+    AddCharacterEligibilityNotice(lines, data)
+
     return BuildReview("profile", data, "Profile Backup", "Restore Backup",
-        BuildProfileSummaryLines(data, "Profile backup export", pieces and pieces.customBarCount), {
+        lines, {
         destructive = true,
         mode = DefaultProfileImportMode(pieces),
         pieces = pieces,
@@ -436,6 +472,7 @@ local function ClassifyDiagnosticPayload(data)
     if meta and meta.charName then
         table.insert(lines, 2, "Source: " .. tostring(meta.charName))
     end
+    AddCharacterEligibilityNotice(lines, data)
 
     return BuildReview("diagnostic", data.profile, "Diagnostic Restore",
         "Restore Diagnostic", lines, {
@@ -548,6 +585,7 @@ function CooldownCompanion:ApplyReviewedImport(review)
             local meta = GetDiagnosticMeta(review.diagnostic)
             options.dataLabel = "diagnostic profile"
             options.exporterCharKey = meta and meta.charKey
+            options.exportedCharInfo = BuildDiagnosticSourceCharacterInfo(meta)
             options.runtimeReason = "diagnostic-profile-import"
             options.renameForeignCharacters = false
             successMessage = "Diagnostic profile restored."
