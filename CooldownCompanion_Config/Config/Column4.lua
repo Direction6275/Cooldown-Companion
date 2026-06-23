@@ -140,6 +140,10 @@ local function HideLayoutOrderDisabledScroll(container)
     HideWidgetFrame(container.layoutOrderDisabledScroll)
 end
 
+local function HideLayoutOrderConflictScroll(container)
+    HideWidgetFrame(container.layoutOrderConflictScroll)
+end
+
 local function HideResourceBarPanelSurfaces(container)
     HideFrame(container.placeholderLabel)
     HideWidgetFrame(container.tabGroup)
@@ -152,6 +156,7 @@ local function HideResourceBarPanelSurfaces(container)
     HideWidgetFrame(container.customBarEntryTabGroup)
     HideWidgetFrame(container.resourceSettingsDetailScroll)
     HideWidgetFrame(container.resourceSettingsTabGroup)
+    HideLayoutOrderConflictScroll(container)
     HideFrame(container.layoutOrderHost)
 end
 
@@ -176,6 +181,38 @@ local function ShowLayoutOrderDisabledScroll(container)
     local label = AceGUI:Create("Label")
     ST._ConfigureWrappedHelperLabel(label)
     label:SetText("Enable Resource Bars or Cast Bar to configure layout.")
+    label:SetFullWidth(true)
+    scroll:AddChild(label)
+end
+
+local function ShowLayoutOrderConflictScroll(container)
+    HideResourceBarPanelSurfaces(container)
+
+    if not container.layoutOrderConflictScroll then
+        local scroll = AceGUI:Create("ScrollFrame")
+        scroll:SetLayout("List")
+        scroll.frame:SetParent(container)
+        container.layoutOrderConflictScroll = scroll
+    end
+
+    local scroll = container.layoutOrderConflictScroll
+    scroll.frame:SetParent(container)
+    scroll.frame:ClearAllPoints()
+    scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+    scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+    scroll:ReleaseChildren()
+    scroll.frame:Show()
+
+    local RBP = ST._RBP
+    if RBP and RBP.BuildResourceBarConflictGate
+        and RBP.BuildResourceBarConflictGate(scroll, "Layout & Order", true)
+    then
+        return
+    end
+
+    local label = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(label)
+    label:SetText("Resolve Resource Bars before editing Layout & Order.")
     label:SetFullWidth(true)
     scroll:AddChild(label)
 end
@@ -350,10 +387,16 @@ local function RefreshColumn4(container)
         container._browsePlaceholder:Hide()
     end
     HideLayoutOrderDisabledScroll(container)
+    HideLayoutOrderConflictScroll(container)
 
     -- Resource Bar panel mode: show selected Custom Bar settings, or Layout & Order.
     if CS.resourceBarPanelActive then
         HideResourceBarPanelSurfaces(container)
+        if CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict() then
+            ShowLayoutOrderConflictScroll(container)
+            return
+        end
+
         local resourceBarsEnabled = AreResourceBarsConfigEnabled()
         local castBarsEnabled = AreCastBarsConfigEnabled()
         if not (resourceBarsEnabled or castBarsEnabled) then

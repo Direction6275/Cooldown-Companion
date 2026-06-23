@@ -241,8 +241,9 @@ local function ShowResourceBarConflictChooser(classKey, opts)
     AddResourceBarConflictSpacer(chooser, 14)
 
     local bullets = {
-        "The setup you KEEP, including Resource settings, Custom Bars, and Resource Aura overlays, will be saved for the whole class.",
-        "The other listed character setups for this class will be removed.",
+        "The Resource settings and Resource Aura overlays from the setup you KEEP will be saved for the whole class.",
+        "Custom Bars from every listed same-class setup will be preserved and added to the saved class setup.",
+        "The other listed character Resource settings and Resource Aura overlays will be removed.",
         "Going forward, every character of this class will use the saved setup.",
         "Per-spec layouts, resource overrides, and aura overlays still work inside that class setup.",
     }
@@ -708,8 +709,8 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
     button1 = "Close",
     hasEditBox = true,
     OnShow = function(self)
-        if CooldownCompanion.GetPendingResourceBarConflictExportMessage then
-            local blockMessage = CooldownCompanion:GetPendingResourceBarConflictExportMessage()
+        if CooldownCompanion.GetCurrentResourceBarConflictExportMessage then
+            local blockMessage = CooldownCompanion:GetCurrentResourceBarConflictExportMessage()
             if blockMessage then
                 self.EditBox:SetText(blockMessage)
                 self.EditBox:HighlightText()
@@ -947,8 +948,8 @@ StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
 ------------------------------------------------------------------------
 
 local function GetCustomBarExportConflictBlockMessage()
-    if CooldownCompanion.GetPendingResourceBarConflictExportMessage then
-        return CooldownCompanion:GetPendingResourceBarConflictExportMessage()
+    if CooldownCompanion.GetCurrentResourceBarConflictExportMessage then
+        return CooldownCompanion:GetCurrentResourceBarConflictExportMessage()
     end
     return nil
 end

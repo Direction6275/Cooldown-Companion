@@ -53,8 +53,8 @@ local function RefreshLayoutOrderPreview()
 end
 
 local function BlockCustomBarExportForResourceBarConflict()
-    if CooldownCompanion.GetPendingResourceBarConflictExportMessage then
-        local message = CooldownCompanion:GetPendingResourceBarConflictExportMessage()
+    if CooldownCompanion.GetCurrentResourceBarConflictExportMessage then
+        local message = CooldownCompanion:GetCurrentResourceBarConflictExportMessage()
         if message then
             CooldownCompanion:Print(message)
             return true

@@ -1321,6 +1321,308 @@ local function BuildResourceBarMigrationBuckets(addon, profile, state)
     return buckets
 end
 
+local function AddMergedCustomBarOrder(store, customBarId)
+    if type(store) ~= "table" or type(customBarId) ~= "string" or customBarId == "" then
+        return
+    end
+    store.order = type(store.order) == "table" and store.order or {}
+    for _, existingId in ipairs(store.order) do
+        if existingId == customBarId then
+            return
+        end
+    end
+    store.order[#store.order + 1] = customBarId
+end
+
+local function AllocateMergedCustomBarId(settings, store)
+    settings.nextCustomBarId = tonumber(settings.nextCustomBarId) or 1
+    local id
+    repeat
+        id = "custom_bar_" .. tostring(settings.nextCustomBarId)
+        settings.nextCustomBarId = settings.nextCustomBarId + 1
+    until type(store.entries[id]) ~= "table"
+    return id
+end
+
+local function EnsureMergedCustomBarLayout(settings, specID)
+    specID = NormalizeCustomBarSpecID(specID)
+    if type(settings) ~= "table" or not specID then
+        return nil
+    end
+    settings.layoutOrder = type(settings.layoutOrder) == "table" and settings.layoutOrder or {}
+    local layout = GetSpecKeyedTable(settings.layoutOrder, specID)
+    if type(layout) ~= "table" then
+        layout = {}
+        settings.layoutOrder[specID] = layout
+    end
+    layout.customBars = type(layout.customBars) == "table" and layout.customBars or {}
+    return layout
+end
+
+local function AddMergedSpecID(specIDs, seen, specID)
+    specID = NormalizeCustomBarSpecID(specID)
+    if specID and not seen[specID] then
+        seen[specID] = true
+        specIDs[#specIDs + 1] = specID
+    end
+end
+
+local function CollectMergedCustomBarLayoutSpecIDs(sourceSettings, sourceCustomBarId, entry, fallbackSpecID, legacySlotIndex)
+    local specIDs = {}
+    local seen = {}
+    AddMergedSpecID(specIDs, seen, fallbackSpecID)
+
+    if type(entry) == "table" and type(entry.specs) == "table" then
+        for specID, enabled in pairs(entry.specs) do
+            if enabled == true then
+                AddMergedSpecID(specIDs, seen, specID)
+            end
+        end
+    end
+
+    local layoutOrder = type(sourceSettings) == "table" and sourceSettings.layoutOrder or nil
+    if type(layoutOrder) == "table" then
+        for specID, layout in pairs(layoutOrder) do
+            if type(layout) == "table" then
+                local hasCustomLayout = type(sourceCustomBarId) == "string"
+                    and type(layout.customBars) == "table"
+                    and type(layout.customBars[sourceCustomBarId]) == "table"
+                local hasLegacyAuraLayout = legacySlotIndex ~= nil
+                    and type(layout.customAuraBarSlots) == "table"
+                    and type(layout.customAuraBarSlots[legacySlotIndex]) == "table"
+                if hasCustomLayout or hasLegacyAuraLayout then
+                    AddMergedSpecID(specIDs, seen, specID)
+                end
+            end
+        end
+    end
+
+    sort(specIDs, function(a, b) return tostring(a) < tostring(b) end)
+    return specIDs
+end
+
+local function CopyMergedCustomBarLayout(targetSettings, sourceSettings, specID, sourceCustomBarId, targetCustomBarId, fallbackOrder, legacySlotIndex)
+    local targetLayout = EnsureMergedCustomBarLayout(targetSettings, specID)
+    if type(targetLayout) ~= "table"
+        or type(targetCustomBarId) ~= "string"
+        or type(targetLayout.customBars[targetCustomBarId]) == "table" then
+        return
+    end
+
+    local sourceLayout = type(sourceSettings) == "table"
+        and type(sourceSettings.layoutOrder) == "table"
+        and GetSpecKeyedTable(sourceSettings.layoutOrder, specID)
+        or nil
+    local sourceCustomLayout = nil
+    if type(sourceLayout) == "table" then
+        if type(sourceCustomBarId) == "string"
+            and type(sourceLayout.customBars) == "table"
+            and type(sourceLayout.customBars[sourceCustomBarId]) == "table" then
+            sourceCustomLayout = sourceLayout.customBars[sourceCustomBarId]
+        elseif legacySlotIndex ~= nil
+            and type(sourceLayout.customAuraBarSlots) == "table"
+            and type(sourceLayout.customAuraBarSlots[legacySlotIndex]) == "table" then
+            sourceCustomLayout = sourceLayout.customAuraBarSlots[legacySlotIndex]
+        end
+    end
+
+    targetLayout.customBars[targetCustomBarId] = type(sourceCustomLayout) == "table"
+        and CopyTable(sourceCustomLayout)
+        or {
+            position = "below",
+            order = fallbackOrder or 1000,
+        }
+end
+
+local function NormalizeMergedCustomBarEntry(entry, fallbackSpecID, entryTypeFallback)
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local copy = CopyTable(entry)
+    if copy.entryType == nil and entryTypeFallback then
+        copy.entryType = entryTypeFallback
+    end
+
+    local specs = {}
+    local sawSpec = false
+    ForEachSharedCustomBarSpec(copy, function(specID)
+        sawSpec = true
+        specs[specID] = true
+    end)
+    fallbackSpecID = NormalizeCustomBarSpecID(fallbackSpecID)
+    if fallbackSpecID then
+        sawSpec = true
+        specs[fallbackSpecID] = true
+    end
+    copy.specs = sawSpec and specs or {}
+    ClearCustomBarLegacySpecFields(copy)
+    return copy
+end
+
+local AddMergedCustomBar
+
+local function MergeLegacyCustomBarBuckets(targetSettings, sourceSettings, barsBySpec, isAuraStore)
+    if type(barsBySpec) ~= "table" then
+        return
+    end
+
+    local specKeys = {}
+    for specID in pairs(barsBySpec) do
+        specKeys[#specKeys + 1] = specID
+    end
+    sort(specKeys, function(a, b) return tostring(a) < tostring(b) end)
+
+    for _, specKey in ipairs(specKeys) do
+        local specID = NormalizeCustomBarSpecID(specKey)
+        local specBars = specID and barsBySpec[specKey] or nil
+        if type(specBars) == "table" then
+            local numericKeys = {}
+            local seen = {}
+            for key in pairs(specBars) do
+                if tonumber(key) then
+                    numericKeys[#numericKeys + 1] = tonumber(key)
+                end
+            end
+            sort(numericKeys)
+            for index, numericKey in ipairs(numericKeys) do
+                local entry = specBars[numericKey] or specBars[tostring(numericKey)]
+                if type(entry) == "table" then
+                    AddMergedCustomBar(targetSettings, sourceSettings, entry, specID, entry.customBarId, 1000 + index, isAuraStore and numericKey or nil, isAuraStore and "aura" or nil)
+                end
+                seen[numericKey] = true
+                seen[tostring(numericKey)] = true
+            end
+            for key, entry in pairs(specBars) do
+                if type(entry) == "table" and not seen[key] then
+                    AddMergedCustomBar(targetSettings, sourceSettings, entry, specID, entry.customBarId, 1000 + #numericKeys + 1, isAuraStore and tonumber(key) or nil, isAuraStore and "aura" or nil)
+                end
+            end
+        end
+    end
+end
+
+local function EnsureMergedCustomBarStore(settings)
+    if type(settings) ~= "table" then
+        return nil
+    end
+
+    if IsSharedCustomBarsStore(settings.customBars) then
+        local store = settings.customBars
+        store.entries = type(store.entries) == "table" and store.entries or {}
+        store.order = type(store.order) == "table" and store.order or {}
+        local ordered = {}
+        for _, customBarId in ipairs(store.order) do
+            ordered[customBarId] = true
+        end
+        for customBarId, entry in pairs(store.entries) do
+            if type(entry) == "table" and type(customBarId) == "string" then
+                entry.customBarId = type(entry.customBarId) == "string" and entry.customBarId or customBarId
+                if not ordered[customBarId] then
+                    store.order[#store.order + 1] = customBarId
+                end
+            end
+        end
+        return store
+    end
+
+    local legacyCustomBars = settings.customBars
+    local legacyCustomAuraBars = settings.customAuraBars
+    settings.customBars = { entries = {}, order = {} }
+    settings.customAuraBars = {}
+    MergeLegacyCustomBarBuckets(settings, settings, legacyCustomBars, false)
+    MergeLegacyCustomBarBuckets(settings, settings, legacyCustomAuraBars, true)
+    return settings.customBars
+end
+
+AddMergedCustomBar = function(targetSettings, sourceSettings, sourceEntry, fallbackSpecID, sourceCustomBarId, fallbackOrder, legacySlotIndex, entryTypeFallback)
+    local store = EnsureMergedCustomBarStore(targetSettings)
+    local entry = NormalizeMergedCustomBarEntry(sourceEntry, fallbackSpecID, entryTypeFallback)
+    if type(store) ~= "table" or type(entry) ~= "table" then
+        return nil
+    end
+
+    local preferredId = type(entry.customBarId) == "string" and entry.customBarId ~= "" and entry.customBarId
+        or (type(sourceCustomBarId) == "string" and sourceCustomBarId ~= "" and sourceCustomBarId or nil)
+    local targetId = preferredId
+    if not targetId then
+        targetId = AllocateMergedCustomBarId(targetSettings, store)
+    elseif type(store.entries[targetId]) == "table" then
+        if DeepEqual(store.entries[targetId], entry) then
+            local specIDs = CollectMergedCustomBarLayoutSpecIDs(sourceSettings, sourceCustomBarId or targetId, entry, fallbackSpecID, legacySlotIndex)
+            for _, specID in ipairs(specIDs) do
+                CopyMergedCustomBarLayout(targetSettings, sourceSettings, specID, sourceCustomBarId or targetId, targetId, fallbackOrder, legacySlotIndex)
+            end
+            return targetId
+        end
+        targetId = AllocateMergedCustomBarId(targetSettings, store)
+    end
+
+    entry.customBarId = targetId
+    store.entries[targetId] = entry
+    AddMergedCustomBarOrder(store, targetId)
+
+    local specIDs = CollectMergedCustomBarLayoutSpecIDs(sourceSettings, sourceCustomBarId or preferredId or targetId, entry, fallbackSpecID, legacySlotIndex)
+    for _, specID in ipairs(specIDs) do
+        CopyMergedCustomBarLayout(targetSettings, sourceSettings, specID, sourceCustomBarId or preferredId or targetId, targetId, fallbackOrder, legacySlotIndex)
+    end
+
+    return targetId
+end
+
+local function MergeCustomBarsFromResourceBarSettings(targetSettings, sourceSettings, classKey)
+    if type(targetSettings) ~= "table" or type(sourceSettings) ~= "table" then
+        return
+    end
+
+    local source = CopyNormalizedResourceBarCandidate(sourceSettings, classKey)
+    EnsureMergedCustomBarStore(targetSettings)
+
+    if IsSharedCustomBarsStore(source.customBars) then
+        local entries = type(source.customBars.entries) == "table" and source.customBars.entries or {}
+        local seen = {}
+        if type(source.customBars.order) == "table" then
+            for _, customBarId in ipairs(source.customBars.order) do
+                local entry = entries[customBarId]
+                if type(entry) == "table" then
+                    AddMergedCustomBar(targetSettings, source, entry, nil, customBarId, 1000 + #targetSettings.customBars.order)
+                    seen[customBarId] = true
+                end
+            end
+        end
+        for customBarId, entry in pairs(entries) do
+            if type(entry) == "table" and not seen[customBarId] then
+                AddMergedCustomBar(targetSettings, source, entry, nil, customBarId, 1000 + #targetSettings.customBars.order + 1)
+            end
+        end
+    else
+        MergeLegacyCustomBarBuckets(targetSettings, source, source.customBars, false)
+    end
+
+    MergeLegacyCustomBarBuckets(targetSettings, source, source.customAuraBars, true)
+    NormalizeResourceBarSettingsForClass(targetSettings, classKey)
+    SanitizeResourceBarAnchors(targetSettings, classKey)
+end
+
+local function MergeResourceBarConflictCustomBars(targetSettings, classKey, conflict, legacyStore, selectedCharKey, existingClassSettings)
+    if type(targetSettings) ~= "table" or type(conflict) ~= "table" then
+        return
+    end
+
+    if type(existingClassSettings) == "table" then
+        MergeCustomBarsFromResourceBarSettings(targetSettings, existingClassSettings, classKey)
+    end
+
+    if type(legacyStore) ~= "table" then
+        return
+    end
+    for _, candidateCharKey in ipairs(conflict.candidateCharKeys or {}) do
+        if candidateCharKey ~= selectedCharKey and type(legacyStore[candidateCharKey]) == "table" then
+            MergeCustomBarsFromResourceBarSettings(targetSettings, legacyStore[candidateCharKey], classKey)
+        end
+    end
+end
+
 local function PromoteResourceBarClassSettings(classStore, classKey, settings)
     classStore[classKey] = CopyTable(settings)
     NormalizeResourceBarSettingsForClass(classStore[classKey], classKey)
@@ -1425,6 +1727,31 @@ local function BuildResourceBarConflictSummary(profile)
         end
     end
     return summaries
+end
+
+local function FormatResourceBarConflictExportMessage(summaries)
+    if type(summaries) ~= "table" or #summaries == 0 then
+        return nil
+    end
+
+    local parts = {}
+    for _, summary in ipairs(summaries) do
+        local candidateText = summary.candidateCount .. " candidate"
+        if summary.candidateCount ~= 1 then
+            candidateText = candidateText .. "s"
+        end
+        if summary.includeExistingClass then
+            candidateText = candidateText .. " including current class setup"
+        end
+        if #summary.candidateCharKeys > 0 then
+            candidateText = candidateText .. ": " .. concat(summary.candidateCharKeys, ", ")
+        end
+        parts[#parts + 1] = summary.classKey .. " (" .. candidateText .. ")"
+    end
+
+    return "Resolve pending Resource Bar conflicts before exporting. Affected classes: "
+        .. concat(parts, "; ")
+        .. ". Open Resource Bar settings on the affected class and choose the setup to keep."
 end
 
 local function GetFallbackResourceBarSettings(addon, classKey)
@@ -1692,28 +2019,35 @@ end
 
 function CooldownCompanion:GetPendingResourceBarConflictExportMessage()
     local summaries = self:GetPendingResourceBarConflictSummary()
-    if #summaries == 0 then
+    return FormatResourceBarConflictExportMessage(summaries)
+end
+
+function CooldownCompanion:GetResourceBarConflictExportMessage(classKey)
+    classKey = NormalizeClassKey(classKey)
+    if not classKey then
         return nil
     end
 
-    local parts = {}
-    for _, summary in ipairs(summaries) do
-        local candidateText = summary.candidateCount .. " candidate"
-        if summary.candidateCount ~= 1 then
-            candidateText = candidateText .. "s"
-        end
-        if summary.includeExistingClass then
-            candidateText = candidateText .. " including current class setup"
-        end
-        if #summary.candidateCharKeys > 0 then
-            candidateText = candidateText .. ": " .. concat(summary.candidateCharKeys, ", ")
-        end
-        parts[#parts + 1] = summary.classKey .. " (" .. candidateText .. ")"
+    local profile = self.db and self.db.profile
+    local conflict = GetResourceBarConflict(profile, classKey)
+    if not conflict then
+        return nil
     end
 
-    return "Resolve pending Resource Bar conflicts before exporting. Affected classes: "
-        .. concat(parts, "; ")
-        .. ". Open Resource Bar settings on the affected class and choose the setup to keep."
+    local candidateCharKeys = CopyTable(conflict.candidateCharKeys or {})
+    sort(candidateCharKeys)
+    return FormatResourceBarConflictExportMessage({
+        {
+            classKey = classKey,
+            candidateCharKeys = candidateCharKeys,
+            candidateCount = #candidateCharKeys + (conflict.includeExistingClass and 1 or 0),
+            includeExistingClass = conflict.includeExistingClass == true,
+        },
+    })
+end
+
+function CooldownCompanion:GetCurrentResourceBarConflictExportMessage()
+    return self:GetResourceBarConflictExportMessage(GetCurrentResourceBarClassKey(self))
 end
 
 function CooldownCompanion:GetResourceBarUnsafeLegacySummary()
@@ -1740,6 +2074,7 @@ function CooldownCompanion:ResolveResourceBarConflict(classKey, sourceCharKey, o
     end
 
     local classStore = EnsureResourceBarClassStore(profile)
+    local legacyStore = GetResourceBarLegacyStore(profile, false)
     if keepExistingClassStore then
         if conflict.includeExistingClass ~= true then
             return false, "invalid_candidate"
@@ -1751,6 +2086,7 @@ function CooldownCompanion:ResolveResourceBarConflict(classKey, sourceCharKey, o
         if classKey == GetCurrentResourceBarClassKey(self) then
             SanitizeResourceBarAnchors(classStore[classKey], classKey)
         end
+        MergeResourceBarConflictCustomBars(classStore[classKey], classKey, conflict, legacyStore, nil, nil)
         RemoveLegacyResourceBarCandidates(profile, conflict.candidateCharKeys)
         ClearResourceBarConflict(EnsureResourceBarMigrationState(profile), classKey)
         if type(self._resourceBarConflictFallbackSettings) == "table" then
@@ -1770,16 +2106,20 @@ function CooldownCompanion:ResolveResourceBarConflict(classKey, sourceCharKey, o
         return false, "invalid_candidate"
     end
 
-    local legacyStore = GetResourceBarLegacyStore(profile, false)
     local source = type(legacyStore) == "table" and legacyStore[sourceCharKey] or nil
     if type(source) ~= "table" then
         return false, "missing_candidate"
     end
 
+    local existingClassSettings = conflict.includeExistingClass == true
+        and type(classStore[classKey]) == "table"
+        and CopyTable(classStore[classKey])
+        or nil
     PromoteResourceBarClassSettings(classStore, classKey, source)
     if classKey == GetCurrentResourceBarClassKey(self) then
         SanitizeResourceBarAnchors(classStore[classKey], classKey)
     end
+    MergeResourceBarConflictCustomBars(classStore[classKey], classKey, conflict, legacyStore, sourceCharKey, existingClassSettings)
 
     RemoveLegacyResourceBarCandidates(profile, conflict.candidateCharKeys)
     ClearResourceBarConflict(EnsureResourceBarMigrationState(profile), classKey)
