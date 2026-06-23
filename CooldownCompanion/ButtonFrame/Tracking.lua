@@ -24,12 +24,41 @@ local IsEntryItemLike = CooldownCompanion.IsEntryItemLike or function(buttonData
                 and (buttonData.itemSlot == 13 or buttonData.itemSlot == 14)))
 end
 
+local function GetReadableMaxCharges(charges)
+    local maxCharges = charges and charges.maxCharges
+    if maxCharges and not issecretvalue(maxCharges) then
+        return tonumber(maxCharges)
+    end
+    return nil
+end
+
+local function ResolveRuntimeChargeInfo(buttonData, chargeSpellID)
+    local spellID = chargeSpellID or buttonData.id
+    local charges = C_Spell.GetSpellCharges(spellID)
+    local maxCharges = GetReadableMaxCharges(charges)
+
+    if (not maxCharges or maxCharges <= 1)
+        and ST.ResolveSpellChargeInfo
+        and buttonData.id then
+        local resolvedCharges, resolvedSpellID, resolvedMaxCharges = ST.ResolveSpellChargeInfo(buttonData.id)
+        if resolvedCharges and (resolvedMaxCharges or 0) > 1 then
+            return resolvedCharges, resolvedSpellID or buttonData.id, true, resolvedMaxCharges
+        end
+    end
+
+    return charges, spellID, false, maxCharges
+end
+
 -- Update charge count state for a spell with hasCharges enabled.
 -- chargeSpellID should be the effective runtime spell ID (override-aware).
 -- Returns the raw charges API table (may be nil) for use by callers.
 local function UpdateChargeTracking(button, buttonData, chargeSpellID)
-    local spellID = chargeSpellID or buttonData.id
-    local charges = C_Spell.GetSpellCharges(spellID)
+    local previousReadableCharges = button._chargeCountReadable == true
+        and button._currentReadableCharges
+        or nil
+    local charges, spellID, usedChargeFallback, maxCharges = ResolveRuntimeChargeInfo(buttonData, chargeSpellID)
+    button._chargeSpellId = spellID
+    button._chargeInfoFromFallback = usedChargeFallback or nil
 
     -- Read current charges only from the authoritative charge API field.
     -- Display-count APIs are UI-oriented and can transiently read 0 during
@@ -37,6 +66,10 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     local cur
     if charges and charges.currentCharges ~= nil and not issecretvalue(charges.currentCharges) then
         cur = charges.currentCharges
+        button._lastReadableCharges = cur
+    elseif (usedChargeFallback or (maxCharges or 0) > 1)
+        and previousReadableCharges ~= nil then
+        button._lastReadableCharges = previousReadableCharges
     end
     button._currentReadableCharges = cur
     button._chargeCountReadable = (cur ~= nil)
@@ -63,6 +96,9 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
         button._chargeDurationObj = nil
         button._chargeRecharging = false
         button._chargeState = nil
+        button._lastReadableCharges = nil
+        button._chargeSpellId = nil
+        button._chargeInfoFromFallback = nil
         return nil
     end
 

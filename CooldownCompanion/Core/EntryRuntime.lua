@@ -1420,6 +1420,9 @@ local function ClearOwnerChargeState(owner)
     owner._mainCDShown = nil
     owner._chargeState = nil
     owner._chargesSpent = nil
+    owner._lastReadableCharges = nil
+    owner._chargeSpellId = nil
+    owner._chargeInfoFromFallback = nil
 end
 
 function EntryRuntime.RecordChargeSpent(owner)
@@ -1467,6 +1470,12 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
     if charges and charges.currentCharges ~= nil and not issecretvalue(charges.currentCharges) then
         currentCharges = charges.currentCharges
         result.currentCharges = currentCharges
+    elseif result.preserveReadableCharges == true
+        and owner
+        and owner._chargeCountReadable == true
+        and owner._currentReadableCharges ~= nil then
+        currentCharges = owner._currentReadableCharges
+        result.currentCharges = currentCharges
     elseif C_Spell.GetSpellDisplayCount then
         result.chargeDisplayCount = C_Spell.GetSpellDisplayCount(cooldownSpellID)
     end
@@ -1482,6 +1491,8 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
         owner._chargeCountReadable = currentCharges ~= nil
         owner._chargeDurationObj = chargeDurationObj
         owner._chargeRecharging = result.chargeRecharging
+        owner._chargeSpellId = cooldownSpellID
+        owner._chargeInfoFromFallback = result.preserveReadableCharges or nil
     end
 
     local mainCDShown = false
@@ -1634,8 +1645,19 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
         owner._customCooldownSpellID = cooldownSpellID
     end
 
+    local chargeSpellID = cooldownSpellID
     local charges = C_Spell.GetSpellCharges(cooldownSpellID)
     local maxCharges = charges and tonumber(charges.maxCharges)
+    local preserveReadableCharges = false
+    if (not maxCharges or maxCharges <= 1) and ST.ResolveSpellChargeInfo then
+        local resolvedCharges, resolvedChargeSpellID, resolvedMaxCharges = ST.ResolveSpellChargeInfo(spellID)
+        if resolvedCharges and (resolvedMaxCharges or 0) > 1 then
+            charges = resolvedCharges
+            chargeSpellID = resolvedChargeSpellID or spellID
+            maxCharges = resolvedMaxCharges
+            preserveReadableCharges = true
+        end
+    end
     SyncCustomBarChargeMetadata(customBar, charges, maxCharges)
     local hasCharges = (maxCharges or 0) > 1
     local secrecy = ResolveSpellCooldownSecrecy(owner, cooldownSpellID)
@@ -1666,10 +1688,12 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     })
     result.baseSpellID = spellID
     result.cooldownSpellID = cooldownSpellID
+    result.chargeSpellID = chargeSpellID
+    result.preserveReadableCharges = preserveReadableCharges or nil
     result.noCooldown = noCooldown or nil
 
     if hasCharges then
-        ApplyCustomBarChargeState(owner, result, spellID, cooldownSpellID, charges, maxCharges)
+        ApplyCustomBarChargeState(owner, result, spellID, chargeSpellID, charges, maxCharges)
     else
         ClearOwnerChargeState(owner)
     end

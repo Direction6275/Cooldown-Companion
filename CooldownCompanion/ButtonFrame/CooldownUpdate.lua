@@ -1310,6 +1310,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._chargesSpent = nil
         button._chargeText = nil
         button._displayCountZeroUsabilityFallback = nil
+        button._lastReadableCharges = nil
+        button._chargeSpellId = nil
+        button._chargeInfoFromFallback = nil
         if buttonData.type == "spell" then
             button.count:SetText("")
         end
@@ -1436,6 +1439,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- some use-count spells. Do not guess zero-state from unrelated
             -- usability signals; leave the zero-state unknown instead.
             button._mainCDShown = false
+        elseif buttonData.type == "spell"
+           and button._lastReadableCharges ~= nil then
+            if button._lastReadableCharges <= 0 then
+                button._mainCDShown = true
+            else
+                local maxCharges = buttonData.maxCharges
+                local spent = button._chargesSpent
+                button._mainCDShown = maxCharges and maxCharges > 1 and spent and spent >= maxCharges or false
+            end
         elseif buttonData.type == "spell" and usesChargeBehavior and buttonData.hasCharges then
             -- Restricted mode: charges unreadable (secret values).
             -- Action bar probe reflects the regular-cooldown DurationObject
