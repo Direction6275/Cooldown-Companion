@@ -101,9 +101,15 @@ local function NormalizeCopiedEntityForContainerScope(self, entity, container)
         return
     end
     if self.NormalizeEligibilityForCharacterScope then
-        self:NormalizeEligibilityForCharacterScope(entity, {
+        local opts = {
             ownerCharKey = container.createdBy or (self.db and self.db.keys and self.db.keys.char),
-        })
+        }
+        self:NormalizeEligibilityForCharacterScope(entity, opts)
+        if type(entity.buttons) == "table" then
+            for _, button in ipairs(entity.buttons) do
+                self:NormalizeEligibilityForCharacterScope(button, opts)
+            end
+        end
     end
 end
 
@@ -722,27 +728,15 @@ end
 function CooldownCompanion:CopyDirectStyleFromPanel(mode, sourceGroupId, targetGroupId)
     sourceGroupId = tonumber(sourceGroupId)
     targetGroupId = tonumber(targetGroupId)
-    if not IsValidDirectStyleCopyMode(mode) then
-        return false, "invalid_mode"
+
+    local canCopy, reason = self:CanCopyDirectStyleFromPanel(mode, sourceGroupId, targetGroupId)
+    if not canCopy then
+        return false, reason
     end
 
     local db = self.db and self.db.profile
     local sourceGroup = db and db.groups and db.groups[sourceGroupId]
     local targetGroup = db and db.groups and db.groups[targetGroupId]
-    if not sourceGroup or not targetGroup then
-        return false, "missing_group"
-    end
-    if sourceGroupId == targetGroupId then
-        return false, "same_group"
-    end
-    if not GroupMatchesDirectStyleCopyMode(sourceGroup, mode)
-        or not GroupMatchesDirectStyleCopyMode(targetGroup, mode) then
-        return false, "mode_mismatch"
-    end
-    local canCopy, reason = self:CanCopyDirectStyleFromPanel(mode, sourceGroupId, targetGroupId)
-    if not canCopy then
-        return false, reason
-    end
 
     local oldMasqueEnabled = targetGroup.masqueEnabled and true or false
     local presetData = CaptureGroupSettingPresetData(db, mode, sourceGroup)
@@ -1261,21 +1255,27 @@ end
 
 function CooldownCompanion:MovePanel(groupId, targetContainerId)
     local db = self.db.profile
-    local group = db.groups[groupId]
-    if not group or not group.parentContainerId then return false end
-    if not db.groupContainers[targetContainerId] then return false end
-
-    local sourceContainerId = group.parentContainerId
-    if sourceContainerId == targetContainerId then return false end
+    local group
     if self.CanMovePanelToContainer then
-        local ok = self:CanMovePanelToContainer(groupId, targetContainerId)
+        local ok, reason = self:CanMovePanelToContainer(groupId, targetContainerId)
         if not ok then
-            if self.Print then
+            if self.Print
+                and (reason == "invalid-class-scope"
+                    or reason == "scope-mismatch"
+                    or reason == "mixed-class-panel") then
                 self:Print("Panels cannot be moved into groups owned by another class.")
             end
             return false
         end
+        group = db.groups[groupId]
+    else
+        group = db.groups[groupId]
+        if not group or not group.parentContainerId then return false end
+        if not db.groupContainers[targetContainerId] then return false end
+        if group.parentContainerId == targetContainerId then return false end
     end
+
+    local sourceContainerId = group.parentContainerId
 
     -- Reassign to target container
     group.parentContainerId = targetContainerId

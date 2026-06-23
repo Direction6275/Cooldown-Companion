@@ -4233,6 +4233,22 @@ function CooldownCompanion:IsContainerVisibleToCurrentChar(containerId)
     if not (self.ResolveContainerClassScope and self.db and self.db.profile and self.db.profile.groupContainers) then
         return false
     end
+    local container = self.db.profile.groupContainers[containerId]
+    if type(container) == "table" then
+        if container.isGlobal == true then
+            return true
+        end
+        local currentCharKey = self.db.keys and self.db.keys.char
+        local currentCharInfo = currentCharKey
+            and self.db.global
+            and self.db.global.characterInfo
+            and self.db.global.characterInfo[currentCharKey]
+        if container.createdBy == currentCharKey
+            and type(currentCharInfo) == "table"
+            and (currentCharInfo.classFilename or currentCharInfo.classID) then
+            return true
+        end
+    end
     local scope = self:ResolveContainerClassScope(containerId)
     return scope.runtimeVisible == true
 end

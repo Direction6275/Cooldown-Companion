@@ -252,7 +252,7 @@ local function BuildProfileSummaryLines(profile, heading, customBarCount)
     local characterScoped = {}
     local legacyScoped = {}
     if type(profile) == "table" then
-        if type(profile.resourceBarsByClass) == "table" then classScoped[#classScoped + 1] = "Resource/Custom Bars" end
+        if CountPairs(profile.resourceBarsByClass) > 0 then classScoped[#classScoped + 1] = "Resource/Custom Bars" end
         if type(profile.resourceBarsByChar) == "table" then legacyScoped[#legacyScoped + 1] = "legacy Resource/Custom Bars" end
         if type(profile.castBarByChar) == "table" then characterScoped[#characterScoped + 1] = "Cast Bar" end
         if type(profile.frameAnchoringByChar) == "table" then characterScoped[#characterScoped + 1] = "Frame Anchoring" end

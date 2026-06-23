@@ -2939,7 +2939,14 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
     end
 
     for groupId, group in pairs(self.db.profile.groups) do
-        if not self:IsGroupVisibleToCurrentChar(groupId) then
+        local visible = self:IsGroupVisibleToCurrentChar(groupId)
+        local previewEligible = false
+        if not visible then
+            previewEligible = self:IsGroupEligibleForConfigPreview(groupId, {
+                group = group,
+            })
+        end
+        if not visible and not previewEligible then
             self:UnloadGroup(groupId)
         else
             local active = self:IsGroupActive(groupId, {
@@ -2947,7 +2954,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                 checkCharVisibility = true,
                 checkLoadConditions = true,
                 requireButtons = true,
-            })
+            }) or previewEligible
 
             if not active then
                 self:UnloadGroup(groupId)

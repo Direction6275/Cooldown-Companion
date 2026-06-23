@@ -1272,6 +1272,16 @@ local function RemoveLegacyResourceBarCandidates(profile, charKeys)
     end
 end
 
+local function ClearResourceBarUnsafeLegacyKeys(state, charKeys)
+    local unsafe = type(state) == "table" and state.unsafeCharKeys or nil
+    if type(unsafe) ~= "table" then
+        return
+    end
+    for _, charKey in ipairs(charKeys or {}) do
+        unsafe[charKey] = nil
+    end
+end
+
 local function ClearResourceBarConflict(state, classKey)
     if type(state) == "table" and type(state.conflicts) == "table" then
         state.conflicts[classKey] = nil
@@ -1653,6 +1663,7 @@ local function MigrateResourceBarClass(profile, classStore, state, classKey, can
                 StoreResourceBarConflict(state, classKey, candidateCharKeys, true)
             else
                 RemoveLegacyResourceBarCandidates(profile, candidateCharKeys)
+                ClearResourceBarUnsafeLegacyKeys(state, candidateCharKeys)
                 ClearResourceBarConflict(state, classKey)
             end
             return
@@ -1676,6 +1687,7 @@ local function MigrateResourceBarClass(profile, classStore, state, classKey, can
     if #unique == 1 then
         PromoteResourceBarClassSettings(classStore, classKey, unique[1].normalized)
         RemoveLegacyResourceBarCandidates(profile, candidateCharKeys)
+        ClearResourceBarUnsafeLegacyKeys(state, candidateCharKeys)
         ClearResourceBarConflict(state, classKey)
         return
     end
@@ -2088,7 +2100,9 @@ function CooldownCompanion:ResolveResourceBarConflict(classKey, sourceCharKey, o
         end
         MergeResourceBarConflictCustomBars(classStore[classKey], classKey, conflict, legacyStore, nil, nil)
         RemoveLegacyResourceBarCandidates(profile, conflict.candidateCharKeys)
-        ClearResourceBarConflict(EnsureResourceBarMigrationState(profile), classKey)
+        local state = EnsureResourceBarMigrationState(profile)
+        ClearResourceBarUnsafeLegacyKeys(state, conflict.candidateCharKeys)
+        ClearResourceBarConflict(state, classKey)
         if type(self._resourceBarConflictFallbackSettings) == "table" then
             self._resourceBarConflictFallbackSettings[classKey] = nil
         end
@@ -2122,7 +2136,9 @@ function CooldownCompanion:ResolveResourceBarConflict(classKey, sourceCharKey, o
     MergeResourceBarConflictCustomBars(classStore[classKey], classKey, conflict, legacyStore, sourceCharKey, existingClassSettings)
 
     RemoveLegacyResourceBarCandidates(profile, conflict.candidateCharKeys)
-    ClearResourceBarConflict(EnsureResourceBarMigrationState(profile), classKey)
+    local state = EnsureResourceBarMigrationState(profile)
+    ClearResourceBarUnsafeLegacyKeys(state, conflict.candidateCharKeys)
+    ClearResourceBarConflict(state, classKey)
     if type(self._resourceBarConflictFallbackSettings) == "table" then
         self._resourceBarConflictFallbackSettings[classKey] = nil
     end

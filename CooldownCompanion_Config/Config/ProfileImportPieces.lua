@@ -632,6 +632,9 @@ local function AddCustomBarInfo(infos, profile, settings, sourceStoreKey, entryK
     end
     local rawId = type(entry.customBarId) == "string" and entry.customBarId ~= "" and entry.customBarId
         or (type(entryKey) == "string" and entryKey or nil)
+    if rawId and options.skipRawIds and options.skipRawIds[rawId] then
+        return
+    end
     local specs = CollectEntrySpecs(entry, options.fallbackSpecID)
     local layouts = CollectCustomBarLayouts(settings, rawId)
     if options.legacyAuraSlots then
@@ -693,6 +696,7 @@ local function AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey,
                     sourceCharacterInfo = options.sourceCharacterInfo,
                     sourceClassKey = options.sourceClassKey,
                     infoByRawId = options.infoByRawId,
+                    skipRawIds = options.skipRawIds,
                     order = order,
                 })
             end
@@ -707,6 +711,7 @@ local function AddSharedCustomBarInfos(infos, profile, settings, sourceStoreKey,
                 sourceCharacterInfo = options.sourceCharacterInfo,
                 sourceClassKey = options.sourceClassKey,
                 infoByRawId = options.infoByRawId,
+                skipRawIds = options.skipRawIds,
                 order = order,
             })
         end
@@ -731,6 +736,7 @@ local function AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreK
                         fallbackSpecID = specID,
                         infoByRawId = options.infoByRawId,
                         legacyAuraSlots = options.legacyAuraSlots,
+                        skipRawIds = options.skipRawIds,
                         order = order,
                     })
                 end
@@ -743,9 +749,10 @@ local function BuildCustomBarInfos(profile, currentCharKey, currentInfo, sourceC
     local infos = {}
     local classStores = type(profile) == "table" and profile.resourceBarsByClass or nil
     local legacyStores = type(profile) == "table" and profile.resourceBarsByChar or nil
-    local resolvedClassStores = {}
+    local classStoreRawIds = {}
 
     local function addFromSettings(sourceStoreKey, settings, options)
+        local initialCount = #infos
         if type(settings) == "table" then
             local infoByRawId = {}
             local customBars = settings.customBars
@@ -756,6 +763,7 @@ local function BuildCustomBarInfos(profile, currentCharKey, currentInfo, sourceC
                     sourceCharacterInfo = options.sourceCharacterInfo,
                     sourceClassKey = options.sourceClassKey,
                     infoByRawId = infoByRawId,
+                    skipRawIds = options.skipRawIds,
                 })
             elseif type(customBars) == "table" then
                 AddSpecKeyedCustomBarInfos(infos, profile, settings, sourceStoreKey, customBars, {
@@ -764,6 +772,7 @@ local function BuildCustomBarInfos(profile, currentCharKey, currentInfo, sourceC
                     sourceCharacterInfo = options.sourceCharacterInfo,
                     sourceClassKey = options.sourceClassKey,
                     infoByRawId = infoByRawId,
+                    skipRawIds = options.skipRawIds,
                 })
             end
             if type(settings.customAuraBars) == "table" then
@@ -774,22 +783,33 @@ local function BuildCustomBarInfos(profile, currentCharKey, currentInfo, sourceC
                     sourceClassKey = options.sourceClassKey,
                     infoByRawId = infoByRawId,
                     legacyAuraSlots = true,
+                    skipRawIds = options.skipRawIds,
                 })
             end
+            if options.recordRawIds then
+                for rawId in pairs(infoByRawId) do
+                    options.recordRawIds[rawId] = true
+                end
+            end
         end
+        return #infos > initialCount
     end
 
     if type(classStores) == "table" then
         for sourceClassKey, settings in pairs(classStores) do
             local normalizedClassKey = NormalizeClassKey(sourceClassKey)
             if normalizedClassKey and type(settings) == "table" then
-                resolvedClassStores[normalizedClassKey] = true
-                addFromSettings(normalizedClassKey, settings, {
+                local rawIds = {}
+                local added = addFromSettings(normalizedClassKey, settings, {
                     currentCharKey = currentCharKey,
                     currentInfo = currentInfo,
                     sourceCharacterInfo = sourceCharacterInfo,
                     sourceClassKey = normalizedClassKey,
+                    recordRawIds = rawIds,
                 })
+                if added then
+                    classStoreRawIds[normalizedClassKey] = rawIds
+                end
             end
         end
     end
@@ -798,13 +818,12 @@ local function BuildCustomBarInfos(profile, currentCharKey, currentInfo, sourceC
         for sourceStoreKey, settings in pairs(legacyStores) do
             local ownerInfo = GetOwnerInfo(profile, sourceStoreKey, sourceCharacterInfo)
             local ownerClassKey = ClassKeyFromInfo(ownerInfo)
-            if not ownerClassKey or not resolvedClassStores[ownerClassKey] then
-                addFromSettings(sourceStoreKey, settings, {
-                    currentCharKey = currentCharKey,
-                    currentInfo = currentInfo,
-                    sourceCharacterInfo = sourceCharacterInfo,
-                })
-            end
+            addFromSettings(sourceStoreKey, settings, {
+                currentCharKey = currentCharKey,
+                currentInfo = currentInfo,
+                sourceCharacterInfo = sourceCharacterInfo,
+                skipRawIds = ownerClassKey and classStoreRawIds[ownerClassKey] or nil,
+            })
         end
     end
 
@@ -1084,9 +1103,6 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
 
     local selectedFolders, selectedContainers, selectedPanels, selectedCustomBars, deselectedContainers, deselectedPanels = SelectionSets(model)
     local selectedCustomBarsPayload = BuildSelectedCustomBarsPayload(model, selectedCustomBars)
-    if selectedCustomBarsPayload and ShouldBlockSelectedCustomBarsImport() then
-        return false
-    end
 
     local importedContainers = {}
     local batchToken = BeginImportBatch()
@@ -1144,7 +1160,9 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
         failed = failed or not ok
     end
 
-    if selectedCustomBarsPayload then
+    if selectedCustomBarsPayload and ShouldBlockSelectedCustomBarsImport() then
+        failed = true
+    elseif selectedCustomBarsPayload then
         local ok = ApplyCustomBarsPayload(profile, selectedCustomBarsPayload)
         applied = ok or applied
         failed = failed or not ok

@@ -709,8 +709,8 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
     button1 = "Close",
     hasEditBox = true,
     OnShow = function(self)
-        if CooldownCompanion.GetCurrentResourceBarConflictExportMessage then
-            local blockMessage = CooldownCompanion:GetCurrentResourceBarConflictExportMessage()
+        if CooldownCompanion.GetPendingResourceBarConflictExportMessage then
+            local blockMessage = CooldownCompanion:GetPendingResourceBarConflictExportMessage()
             if blockMessage then
                 self.EditBox:SetText(blockMessage)
                 self.EditBox:HighlightText()

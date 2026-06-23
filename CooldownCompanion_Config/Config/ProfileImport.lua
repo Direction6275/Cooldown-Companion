@@ -13,6 +13,7 @@ local PROFILE_IMPORT_METADATA_KEYS = {
     _exporterCharKey = true,
     _characterInfo = true,
     _cdcCharacterEligibilityStripped = true,
+    resourceBarMigration = true,
 }
 
 local SCOPED_STORE_KEYS = {
