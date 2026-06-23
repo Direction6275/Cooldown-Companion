@@ -841,7 +841,18 @@ local function NormalizeCustomAuraBarsForClass(settings, classKey)
     end
 end
 
-local function SanitizeAnchorGroupID(groupId)
+local function IsAnchorGroupVisibleForClass(numericGroupID, container, classKey)
+    classKey = NormalizeClassKey(classKey)
+    if classKey and CooldownCompanion.ResolveContainerClassScope then
+        local scope = CooldownCompanion:ResolveContainerClassScope(container, {
+            currentClassKey = classKey,
+        })
+        return type(scope) == "table" and scope.runtimeVisible == true
+    end
+    return CooldownCompanion:IsGroupVisibleToCurrentChar(numericGroupID)
+end
+
+local function SanitizeAnchorGroupID(groupId, classKey)
     if not groupId then
         return nil
     end
@@ -862,18 +873,18 @@ local function SanitizeAnchorGroupID(groupId)
     if not CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) or (container and container.isGlobal) then
         return nil
     end
-    if not CooldownCompanion:IsGroupVisibleToCurrentChar(numericGroupID) then
+    if not IsAnchorGroupVisibleForClass(numericGroupID, container, classKey) then
         return nil
     end
     return numericGroupID
 end
 
-local function SanitizeResourceBarAnchors(settings)
+local function SanitizeResourceBarAnchors(settings, classKey)
     if type(settings) ~= "table" then
         return
     end
 
-    settings.anchorGroupId = SanitizeAnchorGroupID(settings.anchorGroupId)
+    settings.anchorGroupId = SanitizeAnchorGroupID(settings.anchorGroupId, classKey)
 
     if settings.independentAnchor ~= nil and type(settings.independentAnchor) ~= "table" then
         settings.independentAnchor = nil
@@ -1033,7 +1044,7 @@ end
 
 local function SanitizeCopiedOrSeededScopedBarSettings(systemKey, settings)
     if systemKey == "resourceBars" then
-        SanitizeResourceBarAnchors(settings)
+        SanitizeResourceBarAnchors(settings, GetCurrentResourceBarClassKey(CooldownCompanion))
     elseif systemKey == "castBar" then
         SanitizeCastBarAnchors(settings)
     elseif systemKey == "frameAnchoring" then
@@ -1104,7 +1115,7 @@ local function IsDefaultResourceBarClassSettings(settings, classKey)
     end
     local defaults = CopySubsystemDefaults("resourceBars")
     NormalizeResourceBarSettingsForClass(defaults, classKey)
-    SanitizeResourceBarAnchors(defaults)
+    SanitizeResourceBarAnchors(defaults, classKey)
     return DeepEqual(settings, defaults)
 end
 
@@ -1184,7 +1195,7 @@ local function SeedImportedLegacyResourceBarBucket(addon, profile)
         if classKey then
             NormalizeResourceBarSettingsForClass(settings, classKey)
         end
-        SanitizeResourceBarAnchors(settings)
+        SanitizeResourceBarAnchors(settings, classKey)
         store = GetResourceBarLegacyStore(profile, true)
         store[exporterCharKey] = settings
     end
@@ -1203,11 +1214,13 @@ local function SeedCurrentLegacyResourceBarBucket(addon, profile)
     local classStore = type(profile) == "table" and rawget(profile, RESOURCE_BAR_CLASS_STORE_KEY) or nil
     local classSettings = type(classStore) == "table" and classStore[classKey] or nil
     if type(classSettings) == "table" and not IsDefaultResourceBarClassSettings(classSettings, classKey) then
+        ClearLegacyResourceBarSeed(profile)
         return
     end
 
     local store = GetResourceBarLegacyStore(profile, false)
     if type(store) == "table" and type(store[currentCharKey]) == "table" then
+        ClearLegacyResourceBarSeed(profile)
         return
     end
 
@@ -1225,14 +1238,15 @@ local function SeedCurrentLegacyResourceBarBucket(addon, profile)
     store = GetResourceBarLegacyStore(profile, true)
     local settings = CopyTable(seed)
     NormalizeResourceBarSettingsForClass(settings, classKey)
-    SanitizeResourceBarAnchors(settings)
+    SanitizeResourceBarAnchors(settings, classKey)
     store[currentCharKey] = settings
+    ClearLegacyResourceBarSeed(profile)
 end
 
 local function CopyNormalizedResourceBarCandidate(settings, classKey)
     local normalized = CopyTable(settings)
     NormalizeResourceBarSettingsForClass(normalized, classKey)
-    SanitizeResourceBarAnchors(normalized)
+    SanitizeResourceBarAnchors(normalized, classKey)
     return normalized
 end
 
@@ -1310,7 +1324,7 @@ end
 local function PromoteResourceBarClassSettings(classStore, classKey, settings)
     classStore[classKey] = CopyTable(settings)
     NormalizeResourceBarSettingsForClass(classStore[classKey], classKey)
-    SanitizeResourceBarAnchors(classStore[classKey])
+    SanitizeResourceBarAnchors(classStore[classKey], classKey)
 end
 
 local function MigrateResourceBarClass(profile, classStore, state, classKey, candidates)
@@ -1322,7 +1336,7 @@ local function MigrateResourceBarClass(profile, classStore, state, classKey, can
 
     if type(classStore[classKey]) == "table" then
         NormalizeResourceBarSettingsForClass(classStore[classKey], classKey)
-        SanitizeResourceBarAnchors(classStore[classKey])
+        SanitizeResourceBarAnchors(classStore[classKey], classKey)
         if IsDefaultResourceBarClassSettings(classStore[classKey], classKey) then
             classStore[classKey] = nil
         else
@@ -1567,7 +1581,7 @@ function CooldownCompanion:RunResourceBarClassScopeMigration()
     for classKey, settings in pairs(classStore) do
         if type(settings) == "table" then
             NormalizeResourceBarSettingsForClass(settings, classKey)
-            SanitizeResourceBarAnchors(settings)
+            SanitizeResourceBarAnchors(settings, classKey)
         end
     end
 
@@ -1630,7 +1644,7 @@ function CooldownCompanion:GetResourceBarSettings()
     if type(settings) ~= "table" then
         settings = CopySubsystemDefaults("resourceBars")
         NormalizeResourceBarSettingsForClass(settings, classKey)
-        SanitizeResourceBarAnchors(settings)
+        SanitizeResourceBarAnchors(settings, classKey)
         classStore[classKey] = settings
     elseif ResourceBarSettingsNeedsNormalizationForClass(settings, classKey) then
         NormalizeResourceBarSettingsForClass(settings, classKey)
@@ -1735,7 +1749,7 @@ function CooldownCompanion:ResolveResourceBarConflict(classKey, sourceCharKey, o
         end
         NormalizeResourceBarSettingsForClass(classStore[classKey], classKey)
         if classKey == GetCurrentResourceBarClassKey(self) then
-            SanitizeResourceBarAnchors(classStore[classKey])
+            SanitizeResourceBarAnchors(classStore[classKey], classKey)
         end
         RemoveLegacyResourceBarCandidates(profile, conflict.candidateCharKeys)
         ClearResourceBarConflict(EnsureResourceBarMigrationState(profile), classKey)
@@ -1764,7 +1778,7 @@ function CooldownCompanion:ResolveResourceBarConflict(classKey, sourceCharKey, o
 
     PromoteResourceBarClassSettings(classStore, classKey, source)
     if classKey == GetCurrentResourceBarClassKey(self) then
-        SanitizeResourceBarAnchors(classStore[classKey])
+        SanitizeResourceBarAnchors(classStore[classKey], classKey)
     end
 
     RemoveLegacyResourceBarCandidates(profile, conflict.candidateCharKeys)
