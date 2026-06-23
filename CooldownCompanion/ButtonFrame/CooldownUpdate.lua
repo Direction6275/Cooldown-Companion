@@ -1441,12 +1441,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._mainCDShown = false
         elseif buttonData.type == "spell"
            and button._lastReadableCharges ~= nil then
-            if button._lastReadableCharges <= 0 then
-                button._mainCDShown = true
-            else
-                local maxCharges = buttonData.maxCharges
-                local spent = button._chargesSpent
-                button._mainCDShown = maxCharges and maxCharges > 1 and spent and spent >= maxCharges or false
+            if button._chargeRecharging == true then
+                if button._lastReadableCharges <= 0 then
+                    button._mainCDShown = true
+                else
+                    local maxCharges = buttonData.maxCharges
+                    local spent = button._chargesSpent
+                    button._mainCDShown = maxCharges and maxCharges > 1 and spent and spent >= maxCharges or false
+                end
+            elseif button._chargeRecharging == false then
+                button._lastReadableCharges = nil
+                button._chargesSpent = nil
             end
         elseif buttonData.type == "spell" and usesChargeBehavior and buttonData.hasCharges then
             -- Restricted mode: charges unreadable (secret values).

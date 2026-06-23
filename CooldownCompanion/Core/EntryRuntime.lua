@@ -1434,6 +1434,30 @@ function EntryRuntime.RecordChargeSpent(owner)
     end
 end
 
+local function InferCurrentChargesFromSpent(maxCharges, spent)
+    if maxCharges == nil or (issecretvalue and issecretvalue(maxCharges)) then
+        return nil
+    end
+    if spent == nil or (issecretvalue and issecretvalue(spent)) then
+        return nil
+    end
+
+    maxCharges = tonumber(maxCharges)
+    spent = tonumber(spent)
+    if not maxCharges or maxCharges <= 0 or not spent then
+        return nil
+    end
+
+    local current = maxCharges - spent
+    if current < 0 then
+        return 0
+    end
+    if current > maxCharges then
+        return maxCharges
+    end
+    return current
+end
+
 local function SyncCustomBarChargeMetadata(customBar, charges, maxCharges)
     if not customBar then return end
 
@@ -1466,24 +1490,26 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
     result.maxCharges = maxCharges
     result.charges = charges
 
+    local chargeDurationObj = C_Spell.GetSpellChargeDuration(cooldownSpellID)
+    local chargeRecharging = DurationObjectShowsCooldown(chargeDurationObj)
+    result.chargeDurationObj = chargeDurationObj
+    result.chargeRecharging = chargeRecharging or false
+
     local currentCharges
     if charges and charges.currentCharges ~= nil and not issecretvalue(charges.currentCharges) then
         currentCharges = charges.currentCharges
         result.currentCharges = currentCharges
     elseif result.preserveReadableCharges == true
+        and chargeRecharging == true
         and owner
         and owner._chargeCountReadable == true
         and owner._currentReadableCharges ~= nil then
-        currentCharges = owner._currentReadableCharges
+        currentCharges = InferCurrentChargesFromSpent(maxCharges, owner._chargesSpent)
+            or owner._currentReadableCharges
         result.currentCharges = currentCharges
     elseif C_Spell.GetSpellDisplayCount then
         result.chargeDisplayCount = C_Spell.GetSpellDisplayCount(cooldownSpellID)
     end
-
-    local chargeDurationObj = C_Spell.GetSpellChargeDuration(cooldownSpellID)
-    local chargeRecharging = DurationObjectShowsCooldown(chargeDurationObj)
-    result.chargeDurationObj = chargeDurationObj
-    result.chargeRecharging = chargeRecharging or false
 
     if owner then
         owner._customCooldownHasCharges = true
@@ -1512,6 +1538,8 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
         owner._mainCDShown = mainCDShown
         if result.chargeRecharging and not owner._chargesSpent then
             owner._chargesSpent = maxCharges or 0
+        elseif result.chargeRecharging == false then
+            owner._chargesSpent = nil
         end
     end
 
