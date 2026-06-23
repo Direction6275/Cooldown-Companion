@@ -1260,10 +1260,12 @@ local function UpdateBarDisplay(button)
     if itemUsesResolvedCooldownState then
         onCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     elseif isChargeButton then
-        onCooldown = chargeState == CHARGE_STATE_MISSING
-            or chargeState == CHARGE_STATE_ZERO
+        onCooldown = button._chargePresentationSuppressed ~= true
+            and (chargeState == CHARGE_STATE_MISSING
+                or chargeState == CHARGE_STATE_ZERO)
     else
-        onCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+        onCooldown = button._cooldownPresentationSuppressed ~= true
+            and button._cooldownState == COOLDOWN_STATE_COOLDOWN
     end
 
     -- Time text color: switch between cooldown and ready colors
@@ -1930,6 +1932,8 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._lastReadableCharges = nil
     button._chargeSpellId = nil
     button._chargeInfoFromFallback = nil
+    button._chargePresentationSuppressed = nil
+    button._cooldownPresentationSuppressed = nil
     button._zeroChargesConfirmed = nil
     button._nilConfirmPending = nil
     button._displaySpellId = nil

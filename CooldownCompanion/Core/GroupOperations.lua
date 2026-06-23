@@ -2649,6 +2649,8 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
                 button._lastReadableCharges = nil
                 button._chargeSpellId = nil
                 button._chargeInfoFromFallback = nil
+                button._chargePresentationSuppressed = nil
+                button._cooldownPresentationSuppressed = nil
                 button._zeroChargesConfirmed = nil
                 button._displayCountZeroUsabilityFallback = nil
                 ClearButtonVisualState(button)

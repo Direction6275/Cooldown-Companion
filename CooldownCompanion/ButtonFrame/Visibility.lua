@@ -210,6 +210,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     if buttonData.hideWhileZeroCharges
             and not barAuraStackDisplay
             and not CooldownCompanion.HasItemFallbacks(buttonData)
+            and button._chargePresentationSuppressed ~= true
             and button._chargeState == CHARGE_STATE_ZERO then
         hideReasons = bit_bor(hideReasons, HIDE_ZERO_CHARGES)
     end

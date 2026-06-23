@@ -1313,6 +1313,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._lastReadableCharges = nil
         button._chargeSpellId = nil
         button._chargeInfoFromFallback = nil
+        button._chargePresentationSuppressed = nil
+        button._cooldownPresentationSuppressed = nil
         if buttonData.type == "spell" then
             button.count:SetText("")
         end
@@ -1380,6 +1382,19 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._chargeText = nil
             button.count:SetText("")
         end
+    end
+
+    if button._chargePresentationSuppressed == true and not auraOwnsPrimarySwipe then
+        button._cooldownPresentationSuppressed = true
+        button._cooldownState = COOLDOWN_STATE_READY
+        button._cooldownDeferred = nil
+        button._durationObj = nil
+        if not button._isBar and not button._isText then
+            button.cooldown:SetCooldown(0, 0)
+            button.cooldown:Hide()
+        end
+    else
+        button._cooldownPresentationSuppressed = nil
     end
 
     button._isOnGCD = isOnGCD or false
@@ -1516,7 +1531,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if IsEntryItemLike(buttonData) then
         button._desatCooldownActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     elseif usesChargeBehavior then
-        button._desatCooldownActive = button._chargeState == CHARGE_STATE_ZERO
+        button._desatCooldownActive = button._chargePresentationSuppressed ~= true
+            and button._chargeState == CHARGE_STATE_ZERO
     elseif auraOwnsPrimarySwipe and auraProbeInfo then
         button._desatCooldownActive = (auraProbeRealCooldownShown and not auraProbeIsGCDOnly) or false
     else
@@ -1533,16 +1549,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     if usesChargeBehavior then
       if buttonData.type == "spell" and buttonData.hasCharges then
+        local showChargePresentation = button._chargePresentationSuppressed ~= true
         -- Bar/text mode: charge bars are driven by the recharge DurationObject, not
         -- the main spell CD or GCD. Save and clear the main CD so recharge
         -- timing fully controls bar fill for charge spells.
-        if (button._isBar or button._isText) and not auraOwnsPrimarySwipe and button._chargeDurationObj then
+        if showChargePresentation and (button._isBar or button._isText) and not auraOwnsPrimarySwipe and button._chargeDurationObj then
             button._durationObj = nil
         end
 
         local normalCooldownDisplayActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
             or (isGCDOnly and style.showGCDSwipe == true)
-        if not auraOwnsPrimarySwipe and button._chargeDurationObj then
+        if showChargePresentation and not auraOwnsPrimarySwipe and button._chargeDurationObj then
             if not button._isBar and not button._isText then
                 if button._chargeCooldownVisualActive then
                     -- Icon mode: active recharge owns the shared cooldown frame.
@@ -1555,7 +1572,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- Bar/text mode: only set _durationObj if actually recharging
                 button._durationObj = button._chargeDurationObj
             end
-        elseif not button._isBar and not button._isText and not auraOwnsPrimarySwipe then
+        elseif showChargePresentation and not button._isBar and not button._isText and not auraOwnsPrimarySwipe then
             -- Icon mode fallback: no chargeDurationObj, try fetching one.
             -- Only an active charge DurationObject may replace an existing GCD display.
             local chargeSpellID = cooldownSpellId or buttonData.id
@@ -1676,7 +1693,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local cooldownActive
             if usesChargeBehavior then
                 -- Charge spells: cooldown-active means zero available charges.
-                cooldownActive = button._chargeState == CHARGE_STATE_ZERO
+                cooldownActive = button._chargePresentationSuppressed ~= true
+                    and button._chargeState == CHARGE_STATE_ZERO
             elseif auraOwnsPrimarySwipe then
                 -- Aura visuals replace button.cooldown; reuse the shared
                 -- probe computed above (same spell, same tick).

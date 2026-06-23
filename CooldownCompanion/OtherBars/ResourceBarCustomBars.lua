@@ -481,6 +481,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         if not (bar and bar.stackText and bar.stackText:IsShown()) then
             return
         end
+        if cooldownResult and cooldownResult.chargePresentationSuppressed == true then
+            bar.stackText:SetText("")
+            return
+        end
 
         local currentCharges = cooldownResult and cooldownResult.currentCharges
         local maxCharges = cooldownResult and cooldownResult.maxCharges
@@ -545,8 +549,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local cooldownColor = cabConfig.barCooldownColor or {0.6, 0.13, 0.18, 1}
         local rechargeColor = cabConfig.barChargeColor or {1.0, 0.82, 0.0, 1}
         local chargeState = cooldownResult and cooldownResult.chargeState
+        local chargePresentationSuppressed = cooldownResult and cooldownResult.chargePresentationSuppressed == true
         local fillColor = barColor
-        if cooldownResult and cooldownResult.hasCharges == true then
+        if cooldownResult and cooldownResult.hasCharges == true and not chargePresentationSuppressed then
             if chargeState == ST.CooldownLogic.CHARGE_STATE_ZERO then
                 fillColor = cooldownColor
             elseif cooldownActive then
@@ -559,7 +564,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local function UpdateSpellCustomBarSounds(soundAuraActive)
             if CooldownCompanion.UpdateCustomBarSoundAlerts then
                 local soundCooldownActive = cooldownActive
-                if cooldownResult and cooldownResult.hasCharges == true then
+                if cooldownResult and cooldownResult.hasCharges == true and not chargePresentationSuppressed then
                     soundCooldownActive = cooldownResult.chargeState == ST.CooldownLogic.CHARGE_STATE_ZERO
                         or (cooldownResult.chargeState == nil and cooldownActive)
                 end

@@ -82,6 +82,10 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     local charges, spellID, usedChargeFallback, maxCharges = ResolveRuntimeChargeInfo(buttonData, chargeSpellID)
     button._chargeSpellId = spellID
     button._chargeInfoFromFallback = usedChargeFallback or nil
+    button._chargePresentationSuppressed = usedChargeFallback == true
+        and chargeSpellID ~= nil
+        and tonumber(spellID) ~= tonumber(chargeSpellID)
+        or nil
 
     -- Read current charges only from the authoritative charge API field.
     -- Display-count APIs are UI-oriented and can transiently read 0 during
@@ -122,6 +126,8 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
         button._lastReadableCharges = nil
         button._chargeSpellId = nil
         button._chargeInfoFromFallback = nil
+        button._chargePresentationSuppressed = nil
+        button._cooldownPresentationSuppressed = nil
         button._chargesSpent = nil
         return nil
     end
@@ -138,7 +144,10 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
 
     -- Display charge text via secret-safe widget methods
     local showChargeText = button.style and button.style.showChargeText
-    if not showChargeText then
+    if button._chargePresentationSuppressed == true then
+        button._chargeText = nil
+        button.count:SetText("")
+    elseif not showChargeText then
         button.count:SetText("")
     else
         if cur then

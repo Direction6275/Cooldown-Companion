@@ -505,6 +505,7 @@ local function ResolveIconFillIntent(button, buttonData, style, target)
         cooldownReason = "cooldown"
     elseif UsesIconFillChargeBehavior(buttonData)
         and button._chargeRecharging == true
+        and button._chargePresentationSuppressed ~= true
         and button._hideCooldownChargesActive ~= true then
         cooldownReason = "charge-recharge"
     end
