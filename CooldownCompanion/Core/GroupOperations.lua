@@ -1284,7 +1284,8 @@ function CooldownCompanion:GroupHasUsableButtons(group, opts)
     return false
 end
 
-function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group)
+function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group, opts)
+    opts = opts or {}
     if self:IsRotationAssistantGroup(group) then
         return 1
     end
@@ -1293,17 +1294,104 @@ function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group)
         return 0
     end
 
-    local opts = self.GetGroupLayoutButtonUsabilityOptions
-        and self:GetGroupLayoutButtonUsabilityOptions(groupId, group)
-        or nil
+    local buttonUsabilityOptions = opts.buttonUsabilityOptions
+    if not buttonUsabilityOptions
+        and opts.allowConfigPreviewButtonUsability
+        and self.GetGroupLayoutButtonUsabilityOptions then
+        buttonUsabilityOptions = self:GetGroupLayoutButtonUsabilityOptions(groupId, group)
+    end
 
     local count = 0
-    for _, buttonData in ipairs(group.buttons) do
-        if self:IsButtonUsable(buttonData, group, opts) then
+    for sourceIndex, buttonData in ipairs(group.buttons) do
+        if self:IsButtonInConfigPreviewScope(groupId, sourceIndex, buttonUsabilityOptions)
+            and self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             count = count + 1
         end
     end
     return count
+end
+
+local CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS = {
+    checkLoadConditions = false,
+    ignoreSpellAvailability = true,
+    ignoreTalentConditions = true,
+    configPreview = true,
+}
+
+local function IsGroupEnabledForConfigPreview(addon, group)
+    if not group then return false end
+
+    local container = addon:GetParentContainer(group)
+    if container then
+        if container.enabled == false or group.enabled == false then return false end
+    elseif group.enabled == false then
+        return false
+    end
+
+    if group.parentContainerId then
+        if not addon.ResolveContainerClassScope then
+            return false
+        end
+        local scope = addon:ResolveContainerClassScope(group.parentContainerId)
+        if not scope or scope.isInvalid == true then
+            return false
+        end
+    end
+
+    return true
+end
+
+function CooldownCompanion:IsButtonInConfigPreviewScope(groupId, sourceIndex, opts)
+    if not (opts and opts.configPreview) then
+        return true
+    end
+    if not ST.IsConfigButtonForceVisible then
+        return true
+    end
+
+    local previewButton = {
+        _groupId = groupId,
+        index = sourceIndex,
+    }
+    return ST.IsConfigButtonForceVisible(previewButton) == true
+end
+
+local function GroupHasConfigPreviewButtons(addon, groupId, group)
+    if addon:IsRotationAssistantGroup(group) then
+        return true
+    end
+    if not (group and group.buttons and #group.buttons > 0) then
+        return false
+    end
+    for sourceIndex, buttonData in ipairs(group.buttons) do
+        if addon:IsButtonInConfigPreviewScope(groupId, sourceIndex, CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS)
+            and addon:IsButtonUsable(buttonData, group, CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS) then
+            return true
+        end
+    end
+    return false
+end
+
+function CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)
+    if not (groupId and ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(groupId)) then
+        return nil
+    end
+
+    local db = self.db and self.db.profile
+    group = group or (db and db.groups and db.groups[groupId])
+    if not IsGroupEnabledForConfigPreview(self, group) then
+        return nil
+    end
+
+    if not GroupHasConfigPreviewButtons(self, groupId, group) then
+        return nil
+    end
+
+    return CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS
+end
+
+function CooldownCompanion:GetGroupLayoutButtonUsabilityOptions(groupId, group)
+    return self:GetGroupButtonUsabilityOptions(groupId, group)
 end
 
 function CooldownCompanion:IsGroupActive(groupId, opts)
@@ -1353,11 +1441,16 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
     end
 
     local buttonUsabilityOptions = opts.buttonUsabilityOptions
-        or (self.GetGroupButtonUsabilityOptions and self:GetGroupButtonUsabilityOptions(groupId, group))
+    if not buttonUsabilityOptions
+        and opts.allowConfigPreviewButtonUsability
+        and self.GetGroupButtonUsabilityOptions then
+        buttonUsabilityOptions = self:GetGroupButtonUsabilityOptions(groupId, group)
+    end
 
     if opts.requireButtons and not self:GroupHasUsableButtons(group, {
         checkLoadConditions = opts.checkLoadConditions,
         ignoreSpellAvailability = buttonUsabilityOptions and buttonUsabilityOptions.ignoreSpellAvailability,
+        ignoreTalentConditions = buttonUsabilityOptions and buttonUsabilityOptions.ignoreTalentConditions,
     }) then
         return false
     end
@@ -1373,28 +1466,11 @@ function CooldownCompanion:IsGroupEligibleForConfigPreview(groupId, opts)
 
     local db = self.db and self.db.profile
     local group = opts.group or (db and db.groups and db.groups[groupId])
-    if not group then return false end
-
-    local container = self:GetParentContainer(group)
-    if container then
-        if container.enabled == false or group.enabled == false then return false end
-    elseif group.enabled == false then
+    if not IsGroupEnabledForConfigPreview(self, group) then
         return false
     end
 
-    if not self:IsRotationAssistantGroup(group) and not (group.buttons and #group.buttons > 0) then
-        return false
-    end
-
-    if not self.ResolveContainerClassScope then
-        return false
-    end
-    if not group.parentContainerId then
-        return false
-    end
-
-    local scope = self:ResolveContainerClassScope(group.parentContainerId)
-    return scope and scope.isOtherClass == true and scope.isInvalid ~= true
+    return GroupHasConfigPreviewButtons(self, groupId, group)
 end
 
 function CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
@@ -2473,7 +2549,7 @@ function CooldownCompanion:IsButtonUsable(buttonData, group, opts)
     if opts.checkLoadConditions ~= false and not self:IsButtonLoadConditionMet(buttonData, group) then return false end
 
     -- Per-button talent condition: gate visibility on a specific talent node.
-    if not self:IsTalentConditionMet(buttonData) then return false end
+    if not opts.ignoreTalentConditions and not self:IsTalentConditionMet(buttonData) then return false end
 
     if opts.ignoreSpellAvailability and buttonData.type == "spell" then
         return true
@@ -2554,7 +2630,8 @@ local function GetFrameForButtonSetComparison(addon, groupId)
     return addon._dormantFrames and addon._dormantFrames[groupId] or nil
 end
 
-function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group)
+function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group, opts)
+    opts = opts or {}
     local frame = GetFrameForButtonSetComparison(self, groupId)
     if not frame or not frame.buttons then
         return false
@@ -2571,11 +2648,15 @@ function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group)
 
     local usableButtons = {}
     local usableCount = 0
-    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
-        and self:GetGroupButtonUsabilityOptions(groupId, group)
-        or nil
-    for _, buttonData in ipairs(group.buttons) do
-        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
+    local buttonUsabilityOptions = opts.buttonUsabilityOptions
+    if not buttonUsabilityOptions
+        and opts.allowConfigPreviewButtonUsability
+        and self.GetGroupButtonUsabilityOptions then
+        buttonUsabilityOptions = self:GetGroupButtonUsabilityOptions(groupId, group)
+    end
+    for sourceIndex, buttonData in ipairs(group.buttons) do
+        if self:IsButtonInConfigPreviewScope(groupId, sourceIndex, buttonUsabilityOptions)
+            and self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             usableCount = usableCount + 1
             usableButtons[usableCount] = buttonData
         end
@@ -2754,7 +2835,9 @@ function CooldownCompanion:RefreshConfigSelectedGroupFrames()
             if (active or (wasPreviewed and frame))
                 and (not frame
                     or (wasPreviewed and not isPreviewed)
-                    or self:GroupButtonSetNeedsRebuild(groupId, group)) then
+                    or self:GroupButtonSetNeedsRebuild(groupId, group, {
+                        allowConfigPreviewButtonUsability = isPreviewed,
+                    })) then
                 self:RefreshGroupFrame(groupId)
                 refreshed = true
             end
@@ -2783,7 +2866,11 @@ function CooldownCompanion:FinalizePanelAnchors()
         local frame = self.groupFrames[groupId]
         if group and group.parentContainerId and group.anchor and frame then
             if not group.compactLayout then
-                frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
+                frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group, {
+                    allowConfigPreviewButtonUsability = self:IsGroupEligibleForConfigPreview(groupId, {
+                        group = group,
+                    }),
+                })
             else
                 frame.layoutButtonCount = nil
             end
@@ -2945,12 +3032,9 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
 
     for groupId, group in pairs(self.db.profile.groups) do
         local visible = self:IsGroupVisibleToCurrentChar(groupId)
-        local previewEligible = false
-        if not visible then
-            previewEligible = self:IsGroupEligibleForConfigPreview(groupId, {
-                group = group,
-            })
-        end
+        local previewEligible = self:IsGroupEligibleForConfigPreview(groupId, {
+            group = group,
+        })
         if not visible and not previewEligible then
             self:UnloadGroup(groupId)
         else
@@ -2965,11 +3049,15 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                 self:UnloadGroup(groupId)
             else
                 local frame = self.groupFrames[groupId]
-                if frame and self:GroupButtonSetNeedsRebuild(groupId, group) then
+                if frame and self:GroupButtonSetNeedsRebuild(groupId, group, {
+                    allowConfigPreviewButtonUsability = previewEligible,
+                }) then
                     self:RefreshGroupFrame(groupId)
                     frame = self.groupFrames[groupId]
                 elseif not frame then
-                    if self:GroupButtonSetNeedsRebuild(groupId, group) then
+                    if self:GroupButtonSetNeedsRebuild(groupId, group, {
+                        allowConfigPreviewButtonUsability = previewEligible,
+                    }) then
                         self:DiscardDormantFrame(groupId)
                     end
                     -- Recover dormant frame with buttons intact (no repopulation needed)
