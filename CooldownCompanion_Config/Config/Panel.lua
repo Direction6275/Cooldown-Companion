@@ -28,6 +28,8 @@ local IsConfigFinderAvailable = ST._IsConfigFinderAvailable
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local SetConfigFinderText = ST._SetConfigFinderText
 local ClearConfigFinderText = ST._ClearConfigFinderText
+local ClearHideActiveCurrentClassPanels = ST._ClearOtherClassHideActive
+local ResetOtherClassBrowseState = ST._ResetOtherClassLibraryState
 local InvalidateConfigFinderResults = ST._InvalidateConfigFinderResults
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
 local MaybeAutoStartFirstIconPanelTutorial = ST._MaybeAutoStartFirstIconPanelTutorial
@@ -37,6 +39,30 @@ local RebuildTutorialAnchors = ST._RebuildTutorialAnchors
 local RefreshTutorialPlacement = ST._RefreshTutorialPlacement
 local SetupChangelogOverlay = ST._SetupChangelogOverlay
 local RefreshVisibleConfigCompactRows = ST._RefreshVisibleConfigCompactRows
+
+local function ClearTransientConfigPreviewState()
+    ClearHideActiveCurrentClassPanels()
+    if CS.previewToggleRefreshActive then
+        return
+    end
+    if CooldownCompanion.ClearAllConfigPreviews then
+        CooldownCompanion:ClearAllConfigPreviews()
+    end
+    if CooldownCompanion.RefreshConfigSelectedGroupFrames then
+        CooldownCompanion:RefreshConfigSelectedGroupFrames()
+    end
+end
+
+local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
+local CONFIG_FINDER_BOX_HEIGHT = 28
+local CONFIG_FINDER_BUTTON_GAP = 3
+local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
+local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
+local CONFIG_NESTED_INLINE_GROUP_INSET = 20
+local CONFIG_DRAG_ALPHA = 0.40
+local PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH = 330
+local PROFILE_WIDE_FONT_WINDOW_HEIGHT = 168
+local PROFILE_WIDE_BAR_TEXTURE_WINDOW_HEIGHT = 106
 
 local function GetAddonVersionText()
     if ST._GetAddonVersion then
@@ -60,17 +86,6 @@ local function GetVersionFooterText()
     end
     return footer
 end
-
-local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
-local CONFIG_FINDER_BOX_HEIGHT = 28
-local CONFIG_FINDER_BUTTON_GAP = 3
-local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
-local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
-local CONFIG_NESTED_INLINE_GROUP_INSET = 20
-local CONFIG_DRAG_ALPHA = 0.40
-local PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH = 330
-local PROFILE_WIDE_FONT_WINDOW_HEIGHT = 168
-local PROFILE_WIDE_BAR_TEXTURE_WINDOW_HEIGHT = 106
 
 local function GetProfileWideSideWindowWidth()
     local configFrame = CS.configFrame
@@ -930,12 +945,7 @@ local function CreateConfigPanel()
         if CS.CloseAdvancedSettingsPanel then
             CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         end
-        if not CS.previewToggleRefreshActive then
-            CooldownCompanion:ClearAllConfigPreviews()
-            if CooldownCompanion.RefreshConfigSelectedGroupFrames then
-                CooldownCompanion:RefreshConfigSelectedGroupFrames()
-            end
-        end
+        ClearTransientConfigPreviewState()
         if ClearConfigShiftTooltipHover then
             ClearConfigShiftTooltipHover()
         end
@@ -1234,8 +1244,7 @@ local function CreateConfigPanel()
             if ClearConfigPrimarySelection then
                 ClearConfigPrimarySelection()
             end
-            CS.otherClassLibraryActive = false
-            CS.otherClassLibraryClassKey = nil
+            ResetOtherClassBrowseState()
             CooldownCompanion:RefreshConfigPanel()
             return
         end
@@ -1248,6 +1257,7 @@ local function CreateConfigPanel()
         if ClearConfigPrimarySelection then
             ClearConfigPrimarySelection()
         end
+        ClearHideActiveCurrentClassPanels()
         CS.otherClassLibraryActive = true
         CS.otherClassLibraryClassKey = nil
         CooldownCompanion:RefreshConfigPanel()
@@ -1559,6 +1569,7 @@ local function CreateConfigPanel()
             if frame.HideChangelogOverlay then
                 frame.HideChangelogOverlay()
             end
+            ClearTransientConfigPreviewState()
             self:Hide()
         elseif not InCombatLockdown() then
             self:SetPropagateKeyboardInput(true)
@@ -1607,6 +1618,7 @@ local function CreateConfigPanel()
             isCollapsing = true
             content:Hide()
             isCollapsing = false
+            ClearTransientConfigPreviewState()
 
             ApplyMiniFrameBackdrop()
             miniFrame:ClearAllPoints()
@@ -2556,11 +2568,13 @@ function CooldownCompanion:_configToggleImpl()
         if CS.CloseAdvancedSettingsPanel then
             CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         end
+        ClearTransientConfigPreviewState()
         CS.configFrame._miniFrame:Hide()
         return
     end
 
     if CS.configFrame.frame:IsShown() then
+        ClearHideActiveCurrentClassPanels()
         CS.configFrame.frame:Hide()
     else
         SetPrimaryMode("buttons", { skipRefresh = true })

@@ -277,6 +277,7 @@ ST._configState = {
     collapsedPanels = {},
     otherClassLibraryActive = false,
     otherClassLibraryClassKey = nil,
+    hideActiveCurrentClassPanels = false,
     panelClickTimes = {},
     addingToPanelId = nil,
     folderAccentBars = {},
@@ -578,6 +579,29 @@ local function IsConfigFinderActive()
     return IsConfigFinderAvailable() and IsConfigFinderQueryUsable(CS.configSearchText)
 end
 
+local function SetHideActiveCurrentClassPanels(active, opts)
+    local enabled = active == true and CS.otherClassLibraryActive == true
+    if CS.hideActiveCurrentClassPanels == enabled then
+        return false
+    end
+
+    CS.hideActiveCurrentClassPanels = enabled
+    if not (opts and opts.skipRefresh) and CooldownCompanion.RefreshAllGroupsVisibilityOnly then
+        CooldownCompanion:RefreshAllGroupsVisibilityOnly()
+    end
+    return true
+end
+
+local function ClearOtherClassHideActive(opts)
+    return SetHideActiveCurrentClassPanels(false, opts)
+end
+
+local function ResetOtherClassLibraryState(opts)
+    CS.otherClassLibraryActive = false
+    CS.otherClassLibraryClassKey = nil
+    return ClearOtherClassHideActive(opts)
+end
+
 local ClearConfigPrimarySelection
 
 local function SetConfigFinderText(text, opts)
@@ -595,8 +619,7 @@ local function SetConfigFinderText(text, opts)
         if not (opts and opts.preservePrimarySelection) and ClearConfigPrimarySelection then
             ClearConfigPrimarySelection()
         end
-        CS.otherClassLibraryActive = false
-        CS.otherClassLibraryClassKey = nil
+        ResetOtherClassLibraryState()
     end
 
     if opts and opts.syncWidget == false then
@@ -865,6 +888,7 @@ end
 
 local function RestoreOtherClassLibraryForScope(scope)
     if scope and scope.isOtherClass then
+        ClearOtherClassHideActive()
         CS.otherClassLibraryActive = true
         CS.otherClassLibraryClassKey = scope.ownerClassKey
         return true
@@ -3053,8 +3077,7 @@ local function ResetConfigSelection(full)
         wipe(CS.selectedGroups)
         wipe(CS.selectedCustomBars)
         CS.addingToPanelId = nil
-        CS.otherClassLibraryActive = false
-        CS.otherClassLibraryClassKey = nil
+        ResetOtherClassLibraryState()
     end
     RefreshAlphaDriverForConfigSelection()
 end
@@ -3073,16 +3096,13 @@ local function SetConfigPrimaryMode(mode, opts)
     if toBars and not wasBars then
         -- Preserve existing behavior when entering Bars & Frames mode.
         ResetConfigSelection(true)
-        CS.otherClassLibraryActive = false
-        CS.otherClassLibraryClassKey = nil
     elseif (not toBars) and wasBars then
         -- Stop preview loops when returning to button settings mode.
         CooldownCompanion:ClearAllConfigPreviews()
         CS.selectedCustomBarId = nil
         CS.customBarSettingsTab = "appearance"
         ClearConfigResourceSelection()
-        CS.otherClassLibraryActive = false
-        CS.otherClassLibraryClassKey = nil
+        ResetOtherClassLibraryState()
     end
 
     CS.resourceBarPanelActive = toBars
@@ -3415,6 +3435,9 @@ ST._IsConfigFinderAvailable = IsConfigFinderAvailable
 ST._IsConfigFinderActive = IsConfigFinderActive
 ST._SetConfigFinderText = SetConfigFinderText
 ST._ClearConfigFinderText = ClearConfigFinderText
+ST._SetHideActiveCurrentClassPanels = SetHideActiveCurrentClassPanels
+ST._ClearOtherClassHideActive = ClearOtherClassHideActive
+ST._ResetOtherClassLibraryState = ResetOtherClassLibraryState
 ST._BuildConfigFinderResults = BuildConfigFinderResults
 ST._InvalidateConfigFinderResults = InvalidateConfigFinderResults
 ST._SelectConfigFinderResult = SelectConfigFinderResult

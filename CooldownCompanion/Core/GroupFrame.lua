@@ -287,6 +287,13 @@ local function GetGroupButtonSizingOptions(self, groupId, group, buttonUsability
     return nil
 end
 
+local function IsSourceButtonInPreviewScope(self, groupId, sourceIndex, opts)
+    if self.IsButtonInConfigPreviewScope then
+        return self:IsButtonInConfigPreviewScope(groupId, sourceIndex, opts)
+    end
+    return true
+end
+
 local function GetContainerPreviewSelectionState(groupId)
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local group = profile and profile.groups and profile.groups[groupId]
@@ -1774,6 +1781,26 @@ function CooldownCompanion:RefreshCursorAnchorTicker()
     end
 end
 
+local function ShouldShowGroupFrameForRuntimeOrPreview(addon, groupId, group)
+    if addon:IsGroupEligibleForConfigPreview(groupId, {
+        group = group,
+    }) then
+        return true
+    end
+
+    if addon.IsGroupSuppressedForOtherClassBrowse
+        and addon:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
+        return false
+    end
+
+    return addon:IsGroupActive(groupId, {
+        group = group,
+        checkCharVisibility = true,
+        checkLoadConditions = true,
+        requireButtons = true,
+    })
+end
+
 function CooldownCompanion:CreateGroupFrame(groupId)
     -- Return existing frame to prevent duplicates (SharedMedia callbacks
     -- can trigger RefreshAllMedia before OnEnable's CreateAllGroupFrames)
@@ -1974,15 +2001,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Create buttons
     self:PopulateGroupButtons(groupId)
     
-    -- Show/hide based on runtime activity, plus selected off-class config previews.
-    if self:IsGroupActive(groupId, {
-        group = group,
-        checkCharVisibility = true,
-        checkLoadConditions = true,
-        requireButtons = true,
-    }) or self:IsGroupEligibleForConfigPreview(groupId, {
-        group = group,
-    }) then
+    -- Show/hide based on runtime activity, plus selected config previews.
+    if ShouldShowGroupFrameForRuntimeOrPreview(self, groupId, group) then
         frame:Show()
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
         ApplyCurrentAlphaIfPresent(self, frame, groupId, group)
@@ -2261,7 +2281,7 @@ end
 
 -- Compute button width/height from group style (bar mode vs square vs non-square).
 -- Returns width, height, isBarMode.
-local function GetButtonDimensions(group, buttonUsabilityOptions)
+local function GetButtonDimensions(group, buttonUsabilityOptions, groupId)
     local style = group.style or {}
     local isBarMode = group.displayMode == "bars"
     local isTextMode = group.displayMode == "text"
@@ -2273,8 +2293,9 @@ local function GetButtonDimensions(group, buttonUsabilityOptions)
         w = style.textWidth or 200
         if GetEffectiveTextHeight then
             local maxHeight = GetEffectiveTextHeight(style, style.textFormat or "{name}  {status}")
-            for _, buttonData in ipairs(group.buttons or {}) do
-                if CooldownCompanion:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
+            for sourceIndex, buttonData in ipairs(group.buttons or {}) do
+                if IsSourceButtonInPreviewScope(CooldownCompanion, groupId, sourceIndex, buttonUsabilityOptions)
+                    and CooldownCompanion:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
                     local effectiveStyle = CooldownCompanion:GetEffectiveStyle(style, buttonData)
                     local fmt = buttonData.textFormat or effectiveStyle.textFormat or "{name}  {status}"
                     local buttonHeight = GetEffectiveTextHeight(effectiveStyle, fmt)
@@ -2345,7 +2366,7 @@ local function ApplyTextGroupHeader(self, frame, group, style, isTextMode)
 end
 
 local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
-    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions)
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
@@ -2375,7 +2396,9 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
 
     frame.visibleButtonCount = isTriggerMode and (visibleIndex > 0 and 1 or 0) or visibleIndex
     if group.parentContainerId and not group.compactLayout and self.GetGroupLayoutButtonCount then
-        frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
+        frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group, {
+            buttonUsabilityOptions = buttonSizingOptions,
+        })
     else
         frame.layoutButtonCount = nil
     end
@@ -2460,7 +2483,8 @@ local function GetStyleUpdateEntries(self, groupId, frame, group)
     local previousCount = entries.count or 0
     local visibleIndex = 0
     for sourceIndex, buttonData in ipairs(sourceButtons) do
-        if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
+        if IsSourceButtonInPreviewScope(self, groupId, sourceIndex, buttonUsabilityOptions)
+            and IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
             visibleIndex = visibleIndex + 1
             local button = frame.buttons and frame.buttons[visibleIndex]
             if not button then
@@ -2524,7 +2548,8 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     -- Create new buttons (skip untalented spells)
     for i, buttonData in ipairs(sourceButtons) do
-        if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
+        if IsSourceButtonInPreviewScope(self, groupId, i, buttonUsabilityOptions)
+            and IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
             local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
             local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
             local button = AcquireButtonFromPool(frame, poolKey)
@@ -2582,7 +2607,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
         and self:GetGroupButtonUsabilityOptions(groupId, group)
         or nil
     local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
-    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions)
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
@@ -2670,7 +2695,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
         and self:GetGroupButtonUsabilityOptions(groupId, group)
         or nil
     local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
-    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions)
+    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = style.orientation or (isBarMode and "vertical" or "horizontal")
@@ -2825,16 +2850,9 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     )
     self:UpdateGroupClickthrough(groupId)
 
-    -- Update visibility: runtime-active groups show normally; selected off-class
-    -- groups can also show as config previews without becoming runtime-visible.
-    local isActive = CooldownCompanion:IsGroupActive(groupId, {
-        group = group,
-        checkCharVisibility = true,
-        checkLoadConditions = true,
-        requireButtons = true,
-    }) or CooldownCompanion:IsGroupEligibleForConfigPreview(groupId, {
-        group = group,
-    })
+    -- Update visibility: runtime-active groups show normally; selected config
+    -- previews can also show without becoming runtime-visible.
+    local isActive = ShouldShowGroupFrameForRuntimeOrPreview(CooldownCompanion, groupId, group)
     if isActive then
         if InCombatLockdown() and frame:IsProtected() then
             if not frame:IsShown() then
@@ -3700,7 +3718,13 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     HideContainerPanelLabels(frame)
     UpdateContainerWrapperLevels(frame)
 
-    if self._combatForcedLock or container.locked ~= false or not self:IsContainerVisibleToCurrentChar(containerId) then
+    local allPanels = self.GetPanels and self:GetPanels(containerId) or nil
+    local suppressedForOtherClassBrowse = self.IsContainerSuppressedForOtherClassBrowse
+        and self:IsContainerSuppressedForOtherClassBrowse(containerId, allPanels)
+    if self._combatForcedLock
+        or container.locked ~= false
+        or not self:IsContainerVisibleToCurrentChar(containerId)
+        or suppressedForOtherClassBrowse then
         if self.UpdateContainerDragHandle then
             self:UpdateContainerDragHandle(containerId, true)
         else
@@ -3720,8 +3744,8 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         return
     end
 
-    local previewPanels = self.GetContainerUnlockPreviewPanels and self:GetContainerUnlockPreviewPanels(containerId) or {}
-    local allPanels = self.GetPanels and self:GetPanels(containerId) or previewPanels
+    local previewPanels = self.GetContainerUnlockPreviewPanels and self:GetContainerUnlockPreviewPanels(containerId, allPanels) or {}
+    allPanels = allPanels or previewPanels
     local previewRects = {}
     local previewedGroupIds = {}
     local minLeft, maxRight, minBottom, maxTop = nil, nil, nil, nil
