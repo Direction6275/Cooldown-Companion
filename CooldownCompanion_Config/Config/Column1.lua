@@ -41,8 +41,24 @@ local SelectConfigFolder = ST._SelectConfigFolder
 local SelectConfigContainer = ST._SelectConfigContainer
 local ToggleConfigContainerMultiSelect = ST._ToggleConfigContainerMultiSelect
 local SelectConfigPanel = ST._SelectConfigPanel
+local ClearOtherClassHideActive = ST._ClearOtherClassHideActive
+local SetHideActiveCurrentClassPanels = ST._SetHideActiveCurrentClassPanels
 
 local GenerateGroupName
+
+local function ClearOtherClassBrowseState(opts)
+    CS.otherClassLibraryActive = false
+    CS.otherClassLibraryClassKey = nil
+    if ClearOtherClassHideActive then
+        ClearOtherClassHideActive(opts)
+    else
+        local changed = CS.hideActiveCurrentClassPanels == true
+        CS.hideActiveCurrentClassPanels = false
+        if changed and not (opts and opts.skipRefresh) and CooldownCompanion.RefreshAllGroupsVisibilityOnly then
+            CooldownCompanion:RefreshAllGroupsVisibilityOnly()
+        end
+    end
+end
 
 local function OpenContainerLoadConditions(containerId)
     SelectConfigContainer(containerId)
@@ -674,15 +690,23 @@ local function ShowFolderContextMenu(db, folderId, folder)
     ToggleDropDownMenu(1, nil, CS.folderContextMenu, "cursor", 0, 0)
 end
 
+local function ClearColumn1ButtonBar()
+    for _, widget in ipairs(CS.col1BarWidgets) do
+        widget:Release()
+    end
+    wipe(CS.col1BarWidgets)
+    if CS.col1ButtonBar then
+        CS.col1ButtonBar._topRowBtns = nil
+        CS.col1ButtonBar:SetScript("OnSizeChanged", nil)
+    end
+end
+
 local function PopulateColumn1ButtonBar()
     if not CS.col1ButtonBar then
         return
     end
 
-    for _, widget in ipairs(CS.col1BarWidgets) do
-        widget:Release()
-    end
-    wipe(CS.col1BarWidgets)
+    ClearColumn1ButtonBar()
 
     local barW = CS.col1ButtonBar:GetWidth() or 300
     local thirdW = (barW - 6) / 3
@@ -749,6 +773,60 @@ local function PopulateColumn1ButtonBar()
     end)
 end
 
+local function PopulateOtherClassBrowseButtonBar()
+    if not CS.col1ButtonBar then
+        return
+    end
+
+    ClearColumn1ButtonBar()
+
+    local toggleBtn = AceGUI:Create("Button")
+    local function UpdateToggleText()
+        toggleBtn:SetText(CS.hideActiveCurrentClassPanels == true and "Show Active" or "Hide Active")
+    end
+    UpdateToggleText()
+    toggleBtn:SetCallback("OnClick", function()
+        local hideActive = not (CS.hideActiveCurrentClassPanels == true)
+        if SetHideActiveCurrentClassPanels then
+            SetHideActiveCurrentClassPanels(hideActive)
+        else
+            CS.hideActiveCurrentClassPanels = hideActive and CS.otherClassLibraryActive == true
+            if CooldownCompanion.RefreshAllGroupsVisibilityOnly then
+                CooldownCompanion:RefreshAllGroupsVisibilityOnly()
+            end
+        end
+        UpdateToggleText()
+    end)
+    toggleBtn.frame:SetParent(CS.col1ButtonBar)
+    toggleBtn.frame:ClearAllPoints()
+    toggleBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
+    toggleBtn.frame:SetPoint("TOPRIGHT", CS.col1ButtonBar, "TOPRIGHT", 0, -1)
+    toggleBtn.frame:SetHeight(28)
+    toggleBtn.frame._cdcHideActiveOtherClassBrowse = true
+    toggleBtn.frame:SetScript("OnEnter", function(self)
+        local hidden = CS.hideActiveCurrentClassPanels == true
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine(hidden and "Show Active" or "Hide Active")
+        GameTooltip:AddLine(hidden and "Show your current character's panels again." or "Hide your current character's panels.", 1, 1, 1, true)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Other-class previews stay visible.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    toggleBtn.frame:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    toggleBtn.frame:Show()
+    table.insert(CS.col1BarWidgets, toggleBtn)
+
+    CS.col1ButtonBar._topRowBtns = { toggleBtn.frame }
+    CS.col1ButtonBar:SetScript("OnSizeChanged", function(self, w)
+        if self._topRowBtns and self._topRowBtns[1] then
+            self._topRowBtns[1]:SetWidth(w)
+        end
+    end)
+    CS.col1ButtonBar:Show()
+end
+
 ------------------------------------------------------------------------
 -- COLUMN 1: Groups
 ------------------------------------------------------------------------
@@ -757,8 +835,7 @@ local function RefreshColumn1(preserveDrag)
 
     -- Bars & Frames panel mode: take over col1 with the bar/frame tab group
     if CS.resourceBarPanelActive then
-        CS.otherClassLibraryActive = false
-        CS.otherClassLibraryClassKey = nil
+        ClearOtherClassBrowseState()
         CancelDrag()
         CS.HideAutocomplete()
         CS.col1Scroll.frame:Hide()
@@ -838,8 +915,7 @@ local function RefreshColumn1(preserveDrag)
     if not db.folders then db.folders = {} end
 
     if CooldownCompanion._unsupportedLegacyProfile then
-        CS.otherClassLibraryActive = false
-        CS.otherClassLibraryClassKey = nil
+        ClearOtherClassBrowseState()
         if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
 
         local spacer = AceGUI:Create("SimpleGroup")
@@ -1742,8 +1818,7 @@ local function RefreshColumn1(preserveDrag)
     local function RenderOtherClassLibrary(otherSectionOrder)
         local totalCount, classCount = GetOtherClassSummary(otherSectionOrder)
         if totalCount <= 0 or classCount <= 0 then
-            CS.otherClassLibraryActive = false
-            CS.otherClassLibraryClassKey = nil
+            ClearOtherClassBrowseState()
             return false
         end
 
@@ -1781,8 +1856,7 @@ local function RefreshColumn1(preserveDrag)
                 if ClearConfigPrimarySelection then
                     ClearConfigPrimarySelection()
                 end
-                CS.otherClassLibraryActive = false
-                CS.otherClassLibraryClassKey = nil
+                ClearOtherClassBrowseState()
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })
@@ -1849,7 +1923,7 @@ local function RefreshColumn1(preserveDrag)
         CS.col1Scroll:AddChild(label)
         CS.lastCol1RenderedRows = col1RenderedRows
         if CS.otherClassLibraryActive then
-            if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
+            PopulateOtherClassBrowseButtonBar()
         else
             PopulateColumn1ButtonBar()
         end
@@ -1857,8 +1931,7 @@ local function RefreshColumn1(preserveDrag)
     end
 
     if showNewUserEmptyState then
-        CS.otherClassLibraryActive = false
-        CS.otherClassLibraryClassKey = nil
+        ClearOtherClassBrowseState()
 
         local spacer = AceGUI:Create("SimpleGroup")
         spacer:SetFullWidth(true)
@@ -1972,7 +2045,7 @@ local function RefreshColumn1(preserveDrag)
     CS.lastCol1RenderedRows = col1RenderedRows
 
     if CS.otherClassLibraryActive then
-        if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
+        PopulateOtherClassBrowseButtonBar()
     else
         PopulateColumn1ButtonBar()
     end

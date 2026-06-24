@@ -1981,15 +1981,21 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Create buttons
     self:PopulateGroupButtons(groupId)
     
-    -- Show/hide based on runtime activity, plus selected off-class config previews.
-    if self:IsGroupActive(groupId, {
+    -- Show/hide based on runtime activity, plus selected config previews.
+    local previewEligible = self:IsGroupEligibleForConfigPreview(groupId, {
         group = group,
-        checkCharVisibility = true,
-        checkLoadConditions = true,
-        requireButtons = true,
-    }) or self:IsGroupEligibleForConfigPreview(groupId, {
-        group = group,
-    }) then
+    })
+    local suppressedForOtherClassBrowse = self.IsGroupSuppressedForOtherClassBrowse
+        and self:IsGroupSuppressedForOtherClassBrowse(groupId, group)
+    if previewEligible or (
+        not suppressedForOtherClassBrowse
+        and self:IsGroupActive(groupId, {
+            group = group,
+            checkCharVisibility = true,
+            checkLoadConditions = true,
+            requireButtons = true,
+        })
+    ) then
         frame:Show()
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
         ApplyCurrentAlphaIfPresent(self, frame, groupId, group)
@@ -2837,16 +2843,22 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     )
     self:UpdateGroupClickthrough(groupId)
 
-    -- Update visibility: runtime-active groups show normally; selected off-class
-    -- groups can also show as config previews without becoming runtime-visible.
-    local isActive = CooldownCompanion:IsGroupActive(groupId, {
-        group = group,
-        checkCharVisibility = true,
-        checkLoadConditions = true,
-        requireButtons = true,
-    }) or CooldownCompanion:IsGroupEligibleForConfigPreview(groupId, {
+    -- Update visibility: runtime-active groups show normally; selected config
+    -- previews can also show without becoming runtime-visible.
+    local previewEligible = CooldownCompanion:IsGroupEligibleForConfigPreview(groupId, {
         group = group,
     })
+    local suppressedForOtherClassBrowse = CooldownCompanion.IsGroupSuppressedForOtherClassBrowse
+        and CooldownCompanion:IsGroupSuppressedForOtherClassBrowse(groupId, group)
+    local isActive = previewEligible or (
+        not suppressedForOtherClassBrowse
+        and CooldownCompanion:IsGroupActive(groupId, {
+            group = group,
+            checkCharVisibility = true,
+            checkLoadConditions = true,
+            requireButtons = true,
+        })
+    )
     if isActive then
         if InCombatLockdown() and frame:IsProtected() then
             if not frame:IsShown() then

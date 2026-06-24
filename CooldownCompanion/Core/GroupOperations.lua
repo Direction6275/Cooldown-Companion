@@ -1473,6 +1473,45 @@ function CooldownCompanion:IsGroupEligibleForConfigPreview(groupId, opts)
     return GroupHasConfigPreviewButtons(self, groupId, group)
 end
 
+local function IsConfigFrameShown()
+    local configState = ST and ST._configState
+    local frame = configState and configState.configFrame and configState.configFrame.frame
+    return frame and frame.IsShown and frame:IsShown()
+end
+
+function CooldownCompanion:IsGroupSuppressedForOtherClassBrowse(groupId, group)
+    local configState = ST and ST._configState
+    if not (configState
+        and configState.otherClassLibraryActive == true
+        and configState.hideActiveCurrentClassPanels == true
+        and IsConfigFrameShown()) then
+        return false
+    end
+
+    local db = self.db and self.db.profile
+    group = group or (db and db.groups and db.groups[groupId])
+    if not group then
+        return false
+    end
+
+    local visibleToCurrentChar = self:IsGroupVisibleToCurrentChar(groupId)
+    if not visibleToCurrentChar then
+        return false
+    end
+
+    local frame = self.groupFrames and self.groupFrames[groupId]
+    if frame and frame.IsShown and frame:IsShown() then
+        return true
+    end
+
+    return self:IsGroupActive(groupId, {
+        group = group,
+        checkCharVisibility = false,
+        checkLoadConditions = true,
+        requireButtons = true,
+    }) == true
+end
+
 function CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
     if not group.heroTalents or not next(group.heroTalents) then return end
     local subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
@@ -2980,6 +3019,8 @@ function CooldownCompanion:RefreshAllGroups()
     for groupId, group in pairs(self.db.profile.groups) do
         if not self:IsGroupVisibleToCurrentChar(groupId) then
             self:UnloadGroup(groupId)
+        elseif self:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
+            self:UnloadGroup(groupId)
         elseif self:IsGroupActive(groupId, {
             group = group,
             checkCharVisibility = false,
@@ -3036,6 +3077,8 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
             group = group,
         })
         if not visible and not previewEligible then
+            self:UnloadGroup(groupId)
+        elseif self:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
             self:UnloadGroup(groupId)
         else
             local active = self:IsGroupActive(groupId, {

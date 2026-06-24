@@ -28,6 +28,7 @@ local IsConfigFinderAvailable = ST._IsConfigFinderAvailable
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local SetConfigFinderText = ST._SetConfigFinderText
 local ClearConfigFinderText = ST._ClearConfigFinderText
+local ClearOtherClassHideActive = ST._ClearOtherClassHideActive
 local InvalidateConfigFinderResults = ST._InvalidateConfigFinderResults
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
 local MaybeAutoStartFirstIconPanelTutorial = ST._MaybeAutoStartFirstIconPanelTutorial
@@ -38,11 +39,41 @@ local RefreshTutorialPlacement = ST._RefreshTutorialPlacement
 local SetupChangelogOverlay = ST._SetupChangelogOverlay
 local RefreshVisibleConfigCompactRows = ST._RefreshVisibleConfigCompactRows
 
+local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
+local CONFIG_FINDER_BOX_HEIGHT = 28
+local CONFIG_FINDER_BUTTON_GAP = 3
+local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
+local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
+local CONFIG_NESTED_INLINE_GROUP_INSET = 20
+local CONFIG_DRAG_ALPHA = 0.40
+local PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH = 330
+local PROFILE_WIDE_FONT_WINDOW_HEIGHT = 168
+local PROFILE_WIDE_BAR_TEXTURE_WINDOW_HEIGHT = 106
+
 local function GetAddonVersionText()
     if ST._GetAddonVersion then
         return ST._GetAddonVersion()
     end
     return "unknown"
+end
+
+local function ClearHideActiveCurrentClassPanels(opts)
+    if ClearOtherClassHideActive then
+        return ClearOtherClassHideActive(opts)
+    end
+
+    local changed = CS.hideActiveCurrentClassPanels == true
+    CS.hideActiveCurrentClassPanels = false
+    if changed and not (opts and opts.skipRefresh) and CooldownCompanion.RefreshAllGroupsVisibilityOnly then
+        CooldownCompanion:RefreshAllGroupsVisibilityOnly()
+    end
+    return changed
+end
+
+local function ResetOtherClassBrowseState(opts)
+    CS.otherClassLibraryActive = false
+    CS.otherClassLibraryClassKey = nil
+    ClearHideActiveCurrentClassPanels(opts)
 end
 
 local function GetVersionFooterText()
@@ -60,17 +91,6 @@ local function GetVersionFooterText()
     end
     return footer
 end
-
-local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
-local CONFIG_FINDER_BOX_HEIGHT = 28
-local CONFIG_FINDER_BUTTON_GAP = 3
-local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
-local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
-local CONFIG_NESTED_INLINE_GROUP_INSET = 20
-local CONFIG_DRAG_ALPHA = 0.40
-local PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH = 330
-local PROFILE_WIDE_FONT_WINDOW_HEIGHT = 168
-local PROFILE_WIDE_BAR_TEXTURE_WINDOW_HEIGHT = 106
 
 local function GetProfileWideSideWindowWidth()
     local configFrame = CS.configFrame
@@ -1234,8 +1254,7 @@ local function CreateConfigPanel()
             if ClearConfigPrimarySelection then
                 ClearConfigPrimarySelection()
             end
-            CS.otherClassLibraryActive = false
-            CS.otherClassLibraryClassKey = nil
+            ResetOtherClassBrowseState()
             CooldownCompanion:RefreshConfigPanel()
             return
         end
@@ -1248,6 +1267,7 @@ local function CreateConfigPanel()
         if ClearConfigPrimarySelection then
             ClearConfigPrimarySelection()
         end
+        ClearHideActiveCurrentClassPanels()
         CS.otherClassLibraryActive = true
         CS.otherClassLibraryClassKey = nil
         CooldownCompanion:RefreshConfigPanel()
@@ -2556,11 +2576,13 @@ function CooldownCompanion:_configToggleImpl()
         if CS.CloseAdvancedSettingsPanel then
             CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         end
+        ClearHideActiveCurrentClassPanels()
         CS.configFrame._miniFrame:Hide()
         return
     end
 
     if CS.configFrame.frame:IsShown() then
+        ClearHideActiveCurrentClassPanels()
         CS.configFrame.frame:Hide()
     else
         SetPrimaryMode("buttons", { skipRefresh = true })
