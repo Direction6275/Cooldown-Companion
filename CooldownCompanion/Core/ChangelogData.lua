@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.20",
         "1.19.5",
         "1.19.4",
         "1.19.3",
@@ -45,6 +46,26 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.20"] = {
+            markdown = [[
+## New Features
+
+- **Class-Wide Profile Controls:** Profiles now share more setup across same-class characters, instead of treating every character as a fully separate setup.
+  - **Groups:** New groups default to the current class. Same-class alts share those class groups, while Browse Other Classes lets you preview off-class groups without making them active in normal play.
+  - **Load Conditions:** Character, class, specialization, and hero talent filters are shown together. Character filters can still narrow visibility inside the class setup.
+  - **Resource Bars:** Resource Bars, Resource Aura overlays, and Resource Bar Custom Bars now use one saved setup per class, so same-class characters can share the same bars.
+  - **Update Resolver:** On update, if you have multiple same-class characters using the resource module, you will be prompted to pick a character whose setup will be inherited as the new class-wide setup.
+  - **Resolver Details:** The kept setup provides the class Resource Bar settings and Resource Aura overlays; Custom Bars from the other same-class setups are preserved and merged into the class setup before the old character-specific Resource Bar copies are cleared.
+- **Browse Other Classes:** Browse Other Characters has been expanded into a class browser built for the new class-wide setup model.
+  - **Class Library:** Browse Other Classes opens as a class list. Pick a class to inspect that class's saved groups and folders without mixing them into your current class list.
+  - **Selection-Based Previews:** Selecting an other-class panel can show a config-only preview of that panel and its parent container. The preview does not make the panel active in normal play and does not change saved data by itself.
+  - **Hide Active:** The new Hide Active button can temporarily hide panels from your currently played character, making overlapping other-class layouts easier to inspect.
+
+## Bug Fixes
+
+- **Zenith Stomp Display:** Windwalker Monk Zenith entries now hide the base Zenith cooldown, charges, glow, texture effects, and sound alerts while Zenith Stomp replaces Zenith, then restore the normal Zenith display when the override ends.
+]],
+        },
         ["1.19.5"] = {
             markdown = [[
 ## Bug Fixes
