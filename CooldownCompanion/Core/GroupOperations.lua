@@ -1514,6 +1514,45 @@ function CooldownCompanion:IsGroupEligibleForConfigPreview(groupId, opts)
     return GroupHasConfigPreviewButtons(self, groupId, group)
 end
 
+local function BuildConfigPreviewEligibility(addon)
+    local groups = addon.db and addon.db.profile and addon.db.profile.groups
+    if not groups then
+        return nil, nil
+    end
+
+    local containerIds
+    local groupIds
+    for groupId, group in pairs(groups) do
+        local containerId = group and group.parentContainerId
+        if containerId and addon:IsGroupEligibleForConfigPreview(groupId, {
+            group = group,
+        }) then
+            containerIds = containerIds or {}
+            containerIds[containerId] = true
+            groupIds = groupIds or {}
+            groupIds[groupId] = true
+        end
+    end
+    return containerIds, groupIds
+end
+
+local function EnsureConfigPreviewContainerFrame(addon, group, previewEligible)
+    if not (previewEligible and group and group.parentContainerId and addon.containerFrames) then
+        return
+    end
+    if InCombatLockdown() then
+        addon._pendingVisibilityRefresh = true
+        return
+    end
+
+    local containerFrame = addon.containerFrames[group.parentContainerId]
+    if containerFrame then
+        containerFrame:Show()
+    elseif addon.CreateContainerFrame then
+        addon:CreateContainerFrame(group.parentContainerId)
+    end
+end
+
 local function IsConfigFrameShown()
     local configState = ST and ST._configState
     local frame = configState and configState.configFrame and configState.configFrame.frame
@@ -2911,20 +2950,22 @@ function CooldownCompanion:RefreshConfigSelectedGroupFrames()
             local frame = self.groupFrames and self.groupFrames[groupId]
             local wasPreviewed = previousPreviewed and previousPreviewed[groupId]
             local isPreviewed = currentPreviewed and currentPreviewed[groupId]
+            local previewEligible = self:IsGroupEligibleForConfigPreview(groupId, {
+                group = group,
+            })
             local active = self:IsGroupActive(groupId, {
                 group = group,
                 checkCharVisibility = true,
                 checkLoadConditions = true,
                 requireButtons = true,
-            }) or self:IsGroupEligibleForConfigPreview(groupId, {
-                group = group,
-            })
+            }) or previewEligible
             if (active or (wasPreviewed and frame))
                 and (not frame
                     or (wasPreviewed and not isPreviewed)
                     or self:GroupButtonSetNeedsRebuild(groupId, group, {
                         allowConfigPreviewButtonUsability = isPreviewed,
                     })) then
+                EnsureConfigPreviewContainerFrame(self, group, previewEligible)
                 self:RefreshGroupFrame(groupId)
                 refreshed = true
             end
@@ -3024,6 +3065,7 @@ function CooldownCompanion:RefreshAllGroups()
         return
     end
     -- Clean up stale container frames (e.g. after profile switch)
+    local previewContainerIds, previewGroupIds = BuildConfigPreviewEligibility(self)
     if self.containerFrames then
         local containers = self.db.profile.groupContainers or {}
         for containerId, frame in pairs(self.containerFrames) do
@@ -3034,9 +3076,12 @@ function CooldownCompanion:RefreshAllGroups()
         end
         -- Ensure all current-profile containers have frames
         for containerId, _ in pairs(containers) do
-            if self:IsContainerVisibleToCurrentChar(containerId) then
+            if self:IsContainerVisibleToCurrentChar(containerId)
+                or (previewContainerIds and previewContainerIds[containerId]) then
                 if not self.containerFrames[containerId] then
                     self:CreateContainerFrame(containerId)
+                else
+                    self.containerFrames[containerId]:Show()
                 end
             else
                 if self.containerFrames[containerId] then
@@ -3066,9 +3111,7 @@ function CooldownCompanion:RefreshAllGroups()
     -- Refresh current profile's groups: load active ones, unload inactive ones
     for groupId, group in pairs(self.db.profile.groups) do
         local visible = self:IsGroupVisibleToCurrentChar(groupId)
-        local previewEligible = self:IsGroupEligibleForConfigPreview(groupId, {
-            group = group,
-        })
+        local previewEligible = previewGroupIds and previewGroupIds[groupId] == true
         if not visible and not previewEligible then
             self:UnloadGroup(groupId)
         elseif self:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
@@ -3128,6 +3171,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
         local previewEligible = self:IsGroupEligibleForConfigPreview(groupId, {
             group = group,
         })
+        EnsureConfigPreviewContainerFrame(self, group, previewEligible)
         if not visible and not previewEligible then
             self:UnloadGroup(groupId)
         elseif self:IsGroupSuppressedForOtherClassBrowse(groupId, group) then

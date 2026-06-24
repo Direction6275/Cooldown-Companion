@@ -678,6 +678,13 @@ end
 
 local function ClearColumn1ButtonBar()
     for _, widget in ipairs(CS.col1BarWidgets) do
+        local frame = widget and widget.frame
+        if frame and frame._cdcHideActiveOtherClassBrowse then
+            frame:SetScript("OnEnter", nil)
+            frame:SetScript("OnLeave", nil)
+            frame._cdcHideActiveOtherClassBrowse = nil
+            GameTooltip:Hide()
+        end
         widget:Release()
     end
     wipe(CS.col1BarWidgets)

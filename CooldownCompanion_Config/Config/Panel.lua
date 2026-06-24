@@ -1562,6 +1562,7 @@ local function CreateConfigPanel()
             if frame.HideChangelogOverlay then
                 frame.HideChangelogOverlay()
             end
+            ClearHideActiveCurrentClassPanels()
             self:Hide()
         elseif not InCombatLockdown() then
             self:SetPropagateKeyboardInput(true)
