@@ -548,6 +548,26 @@ local function ConfigFinderSearchTextMatches(searchText, query)
         and searchText:find(query, 1, true) ~= nil
 end
 
+local function GetConfigFinderEntryDisplaySearchText(entryRecord)
+    if not entryRecord then
+        return ""
+    end
+    if entryRecord.displaySearchText == nil then
+        entryRecord.displaySearchText = NormalizeConfigFinderText(GetConfigEntryDisplayName(entryRecord.button))
+    end
+    return entryRecord.displaySearchText
+end
+
+local function ConfigFinderEntryMatches(entryRecord, query)
+    if ConfigFinderSearchTextMatches(entryRecord.searchText, query)
+        or ConfigFinderSearchTextMatches(entryRecord.idSearchText, query) then
+        return true
+    end
+
+    return entryRecord.needsDisplaySearch == true
+        and ConfigFinderSearchTextMatches(GetConfigFinderEntryDisplaySearchText(entryRecord), query)
+end
+
 local function IsConfigFinderAvailable()
     return not CS.resourceBarPanelActive
         and not CS.talentPickerMode
@@ -687,6 +707,7 @@ local function BuildConfigFinderIndex(db, charKey)
                     text = entryName,
                     searchText = NormalizeConfigFinderText(entryName),
                     idSearchText = buttonData.id and NormalizeConfigFinderText(tostring(buttonData.id)) or "",
+                    needsDisplaySearch = buttonData.type == "spell",
                 }
             end
 
@@ -754,8 +775,7 @@ local function BuildConfigFinderResults()
         local entryMatchCount = 0
 
         for _, entryRecord in ipairs(panelRecord.entries or {}) do
-            if ConfigFinderSearchTextMatches(entryRecord.searchText, query)
-                or ConfigFinderSearchTextMatches(entryRecord.idSearchText, query) then
+            if ConfigFinderEntryMatches(entryRecord, query) then
                 entryMatchCount = entryMatchCount + 1
             end
         end
@@ -792,8 +812,7 @@ local function BuildConfigFinderResults()
         local renderedEntryMatches
         if match.sourceEntries then
             for _, entryRecord in ipairs(match.sourceEntries) do
-                if ConfigFinderSearchTextMatches(entryRecord.searchText, query)
-                    or ConfigFinderSearchTextMatches(entryRecord.idSearchText, query) then
+                if ConfigFinderEntryMatches(entryRecord, query) then
                     if results.renderedEntryResults >= CONFIG_FINDER_MAX_ENTRY_RESULTS then
                         break
                     end
