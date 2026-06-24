@@ -648,6 +648,19 @@ local function RenderConfigFinderResults()
         return
     end
 
+    if results.truncated then
+        local summary = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(summary)
+        summary:SetText(("|cff888888Showing %d of %d matching panels and %d of %d matching entries. Keep typing to narrow results.|r"):format(
+            #results.panelResults,
+            results.totalPanelResults or #results.panelResults,
+            results.renderedEntryResults or 0,
+            results.totalEntryResults or 0
+        ))
+        summary:SetFullWidth(true)
+        CS.col2Scroll:AddChild(summary)
+    end
+
     local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
 
     for resultIndex, result in ipairs(results.panelResults) do
