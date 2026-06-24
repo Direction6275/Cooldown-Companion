@@ -645,11 +645,12 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
         return false
     end
 
+    if button._chargePresentationSuppressed == true
+            or button._cooldownPresentationSuppressed == true then
+        return nil
+    end
+
     if conditionKey == "cooldownActive" then
-        if button._chargePresentationSuppressed == true
-                or button._cooldownPresentationSuppressed == true then
-            return nil
-        end
         return button._desatCooldownActive == true
     end
 
