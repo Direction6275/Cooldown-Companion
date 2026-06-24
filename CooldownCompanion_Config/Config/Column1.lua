@@ -17,7 +17,6 @@ local SetupGroupRowIndicators = ST._SetupGroupRowIndicators
 local SetupFolderRowIndicators = ST._SetupFolderRowIndicators
 local GetConfigRowBadgeReserve = ST._GetConfigRowBadgeReserve
 local SetupColumn1MarkerRow = ST._SetupColumn1MarkerRow
-local GetGroupIcon = ST._GetGroupIcon
 local GetContainerIcon = ST._GetContainerIcon
 local GetFolderIcon = ST._GetFolderIcon
 local OpenFolderIconPicker = ST._OpenFolderIconPicker

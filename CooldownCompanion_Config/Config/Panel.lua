@@ -14,7 +14,6 @@ local ResetConfigSelection = ST._ResetConfigSelection
 local ClearConfigPrimarySelection = ST._ClearConfigPrimarySelection
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local COLUMN_PADDING = ST._COLUMN_PADDING
-local BuildAutocompleteCache = ST._BuildAutocompleteCache
 local RefreshColumn1 = ST._RefreshColumn1
 local RefreshColumn2 = ST._RefreshColumn2
 local RefreshColumn3 = ST._RefreshColumn3
