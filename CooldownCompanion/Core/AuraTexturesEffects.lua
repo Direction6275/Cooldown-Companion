@@ -608,6 +608,10 @@ local function ResolveTextureIndicatorSectionState(button, sectionKey, config, t
                 or "no-cooldown"
             return FinishTextureIndicatorSectionState(target, false, reason, nil, effectType)
         end
+        if button._chargePresentationSuppressed == true
+                or button._cooldownPresentationSuppressed == true then
+            return FinishTextureIndicatorSectionState(target, false, "presentation-suppressed", nil, effectType)
+        end
         local active = button._desatCooldownActive == false
         return FinishTextureIndicatorSectionState(target, active, active and "ready" or "not-ready", nil, effectType)
     end
@@ -642,6 +646,10 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
     end
 
     if conditionKey == "cooldownActive" then
+        if button._chargePresentationSuppressed == true
+                or button._cooldownPresentationSuppressed == true then
+            return nil
+        end
         return button._desatCooldownActive == true
     end
 
