@@ -614,8 +614,9 @@ function ST.IsGroupConfigSelected(groupId)
     -- Multi-panel selection
     if CS.selectedPanels and CS.selectedPanels[groupId] then return true end
 
-    -- Container selected, no specific panel → all panels in that container
-    if CS.selectedContainer and not CS.selectedGroup then
+    -- Container selected, no specific panel multi-select → all panels in that container
+    if CS.selectedContainer and not CS.selectedGroup
+        and not (CS.selectedPanels and next(CS.selectedPanels)) then
         local db = ST.Addon.db
         local group = db and db.profile.groups[groupId]
         if group and group.parentContainerId == CS.selectedContainer then
@@ -674,8 +675,9 @@ function ST.IsConfigButtonForceVisible(button)
         return true
     end
 
-    -- Container selected, no specific panel → all buttons in all panels
-    if CS.selectedContainer and not CS.selectedGroup then
+    -- Container selected, no specific panel multi-select → all buttons in all panels
+    if CS.selectedContainer and not CS.selectedGroup
+        and not (CS.selectedPanels and next(CS.selectedPanels)) then
         local db = ST.Addon.db
         local group = db and db.profile.groups[groupId]
         if group and group.parentContainerId == CS.selectedContainer then
