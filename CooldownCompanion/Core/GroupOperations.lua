@@ -1316,6 +1316,7 @@ local CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS = {
     ignoreSpellAvailability = true,
     ignoreTalentConditions = true,
     configPreview = true,
+    selectionDrivenConfigPreview = true,
 }
 
 local function IsGroupEnabledForConfigPreview(addon, group)
@@ -1341,9 +1342,56 @@ local function IsGroupEnabledForConfigPreview(addon, group)
     return true
 end
 
+local function IsConfigSelectionPreviewShown()
+    local CS = ST and ST._configState
+    local configFrame = CS and CS.configFrame
+    local frame = configFrame and configFrame.frame
+    if not (frame and frame.IsShown and frame:IsShown()) then
+        return nil
+    end
+    return CS
+end
+
+local function IsSelectionDrivenConfigPreviewScope(addon, groupId, sourceIndex)
+    local CS = IsConfigSelectionPreviewShown()
+    if not CS then
+        return false
+    end
+
+    if CS.selectedGroup == groupId then
+        if not sourceIndex then
+            return true
+        end
+        if CS.selectedButton then
+            return CS.selectedButton == sourceIndex
+        end
+        if CS.selectedButtons and next(CS.selectedButtons) then
+            return CS.selectedButtons[sourceIndex] or false
+        end
+        return true
+    end
+
+    if CS.selectedPanels and CS.selectedPanels[groupId] then
+        return true
+    end
+
+    if CS.selectedContainer and not CS.selectedGroup then
+        local db = addon.db
+        local group = db and db.profile and db.profile.groups and db.profile.groups[groupId]
+        if group and group.parentContainerId == CS.selectedContainer then
+            return true
+        end
+    end
+
+    return false
+end
+
 function CooldownCompanion:IsButtonInConfigPreviewScope(groupId, sourceIndex, opts)
     if not (opts and opts.configPreview) then
         return true
+    end
+    if opts.selectionDrivenConfigPreview then
+        return IsSelectionDrivenConfigPreviewScope(self, groupId, sourceIndex) == true
     end
     if not ST.IsConfigButtonForceVisible then
         return true
@@ -1363,7 +1411,7 @@ local function GroupHasConfigPreviewButtons(addon, groupId, group)
 end
 
 function CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)
-    if not (groupId and ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(groupId)) then
+    if not (groupId and IsSelectionDrivenConfigPreviewScope(self, groupId)) then
         return nil
     end
 
@@ -1450,7 +1498,7 @@ end
 
 function CooldownCompanion:IsGroupEligibleForConfigPreview(groupId, opts)
     opts = opts or {}
-    if not (groupId and ST.IsGroupConfigSelected and ST.IsGroupConfigSelected(groupId)) then
+    if not (groupId and IsSelectionDrivenConfigPreviewScope(self, groupId)) then
         return false
     end
 

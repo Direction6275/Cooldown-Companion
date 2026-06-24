@@ -932,6 +932,7 @@ local function CreateConfigPanel()
         if CS.CloseAdvancedSettingsPanel then
             CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         end
+        ClearHideActiveCurrentClassPanels()
         if not CS.previewToggleRefreshActive then
             CooldownCompanion:ClearAllConfigPreviews()
             if CooldownCompanion.RefreshConfigSelectedGroupFrames then
