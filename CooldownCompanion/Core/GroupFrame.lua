@@ -3718,7 +3718,13 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     HideContainerPanelLabels(frame)
     UpdateContainerWrapperLevels(frame)
 
-    if self._combatForcedLock or container.locked ~= false or not self:IsContainerVisibleToCurrentChar(containerId) then
+    local allPanels = self.GetPanels and self:GetPanels(containerId) or nil
+    local suppressedForOtherClassBrowse = self.IsContainerSuppressedForOtherClassBrowse
+        and self:IsContainerSuppressedForOtherClassBrowse(containerId, allPanels)
+    if self._combatForcedLock
+        or container.locked ~= false
+        or not self:IsContainerVisibleToCurrentChar(containerId)
+        or suppressedForOtherClassBrowse then
         if self.UpdateContainerDragHandle then
             self:UpdateContainerDragHandle(containerId, true)
         else
@@ -3738,8 +3744,8 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         return
     end
 
-    local previewPanels = self.GetContainerUnlockPreviewPanels and self:GetContainerUnlockPreviewPanels(containerId) or {}
-    local allPanels = self.GetPanels and self:GetPanels(containerId) or previewPanels
+    local previewPanels = self.GetContainerUnlockPreviewPanels and self:GetContainerUnlockPreviewPanels(containerId, allPanels) or {}
+    allPanels = allPanels or previewPanels
     local previewRects = {}
     local previewedGroupIds = {}
     local minLeft, maxRight, minBottom, maxTop = nil, nil, nil, nil

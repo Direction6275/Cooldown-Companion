@@ -897,14 +897,15 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     return true
 end
 
-function CooldownCompanion:GetContainerUnlockPreviewPanels(containerId)
+function CooldownCompanion:GetContainerUnlockPreviewPanels(containerId, panels)
     local previewPanels = {}
-    local panels = self:GetPanels(containerId)
-    for _, panelInfo in ipairs(panels) do
-        if self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
-            group = panelInfo.group,
-            checkCharVisibility = true,
-        }) then
+    local panelList = panels or self:GetPanels(containerId)
+    for _, panelInfo in ipairs(panelList) do
+        if not self:IsGroupSuppressedForOtherClassBrowse(panelInfo.groupId, panelInfo.group)
+            and self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
+                group = panelInfo.group,
+                checkCharVisibility = true,
+            }) then
             previewPanels[#previewPanels + 1] = panelInfo
         end
     end
@@ -1553,6 +1554,32 @@ local function EnsureConfigPreviewContainerFrame(addon, group, previewEligible)
     end
 end
 
+local function CleanupInactiveConfigPreviewContainerFrames(addon)
+    if not addon.containerFrames then
+        return false
+    end
+
+    local previewContainerIds = BuildConfigPreviewEligibility(addon)
+    local cleaned = false
+    for containerId, frame in pairs(addon.containerFrames) do
+        if frame
+            and not addon:IsContainerVisibleToCurrentChar(containerId)
+            and not (previewContainerIds and previewContainerIds[containerId]) then
+            if InCombatLockdown() and frame.IsProtected and frame:IsProtected() then
+                addon._pendingVisibilityRefresh = true
+            else
+                if addon.ClearContainerUnlockState then
+                    addon:ClearContainerUnlockState(containerId)
+                end
+                local wasShown = not frame.IsShown or frame:IsShown()
+                frame:Hide()
+                cleaned = cleaned or wasShown
+            end
+        end
+    end
+    return cleaned
+end
+
 local function IsConfigFrameShown()
     local configState = ST and ST._configState
     local frame = configState and configState.configFrame and configState.configFrame.frame
@@ -1590,6 +1617,29 @@ function CooldownCompanion:IsGroupSuppressedForOtherClassBrowse(groupId, group)
         checkLoadConditions = true,
         requireButtons = true,
     }) == true
+end
+
+function CooldownCompanion:IsContainerSuppressedForOtherClassBrowse(containerId, panels)
+    if not containerId then
+        return false
+    end
+
+    local panelList = panels or (self.GetPanels and self:GetPanels(containerId)) or nil
+    local hasSuppressedPanel = false
+    for _, panelInfo in ipairs(panelList or {}) do
+        local groupId = panelInfo.groupId
+        local group = panelInfo.group
+        if self:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
+            hasSuppressedPanel = true
+        elseif self:IsGroupVisibleInUnlockPreview(groupId, {
+            group = group,
+            checkCharVisibility = true,
+        }) then
+            return false
+        end
+    end
+
+    return hasSuppressedPanel
 end
 
 function CooldownCompanion:CleanHeroTalentsForSpec(group, specId)
@@ -2972,8 +3022,9 @@ function CooldownCompanion:RefreshConfigSelectedGroupFrames()
         end
     end
     self._refreshingConfigSelectedGroupFrames = nil
+    local containersCleaned = CleanupInactiveConfigPreviewContainerFrames(self)
 
-    if refreshed then
+    if refreshed or containersCleaned then
         self:FinalizePanelAnchors()
         if self.RefreshAllContainerWrappers then
             self:RefreshAllContainerWrappers()
