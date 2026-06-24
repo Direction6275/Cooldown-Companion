@@ -1838,13 +1838,17 @@ local function CreateConfigPanel()
             UpdateConfigFinderPlaceholder(text)
             return
         end
+        local wasFinderActive = IsConfigFinderActive and IsConfigFinderActive()
         if SetConfigFinderText then
             SetConfigFinderText(text or "", { syncWidget = false })
         else
             CS.configSearchText = text or ""
         end
         UpdateConfigFinderPlaceholder(text)
-        QueueConfigFinderRefresh()
+        local isFinderActive = IsConfigFinderActive and IsConfigFinderActive()
+        if wasFinderActive or isFinderActive then
+            QueueConfigFinderRefresh()
+        end
     end)
     configFinder:SetCallback("OnEnterPressed", function(widget)
         widget:ClearFocus()

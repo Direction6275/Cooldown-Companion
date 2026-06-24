@@ -533,11 +533,19 @@ local function NormalizeConfigFinderText(text)
     return strlower(text)
 end
 
-local function ConfigFinderTextMatches(value, query)
-    if not query or query == "" then
-        return false
-    end
-    return NormalizeConfigFinderText(value):find(query, 1, true) ~= nil
+local CONFIG_FINDER_MIN_QUERY_LENGTH = 2
+local CONFIG_FINDER_MAX_PANEL_RESULTS = 80
+local CONFIG_FINDER_MAX_ENTRY_RESULTS = 200
+
+local function IsConfigFinderQueryUsable(text)
+    return #NormalizeConfigFinderText(text) >= CONFIG_FINDER_MIN_QUERY_LENGTH
+end
+
+local function ConfigFinderSearchTextMatches(searchText, query)
+    return type(searchText) == "string"
+        and query
+        and query ~= ""
+        and searchText:find(query, 1, true) ~= nil
 end
 
 local function IsConfigFinderAvailable()
@@ -547,15 +555,15 @@ local function IsConfigFinderAvailable()
 end
 
 local function IsConfigFinderActive()
-    return IsConfigFinderAvailable() and NormalizeConfigFinderText(CS.configSearchText) ~= ""
+    return IsConfigFinderAvailable() and IsConfigFinderQueryUsable(CS.configSearchText)
 end
 
 local ClearConfigPrimarySelection
 
 local function SetConfigFinderText(text, opts)
     text = type(text) == "string" and text or ""
-    local wasSearching = NormalizeConfigFinderText(CS.configSearchText) ~= ""
-    local willSearch = NormalizeConfigFinderText(text) ~= ""
+    local wasSearching = IsConfigFinderQueryUsable(CS.configSearchText)
+    local willSearch = IsConfigFinderQueryUsable(text)
     if CS.configSearchText ~= text then
         CS._configFinderResults = nil
         CS._configFinderResultsQuery = nil
@@ -595,6 +603,9 @@ local function InvalidateConfigFinderResults()
     CS._configFinderResultsQuery = nil
     CS._configFinderResultsDb = nil
     CS._configFinderResultsCharKey = nil
+    CS._configFinderIndex = nil
+    CS._configFinderIndexDb = nil
+    CS._configFinderIndexCharKey = nil
 end
 
 local function IsContainerVisibleInConfig(container, charKey)
@@ -606,6 +617,95 @@ local function IsContainerVisibleInConfig(container, charKey)
         return scope.isInvalid ~= true
     end
     return container.isGlobal or container.createdBy == charKey
+end
+
+local function GetConfigFinderEntrySearchName(buttonData)
+    if not buttonData then
+        return nil
+    end
+
+    if CooldownCompanion.IsEquipmentSlotEntry
+        and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+        return (CooldownCompanion.GetEquipmentSlotDisplayName
+            and CooldownCompanion.GetEquipmentSlotDisplayName(buttonData))
+            or buttonData.name
+            or ("Unknown " .. tostring(buttonData.type))
+    end
+
+    return buttonData.customName
+        or buttonData.name
+        or ("Unknown " .. tostring(buttonData.type))
+end
+
+local function GetConfigFinderEntryDisplayText(entryRecord)
+    if not entryRecord then
+        return "Entry"
+    end
+    if entryRecord.displayText == nil then
+        local buttonData = entryRecord.button
+        entryRecord.displayText = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
+            or entryRecord.text
+            or (buttonData and ("Unknown " .. tostring(buttonData.type)))
+            or "Entry"
+    end
+    return entryRecord.displayText
+end
+
+local function BuildConfigFinderIndex(db, charKey)
+    if CS._configFinderIndex
+        and CS._configFinderIndexDb == db
+        and CS._configFinderIndexCharKey == charKey then
+        return CS._configFinderIndex
+    end
+
+    local index = {
+        containers = {},
+        panels = {},
+        visibleContainers = {},
+    }
+
+    for containerId, container in pairs(db.groupContainers or {}) do
+        if IsContainerVisibleInConfig(container, charKey) then
+            index.visibleContainers[containerId] = container
+            index.containers[#index.containers + 1] = {
+                containerId = containerId,
+                container = container,
+                searchText = NormalizeConfigFinderText(container.name),
+            }
+        end
+    end
+
+    for panelId, panel in pairs(db.groups or {}) do
+        local containerId = panel.parentContainerId
+        local container = containerId and index.visibleContainers[containerId]
+        if container then
+            local entries = {}
+            for buttonIndex, buttonData in ipairs(panel.buttons or {}) do
+                local entryName = GetConfigFinderEntrySearchName(buttonData)
+                entries[#entries + 1] = {
+                    index = buttonIndex,
+                    button = buttonData,
+                    text = entryName,
+                    searchText = NormalizeConfigFinderText(entryName),
+                    idSearchText = buttonData.id and NormalizeConfigFinderText(tostring(buttonData.id)) or "",
+                }
+            end
+
+            index.panels[#index.panels + 1] = {
+                containerId = containerId,
+                container = container,
+                panelId = panelId,
+                panel = panel,
+                searchText = NormalizeConfigFinderText(panel.name),
+                entries = entries,
+            }
+        end
+    end
+
+    CS._configFinderIndex = index
+    CS._configFinderIndexDb = db
+    CS._configFinderIndexCharKey = charKey
+    return index
 end
 
 local function BuildConfigFinderResults()
@@ -633,6 +733,8 @@ local function BuildConfigFinderResults()
         panelResults = {},
         totalPanelResults = 0,
         totalEntryResults = 0,
+        renderedPanelResults = 0,
+        renderedEntryResults = 0,
     }
 
     local function markContainer(containerId)
@@ -641,54 +743,45 @@ local function BuildConfigFinderResults()
         end
     end
 
-    for containerId, container in pairs(db.groupContainers or {}) do
-        if IsContainerVisibleInConfig(container, charKey) and ConfigFinderTextMatches(container.name, query) then
-            markContainer(containerId)
+    local index = BuildConfigFinderIndex(db, charKey)
+    for _, containerRecord in ipairs(index.containers) do
+        if ConfigFinderSearchTextMatches(containerRecord.searchText, query) then
+            markContainer(containerRecord.containerId)
         end
     end
 
-    for panelId, panel in pairs(db.groups or {}) do
-        local containerId = panel.parentContainerId
-        local container = containerId and db.groupContainers and db.groupContainers[containerId]
-        if IsContainerVisibleInConfig(container, charKey) then
-            local panelMatches = ConfigFinderTextMatches(panel.name, query)
-            local entryMatches
+    local matchedPanels = {}
+    for _, panelRecord in ipairs(index.panels) do
+        local panelMatches = ConfigFinderSearchTextMatches(panelRecord.searchText, query)
+        local entryMatches
 
-            for buttonIndex, buttonData in ipairs(panel.buttons or {}) do
-                local entryName = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
-                    or buttonData.name
-                    or ("Unknown " .. tostring(buttonData.type))
-                local idText = buttonData.id and tostring(buttonData.id) or nil
-                if ConfigFinderTextMatches(entryName, query) or ConfigFinderTextMatches(idText, query) then
-                    if not entryMatches then
-                        entryMatches = {}
-                    end
-                    entryMatches[#entryMatches + 1] = {
-                        index = buttonIndex,
-                        button = buttonData,
-                        text = entryName,
-                    }
+        for _, entryRecord in ipairs(panelRecord.entries or {}) do
+            if ConfigFinderSearchTextMatches(entryRecord.searchText, query)
+                or ConfigFinderSearchTextMatches(entryRecord.idSearchText, query) then
+                if not entryMatches then
+                    entryMatches = {}
                 end
+                entryMatches[#entryMatches + 1] = entryRecord
             end
+        end
 
-            local entryMatchCount = entryMatches and #entryMatches or 0
-            if panelMatches or entryMatchCount > 0 then
-                markContainer(containerId)
-                results.totalPanelResults = results.totalPanelResults + 1
-                results.totalEntryResults = results.totalEntryResults + entryMatchCount
-                results.panelResults[#results.panelResults + 1] = {
-                    containerId = containerId,
-                    container = container,
-                    panelId = panelId,
-                    panel = panel,
-                    panelMatches = panelMatches,
-                    entryMatches = entryMatches,
-                }
-            end
+        local entryMatchCount = entryMatches and #entryMatches or 0
+        if panelMatches or entryMatchCount > 0 then
+            markContainer(panelRecord.containerId)
+            results.totalPanelResults = results.totalPanelResults + 1
+            results.totalEntryResults = results.totalEntryResults + entryMatchCount
+            matchedPanels[#matchedPanels + 1] = {
+                containerId = panelRecord.containerId,
+                container = panelRecord.container,
+                panelId = panelRecord.panelId,
+                panel = panelRecord.panel,
+                panelMatches = panelMatches,
+                entryMatches = entryMatches,
+            }
         end
     end
 
-    table.sort(results.panelResults, function(a, b)
+    table.sort(matchedPanels, function(a, b)
         local orderA = a.container and CooldownCompanion:GetOrderForSpec(a.container, CooldownCompanion._currentSpecId, a.containerId) or 0
         local orderB = b.container and CooldownCompanion:GetOrderForSpec(b.container, CooldownCompanion._currentSpecId, b.containerId) or 0
         if orderA ~= orderB then
@@ -696,6 +789,51 @@ local function BuildConfigFinderResults()
         end
         return (a.panel and a.panel.order or 0) < (b.panel and b.panel.order or 0)
     end)
+
+    for _, match in ipairs(matchedPanels) do
+        if #results.panelResults >= CONFIG_FINDER_MAX_PANEL_RESULTS then
+            results.truncated = true
+            break
+        end
+
+        local renderedEntryMatches
+        if match.entryMatches then
+            for _, entryRecord in ipairs(match.entryMatches) do
+                if results.renderedEntryResults >= CONFIG_FINDER_MAX_ENTRY_RESULTS then
+                    results.truncated = true
+                    break
+                end
+                if not renderedEntryMatches then
+                    renderedEntryMatches = {}
+                end
+                renderedEntryMatches[#renderedEntryMatches + 1] = {
+                    index = entryRecord.index,
+                    button = entryRecord.button,
+                    text = GetConfigFinderEntryDisplayText(entryRecord),
+                }
+                results.renderedEntryResults = results.renderedEntryResults + 1
+            end
+        end
+
+        if match.panelMatches or (renderedEntryMatches and #renderedEntryMatches > 0) then
+            results.panelResults[#results.panelResults + 1] = {
+                containerId = match.containerId,
+                container = match.container,
+                panelId = match.panelId,
+                panel = match.panel,
+                panelMatches = match.panelMatches,
+                entryMatches = renderedEntryMatches,
+            }
+        else
+            results.truncated = true
+        end
+    end
+
+    results.renderedPanelResults = #results.panelResults
+    if results.renderedPanelResults < results.totalPanelResults
+        or results.renderedEntryResults < results.totalEntryResults then
+        results.truncated = true
+    end
 
     CS._configFinderResults = results
     CS._configFinderResultsQuery = query
