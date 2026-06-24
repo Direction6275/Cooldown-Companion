@@ -1608,7 +1608,6 @@ local function CreateConfigPanel()
             if CS.CloseAdvancedSettingsPanel then
                 CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
             end
-            ClearTransientConfigPreviewState()
 
             savedFrameRight = content:GetRight()
             savedFrameTop = content:GetTop()
@@ -1619,6 +1618,7 @@ local function CreateConfigPanel()
             isCollapsing = true
             content:Hide()
             isCollapsing = false
+            ClearTransientConfigPreviewState()
 
             ApplyMiniFrameBackdrop()
             miniFrame:ClearAllPoints()

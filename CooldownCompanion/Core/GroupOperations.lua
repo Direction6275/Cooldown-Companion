@@ -2969,7 +2969,7 @@ function CooldownCompanion:RefreshConfigSelectedGroupFrames()
         end
         return
     end
-    if not (ST.IsGroupConfigSelected and self.db and self.db.profile and self.db.profile.groups) then
+    if not (self.db and self.db.profile and self.db.profile.groups) then
         return
     end
 
@@ -2980,7 +2980,7 @@ function CooldownCompanion:RefreshConfigSelectedGroupFrames()
     local candidates = {}
 
     for groupId in pairs(groups) do
-        if ST.IsGroupConfigSelected(groupId) then
+        if IsSelectionDrivenConfigPreviewScope(self, groupId) then
             currentPreviewed = currentPreviewed or {}
             currentPreviewed[groupId] = true
             candidates[groupId] = true
