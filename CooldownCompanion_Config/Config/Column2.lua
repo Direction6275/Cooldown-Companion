@@ -652,7 +652,7 @@ local function RenderConfigFinderResults()
         local summary = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(summary)
         summary:SetText(("|cff888888Showing %d of %d matching panels and %d of %d matching entries. Keep typing to narrow results.|r"):format(
-            results.renderedPanelResults or #results.panelResults,
+            #results.panelResults,
             results.totalPanelResults or #results.panelResults,
             results.renderedEntryResults or 0,
             results.totalEntryResults or 0

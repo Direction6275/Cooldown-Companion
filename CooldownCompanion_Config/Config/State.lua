@@ -661,15 +661,14 @@ local function BuildConfigFinderIndex(db, charKey)
     local index = {
         containers = {},
         panels = {},
-        visibleContainers = {},
     }
+    local visibleContainers = {}
 
     for containerId, container in pairs(db.groupContainers or {}) do
         if IsContainerVisibleInConfig(container, charKey) then
-            index.visibleContainers[containerId] = container
+            visibleContainers[containerId] = container
             index.containers[#index.containers + 1] = {
                 containerId = containerId,
-                container = container,
                 searchText = NormalizeConfigFinderText(container.name),
             }
         end
@@ -677,7 +676,7 @@ local function BuildConfigFinderIndex(db, charKey)
 
     for panelId, panel in pairs(db.groups or {}) do
         local containerId = panel.parentContainerId
-        local container = containerId and index.visibleContainers[containerId]
+        local container = containerId and visibleContainers[containerId]
         if container then
             local entries = {}
             for buttonIndex, buttonData in ipairs(panel.buttons or {}) do
@@ -733,7 +732,6 @@ local function BuildConfigFinderResults()
         panelResults = {},
         totalPanelResults = 0,
         totalEntryResults = 0,
-        renderedPanelResults = 0,
         renderedEntryResults = 0,
     }
 
@@ -753,19 +751,15 @@ local function BuildConfigFinderResults()
     local matchedPanels = {}
     for _, panelRecord in ipairs(index.panels) do
         local panelMatches = ConfigFinderSearchTextMatches(panelRecord.searchText, query)
-        local entryMatches
+        local entryMatchCount = 0
 
         for _, entryRecord in ipairs(panelRecord.entries or {}) do
             if ConfigFinderSearchTextMatches(entryRecord.searchText, query)
                 or ConfigFinderSearchTextMatches(entryRecord.idSearchText, query) then
-                if not entryMatches then
-                    entryMatches = {}
-                end
-                entryMatches[#entryMatches + 1] = entryRecord
+                entryMatchCount = entryMatchCount + 1
             end
         end
 
-        local entryMatchCount = entryMatches and #entryMatches or 0
         if panelMatches or entryMatchCount > 0 then
             markContainer(panelRecord.containerId)
             results.totalPanelResults = results.totalPanelResults + 1
@@ -776,7 +770,7 @@ local function BuildConfigFinderResults()
                 panelId = panelRecord.panelId,
                 panel = panelRecord.panel,
                 panelMatches = panelMatches,
-                entryMatches = entryMatches,
+                sourceEntries = panelRecord.entries,
             }
         end
     end
@@ -792,45 +786,38 @@ local function BuildConfigFinderResults()
 
     for _, match in ipairs(matchedPanels) do
         if #results.panelResults >= CONFIG_FINDER_MAX_PANEL_RESULTS then
-            results.truncated = true
             break
         end
 
         local renderedEntryMatches
-        if match.entryMatches then
-            for _, entryRecord in ipairs(match.entryMatches) do
-                if results.renderedEntryResults >= CONFIG_FINDER_MAX_ENTRY_RESULTS then
-                    results.truncated = true
-                    break
+        if match.sourceEntries then
+            for _, entryRecord in ipairs(match.sourceEntries) do
+                if ConfigFinderSearchTextMatches(entryRecord.searchText, query)
+                    or ConfigFinderSearchTextMatches(entryRecord.idSearchText, query) then
+                    if results.renderedEntryResults >= CONFIG_FINDER_MAX_ENTRY_RESULTS then
+                        break
+                    end
+                    if not renderedEntryMatches then
+                        renderedEntryMatches = {}
+                    end
+                    renderedEntryMatches[#renderedEntryMatches + 1] = {
+                        index = entryRecord.index,
+                        button = entryRecord.button,
+                        text = GetConfigFinderEntryDisplayText(entryRecord),
+                    }
+                    results.renderedEntryResults = results.renderedEntryResults + 1
                 end
-                if not renderedEntryMatches then
-                    renderedEntryMatches = {}
-                end
-                renderedEntryMatches[#renderedEntryMatches + 1] = {
-                    index = entryRecord.index,
-                    button = entryRecord.button,
-                    text = GetConfigFinderEntryDisplayText(entryRecord),
-                }
-                results.renderedEntryResults = results.renderedEntryResults + 1
             end
         end
 
         if match.panelMatches or (renderedEntryMatches and #renderedEntryMatches > 0) then
-            results.panelResults[#results.panelResults + 1] = {
-                containerId = match.containerId,
-                container = match.container,
-                panelId = match.panelId,
-                panel = match.panel,
-                panelMatches = match.panelMatches,
-                entryMatches = renderedEntryMatches,
-            }
-        else
-            results.truncated = true
+            match.sourceEntries = nil
+            match.entryMatches = renderedEntryMatches
+            results.panelResults[#results.panelResults + 1] = match
         end
     end
 
-    results.renderedPanelResults = #results.panelResults
-    if results.renderedPanelResults < results.totalPanelResults
+    if #results.panelResults < results.totalPanelResults
         or results.renderedEntryResults < results.totalEntryResults then
         results.truncated = true
     end
