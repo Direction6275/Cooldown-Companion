@@ -1314,6 +1314,7 @@ end
 local CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS = {
     checkLoadConditions = false,
     ignoreSpellAvailability = true,
+    ignoreItemAvailability = true,
     ignoreTalentConditions = true,
     configPreview = true,
     selectionDrivenConfigPreview = true,
@@ -1375,7 +1376,8 @@ local function IsSelectionDrivenConfigPreviewScope(addon, groupId, sourceIndex)
         return true
     end
 
-    if CS.selectedContainer and not CS.selectedGroup then
+    if CS.selectedContainer and not CS.selectedGroup
+        and not (CS.selectedPanels and next(CS.selectedPanels)) then
         local db = addon.db
         local group = db and db.profile and db.profile.groups and db.profile.groups[groupId]
         if group and group.parentContainerId == CS.selectedContainer then
@@ -1488,6 +1490,7 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
     if opts.requireButtons and not self:GroupHasUsableButtons(group, {
         checkLoadConditions = opts.checkLoadConditions,
         ignoreSpellAvailability = buttonUsabilityOptions and buttonUsabilityOptions.ignoreSpellAvailability,
+        ignoreItemAvailability = buttonUsabilityOptions and buttonUsabilityOptions.ignoreItemAvailability,
         ignoreTalentConditions = buttonUsabilityOptions and buttonUsabilityOptions.ignoreTalentConditions,
     }) then
         return false
@@ -2631,6 +2634,13 @@ function CooldownCompanion:IsButtonUsable(buttonData, group, opts)
     if opts.ignoreSpellAvailability and buttonData.type == "spell" then
         return true
     end
+    if opts.ignoreItemAvailability
+        and (
+            buttonData.type == "item"
+            or (CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData))
+        ) then
+        return true
+    end
 
     -- Passive/proc spells are tracked via aura, not spellbook presence.
     -- Multi-CDM-child buttons: verify their specific slot still exists in the CDM
@@ -3055,7 +3065,11 @@ function CooldownCompanion:RefreshAllGroups()
 
     -- Refresh current profile's groups: load active ones, unload inactive ones
     for groupId, group in pairs(self.db.profile.groups) do
-        if not self:IsGroupVisibleToCurrentChar(groupId) then
+        local visible = self:IsGroupVisibleToCurrentChar(groupId)
+        local previewEligible = self:IsGroupEligibleForConfigPreview(groupId, {
+            group = group,
+        })
+        if not visible and not previewEligible then
             self:UnloadGroup(groupId)
         elseif self:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
             self:UnloadGroup(groupId)
@@ -3064,7 +3078,7 @@ function CooldownCompanion:RefreshAllGroups()
             checkCharVisibility = false,
             checkLoadConditions = true,
             requireButtons = false,
-        }) then
+        }) or previewEligible then
             self:RefreshGroupFrame(groupId)
         else
             self:UnloadGroup(groupId)
