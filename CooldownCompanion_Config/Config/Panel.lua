@@ -40,6 +40,19 @@ local RefreshTutorialPlacement = ST._RefreshTutorialPlacement
 local SetupChangelogOverlay = ST._SetupChangelogOverlay
 local RefreshVisibleConfigCompactRows = ST._RefreshVisibleConfigCompactRows
 
+local function ClearTransientConfigPreviewState()
+    ClearHideActiveCurrentClassPanels()
+    if CS.previewToggleRefreshActive then
+        return
+    end
+    if CooldownCompanion.ClearAllConfigPreviews then
+        CooldownCompanion:ClearAllConfigPreviews()
+    end
+    if CooldownCompanion.RefreshConfigSelectedGroupFrames then
+        CooldownCompanion:RefreshConfigSelectedGroupFrames()
+    end
+end
+
 local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
 local CONFIG_FINDER_BOX_HEIGHT = 28
 local CONFIG_FINDER_BUTTON_GAP = 3
@@ -932,13 +945,7 @@ local function CreateConfigPanel()
         if CS.CloseAdvancedSettingsPanel then
             CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         end
-        ClearHideActiveCurrentClassPanels()
-        if not CS.previewToggleRefreshActive then
-            CooldownCompanion:ClearAllConfigPreviews()
-            if CooldownCompanion.RefreshConfigSelectedGroupFrames then
-                CooldownCompanion:RefreshConfigSelectedGroupFrames()
-            end
-        end
+        ClearTransientConfigPreviewState()
         if ClearConfigShiftTooltipHover then
             ClearConfigShiftTooltipHover()
         end
@@ -1562,7 +1569,7 @@ local function CreateConfigPanel()
             if frame.HideChangelogOverlay then
                 frame.HideChangelogOverlay()
             end
-            ClearHideActiveCurrentClassPanels()
+            ClearTransientConfigPreviewState()
             self:Hide()
         elseif not InCombatLockdown() then
             self:SetPropagateKeyboardInput(true)
@@ -1601,6 +1608,7 @@ local function CreateConfigPanel()
             if CS.CloseAdvancedSettingsPanel then
                 CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
             end
+            ClearTransientConfigPreviewState()
 
             savedFrameRight = content:GetRight()
             savedFrameTop = content:GetTop()
@@ -2560,7 +2568,7 @@ function CooldownCompanion:_configToggleImpl()
         if CS.CloseAdvancedSettingsPanel then
             CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         end
-        ClearHideActiveCurrentClassPanels()
+        ClearTransientConfigPreviewState()
         CS.configFrame._miniFrame:Hide()
         return
     end
