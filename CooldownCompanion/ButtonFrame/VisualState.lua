@@ -192,6 +192,9 @@ local function IsReadyGlowAtMaxCharges(button, buttonData)
     if not (button and IsReadyGlowMaxChargeEligible(buttonData)) then
         return false
     end
+    if button._chargePresentationSuppressed == true then
+        return false
+    end
 
     return button._chargeState == CHARGE_STATE_FULL
 end
@@ -383,6 +386,8 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
 
     local procSuppressesReady = procOverlayShown and style.procGlowStyle ~= "none"
     local auraSuppressesReady = button._auraTrackingReady == true and button._auraActive == true
+    local cooldownPresentationSuppressed = button._cooldownPresentationSuppressed == true
+        or button._chargePresentationSuppressed == true
     if not button.readyGlow then
         SetGlowIntent(ready, false, false, "missing-widget")
     elseif button._readyGlowPreview == true then
@@ -394,6 +399,9 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
         SetGlowIntent(ready, true, false, "passive")
     elseif button._noCooldown then
         SetGlowIntent(ready, true, false, "no-cooldown")
+    elseif cooldownPresentationSuppressed then
+        SetGlowIntent(ready, true, false, "presentation-suppressed")
+        ready.cooldownSuppressed = true
     elseif style.readyGlowCombatOnly and not inCombat then
         SetGlowIntent(ready, true, false, "combat-only")
         ready.combatOnly = true
@@ -505,6 +513,7 @@ local function ResolveIconFillIntent(button, buttonData, style, target)
         cooldownReason = "cooldown"
     elseif UsesIconFillChargeBehavior(buttonData)
         and button._chargeRecharging == true
+        and button._chargePresentationSuppressed ~= true
         and button._hideCooldownChargesActive ~= true then
         cooldownReason = "charge-recharge"
     end

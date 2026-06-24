@@ -481,6 +481,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         if not (bar and bar.stackText and bar.stackText:IsShown()) then
             return
         end
+        if cooldownResult and cooldownResult.chargePresentationSuppressed == true then
+            bar.stackText:SetText("")
+            return
+        end
 
         local currentCharges = cooldownResult and cooldownResult.currentCharges
         local maxCharges = cooldownResult and cooldownResult.maxCharges
@@ -530,8 +534,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         local cooldownResult = EntryRuntime.EvaluateSpellCooldownStateForCustomBar(cabConfig, bar)
         local durationObj = cooldownResult and cooldownResult.renderDurationObj
+        local chargePresentationSuppressed = cooldownResult and cooldownResult.chargePresentationSuppressed == true
         local cooldownActive = cooldownResult
             and cooldownResult.state == ST.CooldownLogic.STATE_COOLDOWN
+            and not chargePresentationSuppressed
         local auraState = ResolveSpellCustomBarAuraState(barInfo)
         local auraPresent = auraState and auraState.ready == true and auraState.auraPresent == true
         local auraPreview = bar._barAuraActivePreview == true
@@ -546,7 +552,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local rechargeColor = cabConfig.barChargeColor or {1.0, 0.82, 0.0, 1}
         local chargeState = cooldownResult and cooldownResult.chargeState
         local fillColor = barColor
-        if cooldownResult and cooldownResult.hasCharges == true then
+        if cooldownResult and cooldownResult.hasCharges == true and not chargePresentationSuppressed then
             if chargeState == ST.CooldownLogic.CHARGE_STATE_ZERO then
                 fillColor = cooldownColor
             elseif cooldownActive then
@@ -559,11 +565,17 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local function UpdateSpellCustomBarSounds(soundAuraActive)
             if CooldownCompanion.UpdateCustomBarSoundAlerts then
                 local soundCooldownActive = cooldownActive
-                if cooldownResult and cooldownResult.hasCharges == true then
+                local soundCooldownResult = cooldownResult
+                if chargePresentationSuppressed then
+                    soundCooldownActive = false
+                    soundCooldownResult = nil
+                    barInfo._sndInitialized = nil
+                end
+                if cooldownResult and cooldownResult.hasCharges == true and not chargePresentationSuppressed then
                     soundCooldownActive = cooldownResult.chargeState == ST.CooldownLogic.CHARGE_STATE_ZERO
                         or (cooldownResult.chargeState == nil and cooldownActive)
                 end
-                CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, soundAuraActive, soundCooldownActive, cooldownResult)
+                CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, soundAuraActive, soundCooldownActive, soundCooldownResult)
             end
         end
 
@@ -703,6 +715,85 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         UpdateSpellCustomBarSounds(false)
     end
 
+    local function GetReadableMaxCharges(spellID)
+        if not spellID or not C_Spell.GetSpellCharges then
+            return nil
+        end
+
+        local charges = C_Spell.GetSpellCharges(spellID)
+        local maxCharges = charges and charges.maxCharges
+        if maxCharges == nil or (issecretvalue and issecretvalue(maxCharges)) then
+            return nil
+        end
+        return tonumber(maxCharges)
+    end
+
+    local function SpellHasDirectMultiChargeInfo(spellID)
+        local maxCharges = GetReadableMaxCharges(spellID)
+        return maxCharges ~= nil and maxCharges > 1
+    end
+
+    local function GetRuntimeSpellID(baseSpellID)
+        local runtimeSpellID = C_Spell.GetOverrideSpell and C_Spell.GetOverrideSpell(baseSpellID)
+        if not runtimeSpellID or runtimeSpellID == 0 then
+            runtimeSpellID = baseSpellID
+        end
+        return tonumber(runtimeSpellID)
+    end
+
+    local function CustomBarHasChargeBehavior(bar, cabConfig, baseSpellID, runtimeSpellID)
+        if bar and bar._customCooldownHasCharges == true then
+            return true
+        end
+        if cabConfig and cabConfig.hasCharges == true then
+            return true
+        end
+
+        local configMaxCharges = cabConfig and cabConfig.maxCharges
+        if configMaxCharges ~= nil
+            and not (issecretvalue and issecretvalue(configMaxCharges))
+            and (tonumber(configMaxCharges) or 0) > 1 then
+            return true
+        end
+
+        if bar and SpellHasDirectMultiChargeInfo(bar._chargeSpellId) then
+            return true
+        end
+        if SpellHasDirectMultiChargeInfo(baseSpellID) then
+            return true
+        end
+        return runtimeSpellID
+            and runtimeSpellID ~= baseSpellID
+            and SpellHasDirectMultiChargeInfo(runtimeSpellID)
+    end
+
+    local function CustomBarCastConsumesTrackedCharge(bar, cabConfig, spellID)
+        local castSpellID = tonumber(spellID)
+        local baseSpellID = tonumber(cabConfig and cabConfig.spellID)
+        if not castSpellID or not baseSpellID then
+            return false
+        end
+
+        local runtimeSpellID = GetRuntimeSpellID(baseSpellID)
+        if not CustomBarHasChargeBehavior(bar, cabConfig, baseSpellID, runtimeSpellID) then
+            return false
+        end
+
+        if castSpellID == baseSpellID then
+            return true
+        end
+
+        local chargeSpellID = tonumber(bar and bar._chargeSpellId)
+        if chargeSpellID and castSpellID == chargeSpellID then
+            return true
+        end
+
+        return runtimeSpellID
+            and runtimeSpellID ~= baseSpellID
+            and castSpellID == runtimeSpellID
+            and SpellHasDirectMultiChargeInfo(runtimeSpellID)
+    end
+
     function CooldownCompanion:RecordCustomBarSpellCast(spellID)
         if not spellID then return end
 
@@ -715,16 +806,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                 and cabConfig
                 and cabConfig.entryType == "spell"
             then
-                local baseSpellID = tonumber(cabConfig.spellID)
-                local runtimeSpellID = baseSpellID and C_Spell.GetOverrideSpell(baseSpellID)
-                if not runtimeSpellID or runtimeSpellID == 0 then
-                    runtimeSpellID = baseSpellID
-                end
-
-                local charges = runtimeSpellID and C_Spell.GetSpellCharges(runtimeSpellID)
-                local maxCharges = charges and tonumber(charges.maxCharges)
-                if (maxCharges or 0) > 1
-                    and (spellID == baseSpellID or spellID == runtimeSpellID) then
+                if CustomBarCastConsumesTrackedCharge(bar, cabConfig, spellID) then
                     EntryRuntime.RecordChargeSpent(bar)
                 end
             end

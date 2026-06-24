@@ -1195,12 +1195,17 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
 
         local timedAuraPrimarySwipeActive = button._auraPrimarySwipeActive == true
             and button._auraHasTimer ~= false
-        local cooldownVisualActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+        local chargePresentationSuppressed = button._chargePresentationSuppressed == true
+        local cooldownPresentationSuppressed = button._cooldownPresentationSuppressed == true
+        local cooldownVisualActive = (button._cooldownState == COOLDOWN_STATE_COOLDOWN
+                and not cooldownPresentationSuppressed)
             or timedAuraPrimarySwipeActive
             or button._conditionalAuraDurationTextPreview == true
             or button._conditionalPreviewDomain == "cooldown"
-            or button._chargeCooldownVisualActive == true
-            or (isGCDOnly and style.showGCDSwipe == true)
+            or (button._chargeCooldownVisualActive == true and not chargePresentationSuppressed)
+            or (isGCDOnly and style.showGCDSwipe == true
+                and not chargePresentationSuppressed
+                and not cooldownPresentationSuppressed)
 
         if suppressGCD or not cooldownVisualActive then
             button.cooldown:Hide()
@@ -1436,6 +1441,11 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._vertexA = nil
     button._chargeText = nil
     button._chargeCountReadable = nil
+    button._lastReadableCharges = nil
+    button._chargeSpellId = nil
+    button._chargeInfoFromFallback = nil
+    button._chargePresentationSuppressed = nil
+    button._cooldownPresentationSuppressed = nil
     button._zeroChargesConfirmed = nil
     button._hideCooldownChargesActive = nil
     button._nilConfirmPending = nil
