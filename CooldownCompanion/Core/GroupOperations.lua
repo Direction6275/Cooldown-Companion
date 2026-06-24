@@ -1357,19 +1357,9 @@ function CooldownCompanion:IsButtonInConfigPreviewScope(groupId, sourceIndex, op
 end
 
 local function GroupHasConfigPreviewButtons(addon, groupId, group)
-    if addon:IsRotationAssistantGroup(group) then
-        return true
-    end
-    if not (group and group.buttons and #group.buttons > 0) then
-        return false
-    end
-    for sourceIndex, buttonData in ipairs(group.buttons) do
-        if addon:IsButtonInConfigPreviewScope(groupId, sourceIndex, CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS)
-            and addon:IsButtonUsable(buttonData, group, CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS) then
-            return true
-        end
-    end
-    return false
+    return addon:GetGroupLayoutButtonCount(groupId, group, {
+        buttonUsabilityOptions = CONFIG_PREVIEW_BUTTON_USABILITY_OPTIONS,
+    }) > 0
 end
 
 function CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)

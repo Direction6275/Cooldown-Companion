@@ -596,6 +596,12 @@ local function ClearOtherClassHideActive(opts)
     return SetHideActiveCurrentClassPanels(false, opts)
 end
 
+local function ResetOtherClassLibraryState(opts)
+    CS.otherClassLibraryActive = false
+    CS.otherClassLibraryClassKey = nil
+    return ClearOtherClassHideActive(opts)
+end
+
 local ClearConfigPrimarySelection
 
 local function SetConfigFinderText(text, opts)
@@ -613,9 +619,7 @@ local function SetConfigFinderText(text, opts)
         if not (opts and opts.preservePrimarySelection) and ClearConfigPrimarySelection then
             ClearConfigPrimarySelection()
         end
-        CS.otherClassLibraryActive = false
-        CS.otherClassLibraryClassKey = nil
-        ClearOtherClassHideActive()
+        ResetOtherClassLibraryState()
     end
 
     if opts and opts.syncWidget == false then
@@ -3073,9 +3077,7 @@ local function ResetConfigSelection(full)
         wipe(CS.selectedGroups)
         wipe(CS.selectedCustomBars)
         CS.addingToPanelId = nil
-        CS.otherClassLibraryActive = false
-        CS.otherClassLibraryClassKey = nil
-        ClearOtherClassHideActive()
+        ResetOtherClassLibraryState()
     end
     RefreshAlphaDriverForConfigSelection()
 end
@@ -3094,18 +3096,13 @@ local function SetConfigPrimaryMode(mode, opts)
     if toBars and not wasBars then
         -- Preserve existing behavior when entering Bars & Frames mode.
         ResetConfigSelection(true)
-        CS.otherClassLibraryActive = false
-        CS.otherClassLibraryClassKey = nil
-        ClearOtherClassHideActive()
     elseif (not toBars) and wasBars then
         -- Stop preview loops when returning to button settings mode.
         CooldownCompanion:ClearAllConfigPreviews()
         CS.selectedCustomBarId = nil
         CS.customBarSettingsTab = "appearance"
         ClearConfigResourceSelection()
-        CS.otherClassLibraryActive = false
-        CS.otherClassLibraryClassKey = nil
-        ClearOtherClassHideActive()
+        ResetOtherClassLibraryState()
     end
 
     CS.resourceBarPanelActive = toBars
@@ -3440,6 +3437,7 @@ ST._SetConfigFinderText = SetConfigFinderText
 ST._ClearConfigFinderText = ClearConfigFinderText
 ST._SetHideActiveCurrentClassPanels = SetHideActiveCurrentClassPanels
 ST._ClearOtherClassHideActive = ClearOtherClassHideActive
+ST._ResetOtherClassLibraryState = ResetOtherClassLibraryState
 ST._BuildConfigFinderResults = BuildConfigFinderResults
 ST._InvalidateConfigFinderResults = InvalidateConfigFinderResults
 ST._SelectConfigFinderResult = SelectConfigFinderResult

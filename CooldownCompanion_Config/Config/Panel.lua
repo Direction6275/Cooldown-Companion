@@ -28,7 +28,8 @@ local IsConfigFinderAvailable = ST._IsConfigFinderAvailable
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local SetConfigFinderText = ST._SetConfigFinderText
 local ClearConfigFinderText = ST._ClearConfigFinderText
-local ClearOtherClassHideActive = ST._ClearOtherClassHideActive
+local ClearHideActiveCurrentClassPanels = ST._ClearOtherClassHideActive
+local ResetOtherClassBrowseState = ST._ResetOtherClassLibraryState
 local InvalidateConfigFinderResults = ST._InvalidateConfigFinderResults
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
 local MaybeAutoStartFirstIconPanelTutorial = ST._MaybeAutoStartFirstIconPanelTutorial
@@ -55,25 +56,6 @@ local function GetAddonVersionText()
         return ST._GetAddonVersion()
     end
     return "unknown"
-end
-
-local function ClearHideActiveCurrentClassPanels(opts)
-    if ClearOtherClassHideActive then
-        return ClearOtherClassHideActive(opts)
-    end
-
-    local changed = CS.hideActiveCurrentClassPanels == true
-    CS.hideActiveCurrentClassPanels = false
-    if changed and not (opts and opts.skipRefresh) and CooldownCompanion.RefreshAllGroupsVisibilityOnly then
-        CooldownCompanion:RefreshAllGroupsVisibilityOnly()
-    end
-    return changed
-end
-
-local function ResetOtherClassBrowseState(opts)
-    CS.otherClassLibraryActive = false
-    CS.otherClassLibraryClassKey = nil
-    ClearHideActiveCurrentClassPanels(opts)
 end
 
 local function GetVersionFooterText()

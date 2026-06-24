@@ -41,24 +41,10 @@ local SelectConfigFolder = ST._SelectConfigFolder
 local SelectConfigContainer = ST._SelectConfigContainer
 local ToggleConfigContainerMultiSelect = ST._ToggleConfigContainerMultiSelect
 local SelectConfigPanel = ST._SelectConfigPanel
-local ClearOtherClassHideActive = ST._ClearOtherClassHideActive
 local SetHideActiveCurrentClassPanels = ST._SetHideActiveCurrentClassPanels
+local ClearOtherClassBrowseState = ST._ResetOtherClassLibraryState
 
 local GenerateGroupName
-
-local function ClearOtherClassBrowseState(opts)
-    CS.otherClassLibraryActive = false
-    CS.otherClassLibraryClassKey = nil
-    if ClearOtherClassHideActive then
-        ClearOtherClassHideActive(opts)
-    else
-        local changed = CS.hideActiveCurrentClassPanels == true
-        CS.hideActiveCurrentClassPanels = false
-        if changed and not (opts and opts.skipRefresh) and CooldownCompanion.RefreshAllGroupsVisibilityOnly then
-            CooldownCompanion:RefreshAllGroupsVisibilityOnly()
-        end
-    end
-end
 
 local function OpenContainerLoadConditions(containerId)
     SelectConfigContainer(containerId)
@@ -787,14 +773,7 @@ local function PopulateOtherClassBrowseButtonBar()
     UpdateToggleText()
     toggleBtn:SetCallback("OnClick", function()
         local hideActive = not (CS.hideActiveCurrentClassPanels == true)
-        if SetHideActiveCurrentClassPanels then
-            SetHideActiveCurrentClassPanels(hideActive)
-        else
-            CS.hideActiveCurrentClassPanels = hideActive and CS.otherClassLibraryActive == true
-            if CooldownCompanion.RefreshAllGroupsVisibilityOnly then
-                CooldownCompanion:RefreshAllGroupsVisibilityOnly()
-            end
-        end
+        SetHideActiveCurrentClassPanels(hideActive)
         UpdateToggleText()
     end)
     toggleBtn.frame:SetParent(CS.col1ButtonBar)

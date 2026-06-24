@@ -1781,6 +1781,26 @@ function CooldownCompanion:RefreshCursorAnchorTicker()
     end
 end
 
+local function ShouldShowGroupFrameForRuntimeOrPreview(addon, groupId, group)
+    if addon:IsGroupEligibleForConfigPreview(groupId, {
+        group = group,
+    }) then
+        return true
+    end
+
+    if addon.IsGroupSuppressedForOtherClassBrowse
+        and addon:IsGroupSuppressedForOtherClassBrowse(groupId, group) then
+        return false
+    end
+
+    return addon:IsGroupActive(groupId, {
+        group = group,
+        checkCharVisibility = true,
+        checkLoadConditions = true,
+        requireButtons = true,
+    })
+end
+
 function CooldownCompanion:CreateGroupFrame(groupId)
     -- Return existing frame to prevent duplicates (SharedMedia callbacks
     -- can trigger RefreshAllMedia before OnEnable's CreateAllGroupFrames)
@@ -1982,20 +2002,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     self:PopulateGroupButtons(groupId)
     
     -- Show/hide based on runtime activity, plus selected config previews.
-    local previewEligible = self:IsGroupEligibleForConfigPreview(groupId, {
-        group = group,
-    })
-    local suppressedForOtherClassBrowse = self.IsGroupSuppressedForOtherClassBrowse
-        and self:IsGroupSuppressedForOtherClassBrowse(groupId, group)
-    if previewEligible or (
-        not suppressedForOtherClassBrowse
-        and self:IsGroupActive(groupId, {
-            group = group,
-            checkCharVisibility = true,
-            checkLoadConditions = true,
-            requireButtons = true,
-        })
-    ) then
+    if ShouldShowGroupFrameForRuntimeOrPreview(self, groupId, group) then
         frame:Show()
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
         ApplyCurrentAlphaIfPresent(self, frame, groupId, group)
@@ -2845,20 +2852,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
     -- Update visibility: runtime-active groups show normally; selected config
     -- previews can also show without becoming runtime-visible.
-    local previewEligible = CooldownCompanion:IsGroupEligibleForConfigPreview(groupId, {
-        group = group,
-    })
-    local suppressedForOtherClassBrowse = CooldownCompanion.IsGroupSuppressedForOtherClassBrowse
-        and CooldownCompanion:IsGroupSuppressedForOtherClassBrowse(groupId, group)
-    local isActive = previewEligible or (
-        not suppressedForOtherClassBrowse
-        and CooldownCompanion:IsGroupActive(groupId, {
-            group = group,
-            checkCharVisibility = true,
-            checkLoadConditions = true,
-            requireButtons = true,
-        })
-    )
+    local isActive = ShouldShowGroupFrameForRuntimeOrPreview(CooldownCompanion, groupId, group)
     if isActive then
         if InCombatLockdown() and frame:IsProtected() then
             if not frame:IsShown() then
