@@ -8,16 +8,12 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
-local LSM = LibStub("LibSharedMedia-3.0")
 local CS = ST._configState
 local IsPassiveOrProc = ST._IsPassiveOrProc
 local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
-local OpenImportReviewWindow = ST._OpenImportReviewWindow
 local ClearCustomBarPreviewState = ST._ClearConfigCustomBarPreviewState
 local SelectConfigCustomBar = ST._SelectConfigCustomBar
 local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
-local ToggleConfigCustomBarMultiSelect = ST._ToggleConfigCustomBarMultiSelect
-local PruneConfigCustomBarSelection = ST._PruneConfigCustomBarSelection
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
@@ -26,24 +22,17 @@ local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
-local AddAnchorDropdown = ST._AddAnchorDropdown
-local HookSliderEditBox = ST._HookSliderEditBox
-local BuildAlphaControls = ST._BuildAlphaControls
-local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
 local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
 local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
 local BuildMaxStacksIndicatorAdvancedControls = ST._BuildMaxStacksIndicatorAdvancedControls
 local IsBarAuraIndicatorEnabled = ST.IsBarAuraIndicatorEnabled
-local AddPreviewToggleButton = ST._AddPreviewToggleButton
 local AddPreviewBadge = ST._AddPreviewBadge
-local RefreshConfigPanelForPreviewToggle = ST._RefreshConfigPanelForPreviewToggle
 local CleanRecycledEntry = ST._CleanRecycledEntry
 local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
-local tabInfoButtons = CS.tabInfoButtons
 
 local function RefreshLayoutOrderPreview()
     if not (CS.resourceBarPanelActive and CS.col4Container and ST._RefreshColumn4) then
@@ -66,69 +55,18 @@ end
 -- Shared constants from ResourceBarConstants
 local RB = ST._RB
 local POWER_NAMES = RB.POWER_NAMES
-local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
-local HIDE_AT_ZERO_ELIGIBLE = RB.HIDE_AT_ZERO_ELIGIBLE
-local DEFAULT_POWER_COLORS = RB.DEFAULT_POWER_COLORS
-local DEFAULT_MW_BASE_COLOR = RB.DEFAULT_MW_BASE_COLOR
-local DEFAULT_MW_OVERLAY_COLOR = RB.DEFAULT_MW_OVERLAY_COLOR
-local DEFAULT_MW_MAX_COLOR = RB.DEFAULT_MW_MAX_COLOR
 local DEFAULT_CUSTOM_AURA_MAX_COLOR = RB.DEFAULT_CUSTOM_AURA_MAX_COLOR
-local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
 local DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT = RB.DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT
 local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
 local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
 local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
 local DEFAULT_RESOURCE_TEXT_COLOR = RB.DEFAULT_RESOURCE_TEXT_COLOR
-local DEFAULT_RESOURCE_TEXT_ANCHOR = RB.DEFAULT_RESOURCE_TEXT_ANCHOR
-local DEFAULT_RESOURCE_TEXT_X_OFFSET = RB.DEFAULT_RESOURCE_TEXT_X_OFFSET
-local DEFAULT_RESOURCE_TEXT_Y_OFFSET = RB.DEFAULT_RESOURCE_TEXT_Y_OFFSET
-local DEFAULT_SEG_THRESHOLD_COLOR = RB.DEFAULT_SEG_THRESHOLD_COLOR
-local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
-local DEFAULT_CONTINUOUS_TICK_MODE = RB.DEFAULT_CONTINUOUS_TICK_MODE
-local DEFAULT_CONTINUOUS_TICK_WIDTH = RB.DEFAULT_CONTINUOUS_TICK_WIDTH
-local DEFAULT_HEALTH_BAR_COLOR = RB.DEFAULT_HEALTH_BAR_COLOR
-local DEFAULT_HEALTH_BAR_OPACITY = RB.DEFAULT_HEALTH_BAR_OPACITY
-local DEFAULT_HEALTH_BAR_FULL_COLOR = RB.DEFAULT_HEALTH_BAR_FULL_COLOR
-local DEFAULT_HEALTH_BAR_HALF_COLOR = RB.DEFAULT_HEALTH_BAR_HALF_COLOR
-local DEFAULT_HEALTH_BAR_LOW_COLOR = RB.DEFAULT_HEALTH_BAR_LOW_COLOR
-local DEFAULT_HEALTH_BAR_GRADIENT = RB.DEFAULT_HEALTH_BAR_GRADIENT
-local DEFAULT_HEALTH_BACKGROUND_COLOR = RB.DEFAULT_HEALTH_BACKGROUND_COLOR
-local DEFAULT_HEALTH_BACKGROUND_FULL_COLOR = RB.DEFAULT_HEALTH_BACKGROUND_FULL_COLOR
-local DEFAULT_HEALTH_BACKGROUND_HALF_COLOR = RB.DEFAULT_HEALTH_BACKGROUND_HALF_COLOR
-local DEFAULT_HEALTH_BACKGROUND_LOW_COLOR = RB.DEFAULT_HEALTH_BACKGROUND_LOW_COLOR
-local DEFAULT_HEALTH_BACKGROUND_OPACITY = RB.DEFAULT_HEALTH_BACKGROUND_OPACITY
-local DEFAULT_HEALTH_BACKGROUND_GRADIENT = RB.DEFAULT_HEALTH_BACKGROUND_GRADIENT
-local DEFAULT_HEALTH_ABSORB_COLOR = RB.DEFAULT_HEALTH_ABSORB_COLOR
-local DEFAULT_HEALTH_HEAL_ABSORB_COLOR = RB.DEFAULT_HEALTH_HEAL_ABSORB_COLOR
-local DEFAULT_HEALTH_INCOMING_HEAL_COLOR = RB.DEFAULT_HEALTH_INCOMING_HEAL_COLOR
-local DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR = RB.DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR
-local DEFAULT_HEALTH_EFFECT_TEXTURE = RB.DEFAULT_HEALTH_EFFECT_TEXTURE
-local DEFAULT_COMBO_COLOR = RB.DEFAULT_COMBO_COLOR
-local DEFAULT_COMBO_MAX_COLOR = RB.DEFAULT_COMBO_MAX_COLOR
-local DEFAULT_COMBO_CHARGED_COLOR = RB.DEFAULT_COMBO_CHARGED_COLOR
-local DEFAULT_RUNE_READY_COLOR = RB.DEFAULT_RUNE_READY_COLOR
-local DEFAULT_RUNE_RECHARGING_COLOR = RB.DEFAULT_RUNE_RECHARGING_COLOR
-local DEFAULT_RUNE_MAX_COLOR = RB.DEFAULT_RUNE_MAX_COLOR
-local DEFAULT_SHARD_READY_COLOR = RB.DEFAULT_SHARD_READY_COLOR
-local DEFAULT_SHARD_RECHARGING_COLOR = RB.DEFAULT_SHARD_RECHARGING_COLOR
-local DEFAULT_SHARD_MAX_COLOR = RB.DEFAULT_SHARD_MAX_COLOR
-local DEFAULT_HOLY_COLOR = RB.DEFAULT_HOLY_COLOR
-local DEFAULT_HOLY_MAX_COLOR = RB.DEFAULT_HOLY_MAX_COLOR
-local DEFAULT_CHI_COLOR = RB.DEFAULT_CHI_COLOR
-local DEFAULT_CHI_MAX_COLOR = RB.DEFAULT_CHI_MAX_COLOR
-local DEFAULT_ARCANE_COLOR = RB.DEFAULT_ARCANE_COLOR
-local DEFAULT_ARCANE_MAX_COLOR = RB.DEFAULT_ARCANE_MAX_COLOR
-local DEFAULT_ESSENCE_READY_COLOR = RB.DEFAULT_ESSENCE_READY_COLOR
-local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
-local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
 local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
 local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
 local GetCustomBarEntryType = RB.GetCustomBarEntryType
 local EnsureCustomBarId = RB.EnsureCustomBarId
 local EnsureCustomBarLayout = RB.EnsureCustomBarLayout
 local GetCustomBarLayout = RB.GetCustomBarLayout
-local GetResourceSpecOverrideTable = RB.GetResourceSpecOverrideTable
-local RESOURCE_HEALTH_DISPLAY_KEYS = RB.RESOURCE_HEALTH_DISPLAY_KEYS
 local resourceSpecCopyButton
 local resourceSpecCopyMenu
 
@@ -173,18 +111,8 @@ local RefreshCustomAuraBarAuraUnitForSpell = RB.RefreshCustomAuraBarAuraUnitForS
 -- Imports from ResourceBarPanelsHelpers
 local RBP = ST._RBP
 local resourceBarCollapsedSections = RBP.collapsedSections
-local BuildResourceAuraOverlaySection = RBP.BuildResourceAuraOverlaySection
 local BuildResourceBarConflictGate = RBP.BuildResourceBarConflictGate
-local GetConfigActiveResources = RBP.GetConfigActiveResources
 local GetCurrentConfigSpecID = RBP.GetCurrentConfigSpecID
-local ReadSpecOverrideKey = RBP.ReadSpecOverrideKey
-local WriteSpecOverrideKey = RBP.WriteSpecOverrideKey
-local GetSafeRGBConfig = RBP.GetSafeRGBConfig
-local GetSafeRGBAConfig = RBP.GetSafeRGBAConfig
-local GetSegmentedThresholdValueConfig = RBP.GetSegmentedThresholdValueConfig
-local GetContinuousTickModeConfig = RBP.GetContinuousTickModeConfig
-local GetContinuousTickPercentConfig = RBP.GetContinuousTickPercentConfig
-local GetContinuousTickAbsoluteConfig = RBP.GetContinuousTickAbsoluteConfig
 local ResolveAuraColorSpellIDFromText = RBP.ResolveAuraColorSpellIDFromText
 local GetAuraBarAutocompleteDisplayName = RBP.GetAuraBarAutocompleteDisplayName
 local GetAuraBarAutocompleteDisplayIcon = RBP.GetAuraBarAutocompleteDisplayIcon
@@ -192,9 +120,7 @@ local GetAuraBarAutocompleteEntryName = RBP.GetAuraBarAutocompleteEntryName
 local ResolveAuraBarAutocompleteEntry = RBP.ResolveAuraBarAutocompleteEntry
 local ShowAuraBarAutocompleteResults = RBP.ShowAuraBarAutocompleteResults
 local BuildAuraBarAutocompleteCache = RBP.BuildAuraBarAutocompleteCache
-local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
 local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
-local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
 
 local function CopyTableValue(value)
     return type(value) == "table" and CopyTable(value) or value
