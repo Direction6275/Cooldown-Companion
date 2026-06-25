@@ -5,6 +5,7 @@
 .local-tools
 .release
 .tmp
+.worktrees/
 agent-reference
 scripts
 docs
