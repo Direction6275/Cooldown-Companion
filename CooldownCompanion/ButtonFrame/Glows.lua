@@ -21,9 +21,6 @@ local math_min = math.min
 -- Imports from Helpers
 local ApplyEdgePositions = ST._ApplyEdgePositions
 local FitHighlightFrame = ST._FitHighlightFrame
-local DEFAULT_BAR_AURA_COLOR = ST._DEFAULT_BAR_AURA_COLOR
-local DEFAULT_BAR_PANDEMIC_COLOR = ST._DEFAULT_BAR_PANDEMIC_COLOR
-local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
 
 -- Pre-defined color constant tables to avoid per-tick allocation.
 -- IMPORTANT: These tables are read-only — never write to their indices.
