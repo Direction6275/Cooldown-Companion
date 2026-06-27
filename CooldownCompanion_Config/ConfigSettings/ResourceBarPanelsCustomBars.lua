@@ -155,19 +155,6 @@ local function FindCustomBarIndexById(customBars, customBarId)
     return nil
 end
 
-local function EnsureCustomBarRowTextBadge(frame, key)
-    local badge = frame[key]
-    if not badge then
-        badge = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        frame[key] = badge
-    end
-    badge:ClearAllPoints()
-    badge:SetJustifyH("RIGHT")
-    badge:SetJustifyV("MIDDLE")
-    badge:Show()
-    return badge
-end
-
 local function EnsureCustomBarRowIconBadge(frame, key, atlas)
     local badge = frame[key]
     if not badge then
