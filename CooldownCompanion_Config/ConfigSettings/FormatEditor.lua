@@ -9,7 +9,6 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 local ParseFormatString = ST._ParseFormatString
-local HasAnyEffects = ST._HasAnyEffects
 local CreateInfoButton = ST._CreateInfoButton
 local FormatTime = CooldownCompanion.FormatTime
 local AddColorPicker = ST._AddColorPicker

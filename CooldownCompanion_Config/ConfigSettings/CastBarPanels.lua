@@ -5,7 +5,6 @@ local CS = ST._configState
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
-local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
 local AddColorPicker = ST._AddColorPicker
