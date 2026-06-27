@@ -150,8 +150,6 @@ local lastAppliedBarSpacing = nil
 local lastAppliedBarThickness = nil
 local layoutDirty = false
 local independentWrapperFrame = nil
-local customAuraBarActivePreviewTokens = {}
-local customAuraBarPandemicPreviewTokens = {}
 local activeCustomAuraBarActivePreviews = {}
 local activeCustomAuraBarPandemicPreviews = {}
 local segmentedUpdateScratch = { auraActiveCache = {} }
@@ -2292,8 +2290,6 @@ function CooldownCompanion:RevertResourceBars()
     isPreviewActive = false
     wipe(HEALTH_EFFECTS.preview)
     HEALTH_EFFECTS.forcedPreview = nil
-    wipe(customAuraBarActivePreviewTokens)
-    wipe(customAuraBarPandemicPreviewTokens)
     wipe(activeCustomAuraBarActivePreviews)
     wipe(activeCustomAuraBarPandemicPreviews)
     activeResources = {}
@@ -2360,7 +2356,6 @@ function CooldownCompanion:SetCustomAuraBarActivePreview(cabConfig, show)
             show = nil
         end
     end
-    customAuraBarActivePreviewTokens[cabConfig] = (customAuraBarActivePreviewTokens[cabConfig] or 0) + 1
     activeCustomAuraBarActivePreviews[cabConfig] = show or nil
     RefreshCustomAuraBarPreviewState(cabConfig, "_barAuraActivePreview", show)
 end
@@ -2378,7 +2373,6 @@ function CooldownCompanion:SetCustomAuraBarPandemicPreview(cabConfig, show)
             show = nil
         end
     end
-    customAuraBarPandemicPreviewTokens[cabConfig] = (customAuraBarPandemicPreviewTokens[cabConfig] or 0) + 1
     activeCustomAuraBarPandemicPreviews[cabConfig] = show or nil
     RefreshCustomAuraBarPreviewState(cabConfig, "_pandemicPreview", show)
 end
@@ -2389,8 +2383,6 @@ function CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(cabConfig)
 end
 
 function CooldownCompanion:ClearAllCustomAuraBarPreviews()
-    wipe(customAuraBarActivePreviewTokens)
-    wipe(customAuraBarPandemicPreviewTokens)
     wipe(activeCustomAuraBarActivePreviews)
     wipe(activeCustomAuraBarPandemicPreviews)
 
@@ -2415,44 +2407,6 @@ function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     if anyUpdated and layoutDirty then
         RelayoutResourceStack()
     end
-end
-
-function CooldownCompanion:PlayCustomAuraBarActivePreview(cabConfig, durationSeconds)
-    if not cabConfig then return end
-
-    local duration = tonumber(durationSeconds) or 3
-    if duration <= 0 then duration = 3 end
-
-    local token = (customAuraBarActivePreviewTokens[cabConfig] or 0) + 1
-    customAuraBarActivePreviewTokens[cabConfig] = token
-
-    activeCustomAuraBarActivePreviews[cabConfig] = true
-    RefreshCustomAuraBarPreviewState(cabConfig, "_barAuraActivePreview", true)
-
-    C_Timer.After(duration, function()
-        if customAuraBarActivePreviewTokens[cabConfig] ~= token then return end
-        activeCustomAuraBarActivePreviews[cabConfig] = nil
-        RefreshCustomAuraBarPreviewState(cabConfig, "_barAuraActivePreview", false)
-    end)
-end
-
-function CooldownCompanion:PlayCustomAuraBarPandemicPreview(cabConfig, durationSeconds)
-    if not cabConfig then return end
-
-    local duration = tonumber(durationSeconds) or 3
-    if duration <= 0 then duration = 3 end
-
-    local token = (customAuraBarPandemicPreviewTokens[cabConfig] or 0) + 1
-    customAuraBarPandemicPreviewTokens[cabConfig] = token
-
-    activeCustomAuraBarPandemicPreviews[cabConfig] = true
-    RefreshCustomAuraBarPreviewState(cabConfig, "_pandemicPreview", true)
-
-    C_Timer.After(duration, function()
-        if customAuraBarPandemicPreviewTokens[cabConfig] ~= token then return end
-        activeCustomAuraBarPandemicPreviews[cabConfig] = nil
-        RefreshCustomAuraBarPreviewState(cabConfig, "_pandemicPreview", false)
-    end)
 end
 
 function HealthBar.HasActiveEffectPreview()
