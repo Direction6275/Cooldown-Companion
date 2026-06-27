@@ -649,17 +649,6 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
     end
 end
 
-local function ResetAlphaState(state)
-    if not state then
-        return
-    end
-    state.currentAlpha = 1
-    state.desiredAlpha = 1
-    state.fadeDuration = 0
-    state.lastAlpha = 1
-    state.hoverExpire = nil
-end
-
 local function ResetOwnedGroupAlphaState(self, groupId)
     if self.alphaState then
         self.alphaState[groupId] = nil
