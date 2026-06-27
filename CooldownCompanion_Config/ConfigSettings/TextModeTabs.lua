@@ -13,7 +13,6 @@ local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
-local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local CreatePromoteButton = ST._CreatePromoteButton
 local BuildTextColorsControls = ST._BuildTextColorsControls
 local OpenFormatEditor = ST._OpenFormatEditor

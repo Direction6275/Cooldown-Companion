@@ -33,11 +33,7 @@ local AddClassSpecEligibilityControls = ST._AddClassSpecEligibilityControls
 local BuildEligibilityBadgeMap = ST._BuildEligibilityBadgeMap
 
 -- Imports from SectionBuilders.lua
-local BuildCooldownTextControls = ST._BuildCooldownTextControls
-local BuildAuraTextControls = ST._BuildAuraTextControls
-local BuildAuraStackTextControls = ST._BuildAuraStackTextControls
 local BuildKeybindTextControls = ST._BuildKeybindTextControls
-local BuildChargeTextControls = ST._BuildChargeTextControls
 local BuildBorderControls = ST._BuildBorderControls
 local BuildBackgroundColorControls = ST._BuildBackgroundColorControls
 local BuildDesaturationControls = ST._BuildDesaturationControls
@@ -53,7 +49,6 @@ local BuildIconTintControls = ST._BuildIconTintControls
 local BuildAssistedHighlightControls = ST._BuildAssistedHighlightControls
 local BuildProcGlowControls = ST._BuildProcGlowControls
 local BuildPandemicGlowControls = ST._BuildPandemicGlowControls
-local BuildPandemicBarControls = ST._BuildPandemicBarControls
 local BuildAuraIndicatorControls = ST._BuildAuraIndicatorControls
 local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 local AddPreviewBadge = ST._AddPreviewBadge
@@ -62,10 +57,6 @@ local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
-local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
-local BuildBarColorsControls = ST._BuildBarColorsControls
-local BuildBarNameTextControls = ST._BuildBarNameTextControls
-local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
 
 local function PrimeReadyGlowCappedChargeTransitions(groupId)
     local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]

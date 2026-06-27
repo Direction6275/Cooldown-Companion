@@ -6,11 +6,7 @@ local RB = ST._RB
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
-local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
-local CreatePromoteButton = ST._CreatePromoteButton
-local CreateRevertButton = ST._CreateRevertButton
-local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker

@@ -10,7 +10,6 @@ local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local LSM = LibStub("LibSharedMedia-3.0")
 local CS = ST._configState
-local IsPassiveOrProc = ST._IsPassiveOrProc
 local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
 
 -- Imports from Helpers.lua
@@ -18,23 +17,13 @@ local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local HookSliderEditBox = ST._HookSliderEditBox
 local BuildAlphaControls = ST._BuildAlphaControls
 local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
-local BuildPandemicBarControls = ST._BuildPandemicBarControls
-local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
-local BuildBarAuraPulseControls = ST._BuildBarAuraPulseControls
-local BuildPandemicBarPulseControls = ST._BuildPandemicBarPulseControls
 local AddPreviewToggleButton = ST._AddPreviewToggleButton
-local AddPreviewBadge = ST._AddPreviewBadge
 local RefreshConfigPanelForPreviewToggle = ST._RefreshConfigPanelForPreviewToggle
-local CleanRecycledEntry = ST._CleanRecycledEntry
-local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
-local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
-local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local tabInfoButtons = CS.tabInfoButtons
 
 local function RefreshLayoutOrderPreview()
@@ -205,12 +194,6 @@ local function EnsureResourceLayoutAnchor(settings, layout)
         layout.independentWidth = settings.independentWidth
     end
 end
-
-local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
-local StartDragTracking = ST._StartDragTracking
-local GetDragIndicator = ST._GetDragIndicator
-local HideDragIndicator = ST._HideDragIndicator
-local ResetDragIndicatorStyle = ST._ResetDragIndicatorStyle
 
 local function CopyTableValue(value)
     return type(value) == "table" and CopyTable(value) or value
