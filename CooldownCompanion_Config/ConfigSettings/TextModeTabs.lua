@@ -26,38 +26,6 @@ local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 
-local TOKEN_HELP_TEXT = table.concat({
-    "|cffffffffAvailable Tokens:|r",
-    "",
-    "|cff00ff00{name}|r  Spell/item display name",
-    "|cff00ff00{time}|r  Cooldown time remaining",
-    "|cff00ff00{charges}|r  Current charges (if spell has charges)",
-    "|cff00ff00{maxcharges}|r  Maximum charges (if spell has charges)",
-    "|cff00ff00{stacks}|r  Aura stacks or item count",
-    "|cff00ff00{aura}|r  Aura duration remaining",
-    "|cff00ff00{keybind}|r  Keybind text",
-    "|cff00ff00{status}|r  Shows ready/cooldown/aura, or aura-only state for aura entries",
-    "|cff00ff00{icon}|r  Inline spell icon texture",
-    "|cff00ff00{br}|r  Manual line break",
-    "  |cff888888{?aura} checks whether the aura is active, even if it has no timer|r",
-    "",
-    "|cffffffffConditional-Only Tokens:|r",
-    "",
-    "|cff00ff00{missingcharges}|r  |cff888888(conditional only)|r Recharging with charges left",
-    "|cff00ff00{zerocharges}|r  |cff888888(conditional only)|r All charges spent",
-    "|cff00ff00{pandemic}|r  |cff888888(conditional only)|r Aura in pandemic window",
-    "|cff00ff00{proc}|r  |cff888888(conditional only)|r Spell proc overlay active",
-    "|cff00ff00{available}|r  |cff888888(conditional only)|r Off cooldown / has charges",
-    "|cff00ff00{unusable}|r  |cff888888(conditional only)|r Spell/item not usable",
-    "|cff00ff00{oor}|r  |cff888888(conditional only)|r Target out of range",
-    "",
-    "{status} resolves to:",
-    "  Ready (green) when off CD",
-    "  Cooldown time (red) when on CD",
-    "  Aura time (cyan) when aura active",
-    "  Aura entries stay blank when inactive instead of showing Ready",
-}, "\n")
-
 -- Syntax colors for summary (matching FormatEditor.lua)
 local SUM_TOKEN  = "ff00ff00"
 local SUM_COND_P = "ffffff00"
@@ -65,7 +33,6 @@ local SUM_COND_N = "ffff8844"
 local SUM_EFFECT = "ffcc44ff"
 local SUM_COLOR  = "ff44bbff"
 local SUM_GRAY   = "ff888888"
-local SUM_SEP    = "  |cff666666\194\183|r  "
 
 local function BuildFormatSummary(formatString)
     local segments = ParseFormatString(formatString)
