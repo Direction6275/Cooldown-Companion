@@ -17,35 +17,21 @@ CooldownCompanion.TRIGGER_PANEL_TEXT_INSET_Y = 2
 CooldownCompanion.TRIGGER_PANEL_TEXT_OVERFLOW_X = 6
 CooldownCompanion.TRIGGER_PANEL_TEXT_OVERFLOW_Y = 4
 
-local C_Item_IsUsableItem = C_Item.IsUsableItem
-local C_Spell_GetSpellName = C_Spell.GetSpellName
-local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 local GetTime = GetTime
 local ipairs = ipairs
 local issecretvalue = issecretvalue
-local math_abs = math.abs
 local math_cos = math.cos
-local math_floor = math.floor
 local math_max = math.max
-local math_min = math.min
-local math_pi = math.pi
-local math_rad = math.rad
 local math_sin = math.sin
 local pairs = pairs
-local string_find = string.find
 
 local function IsRuntimeItemLike(buttonData)
     return buttonData
         and (buttonData.type == "item" or buttonData.type == "equipmentSlot" or buttonData.type == "equipitem")
 end
-local string_format = string.format
 local string_gsub = string.gsub
-local string_lower = string.lower
-local string_trim = strtrim
 local string_upper = string.upper
 local table_concat = table.concat
-local table_insert = table.insert
-local table_sort = table.sort
 local tonumber = tonumber
 local type = type
 
