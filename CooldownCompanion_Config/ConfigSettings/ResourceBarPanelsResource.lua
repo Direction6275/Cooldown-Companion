@@ -26,13 +26,6 @@ local AddPreviewToggleButton = ST._AddPreviewToggleButton
 local RefreshConfigPanelForPreviewToggle = ST._RefreshConfigPanelForPreviewToggle
 local tabInfoButtons = CS.tabInfoButtons
 
-local function RefreshLayoutOrderPreview()
-    if not (CS.resourceBarPanelActive and CS.col4Container and ST._RefreshColumn4) then
-        return
-    end
-    ST._RefreshColumn4(CS.col4Container)
-end
-
 -- Shared constants from ResourceBarConstants
 local RB = ST._RB
 local POWER_NAMES = RB.POWER_NAMES
@@ -101,7 +94,6 @@ local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
 local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
 local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
 local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
-local GetCustomBarEntryType = RB.GetCustomBarEntryType
 local EnsureCustomBarId = RB.EnsureCustomBarId
 local EnsureCustomBarLayout = RB.EnsureCustomBarLayout
 local GetCustomBarLayout = RB.GetCustomBarLayout
@@ -112,42 +104,6 @@ local resourceSpecCopyButton
 local resourceSpecCopyMenu
 local thresholdTickDraftRows = {}
 local thresholdTickEditorErrors = {}
-
-local function IsHeroSpecProxyCondition(cond)
-    return type(cond) == "table"
-        and cond.nodeID ~= nil
-        and cond.heroSubTreeID ~= nil
-        and cond.entryID == nil
-        and type(cond.name) == "string"
-        and type(cond.heroName) == "string"
-        and cond.name == cond.heroName
-end
-local function IsSpellCustomBarConfig(cab)
-    if RB.IsSpellCustomBarConfig then
-        return RB.IsSpellCustomBarConfig(cab)
-    end
-    return GetCustomBarEntryType and GetCustomBarEntryType(cab) == "spell"
-end
-
-local function IsCustomBarAuraDisplayConfig(cab, isSpellCustomBar)
-    if isSpellCustomBar == nil then
-        isSpellCustomBar = IsSpellCustomBarConfig(cab)
-    end
-
-    return (not isSpellCustomBar) or (cab and cab.auraTracking == true)
-end
-
-local function GetCustomBarTrackingModeConfig(cab, isSpellCustomBar)
-    if RB.GetCustomBarTrackingMode then
-        return RB.GetCustomBarTrackingMode(cab, isSpellCustomBar)
-    end
-
-    local mode = cab and cab.trackingMode
-    if mode == "active" or mode == "stacks" then
-        return mode
-    end
-    return isSpellCustomBar and "active" or "stacks"
-end
 
 local RefreshCustomAuraBarAuraUnitForSpell = RB.RefreshCustomAuraBarAuraUnitForSpell
 
