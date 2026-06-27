@@ -1583,7 +1583,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
 
     local itemKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_itemsettings"
     local itemCollapsed = CS.collapsedSections[itemKey]
-    local itemCollapseBtn = AttachCollapseButton(itemHeading, itemCollapsed, function()
+    AttachCollapseButton(itemHeading, itemCollapsed, function()
         CS.collapsedSections[itemKey] = not CS.collapsedSections[itemKey]
         CooldownCompanion:RefreshConfigPanel()
     end)

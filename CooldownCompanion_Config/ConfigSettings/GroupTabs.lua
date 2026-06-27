@@ -2550,7 +2550,7 @@ local function BuildEffectsTab(container)
         end)
     end
 
-    local assistedAdvExpanded = AddAdvancedToggle(assistedCb, "assistedHighlight", tabInfoButtons, style.showAssistedHighlight or false, {
+    AddAdvancedToggle(assistedCb, "assistedHighlight", tabInfoButtons, style.showAssistedHighlight or false, {
         title = "Assisted Highlight Advanced",
         build = BuildAssistedHighlightAdvanced,
     })
