@@ -26,13 +26,11 @@ local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
 local math_floor = math.floor
 local math_min = math.min
 local math_max = math.max
-local math_abs = math.abs
 local math_sin = math.sin
 local math_pi = math.pi
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
 local issecretvalue = issecretvalue
-local string_format = string.format
 
 ------------------------------------------------------------------------
 -- Imports from ResourceBarConstants / ResourceBarHelpers / ResourceBarVisuals
@@ -124,8 +122,6 @@ local FormatTime = CooldownCompanion.FormatTime
 local GetDurationSecretFormatSpec = CooldownCompanion.GetDurationSecretFormatSpec
 -- Other ST imports
 local CreateGlowContainer = ST._CreateGlowContainer
-local ShowGlowStyle = ST._ShowGlowStyle
-local HideGlowStyles = ST._HideGlowStyles
 local SetBarAuraEffect = ST._SetBarAuraEffect
 local IsBarAuraIndicatorEnabled = ST.IsBarAuraIndicatorEnabled
 local DEFAULT_BAR_PANDEMIC_COLOR = ST._DEFAULT_BAR_PANDEMIC_COLOR
