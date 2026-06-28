@@ -880,8 +880,9 @@ local function ShowButtonTooltip(button, tooltip)
         and type(auraInstanceID) == "number"
         and IsTooltipAuraUnit(auraUnit)
         and tooltip.SetUnitAuraByAuraInstanceID then
-        tooltip:SetUnitAuraByAuraInstanceID(auraUnit, auraInstanceID, "INCLUDE_NAME_PLATE_ONLY")
-        return true
+        if tooltip:SetUnitAuraByAuraInstanceID(auraUnit, auraInstanceID, "INCLUDE_NAME_PLATE_ONLY") then
+            return true
+        end
     end
 
     if buttonData.type == "spell" then
