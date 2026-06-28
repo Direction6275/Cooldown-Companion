@@ -687,9 +687,6 @@ local function ClearButtonPreviewState(button)
     button._pandemicPreview = nil
     button._readyGlowPreview = nil
     button._keyPressHighlightPreview = nil
-    button._barAuraEffectPreview = nil
-    button._barPulsePreview = nil
-    button._barColorShiftPreview = nil
     button._barAuraActivePreview = nil
     button._textureProcPreview = nil
     button._textureAuraPreview = nil
