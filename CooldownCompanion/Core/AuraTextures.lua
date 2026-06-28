@@ -954,22 +954,6 @@ function CooldownCompanion.SanitizeTriggerPanelTextValue(value)
     return value
 end
 
-function CooldownCompanion.CountTriggerPanelTextLines(value)
-    value = CooldownCompanion.NormalizeTriggerPanelTextLineEndings(value)
-    if value == "" then
-        return 1
-    end
-
-    local lineCount = 1
-    for index = 1, #value do
-        if value:sub(index, index) == "\n" then
-            lineCount = lineCount + 1
-        end
-    end
-
-    return lineCount
-end
-
 function CooldownCompanion:GetTriggerPanelDisplayType(groupOrId, createIfMissing)
     local group = ResolveGroup(groupOrId)
     if type(group) ~= "table" then
