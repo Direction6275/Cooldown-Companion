@@ -759,10 +759,6 @@ function CooldownCompanion:PreviewSoundAlertSelection(buttonData, soundName)
     return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
 end
 
-function CooldownCompanion:PreviewCustomBarSoundAlertSelection(customBar, soundName)
-    return PlaySharedMediaSound(soundName, self:GetCustomBarSoundAlertChannel(customBar), GetCustomBarSpeechText(customBar))
-end
-
 function CooldownCompanion:PreviewTriggerPanelSoundAlertSelection(groupOrId, soundName)
     local group = ResolveGroup(groupOrId)
     return PlaySharedMediaSound(soundName, DEFAULT_SOUND_CHANNEL, GetTriggerPanelSpeechText(group))
