@@ -25,6 +25,7 @@ local SetFrameClickThrough = ST.SetFrameClickThrough
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 local HideGlowStyles = ST._HideGlowStyles
 local EntryRuntime = ST.EntryRuntime
+local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
 
 local function UnregisterKeyPressHighlightButton(button)
     local unregister = ST._UnregisterKeyPressHighlightButton
@@ -854,7 +855,10 @@ local function ClearReusableButtonRuntime(button)
         button.textString:SetAlpha(1)
     end
     if button.nameText then button.nameText:SetText("") end
-    if button.timeText then button.timeText:SetText("") end
+    if button.timeText then
+        UnbindDurationText(button.timeText)
+        button.timeText:SetText("")
+    end
     if button.statusBar then button.statusBar:SetAlpha(1.0) end
 end
 

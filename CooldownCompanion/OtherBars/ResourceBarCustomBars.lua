@@ -60,7 +60,9 @@ local CreateOverlayBar = RB.CreateOverlayBar
 local LayoutOverlaySegments = RB.LayoutOverlaySegments
 
 local FormatTime = CooldownCompanion.FormatTime
-local GetDurationSecretFormatSpec = CooldownCompanion.GetDurationSecretFormatSpec
+local BindDurationText = CooldownCompanion.BindDurationText or function() return false end
+local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
+local RecordDurationTextManualUpdate = CooldownCompanion.RecordDurationTextManualUpdate or function() end
 local SetAuraStackCountText = EntryRuntime.SetAuraStackCountText
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
@@ -68,6 +70,21 @@ local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
 local SetStatusBarElapsedDuration = ST.SetStatusBarElapsedDuration
 local SetStatusBarRemainingDuration = ST.SetStatusBarRemainingDuration
+
+local function SetManualDurationText(fontString, text, countManualDurationText)
+    if not fontString then return end
+    UnbindDurationText(fontString)
+    if countManualDurationText then
+        RecordDurationTextManualUpdate("resource")
+    end
+    fontString:SetText(text)
+end
+
+local function UnbindFrameDurationText(frame)
+    if frame and frame.text then
+        UnbindDurationText(frame.text)
+    end
+end
 
 function RB.CreateResourceBarCustomBarsModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
@@ -301,6 +318,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                 MarkLayoutDirty()
             end
             if not shouldShow then
+                UnbindFrameDurationText(barInfo.frame)
                 if barInfo.frame then
                     if not auraPresent then
                         barInfo.frame._customAuraStackValue = nil
@@ -357,28 +375,21 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             -- Duration text (bar.text): driven by showDurationText, independent of drain
             if bar.text and bar.text:IsShown() then
                 if durationObj then
-                    local remaining = durationObj:GetRemainingDuration()
-                    if not durationObj:HasSecretValues() then
-                        if remaining > 0 then
-                            bar.text:SetText(FormatTime(remaining, cabConfig))
-                        else
-                            bar.text:SetText("")
-                        end
-                    else
-                        bar.text:SetFormattedText(GetDurationSecretFormatSpec(cabConfig), remaining)
-                    end
+                    BindDurationText(bar.text, durationObj, cabConfig, "resource")
                 elseif auraCooldownStart and auraCooldownDuration and auraCooldownDuration > 0 then
                     local remaining = auraCooldownStart + auraCooldownDuration - GetTime()
                     if remaining > 0 then
-                        bar.text:SetText(FormatTime(remaining, cabConfig))
+                        SetManualDurationText(bar.text, FormatTime(remaining, cabConfig), true)
                     else
-                        bar.text:SetText("")
+                        SetManualDurationText(bar.text, "")
                     end
                 elseif indicatorPreview then
-                    bar.text:SetText(FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig))
+                    SetManualDurationText(bar.text, FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig), true)
                 else
-                    bar.text:SetText("")
+                    SetManualDurationText(bar.text, "")
                 end
+            elseif bar.text then
+                UnbindDurationText(bar.text)
             end
 
             -- Stack text (bar.stackText): driven by showStackText
@@ -586,6 +597,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                 MarkLayoutDirty()
             end
             if not shouldShow then
+                UnbindFrameDurationText(barInfo.frame)
                 ClearCustomAuraBarIndicatorState(barInfo, false)
                 UpdateSpellCustomBarSounds(auraPresent)
                 return
@@ -634,19 +646,14 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
             if bar.text and bar.text:IsShown() then
                 if auraDurationObj then
-                    local remaining = auraDurationObj:GetRemainingDuration()
-                    if auraDurationObj:HasSecretValues() then
-                        bar.text:SetFormattedText(GetDurationSecretFormatSpec(cabConfig), remaining)
-                    elseif remaining and remaining > 0 then
-                        bar.text:SetText(FormatTime(remaining, cabConfig))
-                    else
-                        bar.text:SetText("")
-                    end
+                    BindDurationText(bar.text, auraDurationObj, cabConfig, "resource")
                 elseif auraPreview or pandemicPreview then
-                    bar.text:SetText(FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig))
+                    SetManualDurationText(bar.text, FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig), true)
                 else
-                    bar.text:SetText("")
+                    SetManualDurationText(bar.text, "")
                 end
+            elseif bar.text then
+                UnbindDurationText(bar.text)
             end
 
             UpdateSpellCustomBarChargeText(bar, cooldownResult)
@@ -681,17 +688,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         if bar.text and bar.text:IsShown() then
             if cooldownActive and durationObj then
-                local remaining = durationObj:GetRemainingDuration()
-                if durationObj:HasSecretValues() then
-                    bar.text:SetFormattedText(GetDurationSecretFormatSpec(cabConfig), remaining)
-                elseif remaining and remaining > 0 then
-                    bar.text:SetText(FormatTime(remaining, cabConfig))
-                else
-                    bar.text:SetText("")
-                end
+                BindDurationText(bar.text, durationObj, cabConfig, "resource")
             else
-                bar.text:SetText("")
+                SetManualDurationText(bar.text, "")
             end
+        elseif bar.text then
+            UnbindDurationText(bar.text)
         end
 
         UpdateSpellCustomBarChargeText(bar, cooldownResult)
@@ -968,6 +970,8 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                     else
                         bar.text:SetPoint("CENTER")
                     end
+                else
+                    UnbindDurationText(bar.text)
                 end
             end
 
@@ -1059,6 +1063,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         for i = firstHiddenIndex, #resourceBarFrames do
             local barInfo = resourceBarFrames[i]
             if barInfo and barInfo.frame then
+                UnbindFrameDurationText(barInfo.frame)
                 ClearStaleRecycledBarRuntimeState(barInfo.frame)
                 ClearCustomAuraBarIndicatorState(barInfo, true)
                 ClearResourceAuraVisuals(barInfo.frame)
@@ -1150,6 +1155,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         if needsRecreate then
             if barInfo and barInfo.frame then
+                UnbindFrameDurationText(barInfo.frame)
                 ClearCustomAuraBarIndicatorState(barInfo, true)
                 ClearResourceAuraVisuals(barInfo.frame)
                 ClearMaxStacksIndicator(barInfo)

@@ -110,6 +110,20 @@ CooldownCompanion.DURATION_FORMAT_DECIMAL_UNDER_10 = DURATION_FORMAT_DECIMAL_UND
 CooldownCompanion.DURATION_FORMAT_DECIMAL_UNDER_60 = DURATION_FORMAT_DECIMAL_UNDER_60
 
 local secondsFormatterCache = {}
+local durationTextFormatterCache = {}
+local durationTextBindingCounters = {
+    bindAttempts = 0,
+    bindSuccesses = 0,
+    bindingsCreated = 0,
+    bindingsReused = 0,
+    formatterUpdates = 0,
+    durationUpdates = 0,
+    unbinds = 0,
+    unsupported = 0,
+    manualUpdates = 0,
+    manualUpdatesBySurface = {},
+    nativeBindsBySurface = {},
+}
 
 local function NormalizeDurationFormat(value, decimalTimers)
     if DURATION_FORMAT_SET[value] then
@@ -219,6 +233,261 @@ local function GetDurationSecretFormatSpec(source)
     return "%.0f"
 end
 CooldownCompanion.GetDurationSecretFormatSpec = GetDurationSecretFormatSpec
+
+local function IncrementDurationTextCounter(key, surface)
+    durationTextBindingCounters[key] = (durationTextBindingCounters[key] or 0) + 1
+    if surface then
+        local bySurfaceKey = key == "manualUpdates" and "manualUpdatesBySurface" or "nativeBindsBySurface"
+        local bySurface = durationTextBindingCounters[bySurfaceKey]
+        bySurface[surface] = (bySurface[surface] or 0) + 1
+    end
+end
+
+function CooldownCompanion:GetDurationTextBindingDebugCounters()
+    return durationTextBindingCounters
+end
+
+function CooldownCompanion:ResetDurationTextBindingDebugCounters()
+    for key, value in pairs(durationTextBindingCounters) do
+        if type(value) == "table" then
+            for childKey in pairs(value) do
+                value[childKey] = nil
+            end
+        else
+            durationTextBindingCounters[key] = 0
+        end
+    end
+    for key in pairs(durationTextFormatterCache) do
+        durationTextFormatterCache[key] = nil
+    end
+end
+
+function CooldownCompanion.RecordDurationTextManualUpdate(surface)
+    IncrementDurationTextCounter("manualUpdates", surface)
+end
+
+local function GetDurationTextRoundingDown()
+    return GetEnumValue("NumericRuleFormatRounding", "Down", 2)
+end
+
+local function FloorComponent(divisor, modulo)
+    return {
+        div = divisor,
+        mod = modulo,
+        step = 1,
+        rounding = GetDurationTextRoundingDown(),
+    }
+end
+
+local function AddFloorBreakpoint(formatter, threshold, format)
+    formatter:AddBreakpoint({
+        threshold = threshold,
+        step = 1,
+        rounding = GetDurationTextRoundingDown(),
+        format = format,
+    })
+end
+
+local function AddClockBreakpoints(formatter, decimalThreshold)
+    if decimalThreshold and decimalThreshold > 0 then
+        formatter:AddBreakpoint({
+            threshold = 0,
+            format = "%.1f",
+        })
+    else
+        AddFloorBreakpoint(formatter, 0, "%.0f")
+    end
+
+    if decimalThreshold == 10 then
+        AddFloorBreakpoint(formatter, 10, "%.0f")
+    end
+
+    formatter:AddBreakpoint({
+        threshold = 60,
+        format = "%.0f:%02.0f",
+        components = {
+            FloorComponent(60),
+            FloorComponent(nil, 60),
+        },
+    })
+    formatter:AddBreakpoint({
+        threshold = 3600,
+        format = "%.0f:%02.0f:%02.0f",
+        components = {
+            FloorComponent(3600),
+            FloorComponent(60, 60),
+            FloorComponent(nil, 60),
+        },
+    })
+end
+
+local function AddUnitsBreakpoints(formatter)
+    AddFloorBreakpoint(formatter, 0, "%.0fs")
+    formatter:AddBreakpoint({
+        threshold = 60,
+        format = "%.0fm %.0fs",
+        components = {
+            FloorComponent(60),
+            FloorComponent(nil, 60),
+        },
+    })
+    formatter:AddBreakpoint({
+        threshold = 3600,
+        format = "%.0fh %.0fm",
+        components = {
+            FloorComponent(3600),
+            FloorComponent(60, 60),
+        },
+    })
+end
+
+local function CreateDurationTextFormatter(formatKey)
+    if not (C_StringUtil and C_StringUtil.CreateNumericRuleFormatter) then
+        return nil
+    end
+
+    local formatter = C_StringUtil.CreateNumericRuleFormatter()
+    if not (formatter and type(formatter.AddBreakpoint) == "function") then
+        return nil
+    end
+
+    if formatKey == DURATION_FORMAT_UNITS then
+        AddUnitsBreakpoints(formatter)
+    elseif formatKey == DURATION_FORMAT_DECIMAL_UNDER_10 then
+        AddClockBreakpoints(formatter, 10)
+    elseif formatKey == DURATION_FORMAT_DECIMAL_UNDER_60 then
+        AddClockBreakpoints(formatter, 60)
+    else
+        AddClockBreakpoints(formatter)
+    end
+
+    return formatter
+end
+
+local function GetDurationTextFormatter(source)
+    local formatKey = GetDurationFormat(source)
+    local cached = durationTextFormatterCache[formatKey]
+    if cached ~= nil then
+        if cached == false then
+            return nil, formatKey
+        end
+        return cached, formatKey
+    end
+
+    local formatter = CreateDurationTextFormatter(formatKey)
+    durationTextFormatterCache[formatKey] = formatter or false
+    return formatter, formatKey
+end
+
+local function DurationTextBindingHasMethods(binding)
+    return binding
+        and type(binding.SetFontString) == "function"
+        and type(binding.SetDuration) == "function"
+        and type(binding.SetFormatter) == "function"
+        and type(binding.SetUpdateInterval) == "function"
+        and type(binding.SetZeroDurationText) == "function"
+        and type(binding.SetExpiredText) == "function"
+        and type(binding.Enable) == "function"
+        and type(binding.Disable) == "function"
+end
+
+local function IsDurationTextBindingSupported()
+    return C_DurationUtil
+        and type(C_DurationUtil.CreateDurationTextBinding) == "function"
+        and C_StringUtil
+        and type(C_StringUtil.CreateNumericRuleFormatter) == "function"
+        or false
+end
+CooldownCompanion.IsDurationTextBindingSupported = IsDurationTextBindingSupported
+
+local function UnbindDurationText(fontString, clearText)
+    if not fontString then return end
+
+    local binding = fontString._ccDurationTextBinding
+    local wasActive = fontString._ccDurationTextBindingActive
+    if binding and wasActive and type(binding.Disable) == "function" then
+        binding:Disable()
+        IncrementDurationTextCounter("unbinds")
+    end
+
+    fontString._ccDurationTextBindingActive = nil
+    fontString._ccDurationTextDuration = nil
+    fontString._ccDurationTextFormatterKey = nil
+    if (wasActive or clearText) and fontString.SetText then
+        fontString:SetText("")
+    end
+end
+CooldownCompanion.UnbindDurationText = UnbindDurationText
+
+local function BindDurationText(fontString, durationObj, source, surface)
+    IncrementDurationTextCounter("bindAttempts")
+
+    if not (fontString and durationObj and IsDurationTextBindingSupported()) then
+        IncrementDurationTextCounter("unsupported")
+        UnbindDurationText(fontString, true)
+        return false
+    end
+
+    local formatter, formatKey = GetDurationTextFormatter(source)
+    if not formatter then
+        IncrementDurationTextCounter("unsupported")
+        UnbindDurationText(fontString, true)
+        return false
+    end
+
+    local binding = fontString._ccDurationTextBinding
+    if not binding then
+        binding = C_DurationUtil.CreateDurationTextBinding()
+        if not DurationTextBindingHasMethods(binding) then
+            IncrementDurationTextCounter("unsupported")
+            UnbindDurationText(fontString, true)
+            return false
+        end
+
+        binding:SetFontString(fontString)
+        binding:SetZeroDurationText("")
+        binding:SetExpiredText("")
+        binding:SetUpdateInterval(0.1)
+        fontString._ccDurationTextBinding = binding
+        fontString._ccDurationTextBindingReady = true
+        IncrementDurationTextCounter("bindingsCreated")
+    elseif not fontString._ccDurationTextBindingReady and not DurationTextBindingHasMethods(binding) then
+        IncrementDurationTextCounter("unsupported")
+        UnbindDurationText(fontString, true)
+        return false
+    else
+        fontString._ccDurationTextBindingReady = true
+        IncrementDurationTextCounter("bindingsReused")
+    end
+
+    local changed = false
+    if fontString._ccDurationTextFormatterKey ~= formatKey then
+        binding:SetFormatter(formatter)
+        fontString._ccDurationTextFormatterKey = formatKey
+        IncrementDurationTextCounter("formatterUpdates")
+        changed = true
+    end
+
+    local wasActive = fontString._ccDurationTextBindingActive
+    if fontString._ccDurationTextDuration ~= durationObj then
+        binding:SetDuration(durationObj)
+        fontString._ccDurationTextDuration = durationObj
+        IncrementDurationTextCounter("durationUpdates")
+        changed = true
+    end
+
+    if not wasActive then
+        binding:Enable()
+        changed = true
+    end
+    if changed and type(binding.UpdateFontString) == "function" then
+        binding:UpdateFontString()
+    end
+    fontString._ccDurationTextBindingActive = true
+    IncrementDurationTextCounter("bindSuccesses", surface)
+    return true
+end
+CooldownCompanion.BindDurationText = BindDurationText
 
 local function ApplyDurationFormatToCooldown(cooldown, source)
     if not cooldown then return end
