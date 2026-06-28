@@ -17,22 +17,7 @@ local ipairs = ipairs
 local tonumber = tonumber
 local wipe = wipe
 local GetTime = GetTime
-local C_Timer_After = C_Timer.After
 
--- Token stores for each glow type (used to invalidate stale timed callbacks)
-local procPreviewTokens = {}
-local procButtonPreviewTokens = {}
-local auraPreviewTokens = {}
-local auraButtonPreviewTokens = {}
-local pandemicPreviewTokens = {}
-local pandemicButtonPreviewTokens = {}
-local readyPreviewTokens = {}
-local readyButtonPreviewTokens = {}
-local kphPreviewTokens = {}
-local textureIndicatorPreviewTokens = {}
-local triggerEffectPreviewTokens = {}
-local conditionalVisualGroupTokens = {}
-local conditionalVisualButtonTokens = {}
 local activeGroupPreviewFlags = {}
 local activeButtonPreviewFlags = {}
 local activeTriggerPanelEffectPreviews = {}
@@ -81,17 +66,6 @@ local function ClearDormantKeyPressHighlightPreviews(self, groupId)
     for _, frame in pairs(dormantFrames) do
         ClearDormantKeyPressHighlightPreviewFrame(frame)
     end
-end
-
-local function BumpButtonPreviewToken(tokenStore, groupId, buttonIndex)
-    local groupTokens = tokenStore[groupId]
-    if not groupTokens then
-        groupTokens = {}
-        tokenStore[groupId] = groupTokens
-    end
-    local token = (groupTokens[buttonIndex] or 0) + 1
-    groupTokens[buttonIndex] = token
-    return token
 end
 
 --------------------------------------------------------------------------------
@@ -200,10 +174,7 @@ end
 
 -- Set preview on a single button.
 -- cacheValue: false forces cache miss on next tick; nil forces re-evaluate.
-local function SetButtonPreview(self, groupId, buttonIndex, show, previewFlag, cacheFlag, cacheValue, buttonTokenStore, onToggle, updateCooldown)
-    if buttonTokenStore and not show then
-        BumpButtonPreviewToken(buttonTokenStore, groupId, buttonIndex)
-    end
+local function SetButtonPreview(self, groupId, buttonIndex, show, previewFlag, cacheFlag, cacheValue, onToggle, updateCooldown)
     SetActiveButtonPreviewFlag(groupId, buttonIndex, previewFlag, show)
     local frame = self.groupFrames[groupId]
     if not frame then return end
@@ -221,13 +192,9 @@ local function SetButtonPreview(self, groupId, buttonIndex, show, previewFlag, c
 end
 
 -- Set preview on all buttons in a group.
-local function SetGroupPreview(self, groupId, show, previewFlag, cacheFlag, cacheValue, groupTokenStore, buttonTokenStore, onToggle, updateCooldown)
-    if buttonTokenStore then buttonTokenStore[groupId] = nil end
+local function SetGroupPreview(self, groupId, show, previewFlag, cacheFlag, cacheValue, onToggle, updateCooldown)
     SetActiveGroupPreviewFlag(groupId, previewFlag, show)
     ClearActiveButtonPreviewFlagForGroup(groupId, previewFlag)
-    if not show then
-        groupTokenStore[groupId] = (groupTokenStore[groupId] or 0) + 1
-    end
     local frame = self.groupFrames[groupId]
     if not frame then return end
     for _, button in ipairs(frame.buttons) do
@@ -240,41 +207,8 @@ local function SetGroupPreview(self, groupId, show, previewFlag, cacheFlag, cach
     end
 end
 
--- Play a timed preview on a single button (default: 3 seconds).
-local function PlayButtonPreview(self, groupId, buttonIndex, durationSeconds, buttonTokenStore, setPreviewFn)
-    local duration = tonumber(durationSeconds) or 3
-    if duration <= 0 then duration = 3 end
-
-    local token = BumpButtonPreviewToken(buttonTokenStore, groupId, buttonIndex)
-    setPreviewFn(self, groupId, buttonIndex, true)
-
-    C_Timer_After(duration, function()
-        local groupTokens = buttonTokenStore[groupId]
-        if not groupTokens or groupTokens[buttonIndex] ~= token then return end
-        setPreviewFn(self, groupId, buttonIndex, false)
-    end)
-end
-
--- Play a timed preview on a whole group (default: 3 seconds).
-local function PlayGroupPreview(self, groupId, durationSeconds, groupTokenStore, setGroupPreviewFn)
-    local duration = tonumber(durationSeconds) or 3
-    if duration <= 0 then duration = 3 end
-
-    local token = (groupTokenStore[groupId] or 0) + 1
-    groupTokenStore[groupId] = token
-
-    setGroupPreviewFn(self, groupId, true)
-
-    C_Timer_After(duration, function()
-        if groupTokenStore[groupId] ~= token then return end
-        setGroupPreviewFn(self, groupId, false)
-    end)
-end
-
 -- Clear all previews of a given type across every group.
-local function ClearAllPreviews(self, previewFlag, cacheFlag, cacheValue, groupTokenStore, buttonTokenStore, onClear, updateCooldown)
-    wipe(groupTokenStore)
-    if buttonTokenStore then wipe(buttonTokenStore) end
+local function ClearAllPreviews(self, previewFlag, cacheFlag, cacheValue, onClear, updateCooldown)
     ClearActivePreviewFlag(previewFlag)
     for _, frame in pairs(self.groupFrames) do
         for _, button in ipairs(frame.buttons) do
@@ -472,7 +406,6 @@ function CooldownCompanion:SetConditionalVisualPreviewActive(groupId, buttonInde
 
     local state = show and BuildConditionalVisualPreviewState(previewKind, sampleState) or nil
     if buttonIndex then
-        BumpButtonPreviewToken(conditionalVisualButtonTokens, groupId, buttonIndex)
         activeConditionalGroupPreviews[groupId] = nil
         if state then
             if not activeConditionalButtonPreviews[groupId] then
@@ -489,44 +422,12 @@ function CooldownCompanion:SetConditionalVisualPreviewActive(groupId, buttonInde
         return
     end
 
-    conditionalVisualButtonTokens[groupId] = nil
     activeConditionalButtonPreviews[groupId] = nil
     activeConditionalGroupPreviews[groupId] = CopyPreviewState(state)
-    conditionalVisualGroupTokens[groupId] = (conditionalVisualGroupTokens[groupId] or 0) + 1
     SetGroupConditionalVisualPreview(self, groupId, state)
-end
-
-function CooldownCompanion:PlayConditionalVisualPreview(groupId, buttonIndex, previewKind, durationSeconds, sampleState)
-    local duration = tonumber(durationSeconds) or 3
-    if duration <= 0 then duration = 3 end
-
-    local state = BuildConditionalVisualPreviewState(previewKind, sampleState)
-    if buttonIndex then
-        local token = BumpButtonPreviewToken(conditionalVisualButtonTokens, groupId, buttonIndex)
-        SetConditionalVisualPreview(self, groupId, buttonIndex, state)
-
-        C_Timer_After(duration, function()
-            local groupTokens = conditionalVisualButtonTokens[groupId]
-            if not groupTokens or groupTokens[buttonIndex] ~= token then return end
-            SetConditionalVisualPreview(self, groupId, buttonIndex, nil)
-        end)
-        return
-    end
-
-    conditionalVisualButtonTokens[groupId] = nil
-    local token = (conditionalVisualGroupTokens[groupId] or 0) + 1
-    conditionalVisualGroupTokens[groupId] = token
-    SetGroupConditionalVisualPreview(self, groupId, state)
-
-    C_Timer_After(duration, function()
-        if conditionalVisualGroupTokens[groupId] ~= token then return end
-        SetGroupConditionalVisualPreview(self, groupId, nil)
-    end)
 end
 
 function CooldownCompanion:ClearAllConditionalVisualPreviews()
-    wipe(conditionalVisualGroupTokens)
-    wipe(conditionalVisualButtonTokens)
     wipe(activeConditionalGroupPreviews)
     wipe(activeConditionalButtonPreviews)
     if not self.groupFrames then return end
@@ -562,23 +463,15 @@ end
 --------------------------------------------------------------------------------
 
 function CooldownCompanion:SetProcGlowPreview(groupId, buttonIndex, show)
-    SetButtonPreview(self, groupId, buttonIndex, show, "_procGlowPreview", "_procGlowActive", false, procButtonPreviewTokens, nil, true)
+    SetButtonPreview(self, groupId, buttonIndex, show, "_procGlowPreview", "_procGlowActive", false, nil, true)
 end
 
 function CooldownCompanion:SetGroupProcGlowPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_procGlowPreview", "_procGlowActive", false, procPreviewTokens, procButtonPreviewTokens, nil, true)
-end
-
-function CooldownCompanion:PlayProcGlowPreview(groupId, buttonIndex, durationSeconds)
-    PlayButtonPreview(self, groupId, buttonIndex, durationSeconds, procButtonPreviewTokens, self.SetProcGlowPreview)
-end
-
-function CooldownCompanion:PlayGroupProcGlowPreview(groupId, durationSeconds)
-    PlayGroupPreview(self, groupId, durationSeconds, procPreviewTokens, self.SetGroupProcGlowPreview)
+    SetGroupPreview(self, groupId, show, "_procGlowPreview", "_procGlowActive", false, nil, true)
 end
 
 function CooldownCompanion:ClearAllProcGlowPreviews()
-    ClearAllPreviews(self, "_procGlowPreview", "_procGlowActive", false, procPreviewTokens, procButtonPreviewTokens, nil, true)
+    ClearAllPreviews(self, "_procGlowPreview", "_procGlowActive", false, nil, true)
 end
 
 --------------------------------------------------------------------------------
@@ -586,23 +479,15 @@ end
 --------------------------------------------------------------------------------
 
 function CooldownCompanion:SetAuraGlowPreview(groupId, buttonIndex, show)
-    SetButtonPreview(self, groupId, buttonIndex, show, "_auraGlowPreview", "_auraGlowActive", false, auraButtonPreviewTokens, nil, true)
+    SetButtonPreview(self, groupId, buttonIndex, show, "_auraGlowPreview", "_auraGlowActive", false, nil, true)
 end
 
 function CooldownCompanion:SetGroupAuraGlowPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_auraGlowPreview", "_auraGlowActive", false, auraPreviewTokens, auraButtonPreviewTokens, nil, true)
-end
-
-function CooldownCompanion:PlayAuraGlowPreview(groupId, buttonIndex, durationSeconds)
-    PlayButtonPreview(self, groupId, buttonIndex, durationSeconds, auraButtonPreviewTokens, self.SetAuraGlowPreview)
-end
-
-function CooldownCompanion:PlayGroupAuraGlowPreview(groupId, durationSeconds)
-    PlayGroupPreview(self, groupId, durationSeconds, auraPreviewTokens, self.SetGroupAuraGlowPreview)
+    SetGroupPreview(self, groupId, show, "_auraGlowPreview", "_auraGlowActive", false, nil, true)
 end
 
 function CooldownCompanion:ClearAllAuraGlowPreviews()
-    ClearAllPreviews(self, "_auraGlowPreview", "_auraGlowActive", false, auraPreviewTokens, auraButtonPreviewTokens, nil, true)
+    ClearAllPreviews(self, "_auraGlowPreview", "_auraGlowActive", false, nil, true)
 end
 
 --------------------------------------------------------------------------------
@@ -670,17 +555,11 @@ end
 -- Optional buttonIndex targets a single button (per-button override preview).
 --------------------------------------------------------------------------------
 
-local barAuraActiveGroupTokens = {}
-local barAuraActiveButtonTokens = {}
-
 function CooldownCompanion:SetBarAuraActivePreview(groupId, buttonIndex, show)
     if not groupId then return end
     if buttonIndex then
-        BumpButtonPreviewToken(barAuraActiveButtonTokens, groupId, buttonIndex)
         SetActiveButtonPreviewFlag(groupId, buttonIndex, "_barAuraActivePreview", show)
     else
-        barAuraActiveButtonTokens[groupId] = nil
-        barAuraActiveGroupTokens[groupId] = (barAuraActiveGroupTokens[groupId] or 0) + 1
         SetActiveGroupPreviewFlag(groupId, "_barAuraActivePreview", show)
         ClearActiveButtonPreviewFlagForGroup(groupId, "_barAuraActivePreview")
     end
@@ -699,49 +578,7 @@ function CooldownCompanion:IsBarAuraActivePreviewActive(groupId, buttonIndex)
     return self:IsPreviewFlagActive(groupId, buttonIndex, "_barAuraActivePreview")
 end
 
-function CooldownCompanion:PlayBarAuraActivePreview(groupId, buttonIndex, durationSeconds)
-    local duration = tonumber(durationSeconds) or 3
-    if duration <= 0 then duration = 3 end
-
-    local token
-    if buttonIndex then
-        token = BumpButtonPreviewToken(barAuraActiveButtonTokens, groupId, buttonIndex)
-    else
-        barAuraActiveButtonTokens[groupId] = nil
-        token = (barAuraActiveGroupTokens[groupId] or 0) + 1
-        barAuraActiveGroupTokens[groupId] = token
-    end
-
-    local frame = self.groupFrames[groupId]
-    if not frame then return end
-    for _, button in ipairs(frame.buttons) do
-        if not buttonIndex or button.index == buttonIndex then
-            button._barAuraActivePreview = true
-            if button.UpdateCooldown then button:UpdateCooldown() end
-        end
-    end
-
-    C_Timer_After(duration, function()
-        if buttonIndex then
-            local groupTokens = barAuraActiveButtonTokens[groupId]
-            if not groupTokens or groupTokens[buttonIndex] ~= token then return end
-        else
-            if barAuraActiveGroupTokens[groupId] ~= token then return end
-        end
-        local f = self.groupFrames[groupId]
-        if not f then return end
-        for _, btn in ipairs(f.buttons) do
-            if not buttonIndex or btn.index == buttonIndex then
-                btn._barAuraActivePreview = nil
-                if btn.UpdateCooldown then btn:UpdateCooldown() end
-            end
-        end
-    end)
-end
-
 function CooldownCompanion:ClearAllBarAuraActivePreviews()
-    wipe(barAuraActiveGroupTokens)
-    wipe(barAuraActiveButtonTokens)
     ClearActivePreviewFlag("_barAuraActivePreview")
     for _, frame in pairs(self.groupFrames) do
         for _, button in ipairs(frame.buttons) do
@@ -758,23 +595,15 @@ end
 --------------------------------------------------------------------------------
 
 function CooldownCompanion:SetPandemicPreview(groupId, buttonIndex, show)
-    SetButtonPreview(self, groupId, buttonIndex, show, "_pandemicPreview", "_auraGlowActive", false, pandemicButtonPreviewTokens, pandemicOnToggle, true)
+    SetButtonPreview(self, groupId, buttonIndex, show, "_pandemicPreview", "_auraGlowActive", false, pandemicOnToggle, true)
 end
 
 function CooldownCompanion:SetGroupPandemicPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_pandemicPreview", "_auraGlowActive", false, pandemicPreviewTokens, pandemicButtonPreviewTokens, pandemicOnToggle, true)
-end
-
-function CooldownCompanion:PlayPandemicPreview(groupId, buttonIndex, durationSeconds)
-    PlayButtonPreview(self, groupId, buttonIndex, durationSeconds, pandemicButtonPreviewTokens, self.SetPandemicPreview)
-end
-
-function CooldownCompanion:PlayGroupPandemicPreview(groupId, durationSeconds)
-    PlayGroupPreview(self, groupId, durationSeconds, pandemicPreviewTokens, self.SetGroupPandemicPreview)
+    SetGroupPreview(self, groupId, show, "_pandemicPreview", "_auraGlowActive", false, pandemicOnToggle, true)
 end
 
 function CooldownCompanion:ClearAllPandemicPreviews()
-    ClearAllPreviews(self, "_pandemicPreview", "_auraGlowActive", false, pandemicPreviewTokens, pandemicButtonPreviewTokens, pandemicOnClear, true)
+    ClearAllPreviews(self, "_pandemicPreview", "_auraGlowActive", false, pandemicOnClear, true)
 end
 
 --------------------------------------------------------------------------------
@@ -782,23 +611,15 @@ end
 --------------------------------------------------------------------------------
 
 function CooldownCompanion:SetReadyGlowPreview(groupId, buttonIndex, show)
-    SetButtonPreview(self, groupId, buttonIndex, show, "_readyGlowPreview", "_readyGlowActive", false, readyButtonPreviewTokens, nil, true)
+    SetButtonPreview(self, groupId, buttonIndex, show, "_readyGlowPreview", "_readyGlowActive", false, nil, true)
 end
 
 function CooldownCompanion:SetGroupReadyGlowPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_readyGlowPreview", "_readyGlowActive", false, readyPreviewTokens, readyButtonPreviewTokens, nil, true)
-end
-
-function CooldownCompanion:PlayReadyGlowPreview(groupId, buttonIndex, durationSeconds)
-    PlayButtonPreview(self, groupId, buttonIndex, durationSeconds, readyButtonPreviewTokens, self.SetReadyGlowPreview)
-end
-
-function CooldownCompanion:PlayGroupReadyGlowPreview(groupId, durationSeconds)
-    PlayGroupPreview(self, groupId, durationSeconds, readyPreviewTokens, self.SetGroupReadyGlowPreview)
+    SetGroupPreview(self, groupId, show, "_readyGlowPreview", "_readyGlowActive", false, nil, true)
 end
 
 function CooldownCompanion:ClearAllReadyGlowPreviews()
-    ClearAllPreviews(self, "_readyGlowPreview", "_readyGlowActive", false, readyPreviewTokens, readyButtonPreviewTokens, nil, true)
+    ClearAllPreviews(self, "_readyGlowPreview", "_readyGlowActive", false, nil, true)
 end
 
 --------------------------------------------------------------------------------
@@ -807,18 +628,14 @@ end
 --------------------------------------------------------------------------------
 
 function CooldownCompanion:SetGroupKeyPressHighlightPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_keyPressHighlightPreview", "_keyPressHighlightActive", false, kphPreviewTokens, nil, RefreshKeyPressHighlightPreview, false)
+    SetGroupPreview(self, groupId, show, "_keyPressHighlightPreview", "_keyPressHighlightActive", false, RefreshKeyPressHighlightPreview, false)
     if not show then
         ClearDormantKeyPressHighlightPreviews(self, groupId)
     end
 end
 
-function CooldownCompanion:PlayGroupKeyPressHighlightPreview(groupId, durationSeconds)
-    PlayGroupPreview(self, groupId, durationSeconds, kphPreviewTokens, self.SetGroupKeyPressHighlightPreview)
-end
-
 function CooldownCompanion:ClearAllKeyPressHighlightPreviews()
-    ClearAllPreviews(self, "_keyPressHighlightPreview", "_keyPressHighlightActive", false, kphPreviewTokens, nil, RefreshKeyPressHighlightPreview, false)
+    ClearAllPreviews(self, "_keyPressHighlightPreview", "_keyPressHighlightActive", false, RefreshKeyPressHighlightPreview, false)
     ClearDormantKeyPressHighlightPreviews(self)
 end
 
@@ -834,13 +651,6 @@ local TEXTURE_INDICATOR_PREVIEW_FLAGS = {
     unusable = "_textureUnusablePreview",
 }
 
-local function GetTextureIndicatorTokenStore(indicatorKey)
-    if not textureIndicatorPreviewTokens[indicatorKey] then
-        textureIndicatorPreviewTokens[indicatorKey] = {}
-    end
-    return textureIndicatorPreviewTokens[indicatorKey]
-end
-
 function CooldownCompanion:SetGroupTextureIndicatorPreview(groupId, indicatorKey, show)
     local previewFlag = TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey]
     if not previewFlag then
@@ -854,8 +664,6 @@ function CooldownCompanion:SetGroupTextureIndicatorPreview(groupId, indicatorKey
         previewFlag,
         "_textureIndicatorPreviewDirty",
         false,
-        GetTextureIndicatorTokenStore(indicatorKey),
-        nil,
         nil,
         true
     )
@@ -866,27 +674,9 @@ function CooldownCompanion:IsGroupTextureIndicatorPreviewActive(groupId, indicat
     return previewFlag and self:IsPreviewFlagActive(groupId, nil, previewFlag) or false
 end
 
-function CooldownCompanion:PlayGroupTextureIndicatorPreview(groupId, indicatorKey, durationSeconds)
-    local previewFlag = TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey]
-    if not previewFlag then
-        return
-    end
-
-    PlayGroupPreview(
-        self,
-        groupId,
-        durationSeconds,
-        GetTextureIndicatorTokenStore(indicatorKey),
-        function(_, previewGroupId, show)
-            self:SetGroupTextureIndicatorPreview(previewGroupId, indicatorKey, show)
-        end
-    )
-end
-
 function CooldownCompanion:ClearAllTextureIndicatorPreviews()
     for indicatorKey in pairs(TEXTURE_INDICATOR_PREVIEW_FLAGS) do
         ClearActivePreviewFlag(TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey])
-        wipe(GetTextureIndicatorTokenStore(indicatorKey))
     end
 
     for _, frame in pairs(self.groupFrames) do
@@ -916,10 +706,6 @@ function CooldownCompanion:SetTriggerPanelEffectsPreview(groupId, show)
         return
     end
 
-    if not show then
-        triggerEffectPreviewTokens[groupId] = (triggerEffectPreviewTokens[groupId] or 0) + 1
-    end
-
     for _, button in ipairs(frame.buttons) do
         button._triggerEffectsPreview = show or nil
         if button.UpdateCooldown then
@@ -937,12 +723,7 @@ function CooldownCompanion:IsTriggerPanelEffectsPreviewActive(groupId)
     return self:IsPreviewFlagActive(groupId, nil, "_triggerEffectsPreview")
 end
 
-function CooldownCompanion:PlayTriggerPanelEffectsPreview(groupId, durationSeconds)
-    PlayGroupPreview(self, groupId, durationSeconds, triggerEffectPreviewTokens, self.SetTriggerPanelEffectsPreview)
-end
-
 function CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
-    wipe(triggerEffectPreviewTokens)
     wipe(activeTriggerPanelEffectPreviews)
     for _, frame in pairs(self.groupFrames) do
         for _, button in ipairs(frame.buttons) do

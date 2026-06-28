@@ -941,34 +941,12 @@ local function RefreshColumn1(preserveDrag)
 
     local containerStats = {}
 
-    -- Count current children in scroll widget
-    local function CountScrollChildren()
-        local children = { CS.col1Scroll.content:GetChildren() }
-        return #children
-    end
-
     -- Track all rendered rows for drag system: sequential index -> metadata
     local col1RenderedRows = {}
 
     local function TrackRenderedRow(meta)
         col1RenderedRows[#col1RenderedRows + 1] = meta
         return meta
-    end
-
-    local function AddAuxWidget(widget, sectionTag, ownerKind, ownerId, ownerFolderId)
-        CS.col1Scroll:AddChild(widget)
-        TrackRenderedRow({
-            kind = "aux-block",
-            widget = widget,
-            section = sectionTag,
-            loadBucket = "aux",
-            acceptsDrop = false,
-            previewProxy = false,
-            layoutOnly = true,
-            ownerKind = ownerKind,
-            ownerId = ownerId,
-            ownerFolderId = ownerFolderId,
-        })
     end
 
     local function ResolveContainerScope(containerId, container)
@@ -1446,27 +1424,6 @@ local function RefreshColumn1(preserveDrag)
             end
         end)
 
-    end
-
-    local function RenderSectionMarker(section, headingText, headingColor)
-        local heading = AceGUI:Create("Label")
-        heading:SetFullWidth(true)
-        heading:SetHeight(18)
-        CS.col1Scroll:AddChild(heading)
-        SetupColumn1MarkerRow(heading, {
-            text = headingText,
-            color = headingColor,
-        })
-        TrackRenderedRow({
-            kind = "section-title",
-            widget = heading,
-            section = section,
-            loadBucket = "marker",
-            acceptsDrop = false,
-            keepVisibleDuringPreview = true,
-            previewProxy = true,
-            isMarker = true,
-        })
     end
 
     -- Render a section (global, current class, or another class)

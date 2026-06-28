@@ -246,7 +246,6 @@ local function GetFirstAvailableTextureIndicatorEffect(indicators, currentSectio
 end
 
 local SCREEN_LOCATION = Enum and Enum.ScreenLocationType or {}
-local PREVIEW_LOCATION_CENTER = SCREEN_LOCATION.Center or 0
 local PREVIEW_LOCATION_LEFTRIGHT = SCREEN_LOCATION.LeftRight or 9
 local PREVIEW_LOCATION_TOPBOTTOM = SCREEN_LOCATION.TopBottom or 10
 
@@ -2551,7 +2550,7 @@ local function BuildEffectsTab(container)
         end)
     end
 
-    local assistedAdvExpanded = AddAdvancedToggle(assistedCb, "assistedHighlight", tabInfoButtons, style.showAssistedHighlight or false, {
+    AddAdvancedToggle(assistedCb, "assistedHighlight", tabInfoButtons, style.showAssistedHighlight or false, {
         title = "Assisted Highlight Advanced",
         build = BuildAssistedHighlightAdvanced,
     })

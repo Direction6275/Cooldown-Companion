@@ -35,9 +35,7 @@ local DEFAULT_POWER_COLORS = RB.DEFAULT_POWER_COLORS
 local DEFAULT_MW_BASE_COLOR = RB.DEFAULT_MW_BASE_COLOR
 local DEFAULT_MW_OVERLAY_COLOR = RB.DEFAULT_MW_OVERLAY_COLOR
 local DEFAULT_MW_MAX_COLOR = RB.DEFAULT_MW_MAX_COLOR
-local DEFAULT_CUSTOM_AURA_MAX_COLOR = RB.DEFAULT_CUSTOM_AURA_MAX_COLOR
 local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
-local DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT = RB.DEFAULT_CUSTOM_AURA_STACK_TEXT_FORMAT
 local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
 local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
 local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
@@ -92,11 +90,6 @@ local DEFAULT_ARCANE_MAX_COLOR = RB.DEFAULT_ARCANE_MAX_COLOR
 local DEFAULT_ESSENCE_READY_COLOR = RB.DEFAULT_ESSENCE_READY_COLOR
 local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
 local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
-local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
-local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
-local EnsureCustomBarId = RB.EnsureCustomBarId
-local EnsureCustomBarLayout = RB.EnsureCustomBarLayout
-local GetCustomBarLayout = RB.GetCustomBarLayout
 local GetResourceSpecOverrideTable = RB.GetResourceSpecOverrideTable
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local RESOURCE_HEALTH_DISPLAY_KEYS = RB.RESOURCE_HEALTH_DISPLAY_KEYS
@@ -104,8 +97,6 @@ local resourceSpecCopyButton
 local resourceSpecCopyMenu
 local thresholdTickDraftRows = {}
 local thresholdTickEditorErrors = {}
-
-local RefreshCustomAuraBarAuraUnitForSpell = RB.RefreshCustomAuraBarAuraUnitForSpell
 
 -- Imports from ResourceBarPanelsHelpers
 local RBP = ST._RBP
@@ -123,13 +114,6 @@ local GetSegmentedThresholdValueConfig = RBP.GetSegmentedThresholdValueConfig
 local GetContinuousTickModeConfig = RBP.GetContinuousTickModeConfig
 local GetContinuousTickPercentConfig = RBP.GetContinuousTickPercentConfig
 local GetContinuousTickAbsoluteConfig = RBP.GetContinuousTickAbsoluteConfig
-local ResolveAuraColorSpellIDFromText = RBP.ResolveAuraColorSpellIDFromText
-local GetAuraBarAutocompleteDisplayName = RBP.GetAuraBarAutocompleteDisplayName
-local GetAuraBarAutocompleteDisplayIcon = RBP.GetAuraBarAutocompleteDisplayIcon
-local GetAuraBarAutocompleteEntryName = RBP.GetAuraBarAutocompleteEntryName
-local ResolveAuraBarAutocompleteEntry = RBP.ResolveAuraBarAutocompleteEntry
-local ShowAuraBarAutocompleteResults = RBP.ShowAuraBarAutocompleteResults
-local BuildAuraBarAutocompleteCache = RBP.BuildAuraBarAutocompleteCache
 local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
 local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
 local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig

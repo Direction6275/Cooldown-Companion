@@ -247,40 +247,6 @@ local function GetDefaultAuraUnit(isHarmful)
     return isHarmful and "target" or "player"
 end
 
-local function PrimeSelectedReadyGlowCappedChargeTransition(groupId, buttonIndex)
-    local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
-    local button = frame and frame.buttons and frame.buttons[buttonIndex]
-    local buttonData = button and button.buttonData
-    if not (button and buttonData) then
-        return
-    end
-
-    if buttonData.type ~= "spell"
-       or buttonData.hasCharges ~= true
-       or buttonData._hasDisplayCount then
-        return
-    end
-
-    button._readyGlowMaxChargesSpellID = button._displaySpellId or buttonData.id
-    button._readyGlowMaxChargesStartTime = nil
-    button._readyGlowMaxChargesActive = false
-end
-
-local function PrimeSelectedReadyGlowNormalTransition(groupId, buttonIndex)
-    local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
-    local button = frame and frame.buttons and frame.buttons[buttonIndex]
-    local buttonData = button and button.buttonData
-    if not (button and buttonData) then
-        return
-    end
-
-    if buttonData.isPassive or button._noCooldown == true or button._desatCooldownActive == true then
-        return
-    end
-
-    button._readyGlowStartTime = GetTime()
-end
-
 local function EnsureAuraUnitChoice(buttonData, isHarmful, unit)
     if IsValidAuraUnit(unit) then
         buttonData.auraUnit = unit
@@ -1617,7 +1583,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
 
     local itemKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_itemsettings"
     local itemCollapsed = CS.collapsedSections[itemKey]
-    local itemCollapseBtn = AttachCollapseButton(itemHeading, itemCollapsed, function()
+    AttachCollapseButton(itemHeading, itemCollapsed, function()
         CS.collapsedSections[itemKey] = not CS.collapsedSections[itemKey]
         CooldownCompanion:RefreshConfigPanel()
     end)

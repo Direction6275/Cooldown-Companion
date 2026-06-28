@@ -2079,20 +2079,6 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         return false
     end
 
-    local function AllSelectedMatch(predicate)
-        local anySelected = false
-        for idx in pairs(CS.selectedButtons) do
-            local bd = group.buttons[idx]
-            if bd then
-                anySelected = true
-                if not predicate(bd) then
-                    return false
-                end
-            end
-        end
-        return anySelected
-    end
-
     local function AllSelectedMatchFiltered(filterFn, predicate)
         local anyMatched = false
         for idx in pairs(CS.selectedButtons) do
@@ -2130,7 +2116,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         and (CS.selectedGroup .. "_batch_visibility")
         or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_visibility")
     local visCollapsed = CS.collapsedSections[visKey]
-    local visCollapseBtn = AttachCollapseButton(heading, visCollapsed, function()
+    AttachCollapseButton(heading, visCollapsed, function()
         CS.collapsedSections[visKey] = not CS.collapsedSections[visKey]
         CooldownCompanion:RefreshConfigPanel()
     end)

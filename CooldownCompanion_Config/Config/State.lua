@@ -2058,19 +2058,6 @@ local function SetupGroupRowIndicators(entry, group)
         if r then badge.icon:SetVertexColor(r, g, b, a or 1) end
         badge:Show()
     end
-    local function AddIconBadge(texture, r, g, b, a)
-        badgeIndex = badgeIndex + 1
-        local badge = AcquireBadge(frame, badgeIndex)
-        badge.icon:SetTexture(texture)
-        if r then badge.icon:SetVertexColor(r, g, b, a or 1) end
-        badge:Show()
-    end
-    local function AddTextBadge(str)
-        badgeIndex = badgeIndex + 1
-        local badge = AcquireBadge(frame, badgeIndex)
-        badge.text:SetText(str)
-        badge:Show()
-    end
 
     -- Disabled
     if group.enabled == false then

@@ -332,22 +332,6 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
     end
 end
 
-local function AuraDataHasTimer(auraData)
-    if not auraData then return false end
-    local duration = auraData.duration
-    if duration == nil then return false end
-    if issecretvalue(duration) then return nil end
-    return duration > 0
-end
-
-local function MergeAuraTimerState(currentHasTimer, auraData)
-    local hasTimer = AuraDataHasTimer(auraData)
-    if hasTimer ~= nil then
-        return hasTimer
-    end
-    return currentHasTimer
-end
-
 local function GetViewerNameFontString(viewerFrame)
     -- BuffBar viewer items render name text on Bar.Name. BuffIcon entries have no name text.
     local bar = viewerFrame and viewerFrame.Bar

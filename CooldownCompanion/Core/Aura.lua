@@ -133,15 +133,6 @@ local function AddAuraCandidateID(candidateSet, spellID)
     end
 end
 
-local function AddAuraCandidateIDsFromString(candidateSet, rawIDs)
-    if not rawIDs then
-        return
-    end
-    for id in tostring(rawIDs):gmatch("%d+") do
-        AddAuraCandidateID(candidateSet, id)
-    end
-end
-
 local function AppendOrderedAuraCandidateID(candidateSet, orderedSet, orderedIDs, spellID)
     local numericID = tonumber(spellID)
     if not numericID or numericID == 0 then

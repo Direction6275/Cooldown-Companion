@@ -134,18 +134,6 @@ local function GetDropIndex(scrollWidget, cursorY, childOffset, totalDraggable)
     return dropIndex, anchorFrame, anchorAbove
 end
 
-------------------------------------------------------------------------
--- Column 2 cross-panel drop target detection
-------------------------------------------------------------------------
-local function FindPreviousPanelId(renderedRows, currentIndex)
-    for i = currentIndex - 1, 1, -1 do
-        if renderedRows[i].kind == "header" then
-            return renderedRows[i].panelId
-        end
-    end
-    return nil
-end
-
 local function BuildCol2EntryDropTarget(action, targetPanelId, targetIndex, anchorFrame, anchorAbove)
     local groups = CooldownCompanion.db and CooldownCompanion.db.profile and CooldownCompanion.db.profile.groups
     local group = targetPanelId and groups and groups[targetPanelId]
@@ -851,20 +839,6 @@ local function BuildCol1FolderReorderBlockTarget(renderedRows, folderId, action,
         end
     end
     return result
-end
-
-local function FindCol1FolderDropTarget(renderedRows, section, folderId)
-    if not folderId then
-        return nil
-    end
-
-    for _, candidate in ipairs(renderedRows or {}) do
-        if candidate.section == section and candidate.kind == "folder" and candidate.id == folderId then
-            return BuildCol1FolderBlockDropResult(renderedRows, folderId, "into-folder")
-        end
-    end
-
-    return nil
 end
 
 local function ResolveCol1FolderBlockDropTarget(renderedRows, rowMeta, sourceKind, action, extra)

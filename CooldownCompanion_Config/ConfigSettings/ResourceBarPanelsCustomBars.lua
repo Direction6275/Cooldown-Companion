@@ -155,19 +155,6 @@ local function FindCustomBarIndexById(customBars, customBarId)
     return nil
 end
 
-local function EnsureCustomBarRowTextBadge(frame, key)
-    local badge = frame[key]
-    if not badge then
-        badge = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        frame[key] = badge
-    end
-    badge:ClearAllPoints()
-    badge:SetJustifyH("RIGHT")
-    badge:SetJustifyV("MIDDLE")
-    badge:Show()
-    return badge
-end
-
 local function EnsureCustomBarRowIconBadge(frame, key, atlas)
     local badge = frame[key]
     if not badge then
@@ -2530,11 +2517,12 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         AddDurationFormatDropdown(panel, customBars[cabIdx], cabApplyBars)
                     end
 
-                    local durationAdvExpanded = showDurationControls
-                        and AddAdvancedToggle(durationTextCb, "rbCabDurationText_" .. capturedKey, rbCabTextAdvBtns, showDuration, {
+                    if showDurationControls then
+                        AddAdvancedToggle(durationTextCb, "rbCabDurationText_" .. capturedKey, rbCabTextAdvBtns, showDuration, {
                             title = "Duration Text Advanced",
                             build = BuildDurationTextAdvanced,
                         })
+                    end
 
                     local function BuildStackTextAdvanced(panel)
                         if not isActive then
@@ -2602,7 +2590,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         AddColorPicker(panel, customBars[cabIdx], "stackTextFontColor", "Stack Text Color", DEFAULT_RESOURCE_TEXT_COLOR, true, cabApplyBars)
                     end
 
-                    local stackAdvExpanded = AddAdvancedToggle(stackTextCb, "rbCabStackText_" .. capturedKey, rbCabTextAdvBtns, showStack, {
+                    AddAdvancedToggle(stackTextCb, "rbCabStackText_" .. capturedKey, rbCabTextAdvBtns, showStack, {
                         title = stackTextLabel .. " Advanced",
                         build = BuildStackTextAdvanced,
                     })

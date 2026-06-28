@@ -657,7 +657,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Create main button frame
     local button = CreateFrame("Frame", parent:GetName() .. "Button" .. index, parent)
     button:SetSize(width, height)
-    local baseLevel = button:GetFrameLevel()
 
     -- Background
     button.bg = button:CreateTexture(nil, "BACKGROUND")

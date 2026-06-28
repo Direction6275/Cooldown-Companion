@@ -47,8 +47,6 @@ local InstallHooks
 -- Helpers
 ------------------------------------------------------------------------
 
-local math_floor = math.floor
-
 local function GetCastBarSettings()
     return CooldownCompanion:GetCastBarSettings()
 end
