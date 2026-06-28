@@ -1984,9 +1984,13 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.UpdateCooldowns = function(self, refreshReason)
         local cleanTicker = refreshReason == "ticker-clean"
         local now = cleanTicker and GetTime and GetTime() or nil
+        local refreshGroup = group
+        if cleanTicker and CooldownCompanion.db and CooldownCompanion.db.profile and CooldownCompanion.db.profile.groups then
+            refreshGroup = CooldownCompanion.db.profile.groups[self.groupId]
+        end
         for _, button in ipairs(self.buttons) do
             if not cleanTicker
-                or not CooldownCompanion:ShouldSkipCleanTickerButtonUpdate(button, group, now) then
+                or not CooldownCompanion:ShouldSkipCleanTickerButtonUpdate(button, refreshGroup, now) then
                 button:UpdateCooldown()
             end
         end

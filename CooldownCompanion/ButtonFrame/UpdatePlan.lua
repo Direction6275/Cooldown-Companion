@@ -244,6 +244,7 @@ function CooldownCompanion:BuildButtonUpdatePlan(button, group)
         if auraTracked then
             AddFeature(plan, seen, "aura")
             AddLane(plan, "aura")
+            AddCleanTickReason(plan, "stateful", "aura-runtime")
             if buttonData.auraUnit == "target"
                 or (type(button) == "table" and button._auraUnit == "target") then
                 AddLane(plan, "target-aura")
@@ -380,6 +381,7 @@ function CooldownCompanion:BuildButtonUpdatePlan(button, group)
         if type(style) == "table" and style.showAssistedHighlight == true then
             AddFeature(plan, seen, "assisted-highlight")
             AddLane(plan, "target")
+            AddCleanTickReason(plan, "stateful", "assisted-highlight")
         end
 
         if HasSoundAlertEvents(buttonData) then
@@ -442,6 +444,13 @@ end
 local function IsSpellVisualPollOnly(plan)
     if type(plan) ~= "table" or type(plan.cleanTickReasonMap) ~= "table" then
         return false
+    end
+    if type(plan.laneMap) == "table" then
+        for lane in pairs(plan.laneMap) do
+            if lane ~= "cooldown" and lane ~= "actionbar" then
+                return false
+            end
+        end
     end
 
     local hasVisualPoll = false
