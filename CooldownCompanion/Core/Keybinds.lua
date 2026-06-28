@@ -418,7 +418,7 @@ function CooldownCompanion:RebuildAddonSlotBindings()
     -- Strategy 1: Scan GetBinding() for CLICK commands.
     -- Covers Bartender4, Dominos, and any addon using CLICK binding format.
     for i = 1, GetNumBindings() do
-        local command, category, key1 = GetBinding(i)
+        local command, _, key1 = GetBinding(i)
         if key1 and command then
             local frameName = command:match("^CLICK (.+):LeftButton$")
             if frameName then

@@ -175,7 +175,7 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
         end
     end
 
-    local fmtPreviewAdvExpanded, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "buttonTextFormatPreview", infoButtons, nil, {
+    local _, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "buttonTextFormatPreview", infoButtons, nil, {
         title = "Format Override Advanced",
         build = BuildFormatOverridePreviewAdvanced,
     })

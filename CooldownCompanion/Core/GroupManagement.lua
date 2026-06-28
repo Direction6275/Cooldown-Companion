@@ -801,16 +801,6 @@ function CooldownCompanion:GetPanelCount(containerId)
     return count
 end
 
-function CooldownCompanion:GetParentContainerId(groupId)
-    local group = self.db.profile.groups[groupId]
-    return group and group.parentContainerId
-end
-
-function CooldownCompanion:IsPanelGroup(groupId)
-    local group = self.db.profile.groups[groupId]
-    return group ~= nil and group.parentContainerId ~= nil
-end
-
 ------------------------------------------------------------------------
 -- Container CRUD
 ------------------------------------------------------------------------
@@ -1096,13 +1086,6 @@ function CooldownCompanion:DuplicateContainer(containerId)
     return newContainerId
 end
 
-function CooldownCompanion:RenameContainer(containerId, newName)
-    local container = self.db.profile.groupContainers[containerId]
-    if container then
-        container.name = newName
-    end
-end
-
 ------------------------------------------------------------------------
 -- Panel CRUD (within containers)
 ------------------------------------------------------------------------
@@ -1310,13 +1293,6 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
 
     RefreshPanelAlphaDependencyTargets(self)
     return true, sourceDeleted
-end
-
-function CooldownCompanion:RenamePanelGroup(groupId, newName)
-    local group = self.db.profile.groups[groupId]
-    if group then
-        group.name = newName
-    end
 end
 
 function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
@@ -1616,7 +1592,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             local baseName = C_Spell.GetSpellName(id) or name
             local overrideName = C_Spell.GetSpellName(overrideID)
             if overrideName and overrideName ~= baseName then
-                print("|cff00ccffCooldown Companion:|r Added " .. baseName
+                self:Print("Added " .. baseName
                     .. " (currently showing as " .. overrideName
                     .. ") - tracks all spell variants.")
                 transformNotified = true
@@ -1984,78 +1960,4 @@ function CooldownCompanion:EnumerateActiveProfileCharacters()
 
     table_sort(result, function(a, b) return a.charKey < b.charKey end)
     return result
-end
-
---- Copy a panel into an existing container owned by the current character.
-function CooldownCompanion:CopyPanelToContainer(sourceGroupId, targetContainerId)
-    local db = self.db.profile
-    local sourcePanel = db.groups[sourceGroupId]
-    if not sourcePanel then return nil end
-    local targetContainer = db.groupContainers[targetContainerId]
-    if not targetContainer then return nil end
-
-    local newGroupId = db.nextGroupId
-    db.nextGroupId = newGroupId + 1
-
-    local newPanel = CopyTable(sourcePanel)
-    newPanel.parentContainerId = targetContainerId
-    newPanel.order = self:GetPanelCount(targetContainerId) + 1
-
-    local containerFrameName = "CooldownCompanionContainer" .. targetContainerId
-    newPanel.anchor = {
-        point = "CENTER",
-        relativeTo = containerFrameName,
-        relativePoint = "CENTER",
-        x = 0,
-        y = 0,
-    }
-    ResetCopiedStandalonePanelAnchor(newPanel, db.groups, sourceGroupId, sourcePanel.parentContainerId, targetContainerId)
-    NormalizeCopiedEntityForContainerScope(self, newPanel, targetContainer)
-
-    db.groups[newGroupId] = newPanel
-    self:CreateGroupFrame(newGroupId)
-    RefreshPanelAlphaDependencyTargets(self)
-    return newGroupId
-end
-
---- Copy a panel as a brand new standalone group (container + panel).
-function CooldownCompanion:CopyPanelAsNewGroup(sourceGroupId, sourceName)
-    local db = self.db.profile
-    local sourcePanel = db.groups[sourceGroupId]
-    if not sourcePanel then return nil, nil end
-
-    -- Create a new container
-    local containerId = self:CreateContainer(sourceName or "Copied Group")
-    local container = db.groupContainers[containerId]
-
-    -- Create container frame
-    if self.CreateContainerFrame then
-        self:CreateContainerFrame(containerId)
-    end
-
-    -- Deep-copy the source panel into the new container
-    local newGroupId = db.nextGroupId
-    db.nextGroupId = newGroupId + 1
-
-    local newPanel = CopyTable(sourcePanel)
-    newPanel.parentContainerId = containerId
-    newPanel.order = 1
-    newPanel.name = "Panel 1"
-
-    local containerFrameName = "CooldownCompanionContainer" .. containerId
-    newPanel.anchor = {
-        point = "CENTER",
-        relativeTo = containerFrameName,
-        relativePoint = "CENTER",
-        x = 0,
-        y = 0,
-    }
-    ResetCopiedStandalonePanelAnchor(newPanel, db.groups, sourceGroupId, sourcePanel.parentContainerId, containerId)
-    NormalizeCopiedEntityForContainerScope(self, newPanel, container)
-
-    db.groups[newGroupId] = newPanel
-    self:CreateGroupFrame(newGroupId)
-    RefreshPanelAlphaDependencyTargets(self)
-
-    return containerId, newGroupId
 end

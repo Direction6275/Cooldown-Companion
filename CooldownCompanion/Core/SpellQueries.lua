@@ -311,15 +311,6 @@ function ST.HasPositiveResourceGateCost(spellId)
     return HasPositivePowerCost(spellId, IsResourceGatedNoCooldownPowerType)
 end
 
-function ST.HasPositiveRuneCost(spellId)
-    local runePowerType = Enum and Enum.PowerType and Enum.PowerType.Runes
-    if runePowerType == nil then return false end
-
-    return HasPositivePowerCost(spellId, function(powerType)
-        return powerType == runePowerType
-    end)
-end
-
 local function HasBaseCooldown(spellId)
     local baseCd = GetSpellBaseCooldown(spellId)
     return baseCd and baseCd > 0
@@ -335,14 +326,6 @@ end
 -- Returns true if the spell has no real cooldown surface (GCD-only).
 function ST.IsNoCooldownSpell(spellId)
     return not ST.HasSpellCooldownSurface(spellId)
-end
-
-function ST.IsRuneCostNoCooldownSpell(spellId)
-    return ST.HasPositiveRuneCost(spellId) and ST.IsNoCooldownSpell(spellId)
-end
-
-function ST.IsResourceGateNoCooldownSpell(spellId)
-    return ST.HasPositiveResourceGateCost(spellId) and ST.IsNoCooldownSpell(spellId)
 end
 
 -- Returns true if the spell tooltip contains a UsageRequirement line

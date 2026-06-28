@@ -31,7 +31,6 @@ local function IsRuntimeItemLike(buttonData)
 end
 local string_gsub = string.gsub
 local string_upper = string.upper
-local table_concat = table.concat
 local tonumber = tonumber
 local type = type
 
@@ -697,12 +696,6 @@ local function NormalizeAuraTextureSettings(settings)
     return settings
 end
 
-function CooldownCompanion:IsAuraTextureButtonSupported(buttonData)
-    return type(buttonData) == "table"
-        and buttonData.type == "spell"
-        and (buttonData.auraTracking == true or buttonData.isPassive == true)
-end
-
 function CooldownCompanion:IsTexturePanelGroup(group)
     return type(group) == "table" and group.displayMode == "textures"
 end
@@ -952,22 +945,6 @@ function CooldownCompanion.SanitizeTriggerPanelTextValue(value)
     end
 
     return value
-end
-
-function CooldownCompanion.CountTriggerPanelTextLines(value)
-    value = CooldownCompanion.NormalizeTriggerPanelTextLineEndings(value)
-    if value == "" then
-        return 1
-    end
-
-    local lineCount = 1
-    for index = 1, #value do
-        if value:sub(index, index) == "\n" then
-            lineCount = lineCount + 1
-        end
-    end
-
-    return lineCount
 end
 
 function CooldownCompanion:GetTriggerPanelDisplayType(groupOrId, createIfMissing)
@@ -1351,34 +1328,6 @@ function CooldownCompanion:RemoveTriggerConditionClause(buttonData, clauseIndex)
     table.remove(clauses, clauseIndex)
     self:SetTriggerConditionClauses(buttonData, clauses)
     return true
-end
-
-function CooldownCompanion:GetTriggerConditionSummary(buttonData)
-    if type(buttonData) ~= "table" then
-        return nil
-    end
-
-    local summaries = {}
-    for _, clause in ipairs(self:GetTriggerConditionClauses(buttonData)) do
-        local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
-        local conditionLabel = TRIGGER_CONDITION_LABELS[conditionKey]
-        local stateLabel
-        if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
-            stateLabel = (TRIGGER_EXPECTED_LABELS[conditionKey] or TRIGGER_EXPECTED_LABELS.cooldownActive)[clause.expected == false and "false" or "true"]
-        else
-            local stateKey = NormalizeTriggerStateKey(conditionKey, clause.state)
-            stateLabel = TRIGGER_STATE_LABELS[conditionKey] and TRIGGER_STATE_LABELS[conditionKey][stateKey]
-        end
-        if conditionLabel and stateLabel then
-            summaries[#summaries + 1] = conditionLabel .. " " .. stateLabel
-        end
-    end
-
-    if #summaries == 0 then
-        return nil
-    end
-
-    return table_concat(summaries, " AND ")
 end
 
 function CooldownCompanion:GetCompactTriggerConditionSummary(buttonData, maxVisibleClauses)

@@ -1757,7 +1757,7 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback)
         panel:AddChild(readyTextBox)
     end
 
-    local readyAdvExpanded, readyAdvBtn = AddAdvancedToggle(readyColorPicker, "textReadyText", tabInfoButtons, nil, {
+    local _, readyAdvBtn = AddAdvancedToggle(readyColorPicker, "textReadyText", tabInfoButtons, nil, {
         title = "Ready Color Advanced",
         build = BuildReadyTextAdvanced,
     })
