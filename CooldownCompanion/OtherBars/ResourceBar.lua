@@ -22,6 +22,7 @@ local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
+local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
 
 local math_floor = math.floor
 local math_min = math.min
@@ -31,6 +32,12 @@ local math_pi = math.pi
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
 local issecretvalue = issecretvalue
+
+local function UnbindFrameDurationText(frame)
+    if frame and frame.text then
+        UnbindDurationText(frame.text)
+    end
+end
 
 ------------------------------------------------------------------------
 -- Imports from ResourceBarConstants / ResourceBarHelpers / ResourceBarVisuals
@@ -391,6 +398,7 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, auraPrese
 end
 local function ClearStaleRecycledBarRuntimeState(frame)
     if not frame then return end
+    UnbindFrameDurationText(frame)
     ClearStatusBarMotion(frame)
     if frame._cdcCustomAuraAlphaModuleId then
         CooldownCompanion:UnregisterModuleAlpha(frame._cdcCustomAuraAlphaModuleId)
@@ -1969,6 +1977,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         if powerType == RESOURCE_HEALTH then
             if not barInfo or barInfo.barType ~= "health_continuous" then
                 if barInfo and barInfo.frame then
+                    ClearStaleRecycledBarRuntimeState(barInfo.frame)
                     ClearResourceAuraVisuals(barInfo.frame)
                     barInfo.frame:Hide()
                 end
@@ -1986,6 +1995,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
             -- Stagger: continuous bar with dedicated update (health-based max, threshold colors)
             if not barInfo or barInfo.barType ~= "stagger_continuous" then
                 if barInfo and barInfo.frame then
+                    ClearStaleRecycledBarRuntimeState(barInfo.frame)
                     ClearResourceAuraVisuals(barInfo.frame)
                     barInfo.frame:Hide()
                 end
@@ -2006,6 +2016,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
             if not barInfo or barInfo.barType ~= "mw_segmented"
                 or #barInfo.frame.segments ~= halfSegments then
                 if barInfo and barInfo.frame then
+                    ClearStaleRecycledBarRuntimeState(barInfo.frame)
                     ClearResourceAuraVisuals(barInfo.frame)
                     barInfo.frame:Hide()
                 end
@@ -2051,6 +2062,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
             if not barInfo or barInfo.barType ~= "segmented"
                 or barInfo.frame._numSegments ~= max then
                 if barInfo and barInfo.frame then
+                    ClearStaleRecycledBarRuntimeState(barInfo.frame)
                     ClearResourceAuraVisuals(barInfo.frame)
                     barInfo.frame:Hide()
                 end
@@ -2071,6 +2083,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
             -- Continuous bar
             if not barInfo or barInfo.barType ~= "continuous" then
                 if barInfo and barInfo.frame then
+                    ClearStaleRecycledBarRuntimeState(barInfo.frame)
                     ClearResourceAuraVisuals(barInfo.frame)
                     barInfo.frame:Hide()
                 end

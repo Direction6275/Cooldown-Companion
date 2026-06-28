@@ -83,6 +83,9 @@ local IsItemEquippable = CooldownCompanion.IsItemEquippable
 local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
 local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
 local FormatTime = CooldownCompanion.FormatTime
+local BindDurationText = CooldownCompanion.BindDurationText or function() return false end
+local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
+local RecordDurationTextManualUpdate = CooldownCompanion.RecordDurationTextManualUpdate or function() end
 local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 
 -- Bar mode tooltip behavior: tooltip should come from hovering the icon area only.
@@ -1000,15 +1003,23 @@ local function ApplyBarAuraStackVisual(button, stackValue, stackValueAvailable)
     end
 end
 
--- Lightweight OnUpdate: keeps time text fresh while native StatusBar timers drive fill motion.
-local function SetBarTimeText(button, text)
+-- Manual text helpers unbind native duration text before writing fallback text.
+local function SetBarTimeText(button, text, countManualDurationText)
+    UnbindDurationText(button.timeText)
+    if countManualDurationText then
+        RecordDurationTextManualUpdate("bar")
+    end
     if button._lastBarTimeText ~= text then
         button._lastBarTimeText = text
         button.timeText:SetText(text)
     end
 end
 
-local function SetBarTimeFormattedText(button, fmt, value)
+local function SetBarTimeFormattedText(button, fmt, value, countManualDurationText)
+    UnbindDurationText(button.timeText)
+    if countManualDurationText then
+        RecordDurationTextManualUpdate("bar")
+    end
     button._lastBarTimeText = nil
     button.timeText:SetFormattedText(fmt, value)
 end
@@ -1134,23 +1145,25 @@ local function UpdateBarFill(button)
                     or (button.style.cooldownFontColor or DEFAULT_WHITE)
                 button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             end
-            -- Time text: HasSecretValues() returns a non-secret boolean.
-            -- Non-secret: full duration-format examples ("1:30", "45", "8.7", etc.)
-            -- Secret: pass the secret number through C++ SetFormattedText with the closest specifier.
+            -- Eligible DurationObjects use native text binding; other timer sources stay on the manual path.
             local durationStyle = button.style
             local secretFormatSpec = GetDurationSecretFormatSpec(durationStyle)
             if previewRemaining and previewRemaining > 0 then
-                SetBarTimeText(button, FormatTime(previewRemaining, durationStyle))
+                SetBarTimeText(button, FormatTime(previewRemaining, durationStyle), true)
             elseif button._durationObj then
-                local remaining = button._durationObj:GetRemainingDuration()
-                if not button._durationObj:HasSecretValues() then
-                    if remaining > 0 then
-                        SetBarTimeText(button, FormatTime(remaining, durationStyle))
-                    else
-                        SetBarTimeText(button, "")
-                    end
+                if BindDurationText(button.timeText, button._durationObj, durationStyle, "bar") then
+                    button._lastBarTimeText = nil
                 else
-                    SetBarTimeFormattedText(button, secretFormatSpec, remaining)
+                    local remaining = button._durationObj:GetRemainingDuration()
+                    if not button._durationObj:HasSecretValues() then
+                        if remaining > 0 then
+                            SetBarTimeText(button, FormatTime(remaining, durationStyle), true)
+                        else
+                            SetBarTimeText(button, "")
+                        end
+                    else
+                        SetBarTimeFormattedText(button, secretFormatSpec, remaining, true)
+                    end
                 end
             elseif button._viewerBar then
                 -- Totem: viewer bar values may be secret (set by Blizzard's internal totem tracking).
@@ -1158,14 +1171,16 @@ local function UpdateBarFill(button)
                 -- secure code sets it, so the widget reports plain — but the actual
                 -- number returned by GetValue() is a secret wrapper).
                 -- Always use SetFormattedText for secret-safe pass-through.
-                SetBarTimeFormattedText(button, secretFormatSpec, button._viewerBar:GetValue())
+                SetBarTimeFormattedText(button, secretFormatSpec, button._viewerBar:GetValue(), true)
             else
                 if itemRemaining > 0 then
-                    SetBarTimeText(button, FormatTime(itemRemaining, durationStyle))
+                    SetBarTimeText(button, FormatTime(itemRemaining, durationStyle), true)
                 else
                     SetBarTimeText(button, "")
                 end
             end
+        else
+            SetBarTimeText(button, "")
         end
     else
         ClearBarAuraStackVisual(button)
