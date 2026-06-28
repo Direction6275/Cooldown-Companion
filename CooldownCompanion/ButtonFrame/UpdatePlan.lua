@@ -116,6 +116,11 @@ local function BuildPlanInputSignature(buttonData)
         buttonData._castCountCandidate == true and "cc1" or "cc0",
         HasSoundAlertEvents(buttonData) and "snd1" or "snd0",
         HasTriggerConditionConfig(buttonData) and "trg1" or "trg0",
+        HasAnyTruthyKey(buttonData, VISIBILITY_KEYS) and "vis1" or "vis0",
+        HasAnyTruthyKey(buttonData, DESATURATION_KEYS) and "des1" or "des0",
+        buttonData.hideAuraActiveExceptPandemic == true and "pvis1" or "pvis0",
+        buttonData.invertAuraDesaturationLogic == true and "ides1" or "ides0",
+        buttonData.neverDesaturate == true and "ndes1" or "ndes0",
     }, "|")
 end
 
