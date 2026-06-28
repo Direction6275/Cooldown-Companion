@@ -1147,30 +1147,18 @@ local function UpdateBarFill(button)
             end
             -- Eligible DurationObjects use native text binding; other timer sources stay on the manual path.
             local durationStyle = button.style
-            local secretFormatSpec = GetDurationSecretFormatSpec(durationStyle)
             if previewRemaining and previewRemaining > 0 then
                 SetBarTimeText(button, FormatTime(previewRemaining, durationStyle), true)
             elseif button._durationObj then
-                if BindDurationText(button.timeText, button._durationObj, durationStyle, "bar") then
-                    button._lastBarTimeText = nil
-                else
-                    local remaining = button._durationObj:GetRemainingDuration()
-                    if not button._durationObj:HasSecretValues() then
-                        if remaining > 0 then
-                            SetBarTimeText(button, FormatTime(remaining, durationStyle), true)
-                        else
-                            SetBarTimeText(button, "")
-                        end
-                    else
-                        SetBarTimeFormattedText(button, secretFormatSpec, remaining, true)
-                    end
-                end
+                button._lastBarTimeText = nil
+                BindDurationText(button.timeText, button._durationObj, durationStyle, "bar")
             elseif button._viewerBar then
                 -- Totem: viewer bar values may be secret (set by Blizzard's internal totem tracking).
                 -- HasSecretValues() on the viewer StatusBar is unreliable (Blizzard's
                 -- secure code sets it, so the widget reports plain — but the actual
                 -- number returned by GetValue() is a secret wrapper).
                 -- Always use SetFormattedText for secret-safe pass-through.
+                local secretFormatSpec = GetDurationSecretFormatSpec(durationStyle)
                 SetBarTimeFormattedText(button, secretFormatSpec, button._viewerBar:GetValue(), true)
             else
                 if itemRemaining > 0 then

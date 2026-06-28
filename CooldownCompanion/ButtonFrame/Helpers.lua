@@ -400,7 +400,7 @@ local function IsDurationTextBindingSupported()
 end
 CooldownCompanion.IsDurationTextBindingSupported = IsDurationTextBindingSupported
 
-local function UnbindDurationText(fontString)
+local function UnbindDurationText(fontString, clearText)
     if not fontString then return end
 
     local binding = fontString._ccDurationTextBinding
@@ -413,7 +413,7 @@ local function UnbindDurationText(fontString)
     fontString._ccDurationTextBindingActive = nil
     fontString._ccDurationTextDuration = nil
     fontString._ccDurationTextFormatterKey = nil
-    if wasActive and fontString.SetText then
+    if (wasActive or clearText) and fontString.SetText then
         fontString:SetText("")
     end
 end
@@ -424,14 +424,14 @@ local function BindDurationText(fontString, durationObj, source, surface)
 
     if not (fontString and durationObj and IsDurationTextBindingSupported()) then
         IncrementDurationTextCounter("unsupported")
-        UnbindDurationText(fontString)
+        UnbindDurationText(fontString, true)
         return false
     end
 
     local formatter, formatKey = GetDurationTextFormatter(source)
     if not formatter then
         IncrementDurationTextCounter("unsupported")
-        UnbindDurationText(fontString)
+        UnbindDurationText(fontString, true)
         return false
     end
 
@@ -440,6 +440,7 @@ local function BindDurationText(fontString, durationObj, source, surface)
         binding = C_DurationUtil.CreateDurationTextBinding()
         if not DurationTextBindingHasMethods(binding) then
             IncrementDurationTextCounter("unsupported")
+            UnbindDurationText(fontString, true)
             return false
         end
 
@@ -452,6 +453,7 @@ local function BindDurationText(fontString, durationObj, source, surface)
         IncrementDurationTextCounter("bindingsCreated")
     elseif not fontString._ccDurationTextBindingReady and not DurationTextBindingHasMethods(binding) then
         IncrementDurationTextCounter("unsupported")
+        UnbindDurationText(fontString, true)
         return false
     else
         fontString._ccDurationTextBindingReady = true

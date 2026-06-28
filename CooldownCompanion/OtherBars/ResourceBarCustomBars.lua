@@ -60,7 +60,6 @@ local CreateOverlayBar = RB.CreateOverlayBar
 local LayoutOverlaySegments = RB.LayoutOverlaySegments
 
 local FormatTime = CooldownCompanion.FormatTime
-local GetDurationSecretFormatSpec = CooldownCompanion.GetDurationSecretFormatSpec
 local BindDurationText = CooldownCompanion.BindDurationText or function() return false end
 local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
 local RecordDurationTextManualUpdate = CooldownCompanion.RecordDurationTextManualUpdate or function() end
@@ -79,15 +78,6 @@ local function SetManualDurationText(fontString, text, countManualDurationText)
         RecordDurationTextManualUpdate("resource")
     end
     fontString:SetText(text)
-end
-
-local function SetManualDurationFormattedText(fontString, formatSpec, value, countManualDurationText)
-    if not fontString then return end
-    UnbindDurationText(fontString)
-    if countManualDurationText then
-        RecordDurationTextManualUpdate("resource")
-    end
-    fontString:SetFormattedText(formatSpec, value)
 end
 
 local function UnbindFrameDurationText(frame)
@@ -385,18 +375,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             -- Duration text (bar.text): driven by showDurationText, independent of drain
             if bar.text and bar.text:IsShown() then
                 if durationObj then
-                    if not BindDurationText(bar.text, durationObj, cabConfig, "resource") then
-                        local remaining = durationObj:GetRemainingDuration()
-                        if not durationObj:HasSecretValues() then
-                            if remaining > 0 then
-                                SetManualDurationText(bar.text, FormatTime(remaining, cabConfig), true)
-                            else
-                                SetManualDurationText(bar.text, "")
-                            end
-                        else
-                            SetManualDurationFormattedText(bar.text, GetDurationSecretFormatSpec(cabConfig), remaining, true)
-                        end
-                    end
+                    BindDurationText(bar.text, durationObj, cabConfig, "resource")
                 elseif auraCooldownStart and auraCooldownDuration and auraCooldownDuration > 0 then
                     local remaining = auraCooldownStart + auraCooldownDuration - GetTime()
                     if remaining > 0 then
@@ -667,16 +646,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
             if bar.text and bar.text:IsShown() then
                 if auraDurationObj then
-                    if not BindDurationText(bar.text, auraDurationObj, cabConfig, "resource") then
-                        local remaining = auraDurationObj:GetRemainingDuration()
-                        if auraDurationObj:HasSecretValues() then
-                            SetManualDurationFormattedText(bar.text, GetDurationSecretFormatSpec(cabConfig), remaining, true)
-                        elseif remaining and remaining > 0 then
-                            SetManualDurationText(bar.text, FormatTime(remaining, cabConfig), true)
-                        else
-                            SetManualDurationText(bar.text, "")
-                        end
-                    end
+                    BindDurationText(bar.text, auraDurationObj, cabConfig, "resource")
                 elseif auraPreview or pandemicPreview then
                     SetManualDurationText(bar.text, FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig), true)
                 else
@@ -718,16 +688,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         if bar.text and bar.text:IsShown() then
             if cooldownActive and durationObj then
-                if not BindDurationText(bar.text, durationObj, cabConfig, "resource") then
-                    local remaining = durationObj:GetRemainingDuration()
-                    if durationObj:HasSecretValues() then
-                        SetManualDurationFormattedText(bar.text, GetDurationSecretFormatSpec(cabConfig), remaining, true)
-                    elseif remaining and remaining > 0 then
-                        SetManualDurationText(bar.text, FormatTime(remaining, cabConfig), true)
-                    else
-                        SetManualDurationText(bar.text, "")
-                    end
-                end
+                BindDurationText(bar.text, durationObj, cabConfig, "resource")
             else
                 SetManualDurationText(bar.text, "")
             end
