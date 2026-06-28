@@ -856,7 +856,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
         }, tabInfoButtons)
     end
 
-    local compactAdvExpanded, compactAdvBtn = AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout, {
+    local _, compactAdvBtn = AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout, {
         title = "Compact Mode Advanced",
         build = BuildCompactAdvanced,
     })
@@ -1030,7 +1030,7 @@ local CHARACTER_COPY_TOOLTIP_DETAILS = {
 }
 
 local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
-    local copyValues, copyOrder = CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
+    local _, copyOrder = CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
     if #copyOrder == 0 then return end
 
     -- Pool one button per systemKey to avoid frame leaks across panel rebuilds

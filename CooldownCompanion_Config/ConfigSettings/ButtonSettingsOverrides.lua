@@ -175,7 +175,7 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
         end
     end
 
-    local fmtPreviewAdvExpanded, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "buttonTextFormatPreview", infoButtons, nil, {
+    local _, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "buttonTextFormatPreview", infoButtons, nil, {
         title = "Format Override Advanced",
         build = BuildFormatOverridePreviewAdvanced,
     })
@@ -461,9 +461,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                 local revertBtn = CreateRevertButton(heading, buttonData, sectionId)
                 table.insert(infoButtons, revertBtn)
 
-                local previewAdvExpanded
                 if PREVIEWABLE_OVERRIDE_SECTIONS[sectionId] then
-                    local previewAdvBtn
                     local function BuildOverridePreviewAdvanced(panel)
                         if sectionId == "procGlow" and overrides.procGlowStyle ~= "none" then
                             AddSelectedButtonPreviewToggle(panel, "Preview Proc Glow", "_procGlowPreview", CooldownCompanion.SetProcGlowPreview)
@@ -503,7 +501,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                         end
                     end
 
-                    previewAdvExpanded, previewAdvBtn = AddAdvancedToggle(heading, "overridePreview_" .. sectionId, infoButtons, nil, {
+                    local _, previewAdvBtn = AddAdvancedToggle(heading, "overridePreview_" .. sectionId, infoButtons, nil, {
                         title = sectionDef.label .. " Advanced",
                         build = BuildOverridePreviewAdvanced,
                         isAvailable = function()

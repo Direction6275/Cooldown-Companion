@@ -2677,7 +2677,7 @@ local function BuildEffectsTab(container)
         end
     end
 
-    local swipeAdvExpanded, swipeAdvBtn = AddAdvancedToggle(swipeCb, "cooldownSwipe", tabInfoButtons, style.showCooldownSwipe ~= false and not iconFillTimerActive, {
+    local _, swipeAdvBtn = AddAdvancedToggle(swipeCb, "cooldownSwipe", tabInfoButtons, style.showCooldownSwipe ~= false and not iconFillTimerActive, {
         title = "Cooldown Swipe Advanced",
         build = BuildCooldownSwipeAdvanced,
     })
@@ -3274,7 +3274,7 @@ local function BuildAppearanceTab(container)
 
     end
 
-    local cdTextAdvExpanded, cdTextAdvBtn = AddAdvancedToggle(cdTextCb, "cooldownText", tabInfoButtons, style.showCooldownText, {
+    local _, cdTextAdvBtn = AddAdvancedToggle(cdTextCb, "cooldownText", tabInfoButtons, style.showCooldownText, {
         title = "Cooldown Text Advanced",
         build = BuildCooldownTextAdvanced,
     })
@@ -3302,7 +3302,7 @@ local function BuildAppearanceTab(container)
         AddOffsetSliders(panel, style, "chargeXOffset", "chargeYOffset", { x = -2, y = 2 }, refreshStyle)
     end
 
-    local chargeAdvExpanded, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "chargeText", tabInfoButtons, style.showChargeText ~= false, {
+    local _, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "chargeText", tabInfoButtons, style.showChargeText ~= false, {
         title = "Count Text Advanced",
         build = BuildChargeTextAdvanced,
     })
@@ -3347,7 +3347,7 @@ local function BuildAppearanceTab(container)
 
     end
 
-    local auraTextAdvExpanded, auraTextAdvBtn = AddAdvancedToggle(auraTextCb, "auraText", tabInfoButtons, style.showAuraText ~= false, {
+    local _, auraTextAdvBtn = AddAdvancedToggle(auraTextCb, "auraText", tabInfoButtons, style.showAuraText ~= false, {
         title = "Aura Duration Text Advanced",
         build = BuildAuraDurationTextAdvanced,
     })
@@ -3383,7 +3383,7 @@ local function BuildAppearanceTab(container)
 
     end
 
-    local auraStackAdvExpanded, auraStackAdvBtn = AddAdvancedToggle(auraStackCb, "auraStackText", tabInfoButtons, style.showAuraStackText ~= false, {
+    local _, auraStackAdvBtn = AddAdvancedToggle(auraStackCb, "auraStackText", tabInfoButtons, style.showAuraStackText ~= false, {
         title = "Aura Stack Text Advanced",
         build = BuildAuraStackTextAdvanced,
     })
@@ -3425,7 +3425,7 @@ local function BuildAppearanceTab(container)
         AddColorPicker(panel, style, "keybindFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
     end
 
-    local kbAdvExpanded, kbAdvBtn = AddAdvancedToggle(kbCb, "keybindText", tabInfoButtons, style.showKeybindText, {
+    local _, kbAdvBtn = AddAdvancedToggle(kbCb, "keybindText", tabInfoButtons, style.showKeybindText, {
         title = KEYBIND_CUSTOM_LABEL .. " Advanced",
         build = BuildKeybindTextAdvanced,
     })
