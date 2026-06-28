@@ -13,9 +13,6 @@ local pairs = pairs
 local wipe = wipe
 local ipairs = ipairs
 local select = select
-local tonumber = tonumber
-local issecretvalue = issecretvalue
-local C_Spell_GetSpellCharges = C_Spell.GetSpellCharges
 
 -- Import cross-file variables
 local defaults = ST._defaults
@@ -50,37 +47,6 @@ ST._BUFF_VIEWER_SET = BUFF_VIEWER_SET
 
 local cdmAlphaGuard = {}
 ST._cdmAlphaGuard = cdmAlphaGuard
-
-local function GetReadableMaxCharges(charges)
-    local maxCharges = charges and charges.maxCharges
-    if maxCharges and not issecretvalue(maxCharges) then
-        return tonumber(maxCharges)
-    end
-    return nil
-end
-
-local function SpellHasDirectMultiChargeInfo(spellID)
-    if not (spellID and C_Spell_GetSpellCharges) then return false end
-    local charges = C_Spell_GetSpellCharges(spellID)
-    return (GetReadableMaxCharges(charges) or 0) > 1
-end
-
-local function CastConsumesTrackedCharge(button, buttonData, spellID, displaySpellID)
-    if spellID == buttonData.id then
-        return true
-    end
-
-    local chargeSpellID = button and button._chargeSpellId
-    if chargeSpellID and spellID == chargeSpellID then
-        return true
-    end
-
-    if displaySpellID and spellID == displaySpellID and displaySpellID ~= buttonData.id then
-        return SpellHasDirectMultiChargeInfo(spellID)
-    end
-
-    return false
-end
 
 function CooldownCompanion:OnInitialize()
     self._hadSavedVariables = type(_G.CooldownCompanionDB) == "table"
@@ -453,11 +419,8 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
             if buttonData.type == "spell"
                 and not buttonData.isPassive then
                 local displaySpellID = button._displaySpellId or buttonData.id
-                local chargeSpellID = button._chargeSpellId
-                if spellID == buttonData.id or spellID == displaySpellID or spellID == chargeSpellID then
-                    if self.UsesChargeBehavior(buttonData)
-                        and buttonData.hasCharges
-                        and CastConsumesTrackedCharge(button, buttonData, spellID, displaySpellID) then
+                if spellID == buttonData.id or spellID == displaySpellID then
+                    if self.UsesChargeBehavior(buttonData) and buttonData.hasCharges then
                         -- Track charge consumption for restricted-mode color heuristic.
                         -- _chargeRecharging at event time reflects the PRE-cast state:
                         --   false = casting from full charges → reset to 1

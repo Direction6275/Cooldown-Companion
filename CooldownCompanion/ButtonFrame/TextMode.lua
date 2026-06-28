@@ -60,10 +60,6 @@ local function IsAuraOnlyEntry(buttonData)
         and buttonData.auraTracking == true
 end
 
-local function IsChargePresentationVisible(button)
-    return button and button._chargePresentationSuppressed ~= true
-end
-
 ------------------------------------------------------------------------
 -- FORMAT STRING PARSER
 -- Parses "{name}  {status}" into a list of segments:
@@ -373,17 +369,14 @@ local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSec
     if tokenName == "time" then
         return timeIsSecret or (timeRemaining and timeRemaining > 0)
     elseif tokenName == "charges" then
-        return IsChargePresentationVisible(button) and UsesChargeBehavior(button.buttonData)
+        return UsesChargeBehavior(button.buttonData)
     elseif tokenName == "maxcharges" then
-        if not IsChargePresentationVisible(button) then return false end
         if not UsesChargeBehavior(button.buttonData) then return false end
         return button._chargeState == CHARGE_STATE_FULL
     elseif tokenName == "missingcharges" then
-        if not IsChargePresentationVisible(button) then return false end
         if not UsesChargeBehavior(button.buttonData) then return false end
         return button._chargeState == CHARGE_STATE_MISSING
     elseif tokenName == "zerocharges" then
-        if not IsChargePresentationVisible(button) then return false end
         if not UsesChargeBehavior(button.buttonData) then return false end
         return button._chargeState == CHARGE_STATE_ZERO
     elseif tokenName == "stacks" then
@@ -453,9 +446,8 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
 
     -- Gather live state
     local auraOnlyEntry = IsAuraOnlyEntry(buttonData)
-    local chargePresentationVisible = IsChargePresentationVisible(button)
-    local currentCharges = chargePresentationVisible and button._currentReadableCharges or nil
-    local maxCharges = chargePresentationVisible and buttonData.maxCharges or nil
+    local currentCharges = button._currentReadableCharges
+    local maxCharges = button.buttonData.maxCharges
     local stackDisplayText, stackDisplayKind = ResolveTextModeStackDisplay(button)
     local auraDurationTextPreview = button._conditionalAuraDurationTextPreview == true
     local auraActive = button._auraActive or auraDurationTextPreview

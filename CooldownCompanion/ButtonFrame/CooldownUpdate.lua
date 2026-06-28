@@ -600,9 +600,6 @@ local function IsReadyGlowAtMaxCharges(button, buttonData)
     if not (button and IsReadyGlowMaxChargeEligible(buttonData)) then
         return false
     end
-    if button._chargePresentationSuppressed == true then
-        return false
-    end
 
     return button._chargeState == CHARGE_STATE_FULL
 end
@@ -1313,11 +1310,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._chargesSpent = nil
         button._chargeText = nil
         button._displayCountZeroUsabilityFallback = nil
-        button._lastReadableCharges = nil
-        button._chargeSpellId = nil
-        button._chargeInfoFromFallback = nil
-        button._chargePresentationSuppressed = nil
-        button._cooldownPresentationSuppressed = nil
         if buttonData.type == "spell" then
             button.count:SetText("")
         end
@@ -1387,19 +1379,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    if button._chargePresentationSuppressed == true and not auraOwnsPrimarySwipe then
-        button._cooldownPresentationSuppressed = true
-        button._cooldownState = COOLDOWN_STATE_READY
-        button._cooldownDeferred = nil
-        button._durationObj = nil
-        if not button._isBar and not button._isText then
-            button.cooldown:SetCooldown(0, 0)
-            button.cooldown:Hide()
-        end
-    else
-        button._cooldownPresentationSuppressed = nil
-    end
-
     button._isOnGCD = isOnGCD or false
     -- Bar mode: suppress GCD-only display in bars (checked by UpdateBarFill OnUpdate).
     -- Skip for charge spells: their _durationObj is the recharge cycle, never the GCD.
@@ -1414,8 +1393,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             and style.showGCDSwipe == true
             and buttonData.type == "spell"
             and isOnGCD == true
-            and button._chargePresentationSuppressed ~= true
-            and button._cooldownPresentationSuppressed ~= true
         if showBarGCDSwipe then
             local gcdDurationObj = CooldownCompanion._gcdDurationObj
             if not gcdDurationObj and spellCooldownDuration then
@@ -1459,30 +1436,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- some use-count spells. Do not guess zero-state from unrelated
             -- usability signals; leave the zero-state unknown instead.
             button._mainCDShown = false
-        elseif buttonData.type == "spell"
-           and button._lastReadableCharges ~= nil then
-            if button._chargeRecharging == true then
-                if button._lastReadableCharges <= 0 then
-                    if button._chargePresentationSuppressed == true then
-                        button._mainCDShown = true
-                    else
-                        local slotProbe = spellCooldownResult and spellCooldownResult.slotProbe
-                            or EntryRuntime.ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
-                        if slotProbe.shown ~= nil then
-                            button._mainCDShown = slotProbe.realShown == true
-                        else
-                            button._mainCDShown = true
-                        end
-                    end
-                else
-                    local maxCharges = buttonData.maxCharges
-                    local spent = button._chargesSpent
-                    button._mainCDShown = maxCharges and maxCharges > 1 and spent and spent >= maxCharges or false
-                end
-            elseif button._chargeRecharging == false then
-                button._lastReadableCharges = nil
-                button._chargesSpent = nil
-            end
         elseif buttonData.type == "spell" and usesChargeBehavior and buttonData.hasCharges then
             -- Restricted mode: charges unreadable (secret values).
             -- Action bar probe reflects the regular-cooldown DurationObject
@@ -1546,8 +1499,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if IsEntryItemLike(buttonData) then
         button._desatCooldownActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     elseif usesChargeBehavior then
-        button._desatCooldownActive = button._chargePresentationSuppressed ~= true
-            and button._chargeState == CHARGE_STATE_ZERO
+        button._desatCooldownActive = button._chargeState == CHARGE_STATE_ZERO
     elseif auraOwnsPrimarySwipe and auraProbeInfo then
         button._desatCooldownActive = (auraProbeRealCooldownShown and not auraProbeIsGCDOnly) or false
     else
@@ -1564,17 +1516,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     if usesChargeBehavior then
       if buttonData.type == "spell" and buttonData.hasCharges then
-        local showChargePresentation = button._chargePresentationSuppressed ~= true
         -- Bar/text mode: charge bars are driven by the recharge DurationObject, not
         -- the main spell CD or GCD. Save and clear the main CD so recharge
         -- timing fully controls bar fill for charge spells.
-        if showChargePresentation and (button._isBar or button._isText) and not auraOwnsPrimarySwipe and button._chargeDurationObj then
+        if (button._isBar or button._isText) and not auraOwnsPrimarySwipe and button._chargeDurationObj then
             button._durationObj = nil
         end
 
         local normalCooldownDisplayActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
             or (isGCDOnly and style.showGCDSwipe == true)
-        if showChargePresentation and not auraOwnsPrimarySwipe and button._chargeDurationObj then
+        if not auraOwnsPrimarySwipe and button._chargeDurationObj then
             if not button._isBar and not button._isText then
                 if button._chargeCooldownVisualActive then
                     -- Icon mode: active recharge owns the shared cooldown frame.
@@ -1587,7 +1538,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- Bar/text mode: only set _durationObj if actually recharging
                 button._durationObj = button._chargeDurationObj
             end
-        elseif showChargePresentation and not button._isBar and not button._isText and not auraOwnsPrimarySwipe then
+        elseif not button._isBar and not button._isText and not auraOwnsPrimarySwipe then
             -- Icon mode fallback: no chargeDurationObj, try fetching one.
             -- Only an active charge DurationObject may replace an existing GCD display.
             local chargeSpellID = cooldownSpellId or buttonData.id
@@ -1684,9 +1635,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local maxCharges
             local chargeRecharging = false
             local chargeCooldownStartTime
-            local chargePresentationSuppressed = usesChargeBehavior
-                and button._chargePresentationSuppressed == true
-            if usesChargeBehavior and not chargePresentationSuppressed then
+            if usesChargeBehavior then
                 if button._currentReadableCharges ~= nil then
                     currentCharges = button._currentReadableCharges
                 elseif charges and charges.currentCharges ~= nil
@@ -1705,15 +1654,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                    and not issecretvalue(charges.cooldownStartTime) then
                     chargeCooldownStartTime = charges.cooldownStartTime
                 end
-            elseif chargePresentationSuppressed then
-                button._sndInitialized = nil
             end
 
             local cooldownActive
             if usesChargeBehavior then
                 -- Charge spells: cooldown-active means zero available charges.
-                cooldownActive = button._chargePresentationSuppressed ~= true
-                    and button._chargeState == CHARGE_STATE_ZERO
+                cooldownActive = button._chargeState == CHARGE_STATE_ZERO
             elseif auraOwnsPrimarySwipe then
                 -- Aura visuals replace button.cooldown; reuse the shared
                 -- probe computed above (same spell, same tick).

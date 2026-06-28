@@ -139,7 +139,6 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     local itemUsesResolvedCooldownState = IsEntryItemLike(buttonData)
         and button._resolvedItemQuantityKind == "stacks"
     local noCooldownForVisibility = IsNoCooldownForVisibility(button)
-    local chargePresentationSuppressed = button._chargePresentationSuppressed == true
 
     -- Check hideWhileOnCooldown (skip for no-CD spells — always "not on CD")
     if buttonData.hideWhileOnCooldown and not noCooldownForVisibility and not barAuraStackDisplay then
@@ -148,9 +147,8 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         elseif UsesChargeBehavior(buttonData) then
-            if not chargePresentationSuppressed
-                    and (button._chargeState == CHARGE_STATE_ZERO
-                    or button._chargeState == CHARGE_STATE_MISSING) then
+            if button._chargeState == CHARGE_STATE_ZERO
+                    or button._chargeState == CHARGE_STATE_MISSING then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         elseif IsEntryItemLike(buttonData) then
@@ -171,7 +169,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         elseif UsesChargeBehavior(buttonData) then
-            if not chargePresentationSuppressed and button._chargeState == CHARGE_STATE_FULL then
+            if button._chargeState == CHARGE_STATE_FULL then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         elseif IsEntryItemLike(buttonData) then
@@ -212,7 +210,6 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     if buttonData.hideWhileZeroCharges
             and not barAuraStackDisplay
             and not CooldownCompanion.HasItemFallbacks(buttonData)
-            and button._chargePresentationSuppressed ~= true
             and button._chargeState == CHARGE_STATE_ZERO then
         hideReasons = bit_bor(hideReasons, HIDE_ZERO_CHARGES)
     end

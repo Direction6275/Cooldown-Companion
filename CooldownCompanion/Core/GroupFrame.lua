@@ -747,11 +747,6 @@ local function ClearReusableButtonRuntime(button)
     button._chargeState = nil
     button._currentReadableCharges = nil
     button._chargeCountReadable = nil
-    button._lastReadableCharges = nil
-    button._chargeSpellId = nil
-    button._chargeInfoFromFallback = nil
-    button._chargePresentationSuppressed = nil
-    button._cooldownPresentationSuppressed = nil
     button._chargeText = nil
     button._chargesSpent = nil
     button._sndInitialized = nil

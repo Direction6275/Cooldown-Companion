@@ -24,68 +24,12 @@ local IsEntryItemLike = CooldownCompanion.IsEntryItemLike or function(buttonData
                 and (buttonData.itemSlot == 13 or buttonData.itemSlot == 14)))
 end
 
-local function GetReadableMaxCharges(charges)
-    local maxCharges = charges and charges.maxCharges
-    if maxCharges and not issecretvalue(maxCharges) then
-        return tonumber(maxCharges)
-    end
-    return nil
-end
-
-local function SyncSpentChargesFromReadableCount(owner, maxCharges, currentCharges)
-    if not owner or currentCharges == nil then
-        return
-    end
-    if issecretvalue and (issecretvalue(maxCharges) or issecretvalue(currentCharges)) then
-        return
-    end
-
-    maxCharges = tonumber(maxCharges)
-    currentCharges = tonumber(currentCharges)
-    if not maxCharges or maxCharges <= 1 or not currentCharges then
-        return
-    end
-
-    local spent = maxCharges - currentCharges
-    if spent < 0 then
-        spent = 0
-    elseif spent > maxCharges then
-        spent = maxCharges
-    end
-    owner._chargesSpent = spent
-end
-
-local function ResolveRuntimeChargeInfo(buttonData, chargeSpellID)
-    local spellID = chargeSpellID or buttonData.id
-    local charges = C_Spell.GetSpellCharges(spellID)
-    local maxCharges = GetReadableMaxCharges(charges)
-
-    if (not maxCharges or maxCharges <= 1)
-        and ST.ResolveSpellChargeInfo
-        and buttonData.id then
-        local resolvedCharges, resolvedSpellID, resolvedMaxCharges = ST.ResolveSpellChargeInfo(buttonData.id)
-        if resolvedCharges and (resolvedMaxCharges or 0) > 1 then
-            return resolvedCharges, resolvedSpellID or buttonData.id, true, resolvedMaxCharges
-        end
-    end
-
-    return charges, spellID, false, maxCharges
-end
-
 -- Update charge count state for a spell with hasCharges enabled.
 -- chargeSpellID should be the effective runtime spell ID (override-aware).
 -- Returns the raw charges API table (may be nil) for use by callers.
 local function UpdateChargeTracking(button, buttonData, chargeSpellID)
-    local previousReadableCharges = button._chargeCountReadable == true
-        and button._currentReadableCharges
-        or nil
-    local charges, spellID, usedChargeFallback, maxCharges = ResolveRuntimeChargeInfo(buttonData, chargeSpellID)
-    button._chargeSpellId = spellID
-    button._chargeInfoFromFallback = usedChargeFallback or nil
-    button._chargePresentationSuppressed = usedChargeFallback == true
-        and chargeSpellID ~= nil
-        and tonumber(spellID) ~= tonumber(chargeSpellID)
-        or nil
+    local spellID = chargeSpellID or buttonData.id
+    local charges = C_Spell.GetSpellCharges(spellID)
 
     -- Read current charges only from the authoritative charge API field.
     -- Display-count APIs are UI-oriented and can transiently read 0 during
@@ -93,10 +37,6 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     local cur
     if charges and charges.currentCharges ~= nil and not issecretvalue(charges.currentCharges) then
         cur = charges.currentCharges
-        button._lastReadableCharges = cur
-    elseif (usedChargeFallback or (maxCharges or 0) > 1)
-        and previousReadableCharges ~= nil then
-        button._lastReadableCharges = previousReadableCharges
     end
     button._currentReadableCharges = cur
     button._chargeCountReadable = (cur ~= nil)
@@ -123,17 +63,10 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
         button._chargeDurationObj = nil
         button._chargeRecharging = false
         button._chargeState = nil
-        button._lastReadableCharges = nil
-        button._chargeSpellId = nil
-        button._chargeInfoFromFallback = nil
-        button._chargePresentationSuppressed = nil
-        button._cooldownPresentationSuppressed = nil
-        button._chargesSpent = nil
         return nil
     end
 
     local mx = buttonData.maxCharges
-    SyncSpentChargesFromReadableCount(button, mx, cur)
 
     -- Recharge DurationObject for multi-charge spells.
     -- GetSpellChargeDuration returns nil for maxCharges=1 (Blizzard doesn't treat
@@ -144,10 +77,7 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
 
     -- Display charge text via secret-safe widget methods
     local showChargeText = button.style and button.style.showChargeText
-    if button._chargePresentationSuppressed == true then
-        button._chargeText = nil
-        button.count:SetText("")
-    elseif not showChargeText then
+    if not showChargeText then
         button.count:SetText("")
     else
         if cur then
@@ -432,7 +362,6 @@ local function ResolveDesaturationIntent(button, buttonData, style, target)
         end
         if not target.active and buttonData.desaturateWhileZeroCharges
                 and not CooldownCompanion.HasItemFallbacks(buttonData)
-                and button._chargePresentationSuppressed ~= true
                 and button._chargeState == CHARGE_STATE_ZERO then
             target.active = true
             target.reason = "zero-charges"
