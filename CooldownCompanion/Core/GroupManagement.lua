@@ -1616,7 +1616,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             local baseName = C_Spell.GetSpellName(id) or name
             local overrideName = C_Spell.GetSpellName(overrideID)
             if overrideName and overrideName ~= baseName then
-                print("|cff00ccffCooldown Companion:|r Added " .. baseName
+                self:Print("Added " .. baseName
                     .. " (currently showing as " .. overrideName
                     .. ") - tracks all spell variants.")
                 transformNotified = true
