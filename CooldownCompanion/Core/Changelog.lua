@@ -8,7 +8,6 @@ local CooldownCompanion = ST.Addon
 
 local rawData = ST._changelogData or {}
 local orderedVersions = {}
-local versionIndex = {}
 local parsedCache = {}
 local DEFAULT_FONT_SIZE = 13
 local MIN_FONT_SIZE = 11
@@ -102,14 +101,12 @@ end
 
 local function BuildOrderedIndex()
     orderedVersions = {}
-    versionIndex = {}
 
     local entries = rawData.entries or {}
     for _, version in ipairs(rawData.order or {}) do
         local entry = entries[version]
         if type(version) == "string" and type(entry) == "table" and type(entry.markdown) == "string" then
             orderedVersions[#orderedVersions + 1] = version
-            versionIndex[version] = #orderedVersions
         end
     end
 end
