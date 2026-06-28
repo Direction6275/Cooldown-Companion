@@ -275,13 +275,6 @@ function Changelog.GetNewestVersion()
     return orderedVersions[1]
 end
 
-function Changelog.GetEntry(version)
-    if not Changelog.HasEntry(version) then
-        return nil
-    end
-    return rawData.entries[version]
-end
-
 function Changelog.GetRenderTokens(version)
     if not Changelog.HasEntry(version) then
         return nil
