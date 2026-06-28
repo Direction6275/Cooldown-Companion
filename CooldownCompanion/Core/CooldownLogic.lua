@@ -17,28 +17,6 @@ CooldownLogic.CHARGE_STATE_FULL = "full"
 CooldownLogic.CHARGE_STATE_MISSING = "missing"
 CooldownLogic.CHARGE_STATE_ZERO = "zero"
 
-local COOLDOWN_STATE_PRIORITY = {
-    [CooldownLogic.STATE_READY] = 1,
-    [CooldownLogic.STATE_GCD] = 1,
-    [CooldownLogic.STATE_COOLDOWN] = 3,
-}
-
-function CooldownLogic.GetCooldownStatePriority(state)
-    return COOLDOWN_STATE_PRIORITY[state] or 0
-end
-
-function CooldownLogic.SelectStrongerCooldownState(a, b)
-    if CooldownLogic.GetCooldownStatePriority(b and b.state) >
-            CooldownLogic.GetCooldownStatePriority(a and a.state) then
-        return b
-    end
-    return a
-end
-
-function CooldownLogic.IsRealCooldownState(state)
-    return state == CooldownLogic.STATE_COOLDOWN
-end
-
 function CooldownLogic.IsSpellGCDOnly(info, options)
     if not info then
         return false
