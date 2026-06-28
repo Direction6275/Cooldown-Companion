@@ -1194,7 +1194,9 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
 
         local timedAuraPrimarySwipeActive = button._auraPrimarySwipeActive == true
             and button._auraHasTimer ~= false
-        local cooldownVisualActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+        local realCooldownSwipeActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+            and button._cooldownDeferred ~= true
+        local cooldownVisualActive = realCooldownSwipeActive
             or timedAuraPrimarySwipeActive
             or button._conditionalAuraDurationTextPreview == true
             or button._conditionalPreviewDomain == "cooldown"
