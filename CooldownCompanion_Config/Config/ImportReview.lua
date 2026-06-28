@@ -1011,6 +1011,4 @@ function CooldownCompanion:OpenImportReviewWindow(context)
     ShowImportReviewWindow(context)
 end
 
-ST._ClassifyImportReviewText = function(text) return CooldownCompanion:ClassifyImportReviewText(text) end
-ST._ApplyReviewedImport = function(review) return CooldownCompanion:ApplyReviewedImport(review) end
 ST._OpenImportReviewWindow = function(context) return CooldownCompanion:OpenImportReviewWindow(context) end
