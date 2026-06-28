@@ -1892,6 +1892,9 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local barAreaTop = showIcon and (iconSize + iconOffset) or 0
 
     button.style = newStyle
+    if CooldownCompanion.ClearButtonUpdatePlan then
+        CooldownCompanion:ClearButtonUpdatePlan(button)
+    end
     if ClearButtonVisualState then
         ClearButtonVisualState(button)
     end

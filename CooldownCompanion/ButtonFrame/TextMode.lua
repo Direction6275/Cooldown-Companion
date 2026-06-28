@@ -880,6 +880,9 @@ end
 ------------------------------------------------------------------------
 local function UpdateTextStyle(button, newStyle)
     button.style = newStyle
+    if CooldownCompanion.ClearButtonUpdatePlan then
+        CooldownCompanion:ClearButtonUpdatePlan(button)
+    end
     if ClearButtonVisualState then
         ClearButtonVisualState(button)
     end

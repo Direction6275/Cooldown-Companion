@@ -3,15 +3,19 @@
     Diagnostic feature classification for per-button refresh cost.
 ]]
 
-local ADDON_NAME, ST = ...
+local _, ST = ...
 local CooldownCompanion = ST.Addon
+local CooldownLogic = ST.CooldownLogic or {}
 
 local ipairs = ipairs
 local next = next
 local table_concat = table.concat
 local tonumber = tonumber
-local tostring = tostring
 local type = type
+
+local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN or "cooldown"
+local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING or "missing"
+local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO or "zero"
 
 local VISIBILITY_KEYS = {
     "hideWhileOnCooldown",
@@ -426,6 +430,15 @@ function CooldownCompanion:GetButtonUpdatePlan(button, group)
     return self:RefreshButtonUpdatePlan(button, group)
 end
 
+function CooldownCompanion:ClearButtonUpdatePlan(button)
+    if type(button) ~= "table" then return end
+
+    button._cdcUpdatePlan = nil
+    button._cdcUpdatePlanData = nil
+    button._cdcUpdatePlanStyle = nil
+    button._cdcUpdatePlanDisplayMode = nil
+end
+
 local function IsSpellVisualPollOnly(plan)
     if type(plan) ~= "table" or type(plan.cleanTickReasonMap) ~= "table" then
         return false
@@ -455,9 +468,9 @@ function CooldownCompanion:ButtonHasActiveCleanTickerMaintenance(button)
     return button._displaySpellId == nil
         or button._lastSpellTexture == nil
         or button._iconDirty == true
-        or button._cooldownState == "cooldown"
-        or button._chargeState == "missing"
-        or button._chargeState == "zero"
+        or button._cooldownState == COOLDOWN_STATE_COOLDOWN
+        or button._chargeState == CHARGE_STATE_MISSING
+        or button._chargeState == CHARGE_STATE_ZERO
         or button._chargeRecharging == true
         or button._durationObj ~= nil
         or button._auraDurationObj ~= nil
@@ -469,6 +482,8 @@ function CooldownCompanion:ButtonHasActiveCleanTickerMaintenance(button)
         or button._readyGlowActive == true
         or button._readyGlowMaxChargesActive == true
         or button._iconFillActive == true
+        or button._resourceGateCost == true
+        or button._baseResourceGateCost == true
         or button._conditionalPreviewRemaining ~= nil
 end
 

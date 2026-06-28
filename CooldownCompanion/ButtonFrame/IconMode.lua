@@ -1407,6 +1407,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
 
     -- Store updated style reference
     button.style = style
+    if CooldownCompanion.ClearButtonUpdatePlan then
+        CooldownCompanion:ClearButtonUpdatePlan(button)
+    end
     if ClearButtonVisualState then
         ClearButtonVisualState(button)
     end

@@ -845,10 +845,9 @@ local function ClearReusableButtonRuntime(button)
     button._textModeSecretArgs = nil
     button._textModeSecretParts = nil
     button._savedOnUpdate = nil
-    button._cdcUpdatePlan = nil
-    button._cdcUpdatePlanData = nil
-    button._cdcUpdatePlanStyle = nil
-    button._cdcUpdatePlanDisplayMode = nil
+    if CooldownCompanion.ClearButtonUpdatePlan then
+        CooldownCompanion:ClearButtonUpdatePlan(button)
+    end
     button._inPandemic = nil
     if EntryRuntime and EntryRuntime.ClearAuraPandemicRuntimeState then
         EntryRuntime.ClearAuraPandemicRuntimeState(button)
