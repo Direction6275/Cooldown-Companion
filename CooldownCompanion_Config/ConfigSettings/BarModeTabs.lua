@@ -206,7 +206,7 @@ local function BuildBarAppearanceTab(container, group, style)
         end
     end
 
-    local iconAdvExpanded, iconAdvBtn = AddAdvancedToggle(showIconCb, "barIcon", tabInfoButtons, style.showBarIcon ~= false, {
+    local _, iconAdvBtn = AddAdvancedToggle(showIconCb, "barIcon", tabInfoButtons, style.showBarIcon ~= false, {
         title = "Bar Icon Advanced",
         build = BuildBarIconAdvanced,
     })
@@ -240,7 +240,7 @@ local function BuildBarAppearanceTab(container, group, style)
         AddOffsetSliders(panel, style, "barNameTextOffsetX", "barNameTextOffsetY", {range = 50}, refreshStyle)
     end
 
-    local nameAdvExpanded, nameAdvBtn = AddAdvancedToggle(showNameCbBasic, "barNameText", tabInfoButtons, style.showBarNameText ~= false, {
+    local _, nameAdvBtn = AddAdvancedToggle(showNameCbBasic, "barNameText", tabInfoButtons, style.showBarNameText ~= false, {
         title = "Name Text Advanced",
         build = BuildBarNameTextAdvanced,
     })
@@ -308,7 +308,7 @@ local function BuildBarAppearanceTab(container, group, style)
         AddOffsetSliders(panel, style, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshStyle)
     end
 
-    local chargeAdvExpanded, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "barChargeText", tabInfoButtons, style.showChargeText ~= false, {
+    local _, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "barChargeText", tabInfoButtons, style.showChargeText ~= false, {
         title = "Count Text Advanced",
         build = BuildBarChargeTextAdvanced,
     })
@@ -396,7 +396,7 @@ local function BuildBarAppearanceTab(container, group, style)
         AddFontControls(panel, style, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle)
     end
 
-    local readyAdvExpanded, readyAdvBtn = AddAdvancedToggle(showReadyCb, "barReadyText", tabInfoButtons, style.showBarReadyText, {
+    local _, readyAdvBtn = AddAdvancedToggle(showReadyCb, "barReadyText", tabInfoButtons, style.showBarReadyText, {
         title = "Ready Text Advanced",
         build = BuildBarReadyTextAdvanced,
     })
