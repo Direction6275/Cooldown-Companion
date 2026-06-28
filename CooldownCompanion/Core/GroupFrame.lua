@@ -731,6 +731,7 @@ local function ClearReusableButtonRuntime(button)
     button._spellOutOfRange = nil
     button._lastSpellTexture = nil
     button._spellTexBaseline = nil
+    button._cleanTickerVisualPollAt = nil
     button._noCooldown = nil
     button._noCooldownSpellId = nil
     button._baseNoCooldown = nil
@@ -844,6 +845,10 @@ local function ClearReusableButtonRuntime(button)
     button._textModeSecretArgs = nil
     button._textModeSecretParts = nil
     button._savedOnUpdate = nil
+    button._cdcUpdatePlan = nil
+    button._cdcUpdatePlanData = nil
+    button._cdcUpdatePlanStyle = nil
+    button._cdcUpdatePlanDisplayMode = nil
     button._inPandemic = nil
     if EntryRuntime and EntryRuntime.ClearAuraPandemicRuntimeState then
         EntryRuntime.ClearAuraPandemicRuntimeState(button)
@@ -960,6 +965,9 @@ local function PreparePooledButtonForUse(self, frame, group, button, index, butt
     end
     if self.UpdateButtonIcon then
         self:UpdateButtonIcon(button)
+    end
+    if self.RefreshButtonUpdatePlan then
+        self:RefreshButtonUpdatePlan(button, group)
     end
     if group and (group.displayMode == "textures" or group.displayMode == "trigger") then
         button:SetAlpha(0)
@@ -1974,9 +1982,14 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     end)
 
     -- Update functions
-    frame.UpdateCooldowns = function(self)
+    frame.UpdateCooldowns = function(self, refreshReason)
+        local cleanTicker = refreshReason == "ticker-clean"
+        local now = cleanTicker and GetTime and GetTime() or nil
         for _, button in ipairs(self.buttons) do
-            button:UpdateCooldown()
+            if not cleanTicker
+                or not CooldownCompanion:ShouldSkipCleanTickerButtonUpdate(button, group, now) then
+                button:UpdateCooldown()
+            end
         end
     end
     

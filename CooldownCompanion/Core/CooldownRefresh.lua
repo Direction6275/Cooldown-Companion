@@ -116,7 +116,11 @@ function CooldownCompanion:TickCooldownRefresh()
     if self:CanSkipTickerCooldownRefresh() then
         return true
     end
-    self:UpdateAllCooldowns()
+    if self._cooldownsDirty then
+        self:UpdateAllCooldowns()
+    else
+        self:UpdateAllCooldowns("ticker-clean")
+    end
     return false
 end
 

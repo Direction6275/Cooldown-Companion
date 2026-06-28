@@ -2891,6 +2891,7 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
                 button._displaySpellId = nil
                 button._liveOverrideSpellId = nil
                 button._lastSpellTexture = nil
+                button._cleanTickerVisualPollAt = nil
                 button._iconDirty = true
                 button._cooldownDeferred = nil
                 button._durationObj = nil
@@ -3435,7 +3436,7 @@ function CooldownCompanion:DiscardDormantFrame(groupId)
     end
 end
 
-function CooldownCompanion:UpdateAllCooldowns()
+function CooldownCompanion:UpdateAllCooldowns(refreshReason)
     self._gcdInfo = C_Spell.GetSpellCooldown(61304)
     -- GCD activity: isActive is NeverSecret (12.0.1 hotfix)
     self._gcdActive = self._gcdInfo and self._gcdInfo.isActive or false
@@ -3458,7 +3459,7 @@ function CooldownCompanion:UpdateAllCooldowns()
 
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
-            frame:UpdateCooldowns()
+            frame:UpdateCooldowns(refreshReason)
         end
     end
 

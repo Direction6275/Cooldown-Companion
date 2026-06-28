@@ -64,6 +64,7 @@ Core\AlphaFade.lua
 Core\Keybinds.lua
 Core\GroupOperations.lua
 ButtonFrame\Helpers.lua
+ButtonFrame\UpdatePlan.lua
 ButtonFrame\Glows.lua
 ButtonFrame\Visibility.lua
 ButtonFrame\Tracking.lua

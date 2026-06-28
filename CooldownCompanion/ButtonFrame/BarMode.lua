@@ -1928,6 +1928,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._nilConfirmPending = nil
     button._displaySpellId = nil
     button._liveOverrideSpellId = nil
+    button._cleanTickerVisualPollAt = nil
     button._itemCount = nil
     button._auraActive = nil
     button._auraDurationObj = nil

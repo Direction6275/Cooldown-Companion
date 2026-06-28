@@ -774,6 +774,7 @@ function CooldownCompanion:ClearRotationAssistantButtonRuntime(button)
     button._liveOverrideSpellId = nil
     button._lastSpellTexture = nil
     button._spellTexBaseline = nil
+    button._cleanTickerVisualPollAt = nil
     button._baseNoCooldown = nil
     button._baseNoCooldownSpellId = nil
     button._noCooldown = nil
