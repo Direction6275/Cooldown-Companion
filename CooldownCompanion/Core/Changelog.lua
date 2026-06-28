@@ -292,22 +292,6 @@ function Changelog.GetRenderTokens(version)
     return parsedCache[version]
 end
 
-function Changelog.GetPreviousVersion(version)
-    local idx = versionIndex[version]
-    if not idx then
-        return nil
-    end
-    return orderedVersions[idx + 1]
-end
-
-function Changelog.GetNextVersion(version)
-    local idx = versionIndex[version]
-    if not idx or idx <= 1 then
-        return nil
-    end
-    return orderedVersions[idx - 1]
-end
-
 function Changelog.ShouldAutoOpen()
     local version = GetAddonVersion()
     if not Changelog.HasEntry(version) then
