@@ -485,14 +485,6 @@ function CooldownCompanion:CreateTexturePanelSelection(entry, baseSettings)
     return NormalizeAuraTextureSettings(selection)
 end
 
-function CooldownCompanion:GetTexturePanelSelectionLabel(groupOrId)
-    local settings = self:GetTexturePanelSettings(groupOrId)
-    if not settings or not settings.sourceType then
-        return nil
-    end
-    return settings.label or tostring(settings.sourceValue)
-end
-
 function CooldownCompanion:EnsureAuraTextureLibraryStore()
     local profile = self.db and self.db.profile
     if not profile then
