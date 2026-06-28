@@ -186,7 +186,7 @@ local function BuildTextAppearanceTab(container, group, style)
         end
     end
 
-    local fmtPreviewAdvExpanded, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "textFormatPreview", tabInfoButtons, nil, {
+    local _, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "textFormatPreview", tabInfoButtons, nil, {
         title = "Format String Advanced",
         build = BuildFormatPreviewAdvanced,
     })

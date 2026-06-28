@@ -313,7 +313,7 @@ local function BuildDiagnosticSnapshot()
 
     local loadedAddons = {}
     for i = 1, C_AddOns.GetNumAddOns() do
-        local name, title, _, loadable, reason, security = C_AddOns.GetAddOnInfo(i)
+        local name, title = C_AddOns.GetAddOnInfo(i)
         local isLoaded = C_AddOns.IsAddOnLoaded(i)
         if isLoaded then
             local version = C_AddOns.GetAddOnMetadata(i, "Version")

@@ -857,7 +857,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(lowHealthAlertCb)
-    local lowHealthAlertAdvancedExpanded, lowHealthAlertAdvancedBtn = HealthResource.AddEffectStyleControls(container, lowHealthAlertCb, health, {
+    local _, lowHealthAlertAdvancedBtn = HealthResource.AddEffectStyleControls(container, lowHealthAlertCb, health, {
         enabledKey = "showLowHealthAlert",
         advancedKey = "healthLowHealthAlert",
         colorKey = "healthLowHealthAlertColor",
