@@ -86,7 +86,7 @@ local function HasSoundAlertEvents(buttonData)
         return false
     end
     for _, enabled in pairs(events) do
-        if enabled == true then
+        if enabled ~= nil and enabled ~= false then
             return true
         end
     end
@@ -102,6 +102,21 @@ local function HasTriggerConditionConfig(buttonData)
     end
     return type(buttonData.triggerConditions) == "table"
         and next(buttonData.triggerConditions) ~= nil
+end
+
+local function BuildPlanInputSignature(buttonData)
+    if type(buttonData) ~= "table" then
+        return "missing"
+    end
+
+    return table_concat({
+        buttonData.hasCharges == true and "hc1" or "hc0",
+        buttonData._hasDisplayCount == true and "dc1" or "dc0",
+        buttonData._displayCountFamily == true and "df1" or "df0",
+        buttonData._castCountCandidate == true and "cc1" or "cc0",
+        HasSoundAlertEvents(buttonData) and "snd1" or "snd0",
+        HasTriggerConditionConfig(buttonData) and "trg1" or "trg0",
+    }, "|")
 end
 
 local function HasActiveStyle(style, key)
@@ -351,6 +366,12 @@ function CooldownCompanion:BuildButtonUpdatePlan(button, group)
             AddFeature(plan, seen, "proc-glow")
             AddLane(plan, "proc")
         end
+        if type(style) == "table" and style.showLossOfControl == true
+            and spellLike and not buttonData.isPassive then
+            AddFeature(plan, seen, "loss-of-control")
+            AddLane(plan, "loss-of-control")
+            AddCleanTickReason(plan, "stateful", "loss-of-control")
+        end
         if HasActiveStyle(style, "readyGlowStyle")
             or (type(style) == "table" and tonumber(style.readyGlowDuration) and tonumber(style.readyGlowDuration) > 0) then
             AddFeature(plan, seen, "ready-glow")
@@ -414,6 +435,7 @@ function CooldownCompanion:RefreshButtonUpdatePlan(button, group)
     button._cdcUpdatePlan = plan
     button._cdcUpdatePlanData = button.buttonData
     button._cdcUpdatePlanStyle = button.style
+    button._cdcUpdatePlanInputSignature = BuildPlanInputSignature(button.buttonData)
     button._cdcUpdatePlanDisplayMode = plan and plan.displayMode or nil
     return plan
 end
@@ -426,6 +448,7 @@ function CooldownCompanion:GetButtonUpdatePlan(button, group)
     if plan
         and button._cdcUpdatePlanData == button.buttonData
         and button._cdcUpdatePlanStyle == button.style
+        and button._cdcUpdatePlanInputSignature == BuildPlanInputSignature(button.buttonData)
         and button._cdcUpdatePlanDisplayMode == displayMode then
         return plan
     end
@@ -438,6 +461,7 @@ function CooldownCompanion:ClearButtonUpdatePlan(button)
     button._cdcUpdatePlan = nil
     button._cdcUpdatePlanData = nil
     button._cdcUpdatePlanStyle = nil
+    button._cdcUpdatePlanInputSignature = nil
     button._cdcUpdatePlanDisplayMode = nil
 end
 
