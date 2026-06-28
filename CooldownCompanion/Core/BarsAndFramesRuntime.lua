@@ -113,10 +113,6 @@ function CooldownCompanion:RefreshBarsAndFramesRuntimeFeatureGate(feature, reaso
     return enabled == true and flags and flags[feature] == true, flags
 end
 
-function CooldownCompanion:IsBarsAndFramesRuntimeEnabled()
-    return runtime.enabled == true
-end
-
 function CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled(feature)
     return runtime.enabled == true and runtime.flags and runtime.flags[feature] == true
 end
