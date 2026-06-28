@@ -50,6 +50,7 @@ local DEFAULT_CUSTOM_AURA_MAX_COLOR = {1, 0.84, 0, 1}
 local CreateGlowContainer = ST._CreateGlowContainer
 local SetBarAuraEffect = ST._SetBarAuraEffect
 local IsBarAuraIndicatorEnabled = ST.IsBarAuraIndicatorEnabled
+local ShowButtonTooltip = ST._ShowButtonTooltip
 
 -- Imports from Visibility
 local UpdateLossOfControl = ST._UpdateLossOfControl
@@ -98,14 +99,7 @@ local function SetBarIconTooltipScripts(button, enable)
             local bd = button.buttonData
             if not bd then return end
             GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
-            if bd.type == "spell" then
-                GameTooltip:SetSpellByID(button._displaySpellId or bd.id)
-            elseif IsEntryItemLike(bd) then
-                local itemID = button._resolvedItemId or bd.id
-                if itemID then
-                    GameTooltip:SetItemByID(itemID)
-                end
-            end
+            ShowButtonTooltip(button, GameTooltip)
             GameTooltip:Show()
         end)
         iconBounds:SetScript("OnLeave", function()

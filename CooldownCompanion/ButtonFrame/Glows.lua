@@ -866,19 +866,44 @@ local function GetViewerAuraStackText(viewerFrame)
     return ""
 end
 
+local function IsTooltipAuraUnit(unit)
+    return unit == "player" or unit == "target"
+end
+
+local function ShowButtonTooltip(button, tooltip)
+    if not (button and tooltip and button.buttonData) then return false end
+
+    local buttonData = button.buttonData
+    local auraUnit = button._auraUnit
+    local auraInstanceID = button._auraInstanceID
+    if button._auraActive == true
+        and type(auraInstanceID) == "number"
+        and IsTooltipAuraUnit(auraUnit)
+        and tooltip.SetUnitAuraByAuraInstanceID then
+        tooltip:SetUnitAuraByAuraInstanceID(auraUnit, auraInstanceID, "INCLUDE_NAME_PLATE_ONLY")
+        return true
+    end
+
+    if buttonData.type == "spell" then
+        tooltip:SetSpellByID(button._displaySpellId or buttonData.id)
+        return true
+    elseif IsEntryItemLike(buttonData) then
+        local itemID = button._resolvedItemId or buttonData.id
+        if itemID then
+            tooltip:SetItemByID(itemID)
+            return true
+        end
+    end
+
+    return false
+end
+
 -- Setup tooltip OnEnter/OnLeave scripts on a button frame.
 -- Shared between icon-mode (CreateButtonFrame) and style refreshes.
 local function SetupTooltipScripts(button)
     button:SetScript("OnEnter", function(self)
         GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
-        if self.buttonData.type == "spell" then
-            GameTooltip:SetSpellByID(self._displaySpellId or self.buttonData.id)
-        elseif IsEntryItemLike(self.buttonData) then
-            local itemID = self._resolvedItemId or self.buttonData.id
-            if itemID then
-                GameTooltip:SetItemByID(itemID)
-            end
-        end
+        ShowButtonTooltip(self, GameTooltip)
         GameTooltip:Show()
     end)
     button:SetScript("OnLeave", function(self)
@@ -967,6 +992,7 @@ ST._ShowGlowStyle = ShowGlowStyle
 ST._CreateGlowContainer = CreateGlowContainer
 ST._CreateAssistedHighlight = CreateAssistedHighlight
 ST._GetViewerAuraStackText = GetViewerAuraStackText
+ST._ShowButtonTooltip = ShowButtonTooltip
 ST._SetupTooltipScripts = SetupTooltipScripts
 ST.IsBarAuraIndicatorEnabled = IsBarAuraIndicatorEnabled
 ST._SetBarAuraEffect = SetBarAuraEffect
