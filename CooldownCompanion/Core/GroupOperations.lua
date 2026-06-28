@@ -1194,69 +1194,6 @@ function CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
     end
 end
 
-function CooldownCompanion:SetFolderSpecs(folderId, specs)
-    local db = self.db and self.db.profile
-    local folder = db and db.folders and db.folders[folderId]
-    if not folder then return false end
-    local oldSpecs = folder.specs and CopyTable(folder.specs) or nil
-
-    if specs and next(specs) then
-        local normalizedSpecs = {}
-        for specId, enabled in pairs(specs) do
-            local numSpecId = tonumber(specId)
-            if enabled and numSpecId then
-                normalizedSpecs[numSpecId] = true
-            end
-        end
-        folder.specs = next(normalizedSpecs) and normalizedSpecs or nil
-    else
-        folder.specs = nil
-    end
-
-    -- Hero filters must remain scoped to selected specs.
-    if folder.heroTalents and next(folder.heroTalents) then
-        if not (folder.specs and next(folder.specs)) then
-            folder.heroTalents = nil
-        elseif oldSpecs then
-            for specId in pairs(oldSpecs) do
-                if not folder.specs[specId] then
-                    -- Works for folders too; CleanHeroTalentsForSpec only mutates .heroTalents
-                    self:CleanHeroTalentsForSpec(folder, specId)
-                end
-            end
-        end
-    end
-
-    self:ApplyFolderSpecFilterToChildren(folderId)
-    self:RefreshAllGroups()
-    self:RefreshConfigPanel()
-    return true
-end
-
-function CooldownCompanion:SetFolderHeroTalent(folderId, subTreeID, enabled)
-    local db = self.db and self.db.profile
-    local folder = db and db.folders and db.folders[folderId]
-    if not folder then return false end
-    if not (folder.specs and next(folder.specs)) then return false end
-
-    if enabled then
-        if not folder.heroTalents then folder.heroTalents = {} end
-        folder.heroTalents[subTreeID] = true
-    else
-        if folder.heroTalents then
-            folder.heroTalents[subTreeID] = nil
-            if not next(folder.heroTalents) then
-                folder.heroTalents = nil
-            end
-        end
-    end
-
-    self:ApplyFolderSpecFilterToChildren(folderId)
-    self:RefreshAllGroups()
-    self:RefreshConfigPanel()
-    return true
-end
-
 function CooldownCompanion:IsHeroTalentAllowed(group)
     local effectiveHeroTalents, _, hasHeroTalentFilter = self:GetEffectiveHeroTalents(group)
     if not hasHeroTalentFilter then return true end
