@@ -1766,7 +1766,3 @@ end
 function CooldownCompanion:CloseTalentPicker()
     HideTalentPicker()
 end
-
-function CooldownCompanion:IsTalentPickerOpen()
-    return CS.talentPickerMode
-end

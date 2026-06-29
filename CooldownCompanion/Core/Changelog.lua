@@ -8,7 +8,6 @@ local CooldownCompanion = ST.Addon
 
 local rawData = ST._changelogData or {}
 local orderedVersions = {}
-local versionIndex = {}
 local parsedCache = {}
 local DEFAULT_FONT_SIZE = 13
 local MIN_FONT_SIZE = 11
@@ -102,14 +101,12 @@ end
 
 local function BuildOrderedIndex()
     orderedVersions = {}
-    versionIndex = {}
 
     local entries = rawData.entries or {}
     for _, version in ipairs(rawData.order or {}) do
         local entry = entries[version]
         if type(version) == "string" and type(entry) == "table" and type(entry.markdown) == "string" then
             orderedVersions[#orderedVersions + 1] = version
-            versionIndex[version] = #orderedVersions
         end
     end
 end
@@ -275,13 +272,6 @@ function Changelog.GetNewestVersion()
     return orderedVersions[1]
 end
 
-function Changelog.GetEntry(version)
-    if not Changelog.HasEntry(version) then
-        return nil
-    end
-    return rawData.entries[version]
-end
-
 function Changelog.GetRenderTokens(version)
     if not Changelog.HasEntry(version) then
         return nil
@@ -290,22 +280,6 @@ function Changelog.GetRenderTokens(version)
         parsedCache[version] = ParseMarkdown(rawData.entries[version].markdown)
     end
     return parsedCache[version]
-end
-
-function Changelog.GetPreviousVersion(version)
-    local idx = versionIndex[version]
-    if not idx then
-        return nil
-    end
-    return orderedVersions[idx + 1]
-end
-
-function Changelog.GetNextVersion(version)
-    local idx = versionIndex[version]
-    if not idx or idx <= 1 then
-        return nil
-    end
-    return orderedVersions[idx - 1]
 end
 
 function Changelog.ShouldAutoOpen()
