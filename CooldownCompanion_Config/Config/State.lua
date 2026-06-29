@@ -24,14 +24,6 @@ if AceGUI and not ST._aceguiCheckboxCreatePatched then
     end
 end
 
--- Viewer frame names (mirrors Core.lua's local VIEWER_NAMES)
-local CDM_VIEWER_NAMES = {
-    "EssentialCooldownViewer",
-    "UtilityCooldownViewer",
-    "BuffIconCooldownViewer",
-    "BuffBarCooldownViewer",
-}
-
 -- Font options for dropdown (LSM-backed, cached and invalidated on new font registration)
 local fontOptionsCache
 local function GetFontOptions()
@@ -190,9 +182,6 @@ end
 
 -- Layout constants
 local COLUMN_PADDING = 8
-local BUTTON_HEIGHT = 24
-local BUTTON_SPACING = 2
-local PROFILE_BAR_HEIGHT = 36
 
 ------------------------------------------------------------------------
 -- Shared config state table
@@ -2386,66 +2375,6 @@ local function SetupColumn1MarkerRow(widget, opts)
 end
 
 ------------------------------------------------------------------------
--- Helper: Create a scroll frame inside a parent
-------------------------------------------------------------------------
-local function CreateScrollFrame(parent)
-    local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 0, 0)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -22, 0)
-
-    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-    scrollChild:SetWidth(scrollFrame:GetWidth())
-    scrollChild:SetHeight(1) -- will be set dynamically
-    scrollFrame:SetScrollChild(scrollChild)
-
-    -- Update child width on resize
-    scrollFrame:SetScript("OnSizeChanged", function(self, w, h)
-        scrollChild:SetWidth(w)
-    end)
-
-    return scrollFrame, scrollChild
-end
-
-------------------------------------------------------------------------
--- Helper: Create a text button
-------------------------------------------------------------------------
-local function CreateTextButton(parent, text, width, height, onClick)
-    local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    btn:SetSize(width, height)
-    btn:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    btn:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    btn:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-
-    btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    btn.text:SetPoint("CENTER")
-    btn.text:SetText(text)
-
-    btn:RegisterForClicks("AnyUp")
-    btn:SetScript("OnClick", function(self, button)
-        if button == "LeftButton" and onClick then
-            onClick(self)
-        end
-    end)
-
-    btn:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(0.3, 0.3, 0.3, 0.9)
-    end)
-    btn:SetScript("OnLeave", function(self)
-        if self.isSelected then
-            self:SetBackdropColor(0.15, 0.4, 0.15, 0.9)
-        else
-            self:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-        end
-    end)
-
-    return btn
-end
-
-------------------------------------------------------------------------
 -- Shared helper: persistent overlay host for column drag/drop previews
 ------------------------------------------------------------------------
 local function EnsureColumnPreviewHost(previewKey, scrollWidget)
@@ -2582,88 +2511,13 @@ local function ClearCol2PreviewHost()
 end
 
 ------------------------------------------------------------------------
--- Helper: Embed an AceGUI widget into a raw frame
-------------------------------------------------------------------------
-local function EmbedWidget(widget, parent, x, y, width, widgetList)
-    widget.frame:SetParent(parent)
-    widget.frame:ClearAllPoints()
-    widget.frame:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    if width then widget:SetWidth(width) end
-    widget.frame:Show()
-    if widgetList then
-        table.insert(widgetList, widget)
-    end
-    return widget
-end
-
-------------------------------------------------------------------------
--- Shared helper: render hero talent sub-tree checkboxes for a given spec.
--- Used by both Column1 (group filter inline panel) and ButtonConditions (load conditions tab).
+-- Shared helper: apply checkbox indentation for pooled AceGUI checkboxes.
 ------------------------------------------------------------------------
 local function ApplyCheckboxIndent(checkbox, offsetX)
     if not (checkbox and checkbox.checkbg) then return end
     -- AceGUI checkboxes are pooled; normalize anchor state before applying offset.
     checkbox.checkbg:ClearAllPoints()
     checkbox.checkbg:SetPoint("TOPLEFT", offsetX or 0, 0)
-end
-
-local function BuildHeroTalentSubTreeCheckboxes(container, group, configID, specId, indentOffset, groupId, opts)
-    opts = opts or {}
-    local specsSource = opts.specsSource or group.specs
-    local useHeroTalentsSource = opts.useHeroTalentsSource and true or false
-    local heroTalentsSource
-    if useHeroTalentsSource then
-        heroTalentsSource = opts.heroTalentsSource
-    else
-        heroTalentsSource = opts.heroTalentsSource or group.heroTalents
-    end
-    local disableToggles = opts.disableToggles and true or false
-
-    local created = {}
-    if not (specsSource and specsSource[specId] and configID) then return created end
-    local subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
-    if not subTreeIDs then return created end
-    for _, subTreeID in ipairs(subTreeIDs) do
-        local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
-        if subTreeInfo then
-            local htCb = AceGUI:Create("CheckBox")
-            htCb:SetLabel(subTreeInfo.name or ("Hero " .. subTreeID))
-            htCb:SetFullWidth(true)
-            htCb:SetValue(heroTalentsSource and heroTalentsSource[subTreeID] or false)
-            if disableToggles then
-                htCb:SetDisabled(true)
-            else
-                htCb:SetCallback("OnValueChanged", function(widget, event, value)
-                    if value then
-                        if not group.heroTalents then group.heroTalents = {} end
-                        group.heroTalents[subTreeID] = true
-                    else
-                        if group.heroTalents then
-                            group.heroTalents[subTreeID] = nil
-                            if not next(group.heroTalents) then
-                                group.heroTalents = nil
-                            end
-                        end
-                    end
-                    if opts.onChanged then
-                        opts.onChanged()
-                    else
-                        CooldownCompanion:RefreshGroupFrame(groupId)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
-                end)
-            end
-            container:AddChild(htCb)
-            created[#created + 1] = htCb
-            ApplyCheckboxIndent(htCb, indentOffset)
-            if subTreeInfo.iconElementID then
-                htCb:SetImage(136235)
-                htCb.image:SetAtlas(subTreeInfo.iconElementID, false)
-                htCb.image:SetTexCoord(0, 1, 0, 1)
-            end
-        end
-    end
-    return created
 end
 
 ------------------------------------------------------------------------
@@ -3396,28 +3250,22 @@ end
 ------------------------------------------------------------------------
 CS.SetConfigPrimaryMode = SetConfigPrimaryMode
 ST._CompactUntitledInlineGroupConfig = CompactUntitledInlineGroupConfig
-ST._CDM_VIEWER_NAMES = CDM_VIEWER_NAMES
 ST._CleanRecycledEntry = CleanRecycledEntry
 ST._ApplyConfigRowIcon = ApplyConfigRowIcon
 ST._ApplyConfigTextRow = ApplyConfigTextRow
 ST._RefreshVisibleConfigCompactRows = RefreshVisibleConfigCompactRows
-ST._AcquireBadge = AcquireBadge
 ST._BuildEligibilityBadgeMap = BuildEligibilityBadgeMap
 ST._SetupGroupRowIndicators = SetupGroupRowIndicators
 ST._SetupFolderRowIndicators = SetupFolderRowIndicators
 ST._GetConfigRowBadgeReserve = GetConfigRowBadgeReserve
 ST._ApplyColumn1MarkerAppearance = ApplyColumn1MarkerAppearance
 ST._SetupColumn1MarkerRow = SetupColumn1MarkerRow
-ST._CreateScrollFrame = CreateScrollFrame
-ST._CreateTextButton = CreateTextButton
 ST._EnsureCol1PreviewHost = EnsureCol1PreviewHost
 ST._EnsureCol2PreviewHost = EnsureCol2PreviewHost
 ST._ClearCol1PreviewHost = ClearCol1PreviewHost
 ST._ClearCol2PreviewHost = ClearCol2PreviewHost
-ST._EmbedWidget = EmbedWidget
 ST._GetButtonIcon = GetButtonIcon
 ST._GetConfigEntryDisplayName = GetConfigEntryDisplayName
-ST._NormalizeConfigFinderText = NormalizeConfigFinderText
 ST._IsConfigFinderAvailable = IsConfigFinderAvailable
 ST._IsConfigFinderActive = IsConfigFinderActive
 ST._SetConfigFinderText = SetConfigFinderText
@@ -3428,7 +3276,6 @@ ST._ResetOtherClassLibraryState = ResetOtherClassLibraryState
 ST._BuildConfigFinderResults = BuildConfigFinderResults
 ST._InvalidateConfigFinderResults = InvalidateConfigFinderResults
 ST._SelectConfigFinderResult = SelectConfigFinderResult
-ST._GetGroupIcon = GetGroupIcon
 ST._GetContainerIcon = GetContainerIcon
 ST._GetFolderIcon = GetFolderIcon
 ST._OpenFolderIconPicker = OpenFolderIconPicker
@@ -3441,14 +3288,8 @@ ST._GenerateFolderName = GenerateFolderName
 ST._ShowPopupAboveConfig = ShowPopupAboveConfig
 ST._BindConfigShiftTooltip = BindConfigShiftTooltip
 ST._ConfigureWrappedHelperLabel = ConfigureWrappedHelperLabel
-ST._ActivateConfigShiftTooltip = ActivateConfigShiftTooltip
 ST._ClearConfigShiftTooltipHover = ClearConfigShiftTooltipHover
-ST._ShowConfigShiftTooltip = ShowConfigShiftTooltip
 ST._COLUMN_PADDING = COLUMN_PADDING
-ST._BUTTON_HEIGHT = BUTTON_HEIGHT
-ST._BUTTON_SPACING = BUTTON_SPACING
-ST._PROFILE_BAR_HEIGHT = PROFILE_BAR_HEIGHT
-ST._BuildHeroTalentSubTreeCheckboxes = BuildHeroTalentSubTreeCheckboxes
 ST._ApplyCheckboxIndent = ApplyCheckboxIndent
 ST._ClearConfigButtonSelection = ClearConfigButtonSelection
 ST._ClearConfigPanelSelection = ClearConfigPanelSelection
@@ -3470,7 +3311,6 @@ ST._ClearConfigCustomBarSelection = ClearConfigCustomBarSelection
 ST._SelectConfigCustomBar = SelectConfigCustomBar
 ST._ToggleConfigCustomBarMultiSelect = ToggleConfigCustomBarMultiSelect
 ST._PruneConfigCustomBarSelection = PruneConfigCustomBarSelection
-ST._ClearConfigResourceSelection = ClearConfigResourceSelection
 ST._SelectConfigResource = SelectConfigResource
 ST._SetConfigResourceSettingsSpecID = SetConfigResourceSettingsSpecID
 ST._PruneConfigResourceSelection = PruneConfigResourceSelection
