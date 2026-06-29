@@ -1053,6 +1053,7 @@ function CooldownCompanion:DuplicateContainer(containerId)
             db.nextGroupId = newGroupId + 1
 
             local newPanel = CopyTable(group)
+            newPanel.cdmPanelSource = nil
             newPanel.parentContainerId = newContainerId
             newPanel.anchor = {
                 point = "CENTER",
@@ -1227,6 +1228,7 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
     local newPanel = CopyTable(sourcePanel)
     newPanel.name = sourcePanel.name .. " (Copy)"
     newPanel.order = self:GetPanelCount(containerId) + 1
+    newPanel.cdmPanelSource = nil
     ResetCopiedStandalonePanelAnchor(newPanel, db.groups, groupId, containerId, containerId)
     NormalizeCopiedEntityForContainerScope(self, newPanel, container)
 
@@ -1426,6 +1428,7 @@ function CooldownCompanion:DuplicateGroup(id)
     local newGroup = CopyTable(sourceGroup)
     newGroup.name = sourceGroup.name .. " (Copy)"
     newGroup.order = newGroupId
+    newGroup.cdmPanelSource = nil
     newGroup.createdBy = self.db.keys.char
     newGroup.isGlobal = false
     NormalizeCopiedEntityForContainerScope(self, newGroup, newGroup)

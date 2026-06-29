@@ -8,6 +8,7 @@ local CooldownCompanion = ST.Addon
 
 local ResetConfigSelection = ST._ResetConfigSelection
 local StripCharacterEligibilityFromProfile = ST._StripCharacterEligibilityFromProfile
+local StripLocalPanelMetadataFromProfile = ST._StripLocalPanelMetadataFromProfile
 
 local PROFILE_IMPORT_METADATA_KEYS = {
     _exporterCharKey = true,
@@ -541,6 +542,9 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
 
     local strippedCharacterEligibility = tonumber(data._cdcCharacterEligibilityStripped) or 0
     CopyProfileDataIntoActiveProfile(db.profile, data)
+    if StripLocalPanelMetadataFromProfile then
+        StripLocalPanelMetadataFromProfile(db.profile)
+    end
     strippedCharacterEligibility = strippedCharacterEligibility + (StripCharacterEligibilityFromProfile
         and StripCharacterEligibilityFromProfile(db.profile)
         or 0)

@@ -43,8 +43,16 @@ local ToggleConfigPanelMultiSelect = ST._ToggleConfigPanelMultiSelect
 local SelectConfigButton = ST._SelectConfigButton
 local SelectConfigButtonPanel = ST._SelectConfigButtonPanel
 local SelectConfigRotationAssistantEntry = ST._SelectConfigRotationAssistantEntry
+local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
+local ClearConfigPanelSelection = ST._ClearConfigPanelSelection
+local BuildCDMPanelSourceData = ST._BuildCDMPanelSourceData
+local GetCDMPanelSourceData = ST._GetCDMPanelSourceData
+local PopulateCDMPanelFromSource = ST._PopulateCDMPanelFromSource
+local ApplyCDMStarterPanelLayout = ST._ApplyCDMStarterPanelLayout
+local IsCDMPanelSourceKey = ST._IsCDMPanelSourceKey
 
 local IsTriggerPanelGroup
+local RefreshCDMPanelFromSource
 
 local function IsContainerVisibleInConfig(containerOrContainerId)
     if CooldownCompanion.ResolveContainerClassScope then
@@ -108,6 +116,7 @@ local ROW_BADGE_SPACING = 2
 local ROW_BADGE_RIGHT_PAD = 4
 local TEXTURE_PANEL_HEADER_BADGE_ATLAS = "UI-HUD-MicroMenu-Communities-Icon-Notification"
 local CURSOR_PANEL_HEADER_BADGE_ATLAS = "cursor_cast_32"
+local CDM_PANEL_HEADER_BADGE_ATLAS = "common-icon-rotateleft"
 local PANEL_HEADER_TYPE_BADGE_GAP = 2
 local TRIGGER_PANEL_BADGE_COLOR = { 1.0, 0.18, 0.78 }
 local PANEL_TYPE_TOOLTIPS = {
@@ -161,6 +170,20 @@ local function AddPanelTypeMenuTooltip(info, displayMode)
 
     info.tooltipTitle = tooltip.title
     info.tooltipText = tooltip.description
+    info.tooltipOnButton = true
+end
+
+local function ShowCDMStarterTooltip(owner)
+    GameTooltip:SetOwner(owner, "ANCHOR_TOP")
+    GameTooltip:AddLine("Build from Cooldown Manager", 1, 0.82, 0, true)
+    GameTooltip:AddLine("Creates editable panels from displayed Essential, Utility, Tracked Buffs, and Tracked Bars sections.", 1, 1, 1, true)
+    GameTooltip:AddLine("Not Displayed entries are ignored.", 0.75, 0.75, 0.75, true)
+    GameTooltip:Show()
+end
+
+local function AddCDMStarterMenuTooltip(info)
+    info.tooltipTitle = "Add Missing CDM Panels"
+    info.tooltipText = "Creates any missing Cooldown Manager starter panels without duplicating existing CDM panels."
     info.tooltipOnButton = true
 end
 
@@ -317,6 +340,57 @@ local function ConfigureCursorAnchorBadge(header, panel)
     badge:Hide()
 end
 
+local function ConfigureCDMRefreshBadge(header, panel, panelId, containerId, cursorBadgeShown)
+    local badge = header.frame._cdcCDMRefreshBadge
+    if not badge then
+        badge = CreateFrame("Button", nil, header.frame)
+        badge:SetSize(16, 16)
+        badge:RegisterForClicks("LeftButtonUp")
+        badge:SetPropagateMouseClicks(false)
+        badge:SetPropagateMouseMotion(false)
+        badge.icon = badge:CreateTexture(nil, "OVERLAY")
+        badge.icon:SetAllPoints()
+        badge:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Refresh from Cooldown Manager", 1, 0.82, 0, true)
+            GameTooltip:AddLine("Replace this panel's entries from its linked CDM section.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        badge:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        header.frame._cdcCDMRefreshBadge = badge
+    end
+
+    badge:SetFrameLevel(header.frame:GetFrameLevel() + 25)
+    badge:ClearAllPoints()
+
+    if not (panel
+        and panel.cdmPanelSource
+        and IsCDMPanelSourceKey
+        and IsCDMPanelSourceKey(panel.cdmPanelSource)) then
+        badge:Hide()
+        return
+    end
+
+    local leftOffset = 4
+    if cursorBadgeShown then
+        leftOffset = leftOffset + ROW_BADGE_SIZE + ROW_BADGE_SPACING
+    end
+    badge:SetPoint("LEFT", header.frame, "LEFT", leftOffset, 0)
+    badge.icon:SetAtlas(CDM_PANEL_HEADER_BADGE_ATLAS, false)
+    badge.icon:SetVertexColor(0.35, 0.8, 1, 0.95)
+    if badge.icon.SetDesaturated then
+        badge.icon:SetDesaturated(false)
+    end
+    badge:SetScript("OnClick", function(_, button)
+        if button ~= "LeftButton" then return end
+        GameTooltip:Hide()
+        RefreshCDMPanelFromSource(panelId, panel, containerId)
+    end)
+    badge:Show()
+end
+
 local function ConfigurePanelTypeBadge(header, displayMode, textWidth)
     local modeBadge = header._cdcModeBadge
     if not modeBadge then
@@ -417,6 +491,168 @@ local function CreatePanelInSelectedContainer(displayMode, opts)
     FinalizeCreatedPanel(newPanelId, displayMode, opts)
 end
 
+local function PrintCooldownManagerUnavailable(sourceData)
+    local reason = sourceData and sourceData.failureReason
+    if type(reason) ~= "string" or reason == "" then
+        reason = "Unknown reason"
+    end
+    CooldownCompanion:Print("Cooldown Manager unavailable: " .. reason)
+end
+
+local function GetExistingCDMPanelSources(containerId)
+    local existing = {}
+    for _, panelInfo in ipairs(CooldownCompanion:GetPanels(containerId) or {}) do
+        local panel = panelInfo.group
+        if panel and panel.cdmPanelSource and IsCDMPanelSourceKey and IsCDMPanelSourceKey(panel.cdmPanelSource) then
+            existing[panel.cdmPanelSource] = true
+        end
+    end
+    return existing
+end
+
+local function CreateCDMPanelFromSource(containerId, sourceData)
+    local panelId = CooldownCompanion:CreatePanel(containerId, sourceData.displayMode)
+    if not panelId then
+        return nil, 0
+    end
+
+    local group = CooldownCompanion.db.profile.groups[panelId]
+    if group then
+        group.name = sourceData.panelName
+        group.cdmPanelSource = sourceData.key
+        if ApplyCDMStarterPanelLayout then
+            ApplyCDMStarterPanelLayout(group, sourceData.key, containerId)
+        end
+    end
+
+    local added = PopulateCDMPanelFromSource and PopulateCDMPanelFromSource(panelId, sourceData) or 0
+    return panelId, added
+end
+
+local function CreateMissingCDMPanelsInSelectedContainer()
+    local containerId = CS.selectedContainer
+    if not containerId then
+        return
+    end
+
+    if not BuildCDMPanelSourceData then
+        CooldownCompanion:Print("Cooldown Manager panel setup is unavailable.")
+        return
+    end
+
+    local sourceData = BuildCDMPanelSourceData()
+    if not (sourceData and sourceData.available) then
+        PrintCooldownManagerUnavailable(sourceData)
+        return
+    end
+
+    if (sourceData.totalEntries or 0) == 0 then
+        CooldownCompanion:Print("No displayed Cooldown Manager entries found.")
+        return
+    end
+
+    local existingSources = GetExistingCDMPanelSources(containerId)
+    local createdPanelIds = {}
+    local createdBySource = {}
+    local createdEntryCount = 0
+
+    for _, source in ipairs(sourceData.sources or {}) do
+        if not existingSources[source.key] and source.entries and #source.entries > 0 then
+            local panelId, added = CreateCDMPanelFromSource(containerId, source)
+            if panelId then
+                createdPanelIds[#createdPanelIds + 1] = panelId
+                createdBySource[source.key] = panelId
+                createdEntryCount = createdEntryCount + (added or 0)
+                existingSources[source.key] = true
+            end
+        end
+    end
+
+    if #createdPanelIds == 0 then
+        CooldownCompanion:Print("No missing Cooldown Manager panels to add.")
+        return
+    end
+
+    local selectPanelId = createdBySource.essential or createdPanelIds[1]
+    SelectConfigPanel(selectPanelId, { containerId = containerId })
+    CS.addingToPanelId = nil
+    CS.pendingEditBoxFocus = false
+    CooldownCompanion:RefreshConfigPanel()
+    CooldownCompanion:Print(("Created %d Cooldown Manager panel%s with %d entr%s."):format(
+        #createdPanelIds,
+        #createdPanelIds == 1 and "" or "s",
+        createdEntryCount,
+        createdEntryCount == 1 and "y" or "ies"
+    ))
+end
+
+local function DeleteEmptyCDMPanel(data)
+    if type(data) ~= "table" then
+        return
+    end
+
+    local containerId = data.containerId
+    local panelId = data.panelId
+    local panel = CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups
+        and CooldownCompanion.db.profile.groups[panelId]
+        or nil
+    if not panel or panel.parentContainerId ~= containerId or panel.cdmPanelSource ~= data.sourceKey then
+        return
+    end
+
+    local panelName = panel.name or "Panel"
+    CooldownCompanion:ClearAllConfigPreviews()
+    if CooldownCompanion:DeletePanel(containerId, panelId) then
+        if CS.selectedGroup == panelId and ClearConfigPanelSelection then
+            ClearConfigPanelSelection()
+        end
+        if CS.selectedPanels then
+            CS.selectedPanels[panelId] = nil
+        end
+        if CS.addingToPanelId == panelId then
+            CS.addingToPanelId = nil
+        end
+        CooldownCompanion:RefreshConfigPanel()
+        CooldownCompanion:Print("Deleted " .. panelName .. ": Cooldown Manager section is empty.")
+    end
+end
+ST._DeleteEmptyCDMPanel = DeleteEmptyCDMPanel
+
+RefreshCDMPanelFromSource = function(panelId, panel, containerId)
+    if not (panel and panel.cdmPanelSource and IsCDMPanelSourceKey and IsCDMPanelSourceKey(panel.cdmPanelSource)) then
+        return
+    end
+
+    local sourceData = BuildCDMPanelSourceData and BuildCDMPanelSourceData() or nil
+    if not (sourceData and sourceData.available) then
+        PrintCooldownManagerUnavailable(sourceData)
+        return
+    end
+
+    local source = GetCDMPanelSourceData and GetCDMPanelSourceData(sourceData, panel.cdmPanelSource) or nil
+    if not source or not source.entries or #source.entries == 0 then
+        ShowPopupAboveConfig("CDC_DELETE_EMPTY_CDM_PANEL", panel.name or "Panel", {
+            containerId = containerId,
+            panelId = panelId,
+            sourceKey = panel.cdmPanelSource,
+        })
+        return
+    end
+
+    local added = PopulateCDMPanelFromSource and PopulateCDMPanelFromSource(panelId, source) or 0
+    if CS.selectedGroup == panelId and ClearConfigButtonSelection then
+        ClearConfigButtonSelection()
+    end
+    CooldownCompanion:RefreshConfigPanel()
+    CooldownCompanion:Print(("Refreshed %s from Cooldown Manager (%d entr%s)."):format(
+        panel.name or "Panel",
+        added,
+        added == 1 and "y" or "ies"
+    ))
+end
+
 local function EnsureCol2PanelTypeMenu()
     if not CS.col2PanelTypeMenu then
         CS.col2PanelTypeMenu = CreateFrame("Frame", "CDCCol2PanelTypeMenu", UIParent, "UIDropDownMenuTemplate")
@@ -487,6 +723,16 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
             if level ~= 1 then return end
 
             local info = UIDropDownMenu_CreateInfo()
+            info.text = "Add Missing CDM Panels"
+            info.notCheckable = true
+            AddCDMStarterMenuTooltip(info)
+            info.func = function()
+                CloseDropDownMenus()
+                CreateMissingCDMPanelsInSelectedContainer()
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            info = UIDropDownMenu_CreateInfo()
             info.text = "Text Panel"
             info.notCheckable = true
             AddPanelTypeMenuTooltip(info, "text")
@@ -583,6 +829,35 @@ local function RenderColumn2NoPanelsState(classColor)
     desc:SetFont((GameFontNormal:GetFont()), 12, "")
     desc:SetColor(0.7, 0.7, 0.7)
     CS.col2Scroll:AddChild(desc)
+
+    local cdmButtonSpacer = AceGUI:Create("SimpleGroup")
+    cdmButtonSpacer:SetFullWidth(true)
+    cdmButtonSpacer:SetHeight(12)
+    cdmButtonSpacer.noAutoHeight = true
+    CS.col2Scroll:AddChild(cdmButtonSpacer)
+
+    local cdmButton = AceGUI:Create("Button")
+    cdmButton:SetText("Build from Cooldown Manager")
+    cdmButton:SetFullWidth(true)
+    cdmButton:SetCallback("OnClick", function()
+        CreateMissingCDMPanelsInSelectedContainer()
+    end)
+    cdmButton:SetCallback("OnEnter", function(widget)
+        ShowCDMStarterTooltip(widget.frame)
+    end)
+    cdmButton:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    CS.col2Scroll:AddChild(cdmButton)
+
+    local cdmHelp = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(cdmHelp)
+    cdmHelp:SetText("Uses displayed CDM sections only. Not Displayed entries are ignored.")
+    cdmHelp:SetFullWidth(true)
+    cdmHelp:SetJustifyH("CENTER")
+    cdmHelp:SetFont((GameFontNormal:GetFont()), 11, "")
+    cdmHelp:SetColor(0.7, 0.7, 0.7)
+    CS.col2Scroll:AddChild(cdmHelp)
 
     local helpSpacer = AceGUI:Create("SimpleGroup")
     helpSpacer:SetFullWidth(true)
@@ -1846,6 +2121,7 @@ local function RefreshColumn2()
                     and CooldownCompanion:IsGroupCursorAnchored(panel)
                     or false
                 ConfigureCursorAnchorBadge(header, panel)
+                ConfigureCDMRefreshBadge(header, panel, panelId, CS.selectedContainer, isCursorAnchoredPanel)
                 rightOffset = ConfigureGenericRenameBadge(header, panel, panelId, rightOffset)
 
                 -- Anchor unlock badge (shown when panel is individually unlocked)
