@@ -40,7 +40,6 @@ local STEP_ORDER = {
     "create_group",
     "panels_column_intro",
     "create_panel",
-    "panel_area_intro",
     "add_one_spell",
     "entry_settings_intro",
     "panel_settings_intro",
@@ -61,7 +60,7 @@ local STEP_DATA = {
     },
     groups_column_intro = {
         title = "Groups",
-        text = "Groups are containers for panels. By default, groups belong to the character they are created on.",
+        text = "Groups are containers for panels. By default, groups are shared by characters of the same class.",
         anchor = "groups_column_area",
         placement = "right",
     },
@@ -83,15 +82,9 @@ local STEP_DATA = {
         anchor = "icon_panel_button",
         placement = "above",
     },
-    panel_area_intro = {
-        title = "This Is the Panel",
-        text = "This is an empty icon panel. Let's add something to track.",
-        anchor = "selected_panel_area",
-        placement = "right",
-    },
     add_one_spell = {
         title = "Add Your First Ability",
-        text = "Type the name of a spell your character can use in the edit box.\n\nAs you type, the addon will attempt to help you narrow down what you're looking for. Add the spell by clicking on it in the dropdown or using arrow keys + Enter.",
+        text = "This is an empty icon panel. Let's add something to track.\n\nType the name of a spell your character can use in the edit box.\n\nAs you type, the addon will attempt to help you narrow down what you're looking for. Add the spell by clicking on it in the dropdown or using arrow keys + Enter.",
         anchor = "selected_panel_add_input",
         placement = "right",
     },
@@ -483,14 +476,9 @@ local function ConfigureButtonsForStep(frame, step)
         SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
         if GetRuntime() and GetRuntime().createdPanel then
             SetTutorialButton(frame.rightButton, "Next", function()
-                AdvanceStep("panel_area_intro")
+                AdvanceStep("add_one_spell")
             end)
         end
-    elseif step == "panel_area_intro" then
-        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
-        SetTutorialButton(frame.rightButton, "Next", function()
-            AdvanceStep("add_one_spell")
-        end)
     elseif step == "add_one_spell" then
         SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
         if GetRuntime() and GetRuntime().addedEntry then
@@ -789,9 +777,9 @@ local function NotifyTutorialAction(action, payload)
             ClearConfigButtonSelection()
             ClearConfigPanelMultiSelection()
             ClearConfigContainerMultiSelection()
-            AdvanceStep("panel_area_intro")
+            AdvanceStep("add_one_spell")
         end
-    elseif action == "inline_add_succeeded" and (runtime.step == "panel_area_intro" or runtime.step == "add_one_spell") then
+    elseif action == "inline_add_succeeded" and runtime.step == "add_one_spell" then
         if payload and payload.groupId and payload.buttonIndex then
             runtime.addedEntry = true
             CS.selectedGroup = payload.groupId
