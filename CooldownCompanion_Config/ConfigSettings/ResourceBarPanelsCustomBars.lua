@@ -155,6 +155,76 @@ local function FindCustomBarIndexById(customBars, customBarId)
     return nil
 end
 
+local function GetCustomBarVerticalListSide(horizontalSide)
+    return horizontalSide == "above" and "left" or "right"
+end
+
+local function GetCustomBarListLayout(settings, specID)
+    local layoutOrder = type(settings) == "table" and settings.layoutOrder or nil
+    if type(layoutOrder) ~= "table" or specID == nil then
+        return nil
+    end
+    return layoutOrder[specID] or layoutOrder[tostring(specID)]
+end
+
+local function ResolveCustomBarListVisualOrder(layout, row, isVerticalLayout)
+    local entry = row and row.entry
+    local fallbackIndex = tonumber(row and row.index) or 0
+    local customBarId = type(entry) == "table" and entry.customBarId or nil
+    local slot = type(layout) == "table"
+        and type(layout.customBars) == "table"
+        and type(customBarId) == "string"
+        and layout.customBars[customBarId]
+        or nil
+
+    if isVerticalLayout then
+        local side = slot and slot.verticalPosition
+        if side ~= "left" and side ~= "right" then
+            side = GetCustomBarVerticalListSide(slot and slot.position)
+        end
+        local order = tonumber(slot and (slot.verticalOrder or slot.order)) or (1000 + fallbackIndex)
+        return side == "left" and 1 or 2, side == "left" and -order or order, fallbackIndex
+    end
+
+    local side = slot and slot.position
+    if side ~= "above" and side ~= "below" then
+        side = "below"
+    end
+    local order = tonumber(slot and slot.order) or (1000 + fallbackIndex)
+    return side == "above" and 1 or 2, side == "above" and -order or order, fallbackIndex
+end
+
+local function SortCustomBarRowsByLayoutVisualOrder(rows, settings, specID)
+    if type(rows) ~= "table" or #rows <= 1 then
+        return
+    end
+
+    local layout = GetCustomBarListLayout(settings, specID)
+    local isVerticalLayout = RBP.IsResourceBarVerticalConfig
+        and RBP.IsResourceBarVerticalConfig(settings, layout)
+        or false
+
+    for _, row in ipairs(rows) do
+        row._customBarListSideRank,
+        row._customBarListVisualOrder,
+        row._customBarListFallbackIndex = ResolveCustomBarListVisualOrder(
+            layout,
+            row,
+            isVerticalLayout
+        )
+    end
+
+    table.sort(rows, function(a, b)
+        if a._customBarListSideRank ~= b._customBarListSideRank then
+            return a._customBarListSideRank < b._customBarListSideRank
+        end
+        if a._customBarListVisualOrder ~= b._customBarListVisualOrder then
+            return a._customBarListVisualOrder < b._customBarListVisualOrder
+        end
+        return (a._customBarListFallbackIndex or 0) < (b._customBarListFallbackIndex or 0)
+    end)
+end
+
 local function EnsureCustomBarRowIconBadge(frame, key, atlas)
     local badge = frame[key]
     if not badge then
@@ -1795,6 +1865,7 @@ local function BuildCustomBarsListPanel(container)
         local target = (RB.CustomBarHasSpec and RB.CustomBarHasSpec(entry, customBarsSpecID)) and loadedBars or inactiveBars
         target[#target + 1] = { entry = entry, index = index }
     end
+    SortCustomBarRowsByLayoutVisualOrder(loadedBars, settings, customBarsSpecID)
 
     local customBarRows = {}
     if #loadedBars > 0 then
