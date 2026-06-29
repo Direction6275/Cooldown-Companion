@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.20.1",
         "1.20",
         "1.19.5",
         "1.19.4",
@@ -46,6 +47,27 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.20.1"] = {
+            markdown = [[
+## Polish | QoL
+
+- **Live Tracked Aura Tooltips:** With Show Tooltips enabled, active tracked aura entries can now show Blizzard's live aura values, such as Ignite damage over time or Blazing Barrier absorb amount. Bar-mode icon hovers use the same aura-aware tooltip behavior.
+- **Custom Bars List Ordering:** In Bars and Frames, the Custom Bars list now follows the layout preview order, making dragged bar positions easier to match with their settings.
+- **First-Run Tutorial:** The tutorial now reflects same-class group sharing and folds the empty-panel guidance into the first ability step.
+- **Addon Chat Messages:** Messages shown when adding transformed spells now use the same addon chat output style as the rest of Cooldown Companion.
+
+## Bug Fixes
+
+- **Deferred Cooldown Swipes:** Spells such as Nature's Swiftness and Tip the Scales should no longer flash an empty radial cooldown swipe while active and waiting for their real cooldown timer.
+- **Charge Display Reliability:** Charge text color and icon desaturation return to the safer pre-Zenith-suppression behavior for charge-based abilities. The Zenith Stomp-specific suppression from 1.20 is backed out for now.
+- **Zenith Stomp Follow-Up:** The Zenith Stomp suppression was reverted because it caused broader charge display issues. A safer Zenith Stomp-specific solution will be revisited in a future update.
+
+## Performance
+
+- **Bar Timer Text:** Bar-mode cooldown and aura timers, plus custom resource bar duration text, keep the same selected formatting while doing less background timer text work.
+- **Timer Cleanup:** Timer labels now clear more reliably when bars are hidden, reused, or switch display modes.
+]],
+        },
         ["1.20"] = {
             markdown = [[
 ## New Features
