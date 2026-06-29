@@ -376,10 +376,12 @@ local function ConfigureCDMRefreshBadge(header, panel, panelId, containerId, cur
     end
 
     badge:SetFrameLevel(header.frame:GetFrameLevel() + 25)
+    badge:SetSize(16, 16)
     badge:ClearAllPoints()
 
     if not IsActiveCDMPanelSource(panel) then
         badge:Hide()
+        badge:SetScript("OnClick", nil)
         return
     end
 
@@ -531,7 +533,7 @@ local function CreateCDMPanelFromSource(containerId, sourceData)
         group.name = sourceData.panelName
         group.cdmPanelSource = sourceData.key
         if ApplyCDMStarterPanelLayout then
-            ApplyCDMStarterPanelLayout(group, sourceData.key, containerId)
+            ApplyCDMStarterPanelLayout(group, sourceData.key, containerId, sourceData.entries and #sourceData.entries or 0)
         end
     end
 

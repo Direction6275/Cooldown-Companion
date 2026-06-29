@@ -313,7 +313,16 @@ local function SetPanelAnchor(group, containerId, x, y)
     }
 end
 
-local function ScaleIconPanel(style, scale, floorSize)
+local function GetStarterButtonLimit(entryCount, fallback)
+    local count = tonumber(entryCount)
+    if count and count > 0 then
+        return math_max(1, math_floor(count))
+    end
+
+    return math_max(1, tonumber(fallback) or 12)
+end
+
+local function ScaleIconPanel(style, scale, floorSize, entryCount)
     local baseSize = tonumber(style.buttonSize) or ST.BUTTON_SIZE or 36
     style.buttonSize = math_max(floorSize, math_floor((baseSize * scale) + 0.5))
     style.maintainAspectRatio = true
@@ -321,10 +330,10 @@ local function ScaleIconPanel(style, scale, floorSize)
     style.iconHeight = nil
     style.orientation = "horizontal"
     style.growthOrigin = "TOPLEFT"
-    style.buttonsPerRow = math_max(8, tonumber(style.buttonsPerRow) or 12)
+    style.buttonsPerRow = GetStarterButtonLimit(entryCount, style.buttonsPerRow)
 end
 
-local function ApplyCDMStarterPanelLayout(group, sourceKey, containerId)
+local function ApplyCDMStarterPanelLayout(group, sourceKey, containerId, entryCount)
     local source = CDM_PANEL_SOURCE_BY_KEY[sourceKey]
     if not (group and source) then
         return
@@ -334,22 +343,22 @@ local function ApplyCDMStarterPanelLayout(group, sourceKey, containerId)
     local style = group.style
 
     if source.layoutKind == "essential" then
-        ScaleIconPanel(style, 1.3, 46)
-        SetPanelAnchor(group, containerId, -130, 30)
+        ScaleIconPanel(style, 1.3, 46, entryCount)
+        SetPanelAnchor(group, containerId, 0, -150)
     elseif source.layoutKind == "trackedBuffs" then
-        ScaleIconPanel(style, 0.95, 34)
-        SetPanelAnchor(group, containerId, -130, 95)
+        ScaleIconPanel(style, 0.95, 34, entryCount)
+        SetPanelAnchor(group, containerId, 0, -85)
     elseif source.layoutKind == "utility" then
-        ScaleIconPanel(style, 0.95, 34)
-        SetPanelAnchor(group, containerId, -130, -35)
+        ScaleIconPanel(style, 0.95, 34, entryCount)
+        SetPanelAnchor(group, containerId, 0, -215)
     elseif source.layoutKind == "trackedBars" then
         style.orientation = "vertical"
         style.growthOrigin = "TOPLEFT"
-        style.buttonsPerRow = 1
+        style.buttonsPerRow = GetStarterButtonLimit(entryCount, style.buttonsPerRow)
         style.barLength = math_max(180, tonumber(style.barLength) or 180)
         style.barHeight = math_max(20, tonumber(style.barHeight) or 20)
         style.barIconSize = math_max(20, tonumber(style.barIconSize) or style.barHeight or 20)
-        SetPanelAnchor(group, containerId, 180, 30)
+        SetPanelAnchor(group, containerId, 150, 0)
     end
 end
 
