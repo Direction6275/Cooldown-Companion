@@ -3902,42 +3902,6 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
     end -- not specCollapsed
 end
 
-local function BuildFolderGeneralTab(scroll, folderId)
-    local db = CooldownCompanion.db.profile
-    local folder = db.folders and db.folders[folderId]
-    if not folder then return end
-
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Folder")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    scroll:AddChild(heading)
-
-    local nameBox = AceGUI:Create("EditBox")
-    nameBox:SetLabel("Name")
-    nameBox:SetText(folder.name or "")
-    nameBox:SetFullWidth(true)
-    local function CommitFolderName(widget, text)
-        if CooldownCompanion:RenameFolder(folderId, text) then
-            CooldownCompanion:RefreshConfigPanel()
-        elseif widget and widget.SetText then
-            widget:SetText(folder.name or "")
-        end
-    end
-    nameBox:SetCallback("OnEnterPressed", function(widget, event, text)
-        CommitFolderName(widget, text)
-    end)
-    nameBox:SetCallback("OnEditFocusLost", function(widget)
-        CommitFolderName(widget, widget:GetText())
-    end)
-    scroll:AddChild(nameBox)
-
-    local section = AceGUI:Create("Label")
-    section:SetText("|cff888888Section:|r " .. tostring(folder.section or "character"))
-    section:SetFullWidth(true)
-    scroll:AddChild(section)
-end
-
 local function BuildFolderLoadConditionsTab(scroll, folderId)
     local db = CooldownCompanion.db.profile
     local folder = db.folders and db.folders[folderId]
@@ -4046,5 +4010,4 @@ ST._BuildAppearanceTab = BuildAppearanceTab
 ST._BuildEffectsTab = BuildEffectsTab
 ST._BuildContainerGeneralTab = BuildContainerGeneralTab
 ST._BuildContainerLoadConditionsTab = BuildContainerLoadConditionsTab
-ST._BuildFolderGeneralTab = BuildFolderGeneralTab
 ST._BuildFolderLoadConditionsTab = BuildFolderLoadConditionsTab
