@@ -2422,10 +2422,6 @@ function CooldownCompanion:GetCurrentEligibilityIdentity()
     }
 end
 
-function CooldownCompanion:CheckLoadConditions(group)
-    return self:EvaluateLoadConditions(group and group.loadConditions)
-end
-
 local function AddLoadConditionSource(sources, label, entity, defaults, allowClassEligibility)
     if type(entity) == "table" and type(entity.loadConditions) == "table" then
         sources[#sources + 1] = {
