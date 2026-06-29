@@ -469,8 +469,6 @@ local function ActiveAuraIconNeedsRefresh(button, auraState, previousIcon, previ
 
     return false
 end
-ST._ActiveAuraIconNeedsRefresh = ActiveAuraIconNeedsRefresh
-
 local function ShouldUseActiveAuraIcon(buttonData)
     return buttonData
         and (buttonData.auraShowAuraIcon == true
