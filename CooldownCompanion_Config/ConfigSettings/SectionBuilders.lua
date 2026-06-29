@@ -1619,13 +1619,6 @@ local function BuildMaxStacksIndicatorAdvancedControls(container, styleTable, re
     })
 end
 
-local function BuildBarColorsControls(container, styleTable, refreshCallback)
-    AddColorPicker(container, styleTable, "barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}, true, refreshCallback, refreshCallback)
-    AddColorPicker(container, styleTable, "barCooldownColor", "Bar Cooldown Color", {0.6, 0.6, 0.6, 1.0}, true, refreshCallback, refreshCallback)
-    AddColorPicker(container, styleTable, "barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1.0}, true, refreshCallback, refreshCallback)
-    AddColorPicker(container, styleTable, "barBgColor", "Bar Background Color", {0.1, 0.1, 0.1, 0.8}, true, refreshCallback, refreshCallback)
-end
-
 local function BuildBarNameTextControls(container, styleTable, refreshCallback)
     local showNameCb = AceGUI:Create("CheckBox")
     showNameCb:SetLabel("Show Name Text")
@@ -1806,7 +1799,6 @@ ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
 ST._BuildBarAuraPulseControls = BuildBarAuraPulseControls
 ST._BuildPandemicBarPulseControls = BuildPandemicBarPulseControls
 ST._BuildMaxStacksIndicatorAdvancedControls = BuildMaxStacksIndicatorAdvancedControls
-ST._BuildBarColorsControls = BuildBarColorsControls
 ST._BuildBarNameTextControls = BuildBarNameTextControls
 ST._BuildBarReadyTextControls = BuildBarReadyTextControls
 ST._BuildTextFontControls = BuildTextFontControls
