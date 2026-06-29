@@ -344,13 +344,13 @@ local function ApplyCDMStarterPanelLayout(group, sourceKey, containerId, entryCo
 
     if source.layoutKind == "essential" then
         ScaleIconPanel(style, 1.3, 46, entryCount)
-        SetPanelAnchor(group, containerId, 0, -150)
+        SetPanelAnchor(group, containerId, 0, 215)
     elseif source.layoutKind == "trackedBuffs" then
         ScaleIconPanel(style, 0.95, 34, entryCount)
-        SetPanelAnchor(group, containerId, 0, -85)
+        SetPanelAnchor(group, containerId, 0, 85)
     elseif source.layoutKind == "utility" then
         ScaleIconPanel(style, 0.95, 34, entryCount)
-        SetPanelAnchor(group, containerId, 0, -215)
+        SetPanelAnchor(group, containerId, 0, 150)
     elseif source.layoutKind == "trackedBars" then
         style.orientation = "vertical"
         style.growthOrigin = "TOPLEFT"
