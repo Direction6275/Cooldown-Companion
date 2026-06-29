@@ -41,9 +41,6 @@ local LDB = LibStub("LibDataBroker-1.1")
 local LDBIcon = LibStub("LibDBIcon-1.0")
 ST._LDBIcon = LDBIcon
 
--- LibSharedMedia for font/texture selection
-local LSM = LibStub("LibSharedMedia-3.0")
-
 -- Masque skinning support (optional)
 local Masque = LibStub("Masque", true)
 local MasqueGroups = {} -- Maps groupId -> Masque Group object
