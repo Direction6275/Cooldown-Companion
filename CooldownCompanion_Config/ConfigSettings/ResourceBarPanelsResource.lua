@@ -163,8 +163,6 @@ local function ReadDisplaySetting(baseSettings, specSettings, key, fallback)
     return fallback
 end
 
-CS._SeedSpecResourceDisplaySettings = SeedSpecResourceDisplaySettings
-CS._ReadResourceDisplaySetting = ReadDisplaySetting
 CS._GetCurrentConfigSpecID = GetCurrentConfigSpecID
 CS._GetSpecResourceDisplayProfile = RB.GetSpecResourceDisplayProfile
 CS._ResourceTextDisplayKeys = RB.RESOURCE_TEXT_DISPLAY_KEYS
