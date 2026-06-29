@@ -1321,8 +1321,6 @@ local function DecodeSharedPayload(text)
     return true, data
 end
 
-ST._StripCharacterEligibilityFromLoadConditions = StripCharacterEligibilityFromLoadConditions
-ST._StripCharacterEligibilityFromEntity = StripCharacterEligibilityFromEntity
 ST._StripCharacterEligibilityFromProfile = StripCharacterEligibilityFromProfile
 ST._StripCharacterEligibilityFromPayload = StripCharacterEligibilityFromPayload
 ST._EncodeSharedPayload = EncodeSharedPayload
