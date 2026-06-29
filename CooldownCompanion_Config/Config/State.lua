@@ -3321,18 +3321,6 @@ ST._ContainersHaveForeignSpecs = ContainersHaveForeignSpecs
 ST._FolderHasForeignSpecs = FolderHasForeignSpecs
 
 ------------------------------------------------------------------------
--- Helper: Recursively disable all interactive AceGUI widgets
-------------------------------------------------------------------------
-local function DisableAllWidgets(container)
-    if container.children then
-        for _, child in ipairs(container.children) do
-            if child.SetDisabled then child:SetDisabled(true) end
-            DisableAllWidgets(child)
-        end
-    end
-end
-
-------------------------------------------------------------------------
 -- Helper: Get class-colored text for current player
 ------------------------------------------------------------------------
 local function GetClassColoredText(text)
@@ -3350,5 +3338,3 @@ local function GetClassColoredText(text)
     return safeText
 end
 ST._GetClassColoredText = GetClassColoredText
-
-ST._DisableAllWidgets = DisableAllWidgets
