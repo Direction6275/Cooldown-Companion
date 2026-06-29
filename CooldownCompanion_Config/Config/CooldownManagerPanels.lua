@@ -81,6 +81,29 @@ local function CheckCooldownViewerAvailable()
     return true, nil
 end
 
+local function GetCooldownViewerSettingsDataProvider()
+    local settings = CooldownViewerSettings
+    if not settings and C_AddOns and C_AddOns.LoadAddOn then
+        C_AddOns.LoadAddOn("Blizzard_CooldownViewer")
+        settings = CooldownViewerSettings
+    end
+
+    local dataProvider = settings
+        and settings.GetDataProvider
+        and settings:GetDataProvider()
+        or nil
+    if not (dataProvider
+        and dataProvider.CheckBuildDisplayData
+        and dataProvider.GetOrderedCooldownIDsForCategory
+        and dataProvider.GetCooldownInfoForID) then
+        return nil
+    end
+
+    -- Raw category sets include entries Blizzard shows under Not Displayed.
+    dataProvider:CheckBuildDisplayData()
+    return dataProvider
+end
+
 local function GetCooldownCategory(source)
     local categories = Enum and Enum.CooldownViewerCategory
     return categories and categories[source.categoryKey] or nil
@@ -137,14 +160,14 @@ local function ResolveEntrySpellID(source, cooldownInfo)
     return cooldownInfo and cooldownInfo.spellID or nil
 end
 
-local function BuildSourceEntries(source)
+local function BuildSourceEntries(source, dataProvider)
     local entries = {}
     local category = GetCooldownCategory(source)
     if category == nil then
         return entries
     end
 
-    local cooldownIDs = C_CooldownViewer.GetCooldownViewerCategorySet(category, false)
+    local cooldownIDs = dataProvider:GetOrderedCooldownIDsForCategory(category, false)
     if type(cooldownIDs) ~= "table" then
         return entries
     end
@@ -152,7 +175,7 @@ local function BuildSourceEntries(source)
     local seen = {}
     for _, cooldownID in ipairs(cooldownIDs) do
         if type(cooldownID) == "number" then
-            local cooldownInfo = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
+            local cooldownInfo = dataProvider:GetCooldownInfoForID(cooldownID)
             if type(cooldownInfo) == "table"
                 and cooldownInfo.isKnown ~= false
                 and (source.entryKind ~= "aura" or ShouldIncludeAuraCooldownInfo(cooldownInfo)) then
@@ -203,9 +226,16 @@ local function BuildCDMPanelSourceData()
         return result
     end
 
+    local dataProvider = GetCooldownViewerSettingsDataProvider()
+    if not dataProvider then
+        result.available = false
+        result.failureReason = "Cooldown Manager display data is unavailable."
+        return result
+    end
+
     for _, sourceSpec in ipairs(CDM_PANEL_SOURCES) do
         local source = CopySourceSpec(sourceSpec)
-        source.entries = BuildSourceEntries(sourceSpec)
+        source.entries = BuildSourceEntries(sourceSpec, dataProvider)
         result.totalEntries = result.totalEntries + #source.entries
         result.sources[#result.sources + 1] = source
         result.sourcesByKey[source.key] = source
