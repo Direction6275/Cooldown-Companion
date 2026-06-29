@@ -33,6 +33,20 @@ local function IsValidDirectStyleCopyMode(mode)
     return DIRECT_STYLE_COPY_MODES[mode] == true
 end
 
+local function ShouldClearCDMPanelSourceForDisplayMode(group, displayMode)
+    if not (group and group.cdmPanelSource) then
+        return false
+    end
+
+    local getSourceDisplayMode = ST._GetCDMPanelSourceDisplayMode
+    if not getSourceDisplayMode then
+        return false
+    end
+
+    local expectedMode = getSourceDisplayMode(group.cdmPanelSource)
+    return expectedMode == nil or expectedMode ~= displayMode
+end
+
 local function GetAnchorOffset(point, width, height)
     local halfW = (width or 0) / 2
     local halfH = (height or 0) / 2
@@ -1053,6 +1067,7 @@ function CooldownCompanion:DuplicateContainer(containerId)
             db.nextGroupId = newGroupId + 1
 
             local newPanel = CopyTable(group)
+            newPanel.cdmPanelSource = nil
             newPanel.parentContainerId = newContainerId
             newPanel.anchor = {
                 point = "CENTER",
@@ -1227,6 +1242,7 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
     local newPanel = CopyTable(sourcePanel)
     newPanel.name = sourcePanel.name .. " (Copy)"
     newPanel.order = self:GetPanelCount(containerId) + 1
+    newPanel.cdmPanelSource = nil
     ResetCopiedStandalonePanelAnchor(newPanel, db.groups, groupId, containerId, containerId)
     NormalizeCopiedEntityForContainerScope(self, newPanel, container)
 
@@ -1323,6 +1339,9 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     end
 
     group.displayMode = newMode
+    if oldMode ~= newMode and ShouldClearCDMPanelSourceForDisplayMode(group, newMode) then
+        group.cdmPanelSource = nil
+    end
     if newMode == "bars" or newMode == "text" then
         group.style.orientation = "vertical"
     end
@@ -1426,6 +1445,7 @@ function CooldownCompanion:DuplicateGroup(id)
     local newGroup = CopyTable(sourceGroup)
     newGroup.name = sourceGroup.name .. " (Copy)"
     newGroup.order = newGroupId
+    newGroup.cdmPanelSource = nil
     newGroup.createdBy = self.db.keys.char
     newGroup.isGlobal = false
     NormalizeCopiedEntityForContainerScope(self, newGroup, newGroup)
@@ -1563,7 +1583,7 @@ function CooldownCompanion:ToggleGroupGlobal(containerId)
     self:RefreshAllGroups()
 end
 
-function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot)
+function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot, preserveSpellID)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
@@ -1576,10 +1596,15 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     -- Resolve spell transforms to base spell ID so the override chain can
     -- freely reach all variant forms at runtime.  Skip for items (no spell
     -- transform system), pet spells (may not resolve through GetBaseSpell),
-    -- forced aura entries, and CDM child-slot buttons (viewer-frame mapping
-    -- uses specific IDs).
+    -- forced aura entries, CDM child-slot buttons (viewer-frame mapping
+    -- uses specific IDs), and CDM starter entries whose display metadata
+    -- already selected the intended spell ID.
     local transformNotified
-    if buttonType == "spell" and not isPetSpell and forceAura ~= true and not cdmChildSlot then
+    if buttonType == "spell"
+        and not isPetSpell
+        and forceAura ~= true
+        and not cdmChildSlot
+        and preserveSpellID ~= true then
         local baseID = ST.ResolveToBaseSpell(id)
         if baseID ~= id then
             id = baseID

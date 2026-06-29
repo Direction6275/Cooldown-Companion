@@ -17,6 +17,9 @@ local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
 local EncodeSharedPayload = ST._EncodeSharedPayload
 local StripCharacterEligibilityFromPayload = ST._StripCharacterEligibilityFromPayload
+local StripLocalPanelMetadataFromEntity = ST._StripLocalPanelMetadataFromEntity
+local StripLocalPanelMetadataFromProfile = ST._StripLocalPanelMetadataFromProfile
+local StripLocalPanelMetadataFromPayload = ST._StripLocalPanelMetadataFromPayload
 
 local LOAD_CONDITION_ALLOWLIST_KEYS = {
     classAllowlist = "class",
@@ -438,6 +441,21 @@ StaticPopupDialogs["CDC_DELETE_PANEL"] = {
     preferredIndex = 3,
 }
 
+StaticPopupDialogs["CDC_DELETE_EMPTY_CDM_PANEL"] = {
+    text = "Cooldown Manager section for '%s' is empty. Delete this panel?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if ST._DeleteEmptyCDMPanel then
+            ST._DeleteEmptyCDMPanel(data)
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["CDC_RENAME_GROUP"] = {
     text = "Rename group '%s' to:",
     button1 = "Rename",
@@ -683,6 +701,9 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
             CooldownCompanion._suppressOwnershipRestamp = true
             db:SetProfile(newName)
             db:CopyProfile(data.source)
+            if StripLocalPanelMetadataFromProfile then
+                StripLocalPanelMetadataFromProfile(db.profile)
+            end
             CooldownCompanion._suppressOwnershipRestamp = nil
             ResetConfigSelection(true)
             CooldownCompanion:RefreshConfigPanel()
@@ -966,6 +987,9 @@ end
 
 local function BuildGroupExportData(group)
     local data = CopyTable(group)
+    if StripLocalPanelMetadataFromEntity then
+        StripLocalPanelMetadataFromEntity(data)
+    end
     data.createdBy = nil
     data.order = nil
     data.folderId = nil
@@ -1122,6 +1146,7 @@ local function CreateImportedPanel(db, containerId, panelIndex, srcPanel, import
 
     local panel = srcPanel and CopyTable(srcPanel) or BuildDefaultImportedPanel(containerId)
     panel._originalGroupId = nil
+    panel.cdmPanelSource = nil
     panel.parentContainerId = containerId
     panel.order = panelIndex
     if not panel.anchor then
@@ -1355,6 +1380,9 @@ local function ApplyGroupImportData(data)
     activeGroupImportPayloads[data] = nil
     if RejectUnsupportedImportPayload(data, "group import") then
         return false
+    end
+    if StripLocalPanelMetadataFromPayload then
+        StripLocalPanelMetadataFromPayload(data)
     end
 
     if not data.type then

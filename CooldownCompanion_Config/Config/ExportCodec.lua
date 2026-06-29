@@ -17,6 +17,9 @@ local UNSUPPORTED_COMPACT_FORMATS = {
     compact1 = true,
     compact2 = true,
 }
+local LOCAL_PANEL_METADATA_KEYS = {
+    cdmPanelSource = true,
+}
 
 local LOAD_CONDITION_ALLOWLIST_KEYS = {
     classAllowlist = "class",
@@ -173,6 +176,64 @@ local function StripCharacterEligibilityFromPayload(payload)
     if type(payload.bars) == "table" then
         for _, bar in ipairs(payload.bars) do
             stripped = stripped + StripCharacterEligibilityFromEntity(bar)
+        end
+    end
+    return stripped
+end
+
+local function StripLocalPanelMetadataFromEntity(entity)
+    if type(entity) ~= "table" then return 0 end
+    local stripped = 0
+    for key in pairs(LOCAL_PANEL_METADATA_KEYS) do
+        if entity[key] ~= nil then
+            entity[key] = nil
+            stripped = stripped + 1
+        end
+    end
+    return stripped
+end
+
+local function StripLocalPanelMetadataFromContainerEntry(entry)
+    if type(entry) ~= "table" then return 0 end
+    local stripped = 0
+    if type(entry.panels) == "table" then
+        for _, panel in ipairs(entry.panels) do
+            stripped = stripped + StripLocalPanelMetadataFromEntity(panel)
+        end
+    end
+    return stripped
+end
+
+local function StripLocalPanelMetadataFromProfile(profile)
+    if type(profile) ~= "table" then return 0 end
+    local stripped = 0
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            stripped = stripped + StripLocalPanelMetadataFromEntity(group)
+        end
+    end
+    return stripped
+end
+
+local function StripLocalPanelMetadataFromPayload(payload)
+    if type(payload) ~= "table" then return 0 end
+    local stripped = 0
+    stripped = stripped + StripLocalPanelMetadataFromProfile(payload)
+    stripped = stripped + StripLocalPanelMetadataFromProfile(payload.profile)
+    stripped = stripped + StripLocalPanelMetadataFromEntity(payload.group)
+    if type(payload.groups) == "table" then
+        for _, group in ipairs(payload.groups) do
+            stripped = stripped + StripLocalPanelMetadataFromEntity(group)
+        end
+    end
+    if type(payload.panels) == "table" then
+        for _, panel in ipairs(payload.panels) do
+            stripped = stripped + StripLocalPanelMetadataFromEntity(panel)
+        end
+    end
+    if type(payload.containers) == "table" then
+        for _, entry in ipairs(payload.containers) do
+            stripped = stripped + StripLocalPanelMetadataFromContainerEntry(entry)
         end
     end
     return stripped
@@ -711,6 +772,8 @@ local function CompactPanel(group, styleDefaults, panelContainerRef, formatVersi
             and IsPanelAnchor(group.anchor)
             and HasActivePanelAlphaSettings(group) then
             compact.inheritPanelAlpha = true
+        elseif LOCAL_PANEL_METADATA_KEYS[key] then
+            -- Local setup metadata stays in the active profile only.
         elseif panelDefaults[key] ~= nil then
             if not DeepEqual(value, panelDefaults[key]) then
                 compact[key] = CopyValue(value)
@@ -754,6 +817,7 @@ local function RehydratePanel(group, styleDefaults, panelContainerRef, formatVer
     if preserveCustomPanelAlpha then
         group.inheritPanelAlpha = false
     end
+    StripLocalPanelMetadataFromEntity(group)
 end
 
 local function CompactContainer(container, formatVersion)
@@ -1260,6 +1324,7 @@ local function EncodeSharedPayload(payload, exportKind)
     local formatVersion = CURRENT_COMPACT_FORMAT_VALUE
 
     StripAndTagCharacterEligibility(exportData)
+    StripLocalPanelMetadataFromPayload(exportData)
 
     if CooldownCompanion.StampExportPayloadCheckpoint then
         CooldownCompanion:StampExportPayloadCheckpoint(exportData, exportKind)
@@ -1317,12 +1382,16 @@ local function DecodeSharedPayload(text)
     end
 
     StripAndTagCharacterEligibility(data)
+    StripLocalPanelMetadataFromPayload(data)
 
     return true, data
 end
 
 ST._StripCharacterEligibilityFromProfile = StripCharacterEligibilityFromProfile
 ST._StripCharacterEligibilityFromPayload = StripCharacterEligibilityFromPayload
+ST._StripLocalPanelMetadataFromEntity = StripLocalPanelMetadataFromEntity
+ST._StripLocalPanelMetadataFromProfile = StripLocalPanelMetadataFromProfile
+ST._StripLocalPanelMetadataFromPayload = StripLocalPanelMetadataFromPayload
 ST._EncodeSharedPayload = EncodeSharedPayload
 ST._DecodeSharedPayload = DecodeSharedPayload
 ST._PrepareSharedImportText = PrepareSharedImportText
