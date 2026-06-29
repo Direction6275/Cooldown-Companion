@@ -131,6 +131,33 @@ local autocompleteDropdown
 local AUTOCOMPLETE_MAX_ROWS = 8
 local AUTOCOMPLETE_ROW_HEIGHT = 22
 local AUTOCOMPLETE_ICON_SIZE = 16
+local AUTOCOMPLETE_TYPE_BADGE_SIZE = 13
+local AUTOCOMPLETE_TYPE_LABEL_WIDTH = 68
+local AUTOCOMPLETE_TYPE_RIGHT_PAD = 6
+local AUTOCOMPLETE_TYPE_GAP = 4
+
+local AUTOCOMPLETE_TYPE_DISPLAY = {
+    spell = { label = "Spell", atlas = "ui_adv_atk" },
+    aura = { label = "Aura", atlas = "ui_adv_health" },
+    equipment = { label = "Equipment", atlas = "Crosshair_repairnpc_32" },
+    item = { label = "Item", atlas = "auctionhouse-icon-coin-gold" },
+}
+
+local function GetAutocompleteTypeDisplay(entry)
+    local kind = entry and entry.autocompleteKind
+    if kind ~= "spell" and kind ~= "aura" and kind ~= "equipment" and kind ~= "item" then
+        if entry and entry.isEquipmentSlot then
+            kind = "equipment"
+        elseif entry and entry.isItem then
+            kind = "item"
+        elseif entry and (entry.forceAura == true or entry.isCDMAura == true or entry.isPassive == true) then
+            kind = "aura"
+        else
+            kind = "spell"
+        end
+    end
+    return AUTOCOMPLETE_TYPE_DISPLAY[kind] or AUTOCOMPLETE_TYPE_DISPLAY.spell
+end
 
 local function IsBlockedSpellForTracking(spellId)
     return spellId and IsNeverTrackableSpell(spellId)
@@ -557,6 +584,7 @@ local function BuildEquipmentSlotAutocompleteEntry(itemSlot, aliases)
         searchLower = table.concat(searchParts, " "),
         icon = (effectiveItem and effectiveItem.trackable and effectiveItem.icon) or 134400,
         category = "Equipment",
+        autocompleteKind = "equipment",
         isEquipmentSlot = true,
         itemSlot = itemSlot,
         itemSlotKind = slotData.itemSlotKind,
@@ -726,10 +754,11 @@ local function BuildAutocompleteCache()
                             -- Dual-CDM spell: insert separate Cooldown and Buff entries
                             table.insert(cache, {
                                 id = id,
-                                name = itemInfo.name .. " (Cooldown)",
+                                name = itemInfo.name,
                                 nameLower = itemInfo.name:lower(),
                                 icon = itemInfo.iconID or 134400,
                                 category = category,
+                                autocompleteKind = "spell",
                                 isItem = false,
                                 forceAura = false,
                             })
@@ -741,10 +770,11 @@ local function BuildAutocompleteCache()
                                 seenAuras[id] = true
                                 table.insert(cache, {
                                     id = id,
-                                    name = itemInfo.name .. " (Buff)",
+                                    name = itemInfo.name,
                                     nameLower = itemInfo.name:lower(),
                                     icon = itemInfo.iconID or 134400,
                                     category = "Tracked Buff",
+                                    autocompleteKind = "aura",
                                     isItem = false,
                                     isCDMAura = true,
                                     forceAura = true,
@@ -757,6 +787,7 @@ local function BuildAutocompleteCache()
                                 nameLower = itemInfo.name:lower(),
                                 icon = itemInfo.iconID or 134400,
                                 category = category,
+                                autocompleteKind = (isAura and not passiveCooldown) and "aura" or "spell",
                                 isItem = false,
                             })
                         end
@@ -785,6 +816,7 @@ local function BuildAutocompleteCache()
                         nameLower = itemInfo.name:lower(),
                         icon = itemInfo.iconID or 134400,
                         category = "Pet",
+                        autocompleteKind = (isAura and not passiveCooldown) and "aura" or "spell",
                         isItem = false,
                         isPetSpell = true,
                     })
@@ -811,6 +843,7 @@ local function BuildAutocompleteCache()
                             nameLower = itemName:lower(),
                             icon = containerInfo.iconFileID or C_Item.GetItemIconByID(itemID) or 134400,
                             category = "Item",
+                            autocompleteKind = "item",
                             isItem = true,
                         })
                     end
@@ -839,6 +872,7 @@ local function BuildAutocompleteCache()
                                 nameLower = spellInfo.name:lower(),
                                 icon = spellInfo.iconID or 134400,
                                 category = "Cooldown Manager",
+                                autocompleteKind = "aura",
                                 isItem = false,
                                 isCDMAura = true,
                                 isPassive = true,
@@ -1038,7 +1072,7 @@ local function OnAutocompleteSelect(entry)
         added = TryAddItem(tostring(entry.id))
     else
         local displayNameOverride
-        if entry.category == "Cooldown Manager"
+        if entry.isCDMAura == true
             and type(entry.name) == "string"
             and entry.name ~= ""
         then
@@ -1106,17 +1140,24 @@ local function GetOrCreateAutocompleteDropdown()
         -- Name text
         local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         nameText:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-        nameText:SetPoint("RIGHT", row, "RIGHT", -112, 0)
         nameText:SetJustifyH("LEFT")
         nameText:SetWordWrap(false)
         row.nameText = nameText
 
-        -- Category text
+        -- Type badge and label
         local categoryText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        categoryText:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+        categoryText:SetSize(AUTOCOMPLETE_TYPE_LABEL_WIDTH, AUTOCOMPLETE_ROW_HEIGHT)
         categoryText:SetJustifyH("RIGHT")
         categoryText:SetTextColor(0.5, 0.5, 0.5, 1)
         row.categoryText = categoryText
+
+        local typeBadge = row:CreateTexture(nil, "ARTWORK")
+        typeBadge:SetSize(AUTOCOMPLETE_TYPE_BADGE_SIZE, AUTOCOMPLETE_TYPE_BADGE_SIZE)
+        typeBadge:SetPoint("RIGHT", row, "RIGHT", -AUTOCOMPLETE_TYPE_RIGHT_PAD, 0)
+        row.typeBadge = typeBadge
+
+        categoryText:SetPoint("RIGHT", typeBadge, "LEFT", -AUTOCOMPLETE_TYPE_GAP, 0)
+        nameText:SetPoint("RIGHT", categoryText, "LEFT", -6, 0)
 
         row:SetScript("OnMouseDown", function()
             dropdown._clickInProgress = true
@@ -1177,10 +1218,14 @@ local function ShowAutocompleteResults(results, anchorWidget, onSelect, options)
             row.entry = entry
             row.icon:SetTexture(entry.icon)
             row.nameText:SetText(entry.name)
-            row.categoryText:SetText(entry.isCDMAura and entry.id and (entry.category .. " " .. tostring(entry.id)) or entry.category)
+            local typeDisplay = GetAutocompleteTypeDisplay(entry)
+            row.typeBadge:SetAtlas(typeDisplay.atlas, false)
+            row.typeBadge:Show()
+            row.categoryText:SetText(typeDisplay.label)
             row:Show()
         else
             row.entry = nil
+            row.typeBadge:Hide()
             row:Hide()
         end
     end
