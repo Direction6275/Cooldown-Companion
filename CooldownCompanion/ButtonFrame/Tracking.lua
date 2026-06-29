@@ -417,7 +417,5 @@ ST._UpdateChargeTracking = UpdateChargeTracking
 ST._UpdateDisplayCountTracking = UpdateDisplayCountTracking
 ST._UpdateItemChargeTracking = UpdateItemChargeTracking
 ST._UpdateIconTint = UpdateIconTint
-ST._ResolveIconTintIntent = ResolveIconTintIntent
-ST._ResolveDesaturationIntent = ResolveDesaturationIntent
 ST._ResolveIconDesaturationIntent = ResolveDesaturationIntent
 ST._EvaluateDesaturation = EvaluateDesaturation
