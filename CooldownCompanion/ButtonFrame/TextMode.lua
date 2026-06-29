@@ -1094,7 +1094,5 @@ end
 -- EXPORTS
 ------------------------------------------------------------------------
 ST._UpdateTextDisplay = UpdateTextDisplay
-ST._UpdateTextStyle = UpdateTextStyle
 ST._ParseFormatString = ParseFormatString
-ST._HasAnyEffects = HasAnyEffects
 ST._GetEffectiveTextHeight = GetEffectiveTextHeight
