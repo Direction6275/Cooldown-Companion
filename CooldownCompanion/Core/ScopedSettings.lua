@@ -1782,18 +1782,6 @@ local function GetFallbackResourceBarSettings(addon, classKey)
     return settings
 end
 
-function CooldownCompanion:CaptureLegacyScopedBarSettingsSeeds()
-    local profile = self.db and self.db.profile
-    if not profile then
-        return
-    end
-
-    CaptureLegacyScopedBarSystemSeed(profile, RESOURCE_BAR_SYSTEM_SPEC)
-    for _, systemSpec in pairs(SCOPED_BAR_SYSTEMS) do
-        CaptureLegacyScopedBarSystemSeed(profile, systemSpec)
-    end
-end
-
 function CooldownCompanion:EnsureLegacyScopedBarSeenCharacters()
     local profile = self.db and self.db.profile
     if not profile then
@@ -1935,22 +1923,8 @@ function CooldownCompanion:RunResourceBarClassScopeMigration()
     end
 end
 
-function CooldownCompanion:GetResourceBarClassSettingsStore()
-    local profile = self.db and self.db.profile
-    if type(profile) ~= "table" then
-        return nil
-    end
-    return EnsureResourceBarClassStore(profile)
-end
-
 function CooldownCompanion:GetCurrentResourceBarClassKey()
     return GetCurrentResourceBarClassKey(self)
-end
-
-function CooldownCompanion:EnsureCurrentCharacterScopedBarSettings()
-    self:GetResourceBarSettings()
-    self:GetCharacterScopedSettings("castBar")
-    self:GetCharacterScopedSettings("frameAnchoring")
 end
 
 function CooldownCompanion:GetResourceBarSettings()
@@ -1998,14 +1972,6 @@ end
 
 function CooldownCompanion:GetFrameAnchoringSettings()
     return self:GetCharacterScopedSettings("frameAnchoring")
-end
-
-function CooldownCompanion:GetResourceBarMigrationState()
-    local profile = self.db and self.db.profile
-    if type(profile) ~= "table" then
-        return nil
-    end
-    return EnsureResourceBarMigrationState(profile)
 end
 
 function CooldownCompanion:GetResourceBarConflict(classKey)
@@ -2060,14 +2026,6 @@ end
 
 function CooldownCompanion:GetCurrentResourceBarConflictExportMessage()
     return self:GetResourceBarConflictExportMessage(GetCurrentResourceBarClassKey(self))
-end
-
-function CooldownCompanion:GetResourceBarUnsafeLegacySummary()
-    local profile = self.db and self.db.profile
-    local state = type(profile) == "table" and rawget(profile, RESOURCE_BAR_MIGRATION_KEY) or nil
-    local unsafe = type(state) == "table" and state.unsafeCharKeys or nil
-    local keys = SortedMapKeys(unsafe)
-    return keys
 end
 
 function CooldownCompanion:ResolveResourceBarConflict(classKey, sourceCharKey, options)
