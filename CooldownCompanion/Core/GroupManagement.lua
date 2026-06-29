@@ -1583,7 +1583,7 @@ function CooldownCompanion:ToggleGroupGlobal(containerId)
     self:RefreshAllGroups()
 end
 
-function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot)
+function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot, preserveSpellID)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
@@ -1596,10 +1596,15 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     -- Resolve spell transforms to base spell ID so the override chain can
     -- freely reach all variant forms at runtime.  Skip for items (no spell
     -- transform system), pet spells (may not resolve through GetBaseSpell),
-    -- forced aura entries, and CDM child-slot buttons (viewer-frame mapping
-    -- uses specific IDs).
+    -- forced aura entries, CDM child-slot buttons (viewer-frame mapping
+    -- uses specific IDs), and CDM starter entries whose display metadata
+    -- already selected the intended spell ID.
     local transformNotified
-    if buttonType == "spell" and not isPetSpell and forceAura ~= true and not cdmChildSlot then
+    if buttonType == "spell"
+        and not isPetSpell
+        and forceAura ~= true
+        and not cdmChildSlot
+        and preserveSpellID ~= true then
         local baseID = ST.ResolveToBaseSpell(id)
         if baseID ~= id then
             id = baseID

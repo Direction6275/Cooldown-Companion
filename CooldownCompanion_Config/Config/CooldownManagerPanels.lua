@@ -281,7 +281,9 @@ local function PopulateCDMPanelFromSource(panelId, sourceData)
             entry.name,
             nil,
             entry.isPassive,
-            entry.forceAura
+            entry.forceAura,
+            nil,
+            sourceData.entryKind == "spell"
         )
         if index then
             if sourceData.entryKind == "spell" and group.buttons and group.buttons[index] then
