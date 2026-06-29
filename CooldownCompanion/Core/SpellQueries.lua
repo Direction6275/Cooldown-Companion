@@ -21,9 +21,8 @@ function ST.ResolveCDMDisplaySpellID(cooldownInfo)
     if type(cooldownInfo) ~= "table" then
         return nil
     end
-    if IsConcreteSpellID(cooldownInfo.linkedSpellID) then
-        return cooldownInfo.linkedSpellID
-    end
+    -- linkedSpellID is live aura state on Blizzard item data; starter setup
+    -- needs stable CDM metadata so cooldown panels do not capture an aura stage.
     if IsConcreteSpellID(cooldownInfo.overrideTooltipSpellID) then
         return cooldownInfo.overrideTooltipSpellID
     end
