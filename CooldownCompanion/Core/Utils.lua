@@ -18,10 +18,6 @@ local issecretvalue = issecretvalue
 -- Constants
 --------------------------------------------------------------------------------
 
-ST.DEFAULT_OVERHANG_PCT = 32
-ST.DEFAULT_GLOW_COLOR = {1, 1, 1, 1}
-ST.DEFAULT_BG_COLOR = {0.2, 0.2, 0.2, 0.8}
-ST.NUM_GLOW_STYLES = 3
 ST.BORDER_RENDER_MODE_CUSTOM = "custom"
 ST.BORDER_RENDER_MODE_CRISP = "crisp"
 ST.DEFAULT_FONT_NAME = ST.DEFAULT_FONT_NAME or "Friz Quadrata TT"
