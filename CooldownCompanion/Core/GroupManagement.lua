@@ -33,6 +33,20 @@ local function IsValidDirectStyleCopyMode(mode)
     return DIRECT_STYLE_COPY_MODES[mode] == true
 end
 
+local function ShouldClearCDMPanelSourceForDisplayMode(group, displayMode)
+    if not (group and group.cdmPanelSource) then
+        return false
+    end
+
+    local getSourceDisplayMode = ST._GetCDMPanelSourceDisplayMode
+    if not getSourceDisplayMode then
+        return false
+    end
+
+    local expectedMode = getSourceDisplayMode(group.cdmPanelSource)
+    return expectedMode == nil or expectedMode ~= displayMode
+end
+
 local function GetAnchorOffset(point, width, height)
     local halfW = (width or 0) / 2
     local halfH = (height or 0) / 2
@@ -1325,6 +1339,9 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     end
 
     group.displayMode = newMode
+    if oldMode ~= newMode and ShouldClearCDMPanelSourceForDisplayMode(group, newMode) then
+        group.cdmPanelSource = nil
+    end
     if newMode == "bars" or newMode == "text" then
         group.style.orientation = "vertical"
     end

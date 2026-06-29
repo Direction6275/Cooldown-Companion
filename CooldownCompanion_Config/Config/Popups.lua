@@ -18,6 +18,7 @@ local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
 local EncodeSharedPayload = ST._EncodeSharedPayload
 local StripCharacterEligibilityFromPayload = ST._StripCharacterEligibilityFromPayload
 local StripLocalPanelMetadataFromEntity = ST._StripLocalPanelMetadataFromEntity
+local StripLocalPanelMetadataFromProfile = ST._StripLocalPanelMetadataFromProfile
 local StripLocalPanelMetadataFromPayload = ST._StripLocalPanelMetadataFromPayload
 
 local LOAD_CONDITION_ALLOWLIST_KEYS = {
@@ -700,6 +701,9 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
             CooldownCompanion._suppressOwnershipRestamp = true
             db:SetProfile(newName)
             db:CopyProfile(data.source)
+            if StripLocalPanelMetadataFromProfile then
+                StripLocalPanelMetadataFromProfile(db.profile)
+            end
             CooldownCompanion._suppressOwnershipRestamp = nil
             ResetConfigSelection(true)
             CooldownCompanion:RefreshConfigPanel()

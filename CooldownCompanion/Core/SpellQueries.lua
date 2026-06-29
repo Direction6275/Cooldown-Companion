@@ -17,6 +17,25 @@ local function IsConcreteSpellID(spellID)
 end
 ST.IsConcreteSpellID = IsConcreteSpellID
 
+function ST.ResolveCDMDisplaySpellID(cooldownInfo)
+    if type(cooldownInfo) ~= "table" then
+        return nil
+    end
+    if IsConcreteSpellID(cooldownInfo.linkedSpellID) then
+        return cooldownInfo.linkedSpellID
+    end
+    if IsConcreteSpellID(cooldownInfo.overrideTooltipSpellID) then
+        return cooldownInfo.overrideTooltipSpellID
+    end
+    if IsConcreteSpellID(cooldownInfo.overrideSpellID) then
+        return cooldownInfo.overrideSpellID
+    end
+    if IsConcreteSpellID(cooldownInfo.spellID) then
+        return cooldownInfo.spellID
+    end
+    return nil
+end
+
 function ST.ResolveCDMAuraSpellID(cooldownInfo)
     if type(cooldownInfo) ~= "table" then
         return nil

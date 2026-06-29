@@ -50,6 +50,7 @@ local GetCDMPanelSourceData = ST._GetCDMPanelSourceData
 local PopulateCDMPanelFromSource = ST._PopulateCDMPanelFromSource
 local ApplyCDMStarterPanelLayout = ST._ApplyCDMStarterPanelLayout
 local IsCDMPanelSourceKey = ST._IsCDMPanelSourceKey
+local GetCDMPanelSourceDisplayMode = ST._GetCDMPanelSourceDisplayMode
 
 local IsTriggerPanelGroup
 local RefreshCDMPanelFromSource
@@ -185,6 +186,18 @@ local function AddCDMStarterMenuTooltip(info)
     info.tooltipTitle = "Add Missing CDM Panels"
     info.tooltipText = "Creates any missing Cooldown Manager starter panels without duplicating existing CDM panels."
     info.tooltipOnButton = true
+end
+
+local function IsActiveCDMPanelSource(panel)
+    if not (panel
+        and panel.cdmPanelSource
+        and IsCDMPanelSourceKey
+        and IsCDMPanelSourceKey(panel.cdmPanelSource)) then
+        return false
+    end
+
+    local expectedMode = GetCDMPanelSourceDisplayMode and GetCDMPanelSourceDisplayMode(panel.cdmPanelSource) or nil
+    return expectedMode == nil or panel.displayMode == expectedMode
 end
 
 local function GetPanelTypeBadgeAtlas(displayMode)
@@ -365,10 +378,7 @@ local function ConfigureCDMRefreshBadge(header, panel, panelId, containerId, cur
     badge:SetFrameLevel(header.frame:GetFrameLevel() + 25)
     badge:ClearAllPoints()
 
-    if not (panel
-        and panel.cdmPanelSource
-        and IsCDMPanelSourceKey
-        and IsCDMPanelSourceKey(panel.cdmPanelSource)) then
+    if not IsActiveCDMPanelSource(panel) then
         badge:Hide()
         return
     end
@@ -503,7 +513,7 @@ local function GetExistingCDMPanelSources(containerId)
     local existing = {}
     for _, panelInfo in ipairs(CooldownCompanion:GetPanels(containerId) or {}) do
         local panel = panelInfo.group
-        if panel and panel.cdmPanelSource and IsCDMPanelSourceKey and IsCDMPanelSourceKey(panel.cdmPanelSource) then
+        if IsActiveCDMPanelSource(panel) then
             existing[panel.cdmPanelSource] = true
         end
     end
@@ -621,7 +631,7 @@ end
 ST._DeleteEmptyCDMPanel = DeleteEmptyCDMPanel
 
 RefreshCDMPanelFromSource = function(panelId, panel, containerId)
-    if not (panel and panel.cdmPanelSource and IsCDMPanelSourceKey and IsCDMPanelSourceKey(panel.cdmPanelSource)) then
+    if not IsActiveCDMPanelSource(panel) then
         return
     end
 

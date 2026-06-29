@@ -12,6 +12,7 @@ local math_max = math.max
 local tonumber = tonumber
 
 local IsConcreteSpellID = ST.IsConcreteSpellID
+local ResolveCDMDisplaySpellID = ST.ResolveCDMDisplaySpellID
 local ResolveCDMAuraSpellID = ST.ResolveCDMAuraSpellID
 local bit_band = bit and bit.band
 
@@ -57,6 +58,11 @@ end
 
 local function IsKnownSourceKey(sourceKey)
     return CDM_PANEL_SOURCE_BY_KEY[sourceKey] ~= nil
+end
+
+local function GetSourceDisplayMode(sourceKey)
+    local source = CDM_PANEL_SOURCE_BY_KEY[sourceKey]
+    return source and source.displayMode or nil
 end
 
 local function CheckCooldownViewerAvailable()
@@ -157,7 +163,9 @@ local function ResolveEntrySpellID(source, cooldownInfo)
         return ResolveCDMAuraSpellID and ResolveCDMAuraSpellID(cooldownInfo) or nil
     end
 
-    return cooldownInfo and cooldownInfo.spellID or nil
+    return ResolveCDMDisplaySpellID and ResolveCDMDisplaySpellID(cooldownInfo)
+        or cooldownInfo and cooldownInfo.spellID
+        or nil
 end
 
 local function BuildSourceEntries(source, dataProvider)
@@ -276,6 +284,9 @@ local function PopulateCDMPanelFromSource(panelId, sourceData)
             entry.forceAura
         )
         if index then
+            if sourceData.entryKind == "spell" and group.buttons and group.buttons[index] then
+                group.buttons[index].name = entry.name
+            end
             added = added + 1
         end
     end
@@ -345,4 +356,5 @@ ST._GetCDMPanelSourceData = GetSourceData
 ST._PopulateCDMPanelFromSource = PopulateCDMPanelFromSource
 ST._ApplyCDMStarterPanelLayout = ApplyCDMStarterPanelLayout
 ST._IsCDMPanelSourceKey = IsKnownSourceKey
+ST._GetCDMPanelSourceDisplayMode = GetSourceDisplayMode
 ST._CDMPanelSources = CDM_PANEL_SOURCES
