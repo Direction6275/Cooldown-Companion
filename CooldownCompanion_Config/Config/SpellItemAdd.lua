@@ -1273,7 +1273,6 @@ end
 -- ST._ exports (consumed by later Config/ files)
 ------------------------------------------------------------------------
 ST._TryAdd = TryAdd
-ST._TryAddEquipmentSlot = TryAddEquipmentSlot
 ST._TryReceiveCursorDrop = TryReceiveCursorDrop
 ST._BuildAutocompleteCache = BuildAutocompleteCache
 ST._OnAutocompleteSelect = OnAutocompleteSelect

@@ -356,7 +356,6 @@ local function ShowResourceBarConflictChooser(classKey, opts)
 end
 
 ST._ShowResourceBarConflictChooser = ShowResourceBarConflictChooser
-ST._HideResourceBarConflictChooser = HideResourceBarConflictChooser
 
 local function PruneDeletedFolderSelection(folderId)
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
