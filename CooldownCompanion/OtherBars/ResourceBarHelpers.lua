@@ -183,12 +183,6 @@ local function GetEffectiveAnchorGroupId(settings)
     return CooldownCompanion:GetFirstAvailableAnchorGroup()
 end
 
-local function GetAnchorGroupFrame(settings)
-    local groupId = GetEffectiveAnchorGroupId(settings)
-    if not groupId then return nil end
-    return CooldownCompanion.groupFrames[groupId]
-end
-
 local function GetCurrentSpecID()
     local specIdx = C_SpecializationInfo.GetSpecialization()
     if specIdx then
@@ -2078,7 +2072,6 @@ RB.GetResourceGlobalThickness = GetResourceGlobalThickness
 RB.GetResourceAnchorGap = GetResourceAnchorGap
 RB.GetVerticalSideFallback = GetVerticalSideFallback
 RB.GetEffectiveAnchorGroupId = GetEffectiveAnchorGroupId
-RB.GetAnchorGroupFrame = GetAnchorGroupFrame
 RB.GetCurrentSpecID = GetCurrentSpecID
 RB.GetPlayerClassID = GetPlayerClassID
 RB.GetSpecCustomAuraBars = GetSpecCustomAuraBars
