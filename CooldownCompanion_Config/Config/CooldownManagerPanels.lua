@@ -276,6 +276,7 @@ local function PopulateCDMPanelFromSource(panelId, sourceData)
 
     group.buttons = {}
 
+    local isAuraSource = IsCDMAuraPanelSource(sourceData and sourceData.key)
     local added = 0
     for _, entry in ipairs(sourceData and sourceData.entries or {}) do
         local index = CooldownCompanion:AddButtonToGroup(
@@ -293,14 +294,14 @@ local function PopulateCDMPanelFromSource(panelId, sourceData)
             if sourceData.entryKind == "spell" and group.buttons and group.buttons[index] then
                 group.buttons[index].name = entry.name
             end
-            if IsCDMAuraPanelSource(sourceData.key) and group.buttons and group.buttons[index] then
+            if isAuraSource and group.buttons and group.buttons[index] then
                 group.buttons[index].hideWhileAuraNotActive = true
             end
             added = added + 1
         end
     end
 
-    if added == 0 and CooldownCompanion.RefreshGroupFrame then
+    if CooldownCompanion.RefreshGroupFrame and (added == 0 or isAuraSource) then
         CooldownCompanion:RefreshGroupFrame(panelId)
     end
 
