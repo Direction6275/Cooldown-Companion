@@ -27,7 +27,6 @@ local TryAdd = ST._TryAdd
 local TryReceiveCursorDrop = ST._TryReceiveCursorDrop
 local OnAutocompleteSelect = ST._OnAutocompleteSelect
 local SearchAutocomplete = ST._SearchAutocomplete
-local OpenAutoAddFlow = ST._OpenAutoAddFlow
 local ResolveViewerChildForSpellDisplay = ST.ResolveViewerChildForSpellDisplay
 local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
@@ -1184,7 +1183,9 @@ local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId,
         CS.newInput = text
         if text and #text >= 1 then
             local results = SearchAutocomplete(text)
-            CS.ShowAutocompleteResults(results, widget, OnAutocompleteSelect)
+            CS.ShowAutocompleteResults(results, widget, OnAutocompleteSelect, {
+                requireExactNumericEnter = true,
+            })
         else
             CS.HideAutocomplete()
         end
@@ -1201,60 +1202,6 @@ local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId,
             end
         end)
     end
-
-    local addSpacer = AceGUI:Create("SimpleGroup")
-    addSpacer:SetFullWidth(true)
-    addSpacer:SetHeight(2)
-    addSpacer.noAutoHeight = true
-    panelContainer:AddChild(addSpacer)
-
-    local addRow = AceGUI:Create("SimpleGroup")
-    addRow:SetFullWidth(true)
-    addRow:SetLayout("Flow")
-    panelMeta.addRowFrame = addRow.frame
-
-    local isTriggerPanel = IsTriggerPanelGroup(panel)
-    local manualAddBtn = AceGUI:Create("Button")
-    manualAddBtn:SetText(isTriggerPanel and "Add Entry" or "Manual Add")
-    manualAddBtn:SetRelativeWidth((panel.displayMode == "textures" or isTriggerPanel) and 1 or 0.49)
-    panelMeta.manualAddButtonFrame = manualAddBtn.frame
-    manualAddBtn:SetCallback("OnClick", function()
-        SubmitInlineAdd(CS.newInput)
-    end)
-    addRow:AddChild(manualAddBtn)
-
-    if panel.displayMode ~= "textures" and not isTriggerPanel then
-        local autoAddBtn = AceGUI:Create("Button")
-        autoAddBtn:SetText("Auto Add")
-        autoAddBtn:SetRelativeWidth(0.49)
-        local tutorialRuntime = CS.tutorialRuntime
-        local deemphasizeAutoAdd = tutorialRuntime
-            and tutorialRuntime.active
-            and (tutorialRuntime.step == "add_box_intro" or tutorialRuntime.step == "add_one_spell")
-        autoAddBtn:SetCallback("OnClick", function()
-            CS.selectedGroup = CS.addingToPanelId
-            OpenAutoAddFlow()
-        end)
-        autoAddBtn:SetCallback("OnEnter", function(widget)
-            GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
-            GameTooltip:AddLine("Auto Add")
-            GameTooltip:AddLine("Auto-add from Action Bars, Spellbook, or CDM Auras.", 1, 1, 1, true)
-            if deemphasizeAutoAdd then
-                GameTooltip:AddLine("Optional during the tutorial. The guided path uses the add box above.", 0.8, 0.8, 0.8, true)
-            end
-            GameTooltip:Show()
-        end)
-        autoAddBtn:SetCallback("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        if autoAddBtn.frame then
-            autoAddBtn.frame:SetAlpha(deemphasizeAutoAdd and 0.62 or 1)
-        end
-        panelMeta.autoAddButtonFrame = autoAddBtn.frame
-        addRow:AddChild(autoAddBtn)
-    end
-
-    panelContainer:AddChild(addRow)
 
 end
 
@@ -2106,10 +2053,7 @@ local function RefreshColumn2()
                 isCollapsed = isCollapsed and true or false,
                 displayMode = panel.displayMode,
                 buttonRows = {},
-                addRowFrame = nil,
                 addInputFrame = nil,
-                manualAddButtonFrame = nil,
-                autoAddButtonFrame = nil,
             }
 
             -- Class-colored accent separator between panels

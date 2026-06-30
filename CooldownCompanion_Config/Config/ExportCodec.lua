@@ -360,7 +360,6 @@ local PROFILE_DEFAULT_KEYS = {
     minimap = "minimap",
     escClosesConfig = "escClosesConfig",
     showAdvanced = "showAdvanced",
-    autoAddPrefs = "autoAddPrefs",
     profileWideFontEnabled = "profileWideFontEnabled",
     profileWideFontName = "profileWideFontName",
     profileWideFontOutline = "profileWideFontOutline",
@@ -378,6 +377,7 @@ local PROFILE_DEFAULT_KEYS = {
 }
 
 local RETIRED_PROFILE_KEYS = {
+    autoAddPrefs = true,
     hideInfoButtons = true,
 }
 

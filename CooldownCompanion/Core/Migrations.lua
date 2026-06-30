@@ -179,6 +179,14 @@ local function BackfillUnusableVisualOverrideModes(profile)
     return changed
 end
 
+local function ClearRetiredAutoAddPrefs(profile)
+    if type(profile) ~= "table" or profile.autoAddPrefs == nil then
+        return false
+    end
+    profile.autoAddPrefs = nil
+    return true
+end
+
 local function HasSupportedCheckpoint(payload)
     if type(payload) ~= "table" then
         return false
@@ -320,6 +328,7 @@ function CooldownCompanion:RunAllMigrations()
     self._pendingUnsupportedLegacyHide = nil
 
     self:StampImportCheckpoint(self.db and self.db.profile)
+    ClearRetiredAutoAddPrefs(self.db and self.db.profile)
     NormalizePassiveCooldownButtons(self.db and self.db.profile)
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     if self.RunResourceBarClassScopeMigration then
