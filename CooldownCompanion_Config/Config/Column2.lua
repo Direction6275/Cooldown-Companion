@@ -3069,5 +3069,4 @@ end
 ------------------------------------------------------------------------
 -- ST._ exports
 ------------------------------------------------------------------------
-ST._BuildEntryMoveDestinationSections = BuildEntryMoveDestinationSections
 ST._RefreshColumn2 = RefreshColumn2
