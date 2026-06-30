@@ -2279,6 +2279,14 @@ function CooldownCompanion:NormalizeStableExternalAnchorCompactLayout(groupId, g
     return true, false
 end
 
+function CooldownCompanion:NormalizeCurrentStableExternalAnchorCompactLayout()
+    local groupId = self.GetFirstAvailableAnchorGroup and self:GetFirstAvailableAnchorGroup() or nil
+    if not groupId then
+        return false, false
+    end
+    return self:NormalizeStableExternalAnchorCompactLayout(groupId)
+end
+
 function CooldownCompanion:PopulatePanelAnchorTargetDropdown(dropdown, sourceGroupId)
     local db = self.db.profile
     local containers = db.groupContainers or {}

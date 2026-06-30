@@ -1105,6 +1105,10 @@ end
 -- Panel CRUD (within containers)
 ------------------------------------------------------------------------
 
+local function ShouldDefaultPanelCompactLayout(displayMode)
+    return displayMode == "icons" or displayMode == "bars"
+end
+
 function CooldownCompanion:CreatePanel(containerId, displayMode)
     local db = self.db.profile
     local container = db.groupContainers[containerId]
@@ -1134,7 +1138,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         style = CopyTable(db.globalStyle),
         displayMode = displayMode,
         masqueEnabled = false,
-        compactLayout = true,
+        compactLayout = ShouldDefaultPanelCompactLayout(displayMode),
         maxVisibleButtons = 0,
         compactGrowthDirection = "center",
         inheritPanelAlpha = true,

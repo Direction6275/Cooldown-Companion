@@ -299,6 +299,10 @@ local PANEL_DEFAULTS = {
     fadeOutDuration = 0.2,
 }
 
+local function ShouldDefaultPanelCompactLayout(displayMode)
+    return displayMode == "icons" or displayMode == "bars"
+end
+
 local CONTAINER_DEFAULTS = {
     enabled = true,
     locked = true,
@@ -638,6 +642,20 @@ local function GetPanelDefaults(formatVersion)
     return PANEL_DEFAULTS
 end
 
+local function GetPanelCompactLayoutDefault(formatVersion, displayMode)
+    local defaults = GetPanelDefaults(formatVersion)
+    if not defaults or defaults.compactLayout ~= true then
+        return false
+    end
+    return ShouldDefaultPanelCompactLayout(displayMode or defaults.displayMode or "icons")
+end
+
+local function GetEffectivePanelDefaults(formatVersion, group)
+    local defaults = CopyValue(GetPanelDefaults(formatVersion))
+    defaults.compactLayout = GetPanelCompactLayoutDefault(formatVersion, group and group.displayMode)
+    return defaults
+end
+
 local function GetContainerDefaults(formatVersion)
     local entityDefaults = GetEntityDefaults(formatVersion)
     if entityDefaults and entityDefaults.container then
@@ -767,7 +785,7 @@ local function CompactPanel(group, styleDefaults, panelContainerRef, formatVersi
         return nil
     end
 
-    local panelDefaults = GetPanelDefaults(formatVersion)
+    local panelDefaults = GetEffectivePanelDefaults(formatVersion, group)
     local compact = {}
     for key, value in pairs(group) do
         if key == "style" then
@@ -811,7 +829,7 @@ local function RehydratePanel(group, styleDefaults, panelContainerRef, formatVer
         return
     end
 
-    local panelDefaults = GetPanelDefaults(formatVersion)
+    local panelDefaults = GetEffectivePanelDefaults(formatVersion, group)
     group.style = MergeWithDefaults(group.style, styleDefaults)
     local preserveCustomPanelAlpha = group.inheritPanelAlpha == nil
         and panelContainerRef ~= nil

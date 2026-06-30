@@ -130,6 +130,7 @@ function CooldownCompanion:EvaluateBarsAndFramesRuntime(reason)
     end
 
     runtime.counters.evaluate = runtime.counters.evaluate + 1
+    CallIfAvailable("NormalizeCurrentStableExternalAnchorCompactLayout")
     local opts = { skipRuntimeGate = true }
 
     if flags.resourceBars then
@@ -155,6 +156,7 @@ function CooldownCompanion:EvaluateBarsAndFramesStackingRuntime(reason)
     end
 
     runtime.counters.evaluate = runtime.counters.evaluate + 1
+    CallIfAvailable("NormalizeCurrentStableExternalAnchorCompactLayout")
     local opts = { skipRuntimeGate = true }
 
     if flags.resourceBars then
