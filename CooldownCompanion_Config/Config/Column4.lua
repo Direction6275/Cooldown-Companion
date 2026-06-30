@@ -469,7 +469,6 @@ local function RefreshColumn4(container)
                             scroll:SetLayout("List")
                             widget:AddChild(scroll)
                             container.customBarsDetailScroll = scroll
-                            CS.customBarSettingsScroll = scroll
                             container._customBarDetailScrollKey = GetCustomBarDetailScrollKey()
                             ST._BuildCustomAuraBarPanel(scroll, CS.selectedCustomBarId, CS.customBarSettingsTab)
                         end)
