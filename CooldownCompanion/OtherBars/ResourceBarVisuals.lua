@@ -1499,16 +1499,11 @@ end
 -- Add all visual functions to ST._RB
 ------------------------------------------------------------------------
 
-RB.GetResourceAuraEntry = GetResourceAuraEntry
-RB.GetLegacyResourceAuraEntry = GetLegacyResourceAuraEntry
 RB.GetActiveResourceAuraEntry = GetActiveResourceAuraEntry
-RB.GetResourceAuraTrackingMode = GetResourceAuraTrackingMode
 RB.GetResourceAuraConfiguredMaxStacks = GetResourceAuraConfiguredMaxStacks
 RB.IsResourceAuraOverlayEnabled = IsResourceAuraOverlayEnabled
 RB.GetResourceAuraState = GetResourceAuraState
 RB.HideResourceAuraStackSegments = HideResourceAuraStackSegments
-RB.LayoutResourceAuraStackSegments = LayoutResourceAuraStackSegments
-RB.EnsureResourceAuraStackSegments = EnsureResourceAuraStackSegments
 RB.ApplyResourceAuraStackSegments = ApplyResourceAuraStackSegments
 RB.ClearResourceAuraVisuals = ClearResourceAuraVisuals
 RB.UpdateContinuousTickMarker = UpdateContinuousTickMarker
