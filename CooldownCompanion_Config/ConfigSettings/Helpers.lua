@@ -796,11 +796,21 @@ end
 -- bar mode (BarModeTabs): checkbox → advanced toggle → info button →
 -- conditional growth-direction + max-visible-buttons controls.
 local function BuildCompactModeControls(container, group, tabInfoButtons)
+    local stableAnchorLocked = false
+    if CooldownCompanion.NormalizeStableExternalAnchorCompactLayout and CS.selectedGroup then
+        stableAnchorLocked = CooldownCompanion:NormalizeStableExternalAnchorCompactLayout(CS.selectedGroup, group) == true
+    end
+
     local compactCb = AceGUI:Create("CheckBox")
     compactCb:SetLabel("Compact Mode")
     compactCb:SetValue(group.compactLayout or false)
     compactCb:SetFullWidth(true)
+    compactCb:SetDisabled(stableAnchorLocked)
     compactCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if stableAnchorLocked then
+            group.compactLayout = false
+            return
+        end
         group.compactLayout = val or false
         CooldownCompanion:PopulateGroupButtons(CS.selectedGroup)
         local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
@@ -856,7 +866,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
         }, tabInfoButtons)
     end
 
-    local _, compactAdvBtn = AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout, {
+    local _, compactAdvBtn = AddAdvancedToggle(compactCb, "compactLayout", tabInfoButtons, group.compactLayout and not stableAnchorLocked, {
         title = "Compact Mode Advanced",
         build = BuildCompactAdvanced,
     })
@@ -875,6 +885,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
     CreateInfoButton(compactCb.frame, compactAnchor, "LEFT", compactRelPoint, compactXOff, 0, {
         "Compact Mode",
         {"Compacts visible buttons or bars when hide conditions remove entries, helping centered layouts stay centered.", 1, 1, 1, true},
+        {"Does not function when unit frames, resources, or cast bars are anchored to this panel.", 0.7, 0.7, 0.7, true},
     }, tabInfoButtons)
 end
 
