@@ -12,10 +12,14 @@ local LibDeflate = LibStub("LibDeflate")
 local COMPRESSION_CONFIG = { level = 9 }
 local COMPACT_FORMAT_KEY = "_cdcExportFormat"
 local STRIPPED_CHARACTER_ELIGIBILITY_KEY = "_cdcCharacterEligibilityStripped"
-local CURRENT_COMPACT_FORMAT_VALUE = "compact3"
+local PREVIOUS_COMPACT_FORMAT_VALUE = "compact3"
+local CURRENT_COMPACT_FORMAT_VALUE = "compact4"
 local UNSUPPORTED_COMPACT_FORMATS = {
     compact1 = true,
     compact2 = true,
+}
+local LOCAL_PANEL_METADATA_KEYS = {
+    cdmPanelSource = true,
 }
 
 local LOAD_CONDITION_ALLOWLIST_KEYS = {
@@ -178,6 +182,64 @@ local function StripCharacterEligibilityFromPayload(payload)
     return stripped
 end
 
+local function StripLocalPanelMetadataFromEntity(entity)
+    if type(entity) ~= "table" then return 0 end
+    local stripped = 0
+    for key in pairs(LOCAL_PANEL_METADATA_KEYS) do
+        if entity[key] ~= nil then
+            entity[key] = nil
+            stripped = stripped + 1
+        end
+    end
+    return stripped
+end
+
+local function StripLocalPanelMetadataFromContainerEntry(entry)
+    if type(entry) ~= "table" then return 0 end
+    local stripped = 0
+    if type(entry.panels) == "table" then
+        for _, panel in ipairs(entry.panels) do
+            stripped = stripped + StripLocalPanelMetadataFromEntity(panel)
+        end
+    end
+    return stripped
+end
+
+local function StripLocalPanelMetadataFromProfile(profile)
+    if type(profile) ~= "table" then return 0 end
+    local stripped = 0
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            stripped = stripped + StripLocalPanelMetadataFromEntity(group)
+        end
+    end
+    return stripped
+end
+
+local function StripLocalPanelMetadataFromPayload(payload)
+    if type(payload) ~= "table" then return 0 end
+    local stripped = 0
+    stripped = stripped + StripLocalPanelMetadataFromProfile(payload)
+    stripped = stripped + StripLocalPanelMetadataFromProfile(payload.profile)
+    stripped = stripped + StripLocalPanelMetadataFromEntity(payload.group)
+    if type(payload.groups) == "table" then
+        for _, group in ipairs(payload.groups) do
+            stripped = stripped + StripLocalPanelMetadataFromEntity(group)
+        end
+    end
+    if type(payload.panels) == "table" then
+        for _, panel in ipairs(payload.panels) do
+            stripped = stripped + StripLocalPanelMetadataFromEntity(panel)
+        end
+    end
+    if type(payload.containers) == "table" then
+        for _, entry in ipairs(payload.containers) do
+            stripped = stripped + StripLocalPanelMetadataFromContainerEntry(entry)
+        end
+    end
+    return stripped
+end
+
 local function StripAndTagCharacterEligibility(payload)
     local stripped = StripCharacterEligibilityFromPayload(payload)
     if stripped > 0 then
@@ -225,7 +287,7 @@ local LOCAL_LOAD_CONDITIONS_DEFAULTS = {
 local PANEL_DEFAULTS = {
     displayMode = "icons",
     masqueEnabled = false,
-    compactLayout = false,
+    compactLayout = true,
     maxVisibleButtons = 0,
     compactGrowthDirection = "center",
     inheritPanelAlpha = true,
@@ -236,6 +298,10 @@ local PANEL_DEFAULTS = {
     fadeInDuration = 0.2,
     fadeOutDuration = 0.2,
 }
+
+local function ShouldDefaultPanelCompactLayout(displayMode)
+    return displayMode == "icons" or displayMode == "bars"
+end
 
 local CONTAINER_DEFAULTS = {
     enabled = true,
@@ -294,7 +360,6 @@ local PROFILE_DEFAULT_KEYS = {
     minimap = "minimap",
     escClosesConfig = "escClosesConfig",
     showAdvanced = "showAdvanced",
-    autoAddPrefs = "autoAddPrefs",
     profileWideFontEnabled = "profileWideFontEnabled",
     profileWideFontName = "profileWideFontName",
     profileWideFontOutline = "profileWideFontOutline",
@@ -312,6 +377,7 @@ local PROFILE_DEFAULT_KEYS = {
 }
 
 local RETIRED_PROFILE_KEYS = {
+    autoAddPrefs = true,
     hideInfoButtons = true,
 }
 
@@ -334,33 +400,17 @@ local function BuildCurrentCompactProfileDefaults()
     return compactDefaults
 end
 
-local SCOPED_SYSTEM_DEFAULTS = {
-    resourceBars = "resourceBars",
-    castBar = "castBar",
-    frameAnchoring = "frameAnchoring",
-    legacyResourceBarsSeed = "resourceBars",
-    legacyCastBarSeed = "castBar",
-    legacyFrameAnchoringSeed = "frameAnchoring",
-}
+local function BuildCompact3ProfileDefaults()
+    local compactDefaults = BuildCurrentCompactProfileDefaults()
+    if compactDefaults.globalStyle then
+        compactDefaults.globalStyle.showUnusable = false
+        compactDefaults.globalStyle.showLossOfControl = false
+    end
+    return compactDefaults
+end
 
-local SCOPED_STORE_KEYS = {
-    resourceBarsByClass = "resourceBars",
-    resourceBarsByChar = "resourceBars",
-    castBarByChar = "castBar",
-    frameAnchoringByChar = "frameAnchoring",
-}
-
--- Compact payloads must rehydrate against a frozen baseline, not the
--- importer's current runtime defaults. The current compact baseline is seeded
--- from Core/Defaults so export compaction and runtime defaults stay in sync.
--- If profile defaults change in a future release, keep the old snapshot here
--- and bump CURRENT_COMPACT_FORMAT_VALUE.
-local COMPACT_PROFILE_DEFAULTS = {
-    [CURRENT_COMPACT_FORMAT_VALUE] = BuildCurrentCompactProfileDefaults(),
-}
-
-local COMPACT_ENTITY_DEFAULTS = {
-    [CURRENT_COMPACT_FORMAT_VALUE] = {
+local function BuildCompactEntityDefaults(compactLayoutDefault)
+    return {
         loadConditions = {
             raid = false,
             dungeon = false,
@@ -375,7 +425,7 @@ local COMPACT_ENTITY_DEFAULTS = {
         panel = {
             displayMode = "icons",
             masqueEnabled = false,
-            compactLayout = false,
+            compactLayout = compactLayoutDefault == true,
             maxVisibleButtons = 0,
             compactGrowthDirection = "center",
             inheritPanelAlpha = true,
@@ -415,7 +465,38 @@ local COMPACT_ENTITY_DEFAULTS = {
             x = 0,
             y = 0,
         },
-    },
+    }
+end
+
+local SCOPED_SYSTEM_DEFAULTS = {
+    resourceBars = "resourceBars",
+    castBar = "castBar",
+    frameAnchoring = "frameAnchoring",
+    legacyResourceBarsSeed = "resourceBars",
+    legacyCastBarSeed = "castBar",
+    legacyFrameAnchoringSeed = "frameAnchoring",
+}
+
+local SCOPED_STORE_KEYS = {
+    resourceBarsByClass = "resourceBars",
+    resourceBarsByChar = "resourceBars",
+    castBarByChar = "castBar",
+    frameAnchoringByChar = "frameAnchoring",
+}
+
+-- Compact payloads must rehydrate against a frozen baseline, not the
+-- importer's current runtime defaults. The current compact baseline is seeded
+-- from Core/Defaults so export compaction and runtime defaults stay in sync.
+-- If profile defaults change in a future release, keep the old snapshot here
+-- and bump CURRENT_COMPACT_FORMAT_VALUE.
+local COMPACT_PROFILE_DEFAULTS = {
+    [PREVIOUS_COMPACT_FORMAT_VALUE] = BuildCompact3ProfileDefaults(),
+    [CURRENT_COMPACT_FORMAT_VALUE] = BuildCurrentCompactProfileDefaults(),
+}
+
+local COMPACT_ENTITY_DEFAULTS = {
+    [PREVIOUS_COMPACT_FORMAT_VALUE] = BuildCompactEntityDefaults(false),
+    [CURRENT_COMPACT_FORMAT_VALUE] = BuildCompactEntityDefaults(true),
 }
 
 local function PrepareSharedImportText(text)
@@ -537,6 +618,11 @@ local function GetEntityDefaults(formatVersion)
     return COMPACT_ENTITY_DEFAULTS[formatVersion]
 end
 
+local function IsSupportedCompactFormat(formatVersion)
+    return COMPACT_PROFILE_DEFAULTS[formatVersion] ~= nil
+        or COMPACT_ENTITY_DEFAULTS[formatVersion] ~= nil
+end
+
 local function GetLoadConditionsDefaults(formatVersion, localScope)
     if localScope then
         return LOCAL_LOAD_CONDITIONS_DEFAULTS
@@ -554,6 +640,20 @@ local function GetPanelDefaults(formatVersion)
         return entityDefaults.panel
     end
     return PANEL_DEFAULTS
+end
+
+local function GetPanelCompactLayoutDefault(formatVersion, displayMode)
+    local defaults = GetPanelDefaults(formatVersion)
+    if not defaults or defaults.compactLayout ~= true then
+        return false
+    end
+    return ShouldDefaultPanelCompactLayout(displayMode or defaults.displayMode or "icons")
+end
+
+local function GetEffectivePanelDefaults(formatVersion, group)
+    local defaults = CopyValue(GetPanelDefaults(formatVersion))
+    defaults.compactLayout = GetPanelCompactLayoutDefault(formatVersion, group and group.displayMode)
+    return defaults
 end
 
 local function GetContainerDefaults(formatVersion)
@@ -685,7 +785,7 @@ local function CompactPanel(group, styleDefaults, panelContainerRef, formatVersi
         return nil
     end
 
-    local panelDefaults = GetPanelDefaults(formatVersion)
+    local panelDefaults = GetEffectivePanelDefaults(formatVersion, group)
     local compact = {}
     for key, value in pairs(group) do
         if key == "style" then
@@ -711,6 +811,8 @@ local function CompactPanel(group, styleDefaults, panelContainerRef, formatVersi
             and IsPanelAnchor(group.anchor)
             and HasActivePanelAlphaSettings(group) then
             compact.inheritPanelAlpha = true
+        elseif LOCAL_PANEL_METADATA_KEYS[key] then
+            -- Local setup metadata stays in the active profile only.
         elseif panelDefaults[key] ~= nil then
             if not DeepEqual(value, panelDefaults[key]) then
                 compact[key] = CopyValue(value)
@@ -727,7 +829,7 @@ local function RehydratePanel(group, styleDefaults, panelContainerRef, formatVer
         return
     end
 
-    local panelDefaults = GetPanelDefaults(formatVersion)
+    local panelDefaults = GetEffectivePanelDefaults(formatVersion, group)
     group.style = MergeWithDefaults(group.style, styleDefaults)
     local preserveCustomPanelAlpha = group.inheritPanelAlpha == nil
         and panelContainerRef ~= nil
@@ -754,6 +856,7 @@ local function RehydratePanel(group, styleDefaults, panelContainerRef, formatVer
     if preserveCustomPanelAlpha then
         group.inheritPanelAlpha = false
     end
+    StripLocalPanelMetadataFromEntity(group)
 end
 
 local function CompactContainer(container, formatVersion)
@@ -1260,6 +1363,7 @@ local function EncodeSharedPayload(payload, exportKind)
     local formatVersion = CURRENT_COMPACT_FORMAT_VALUE
 
     StripAndTagCharacterEligibility(exportData)
+    StripLocalPanelMetadataFromPayload(exportData)
 
     if CooldownCompanion.StampExportPayloadCheckpoint then
         CooldownCompanion:StampExportPayloadCheckpoint(exportData, exportKind)
@@ -1306,7 +1410,7 @@ local function DecodeSharedPayload(text)
     end
 
     local formatVersion = data[COMPACT_FORMAT_KEY]
-    if formatVersion == CURRENT_COMPACT_FORMAT_VALUE then
+    if IsSupportedCompactFormat(formatVersion) then
         data[COMPACT_FORMAT_KEY] = nil
         data = RehydrateCompactPayload(data, formatVersion)
     elseif UNSUPPORTED_COMPACT_FORMATS[formatVersion] then
@@ -1317,12 +1421,16 @@ local function DecodeSharedPayload(text)
     end
 
     StripAndTagCharacterEligibility(data)
+    StripLocalPanelMetadataFromPayload(data)
 
     return true, data
 end
 
 ST._StripCharacterEligibilityFromProfile = StripCharacterEligibilityFromProfile
 ST._StripCharacterEligibilityFromPayload = StripCharacterEligibilityFromPayload
+ST._StripLocalPanelMetadataFromEntity = StripLocalPanelMetadataFromEntity
+ST._StripLocalPanelMetadataFromProfile = StripLocalPanelMetadataFromProfile
+ST._StripLocalPanelMetadataFromPayload = StripLocalPanelMetadataFromPayload
 ST._EncodeSharedPayload = EncodeSharedPayload
 ST._DecodeSharedPayload = DecodeSharedPayload
 ST._PrepareSharedImportText = PrepareSharedImportText

@@ -110,7 +110,11 @@ end
 
 function CooldownCompanion:RefreshBarsAndFramesRuntimeFeatureGate(feature, reason)
     local enabled, flags = self:RefreshBarsAndFramesRuntimeGate(reason)
-    return enabled == true and flags and flags[feature] == true, flags
+    local featureEnabled = enabled == true and flags and flags[feature] == true or false
+    if featureEnabled then
+        CallIfAvailable("NormalizeCurrentStableExternalAnchorCompactLayout")
+    end
+    return featureEnabled, flags
 end
 
 function CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled(feature)
@@ -130,6 +134,7 @@ function CooldownCompanion:EvaluateBarsAndFramesRuntime(reason)
     end
 
     runtime.counters.evaluate = runtime.counters.evaluate + 1
+    CallIfAvailable("NormalizeCurrentStableExternalAnchorCompactLayout")
     local opts = { skipRuntimeGate = true }
 
     if flags.resourceBars then
@@ -155,6 +160,7 @@ function CooldownCompanion:EvaluateBarsAndFramesStackingRuntime(reason)
     end
 
     runtime.counters.evaluate = runtime.counters.evaluate + 1
+    CallIfAvailable("NormalizeCurrentStableExternalAnchorCompactLayout")
     local opts = { skipRuntimeGate = true }
 
     if flags.resourceBars then

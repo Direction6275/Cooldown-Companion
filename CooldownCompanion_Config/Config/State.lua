@@ -285,10 +285,6 @@ ST._configState = {
     configFinderSuppressTextChanged = false,
     compactConfigRows = false,
 
-    -- Auto Add flow state (Column 3 wizard mode)
-    autoAddFlowActive = false,
-    autoAddFlowState = nil,
-    autoAddFlowSerial = 0,
     configShiftTooltipActive = nil,
 
     -- Tab UI state (populated by ConfigSettings, cleaned by both files)
@@ -1896,6 +1892,11 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcAddBtn then entry.frame._cdcAddBtn:Hide() end
     if entry.frame._cdcGenericRenameBadge then entry.frame._cdcGenericRenameBadge:Hide() end
     if entry.frame._cdcCursorAnchorBadge then entry.frame._cdcCursorAnchorBadge:Hide() end
+    if entry.frame._cdcCDMRefreshBadge then
+        entry.frame._cdcCDMRefreshBadge:Hide()
+        entry.frame._cdcCDMRefreshBadge:ClearAllPoints()
+        entry.frame._cdcCDMRefreshBadge:SetScript("OnClick", nil)
+    end
     if entry.frame._cdcAnchorBadge then entry.frame._cdcAnchorBadge:Hide() end
     if entry.frame._cdcHeaderDisabledBadge then entry.frame._cdcHeaderDisabledBadge:Hide() end
     if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end
@@ -2898,9 +2899,6 @@ local function PruneConfigCustomBarSelection(customBarExists, resetTab)
 end
 
 local function ResetConfigSelection(full)
-    if full and ST._CancelAutoAddFlow then
-        ST._CancelAutoAddFlow()
-    end
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedFolder = nil
     CS.selectedButton = nil

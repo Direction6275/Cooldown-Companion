@@ -2210,6 +2210,83 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup()
     return nil
 end
 
+local function IsResourceBarIndependentAnchor(settings, specId)
+    local independent = settings and settings.independentAnchorEnabled == true
+    local layouts = settings and settings.layoutOrder
+    local layoutKey = specId and (tonumber(specId) or specId)
+    local layout = nil
+    if layoutKey and type(layouts) == "table" then
+        layout = layouts[layoutKey] or layouts[tostring(layoutKey)]
+    end
+    if type(layout) == "table" and layout.independentAnchorEnabled ~= nil then
+        independent = layout.independentAnchorEnabled == true
+    end
+    return independent
+end
+
+function CooldownCompanion:IsGroupStableExternalAnchor(groupId)
+    groupId = tonumber(groupId)
+    if not groupId then
+        return false
+    end
+
+    local anchorGroupId = self.GetFirstAvailableAnchorGroup and tonumber(self:GetFirstAvailableAnchorGroup()) or nil
+    if anchorGroupId ~= groupId then
+        return false
+    end
+
+    local frameSettings = self.GetFrameAnchoringSettings and self:GetFrameAnchoringSettings() or nil
+    if frameSettings and frameSettings.enabled == true then
+        return true
+    end
+
+    local castSettings = self.GetCastBarSettings and self:GetCastBarSettings() or nil
+    if castSettings and castSettings.enabled == true and castSettings.independentAnchorEnabled ~= true then
+        return true
+    end
+
+    local resourceSettings = self.GetResourceBarSettings and self:GetResourceBarSettings() or nil
+    if resourceSettings
+        and resourceSettings.enabled == true
+        and not IsResourceBarIndependentAnchor(resourceSettings, self._currentSpecId) then
+        return true
+    end
+
+    return false
+end
+
+function CooldownCompanion:NormalizeStableExternalAnchorCompactLayout(groupId, group)
+    local isStableAnchor = self:IsGroupStableExternalAnchor(groupId)
+    if not isStableAnchor then
+        return false, false
+    end
+
+    group = group or (self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId])
+    if group and group.compactLayout then
+        group.compactLayout = false
+        local frame = self.groupFrames and self.groupFrames[groupId]
+        if frame then
+            frame._layoutDirty = true
+            if InCombatLockdown and InCombatLockdown() and frame:IsProtected() then
+                self._pendingFullRefresh = true
+            elseif self.PopulateGroupButtons then
+                self:PopulateGroupButtons(groupId)
+            end
+        end
+        return true, true
+    end
+
+    return true, false
+end
+
+function CooldownCompanion:NormalizeCurrentStableExternalAnchorCompactLayout()
+    local groupId = self.GetFirstAvailableAnchorGroup and self:GetFirstAvailableAnchorGroup() or nil
+    if not groupId then
+        return false, false
+    end
+    return self:NormalizeStableExternalAnchorCompactLayout(groupId)
+end
+
 function CooldownCompanion:PopulatePanelAnchorTargetDropdown(dropdown, sourceGroupId)
     local db = self.db.profile
     local containers = db.groupContainers or {}
@@ -2898,6 +2975,9 @@ function CooldownCompanion:FinalizePanelAnchors()
     for groupId, group in pairs(groups) do
         local frame = self.groupFrames[groupId]
         if group and group.parentContainerId and group.anchor and frame then
+            if self.NormalizeStableExternalAnchorCompactLayout then
+                self:NormalizeStableExternalAnchorCompactLayout(groupId, group)
+            end
             if not group.compactLayout then
                 frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group, {
                     allowConfigPreviewButtonUsability = self:IsGroupEligibleForConfigPreview(groupId, {

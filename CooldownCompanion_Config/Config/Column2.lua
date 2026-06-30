@@ -27,7 +27,6 @@ local TryAdd = ST._TryAdd
 local TryReceiveCursorDrop = ST._TryReceiveCursorDrop
 local OnAutocompleteSelect = ST._OnAutocompleteSelect
 local SearchAutocomplete = ST._SearchAutocomplete
-local OpenAutoAddFlow = ST._OpenAutoAddFlow
 local ResolveViewerChildForSpellDisplay = ST.ResolveViewerChildForSpellDisplay
 local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
@@ -43,8 +42,17 @@ local ToggleConfigPanelMultiSelect = ST._ToggleConfigPanelMultiSelect
 local SelectConfigButton = ST._SelectConfigButton
 local SelectConfigButtonPanel = ST._SelectConfigButtonPanel
 local SelectConfigRotationAssistantEntry = ST._SelectConfigRotationAssistantEntry
+local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
+local ClearConfigPanelSelection = ST._ClearConfigPanelSelection
+local BuildCDMPanelSourceData = ST._BuildCDMPanelSourceData
+local GetCDMPanelSourceData = ST._GetCDMPanelSourceData
+local PopulateCDMPanelFromSource = ST._PopulateCDMPanelFromSource
+local ApplyCDMStarterPanelLayout = ST._ApplyCDMStarterPanelLayout
+local IsCDMPanelSourceKey = ST._IsCDMPanelSourceKey
+local GetCDMPanelSourceDisplayMode = ST._GetCDMPanelSourceDisplayMode
 
 local IsTriggerPanelGroup
+local RefreshCDMPanelFromSource
 
 local function IsContainerVisibleInConfig(containerOrContainerId)
     if CooldownCompanion.ResolveContainerClassScope then
@@ -108,6 +116,7 @@ local ROW_BADGE_SPACING = 2
 local ROW_BADGE_RIGHT_PAD = 4
 local TEXTURE_PANEL_HEADER_BADGE_ATLAS = "UI-HUD-MicroMenu-Communities-Icon-Notification"
 local CURSOR_PANEL_HEADER_BADGE_ATLAS = "cursor_cast_32"
+local CDM_PANEL_HEADER_BADGE_ATLAS = "common-icon-rotateleft"
 local PANEL_HEADER_TYPE_BADGE_GAP = 2
 local TRIGGER_PANEL_BADGE_COLOR = { 1.0, 0.18, 0.78 }
 local PANEL_TYPE_TOOLTIPS = {
@@ -162,6 +171,31 @@ local function AddPanelTypeMenuTooltip(info, displayMode)
     info.tooltipTitle = tooltip.title
     info.tooltipText = tooltip.description
     info.tooltipOnButton = true
+end
+
+local function ShowCDMStarterTooltip(owner)
+    GameTooltip:SetOwner(owner, "ANCHOR_TOP")
+    GameTooltip:AddLine("Build from Cooldown Manager", 1, 0.82, 0, true)
+    GameTooltip:AddLine("Creates editable panels from displayed Essential, Utility, Tracked Buffs, and Tracked Bars sections.", 1, 1, 1, true)
+    GameTooltip:Show()
+end
+
+local function AddCDMStarterMenuTooltip(info)
+    info.tooltipTitle = "Add Missing CDM Panels"
+    info.tooltipText = "Creates any missing Cooldown Manager starter panels without duplicating existing CDM panels."
+    info.tooltipOnButton = true
+end
+
+local function IsActiveCDMPanelSource(panel)
+    if not (panel
+        and panel.cdmPanelSource
+        and IsCDMPanelSourceKey
+        and IsCDMPanelSourceKey(panel.cdmPanelSource)) then
+        return false
+    end
+
+    local expectedMode = GetCDMPanelSourceDisplayMode and GetCDMPanelSourceDisplayMode(panel.cdmPanelSource) or nil
+    return expectedMode == nil or panel.displayMode == expectedMode
 end
 
 local function GetPanelTypeBadgeAtlas(displayMode)
@@ -317,6 +351,56 @@ local function ConfigureCursorAnchorBadge(header, panel)
     badge:Hide()
 end
 
+local function ConfigureCDMRefreshBadge(header, panel, panelId, containerId, cursorBadgeShown)
+    local badge = header.frame._cdcCDMRefreshBadge
+    if not badge then
+        badge = CreateFrame("Button", nil, header.frame)
+        badge:SetSize(16, 16)
+        badge:RegisterForClicks("LeftButtonUp")
+        badge:SetPropagateMouseClicks(false)
+        badge:SetPropagateMouseMotion(false)
+        badge.icon = badge:CreateTexture(nil, "OVERLAY")
+        badge.icon:SetAllPoints()
+        badge:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Refresh from Cooldown Manager", 1, 0.82, 0, true)
+            GameTooltip:AddLine("Replace this panel's entries from its linked CDM section.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        badge:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        header.frame._cdcCDMRefreshBadge = badge
+    end
+
+    badge:SetFrameLevel(header.frame:GetFrameLevel() + 25)
+    badge:SetSize(16, 16)
+    badge:ClearAllPoints()
+
+    if not IsActiveCDMPanelSource(panel) then
+        badge:Hide()
+        badge:SetScript("OnClick", nil)
+        return
+    end
+
+    local leftOffset = 4
+    if cursorBadgeShown then
+        leftOffset = leftOffset + ROW_BADGE_SIZE + ROW_BADGE_SPACING
+    end
+    badge:SetPoint("LEFT", header.frame, "LEFT", leftOffset, 0)
+    badge.icon:SetAtlas(CDM_PANEL_HEADER_BADGE_ATLAS, false)
+    badge.icon:SetVertexColor(0.35, 0.8, 1, 0.95)
+    if badge.icon.SetDesaturated then
+        badge.icon:SetDesaturated(false)
+    end
+    badge:SetScript("OnClick", function(_, button)
+        if button ~= "LeftButton" then return end
+        GameTooltip:Hide()
+        RefreshCDMPanelFromSource(panelId, panel, containerId)
+    end)
+    badge:Show()
+end
+
 local function ConfigurePanelTypeBadge(header, displayMode, textWidth)
     local modeBadge = header._cdcModeBadge
     if not modeBadge then
@@ -415,6 +499,240 @@ end
 local function CreatePanelInSelectedContainer(displayMode, opts)
     local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, displayMode)
     FinalizeCreatedPanel(newPanelId, displayMode, opts)
+end
+
+local function PrintCooldownManagerUnavailable(sourceData)
+    local reason = sourceData and sourceData.failureReason
+    if type(reason) ~= "string" or reason == "" then
+        reason = "Unknown reason"
+    end
+    CooldownCompanion:Print("Cooldown Manager unavailable: " .. reason)
+end
+
+local function GetExistingCDMPanelSources(containerId)
+    local existing = {}
+    for _, panelInfo in ipairs(CooldownCompanion:GetPanels(containerId) or {}) do
+        local panel = panelInfo.group
+        if IsActiveCDMPanelSource(panel) then
+            existing[panel.cdmPanelSource] = true
+        end
+    end
+    return existing
+end
+
+local function NormalizeCDMPanelOrder(containerId, sourceData)
+    local desiredRank = {}
+    for index, source in ipairs(sourceData and sourceData.sources or {}) do
+        desiredRank[source.key] = index
+    end
+
+    local panels = CooldownCompanion:GetPanels(containerId) or {}
+    local cdmPanels = {}
+    for index, panelInfo in ipairs(panels) do
+        local panel = panelInfo.group
+        if IsActiveCDMPanelSource(panel) and desiredRank[panel.cdmPanelSource] then
+            cdmPanels[#cdmPanels + 1] = {
+                panelId = panelInfo.groupId,
+                rank = desiredRank[panel.cdmPanelSource],
+                originalIndex = index,
+            }
+        end
+    end
+
+    if #cdmPanels < 2 then
+        return false
+    end
+
+    table.sort(cdmPanels, function(a, b)
+        if a.rank == b.rank then
+            return a.originalIndex < b.originalIndex
+        end
+        return a.rank < b.rank
+    end)
+
+    local nextCDMIndex = 1
+    local changed = false
+    for index, panelInfo in ipairs(panels) do
+        local panel = panelInfo.group
+        local panelId = panelInfo.groupId
+        if IsActiveCDMPanelSource(panel) and desiredRank[panel.cdmPanelSource] then
+            panelId = cdmPanels[nextCDMIndex].panelId
+            nextCDMIndex = nextCDMIndex + 1
+        end
+
+        local target = CooldownCompanion.db.profile.groups[panelId]
+        if target and target.order ~= index then
+            target.order = index
+            changed = true
+        end
+        if panelInfo.groupId ~= panelId then
+            changed = true
+        end
+    end
+
+    return changed
+end
+
+local function RefreshCDMPanelOrderRuntime()
+    if CooldownCompanion.RefreshAllGroups then
+        CooldownCompanion:RefreshAllGroups()
+    end
+    if CooldownCompanion.EvaluateBarsAndFramesRuntime then
+        CooldownCompanion:EvaluateBarsAndFramesRuntime("cdm-panel-order")
+    end
+end
+
+local function CreateCDMPanelFromSource(containerId, sourceData)
+    local panelId = CooldownCompanion:CreatePanel(containerId, sourceData.displayMode)
+    if not panelId then
+        return nil, 0
+    end
+
+    local group = CooldownCompanion.db.profile.groups[panelId]
+    if group then
+        group.name = sourceData.panelName
+        group.cdmPanelSource = sourceData.key
+        if ApplyCDMStarterPanelLayout then
+            ApplyCDMStarterPanelLayout(group, sourceData.key, containerId, sourceData.entries and #sourceData.entries or 0)
+        end
+    end
+
+    local added = PopulateCDMPanelFromSource and PopulateCDMPanelFromSource(panelId, sourceData) or 0
+    return panelId, added
+end
+
+local function CreateMissingCDMPanelsInSelectedContainer()
+    local containerId = CS.selectedContainer
+    if not containerId then
+        return
+    end
+
+    if not BuildCDMPanelSourceData then
+        CooldownCompanion:Print("Cooldown Manager panel setup is unavailable.")
+        return
+    end
+
+    local sourceData = BuildCDMPanelSourceData()
+    if not (sourceData and sourceData.available) then
+        PrintCooldownManagerUnavailable(sourceData)
+        return
+    end
+
+    if (sourceData.totalEntries or 0) == 0 then
+        CooldownCompanion:Print("No displayed Cooldown Manager entries found.")
+        return
+    end
+
+    local existingSources = GetExistingCDMPanelSources(containerId)
+    local createdPanelIds = {}
+    local createdBySource = {}
+    local createdEntryCount = 0
+
+    for _, source in ipairs(sourceData.sources or {}) do
+        if not existingSources[source.key] and source.entries and #source.entries > 0 then
+            local panelId, added = CreateCDMPanelFromSource(containerId, source)
+            if panelId then
+                createdPanelIds[#createdPanelIds + 1] = panelId
+                createdBySource[source.key] = panelId
+                createdEntryCount = createdEntryCount + (added or 0)
+                existingSources[source.key] = true
+            end
+        end
+    end
+
+    local orderChanged = NormalizeCDMPanelOrder(containerId, sourceData)
+    if orderChanged then
+        RefreshCDMPanelOrderRuntime()
+    end
+
+    if #createdPanelIds == 0 then
+        if orderChanged then
+            CooldownCompanion:RefreshConfigPanel()
+            CooldownCompanion:Print("Reordered Cooldown Manager panels.")
+            return
+        end
+        CooldownCompanion:Print("No missing Cooldown Manager panels to add.")
+        return
+    end
+
+    local selectPanelId = createdBySource.essential or createdPanelIds[1]
+    SelectConfigPanel(selectPanelId, { containerId = containerId })
+    CS.addingToPanelId = nil
+    CS.pendingEditBoxFocus = false
+    CooldownCompanion:RefreshConfigPanel()
+    CooldownCompanion:Print(("Created %d Cooldown Manager panel%s with %d entr%s."):format(
+        #createdPanelIds,
+        #createdPanelIds == 1 and "" or "s",
+        createdEntryCount,
+        createdEntryCount == 1 and "y" or "ies"
+    ))
+end
+
+local function DeleteEmptyCDMPanel(data)
+    if type(data) ~= "table" then
+        return
+    end
+
+    local containerId = data.containerId
+    local panelId = data.panelId
+    local panel = CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups
+        and CooldownCompanion.db.profile.groups[panelId]
+        or nil
+    if not panel or panel.parentContainerId ~= containerId or panel.cdmPanelSource ~= data.sourceKey then
+        return
+    end
+
+    local panelName = panel.name or "Panel"
+    CooldownCompanion:ClearAllConfigPreviews()
+    if CooldownCompanion:DeletePanel(containerId, panelId) then
+        if CS.selectedGroup == panelId and ClearConfigPanelSelection then
+            ClearConfigPanelSelection()
+        end
+        if CS.selectedPanels then
+            CS.selectedPanels[panelId] = nil
+        end
+        if CS.addingToPanelId == panelId then
+            CS.addingToPanelId = nil
+        end
+        CooldownCompanion:RefreshConfigPanel()
+        CooldownCompanion:Print("Deleted " .. panelName .. ": Cooldown Manager section is empty.")
+    end
+end
+ST._DeleteEmptyCDMPanel = DeleteEmptyCDMPanel
+
+RefreshCDMPanelFromSource = function(panelId, panel, containerId)
+    if not IsActiveCDMPanelSource(panel) then
+        return
+    end
+
+    local sourceData = BuildCDMPanelSourceData and BuildCDMPanelSourceData() or nil
+    if not (sourceData and sourceData.available) then
+        PrintCooldownManagerUnavailable(sourceData)
+        return
+    end
+
+    local source = GetCDMPanelSourceData and GetCDMPanelSourceData(sourceData, panel.cdmPanelSource) or nil
+    if not source or not source.entries or #source.entries == 0 then
+        ShowPopupAboveConfig("CDC_DELETE_EMPTY_CDM_PANEL", panel.name or "Panel", {
+            containerId = containerId,
+            panelId = panelId,
+            sourceKey = panel.cdmPanelSource,
+        })
+        return
+    end
+
+    local added = PopulateCDMPanelFromSource and PopulateCDMPanelFromSource(panelId, source) or 0
+    if CS.selectedGroup == panelId and ClearConfigButtonSelection then
+        ClearConfigButtonSelection()
+    end
+    CooldownCompanion:RefreshConfigPanel()
+    CooldownCompanion:Print(("Refreshed %s from Cooldown Manager (%d entr%s)."):format(
+        panel.name or "Panel",
+        added,
+        added == 1 and "y" or "ies"
+    ))
 end
 
 local function EnsureCol2PanelTypeMenu()
@@ -527,6 +845,16 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
                 CreatePanelInSelectedContainer(ST.DISPLAY_MODE_ROTATION_ASSISTANT)
             end
             UIDropDownMenu_AddButton(info, level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Add Missing CDM Panels"
+            info.notCheckable = true
+            AddCDMStarterMenuTooltip(info)
+            info.func = function()
+                CloseDropDownMenus()
+                CreateMissingCDMPanelsInSelectedContainer()
+            end
+            UIDropDownMenu_AddButton(info, level)
         end, "MENU")
         menu:SetFrameStrata("FULLSCREEN_DIALOG")
         ToggleDropDownMenu(1, nil, menu, "cursor", 0, 0)
@@ -555,11 +883,15 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
 end
 
 local function RenderColumn2NoPanelsState(classColor)
-    local spacer = AceGUI:Create("SimpleGroup")
-    spacer:SetFullWidth(true)
-    spacer:SetHeight(20)
-    spacer.noAutoHeight = true
-    CS.col2Scroll:AddChild(spacer)
+    local function AddFixedSpacer(height)
+        local spacer = AceGUI:Create("SimpleGroup")
+        spacer:SetFullWidth(true)
+        spacer:SetHeight(height)
+        spacer.noAutoHeight = true
+        CS.col2Scroll:AddChild(spacer)
+    end
+
+    AddFixedSpacer(20)
 
     local header = AceGUI:Create("Label")
     ST._ConfigureWrappedHelperLabel(header)
@@ -569,11 +901,7 @@ local function RenderColumn2NoPanelsState(classColor)
     header:SetFont((GameFontNormal:GetFont()), 15, "")
     CS.col2Scroll:AddChild(header)
 
-    local descSpacer = AceGUI:Create("SimpleGroup")
-    descSpacer:SetFullWidth(true)
-    descSpacer:SetHeight(6)
-    descSpacer.noAutoHeight = true
-    CS.col2Scroll:AddChild(descSpacer)
+    AddFixedSpacer(6)
 
     local desc = AceGUI:Create("Label")
     ST._ConfigureWrappedHelperLabel(desc)
@@ -584,19 +912,11 @@ local function RenderColumn2NoPanelsState(classColor)
     desc:SetColor(0.7, 0.7, 0.7)
     CS.col2Scroll:AddChild(desc)
 
-    local helpSpacer = AceGUI:Create("SimpleGroup")
-    helpSpacer:SetFullWidth(true)
-    helpSpacer:SetHeight(10)
-    helpSpacer.noAutoHeight = true
-    CS.col2Scroll:AddChild(helpSpacer)
+    AddFixedSpacer(18)
 
     AddClassAccentSpacer(CS.col2Scroll, classColor)
 
-    local postDividerSpacer = AceGUI:Create("SimpleGroup")
-    postDividerSpacer:SetFullWidth(true)
-    postDividerSpacer:SetHeight(10)
-    postDividerSpacer.noAutoHeight = true
-    CS.col2Scroll:AddChild(postDividerSpacer)
+    AddFixedSpacer(10)
 
     local helpEntries = {
         PANEL_TYPE_TOOLTIPS.icons,
@@ -607,13 +927,10 @@ local function RenderColumn2NoPanelsState(classColor)
         PANEL_TYPE_TOOLTIPS.rotationAssistant,
     }
 
+    local lastHelpFrame
     for index, entry in ipairs(helpEntries) do
         if index > 1 then
-            local entrySpacer = AceGUI:Create("SimpleGroup")
-            entrySpacer:SetFullWidth(true)
-            entrySpacer:SetHeight(8)
-            entrySpacer.noAutoHeight = true
-            CS.col2Scroll:AddChild(entrySpacer)
+            AddFixedSpacer(8)
         end
 
         local panelHelp = AceGUI:Create("Label")
@@ -624,7 +941,75 @@ local function RenderColumn2NoPanelsState(classColor)
         panelHelp:SetFont((GameFontNormal:GetFont()), 12, "")
         panelHelp:SetColor(0.75, 0.75, 0.75)
         CS.col2Scroll:AddChild(panelHelp)
+        lastHelpFrame = panelHelp.frame
     end
+
+    CS.col2Scroll:DoLayout()
+
+    local visibleHeight = CS.col2Scroll.frame and CS.col2Scroll.frame:GetHeight() or 0
+    local scrollTop = CS.col2Scroll.frame and CS.col2Scroll.frame:GetTop()
+    local lastHelpBottom = lastHelpFrame and lastHelpFrame:GetBottom()
+    local contentHeight = 0
+    if scrollTop and lastHelpBottom then
+        contentHeight = math.max(0, scrollTop - lastHelpBottom)
+    end
+    if contentHeight <= 0 then
+        local contentState = CS.col2Scroll.status or CS.col2Scroll.localstatus
+        contentHeight = tonumber(contentState and contentState.contentHeight)
+            or tonumber(contentState and contentState.contentheight)
+            or (CS.col2Scroll.content and CS.col2Scroll.content:GetHeight())
+            or 0
+    end
+    local ctaHeight = 62
+    local ctaSpacerHeight = 18
+    if visibleHeight > 0 and contentHeight > 0 then
+        local remainingHeight = visibleHeight - contentHeight - ctaHeight
+        if remainingHeight > 0 then
+            ctaSpacerHeight = math.max(ctaSpacerHeight, math.floor((remainingHeight / 2) + 0.5))
+        end
+    end
+    AddFixedSpacer(ctaSpacerHeight)
+
+    local cdmIntro = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(cdmIntro)
+    cdmIntro:SetText("Alternatively, automatically create panels based on what is in your CDM.")
+    cdmIntro:SetFullWidth(true)
+    cdmIntro:SetJustifyH("CENTER")
+    cdmIntro:SetFont((GameFontNormal:GetFont()), 12, "")
+    cdmIntro:SetColor(0.85, 0.85, 0.85)
+    CS.col2Scroll:AddChild(cdmIntro)
+
+    AddFixedSpacer(6)
+
+    local cdmButtonRow = AceGUI:Create("SimpleGroup")
+    cdmButtonRow:SetFullWidth(true)
+    cdmButtonRow:SetLayout("Flow")
+
+    local leftSpacer = AceGUI:Create("Label")
+    leftSpacer:SetText("")
+    leftSpacer:SetRelativeWidth(0.15)
+    cdmButtonRow:AddChild(leftSpacer)
+
+    local cdmButton = AceGUI:Create("Button")
+    cdmButton:SetText("Build from Cooldown Manager")
+    cdmButton:SetRelativeWidth(0.70)
+    cdmButton:SetCallback("OnClick", function()
+        CreateMissingCDMPanelsInSelectedContainer()
+    end)
+    cdmButton:SetCallback("OnEnter", function(widget)
+        ShowCDMStarterTooltip(widget.frame)
+    end)
+    cdmButton:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    cdmButtonRow:AddChild(cdmButton)
+
+    local rightSpacer = AceGUI:Create("Label")
+    rightSpacer:SetText("")
+    rightSpacer:SetRelativeWidth(0.15)
+    cdmButtonRow:AddChild(rightSpacer)
+
+    CS.col2Scroll:AddChild(cdmButtonRow)
 
     CS.col2Scroll:DoLayout()
 end
@@ -825,7 +1210,9 @@ local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId,
         CS.newInput = text
         if text and #text >= 1 then
             local results = SearchAutocomplete(text)
-            CS.ShowAutocompleteResults(results, widget, OnAutocompleteSelect)
+            CS.ShowAutocompleteResults(results, widget, OnAutocompleteSelect, {
+                requireExactNumericEnter = true,
+            })
         else
             CS.HideAutocomplete()
         end
@@ -842,60 +1229,6 @@ local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId,
             end
         end)
     end
-
-    local addSpacer = AceGUI:Create("SimpleGroup")
-    addSpacer:SetFullWidth(true)
-    addSpacer:SetHeight(2)
-    addSpacer.noAutoHeight = true
-    panelContainer:AddChild(addSpacer)
-
-    local addRow = AceGUI:Create("SimpleGroup")
-    addRow:SetFullWidth(true)
-    addRow:SetLayout("Flow")
-    panelMeta.addRowFrame = addRow.frame
-
-    local isTriggerPanel = IsTriggerPanelGroup(panel)
-    local manualAddBtn = AceGUI:Create("Button")
-    manualAddBtn:SetText(isTriggerPanel and "Add Entry" or "Manual Add")
-    manualAddBtn:SetRelativeWidth((panel.displayMode == "textures" or isTriggerPanel) and 1 or 0.49)
-    panelMeta.manualAddButtonFrame = manualAddBtn.frame
-    manualAddBtn:SetCallback("OnClick", function()
-        SubmitInlineAdd(CS.newInput)
-    end)
-    addRow:AddChild(manualAddBtn)
-
-    if panel.displayMode ~= "textures" and not isTriggerPanel then
-        local autoAddBtn = AceGUI:Create("Button")
-        autoAddBtn:SetText("Auto Add")
-        autoAddBtn:SetRelativeWidth(0.49)
-        local tutorialRuntime = CS.tutorialRuntime
-        local deemphasizeAutoAdd = tutorialRuntime
-            and tutorialRuntime.active
-            and (tutorialRuntime.step == "add_box_intro" or tutorialRuntime.step == "add_one_spell")
-        autoAddBtn:SetCallback("OnClick", function()
-            CS.selectedGroup = CS.addingToPanelId
-            OpenAutoAddFlow()
-        end)
-        autoAddBtn:SetCallback("OnEnter", function(widget)
-            GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
-            GameTooltip:AddLine("Auto Add")
-            GameTooltip:AddLine("Auto-add from Action Bars, Spellbook, or CDM Auras.", 1, 1, 1, true)
-            if deemphasizeAutoAdd then
-                GameTooltip:AddLine("Optional during the tutorial. The guided path uses the add box above.", 0.8, 0.8, 0.8, true)
-            end
-            GameTooltip:Show()
-        end)
-        autoAddBtn:SetCallback("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        if autoAddBtn.frame then
-            autoAddBtn.frame:SetAlpha(deemphasizeAutoAdd and 0.62 or 1)
-        end
-        panelMeta.autoAddButtonFrame = autoAddBtn.frame
-        addRow:AddChild(autoAddBtn)
-    end
-
-    panelContainer:AddChild(addRow)
 
 end
 
@@ -1747,10 +2080,7 @@ local function RefreshColumn2()
                 isCollapsed = isCollapsed and true or false,
                 displayMode = panel.displayMode,
                 buttonRows = {},
-                addRowFrame = nil,
                 addInputFrame = nil,
-                manualAddButtonFrame = nil,
-                autoAddButtonFrame = nil,
             }
 
             -- Class-colored accent separator between panels
@@ -1846,6 +2176,7 @@ local function RefreshColumn2()
                     and CooldownCompanion:IsGroupCursorAnchored(panel)
                     or false
                 ConfigureCursorAnchorBadge(header, panel)
+                ConfigureCDMRefreshBadge(header, panel, panelId, CS.selectedContainer, isCursorAnchoredPanel)
                 rightOffset = ConfigureGenericRenameBadge(header, panel, panelId, rightOffset)
 
                 -- Anchor unlock badge (shown when panel is individually unlocked)
