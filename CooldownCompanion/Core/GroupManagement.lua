@@ -1154,7 +1154,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.desaturateOnCooldown == nil then style.desaturateOnCooldown = true end
     if style.showOutOfRange == nil then style.showOutOfRange = true end
     if style.showGCDSwipe == nil then style.showGCDSwipe = false end
-    if style.showLossOfControl == nil then style.showLossOfControl = false end
+    if style.showLossOfControl == nil then style.showLossOfControl = true end
     if style.showTooltips == nil then style.showTooltips = false end
     if style.showUnusable == nil then style.showUnusable = true end
     if style.unusableVisualMode == nil then style.unusableVisualMode = "dim" end
@@ -1181,6 +1181,8 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         style.showAuraText = false
         style.showAuraStackText = false
         style.showAssistedHighlight = false
+        style.showLossOfControl = false
+        style.showUnusable = false
         style.procGlowStyle = "none"
         style.pandemicGlowStyle = "none"
         style.readyGlowStyle = "none"
