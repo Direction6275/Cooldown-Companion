@@ -285,10 +285,6 @@ ST._configState = {
     configFinderSuppressTextChanged = false,
     compactConfigRows = false,
 
-    -- Auto Add flow state (Column 3 wizard mode)
-    autoAddFlowActive = false,
-    autoAddFlowState = nil,
-    autoAddFlowSerial = 0,
     configShiftTooltipActive = nil,
 
     -- Tab UI state (populated by ConfigSettings, cleaned by both files)
@@ -2903,9 +2899,6 @@ local function PruneConfigCustomBarSelection(customBarExists, resetTab)
 end
 
 local function ResetConfigSelection(full)
-    if full and ST._CancelAutoAddFlow then
-        ST._CancelAutoAddFlow()
-    end
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedFolder = nil
     CS.selectedButton = nil

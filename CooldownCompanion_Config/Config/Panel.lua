@@ -404,9 +404,6 @@ local function GetColumn3HeaderMode(selection)
     if selection.panelMultiCount >= 2 then
         return "panel_actions"
     end
-    if CS.autoAddFlowActive then
-        return "auto_add"
-    end
     return "button"
 end
 
@@ -440,8 +437,6 @@ local function GetColumn3HeaderTitle(selection)
     local mode = GetColumn3HeaderMode(selection)
     if mode == "custom_aura" then
         return GetCustomBarsColumnTitle()
-    elseif mode == "auto_add" then
-        return "Auto Add"
     elseif mode == "panel_actions" then
         return "Panel Actions"
     end
@@ -718,9 +713,6 @@ local function ResetConfigForProfileChange()
         ClearConfigFinderText()
     end
     SetPrimaryMode("buttons", { skipRefresh = true })
-    if ST._CancelAutoAddFlow then
-        ST._CancelAutoAddFlow()
-    end
 end
 
 function CooldownCompanion:_configResetForProfileChangeImpl()
@@ -951,9 +943,6 @@ local function CreateConfigPanel()
         end
         CloseDropDownMenus()
         CS.HideAutocomplete()
-        if ST._CancelAutoAddFlow then
-            ST._CancelAutoAddFlow()
-        end
     end)
 
     -- ESC to close support (keyboard handler — more reliable than UISpecialFrames)
@@ -1901,9 +1890,6 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Inactive Custom Bars shows Custom Bars filtered to other specs.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("No spec filter means a Custom Bar applies to every spec.", 1, 1, 1, true)
-        elseif CS.autoAddFlowActive then
-            GameTooltip:AddLine("Auto Add")
-            GameTooltip:AddLine("Guided import flow for Action Bars, Spellbook, and CDM Auras.", 1, 1, 1, true)
         else
             local selection = GetConfigSelectionSummary()
             local mode = GetColumn3HeaderMode(selection)
@@ -2423,16 +2409,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
     end
 
     -- Save AceGUI scroll state before any column rebuilds.
-    local function getAutoAddScrollKey()
-        local state = CS.autoAddFlowState
-        if not (CS.autoAddFlowActive and state) then return nil end
-        return table.concat({
-            tostring(tonumber(state.serial) or 0),
-            tostring(state.groupID or ""),
-            tostring(state.source or ""),
-            tostring(tonumber(state.step) or 0),
-        }, ":")
-    end
     local function getBarsStylingScrollKey()
         if not CS.resourceBarPanelActive then return nil end
         local barTab = tostring(CS.barPanelTab or "")
@@ -2467,8 +2443,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
     local col3Before = CS.configFrame and CS.configFrame.col3
     local savedCab = SaveScrollState(getCustomAuraScrollWidget(col3Before))
     local savedCabKey = getCustomAuraScrollKey()
-    local savedAaf = col3Before and col3Before._autoAddScroll and SaveScrollState(col3Before._autoAddScroll)
-    local savedAafKey = getAutoAddScrollKey()
     local savedBtn = SaveScrollState(buttonSettingsScroll)
 
     if CS.configFrame.profileBar:IsShown() then
@@ -2514,14 +2488,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
             RestoreScrollState(customAuraAfter, savedCab)
         else
             ClearScrollState(customAuraAfter)
-        end
-    end
-    if col3After and col3After._autoAddScroll then
-        local currentAafKey = getAutoAddScrollKey()
-        if savedAaf and savedAafKey and currentAafKey and savedAafKey == currentAafKey then
-            RestoreScrollState(col3After._autoAddScroll, savedAaf)
-        else
-            ClearScrollState(col3After._autoAddScroll)
         end
     end
     RestoreScrollState(buttonSettingsScroll, savedBtn)

@@ -705,9 +705,7 @@ local function RebuildTutorialAnchors()
 
     if selectedPanelMeta then
         anchors.selected_panel_area = selectedPanelMeta.panelFrame or selectedPanelMeta.headerFrame
-        anchors.selected_panel_add_row = selectedPanelMeta.addRowFrame
         anchors.selected_panel_add_input = selectedPanelMeta.addInputFrame
-        anchors.selected_panel_manual_add_button = selectedPanelMeta.manualAddButtonFrame
     end
 
     if CS.configFrame and CS.configFrame.col3 and CS.configFrame.col3.frame then

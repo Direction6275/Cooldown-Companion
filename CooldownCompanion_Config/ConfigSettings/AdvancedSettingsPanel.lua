@@ -65,7 +65,6 @@ local function BuildContext(extra)
         selectedCustomBarId = CS.selectedCustomBarId,
         selectedResourcePowerType = CS.selectedResourcePowerType,
         resourceSettingsSpecID = CS.resourceSettingsSpecID,
-        autoAddFlowActive = BoolValue(CS.autoAddFlowActive),
         talentPickerMode = BoolValue(CS.talentPickerMode),
     }
 
