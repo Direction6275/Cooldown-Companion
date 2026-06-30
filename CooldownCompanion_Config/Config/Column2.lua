@@ -805,16 +805,6 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
             if level ~= 1 then return end
 
             local info = UIDropDownMenu_CreateInfo()
-            info.text = "Add Missing CDM Panels"
-            info.notCheckable = true
-            AddCDMStarterMenuTooltip(info)
-            info.func = function()
-                CloseDropDownMenus()
-                CreateMissingCDMPanelsInSelectedContainer()
-            end
-            UIDropDownMenu_AddButton(info, level)
-
-            info = UIDropDownMenu_CreateInfo()
             info.text = "Text Panel"
             info.notCheckable = true
             AddPanelTypeMenuTooltip(info, "text")
@@ -853,6 +843,16 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
             info.func = function()
                 CloseDropDownMenus()
                 CreatePanelInSelectedContainer(ST.DISPLAY_MODE_ROTATION_ASSISTANT)
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Add Missing CDM Panels"
+            info.notCheckable = true
+            AddCDMStarterMenuTooltip(info)
+            info.func = function()
+                CloseDropDownMenus()
+                CreateMissingCDMPanelsInSelectedContainer()
             end
             UIDropDownMenu_AddButton(info, level)
         end, "MENU")
@@ -972,7 +972,7 @@ local function RenderColumn2NoPanelsState(classColor)
 
     local cdmIntro = AceGUI:Create("Label")
     ST._ConfigureWrappedHelperLabel(cdmIntro)
-    cdmIntro:SetText("Alternatively, automatically create panels based on what is in your CDM")
+    cdmIntro:SetText("Alternatively, automatically create panels based on what is in your CDM.")
     cdmIntro:SetFullWidth(true)
     cdmIntro:SetJustifyH("CENTER")
     cdmIntro:SetFont((GameFontNormal:GetFont()), 12, "")
