@@ -380,4 +380,3 @@ ST._PopulateCDMPanelFromSource = PopulateCDMPanelFromSource
 ST._ApplyCDMStarterPanelLayout = ApplyCDMStarterPanelLayout
 ST._IsCDMPanelSourceKey = IsKnownSourceKey
 ST._GetCDMPanelSourceDisplayMode = GetSourceDisplayMode
-ST._CDMPanelSources = CDM_PANEL_SOURCES
