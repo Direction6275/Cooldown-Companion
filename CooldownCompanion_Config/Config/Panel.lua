@@ -238,9 +238,7 @@ local function OpenProfileWideBarTextureWindow()
 end
 
 CS.CloseProfileWideFontWindow = CloseProfileWideFontWindow
-CS.OpenProfileWideFontWindow = OpenProfileWideFontWindow
 CS.CloseProfileWideBarTextureWindow = CloseProfileWideBarTextureWindow
-CS.OpenProfileWideBarTextureWindow = OpenProfileWideBarTextureWindow
 
 if not AceGUI:GetLayout(MANUAL_COLUMN_LAYOUT) then
     -- These columns are positioned and sized manually, so their layout should
