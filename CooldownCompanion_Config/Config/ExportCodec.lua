@@ -12,7 +12,8 @@ local LibDeflate = LibStub("LibDeflate")
 local COMPRESSION_CONFIG = { level = 9 }
 local COMPACT_FORMAT_KEY = "_cdcExportFormat"
 local STRIPPED_CHARACTER_ELIGIBILITY_KEY = "_cdcCharacterEligibilityStripped"
-local CURRENT_COMPACT_FORMAT_VALUE = "compact3"
+local PREVIOUS_COMPACT_FORMAT_VALUE = "compact3"
+local CURRENT_COMPACT_FORMAT_VALUE = "compact4"
 local UNSUPPORTED_COMPACT_FORMATS = {
     compact1 = true,
     compact2 = true,
@@ -286,7 +287,7 @@ local LOCAL_LOAD_CONDITIONS_DEFAULTS = {
 local PANEL_DEFAULTS = {
     displayMode = "icons",
     masqueEnabled = false,
-    compactLayout = false,
+    compactLayout = true,
     maxVisibleButtons = 0,
     compactGrowthDirection = "center",
     inheritPanelAlpha = true,
@@ -297,6 +298,10 @@ local PANEL_DEFAULTS = {
     fadeInDuration = 0.2,
     fadeOutDuration = 0.2,
 }
+
+local function ShouldDefaultPanelCompactLayout(displayMode)
+    return displayMode == "icons" or displayMode == "bars"
+end
 
 local CONTAINER_DEFAULTS = {
     enabled = true,
@@ -395,33 +400,17 @@ local function BuildCurrentCompactProfileDefaults()
     return compactDefaults
 end
 
-local SCOPED_SYSTEM_DEFAULTS = {
-    resourceBars = "resourceBars",
-    castBar = "castBar",
-    frameAnchoring = "frameAnchoring",
-    legacyResourceBarsSeed = "resourceBars",
-    legacyCastBarSeed = "castBar",
-    legacyFrameAnchoringSeed = "frameAnchoring",
-}
+local function BuildCompact3ProfileDefaults()
+    local compactDefaults = BuildCurrentCompactProfileDefaults()
+    if compactDefaults.globalStyle then
+        compactDefaults.globalStyle.showUnusable = false
+        compactDefaults.globalStyle.showLossOfControl = false
+    end
+    return compactDefaults
+end
 
-local SCOPED_STORE_KEYS = {
-    resourceBarsByClass = "resourceBars",
-    resourceBarsByChar = "resourceBars",
-    castBarByChar = "castBar",
-    frameAnchoringByChar = "frameAnchoring",
-}
-
--- Compact payloads must rehydrate against a frozen baseline, not the
--- importer's current runtime defaults. The current compact baseline is seeded
--- from Core/Defaults so export compaction and runtime defaults stay in sync.
--- If profile defaults change in a future release, keep the old snapshot here
--- and bump CURRENT_COMPACT_FORMAT_VALUE.
-local COMPACT_PROFILE_DEFAULTS = {
-    [CURRENT_COMPACT_FORMAT_VALUE] = BuildCurrentCompactProfileDefaults(),
-}
-
-local COMPACT_ENTITY_DEFAULTS = {
-    [CURRENT_COMPACT_FORMAT_VALUE] = {
+local function BuildCompactEntityDefaults(compactLayoutDefault)
+    return {
         loadConditions = {
             raid = false,
             dungeon = false,
@@ -436,7 +425,7 @@ local COMPACT_ENTITY_DEFAULTS = {
         panel = {
             displayMode = "icons",
             masqueEnabled = false,
-            compactLayout = false,
+            compactLayout = compactLayoutDefault == true,
             maxVisibleButtons = 0,
             compactGrowthDirection = "center",
             inheritPanelAlpha = true,
@@ -476,7 +465,38 @@ local COMPACT_ENTITY_DEFAULTS = {
             x = 0,
             y = 0,
         },
-    },
+    }
+end
+
+local SCOPED_SYSTEM_DEFAULTS = {
+    resourceBars = "resourceBars",
+    castBar = "castBar",
+    frameAnchoring = "frameAnchoring",
+    legacyResourceBarsSeed = "resourceBars",
+    legacyCastBarSeed = "castBar",
+    legacyFrameAnchoringSeed = "frameAnchoring",
+}
+
+local SCOPED_STORE_KEYS = {
+    resourceBarsByClass = "resourceBars",
+    resourceBarsByChar = "resourceBars",
+    castBarByChar = "castBar",
+    frameAnchoringByChar = "frameAnchoring",
+}
+
+-- Compact payloads must rehydrate against a frozen baseline, not the
+-- importer's current runtime defaults. The current compact baseline is seeded
+-- from Core/Defaults so export compaction and runtime defaults stay in sync.
+-- If profile defaults change in a future release, keep the old snapshot here
+-- and bump CURRENT_COMPACT_FORMAT_VALUE.
+local COMPACT_PROFILE_DEFAULTS = {
+    [PREVIOUS_COMPACT_FORMAT_VALUE] = BuildCompact3ProfileDefaults(),
+    [CURRENT_COMPACT_FORMAT_VALUE] = BuildCurrentCompactProfileDefaults(),
+}
+
+local COMPACT_ENTITY_DEFAULTS = {
+    [PREVIOUS_COMPACT_FORMAT_VALUE] = BuildCompactEntityDefaults(false),
+    [CURRENT_COMPACT_FORMAT_VALUE] = BuildCompactEntityDefaults(true),
 }
 
 local function PrepareSharedImportText(text)
@@ -598,6 +618,11 @@ local function GetEntityDefaults(formatVersion)
     return COMPACT_ENTITY_DEFAULTS[formatVersion]
 end
 
+local function IsSupportedCompactFormat(formatVersion)
+    return COMPACT_PROFILE_DEFAULTS[formatVersion] ~= nil
+        or COMPACT_ENTITY_DEFAULTS[formatVersion] ~= nil
+end
+
 local function GetLoadConditionsDefaults(formatVersion, localScope)
     if localScope then
         return LOCAL_LOAD_CONDITIONS_DEFAULTS
@@ -615,6 +640,20 @@ local function GetPanelDefaults(formatVersion)
         return entityDefaults.panel
     end
     return PANEL_DEFAULTS
+end
+
+local function GetPanelCompactLayoutDefault(formatVersion, displayMode)
+    local defaults = GetPanelDefaults(formatVersion)
+    if not defaults or defaults.compactLayout ~= true then
+        return false
+    end
+    return ShouldDefaultPanelCompactLayout(displayMode or defaults.displayMode or "icons")
+end
+
+local function GetEffectivePanelDefaults(formatVersion, group)
+    local defaults = CopyValue(GetPanelDefaults(formatVersion))
+    defaults.compactLayout = GetPanelCompactLayoutDefault(formatVersion, group and group.displayMode)
+    return defaults
 end
 
 local function GetContainerDefaults(formatVersion)
@@ -746,7 +785,7 @@ local function CompactPanel(group, styleDefaults, panelContainerRef, formatVersi
         return nil
     end
 
-    local panelDefaults = GetPanelDefaults(formatVersion)
+    local panelDefaults = GetEffectivePanelDefaults(formatVersion, group)
     local compact = {}
     for key, value in pairs(group) do
         if key == "style" then
@@ -790,7 +829,7 @@ local function RehydratePanel(group, styleDefaults, panelContainerRef, formatVer
         return
     end
 
-    local panelDefaults = GetPanelDefaults(formatVersion)
+    local panelDefaults = GetEffectivePanelDefaults(formatVersion, group)
     group.style = MergeWithDefaults(group.style, styleDefaults)
     local preserveCustomPanelAlpha = group.inheritPanelAlpha == nil
         and panelContainerRef ~= nil
@@ -1371,7 +1410,7 @@ local function DecodeSharedPayload(text)
     end
 
     local formatVersion = data[COMPACT_FORMAT_KEY]
-    if formatVersion == CURRENT_COMPACT_FORMAT_VALUE then
+    if IsSupportedCompactFormat(formatVersion) then
         data[COMPACT_FORMAT_KEY] = nil
         data = RehydrateCompactPayload(data, formatVersion)
     elseif UNSUPPORTED_COMPACT_FORMATS[formatVersion] then

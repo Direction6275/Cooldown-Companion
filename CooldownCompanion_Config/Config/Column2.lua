@@ -376,10 +376,12 @@ local function ConfigureCDMRefreshBadge(header, panel, panelId, containerId, cur
     end
 
     badge:SetFrameLevel(header.frame:GetFrameLevel() + 25)
+    badge:SetSize(16, 16)
     badge:ClearAllPoints()
 
     if not IsActiveCDMPanelSource(panel) then
         badge:Hide()
+        badge:SetScript("OnClick", nil)
         return
     end
 
@@ -520,6 +522,68 @@ local function GetExistingCDMPanelSources(containerId)
     return existing
 end
 
+local function NormalizeCDMPanelOrder(containerId, sourceData)
+    local desiredRank = {}
+    for index, source in ipairs(sourceData and sourceData.sources or {}) do
+        desiredRank[source.key] = index
+    end
+
+    local panels = CooldownCompanion:GetPanels(containerId) or {}
+    local cdmPanels = {}
+    for index, panelInfo in ipairs(panels) do
+        local panel = panelInfo.group
+        if IsActiveCDMPanelSource(panel) and desiredRank[panel.cdmPanelSource] then
+            cdmPanels[#cdmPanels + 1] = {
+                panelId = panelInfo.groupId,
+                rank = desiredRank[panel.cdmPanelSource],
+                originalIndex = index,
+            }
+        end
+    end
+
+    if #cdmPanels < 2 then
+        return false
+    end
+
+    table.sort(cdmPanels, function(a, b)
+        if a.rank == b.rank then
+            return a.originalIndex < b.originalIndex
+        end
+        return a.rank < b.rank
+    end)
+
+    local nextCDMIndex = 1
+    local changed = false
+    for index, panelInfo in ipairs(panels) do
+        local panel = panelInfo.group
+        local panelId = panelInfo.groupId
+        if IsActiveCDMPanelSource(panel) and desiredRank[panel.cdmPanelSource] then
+            panelId = cdmPanels[nextCDMIndex].panelId
+            nextCDMIndex = nextCDMIndex + 1
+        end
+
+        local target = CooldownCompanion.db.profile.groups[panelId]
+        if target and target.order ~= index then
+            target.order = index
+            changed = true
+        end
+        if panelInfo.groupId ~= panelId then
+            changed = true
+        end
+    end
+
+    return changed
+end
+
+local function RefreshCDMPanelOrderRuntime()
+    if CooldownCompanion.RefreshAllGroups then
+        CooldownCompanion:RefreshAllGroups()
+    end
+    if CooldownCompanion.EvaluateBarsAndFramesRuntime then
+        CooldownCompanion:EvaluateBarsAndFramesRuntime("cdm-panel-order")
+    end
+end
+
 local function CreateCDMPanelFromSource(containerId, sourceData)
     local panelId = CooldownCompanion:CreatePanel(containerId, sourceData.displayMode)
     if not panelId then
@@ -531,7 +595,7 @@ local function CreateCDMPanelFromSource(containerId, sourceData)
         group.name = sourceData.panelName
         group.cdmPanelSource = sourceData.key
         if ApplyCDMStarterPanelLayout then
-            ApplyCDMStarterPanelLayout(group, sourceData.key, containerId)
+            ApplyCDMStarterPanelLayout(group, sourceData.key, containerId, sourceData.entries and #sourceData.entries or 0)
         end
     end
 
@@ -578,7 +642,17 @@ local function CreateMissingCDMPanelsInSelectedContainer()
         end
     end
 
+    local orderChanged = NormalizeCDMPanelOrder(containerId, sourceData)
+    if orderChanged then
+        RefreshCDMPanelOrderRuntime()
+    end
+
     if #createdPanelIds == 0 then
+        if orderChanged then
+            CooldownCompanion:RefreshConfigPanel()
+            CooldownCompanion:Print("Reordered Cooldown Manager panels.")
+            return
+        end
         CooldownCompanion:Print("No missing Cooldown Manager panels to add.")
         return
     end

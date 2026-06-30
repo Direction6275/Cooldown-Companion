@@ -1896,6 +1896,11 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcAddBtn then entry.frame._cdcAddBtn:Hide() end
     if entry.frame._cdcGenericRenameBadge then entry.frame._cdcGenericRenameBadge:Hide() end
     if entry.frame._cdcCursorAnchorBadge then entry.frame._cdcCursorAnchorBadge:Hide() end
+    if entry.frame._cdcCDMRefreshBadge then
+        entry.frame._cdcCDMRefreshBadge:Hide()
+        entry.frame._cdcCDMRefreshBadge:ClearAllPoints()
+        entry.frame._cdcCDMRefreshBadge:SetScript("OnClick", nil)
+    end
     if entry.frame._cdcAnchorBadge then entry.frame._cdcAnchorBadge:Hide() end
     if entry.frame._cdcHeaderDisabledBadge then entry.frame._cdcHeaderDisabledBadge:Hide() end
     if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end
