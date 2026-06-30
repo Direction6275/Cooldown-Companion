@@ -134,6 +134,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
 
     -- Phase 1: Evaluate each hide condition and accumulate active reasons as bits.
     local hideReasons = 0
+    local zeroOnlyChargeSpellHide = false
     local auraTrackingReady = button._auraTrackingReady == true
     local barAuraStackDisplay = button._barAuraStackDisplay == true
     local itemUsesResolvedCooldownState = IsEntryItemLike(buttonData)
@@ -175,6 +176,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                 if button._chargeState == CHARGE_STATE_FULL
                         or button._chargeState == CHARGE_STATE_MISSING then
                     hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
+                    zeroOnlyChargeSpellHide = true
                 end
             elseif button._chargeState == CHARGE_STATE_FULL then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
@@ -256,7 +258,10 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     -- which is equivalent to "this is the only active hide reason."
     if hideReasons ~= 0 then
         for _, entry in ipairs(BASELINE_FALLBACKS) do
-            if bit_band(hideReasons, entry.bit) ~= 0 and buttonData[entry.key] then
+            local suppressFallback = zeroOnlyChargeSpellHide and entry.bit == HIDE_NOT_ON_COOLDOWN
+            if not suppressFallback
+                    and bit_band(hideReasons, entry.bit) ~= 0
+                    and buttonData[entry.key] then
                 if hideReasons == entry.bit then
                     local groupId = button._groupId
                     local group = groupId and CooldownCompanion.db.profile.groups[groupId]

@@ -2004,6 +2004,19 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         end
     end
 
+    local function ApplyToChargeSpellNotOnCooldownOnly(field, value)
+        if isBatch then
+            for idx in pairs(CS.selectedButtons) do
+                local bd = group.buttons[idx]
+                if bd and FilterChargeSpellNotOnCooldown(bd) then
+                    bd[field] = value
+                end
+            end
+        elseif FilterChargeSpellNotOnCooldown(buttonData) then
+            buttonData[field] = value
+        end
+    end
+
     -- Filtered apply: only write to equippable items (equip toggles).
     -- When clearing, write to ALL selected to clean stale data.
     local function ApplyToEquippable(field, value)
@@ -2248,8 +2261,9 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         WrapBatchCallback(showOnlyAtZeroCb, function(widget, event, val)
             ApplyToChargeSpellNotOnCooldown("showOnlyAtZeroCharges", val or nil)
             if val then
-                ApplyToChargeSpellNotOnCooldown("hideWhileZeroCharges", nil)
-                ApplyToChargeSpellNotOnCooldown("useBaselineAlphaFallbackZeroCharges", nil)
+                ApplyToChargeSpellNotOnCooldownOnly("useBaselineAlphaFallbackNotOnCooldown", nil)
+                ApplyToChargeSpellNotOnCooldownOnly("hideWhileZeroCharges", nil)
+                ApplyToChargeSpellNotOnCooldownOnly("useBaselineAlphaFallbackZeroCharges", nil)
             end
             CooldownCompanion:RefreshConfigPanel()
         end)
@@ -2268,6 +2282,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         ApplyCheckboxIndent(fallbackNotOnCDCb, 20)
         WrapBatchCallback(fallbackNotOnCDCb, function(widget, event, val)
             ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", val or nil)
+            if val then
+                ApplyToChargeSpellNotOnCooldownOnly("showOnlyAtZeroCharges", nil)
+            end
+            CooldownCompanion:RefreshConfigPanel()
         end)
         scroll:AddChild(fallbackNotOnCDCb)
 
