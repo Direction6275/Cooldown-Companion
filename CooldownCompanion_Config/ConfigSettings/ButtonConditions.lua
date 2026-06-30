@@ -1631,6 +1631,13 @@ local function FilterChargeCapable(bd)
     if bd.type == "item" and not CooldownCompanion.IsItemEquippable(bd) then return true end
     return false
 end
+local function FilterChargeSpell(bd)
+    if HasItemFallbacks(bd) then return false end
+    return bd.type == "spell" and bd.hasCharges == true and UsesChargeBehavior(bd)
+end
+local function FilterChargeSpellNotOnCooldown(bd)
+    return FilterChargeSpell(bd) and bd.hideWhileNotOnCooldown == true
+end
 
 -- Returns true if any selected button has field truthy
 local function AnySelectedHas(group, field)
@@ -1963,6 +1970,53 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         end
     end
 
+    -- Filtered apply: only write to charge-based spell buttons.
+    -- When clearing (value is falsy), write to ALL selected to clean stale data.
+    local function ApplyToChargeSpell(field, value)
+        if isBatch then
+            for idx in pairs(CS.selectedButtons) do
+                local bd = group.buttons[idx]
+                if bd then
+                    if not value or FilterChargeSpell(bd) then
+                        bd[field] = value
+                    end
+                end
+            end
+        else
+            buttonData[field] = value
+        end
+    end
+
+    -- Filtered apply for the nested "Hide While Not On Cooldown" charge-spell option.
+    -- When clearing, write to ALL selected to remove stale child values.
+    local function ApplyToChargeSpellNotOnCooldown(field, value)
+        if isBatch then
+            for idx in pairs(CS.selectedButtons) do
+                local bd = group.buttons[idx]
+                if bd then
+                    if not value or FilterChargeSpellNotOnCooldown(bd) then
+                        bd[field] = value
+                    end
+                end
+            end
+        else
+            buttonData[field] = value
+        end
+    end
+
+    local function ApplyToChargeSpellNotOnCooldownOnly(field, value)
+        if isBatch then
+            for idx in pairs(CS.selectedButtons) do
+                local bd = group.buttons[idx]
+                if bd and FilterChargeSpellNotOnCooldown(bd) then
+                    bd[field] = value
+                end
+            end
+        elseif FilterChargeSpellNotOnCooldown(buttonData) then
+            buttonData[field] = value
+        end
+    end
+
     -- Filtered apply: only write to equippable items (equip toggles).
     -- When clearing, write to ALL selected to clean stale data.
     local function ApplyToEquippable(field, value)
@@ -2144,6 +2198,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         if val then
             ApplyToSelected("hideWhileNotOnCooldown", nil)
             ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", nil)
+            ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
         else
             ApplyToSelected("useBaselineAlphaFallbackOnCooldown", nil)
         end
@@ -2184,10 +2239,36 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             ApplyToSelected("useBaselineAlphaFallbackOnCooldown", nil)
         else
             ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", nil)
+            ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
         end
         CooldownCompanion:RefreshConfigPanel()
     end)
     scroll:AddChild(hideNotCDCb)
+
+    local showOnlyAtZeroCharges
+    if isBatch then
+        showOnlyAtZeroCharges = AnySelectedMatch(FilterChargeSpellNotOnCooldown)
+    else
+        showOnlyAtZeroCharges = buttonData.hideWhileNotOnCooldown
+            and FilterChargeSpell(buttonData)
+    end
+    if showOnlyAtZeroCharges then
+        local showOnlyAtZeroCb = AceGUI:Create("CheckBox")
+        showOnlyAtZeroCb:SetLabel("Only Show At Zero Charges")
+        SetCheckboxValue(showOnlyAtZeroCb, "showOnlyAtZeroCharges", FilterChargeSpellNotOnCooldown)
+        showOnlyAtZeroCb:SetFullWidth(true)
+        ApplyCheckboxIndent(showOnlyAtZeroCb, 20)
+        WrapBatchCallback(showOnlyAtZeroCb, function(widget, event, val)
+            ApplyToChargeSpellNotOnCooldown("showOnlyAtZeroCharges", val or nil)
+            if val then
+                ApplyToChargeSpellNotOnCooldownOnly("useBaselineAlphaFallbackNotOnCooldown", nil)
+                ApplyToChargeSpellNotOnCooldownOnly("hideWhileZeroCharges", nil)
+                ApplyToChargeSpellNotOnCooldownOnly("useBaselineAlphaFallbackZeroCharges", nil)
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(showOnlyAtZeroCb)
+    end
 
     -- Baseline Alpha Fallback (nested under hideWhileNotOnCooldown)
     local showFallbackNotOnCooldown
@@ -2201,6 +2282,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         ApplyCheckboxIndent(fallbackNotOnCDCb, 20)
         WrapBatchCallback(fallbackNotOnCDCb, function(widget, event, val)
             ApplyToSelected("useBaselineAlphaFallbackNotOnCooldown", val or nil)
+            if val then
+                ApplyToChargeSpellNotOnCooldownOnly("showOnlyAtZeroCharges", nil)
+            end
+            CooldownCompanion:RefreshConfigPanel()
         end)
         scroll:AddChild(fallbackNotOnCDCb)
 
@@ -2324,6 +2409,7 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
             ApplyToChargeCapable("hideWhileZeroCharges", val or nil)
             if val then
                 ApplyToChargeCapable("desaturateWhileZeroCharges", nil)
+                ApplyToChargeSpell("showOnlyAtZeroCharges", nil)
             else
                 ApplyToChargeCapable("useBaselineAlphaFallbackZeroCharges", nil)
             end
