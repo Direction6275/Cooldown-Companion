@@ -177,7 +177,6 @@ local function ShowCDMStarterTooltip(owner)
     GameTooltip:SetOwner(owner, "ANCHOR_TOP")
     GameTooltip:AddLine("Build from Cooldown Manager", 1, 0.82, 0, true)
     GameTooltip:AddLine("Creates editable panels from displayed Essential, Utility, Tracked Buffs, and Tracked Bars sections.", 1, 1, 1, true)
-    GameTooltip:AddLine("Not Displayed entries are ignored.", 0.75, 0.75, 0.75, true)
     GameTooltip:Show()
 end
 
@@ -806,16 +805,6 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
             if level ~= 1 then return end
 
             local info = UIDropDownMenu_CreateInfo()
-            info.text = "Add Missing CDM Panels"
-            info.notCheckable = true
-            AddCDMStarterMenuTooltip(info)
-            info.func = function()
-                CloseDropDownMenus()
-                CreateMissingCDMPanelsInSelectedContainer()
-            end
-            UIDropDownMenu_AddButton(info, level)
-
-            info = UIDropDownMenu_CreateInfo()
             info.text = "Text Panel"
             info.notCheckable = true
             AddPanelTypeMenuTooltip(info, "text")
@@ -856,6 +845,16 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
                 CreatePanelInSelectedContainer(ST.DISPLAY_MODE_ROTATION_ASSISTANT)
             end
             UIDropDownMenu_AddButton(info, level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Add Missing CDM Panels"
+            info.notCheckable = true
+            AddCDMStarterMenuTooltip(info)
+            info.func = function()
+                CloseDropDownMenus()
+                CreateMissingCDMPanelsInSelectedContainer()
+            end
+            UIDropDownMenu_AddButton(info, level)
         end, "MENU")
         menu:SetFrameStrata("FULLSCREEN_DIALOG")
         ToggleDropDownMenu(1, nil, menu, "cursor", 0, 0)
@@ -884,11 +883,15 @@ local function PopulateCol2PanelCreationBar(panelBtnWidth)
 end
 
 local function RenderColumn2NoPanelsState(classColor)
-    local spacer = AceGUI:Create("SimpleGroup")
-    spacer:SetFullWidth(true)
-    spacer:SetHeight(20)
-    spacer.noAutoHeight = true
-    CS.col2Scroll:AddChild(spacer)
+    local function AddFixedSpacer(height)
+        local spacer = AceGUI:Create("SimpleGroup")
+        spacer:SetFullWidth(true)
+        spacer:SetHeight(height)
+        spacer.noAutoHeight = true
+        CS.col2Scroll:AddChild(spacer)
+    end
+
+    AddFixedSpacer(20)
 
     local header = AceGUI:Create("Label")
     ST._ConfigureWrappedHelperLabel(header)
@@ -898,11 +901,7 @@ local function RenderColumn2NoPanelsState(classColor)
     header:SetFont((GameFontNormal:GetFont()), 15, "")
     CS.col2Scroll:AddChild(header)
 
-    local descSpacer = AceGUI:Create("SimpleGroup")
-    descSpacer:SetFullWidth(true)
-    descSpacer:SetHeight(6)
-    descSpacer.noAutoHeight = true
-    CS.col2Scroll:AddChild(descSpacer)
+    AddFixedSpacer(6)
 
     local desc = AceGUI:Create("Label")
     ST._ConfigureWrappedHelperLabel(desc)
@@ -913,48 +912,11 @@ local function RenderColumn2NoPanelsState(classColor)
     desc:SetColor(0.7, 0.7, 0.7)
     CS.col2Scroll:AddChild(desc)
 
-    local cdmButtonSpacer = AceGUI:Create("SimpleGroup")
-    cdmButtonSpacer:SetFullWidth(true)
-    cdmButtonSpacer:SetHeight(12)
-    cdmButtonSpacer.noAutoHeight = true
-    CS.col2Scroll:AddChild(cdmButtonSpacer)
-
-    local cdmButton = AceGUI:Create("Button")
-    cdmButton:SetText("Build from Cooldown Manager")
-    cdmButton:SetFullWidth(true)
-    cdmButton:SetCallback("OnClick", function()
-        CreateMissingCDMPanelsInSelectedContainer()
-    end)
-    cdmButton:SetCallback("OnEnter", function(widget)
-        ShowCDMStarterTooltip(widget.frame)
-    end)
-    cdmButton:SetCallback("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    CS.col2Scroll:AddChild(cdmButton)
-
-    local cdmHelp = AceGUI:Create("Label")
-    ST._ConfigureWrappedHelperLabel(cdmHelp)
-    cdmHelp:SetText("Uses displayed CDM sections only. Not Displayed entries are ignored.")
-    cdmHelp:SetFullWidth(true)
-    cdmHelp:SetJustifyH("CENTER")
-    cdmHelp:SetFont((GameFontNormal:GetFont()), 11, "")
-    cdmHelp:SetColor(0.7, 0.7, 0.7)
-    CS.col2Scroll:AddChild(cdmHelp)
-
-    local helpSpacer = AceGUI:Create("SimpleGroup")
-    helpSpacer:SetFullWidth(true)
-    helpSpacer:SetHeight(10)
-    helpSpacer.noAutoHeight = true
-    CS.col2Scroll:AddChild(helpSpacer)
+    AddFixedSpacer(18)
 
     AddClassAccentSpacer(CS.col2Scroll, classColor)
 
-    local postDividerSpacer = AceGUI:Create("SimpleGroup")
-    postDividerSpacer:SetFullWidth(true)
-    postDividerSpacer:SetHeight(10)
-    postDividerSpacer.noAutoHeight = true
-    CS.col2Scroll:AddChild(postDividerSpacer)
+    AddFixedSpacer(10)
 
     local helpEntries = {
         PANEL_TYPE_TOOLTIPS.icons,
@@ -965,13 +927,10 @@ local function RenderColumn2NoPanelsState(classColor)
         PANEL_TYPE_TOOLTIPS.rotationAssistant,
     }
 
+    local lastHelpFrame
     for index, entry in ipairs(helpEntries) do
         if index > 1 then
-            local entrySpacer = AceGUI:Create("SimpleGroup")
-            entrySpacer:SetFullWidth(true)
-            entrySpacer:SetHeight(8)
-            entrySpacer.noAutoHeight = true
-            CS.col2Scroll:AddChild(entrySpacer)
+            AddFixedSpacer(8)
         end
 
         local panelHelp = AceGUI:Create("Label")
@@ -982,7 +941,75 @@ local function RenderColumn2NoPanelsState(classColor)
         panelHelp:SetFont((GameFontNormal:GetFont()), 12, "")
         panelHelp:SetColor(0.75, 0.75, 0.75)
         CS.col2Scroll:AddChild(panelHelp)
+        lastHelpFrame = panelHelp.frame
     end
+
+    CS.col2Scroll:DoLayout()
+
+    local visibleHeight = CS.col2Scroll.frame and CS.col2Scroll.frame:GetHeight() or 0
+    local scrollTop = CS.col2Scroll.frame and CS.col2Scroll.frame:GetTop()
+    local lastHelpBottom = lastHelpFrame and lastHelpFrame:GetBottom()
+    local contentHeight = 0
+    if scrollTop and lastHelpBottom then
+        contentHeight = math.max(0, scrollTop - lastHelpBottom)
+    end
+    if contentHeight <= 0 then
+        local contentState = CS.col2Scroll.status or CS.col2Scroll.localstatus
+        contentHeight = tonumber(contentState and contentState.contentHeight)
+            or tonumber(contentState and contentState.contentheight)
+            or (CS.col2Scroll.content and CS.col2Scroll.content:GetHeight())
+            or 0
+    end
+    local ctaHeight = 62
+    local ctaSpacerHeight = 18
+    if visibleHeight > 0 and contentHeight > 0 then
+        local remainingHeight = visibleHeight - contentHeight - ctaHeight
+        if remainingHeight > 0 then
+            ctaSpacerHeight = math.max(ctaSpacerHeight, math.floor((remainingHeight / 2) + 0.5))
+        end
+    end
+    AddFixedSpacer(ctaSpacerHeight)
+
+    local cdmIntro = AceGUI:Create("Label")
+    ST._ConfigureWrappedHelperLabel(cdmIntro)
+    cdmIntro:SetText("Alternatively, automatically create panels based on what is in your CDM.")
+    cdmIntro:SetFullWidth(true)
+    cdmIntro:SetJustifyH("CENTER")
+    cdmIntro:SetFont((GameFontNormal:GetFont()), 12, "")
+    cdmIntro:SetColor(0.85, 0.85, 0.85)
+    CS.col2Scroll:AddChild(cdmIntro)
+
+    AddFixedSpacer(6)
+
+    local cdmButtonRow = AceGUI:Create("SimpleGroup")
+    cdmButtonRow:SetFullWidth(true)
+    cdmButtonRow:SetLayout("Flow")
+
+    local leftSpacer = AceGUI:Create("Label")
+    leftSpacer:SetText("")
+    leftSpacer:SetRelativeWidth(0.15)
+    cdmButtonRow:AddChild(leftSpacer)
+
+    local cdmButton = AceGUI:Create("Button")
+    cdmButton:SetText("Build from Cooldown Manager")
+    cdmButton:SetRelativeWidth(0.70)
+    cdmButton:SetCallback("OnClick", function()
+        CreateMissingCDMPanelsInSelectedContainer()
+    end)
+    cdmButton:SetCallback("OnEnter", function(widget)
+        ShowCDMStarterTooltip(widget.frame)
+    end)
+    cdmButton:SetCallback("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    cdmButtonRow:AddChild(cdmButton)
+
+    local rightSpacer = AceGUI:Create("Label")
+    rightSpacer:SetText("")
+    rightSpacer:SetRelativeWidth(0.15)
+    cdmButtonRow:AddChild(rightSpacer)
+
+    CS.col2Scroll:AddChild(cdmButtonRow)
 
     CS.col2Scroll:DoLayout()
 end
