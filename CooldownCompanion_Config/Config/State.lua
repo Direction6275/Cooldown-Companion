@@ -327,7 +327,6 @@ ST._configState = {
     -- CS.* function forward declarations (set by later files)
     IsStrataOrderComplete = nil,
     InitPendingStrataOrder = nil,
-    SetConfigPrimaryMode = nil,
     StartPickFrame = nil,
     StartPickCDM = nil,
     ShowPopupAboveConfig = nil,
@@ -3246,7 +3245,6 @@ end
 ------------------------------------------------------------------------
 -- ST._ exports (consumed by later Config/ files at load time)
 ------------------------------------------------------------------------
-CS.SetConfigPrimaryMode = SetConfigPrimaryMode
 ST._CompactUntitledInlineGroupConfig = CompactUntitledInlineGroupConfig
 ST._CleanRecycledEntry = CleanRecycledEntry
 ST._ApplyConfigRowIcon = ApplyConfigRowIcon
