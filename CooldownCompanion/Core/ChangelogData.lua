@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.21",
         "1.20.1",
         "1.20",
         "1.19.5",
@@ -47,6 +48,22 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.21"] = {
+            markdown = [[
+## New Features
+
+- **Cooldown Manager Starter Panels:** Empty groups can now build editable panels from Blizzard's Cooldown Manager in one click, including Essential Cooldowns, Utility Cooldowns, Tracked Buffs, and Tracked Bars.
+- **Starter Panel Defaults:** New starter panels use cleaner ordering, centered compact layouts, tracked aura defaults, and safer placement.
+- **Zero-Charge Visibility:** Charge-based spell buttons can now be set to appear only when every charge is spent, so abilities like Monk Roll can stay hidden until they are fully out of charges.
+
+## Polish | QoL
+
+- **Better Defaults:**  New icon and bar panels default the following to enabled: Compact Mode, Loss of Control visuals, and Unusable Dimming/Visuals.
+  - Compact Mode is disabled if resources, cast bar, or Unit Frames are anchored to the panel in order to maintain stable sizing of those elements.
+- **Autocomplete Type Labels:** Add-entry search results now show a simple right-side type label, such as Spell, Aura, Equipment, or Item, making similar spell and aura entries easier to tell apart.
+- **Cleaner Manual Adds:** The older Auto Add wizard and extra Manual Add/Add Entry button have been removed. Individual entries still use the add box, autocomplete, and arrow keys + Enter.
+]],
+        },
         ["1.20.1"] = {
             markdown = [[
 ## Polish | QoL
