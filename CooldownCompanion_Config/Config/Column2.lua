@@ -1183,7 +1183,9 @@ local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId,
         CS.newInput = text
         if text and #text >= 1 then
             local results = SearchAutocomplete(text)
-            CS.ShowAutocompleteResults(results, widget, OnAutocompleteSelect)
+            CS.ShowAutocompleteResults(results, widget, OnAutocompleteSelect, {
+                requireExactNumericEnter = true,
+            })
         else
             CS.HideAutocomplete()
         end
