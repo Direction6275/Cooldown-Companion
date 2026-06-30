@@ -575,6 +575,15 @@ local function NormalizeCDMPanelOrder(containerId, sourceData)
     return changed
 end
 
+local function RefreshCDMPanelOrderRuntime()
+    if CooldownCompanion.RefreshAllGroups then
+        CooldownCompanion:RefreshAllGroups()
+    end
+    if CooldownCompanion.EvaluateBarsAndFramesRuntime then
+        CooldownCompanion:EvaluateBarsAndFramesRuntime("cdm-panel-order")
+    end
+end
+
 local function CreateCDMPanelFromSource(containerId, sourceData)
     local panelId = CooldownCompanion:CreatePanel(containerId, sourceData.displayMode)
     if not panelId then
@@ -634,6 +643,9 @@ local function CreateMissingCDMPanelsInSelectedContainer()
     end
 
     local orderChanged = NormalizeCDMPanelOrder(containerId, sourceData)
+    if orderChanged then
+        RefreshCDMPanelOrderRuntime()
+    end
 
     if #createdPanelIds == 0 then
         if orderChanged then

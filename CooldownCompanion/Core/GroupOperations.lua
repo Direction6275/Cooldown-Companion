@@ -2264,6 +2264,15 @@ function CooldownCompanion:NormalizeStableExternalAnchorCompactLayout(groupId, g
     group = group or (self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId])
     if group and group.compactLayout then
         group.compactLayout = false
+        local frame = self.groupFrames and self.groupFrames[groupId]
+        if frame then
+            frame._layoutDirty = true
+            if InCombatLockdown and InCombatLockdown() and frame:IsProtected() then
+                self._pendingFullRefresh = true
+            elseif self.PopulateGroupButtons then
+                self:PopulateGroupButtons(groupId)
+            end
+        end
         return true, true
     end
 
