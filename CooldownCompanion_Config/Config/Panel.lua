@@ -1146,7 +1146,6 @@ local function CreateConfigPanel()
         cdmDisplayBtn:GetHighlightTexture():SetAlpha(0.3)
     end
     UpdateCdmDisplayIcon()
-    CS.UpdateCdmDisplayIcon = UpdateCdmDisplayIcon
 
     cdmDisplayBtn:SetScript("OnClick", function()
         CooldownCompanion.db.profile.cdmHidden = not CooldownCompanion.db.profile.cdmHidden
