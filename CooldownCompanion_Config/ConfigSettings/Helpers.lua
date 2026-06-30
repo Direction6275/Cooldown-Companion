@@ -874,7 +874,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
     end
     CreateInfoButton(compactCb.frame, compactAnchor, "LEFT", compactRelPoint, compactXOff, 0, {
         "Compact Mode",
-        {"When per-button visibility rules hide a button, shift remaining buttons to fill the gap and resize the group frame to fit visible buttons only.", 1, 1, 1, true},
+        {"Compacts visible buttons or bars when hide conditions remove entries, helping centered layouts stay centered.", 1, 1, 1, true},
     }, tabInfoButtons)
 end
 

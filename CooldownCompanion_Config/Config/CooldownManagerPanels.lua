@@ -65,6 +65,10 @@ local function GetSourceDisplayMode(sourceKey)
     return source and source.displayMode or nil
 end
 
+local function IsCDMAuraPanelSource(sourceKey)
+    return sourceKey == "trackedBuffs" or sourceKey == "trackedBars"
+end
+
 local function CheckCooldownViewerAvailable()
     if not (C_CooldownViewer
         and C_CooldownViewer.GetCooldownViewerCategorySet
@@ -289,6 +293,9 @@ local function PopulateCDMPanelFromSource(panelId, sourceData)
             if sourceData.entryKind == "spell" and group.buttons and group.buttons[index] then
                 group.buttons[index].name = entry.name
             end
+            if IsCDMAuraPanelSource(sourceData.key) and group.buttons and group.buttons[index] then
+                group.buttons[index].hideWhileAuraNotActive = true
+            end
             added = added + 1
         end
     end
@@ -347,11 +354,15 @@ local function ApplyCDMStarterPanelLayout(group, sourceKey, containerId, entryCo
         SetPanelAnchor(group, containerId, 0, -150)
     elseif source.layoutKind == "trackedBuffs" then
         ScaleIconPanel(style, 0.95, 34, entryCount)
+        group.compactLayout = true
+        group.compactGrowthDirection = "center"
         SetPanelAnchor(group, containerId, 0, -85)
     elseif source.layoutKind == "utility" then
         ScaleIconPanel(style, 0.95, 34, entryCount)
         SetPanelAnchor(group, containerId, 0, -215)
     elseif source.layoutKind == "trackedBars" then
+        group.compactLayout = true
+        group.compactGrowthDirection = "center"
         style.orientation = "vertical"
         style.growthOrigin = "TOPLEFT"
         style.buttonsPerRow = GetStarterButtonLimit(entryCount, style.buttonsPerRow)
