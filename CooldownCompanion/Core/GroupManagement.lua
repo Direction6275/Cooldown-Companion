@@ -1134,7 +1134,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         style = CopyTable(db.globalStyle),
         displayMode = displayMode,
         masqueEnabled = false,
-        compactLayout = false,
+        compactLayout = true,
         maxVisibleButtons = 0,
         compactGrowthDirection = "center",
         inheritPanelAlpha = true,
