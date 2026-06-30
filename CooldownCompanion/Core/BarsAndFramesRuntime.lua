@@ -110,7 +110,11 @@ end
 
 function CooldownCompanion:RefreshBarsAndFramesRuntimeFeatureGate(feature, reason)
     local enabled, flags = self:RefreshBarsAndFramesRuntimeGate(reason)
-    return enabled == true and flags and flags[feature] == true, flags
+    local featureEnabled = enabled == true and flags and flags[feature] == true or false
+    if featureEnabled then
+        CallIfAvailable("NormalizeCurrentStableExternalAnchorCompactLayout")
+    end
+    return featureEnabled, flags
 end
 
 function CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled(feature)
