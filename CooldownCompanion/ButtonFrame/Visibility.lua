@@ -169,7 +169,14 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         elseif UsesChargeBehavior(buttonData) then
-            if button._chargeState == CHARGE_STATE_FULL then
+            if buttonData.type == "spell"
+                    and buttonData.hasCharges == true
+                    and buttonData.showOnlyAtZeroCharges then
+                if button._chargeState == CHARGE_STATE_FULL
+                        or button._chargeState == CHARGE_STATE_MISSING then
+                    hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
+                end
+            elseif button._chargeState == CHARGE_STATE_FULL then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         elseif IsEntryItemLike(buttonData) then
