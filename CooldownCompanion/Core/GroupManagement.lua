@@ -1744,7 +1744,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 end
             end
             local hasViewerFrame = false
-            if viewerFrame and GetCVarBool("cooldownViewerEnabled") then
+            if viewerFrame and C_CVar.GetCVarBool("cooldownViewerEnabled") then
                 local parent = viewerFrame:GetParent()
                 local parentName = parent and parent:GetName()
                 hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"

@@ -2060,7 +2060,7 @@ local function RefreshColumn2()
             return
         end
 
-        local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
+        local cdmEnabled = C_CVar.GetCVarBool("cooldownViewerEnabled")
 
         -- Metadata for cross-panel drag detection
         local col2RenderedRows = {}

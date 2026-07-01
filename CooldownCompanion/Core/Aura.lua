@@ -1265,7 +1265,7 @@ end
 
 function CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
     local enabled = self._cdmViewerEnabled
-    if enabled == nil then enabled = GetCVarBool("cooldownViewerEnabled") end
+    if enabled == nil then enabled = C_CVar.GetCVarBool("cooldownViewerEnabled") end
     if not spellID or spellID == 0 or not enabled then
         return nil
     end
