@@ -874,6 +874,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button._activeAuraIconAvailable = nil
     button._lastViewerTexId = nil
     button._lastSpellTexture = nil
+    button._lastTextureCheckAt = nil
     button._spellTexBaseline = nil
 
     button._auraInstanceID = nil
@@ -1461,6 +1462,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._activeAuraIconAvailable = nil
     button._lastViewerTexId = nil
     button._lastSpellTexture = nil
+    button._lastTextureCheckAt = nil
     button._spellTexBaseline = nil
 
     button._auraInstanceID = nil
