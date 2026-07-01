@@ -163,10 +163,6 @@ local function ReadDisplaySetting(baseSettings, specSettings, key, fallback)
     return fallback
 end
 
-CS._GetCurrentConfigSpecID = GetCurrentConfigSpecID
-CS._GetSpecResourceDisplayProfile = RB.GetSpecResourceDisplayProfile
-CS._ResourceTextDisplayKeys = RB.RESOURCE_TEXT_DISPLAY_KEYS
-
 local HealthResource = { ID = RB.RESOURCE_HEALTH }
 
 function HealthResource.GetEffectTextureOptions()
@@ -344,7 +340,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         EnsureResourceSettings(settings, capturedPt)
     end
     local baseSettings = settings.resources[capturedPt]
-    local resSettings = SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, CS._ResourceTextDisplayKeys) or baseSettings
+    local resSettings = SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, RB.RESOURCE_TEXT_DISPLAY_KEYS) or baseSettings
     local name = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
 
     local showTextValue = ReadDisplaySetting(baseSettings, resSettings, "showText", nil)
@@ -1934,8 +1930,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         local hasContinuousTick = resourceSettingsPowerType ~= 101 and resourceSettingsPowerType ~= healthResourceID
         showThresholdsTicks = hasSegmentedThreshold or hasContinuousTick
     end
-    local displaySpecID = opts and tonumber(opts.specID) or CS._GetCurrentConfigSpecID()
-    local displayProfile = displaySpecID and CS._GetSpecResourceDisplayProfile(settings, displaySpecID) or nil
+    local displaySpecID = opts and tonumber(opts.specID) or GetCurrentConfigSpecID()
+    local displayProfile = displaySpecID and RB.GetSpecResourceDisplayProfile(settings, displaySpecID) or nil
     if not displaySpecID or not displayProfile then
         local label = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(label)
