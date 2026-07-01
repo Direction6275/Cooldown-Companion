@@ -1594,7 +1594,6 @@ local function AddResourceBarsDisabledLabel(container, text)
     label:SetFullWidth(true)
     container:AddChild(label)
 end
-ST._AddResourceBarsDisabledLabel = AddResourceBarsDisabledLabel
 
 ST._AddResourceSettingsListSection = function(container, settings)
     local resources = settings and RBP.GetConfigEditableResources and RBP.GetConfigEditableResources(settings) or {}
@@ -1654,7 +1653,7 @@ local function BuildCustomBarsListPanel(container)
     local settings = CooldownCompanion:GetResourceBarSettings()
     if not (settings and settings.enabled) then
         ST._AddResourceSettingsListSection(container, nil)
-        ST._AddResourceBarsDisabledLabel(container, "Enable Resource Bars to configure Custom Bars and Resources.")
+        AddResourceBarsDisabledLabel(container, "Enable Resource Bars to configure Custom Bars and Resources.")
         return
     end
 
