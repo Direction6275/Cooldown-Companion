@@ -64,14 +64,6 @@ local function GetEntryStableKey(buttonData)
 end
 CooldownCompanion.GetEntryStableKey = GetEntryStableKey
 
-local function GetEntrySettingsKind(buttonData)
-    if IsEquipmentSlotEntry(buttonData) then
-        return EQUIPMENT_SLOT_TYPE
-    end
-    return buttonData and buttonData.type or nil
-end
-CooldownCompanion.GetEntrySettingsKind = GetEntrySettingsKind
-
 local function IsEntryItemLike(buttonData)
     return buttonData and (buttonData.type == "item" or IsEquipmentSlotEntry(buttonData))
 end
@@ -398,7 +390,6 @@ local function IsDurationTextBindingSupported()
         and type(C_StringUtil.CreateNumericRuleFormatter) == "function"
         or false
 end
-CooldownCompanion.IsDurationTextBindingSupported = IsDurationTextBindingSupported
 
 local function UnbindDurationText(fontString, clearText)
     if not fontString then return end
@@ -603,7 +594,6 @@ CooldownCompanion.HasCastCountText = HasCastCountText
 local function HasConditionalCastCountText(buttonData)
     return GetConditionalCastCountFamily(buttonData) ~= nil
 end
-CooldownCompanion.HasConditionalCastCountText = HasConditionalCastCountText
 
 local function GetCastCountSpellID(buttonData, currentSpellID)
     local family = GetCastCountFamily(buttonData)
@@ -694,7 +684,6 @@ local function GetItemAvailableQuantity(itemID, forceChargeCount)
     end
     return stackCount, "stacks"
 end
-CooldownCompanion.GetItemAvailableQuantity = GetItemAvailableQuantity
 
 local function HasItemFallbacks(buttonData)
     return buttonData
@@ -795,7 +784,6 @@ local function NormalizeItemFallbackVisibilitySettings(buttonData, hasFallbacks,
 
     return changed
 end
-CooldownCompanion.NormalizeItemFallbackVisibilitySettings = NormalizeItemFallbackVisibilitySettings
 
 local function NormalizeItemFallbacks(buttonData)
     if not (buttonData and type(buttonData.itemFallbacks) == "table") then
@@ -857,7 +845,6 @@ local function ResolveItemFallback(buttonData)
 
     return primaryID, primaryQuantity, primaryKind
 end
-CooldownCompanion.ResolveItemFallback = ResolveItemFallback
 
 -- Position a region in the icon area of a bar button.
 -- inset=0 for backgrounds/bounds, inset=borderSize for the icon texture itself.

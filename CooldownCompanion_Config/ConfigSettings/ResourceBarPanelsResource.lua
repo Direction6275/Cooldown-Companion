@@ -97,6 +97,7 @@ local resourceSpecCopyButton
 local resourceSpecCopyMenu
 local thresholdTickDraftRows = {}
 local thresholdTickEditorErrors = {}
+local BuildBarHeightControls
 
 -- Imports from ResourceBarPanelsHelpers
 local RBP = ST._RBP
@@ -162,10 +163,6 @@ local function ReadDisplaySetting(baseSettings, specSettings, key, fallback)
     end
     return fallback
 end
-
-CS._GetCurrentConfigSpecID = GetCurrentConfigSpecID
-CS._GetSpecResourceDisplayProfile = RB.GetSpecResourceDisplayProfile
-CS._ResourceTextDisplayKeys = RB.RESOURCE_TEXT_DISPLAY_KEYS
 
 local HealthResource = { ID = RB.RESOURCE_HEALTH }
 
@@ -344,7 +341,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         EnsureResourceSettings(settings, capturedPt)
     end
     local baseSettings = settings.resources[capturedPt]
-    local resSettings = SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, CS._ResourceTextDisplayKeys) or baseSettings
+    local resSettings = SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, RB.RESOURCE_TEXT_DISPLAY_KEYS) or baseSettings
     local name = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
 
     local showTextValue = ReadDisplaySetting(baseSettings, resSettings, "showText", nil)
@@ -912,8 +909,6 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     end
 end
 
-CS.healthResourceUI = HealthResource
-
 local function AddResourceSpecCopyButton(enableCb)
     local _, initialSpecOrder, currentSpecID = CooldownCompanion:GetResourceBarSpecCopyOptions()
     if not currentSpecID or #initialSpecOrder == 0 then
@@ -1246,7 +1241,7 @@ local function BuildResourceBarPositioningPanel(container)
     container:AddChild(segGapSlider)
 
     -- Bar Height + Custom Heights
-    ST._BuildBarHeightControls(container, settings, layout)
+    BuildBarHeightControls(container, settings, layout)
 
     -- ============ Anchor Settings (independent mode only) ============
     if isIndependentStack then
@@ -1382,7 +1377,7 @@ local function GetResourceBarTextureOptions()
 end
 
 -- Extracted to its own function to keep upvalue counts manageable in the caller.
-local function BuildBarHeightControls(container, settings, layout)
+BuildBarHeightControls = function(container, settings, layout)
     layout = layout or settings
     local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
     local customHeightsAdvKey = "customResourceBarHeights"
@@ -1498,8 +1493,6 @@ local function BuildBarHeightControls(container, settings, layout)
         {"When enabled, each resource can have its own bar size. Open advanced settings here to configure all resource sizes together.", 1, 1, 1, true},
     }, customHeightsCb)
 end
-
-ST._BuildBarHeightControls = BuildBarHeightControls
 
 local function AddResourceColorDescriptor(descriptors, key, label, defaultColor, hasAlpha)
     descriptors[#descriptors + 1] = {
@@ -1934,8 +1927,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         local hasContinuousTick = resourceSettingsPowerType ~= 101 and resourceSettingsPowerType ~= healthResourceID
         showThresholdsTicks = hasSegmentedThreshold or hasContinuousTick
     end
-    local displaySpecID = opts and tonumber(opts.specID) or CS._GetCurrentConfigSpecID()
-    local displayProfile = displaySpecID and CS._GetSpecResourceDisplayProfile(settings, displaySpecID) or nil
+    local displaySpecID = opts and tonumber(opts.specID) or GetCurrentConfigSpecID()
+    local displayProfile = displaySpecID and RB.GetSpecResourceDisplayProfile(settings, displaySpecID) or nil
     if not displaySpecID or not displayProfile then
         local label = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(label)
@@ -2058,7 +2051,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     if showHealthColors then
         local health = settings.resources and settings.resources[healthResourceID]
         if health and health.enabled == true then
-            CS.healthResourceUI.BuildColorControls(container, settings, applyBars)
+            HealthResource.BuildColorControls(container, settings, applyBars)
         elseif mode == "health" then
             local label = AceGUI:Create("Label")
             ST._ConfigureWrappedHelperLabel(label)

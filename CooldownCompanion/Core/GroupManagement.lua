@@ -1744,7 +1744,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
                 end
             end
             local hasViewerFrame = false
-            if viewerFrame and GetCVarBool("cooldownViewerEnabled") then
+            if viewerFrame and C_CVar.GetCVarBool("cooldownViewerEnabled") then
                 local parent = viewerFrame:GetParent()
                 local parentName = parent and parent:GetName()
                 hasViewerFrame = parentName == "BuffIconCooldownViewer" or parentName == "BuffBarCooldownViewer"
@@ -1876,7 +1876,15 @@ local function FindDisplaySpell(matcher)
     if not classID then return nil end
     local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID)
     for specIndex = 1, numSpecs do
-        local specID = GetSpecializationInfoForClassID(classID, specIndex)
+        local specID = C_SpecializationInfo.GetSpecializationInfo(
+            specIndex,
+            false,
+            false,
+            nil,
+            nil,
+            nil,
+            classID
+        )
         if specID then
             local ids = C_SpecializationInfo.GetSpellsDisplay(specID)
             if ids then
