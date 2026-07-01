@@ -97,6 +97,7 @@ local resourceSpecCopyButton
 local resourceSpecCopyMenu
 local thresholdTickDraftRows = {}
 local thresholdTickEditorErrors = {}
+local BuildBarHeightControls
 
 -- Imports from ResourceBarPanelsHelpers
 local RBP = ST._RBP
@@ -1240,7 +1241,7 @@ local function BuildResourceBarPositioningPanel(container)
     container:AddChild(segGapSlider)
 
     -- Bar Height + Custom Heights
-    ST._BuildBarHeightControls(container, settings, layout)
+    BuildBarHeightControls(container, settings, layout)
 
     -- ============ Anchor Settings (independent mode only) ============
     if isIndependentStack then
@@ -1376,7 +1377,7 @@ local function GetResourceBarTextureOptions()
 end
 
 -- Extracted to its own function to keep upvalue counts manageable in the caller.
-local function BuildBarHeightControls(container, settings, layout)
+BuildBarHeightControls = function(container, settings, layout)
     layout = layout or settings
     local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
     local customHeightsAdvKey = "customResourceBarHeights"
@@ -1492,8 +1493,6 @@ local function BuildBarHeightControls(container, settings, layout)
         {"When enabled, each resource can have its own bar size. Open advanced settings here to configure all resource sizes together.", 1, 1, 1, true},
     }, customHeightsCb)
 end
-
-ST._BuildBarHeightControls = BuildBarHeightControls
 
 local function AddResourceColorDescriptor(descriptors, key, label, defaultColor, hasAlpha)
     descriptors[#descriptors + 1] = {
