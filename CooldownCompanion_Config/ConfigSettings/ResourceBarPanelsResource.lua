@@ -908,8 +908,6 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     end
 end
 
-CS.healthResourceUI = HealthResource
-
 local function AddResourceSpecCopyButton(enableCb)
     local _, initialSpecOrder, currentSpecID = CooldownCompanion:GetResourceBarSpecCopyOptions()
     if not currentSpecID or #initialSpecOrder == 0 then
@@ -2054,7 +2052,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     if showHealthColors then
         local health = settings.resources and settings.resources[healthResourceID]
         if health and health.enabled == true then
-            CS.healthResourceUI.BuildColorControls(container, settings, applyBars)
+            HealthResource.BuildColorControls(container, settings, applyBars)
         elseif mode == "health" then
             local label = AceGUI:Create("Label")
             ST._ConfigureWrappedHelperLabel(label)
