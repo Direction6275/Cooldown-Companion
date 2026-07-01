@@ -64,14 +64,6 @@ local function GetEntryStableKey(buttonData)
 end
 CooldownCompanion.GetEntryStableKey = GetEntryStableKey
 
-local function GetEntrySettingsKind(buttonData)
-    if IsEquipmentSlotEntry(buttonData) then
-        return EQUIPMENT_SLOT_TYPE
-    end
-    return buttonData and buttonData.type or nil
-end
-CooldownCompanion.GetEntrySettingsKind = GetEntrySettingsKind
-
 local function IsEntryItemLike(buttonData)
     return buttonData and (buttonData.type == "item" or IsEquipmentSlotEntry(buttonData))
 end
