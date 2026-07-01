@@ -1595,7 +1595,7 @@ local function AddResourceBarsDisabledLabel(container, text)
     container:AddChild(label)
 end
 
-ST._AddResourceSettingsListSection = function(container, settings)
+local function AddResourceSettingsListSection(container, settings)
     local resources = settings and RBP.GetConfigEditableResources and RBP.GetConfigEditableResources(settings) or {}
     local editableResourceSet = {}
     for _, powerType in ipairs(resources or {}) do
@@ -1652,7 +1652,7 @@ local function BuildCustomBarsListPanel(container)
 
     local settings = CooldownCompanion:GetResourceBarSettings()
     if not (settings and settings.enabled) then
-        ST._AddResourceSettingsListSection(container, nil)
+        AddResourceSettingsListSection(container, nil)
         AddResourceBarsDisabledLabel(container, "Enable Resource Bars to configure Custom Bars and Resources.")
         return
     end
@@ -1885,7 +1885,7 @@ local function BuildCustomBarsListPanel(container)
     local renderedListBlock = false
     for index, item in ipairs(customBarRows) do
         if item.resources then
-            renderedListBlock = ST._AddResourceSettingsListSection(container, settings) or renderedListBlock
+            renderedListBlock = AddResourceSettingsListSection(container, settings) or renderedListBlock
         elseif item.heading then
             renderedListBlock = true
             local listHeading = AceGUI:Create("Heading")
