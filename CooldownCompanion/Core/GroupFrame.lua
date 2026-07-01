@@ -728,6 +728,7 @@ local function ClearReusableButtonRuntime(button)
     button._liveOverrideSpellId = nil
     button._spellOutOfRange = nil
     button._lastSpellTexture = nil
+    button._lastTextureCheckAt = nil
     button._spellTexBaseline = nil
     button._noCooldown = nil
     button._noCooldownSpellId = nil

@@ -27,6 +27,10 @@ local EvaluateButtonVisibility = ST._EvaluateButtonVisibility
 -- IMPORTANT: These tables are read-only — never write to their indices.
 local DEFAULT_WHITE = {1, 1, 1, 1}
 
+-- Silent-transform icon staleness probe interval (seconds). Event-driven icon
+-- refresh paths are unaffected; this only paces the no-event fallback probe.
+local TEXTURE_STALENESS_INTERVAL = 0.25
+
 -- APIs for text-mode conditional tokens
 local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 local IsUsableItem = C_Item.IsUsableItem
@@ -832,13 +836,21 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             refreshIcon = true
         end
 
-        -- Per-tick icon staleness detection for silent transforms (e.g. Tiger's
+        -- Icon staleness detection for silent transforms (e.g. Tiger's
         -- Fury changing Rake/Rip icons). GetSpellTexture dynamically resolves
-        -- the current visual, but no event fires for these transforms.
-        local freshIcon = C_Spell.GetSpellTexture(buttonData.id)
-        if freshIcon and freshIcon ~= button._lastSpellTexture then
-            button._lastSpellTexture = freshIcon
-            refreshIcon = true
+        -- the current visual, but no event fires for these transforms, so a
+        -- paced probe is the fallback. Also re-probe whenever an icon refresh
+        -- is already pending, so the stored baseline stays in sync with what
+        -- UpdateButtonIcon is about to display.
+        if refreshIcon
+            or button._lastTextureCheckAt == nil
+            or (now - button._lastTextureCheckAt) >= TEXTURE_STALENESS_INTERVAL then
+            button._lastTextureCheckAt = now
+            local freshIcon = C_Spell.GetSpellTexture(buttonData.id)
+            if freshIcon and freshIcon ~= button._lastSpellTexture then
+                button._lastSpellTexture = freshIcon
+                refreshIcon = true
+            end
         end
 
         if refreshIcon then
