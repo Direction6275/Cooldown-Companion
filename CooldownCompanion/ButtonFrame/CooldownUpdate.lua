@@ -480,7 +480,7 @@ local function ShouldUseActiveAuraIcon(buttonData)
             or buttonData.isPassive == true)
 end
 
-local function DispatchStandaloneTextureVisual(button)
+local function DispatchStandaloneTextureVisual(button, group)
     if not button then
         return
     end
@@ -488,8 +488,10 @@ local function DispatchStandaloneTextureVisual(button)
         return
     end
 
-    local group = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
-        and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
+    if group == nil then
+        group = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
+            and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
+    end
     if group and group.displayMode == "trigger" then
         local frame = button:GetParent()
         local runtimeButtons = frame and frame.buttons
@@ -1691,7 +1693,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     button._rawVisibilityReasonBits = button._visibilityReasonBits
     button._rawVisibilityReasonMode = button._visibilityReasonMode
 
-    local group = button._groupId and CooldownCompanion.db.profile.groups[button._groupId]
+    local group = buttonGroup
     local isTriggerPanel = group and group.displayMode == "trigger"
     local forceVisibleByUnlockPreview = group
         and group.parentContainerId
@@ -1764,7 +1766,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button:SetAlpha(0)
                 button._lastVisAlpha = 0
             end
-            DispatchStandaloneTextureVisual(button)
+            DispatchStandaloneTextureVisual(button, group)
             if shouldCaptureVisualState then
                 CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
             end
@@ -1784,7 +1786,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- and icon mode force-show both read stale true on next tick.
             button.cooldown:Hide()
             HideIconFillForHiddenButton(button)
-            DispatchStandaloneTextureVisual(button)
+            DispatchStandaloneTextureVisual(button, group)
             if shouldCaptureVisualState then
                 CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
             end
@@ -1849,11 +1851,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     elseif button._isBar then
         UpdateBarDisplay(button)
-        DispatchStandaloneTextureVisual(button)
+        DispatchStandaloneTextureVisual(button, group)
     else
         UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
         UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
-        DispatchStandaloneTextureVisual(button)
+        DispatchStandaloneTextureVisual(button, group)
     end
     if shouldCaptureVisualState then
         CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
