@@ -2341,12 +2341,12 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     end
 
     if activeTab == "soundalerts" then
-        ST._BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
+        BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
         return
     end
 
     if activeTab == "loadconditions" then
-        ST._BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
+        BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
         return
     end
 
@@ -2818,8 +2818,6 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
 
 end
 
--- Expose for ButtonSettings.lua and Config.lua
+-- Expose panel builders used by the config columns
 ST._BuildCustomBarsListPanel = BuildCustomBarsListPanel
 ST._BuildCustomAuraBarPanel = BuildCustomAuraBarPanel
-ST._BuildCustomBarSoundAlertsTab = BuildCustomBarSoundAlertsTab
-ST._BuildCustomBarLoadConditionsTab = BuildCustomBarLoadConditionsTab
