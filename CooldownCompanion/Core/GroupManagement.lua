@@ -1876,7 +1876,15 @@ local function FindDisplaySpell(matcher)
     if not classID then return nil end
     local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID)
     for specIndex = 1, numSpecs do
-        local specID = GetSpecializationInfoForClassID(classID, specIndex)
+        local specID = C_SpecializationInfo.GetSpecializationInfo(
+            specIndex,
+            false,
+            false,
+            nil,
+            nil,
+            nil,
+            classID
+        )
         if specID then
             local ids = C_SpecializationInfo.GetSpellsDisplay(specID)
             if ids then
