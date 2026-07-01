@@ -896,13 +896,6 @@ end
 -- Identical to GetSafeRGBConfig; alias kept for call-site clarity (RGB vs RGBA intent)
 local GetSafeRGBAConfig = GetSafeRGBConfig
 
-local function CopyRGBConfig(color)
-    if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
-        return nil
-    end
-    return { color[1], color[2], color[3] }
-end
-
 local function GetSegmentedThresholdValueConfig(resource)
     local value = tonumber(resource and resource.segThresholdValue)
     if not value then
@@ -952,14 +945,6 @@ end
 ------------------------------------------------------------------------
 -- Autocomplete handlers
 ------------------------------------------------------------------------
-
-local function AttachAuraAutocompleteHandlers(editBoxWidget, onAuraSelect)
-    editBoxWidget:SetCallback("OnTextChanged", function(widget, event, text)
-        ShowAuraBarAutocompleteResults(text, widget, onAuraSelect)
-    end)
-
-    CS.SetupAutocompleteKeyHandler(editBoxWidget)
-end
 
 ------------------------------------------------------------------------
 -- Aura overlay UI builders
@@ -1243,35 +1228,6 @@ local function ClearLegacyResourceAuraFieldsConfig(resource)
     resource.auraUnit = nil
     resource.auraUnitExplicit = nil
 end
-
-local function ClearResourceAuraEntryConfig(powerType, resource, specID)
-    if type(resource.auraOverlayEntries) ~= "table" then
-        return
-    end
-
-    resource.auraOverlayEntries[specID] = nil
-    resource.auraOverlayEntries[tostring(specID)] = nil
-    if not next(resource.auraOverlayEntries) then
-        resource.auraOverlayEntries = nil
-    end
-    if type(resource.specOverrides) == "table" then
-        local specData = resource.specOverrides[specID] or resource.specOverrides[tostring(specID)]
-        if type(specData) == "table" then
-            specData.auraOverlayEnabled = nil
-            if not next(specData) then
-                resource.specOverrides[specID] = nil
-                resource.specOverrides[tostring(specID)] = nil
-                if not next(resource.specOverrides) then
-                    resource.specOverrides = nil
-                end
-            end
-        end
-    end
-
-    CooldownCompanion:ApplyResourceBars()
-    CooldownCompanion:RefreshConfigPanel()
-end
-
 
 local function AddResourceAuraOverrideControls(container, settings, powerType, resourceName, auraAdvButtons, opts)
     if not settings.resources[powerType] then
