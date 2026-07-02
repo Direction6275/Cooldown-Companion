@@ -525,14 +525,14 @@ local function ResolveIconFillIntent(button, buttonData, style, target)
     return SetIconFillIntent(target, true, false, "inactive")
 end
 
-local buttonVisualStateSnapshotsEnabled = false
+ST._buttonVisualStateSnapshotsEnabled = ST._buttonVisualStateSnapshotsEnabled == true
 
 local function SetButtonVisualStateSnapshotsEnabled(enabled)
-    buttonVisualStateSnapshotsEnabled = enabled == true
+    ST._buttonVisualStateSnapshotsEnabled = enabled == true
 end
 
 local function AreButtonVisualStateSnapshotsEnabled()
-    return buttonVisualStateSnapshotsEnabled == true
+    return ST._buttonVisualStateSnapshotsEnabled == true
 end
 
 local function CopyTextVisualState(button, text, context)

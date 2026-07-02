@@ -555,7 +555,7 @@ local function BuildSpecDropdownOptions(group)
     local order = {}
 
     for i = 1, (GetNumSpecializations() or 0) do
-        local specID, name = C_SpecializationInfo.GetSpecializationInfo(i)
+        local specID, name = GetSpecializationInfo(i)
         if specID and name and (not hasSpecFilter or effectiveSpecs[specID]) then
             values[specID] = name
             order[#order + 1] = specID

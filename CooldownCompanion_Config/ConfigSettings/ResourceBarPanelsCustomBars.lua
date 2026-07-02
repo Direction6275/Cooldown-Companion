@@ -1594,8 +1594,9 @@ local function AddResourceBarsDisabledLabel(container, text)
     label:SetFullWidth(true)
     container:AddChild(label)
 end
+ST._AddResourceBarsDisabledLabel = AddResourceBarsDisabledLabel
 
-local function AddResourceSettingsListSection(container, settings)
+ST._AddResourceSettingsListSection = function(container, settings)
     local resources = settings and RBP.GetConfigEditableResources and RBP.GetConfigEditableResources(settings) or {}
     local editableResourceSet = {}
     for _, powerType in ipairs(resources or {}) do
@@ -1652,8 +1653,8 @@ local function BuildCustomBarsListPanel(container)
 
     local settings = CooldownCompanion:GetResourceBarSettings()
     if not (settings and settings.enabled) then
-        AddResourceSettingsListSection(container, nil)
-        AddResourceBarsDisabledLabel(container, "Enable Resource Bars to configure Custom Bars and Resources.")
+        ST._AddResourceSettingsListSection(container, nil)
+        ST._AddResourceBarsDisabledLabel(container, "Enable Resource Bars to configure Custom Bars and Resources.")
         return
     end
 
@@ -1885,7 +1886,7 @@ local function BuildCustomBarsListPanel(container)
     local renderedListBlock = false
     for index, item in ipairs(customBarRows) do
         if item.resources then
-            renderedListBlock = AddResourceSettingsListSection(container, settings) or renderedListBlock
+            renderedListBlock = ST._AddResourceSettingsListSection(container, settings) or renderedListBlock
         elseif item.heading then
             renderedListBlock = true
             local listHeading = AceGUI:Create("Heading")
@@ -2341,12 +2342,12 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     end
 
     if activeTab == "soundalerts" then
-        BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
+        ST._BuildCustomBarSoundAlertsTab(container, cab, infoButtons)
         return
     end
 
     if activeTab == "loadconditions" then
-        BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
+        ST._BuildCustomBarLoadConditionsTab(container, cab, infoButtons)
         return
     end
 
@@ -2818,6 +2819,8 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
 
 end
 
--- Expose panel builders used by the config columns
+-- Expose for ButtonSettings.lua and Config.lua
 ST._BuildCustomBarsListPanel = BuildCustomBarsListPanel
 ST._BuildCustomAuraBarPanel = BuildCustomAuraBarPanel
+ST._BuildCustomBarSoundAlertsTab = BuildCustomBarSoundAlertsTab
+ST._BuildCustomBarLoadConditionsTab = BuildCustomBarLoadConditionsTab

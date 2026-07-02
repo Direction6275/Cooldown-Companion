@@ -248,6 +248,7 @@ local function CleanupWindow(widget)
     widget:ReleaseChildren()
     AceGUI:Release(widget)
     advancedWindow = nil
+    CS.advancedSettingsPanelWindow = nil
     activeDescriptor = nil
     if CS.SetActiveAdvancedSettingsToggleButton then
         CS.SetActiveAdvancedSettingsToggleButton(nil)
@@ -308,6 +309,7 @@ local function OpenAdvancedSettingsPanel(opts)
         window:EnableResize(false)
         window:SetCallback("OnClose", CleanupWindow)
         advancedWindow = window
+        CS.advancedSettingsPanelWindow = window
         if CS.RegisterConfigDragAlphaFrame then
             CS.RegisterConfigDragAlphaFrame(window.frame)
         end

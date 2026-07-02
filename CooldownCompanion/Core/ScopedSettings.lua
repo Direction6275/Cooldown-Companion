@@ -506,15 +506,7 @@ local function GetClassSpecInfo(classKey)
     end
 
     for i = 1, numSpecs do
-        local specID = C_SpecializationInfo.GetSpecializationInfo(
-            i,
-            false,
-            false,
-            nil,
-            nil,
-            nil,
-            classID
-        )
+        local specID = GetSpecializationInfoForClassID(classID, i)
         if specID then
             specIDs[specID] = true
         end
@@ -2157,15 +2149,7 @@ function CooldownCompanion:GetResourceBarSpecCopyOptions()
     local order = {}
     local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID) or 0
     for i = 1, numSpecs do
-        local specID, specName = C_SpecializationInfo.GetSpecializationInfo(
-            i,
-            false,
-            false,
-            nil,
-            nil,
-            nil,
-            classID
-        )
+        local specID, specName = GetSpecializationInfoForClassID(classID, i)
         if specID then
             if specID ~= currentSpecID then
                 values[specID] = specName or ("Spec " .. tostring(specID))
