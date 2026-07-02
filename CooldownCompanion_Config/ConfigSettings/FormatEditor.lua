@@ -501,7 +501,7 @@ local function GetPreviewIcon()
             elseif CooldownCompanion.IsEquipmentSlotEntry
                 and CooldownCompanion.IsEquipmentSlotEntry(bd) then
                 local effectiveItem = CooldownCompanion.ResolveEffectiveItem
-                    and CooldownCompanion.ResolveEffectiveItem(bd, { requestLoad = true }) or nil
+                    and CooldownCompanion.ResolveEffectiveItem(bd, true) or nil
                 if effectiveItem and effectiveItem.trackable and effectiveItem.icon then
                     return effectiveItem.icon
                 end

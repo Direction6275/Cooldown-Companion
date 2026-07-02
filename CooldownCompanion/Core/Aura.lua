@@ -36,11 +36,7 @@ local COOLDOWN_VIEWER_ASSOCIATION_CATEGORIES = {
     Enum.CooldownViewerCategory.TrackedBar,
 }
 
--- Caller-owned scratch sets for ST.FillAuraInstanceIDSet — see Utils.lua for
--- the lifetime contract (use only the returned set, never read these directly).
-local removedAuraIDSetScratch = {}
-local updatedAuraIDSetScratch = {}
-local FillAuraInstanceIDSet = ST.FillAuraInstanceIDSet
+local GetAuraInstanceIDSets = ST.GetAuraInstanceIDSets
 
 -- Immutable — shared across calls; never write to this table.
 local CLEAR_TRACKED_AURA_FALSE_STATE_OPTS = { useFalseState = true }
@@ -482,8 +478,7 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
     -- work correctly — the update path re-checks _auraInstanceID after removals.
     local removedIDs = updateInfo.removedAuraInstanceIDs
     local updatedIDs = updateInfo.updatedAuraInstanceIDs
-    local removedIDSet = FillAuraInstanceIDSet(removedAuraIDSetScratch, removedIDs)
-    local updatedIDSet = FillAuraInstanceIDSet(updatedAuraIDSetScratch, updatedIDs)
+    local removedIDSet, updatedIDSet = GetAuraInstanceIDSets(updateInfo)
     local isTarget = (unit == "target")
     if removedIDs or updatedIDs or isTarget then
         self:ForEachButton(function(button)

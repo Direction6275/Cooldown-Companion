@@ -12,11 +12,7 @@ local ipairs = ipairs
 
 local RB = ST._RB
 
--- Caller-owned scratch sets for ST.FillAuraInstanceIDSet — see Utils.lua for
--- the lifetime contract (use only the returned set, never read these directly).
-local removedAuraIDSetScratch = {}
-local updatedAuraIDSetScratch = {}
-local FillAuraInstanceIDSet = ST.FillAuraInstanceIDSet
+local GetAuraInstanceIDSets = ST.GetAuraInstanceIDSets
 
 -- Immutable — shared across calls; never write to this table.
 local CLEAR_CUSTOM_BAR_AURA_OPTS = { useFalseState = true, clearCustomAuraStacks = true }
@@ -167,8 +163,7 @@ function RB.CreateResourceBarLifecycleModule(deps)
 
                     local removedIDs = updateInfo.removedAuraInstanceIDs
                     local updatedIDs = updateInfo.updatedAuraInstanceIDs
-                    local removedIDSet = FillAuraInstanceIDSet(removedAuraIDSetScratch, removedIDs)
-                    local updatedIDSet = FillAuraInstanceIDSet(updatedAuraIDSetScratch, updatedIDs)
+                    local removedIDSet, updatedIDSet = GetAuraInstanceIDSets(updateInfo)
                     local hasAuraChange = updateInfo.isFullUpdate or updateInfo.addedAuras or removedIDs or updatedIDs
                     local targetSwitchDataReceived = false
 

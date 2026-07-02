@@ -867,7 +867,7 @@ end
 local function ResolveReusableButtonEntryState(button, buttonData)
     if CooldownCompanion.IsEntryItemLike and CooldownCompanion.IsEntryItemLike(buttonData) then
         local effectiveItem = CooldownCompanion.ResolveEffectiveItem
-            and CooldownCompanion.ResolveEffectiveItem(buttonData, CooldownCompanion.RESOLVE_ITEM_REQUEST_LOAD_OPTS)
+            and CooldownCompanion.ResolveEffectiveItem(buttonData, true)
             or nil
         button._resolvedItemId = effectiveItem and effectiveItem.itemID or buttonData.id
         button._resolvedItemAvailableQuantity = effectiveItem and effectiveItem.availableQuantity or 0

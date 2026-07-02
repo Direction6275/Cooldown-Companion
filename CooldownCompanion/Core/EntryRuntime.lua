@@ -25,9 +25,9 @@ local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 local TARGET_SWITCH_SAFETY_CAP = 0.60
--- Reusable scratch opts — single call site each; filled immediately before
--- their call and wiped right after it, so they are always empty between uses
--- and never pin values from a previous call.
+-- Reusable scratch opts — single call site each; wiped immediately before
+-- each fill, so a previous call can never leak values into the next one
+-- even if an error aborts an update mid-call.
 local buttonSpellCooldownLaneOpts = {}
 local customBarSpellCooldownLaneOpts = {}
 -- Immutable — shared across calls; never write to these tables.
@@ -1237,6 +1237,21 @@ end
 -- never retain.
 EntryRuntime.ProbeActionSlotCooldownForSpell = ProbeActionSlotCooldownForSpell
 
+-- Resolve the action-slot probe state cached on a lane result, re-probing when
+-- the lane stored none (nil slotProbeShown means "not probed"). Returns
+-- shown, realShown; both nil when no action slot matches the spell.
+local function ResolveSlotProbeShown(result, baseSpellID, cooldownSpellID)
+    local probeShown = result and result.slotProbeShown
+    local probeRealShown = result and result.slotProbeRealShown
+    if probeShown == nil then
+        local slotProbe = ProbeActionSlotCooldownForSpell(baseSpellID, cooldownSpellID)
+        probeShown = slotProbe.shown
+        probeRealShown = slotProbe.realShown
+    end
+    return probeShown, probeRealShown
+end
+EntryRuntime.ResolveSlotProbeShown = ResolveSlotProbeShown
+
 -- Returns a module-local scratch table. Read it only synchronously within the
 -- current button/custom-bar update; never retain it across ticks/events.
 local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
@@ -1358,12 +1373,11 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldo
     local allowActionSlotReadyFallback = allowActionSlotRealFallback
         and cooldownSpellId ~= buttonData.id
 
+    wipe(buttonSpellCooldownLaneOpts)
     buttonSpellCooldownLaneOpts.allowActionSlotRealFallback = allowActionSlotRealFallback
     buttonSpellCooldownLaneOpts.allowActionSlotReadyFallback = allowActionSlotReadyFallback
     buttonSpellCooldownLaneOpts.suppressCooldownSurface = resourceGatedNoCooldown == true
-    local result = EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id, buttonSpellCooldownLaneOpts)
-    wipe(buttonSpellCooldownLaneOpts)
-    return result
+    return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id, buttonSpellCooldownLaneOpts)
 end
 EntryRuntime.EvaluateButtonSpellCooldown = EvaluateButtonSpellCooldown
 
@@ -1531,13 +1545,7 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
     if currentCharges ~= nil then
         mainCDShown = currentCharges <= 0
     else
-        local probeShown = result.slotProbeShown
-        local probeRealShown = result.slotProbeRealShown
-        if probeShown == nil then
-            local slotProbe = ProbeActionSlotCooldownForSpell(baseSpellID, cooldownSpellID)
-            probeShown = slotProbe.shown
-            probeRealShown = slotProbe.realShown
-        end
+        local probeShown, probeRealShown = ResolveSlotProbeShown(result, baseSpellID, cooldownSpellID)
         if probeShown ~= nil then
             mainCDShown = probeRealShown == true
         elseif result.fetchOk then
@@ -1709,11 +1717,11 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     local allowActionSlotReadyFallback = allowActionSlotRealFallback
         and cooldownSpellID ~= spellID
 
+    wipe(customBarSpellCooldownLaneOpts)
     customBarSpellCooldownLaneOpts.allowActionSlotRealFallback = allowActionSlotRealFallback
     customBarSpellCooldownLaneOpts.allowActionSlotReadyFallback = allowActionSlotReadyFallback
     customBarSpellCooldownLaneOpts.suppressCooldownSurface = resourceGatedNoCooldown == true
     local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, customBarSpellCooldownLaneOpts)
-    wipe(customBarSpellCooldownLaneOpts)
     result.baseSpellID = spellID
     result.cooldownSpellID = cooldownSpellID
     result.noCooldown = noCooldown or nil

@@ -2732,11 +2732,8 @@ function CooldownCompanion:IsButtonUsable(buttonData, group, opts)
 
         return true
     elseif CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
-        -- RESOLVE_ITEM_REQUEST_LOAD_OPTS must be read at call time here: this
-        -- file loads before ButtonFrame/Helpers.lua defines it (TOC order), so
-        -- a file-scope local would capture nil and silently drop requestLoad.
         local effectiveItem = CooldownCompanion.ResolveEffectiveItem
-            and CooldownCompanion.ResolveEffectiveItem(buttonData, CooldownCompanion.RESOLVE_ITEM_REQUEST_LOAD_OPTS) or nil
+            and CooldownCompanion.ResolveEffectiveItem(buttonData, true) or nil
         return effectiveItem and effectiveItem.trackable == true
     elseif buttonData.type == "item" then
         if buttonData.hasCharges then return true end

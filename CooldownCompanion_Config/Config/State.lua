@@ -402,7 +402,7 @@ local function GetButtonIcon(buttonData)
     elseif CooldownCompanion.IsEquipmentSlotEntry
         and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
         local effectiveItem = CooldownCompanion.ResolveEffectiveItem
-            and CooldownCompanion.ResolveEffectiveItem(buttonData, { requestLoad = true }) or nil
+            and CooldownCompanion.ResolveEffectiveItem(buttonData, true) or nil
         if effectiveItem and effectiveItem.trackable and effectiveItem.icon then
             return effectiveItem.icon
         end

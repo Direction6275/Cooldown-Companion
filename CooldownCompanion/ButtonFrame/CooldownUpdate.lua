@@ -26,11 +26,9 @@ local EvaluateButtonVisibility = ST._EvaluateButtonVisibility
 -- Pre-defined color constant tables to avoid per-tick allocation.
 -- IMPORTANT: These tables are read-only — never write to their indices.
 local DEFAULT_WHITE = {1, 1, 1, 1}
--- Immutable shared opts owned by Helpers.lua; never write to this table.
-local RESOLVE_ITEM_REQUEST_LOAD_OPTS = CooldownCompanion.RESOLVE_ITEM_REQUEST_LOAD_OPTS
--- Reusable scratch opts — single call site each; filled immediately before
--- their call and wiped right after it, so they are always empty between walks
--- and never pin values from a previous walk.
+-- Reusable scratch opts — single call site each; wiped immediately before
+-- each fill, so a previous walk can never leak values into the next call
+-- even if an error aborts a walk mid-call.
 local evaluateButtonAuraStateOpts = {}
 local buttonAuraPandemicStateOpts = {}
 
@@ -751,7 +749,7 @@ local function UpdateResolvedItemState(button, buttonData)
         return false
     end
 
-    local effectiveItem = ResolveEffectiveItem(buttonData, RESOLVE_ITEM_REQUEST_LOAD_OPTS)
+    local effectiveItem = ResolveEffectiveItem(buttonData, true)
     if IsEquipmentSlotEntry(buttonData) and not (effectiveItem and effectiveItem.trackable) then
         if InCombatLockdown() and button._resolvedItemId then
             return false
@@ -999,6 +997,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if buttonData.auraTracking and button._auraSpellID then
         auraDisplayNameState = CreateAuraDisplayNameState(button)
         button._auraDisplayName = nil
+        wipe(evaluateButtonAuraStateOpts)
         evaluateButtonAuraStateOpts.now = now
         evaluateButtonAuraStateOpts.allowDurationlessAuraInstance = barAuraStackConfigured
         evaluateButtonAuraStateOpts.previousAuraDurationObj = prevAuraDurationObj
@@ -1009,7 +1008,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._auraSpellID,
             evaluateButtonAuraStateOpts
         )
-        wipe(evaluateButtonAuraStateOpts)
         local viewerFrame = auraState.viewerFrame
         auraTrackingReady = auraState.auraTrackingReady == true
         auraOverrideActive = auraState.auraPresent == true
@@ -1126,13 +1124,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
 
+        wipe(buttonAuraPandemicStateOpts)
         buttonAuraPandemicStateOpts.now = now
         buttonAuraPandemicStateOpts.enabled = auraOverrideActive and (style.showPandemicGlow ~= false or buttonData.hideAuraActiveExceptPandemic)
         buttonAuraPandemicStateOpts.previewActive = button._pandemicPreview == true
         buttonAuraPandemicStateOpts.clearWhenDisabled = true
         buttonAuraPandemicStateOpts.auraState = auraState
         button._inPandemic = EntryRuntime.ResolveAuraPandemicState(button, viewerFrame, buttonAuraPandemicStateOpts)
-        wipe(buttonAuraPandemicStateOpts)
 
         -- Pass through aura display names while keeping icon writes owned by UpdateButtonIcon.
         CommitAuraDisplayName(button, buttonData, viewerFrame, auraOverrideActive, auraDisplayNameState)
@@ -1451,13 +1449,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- and duration > 0).  It can report true during per-cast lockouts
             -- and recharge, so the _chargesSpent heuristic below guards both
             -- this path and the isActive fallback.
-            local probeShown = spellCooldownResult and spellCooldownResult.slotProbeShown
-            local probeRealShown = spellCooldownResult and spellCooldownResult.slotProbeRealShown
-            if probeShown == nil then
-                local slotProbe = EntryRuntime.ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
-                probeShown = slotProbe.shown
-                probeRealShown = slotProbe.realShown
-            end
+            local probeShown, probeRealShown = EntryRuntime.ResolveSlotProbeShown(spellCooldownResult, buttonData.id, cooldownSpellId)
             if probeShown ~= nil then
                 button._mainCDShown = probeRealShown == true
             elseif not auraOwnsPrimarySwipe then

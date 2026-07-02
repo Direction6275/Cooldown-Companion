@@ -938,7 +938,7 @@ local function RequestEquipmentSlotItemData(itemLocation, itemID)
     end
 end
 
-local function ResolveEquipmentSlotItem(buttonData, opts)
+local function ResolveEquipmentSlotItem(buttonData, requestLoad)
     local result = {
         isEquipmentSlot = true,
         itemSlot = buttonData and buttonData.itemSlot or nil,
@@ -966,7 +966,7 @@ local function ResolveEquipmentSlotItem(buttonData, opts)
     result.itemID = itemID
     if not itemID then
         result.reason = "loading"
-        if opts and opts.requestLoad then
+        if requestLoad then
             RequestEquipmentSlotItemData(itemLocation)
         end
         return result
@@ -978,7 +978,7 @@ local function ResolveEquipmentSlotItem(buttonData, opts)
 
     if C_Item.IsItemDataCached(itemLocation) == false or C_Item.IsItemDataCachedByID(itemID) == false then
         result.reason = "loading"
-        if opts and opts.requestLoad then
+        if requestLoad then
             RequestEquipmentSlotItemData(itemLocation, itemID)
         end
         return result
@@ -1004,9 +1004,9 @@ local function ResolveEquipmentSlotItem(buttonData, opts)
     return result
 end
 
-local function ResolveEffectiveItem(buttonData, opts)
+local function ResolveEffectiveItem(buttonData, requestLoad)
     if IsEquipmentSlotEntry(buttonData) then
-        return ResolveEquipmentSlotItem(buttonData, opts)
+        return ResolveEquipmentSlotItem(buttonData, requestLoad)
     end
     if not (buttonData and buttonData.type == "item") then
         return nil
@@ -1025,10 +1025,6 @@ local function ResolveEffectiveItem(buttonData, opts)
     }
 end
 CooldownCompanion.ResolveEffectiveItem = ResolveEffectiveItem
-
--- Immutable shared opts for ResolveEffectiveItem callers that want async item
--- loads requested. Shared across files and calls — never write to this table.
-CooldownCompanion.RESOLVE_ITEM_REQUEST_LOAD_OPTS = { requestLoad = true }
 
 -- Apply configurable strata (frame level) ordering to button sub-elements.
 -- order: array of 6 keys or nil for default.

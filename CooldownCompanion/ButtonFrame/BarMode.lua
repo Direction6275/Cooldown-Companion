@@ -45,8 +45,6 @@ local DEFAULT_AURA_TEXT_COLOR = {0, 0.925, 1, 1}
 local DEFAULT_BAR_COLOR = {0.2, 0.6, 1.0, 1.0}
 local DEFAULT_READY_TEXT_COLOR = {0.2, 1.0, 0.2, 1.0}
 local DEFAULT_CUSTOM_AURA_MAX_COLOR = {1, 0.84, 0, 1}
--- Immutable shared opts owned by Helpers.lua; never write to this table.
-local RESOLVE_ITEM_REQUEST_LOAD_OPTS = CooldownCompanion.RESOLVE_ITEM_REQUEST_LOAD_OPTS
 
 -- Imports from Glows
 local CreateGlowContainer = ST._CreateGlowContainer
@@ -1787,7 +1785,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._auraNameOverrideActive = nil
 
     if IsEntryItemLike(buttonData) then
-        local effectiveItem = ResolveEffectiveItem(buttonData, RESOLVE_ITEM_REQUEST_LOAD_OPTS)
+        local effectiveItem = ResolveEffectiveItem(buttonData, true)
         button._resolvedItemId = effectiveItem and effectiveItem.itemID or buttonData.id
         button._resolvedItemAvailableQuantity = effectiveItem and effectiveItem.availableQuantity or 0
         button._resolvedItemQuantityKind = effectiveItem and effectiveItem.quantityKind or "stacks"

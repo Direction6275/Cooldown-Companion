@@ -52,8 +52,6 @@ local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}
 local DEFAULT_AURA_COLOR = {0, 0.925, 1, 1}
 local DEFAULT_CUSTOM_COLOR = {1, 0.82, 0, 1}
 local DEFAULT_TEXT_FORMAT = "{name}  {status}"
--- Immutable shared opts owned by Helpers.lua; never write to this table.
-local RESOLVE_ITEM_REQUEST_LOAD_OPTS = CooldownCompanion.RESOLVE_ITEM_REQUEST_LOAD_OPTS
 
 local function IsAuraOnlyEntry(buttonData)
     return buttonData
@@ -1058,7 +1056,7 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button._textSecretNameActive = nil
 
     if IsEntryItemLike(buttonData) then
-        local effectiveItem = ResolveEffectiveItem(buttonData, RESOLVE_ITEM_REQUEST_LOAD_OPTS)
+        local effectiveItem = ResolveEffectiveItem(buttonData, true)
         button._resolvedItemId = effectiveItem and effectiveItem.itemID or buttonData.id
         button._resolvedItemAvailableQuantity = effectiveItem and effectiveItem.availableQuantity or 0
         button._resolvedItemQuantityKind = effectiveItem and effectiveItem.quantityKind or "stacks"

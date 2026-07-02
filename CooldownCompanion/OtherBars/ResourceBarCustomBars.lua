@@ -97,9 +97,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         or ClearCustomAuraBarIndicatorState
     local UpdateCustomAuraBarIndicatorVisuals = deps.UpdateCustomAuraBarIndicatorVisuals
     local ApplyCustomAuraBarPreviewState = deps.ApplyCustomAuraBarPreviewState
-    -- Reusable scratch opts — single call site each; filled immediately before
-    -- their call and wiped right after it, so they are always empty between
-    -- updates and never pin values from a previous update.
+    -- Reusable scratch opts — single call site each; wiped immediately before
+    -- each fill, so a previous update can never leak values into the next one
+    -- even if an error aborts an update mid-call.
     local spellCustomBarAuraStateOpts = {}
     local customAuraBarAuraStateOpts = {}
     local customAuraBarPandemicStateOpts = {}
@@ -186,13 +186,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         local configUnit = buttonData.auraUnit or "player"
         local resolvedAuraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
+        wipe(spellCustomBarAuraStateOpts)
         spellCustomBarAuraStateOpts.configUnit = configUnit
         spellCustomBarAuraStateOpts.allowDurationlessAuraInstance = true
         spellCustomBarAuraStateOpts.useButtonAuraViewerFallback = true
         spellCustomBarAuraStateOpts.validateCachedAuraData = EntryRuntime.AuraDataMatchesTrackedSpell
-        local auraState = EntryRuntime.EvaluateTrackedAuraState(bar, buttonData, resolvedAuraSpellID, spellCustomBarAuraStateOpts)
-        wipe(spellCustomBarAuraStateOpts)
-        return auraState
+        return EntryRuntime.EvaluateTrackedAuraState(bar, buttonData, resolvedAuraSpellID, spellCustomBarAuraStateOpts)
     end
 
     local function UpdateCustomAuraBar(barInfo)
@@ -227,11 +226,11 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             local buttonData, spellID = BuildCustomBarAuraButtonData(cabConfig, true)
             if buttonData and spellID then
                 configUnit = buttonData.auraUnit or configUnit
+                wipe(customAuraBarAuraStateOpts)
                 customAuraBarAuraStateOpts.configUnit = configUnit
                 customAuraBarAuraStateOpts.allowDurationlessAuraInstance = true
                 customAuraBarAuraStateOpts.allowPlayerAuraFallbackWithoutReady = true
                 auraState = EntryRuntime.EvaluateTrackedAuraState(barInfo.frame, buttonData, spellID, customAuraBarAuraStateOpts)
-                wipe(customAuraBarAuraStateOpts)
                 viewerFrame = auraState and auraState.viewerFrame or nil
             end
         end
@@ -296,6 +295,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
 
         local pandemicStateFrame = barInfo.frame
+        wipe(customAuraBarPandemicStateOpts)
         customAuraBarPandemicStateOpts.enabled = configUnit == "target" and auraPresent
         customAuraBarPandemicStateOpts.previewActive = pandemicPreview == true
         customAuraBarPandemicStateOpts.clearWhenDisabled = true
@@ -303,7 +303,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         customAuraBarPandemicStateOpts.auraUnit = auraUnit
         customAuraBarPandemicStateOpts.auraInstanceID = instId
         local inPandemic = EntryRuntime.ResolveAuraPandemicState(pandemicStateFrame, viewerFrame, customAuraBarPandemicStateOpts)
-        wipe(customAuraBarPandemicStateOpts)
 
         if isActive and bar then
             if auraPresent then
@@ -593,12 +592,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         local configUnit = (auraState and auraState.configUnit)
             or GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
+        wipe(customCooldownBarPandemicStateOpts)
         customCooldownBarPandemicStateOpts.enabled = configUnit == "target" and auraPresent
         customCooldownBarPandemicStateOpts.previewActive = pandemicPreview == true
         customCooldownBarPandemicStateOpts.clearWhenDisabled = true
         customCooldownBarPandemicStateOpts.auraState = auraState
         local inPandemic = EntryRuntime.ResolveAuraPandemicState(bar, auraState and auraState.viewerFrame, customCooldownBarPandemicStateOpts)
-        wipe(customCooldownBarPandemicStateOpts)
 
         if auraState
             and auraState.ready == true
