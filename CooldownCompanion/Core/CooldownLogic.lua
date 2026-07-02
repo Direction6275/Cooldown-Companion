@@ -17,13 +17,12 @@ CooldownLogic.CHARGE_STATE_FULL = "full"
 CooldownLogic.CHARGE_STATE_MISSING = "missing"
 CooldownLogic.CHARGE_STATE_ZERO = "zero"
 
-function CooldownLogic.IsSpellGCDOnly(info, options)
+function CooldownLogic.IsSpellGCDOnly(info, normalCooldownShown, realCooldownShown)
     if not info then
         return false
     end
 
-    options = options or {}
-    if options.realCooldownShown or not options.normalCooldownShown then
+    if realCooldownShown or not normalCooldownShown then
         return false
     end
 

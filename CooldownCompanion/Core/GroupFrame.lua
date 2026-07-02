@@ -782,6 +782,7 @@ local function ClearReusableButtonRuntime(button)
     button._auraStackText = nil
     button._auraHasTimer = nil
     button._textSecretNameActive = nil
+    EntryRuntime.ReleaseTrackedAuraScratch(button)
     button._bindingKeyInfos = nil
     button._keyPressHighlightActive = nil
     button._visibilityHidden = false
@@ -866,7 +867,7 @@ end
 local function ResolveReusableButtonEntryState(button, buttonData)
     if CooldownCompanion.IsEntryItemLike and CooldownCompanion.IsEntryItemLike(buttonData) then
         local effectiveItem = CooldownCompanion.ResolveEffectiveItem
-            and CooldownCompanion.ResolveEffectiveItem(buttonData, { requestLoad = true })
+            and CooldownCompanion.ResolveEffectiveItem(buttonData, CooldownCompanion.RESOLVE_ITEM_REQUEST_LOAD_OPTS)
             or nil
         button._resolvedItemId = effectiveItem and effectiveItem.itemID or buttonData.id
         button._resolvedItemAvailableQuantity = effectiveItem and effectiveItem.availableQuantity or 0

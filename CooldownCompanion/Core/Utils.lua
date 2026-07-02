@@ -8,6 +8,7 @@ local ADDON_NAME, ST = ...
 local InCombatLockdown = InCombatLockdown
 local string_format = string.format
 local ipairs = ipairs
+local wipe = wipe
 local pairs = pairs
 local tonumber = tonumber
 local type = type
@@ -39,6 +40,27 @@ ST.EDGE_ANCHOR_SPEC = {
     {"TOPLEFT", "TOPLEFT",     "BOTTOMRIGHT", "BOTTOMLEFT",   0, -1,  1,  1}, -- Left   (inset to avoid corner overlap)
     {"TOPLEFT", "TOPRIGHT",    "BOTTOMRIGHT", "BOTTOMRIGHT", -1, -1,  0,  1}, -- Right  (inset to avoid corner overlap)
 }
+
+--------------------------------------------------------------------------------
+-- Aura Instance ID Sets
+--------------------------------------------------------------------------------
+
+-- Fills a caller-owned scratch set from a UNIT_AURA instance-ID array and
+-- returns it, or returns nil when the array is empty/absent (the nil path
+-- deliberately skips the wipe, so scratch contents are stale between calls).
+-- Use only the returned set, only within the same synchronous event dispatch;
+-- never read the scratch directly or retain the set.
+function ST.FillAuraInstanceIDSet(scratch, auraInstanceIDs)
+    if not (auraInstanceIDs and auraInstanceIDs[1]) then
+        return nil
+    end
+
+    wipe(scratch)
+    for _, auraInstanceID in ipairs(auraInstanceIDs) do
+        scratch[auraInstanceID] = true
+    end
+    return scratch
+end
 
 --------------------------------------------------------------------------------
 -- StatusBar Motion Helpers
