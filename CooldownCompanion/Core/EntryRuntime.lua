@@ -1125,6 +1125,15 @@ local function IsSpellCooldownDeferred(info)
 end
 
 local actionSlotSeenScratch = {}
+-- Reusable probe/lane scratch tables, wiped at the start of every fill; each
+-- keeps its previous fill's contents (including Blizzard info/duration/charge
+-- references) until then. The two probe scratches must stay separate tables:
+-- ProbeActionSlotCooldownForSpell fills actionSlotCooldownProbeScratch while
+-- MergeActionSlotProbe reads from actionSlotProbeScratch, so sharing one
+-- table would wipe the merged result mid-probe.
+local actionSlotProbeScratch = {}
+local actionSlotCooldownProbeScratch = {}
+local spellCooldownLaneResultScratch = {}
 
 local function MergeActionSlotProbe(result, probe)
     if probe.sawAnySlot then result.sawAnySlot = true end
@@ -1147,13 +1156,11 @@ local function MergeActionSlotProbe(result, probe)
     return false
 end
 
+-- Returns a module-local scratch table. Read it only synchronously in the
+-- current probe/merge path; never retain it across calls.
 local function ProbeActionSlotsForSpellID(spellID)
-    local result = {
-        shown = nil,
-        realShown = nil,
-        sawAnySlot = false,
-        sawUnknown = false,
-    }
+    local result = actionSlotProbeScratch
+    wipe(result)
 
     if not spellID then return result end
 
@@ -1198,13 +1205,11 @@ local function ProbeActionSlotsForSpellID(spellID)
 
     return result
 end
+-- Returns a module-local scratch table. Read it only synchronously in the
+-- current update/probe path; never retain it across ticks/events.
 local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
-    local result = {
-        shown = nil,
-        realShown = nil,
-        sawAnySlot = false,
-        sawUnknown = false,
-    }
+    local result = actionSlotCooldownProbeScratch
+    wipe(result)
 
     if not baseSpellID then return result end
 
@@ -1227,19 +1232,24 @@ local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
 
     return result
 end
+-- Public alias: external callers receive the same scratch table on every
+-- call, so two calls never yield independent results -- consume synchronously,
+-- never retain.
 EntryRuntime.ProbeActionSlotCooldownForSpell = ProbeActionSlotCooldownForSpell
 
+-- Returns a module-local scratch table. Read it only synchronously within the
+-- current button/custom-bar update; never retain it across ticks/events.
 local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
-    local result = {
-        spellID = spellID,
-        fetchOk = false,
-        state = COOLDOWN_STATE_READY,
-        source = "ready",
-        realCooldownShown = false,
-        isOnGCD = false,
-        deferred = false,
-        resourceGatedNoCooldown = false,
-    }
+    local result = spellCooldownLaneResultScratch
+    wipe(result)
+    result.spellID = spellID
+    result.fetchOk = false
+    result.state = COOLDOWN_STATE_READY
+    result.source = "ready"
+    result.realCooldownShown = false
+    result.isOnGCD = false
+    result.deferred = false
+    result.resourceGatedNoCooldown = false
 
     if not spellID then
         return result
@@ -1260,7 +1270,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
                 result.realCooldownShown = slotProbe.realShown == true
                 result.durationObj = slotProbe.durationObj
                 result.realDurationObj = slotProbe.realDurationObj
-                result.slotProbe = slotProbe
+                result.slotProbeShown = slotProbe.shown
+                result.slotProbeRealShown = slotProbe.realShown
                 if result.realCooldownShown and slotProbe.realDurationObj then
                     result.state = COOLDOWN_STATE_COOLDOWN
                     result.source = "action-slot-real-no-spell-info"
@@ -1319,7 +1330,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
         and options.allowActionSlotRealFallback then
         local slotProbe = ProbeActionSlotCooldownForSpell(baseSpellID or spellID, spellID)
         if slotProbe.realShown == true and slotProbe.realDurationObj then
-            result.slotProbe = slotProbe
+            result.slotProbeShown = slotProbe.shown
+            result.slotProbeRealShown = slotProbe.realShown
             result.normalCooldownShown = slotProbe.shown == true or result.normalCooldownShown
             result.realCooldownShown = true
             result.durationObj = slotProbe.durationObj or result.durationObj
@@ -1332,6 +1344,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
 
     return result
 end
+-- Returns the spell cooldown lane scratch; read only synchronously in the
+-- current button update and never retain across ticks/events.
 local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldown, resourceGateCost, baseNoCooldown, baseResourceGateCost)
     local resourceGatedNoCooldown = noCooldown == true
         and (resourceGateCost == true
@@ -1517,10 +1531,15 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
     if currentCharges ~= nil then
         mainCDShown = currentCharges <= 0
     else
-        local slotProbe = result.slotProbe or ProbeActionSlotCooldownForSpell(baseSpellID, cooldownSpellID)
-        result.chargeSlotProbe = slotProbe
-        if slotProbe.shown ~= nil then
-            mainCDShown = slotProbe.realShown == true
+        local probeShown = result.slotProbeShown
+        local probeRealShown = result.slotProbeRealShown
+        if probeShown == nil then
+            local slotProbe = ProbeActionSlotCooldownForSpell(baseSpellID, cooldownSpellID)
+            probeShown = slotProbe.shown
+            probeRealShown = slotProbe.realShown
+        end
+        if probeShown ~= nil then
+            mainCDShown = probeRealShown == true
         elseif result.fetchOk then
             mainCDShown = result.state == COOLDOWN_STATE_COOLDOWN
         end
@@ -1646,6 +1665,8 @@ function EntryRuntime.ApplyBarAuraStackState(
     return barAuraSecretStackValue, preserveBarAuraStackText
 end
 
+-- Returns the spell cooldown lane scratch; read only synchronously in the
+-- current custom-bar update and never retain across ticks/events.
 function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     local spellID = tonumber(customBar and customBar.spellID)
     if not spellID then
