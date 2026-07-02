@@ -18,6 +18,9 @@ local removedAuraIDSetScratch = {}
 local updatedAuraIDSetScratch = {}
 local FillAuraInstanceIDSet = ST.FillAuraInstanceIDSet
 
+-- Immutable — shared across calls; never write to this table.
+local CLEAR_CUSTOM_BAR_AURA_OPTS = { useFalseState = true, clearCustomAuraStacks = true }
+
 function RB.CreateResourceBarLifecycleModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
     local GetResourceBarSettings = deps.GetResourceBarSettings or RB.GetResourceBarSettings
@@ -46,10 +49,7 @@ function RB.CreateResourceBarLifecycleModule(deps)
     end
 
     local function ClearCustomBarAuraRuntime(bar, configUnit)
-        EntryRuntime.ClearTrackedAuraOwnerState(bar, configUnit, {
-            useFalseState = true,
-            clearCustomAuraStacks = true,
-        })
+        EntryRuntime.ClearTrackedAuraOwnerState(bar, configUnit, CLEAR_CUSTOM_BAR_AURA_OPTS)
     end
 
     local function RebuildResourceBarTalentEligibilityCache()

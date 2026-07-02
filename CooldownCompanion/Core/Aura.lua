@@ -42,6 +42,9 @@ local removedAuraIDSetScratch = {}
 local updatedAuraIDSetScratch = {}
 local FillAuraInstanceIDSet = ST.FillAuraInstanceIDSet
 
+-- Immutable — shared across calls; never write to this table.
+local CLEAR_TRACKED_AURA_FALSE_STATE_OPTS = { useFalseState = true }
+
 local function IsBuffViewerChild(frame)
     if not frame then return false end
     local parent = frame:GetParent()
@@ -528,7 +531,7 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
                 shouldClear = true
             end
             if shouldClear then
-                EntryRuntime.ClearTrackedAuraOwnerState(button, configUnit, { useFalseState = true })
+                EntryRuntime.ClearTrackedAuraOwnerState(button, configUnit, CLEAR_TRACKED_AURA_FALSE_STATE_OPTS)
                 button._auraPrimarySwipeActive = nil
             end
         end

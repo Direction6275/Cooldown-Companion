@@ -144,6 +144,13 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end)
     end
 
+    -- Reusable scratch buttonData -- returned to callers but only consumed
+    -- synchronously within the same bar update; never retain between updates
+    -- and never assign to a button.buttonData field (style caches key on
+    -- buttonData table identity). The wipe is enforcement so no field can
+    -- leak between fills.
+    local customBarAuraButtonDataScratch = {}
+
     local function BuildCustomBarAuraButtonData(cabConfig, addedAsAura)
         local spellID = tonumber(cabConfig and cabConfig.spellID)
         if not spellID then
@@ -158,16 +165,14 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             return nil, nil
         end
 
-        local buttonData = {
-            type = "spell",
-            id = spellID,
-            auraSpellID = cabConfig.auraSpellID,
-            auraTracking = true,
-            auraUnit = GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID),
-        }
-        if addedAsAura then
-            buttonData.addedAs = "aura"
-        end
+        local buttonData = customBarAuraButtonDataScratch
+        wipe(buttonData)
+        buttonData.type = "spell"
+        buttonData.id = spellID
+        buttonData.auraSpellID = cabConfig.auraSpellID
+        buttonData.auraTracking = true
+        buttonData.auraUnit = GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID)
+        buttonData.addedAs = addedAsAura and "aura" or nil
         return buttonData, spellID
     end
 
@@ -1167,6 +1172,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
                 ClearCustomAuraBarIndicatorState(barInfo, true)
                 ClearResourceAuraVisuals(barInfo.frame)
                 ClearMaxStacksIndicator(barInfo)
+                -- The old frame is abandoned (frames are never destroyed);
+                -- release its evaluation scratch so it stops pinning aura refs.
+                EntryRuntime.ReleaseTrackedAuraScratch(barInfo.frame)
                 barInfo.frame:Hide()
             end
             if mode == "continuous" then

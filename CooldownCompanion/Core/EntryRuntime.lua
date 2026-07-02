@@ -30,7 +30,9 @@ local TARGET_SWITCH_SAFETY_CAP = 0.60
 -- and never pin values from a previous call.
 local buttonSpellCooldownLaneOpts = {}
 local customBarSpellCooldownLaneOpts = {}
-local clearOwnerStateOpts = {}
+-- Immutable — shared across calls; never write to these tables.
+local CLEAR_OWNER_FALSE_STATE_OPTS = { useFalseState = true }
+local CLEAR_OWNER_FALSE_STATE_KEEP_SWITCH_OPTS = { useFalseState = true, preserveTargetSwitch = true }
 
 local EntryRuntime = ST.EntryRuntime or {}
 ST.EntryRuntime = EntryRuntime
@@ -680,6 +682,17 @@ function EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit, options)
     end
 end
 
+-- Releases the per-owner evaluation scratches: the tracked-aura state table
+-- filled by EvaluateTrackedAuraState and the aura display-name scratch filled
+-- by ButtonFrame/CooldownUpdate. Both are recreated lazily on the next
+-- evaluation. Call only from teardown/dormancy paths, never while an
+-- evaluation's returned state is still being read.
+function EntryRuntime.ReleaseTrackedAuraScratch(owner)
+    if not owner then return end
+    owner._trackedAuraStateScratch = nil
+    owner._auraDisplayNameStateScratch = nil
+end
+
 function EntryRuntime.StartTrackedAuraTargetSwitch(owner, now, unit)
     if not owner then return end
     owner._auraInstanceID = nil
@@ -813,10 +826,10 @@ local function CommitTrackedAuraOwnerState(owner, state)
             owner._targetSwitchDataReceived = nil
         end
     else
-        clearOwnerStateOpts.useFalseState = true
-        clearOwnerStateOpts.preserveTargetSwitch = state.wasAuraActive == true
-        EntryRuntime.ClearTrackedAuraOwnerState(owner, state.configUnit, clearOwnerStateOpts)
-        wipe(clearOwnerStateOpts)
+        EntryRuntime.ClearTrackedAuraOwnerState(owner, state.configUnit,
+            state.wasAuraActive == true
+                and CLEAR_OWNER_FALSE_STATE_KEEP_SWITCH_OPTS
+                or CLEAR_OWNER_FALSE_STATE_OPTS)
         if owner._targetSwitchAt and not state.wasAuraActive then
             owner._targetSwitchAt = nil
             owner._targetSwitchDataReceived = nil

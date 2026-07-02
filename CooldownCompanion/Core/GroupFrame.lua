@@ -782,14 +782,7 @@ local function ClearReusableButtonRuntime(button)
     button._auraStackText = nil
     button._auraHasTimer = nil
     button._textSecretNameActive = nil
-    -- Release refs pinned by per-button evaluation scratches (aura data,
-    -- duration objects, viewer frames, secret aura names).
-    if button._trackedAuraStateScratch then
-        wipe(button._trackedAuraStateScratch)
-    end
-    if button._auraDisplayNameStateScratch then
-        wipe(button._auraDisplayNameStateScratch)
-    end
+    EntryRuntime.ReleaseTrackedAuraScratch(button)
     button._bindingKeyInfos = nil
     button._keyPressHighlightActive = nil
     button._visibilityHidden = false

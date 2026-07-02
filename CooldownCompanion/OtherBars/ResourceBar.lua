@@ -39,6 +39,9 @@ local function UnbindFrameDurationText(frame)
     end
 end
 
+-- Immutable — shared across calls; never write to this table.
+local CLEAR_CUSTOM_AURA_STACKS_OPTS = { clearCustomAuraStacks = true }
+
 ------------------------------------------------------------------------
 -- Imports from ResourceBarConstants / ResourceBarHelpers / ResourceBarVisuals
 ------------------------------------------------------------------------
@@ -223,7 +226,7 @@ local function ClearCustomAuraBarIndicatorState(barInfo, clearPreviewFlags)
     local bar = barInfo and barInfo.frame
     if not bar then return end
 
-    EntryRuntime.ClearTrackedAuraOwnerState(bar, nil, { clearCustomAuraStacks = true })
+    EntryRuntime.ClearTrackedAuraOwnerState(bar, nil, CLEAR_CUSTOM_AURA_STACKS_OPTS)
 
     ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags)
 end
@@ -430,12 +433,8 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     end
     frame._cdcIndependentAlphaTarget = nil
     frame._cdcIndependentLastAlpha = nil
-    EntryRuntime.ClearTrackedAuraOwnerState(frame, nil, { clearCustomAuraStacks = true })
-    -- Release refs pinned by the per-owner evaluation scratch (aura data,
-    -- duration objects, viewer frames).
-    if frame._trackedAuraStateScratch then
-        wipe(frame._trackedAuraStateScratch)
-    end
+    EntryRuntime.ClearTrackedAuraOwnerState(frame, nil, CLEAR_CUSTOM_AURA_STACKS_OPTS)
+    EntryRuntime.ReleaseTrackedAuraScratch(frame)
     frame._parsedAuraIDs = nil
     frame._parsedAuraIDsRaw = nil
     frame._parsedAuraIDsButtonID = nil
