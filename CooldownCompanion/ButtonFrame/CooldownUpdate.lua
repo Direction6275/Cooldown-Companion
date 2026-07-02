@@ -1451,10 +1451,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- and duration > 0).  It can report true during per-cast lockouts
             -- and recharge, so the _chargesSpent heuristic below guards both
             -- this path and the isActive fallback.
-            local slotProbe = spellCooldownResult and spellCooldownResult.slotProbe
-                or EntryRuntime.ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
-            if slotProbe.shown ~= nil then
-                button._mainCDShown = slotProbe.realShown == true
+            local probeShown = spellCooldownResult and spellCooldownResult.slotProbeShown
+            local probeRealShown = spellCooldownResult and spellCooldownResult.slotProbeRealShown
+            if probeShown == nil then
+                local slotProbe = EntryRuntime.ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
+                probeShown = slotProbe.shown
+                probeRealShown = slotProbe.realShown
+            end
+            if probeShown ~= nil then
+                button._mainCDShown = probeRealShown == true
             elseif not auraOwnsPrimarySwipe then
                 -- No action bar slot found; use the ignoreGCD-backed real cooldown state.
                 if spellCooldownResult and spellCooldownResult.fetchOk then

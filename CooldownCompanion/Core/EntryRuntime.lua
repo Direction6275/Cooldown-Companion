@@ -1125,6 +1125,12 @@ local function IsSpellCooldownDeferred(info)
 end
 
 local actionSlotSeenScratch = {}
+-- Reusable probe/lane scratch tables, wiped at the start of every fill; each
+-- keeps its previous fill's contents (including Blizzard info/duration/charge
+-- references) until then. The two probe scratches must stay separate tables:
+-- ProbeActionSlotCooldownForSpell fills actionSlotCooldownProbeScratch while
+-- MergeActionSlotProbe reads from actionSlotProbeScratch, so sharing one
+-- table would wipe the merged result mid-probe.
 local actionSlotProbeScratch = {}
 local actionSlotCooldownProbeScratch = {}
 local spellCooldownLaneResultScratch = {}
@@ -1155,8 +1161,6 @@ end
 local function ProbeActionSlotsForSpellID(spellID)
     local result = actionSlotProbeScratch
     wipe(result)
-    result.sawAnySlot = false
-    result.sawUnknown = false
 
     if not spellID then return result end
 
@@ -1206,8 +1210,6 @@ end
 local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
     local result = actionSlotCooldownProbeScratch
     wipe(result)
-    result.sawAnySlot = false
-    result.sawUnknown = false
 
     if not baseSpellID then return result end
 
@@ -1230,6 +1232,9 @@ local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
 
     return result
 end
+-- Public alias: external callers receive the same scratch table on every
+-- call, so two calls never yield independent results -- consume synchronously,
+-- never retain.
 EntryRuntime.ProbeActionSlotCooldownForSpell = ProbeActionSlotCooldownForSpell
 
 -- Returns a module-local scratch table. Read it only synchronously within the
@@ -1265,7 +1270,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
                 result.realCooldownShown = slotProbe.realShown == true
                 result.durationObj = slotProbe.durationObj
                 result.realDurationObj = slotProbe.realDurationObj
-                result.slotProbe = slotProbe
+                result.slotProbeShown = slotProbe.shown
+                result.slotProbeRealShown = slotProbe.realShown
                 if result.realCooldownShown and slotProbe.realDurationObj then
                     result.state = COOLDOWN_STATE_COOLDOWN
                     result.source = "action-slot-real-no-spell-info"
@@ -1324,7 +1330,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
         and options.allowActionSlotRealFallback then
         local slotProbe = ProbeActionSlotCooldownForSpell(baseSpellID or spellID, spellID)
         if slotProbe.realShown == true and slotProbe.realDurationObj then
-            result.slotProbe = slotProbe
+            result.slotProbeShown = slotProbe.shown
+            result.slotProbeRealShown = slotProbe.realShown
             result.normalCooldownShown = slotProbe.shown == true or result.normalCooldownShown
             result.realCooldownShown = true
             result.durationObj = slotProbe.durationObj or result.durationObj
@@ -1524,10 +1531,15 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
     if currentCharges ~= nil then
         mainCDShown = currentCharges <= 0
     else
-        local slotProbe = result.slotProbe or ProbeActionSlotCooldownForSpell(baseSpellID, cooldownSpellID)
-        result.chargeSlotProbe = slotProbe
-        if slotProbe.shown ~= nil then
-            mainCDShown = slotProbe.realShown == true
+        local probeShown = result.slotProbeShown
+        local probeRealShown = result.slotProbeRealShown
+        if probeShown == nil then
+            local slotProbe = ProbeActionSlotCooldownForSpell(baseSpellID, cooldownSpellID)
+            probeShown = slotProbe.shown
+            probeRealShown = slotProbe.realShown
+        end
+        if probeShown ~= nil then
+            mainCDShown = probeRealShown == true
         elseif result.fetchOk then
             mainCDShown = result.state == COOLDOWN_STATE_COOLDOWN
         end
