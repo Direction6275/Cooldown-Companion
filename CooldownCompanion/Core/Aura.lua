@@ -36,16 +36,22 @@ local COOLDOWN_VIEWER_ASSOCIATION_CATEGORIES = {
     Enum.CooldownViewerCategory.TrackedBar,
 }
 
-local function BuildAuraInstanceIDSet(auraInstanceIDs)
+-- Reusable scratch sets — only valid through FillAuraInstanceIDSet's return
+-- value within the same synchronous event dispatch; contents are stale between
+-- calls (the nil-return path skips the wipe). Never read directly or retain.
+local removedAuraIDSetScratch = {}
+local updatedAuraIDSetScratch = {}
+
+local function FillAuraInstanceIDSet(scratch, auraInstanceIDs)
     if not (auraInstanceIDs and auraInstanceIDs[1]) then
         return nil
     end
 
-    local auraInstanceIDSet = {}
+    wipe(scratch)
     for _, auraInstanceID in ipairs(auraInstanceIDs) do
-        auraInstanceIDSet[auraInstanceID] = true
+        scratch[auraInstanceID] = true
     end
-    return auraInstanceIDSet
+    return scratch
 end
 
 local function IsBuffViewerChild(frame)
@@ -485,8 +491,8 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
     -- work correctly — the update path re-checks _auraInstanceID after removals.
     local removedIDs = updateInfo.removedAuraInstanceIDs
     local updatedIDs = updateInfo.updatedAuraInstanceIDs
-    local removedIDSet = BuildAuraInstanceIDSet(removedIDs)
-    local updatedIDSet = BuildAuraInstanceIDSet(updatedIDs)
+    local removedIDSet = FillAuraInstanceIDSet(removedAuraIDSetScratch, removedIDs)
+    local updatedIDSet = FillAuraInstanceIDSet(updatedAuraIDSetScratch, updatedIDs)
     local isTarget = (unit == "target")
     if removedIDs or updatedIDs or isTarget then
         self:ForEachButton(function(button)

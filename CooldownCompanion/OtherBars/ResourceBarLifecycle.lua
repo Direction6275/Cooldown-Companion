@@ -8,8 +8,28 @@ local CooldownCompanion = ST.Addon
 local EntryRuntime = ST.EntryRuntime
 
 local math_abs = math.abs
+local ipairs = ipairs
+local wipe = wipe
 
 local RB = ST._RB
+
+-- Reusable scratch sets — only valid through FillAuraInstanceIDSet's return
+-- value within the same synchronous event dispatch; contents are stale between
+-- calls (the nil-return path skips the wipe). Never read directly or retain.
+local removedAuraIDSetScratch = {}
+local updatedAuraIDSetScratch = {}
+
+local function FillAuraInstanceIDSet(scratch, auraInstanceIDs)
+    if not (auraInstanceIDs and auraInstanceIDs[1]) then
+        return nil
+    end
+
+    wipe(scratch)
+    for _, auraInstanceID in ipairs(auraInstanceIDs) do
+        scratch[auraInstanceID] = true
+    end
+    return scratch
+end
 
 function RB.CreateResourceBarLifecycleModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
@@ -28,18 +48,6 @@ function RB.CreateResourceBarLifecycleModule(deps)
     local pendingTalentResourceRefreshToken = 0
     local lifecycleEventsEnabled = false
     local InstallHooks
-
-    local function BuildAuraInstanceIDSet(auraInstanceIDs)
-        if not (auraInstanceIDs and auraInstanceIDs[1]) then
-            return nil
-        end
-
-        local auraInstanceIDSet = {}
-        for _, auraInstanceID in ipairs(auraInstanceIDs) do
-            auraInstanceIDSet[auraInstanceID] = true
-        end
-        return auraInstanceIDSet
-    end
 
     local function IsCustomBarAuraRuntimeTracked(barInfo, cabConfig)
         if not (barInfo and cabConfig) then return false end
@@ -172,8 +180,8 @@ function RB.CreateResourceBarLifecycleModule(deps)
 
                     local removedIDs = updateInfo.removedAuraInstanceIDs
                     local updatedIDs = updateInfo.updatedAuraInstanceIDs
-                    local removedIDSet = BuildAuraInstanceIDSet(removedIDs)
-                    local updatedIDSet = BuildAuraInstanceIDSet(updatedIDs)
+                    local removedIDSet = FillAuraInstanceIDSet(removedAuraIDSetScratch, removedIDs)
+                    local updatedIDSet = FillAuraInstanceIDSet(updatedAuraIDSetScratch, updatedIDs)
                     local hasAuraChange = updateInfo.isFullUpdate or updateInfo.addedAuras or removedIDs or updatedIDs
                     local targetSwitchDataReceived = false
 
