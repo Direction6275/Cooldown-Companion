@@ -8,8 +8,14 @@ local CooldownCompanion = ST.Addon
 local EntryRuntime = ST.EntryRuntime
 
 local math_abs = math.abs
+local ipairs = ipairs
 
 local RB = ST._RB
+
+local GetAuraInstanceIDSets = ST.GetAuraInstanceIDSets
+
+-- Immutable — shared across calls; never write to this table.
+local CLEAR_CUSTOM_BAR_AURA_OPTS = { useFalseState = true, clearCustomAuraStacks = true }
 
 function RB.CreateResourceBarLifecycleModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
@@ -29,18 +35,6 @@ function RB.CreateResourceBarLifecycleModule(deps)
     local lifecycleEventsEnabled = false
     local InstallHooks
 
-    local function BuildAuraInstanceIDSet(auraInstanceIDs)
-        if not (auraInstanceIDs and auraInstanceIDs[1]) then
-            return nil
-        end
-
-        local auraInstanceIDSet = {}
-        for _, auraInstanceID in ipairs(auraInstanceIDs) do
-            auraInstanceIDSet[auraInstanceID] = true
-        end
-        return auraInstanceIDSet
-    end
-
     local function IsCustomBarAuraRuntimeTracked(barInfo, cabConfig)
         if not (barInfo and cabConfig) then return false end
         return barInfo.barType == "custom_continuous"
@@ -51,10 +45,7 @@ function RB.CreateResourceBarLifecycleModule(deps)
     end
 
     local function ClearCustomBarAuraRuntime(bar, configUnit)
-        EntryRuntime.ClearTrackedAuraOwnerState(bar, configUnit, {
-            useFalseState = true,
-            clearCustomAuraStacks = true,
-        })
+        EntryRuntime.ClearTrackedAuraOwnerState(bar, configUnit, CLEAR_CUSTOM_BAR_AURA_OPTS)
     end
 
     local function RebuildResourceBarTalentEligibilityCache()
@@ -172,8 +163,7 @@ function RB.CreateResourceBarLifecycleModule(deps)
 
                     local removedIDs = updateInfo.removedAuraInstanceIDs
                     local updatedIDs = updateInfo.updatedAuraInstanceIDs
-                    local removedIDSet = BuildAuraInstanceIDSet(removedIDs)
-                    local updatedIDSet = BuildAuraInstanceIDSet(updatedIDs)
+                    local removedIDSet, updatedIDSet = GetAuraInstanceIDSets(updateInfo)
                     local hasAuraChange = updateInfo.isFullUpdate or updateInfo.addedAuras or removedIDs or updatedIDs
                     local targetSwitchDataReceived = false
 

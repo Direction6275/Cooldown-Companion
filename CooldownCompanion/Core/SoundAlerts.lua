@@ -941,6 +941,8 @@ local function UpdateCooldownSoundAlertTransitions(state, enabledEvents, opts)
     end
 end
 
+-- cooldownResult is a reused evaluation scratch: copy scalar fields only and
+-- never store the table or read it after this call returns.
 function CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, auraActive, cooldownActive, cooldownResult)
     local customBar = barInfo and barInfo.cabConfig
     local enabledEvents = self:GetEnabledSoundAlertEventsForCustomBar(customBar)

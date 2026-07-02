@@ -36,17 +36,10 @@ local COOLDOWN_VIEWER_ASSOCIATION_CATEGORIES = {
     Enum.CooldownViewerCategory.TrackedBar,
 }
 
-local function BuildAuraInstanceIDSet(auraInstanceIDs)
-    if not (auraInstanceIDs and auraInstanceIDs[1]) then
-        return nil
-    end
+local GetAuraInstanceIDSets = ST.GetAuraInstanceIDSets
 
-    local auraInstanceIDSet = {}
-    for _, auraInstanceID in ipairs(auraInstanceIDs) do
-        auraInstanceIDSet[auraInstanceID] = true
-    end
-    return auraInstanceIDSet
-end
+-- Immutable — shared across calls; never write to this table.
+local CLEAR_TRACKED_AURA_FALSE_STATE_OPTS = { useFalseState = true }
 
 local function IsBuffViewerChild(frame)
     if not frame then return false end
@@ -485,8 +478,7 @@ function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
     -- work correctly — the update path re-checks _auraInstanceID after removals.
     local removedIDs = updateInfo.removedAuraInstanceIDs
     local updatedIDs = updateInfo.updatedAuraInstanceIDs
-    local removedIDSet = BuildAuraInstanceIDSet(removedIDs)
-    local updatedIDSet = BuildAuraInstanceIDSet(updatedIDs)
+    local removedIDSet, updatedIDSet = GetAuraInstanceIDSets(updateInfo)
     local isTarget = (unit == "target")
     if removedIDs or updatedIDs or isTarget then
         self:ForEachButton(function(button)
@@ -534,7 +526,7 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
                 shouldClear = true
             end
             if shouldClear then
-                EntryRuntime.ClearTrackedAuraOwnerState(button, configUnit, { useFalseState = true })
+                EntryRuntime.ClearTrackedAuraOwnerState(button, configUnit, CLEAR_TRACKED_AURA_FALSE_STATE_OPTS)
                 button._auraPrimarySwipeActive = nil
             end
         end

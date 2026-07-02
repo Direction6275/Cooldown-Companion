@@ -25,6 +25,14 @@ local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 local TARGET_SWITCH_SAFETY_CAP = 0.60
+-- Reusable scratch opts — single call site each; wiped immediately before
+-- each fill, so a previous call can never leak values into the next one
+-- even if an error aborts an update mid-call.
+local buttonSpellCooldownLaneOpts = {}
+local customBarSpellCooldownLaneOpts = {}
+-- Immutable — shared across calls; never write to these tables.
+local CLEAR_OWNER_FALSE_STATE_OPTS = { useFalseState = true }
+local CLEAR_OWNER_FALSE_STATE_KEEP_SWITCH_OPTS = { useFalseState = true, preserveTargetSwitch = true }
 
 local EntryRuntime = ST.EntryRuntime or {}
 ST.EntryRuntime = EntryRuntime
@@ -674,6 +682,17 @@ function EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit, options)
     end
 end
 
+-- Releases the per-owner evaluation scratches: the tracked-aura state table
+-- filled by EvaluateTrackedAuraState and the aura display-name scratch filled
+-- by ButtonFrame/CooldownUpdate. Both are recreated lazily on the next
+-- evaluation. Call only from teardown/dormancy paths, never while an
+-- evaluation's returned state is still being read.
+function EntryRuntime.ReleaseTrackedAuraScratch(owner)
+    if not owner then return end
+    owner._trackedAuraStateScratch = nil
+    owner._auraDisplayNameStateScratch = nil
+end
+
 function EntryRuntime.StartTrackedAuraTargetSwitch(owner, now, unit)
     if not owner then return end
     owner._auraInstanceID = nil
@@ -807,10 +826,10 @@ local function CommitTrackedAuraOwnerState(owner, state)
             owner._targetSwitchDataReceived = nil
         end
     else
-        EntryRuntime.ClearTrackedAuraOwnerState(owner, state.configUnit, {
-            useFalseState = true,
-            preserveTargetSwitch = state.wasAuraActive == true,
-        })
+        EntryRuntime.ClearTrackedAuraOwnerState(owner, state.configUnit,
+            state.wasAuraActive == true
+                and CLEAR_OWNER_FALSE_STATE_KEEP_SWITCH_OPTS
+                or CLEAR_OWNER_FALSE_STATE_OPTS)
         if owner._targetSwitchAt and not state.wasAuraActive then
             owner._targetSwitchAt = nil
             owner._targetSwitchDataReceived = nil
@@ -818,6 +837,9 @@ local function CommitTrackedAuraOwnerState(owner, state)
     end
 end
 
+-- Returns a per-owner scratch table that is wiped and refilled on this owner's
+-- next evaluation. Read it only synchronously within the current update; never
+-- retain the returned table (or store it on another object) across ticks/events.
 function EntryRuntime.EvaluateTrackedAuraState(owner, buttonData, auraSpellID, options)
     owner = owner or {}
     options = options or {}
@@ -1032,34 +1054,43 @@ function EntryRuntime.EvaluateTrackedAuraState(owner, buttonData, auraSpellID, o
     end
 
     local auraExpirationTime, auraDuration, auraTimingReadable = GetReadableAuraTiming(auraPresent and auraData or nil)
-    local state = {
-        ready = ready == true,
-        auraPresent = auraPresent == true,
-        auraTrackingReady = ready == true,
-        cdmEnabled = cdmEnabled == true,
-        auraData = auraPresent and auraData or nil,
-        auraApplications = auraPresent and auraApplications or nil,
-        auraInstanceID = auraPresent and auraInstanceID or nil,
-        auraUnit = auraPresent and auraUnit or configUnit,
-        configUnit = configUnit,
-        viewerFrame = viewerFrame,
-        viewerBar = viewerBar,
-        durationObj = auraPresent and durationObj or nil,
-        auraCooldownStart = auraPresent and auraCooldownStart or nil,
-        auraCooldownDuration = auraPresent and auraCooldownDuration or nil,
-        auraExpirationTime = auraTimingReadable and auraExpirationTime or nil,
-        auraDuration = auraTimingReadable and auraDuration or nil,
-        auraHasTimer = auraPresent and auraHasTimer == true or false,
-        auraGraceHeld = auraGraceHeld == true,
-        activeAuraSpellID = activeAuraSpellID,
-        activeAuraSpellIDResolved = activeAuraSpellIDResolved == true,
-        activeAuraSpellIDFromFallback = activeAuraSpellIDFromFallback,
-        activeAuraIcon = activeAuraIcon,
-        activeAuraIconAvailable = activeAuraIconAvailable == true,
-        activeAuraIconResolved = activeAuraIconResolved == true,
-        allowDurationlessAuraInstance = allowDurationlessAuraInstance,
-        wasAuraActive = wasAuraActive,
-    }
+    -- Reusable per-owner scratch -- see the contract above the function header.
+    -- The wipe is enforcement: every field below is assigned unconditionally
+    -- today, but the wipe keeps a future conditional assignment from leaking a
+    -- stale value between evaluations.
+    local state = owner._trackedAuraStateScratch
+    if state then
+        wipe(state)
+    else
+        state = {}
+        owner._trackedAuraStateScratch = state
+    end
+    state.ready = ready == true
+    state.auraPresent = auraPresent == true
+    state.auraTrackingReady = ready == true
+    state.cdmEnabled = cdmEnabled == true
+    state.auraData = auraPresent and auraData or nil
+    state.auraApplications = auraPresent and auraApplications or nil
+    state.auraInstanceID = auraPresent and auraInstanceID or nil
+    state.auraUnit = auraPresent and auraUnit or configUnit
+    state.configUnit = configUnit
+    state.viewerFrame = viewerFrame
+    state.viewerBar = viewerBar
+    state.durationObj = auraPresent and durationObj or nil
+    state.auraCooldownStart = auraPresent and auraCooldownStart or nil
+    state.auraCooldownDuration = auraPresent and auraCooldownDuration or nil
+    state.auraExpirationTime = auraTimingReadable and auraExpirationTime or nil
+    state.auraDuration = auraTimingReadable and auraDuration or nil
+    state.auraHasTimer = auraPresent and auraHasTimer == true or false
+    state.auraGraceHeld = auraGraceHeld == true
+    state.activeAuraSpellID = activeAuraSpellID
+    state.activeAuraSpellIDResolved = activeAuraSpellIDResolved == true
+    state.activeAuraSpellIDFromFallback = activeAuraSpellIDFromFallback
+    state.activeAuraIcon = activeAuraIcon
+    state.activeAuraIconAvailable = activeAuraIconAvailable == true
+    state.activeAuraIconResolved = activeAuraIconResolved == true
+    state.allowDurationlessAuraInstance = allowDurationlessAuraInstance
+    state.wasAuraActive = wasAuraActive
 
     if mutateOwner then
         CommitTrackedAuraOwnerState(owner, state)
@@ -1094,6 +1125,15 @@ local function IsSpellCooldownDeferred(info)
 end
 
 local actionSlotSeenScratch = {}
+-- Reusable probe/lane scratch tables, wiped at the start of every fill; each
+-- keeps its previous fill's contents (including Blizzard info/duration/charge
+-- references) until then. The two probe scratches must stay separate tables:
+-- ProbeActionSlotCooldownForSpell fills actionSlotCooldownProbeScratch while
+-- MergeActionSlotProbe reads from actionSlotProbeScratch, so sharing one
+-- table would wipe the merged result mid-probe.
+local actionSlotProbeScratch = {}
+local actionSlotCooldownProbeScratch = {}
+local spellCooldownLaneResultScratch = {}
 
 local function MergeActionSlotProbe(result, probe)
     if probe.sawAnySlot then result.sawAnySlot = true end
@@ -1116,13 +1156,11 @@ local function MergeActionSlotProbe(result, probe)
     return false
 end
 
+-- Returns a module-local scratch table. Read it only synchronously in the
+-- current probe/merge path; never retain it across calls.
 local function ProbeActionSlotsForSpellID(spellID)
-    local result = {
-        shown = nil,
-        realShown = nil,
-        sawAnySlot = false,
-        sawUnknown = false,
-    }
+    local result = actionSlotProbeScratch
+    wipe(result)
 
     if not spellID then return result end
 
@@ -1167,13 +1205,11 @@ local function ProbeActionSlotsForSpellID(spellID)
 
     return result
 end
+-- Returns a module-local scratch table. Read it only synchronously in the
+-- current update/probe path; never retain it across ticks/events.
 local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
-    local result = {
-        shown = nil,
-        realShown = nil,
-        sawAnySlot = false,
-        sawUnknown = false,
-    }
+    local result = actionSlotCooldownProbeScratch
+    wipe(result)
 
     if not baseSpellID then return result end
 
@@ -1196,19 +1232,39 @@ local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
 
     return result
 end
+-- Public alias: external callers receive the same scratch table on every
+-- call, so two calls never yield independent results -- consume synchronously,
+-- never retain.
 EntryRuntime.ProbeActionSlotCooldownForSpell = ProbeActionSlotCooldownForSpell
 
+-- Resolve the action-slot probe state cached on a lane result, re-probing when
+-- the lane stored none (nil slotProbeShown means "not probed"). Returns
+-- shown, realShown; both nil when no action slot matches the spell.
+local function ResolveSlotProbeShown(result, baseSpellID, cooldownSpellID)
+    local probeShown = result and result.slotProbeShown
+    local probeRealShown = result and result.slotProbeRealShown
+    if probeShown == nil then
+        local slotProbe = ProbeActionSlotCooldownForSpell(baseSpellID, cooldownSpellID)
+        probeShown = slotProbe.shown
+        probeRealShown = slotProbe.realShown
+    end
+    return probeShown, probeRealShown
+end
+EntryRuntime.ResolveSlotProbeShown = ResolveSlotProbeShown
+
+-- Returns a module-local scratch table. Read it only synchronously within the
+-- current button/custom-bar update; never retain it across ticks/events.
 local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
-    local result = {
-        spellID = spellID,
-        fetchOk = false,
-        state = COOLDOWN_STATE_READY,
-        source = "ready",
-        realCooldownShown = false,
-        isOnGCD = false,
-        deferred = false,
-        resourceGatedNoCooldown = false,
-    }
+    local result = spellCooldownLaneResultScratch
+    wipe(result)
+    result.spellID = spellID
+    result.fetchOk = false
+    result.state = COOLDOWN_STATE_READY
+    result.source = "ready"
+    result.realCooldownShown = false
+    result.isOnGCD = false
+    result.deferred = false
+    result.resourceGatedNoCooldown = false
 
     if not spellID then
         return result
@@ -1229,7 +1285,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
                 result.realCooldownShown = slotProbe.realShown == true
                 result.durationObj = slotProbe.durationObj
                 result.realDurationObj = slotProbe.realDurationObj
-                result.slotProbe = slotProbe
+                result.slotProbeShown = slotProbe.shown
+                result.slotProbeRealShown = slotProbe.realShown
                 if result.realCooldownShown and slotProbe.realDurationObj then
                     result.state = COOLDOWN_STATE_COOLDOWN
                     result.source = "action-slot-real-no-spell-info"
@@ -1273,10 +1330,7 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
         result.state = COOLDOWN_STATE_COOLDOWN
         result.source = "spell-real-ignore-gcd"
         result.renderDurationObj = result.realDurationObj
-    elseif CooldownLogic.IsSpellGCDOnly(info, {
-        normalCooldownShown = result.normalCooldownShown,
-        realCooldownShown = result.realCooldownShown,
-    }) then
+    elseif CooldownLogic.IsSpellGCDOnly(info, result.normalCooldownShown, result.realCooldownShown) then
         result.source = "spell-gcd"
         result.presentationState = COOLDOWN_STATE_GCD
         result.renderDurationObj = result.durationObj or CooldownCompanion._gcdDurationObj
@@ -1291,7 +1345,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
         and options.allowActionSlotRealFallback then
         local slotProbe = ProbeActionSlotCooldownForSpell(baseSpellID or spellID, spellID)
         if slotProbe.realShown == true and slotProbe.realDurationObj then
-            result.slotProbe = slotProbe
+            result.slotProbeShown = slotProbe.shown
+            result.slotProbeRealShown = slotProbe.realShown
             result.normalCooldownShown = slotProbe.shown == true or result.normalCooldownShown
             result.realCooldownShown = true
             result.durationObj = slotProbe.durationObj or result.durationObj
@@ -1304,6 +1359,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
 
     return result
 end
+-- Returns the spell cooldown lane scratch; read only synchronously in the
+-- current button update and never retain across ticks/events.
 local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldown, resourceGateCost, baseNoCooldown, baseResourceGateCost)
     local resourceGatedNoCooldown = noCooldown == true
         and (resourceGateCost == true
@@ -1316,11 +1373,11 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldo
     local allowActionSlotReadyFallback = allowActionSlotRealFallback
         and cooldownSpellId ~= buttonData.id
 
-    return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id, {
-        allowActionSlotRealFallback = allowActionSlotRealFallback,
-        allowActionSlotReadyFallback = allowActionSlotReadyFallback,
-        suppressCooldownSurface = resourceGatedNoCooldown == true,
-    })
+    wipe(buttonSpellCooldownLaneOpts)
+    buttonSpellCooldownLaneOpts.allowActionSlotRealFallback = allowActionSlotRealFallback
+    buttonSpellCooldownLaneOpts.allowActionSlotReadyFallback = allowActionSlotReadyFallback
+    buttonSpellCooldownLaneOpts.suppressCooldownSurface = resourceGatedNoCooldown == true
+    return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id, buttonSpellCooldownLaneOpts)
 end
 EntryRuntime.EvaluateButtonSpellCooldown = EvaluateButtonSpellCooldown
 
@@ -1488,10 +1545,9 @@ local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpe
     if currentCharges ~= nil then
         mainCDShown = currentCharges <= 0
     else
-        local slotProbe = result.slotProbe or ProbeActionSlotCooldownForSpell(baseSpellID, cooldownSpellID)
-        result.chargeSlotProbe = slotProbe
-        if slotProbe.shown ~= nil then
-            mainCDShown = slotProbe.realShown == true
+        local probeShown, probeRealShown = ResolveSlotProbeShown(result, baseSpellID, cooldownSpellID)
+        if probeShown ~= nil then
+            mainCDShown = probeRealShown == true
         elseif result.fetchOk then
             mainCDShown = result.state == COOLDOWN_STATE_COOLDOWN
         end
@@ -1617,6 +1673,8 @@ function EntryRuntime.ApplyBarAuraStackState(
     return barAuraSecretStackValue, preserveBarAuraStackText
 end
 
+-- Returns the spell cooldown lane scratch; read only synchronously in the
+-- current custom-bar update and never retain across ticks/events.
 function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     local spellID = tonumber(customBar and customBar.spellID)
     if not spellID then
@@ -1659,11 +1717,11 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     local allowActionSlotReadyFallback = allowActionSlotRealFallback
         and cooldownSpellID ~= spellID
 
-    local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, {
-        allowActionSlotRealFallback = allowActionSlotRealFallback,
-        allowActionSlotReadyFallback = allowActionSlotReadyFallback,
-        suppressCooldownSurface = resourceGatedNoCooldown == true,
-    })
+    wipe(customBarSpellCooldownLaneOpts)
+    customBarSpellCooldownLaneOpts.allowActionSlotRealFallback = allowActionSlotRealFallback
+    customBarSpellCooldownLaneOpts.allowActionSlotReadyFallback = allowActionSlotReadyFallback
+    customBarSpellCooldownLaneOpts.suppressCooldownSurface = resourceGatedNoCooldown == true
+    local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, customBarSpellCooldownLaneOpts)
     result.baseSpellID = spellID
     result.cooldownSpellID = cooldownSpellID
     result.noCooldown = noCooldown or nil

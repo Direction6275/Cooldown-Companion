@@ -8,6 +8,7 @@ local ADDON_NAME, ST = ...
 local InCombatLockdown = InCombatLockdown
 local string_format = string.format
 local ipairs = ipairs
+local wipe = wipe
 local pairs = pairs
 local tonumber = tonumber
 local type = type
@@ -39,6 +40,39 @@ ST.EDGE_ANCHOR_SPEC = {
     {"TOPLEFT", "TOPLEFT",     "BOTTOMRIGHT", "BOTTOMLEFT",   0, -1,  1,  1}, -- Left   (inset to avoid corner overlap)
     {"TOPLEFT", "TOPRIGHT",    "BOTTOMRIGHT", "BOTTOMRIGHT", -1, -1,  0,  1}, -- Right  (inset to avoid corner overlap)
 }
+
+--------------------------------------------------------------------------------
+-- Aura Instance ID Sets
+--------------------------------------------------------------------------------
+
+-- Module-owned scratch sets for GetAuraInstanceIDSets. Only the getter below
+-- may touch these; callers use only the returned sets.
+local removedAuraIDSetScratch = {}
+local updatedAuraIDSetScratch = {}
+
+-- Fills a scratch set from a UNIT_AURA instance-ID array and returns it, or
+-- returns nil when the array is empty/absent (the nil path deliberately skips
+-- the wipe, so scratch contents are stale between calls).
+local function FillAuraInstanceIDSet(scratch, auraInstanceIDs)
+    if not (auraInstanceIDs and auraInstanceIDs[1]) then
+        return nil
+    end
+
+    wipe(scratch)
+    for _, auraInstanceID in ipairs(auraInstanceIDs) do
+        scratch[auraInstanceID] = true
+    end
+    return scratch
+end
+
+-- Returns removedIDSet, updatedIDSet lookup sets for a UNIT_AURA updateInfo;
+-- either may be nil when its instance-ID array is empty/absent. Both are
+-- shared scratch sets: use them only within the same synchronous event
+-- dispatch and never retain them.
+function ST.GetAuraInstanceIDSets(updateInfo)
+    return FillAuraInstanceIDSet(removedAuraIDSetScratch, updateInfo and updateInfo.removedAuraInstanceIDs),
+        FillAuraInstanceIDSet(updatedAuraIDSetScratch, updateInfo and updateInfo.updatedAuraInstanceIDs)
+end
 
 --------------------------------------------------------------------------------
 -- StatusBar Motion Helpers

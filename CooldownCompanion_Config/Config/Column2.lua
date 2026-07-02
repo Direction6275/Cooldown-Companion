@@ -2746,7 +2746,7 @@ local function RefreshColumn2()
                     elseif CooldownCompanion.IsEquipmentSlotEntry
                         and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
                         local effectiveItem = CooldownCompanion.ResolveEffectiveItem
-                            and CooldownCompanion.ResolveEffectiveItem(buttonData, { requestLoad = true }) or nil
+                            and CooldownCompanion.ResolveEffectiveItem(buttonData, true) or nil
                         if effectiveItem and effectiveItem.trackable and effectiveItem.itemID then
                             BindConfigShiftTooltip(entry, "item", effectiveItem.itemID, entry.frame, "ANCHOR_RIGHT")
                         end

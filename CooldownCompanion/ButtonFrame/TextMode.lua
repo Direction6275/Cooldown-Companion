@@ -1056,7 +1056,7 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button._textSecretNameActive = nil
 
     if IsEntryItemLike(buttonData) then
-        local effectiveItem = ResolveEffectiveItem(buttonData, { requestLoad = true })
+        local effectiveItem = ResolveEffectiveItem(buttonData, true)
         button._resolvedItemId = effectiveItem and effectiveItem.itemID or buttonData.id
         button._resolvedItemAvailableQuantity = effectiveItem and effectiveItem.availableQuantity or 0
         button._resolvedItemQuantityKind = effectiveItem and effectiveItem.quantityKind or "stacks"

@@ -26,6 +26,11 @@ local EvaluateButtonVisibility = ST._EvaluateButtonVisibility
 -- Pre-defined color constant tables to avoid per-tick allocation.
 -- IMPORTANT: These tables are read-only — never write to their indices.
 local DEFAULT_WHITE = {1, 1, 1, 1}
+-- Reusable scratch opts — single call site each; wiped immediately before
+-- each fill, so a previous walk can never leak values into the next call
+-- even if an error aborts a walk mid-call.
+local evaluateButtonAuraStateOpts = {}
+local buttonAuraPandemicStateOpts = {}
 
 -- Silent-transform icon staleness probe interval (seconds). Event-driven icon
 -- refresh paths are unaffected; this only paces the no-event fallback probe.
@@ -342,11 +347,19 @@ local function GetViewerNameFontString(viewerFrame)
     return bar and bar.Name or nil
 end
 
+-- Reusable per-button scratch -- only valid within the current cooldown walk.
+-- Never retain or read directly between calls.
 local function CreateAuraDisplayNameState(button)
-    return {
-        priorReadableName = button and button._auraDisplayName or nil,
-        priorSecretTextActive = button and button._isText and button._textSecretNameActive == true or false,
-    }
+    local state = button._auraDisplayNameStateScratch
+    if state then
+        wipe(state)
+    else
+        state = {}
+        button._auraDisplayNameStateScratch = state
+    end
+    state.priorReadableName = button._auraDisplayName
+    state.priorSecretTextActive = button._isText and button._textSecretNameActive == true or false
+    return state
 end
 
 local function RecordAuraDisplayName(state, auraData)
@@ -736,7 +749,7 @@ local function UpdateResolvedItemState(button, buttonData)
         return false
     end
 
-    local effectiveItem = ResolveEffectiveItem(buttonData, { requestLoad = true })
+    local effectiveItem = ResolveEffectiveItem(buttonData, true)
     if IsEquipmentSlotEntry(buttonData) and not (effectiveItem and effectiveItem.trackable) then
         if InCombatLockdown() and button._resolvedItemId then
             return false
@@ -984,16 +997,16 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if buttonData.auraTracking and button._auraSpellID then
         auraDisplayNameState = CreateAuraDisplayNameState(button)
         button._auraDisplayName = nil
+        wipe(evaluateButtonAuraStateOpts)
+        evaluateButtonAuraStateOpts.now = now
+        evaluateButtonAuraStateOpts.allowDurationlessAuraInstance = barAuraStackConfigured
+        evaluateButtonAuraStateOpts.previousAuraDurationObj = prevAuraDurationObj
+        evaluateButtonAuraStateOpts.wasAuraActive = wasAuraActive
         local auraState = EntryRuntime.EvaluateTrackedAuraState(
             button,
             buttonData,
             button._auraSpellID,
-            {
-                now = now,
-                allowDurationlessAuraInstance = barAuraStackConfigured,
-                previousAuraDurationObj = prevAuraDurationObj,
-                wasAuraActive = wasAuraActive,
-            }
+            evaluateButtonAuraStateOpts
         )
         local viewerFrame = auraState.viewerFrame
         auraTrackingReady = auraState.auraTrackingReady == true
@@ -1111,13 +1124,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
         end
 
-        button._inPandemic = EntryRuntime.ResolveAuraPandemicState(button, viewerFrame, {
-            now = now,
-            enabled = auraOverrideActive and (style.showPandemicGlow ~= false or buttonData.hideAuraActiveExceptPandemic),
-            previewActive = button._pandemicPreview == true,
-            clearWhenDisabled = true,
-            auraState = auraState,
-        })
+        wipe(buttonAuraPandemicStateOpts)
+        buttonAuraPandemicStateOpts.now = now
+        buttonAuraPandemicStateOpts.enabled = auraOverrideActive and (style.showPandemicGlow ~= false or buttonData.hideAuraActiveExceptPandemic)
+        buttonAuraPandemicStateOpts.previewActive = button._pandemicPreview == true
+        buttonAuraPandemicStateOpts.clearWhenDisabled = true
+        buttonAuraPandemicStateOpts.auraState = auraState
+        button._inPandemic = EntryRuntime.ResolveAuraPandemicState(button, viewerFrame, buttonAuraPandemicStateOpts)
 
         -- Pass through aura display names while keeping icon writes owned by UpdateButtonIcon.
         CommitAuraDisplayName(button, buttonData, viewerFrame, auraOverrideActive, auraDisplayNameState)
@@ -1177,10 +1190,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             auraProbeDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId, true)
             auraProbeRealCooldownShown = EntryRuntime.DurationObjectShowsCooldown(auraProbeDuration)
         end
-        auraProbeIsGCDOnly = auraProbeInfo and CooldownLogic.IsSpellGCDOnly(auraProbeInfo, {
-            normalCooldownShown = auraProbeNormalCooldownShown,
-            realCooldownShown = auraProbeRealCooldownShown,
-        }) or false
+        auraProbeIsGCDOnly = CooldownLogic.IsSpellGCDOnly(auraProbeInfo, auraProbeNormalCooldownShown, auraProbeRealCooldownShown)
     end
 
     -- Secondary cooldown text display during aura override
@@ -1439,10 +1449,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- and duration > 0).  It can report true during per-cast lockouts
             -- and recharge, so the _chargesSpent heuristic below guards both
             -- this path and the isActive fallback.
-            local slotProbe = spellCooldownResult and spellCooldownResult.slotProbe
-                or EntryRuntime.ProbeActionSlotCooldownForSpell(buttonData.id, cooldownSpellId)
-            if slotProbe.shown ~= nil then
-                button._mainCDShown = slotProbe.realShown == true
+            local probeShown, probeRealShown = EntryRuntime.ResolveSlotProbeShown(spellCooldownResult, buttonData.id, cooldownSpellId)
+            if probeShown ~= nil then
+                button._mainCDShown = probeRealShown == true
             elseif not auraOwnsPrimarySwipe then
                 -- No action bar slot found; use the ignoreGCD-backed real cooldown state.
                 if spellCooldownResult and spellCooldownResult.fetchOk then
