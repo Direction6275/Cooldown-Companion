@@ -139,7 +139,7 @@ function CooldownCompanion:OnEnable()
         self._unitEventFrame = CreateFrame("Frame")
         self._unitEventFrame:SetScript("OnEvent", function(_, event, ...)
             if event == "UNIT_POWER_FREQUENT" then
-                self:MarkCooldownsDirty()
+                self:MarkCooldownsDirty("power")
             elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
                 self:OnSpellCast(event, ...)
             elseif event == "UNIT_AURA" then
@@ -219,7 +219,8 @@ function CooldownCompanion:OnEnable()
             if ST._QueueInheritedUnitFrameAlphaResync then
                 ST._QueueInheritedUnitFrameAlphaResync()
             end
-            self:MarkCooldownsDirty()
+            self:MarkCooldownsDirty("unit-target")
+            ST.TagRefreshPass("unit-target-direct")
             self:UpdateAllCooldowns()
         end)
     end
@@ -315,7 +316,7 @@ function CooldownCompanion:OnEnable()
 end
 
 function CooldownCompanion:OnCooldownStateChanged()
-    self:MarkCooldownsDirty()
+    self:MarkCooldownsDirty("cooldown-event")
     -- Preserve immediate cooldown-event accuracy. This refresh only suppresses
     -- the next ticker walk when no other dirty state appears afterward.
     self:RunImmediateCooldownRefresh("cooldown-event")
@@ -409,7 +410,7 @@ end
 
 function CooldownCompanion:OnProcGlowHide(event, spellID)
     self.procOverlaySpells[spellID] = nil
-    self:MarkCooldownsDirty()
+    self:MarkCooldownsDirty("proc-hide")
     self:QueueCooldownRefresh("proc-event")
 end
 

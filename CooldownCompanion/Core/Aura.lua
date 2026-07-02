@@ -465,7 +465,7 @@ local function ForEachAuraLayoutInfo(callback)
 end
 
 function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
-    self:MarkCooldownsDirty()
+    self:MarkCooldownsDirty(unit == "player" and "aura-player" or "aura-other")
     if unit == "player" and self._isDracthyr then
         self:InvalidateMountAlphaCache()
     end
@@ -531,7 +531,7 @@ function CooldownCompanion:ClearAuraUnit(unitToken)
             end
         end
     end)
-    self:MarkCooldownsDirty()
+    self:MarkCooldownsDirty("aura-clear")
 end
 
 function CooldownCompanion:OnTargetChanged()
@@ -559,6 +559,7 @@ function CooldownCompanion:OnTargetChanged()
     -- been processed by the time PLAYER_TARGET_CHANGED fires, the CDM children
     -- will have fresh auraInstanceID data.  Probing immediately lets the
     -- primary path clear _targetSwitchAt in the same frame — zero hold.
+    ST.TagRefreshPass("target-probe")
     self:UpdateAllCooldowns()
 end
 
