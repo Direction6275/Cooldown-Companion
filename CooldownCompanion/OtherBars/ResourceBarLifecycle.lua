@@ -95,7 +95,20 @@ function RB.CreateResourceBarLifecycleModule(deps)
                     end
                 elseif event == "PLAYER_TALENT_UPDATE"
                     or event == "TRAIT_CONFIG_UPDATED" then
-                    UpdateMWMaxStacks()
+                    if CooldownCompanion.CacheCurrentSpec then
+                        CooldownCompanion:CacheCurrentSpec()
+                    end
+                    if CooldownCompanion.RebuildTalentNodeCache then
+                        CooldownCompanion:RebuildTalentNodeCache()
+                    end
+                    local rebuilt = UpdateMWMaxStacks()
+                    if not rebuilt then
+                        CooldownCompanion:EvaluateResourceBars()
+                    end
+                    CooldownCompanion:UpdateAnchorStacking()
+                    if CooldownCompanion.RefreshConfigPanel then
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
                 end
             end)
         end

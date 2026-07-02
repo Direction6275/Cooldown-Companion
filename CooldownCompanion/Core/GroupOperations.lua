@@ -2619,6 +2619,13 @@ function CooldownCompanion:IsCustomBarLoadConditionMet(customBar)
     return self:EvaluateLoadConditionSources(sources)
 end
 
+function CooldownCompanion:IsCustomBarRuntimeEligible(customBar)
+    if type(customBar) ~= "table" then return false end
+    if customBar.enabled ~= true or not customBar.spellID then return false end
+    if not self:IsTalentConditionMet(customBar) then return false end
+    return self:IsCustomBarLoadConditionMet(customBar)
+end
+
 
 -- ToggleGroupGlobal is defined in GroupManagement.lua (container-aware version)
 
