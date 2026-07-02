@@ -25,6 +25,7 @@ function RB.CreateResourceBarLifecycleModule(deps)
     local eventFrame = nil
     local eventFrameEnabled = false
     local pendingSpecChange = false
+    local pendingTalentResourceRefreshToken = 0
     local lifecycleEventsEnabled = false
     local InstallHooks
 
@@ -54,6 +55,38 @@ function RB.CreateResourceBarLifecycleModule(deps)
             useFalseState = true,
             clearCustomAuraStacks = true,
         })
+    end
+
+    local function RebuildResourceBarTalentEligibilityCache()
+        if CooldownCompanion.CacheCurrentSpec then
+            CooldownCompanion:CacheCurrentSpec()
+        end
+        if CooldownCompanion.RebuildTalentNodeCache then
+            CooldownCompanion:RebuildTalentNodeCache()
+        end
+    end
+
+    local function CancelQueuedTalentResourceRefresh()
+        pendingTalentResourceRefreshToken = pendingTalentResourceRefreshToken + 1
+    end
+
+    local function QueueTalentResourceRefresh(refreshConfig)
+        pendingTalentResourceRefreshToken = pendingTalentResourceRefreshToken + 1
+        local token = pendingTalentResourceRefreshToken
+        C_Timer.After(0.1, function()
+            if pendingTalentResourceRefreshToken ~= token then return end
+            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
+
+            RebuildResourceBarTalentEligibilityCache()
+            local rebuilt = UpdateMWMaxStacks()
+            if not rebuilt then
+                CooldownCompanion:EvaluateResourceBars()
+            end
+            CooldownCompanion:UpdateAnchorStacking()
+            if refreshConfig and CooldownCompanion.RefreshConfigPanel then
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        end)
     end
 
     ------------------------------------------------------------------------
@@ -93,8 +126,13 @@ function RB.CreateResourceBarLifecycleModule(deps)
                             CooldownCompanion:UpdateAnchorStacking()
                         end)
                     end
-                elseif event == "PLAYER_TALENT_UPDATE"
-                    or event == "TRAIT_CONFIG_UPDATED" then
+                elseif event == "PLAYER_TALENT_UPDATE" then
+                    RebuildResourceBarTalentEligibilityCache()
+                    QueueTalentResourceRefresh(true)
+                elseif event == "TRAIT_CONFIG_UPDATED" then
+                    CancelQueuedTalentResourceRefresh()
+                    RebuildResourceBarTalentEligibilityCache()
+                    -- Core OnTalentsChanged already applies resource bars for this event.
                     UpdateMWMaxStacks()
                 end
             end)
@@ -111,6 +149,7 @@ function RB.CreateResourceBarLifecycleModule(deps)
         if not lifecycleFrame then return end
         lifecycleFrame:UnregisterAllEvents()
         pendingSpecChange = false
+        CancelQueuedTalentResourceRefresh()
         lifecycleEventsEnabled = false
     end
 

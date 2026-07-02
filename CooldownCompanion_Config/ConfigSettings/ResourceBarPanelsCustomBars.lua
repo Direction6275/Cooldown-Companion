@@ -1862,7 +1862,9 @@ local function BuildCustomBarsListPanel(container)
     local loadedBars = {}
     local inactiveBars = {}
     for index, entry in ipairs(customBars) do
-        local target = (RB.CustomBarHasSpec and RB.CustomBarHasSpec(entry, customBarsSpecID)) and loadedBars or inactiveBars
+        local loadedForSpec = RB.CustomBarHasSpec and RB.CustomBarHasSpec(entry, customBarsSpecID)
+        local runtimeEligible = loadedForSpec and CooldownCompanion:IsCustomBarRuntimeEligible(entry)
+        local target = runtimeEligible and loadedBars or inactiveBars
         target[#target + 1] = { entry = entry, index = index }
     end
     SortCustomBarRowsByLayoutVisualOrder(loadedBars, settings, customBarsSpecID)
@@ -2294,6 +2296,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     local capturedKey = capturedId or tostring(capturedIdx)
     local currentConfigSpecID = GetCurrentConfigSpecID()
     local customBarLoadedForCurrentSpec = not RB.CustomBarHasSpec or RB.CustomBarHasSpec(cab, currentConfigSpecID)
+    local customBarPreviewsEnabled = customBarLoadedForCurrentSpec and CooldownCompanion:IsCustomBarRuntimeEligible(cab)
     local function resolveLayoutSpecID(entry, fallbackSpecID)
         fallbackSpecID = tonumber(fallbackSpecID) or fallbackSpecID
         if RB.CustomBarHasSpec and fallbackSpecID and RB.CustomBarHasSpec(entry, fallbackSpecID) then
@@ -2352,7 +2355,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     end
 
     if activeTab == "indicators" then
-        BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, cab, isSpellCustomBar, resolvedAuraUnit, capturedKey, infoButtons, customBarLoadedForCurrentSpec)
+        BuildCustomBarIndicatorsTab(container, customBars, capturedIdx, cab, isSpellCustomBar, resolvedAuraUnit, capturedKey, infoButtons, customBarPreviewsEnabled)
         return
     end
 
