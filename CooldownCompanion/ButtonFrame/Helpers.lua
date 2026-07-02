@@ -1026,6 +1026,10 @@ local function ResolveEffectiveItem(buttonData, opts)
 end
 CooldownCompanion.ResolveEffectiveItem = ResolveEffectiveItem
 
+-- Immutable shared opts for ResolveEffectiveItem callers that want async item
+-- loads requested. Shared across files and calls — never write to this table.
+CooldownCompanion.RESOLVE_ITEM_REQUEST_LOAD_OPTS = { requestLoad = true }
+
 -- Apply configurable strata (frame level) ordering to button sub-elements.
 -- order: array of 6 keys or nil for default.
 -- Index 1 = lowest layer (baseLevel+1), index 6 = highest (baseLevel+6).

@@ -25,12 +25,12 @@ local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 local TARGET_SWITCH_SAFETY_CAP = 0.60
--- Reusable scratch opts — single call site each; assign EVERY field
--- unconditionally before each call (a conditional write leaves a stale value
--- from the previous call that silently overrides owner/auraState data).
+-- Reusable scratch opts — single call site each; filled immediately before
+-- their call and wiped right after it, so they are always empty between uses
+-- and never pin values from a previous call.
 local buttonSpellCooldownLaneOpts = {}
-local laneGCDOnlyOpts = {}
 local customBarSpellCooldownLaneOpts = {}
+local clearOwnerStateOpts = {}
 
 local EntryRuntime = ST.EntryRuntime or {}
 ST.EntryRuntime = EntryRuntime
@@ -813,10 +813,10 @@ local function CommitTrackedAuraOwnerState(owner, state)
             owner._targetSwitchDataReceived = nil
         end
     else
-        EntryRuntime.ClearTrackedAuraOwnerState(owner, state.configUnit, {
-            useFalseState = true,
-            preserveTargetSwitch = state.wasAuraActive == true,
-        })
+        clearOwnerStateOpts.useFalseState = true
+        clearOwnerStateOpts.preserveTargetSwitch = state.wasAuraActive == true
+        EntryRuntime.ClearTrackedAuraOwnerState(owner, state.configUnit, clearOwnerStateOpts)
+        wipe(clearOwnerStateOpts)
         if owner._targetSwitchAt and not state.wasAuraActive then
             owner._targetSwitchAt = nil
             owner._targetSwitchDataReceived = nil
@@ -824,6 +824,9 @@ local function CommitTrackedAuraOwnerState(owner, state)
     end
 end
 
+-- Returns a per-owner scratch table that is wiped and refilled on this owner's
+-- next evaluation. Read it only synchronously within the current update; never
+-- retain the returned table (or store it on another object) across ticks/events.
 function EntryRuntime.EvaluateTrackedAuraState(owner, buttonData, auraSpellID, options)
     owner = owner or {}
     options = options or {}
@@ -1038,34 +1041,43 @@ function EntryRuntime.EvaluateTrackedAuraState(owner, buttonData, auraSpellID, o
     end
 
     local auraExpirationTime, auraDuration, auraTimingReadable = GetReadableAuraTiming(auraPresent and auraData or nil)
-    local state = {
-        ready = ready == true,
-        auraPresent = auraPresent == true,
-        auraTrackingReady = ready == true,
-        cdmEnabled = cdmEnabled == true,
-        auraData = auraPresent and auraData or nil,
-        auraApplications = auraPresent and auraApplications or nil,
-        auraInstanceID = auraPresent and auraInstanceID or nil,
-        auraUnit = auraPresent and auraUnit or configUnit,
-        configUnit = configUnit,
-        viewerFrame = viewerFrame,
-        viewerBar = viewerBar,
-        durationObj = auraPresent and durationObj or nil,
-        auraCooldownStart = auraPresent and auraCooldownStart or nil,
-        auraCooldownDuration = auraPresent and auraCooldownDuration or nil,
-        auraExpirationTime = auraTimingReadable and auraExpirationTime or nil,
-        auraDuration = auraTimingReadable and auraDuration or nil,
-        auraHasTimer = auraPresent and auraHasTimer == true or false,
-        auraGraceHeld = auraGraceHeld == true,
-        activeAuraSpellID = activeAuraSpellID,
-        activeAuraSpellIDResolved = activeAuraSpellIDResolved == true,
-        activeAuraSpellIDFromFallback = activeAuraSpellIDFromFallback,
-        activeAuraIcon = activeAuraIcon,
-        activeAuraIconAvailable = activeAuraIconAvailable == true,
-        activeAuraIconResolved = activeAuraIconResolved == true,
-        allowDurationlessAuraInstance = allowDurationlessAuraInstance,
-        wasAuraActive = wasAuraActive,
-    }
+    -- Reusable per-owner scratch -- see the contract above the function header.
+    -- The wipe is enforcement: every field below is assigned unconditionally
+    -- today, but the wipe keeps a future conditional assignment from leaking a
+    -- stale value between evaluations.
+    local state = owner._trackedAuraStateScratch
+    if state then
+        wipe(state)
+    else
+        state = {}
+        owner._trackedAuraStateScratch = state
+    end
+    state.ready = ready == true
+    state.auraPresent = auraPresent == true
+    state.auraTrackingReady = ready == true
+    state.cdmEnabled = cdmEnabled == true
+    state.auraData = auraPresent and auraData or nil
+    state.auraApplications = auraPresent and auraApplications or nil
+    state.auraInstanceID = auraPresent and auraInstanceID or nil
+    state.auraUnit = auraPresent and auraUnit or configUnit
+    state.configUnit = configUnit
+    state.viewerFrame = viewerFrame
+    state.viewerBar = viewerBar
+    state.durationObj = auraPresent and durationObj or nil
+    state.auraCooldownStart = auraPresent and auraCooldownStart or nil
+    state.auraCooldownDuration = auraPresent and auraCooldownDuration or nil
+    state.auraExpirationTime = auraTimingReadable and auraExpirationTime or nil
+    state.auraDuration = auraTimingReadable and auraDuration or nil
+    state.auraHasTimer = auraPresent and auraHasTimer == true or false
+    state.auraGraceHeld = auraGraceHeld == true
+    state.activeAuraSpellID = activeAuraSpellID
+    state.activeAuraSpellIDResolved = activeAuraSpellIDResolved == true
+    state.activeAuraSpellIDFromFallback = activeAuraSpellIDFromFallback
+    state.activeAuraIcon = activeAuraIcon
+    state.activeAuraIconAvailable = activeAuraIconAvailable == true
+    state.activeAuraIconResolved = activeAuraIconResolved == true
+    state.allowDurationlessAuraInstance = allowDurationlessAuraInstance
+    state.wasAuraActive = wasAuraActive
 
     if mutateOwner then
         CommitTrackedAuraOwnerState(owner, state)
@@ -1263,10 +1275,6 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
         result.realCooldownShown = DurationObjectShowsCooldown(result.realDurationObj)
     end
 
-    -- Snapshot for the IsSpellGCDOnly elseif below — keep in sync if anything
-    -- mutates result.normalCooldownShown/realCooldownShown before that branch.
-    laneGCDOnlyOpts.normalCooldownShown = result.normalCooldownShown
-    laneGCDOnlyOpts.realCooldownShown = result.realCooldownShown
     if suppressCooldownSurface then
         if result.isOnGCD == true and CooldownCompanion._gcdDurationObj then
             result.source = "resource-gated-gcd"
@@ -1283,7 +1291,7 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
         result.state = COOLDOWN_STATE_COOLDOWN
         result.source = "spell-real-ignore-gcd"
         result.renderDurationObj = result.realDurationObj
-    elseif CooldownLogic.IsSpellGCDOnly(info, laneGCDOnlyOpts) then
+    elseif CooldownLogic.IsSpellGCDOnly(info, result.normalCooldownShown, result.realCooldownShown) then
         result.source = "spell-gcd"
         result.presentationState = COOLDOWN_STATE_GCD
         result.renderDurationObj = result.durationObj or CooldownCompanion._gcdDurationObj
@@ -1326,7 +1334,9 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldo
     buttonSpellCooldownLaneOpts.allowActionSlotRealFallback = allowActionSlotRealFallback
     buttonSpellCooldownLaneOpts.allowActionSlotReadyFallback = allowActionSlotReadyFallback
     buttonSpellCooldownLaneOpts.suppressCooldownSurface = resourceGatedNoCooldown == true
-    return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id, buttonSpellCooldownLaneOpts)
+    local result = EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id, buttonSpellCooldownLaneOpts)
+    wipe(buttonSpellCooldownLaneOpts)
+    return result
 end
 EntryRuntime.EvaluateButtonSpellCooldown = EvaluateButtonSpellCooldown
 
@@ -1669,6 +1679,7 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     customBarSpellCooldownLaneOpts.allowActionSlotReadyFallback = allowActionSlotReadyFallback
     customBarSpellCooldownLaneOpts.suppressCooldownSurface = resourceGatedNoCooldown == true
     local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, customBarSpellCooldownLaneOpts)
+    wipe(customBarSpellCooldownLaneOpts)
     result.baseSpellID = spellID
     result.cooldownSpellID = cooldownSpellID
     result.noCooldown = noCooldown or nil

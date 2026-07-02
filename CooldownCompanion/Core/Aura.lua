@@ -36,23 +36,11 @@ local COOLDOWN_VIEWER_ASSOCIATION_CATEGORIES = {
     Enum.CooldownViewerCategory.TrackedBar,
 }
 
--- Reusable scratch sets — only valid through FillAuraInstanceIDSet's return
--- value within the same synchronous event dispatch; contents are stale between
--- calls (the nil-return path skips the wipe). Never read directly or retain.
+-- Caller-owned scratch sets for ST.FillAuraInstanceIDSet — see Utils.lua for
+-- the lifetime contract (use only the returned set, never read these directly).
 local removedAuraIDSetScratch = {}
 local updatedAuraIDSetScratch = {}
-
-local function FillAuraInstanceIDSet(scratch, auraInstanceIDs)
-    if not (auraInstanceIDs and auraInstanceIDs[1]) then
-        return nil
-    end
-
-    wipe(scratch)
-    for _, auraInstanceID in ipairs(auraInstanceIDs) do
-        scratch[auraInstanceID] = true
-    end
-    return scratch
-end
+local FillAuraInstanceIDSet = ST.FillAuraInstanceIDSet
 
 local function IsBuffViewerChild(frame)
     if not frame then return false end

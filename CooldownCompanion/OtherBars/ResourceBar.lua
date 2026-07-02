@@ -431,6 +431,11 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     frame._cdcIndependentAlphaTarget = nil
     frame._cdcIndependentLastAlpha = nil
     EntryRuntime.ClearTrackedAuraOwnerState(frame, nil, { clearCustomAuraStacks = true })
+    -- Release refs pinned by the per-owner evaluation scratch (aura data,
+    -- duration objects, viewer frames).
+    if frame._trackedAuraStateScratch then
+        wipe(frame._trackedAuraStateScratch)
+    end
     frame._parsedAuraIDs = nil
     frame._parsedAuraIDsRaw = nil
     frame._parsedAuraIDsButtonID = nil

@@ -52,8 +52,8 @@ local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}
 local DEFAULT_AURA_COLOR = {0, 0.925, 1, 1}
 local DEFAULT_CUSTOM_COLOR = {1, 0.82, 0, 1}
 local DEFAULT_TEXT_FORMAT = "{name}  {status}"
--- Immutable — shared across calls; never write to this table.
-local RESOLVE_ITEM_REQUEST_LOAD_OPTS = { requestLoad = true }
+-- Immutable shared opts owned by Helpers.lua; never write to this table.
+local RESOLVE_ITEM_REQUEST_LOAD_OPTS = CooldownCompanion.RESOLVE_ITEM_REQUEST_LOAD_OPTS
 
 local function IsAuraOnlyEntry(buttonData)
     return buttonData
