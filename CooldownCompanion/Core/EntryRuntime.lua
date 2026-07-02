@@ -1125,6 +1125,9 @@ local function IsSpellCooldownDeferred(info)
 end
 
 local actionSlotSeenScratch = {}
+local actionSlotProbeScratch = {}
+local actionSlotCooldownProbeScratch = {}
+local spellCooldownLaneResultScratch = {}
 
 local function MergeActionSlotProbe(result, probe)
     if probe.sawAnySlot then result.sawAnySlot = true end
@@ -1147,13 +1150,13 @@ local function MergeActionSlotProbe(result, probe)
     return false
 end
 
+-- Returns a module-local scratch table. Read it only synchronously in the
+-- current probe/merge path; never retain it across calls.
 local function ProbeActionSlotsForSpellID(spellID)
-    local result = {
-        shown = nil,
-        realShown = nil,
-        sawAnySlot = false,
-        sawUnknown = false,
-    }
+    local result = actionSlotProbeScratch
+    wipe(result)
+    result.sawAnySlot = false
+    result.sawUnknown = false
 
     if not spellID then return result end
 
@@ -1198,13 +1201,13 @@ local function ProbeActionSlotsForSpellID(spellID)
 
     return result
 end
+-- Returns a module-local scratch table. Read it only synchronously in the
+-- current update/probe path; never retain it across ticks/events.
 local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
-    local result = {
-        shown = nil,
-        realShown = nil,
-        sawAnySlot = false,
-        sawUnknown = false,
-    }
+    local result = actionSlotCooldownProbeScratch
+    wipe(result)
+    result.sawAnySlot = false
+    result.sawUnknown = false
 
     if not baseSpellID then return result end
 
@@ -1229,17 +1232,19 @@ local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
 end
 EntryRuntime.ProbeActionSlotCooldownForSpell = ProbeActionSlotCooldownForSpell
 
+-- Returns a module-local scratch table. Read it only synchronously within the
+-- current button/custom-bar update; never retain it across ticks/events.
 local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
-    local result = {
-        spellID = spellID,
-        fetchOk = false,
-        state = COOLDOWN_STATE_READY,
-        source = "ready",
-        realCooldownShown = false,
-        isOnGCD = false,
-        deferred = false,
-        resourceGatedNoCooldown = false,
-    }
+    local result = spellCooldownLaneResultScratch
+    wipe(result)
+    result.spellID = spellID
+    result.fetchOk = false
+    result.state = COOLDOWN_STATE_READY
+    result.source = "ready"
+    result.realCooldownShown = false
+    result.isOnGCD = false
+    result.deferred = false
+    result.resourceGatedNoCooldown = false
 
     if not spellID then
         return result
@@ -1332,6 +1337,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
 
     return result
 end
+-- Returns the spell cooldown lane scratch; read only synchronously in the
+-- current button update and never retain across ticks/events.
 local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldown, resourceGateCost, baseNoCooldown, baseResourceGateCost)
     local resourceGatedNoCooldown = noCooldown == true
         and (resourceGateCost == true
@@ -1646,6 +1653,8 @@ function EntryRuntime.ApplyBarAuraStackState(
     return barAuraSecretStackValue, preserveBarAuraStackText
 end
 
+-- Returns the spell cooldown lane scratch; read only synchronously in the
+-- current custom-bar update and never retain across ticks/events.
 function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     local spellID = tonumber(customBar and customBar.spellID)
     if not spellID then
