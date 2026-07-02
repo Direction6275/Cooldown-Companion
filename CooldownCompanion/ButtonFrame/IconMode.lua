@@ -75,6 +75,8 @@ local ApplyDurationFormatToCooldown = CooldownCompanion.ApplyDurationFormatToCoo
 -- IMPORTANT: These tables are read-only — never write to their indices.
 local DEFAULT_WHITE = {1, 1, 1, 1}
 local DEFAULT_AURA_TEXT_COLOR = {0, 0.925, 1, 1}
+-- Immutable — shared across calls; never write to this table.
+local RESOLVE_ITEM_REQUEST_LOAD_OPTS = { requestLoad = true }
 local ICON_FILL_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 local BLIZZARD_AURA_SWIPE_TEXTURE = "Interface\\HUD\\UI-HUD-CoolDownManager-Icon-Swipe"
 local BLIZZARD_AURA_SWIPE_R = 1
@@ -810,7 +812,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.buttonData = buttonData
 
     if IsEntryItemLike(buttonData) then
-        local effectiveItem = ResolveEffectiveItem(buttonData, { requestLoad = true })
+        local effectiveItem = ResolveEffectiveItem(buttonData, RESOLVE_ITEM_REQUEST_LOAD_OPTS)
         button._resolvedItemId = effectiveItem and effectiveItem.itemID or buttonData.id
         button._resolvedItemAvailableQuantity = effectiveItem and effectiveItem.availableQuantity or 0
         button._resolvedItemQuantityKind = effectiveItem and effectiveItem.quantityKind or "stacks"
