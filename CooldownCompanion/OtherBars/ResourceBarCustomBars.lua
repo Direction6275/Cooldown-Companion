@@ -88,10 +88,6 @@ end
 
 function RB.CreateResourceBarCustomBarsModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
-    local spellCustomBarAuraStateOpts = {}
-    local customAuraBarAuraStateOpts = {}
-    local customAuraBarPandemicStateOpts = {}
-    local customCooldownBarPandemicStateOpts = {}
     local GetPreviewActive = deps.GetPreviewActive
     local MarkLayoutDirty = deps.MarkLayoutDirty
     local RelayoutResourceStack = deps.RelayoutResourceStack
@@ -101,6 +97,13 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         or ClearCustomAuraBarIndicatorState
     local UpdateCustomAuraBarIndicatorVisuals = deps.UpdateCustomAuraBarIndicatorVisuals
     local ApplyCustomAuraBarPreviewState = deps.ApplyCustomAuraBarPreviewState
+    -- Reusable scratch opts — single call site each; assign EVERY field
+    -- unconditionally before each call (a conditional write leaves a stale value
+    -- from the previous call that silently overrides owner/auraState data).
+    local spellCustomBarAuraStateOpts = {}
+    local customAuraBarAuraStateOpts = {}
+    local customAuraBarPandemicStateOpts = {}
+    local customCooldownBarPandemicStateOpts = {}
     local customAuraWakeRetryQueue = {}
     local customAuraWakeRetryPending = {}
     local customAuraWakeRetryScheduled = false
@@ -292,6 +295,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         customAuraBarPandemicStateOpts.auraUnit = auraUnit
         customAuraBarPandemicStateOpts.auraInstanceID = instId
         local inPandemic = EntryRuntime.ResolveAuraPandemicState(pandemicStateFrame, viewerFrame, customAuraBarPandemicStateOpts)
+        customAuraBarPandemicStateOpts.auraState = nil -- don't pin the aura-state chain between updates
 
         if isActive and bar then
             if auraPresent then
@@ -586,6 +590,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         customCooldownBarPandemicStateOpts.clearWhenDisabled = true
         customCooldownBarPandemicStateOpts.auraState = auraState
         local inPandemic = EntryRuntime.ResolveAuraPandemicState(bar, auraState and auraState.viewerFrame, customCooldownBarPandemicStateOpts)
+        customCooldownBarPandemicStateOpts.auraState = nil -- don't pin the aura-state chain between updates
 
         if auraState
             and auraState.ready == true

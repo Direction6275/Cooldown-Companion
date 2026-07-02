@@ -25,6 +25,9 @@ local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 local TARGET_SWITCH_SAFETY_CAP = 0.60
+-- Reusable scratch opts — single call site each; assign EVERY field
+-- unconditionally before each call (a conditional write leaves a stale value
+-- from the previous call that silently overrides owner/auraState data).
 local buttonSpellCooldownLaneOpts = {}
 local laneGCDOnlyOpts = {}
 local customBarSpellCooldownLaneOpts = {}
@@ -1260,6 +1263,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
         result.realCooldownShown = DurationObjectShowsCooldown(result.realDurationObj)
     end
 
+    -- Snapshot for the IsSpellGCDOnly elseif below — keep in sync if anything
+    -- mutates result.normalCooldownShown/realCooldownShown before that branch.
     laneGCDOnlyOpts.normalCooldownShown = result.normalCooldownShown
     laneGCDOnlyOpts.realCooldownShown = result.realCooldownShown
     if suppressCooldownSurface then

@@ -28,6 +28,9 @@ local EvaluateButtonVisibility = ST._EvaluateButtonVisibility
 local DEFAULT_WHITE = {1, 1, 1, 1}
 -- Immutable — shared across calls; never write to this table.
 local RESOLVE_ITEM_REQUEST_LOAD_OPTS = { requestLoad = true }
+-- Reusable scratch opts — single call site each; assign EVERY field
+-- unconditionally before each call (a conditional write leaves a stale value
+-- from the previous call that silently overrides owner/auraState data).
 local evaluateButtonAuraStateOpts = {}
 local buttonAuraPandemicStateOpts = {}
 local auraProbeGCDOnlyOpts = {}
@@ -999,6 +1002,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._auraSpellID,
             evaluateButtonAuraStateOpts
         )
+        evaluateButtonAuraStateOpts.previousAuraDurationObj = nil -- don't pin the duration object between walks
         local viewerFrame = auraState.viewerFrame
         auraTrackingReady = auraState.auraTrackingReady == true
         auraOverrideActive = auraState.auraPresent == true
@@ -1121,6 +1125,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         buttonAuraPandemicStateOpts.clearWhenDisabled = true
         buttonAuraPandemicStateOpts.auraState = auraState
         button._inPandemic = EntryRuntime.ResolveAuraPandemicState(button, viewerFrame, buttonAuraPandemicStateOpts)
+        buttonAuraPandemicStateOpts.auraState = nil -- don't pin the aura-state chain between walks
 
         -- Pass through aura display names while keeping icon writes owned by UpdateButtonIcon.
         CommitAuraDisplayName(button, buttonData, viewerFrame, auraOverrideActive, auraDisplayNameState)
@@ -1180,9 +1185,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             auraProbeDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId, true)
             auraProbeRealCooldownShown = EntryRuntime.DurationObjectShowsCooldown(auraProbeDuration)
         end
-        auraProbeGCDOnlyOpts.normalCooldownShown = auraProbeNormalCooldownShown
-        auraProbeGCDOnlyOpts.realCooldownShown = auraProbeRealCooldownShown
-        auraProbeIsGCDOnly = auraProbeInfo and CooldownLogic.IsSpellGCDOnly(auraProbeInfo, auraProbeGCDOnlyOpts) or false
+        if auraProbeInfo then
+            auraProbeGCDOnlyOpts.normalCooldownShown = auraProbeNormalCooldownShown
+            auraProbeGCDOnlyOpts.realCooldownShown = auraProbeRealCooldownShown
+            auraProbeIsGCDOnly = CooldownLogic.IsSpellGCDOnly(auraProbeInfo, auraProbeGCDOnlyOpts) or false
+        else
+            auraProbeIsGCDOnly = false
+        end
     end
 
     -- Secondary cooldown text display during aura override
