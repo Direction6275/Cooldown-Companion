@@ -60,6 +60,10 @@ function T:TakeQueueHistory()
     return hist
 end
 
+function T:ClearQueueHistory()
+    self.queueHistoryLen = 0
+end
+
 function T:SetPending(source, detail, hist, dirtyAtStart)
     self.pendingSource = source
     self.pendingDetail = detail
@@ -126,7 +130,8 @@ local gateFrame = CreateFrame("Frame")
 gateFrame:RegisterEvent("PLAYER_LOGIN")
 gateFrame:SetScript("OnEvent", function(frame)
     frame:UnregisterAllEvents()
-    if C_AddOns.IsAddOnLoaded("CC_DevBridge") then
+    local _, loaded = C_AddOns.IsAddOnLoaded("CC_DevBridge")
+    if loaded then
         T.enabled = true
     end
 end)

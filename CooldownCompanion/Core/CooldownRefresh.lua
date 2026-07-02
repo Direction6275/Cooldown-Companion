@@ -104,11 +104,14 @@ function CooldownCompanion:RunImmediateCooldownRefresh(source)
         cooldownEventSerial = self._cooldownDirtySerial or 0
     end
 
+    local T = ST.RefreshTelemetry
+    if self._queuedCooldownRefreshSource and T and T.enabled then
+        T:ClearQueueHistory()
+    end
     self._queuedCooldownRefreshSource = nil
     self._queuedCooldownRefreshCooldownEventSerial = nil
     self._cooldownImmediateRefreshThisFrame = true
     self:EnsureCooldownRefreshQueueFrame()
-    local T = ST.RefreshTelemetry
     if T and T.enabled then
         T:SetPending("immediate", source, nil, nil)
     end

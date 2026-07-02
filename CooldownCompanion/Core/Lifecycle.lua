@@ -349,6 +349,10 @@ function CooldownCompanion:OnDisable()
         self._alphaFrame = nil
     end
 
+    local T = ST.RefreshTelemetry
+    if self._queuedCooldownRefreshSource and T and T.enabled then
+        T:ClearQueueHistory()
+    end
     self:ResetCooldownRefreshState()
 
     -- Disable all range check registrations
