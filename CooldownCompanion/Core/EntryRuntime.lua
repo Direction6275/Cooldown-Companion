@@ -25,6 +25,9 @@ local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 local TARGET_SWITCH_SAFETY_CAP = 0.60
+local buttonSpellCooldownLaneOpts = {}
+local laneGCDOnlyOpts = {}
+local customBarSpellCooldownLaneOpts = {}
 
 local EntryRuntime = ST.EntryRuntime or {}
 ST.EntryRuntime = EntryRuntime
@@ -1257,6 +1260,8 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
         result.realCooldownShown = DurationObjectShowsCooldown(result.realDurationObj)
     end
 
+    laneGCDOnlyOpts.normalCooldownShown = result.normalCooldownShown
+    laneGCDOnlyOpts.realCooldownShown = result.realCooldownShown
     if suppressCooldownSurface then
         if result.isOnGCD == true and CooldownCompanion._gcdDurationObj then
             result.source = "resource-gated-gcd"
@@ -1273,10 +1278,7 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
         result.state = COOLDOWN_STATE_COOLDOWN
         result.source = "spell-real-ignore-gcd"
         result.renderDurationObj = result.realDurationObj
-    elseif CooldownLogic.IsSpellGCDOnly(info, {
-        normalCooldownShown = result.normalCooldownShown,
-        realCooldownShown = result.realCooldownShown,
-    }) then
+    elseif CooldownLogic.IsSpellGCDOnly(info, laneGCDOnlyOpts) then
         result.source = "spell-gcd"
         result.presentationState = COOLDOWN_STATE_GCD
         result.renderDurationObj = result.durationObj or CooldownCompanion._gcdDurationObj
@@ -1316,11 +1318,10 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldo
     local allowActionSlotReadyFallback = allowActionSlotRealFallback
         and cooldownSpellId ~= buttonData.id
 
-    return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id, {
-        allowActionSlotRealFallback = allowActionSlotRealFallback,
-        allowActionSlotReadyFallback = allowActionSlotReadyFallback,
-        suppressCooldownSurface = resourceGatedNoCooldown == true,
-    })
+    buttonSpellCooldownLaneOpts.allowActionSlotRealFallback = allowActionSlotRealFallback
+    buttonSpellCooldownLaneOpts.allowActionSlotReadyFallback = allowActionSlotReadyFallback
+    buttonSpellCooldownLaneOpts.suppressCooldownSurface = resourceGatedNoCooldown == true
+    return EvaluateSpellCooldownLane(cooldownSpellId, buttonData._cooldownSecrecy, buttonData.id, buttonSpellCooldownLaneOpts)
 end
 EntryRuntime.EvaluateButtonSpellCooldown = EvaluateButtonSpellCooldown
 
@@ -1659,11 +1660,10 @@ function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
     local allowActionSlotReadyFallback = allowActionSlotRealFallback
         and cooldownSpellID ~= spellID
 
-    local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, {
-        allowActionSlotRealFallback = allowActionSlotRealFallback,
-        allowActionSlotReadyFallback = allowActionSlotReadyFallback,
-        suppressCooldownSurface = resourceGatedNoCooldown == true,
-    })
+    customBarSpellCooldownLaneOpts.allowActionSlotRealFallback = allowActionSlotRealFallback
+    customBarSpellCooldownLaneOpts.allowActionSlotReadyFallback = allowActionSlotReadyFallback
+    customBarSpellCooldownLaneOpts.suppressCooldownSurface = resourceGatedNoCooldown == true
+    local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, customBarSpellCooldownLaneOpts)
     result.baseSpellID = spellID
     result.cooldownSpellID = cooldownSpellID
     result.noCooldown = noCooldown or nil
