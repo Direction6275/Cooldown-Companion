@@ -26,6 +26,7 @@
       If another dirty mark lands before the flush, the later ticker walks
       instead of skipping. That is intentionally conservative: displays can only
       be fresher, never staler.
+    - Refresh telemetry fields are observe-only and never change scheduling.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -38,9 +39,13 @@ local function CooldownRefreshQueueOnUpdate(frame)
     end
 end
 
-function CooldownCompanion:MarkCooldownsDirty()
+function CooldownCompanion:MarkCooldownsDirty(source)
     self._cooldownsDirty = true
     self._cooldownDirtySerial = (self._cooldownDirtySerial or 0) + 1
+    local T = ST.RefreshTelemetry
+    if T and T.enabled then
+        T:CountDirty(source or "unspecified")
+    end
 end
 
 function CooldownCompanion:ClearCooldownsDirty()
@@ -65,6 +70,10 @@ function CooldownCompanion:FlushQueuedCooldownRefresh()
     self:ResetCooldownRefreshState()
 
     if queuedSource then
+        local T = ST.RefreshTelemetry
+        if T and T.enabled then
+            T:SetPending("queue-flush", queuedSource, T:TakeQueueHistory(), nil)
+        end
         self:UpdateAllCooldowns()
         if cooldownEventSerial then
             self._cooldownRefreshSatisfiedSerial = cooldownEventSerial
@@ -76,6 +85,10 @@ function CooldownCompanion:QueueCooldownRefresh(source)
     self._queuedCooldownRefreshSource = source or "event"
     if source == "cooldown-event" then
         self._queuedCooldownRefreshCooldownEventSerial = self._cooldownDirtySerial or 0
+    end
+    local T = ST.RefreshTelemetry
+    if T and T.enabled then
+        T:CountQueue(source or "event")
     end
     self:EnsureCooldownRefreshQueueFrame()
 end
@@ -91,10 +104,17 @@ function CooldownCompanion:RunImmediateCooldownRefresh(source)
         cooldownEventSerial = self._cooldownDirtySerial or 0
     end
 
+    local T = ST.RefreshTelemetry
+    if self._queuedCooldownRefreshSource and T and T.enabled then
+        T:ClearQueueHistory()
+    end
     self._queuedCooldownRefreshSource = nil
     self._queuedCooldownRefreshCooldownEventSerial = nil
     self._cooldownImmediateRefreshThisFrame = true
     self:EnsureCooldownRefreshQueueFrame()
+    if T and T.enabled then
+        T:SetPending("immediate", source, nil, nil)
+    end
     self:UpdateAllCooldowns()
     if cooldownEventSerial then
         self._cooldownRefreshSatisfiedSerial = cooldownEventSerial
@@ -109,12 +129,23 @@ function CooldownCompanion:CanSkipTickerCooldownRefresh()
 end
 
 function CooldownCompanion:TickCooldownRefresh()
+    local T = ST.RefreshTelemetry
+    local telemetryOn = T and T.enabled
+    local dirtyAtStart
+    if telemetryOn then
+        dirtyAtStart = self._cooldownsDirty and true or false
+    end
     if self._queuedCooldownRefreshSource then
         self:FlushQueuedCooldownRefresh()
         return false
     end
     if self:CanSkipTickerCooldownRefresh() then
+        if telemetryOn then T:CountSkip() end
         return true
+    end
+    if telemetryOn then
+        T:SetPending(dirtyAtStart and "ticker-dirty" or "ticker-clean",
+            nil, nil, dirtyAtStart)
     end
     self:UpdateAllCooldowns()
     return false

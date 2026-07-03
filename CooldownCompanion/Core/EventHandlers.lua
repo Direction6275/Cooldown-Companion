@@ -56,7 +56,7 @@ local function GroupHasEquipmentSlotEntries(group)
 end
 
 function CooldownCompanion:RefreshEquipmentSlotEntries(reason, itemID)
-    self:MarkCooldownsDirty()
+    self:MarkCooldownsDirty("equipment-slots")
     if self.db and self.db.profile and self.db.profile.groups then
         for groupId, group in pairs(self.db.profile.groups) do
             if GroupHasEquipmentSlotEntries(group) then
@@ -73,7 +73,7 @@ function CooldownCompanion:OnEquipmentChanged(event, equipmentSlot)
     if equipmentSlot == trinket1 or equipmentSlot == trinket2 then
         self:RefreshEquipmentSlotEntries("equipment", nil)
     else
-        self:MarkCooldownsDirty()
+        self:MarkCooldownsDirty("equipment-changed")
     end
 end
 
@@ -257,12 +257,12 @@ function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInR
         end
     end)
     if changed then
-        self:MarkCooldownsDirty()
+        self:MarkCooldownsDirty("range-check")
     end
 end
 
 function CooldownCompanion:OnBagChanged()
-    self:MarkCooldownsDirty()
+    self:MarkCooldownsDirty("bag-changed")
     self:RefreshChargeFlags("item")
     self:RefreshConfigPanel()
 end
@@ -569,7 +569,7 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
                     end
                 end
             end)
-            self:MarkCooldownsDirty()
+            self:MarkCooldownsDirty("player-entering-world")
         end)
     end
 end

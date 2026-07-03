@@ -2865,7 +2865,7 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
         end
     end
 
-    self:MarkCooldownsDirty()
+    self:MarkCooldownsDirty("availability-rebuild")
 end
 
 function CooldownCompanion:RefreshAllGroupsForSpellAvailability()
@@ -2878,6 +2878,7 @@ function CooldownCompanion:RefreshAllGroupsForSpellAvailability()
         self:RefreshAllGroupsVisibilityOnly()
     end
 
+    ST.TagRefreshPass("availability-rebuild")
     self:UpdateAllCooldowns()
 end
 
@@ -3386,6 +3387,14 @@ function CooldownCompanion:DiscardDormantFrame(groupId)
 end
 
 function CooldownCompanion:UpdateAllCooldowns()
+    local T = ST.RefreshTelemetry
+    local telemetryOn = T and T.enabled
+    local t0, frames, buttons
+    if telemetryOn then
+        t0 = debugprofilestop()
+        frames, buttons = 0, 0
+    end
+
     self._gcdInfo = C_Spell.GetSpellCooldown(61304)
     -- GCD activity: isActive is NeverSecret (12.0.1 hotfix)
     self._gcdActive = self._gcdInfo and self._gcdInfo.isActive or false
@@ -3409,10 +3418,17 @@ function CooldownCompanion:UpdateAllCooldowns()
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
             frame:UpdateCooldowns()
+            if telemetryOn then
+                frames = frames + 1
+                buttons = buttons + (frame.buttons and #frame.buttons or 0)
+            end
         end
     end
 
     self._cooldownUpdatePassActive = nil
+    if telemetryOn then
+        T:RecordPass(frames, buttons, debugprofilestop() - t0)
+    end
 end
 
 function CooldownCompanion:UpdateAllGroupLayouts()
