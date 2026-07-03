@@ -170,7 +170,11 @@ local batch = {
     missFires = 0,
     secretFires = 0,
     events = {},                -- tag -> count for the current batch
+    idSpells = {},              -- identity spellIDs this batch (capped, for logs)
+    missSpells = {},            -- index-miss spellIDs this batch (capped)
 }
+
+local BATCH_SPELL_CAP = 8
 
 local changedKeys = {}          -- per-pass scratch, reused
 
@@ -225,8 +229,14 @@ local function NoteIdentityArg(event, spellID)
             batch.identityFires = batch.identityFires + 1
             SP.identityFireTotal = SP.identityFireTotal + 1
             CountFire(event .. ":id")
+            if #batch.idSpells < BATCH_SPELL_CAP then
+                batch.idSpells[#batch.idSpells + 1] = spellID
+            end
         else
             CountMiss(event)
+            if #batch.missSpells < BATCH_SPELL_CAP then
+                batch.missSpells[#batch.missSpells + 1] = spellID
+            end
         end
         return true
     end
@@ -292,6 +302,14 @@ local function BatchSummary()
         n = n + 1
         parts[n] = tag .. "x" .. count
     end
+    if #batch.idSpells > 0 then
+        n = n + 1
+        parts[n] = "id[" .. table.concat(batch.idSpells, " ") .. "]"
+    end
+    if #batch.missSpells > 0 then
+        n = n + 1
+        parts[n] = "miss[" .. table.concat(batch.missSpells, " ") .. "]"
+    end
     return table.concat(parts, ",", 1, n)
 end
 
@@ -351,12 +369,21 @@ local function Classify(changedCount, oldCd, newCd)
     local onlyTint = true
     local onlyGsup = true
     local cdChanged = false
+    local desatCdChanged = false
     local gcdOk, expiryOk, chargeOnly = true, true, true
     for i = 1, changedCount do
         local key = changedKeys[i]
-        if not CROSS_FAMILY[key] then
+        if CROSS_FAMILY[key] then
+            -- aura/proc/visibility families: never cooldown/charges evidence
+        elseif key == "desat" and not (cdChanged or desatCdChanged) then
+            -- Applied desaturation moved while the cooldown state and the
+            -- cooldown-desat intent both stayed put (FIELDS orders cd/desatCd
+            -- before desat, so both flags are already decided here): that is
+            -- aura-tracking / hold-driven desaturation, not cooldown evidence.
+        else
             coreCount = coreCount + 1
             if key == "cd" then cdChanged = true end
+            if key == "desatCd" then desatCdChanged = true end
             if key ~= "tint" then onlyTint = false end
             if key ~= "gsup" then onlyGsup = false end
             if not GCD_SHAPE[key] then gcdOk = false end
@@ -468,6 +495,8 @@ function SP:NotePassEnd(passSource, passDetail)
         batch.missFires = 0
         batch.secretFires = 0
         wipe(batch.events)
+        wipe(batch.idSpells)
+        wipe(batch.missSpells)
     end
 end
 
