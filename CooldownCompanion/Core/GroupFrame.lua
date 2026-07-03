@@ -844,6 +844,11 @@ local function ClearReusableButtonRuntime(button)
     button._textModeSecretArgs = nil
     button._textModeSecretParts = nil
     button._savedOnUpdate = nil
+    -- D1 shadow-parity per-button caches: drop them on reuse so a recycled
+    -- frame is not diffed against the previous logical button's baseline/stamps.
+    button._shadowParityState = nil
+    button._shadowParitySigGen = nil
+    button._shadowParityCoveredBatch = nil
     button._inPandemic = nil
     if EntryRuntime and EntryRuntime.ClearAuraPandemicRuntimeState then
         EntryRuntime.ClearAuraPandemicRuntimeState(button)

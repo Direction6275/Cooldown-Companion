@@ -69,9 +69,8 @@ local STATE_GCD = CooldownLogic.STATE_GCD
 local pairs = pairs
 local ipairs = ipairs
 local type = type
-local select = select
 local floor = math.floor
-local issecretvalue = issecretvalue or function() return false end
+local issecretvalue = issecretvalue
 
 local SECRET = "\1secret"   -- placeholder for secret-typed field values
 
@@ -178,6 +177,23 @@ local BATCH_SPELL_CAP = 8
 
 local changedKeys = {}          -- per-pass scratch, reused
 
+-- Clear the pending batch and advance batch.id so any coverage stamps still
+-- sitting on buttons (button._shadowParityCoveredBatch) from the previous batch
+-- can no longer match. Called from the tail of every evaluated pass and from a
+-- manual reset, so a reset landing between an event tap and the next pass end
+-- cannot carry stale fires or stamps into the fresh window.
+local function ResetBatch()
+    batch.id = batch.id + 1
+    batch.fireCount = 0
+    batch.identityFires = 0
+    batch.broadcastFires = 0
+    batch.missFires = 0
+    batch.secretFires = 0
+    wipe(batch.events)
+    wipe(batch.idSpells)
+    wipe(batch.missSpells)
+end
+
 local function CountFire(tag)
     batch.fireCount = batch.fireCount + 1
     batch.events[tag] = (batch.events[tag] or 0) + 1
@@ -253,17 +269,32 @@ local function NoteBroadcast(event)
     CountFire(event .. ":bc")
 end
 
+-- Shared identity handling for the cooldown/charge taps. Both carry the same
+-- (spellID, baseSpellID) identity shape. NoteIdentityArg makes the primary
+-- decision (secret/unreadable -> broad-fallback, plain number -> stamp or miss,
+-- nil -> broadcast). The differing plain base is stamped as supplementary
+-- coverage ONLY when the primary was itself a readable plain number: a secret
+-- primary forces the whole fire broad with no partial coverage credit. Every
+-- read is issecretvalue-guarded before any type/compare touches the arg.
+local function NoteIdentityEvent(event, spellID, baseSpellID)
+    if not NoteIdentityArg(event, spellID) then
+        NoteBroadcast(event)
+        return
+    end
+    if not issecretvalue(spellID) and type(spellID) == "number"
+            and not issecretvalue(baseSpellID) and type(baseSpellID) == "number"
+            and baseSpellID ~= spellID then
+        StampCovered(baseSpellID)
+    end
+end
+
 -- Tap for OnCooldownStateChanged (SPELL/BAG/ACTIONBAR_UPDATE_COOLDOWN).
--- Args pass through untouched; issecretvalue is checked before any read.
+-- SPELL_UPDATE_COOLDOWN payload: spellID, baseSpellID, category,
+-- startRecoveryCategory. issecretvalue is checked before any read.
 function SP:NoteCooldownEvent(event, ...)
     if event == "SPELL_UPDATE_COOLDOWN" then
-        local spellID
-        if select("#", ...) > 0 then
-            spellID = select(1, ...)
-        end
-        if not NoteIdentityArg(event, spellID) then
-            NoteBroadcast(event)
-        end
+        local spellID, baseSpellID = ...
+        NoteIdentityEvent(event, spellID, baseSpellID)
     else
         NoteBroadcast(event)
     end
@@ -272,15 +303,7 @@ end
 -- Tap for OnChargesChanged (SPELL_UPDATE_CHARGES / SPELL_UPDATE_USES).
 function SP:NoteChargesEvent(event, spellID, baseSpellID)
     if event == "SPELL_UPDATE_USES" then
-        if not NoteIdentityArg(event, spellID) then
-            NoteBroadcast(event)
-        end
-        -- Also cover the base spell when it differs. Never compare against
-        -- spellID unless both are known non-secret plain values.
-        if not issecretvalue(baseSpellID) and type(baseSpellID) == "number"
-                and (issecretvalue(spellID) or baseSpellID ~= spellID) then
-            StampCovered(baseSpellID)
-        end
+        NoteIdentityEvent(event, spellID, baseSpellID)
     else
         NoteBroadcast(event)
     end
@@ -488,15 +511,7 @@ function SP:NotePassEnd(passSource, passDetail)
                 self.broadcastSilentPasses = self.broadcastSilentPasses + 1
             end
         end
-        batch.id = batch.id + 1
-        batch.fireCount = 0
-        batch.identityFires = 0
-        batch.broadcastFires = 0
-        batch.missFires = 0
-        batch.secretFires = 0
-        wipe(batch.events)
-        wipe(batch.idSpells)
-        wipe(batch.missSpells)
+        ResetBatch()
     end
 end
 
@@ -572,6 +587,8 @@ function CooldownCompanion:ResetShadowParity()
     SP.logTotal = 0
     wipe(SP.log)
     wipe(SP.fireCounts)
+    -- Drop any in-flight batch too, so a reset mid-window starts clean.
+    ResetBatch()
 end
 
 function CooldownCompanion:PrintShadowParitySummary()
