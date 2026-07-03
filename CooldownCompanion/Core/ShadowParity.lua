@@ -180,27 +180,32 @@ local function StampCovered(spellID)
     return true
 end
 
+local function CountFallback(event)
+    batch.fallbackFires = batch.fallbackFires + 1
+    SP.fallbackFireTotal = SP.fallbackFireTotal + 1
+    CountFire(event .. ":fb")
+end
+
 -- Identity-arg fire: stamp coverage, or degrade to a broad-fallback fire when
 -- the router could not have routed it (secret arg, non-number, index miss).
+-- issecretvalue runs before any other operation touches the arg.
 local function NoteIdentityArg(event, spellID)
-    if spellID ~= nil and not issecretvalue(spellID)
-            and type(spellID) == "number" then
+    if issecretvalue(spellID) then
+        CountFallback(event)
+        return true
+    end
+    if type(spellID) == "number" then
         if StampCovered(spellID) then
             batch.identityFires = batch.identityFires + 1
             SP.identityFireTotal = SP.identityFireTotal + 1
             CountFire(event .. ":id")
         else
-            batch.fallbackFires = batch.fallbackFires + 1
-            SP.fallbackFireTotal = SP.fallbackFireTotal + 1
-            CountFire(event .. ":fb")
+            CountFallback(event)
         end
         return true
     end
     if spellID ~= nil then
-        -- secret or non-number arg: router must broad-fallback
-        batch.fallbackFires = batch.fallbackFires + 1
-        SP.fallbackFireTotal = SP.fallbackFireTotal + 1
-        CountFire(event .. ":fb")
+        CountFallback(event)
         return true
     end
     return false
@@ -233,8 +238,11 @@ function SP:NoteChargesEvent(event, spellID, baseSpellID)
     if event == "SPELL_UPDATE_USES" then
         if not NoteIdentityArg(event, spellID) then
             NoteBroadcast(event)
-        elseif baseSpellID ~= nil and not issecretvalue(baseSpellID)
-                and type(baseSpellID) == "number" and baseSpellID ~= spellID then
+        end
+        -- Also cover the base spell when it differs. Never compare against
+        -- spellID unless both are known non-secret plain values.
+        if not issecretvalue(baseSpellID) and type(baseSpellID) == "number"
+                and (issecretvalue(spellID) or baseSpellID ~= spellID) then
             StampCovered(baseSpellID)
         end
     else
