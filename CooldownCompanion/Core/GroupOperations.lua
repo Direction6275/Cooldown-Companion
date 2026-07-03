@@ -3450,6 +3450,12 @@ function CooldownCompanion:UpdateAllCooldowns()
     -- TICKER_MAX_CONSECUTIVE_SKIPS). Covers every walk path, not just the ticker.
     self._tickerSkipStreak = 0
     if telemetryOn then
+        -- D1 shadow-parity: diff button visual signatures against the pending
+        -- event batch before RecordPass clears the pass attribution.
+        local SP = ST.ShadowParity
+        if SP and SP.enabled then
+            SP:NotePassEnd(T.pendingSource, T.pendingDetail)
+        end
         T:RecordPass(frames, buttons, debugprofilestop() - t0)
     end
 end
