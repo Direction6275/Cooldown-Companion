@@ -2584,6 +2584,8 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
 
     ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
     FinishGroupButtonRefresh(self, groupId, frame, group)
+    -- D3: button population changed — refresh the identity index (coalesced).
+    self:RequestSpellButtonIndexRebuild("populate")
     -- _hasBeenSized is now true if the compact resize ran (set by
     -- ResizeGroupFrame), or still false if all buttons were visible and no
     -- compact resize was needed.  When compactLayout is off, it stays false

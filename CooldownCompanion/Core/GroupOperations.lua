@@ -2880,6 +2880,10 @@ function CooldownCompanion:RefreshAllGroupsForSpellAvailability()
 
     ST.TagRefreshPass("availability-rebuild")
     self:UpdateAllCooldowns()
+
+    -- D3: spec/talent/spell-availability churn can change override identity
+    -- without repopulating buttons — refresh the identity index (coalesced).
+    self:RequestSpellButtonIndexRebuild("availability")
 end
 
 function CooldownCompanion:CreateAllGroupFrames()
@@ -3320,6 +3324,8 @@ function CooldownCompanion:UnloadGroup(groupId)
     self._dormantFrames = self._dormantFrames or {}
     self._dormantFrames[groupId] = frame
     self.groupFrames[groupId] = nil
+    -- D3: frame left the live set — refresh the identity index (coalesced).
+    self:RequestSpellButtonIndexRebuild("unload")
     if self.RefreshCursorAnchorTicker then
         self:RefreshCursorAnchorTicker()
     end
@@ -3365,6 +3371,10 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
     if frame.anchoredToParent and not frame._anchorDirty then
         self:SetupAlphaSync(frame, frame.anchoredToParent)
     end
+
+    -- D3: frame re-entered the live set without repopulation — refresh the
+    -- identity index (coalesced).
+    self:RequestSpellButtonIndexRebuild("recover")
 
     return frame
 end
