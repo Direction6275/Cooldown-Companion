@@ -190,6 +190,14 @@ local function IsUnusableVisualActive(button, buttonData)
     if buttonData.isPassive or buttonData.isPassiveCooldown or buttonData.addedAs == "aura" then
         return false
     end
+    -- Entries added to track an aura (buff/debuff) display aura state, not spell
+    -- castability, so the "dim when unusable" visual never applies to them -- only
+    -- to entries added as a spell/cooldown. Mirrors the isPassive exemption above.
+    -- (auraTracking can auto-enable on a spell/cooldown entry, so key off the
+    -- immutable add-intent label, not the runtime aura-tracking flag.)
+    if buttonData.addedAs == "aura" then
+        return false
+    end
     if button._conditionalUnusablePreview then
         return true, "unusable-preview"
     end
