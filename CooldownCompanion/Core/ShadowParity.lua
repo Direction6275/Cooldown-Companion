@@ -40,12 +40,19 @@
     (shadowParityMismatchTotal, per-family) — the number Gate 2 requires to
     be zero across the D7 matrix.
 
+    Index-miss identity fires (spells no button tracks — most of the
+    spellbook fires SPELL_UPDATE_COOLDOWN) are what the intended router
+    DROPS. Batches of identity + miss fires get their own mismatch counter
+    (mismatchDropOnly): a core change there means a dropped fire may have
+    mattered, i.e. the index was stale for a tracked identity. Secret or
+    unreadable args instead force the broad path (never mismatch-eligible).
+
     Broadcast demotion evidence (the Gate 1 question): batches containing
     broadcast fires (ACTIONBAR/BAG_UPDATE_COOLDOWN, no-arg
-    SPELL_UPDATE_COOLDOWN, SPELL_UPDATE_CHARGES) are not mismatch-eligible —
-    Phase 3 keeps broadcasts on the broad path — but are measured instead:
-    did the broad pass change any uncovered cooldown-core state
-    (broadcastCarriedChanges) or not (broadcastSilentPasses)?
+    SPELL_UPDATE_COOLDOWN, SPELL_UPDATE_CHARGES) or secret args are not
+    mismatch-eligible — Phase 3 keeps those on the broad path — but are
+    measured instead: did the broad pass change any uncovered cooldown-core
+    state (broadcastCarriedChanges) or not (broadcastSilentPasses)?
 
     Owner-runnable:
       /run CooldownCompanion:PrintShadowParitySummary()
@@ -120,14 +127,17 @@ local SP = {
     -- pass counters
     passTotal = 0,              -- every completed broad pass (signature refresh)
     passesEvaluated = 0,        -- passes that consumed a non-empty event batch
-    passesIdentityOnly = 0,
-    passesWithBroadcast = 0,
-    -- event fire counters (lifetime, by "EVENT:id|bc|fb" tag)
+    passesIdentityOnly = 0,     -- batch was pure tracked-identity fires
+    passesDropOnly = 0,         -- identity + index-miss fires only (router
+                                -- would route the hits and drop the misses)
+    passesWithBroadcast = 0,    -- batch forces the broad path (broadcast or
+                                -- secret/unreadable arg)
+    -- event fire counters (lifetime, by "EVENT:id|bc|miss|secret" tag)
     fireCounts = {},
     identityFireTotal = 0,
     broadcastFireTotal = 0,
-    fallbackFireTotal = 0,      -- identity events routing could not route
-                                -- (secret arg or index miss -> broad fallback)
+    missFireTotal = 0,          -- identity fires for untracked spells (dropped)
+    secretFireTotal = 0,        -- secret/unreadable args (broad fallback)
     -- per-button change classifications on evaluated passes
     routedCoveredChanges = 0,   -- changed AND covered: routing caught it
     crossFamilyChanges = 0,
@@ -137,6 +147,9 @@ local SP = {
     shadowParityMismatchTotal = 0,
     mismatchCooldown = 0,
     mismatchCharges = 0,
+    mismatchDropOnly = 0,       -- core change in an identity+miss batch: a
+                                -- dropped fire may have mattered (drop-safety
+                                -- evidence, kept separate from the pure counter)
     -- Gate 1 broadcast-demotion evidence
     broadcastCarriedChanges = 0,
     broadcastSilentPasses = 0,
@@ -154,7 +167,8 @@ local batch = {
     fireCount = 0,
     identityFires = 0,
     broadcastFires = 0,
-    fallbackFires = 0,
+    missFires = 0,
+    secretFires = 0,
     events = {},                -- tag -> count for the current batch
 }
 
@@ -180,18 +194,30 @@ local function StampCovered(spellID)
     return true
 end
 
-local function CountFallback(event)
-    batch.fallbackFires = batch.fallbackFires + 1
-    SP.fallbackFireTotal = SP.fallbackFireTotal + 1
-    CountFire(event .. ":fb")
+-- Secret or non-number identity arg: the router cannot inspect it and must
+-- broad-fallback. Batches containing these are never mismatch-eligible.
+local function CountSecret(event)
+    batch.secretFires = batch.secretFires + 1
+    SP.secretFireTotal = SP.secretFireTotal + 1
+    CountFire(event .. ":secret")
 end
 
--- Identity-arg fire: stamp coverage, or degrade to a broad-fallback fire when
--- the router could not have routed it (secret arg, non-number, index miss).
--- issecretvalue runs before any other operation touches the arg.
+-- Identity fire naming a spell no button tracks (index miss). The intended
+-- router DROPS these — most SPELL_UPDATE_COOLDOWN fires name untracked
+-- spellbook spells. Whether dropping is safe is exactly what the drop-batch
+-- mismatch counter (mismatchDropOnly) tests: a stale-index miss on a spell a
+-- button DOES track would surface there.
+local function CountMiss(event)
+    batch.missFires = batch.missFires + 1
+    SP.missFireTotal = SP.missFireTotal + 1
+    CountFire(event .. ":miss")
+end
+
+-- Identity-arg fire. issecretvalue runs before any other operation touches
+-- the arg.
 local function NoteIdentityArg(event, spellID)
     if issecretvalue(spellID) then
-        CountFallback(event)
+        CountSecret(event)
         return true
     end
     if type(spellID) == "number" then
@@ -200,12 +226,12 @@ local function NoteIdentityArg(event, spellID)
             SP.identityFireTotal = SP.identityFireTotal + 1
             CountFire(event .. ":id")
         else
-            CountFallback(event)
+            CountMiss(event)
         end
         return true
     end
     if spellID ~= nil then
-        CountFallback(event)
+        CountSecret(event)
         return true
     end
     return false
@@ -361,9 +387,9 @@ function SP:NotePassEnd(passSource, passDetail)
     self.passTotal = self.passTotal + 1
 
     local evaluate = batch.fireCount > 0
-    local identityOnly = evaluate
-        and batch.broadcastFires == 0
-        and batch.fallbackFires == 0
+    local broadRequired = batch.broadcastFires > 0 or batch.secretFires > 0
+    local identityOnly = evaluate and not broadRequired and batch.missFires == 0
+    local dropOnly = evaluate and not broadRequired and not identityOnly
     local uncoveredCoreChanges = 0
     local source = passDetail or passSource
 
@@ -397,6 +423,10 @@ function SP:NotePassEnd(passSource, passDetail)
                                 end
                                 uncoveredCoreChanges = uncoveredCoreChanges + 1
                                 LogChange("MISMATCH", source, button, changedCount)
+                            elseif dropOnly then
+                                self.mismatchDropOnly = self.mismatchDropOnly + 1
+                                uncoveredCoreChanges = uncoveredCoreChanges + 1
+                                LogChange("DROPMISS", source, button, changedCount)
                             else
                                 -- broadcasts stay on the broad path in Phase 3;
                                 -- this is demotion evidence, not a mismatch
@@ -415,6 +445,8 @@ function SP:NotePassEnd(passSource, passDetail)
         self.passesEvaluated = self.passesEvaluated + 1
         if identityOnly then
             self.passesIdentityOnly = self.passesIdentityOnly + 1
+        elseif dropOnly then
+            self.passesDropOnly = self.passesDropOnly + 1
         else
             self.passesWithBroadcast = self.passesWithBroadcast + 1
             if uncoveredCoreChanges == 0 then
@@ -425,7 +457,8 @@ function SP:NotePassEnd(passSource, passDetail)
         batch.fireCount = 0
         batch.identityFires = 0
         batch.broadcastFires = 0
-        batch.fallbackFires = 0
+        batch.missFires = 0
+        batch.secretFires = 0
         wipe(batch.events)
     end
 end
@@ -451,10 +484,12 @@ function CooldownCompanion:GetShadowParityDiagnostics()
         passTotal = SP.passTotal,
         passesEvaluated = SP.passesEvaluated,
         passesIdentityOnly = SP.passesIdentityOnly,
+        passesDropOnly = SP.passesDropOnly,
         passesWithBroadcast = SP.passesWithBroadcast,
         identityFireTotal = SP.identityFireTotal,
         broadcastFireTotal = SP.broadcastFireTotal,
-        fallbackFireTotal = SP.fallbackFireTotal,
+        missFireTotal = SP.missFireTotal,
+        secretFireTotal = SP.secretFireTotal,
         routedCoveredChanges = SP.routedCoveredChanges,
         crossFamilyChanges = SP.crossFamilyChanges,
         usabilityChanges = SP.usabilityChanges,
@@ -463,6 +498,7 @@ function CooldownCompanion:GetShadowParityDiagnostics()
         shadowParityMismatchTotal = SP.shadowParityMismatchTotal,
         mismatchCooldown = SP.mismatchCooldown,
         mismatchCharges = SP.mismatchCharges,
+        mismatchDropOnly = SP.mismatchDropOnly,
         broadcastCarriedChanges = SP.broadcastCarriedChanges,
         broadcastSilentPasses = SP.broadcastSilentPasses,
         secretFieldSeen = SP.secretFieldSeen,
@@ -477,10 +513,12 @@ function CooldownCompanion:ResetShadowParity()
     SP.passTotal = 0
     SP.passesEvaluated = 0
     SP.passesIdentityOnly = 0
+    SP.passesDropOnly = 0
     SP.passesWithBroadcast = 0
     SP.identityFireTotal = 0
     SP.broadcastFireTotal = 0
-    SP.fallbackFireTotal = 0
+    SP.missFireTotal = 0
+    SP.secretFireTotal = 0
     SP.routedCoveredChanges = 0
     SP.crossFamilyChanges = 0
     SP.usabilityChanges = 0
@@ -489,6 +527,7 @@ function CooldownCompanion:ResetShadowParity()
     SP.shadowParityMismatchTotal = 0
     SP.mismatchCooldown = 0
     SP.mismatchCharges = 0
+    SP.mismatchDropOnly = 0
     SP.broadcastCarriedChanges = 0
     SP.broadcastSilentPasses = 0
     SP.secretFieldSeen = 0
@@ -499,13 +538,13 @@ function CooldownCompanion:ResetShadowParity()
 end
 
 function CooldownCompanion:PrintShadowParitySummary()
-    self:Print(("ShadowParity: %d passes, %d evaluated (%d identity-only, %d w/broadcast) | MISMATCH %d (cd %d, ch %d) | noise: gcd %d, expiry %d, cross %d, usab %d | covered %d | bcast carried %d, silent %d | fires id %d, bc %d, fb %d"):format(
-        SP.passTotal, SP.passesEvaluated, SP.passesIdentityOnly, SP.passesWithBroadcast,
-        SP.shadowParityMismatchTotal, SP.mismatchCooldown, SP.mismatchCharges,
+    self:Print(("ShadowParity: %d passes, %d evaluated (%d pure-id, %d id+miss, %d broad) | MISMATCH %d (cd %d, ch %d) dropMISM %d | noise: gcd %d, expiry %d, cross %d, usab %d | covered %d | bcast carried %d, silent %d | fires id %d, miss %d, bc %d, secret %d"):format(
+        SP.passTotal, SP.passesEvaluated, SP.passesIdentityOnly, SP.passesDropOnly, SP.passesWithBroadcast,
+        SP.shadowParityMismatchTotal, SP.mismatchCooldown, SP.mismatchCharges, SP.mismatchDropOnly,
         SP.gcdSettleChanges, SP.expirySettleChanges, SP.crossFamilyChanges, SP.usabilityChanges,
         SP.routedCoveredChanges,
         SP.broadcastCarriedChanges, SP.broadcastSilentPasses,
-        SP.identityFireTotal, SP.broadcastFireTotal, SP.fallbackFireTotal))
+        SP.identityFireTotal, SP.missFireTotal, SP.broadcastFireTotal, SP.secretFireTotal))
     if SP.shadowParityMismatchTotal > 0 then
         self:Print("ShadowParity: mismatches logged — /dump CooldownCompanion:GetShadowParityDiagnostics()")
     end
