@@ -1144,6 +1144,16 @@ local function FitHighlightFrame(frame, button, overhangPct)
     end
 end
 
+-- F3: native cooldown-expiry signal. One shared handler for every button's
+-- primary Cooldown widget; marks the scheduler dirty so expiry is a signal
+-- rather than something the clean ticker polls for. Reads no game or widget
+-- state at fire time, so it is safe to run re-entrantly mid-pass. Kill switch:
+-- CooldownCompanion:SetCooldownDoneSignalDisabled().
+function ST.OnButtonCooldownDone(cooldown)
+    if CooldownCompanion._cooldownDoneSignalOff then return end
+    CooldownCompanion:MarkCooldownsDirty("cd-done")
+end
+
 -- Exports
 ST._DEFAULT_BAR_AURA_COLOR = DEFAULT_BAR_AURA_COLOR
 ST._DEFAULT_BAR_PANDEMIC_COLOR = DEFAULT_BAR_PANDEMIC_COLOR

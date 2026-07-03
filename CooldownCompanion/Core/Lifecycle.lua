@@ -114,6 +114,10 @@ function CooldownCompanion:EnsureRuntimeInitialized()
 end
 
 function CooldownCompanion:OnEnable()
+    -- F3: seed the cooldown-done kill-switch runtime flag from saved state
+    -- (absent key = signal enabled).
+    self._cooldownDoneSignalOff = self.db.global.cooldownDoneSignalDisabled == true
+
     -- Cooldown events can expose very short ready windows, so refresh them
     -- immediately instead of waiting for the ticker.
     for _, evt in ipairs({

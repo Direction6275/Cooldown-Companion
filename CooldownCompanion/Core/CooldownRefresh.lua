@@ -27,6 +27,9 @@
       instead of skipping. That is intentionally conservative: displays can only
       be fresher, never staler.
     - Refresh telemetry fields are observe-only and never change scheduling.
+    - cd-done marks come from ST.OnButtonCooldownDone (ButtonFrame/Helpers.lua)
+      and are ordinary MarkCooldownsDirty calls; the hidden kill switch only
+      stops the marks, never adds skips.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -50,6 +53,16 @@ end
 
 function CooldownCompanion:ClearCooldownsDirty()
     self._cooldownsDirty = false
+end
+
+-- F3 hidden kill switch (no config UI). Disable the cooldown-expiry signal
+-- live (no reload) with:
+--   /run CooldownCompanion:SetCooldownDoneSignalDisabled(true)
+-- Persists in db.global; default (absent) = signal enabled.
+function CooldownCompanion:SetCooldownDoneSignalDisabled(disabled)
+    disabled = disabled == true
+    self.db.global.cooldownDoneSignalDisabled = disabled or nil
+    self._cooldownDoneSignalOff = disabled
 end
 
 function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
