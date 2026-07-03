@@ -142,8 +142,11 @@ function CooldownCompanion:OnEnable()
     end
 
     -- Broader state changes can wait for the regular ticker pass.
+    -- PLAYER_SOFT_ENEMY_CHANGED refreshes the assisted-highlight hostile gate
+    -- when there is no hard target and the softenemy fallback changes.
     for _, evt in ipairs({
         "LOSS_OF_CONTROL_ADDED", "LOSS_OF_CONTROL_UPDATE", "ITEM_COUNT_CHANGED",
+        "PLAYER_SOFT_ENEMY_CHANGED",
     }) do
         self:RegisterEvent(evt, "MarkCooldownsDirty")
     end
