@@ -125,6 +125,10 @@ function CooldownCompanion:OnEnable()
     -- (absent key = signal enabled).
     self._cooldownDoneSignalOff = self.db.global.cooldownDoneSignalDisabled == true
 
+    -- F6: render-layer flattening is now permanent (applied unconditionally at
+    -- button creation); drop the saved switch key from any earlier build.
+    self.db.global.renderFlattenEnabled = nil
+
     -- F2: seed the combat flag read by the idle-skip predicate (the skip is
     -- out-of-combat only). Maintained by OnCombatStart/OnCombatEnd; one
     -- InCombatLockdown() read here covers /reload-in-combat. No per-tick probe.

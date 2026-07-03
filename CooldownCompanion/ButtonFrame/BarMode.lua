@@ -1550,6 +1550,10 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._isBar = true
     button._isVertical = isVertical
 
+    -- F6: flatten this bar's render layers into one render pass
+    -- (owner-validated V1-V10: no visual difference).
+    button:SetFlattensRenderLayers(true)
+
     -- Background — covers bar area only when icon is shown (icon has its own iconBg)
     local bgColor = style.barBgColor or {0.1, 0.1, 0.1, 0.8}
     button.bg = button:CreateTexture(nil, "BACKGROUND")
