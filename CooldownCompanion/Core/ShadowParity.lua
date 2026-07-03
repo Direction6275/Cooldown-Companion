@@ -83,6 +83,7 @@ local FIELDS = {
     { "charge",      "_chargeState" },
     { "chargeRe",    "_chargeRecharging" },
     { "chargeSpent", "_chargesSpent" },
+    { "chargeN",     "_currentReadableCharges" },
     { "nocd",        "_noCooldown" },
     { "tint",        "_unusableTintActive" },
     { "fill",        "_iconFillActive" },
@@ -114,9 +115,12 @@ local GCD_SHAPE = {
 local EXPIRY_SHAPE = {
     cd = true, desatCd = true, desat = true, ready = true,
     fill = true, fillMode = true, fillUpd = true,
-    charge = true, chargeRe = true, chargeSpent = true, nocd = true, tint = true,
+    charge = true, chargeRe = true, chargeSpent = true, chargeN = true,
+    nocd = true, tint = true,
 }
-local CHARGE_ONLY = { charge = true, chargeRe = true, chargeSpent = true }
+local CHARGE_ONLY = {
+    charge = true, chargeRe = true, chargeSpent = true, chargeN = true,
+}
 
 local LOG_SIZE = 64
 
@@ -233,36 +237,6 @@ local function CountMiss(event)
     CountFire(event .. ":miss")
 end
 
--- Identity-arg fire. issecretvalue runs before any other operation touches
--- the arg.
-local function NoteIdentityArg(event, spellID)
-    if issecretvalue(spellID) then
-        CountSecret(event)
-        return true
-    end
-    if type(spellID) == "number" then
-        if StampCovered(spellID) then
-            batch.identityFires = batch.identityFires + 1
-            SP.identityFireTotal = SP.identityFireTotal + 1
-            CountFire(event .. ":id")
-            if #batch.idSpells < BATCH_SPELL_CAP then
-                batch.idSpells[#batch.idSpells + 1] = spellID
-            end
-        else
-            CountMiss(event)
-            if #batch.missSpells < BATCH_SPELL_CAP then
-                batch.missSpells[#batch.missSpells + 1] = spellID
-            end
-        end
-        return true
-    end
-    if spellID ~= nil then
-        CountSecret(event)
-        return true
-    end
-    return false
-end
-
 local function NoteBroadcast(event)
     batch.broadcastFires = batch.broadcastFires + 1
     SP.broadcastFireTotal = SP.broadcastFireTotal + 1
@@ -270,21 +244,49 @@ local function NoteBroadcast(event)
 end
 
 -- Shared identity handling for the cooldown/charge taps. Both carry the same
--- (spellID, baseSpellID) identity shape. NoteIdentityArg makes the primary
--- decision (secret/unreadable -> broad-fallback, plain number -> stamp or miss,
--- nil -> broadcast). The differing plain base is stamped as supplementary
--- coverage ONLY when the primary was itself a readable plain number: a secret
--- primary forces the whole fire broad with no partial coverage credit. Every
--- read is issecretvalue-guarded before any type/compare touches the arg.
+-- (spellID, baseSpellID) identity shape, and the D3 index keys buttons under
+-- base, override, and display IDs alike -- so a fire is a real drop only when
+-- NEITHER readable identity maps to a tracked button. A secret/unreadable
+-- primary still forces the broad path with no partial coverage credit (a routed
+-- world could not key on it). issecretvalue guards precede every type/compare.
 local function NoteIdentityEvent(event, spellID, baseSpellID)
-    if not NoteIdentityArg(event, spellID) then
-        NoteBroadcast(event)
+    -- Secret/unreadable primary identity -> broad, never mismatch-eligible.
+    if issecretvalue(spellID) then
+        CountSecret(event)
         return
     end
-    if not issecretvalue(spellID) and type(spellID) == "number"
-            and not issecretvalue(baseSpellID) and type(baseSpellID) == "number"
+    if type(spellID) ~= "number" then
+        -- Non-nil non-number is unreadable (broad); nil is the broadcast form.
+        if spellID ~= nil then
+            CountSecret(event)
+        else
+            NoteBroadcast(event)
+        end
+        return
+    end
+    -- Primary is a readable number. Fold in the distinct readable base ID: stamp
+    -- both, and treat the fire as covered when EITHER maps to a tracked button.
+    local baseNum
+    if not issecretvalue(baseSpellID) and type(baseSpellID) == "number"
             and baseSpellID ~= spellID then
-        StampCovered(baseSpellID)
+        baseNum = baseSpellID
+    end
+    local covered = StampCovered(spellID)
+    if baseNum and StampCovered(baseNum) then
+        covered = true
+    end
+    if covered then
+        batch.identityFires = batch.identityFires + 1
+        SP.identityFireTotal = SP.identityFireTotal + 1
+        CountFire(event .. ":id")
+        if #batch.idSpells < BATCH_SPELL_CAP then
+            batch.idSpells[#batch.idSpells + 1] = spellID
+        end
+    else
+        CountMiss(event)
+        if #batch.missSpells < BATCH_SPELL_CAP then
+            batch.missSpells[#batch.missSpells + 1] = spellID
+        end
     end
 end
 
