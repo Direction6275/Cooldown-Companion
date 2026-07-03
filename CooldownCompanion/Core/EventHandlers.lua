@@ -194,13 +194,22 @@ function CooldownCompanion:OnSpellsChanged()
 end
 
 function CooldownCompanion:OnSpellUpdateIcon()
+    local anyDeferred = false
     self:ForEachButton(function(button, bd)
         if bd.cdmChildSlot then
             button._iconDirty = true
+            anyDeferred = true
         else
             self:UpdateButtonIcon(button)
         end
     end)
+    -- A skipped idle tick doesn't walk, so a deferred cdmChildSlot icon refresh
+    -- (_iconDirty, consumed in UpdateButtonCooldown) must mark dirty to force a
+    -- walk; otherwise it waits for the ~1s idle-skip safety walk. Conservative:
+    -- only ever adds a walk. Mirrors the assisted-spell dirty-mark in Lifecycle.
+    if anyDeferred then
+        self:MarkCooldownsDirty("icon")
+    end
 end
 
 local function GetRangeCheckSpellID(buttonData)
