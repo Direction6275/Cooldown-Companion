@@ -349,6 +349,7 @@ end
 local function Classify(changedCount, oldCd, newCd)
     local coreCount = 0
     local onlyTint = true
+    local onlyGsup = true
     local cdChanged = false
     local gcdOk, expiryOk, chargeOnly = true, true, true
     for i = 1, changedCount do
@@ -357,6 +358,7 @@ local function Classify(changedCount, oldCd, newCd)
             coreCount = coreCount + 1
             if key == "cd" then cdChanged = true end
             if key ~= "tint" then onlyTint = false end
+            if key ~= "gsup" then onlyGsup = false end
             if not GCD_SHAPE[key] then gcdOk = false end
             if not EXPIRY_SHAPE[key] then expiryOk = false end
             if not CHARGE_ONLY[key] then chargeOnly = false end
@@ -367,6 +369,12 @@ local function Classify(changedCount, oldCd, newCd)
     end
     if onlyTint then
         return "usability"
+    end
+    if onlyGsup then
+        -- _barGCDSuppressed flips only with GCD activity (A1 shared
+        -- snapshot); a gsup-only change is GCD settle even when the
+        -- cooldown state itself did not change this pass.
+        return "gcd"
     end
     if cdChanged and gcdOk and (oldCd == STATE_GCD or newCd == STATE_GCD) then
         return "gcd"
