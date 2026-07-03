@@ -97,6 +97,33 @@ function CooldownCompanion:SetCooldownDoneSignalDisabled(disabled)
     self._cooldownDoneSignalOff = disabled
 end
 
+-- F6 hidden switch (no config UI, default OFF). Render-layer flattening collapses
+-- each button's stacked regions (icon, cooldown swipe, overlays, texts, bars) into
+-- one render pass via Frame:SetFlattensRenderLayers. Visual-risk change (overlapping
+-- semi-transparent regions can composite differently), so it ships behind a switch.
+-- Enable live (no reload) with:
+--   /run CooldownCompanion:SetRenderFlattenEnabled(true)
+-- Persists in db.global; default (absent) = disabled. Applies to existing and
+-- future button roots; disabling reverts every live button the same way.
+function CooldownCompanion:SetRenderFlattenEnabled(enabled)
+    enabled = enabled == true
+    self.db.global.renderFlattenEnabled = enabled or nil
+    self._renderFlattenOn = enabled
+    self:ApplyRenderFlattenToAllButtons()
+end
+
+-- Apply the current render-flatten state to every live button root frame. Both
+-- directions work live (enable AND disable without reload). Button roots only --
+-- never group/container/panel/bar-frame wrappers (see the creation-site guards).
+function CooldownCompanion:ApplyRenderFlattenToAllButtons()
+    local enabled = self._renderFlattenOn == true
+    self:ForEachButton(function(button)
+        if button.SetFlattensRenderLayers then
+            button:SetFlattensRenderLayers(enabled)
+        end
+    end)
+end
+
 function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
     if not self._cooldownRefreshQueueFrame then
         local frame = CreateFrame("Frame")

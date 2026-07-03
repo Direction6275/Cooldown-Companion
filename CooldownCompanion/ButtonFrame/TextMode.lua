@@ -956,6 +956,11 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button:SetSize(w, h)
     button._isText = true
 
+    -- F6 (hidden switch, default OFF): flatten this text frame's render layers.
+    if CooldownCompanion._renderFlattenOn then
+        button:SetFlattensRenderLayers(true)
+    end
+
     -- Background (sublayer 0)
     local bgColor = style.textBgColor or {0, 0, 0, 0}
     button.bg = button:CreateTexture(nil, "BACKGROUND", nil, 0)

@@ -672,6 +672,11 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local button = CreateFrame("Frame", parent:GetName() .. "Button" .. index, parent)
     button:SetSize(width, height)
 
+    -- F6 (hidden switch, default OFF): flatten this button's render layers.
+    if CooldownCompanion._renderFlattenOn then
+        button:SetFlattensRenderLayers(true)
+    end
+
     -- Background
     button.bg = button:CreateTexture(nil, "BACKGROUND")
     button.bg:SetAllPoints()
