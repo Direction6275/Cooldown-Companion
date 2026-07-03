@@ -125,10 +125,9 @@ function CooldownCompanion:OnEnable()
     -- (absent key = signal enabled).
     self._cooldownDoneSignalOff = self.db.global.cooldownDoneSignalDisabled == true
 
-    -- F6: seed the render-flatten switch from saved state (absent key = OFF).
-    -- Future button roots read it at creation; SetRenderFlattenEnabled applies
-    -- it to existing buttons live.
-    self._renderFlattenOn = self.db.global.renderFlattenEnabled == true
+    -- F6: render-layer flattening is now permanent (applied unconditionally at
+    -- button creation); drop the saved switch key from any earlier build.
+    self.db.global.renderFlattenEnabled = nil
 
     -- F2: seed the combat flag read by the idle-skip predicate (the skip is
     -- out-of-combat only). Maintained by OnCombatStart/OnCombatEnd; one
