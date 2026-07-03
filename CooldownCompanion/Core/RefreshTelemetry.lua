@@ -8,8 +8,8 @@
       dirty-at-start (ticker passes), frames/buttons walked, duration (ms),
       idle-eligibility at pass start and whether a time-render canary fired
     - ticker skips (satisfied cooldown-event serial)
-    - F2 shadow (observe-only): would-skip count under the PR-B idle predicate
-      and false-idle count (a time-render canary that fired during a pass that
+    - F2 (observe-only): would-skip count under the live-skip predicate and
+      false-idle count (a time-render canary that fired during a pass that
       began clean and idle-eligible)
     Read via CooldownCompanion:GetRefreshTelemetry(); reset via
     CooldownCompanion:ResetRefreshTelemetry(). Never alters refresh behavior.
@@ -27,14 +27,16 @@ local T = {
     queueCounts = {},           -- source -> count
     passCounts = {},            -- source -> count
     tickerSkips = 0,
-    -- F2 shadow (observe-only): clean ticker passes that the PR-B idle predicate
-    -- would have skipped, and times a time-render canary fired during a pass
-    -- that began clean + idle-eligible (a proven-wrong "false idle"; the PR-B
-    -- soak gate requires this to stay 0). Neither ever changes scheduling.
+    -- F2 (observe-only): ticks the live-skip predicate accepted, whether then
+    -- skipped or walked as a safety tick (soak invariant: wouldSkipTotal ==
+    -- tickerIdleSkips + "safety-tick" pass count), and times a time-render
+    -- canary fired during a pass that began clean + idle-eligible (a
+    -- proven-wrong "false idle"; the soak gate requires this to stay 0).
+    -- Neither ever changes scheduling.
     wouldSkipTotal = 0,
     falseIdleTotal = 0,
-    -- F2 live skip (PR B): clean idle ticks actually suppressed (switch on).
-    -- The "safety-tick" pass source counts the forced ~1/s walks while skipping.
+    -- F2 live skip: clean idle ticks actually suppressed. The "safety-tick"
+    -- pass source counts the forced ~1/s walks while skipping.
     tickerIdleSkips = 0,
     passLog = {},               -- ring buffer of reused entry tables
     passCursor = 0,             -- last written index (1..RING_SIZE)
@@ -68,13 +70,13 @@ function T:CountSkip()
     self.tickerSkips = self.tickerSkips + 1
 end
 
--- F2 shadow: a clean ticker pass that the PR-B idle predicate would have
--- skipped. Observe-only -- the pass still walks in PR A.
+-- F2 cross-check: a clean tick the live-skip predicate accepted (then either
+-- skipped or walked as a safety tick). Observe-only.
 function T:CountWouldSkip()
     self.wouldSkipTotal = self.wouldSkipTotal + 1
 end
 
--- F2 live skip (PR B): a clean idle tick was actually suppressed (early return).
+-- F2 live skip: a clean idle tick was actually suppressed (early return).
 function T:CountIdleSkip()
     self.tickerIdleSkips = self.tickerIdleSkips + 1
 end
@@ -111,7 +113,7 @@ function T:SetPending(source, detail, hist, dirtyAtStart)
     self.pendingHist = hist
     self.pendingDirtyAtStart = dirtyAtStart
     -- F2: snapshot the eligibility latched by the previous completed walk, so a
-    -- canary firing during this pass is judged against the state the PR-B skip
+    -- canary firing during this pass is judged against the state the live skip
     -- decision would have used (eligibility always lags one walk). Reset the
     -- per-pass canary flag.
     self.pendingIdleEligible = CooldownCompanion._tickerIdleEligible == true

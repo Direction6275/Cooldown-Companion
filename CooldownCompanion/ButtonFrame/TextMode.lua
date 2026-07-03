@@ -466,6 +466,11 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
             durationIsSecret = true
             durationRemaining = rem
         elseif rem and rem > 0 then
+            -- F2 canary: spell-cooldown / aura remaining text is drawn from the
+            -- duration object this walk (covered by the _cooldownState ==
+            -- COOLDOWN / _auraActive classifier terms). Secret branch above is
+            -- combat-only, where the idle skip is disarmed.
+            if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
             durationRemaining = rem
         end
     elseif not auraActive and button._itemCdStart and button._itemCdDuration and button._itemCdDuration > 0 then

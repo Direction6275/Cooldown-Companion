@@ -1399,7 +1399,16 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
 
     -- Ready glow (glow while off cooldown)
     if button.readyGlow then
-        local showReady = glowIntent and glowIntent.ready and glowIntent.ready.active == true
+        local readyIntent = glowIntent and glowIntent.ready
+        local showReady = readyIntent and readyIntent.active == true
+        -- F2 canary: a finite ready-glow duration window is lit this walk; its
+        -- OFF edge is walk-evaluated (covered by the ready-glow window
+        -- classifier term). durationWindow is reset on every resolve, so this
+        -- cannot read a stale flag.
+        if showReady and readyIntent.durationWindow == true
+            and RefreshTelemetry and RefreshTelemetry.enabled then
+            RefreshTelemetry:NoteTimeRender()
+        end
         SetReadyGlow(button, showReady)
     end
 end

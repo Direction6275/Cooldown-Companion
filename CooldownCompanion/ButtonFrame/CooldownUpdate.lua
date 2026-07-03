@@ -34,6 +34,10 @@ local buttonAuraPandemicStateOpts = {}
 
 -- Silent-transform icon staleness probe interval (seconds). Event-driven icon
 -- refresh paths are unaffected; this only paces the no-event fallback probe.
+-- F2 accepted residual: while the idle ticker skip is active, this probe rides
+-- the ~1s safety walk instead of every clean 0.1s tick, so a silent texture
+-- change while fully idle can take up to ~1s (instead of ~0.25s) to appear.
+-- Owner-approved trade (PR #505 review).
 local TEXTURE_STALENESS_INTERVAL = 0.25
 
 -- APIs for text-mode conditional tokens
@@ -782,6 +786,22 @@ local function UpdateResolvedItemState(button, buttonData)
     return changed
 end
 
+-- F2: a finite ready-glow window (readyGlowDuration > 0) is a pending
+-- time-gated transition: the glow's OFF edge ((now - start) <= dur, see
+-- ResolveIconGlowIntent) is only re-evaluated by the walk, so a running window
+-- must keep the ticker walking. In-window check only -- the start timestamps
+-- stay set after the window expires (until the next cooldown / uncap), so a
+-- bare nil check would keep the ticker awake on every ready button forever.
+local function HasPendingReadyGlowWindow(button, now)
+    local style = button.style
+    local dur = style and style.readyGlowDuration or 0
+    if dur <= 0 then return false end
+    local startTime = button._readyGlowStartTime
+    if startTime and (now - startTime) <= dur then return true end
+    startTime = button._readyGlowMaxChargesStartTime
+    return (startTime and (now - startTime) <= dur) or false
+end
+
 -- F2 shadow: report whether this button is in any time-animated state the clean
 -- ticker must keep re-rendering, so a walk that draws nothing time-driven can
 -- latch idle-eligible. ORs only; never clears the pass flag to a false negative.
@@ -790,13 +810,18 @@ end
 -- direct frame:UpdateCooldowns() callers outside a broad pass conservative for
 -- free. Called only for buttons that reach the render dispatch (hidden buttons
 -- early-return above and correctly draw nothing).
-local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly)
+-- CONTRACT: every state that needs a walk re-render before the next dirty mark
+-- -- including pending time-gated transitions that look static right now (e.g.
+-- a running ready-glow duration window) -- must have a term here, or the idle
+-- skip will starve it until the ~1s safety walk.
+local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now)
     if button._cooldownState == COOLDOWN_STATE_COOLDOWN     -- spell/item/deferred cooldown
         or button._chargeRecharging                          -- charge recharge in progress
-        or button._auraActive == true                        -- aura display (incl. target-switch hold)
+        or button._auraActive                                -- aura display (incl. target-switch hold); truthy on purpose, fail open
         or button._targetSwitchAt ~= nil                     -- target-switch continuity hold
         or conditionalPreview ~= nil                         -- conditional visual preview active
         or (isGCDOnly and button.style and button.style.showGCDSwipe == true) -- GCD swipe presentation
+        or HasPendingReadyGlowWindow(button, now)            -- finite ready-glow window still running
     then
         CooldownCompanion._passTimeStateSeen = true
         CooldownCompanion._tickerIdleEligible = false
@@ -1890,5 +1915,5 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if shouldCaptureVisualState then
         CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
     end
-    NoteButtonTimeState(button, conditionalPreview, isGCDOnly)
+    NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now)
 end
