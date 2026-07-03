@@ -71,8 +71,14 @@ local function ForEachIdentityKey(button, buttonData, callback)
         local baseId = buttonData.id
         if type(baseId) ~= "number" then return end
         callback("spell", baseId, button)
+        -- GetOverrideSpell returns 0 (a truthy value in Lua) when there is no
+        -- override; normalize that (and a self-referential override) to nil so
+        -- we never index under key 0 and the displayId de-dup below stays sound.
         local overrideId = C_Spell.GetOverrideSpell(baseId)
-        if overrideId and overrideId ~= baseId then
+        if overrideId == 0 or overrideId == baseId then
+            overrideId = nil
+        end
+        if overrideId then
             callback("spell", overrideId, button)
         end
         local displayId = button._displaySpellId
