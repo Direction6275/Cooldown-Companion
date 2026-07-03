@@ -5,8 +5,12 @@
     - dirty-mark counts by source
     - queue request counts by source, plus per-flush source history
     - every UpdateAllCooldowns pass: time, source, detail, queue history,
-      dirty-at-start (ticker passes), frames/buttons walked, duration (ms)
+      dirty-at-start (ticker passes), frames/buttons walked, duration (ms),
+      idle-eligibility at pass start and whether a time-render canary fired
     - ticker skips (satisfied cooldown-event serial)
+    - F2 (observe-only): would-skip count under the live-skip predicate and
+      false-idle count (a time-render canary that fired during a pass that
+      began clean and idle-eligible)
     Read via CooldownCompanion:GetRefreshTelemetry(); reset via
     CooldownCompanion:ResetRefreshTelemetry(). Never alters refresh behavior.
 ]]
@@ -23,6 +27,17 @@ local T = {
     queueCounts = {},           -- source -> count
     passCounts = {},            -- source -> count
     tickerSkips = 0,
+    -- F2 (observe-only): ticks the live-skip predicate accepted, whether then
+    -- skipped or walked as a safety tick (soak invariant: wouldSkipTotal ==
+    -- tickerIdleSkips + "safety-tick" pass count), and times a time-render
+    -- canary fired during a pass that began clean + idle-eligible (a
+    -- proven-wrong "false idle"; the soak gate requires this to stay 0).
+    -- Neither ever changes scheduling.
+    wouldSkipTotal = 0,
+    falseIdleTotal = 0,
+    -- F2 live skip: clean idle ticks actually suppressed. The "safety-tick"
+    -- pass source counts the forced ~1/s walks while skipping.
+    tickerIdleSkips = 0,
     passLog = {},               -- ring buffer of reused entry tables
     passCursor = 0,             -- last written index (1..RING_SIZE)
     passTotal = 0,              -- total passes recorded since reset
@@ -33,6 +48,9 @@ local T = {
     pendingDetail = nil,
     pendingHist = nil,
     pendingDirtyAtStart = nil,
+    -- F2: eligibility snapshot at pass start, and whether a canary fired.
+    pendingIdleEligible = nil,
+    pendingRenderedTime = nil,
 }
 ST.RefreshTelemetry = T
 
@@ -52,6 +70,31 @@ function T:CountSkip()
     self.tickerSkips = self.tickerSkips + 1
 end
 
+-- F2 cross-check: a clean tick the live-skip predicate accepted (then either
+-- skipped or walked as a safety tick). Observe-only.
+function T:CountWouldSkip()
+    self.wouldSkipTotal = self.wouldSkipTotal + 1
+end
+
+-- F2 live skip: a clean idle tick was actually suppressed (early return).
+function T:CountIdleSkip()
+    self.tickerIdleSkips = self.tickerIdleSkips + 1
+end
+
+-- F2 canary: a time-driven remaining render happened. Only renders that occur
+-- during a broad UpdateAllCooldowns walk are relevant to skip safety -- the
+-- idle skip suppresses that walk, not the OnUpdate self-animation that runs
+-- between passes -- so ignore anything fired outside a pass. A render during a
+-- pass that began clean and idle-eligible is a proven false idle: the predicate
+-- said "nothing time-animated" yet something drew remaining time.
+function T:NoteTimeRender()
+    if not CooldownCompanion._cooldownUpdatePassActive then return end
+    self.pendingRenderedTime = true
+    if self.pendingIdleEligible and self.pendingDirtyAtStart == false then
+        self.falseIdleTotal = self.falseIdleTotal + 1
+    end
+end
+
 -- Consume and clear the accumulated queue-source history (called at flush).
 function T:TakeQueueHistory()
     if self.queueHistoryLen == 0 then return nil end
@@ -69,6 +112,12 @@ function T:SetPending(source, detail, hist, dirtyAtStart)
     self.pendingDetail = detail
     self.pendingHist = hist
     self.pendingDirtyAtStart = dirtyAtStart
+    -- F2: snapshot the eligibility latched by the previous completed walk, so a
+    -- canary firing during this pass is judged against the state the live skip
+    -- decision would have used (eligibility always lags one walk). Reset the
+    -- per-pass canary flag.
+    self.pendingIdleEligible = CooldownCompanion._tickerIdleEligible == true
+    self.pendingRenderedTime = nil
 end
 
 -- Called from the end of UpdateAllCooldowns when enabled.
@@ -88,6 +137,8 @@ function T:RecordPass(frames, buttons, ms)
     entry.detail = self.pendingDetail
     entry.hist = self.pendingHist
     entry.dirtyAtStart = self.pendingDirtyAtStart
+    entry.idleEligible = self.pendingIdleEligible
+    entry.renderedTime = self.pendingRenderedTime
     entry.frames = frames
     entry.buttons = buttons
     entry.ms = ms
@@ -95,6 +146,8 @@ function T:RecordPass(frames, buttons, ms)
     self.pendingDetail = nil
     self.pendingHist = nil
     self.pendingDirtyAtStart = nil
+    self.pendingIdleEligible = nil
+    self.pendingRenderedTime = nil
 end
 
 -- One-line tag helper for direct UpdateAllCooldowns callsites.
@@ -113,6 +166,9 @@ function CooldownCompanion:ResetRefreshTelemetry()
     wipe(T.queueCounts)
     wipe(T.passCounts)
     T.tickerSkips = 0
+    T.wouldSkipTotal = 0
+    T.falseIdleTotal = 0
+    T.tickerIdleSkips = 0
     T.passCursor = 0
     T.passTotal = 0
     T.queueHistoryLen = 0
@@ -120,6 +176,8 @@ function CooldownCompanion:ResetRefreshTelemetry()
     T.pendingDetail = nil
     T.pendingHist = nil
     T.pendingDirtyAtStart = nil
+    T.pendingIdleEligible = nil
+    T.pendingRenderedTime = nil
     -- Entry tables in passLog are reused; stale entries beyond passTotal are
     -- ignored by readers (passTotal + passCursor define the valid window).
 end
