@@ -1007,6 +1007,7 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button.cooldown:SetHideCountdownNumbers(true)
     button.cooldown:Hide()
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    button.cooldown:SetScript("OnCooldownDone", ST.OnButtonCooldownDone)
 
     -- Charge/item count overlay (hidden, but UpdateChargeTracking writes to button.count)
     button.overlayFrame = CreateFrame("Frame", nil, button)

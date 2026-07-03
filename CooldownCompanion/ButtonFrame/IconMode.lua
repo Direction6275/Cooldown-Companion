@@ -723,6 +723,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
     -- Always fully non-interactive: disable both clicks and motion
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    button.cooldown:SetScript("OnCooldownDone", ST.OnButtonCooldownDone)
 
     -- Loss of control cooldown frame (red swipe showing lockout duration)
     button.locCooldown = CreateFrame("Cooldown", button:GetName() .. "LocCooldown", button, "CooldownFrameTemplate")
