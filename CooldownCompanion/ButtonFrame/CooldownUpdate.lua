@@ -782,6 +782,27 @@ local function UpdateResolvedItemState(button, buttonData)
     return changed
 end
 
+-- F2 shadow: report whether this button is in any time-animated state the clean
+-- ticker must keep re-rendering, so a walk that draws nothing time-driven can
+-- latch idle-eligible. ORs only; never clears the pass flag to a false negative.
+-- Fail open -- any unclear or ambiguous state counts as active. Setting
+-- _tickerIdleEligible false directly (not only the pass-scoped flag) also keeps
+-- direct frame:UpdateCooldowns() callers outside a broad pass conservative for
+-- free. Called only for buttons that reach the render dispatch (hidden buttons
+-- early-return above and correctly draw nothing).
+local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly)
+    if button._cooldownState == COOLDOWN_STATE_COOLDOWN     -- spell/item/deferred cooldown
+        or button._chargeRecharging                          -- charge recharge in progress
+        or button._auraActive == true                        -- aura display (incl. target-switch hold)
+        or button._targetSwitchAt ~= nil                     -- target-switch continuity hold
+        or conditionalPreview ~= nil                         -- conditional visual preview active
+        or (isGCDOnly and button.style and button.style.showGCDSwipe == true) -- GCD swipe presentation
+    then
+        CooldownCompanion._passTimeStateSeen = true
+        CooldownCompanion._tickerIdleEligible = false
+    end
+end
+
 function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonData = button.buttonData
     local style = button.style
@@ -1869,4 +1890,5 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if shouldCaptureVisualState then
         CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
     end
+    NoteButtonTimeState(button, conditionalPreview, isGCDOnly)
 end

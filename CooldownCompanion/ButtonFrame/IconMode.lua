@@ -7,6 +7,8 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
 local EntryRuntime = ST.EntryRuntime
+-- F2 canary sink (loaded before this file; dev-gated, observe-only).
+local RefreshTelemetry = ST.RefreshTelemetry
 local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
@@ -355,6 +357,9 @@ local function ResolveIconFillPreviewRemaining(button)
         return nil, nil
     end
 
+    -- F2 canary: past the guard, an icon-fill conditional-preview remaining is
+    -- computed this walk (covered by the conditionalPreview classifier term).
+    if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
     local remaining
     if button._conditionalPreviewLoop
         and button._conditionalPreviewLoopStartTime
@@ -396,6 +401,9 @@ local function SetIconFillFromCooldownWidget(button)
 
     local value = ResolveIconFillTimerValue(button, elapsed / durMs)
 
+    -- F2 canary: cooldown-widget icon fill draws remaining this walk (covered by
+    -- the _cooldownState == COOLDOWN / _auraActive classifier terms, guarded above).
+    if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
     button.iconFill:SetValue(value)
     return true
 end
@@ -423,6 +431,9 @@ local function SetIconFillValue(button)
         end
 
         if button._auraCooldownStart and button._auraCooldownDuration and button._auraCooldownDuration > 0 then
+            -- F2 canary: aura-cooldown icon fill draws remaining this walk
+            -- (covered by the _auraActive classifier term).
+            if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
             local elapsed = GetTime() - button._auraCooldownStart
             if elapsed < 0 then elapsed = 0 end
             if elapsed > button._auraCooldownDuration then elapsed = button._auraCooldownDuration end
@@ -450,6 +461,9 @@ local function SetIconFillValue(button)
     if button._iconFillMode == "cooldown" and IsEntryItemLike(button.buttonData) then
         local durationSeconds = button._itemCdDuration or 0
         if durationSeconds > 0 then
+            -- F2 canary: item cooldown icon fill draws remaining this walk
+            -- (covered by the _cooldownState == COOLDOWN classifier term).
+            if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
             local elapsed = GetTime() - (button._itemCdStart or 0)
             if elapsed < 0 then elapsed = 0 end
             local value = elapsed / durationSeconds

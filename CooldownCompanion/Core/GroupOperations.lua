@@ -3414,6 +3414,10 @@ function CooldownCompanion:UpdateAllCooldowns()
     -- Cache CDM viewer CVar once per tick (avoids per-button GetCVarBool in ResolveBuffViewerFrameForSpell)
     self._cdmViewerEnabled = C_CVar_GetCVarBool("cooldownViewerEnabled") == true
     self._cooldownUpdatePassActive = true
+    -- F2 shadow: reset the per-pass time-animation flag. Any button that renders
+    -- time-driven state this walk sets it true (NoteButtonTimeState); a walk that
+    -- ends with it still false latches idle-eligible below. Fail open.
+    self._passTimeStateSeen = false
 
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
@@ -3426,6 +3430,15 @@ function CooldownCompanion:UpdateAllCooldowns()
     end
 
     self._cooldownUpdatePassActive = nil
+    -- F2 shadow eligibility: a completed full walk that saw no time-animated
+    -- button latches idle-eligible. Only this line may latch it true; every
+    -- other writer (NoteButtonTimeState) may only clear it to false. It is thus
+    -- never older than the last completed walk. Maintained unconditionally (not
+    -- gated on telemetry) so the PR-B predicate can read it live. Fail open.
+    self._tickerIdleEligible = not self._passTimeStateSeen
+    -- F2: any completed walk restarts the idle-skip safety clock (see
+    -- TICKER_MAX_CONSECUTIVE_SKIPS). Covers every walk path, not just the ticker.
+    self._tickerSkipStreak = 0
     if telemetryOn then
         T:RecordPass(frames, buttons, debugprofilestop() - t0)
     end

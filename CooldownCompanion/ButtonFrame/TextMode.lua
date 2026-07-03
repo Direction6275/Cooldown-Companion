@@ -6,6 +6,8 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
+-- F2 canary sink (loaded before this file; dev-gated, observe-only).
+local RefreshTelemetry = ST.RefreshTelemetry
 local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
@@ -467,6 +469,9 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
             durationRemaining = rem
         end
     elseif not auraActive and button._itemCdStart and button._itemCdDuration and button._itemCdDuration > 0 then
+        -- F2 canary: item cooldown text remaining is drawn this walk (covered by
+        -- the _cooldownState == COOLDOWN classifier term).
+        if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
         local now = GetTime()
         local elapsed = now - button._itemCdStart
         local rem = button._itemCdDuration - elapsed

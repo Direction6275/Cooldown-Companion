@@ -99,9 +99,16 @@ function CooldownCompanion:EnsureRuntimeInitialized()
 
     if not self.updateTicker then
         self.updateTicker = C_Timer.NewTicker(0.1, function()
-            -- Read assisted combat recommended spell (plain table field, no API call)
+            -- Read assisted combat recommended spell (plain table field, no API
+            -- call). A skipped tick doesn't walk, so a changed recommendation
+            -- must mark dirty to force a walk. Conservative: a new dirty source
+            -- only ever adds walks, never removes them.
             if AssistedCombatManager then
-                self.assistedSpellID = AssistedCombatManager.lastNextCastSpellID
+                local nextCast = AssistedCombatManager.lastNextCastSpellID
+                if nextCast ~= self.assistedSpellID then
+                    self.assistedSpellID = nextCast
+                    self:MarkCooldownsDirty("assisted")
+                end
             end
 
             self:TickCooldownRefresh()
@@ -117,6 +124,14 @@ function CooldownCompanion:OnEnable()
     -- F3: seed the cooldown-done kill-switch runtime flag from saved state
     -- (absent key = signal enabled).
     self._cooldownDoneSignalOff = self.db.global.cooldownDoneSignalDisabled == true
+
+    -- F2: seed the combat flag read by the idle-skip predicate (the skip is
+    -- out-of-combat only). Maintained by OnCombatStart/OnCombatEnd; one
+    -- InCombatLockdown() read here covers /reload-in-combat. No per-tick probe.
+    self._inCombatForTicker = InCombatLockdown() and true or false
+
+    -- F2: reset the idle-skip safety-walk streak.
+    self._tickerSkipStreak = 0
 
     -- Cooldown events can expose very short ready windows, so refresh them
     -- immediately instead of waiting for the ticker.
@@ -448,6 +463,7 @@ end
 
 
 function CooldownCompanion:OnCombatStart()
+    self._inCombatForTicker = true  -- F2: disarms the idle ticker skip in combat
     self:BeginCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
     -- Close spellbook during combat to avoid Blizzard secret value errors
@@ -467,6 +483,7 @@ function CooldownCompanion:OnCombatStart()
 end
 
 function CooldownCompanion:OnCombatEnd()
+    self._inCombatForTicker = false  -- F2: re-arms idle ticker skip eligibility
     local combatLockSnapshot = self:EndCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
     self:ApplyCdmAlpha()
