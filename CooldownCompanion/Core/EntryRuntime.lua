@@ -753,15 +753,17 @@ end
 -- first Show. Hooking the pool once per viewer (enumerate current + hooksecurefunc
 -- Acquire) covers every DoT on it, including future frames, before their Show.
 -- Idempotent (per-frame + per-viewer guards); hooks are additive post-hooks
--- touching only CC state (a dirty mark) -- no protected calls, no taint. owner.
--- _pandemicEdgeHooked records coverage (stable, per viewer) so the classifier can
--- gate its skip-exemption on it (fail open when the viewer/pool is unavailable).
+-- touching only CC state (a dirty mark) -- no protected calls, no taint.
+-- Records `owner._pandemicEdgeUncovered` (stable, per viewer) for the classifier:
+-- true = pandemic applies but its edge is NOT covered (pool unavailable → the
+-- button must keep forcing walks, fail open); nil = covered (the pool is hooked,
+-- so the crossing wakes the ticker → the button is skippable on the pandemic axis).
 local function InstallPandemicEdgeHook(owner, viewerFrame)
     local getViewer = viewerFrame.GetViewerFrame
     local viewer = getViewer and getViewer(viewerFrame)
     local pool = viewer and viewer.pandemicIconPool
     if not (pool and pool.EnumerateActive) then
-        owner._pandemicEdgeHooked = nil
+        owner._pandemicEdgeUncovered = true
         return
     end
     if not viewer._ccPandemicPoolHooked then
@@ -769,7 +771,7 @@ local function InstallPandemicEdgeHook(owner, viewerFrame)
         HookPandemicPoolActive(pool)
         hooksecurefunc(pool, "Acquire", HookPandemicPoolActive)
     end
-    owner._pandemicEdgeHooked = true
+    owner._pandemicEdgeUncovered = nil
 end
 
 function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
@@ -781,6 +783,9 @@ function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
     end
 
     if not (options.enabled and viewerFrame) then
+        -- Pandemic glow does not apply to this button/pass -- nothing for the
+        -- classifier to keep walk-forcing on the pandemic axis.
+        owner._pandemicEdgeUncovered = nil
         if options.clearWhenDisabled then
             ClearAuraPandemicRuntimeState(owner)
         end

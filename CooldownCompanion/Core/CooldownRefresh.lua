@@ -48,15 +48,28 @@
       and are ordinary MarkCooldownsDirty calls; the hidden kill switch only
       stops the marks, never adds skips.
     - The combat ticker floor (hidden switch SetCombatTickerFloorEnabled,
-      db.global.combatTickerFloor, default OFF) is landing in stages. Stage 1
-      (this change) wires only the pandemic edge-hook: while the switch is on,
-      the CDM's pooled pandemic FX frames' OnShow/OnHide (hooked per viewer via
-      pandemicIconPool) mark cooldowns dirty ("pandemic-edge"), covering the
-      secret-in-combat pandemic crossing as an event (<=1 tick) instead of the
-      per-walk IsVisible() poll. It only ever adds walks, so it cannot stale the
-      display. The classifier refinement and power-mark
-      demotion -- the parts that actually skip walks in combat -- land later on
-      this same switch. Switch OFF leaves any installed hooks inert.
+      db.global.combatTickerFloor, default OFF) extends the idle skip into combat
+      for self-animating display modes only, via three coupled changes on the one
+      switch:
+        1. Mode-aware classifier (NoteButtonTimeState): an active cooldown/aura/
+           GCD swipe on an icon or bar button no longer forces a walk (the swipe,
+           numbers, and iconFill self-animate). Text mode, charge recharge,
+           target-switch holds, ready-glow windows, previews, and any
+           secret/unproven state still force walks.
+        2. Pandemic edge-hook: the crossing is secret in combat, so the CDM's
+           pooled pandemic FX frames' OnShow/OnHide (hooked per viewer via
+           pandemicIconPool) mark dirty ("pandemic-edge") -- a one-tick
+           event-covered edge, not a poll. An aura button is skippable only once
+           its viewer's pandemic pool is hooked (_pandemicEdgeUncovered nil);
+           until then it forces (fail open).
+        3. Power-mark demotion: UNIT_POWER_FREQUENT stops marking dirty while the
+           switch is on; the castability tint then rides walk cadence (safety
+           walk ~1s worst case).
+      Discrete edges stay event-covered (cooldown start/end, aura apply/remove,
+      pandemic enter/exit). The safety walk (TICKER_MAX_CONSECUTIVE_SKIPS) is now
+      load-bearing in combat. Switch OFF restores the prior classifier, combat
+      disarm, and power marks verbatim, and leaves any installed pandemic hooks
+      inert (byte-identical behavior).
 ]]
 
 local ADDON_NAME, ST = ...
@@ -204,7 +217,12 @@ function CooldownCompanion:IsIdleTickerSkipEligible()
     return not self._cooldownsDirty
         and not self._queuedCooldownRefreshSource
         and self._tickerIdleEligible == true
-        and not self._inCombatForTicker
+        -- The idle skip is out-of-combat only, UNLESS the combat ticker floor is
+        -- on: it extends the skip into combat, relying on the mode-aware
+        -- classifier (self-animating icon/bar buttons no longer force walks) and
+        -- the pandemic edge-hook. The classifier + safety walk still bound
+        -- staleness; a walk-forcing button in combat still keeps the ticker awake.
+        and (not self._inCombatForTicker or self._combatTickerFloorOn)
         and not self._cooldownDoneSignalOff
 end
 

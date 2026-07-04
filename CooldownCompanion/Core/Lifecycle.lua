@@ -171,7 +171,16 @@ function CooldownCompanion:OnEnable()
         self._unitEventFrame = CreateFrame("Frame")
         self._unitEventFrame:SetScript("OnEvent", function(_, event, ...)
             if event == "UNIT_POWER_FREQUENT" then
-                self:MarkCooldownsDirty("power")
+                -- Combat ticker floor: power updates (~14/sec in combat) are the
+                -- ticker's dirty floor and their only consumer is the castability
+                -- tint. While the floor is on, stop marking dirty here so the
+                -- ticker can idle-skip; the tint then rides walk cadence (safety
+                -- walk ~1s worst case -- the owner-signed-off latency trade).
+                -- Switch OFF restores the immediate mark verbatim. The power
+                -- dirtyCount dropping toward 0 is the telemetry signal.
+                if not self._combatTickerFloorOn then
+                    self:MarkCooldownsDirty("power")
+                end
             elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
                 self:OnSpellCast(event, ...)
             elseif event == "UNIT_AURA" then
