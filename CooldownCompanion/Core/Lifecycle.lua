@@ -348,12 +348,6 @@ function CooldownCompanion:OnEnable()
 end
 
 function CooldownCompanion:OnCooldownStateChanged(event, ...)
-    -- D1 shadow-parity tap (dev-gated, observe-only). Event args pass through
-    -- unread here; the harness issecretvalue-checks before any read.
-    local SP = ST.ShadowParity
-    if SP and SP.enabled then
-        SP:NoteCooldownEvent(event, ...)
-    end
     -- F1 3b: readable-identity SPELL fires route to their index-matched buttons
     -- (mini-pass) or drop (no tracked button). Anything the router cannot fully
     -- classify -- secret/nil arg, panel-matched button, generation churn --
@@ -437,11 +431,6 @@ function CooldownCompanion:OnDisable()
 end
 
 function CooldownCompanion:OnChargesChanged(event, spellID, baseSpellID)
-    -- D1 shadow-parity tap (dev-gated, observe-only).
-    local SP = ST.ShadowParity
-    if SP and SP.enabled then
-        SP:NoteChargesEvent(event, spellID, baseSpellID)
-    end
     if event == "SPELL_UPDATE_USES" and spellID then
         local matchesConditionalCastCountEvent = CooldownCompanion.MatchesConditionalCastCountEvent
         local matchedCastCountButton = false

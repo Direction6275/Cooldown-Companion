@@ -826,13 +826,6 @@ end
 -- Discrete edges (cooldown start/end, aura apply/remove, pandemic enter/exit)
 -- stay event-covered; the skip only suppresses the redundant continuous middle.
 local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, floorFailOpen)
-    -- F1 3b Commit A: the forcing terms are broken out into individual booleans
-    -- (was a short-circuit or-chain) so a dev-gated tally can name which term
-    -- pins the ticker awake. `forced` is byte-identical to the old chain -- each
-    -- branch sets the same terms it did before, ORed to the same result; only
-    -- the reporting (guarded on ShadowParity.enabled) is new. The four initial
-    -- terms are pure side-effect-free reads, so evaluating them up front (rather
-    -- than short-circuiting) leaves the truth table unchanged.
     local charge = button._chargeRecharging and true or false   -- charge recharge (charge-color heuristic, walk-driven)
     local targetSwitch = button._targetSwitchAt ~= nil          -- target-switch continuity hold
     local preview = conditionalPreview ~= nil                   -- conditional visual preview active
@@ -874,24 +867,6 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
     if forced then
         CooldownCompanion._passTimeStateSeen = true
         CooldownCompanion._tickerIdleEligible = false
-        -- F1 3b Commit A tally (dev-gated observe-only): one call per term that
-        -- actually forced. ST is a file upvalue; NoteButtonTimeState is well
-        -- under the 60-upvalue ceiling (unlike UpdateButtonCooldown).
-        -- Gate on _cooldownUpdatePassActive so ONLY broad-walk forced terms are
-        -- tallied: a routed mini-pass reaches here too (via UpdateButtonCooldown)
-        -- but is not a ticker walk, so its terms must not pollute the clean-walk
-        -- pinner counts PrintCombatFloorSummary reports.
-        local SP = ST.ShadowParity
-        if SP and SP.enabled and CooldownCompanion._cooldownUpdatePassActive then
-            if charge then SP:NoteForcedTerm("charge", button) end
-            if targetSwitch then SP:NoteForcedTerm("targetSwitch", button) end
-            if preview then SP:NoteForcedTerm("preview", button) end
-            if readyGlow then SP:NoteForcedTerm("readyGlow", button) end
-            if text then SP:NoteForcedTerm("text", button) end
-            if pandemicUncovered then SP:NoteForcedTerm("pandemicUncovered", button) end
-            if pandemicGrace then SP:NoteForcedTerm("pandemicGrace", button) end
-            if panelForce then SP:NoteForcedTerm("panelForce", button) end
-        end
     end
 end
 
@@ -1905,9 +1880,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if floorFailOpen then
                 CooldownCompanion._passTimeStateSeen = true
                 CooldownCompanion._tickerIdleEligible = false
-                -- F1 3b Commit A: count this fail-open pin (routed via a method so
-                -- this ceiling-bound function gains no upvalue).
-                CooldownCompanion:NoteForcedTickerTerm("hiddenFailOpen", button)
             end
             return  -- Skip all visual updates
         else
@@ -1933,7 +1905,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if floorFailOpen then
                 CooldownCompanion._passTimeStateSeen = true
                 CooldownCompanion._tickerIdleEligible = false
-                CooldownCompanion:NoteForcedTickerTerm("hiddenFailOpen", button)
             end
             return  -- Skip visual updates for hidden buttons
         else

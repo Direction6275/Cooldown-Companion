@@ -55,7 +55,6 @@ Core\SoundAlerts.lua
 Core\StyleOverrides.lua
 Core\RefreshTelemetry.lua
 Core\SpellButtonIndex.lua
-Core\ShadowParity.lua
 Core\CooldownRouting.lua
 Core\CooldownRefresh.lua
 Core\Lifecycle.lua
