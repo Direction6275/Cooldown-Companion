@@ -123,6 +123,7 @@ local CHARGE_ONLY = {
 }
 
 local LOG_SIZE = 64
+local FORCED_TERM_LOG_SIZE = 32     -- F1 3b Commit A: forcing-term sample ring
 
 local SP = {
     enabled = false,
@@ -173,6 +174,27 @@ local SP = {
     combatOtherLog = {},            -- ring: "time|source|fields|button"
     combatOtherCursor = 0,
     combatOtherTotal = 0,
+    -- F1 3b Commit A forcing-term tally (observe-only). With the floor ON, a
+    -- residual clean walk still ran because at least one button forced walking;
+    -- these name the term(s) that pinned it, so the pinner can be identified in
+    -- the same soak that validates routing. Populated by NoteForcedTerm.
+    forcedTermCounts = {},          -- term -> forced-button occurrences
+    forcedTermLog = {},             -- ring: "term|button" samples
+    forcedTermCursor = 0,
+    forcedTermTotal = 0,
+    -- F1 3b Commit C live-router counters (incremented by CooldownRouting.lua
+    -- only while enabled -- zero user cost). Separate from the watchdog's
+    -- mismatch counters: these measure what the router actually did.
+    routedFires = 0,                -- SPELL_UPDATE_COOLDOWN fires routed to a batch
+    routedButtons = 0,              -- button mini-pass updates run at flush
+    droppedFires = 0,               -- readable fires no tracked button indexes
+    secretBroadFires = 0,           -- secret/unreadable arg -> forced broad path
+    nilBroadFires = 0,              -- nil (broadcast-form) arg -> forced broad path
+    panelBroadFires = 0,            -- a matched button is in a panel group -> broad
+    rebuildPendingBroadFires = 0,   -- index rebuild pending (buckets stale) -> broad
+    assistantExcludedBroadFires = 0,-- rotation-assistant button loaded -> broad
+    supersededBatches = 0,          -- batch dropped: a broad refresh was queued
+    generationEscalations = 0,      -- batch escalated: index rebuilt or rebuild pending at flush
     -- mismatch / broadcast-carried detail ring (formatted strings, SV-safe)
     log = {},
     logCursor = 0,
@@ -229,17 +251,14 @@ local function CountFire(tag)
 end
 
 -- Stamp every button the D3 index maps this spellID to as covered by the
--- current batch. Returns true when at least one button was stamped.
+-- current batch. Shares CooldownCompanion:ForEachIndexedSpellButton with the
+-- live router (F1 3b) so both resolve a fire to the same button set by
+-- construction. Returns true when at least one button was stamped.
+local function StampCoveredButton(button)
+    button._shadowParityCoveredBatch = batch.id
+end
 local function StampCovered(spellID)
-    local index = CooldownCompanion:GetSpellButtonIndex()
-    local bucket = index.spell[spellID]
-    if not bucket then
-        return false
-    end
-    for _, button in ipairs(bucket) do
-        button._shadowParityCoveredBatch = batch.id
-    end
-    return true
+    return CooldownCompanion:ForEachIndexedSpellButton(spellID, StampCoveredButton)
 end
 
 -- Secret or non-number identity arg: the router cannot inspect it and must
@@ -343,6 +362,30 @@ local function DescribeButton(button)
         tostring(button.index),
         tostring(buttonData and buttonData.type),
         tostring(buttonData and (buttonData.id or buttonData.itemSlot)))
+end
+
+-- F1 3b Commit A: record one classifier term that forced a walk on `button`.
+-- Called once per contributing term per forced button per broad walk, only
+-- while enabled (the caller guards on SP.enabled). Keeps a per-term count plus
+-- a small overwriting ring of (term, buttonDesc) samples.
+function SP:NoteForcedTerm(term, button)
+    self.forcedTermCounts[term] = (self.forcedTermCounts[term] or 0) + 1
+    local cursor = self.forcedTermCursor % FORCED_TERM_LOG_SIZE + 1
+    self.forcedTermCursor = cursor
+    self.forcedTermTotal = self.forcedTermTotal + 1
+    self.forcedTermLog[cursor] = term .. "|" .. DescribeButton(button)
+end
+
+-- Forwarder so callers that cannot afford a new file upvalue (CooldownUpdate.lua
+-- UpdateButtonCooldown sits at the 60-upvalue ceiling) can report a forcing term
+-- through the existing CooldownCompanion upvalue. No-op unless enabled.
+function CooldownCompanion:NoteForcedTickerTerm(term, button)
+    -- Broad-walk only (mirrors the NoteButtonTimeState tally gate): a routed
+    -- mini-pass reaches the hidden-button fail-open callers too, but its terms
+    -- are not clean-walk ticker pins and must not skew the forced-term counts.
+    if SP.enabled and self._cooldownUpdatePassActive then
+        SP:NoteForcedTerm(term, button)
+    end
 end
 
 local function BatchSummary()
@@ -687,6 +730,21 @@ function CooldownCompanion:GetShadowParityDiagnostics()
         combatUsableOnlyStamps = CopyRing(SP.combatUsableOnlyStamps, SPIKE_STAMP_SIZE),
         combatOtherTotal = SP.combatOtherTotal,
         combatOtherLog = CopyRing(SP.combatOtherLog, SPIKE_LOG_SIZE),
+        -- F1 3b Commit A forcing-term tally
+        forcedTermCounts = CopyScalarMap(SP.forcedTermCounts),
+        forcedTermTotal = SP.forcedTermTotal,
+        forcedTermLog = CopyRing(SP.forcedTermLog, FORCED_TERM_LOG_SIZE),
+        -- F1 3b Commit C live-router counters
+        routedFires = SP.routedFires,
+        routedButtons = SP.routedButtons,
+        droppedFires = SP.droppedFires,
+        secretBroadFires = SP.secretBroadFires,
+        nilBroadFires = SP.nilBroadFires,
+        panelBroadFires = SP.panelBroadFires,
+        rebuildPendingBroadFires = SP.rebuildPendingBroadFires,
+        assistantExcludedBroadFires = SP.assistantExcludedBroadFires,
+        supersededBatches = SP.supersededBatches,
+        generationEscalations = SP.generationEscalations,
     }
 end
 
@@ -729,6 +787,22 @@ function CooldownCompanion:ResetShadowParity()
     wipe(SP.combatDirtySourceTicks)
     wipe(SP.combatUsableOnlyStamps)
     wipe(SP.combatOtherLog)
+    -- F1 3b Commit A forcing-term tally
+    wipe(SP.forcedTermCounts)
+    wipe(SP.forcedTermLog)
+    SP.forcedTermCursor = 0
+    SP.forcedTermTotal = 0
+    -- F1 3b Commit C live-router counters
+    SP.routedFires = 0
+    SP.routedButtons = 0
+    SP.droppedFires = 0
+    SP.secretBroadFires = 0
+    SP.nilBroadFires = 0
+    SP.panelBroadFires = 0
+    SP.rebuildPendingBroadFires = 0
+    SP.assistantExcludedBroadFires = 0
+    SP.supersededBatches = 0
+    SP.generationEscalations = 0
     -- Drop any in-flight batch too, so a reset mid-window starts clean.
     ResetBatch()
 end
@@ -744,6 +818,19 @@ function CooldownCompanion:PrintShadowParitySummary()
     if SP.shadowParityMismatchTotal > 0 then
         self:Print("ShadowParity: mismatches logged — /dump CooldownCompanion:GetShadowParityDiagnostics()")
     end
+end
+
+-- F1 3b Commit C: live-routing readout. Routed vs dropped is the ~14/86 split
+-- the router aims for; the broad-fallback counts (secret/nil/panel) plus the
+-- supersede/generation drops show the fail-open paths firing. Pairs with the
+-- hard gates in PrintShadowParitySummary (shadowParityMismatchTotal /
+-- mismatchDropOnly), which stay the routing-failure detectors.
+function CooldownCompanion:PrintCooldownRoutingSummary()
+    self:Print(("CooldownRouting: routed %d fires -> %d button updates | dropped %d (index miss) | broad fallback: secret %d, nil %d, panel %d, rebuild-pending %d, assistant %d | batches: superseded %d, gen-escalated %d"):format(
+        SP.routedFires, SP.routedButtons, SP.droppedFires,
+        SP.secretBroadFires, SP.nilBroadFires, SP.panelBroadFires,
+        SP.rebuildPendingBroadFires, SP.assistantExcludedBroadFires,
+        SP.supersededBatches, SP.generationEscalations))
 end
 
 -- Combat ticker-floor spike readout (spec docs/plans/2026-07-03-015). Headline:
@@ -764,6 +851,18 @@ function CooldownCompanion:PrintCombatFloorSummary()
     if SP.combatOtherTotal > 0 then
         self:Print(("CombatFloor: %d other-write passes logged — /dump CooldownCompanion:GetShadowParityDiagnostics()"):format(SP.combatOtherTotal))
     end
+    -- F1 3b Commit A: which classifier term(s) pinned the ticker awake (one
+    -- forcing button keeps the whole ticker walking). The top term names the
+    -- residual clean-walk pinner.
+    local parts, n = {}, 0
+    for term, count in pairs(SP.forcedTermCounts) do
+        n = n + 1
+        parts[n] = term .. " " .. count
+    end
+    self:Print(n > 0
+        and ("CombatFloor forced terms (%d total): %s"):format(
+            SP.forcedTermTotal, table.concat(parts, ", ", 1, n))
+        or "CombatFloor forced terms: (none seen)")
 end
 
 -- Gate: enable only when the CC_DevBridge dev addon is present (same pattern

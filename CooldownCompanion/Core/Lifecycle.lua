@@ -133,6 +133,14 @@ function CooldownCompanion:OnEnable()
     self.db.global.combatTickerFloor = nil
     self._combatTickerFloorOn = self.db.global.combatTickerFloorDisabled ~= true
 
+    -- F1 3a: seed the broadcast-demotion runtime flag from saved state. DEFAULT
+    -- ON (F1 3b Commit G): absent key = ON; only an explicit false disables.
+    self._cooldownBroadcastDemotionOn = self.db.global.cooldownBroadcastDemotion ~= false
+
+    -- F1 3b: seed the cooldown-routing runtime flag from saved state. DEFAULT ON
+    -- (F1 3b Commit G): absent key = ON; only an explicit false disables.
+    self._cooldownRoutingOn = self.db.global.cooldownRouting ~= false
+
     -- F6: render-layer flattening is now permanent (applied unconditionally at
     -- button creation); drop the saved switch key from any earlier build.
     self.db.global.renderFlattenEnabled = nil
@@ -364,6 +372,26 @@ function CooldownCompanion:OnCooldownStateChanged(event, ...)
     local SP = ST.ShadowParity
     if SP and SP.enabled then
         SP:NoteCooldownEvent(event, ...)
+    end
+    -- F1 3b: readable-identity SPELL fires route to their index-matched buttons
+    -- (mini-pass) or drop (no tracked button). Anything the router cannot fully
+    -- classify -- secret/nil arg, panel-matched button, generation churn --
+    -- returns false and falls through to the broad path below unchanged.
+    if self._cooldownRoutingOn and event == "SPELL_UPDATE_COOLDOWN" then
+        if self:RouteCooldownEventFire(...) then
+            return
+        end
+    end
+    if self._cooldownBroadcastDemotionOn
+        and (event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "BAG_UPDATE_COOLDOWN")
+    then
+        -- F1 3a: identity-less broadcast events carry no data CC consumes
+        -- (D2 + demotion trace); everything they signal is re-polled by the
+        -- next walk. Dirty-only: the next tick walks (<=0.1s), in combat and
+        -- OOC alike. SPELL_UPDATE_COOLDOWN keeps immediate accuracy below.
+        self:MarkCooldownsDirty(event == "BAG_UPDATE_COOLDOWN"
+            and "bag-cd-broadcast" or "actionbar-cd-broadcast")
+        return
     end
     self:MarkCooldownsDirty("cooldown-event")
     -- Preserve immediate cooldown-event accuracy. This refresh only suppresses

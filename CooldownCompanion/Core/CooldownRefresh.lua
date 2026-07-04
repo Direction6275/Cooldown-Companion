@@ -70,6 +70,23 @@
       load-bearing in combat. The kill switch restores the prior classifier,
       combat disarm, and power marks verbatim, and leaves any installed pandemic
       hooks inert (byte-identical legacy path, retained for soak reversion).
+    - Broadcast demotion (F1 3a) may downgrade ACTIONBAR/BAG cooldown events
+      from immediate-broad to dirty-only. It never suppresses the mark itself
+      and never touches SPELL_UPDATE_COOLDOWN. Bounded by the next ticker
+      walk; dirty ticks always walk.
+    - Routed mini-passes (F1 3b) run beside the scheduler: they never mark
+      dirty, never touch serials/queue/latch state, never set
+      _cooldownUpdatePassActive, and their batch is dropped whenever a broad
+      refresh is queued at flush time. Their shared per-button pipeline still
+      reaches NoteButtonTimeState, which may push the F2 accumulators
+      (_passTimeStateSeen, _tickerIdleEligible) in the conservative direction
+      (forcing an extra walk) for a forced routed button -- never the permissive
+      one: only a completed broad walk latches _tickerIdleEligible true, so a
+      mini-pass cannot cause a false idle-skip. Secret-arg, nil-arg, panel-
+      matched, rebuild-pending, assistant-excluded, and generation-churned fires
+      all take the broad path; index-miss fires are counted drops. Only routed
+      (hit) and dropped (miss) fires skip the dirty mark; every other cooldown
+      fire marks dirty exactly as today.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -130,6 +147,32 @@ function CooldownCompanion:SetCombatTickerFloorDisabled(disabled)
     disabled = disabled == true
     self.db.global.combatTickerFloorDisabled = disabled or nil
     self._combatTickerFloorOn = not disabled
+end
+
+-- F1 3a hidden switch (no config UI). Demote the identity-less broadcast
+-- cooldown events (ACTIONBAR/BAG_UPDATE_COOLDOWN) from immediate-broad to
+-- dirty-only. DEFAULT ON as of F1 3b Commit G. Disable live (no reload) with:
+--   /run CooldownCompanion:SetCooldownBroadcastDemotionEnabled(false)
+-- Persists in db.global; default (absent) = ON. Stored as a strict boolean so an
+-- explicit OFF survives reload (OnEnable reads it back with ~= false).
+function CooldownCompanion:SetCooldownBroadcastDemotionEnabled(enabled)
+    enabled = enabled == true
+    self.db.global.cooldownBroadcastDemotion = enabled
+    self._cooldownBroadcastDemotionOn = enabled
+end
+
+-- F1 3b hidden switch (no config UI). Route readable-arg SPELL_UPDATE_COOLDOWN
+-- fires to their index-matched buttons (mini-pass) or drop them (untracked
+-- identity), instead of the broad walk. DEFAULT ON as of F1 3b Commit G.
+-- Disable live (no reload) with:
+--   /run CooldownCompanion:SetCooldownRoutingEnabled(false)
+-- Persists in db.global; default (absent) = ON. Stored as a strict boolean so an
+-- explicit OFF survives reload (OnEnable reads it back with ~= false).
+-- Independent of the demotion switch above and of the floor's kill switch.
+function CooldownCompanion:SetCooldownRoutingEnabled(enabled)
+    enabled = enabled == true
+    self.db.global.cooldownRouting = enabled
+    self._cooldownRoutingOn = enabled
 end
 
 function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
