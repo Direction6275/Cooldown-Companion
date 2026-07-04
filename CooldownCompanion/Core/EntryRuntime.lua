@@ -705,13 +705,9 @@ end
 
 -- Shared hook body for the pandemic edge (a pooled CDM FX frame's OnShow/OnHide,
 -- which fire only on real pandemic enter/exit transitions -- Show() on an
--- already-shown frame is a no-op, so these do NOT fire per update). Marks dirty
--- only while the switch is on, so installed hooks are inert when OFF (one shared
--- function object -- no per-frame closure allocation).
+-- already-shown frame is a no-op, so these do NOT fire per update).
 local function OnPandemicEdge()
-    if CooldownCompanion._combatTickerFloorOn then
-        CooldownCompanion:MarkCooldownsDirty("pandemic-edge")
-    end
+    CooldownCompanion:MarkCooldownsDirty("pandemic-edge")
 end
 
 -- Hook one pooled pandemic FX frame's OnShow/OnHide once (guard on the frame).
@@ -792,12 +788,9 @@ function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
         return false
     end
 
-    -- Combat ticker floor (switch-gated): make the secret-in-combat pandemic
-    -- crossing an event-covered edge by hooking this viewer's pandemic FX pool.
-    -- Inert unless the switch is on; installs once per viewer.
-    if CooldownCompanion._combatTickerFloorOn then
-        InstallPandemicEdgeHook(owner, viewerFrame)
-    end
+    -- Combat ticker floor: make the secret-in-combat pandemic crossing an
+    -- event-covered edge by hooking this viewer's pandemic FX pool.
+    InstallPandemicEdgeHook(owner, viewerFrame)
 
     local now = options.now or GetTime()
     local auraUnit, auraInstanceID = GetPandemicAuraIdentity(owner, options)

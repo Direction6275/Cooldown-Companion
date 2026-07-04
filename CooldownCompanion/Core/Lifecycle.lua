@@ -121,25 +121,12 @@ function CooldownCompanion:EnsureRuntimeInitialized()
 end
 
 function CooldownCompanion:OnEnable()
-    -- F3: seed the cooldown-done kill-switch runtime flag from saved state
-    -- (absent key = signal enabled).
-    self._cooldownDoneSignalOff = self.db.global.cooldownDoneSignalDisabled == true
-
-    -- Combat ticker floor: ON by default (the shipped behavior). Seeds enabled
-    -- unless the hidden kill switch (SetCombatTickerFloorDisabled) has forced the
-    -- legacy path; absent key = ON. Gates the mode-aware classifier, the pandemic
-    -- edge-hook, and the power-mark demotion. Drop the earlier default-OFF opt-in
-    -- key from any prior build.
+    -- Audit-program switches removed (2026-07): scrub stale keys.
+    self.db.global.cooldownDoneSignalDisabled = nil
+    self.db.global.combatTickerFloorDisabled = nil
+    self.db.global.cooldownBroadcastDemotion = nil
+    self.db.global.cooldownRouting = nil
     self.db.global.combatTickerFloor = nil
-    self._combatTickerFloorOn = self.db.global.combatTickerFloorDisabled ~= true
-
-    -- F1 3a: seed the broadcast-demotion runtime flag from saved state. DEFAULT
-    -- ON (F1 3b Commit G): absent key = ON; only an explicit false disables.
-    self._cooldownBroadcastDemotionOn = self.db.global.cooldownBroadcastDemotion ~= false
-
-    -- F1 3b: seed the cooldown-routing runtime flag from saved state. DEFAULT ON
-    -- (F1 3b Commit G): absent key = ON; only an explicit false disables.
-    self._cooldownRoutingOn = self.db.global.cooldownRouting ~= false
 
     -- F6: render-layer flattening is now permanent (applied unconditionally at
     -- button creation); drop the saved switch key from any earlier build.
@@ -183,14 +170,8 @@ function CooldownCompanion:OnEnable()
             if event == "UNIT_POWER_FREQUENT" then
                 -- Combat ticker floor: power updates (~14/sec in combat) are the
                 -- ticker's dirty floor and their only consumer is the castability
-                -- tint. While the floor is on, stop marking dirty here so the
-                -- ticker can idle-skip; the tint then rides walk cadence (safety
-                -- walk ~1s worst case -- the owner-signed-off latency trade).
-                -- Switch OFF restores the immediate mark verbatim. The power
-                -- dirtyCount dropping toward 0 is the telemetry signal.
-                if not self._combatTickerFloorOn then
-                    self:MarkCooldownsDirty("power")
-                end
+                -- tint. The tint rides walk cadence (safety walk ~1s worst case
+                -- -- the owner-signed-off latency trade).
             elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
                 self:OnSpellCast(event, ...)
             elseif event == "UNIT_AURA" then
@@ -377,14 +358,12 @@ function CooldownCompanion:OnCooldownStateChanged(event, ...)
     -- (mini-pass) or drop (no tracked button). Anything the router cannot fully
     -- classify -- secret/nil arg, panel-matched button, generation churn --
     -- returns false and falls through to the broad path below unchanged.
-    if self._cooldownRoutingOn and event == "SPELL_UPDATE_COOLDOWN" then
+    if event == "SPELL_UPDATE_COOLDOWN" then
         if self:RouteCooldownEventFire(...) then
             return
         end
     end
-    if self._cooldownBroadcastDemotionOn
-        and (event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "BAG_UPDATE_COOLDOWN")
-    then
+    if event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "BAG_UPDATE_COOLDOWN" then
         -- F1 3a: identity-less broadcast events carry no data CC consumes
         -- (D2 + demotion trace); everything they signal is re-polled by the
         -- next walk. Dirty-only: the next tick walks (<=0.1s), in combat and

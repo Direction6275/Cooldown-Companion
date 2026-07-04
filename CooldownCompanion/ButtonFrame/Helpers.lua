@@ -1150,7 +1150,6 @@ end
 -- state at fire time, so it is safe to run re-entrantly mid-pass. Kill switch:
 -- CooldownCompanion:SetCooldownDoneSignalDisabled().
 function ST.OnButtonCooldownDone(cooldown)
-    if CooldownCompanion._cooldownDoneSignalOff then return end
     CooldownCompanion:MarkCooldownsDirty("cd-done")
 end
 

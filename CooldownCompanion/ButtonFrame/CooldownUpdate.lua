@@ -839,15 +839,13 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
     local readyGlow = HasPendingReadyGlowWindow(button, now)    -- finite ready-glow window still running
     local forced = charge or targetSwitch or preview or readyGlow
 
-    local legacy, text, pandemicUncovered, pandemicGrace = false, false, false, false
+    local text, pandemicUncovered, pandemicGrace = false, false, false
     if not forced then
         local timeActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN -- spell/item/deferred cooldown
             or button._auraActive                            -- aura display (incl. target-switch hold); truthy on purpose, fail open
             or (isGCDOnly and button.style and button.style.showGCDSwipe == true) -- GCD swipe presentation
         if timeActive then
-            if not CooldownCompanion._combatTickerFloorOn then
-                legacy = true                                -- legacy: any time state forces a walk
-            elseif button._isText then
+            if button._isText then
                 text = true                                  -- text mode is walk-driven (FormatTime + SetText)
             elseif button._auraActive and button._pandemicEdgeUncovered then
                 pandemicUncovered = true                     -- pandemic applies but its edge isn't hooked (fail open)
@@ -857,7 +855,7 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
             end
             -- else: icon/bar self-animating cooldown/aura/GCD, pandemic covered
             -- or absent -- skippable; discrete edges stay event-covered.
-            forced = legacy or text or pandemicUncovered or pandemicGrace
+            forced = text or pandemicUncovered or pandemicGrace
         end
     end
 
@@ -889,7 +887,6 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
             if targetSwitch then SP:NoteForcedTerm("targetSwitch", button) end
             if preview then SP:NoteForcedTerm("preview", button) end
             if readyGlow then SP:NoteForcedTerm("readyGlow", button) end
-            if legacy then SP:NoteForcedTerm("legacy", button) end
             if text then SP:NoteForcedTerm("text", button) end
             if pandemicUncovered then SP:NoteForcedTerm("pandemicUncovered", button) end
             if pandemicGrace then SP:NoteForcedTerm("pandemicGrace", button) end
@@ -923,10 +920,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- hideWhileUnusable must keep the ticker walking whether the button is shown or
     -- hidden: hidden buttons early-return before NoteButtonTimeState, so this is also
     -- applied in the visibility-hidden branch below. False on the kill-switch OFF path.
-    local floorFailOpen = CooldownCompanion._combatTickerFloorOn == true
-        and (buttonDisplayMode == "textures" or buttonDisplayMode == "trigger"
-            or (buttonData.hideWhileUnusable == true
-                and not buttonData.isPassive and not buttonData.isPassiveCooldown))
+    local floorFailOpen = buttonDisplayMode == "textures" or buttonDisplayMode == "trigger"
+        or (buttonData.hideWhileUnusable == true
+            and not buttonData.isPassive and not buttonData.isPassiveCooldown)
     ClearConditionalVisualPreviewFields(button)
 
     if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then

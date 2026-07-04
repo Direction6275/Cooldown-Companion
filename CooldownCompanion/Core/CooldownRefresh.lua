@@ -127,54 +127,6 @@ function CooldownCompanion:ClearCooldownsDirty()
     self._cooldownsDirty = false
 end
 
--- F3 hidden kill switch (no config UI). Disable the cooldown-expiry signal
--- live (no reload) with:
---   /run CooldownCompanion:SetCooldownDoneSignalDisabled(true)
--- Persists in db.global; default (absent) = signal enabled.
-function CooldownCompanion:SetCooldownDoneSignalDisabled(disabled)
-    disabled = disabled == true
-    self.db.global.cooldownDoneSignalDisabled = disabled or nil
-    self._cooldownDoneSignalOff = disabled
-end
-
--- Combat ticker floor: ON by default (the shipped behavior -- extends the idle
--- skip into combat for self-animating display modes). Hidden kill switch (no
--- config UI, F3 pattern) to force the legacy always-walk path during soak, live
--- (no reload):
---   /run CooldownCompanion:SetCombatTickerFloorDisabled(true)
--- Persists in db.global; default (absent) = enabled.
-function CooldownCompanion:SetCombatTickerFloorDisabled(disabled)
-    disabled = disabled == true
-    self.db.global.combatTickerFloorDisabled = disabled or nil
-    self._combatTickerFloorOn = not disabled
-end
-
--- F1 3a hidden switch (no config UI). Demote the identity-less broadcast
--- cooldown events (ACTIONBAR/BAG_UPDATE_COOLDOWN) from immediate-broad to
--- dirty-only. DEFAULT ON as of F1 3b Commit G. Disable live (no reload) with:
---   /run CooldownCompanion:SetCooldownBroadcastDemotionEnabled(false)
--- Persists in db.global; default (absent) = ON. Stored as a strict boolean so an
--- explicit OFF survives reload (OnEnable reads it back with ~= false).
-function CooldownCompanion:SetCooldownBroadcastDemotionEnabled(enabled)
-    enabled = enabled == true
-    self.db.global.cooldownBroadcastDemotion = enabled
-    self._cooldownBroadcastDemotionOn = enabled
-end
-
--- F1 3b hidden switch (no config UI). Route readable-arg SPELL_UPDATE_COOLDOWN
--- fires to their index-matched buttons (mini-pass) or drop them (untracked
--- identity), instead of the broad walk. DEFAULT ON as of F1 3b Commit G.
--- Disable live (no reload) with:
---   /run CooldownCompanion:SetCooldownRoutingEnabled(false)
--- Persists in db.global; default (absent) = ON. Stored as a strict boolean so an
--- explicit OFF survives reload (OnEnable reads it back with ~= false).
--- Independent of the demotion switch above and of the floor's kill switch.
-function CooldownCompanion:SetCooldownRoutingEnabled(enabled)
-    enabled = enabled == true
-    self.db.global.cooldownRouting = enabled
-    self._cooldownRoutingOn = enabled
-end
-
 function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
     if not self._cooldownRefreshQueueFrame then
         local frame = CreateFrame("Frame")
@@ -259,13 +211,6 @@ function CooldownCompanion:IsIdleTickerSkipEligible()
     return not self._cooldownsDirty
         and not self._queuedCooldownRefreshSource
         and self._tickerIdleEligible == true
-        -- The idle skip is out-of-combat only, UNLESS the combat ticker floor is
-        -- on: it extends the skip into combat, relying on the mode-aware
-        -- classifier (self-animating icon/bar buttons no longer force walks) and
-        -- the pandemic edge-hook. The classifier + safety walk still bound
-        -- staleness; a walk-forcing button in combat still keeps the ticker awake.
-        and (not self._inCombatForTicker or self._combatTickerFloorOn)
-        and not self._cooldownDoneSignalOff
 end
 
 -- F2 live-skip predicate: the shared inner eligibility plus the config-open
