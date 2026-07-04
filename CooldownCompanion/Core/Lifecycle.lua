@@ -132,10 +132,6 @@ function CooldownCompanion:OnEnable()
     -- button creation); drop the saved switch key from any earlier build.
     self.db.global.renderFlattenEnabled = nil
 
-    -- Seed the cached combat state used by combat transition handlers and
-    -- diagnostics. One InCombatLockdown() read here covers /reload-in-combat.
-    self._inCombatForTicker = InCombatLockdown() and true or false
-
     -- F2: reset the idle-skip safety-walk streak.
     self._tickerSkipStreak = 0
 
@@ -161,24 +157,18 @@ function CooldownCompanion:OnEnable()
 
     self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnPlayerEnteringWorld")
 
-    -- High-frequency unit events. RegisterUnitEvent filters before dispatch,
-    -- avoiding global UNIT_* traffic through AceEvent.
+    -- Filtered unit events. RegisterUnitEvent avoids global UNIT_* traffic
+    -- through AceEvent.
     if not self._unitEventFrame then
         self._unitEventFrame = CreateFrame("Frame")
         self._unitEventFrame:SetScript("OnEvent", function(_, event, ...)
-            if event == "UNIT_POWER_FREQUENT" then
-                -- Combat ticker floor: power updates (~14/sec in combat) are the
-                -- ticker's dirty floor and their only consumer is the castability
-                -- tint. The tint rides walk cadence (safety walk ~1s worst case
-                -- -- the owner-signed-off latency trade).
-            elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+            if event == "UNIT_SPELLCAST_SUCCEEDED" then
                 self:OnSpellCast(event, ...)
             elseif event == "UNIT_AURA" then
                 self:OnUnitAura(event, ...)
             end
         end)
     end
-    self._unitEventFrame:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
     self._unitEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
     self._unitEventFrame:RegisterUnitEvent("UNIT_AURA", "player", "target")
 
@@ -493,7 +483,6 @@ end
 
 
 function CooldownCompanion:OnCombatStart()
-    self._inCombatForTicker = true
     self:BeginCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
     -- Close spellbook during combat to avoid Blizzard secret value errors
@@ -513,7 +502,6 @@ function CooldownCompanion:OnCombatStart()
 end
 
 function CooldownCompanion:OnCombatEnd()
-    self._inCombatForTicker = false
     local combatLockSnapshot = self:EndCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
     self:ApplyCdmAlpha()
