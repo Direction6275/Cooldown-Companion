@@ -125,11 +125,13 @@ function CooldownCompanion:OnEnable()
     -- (absent key = signal enabled).
     self._cooldownDoneSignalOff = self.db.global.cooldownDoneSignalDisabled == true
 
-    -- Combat ticker floor: seed the hidden switch flag from saved state (absent
-    -- key = OFF). Gates the pandemic edge-hook install/fire; the classifier
-    -- refinement and power-mark demotion land on this same flag later.
-    -- Maintained by SetCombatTickerFloorEnabled.
-    self._combatTickerFloorOn = self.db.global.combatTickerFloor == true
+    -- Combat ticker floor: ON by default (the shipped behavior). Seeds enabled
+    -- unless the hidden kill switch (SetCombatTickerFloorDisabled) has forced the
+    -- legacy path; absent key = ON. Gates the mode-aware classifier, the pandemic
+    -- edge-hook, and the power-mark demotion. Drop the earlier default-OFF opt-in
+    -- key from any prior build.
+    self.db.global.combatTickerFloor = nil
+    self._combatTickerFloorOn = self.db.global.combatTickerFloorDisabled ~= true
 
     -- F6: render-layer flattening is now permanent (applied unconditionally at
     -- button creation); drop the saved switch key from any earlier build.
