@@ -825,7 +825,7 @@ end
 -- mode. Switch OFF reproduces the legacy all-terms-force classifier exactly.
 -- Discrete edges (cooldown start/end, aura apply/remove, pandemic enter/exit)
 -- stay event-covered; the skip only suppresses the redundant continuous middle.
-local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now)
+local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, floorFailOpen)
     local forced = button._chargeRecharging                  -- charge recharge (charge-color heuristic, walk-driven)
         or button._targetSwitchAt ~= nil                     -- target-switch continuity hold
         or conditionalPreview ~= nil                         -- conditional visual preview active
@@ -842,10 +842,23 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now)
                 forced = true                                -- text mode is walk-driven (FormatTime + SetText)
             elseif button._auraActive and button._pandemicEdgeUncovered then
                 forced = true                                -- pandemic applies but its edge isn't hooked (fail open)
+            elseif button._auraActive and button._pandemicGraceStart
+                and (now - button._pandemicGraceStart) <= 0.3 then
+                forced = true                                -- pandemic grace-hold expiry is time-gated with no edge (CONTRACT)
             end
             -- else: icon/bar self-animating cooldown/aura/GCD, pandemic covered
             -- or absent -- skippable; discrete edges stay event-covered.
         end
+    end
+
+    -- Combat ticker floor fail-open: display surfaces NOT covered by the
+    -- self-animating icon/bar path -- texture/trigger panels (custom standalone
+    -- render, self-animation unproven) and hideWhileUnusable visibility (no
+    -- SPELL_UPDATE_USABLE event; power marks demoted). Must force regardless of
+    -- timeActive. floorFailOpen already folds in _combatTickerFloorOn, so it is
+    -- false on the kill-switch OFF path (legacy classifier byte-identical).
+    if not forced and floorFailOpen then
+        forced = true
     end
 
     if forced then
@@ -875,6 +888,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonGroup = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
     local buttonDisplayMode = buttonGroup and (buttonGroup.displayMode or "icons") or "icons"
+    -- Combat ticker floor fail-open gate (folds in the kill switch). Panel modes and
+    -- hideWhileUnusable must keep the ticker walking whether the button is shown or
+    -- hidden: hidden buttons early-return before NoteButtonTimeState, so this is also
+    -- applied in the visibility-hidden branch below. False on the kill-switch OFF path.
+    local floorFailOpen = CooldownCompanion._combatTickerFloorOn == true
+        and (buttonDisplayMode == "textures" or buttonDisplayMode == "trigger"
+            or (buttonData.hideWhileUnusable == true
+                and not buttonData.isPassive and not buttonData.isPassiveCooldown))
     ClearConditionalVisualPreviewFields(button)
 
     if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
@@ -1851,6 +1872,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if shouldCaptureVisualState then
                 CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
             end
+            -- Combat ticker floor fail-open: hidden buttons skip NoteButtonTimeState, so
+            -- pin the ticker here for trigger panels (walk-driven standalone texture) and
+            -- hideWhileUnusable (the walk is what re-shows the button when usability flips).
+            if floorFailOpen then
+                CooldownCompanion._passTimeStateSeen = true
+                CooldownCompanion._tickerIdleEligible = false
+            end
             return  -- Skip all visual updates
         else
             local targetAlpha = button._visibilityAlphaOverride or 1
@@ -1870,6 +1898,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             DispatchStandaloneTextureVisual(button, group)
             if shouldCaptureVisualState then
                 CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
+            end
+            -- Combat ticker floor fail-open: see the non-compact branch above.
+            if floorFailOpen then
+                CooldownCompanion._passTimeStateSeen = true
+                CooldownCompanion._tickerIdleEligible = false
             end
             return  -- Skip visual updates for hidden buttons
         else
@@ -1941,5 +1974,5 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if shouldCaptureVisualState then
         CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
     end
-    NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now)
+    NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, floorFailOpen)
 end

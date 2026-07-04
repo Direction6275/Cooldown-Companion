@@ -173,15 +173,6 @@ local SP = {
     combatOtherLog = {},            -- ring: "time|source|fields|button"
     combatOtherCursor = 0,
     combatOtherTotal = 0,
-    -- Spike 016 pandemic-secrecy probe: is the combat pandemic crossing
-    -- schedulable (readable range) or secret (must poll PandemicIcon)? And do the
-    -- CDM PandemicIcon OnShow/OnHide scripts fire (edge-hook pivot test)?
-    pandemicResolvesCombat = 0,
-    pandemicRangeReadable = 0,
-    pandemicRangeSecret = 0,
-    pandemicIconsHooked = 0,
-    pandemicIconShowFires = 0,
-    pandemicIconHideFires = 0,
     -- mismatch / broadcast-carried detail ring (formatted strings, SV-safe)
     log = {},
     logCursor = 0,
@@ -579,7 +570,9 @@ function SP:NotePassEnd(passSource, passDetail)
             and (passSource == "ticker-dirty" or passSource == "ticker-clean"
                 or passSource == "safety-tick")
         for src, count in pairs(T.dirtyCounts) do
-            if countThis and count > (dirtyPrev[src] or 0) then
+            local prev = dirtyPrev[src] or 0
+            if count < prev then prev = 0 end   -- dirtyCounts was reset mid-capture; rebaseline
+            if countThis and count > prev then
                 self.combatDirtySourceTicks[src] =
                     (self.combatDirtySourceTicks[src] or 0) + 1
             end
@@ -624,32 +617,6 @@ function SP:NotePassEnd(passSource, passDetail)
             end
         end
         ResetBatch()
-    end
-end
-
--- Spike 016 pandemic-secrecy probe (observe-only, dev-gated, combat only).
--- Records whether the pandemic crossing is schedulable (readable range) vs must
--- poll PandemicIcon (secret), and lazily hooks each viewer's PandemicIcon
--- OnShow/OnHide to test an edge-hook pivot. Hooks only bump counters -- no
--- protected calls, no taint; never runs for users (SP.enabled gates on
--- CC_DevBridge).
-function SP:NotePandemicResolve(hasReadableRange, viewerFrame)
-    self.pandemicResolvesCombat = self.pandemicResolvesCombat + 1
-    if hasReadableRange then
-        self.pandemicRangeReadable = self.pandemicRangeReadable + 1
-    else
-        self.pandemicRangeSecret = self.pandemicRangeSecret + 1
-    end
-    local icon = viewerFrame and viewerFrame.PandemicIcon
-    if icon and icon.HookScript and not icon._ccSpikePandemicHooked then
-        icon._ccSpikePandemicHooked = true
-        self.pandemicIconsHooked = self.pandemicIconsHooked + 1
-        icon:HookScript("OnShow", function()
-            SP.pandemicIconShowFires = SP.pandemicIconShowFires + 1
-        end)
-        icon:HookScript("OnHide", function()
-            SP.pandemicIconHideFires = SP.pandemicIconHideFires + 1
-        end)
     end
 end
 
@@ -720,13 +687,6 @@ function CooldownCompanion:GetShadowParityDiagnostics()
         combatUsableOnlyStamps = CopyRing(SP.combatUsableOnlyStamps, SPIKE_STAMP_SIZE),
         combatOtherTotal = SP.combatOtherTotal,
         combatOtherLog = CopyRing(SP.combatOtherLog, SPIKE_LOG_SIZE),
-        -- Spike 016 pandemic-secrecy probe
-        pandemicResolvesCombat = SP.pandemicResolvesCombat,
-        pandemicRangeReadable = SP.pandemicRangeReadable,
-        pandemicRangeSecret = SP.pandemicRangeSecret,
-        pandemicIconsHooked = SP.pandemicIconsHooked,
-        pandemicIconShowFires = SP.pandemicIconShowFires,
-        pandemicIconHideFires = SP.pandemicIconHideFires,
     }
 end
 
@@ -769,13 +729,6 @@ function CooldownCompanion:ResetShadowParity()
     wipe(SP.combatDirtySourceTicks)
     wipe(SP.combatUsableOnlyStamps)
     wipe(SP.combatOtherLog)
-    -- Spike 016 pandemic-secrecy window metrics (pandemicIconsHooked is a
-    -- structural count of installed hooks -- kept across resets).
-    SP.pandemicResolvesCombat = 0
-    SP.pandemicRangeReadable = 0
-    SP.pandemicRangeSecret = 0
-    SP.pandemicIconShowFires = 0
-    SP.pandemicIconHideFires = 0
     -- Drop any in-flight batch too, so a reset mid-window starts clean.
     ResetBatch()
 end
@@ -811,18 +764,6 @@ function CooldownCompanion:PrintCombatFloorSummary()
     if SP.combatOtherTotal > 0 then
         self:Print(("CombatFloor: %d other-write passes logged — /dump CooldownCompanion:GetShadowParityDiagnostics()"):format(SP.combatOtherTotal))
     end
-end
-
--- Spike 016 pandemic-secrecy readout: the decisive gate for the floor phase.
--- High "secret" share = the pandemic crossing is NOT schedulable in combat
--- (must poll PandemicIcon) = the Feral risk. OnShow/OnHide fires gauge whether
--- an edge-hook pivot is available (0 hooked = PandemicIcon absent or not a frame).
-function CooldownCompanion:PrintPandemicSecrecy()
-    local total = SP.pandemicResolvesCombat
-    local secretPct = total > 0 and (SP.pandemicRangeSecret / total * 100) or 0
-    self:Print(("PandemicSecrecy: %d combat resolves — readable %d, secret %d (%.0f%% secret) | PandemicIcon hooked %d, OnShow %d, OnHide %d"):format(
-        total, SP.pandemicRangeReadable, SP.pandemicRangeSecret, secretPct,
-        SP.pandemicIconsHooked, SP.pandemicIconShowFires, SP.pandemicIconHideFires))
 end
 
 -- Gate: enable only when the CC_DevBridge dev addon is present (same pattern
