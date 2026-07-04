@@ -403,10 +403,7 @@ local function SetIconFillFromCooldownWidget(button)
 
     -- F2 canary: cooldown-widget icon fill draws remaining this walk (covered by
     -- the _cooldownState == COOLDOWN / _auraActive classifier terms, guarded above).
-    -- Under the combat ticker floor this fill self-animates (its own OnUpdate,
-    -- usesOnUpdate), so the walk-time render is redundant -- do not count it, or it
-    -- would falsely trip falseIdleTotal against the now-skippable icon.
-    if not CooldownCompanion._combatTickerFloorOn and RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
+    if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
     button.iconFill:SetValue(value)
     return true
 end
@@ -435,10 +432,8 @@ local function SetIconFillValue(button)
 
         if button._auraCooldownStart and button._auraCooldownDuration and button._auraCooldownDuration > 0 then
             -- F2 canary: aura-cooldown icon fill draws remaining this walk
-            -- (covered by the _auraActive classifier term). Skipped under the
-            -- combat ticker floor -- this fill self-animates (own OnUpdate), so
-            -- counting it would falsely trip falseIdleTotal against a skippable icon.
-            if not CooldownCompanion._combatTickerFloorOn and RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
+            -- (covered by the _auraActive classifier term).
+            if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
             local elapsed = GetTime() - button._auraCooldownStart
             if elapsed < 0 then elapsed = 0 end
             if elapsed > button._auraCooldownDuration then elapsed = button._auraCooldownDuration end
@@ -467,10 +462,8 @@ local function SetIconFillValue(button)
         local durationSeconds = button._itemCdDuration or 0
         if durationSeconds > 0 then
             -- F2 canary: item cooldown icon fill draws remaining this walk
-            -- (covered by the _cooldownState == COOLDOWN classifier term). Skipped
-            -- under the combat ticker floor -- this fill self-animates (own
-            -- OnUpdate), so counting it would falsely trip falseIdleTotal.
-            if not CooldownCompanion._combatTickerFloorOn and RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
+            -- (covered by the _cooldownState == COOLDOWN classifier term).
+            if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
             local elapsed = GetTime() - (button._itemCdStart or 0)
             if elapsed < 0 then elapsed = 0 end
             local value = elapsed / durationSeconds

@@ -814,41 +814,15 @@ end
 -- -- including pending time-gated transitions that look static right now (e.g.
 -- a running ready-glow duration window) -- must have a term here, or the idle
 -- skip will starve it until the ~1s safety walk.
---
--- Combat ticker floor (switch-gated): the cooldown swipe/numbers, aura swipe, and
--- GCD swipe self-animate in icon/bar mode (Blizzard CooldownFrameTemplate /
--- BarModeOnUpdate) -- they do NOT need a walk to keep drawing. So while the floor
--- is on, those states stop forcing walks EXCEPT in text mode (redrawn from
--- GetTime() each walk) or when an active aura's pandemic glow applies but its
--- edge-hook is not yet covering it. Everything else (charge-color heuristic,
--- target-switch hold, preview, ready-glow window) stays walk-forcing in every
--- mode. Switch OFF reproduces the legacy all-terms-force classifier exactly.
--- Discrete edges (cooldown start/end, aura apply/remove, pandemic enter/exit)
--- stay event-covered; the skip only suppresses the redundant continuous middle.
 local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now)
-    local forced = button._chargeRecharging                  -- charge recharge (charge-color heuristic, walk-driven)
+    if button._cooldownState == COOLDOWN_STATE_COOLDOWN     -- spell/item/deferred cooldown
+        or button._chargeRecharging                          -- charge recharge in progress
+        or button._auraActive                                -- aura display (incl. target-switch hold); truthy on purpose, fail open
         or button._targetSwitchAt ~= nil                     -- target-switch continuity hold
         or conditionalPreview ~= nil                         -- conditional visual preview active
+        or (isGCDOnly and button.style and button.style.showGCDSwipe == true) -- GCD swipe presentation
         or HasPendingReadyGlowWindow(button, now)            -- finite ready-glow window still running
-
-    if not forced then
-        local timeActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN -- spell/item/deferred cooldown
-            or button._auraActive                            -- aura display (incl. target-switch hold); truthy on purpose, fail open
-            or (isGCDOnly and button.style and button.style.showGCDSwipe == true) -- GCD swipe presentation
-        if timeActive then
-            if not CooldownCompanion._combatTickerFloorOn then
-                forced = true                                -- legacy: any time state forces a walk
-            elseif button._isText then
-                forced = true                                -- text mode is walk-driven (FormatTime + SetText)
-            elseif button._auraActive and button._pandemicEdgeUncovered then
-                forced = true                                -- pandemic applies but its edge isn't hooked (fail open)
-            end
-            -- else: icon/bar self-animating cooldown/aura/GCD, pandemic covered
-            -- or absent -- skippable; discrete edges stay event-covered.
-        end
-    end
-
-    if forced then
+    then
         CooldownCompanion._passTimeStateSeen = true
         CooldownCompanion._tickerIdleEligible = false
     end
