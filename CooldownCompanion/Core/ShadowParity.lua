@@ -191,6 +191,8 @@ local SP = {
     secretBroadFires = 0,           -- secret/unreadable arg -> forced broad path
     nilBroadFires = 0,              -- nil (broadcast-form) arg -> forced broad path
     panelBroadFires = 0,            -- a matched button is in a panel group -> broad
+    rebuildPendingBroadFires = 0,   -- index rebuild pending (buckets stale) -> broad
+    assistantExcludedBroadFires = 0,-- rotation-assistant button loaded -> broad
     supersededBatches = 0,          -- batch dropped: a broad refresh was queued
     generationEscalations = 0,      -- batch escalated: index rebuilt before flush
     -- mismatch / broadcast-carried detail ring (formatted strings, SV-safe)
@@ -736,6 +738,8 @@ function CooldownCompanion:GetShadowParityDiagnostics()
         secretBroadFires = SP.secretBroadFires,
         nilBroadFires = SP.nilBroadFires,
         panelBroadFires = SP.panelBroadFires,
+        rebuildPendingBroadFires = SP.rebuildPendingBroadFires,
+        assistantExcludedBroadFires = SP.assistantExcludedBroadFires,
         supersededBatches = SP.supersededBatches,
         generationEscalations = SP.generationEscalations,
     }
@@ -792,6 +796,8 @@ function CooldownCompanion:ResetShadowParity()
     SP.secretBroadFires = 0
     SP.nilBroadFires = 0
     SP.panelBroadFires = 0
+    SP.rebuildPendingBroadFires = 0
+    SP.assistantExcludedBroadFires = 0
     SP.supersededBatches = 0
     SP.generationEscalations = 0
     -- Drop any in-flight batch too, so a reset mid-window starts clean.
@@ -817,9 +823,10 @@ end
 -- hard gates in PrintShadowParitySummary (shadowParityMismatchTotal /
 -- mismatchDropOnly), which stay the routing-failure detectors.
 function CooldownCompanion:PrintCooldownRoutingSummary()
-    self:Print(("CooldownRouting: routed %d fires -> %d button updates | dropped %d (index miss) | broad fallback: secret %d, nil %d, panel %d | batches: superseded %d, gen-escalated %d"):format(
+    self:Print(("CooldownRouting: routed %d fires -> %d button updates | dropped %d (index miss) | broad fallback: secret %d, nil %d, panel %d, rebuild-pending %d, assistant %d | batches: superseded %d, gen-escalated %d"):format(
         SP.routedFires, SP.routedButtons, SP.droppedFires,
         SP.secretBroadFires, SP.nilBroadFires, SP.panelBroadFires,
+        SP.rebuildPendingBroadFires, SP.assistantExcludedBroadFires,
         SP.supersededBatches, SP.generationEscalations))
 end
 

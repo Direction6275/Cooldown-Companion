@@ -10,18 +10,27 @@
         boundary (a "mini-pass"), coalescing same-frame fires.
       - index miss -> the fire is DROPPED: no tracked button displays that
         identity, so nothing needs updating (policed live by the watchdog's
-        mismatchDropOnly counter).
-      - anything the router cannot fully classify -- secret/unreadable arg, nil
-        (broadcast-form) arg, a matched button in a panel group (cross-button
-        aggregate, D4 inventory A4/A5), or a structural index rebuild between
-        enqueue and flush -- falls back to today's broad path unchanged (fail
-        open; accuracy is inviolable).
+        mismatchDropOnly counter). A drop is only taken once the index-trust
+        gate below has passed.
+      - anything the router cannot fully classify, or any state that makes the
+        index untrustworthy, falls back to today's broad path unchanged (fail
+        open; accuracy is inviolable): secret/unreadable arg, nil (broadcast-
+        form) arg, a matched button in a panel group (cross-button aggregate,
+        D4 inventory A4/A5), a structural index rebuild pending or landed
+        between enqueue and flush, or any rotation-assistant virtual button
+        loaded (those are excluded from the index by design, so a drop could
+        starve one -- SpellButtonIndex header).
 
     Runs beside the refresh scheduler, never through it (CooldownRefresh.lua
     header invariants): the mini-pass never marks dirty, never touches the
-    scheduler serial/queue/latch state, never sets _cooldownUpdatePassActive,
-    and never latches/resets the F2 accumulators. The single sanctioned
-    scheduler touch is the generation-escalation fail-open in the flush.
+    scheduler serial/queue/latch state, and never sets _cooldownUpdatePassActive.
+    It does reach NoteButtonTimeState through the shared per-button pipeline,
+    which may push the F2 accumulators (_passTimeStateSeen, _tickerIdleEligible)
+    in the conservative direction (forcing an extra walk) for a forced routed
+    button -- never the permissive one: only a completed broad walk latches
+    _tickerIdleEligible true, so a mini-pass can never cause a false idle-skip.
+    The single sanctioned scheduler touch is the generation-escalation fail-open
+    in the flush.
 
     Fire->buttons resolution is shared with the ShadowParity watchdog via
     CooldownCompanion:ForEachIndexedSpellButton, so "what the router routes" and
@@ -122,6 +131,25 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
     local SP = ST.ShadowParity
     local spEnabled = SP and SP.enabled
 
+    -- Index-trust gate (fail open BEFORE any route or drop): the flush
+    -- generation guard only re-checks routed batches, never the immediate
+    -- index-miss drop, so an untrustworthy index must broad-fallback here.
+    local index = self:GetSpellButtonIndex()
+    if self:IsSpellButtonIndexRebuildPending() then
+        -- Rebuild queued but not run: buckets predate the change, so a fire for
+        -- a not-yet-indexed button could be wrongly dropped.
+        if spEnabled then SP.rebuildPendingBroadFires = SP.rebuildPendingBroadFires + 1 end
+        return false
+    end
+    if index.excludedCount > 0 then
+        -- Rotation-assistant virtual buttons are index-excluded (their identity
+        -- follows the assisted-combat recommendation and is permanently stale);
+        -- keep every fire broad while any is loaded so a drop can never starve
+        -- one (SpellButtonIndex header intent).
+        if spEnabled then SP.assistantExcludedBroadFires = SP.assistantExcludedBroadFires + 1 end
+        return false
+    end
+
     -- Secret/unreadable primary identity -> broad, never routable.
     if issecretvalue(spellID) then
         if spEnabled then SP.secretBroadFires = SP.secretBroadFires + 1 end
@@ -167,8 +195,16 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
         return false
     end
 
-    -- Route: merge this fire's buttons into the pending batch (set semantics),
-    -- stamp the current index generation, arm the flush.
+    -- Route: merge this fire's buttons into the pending batch (set semantics)
+    -- and arm the flush. Stamp the index generation ONCE, when the batch first
+    -- arms -- re-stamping on later fires would mask a rebuild that landed after
+    -- the earliest batched button was resolved, letting the flush generation
+    -- guard pass on a stale batch. A later fire resolved under a newer
+    -- generation still coalesces in; the guard then escalates the whole batch to
+    -- broad, which is the correct fail-open.
+    if batchCount == 0 then
+        batchGeneration = index.generation
+    end
     for i = 1, fireCount do
         local button = fireList[i]
         if not batchButtons[button] then
@@ -177,7 +213,6 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
             batchOrder[batchCount] = button
         end
     end
-    batchGeneration = self:GetSpellButtonIndex().generation
     self:EnsureRoutedBatchFrame()
     if spEnabled then SP.routedFires = SP.routedFires + 1 end
     return true

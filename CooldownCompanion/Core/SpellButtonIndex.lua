@@ -5,10 +5,14 @@
     Maps identity keys to loaded button frames so a future event router can ask
     "which buttons care about spell/item X?" without walking every button.
 
-    PASSIVE BY DESIGN: nothing at runtime consumes this index. Its only readers
-    are the diagnostics below (and, later, the D1 shadow-parity harness). It
-    ships early so it soaks through real talent/spec/pet/equipment churn while
-    nothing depends on it.
+    Originally PASSIVE BY DESIGN so it could soak through real
+    talent/spec/pet/equipment churn before anything depended on it. As of F1 3b
+    the live cooldown router (CooldownRouting.lua) and the shadow-parity watchdog
+    both consume it through ForEachIndexedSpellButton. It is only load-bearing
+    while routing is enabled (default OFF), and the router fails open to the broad
+    path whenever the index cannot be trusted -- a rebuild is pending (buckets
+    stale, IsSpellButtonIndexRebuildPending) or any rotation-assistant virtual
+    button is loaded (excluded from the index, see below).
 
     Keys are multi-key per button, mirroring what event-arg matching will need:
     - spell entries: base spellID, live override spellID
@@ -171,6 +175,16 @@ end
 -- Live index table (diagnostics and, later, the D1 shadow-parity harness).
 function CooldownCompanion:GetSpellButtonIndex()
     return index
+end
+
+-- True while a structural rebuild has been requested (RequestSpellButtonIndexRebuild)
+-- but the coalesced next-frame RebuildSpellButtonIndex has not yet run. In this
+-- window the buckets predate the change that triggered the request, so a fire for
+-- a not-yet-indexed button would be misclassified. The live router (F1 3b) reads
+-- this and fails open to the broad path while it is true -- the flush generation
+-- guard only re-checks routed batches, never the immediate index-miss drop.
+function CooldownCompanion:IsSpellButtonIndexRebuildPending()
+    return pendingRebuildReason ~= nil
 end
 
 -- Shared fire->buttons resolution used by BOTH the live router (F1 3b) and the

@@ -75,14 +75,18 @@
       and never touches SPELL_UPDATE_COOLDOWN. Bounded by the next ticker
       walk; dirty ticks always walk.
     - Routed mini-passes (F1 3b) run beside the scheduler: they never mark
-      dirty, never touch serials/queue/latch state, never reset or latch the
-      F2 accumulators (_passTimeStateSeen, _tickerIdleEligible,
-      _tickerSkipStreak), never set _cooldownUpdatePassActive, and their
-      batch is dropped whenever a broad refresh is queued at flush time.
-      Secret-arg, nil-arg, panel-matched, and generation-churned fires always
-      take the broad path; index-miss fires are counted drops. Only routed
-      (hit) and dropped (miss) fires skip the dirty mark; every other
-      cooldown fire marks dirty exactly as today.
+      dirty, never touch serials/queue/latch state, never set
+      _cooldownUpdatePassActive, and their batch is dropped whenever a broad
+      refresh is queued at flush time. Their shared per-button pipeline still
+      reaches NoteButtonTimeState, which may push the F2 accumulators
+      (_passTimeStateSeen, _tickerIdleEligible) in the conservative direction
+      (forcing an extra walk) for a forced routed button -- never the permissive
+      one: only a completed broad walk latches _tickerIdleEligible true, so a
+      mini-pass cannot cause a false idle-skip. Secret-arg, nil-arg, panel-
+      matched, rebuild-pending, assistant-excluded, and generation-churned fires
+      all take the broad path; index-miss fires are counted drops. Only routed
+      (hit) and dropped (miss) fires skip the dirty mark; every other cooldown
+      fire marks dirty exactly as today.
 ]]
 
 local ADDON_NAME, ST = ...
