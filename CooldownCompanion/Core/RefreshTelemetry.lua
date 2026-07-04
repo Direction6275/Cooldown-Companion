@@ -38,9 +38,10 @@ local T = {
     -- F2 live skip: clean idle ticks actually suppressed. The "safety-tick"
     -- pass source counts the forced ~1/s walks while skipping.
     tickerIdleSkips = 0,
-    -- Combat ticker floor: count of CDM PandemicIcon frames the edge-hook has
+    -- Combat ticker floor: count of pooled pandemic FX frames the edge-hook has
     -- installed on (coverage). Pairs with the "pandemic-edge" dirtyCounts entry
-    -- (fires) to gauge whether the edge-hook covers every tracked DoT.
+    -- (fires) to gauge the edge-hook. The pool is small and reused across DoTs,
+    -- so this is a handful, not one-per-DoT.
     pandemicEdgeHooks = 0,
     passLog = {},               -- ring buffer of reused entry tables
     passCursor = 0,             -- last written index (1..RING_SIZE)
@@ -85,7 +86,7 @@ function T:CountIdleSkip()
     self.tickerIdleSkips = self.tickerIdleSkips + 1
 end
 
--- Combat ticker floor: an edge-hook was installed on a CDM PandemicIcon frame.
+-- Combat ticker floor: an edge-hook was installed on a pooled pandemic FX frame.
 function T:CountPandemicEdgeHook()
     self.pandemicEdgeHooks = self.pandemicEdgeHooks + 1
 end

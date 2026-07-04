@@ -50,10 +50,11 @@
     - The combat ticker floor (hidden switch SetCombatTickerFloorEnabled,
       db.global.combatTickerFloor, default OFF) is landing in stages. Stage 1
       (this change) wires only the pandemic edge-hook: while the switch is on,
-      the CDM PandemicIcon's OnShow/OnHide mark cooldowns dirty ("pandemic-edge"),
-      covering the secret-in-combat pandemic crossing as an event (<=1 tick)
-      instead of the per-walk IsVisible() poll. It only ever adds walks, so it
-      cannot stale the display. The classifier refinement and power-mark
+      the CDM's pooled pandemic FX frames' OnShow/OnHide (hooked per viewer via
+      pandemicIconPool) mark cooldowns dirty ("pandemic-edge"), covering the
+      secret-in-combat pandemic crossing as an event (<=1 tick) instead of the
+      per-walk IsVisible() poll. It only ever adds walks, so it cannot stale the
+      display. The classifier refinement and power-mark
       demotion -- the parts that actually skip walks in combat -- land later on
       this same switch. Switch OFF leaves any installed hooks inert.
 ]]
