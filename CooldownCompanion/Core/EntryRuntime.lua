@@ -703,6 +703,44 @@ function EntryRuntime.StartTrackedAuraTargetSwitch(owner, now, unit)
     owner._auraUnit = unit or "target"
 end
 
+-- Shared hook body for the pandemic edge (OnShow/OnHide). Marks dirty only while
+-- the combat ticker floor switch is on, so installed hooks are inert when OFF
+-- (one shared function object -- no per-icon closure allocation).
+local function OnPandemicEdge()
+    if CooldownCompanion._combatTickerFloorOn then
+        CooldownCompanion:MarkCooldownsDirty("pandemic-edge")
+    end
+end
+
+-- Combat ticker floor (switch-gated): the pandemic threshold is a secret value
+-- in combat (Phase 0: 0 readable of 8401 Feral resolves), so the crossing time
+-- cannot be computed and scheduled. The CDM PandemicIcon's OnShow/OnHide fire on
+-- the real transition, so hook them to MarkCooldownsDirty -- turning the crossing
+-- into an event-covered edge (<=1 tick, at least as accurate as today's per-walk
+-- IsVisible() poll, which CC already trusts as the combat signal).
+--
+-- Idempotent per icon (guard flag on the frame). Hooks are additive and touch
+-- only CC state (a dirty mark) -- no protected calls, no taint. owner.
+-- _pandemicEdgeHooked records coverage so the classifier can gate its
+-- skip-exemption on it (fail open when unhooked/absent).
+local function InstallPandemicEdgeHook(owner, viewerFrame)
+    local icon = viewerFrame.PandemicIcon
+    if not (icon and icon.HookScript) then
+        owner._pandemicEdgeHooked = nil
+        return
+    end
+    if not icon._ccPandemicEdgeHooked then
+        icon._ccPandemicEdgeHooked = true
+        icon:HookScript("OnShow", OnPandemicEdge)
+        icon:HookScript("OnHide", OnPandemicEdge)
+        local RT = ST.RefreshTelemetry
+        if RT and RT.enabled then
+            RT:CountPandemicEdgeHook()
+        end
+    end
+    owner._pandemicEdgeHooked = true
+end
+
 function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
     if not owner then return false end
     options = options or {}
@@ -716,6 +754,13 @@ function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
             ClearAuraPandemicRuntimeState(owner)
         end
         return false
+    end
+
+    -- Combat ticker floor (switch-gated): make the secret-in-combat pandemic
+    -- crossing an event-covered edge by hooking this viewer's PandemicIcon.
+    -- Inert unless the switch is on; installs once per icon.
+    if CooldownCompanion._combatTickerFloorOn then
+        InstallPandemicEdgeHook(owner, viewerFrame)
     end
 
     local now = options.now or GetTime()

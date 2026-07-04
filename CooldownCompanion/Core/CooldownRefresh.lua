@@ -47,6 +47,15 @@
     - cd-done marks come from ST.OnButtonCooldownDone (ButtonFrame/Helpers.lua)
       and are ordinary MarkCooldownsDirty calls; the hidden kill switch only
       stops the marks, never adds skips.
+    - The combat ticker floor (hidden switch SetCombatTickerFloorEnabled,
+      db.global.combatTickerFloor, default OFF) is landing in stages. Stage 1
+      (this change) wires only the pandemic edge-hook: while the switch is on,
+      the CDM PandemicIcon's OnShow/OnHide mark cooldowns dirty ("pandemic-edge"),
+      covering the secret-in-combat pandemic crossing as an event (<=1 tick)
+      instead of the per-walk IsVisible() poll. It only ever adds walks, so it
+      cannot stale the display. The classifier refinement and power-mark
+      demotion -- the parts that actually skip walks in combat -- land later on
+      this same switch. Switch OFF leaves any installed hooks inert.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -95,6 +104,19 @@ function CooldownCompanion:SetCooldownDoneSignalDisabled(disabled)
     disabled = disabled == true
     self.db.global.cooldownDoneSignalDisabled = disabled or nil
     self._cooldownDoneSignalOff = disabled
+end
+
+-- Combat ticker floor hidden switch (no config UI). Extends the idle skip into
+-- combat for self-animating display modes; default OFF. Currently wires the
+-- pandemic edge-hook (the crossing is secret in combat); the classifier
+-- refinement and power-mark demotion land on this same switch later. Toggle
+-- live (no reload) with:
+--   /run CooldownCompanion:SetCombatTickerFloorEnabled(true)
+-- Persists in db.global; default (absent) = OFF (today's behavior).
+function CooldownCompanion:SetCombatTickerFloorEnabled(enabled)
+    enabled = enabled == true
+    self.db.global.combatTickerFloor = enabled or nil
+    self._combatTickerFloorOn = enabled
 end
 
 function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
