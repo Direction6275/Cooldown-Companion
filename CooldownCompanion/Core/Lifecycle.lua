@@ -341,7 +341,13 @@ function CooldownCompanion:OnEnable()
     self:FinalizeContainerAnchorsToScreenOffsets()
 end
 
-function CooldownCompanion:OnCooldownStateChanged()
+function CooldownCompanion:OnCooldownStateChanged(event, ...)
+    -- D1 shadow-parity tap (dev-gated, observe-only). Event args pass through
+    -- unread here; the harness issecretvalue-checks before any read.
+    local SP = ST.ShadowParity
+    if SP and SP.enabled then
+        SP:NoteCooldownEvent(event, ...)
+    end
     self:MarkCooldownsDirty("cooldown-event")
     -- Preserve immediate cooldown-event accuracy. This refresh only suppresses
     -- the next ticker walk when no other dirty state appears afterward.
@@ -407,6 +413,11 @@ function CooldownCompanion:OnDisable()
 end
 
 function CooldownCompanion:OnChargesChanged(event, spellID, baseSpellID)
+    -- D1 shadow-parity tap (dev-gated, observe-only).
+    local SP = ST.ShadowParity
+    if SP and SP.enabled then
+        SP:NoteChargesEvent(event, spellID, baseSpellID)
+    end
     if event == "SPELL_UPDATE_USES" and spellID then
         local matchesConditionalCastCountEvent = CooldownCompanion.MatchesConditionalCastCountEvent
         local matchedCastCountButton = false
