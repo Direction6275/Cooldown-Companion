@@ -133,6 +133,10 @@ function CooldownCompanion:OnEnable()
     self.db.global.combatTickerFloor = nil
     self._combatTickerFloorOn = self.db.global.combatTickerFloorDisabled ~= true
 
+    -- F1 3a: seed the broadcast-demotion runtime flag from saved state (absent
+    -- key = OFF; today's immediate-broad path for every cooldown event).
+    self._cooldownBroadcastDemotionOn = self.db.global.cooldownBroadcastDemotion == true
+
     -- F6: render-layer flattening is now permanent (applied unconditionally at
     -- button creation); drop the saved switch key from any earlier build.
     self.db.global.renderFlattenEnabled = nil
@@ -364,6 +368,17 @@ function CooldownCompanion:OnCooldownStateChanged(event, ...)
     local SP = ST.ShadowParity
     if SP and SP.enabled then
         SP:NoteCooldownEvent(event, ...)
+    end
+    if self._cooldownBroadcastDemotionOn
+        and (event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "BAG_UPDATE_COOLDOWN")
+    then
+        -- F1 3a: identity-less broadcast events carry no data CC consumes
+        -- (D2 + demotion trace); everything they signal is re-polled by the
+        -- next walk. Dirty-only: the next tick walks (<=0.1s), in combat and
+        -- OOC alike. SPELL_UPDATE_COOLDOWN keeps immediate accuracy below.
+        self:MarkCooldownsDirty(event == "BAG_UPDATE_COOLDOWN"
+            and "bag-cd-broadcast" or "actionbar-cd-broadcast")
+        return
     end
     self:MarkCooldownsDirty("cooldown-event")
     -- Preserve immediate cooldown-event accuracy. This refresh only suppresses

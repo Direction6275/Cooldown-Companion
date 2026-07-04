@@ -70,6 +70,10 @@
       load-bearing in combat. The kill switch restores the prior classifier,
       combat disarm, and power marks verbatim, and leaves any installed pandemic
       hooks inert (byte-identical legacy path, retained for soak reversion).
+    - Broadcast demotion (F1 3a) may downgrade ACTIONBAR/BAG cooldown events
+      from immediate-broad to dirty-only. It never suppresses the mark itself
+      and never touches SPELL_UPDATE_COOLDOWN. Bounded by the next ticker
+      walk; dirty ticks always walk.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -130,6 +134,17 @@ function CooldownCompanion:SetCombatTickerFloorDisabled(disabled)
     disabled = disabled == true
     self.db.global.combatTickerFloorDisabled = disabled or nil
     self._combatTickerFloorOn = not disabled
+end
+
+-- F1 3a hidden switch (no config UI). Demote the identity-less broadcast
+-- cooldown events (ACTIONBAR/BAG_UPDATE_COOLDOWN) from immediate-broad to
+-- dirty-only, live (no reload):
+--   /run CooldownCompanion:SetCooldownBroadcastDemotionEnabled(true)
+-- Persists in db.global; default (absent) = OFF (today's immediate-broad path).
+function CooldownCompanion:SetCooldownBroadcastDemotionEnabled(enabled)
+    enabled = enabled == true
+    self.db.global.cooldownBroadcastDemotion = enabled or nil
+    self._cooldownBroadcastDemotionOn = enabled
 end
 
 function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
