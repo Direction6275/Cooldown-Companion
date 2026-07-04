@@ -242,11 +242,16 @@ function CooldownCompanion:FlushRoutedCooldownBatch()
         return
     end
 
-    -- 2. Generation: a structural rebuild landed between enqueue and flush, so
-    --    the stamped buttons may be stale. Escalate to the broad path (the one
-    --    sanctioned scheduler touch) and drop the batch.
+    -- 2. Generation / pending rebuild: a structural rebuild landed between
+    --    enqueue and flush (generation bumped), OR one is queued but has not run
+    --    yet (buckets about to change, generation not yet bumped). The dispatch
+    --    index-trust gate blocks NEW fires while pending, but a batch armed
+    --    BEFORE the structural change still reaches here; without this the
+    --    generation compare passes (unchanged) and stale/pooled/removed frames
+    --    mini-pass. Either way the stamped buttons may be stale, so escalate to
+    --    the broad path (the one sanctioned scheduler touch) and drop the batch.
     local index = self:GetSpellButtonIndex()
-    if index.generation ~= batchGeneration then
+    if index.generation ~= batchGeneration or self:IsSpellButtonIndexRebuildPending() then
         if spEnabled then SP.generationEscalations = SP.generationEscalations + 1 end
         self:MarkCooldownsDirty("cooldown-event")
         self:QueueCooldownRefresh("cooldown-event")

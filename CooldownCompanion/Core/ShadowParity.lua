@@ -194,7 +194,7 @@ local SP = {
     rebuildPendingBroadFires = 0,   -- index rebuild pending (buckets stale) -> broad
     assistantExcludedBroadFires = 0,-- rotation-assistant button loaded -> broad
     supersededBatches = 0,          -- batch dropped: a broad refresh was queued
-    generationEscalations = 0,      -- batch escalated: index rebuilt before flush
+    generationEscalations = 0,      -- batch escalated: index rebuilt or rebuild pending at flush
     -- mismatch / broadcast-carried detail ring (formatted strings, SV-safe)
     log = {},
     logCursor = 0,
@@ -380,7 +380,10 @@ end
 -- UpdateButtonCooldown sits at the 60-upvalue ceiling) can report a forcing term
 -- through the existing CooldownCompanion upvalue. No-op unless enabled.
 function CooldownCompanion:NoteForcedTickerTerm(term, button)
-    if SP.enabled then
+    -- Broad-walk only (mirrors the NoteButtonTimeState tally gate): a routed
+    -- mini-pass reaches the hidden-button fail-open callers too, but its terms
+    -- are not clean-walk ticker pins and must not skew the forced-term counts.
+    if SP.enabled and self._cooldownUpdatePassActive then
         SP:NoteForcedTerm(term, button)
     end
 end

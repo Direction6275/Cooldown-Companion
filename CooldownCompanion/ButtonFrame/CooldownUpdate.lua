@@ -879,8 +879,12 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
         -- F1 3b Commit A tally (dev-gated observe-only): one call per term that
         -- actually forced. ST is a file upvalue; NoteButtonTimeState is well
         -- under the 60-upvalue ceiling (unlike UpdateButtonCooldown).
+        -- Gate on _cooldownUpdatePassActive so ONLY broad-walk forced terms are
+        -- tallied: a routed mini-pass reaches here too (via UpdateButtonCooldown)
+        -- but is not a ticker walk, so its terms must not pollute the clean-walk
+        -- pinner counts PrintCombatFloorSummary reports.
         local SP = ST.ShadowParity
-        if SP and SP.enabled then
+        if SP and SP.enabled and CooldownCompanion._cooldownUpdatePassActive then
             if charge then SP:NoteForcedTerm("charge", button) end
             if targetSwitch then SP:NoteForcedTerm("targetSwitch", button) end
             if preview then SP:NoteForcedTerm("preview", button) end
