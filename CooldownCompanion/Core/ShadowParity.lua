@@ -157,6 +157,22 @@ local SP = {
     broadcastCarriedChanges = 0,
     broadcastSilentPasses = 0,
     secretFieldSeen = 0,
+    -- Combat ticker-floor feasibility spike counters (observe-only). Per broad
+    -- pass IN COMBAT, classified by signature-diff outcome to measure what the
+    -- power-driven floor walk actually writes -- independent of the event batch
+    -- (floor passes carry no cooldown-family event, so the classifiers above
+    -- never see them).
+    combatPassZeroWrite = 0,        -- no button's signature changed
+    combatPassUsabilityOnly = 0,    -- only the unusable tint (castability) changed
+    combatPassOtherWrite = 0,       -- something else changed
+    combatPassUnclassified = 0,     -- a button was re-baselined this pass
+    combatOtherWriteBySource = {},  -- passSource -> other-write pass count
+    combatDirtySourceTicks = {},    -- dirty source -> ticker ticks it preceded
+    combatUsableOnlyStamps = {},    -- ring of usability-only pass times (USABLE corr.)
+    combatUsableOnlyCursor = 0,
+    combatOtherLog = {},            -- ring: "time|source|fields|button"
+    combatOtherCursor = 0,
+    combatOtherTotal = 0,
     -- mismatch / broadcast-carried detail ring (formatted strings, SV-safe)
     log = {},
     logCursor = 0,
@@ -180,6 +196,14 @@ local batch = {
 local BATCH_SPELL_CAP = 8
 
 local changedKeys = {}          -- per-pass scratch, reused
+
+-- Combat ticker-floor feasibility spike (spec docs/plans/2026-07-03-015),
+-- observe-only. Scratch + running state for the per-pass write classification.
+local SPIKE_LOG_SIZE = 32       -- other-write detail ring
+local SPIKE_STAMP_SIZE = 64     -- usability-only pass timestamp ring
+local spikeFams = {}            -- per-pass set of non-usability changed keys
+local spikeFamList = {}         -- per-pass ordered scratch for the log string
+local dirtyPrev = {}            -- running RefreshTelemetry.dirtyCounts snapshot
 
 -- Clear the pending batch and advance batch.id so any coverage stamps still
 -- sitting on buttons (button._shadowParityCoveredBatch) from the previous batch
@@ -348,6 +372,15 @@ local function LogChange(kind, passSource, button, changedCount)
         table.concat(changedKeys, ",", 1, changedCount))
 end
 
+-- Combat-floor spike other-write ring entry: which fields the floor walk wrote.
+local function LogCombatOther(passSource, famsStr, button)
+    local cursor = SP.combatOtherCursor % SPIKE_LOG_SIZE + 1
+    SP.combatOtherCursor = cursor
+    SP.combatOtherTotal = SP.combatOtherTotal + 1
+    SP.combatOtherLog[cursor] = ("%.1f|%s|%s|%s"):format(
+        GetTime(), tostring(passSource), famsStr, DescribeButton(button))
+end
+
 -- Read the signature fields into the button's reusable state table and
 -- collect changed short keys into the shared scratch. When suppress is true
 -- (first observation, or the button was not observed in the immediately
@@ -453,6 +486,13 @@ function SP:NotePassEnd(passSource, passDetail)
     local uncoveredCoreChanges = 0
     local source = passDetail or passSource
 
+    -- Combat ticker-floor spike accumulators (observe-only). Classify this pass
+    -- by what it wrote, in combat only, independent of the event batch above.
+    local inCombat = CooldownCompanion._inCombatForTicker and true or false
+    local spikeChanged, spikeNonUsability, spikeSuppressed = false, false, false
+    local spikeRingButton
+    if inCombat then wipe(spikeFams) end
+
     for _, frame in pairs(CooldownCompanion.groupFrames) do
         if frame and frame.UpdateCooldowns and frame.buttons and frame:IsShown() then
             for _, button in ipairs(frame.buttons) do
@@ -461,6 +501,26 @@ function SP:NotePassEnd(passSource, passDetail)
                     local suppress = button._shadowParitySigGen ~= passGen - 1
                     local changedCount, oldCd, newCd = ObserveButton(button, suppress)
                     button._shadowParitySigGen = passGen
+                    if inCombat then
+                        if suppress then
+                            spikeSuppressed = true
+                        elseif changedCount > 0 then
+                            spikeChanged = true
+                            local buttonOther = false
+                            for i = 1, changedCount do
+                                if changedKeys[i] ~= "tint" then
+                                    buttonOther = true
+                                    spikeFams[changedKeys[i]] = true
+                                end
+                            end
+                            if buttonOther then
+                                spikeNonUsability = true
+                                if not spikeRingButton then
+                                    spikeRingButton = button
+                                end
+                            end
+                        end
+                    end
                     if evaluate and changedCount > 0 then
                         if button._shadowParityCoveredBatch == batch.id then
                             self.routedCoveredChanges = self.routedCoveredChanges + 1
@@ -501,6 +561,49 @@ function SP:NotePassEnd(passSource, passDetail)
         end
     end
 
+    -- Combat-floor spike: fold this pass's write-outcome and the dirty sources
+    -- that preceded it (ticker ticks only -- the floor) into the counters. The
+    -- dirty snapshot updates every pass so "since last walk" always holds.
+    local T = ST.RefreshTelemetry
+    if T and T.enabled then
+        local countThis = inCombat
+            and (passSource == "ticker-dirty" or passSource == "ticker-clean"
+                or passSource == "safety-tick")
+        for src, count in pairs(T.dirtyCounts) do
+            local prev = dirtyPrev[src] or 0
+            if count < prev then prev = 0 end   -- dirtyCounts was reset mid-capture; rebaseline
+            if countThis and count > prev then
+                self.combatDirtySourceTicks[src] =
+                    (self.combatDirtySourceTicks[src] or 0) + 1
+            end
+            dirtyPrev[src] = count
+        end
+    end
+    if inCombat then
+        if spikeSuppressed then
+            self.combatPassUnclassified = self.combatPassUnclassified + 1
+        elseif not spikeChanged then
+            self.combatPassZeroWrite = self.combatPassZeroWrite + 1
+        elseif not spikeNonUsability then
+            self.combatPassUsabilityOnly = self.combatPassUsabilityOnly + 1
+            local cursor = self.combatUsableOnlyCursor % SPIKE_STAMP_SIZE + 1
+            self.combatUsableOnlyCursor = cursor
+            self.combatUsableOnlyStamps[cursor] = floor(GetTime() * 10 + 0.5) / 10
+        else
+            self.combatPassOtherWrite = self.combatPassOtherWrite + 1
+            local srcKey = passSource or "untagged"
+            self.combatOtherWriteBySource[srcKey] =
+                (self.combatOtherWriteBySource[srcKey] or 0) + 1
+            local n = 0
+            for key in pairs(spikeFams) do
+                n = n + 1
+                spikeFamList[n] = key
+            end
+            LogCombatOther(srcKey, table.concat(spikeFamList, ",", 1, n),
+                spikeRingButton)
+        end
+    end
+
     if evaluate then
         self.passesEvaluated = self.passesEvaluated + 1
         if identityOnly then
@@ -515,6 +618,21 @@ function SP:NotePassEnd(passSource, passDetail)
         end
         ResetBatch()
     end
+end
+
+-- SV-safe copy helpers for the spike diagnostics (scalars/strings only).
+local function CopyScalarMap(src)
+    local out = {}
+    for k, v in pairs(src) do out[k] = v end
+    return out
+end
+
+local function CopyRing(src, size)
+    local out = {}
+    for i = 1, size do
+        if src[i] ~= nil then out[#out + 1] = src[i] end
+    end
+    return out
 end
 
 function CooldownCompanion:GetShadowParity()
@@ -559,6 +677,16 @@ function CooldownCompanion:GetShadowParityDiagnostics()
         logTotal = SP.logTotal,
         fireCounts = fires,
         log = log,
+        -- Combat ticker-floor spike
+        combatPassZeroWrite = SP.combatPassZeroWrite,
+        combatPassUsabilityOnly = SP.combatPassUsabilityOnly,
+        combatPassOtherWrite = SP.combatPassOtherWrite,
+        combatPassUnclassified = SP.combatPassUnclassified,
+        combatOtherWriteBySource = CopyScalarMap(SP.combatOtherWriteBySource),
+        combatDirtySourceTicks = CopyScalarMap(SP.combatDirtySourceTicks),
+        combatUsableOnlyStamps = CopyRing(SP.combatUsableOnlyStamps, SPIKE_STAMP_SIZE),
+        combatOtherTotal = SP.combatOtherTotal,
+        combatOtherLog = CopyRing(SP.combatOtherLog, SPIKE_LOG_SIZE),
     }
 end
 
@@ -589,6 +717,18 @@ function CooldownCompanion:ResetShadowParity()
     SP.logTotal = 0
     wipe(SP.log)
     wipe(SP.fireCounts)
+    -- Combat ticker-floor spike counters (dirtyPrev is a running snapshot, kept)
+    SP.combatPassZeroWrite = 0
+    SP.combatPassUsabilityOnly = 0
+    SP.combatPassOtherWrite = 0
+    SP.combatPassUnclassified = 0
+    SP.combatUsableOnlyCursor = 0
+    SP.combatOtherCursor = 0
+    SP.combatOtherTotal = 0
+    wipe(SP.combatOtherWriteBySource)
+    wipe(SP.combatDirtySourceTicks)
+    wipe(SP.combatUsableOnlyStamps)
+    wipe(SP.combatOtherLog)
     -- Drop any in-flight batch too, so a reset mid-window starts clean.
     ResetBatch()
 end
@@ -603,6 +743,26 @@ function CooldownCompanion:PrintShadowParitySummary()
         SP.identityFireTotal, SP.missFireTotal, SP.broadcastFireTotal, SP.secretFireTotal))
     if SP.shadowParityMismatchTotal > 0 then
         self:Print("ShadowParity: mismatches logged — /dump CooldownCompanion:GetShadowParityDiagnostics()")
+    end
+end
+
+-- Combat ticker-floor spike readout (spec docs/plans/2026-07-03-015). Headline:
+-- what share of in-combat walks wrote nothing or only the castability tint
+-- (skippable if usability can be event-signaled), and how many ticker ticks
+-- power vs cooldown-event marks preceded.
+function CooldownCompanion:PrintCombatFloorSummary()
+    local zero = SP.combatPassZeroWrite
+    local usab = SP.combatPassUsabilityOnly
+    local other = SP.combatPassOtherWrite
+    local classified = zero + usab + other
+    local pct = classified > 0 and ((zero + usab) / classified * 100) or 0
+    self:Print(("CombatFloor: %d classified combat walks — zero-write %d, usability-only %d, other-write %d (+%d unclassified) | skippable %.0f%% | ticker ticks: power %d, cd-event %d, aura-player %d"):format(
+        classified, zero, usab, other, SP.combatPassUnclassified, pct,
+        SP.combatDirtySourceTicks.power or 0,
+        SP.combatDirtySourceTicks["cooldown-event"] or 0,
+        SP.combatDirtySourceTicks["aura-player"] or 0))
+    if SP.combatOtherTotal > 0 then
+        self:Print(("CombatFloor: %d other-write passes logged — /dump CooldownCompanion:GetShadowParityDiagnostics()"):format(SP.combatOtherTotal))
     end
 end
 
