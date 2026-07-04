@@ -2,17 +2,14 @@
     CooldownCompanion - Core/CooldownRouting.lua: F1 3b readable-identity
     cooldown event router.
 
-    When routing is enabled (SetCooldownRoutingEnabled; default ON as of F1 3b
-    Commit G, disable with SetCooldownRoutingEnabled(false)), a
-    readable-arg SPELL_UPDATE_COOLDOWN fire is resolved through the D3 spell
+    A readable-arg SPELL_UPDATE_COOLDOWN fire is resolved through the D3 spell
     index instead of triggering a broad walk:
       - index hit  -> the matched buttons are added to a pending batch that runs
         the full per-button pipeline (UpdateButtonCooldown) on the next OnUpdate
         boundary (a "mini-pass"), coalescing same-frame fires.
       - index miss -> the fire is DROPPED: no tracked button displays that
-        identity, so nothing needs updating (policed live by the watchdog's
-        mismatchDropOnly counter). A drop is only taken once the index-trust
-        gate below has passed.
+        identity, so nothing needs updating. A drop is only taken once the
+        index-trust gate below has passed.
       - anything the router cannot fully classify, or any state that makes the
         index untrustworthy, falls back to today's broad path unchanged (fail
         open; accuracy is inviolable): secret/unreadable arg, nil (broadcast-
@@ -33,9 +30,8 @@
     The single sanctioned scheduler touch is the generation-escalation fail-open
     in the flush.
 
-    Fire->buttons resolution is shared with the ShadowParity watchdog via
-    CooldownCompanion:ForEachIndexedSpellButton, so "what the router routes" and
-    "what the watchdog checks" are the same lookup by construction.
+    Fire->buttons resolution uses CooldownCompanion:ForEachIndexedSpellButton,
+    keeping the router's lookup single-sourced by construction.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -124,14 +120,10 @@ end
 -- Dispatch classifier, called from OnCooldownStateChanged for readable-arg
 -- SPELL_UPDATE_COOLDOWN when routing is on. Returns true only when the fire is
 -- fully handled (routed into the batch, or dropped as an index miss); false
--- forces the broad path. Classification mirrors ShadowParity NoteIdentityEvent
--- exactly: issecretvalue guards precede every read, and a distinct readable base
--- ID is folded in so a fire is a real drop only when NEITHER readable identity
--- maps to a tracked button.
+-- forces the broad path. issecretvalue guards precede every read, and a
+-- distinct readable base ID is folded in so a fire is a real drop only when
+-- NEITHER readable identity maps to a tracked button.
 function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
-    local SP = ST.ShadowParity
-    local spEnabled = SP and SP.enabled
-
     -- Index-trust gate (fail open BEFORE any route or drop): the flush
     -- generation guard only re-checks routed batches, never the immediate
     -- index-miss drop, so an untrustworthy index must broad-fallback here.
@@ -139,7 +131,6 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
     if self:IsSpellButtonIndexRebuildPending() then
         -- Rebuild queued but not run: buckets predate the change, so a fire for
         -- a not-yet-indexed button could be wrongly dropped.
-        if spEnabled then SP.rebuildPendingBroadFires = SP.rebuildPendingBroadFires + 1 end
         return false
     end
     if index.excludedCount > 0 then
@@ -147,29 +138,20 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
         -- follows the assisted-combat recommendation and is permanently stale);
         -- keep every fire broad while any is loaded so a drop can never starve
         -- one (SpellButtonIndex header intent).
-        if spEnabled then SP.assistantExcludedBroadFires = SP.assistantExcludedBroadFires + 1 end
         return false
     end
 
     -- Secret/unreadable primary identity -> broad, never routable.
     if issecretvalue(spellID) then
-        if spEnabled then SP.secretBroadFires = SP.secretBroadFires + 1 end
         return false
     end
     if type(spellID) ~= "number" then
         -- Non-nil non-number is unreadable (broad); nil is the broadcast form
         -- (nil demotion is out of scope for this PR).
-        if spEnabled then
-            if spellID ~= nil then
-                SP.secretBroadFires = SP.secretBroadFires + 1
-            else
-                SP.nilBroadFires = SP.nilBroadFires + 1
-            end
-        end
         return false
     end
 
-    -- Fold in the distinct readable base ID (same rule as the watchdog).
+    -- Fold in the distinct readable base ID, matching the router's drop rule.
     local baseNum
     if not issecretvalue(baseSpellID) and type(baseSpellID) == "number"
             and baseSpellID ~= spellID then
@@ -186,13 +168,11 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
 
     if fireCount == 0 then
         -- Index miss: no tracked button displays this identity -> drop. No dirty
-        -- mark, no walk. Drop safety is policed live by mismatchDropOnly.
-        if spEnabled then SP.droppedFires = SP.droppedFires + 1 end
+        -- mark, no walk.
         return true
     end
     if firePanel then
         -- A matched button is a panel aggregate member -> fail open to broad.
-        if spEnabled then SP.panelBroadFires = SP.panelBroadFires + 1 end
         return false
     end
 
@@ -215,7 +195,6 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
         end
     end
     self:EnsureRoutedBatchFrame()
-    if spEnabled then SP.routedFires = SP.routedFires + 1 end
     return true
 end
 
@@ -230,28 +209,11 @@ function CooldownCompanion:FlushRoutedCooldownBatch()
     end
     self._routedBatchArmed = nil
 
-    local SP = ST.ShadowParity
-    local spEnabled = SP and SP.enabled
-
-    -- 0. Kill switch: routing was disabled (SetCooldownRoutingEnabled(false))
-    --    between arm and flush. New fires already take the broad path
-    --    (OnCooldownStateChanged gates on _cooldownRoutingOn), but a batch armed
-    --    while routing was on still reaches here; fail open to a broad refresh
-    --    (accuracy inviolable) and drop it so the switch reverts to the legacy
-    --    path with no residual mini-pass -- the drill can trust an instant revert.
-    if not self._cooldownRoutingOn then
-        self:MarkCooldownsDirty("cooldown-event")
-        self:QueueCooldownRefresh("cooldown-event")
-        ClearRoutedBatch()
-        return
-    end
-
     -- 1. Supersede: a queued broad refresh flushes at this same boundary and
     --    strictly covers the batch, so drop it. OnUpdate order between the two
     --    frames is not guaranteed; if the broad flush already ran this is nil
     --    and the mini-pass runs redundantly -- safe, just not free.
     if self._queuedCooldownRefreshSource ~= nil then
-        if spEnabled then SP.supersededBatches = SP.supersededBatches + 1 end
         ClearRoutedBatch()
         return
     end
@@ -266,7 +228,6 @@ function CooldownCompanion:FlushRoutedCooldownBatch()
     --    the broad path (the one sanctioned scheduler touch) and drop the batch.
     local index = self:GetSpellButtonIndex()
     if index.generation ~= batchGeneration or self:IsSpellButtonIndexRebuildPending() then
-        if spEnabled then SP.generationEscalations = SP.generationEscalations + 1 end
         self:MarkCooldownsDirty("cooldown-event")
         self:QueueCooldownRefresh("cooldown-event")
         ClearRoutedBatch()
@@ -278,16 +239,13 @@ function CooldownCompanion:FlushRoutedCooldownBatch()
     --    broad walk's gate). button:UpdateCooldown delegates to
     --    UpdateButtonCooldown in every display mode.
     self:SnapshotCooldownPassContext()
-    local routed = 0
     for i = 1, batchCount do
         local button = batchOrder[i]
         local groupFrame = button:GetParent()
         if button.buttonData and groupFrame and groupFrame:IsShown() then
             button:UpdateCooldown()
-            routed = routed + 1
         end
     end
-    if spEnabled then SP.routedButtons = SP.routedButtons + routed end
 
     ClearRoutedBatch()
 end

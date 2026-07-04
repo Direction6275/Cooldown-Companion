@@ -39,18 +39,15 @@
     - _tickerIdleEligible is latched true only by a completed
       UpdateAllCooldowns walk that saw no time-animated button; every other
       writer may only clear it. Eligibility is never older than the last walk.
-    - The skip fails open: combat, config, a disabled cd-done signal, or any
-      unclassified state forces walking. A 1s safety walk runs while skipping.
+    - The skip fails open: config or any unclassified state forces walking. A 1s
+      safety walk runs while skipping.
     - Accepted residual: no-event fallback probes that ride the clean walk
       (e.g. the 0.25s icon texture staleness probe in CooldownUpdate.lua) run
       at safety-walk cadence (~1s) while skipping. Owner-approved (PR #505).
     - cd-done marks come from ST.OnButtonCooldownDone (ButtonFrame/Helpers.lua)
-      and are ordinary MarkCooldownsDirty calls; the hidden kill switch only
-      stops the marks, never adds skips.
-    - The combat ticker floor (ON by default; hidden kill switch
-      SetCombatTickerFloorDisabled, db.global.combatTickerFloorDisabled, for
-      soak reversion only) extends the idle skip into combat for self-animating
-      display modes only, via three coupled changes gated on _combatTickerFloorOn:
+      and are ordinary MarkCooldownsDirty calls.
+    - The combat ticker floor extends the idle skip into combat for
+      self-animating display modes only, via three coupled changes:
         1. Mode-aware classifier (NoteButtonTimeState): an active cooldown/aura/
            GCD swipe on an icon or bar button no longer forces a walk (the swipe,
            numbers, and iconFill self-animate). Text mode, charge recharge,
@@ -62,14 +59,11 @@
            event-covered edge, not a poll. An aura button is skippable only once
            its viewer's pandemic pool is hooked (_pandemicEdgeUncovered nil);
            until then it forces (fail open).
-        3. Power-mark demotion: UNIT_POWER_FREQUENT stops marking dirty while the
-           switch is on; the castability tint then rides walk cadence (safety
-           walk ~1s worst case).
+        3. Power-mark demotion: UNIT_POWER_FREQUENT does not mark dirty; the
+           castability tint rides walk cadence (safety walk ~1s worst case).
       Discrete edges stay event-covered (cooldown start/end, aura apply/remove,
       pandemic enter/exit). The safety walk (TICKER_MAX_CONSECUTIVE_SKIPS) is now
-      load-bearing in combat. The kill switch restores the prior classifier,
-      combat disarm, and power marks verbatim, and leaves any installed pandemic
-      hooks inert (byte-identical legacy path, retained for soak reversion).
+      load-bearing in combat.
     - Broadcast demotion (F1 3a) may downgrade ACTIONBAR/BAG cooldown events
       from immediate-broad to dirty-only. It never suppresses the mark itself
       and never touches SPELL_UPDATE_COOLDOWN. Bounded by the next ticker
@@ -125,54 +119,6 @@ end
 
 function CooldownCompanion:ClearCooldownsDirty()
     self._cooldownsDirty = false
-end
-
--- F3 hidden kill switch (no config UI). Disable the cooldown-expiry signal
--- live (no reload) with:
---   /run CooldownCompanion:SetCooldownDoneSignalDisabled(true)
--- Persists in db.global; default (absent) = signal enabled.
-function CooldownCompanion:SetCooldownDoneSignalDisabled(disabled)
-    disabled = disabled == true
-    self.db.global.cooldownDoneSignalDisabled = disabled or nil
-    self._cooldownDoneSignalOff = disabled
-end
-
--- Combat ticker floor: ON by default (the shipped behavior -- extends the idle
--- skip into combat for self-animating display modes). Hidden kill switch (no
--- config UI, F3 pattern) to force the legacy always-walk path during soak, live
--- (no reload):
---   /run CooldownCompanion:SetCombatTickerFloorDisabled(true)
--- Persists in db.global; default (absent) = enabled.
-function CooldownCompanion:SetCombatTickerFloorDisabled(disabled)
-    disabled = disabled == true
-    self.db.global.combatTickerFloorDisabled = disabled or nil
-    self._combatTickerFloorOn = not disabled
-end
-
--- F1 3a hidden switch (no config UI). Demote the identity-less broadcast
--- cooldown events (ACTIONBAR/BAG_UPDATE_COOLDOWN) from immediate-broad to
--- dirty-only. DEFAULT ON as of F1 3b Commit G. Disable live (no reload) with:
---   /run CooldownCompanion:SetCooldownBroadcastDemotionEnabled(false)
--- Persists in db.global; default (absent) = ON. Stored as a strict boolean so an
--- explicit OFF survives reload (OnEnable reads it back with ~= false).
-function CooldownCompanion:SetCooldownBroadcastDemotionEnabled(enabled)
-    enabled = enabled == true
-    self.db.global.cooldownBroadcastDemotion = enabled
-    self._cooldownBroadcastDemotionOn = enabled
-end
-
--- F1 3b hidden switch (no config UI). Route readable-arg SPELL_UPDATE_COOLDOWN
--- fires to their index-matched buttons (mini-pass) or drop them (untracked
--- identity), instead of the broad walk. DEFAULT ON as of F1 3b Commit G.
--- Disable live (no reload) with:
---   /run CooldownCompanion:SetCooldownRoutingEnabled(false)
--- Persists in db.global; default (absent) = ON. Stored as a strict boolean so an
--- explicit OFF survives reload (OnEnable reads it back with ~= false).
--- Independent of the demotion switch above and of the floor's kill switch.
-function CooldownCompanion:SetCooldownRoutingEnabled(enabled)
-    enabled = enabled == true
-    self.db.global.cooldownRouting = enabled
-    self._cooldownRoutingOn = enabled
 end
 
 function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
@@ -259,13 +205,6 @@ function CooldownCompanion:IsIdleTickerSkipEligible()
     return not self._cooldownsDirty
         and not self._queuedCooldownRefreshSource
         and self._tickerIdleEligible == true
-        -- The idle skip is out-of-combat only, UNLESS the combat ticker floor is
-        -- on: it extends the skip into combat, relying on the mode-aware
-        -- classifier (self-animating icon/bar buttons no longer force walks) and
-        -- the pandemic edge-hook. The classifier + safety walk still bound
-        -- staleness; a walk-forcing button in combat still keeps the ticker awake.
-        and (not self._inCombatForTicker or self._combatTickerFloorOn)
-        and not self._cooldownDoneSignalOff
 end
 
 -- F2 live-skip predicate: the shared inner eligibility plus the config-open
@@ -291,8 +230,8 @@ function CooldownCompanion:TickCooldownRefresh()
         return true
     end
     -- F2 cross-check: count every tick the live-skip predicate accepts, whether
-    -- it then skips or walks as a safety tick. Soak invariant: wouldSkipTotal ==
-    -- tickerIdleSkips + "safety-tick" pass count.
+    -- it then skips or walks as a safety tick. Consistency invariant:
+    -- wouldSkipTotal == tickerIdleSkips + "safety-tick" pass count.
     local canSkipIdle = self:CanSkipIdleTickerRefresh()
     if telemetryOn and canSkipIdle then
         T:CountWouldSkip()

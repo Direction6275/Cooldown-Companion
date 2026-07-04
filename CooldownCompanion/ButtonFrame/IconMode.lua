@@ -406,7 +406,6 @@ local function SetIconFillFromCooldownWidget(button)
     -- Under the combat ticker floor this fill self-animates (its own OnUpdate,
     -- usesOnUpdate), so the walk-time render is redundant -- do not count it, or it
     -- would falsely trip falseIdleTotal against the now-skippable icon.
-    if not CooldownCompanion._combatTickerFloorOn and RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
     button.iconFill:SetValue(value)
     return true
 end
@@ -438,7 +437,6 @@ local function SetIconFillValue(button)
             -- (covered by the _auraActive classifier term). Skipped under the
             -- combat ticker floor -- this fill self-animates (own OnUpdate), so
             -- counting it would falsely trip falseIdleTotal against a skippable icon.
-            if not CooldownCompanion._combatTickerFloorOn and RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
             local elapsed = GetTime() - button._auraCooldownStart
             if elapsed < 0 then elapsed = 0 end
             if elapsed > button._auraCooldownDuration then elapsed = button._auraCooldownDuration end
@@ -470,7 +468,6 @@ local function SetIconFillValue(button)
             -- (covered by the _cooldownState == COOLDOWN classifier term). Skipped
             -- under the combat ticker floor -- this fill self-animates (own
             -- OnUpdate), so counting it would falsely trip falseIdleTotal.
-            if not CooldownCompanion._combatTickerFloorOn and RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
             local elapsed = GetTime() - (button._itemCdStart or 0)
             if elapsed < 0 then elapsed = 0 end
             local value = elapsed / durationSeconds

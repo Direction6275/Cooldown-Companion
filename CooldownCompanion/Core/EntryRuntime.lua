@@ -705,13 +705,9 @@ end
 
 -- Shared hook body for the pandemic edge (a pooled CDM FX frame's OnShow/OnHide,
 -- which fire only on real pandemic enter/exit transitions -- Show() on an
--- already-shown frame is a no-op, so these do NOT fire per update). Marks dirty
--- only while the switch is on, so installed hooks are inert when OFF (one shared
--- function object -- no per-frame closure allocation).
+-- already-shown frame is a no-op, so these do NOT fire per update).
 local function OnPandemicEdge()
-    if CooldownCompanion._combatTickerFloorOn then
-        CooldownCompanion:MarkCooldownsDirty("pandemic-edge")
-    end
+    CooldownCompanion:MarkCooldownsDirty("pandemic-edge")
 end
 
 -- Hook one pooled pandemic FX frame's OnShow/OnHide once (guard on the frame).
@@ -737,14 +733,14 @@ local function HookPandemicPoolActive(pool)
     end
 end
 
--- Combat ticker floor (switch-gated): the pandemic threshold is a secret value
--- in combat (Phase 0: 0 readable of 8401 Feral resolves), so the crossing time
--- cannot be computed and scheduled. The CDM shows a pooled pandemic FX frame on
--- the real transition -- Blizzard CooldownViewerItem Show/HidePandemicStateFrame
--- acquire/release it from viewer.pandemicIconPool -- so hooking that pool's
--- frames' OnShow/OnHide to MarkCooldownsDirty turns the crossing into an
--- event-covered edge (<=1 tick, at least as accurate as today's per-walk
--- IsVisible() poll, which CC already trusts as the combat signal).
+-- Combat ticker floor: the pandemic threshold is a secret value in combat
+-- (Phase 0: 0 readable of 8401 Feral resolves), so the crossing time cannot be
+-- computed and scheduled. The CDM shows a pooled pandemic FX frame on the real
+-- transition -- Blizzard CooldownViewerItem Show/HidePandemicStateFrame acquire/
+-- release it from viewer.pandemicIconPool -- so hooking that pool's frames'
+-- OnShow/OnHide to MarkCooldownsDirty turns the crossing into an event-covered
+-- edge (<=1 tick, at least as accurate as today's per-walk IsVisible() poll,
+-- which CC already trusts as the combat signal).
 --
 -- Hooks the POOL, not per-item PandemicIcon: HidePandemicStateFrame releases the
 -- frame and nils item.PandemicIcon on exit, and the small pool is reused across
@@ -792,12 +788,9 @@ function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
         return false
     end
 
-    -- Combat ticker floor (switch-gated): make the secret-in-combat pandemic
-    -- crossing an event-covered edge by hooking this viewer's pandemic FX pool.
-    -- Inert unless the switch is on; installs once per viewer.
-    if CooldownCompanion._combatTickerFloorOn then
-        InstallPandemicEdgeHook(owner, viewerFrame)
-    end
+    -- Combat ticker floor: make the secret-in-combat pandemic crossing an
+    -- event-covered edge by hooking this viewer's pandemic FX pool.
+    InstallPandemicEdgeHook(owner, viewerFrame)
 
     local now = options.now or GetTime()
     local auraUnit, auraInstanceID = GetPandemicAuraIdentity(owner, options)

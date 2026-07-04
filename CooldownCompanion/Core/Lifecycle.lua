@@ -121,34 +121,16 @@ function CooldownCompanion:EnsureRuntimeInitialized()
 end
 
 function CooldownCompanion:OnEnable()
-    -- F3: seed the cooldown-done kill-switch runtime flag from saved state
-    -- (absent key = signal enabled).
-    self._cooldownDoneSignalOff = self.db.global.cooldownDoneSignalDisabled == true
-
-    -- Combat ticker floor: ON by default (the shipped behavior). Seeds enabled
-    -- unless the hidden kill switch (SetCombatTickerFloorDisabled) has forced the
-    -- legacy path; absent key = ON. Gates the mode-aware classifier, the pandemic
-    -- edge-hook, and the power-mark demotion. Drop the earlier default-OFF opt-in
-    -- key from any prior build.
+    -- Audit-program switches removed (2026-07): scrub stale keys.
+    self.db.global.cooldownDoneSignalDisabled = nil
+    self.db.global.combatTickerFloorDisabled = nil
+    self.db.global.cooldownBroadcastDemotion = nil
+    self.db.global.cooldownRouting = nil
     self.db.global.combatTickerFloor = nil
-    self._combatTickerFloorOn = self.db.global.combatTickerFloorDisabled ~= true
-
-    -- F1 3a: seed the broadcast-demotion runtime flag from saved state. DEFAULT
-    -- ON (F1 3b Commit G): absent key = ON; only an explicit false disables.
-    self._cooldownBroadcastDemotionOn = self.db.global.cooldownBroadcastDemotion ~= false
-
-    -- F1 3b: seed the cooldown-routing runtime flag from saved state. DEFAULT ON
-    -- (F1 3b Commit G): absent key = ON; only an explicit false disables.
-    self._cooldownRoutingOn = self.db.global.cooldownRouting ~= false
 
     -- F6: render-layer flattening is now permanent (applied unconditionally at
     -- button creation); drop the saved switch key from any earlier build.
     self.db.global.renderFlattenEnabled = nil
-
-    -- F2: seed the combat flag read by the idle-skip predicate (the skip is
-    -- out-of-combat only). Maintained by OnCombatStart/OnCombatEnd; one
-    -- InCombatLockdown() read here covers /reload-in-combat. No per-tick probe.
-    self._inCombatForTicker = InCombatLockdown() and true or false
 
     -- F2: reset the idle-skip safety-walk streak.
     self._tickerSkipStreak = 0
@@ -175,30 +157,18 @@ function CooldownCompanion:OnEnable()
 
     self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnPlayerEnteringWorld")
 
-    -- High-frequency unit events. RegisterUnitEvent filters before dispatch,
-    -- avoiding global UNIT_* traffic through AceEvent.
+    -- Filtered unit events. RegisterUnitEvent avoids global UNIT_* traffic
+    -- through AceEvent.
     if not self._unitEventFrame then
         self._unitEventFrame = CreateFrame("Frame")
         self._unitEventFrame:SetScript("OnEvent", function(_, event, ...)
-            if event == "UNIT_POWER_FREQUENT" then
-                -- Combat ticker floor: power updates (~14/sec in combat) are the
-                -- ticker's dirty floor and their only consumer is the castability
-                -- tint. While the floor is on, stop marking dirty here so the
-                -- ticker can idle-skip; the tint then rides walk cadence (safety
-                -- walk ~1s worst case -- the owner-signed-off latency trade).
-                -- Switch OFF restores the immediate mark verbatim. The power
-                -- dirtyCount dropping toward 0 is the telemetry signal.
-                if not self._combatTickerFloorOn then
-                    self:MarkCooldownsDirty("power")
-                end
-            elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+            if event == "UNIT_SPELLCAST_SUCCEEDED" then
                 self:OnSpellCast(event, ...)
             elseif event == "UNIT_AURA" then
                 self:OnUnitAura(event, ...)
             end
         end)
     end
-    self._unitEventFrame:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
     self._unitEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
     self._unitEventFrame:RegisterUnitEvent("UNIT_AURA", "player", "target")
 
@@ -367,24 +337,16 @@ function CooldownCompanion:OnEnable()
 end
 
 function CooldownCompanion:OnCooldownStateChanged(event, ...)
-    -- D1 shadow-parity tap (dev-gated, observe-only). Event args pass through
-    -- unread here; the harness issecretvalue-checks before any read.
-    local SP = ST.ShadowParity
-    if SP and SP.enabled then
-        SP:NoteCooldownEvent(event, ...)
-    end
     -- F1 3b: readable-identity SPELL fires route to their index-matched buttons
     -- (mini-pass) or drop (no tracked button). Anything the router cannot fully
     -- classify -- secret/nil arg, panel-matched button, generation churn --
     -- returns false and falls through to the broad path below unchanged.
-    if self._cooldownRoutingOn and event == "SPELL_UPDATE_COOLDOWN" then
+    if event == "SPELL_UPDATE_COOLDOWN" then
         if self:RouteCooldownEventFire(...) then
             return
         end
     end
-    if self._cooldownBroadcastDemotionOn
-        and (event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "BAG_UPDATE_COOLDOWN")
-    then
+    if event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "BAG_UPDATE_COOLDOWN" then
         -- F1 3a: identity-less broadcast events carry no data CC consumes
         -- (D2 + demotion trace); everything they signal is re-polled by the
         -- next walk. Dirty-only: the next tick walks (<=0.1s), in combat and
@@ -458,11 +420,6 @@ function CooldownCompanion:OnDisable()
 end
 
 function CooldownCompanion:OnChargesChanged(event, spellID, baseSpellID)
-    -- D1 shadow-parity tap (dev-gated, observe-only).
-    local SP = ST.ShadowParity
-    if SP and SP.enabled then
-        SP:NoteChargesEvent(event, spellID, baseSpellID)
-    end
     if event == "SPELL_UPDATE_USES" and spellID then
         local matchesConditionalCastCountEvent = CooldownCompanion.MatchesConditionalCastCountEvent
         local matchedCastCountButton = false
@@ -526,7 +483,6 @@ end
 
 
 function CooldownCompanion:OnCombatStart()
-    self._inCombatForTicker = true  -- F2: disarms the idle ticker skip in combat
     self:BeginCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
     -- Close spellbook during combat to avoid Blizzard secret value errors
@@ -546,7 +502,6 @@ function CooldownCompanion:OnCombatStart()
 end
 
 function CooldownCompanion:OnCombatEnd()
-    self._inCombatForTicker = false  -- F2: re-arms idle ticker skip eligibility
     local combatLockSnapshot = self:EndCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
     self:ApplyCdmAlpha()

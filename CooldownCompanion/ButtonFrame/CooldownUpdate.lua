@@ -815,39 +815,29 @@ end
 -- a running ready-glow duration window) -- must have a term here, or the idle
 -- skip will starve it until the ~1s safety walk.
 --
--- Combat ticker floor (switch-gated): the cooldown swipe/numbers, aura swipe, and
--- GCD swipe self-animate in icon/bar mode (Blizzard CooldownFrameTemplate /
--- BarModeOnUpdate) -- they do NOT need a walk to keep drawing. So while the floor
--- is on, those states stop forcing walks EXCEPT in text mode (redrawn from
--- GetTime() each walk) or when an active aura's pandemic glow applies but its
--- edge-hook is not yet covering it. Everything else (charge-color heuristic,
--- target-switch hold, preview, ready-glow window) stays walk-forcing in every
--- mode. Switch OFF reproduces the legacy all-terms-force classifier exactly.
+-- Combat ticker floor: the cooldown swipe/numbers, aura swipe, and GCD swipe
+-- self-animate in icon/bar mode (Blizzard CooldownFrameTemplate /
+-- BarModeOnUpdate) -- they do NOT need a walk to keep drawing. Those states stop
+-- forcing walks EXCEPT in text mode (redrawn from GetTime() each walk) or when
+-- an active aura's pandemic glow applies but its edge-hook is not yet covering
+-- it. Everything else (charge-color heuristic, target-switch hold, preview,
+-- ready-glow window) stays walk-forcing in every mode.
 -- Discrete edges (cooldown start/end, aura apply/remove, pandemic enter/exit)
 -- stay event-covered; the skip only suppresses the redundant continuous middle.
 local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, floorFailOpen)
-    -- F1 3b Commit A: the forcing terms are broken out into individual booleans
-    -- (was a short-circuit or-chain) so a dev-gated tally can name which term
-    -- pins the ticker awake. `forced` is byte-identical to the old chain -- each
-    -- branch sets the same terms it did before, ORed to the same result; only
-    -- the reporting (guarded on ShadowParity.enabled) is new. The four initial
-    -- terms are pure side-effect-free reads, so evaluating them up front (rather
-    -- than short-circuiting) leaves the truth table unchanged.
     local charge = button._chargeRecharging and true or false   -- charge recharge (charge-color heuristic, walk-driven)
     local targetSwitch = button._targetSwitchAt ~= nil          -- target-switch continuity hold
     local preview = conditionalPreview ~= nil                   -- conditional visual preview active
     local readyGlow = HasPendingReadyGlowWindow(button, now)    -- finite ready-glow window still running
     local forced = charge or targetSwitch or preview or readyGlow
 
-    local legacy, text, pandemicUncovered, pandemicGrace = false, false, false, false
+    local text, pandemicUncovered, pandemicGrace = false, false, false
     if not forced then
         local timeActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN -- spell/item/deferred cooldown
             or button._auraActive                            -- aura display (incl. target-switch hold); truthy on purpose, fail open
             or (isGCDOnly and button.style and button.style.showGCDSwipe == true) -- GCD swipe presentation
         if timeActive then
-            if not CooldownCompanion._combatTickerFloorOn then
-                legacy = true                                -- legacy: any time state forces a walk
-            elseif button._isText then
+            if button._isText then
                 text = true                                  -- text mode is walk-driven (FormatTime + SetText)
             elseif button._auraActive and button._pandemicEdgeUncovered then
                 pandemicUncovered = true                     -- pandemic applies but its edge isn't hooked (fail open)
@@ -857,7 +847,7 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
             end
             -- else: icon/bar self-animating cooldown/aura/GCD, pandemic covered
             -- or absent -- skippable; discrete edges stay event-covered.
-            forced = legacy or text or pandemicUncovered or pandemicGrace
+            forced = text or pandemicUncovered or pandemicGrace
         end
     end
 
@@ -865,8 +855,7 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
     -- self-animating icon/bar path -- texture/trigger panels (custom standalone
     -- render, self-animation unproven) and hideWhileUnusable visibility (no
     -- SPELL_UPDATE_USABLE event; power marks demoted). Must force regardless of
-    -- timeActive. floorFailOpen already folds in _combatTickerFloorOn, so it is
-    -- false on the kill-switch OFF path (legacy classifier byte-identical).
+    -- timeActive.
     local panelForce = false
     if not forced and floorFailOpen then
         panelForce = true
@@ -876,25 +865,6 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
     if forced then
         CooldownCompanion._passTimeStateSeen = true
         CooldownCompanion._tickerIdleEligible = false
-        -- F1 3b Commit A tally (dev-gated observe-only): one call per term that
-        -- actually forced. ST is a file upvalue; NoteButtonTimeState is well
-        -- under the 60-upvalue ceiling (unlike UpdateButtonCooldown).
-        -- Gate on _cooldownUpdatePassActive so ONLY broad-walk forced terms are
-        -- tallied: a routed mini-pass reaches here too (via UpdateButtonCooldown)
-        -- but is not a ticker walk, so its terms must not pollute the clean-walk
-        -- pinner counts PrintCombatFloorSummary reports.
-        local SP = ST.ShadowParity
-        if SP and SP.enabled and CooldownCompanion._cooldownUpdatePassActive then
-            if charge then SP:NoteForcedTerm("charge", button) end
-            if targetSwitch then SP:NoteForcedTerm("targetSwitch", button) end
-            if preview then SP:NoteForcedTerm("preview", button) end
-            if readyGlow then SP:NoteForcedTerm("readyGlow", button) end
-            if legacy then SP:NoteForcedTerm("legacy", button) end
-            if text then SP:NoteForcedTerm("text", button) end
-            if pandemicUncovered then SP:NoteForcedTerm("pandemicUncovered", button) end
-            if pandemicGrace then SP:NoteForcedTerm("pandemicGrace", button) end
-            if panelForce then SP:NoteForcedTerm("panelForce", button) end
-        end
     end
 end
 
@@ -919,14 +889,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonGroup = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
     local buttonDisplayMode = buttonGroup and (buttonGroup.displayMode or "icons") or "icons"
-    -- Combat ticker floor fail-open gate (folds in the kill switch). Panel modes and
-    -- hideWhileUnusable must keep the ticker walking whether the button is shown or
-    -- hidden: hidden buttons early-return before NoteButtonTimeState, so this is also
-    -- applied in the visibility-hidden branch below. False on the kill-switch OFF path.
-    local floorFailOpen = CooldownCompanion._combatTickerFloorOn == true
-        and (buttonDisplayMode == "textures" or buttonDisplayMode == "trigger"
-            or (buttonData.hideWhileUnusable == true
-                and not buttonData.isPassive and not buttonData.isPassiveCooldown))
+    -- Combat ticker floor fail-open gate. Panel modes and hideWhileUnusable must
+    -- keep the ticker walking whether the button is shown or hidden: hidden
+    -- buttons early-return before NoteButtonTimeState, so this is also applied
+    -- in the visibility-hidden branch below.
+    local floorFailOpen = buttonDisplayMode == "textures" or buttonDisplayMode == "trigger"
+        or (buttonData.hideWhileUnusable == true
+            and not buttonData.isPassive and not buttonData.isPassiveCooldown)
     ClearConditionalVisualPreviewFields(button)
 
     if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
@@ -1909,9 +1878,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if floorFailOpen then
                 CooldownCompanion._passTimeStateSeen = true
                 CooldownCompanion._tickerIdleEligible = false
-                -- F1 3b Commit A: count this fail-open pin (routed via a method so
-                -- this ceiling-bound function gains no upvalue).
-                CooldownCompanion:NoteForcedTickerTerm("hiddenFailOpen", button)
             end
             return  -- Skip all visual updates
         else
@@ -1937,7 +1903,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if floorFailOpen then
                 CooldownCompanion._passTimeStateSeen = true
                 CooldownCompanion._tickerIdleEligible = false
-                CooldownCompanion:NoteForcedTickerTerm("hiddenFailOpen", button)
             end
             return  -- Skip visual updates for hidden buttons
         else
