@@ -2,8 +2,8 @@
     CooldownCompanion - Core/SpellButtonIndex.lua: reverse identity -> buttons
     index (F1 prerequisite D3).
 
-    Maps identity keys to loaded button frames so a future event router can ask
-    "which buttons care about spell/item X?" without walking every button.
+    Maps identity keys to loaded button frames so the cooldown event router can
+    ask "which buttons care about spell/item X?" without walking every button.
 
     Originally PASSIVE BY DESIGN so it could soak through real
     talent/spec/pet/equipment churn before anything depended on it. As of F1 3b

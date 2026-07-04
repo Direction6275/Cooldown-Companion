@@ -232,6 +232,19 @@ function CooldownCompanion:FlushRoutedCooldownBatch()
     local SP = ST.ShadowParity
     local spEnabled = SP and SP.enabled
 
+    -- 0. Kill switch: routing was disabled (SetCooldownRoutingEnabled(false))
+    --    between arm and flush. New fires already take the broad path
+    --    (OnCooldownStateChanged gates on _cooldownRoutingOn), but a batch armed
+    --    while routing was on still reaches here; fail open to a broad refresh
+    --    (accuracy inviolable) and drop it so the switch reverts to the legacy
+    --    path with no residual mini-pass -- the drill can trust an instant revert.
+    if not self._cooldownRoutingOn then
+        self:MarkCooldownsDirty("cooldown-event")
+        self:QueueCooldownRefresh("cooldown-event")
+        ClearRoutedBatch()
+        return
+    end
+
     -- 1. Supersede: a queued broad refresh flushes at this same boundary and
     --    strictly covers the batch, so drop it. OnUpdate order between the two
     --    frames is not guaranteed; if the broad flush already ran this is nil
