@@ -722,6 +722,13 @@ function EntryRuntime.ResolveAuraPandemicState(owner, viewerFrame, options)
     local auraUnit, auraInstanceID = GetPandemicAuraIdentity(owner, options)
     local pandemicStartTime, pandemicEndTime, hasReadableRange = GetReadablePandemicRange(viewerFrame)
     local hasDirtyUpdate = HasMatchingPandemicDirtyState(owner, auraUnit, auraInstanceID)
+    -- Spike 016: observe-only pandemic-secrecy instrument (dev-gated, combat).
+    -- Answers whether the ticker-floor pandemic crossing is schedulable (readable
+    -- range) or secret (must poll PandemicIcon). Zero behavior change.
+    local shadowParity = ST.ShadowParity
+    if shadowParity and shadowParity.enabled and CooldownCompanion._inCombatForTicker then
+        shadowParity:NotePandemicResolve(hasReadableRange, viewerFrame)
+    end
     if hasReadableRange and viewerFrame.IsInPandemicTime then
         local semanticResult = viewerFrame:IsInPandemicTime(now)
         if not issecretvalue(semanticResult) then
