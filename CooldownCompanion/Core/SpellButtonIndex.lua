@@ -5,11 +5,10 @@
     Maps identity keys to loaded button frames so the cooldown event router can
     ask "which buttons care about spell/item X?" without walking every button.
 
-    Originally PASSIVE BY DESIGN so it could soak through real
-    talent/spec/pet/equipment churn before anything depended on it. As of F1 3b
-    the live cooldown router (CooldownRouting.lua) and the shadow-parity watchdog
-    both consume it through ForEachIndexedSpellButton. It is only load-bearing
-    while routing is enabled (default ON as of F1 3b), and the router fails open to the broad
+    Originally PASSIVE BY DESIGN so it could be verified against real
+    talent/spec/pet/equipment churn before anything depended on it. The live
+    cooldown router (CooldownRouting.lua) consumes it through
+    ForEachIndexedSpellButton, and fails open to the broad
     path whenever the index cannot be trusted -- a rebuild is pending (buckets
     stale, IsSpellButtonIndexRebuildPending) or any rotation-assistant virtual
     button is loaded (excluded from the index, see below).
@@ -172,7 +171,7 @@ function CooldownCompanion:RequestSpellButtonIndexRebuild(reason)
     end)
 end
 
--- Live index table (diagnostics and, later, the D1 shadow-parity harness).
+-- Live index table for diagnostics and routed cooldown-event resolution.
 function CooldownCompanion:GetSpellButtonIndex()
     return index
 end
@@ -187,11 +186,9 @@ function CooldownCompanion:IsSpellButtonIndexRebuildPending()
     return pendingRebuildReason ~= nil
 end
 
--- Shared fire->buttons resolution used by BOTH the live router (F1 3b) and the
--- shadow-parity watchdog (ShadowParity StampCovered). callback(button) runs once
--- per button indexed under this readable spellID; returns true when at least one
--- button is indexed. Single lookup by construction, so "what the router routes"
--- and "what the watchdog checks" cannot drift.
+-- Shared fire->buttons resolution used by the live router (F1 3b).
+-- callback(button) runs once per button indexed under this readable spellID;
+-- returns true when at least one button is indexed.
 function CooldownCompanion:ForEachIndexedSpellButton(spellID, callback)
     local bucket = index.spell[spellID]
     if not bucket then
@@ -297,7 +294,7 @@ end
 -- Full consistency sweep: every live button's freshly-derived keys must hit
 -- the index, and every indexed button must still be a live, key-matching
 -- button (catches stale frames after unload and identity churn after talent/
--- spec/pet/equipment swaps). Owner soak tool:
+-- spec/pet/equipment swaps). Owner diagnostic:
 --   /run CooldownCompanion:VerifySpellButtonIndexAll()
 function CooldownCompanion:VerifySpellButtonIndexAll()
     local mismatches = 0

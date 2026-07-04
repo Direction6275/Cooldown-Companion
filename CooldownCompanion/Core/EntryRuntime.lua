@@ -733,14 +733,14 @@ local function HookPandemicPoolActive(pool)
     end
 end
 
--- Combat ticker floor (switch-gated): the pandemic threshold is a secret value
--- in combat (Phase 0: 0 readable of 8401 Feral resolves), so the crossing time
--- cannot be computed and scheduled. The CDM shows a pooled pandemic FX frame on
--- the real transition -- Blizzard CooldownViewerItem Show/HidePandemicStateFrame
--- acquire/release it from viewer.pandemicIconPool -- so hooking that pool's
--- frames' OnShow/OnHide to MarkCooldownsDirty turns the crossing into an
--- event-covered edge (<=1 tick, at least as accurate as today's per-walk
--- IsVisible() poll, which CC already trusts as the combat signal).
+-- Combat ticker floor: the pandemic threshold is a secret value in combat
+-- (Phase 0: 0 readable of 8401 Feral resolves), so the crossing time cannot be
+-- computed and scheduled. The CDM shows a pooled pandemic FX frame on the real
+-- transition -- Blizzard CooldownViewerItem Show/HidePandemicStateFrame acquire/
+-- release it from viewer.pandemicIconPool -- so hooking that pool's frames'
+-- OnShow/OnHide to MarkCooldownsDirty turns the crossing into an event-covered
+-- edge (<=1 tick, at least as accurate as today's per-walk IsVisible() poll,
+-- which CC already trusts as the combat signal).
 --
 -- Hooks the POOL, not per-item PandemicIcon: HidePandemicStateFrame releases the
 -- frame and nils item.PandemicIcon on exit, and the small pool is reused across

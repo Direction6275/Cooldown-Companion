@@ -132,9 +132,8 @@ function CooldownCompanion:OnEnable()
     -- button creation); drop the saved switch key from any earlier build.
     self.db.global.renderFlattenEnabled = nil
 
-    -- F2: seed the combat flag read by the idle-skip predicate (the skip is
-    -- out-of-combat only). Maintained by OnCombatStart/OnCombatEnd; one
-    -- InCombatLockdown() read here covers /reload-in-combat. No per-tick probe.
+    -- Seed the cached combat state used by combat transition handlers and
+    -- diagnostics. One InCombatLockdown() read here covers /reload-in-combat.
     self._inCombatForTicker = InCombatLockdown() and true or false
 
     -- F2: reset the idle-skip safety-walk streak.
@@ -494,7 +493,7 @@ end
 
 
 function CooldownCompanion:OnCombatStart()
-    self._inCombatForTicker = true  -- F2: disarms the idle ticker skip in combat
+    self._inCombatForTicker = true
     self:BeginCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
     -- Close spellbook during combat to avoid Blizzard secret value errors
@@ -514,7 +513,7 @@ function CooldownCompanion:OnCombatStart()
 end
 
 function CooldownCompanion:OnCombatEnd()
-    self._inCombatForTicker = false  -- F2: re-arms idle ticker skip eligibility
+    self._inCombatForTicker = false
     local combatLockSnapshot = self:EndCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
     self:ApplyCdmAlpha()

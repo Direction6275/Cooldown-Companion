@@ -2,17 +2,14 @@
     CooldownCompanion - Core/CooldownRouting.lua: F1 3b readable-identity
     cooldown event router.
 
-    When routing is enabled (SetCooldownRoutingEnabled; default ON as of F1 3b
-    Commit G, disable with SetCooldownRoutingEnabled(false)), a
-    readable-arg SPELL_UPDATE_COOLDOWN fire is resolved through the D3 spell
+    A readable-arg SPELL_UPDATE_COOLDOWN fire is resolved through the D3 spell
     index instead of triggering a broad walk:
       - index hit  -> the matched buttons are added to a pending batch that runs
         the full per-button pipeline (UpdateButtonCooldown) on the next OnUpdate
         boundary (a "mini-pass"), coalescing same-frame fires.
       - index miss -> the fire is DROPPED: no tracked button displays that
-        identity, so nothing needs updating (policed live by the watchdog's
-        mismatchDropOnly counter). A drop is only taken once the index-trust
-        gate below has passed.
+        identity, so nothing needs updating. A drop is only taken once the
+        index-trust gate below has passed.
       - anything the router cannot fully classify, or any state that makes the
         index untrustworthy, falls back to today's broad path unchanged (fail
         open; accuracy is inviolable): secret/unreadable arg, nil (broadcast-
@@ -33,9 +30,8 @@
     The single sanctioned scheduler touch is the generation-escalation fail-open
     in the flush.
 
-    Fire->buttons resolution is shared with the ShadowParity watchdog via
-    CooldownCompanion:ForEachIndexedSpellButton, so "what the router routes" and
-    "what the watchdog checks" are the same lookup by construction.
+    Fire->buttons resolution uses CooldownCompanion:ForEachIndexedSpellButton,
+    keeping the router's lookup single-sourced by construction.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -155,7 +151,7 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
         return false
     end
 
-    -- Fold in the distinct readable base ID (same rule as the watchdog).
+    -- Fold in the distinct readable base ID, matching the router's drop rule.
     local baseNum
     if not issecretvalue(baseSpellID) and type(baseSpellID) == "number"
             and baseSpellID ~= spellID then

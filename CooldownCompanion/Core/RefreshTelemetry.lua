@@ -28,10 +28,10 @@ local T = {
     passCounts = {},            -- source -> count
     tickerSkips = 0,
     -- F2 (observe-only): ticks the live-skip predicate accepted, whether then
-    -- skipped or walked as a safety tick (soak invariant: wouldSkipTotal ==
-    -- tickerIdleSkips + "safety-tick" pass count), and times a time-render
-    -- canary fired during a pass that began clean + idle-eligible (a
-    -- proven-wrong "false idle"; the soak gate requires this to stay 0).
+    -- skipped or walked as a safety tick (consistency invariant:
+    -- wouldSkipTotal == tickerIdleSkips + "safety-tick" pass count), and times
+    -- a time-render canary fired during a pass that began clean + idle-eligible
+    -- (a proven-wrong "false idle"; the diagnostic target is 0).
     -- Neither ever changes scheduling.
     wouldSkipTotal = 0,
     falseIdleTotal = 0,

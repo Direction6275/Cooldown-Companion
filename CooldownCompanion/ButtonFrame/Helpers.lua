@@ -1147,8 +1147,7 @@ end
 -- F3: native cooldown-expiry signal. One shared handler for every button's
 -- primary Cooldown widget; marks the scheduler dirty so expiry is a signal
 -- rather than something the clean ticker polls for. Reads no game or widget
--- state at fire time, so it is safe to run re-entrantly mid-pass. Kill switch:
--- CooldownCompanion:SetCooldownDoneSignalDisabled().
+-- state at fire time, so it is safe to run re-entrantly mid-pass.
 function ST.OnButtonCooldownDone(cooldown)
     CooldownCompanion:MarkCooldownsDirty("cd-done")
 end
