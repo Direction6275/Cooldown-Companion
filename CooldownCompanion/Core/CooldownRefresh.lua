@@ -47,6 +47,29 @@
     - cd-done marks come from ST.OnButtonCooldownDone (ButtonFrame/Helpers.lua)
       and are ordinary MarkCooldownsDirty calls; the hidden kill switch only
       stops the marks, never adds skips.
+    - The combat ticker floor (ON by default; hidden kill switch
+      SetCombatTickerFloorDisabled, db.global.combatTickerFloorDisabled, for
+      soak reversion only) extends the idle skip into combat for self-animating
+      display modes only, via three coupled changes gated on _combatTickerFloorOn:
+        1. Mode-aware classifier (NoteButtonTimeState): an active cooldown/aura/
+           GCD swipe on an icon or bar button no longer forces a walk (the swipe,
+           numbers, and iconFill self-animate). Text mode, charge recharge,
+           target-switch holds, ready-glow windows, previews, and any
+           secret/unproven state still force walks.
+        2. Pandemic edge-hook: the crossing is secret in combat, so the CDM's
+           pooled pandemic FX frames' OnShow/OnHide (hooked per viewer via
+           pandemicIconPool) mark dirty ("pandemic-edge") -- a one-tick
+           event-covered edge, not a poll. An aura button is skippable only once
+           its viewer's pandemic pool is hooked (_pandemicEdgeUncovered nil);
+           until then it forces (fail open).
+        3. Power-mark demotion: UNIT_POWER_FREQUENT stops marking dirty while the
+           switch is on; the castability tint then rides walk cadence (safety
+           walk ~1s worst case).
+      Discrete edges stay event-covered (cooldown start/end, aura apply/remove,
+      pandemic enter/exit). The safety walk (TICKER_MAX_CONSECUTIVE_SKIPS) is now
+      load-bearing in combat. The kill switch restores the prior classifier,
+      combat disarm, and power marks verbatim, and leaves any installed pandemic
+      hooks inert (byte-identical legacy path, retained for soak reversion).
 ]]
 
 local ADDON_NAME, ST = ...
@@ -95,6 +118,18 @@ function CooldownCompanion:SetCooldownDoneSignalDisabled(disabled)
     disabled = disabled == true
     self.db.global.cooldownDoneSignalDisabled = disabled or nil
     self._cooldownDoneSignalOff = disabled
+end
+
+-- Combat ticker floor: ON by default (the shipped behavior -- extends the idle
+-- skip into combat for self-animating display modes). Hidden kill switch (no
+-- config UI, F3 pattern) to force the legacy always-walk path during soak, live
+-- (no reload):
+--   /run CooldownCompanion:SetCombatTickerFloorDisabled(true)
+-- Persists in db.global; default (absent) = enabled.
+function CooldownCompanion:SetCombatTickerFloorDisabled(disabled)
+    disabled = disabled == true
+    self.db.global.combatTickerFloorDisabled = disabled or nil
+    self._combatTickerFloorOn = not disabled
 end
 
 function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
@@ -181,7 +216,12 @@ function CooldownCompanion:IsIdleTickerSkipEligible()
     return not self._cooldownsDirty
         and not self._queuedCooldownRefreshSource
         and self._tickerIdleEligible == true
-        and not self._inCombatForTicker
+        -- The idle skip is out-of-combat only, UNLESS the combat ticker floor is
+        -- on: it extends the skip into combat, relying on the mode-aware
+        -- classifier (self-animating icon/bar buttons no longer force walks) and
+        -- the pandemic edge-hook. The classifier + safety walk still bound
+        -- staleness; a walk-forcing button in combat still keeps the ticker awake.
+        and (not self._inCombatForTicker or self._combatTickerFloorOn)
         and not self._cooldownDoneSignalOff
 end
 

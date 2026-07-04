@@ -125,6 +125,14 @@ function CooldownCompanion:OnEnable()
     -- (absent key = signal enabled).
     self._cooldownDoneSignalOff = self.db.global.cooldownDoneSignalDisabled == true
 
+    -- Combat ticker floor: ON by default (the shipped behavior). Seeds enabled
+    -- unless the hidden kill switch (SetCombatTickerFloorDisabled) has forced the
+    -- legacy path; absent key = ON. Gates the mode-aware classifier, the pandemic
+    -- edge-hook, and the power-mark demotion. Drop the earlier default-OFF opt-in
+    -- key from any prior build.
+    self.db.global.combatTickerFloor = nil
+    self._combatTickerFloorOn = self.db.global.combatTickerFloorDisabled ~= true
+
     -- F6: render-layer flattening is now permanent (applied unconditionally at
     -- button creation); drop the saved switch key from any earlier build.
     self.db.global.renderFlattenEnabled = nil
@@ -165,7 +173,16 @@ function CooldownCompanion:OnEnable()
         self._unitEventFrame = CreateFrame("Frame")
         self._unitEventFrame:SetScript("OnEvent", function(_, event, ...)
             if event == "UNIT_POWER_FREQUENT" then
-                self:MarkCooldownsDirty("power")
+                -- Combat ticker floor: power updates (~14/sec in combat) are the
+                -- ticker's dirty floor and their only consumer is the castability
+                -- tint. While the floor is on, stop marking dirty here so the
+                -- ticker can idle-skip; the tint then rides walk cadence (safety
+                -- walk ~1s worst case -- the owner-signed-off latency trade).
+                -- Switch OFF restores the immediate mark verbatim. The power
+                -- dirtyCount dropping toward 0 is the telemetry signal.
+                if not self._combatTickerFloorOn then
+                    self:MarkCooldownsDirty("power")
+                end
             elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
                 self:OnSpellCast(event, ...)
             elseif event == "UNIT_AURA" then
