@@ -123,6 +123,7 @@ local CHARGE_ONLY = {
 }
 
 local LOG_SIZE = 64
+local FORCED_TERM_LOG_SIZE = 32     -- F1 3b Commit A: forcing-term sample ring
 
 local SP = {
     enabled = false,
@@ -173,6 +174,14 @@ local SP = {
     combatOtherLog = {},            -- ring: "time|source|fields|button"
     combatOtherCursor = 0,
     combatOtherTotal = 0,
+    -- F1 3b Commit A forcing-term tally (observe-only). With the floor ON, a
+    -- residual clean walk still ran because at least one button forced walking;
+    -- these name the term(s) that pinned it, so the pinner can be identified in
+    -- the same soak that validates routing. Populated by NoteForcedTerm.
+    forcedTermCounts = {},          -- term -> forced-button occurrences
+    forcedTermLog = {},             -- ring: "term|button" samples
+    forcedTermCursor = 0,
+    forcedTermTotal = 0,
     -- mismatch / broadcast-carried detail ring (formatted strings, SV-safe)
     log = {},
     logCursor = 0,
@@ -343,6 +352,27 @@ local function DescribeButton(button)
         tostring(button.index),
         tostring(buttonData and buttonData.type),
         tostring(buttonData and (buttonData.id or buttonData.itemSlot)))
+end
+
+-- F1 3b Commit A: record one classifier term that forced a walk on `button`.
+-- Called once per contributing term per forced button per broad walk, only
+-- while enabled (the caller guards on SP.enabled). Keeps a per-term count plus
+-- a small overwriting ring of (term, buttonDesc) samples.
+function SP:NoteForcedTerm(term, button)
+    self.forcedTermCounts[term] = (self.forcedTermCounts[term] or 0) + 1
+    local cursor = self.forcedTermCursor % FORCED_TERM_LOG_SIZE + 1
+    self.forcedTermCursor = cursor
+    self.forcedTermTotal = self.forcedTermTotal + 1
+    self.forcedTermLog[cursor] = term .. "|" .. DescribeButton(button)
+end
+
+-- Forwarder so callers that cannot afford a new file upvalue (CooldownUpdate.lua
+-- UpdateButtonCooldown sits at the 60-upvalue ceiling) can report a forcing term
+-- through the existing CooldownCompanion upvalue. No-op unless enabled.
+function CooldownCompanion:NoteForcedTickerTerm(term, button)
+    if SP.enabled then
+        SP:NoteForcedTerm(term, button)
+    end
 end
 
 local function BatchSummary()
@@ -687,6 +717,10 @@ function CooldownCompanion:GetShadowParityDiagnostics()
         combatUsableOnlyStamps = CopyRing(SP.combatUsableOnlyStamps, SPIKE_STAMP_SIZE),
         combatOtherTotal = SP.combatOtherTotal,
         combatOtherLog = CopyRing(SP.combatOtherLog, SPIKE_LOG_SIZE),
+        -- F1 3b Commit A forcing-term tally
+        forcedTermCounts = CopyScalarMap(SP.forcedTermCounts),
+        forcedTermTotal = SP.forcedTermTotal,
+        forcedTermLog = CopyRing(SP.forcedTermLog, FORCED_TERM_LOG_SIZE),
     }
 end
 
@@ -729,6 +763,11 @@ function CooldownCompanion:ResetShadowParity()
     wipe(SP.combatDirtySourceTicks)
     wipe(SP.combatUsableOnlyStamps)
     wipe(SP.combatOtherLog)
+    -- F1 3b Commit A forcing-term tally
+    wipe(SP.forcedTermCounts)
+    wipe(SP.forcedTermLog)
+    SP.forcedTermCursor = 0
+    SP.forcedTermTotal = 0
     -- Drop any in-flight batch too, so a reset mid-window starts clean.
     ResetBatch()
 end
@@ -764,6 +803,18 @@ function CooldownCompanion:PrintCombatFloorSummary()
     if SP.combatOtherTotal > 0 then
         self:Print(("CombatFloor: %d other-write passes logged — /dump CooldownCompanion:GetShadowParityDiagnostics()"):format(SP.combatOtherTotal))
     end
+    -- F1 3b Commit A: which classifier term(s) pinned the ticker awake (one
+    -- forcing button keeps the whole ticker walking). The top term names the
+    -- residual clean-walk pinner.
+    local parts, n = {}, 0
+    for term, count in pairs(SP.forcedTermCounts) do
+        n = n + 1
+        parts[n] = term .. " " .. count
+    end
+    self:Print(n > 0
+        and ("CombatFloor forced terms (%d total): %s"):format(
+            SP.forcedTermTotal, table.concat(parts, ", ", 1, n))
+        or "CombatFloor forced terms: (none seen)")
 end
 
 -- Gate: enable only when the CC_DevBridge dev addon is present (same pattern

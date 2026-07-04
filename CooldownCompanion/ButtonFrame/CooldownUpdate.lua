@@ -826,28 +826,38 @@ end
 -- Discrete edges (cooldown start/end, aura apply/remove, pandemic enter/exit)
 -- stay event-covered; the skip only suppresses the redundant continuous middle.
 local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, floorFailOpen)
-    local forced = button._chargeRecharging                  -- charge recharge (charge-color heuristic, walk-driven)
-        or button._targetSwitchAt ~= nil                     -- target-switch continuity hold
-        or conditionalPreview ~= nil                         -- conditional visual preview active
-        or HasPendingReadyGlowWindow(button, now)            -- finite ready-glow window still running
+    -- F1 3b Commit A: the forcing terms are broken out into individual booleans
+    -- (was a short-circuit or-chain) so a dev-gated tally can name which term
+    -- pins the ticker awake. `forced` is byte-identical to the old chain -- each
+    -- branch sets the same terms it did before, ORed to the same result; only
+    -- the reporting (guarded on ShadowParity.enabled) is new. The four initial
+    -- terms are pure side-effect-free reads, so evaluating them up front (rather
+    -- than short-circuiting) leaves the truth table unchanged.
+    local charge = button._chargeRecharging and true or false   -- charge recharge (charge-color heuristic, walk-driven)
+    local targetSwitch = button._targetSwitchAt ~= nil          -- target-switch continuity hold
+    local preview = conditionalPreview ~= nil                   -- conditional visual preview active
+    local readyGlow = HasPendingReadyGlowWindow(button, now)    -- finite ready-glow window still running
+    local forced = charge or targetSwitch or preview or readyGlow
 
+    local legacy, text, pandemicUncovered, pandemicGrace = false, false, false, false
     if not forced then
         local timeActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN -- spell/item/deferred cooldown
             or button._auraActive                            -- aura display (incl. target-switch hold); truthy on purpose, fail open
             or (isGCDOnly and button.style and button.style.showGCDSwipe == true) -- GCD swipe presentation
         if timeActive then
             if not CooldownCompanion._combatTickerFloorOn then
-                forced = true                                -- legacy: any time state forces a walk
+                legacy = true                                -- legacy: any time state forces a walk
             elseif button._isText then
-                forced = true                                -- text mode is walk-driven (FormatTime + SetText)
+                text = true                                  -- text mode is walk-driven (FormatTime + SetText)
             elseif button._auraActive and button._pandemicEdgeUncovered then
-                forced = true                                -- pandemic applies but its edge isn't hooked (fail open)
+                pandemicUncovered = true                     -- pandemic applies but its edge isn't hooked (fail open)
             elseif button._auraActive and button._pandemicGraceStart
                 and (now - button._pandemicGraceStart) <= 0.3 then
-                forced = true                                -- pandemic grace-hold expiry is time-gated with no edge (CONTRACT)
+                pandemicGrace = true                         -- pandemic grace-hold expiry is time-gated with no edge (CONTRACT)
             end
             -- else: icon/bar self-animating cooldown/aura/GCD, pandemic covered
             -- or absent -- skippable; discrete edges stay event-covered.
+            forced = legacy or text or pandemicUncovered or pandemicGrace
         end
     end
 
@@ -857,13 +867,30 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
     -- SPELL_UPDATE_USABLE event; power marks demoted). Must force regardless of
     -- timeActive. floorFailOpen already folds in _combatTickerFloorOn, so it is
     -- false on the kill-switch OFF path (legacy classifier byte-identical).
+    local panelForce = false
     if not forced and floorFailOpen then
+        panelForce = true
         forced = true
     end
 
     if forced then
         CooldownCompanion._passTimeStateSeen = true
         CooldownCompanion._tickerIdleEligible = false
+        -- F1 3b Commit A tally (dev-gated observe-only): one call per term that
+        -- actually forced. ST is a file upvalue; NoteButtonTimeState is well
+        -- under the 60-upvalue ceiling (unlike UpdateButtonCooldown).
+        local SP = ST.ShadowParity
+        if SP and SP.enabled then
+            if charge then SP:NoteForcedTerm("charge", button) end
+            if targetSwitch then SP:NoteForcedTerm("targetSwitch", button) end
+            if preview then SP:NoteForcedTerm("preview", button) end
+            if readyGlow then SP:NoteForcedTerm("readyGlow", button) end
+            if legacy then SP:NoteForcedTerm("legacy", button) end
+            if text then SP:NoteForcedTerm("text", button) end
+            if pandemicUncovered then SP:NoteForcedTerm("pandemicUncovered", button) end
+            if pandemicGrace then SP:NoteForcedTerm("pandemicGrace", button) end
+            if panelForce then SP:NoteForcedTerm("panelForce", button) end
+        end
     end
 end
 
@@ -1878,6 +1905,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if floorFailOpen then
                 CooldownCompanion._passTimeStateSeen = true
                 CooldownCompanion._tickerIdleEligible = false
+                -- F1 3b Commit A: count this fail-open pin (routed via a method so
+                -- this ceiling-bound function gains no upvalue).
+                CooldownCompanion:NoteForcedTickerTerm("hiddenFailOpen", button)
             end
             return  -- Skip all visual updates
         else
@@ -1903,6 +1933,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if floorFailOpen then
                 CooldownCompanion._passTimeStateSeen = true
                 CooldownCompanion._tickerIdleEligible = false
+                CooldownCompanion:NoteForcedTickerTerm("hiddenFailOpen", button)
             end
             return  -- Skip visual updates for hidden buttons
         else
