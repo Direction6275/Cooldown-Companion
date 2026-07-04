@@ -2,7 +2,8 @@
     CooldownCompanion - Core/CooldownRouting.lua: F1 3b readable-identity
     cooldown event router.
 
-    When routing is enabled (SetCooldownRoutingEnabled; default OFF), a
+    When routing is enabled (SetCooldownRoutingEnabled; default ON as of F1 3b
+    Commit G, disable with SetCooldownRoutingEnabled(false)), a
     readable-arg SPELL_UPDATE_COOLDOWN fire is resolved through the D3 spell
     index instead of triggering a broad walk:
       - index hit  -> the matched buttons are added to a pending batch that runs

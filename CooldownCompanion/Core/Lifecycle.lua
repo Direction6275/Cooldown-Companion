@@ -133,13 +133,13 @@ function CooldownCompanion:OnEnable()
     self.db.global.combatTickerFloor = nil
     self._combatTickerFloorOn = self.db.global.combatTickerFloorDisabled ~= true
 
-    -- F1 3a: seed the broadcast-demotion runtime flag from saved state (absent
-    -- key = OFF; today's immediate-broad path for every cooldown event).
-    self._cooldownBroadcastDemotionOn = self.db.global.cooldownBroadcastDemotion == true
+    -- F1 3a: seed the broadcast-demotion runtime flag from saved state. DEFAULT
+    -- ON (F1 3b Commit G): absent key = ON; only an explicit false disables.
+    self._cooldownBroadcastDemotionOn = self.db.global.cooldownBroadcastDemotion ~= false
 
-    -- F1 3b: seed the cooldown-routing runtime flag from saved state (absent key
-    -- = OFF; today's broad path for every readable-arg SPELL_UPDATE_COOLDOWN).
-    self._cooldownRoutingOn = self.db.global.cooldownRouting == true
+    -- F1 3b: seed the cooldown-routing runtime flag from saved state. DEFAULT ON
+    -- (F1 3b Commit G): absent key = ON; only an explicit false disables.
+    self._cooldownRoutingOn = self.db.global.cooldownRouting ~= false
 
     -- F6: render-layer flattening is now permanent (applied unconditionally at
     -- button creation); drop the saved switch key from any earlier build.

@@ -9,7 +9,7 @@
     talent/spec/pet/equipment churn before anything depended on it. As of F1 3b
     the live cooldown router (CooldownRouting.lua) and the shadow-parity watchdog
     both consume it through ForEachIndexedSpellButton. It is only load-bearing
-    while routing is enabled (default OFF), and the router fails open to the broad
+    while routing is enabled (default ON as of F1 3b), and the router fails open to the broad
     path whenever the index cannot be trusted -- a rebuild is pending (buckets
     stale, IsSpellButtonIndexRebuildPending) or any rotation-assistant virtual
     button is loaded (excluded from the index, see below).

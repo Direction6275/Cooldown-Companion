@@ -151,24 +151,27 @@ end
 
 -- F1 3a hidden switch (no config UI). Demote the identity-less broadcast
 -- cooldown events (ACTIONBAR/BAG_UPDATE_COOLDOWN) from immediate-broad to
--- dirty-only, live (no reload):
---   /run CooldownCompanion:SetCooldownBroadcastDemotionEnabled(true)
--- Persists in db.global; default (absent) = OFF (today's immediate-broad path).
+-- dirty-only. DEFAULT ON as of F1 3b Commit G. Disable live (no reload) with:
+--   /run CooldownCompanion:SetCooldownBroadcastDemotionEnabled(false)
+-- Persists in db.global; default (absent) = ON. Stored as a strict boolean so an
+-- explicit OFF survives reload (OnEnable reads it back with ~= false).
 function CooldownCompanion:SetCooldownBroadcastDemotionEnabled(enabled)
     enabled = enabled == true
-    self.db.global.cooldownBroadcastDemotion = enabled or nil
+    self.db.global.cooldownBroadcastDemotion = enabled
     self._cooldownBroadcastDemotionOn = enabled
 end
 
 -- F1 3b hidden switch (no config UI). Route readable-arg SPELL_UPDATE_COOLDOWN
 -- fires to their index-matched buttons (mini-pass) or drop them (untracked
--- identity), instead of the broad walk. Live (no reload):
---   /run CooldownCompanion:SetCooldownRoutingEnabled(true)
--- Persists in db.global; default (absent) = OFF (today's broad path).
+-- identity), instead of the broad walk. DEFAULT ON as of F1 3b Commit G.
+-- Disable live (no reload) with:
+--   /run CooldownCompanion:SetCooldownRoutingEnabled(false)
+-- Persists in db.global; default (absent) = ON. Stored as a strict boolean so an
+-- explicit OFF survives reload (OnEnable reads it back with ~= false).
 -- Independent of the demotion switch above and of the floor's kill switch.
 function CooldownCompanion:SetCooldownRoutingEnabled(enabled)
     enabled = enabled == true
-    self.db.global.cooldownRouting = enabled or nil
+    self.db.global.cooldownRouting = enabled
     self._cooldownRoutingOn = enabled
 end
 
