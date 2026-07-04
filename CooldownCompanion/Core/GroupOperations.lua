@@ -3396,15 +3396,14 @@ function CooldownCompanion:DiscardDormantFrame(groupId)
     end
 end
 
-function CooldownCompanion:UpdateAllCooldowns()
-    local T = ST.RefreshTelemetry
-    local telemetryOn = T and T.enabled
-    local t0, frames, buttons
-    if telemetryOn then
-        t0 = debugprofilestop()
-        frames, buttons = 0, 0
-    end
-
+-- A1 shared per-pass input snapshot: the GCD state (spell 61304), the
+-- assisted-highlight hostile-target gate, and the CDM viewer CVar -- the three
+-- reads every button in a pass must see identically (D4 inventory A1). Extracted
+-- so routed mini-passes (F1 3b) take the same once-per-batch snapshot the broad
+-- walk uses. Deliberately does NOT touch _cooldownUpdatePassActive or
+-- _passTimeStateSeen: a mini-pass must not set either (3b constraints 4-5), so
+-- those stay in UpdateAllCooldowns below.
+function CooldownCompanion:SnapshotCooldownPassContext()
     self._gcdInfo = C_Spell.GetSpellCooldown(61304)
     -- GCD activity: isActive is NeverSecret (12.0.1 hotfix)
     self._gcdActive = self._gcdInfo and self._gcdInfo.isActive or false
@@ -3423,6 +3422,18 @@ function CooldownCompanion:UpdateAllCooldowns()
 
     -- Cache CDM viewer CVar once per tick (avoids per-button GetCVarBool in ResolveBuffViewerFrameForSpell)
     self._cdmViewerEnabled = C_CVar_GetCVarBool("cooldownViewerEnabled") == true
+end
+
+function CooldownCompanion:UpdateAllCooldowns()
+    local T = ST.RefreshTelemetry
+    local telemetryOn = T and T.enabled
+    local t0, frames, buttons
+    if telemetryOn then
+        t0 = debugprofilestop()
+        frames, buttons = 0, 0
+    end
+
+    self:SnapshotCooldownPassContext()
     self._cooldownUpdatePassActive = true
     -- F2 shadow: reset the per-pass time-animation flag. Any button that renders
     -- time-driven state this walk sets it true (NoteButtonTimeState); a walk that

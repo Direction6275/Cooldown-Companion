@@ -137,6 +137,10 @@ function CooldownCompanion:OnEnable()
     -- key = OFF; today's immediate-broad path for every cooldown event).
     self._cooldownBroadcastDemotionOn = self.db.global.cooldownBroadcastDemotion == true
 
+    -- F1 3b: seed the cooldown-routing runtime flag from saved state (absent key
+    -- = OFF; today's broad path for every readable-arg SPELL_UPDATE_COOLDOWN).
+    self._cooldownRoutingOn = self.db.global.cooldownRouting == true
+
     -- F6: render-layer flattening is now permanent (applied unconditionally at
     -- button creation); drop the saved switch key from any earlier build.
     self.db.global.renderFlattenEnabled = nil
@@ -368,6 +372,15 @@ function CooldownCompanion:OnCooldownStateChanged(event, ...)
     local SP = ST.ShadowParity
     if SP and SP.enabled then
         SP:NoteCooldownEvent(event, ...)
+    end
+    -- F1 3b: readable-identity SPELL fires route to their index-matched buttons
+    -- (mini-pass) or drop (no tracked button). Anything the router cannot fully
+    -- classify -- secret/nil arg, panel-matched button, generation churn --
+    -- returns false and falls through to the broad path below unchanged.
+    if self._cooldownRoutingOn and event == "SPELL_UPDATE_COOLDOWN" then
+        if self:RouteCooldownEventFire(...) then
+            return
+        end
     end
     if self._cooldownBroadcastDemotionOn
         and (event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "BAG_UPDATE_COOLDOWN")

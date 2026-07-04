@@ -173,6 +173,22 @@ function CooldownCompanion:GetSpellButtonIndex()
     return index
 end
 
+-- Shared fire->buttons resolution used by BOTH the live router (F1 3b) and the
+-- shadow-parity watchdog (ShadowParity StampCovered). callback(button) runs once
+-- per button indexed under this readable spellID; returns true when at least one
+-- button is indexed. Single lookup by construction, so "what the router routes"
+-- and "what the watchdog checks" cannot drift.
+function CooldownCompanion:ForEachIndexedSpellButton(spellID, callback)
+    local bucket = index.spell[spellID]
+    if not bucket then
+        return false
+    end
+    for _, button in ipairs(bucket) do
+        callback(button)
+    end
+    return true
+end
+
 local function DescribeButton(button)
     local buttonData = button.buttonData
     local groupId = button._groupId or (button:GetParent() and button:GetParent().groupId)

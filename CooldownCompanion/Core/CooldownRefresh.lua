@@ -74,6 +74,15 @@
       from immediate-broad to dirty-only. It never suppresses the mark itself
       and never touches SPELL_UPDATE_COOLDOWN. Bounded by the next ticker
       walk; dirty ticks always walk.
+    - Routed mini-passes (F1 3b) run beside the scheduler: they never mark
+      dirty, never touch serials/queue/latch state, never reset or latch the
+      F2 accumulators (_passTimeStateSeen, _tickerIdleEligible,
+      _tickerSkipStreak), never set _cooldownUpdatePassActive, and their
+      batch is dropped whenever a broad refresh is queued at flush time.
+      Secret-arg, nil-arg, panel-matched, and generation-churned fires always
+      take the broad path; index-miss fires are counted drops. Only routed
+      (hit) and dropped (miss) fires skip the dirty mark; every other
+      cooldown fire marks dirty exactly as today.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -145,6 +154,18 @@ function CooldownCompanion:SetCooldownBroadcastDemotionEnabled(enabled)
     enabled = enabled == true
     self.db.global.cooldownBroadcastDemotion = enabled or nil
     self._cooldownBroadcastDemotionOn = enabled
+end
+
+-- F1 3b hidden switch (no config UI). Route readable-arg SPELL_UPDATE_COOLDOWN
+-- fires to their index-matched buttons (mini-pass) or drop them (untracked
+-- identity), instead of the broad walk. Live (no reload):
+--   /run CooldownCompanion:SetCooldownRoutingEnabled(true)
+-- Persists in db.global; default (absent) = OFF (today's broad path).
+-- Independent of the demotion switch above and of the floor's kill switch.
+function CooldownCompanion:SetCooldownRoutingEnabled(enabled)
+    enabled = enabled == true
+    self.db.global.cooldownRouting = enabled or nil
+    self._cooldownRoutingOn = enabled
 end
 
 function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
