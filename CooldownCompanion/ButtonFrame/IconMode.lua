@@ -1267,6 +1267,42 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
     UpdateIconFill(button, buttonData, style)
     UpdateBlizzardAuraSwipe(button, style)
 
+    -- Independent GCD swipe. Runs AFTER UpdateIconFill and UpdateBlizzardAuraSwipe
+    -- because both also write button.cooldown's swipe flags -- being the final owner
+    -- for the pass is what keeps the latch honest. Bar mode draws its GCD radial from
+    -- a dedicated frame, so Show GCD Swipe works there even with the main swipe off;
+    -- icon mode shares button.cooldown, whose flags ApplyDefaultCooldownSwipeStyle
+    -- gates on showCooldownSwipe, so a GCD-only radial drew nothing when the main
+    -- swipe was off. Only in that case, draw it ourselves, mirroring bar mode (sweep
+    -- on, edge per showCooldownSwipeEdge). Latched to avoid per-tick writes; the
+    -- falling edge restores default styling and runs unconditionally, so a fetchOk
+    -- false tick can't strand the latch. Defers to real cooldown (isGCDOnly excludes
+    -- it), aura/icon-fill owners, charge-visual, hideCooldownWithCharges, and previews.
+    local gcdOnlyRadialActive = fetchOk
+        and not buttonData.isPassive
+        and isGCDOnly
+        and style.showGCDSwipe == true
+        and style.showCooldownSwipe == false
+        and button._auraPrimarySwipeActive ~= true
+        and button._auraBlizzardSwipeActive ~= true
+        and button._iconFillActive ~= true
+        and button._chargeCooldownVisualActive ~= true
+        and button._hideCooldownChargesActive ~= true
+        and button._conditionalPreviewDomain ~= "cooldown"
+        and button._conditionalAuraDurationTextPreview ~= true
+
+    if gcdOnlyRadialActive then
+        if button._gcdSwipeDrawActive ~= true then
+            button._gcdSwipeDrawActive = true
+            button.cooldown:SetDrawSwipe(true)
+            button.cooldown:SetDrawEdge(style.showCooldownSwipeEdge ~= false)
+            button.cooldown:SetReverse(style.cooldownSwipeReverse or false)
+        end
+    elseif button._gcdSwipeDrawActive == true then
+        button._gcdSwipeDrawActive = nil
+        ApplyDefaultCooldownSwipeStyle(button, style)
+    end
+
     -- When separate text positions: move primary text to aura anchor during aura, cooldown anchor otherwise
     if button._secondaryCdTextRegion and button._cdTextRegion then
         local wantAuraPos = button._auraPrimarySwipeActive == true or button._conditionalAuraDurationTextPreview == true
@@ -1480,6 +1516,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._chargeCountReadable = nil
     button._zeroChargesConfirmed = nil
     button._hideCooldownChargesActive = nil
+    button._gcdSwipeDrawActive = nil
     button._nilConfirmPending = nil
     button._procGlowActive = nil
     button._auraGlowActive = nil
