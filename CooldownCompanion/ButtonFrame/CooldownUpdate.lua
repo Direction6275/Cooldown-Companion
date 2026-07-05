@@ -7,6 +7,10 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
 local EntryRuntime = ST.EntryRuntime
+-- Forcing-attribution sink (loaded before this file; dev-gated, observe-only).
+-- Referenced only by NoteButtonTimeState -- UpdateButtonCooldown is at the
+-- 60-upvalue ceiling and must reach telemetry via CooldownCompanion methods.
+local RefreshTelemetry = ST.RefreshTelemetry
 
 -- Localize frequently-used globals
 local GetTime = GetTime
@@ -851,20 +855,30 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
         end
     end
 
-    -- Combat ticker floor fail-open: display surfaces NOT covered by the
-    -- self-animating icon/bar path -- texture/trigger panels (custom standalone
-    -- render, self-animation unproven) and hideWhileUnusable visibility (no
-    -- SPELL_UPDATE_USABLE event; power marks demoted). Must force regardless of
-    -- timeActive.
-    local panelForce = false
+    -- Combat ticker floor fail-open: hideWhileUnusable visibility is not covered
+    -- by the self-animating icon/bar path (no SPELL_UPDATE_USABLE event; power
+    -- marks demoted), so it must force regardless of timeActive.
+    local floorForce = false
     if not forced and floorFailOpen then
-        panelForce = true
+        floorForce = true
         forced = true
     end
 
     if forced then
         CooldownCompanion._passTimeStateSeen = true
         CooldownCompanion._tickerIdleEligible = false
+        -- Forcing attribution (dev-gated, observe-only): name the term(s) that
+        -- pinned this walk. Inert without the CC_DevBridge dev addon.
+        if RefreshTelemetry and RefreshTelemetry.enabled then
+            if charge then RefreshTelemetry:CountForce("charge") end
+            if targetSwitch then RefreshTelemetry:CountForce("target-switch") end
+            if preview then RefreshTelemetry:CountForce("preview") end
+            if readyGlow then RefreshTelemetry:CountForce("ready-glow") end
+            if text then RefreshTelemetry:CountForce("text") end
+            if pandemicUncovered then RefreshTelemetry:CountForce("pandemic-uncovered") end
+            if pandemicGrace then RefreshTelemetry:CountForce("pandemic-grace") end
+            if floorForce then RefreshTelemetry:CountForce(floorFailOpen) end
+        end
     end
 end
 
@@ -889,13 +903,21 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonGroup = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
     local buttonDisplayMode = buttonGroup and (buttonGroup.displayMode or "icons") or "icons"
-    -- Combat ticker floor fail-open gate. Panel modes and hideWhileUnusable must
-    -- keep the ticker walking whether the button is shown or hidden: hidden
-    -- buttons early-return before NoteButtonTimeState, so this is also applied
-    -- in the visibility-hidden branch below.
-    local floorFailOpen = buttonDisplayMode == "textures" or buttonDisplayMode == "trigger"
-        or (buttonData.hideWhileUnusable == true
-            and not buttonData.isPassive and not buttonData.isPassiveCooldown)
+    -- Combat ticker floor fail-open gate ("hide-unusable" / nil; any truthy
+    -- value forces). hideWhileUnusable must keep the ticker walking whether the
+    -- button is shown or hidden (visibility re-show is walk-driven; usability
+    -- has no event): hidden buttons early-return before NoteButtonTimeState, so
+    -- this is also applied in the visibility-hidden branch below. The string
+    -- doubles as the term name for the dev-gated forcing attribution.
+    -- Texture/trigger panels do NOT force: every panel input is event-covered,
+    -- self-animating, or in the owner-approved <=1s walk-cadence class, so
+    -- panels ride dirty ticks + the safety walk like icon visuals (disposition
+    -- doc 2026-07-04-023; forcing-attribution captures showed the old blanket
+    -- force cost ~25 ms/s in combat and defeated the idle skip entirely).
+    local floorFailOpen = (buttonData.hideWhileUnusable == true
+            and not buttonData.isPassive and not buttonData.isPassiveCooldown
+            and "hide-unusable")
+        or nil
     ClearConditionalVisualPreviewFields(button)
 
     if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
@@ -1275,6 +1297,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Probe spell CD during aura override (shared by secondary CD and sound alerts).
+    -- Accepted residual: expiry mid-override has no widget signal (OnCooldownDone
+    -- rides button.cooldown, which the aura owns), so a buff outlasting its spell's
+    -- cooldown shows the ready transition up to ~1s late while the ticker skips.
+    -- Owner-approved 2026-07-04 (CooldownRefresh.lua header, accepted residuals).
     if auraOwnsPrimarySwipe and not barAuraStackDisplay and buttonData.type == "spell" and not buttonData.isPassive then
         auraProbeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
         if auraProbeInfo and auraProbeInfo.isActive then
@@ -1873,11 +1899,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
             end
             -- Combat ticker floor fail-open: hidden buttons skip NoteButtonTimeState, so
-            -- pin the ticker here for trigger panels (walk-driven standalone texture) and
-            -- hideWhileUnusable (the walk is what re-shows the button when usability flips).
+            -- pin the ticker here for hideWhileUnusable (the walk is what re-shows the
+            -- button when usability flips).
             if floorFailOpen then
                 CooldownCompanion._passTimeStateSeen = true
                 CooldownCompanion._tickerIdleEligible = false
+                CooldownCompanion:CountTickerForce(floorFailOpen)
             end
             return  -- Skip all visual updates
         else
@@ -1903,6 +1930,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if floorFailOpen then
                 CooldownCompanion._passTimeStateSeen = true
                 CooldownCompanion._tickerIdleEligible = false
+                CooldownCompanion:CountTickerForce(floorFailOpen)
             end
             return  -- Skip visual updates for hidden buttons
         else

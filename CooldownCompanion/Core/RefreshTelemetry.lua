@@ -11,6 +11,10 @@
     - F2 (observe-only): would-skip count under the live-skip predicate and
       false-idle count (a time-render canary that fired during a pass that
       began clean and idle-eligible)
+    - forcing attribution (observe-only): which classifier term(s) pinned each
+      broad walk (per-term button counts in forcingCounts, per-walk term
+      combinations in passForceCombos, and a "force" field on passLog entries)
+      -- names what keeps the idle skip from engaging
     Read via CooldownCompanion:GetRefreshTelemetry(); reset via
     CooldownCompanion:ResetRefreshTelemetry(). Never alters refresh behavior.
 ]]
@@ -43,6 +47,13 @@ local T = {
     -- (fires) to gauge the edge-hook. The pool is small and reused across DoTs,
     -- so this is a handful, not one-per-DoT.
     pandemicEdgeHooks = 0,
+    -- Forcing attribution (observe-only): which NoteButtonTimeState term(s)
+    -- forced walking. forcingCounts = term -> per-button occurrences across all
+    -- broad walks; passForceCombos = sorted "term(+term)" combo -> walks pinned
+    -- by exactly that set; passForceTerms = per-walk scratch (wiped each pass).
+    forcingCounts = {},
+    passForceCombos = {},
+    passForceTerms = {},
     passLog = {},               -- ring buffer of reused entry tables
     passCursor = 0,             -- last written index (1..RING_SIZE)
     passTotal = 0,              -- total passes recorded since reset
@@ -91,6 +102,24 @@ function T:CountPandemicEdgeHook()
     self.pandemicEdgeHooks = self.pandemicEdgeHooks + 1
 end
 
+-- Forcing attribution: a classifier term forced this button to keep the ticker
+-- walking. Only broad walks are relevant to idle-skip pinning (mirrors
+-- NoteTimeRender), so ignore routed mini-pass renders.
+function T:CountForce(term)
+    if not CooldownCompanion._cooldownUpdatePassActive then return end
+    self.forcingCounts[term] = (self.forcingCounts[term] or 0) + 1
+    self.passForceTerms[term] = true
+end
+
+-- Enabled-gated wrapper for call sites inside UpdateButtonCooldown, which sits
+-- at the Lua 5.1 60-upvalue ceiling and cannot capture a new file-local; it
+-- reaches this through the CooldownCompanion upvalue it already holds.
+function CooldownCompanion:CountTickerForce(term)
+    if T.enabled then
+        T:CountForce(term)
+    end
+end
+
 -- F2 canary: a time-driven remaining render happened. Only renders that occur
 -- during a broad UpdateAllCooldowns walk are relevant to skip safety -- the
 -- idle skip suppresses that walk, not the OnUpdate self-animation that runs
@@ -135,6 +164,19 @@ function T:RecordPass(frames, buttons, ms)
     local source = self.pendingSource or "direct-untagged"
     self.passCounts[source] = (self.passCounts[source] or 0) + 1
     self.passTotal = self.passTotal + 1
+    -- Forcing attribution: fold this walk's distinct forcing terms into a
+    -- stable sorted combo key (nil when nothing forced -- an idle-eligible walk).
+    local force
+    if next(self.passForceTerms) then
+        local terms = {}
+        for term in pairs(self.passForceTerms) do
+            terms[#terms + 1] = term
+        end
+        table.sort(terms)
+        force = table.concat(terms, "+")
+        self.passForceCombos[force] = (self.passForceCombos[force] or 0) + 1
+        wipe(self.passForceTerms)
+    end
     local cursor = self.passCursor % RING_SIZE + 1
     self.passCursor = cursor
     local entry = self.passLog[cursor]
@@ -143,6 +185,7 @@ function T:RecordPass(frames, buttons, ms)
         self.passLog[cursor] = entry
     end
     entry.t = GetTime()
+    entry.force = force
     entry.src = source
     entry.detail = self.pendingDetail
     entry.hist = self.pendingHist
@@ -175,6 +218,9 @@ function CooldownCompanion:ResetRefreshTelemetry()
     wipe(T.dirtyCounts)
     wipe(T.queueCounts)
     wipe(T.passCounts)
+    wipe(T.forcingCounts)
+    wipe(T.passForceCombos)
+    wipe(T.passForceTerms)
     T.tickerSkips = 0
     T.wouldSkipTotal = 0
     T.falseIdleTotal = 0
