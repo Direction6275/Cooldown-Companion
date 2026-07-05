@@ -207,6 +207,7 @@ local function FinalizePreviewState(preview)
             frame:ClearAllPoints()
             frame:SetParent(preview.root)
             frame:SetScript("OnMouseDown", nil)
+            frame:SetScript("OnMouseUp", nil)
             frame:SetScript("OnEnter", nil)
             frame:SetScript("OnLeave", nil)
         end
@@ -1544,6 +1545,27 @@ local function BuildStableLaneSlots(lane, draggedSlotId)
     return laneScale, slotRects
 end
 
+local function SelectPreviewSlot(slot)
+    if type(slot) ~= "table" then
+        return false
+    end
+
+    if slot.kind == "resource" and slot.powerType ~= nil and ST._SelectConfigResource then
+        ST._SelectConfigResource(slot.powerType, { toggle = true })
+        return true
+    end
+
+    if slot.kind == "custom" and slot.customBarId ~= nil and ST._SelectConfigCustomBar then
+        ST._SelectConfigCustomBar(slot.customBarId, {
+            clearPreview = true,
+            toggle = true,
+        })
+        return true
+    end
+
+    return false
+end
+
 local function BuildLane(preview, parent, layoutDrag, title, width, height, axis, side, reversed, slotModels, slotWidth, slotHeight, acceptedCategory)
     local laneFrame = AcquireContainer(preview, parent)
     laneFrame:SetSize(width, height)
@@ -1584,6 +1606,26 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
                 slotData = slotModel,
             }
             StartDragTracking()
+        end)
+        slotFrame:SetScript("OnMouseUp", function(self, button)
+            local state = CS.dragState
+            if button ~= "LeftButton"
+                or not state
+                or state.kind ~= LAYOUT_PREVIEW_DRAG_KIND
+                or state.phase ~= "pending"
+                or state.widget ~= self then
+                return
+            end
+
+            if CancelDrag then
+                CancelDrag()
+            else
+                CS.dragState = nil
+            end
+
+            if SelectPreviewSlot(slotModel) then
+                CooldownCompanion:RefreshConfigPanel()
+            end
         end)
         slotFrame:SetScript("OnEnter", function(self)
             if self.hoverHighlight then
