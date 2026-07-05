@@ -12,8 +12,9 @@ local LibDeflate = LibStub("LibDeflate")
 local COMPRESSION_CONFIG = { level = 9 }
 local COMPACT_FORMAT_KEY = "_cdcExportFormat"
 local STRIPPED_CHARACTER_ELIGIBILITY_KEY = "_cdcCharacterEligibilityStripped"
-local PREVIOUS_COMPACT_FORMAT_VALUE = "compact3"
-local CURRENT_COMPACT_FORMAT_VALUE = "compact4"
+local COMPACT3_FORMAT_VALUE = "compact3"
+local COMPACT4_FORMAT_VALUE = "compact4"
+local CURRENT_COMPACT_FORMAT_VALUE = "compact5"
 local UNSUPPORTED_COMPACT_FORMATS = {
     compact1 = true,
     compact2 = true,
@@ -409,6 +410,25 @@ local function BuildCompact3ProfileDefaults()
     return compactDefaults
 end
 
+local function StripAuraDurationSwipeDefaults(compactDefaults)
+    local style = type(compactDefaults) == "table" and compactDefaults.globalStyle
+    if type(style) ~= "table" then
+        return compactDefaults
+    end
+
+    style.showAuraDurationSwipe = nil
+    style.showAuraDurationSwipeFill = nil
+    style.auraDurationSwipeReverse = nil
+    style.showAuraDurationSwipeEdge = nil
+    style.auraDurationSwipeAlpha = nil
+    style.auraDurationSwipeEdgeColor = nil
+    return compactDefaults
+end
+
+local function BuildCompact4ProfileDefaults()
+    return StripAuraDurationSwipeDefaults(BuildCurrentCompactProfileDefaults())
+end
+
 local function BuildCompactEntityDefaults(compactLayoutDefault)
     return {
         loadConditions = {
@@ -490,12 +510,14 @@ local SCOPED_STORE_KEYS = {
 -- If profile defaults change in a future release, keep the old snapshot here
 -- and bump CURRENT_COMPACT_FORMAT_VALUE.
 local COMPACT_PROFILE_DEFAULTS = {
-    [PREVIOUS_COMPACT_FORMAT_VALUE] = BuildCompact3ProfileDefaults(),
+    [COMPACT3_FORMAT_VALUE] = StripAuraDurationSwipeDefaults(BuildCompact3ProfileDefaults()),
+    [COMPACT4_FORMAT_VALUE] = BuildCompact4ProfileDefaults(),
     [CURRENT_COMPACT_FORMAT_VALUE] = BuildCurrentCompactProfileDefaults(),
 }
 
 local COMPACT_ENTITY_DEFAULTS = {
-    [PREVIOUS_COMPACT_FORMAT_VALUE] = BuildCompactEntityDefaults(false),
+    [COMPACT3_FORMAT_VALUE] = BuildCompactEntityDefaults(false),
+    [COMPACT4_FORMAT_VALUE] = BuildCompactEntityDefaults(true),
     [CURRENT_COMPACT_FORMAT_VALUE] = BuildCompactEntityDefaults(true),
 }
 
