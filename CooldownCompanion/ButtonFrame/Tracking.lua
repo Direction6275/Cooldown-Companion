@@ -6,6 +6,7 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
+local EntryRuntime = ST.EntryRuntime
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
@@ -194,6 +195,9 @@ local function IsUnusableVisualActive(button, buttonData)
         return true, "unusable-preview"
     end
     if buttonData.type == "spell" then
+        if EntryRuntime.ShouldSuppressSpellUnusableVisual(button, buttonData) then
+            return false
+        end
         local spellID = button._displaySpellId or buttonData.id
         if not C_Spell_IsSpellUsable(spellID) then
             return true, "unusable"
@@ -244,7 +248,8 @@ local function ResolveIconTintIntent(button, buttonData, style, target)
             r, g, b = 1, 0.2, 0.2
             reason = "out-of-range-preview"
             stateOverride = true
-        elseif buttonData.type == "spell" then
+        elseif buttonData.type == "spell"
+                and not EntryRuntime.ShouldSuppressSpellRangeVisual(button, buttonData) then
             if button._spellOutOfRange then
                 r, g, b = 1, 0.2, 0.2
                 reason = "out-of-range"
