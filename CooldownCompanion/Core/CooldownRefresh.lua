@@ -44,6 +44,12 @@
     - Accepted residual: no-event fallback probes that ride the clean walk
       (e.g. the 0.25s icon texture staleness probe in CooldownUpdate.lua) run
       at safety-walk cadence (~1s) while skipping. Owner-approved (PR #505).
+    - Accepted residual: during aura override the real spell cooldown has no
+      expiry signal (OnCooldownDone rides button.cooldown, which the aura owns;
+      the walk-time probe in CooldownUpdate.lua re-checks it). For a buff that
+      outlasts its spell's cooldown, the ready transition (desat clear, ready
+      glow) can lag up to the ~1s safety walk while skipping.
+      Owner-approved (2026-07-04).
     - cd-done marks come from ST.OnButtonCooldownDone (ButtonFrame/Helpers.lua)
       and are ordinary MarkCooldownsDirty calls.
     - The combat ticker floor extends the idle skip into combat for
