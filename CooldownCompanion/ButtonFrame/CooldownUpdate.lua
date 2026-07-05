@@ -1959,8 +1959,12 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         if buttonData.isPassive or buttonData.isPassiveCooldown then
             button._isUnusable = false
         elseif buttonData.type == "spell" then
-            local spellID = button._displaySpellId or buttonData.id
-            button._isUnusable = not C_Spell_IsSpellUsable(spellID)
+            if EntryRuntime.ShouldSuppressSpellUnusableVisual(button, buttonData) then
+                button._isUnusable = false
+            else
+                local spellID = button._displaySpellId or buttonData.id
+                button._isUnusable = not C_Spell_IsSpellUsable(spellID)
+            end
         elseif IsEntryItemLike(buttonData) or buttonData.type == "equipitem" then
             local itemID = button._resolvedItemId or buttonData.id
             local usable = itemID and IsUsableItem(itemID)
@@ -1970,7 +1974,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
 
         if buttonData.type == "spell" and not buttonData.isPassiveCooldown then
-            button._isOutOfRange = button._spellOutOfRange or false
+            if EntryRuntime.ShouldSuppressSpellRangeVisual(button, buttonData) then
+                button._isOutOfRange = false
+            else
+                button._isOutOfRange = button._spellOutOfRange or false
+            end
         elseif IsEntryItemLike(buttonData) or buttonData.type == "equipitem" then
             -- C_Item.IsItemInRange is protected in combat for non-enemy targets (10.2.0)
             local itemID = button._resolvedItemId or buttonData.id

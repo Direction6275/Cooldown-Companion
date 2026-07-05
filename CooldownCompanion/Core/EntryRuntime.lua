@@ -37,6 +37,22 @@ local CLEAR_OWNER_FALSE_STATE_KEEP_SWITCH_OPTS = { useFalseState = true, preserv
 local EntryRuntime = ST.EntryRuntime or {}
 ST.EntryRuntime = EntryRuntime
 
+function EntryRuntime.ShouldSuppressSpellRangeVisual(button, buttonData)
+    return type(buttonData) == "table"
+        and buttonData.type == "spell"
+        and buttonData.auraTracking == true
+        and button
+        and button._auraActive == true
+end
+
+function EntryRuntime.ShouldSuppressSpellUnusableVisual(button, buttonData)
+    return type(buttonData) == "table"
+        and buttonData.type == "spell"
+        and buttonData.auraTracking == true
+        and button
+        and button._auraActive == true
+end
+
 -- Hidden scratch CooldownFrame for probing DurationObject activity.
 -- DurationObject:IsZero() returns a secret boolean in tainted contexts;
 -- feeding the object to a Cooldown widget and checking IsShown() yields a

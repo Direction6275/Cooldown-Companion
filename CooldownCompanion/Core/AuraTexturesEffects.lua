@@ -5,6 +5,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local EntryRuntime = ST.EntryRuntime
 local AT = ST._AT
 
 local C_Item_IsItemInRange = C_Item.IsItemInRange
@@ -621,6 +622,9 @@ local function ResolveTextureIndicatorSectionState(button, sectionKey, config, t
             return FinishTextureIndicatorSectionState(target, false, reason, nil, effectType)
         end
         if buttonData.type == "spell" then
+            if EntryRuntime.ShouldSuppressSpellUnusableVisual(button, buttonData) then
+                return FinishTextureIndicatorSectionState(target, false, "aura-active", nil, effectType)
+            end
             local spellID = button._displaySpellId or buttonData.id
             local active = not C_Spell_IsSpellUsable(spellID)
             return FinishTextureIndicatorSectionState(target, active, active and "unusable" or "usable", nil, effectType)
@@ -660,6 +664,9 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
         end
 
         if buttonData.type == "spell" then
+            if EntryRuntime.ShouldSuppressSpellRangeVisual(button, buttonData) then
+                return nil
+            end
             if button._spellOutOfRange == nil then
                 return nil
             end
@@ -687,6 +694,9 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
             return false
         end
         if buttonData.type == "spell" then
+            if EntryRuntime.ShouldSuppressSpellUnusableVisual(button, buttonData) then
+                return nil
+            end
             local spellID = button._displaySpellId or buttonData.id
             return C_Spell_IsSpellUsable(spellID)
         end
