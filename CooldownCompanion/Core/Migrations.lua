@@ -179,6 +179,93 @@ local function BackfillUnusableVisualOverrideModes(profile)
     return changed
 end
 
+local AURA_DURATION_SWIPE_STYLE_MIRRORS = {
+    { auraKey = "showAuraDurationSwipeFill", cooldownKey = "showCooldownSwipeFill", default = true },
+    { auraKey = "auraDurationSwipeReverse", cooldownKey = "cooldownSwipeReverse", default = false },
+    { auraKey = "showAuraDurationSwipeEdge", cooldownKey = "showCooldownSwipeEdge", default = true },
+    { auraKey = "auraDurationSwipeAlpha", cooldownKey = "cooldownSwipeAlpha", default = 0.8 },
+    { auraKey = "auraDurationSwipeEdgeColor", cooldownKey = "cooldownSwipeEdgeColor", default = {1, 1, 1, 1} },
+}
+
+local function ResolveMirroredCooldownSwipeStyleValue(style, fallbackStyle, cooldownKey, defaultValue)
+    local value = style and style[cooldownKey]
+    if value == nil and type(fallbackStyle) == "table" then
+        value = fallbackStyle[cooldownKey]
+    end
+    if value == nil then
+        value = defaultValue
+    end
+    if type(value) == "table" then
+        return CopyTable(value)
+    end
+    return value
+end
+
+local function BackfillAuraDurationSwipeStyle(style, fallbackStyle)
+    if type(style) ~= "table" then
+        return false
+    end
+
+    local changed = false
+    if style.showAuraDurationSwipe == nil then
+        local showCooldownSwipe = style.showCooldownSwipe
+        if showCooldownSwipe == nil and type(fallbackStyle) == "table" then
+            showCooldownSwipe = fallbackStyle.showCooldownSwipe
+        end
+        style.showAuraDurationSwipe = showCooldownSwipe ~= false
+        changed = true
+    end
+
+    for _, mirror in ipairs(AURA_DURATION_SWIPE_STYLE_MIRRORS) do
+        if style[mirror.auraKey] == nil then
+            style[mirror.auraKey] = ResolveMirroredCooldownSwipeStyleValue(style, fallbackStyle, mirror.cooldownKey, mirror.default)
+            changed = true
+        end
+    end
+
+    return changed
+end
+
+local function BackfillAuraDurationSwipeSettings(profile)
+    if type(profile) ~= "table" then
+        return false
+    end
+
+    local changed = BackfillAuraDurationSwipeStyle(profile.globalStyle)
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" then
+                if BackfillAuraDurationSwipeStyle(group.style, profile.globalStyle) then
+                    changed = true
+                end
+
+                if type(group.buttons) == "table" then
+                    for _, buttonData in ipairs(group.buttons) do
+                        if type(buttonData) == "table" then
+                            local overrideSections = buttonData.overrideSections
+                            local hasAuraSwipeOverride = type(overrideSections) == "table"
+                                and (overrideSections.cooldownSwipe == true or overrideSections.auraDurationSwipe == true)
+                            if hasAuraSwipeOverride and BackfillAuraDurationSwipeStyle(buttonData.styleOverrides, group.style) then
+                                changed = true
+                            end
+
+                            if type(overrideSections) == "table"
+                                and overrideSections.cooldownSwipe == true
+                                and overrideSections.auraDurationSwipe ~= true then
+                                overrideSections.auraDurationSwipe = true
+                                changed = true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return changed
+end
+
 local function ClearRetiredAutoAddPrefs(profile)
     if type(profile) ~= "table" or profile.autoAddPrefs == nil then
         return false
@@ -331,6 +418,7 @@ function CooldownCompanion:RunAllMigrations()
     ClearRetiredAutoAddPrefs(self.db and self.db.profile)
     NormalizePassiveCooldownButtons(self.db and self.db.profile)
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
+    BackfillAuraDurationSwipeSettings(self.db and self.db.profile)
     if self.RunResourceBarClassScopeMigration then
         self:RunResourceBarClassScopeMigration()
     end

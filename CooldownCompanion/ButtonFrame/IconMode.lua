@@ -322,20 +322,51 @@ local function AnchorAuraBlizzardCooldown(button)
     button.auraBlizzardCooldown:SetTexCoordRange(BLIZZARD_AURA_SWIPE_TEX_LOW, BLIZZARD_AURA_SWIPE_TEX_HIGH)
 end
 
+local function IsAuraDurationSwipeOwner(button)
+    return button
+        and (button._auraPrimarySwipeActive == true or button._conditionalAuraDurationTextPreview == true)
+end
+
 local function ApplyDefaultCooldownSwipeStyle(button, style)
     if not (button and button.cooldown and style) then
         return
     end
 
-    local swipeEnabled = style.showCooldownSwipe ~= false
-    local fillEnabled = style.showCooldownSwipeFill ~= false
+    local auraOwner = IsAuraDurationSwipeOwner(button)
+    local swipeEnabled
+    local fillEnabled
+    local edgeEnabled
+    local reverse
+    local alpha
+    local edgeColor
+    if auraOwner then
+        swipeEnabled = style.showAuraDurationSwipe ~= false and style.auraUseBlizzardSwipe ~= true
+        fillEnabled = style.showAuraDurationSwipeFill ~= false
+        edgeEnabled = style.showAuraDurationSwipeEdge ~= false
+        reverse = style.auraDurationSwipeReverse or false
+        alpha = style.auraDurationSwipeAlpha or 0.8
+        edgeColor = style.auraDurationSwipeEdgeColor or DEFAULT_WHITE
+    else
+        swipeEnabled = style.showCooldownSwipe ~= false
+        fillEnabled = style.showCooldownSwipeFill ~= false
+        edgeEnabled = style.showCooldownSwipeEdge ~= false
+        reverse = style.cooldownSwipeReverse or false
+        alpha = style.cooldownSwipeAlpha or 0.8
+        edgeColor = style.cooldownSwipeEdgeColor or DEFAULT_WHITE
+    end
+    button._cooldownSwipeOwnerIsAura = auraOwner or false
     button.cooldown:SetUseAuraDisplayTime(false)
     button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled and button._hideCooldownChargesActive ~= true)
-    button.cooldown:SetDrawEdge(swipeEnabled and style.showCooldownSwipeEdge ~= false)
-    button.cooldown:SetReverse(swipeEnabled and (style.cooldownSwipeReverse or false))
-    button.cooldown:SetSwipeColor(0, 0, 0, style.cooldownSwipeAlpha or 0.8)
-    local edgeColor = style.cooldownSwipeEdgeColor or DEFAULT_WHITE
+    button.cooldown:SetDrawEdge(swipeEnabled and edgeEnabled)
+    button.cooldown:SetReverse(swipeEnabled and reverse)
+    button.cooldown:SetSwipeColor(0, 0, 0, alpha)
     button.cooldown:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
+end
+
+local function RefreshDefaultCooldownSwipeStyleForOwner(button, style)
+    if button and button._cooldownSwipeOwnerIsAura ~= (IsAuraDurationSwipeOwner(button) or false) then
+        ApplyDefaultCooldownSwipeStyle(button, style)
+    end
 end
 
 local function HideBlizzardAuraSwipe(button, style)
@@ -581,7 +612,8 @@ local function UpdateBlizzardAuraSwipe(button, style)
         return
     end
 
-    local enabled = style.auraUseBlizzardSwipe == true
+    local enabled = style.showAuraDurationSwipe ~= false
+        and style.auraUseBlizzardSwipe == true
         and button._iconFillAuraActive ~= true
         and (button._auraPrimarySwipeActive == true or button._conditionalAuraDurationTextPreview == true)
         and (button._conditionalAuraDurationTextPreview == true or button._auraHasTimer ~= false)
@@ -1242,6 +1274,8 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
+    RefreshDefaultCooldownSwipeStyleForOwner(button, style)
+
     -- Charge-visual suppression: when toggle is active and charges remain,
     -- hide the swipe fill (dark overlay) but keep the edge visible.
     if UsesChargeBehavior(buttonData) and buttonData.hideCooldownWithCharges
@@ -1252,16 +1286,12 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             if hasChargesRemaining then
                 button.cooldown:SetDrawSwipe(false)
             else
-                local swipeEnabled = style.showCooldownSwipe ~= false
-                local fillEnabled = style.showCooldownSwipeFill ~= false
-                button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled)
+                ApplyDefaultCooldownSwipeStyle(button, style)
             end
         end
     elseif button._hideCooldownChargesActive ~= nil then
         button._hideCooldownChargesActive = nil
-        local swipeEnabled = style.showCooldownSwipe ~= false
-        local fillEnabled = style.showCooldownSwipeFill ~= false
-        button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled)
+        ApplyDefaultCooldownSwipeStyle(button, style)
     end
 
     UpdateIconFill(button, buttonData, style)
