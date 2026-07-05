@@ -6,6 +6,8 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
+-- F2 canary sink (loaded before this file; dev-gated, observe-only).
+local RefreshTelemetry = ST.RefreshTelemetry
 local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
@@ -461,12 +463,23 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
     elseif button._durationObj then
         local rem = button._durationObj:GetRemainingDuration()
         if button._durationObj:HasSecretValues() then
+            -- F2 canary: secret remaining text is still a time-driven render,
+            -- and the combat ticker floor skips in combat too -- this branch
+            -- must feed the false-idle canary like the readable one below.
+            if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
             durationIsSecret = true
             durationRemaining = rem
         elseif rem and rem > 0 then
+            -- F2 canary: spell-cooldown / aura remaining text is drawn from the
+            -- duration object this walk (covered by the _cooldownState ==
+            -- COOLDOWN / _auraActive classifier terms).
+            if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
             durationRemaining = rem
         end
     elseif not auraActive and button._itemCdStart and button._itemCdDuration and button._itemCdDuration > 0 then
+        -- F2 canary: item cooldown text remaining is drawn this walk (covered by
+        -- the _cooldownState == COOLDOWN classifier term).
+        if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
         local now = GetTime()
         local elapsed = now - button._itemCdStart
         local rem = button._itemCdDuration - elapsed
@@ -946,6 +959,10 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button:SetSize(w, h)
     button._isText = true
 
+    -- F6: flatten this text frame's render layers into one render pass
+    -- (owner-validated V1-V10: no visual difference).
+    button:SetFlattensRenderLayers(true)
+
     -- Background (sublayer 0)
     local bgColor = style.textBgColor or {0, 0, 0, 0}
     button.bg = button:CreateTexture(nil, "BACKGROUND", nil, 0)
@@ -1007,6 +1024,7 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button.cooldown:SetHideCountdownNumbers(true)
     button.cooldown:Hide()
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    button.cooldown:SetScript("OnCooldownDone", ST.OnButtonCooldownDone)
 
     -- Charge/item count overlay (hidden, but UpdateChargeTracking writes to button.count)
     button.overlayFrame = CreateFrame("Frame", nil, button)

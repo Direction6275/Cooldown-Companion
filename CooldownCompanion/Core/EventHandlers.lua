@@ -56,7 +56,7 @@ local function GroupHasEquipmentSlotEntries(group)
 end
 
 function CooldownCompanion:RefreshEquipmentSlotEntries(reason, itemID)
-    self:MarkCooldownsDirty()
+    self:MarkCooldownsDirty("equipment-slots")
     if self.db and self.db.profile and self.db.profile.groups then
         for groupId, group in pairs(self.db.profile.groups) do
             if GroupHasEquipmentSlotEntries(group) then
@@ -73,7 +73,7 @@ function CooldownCompanion:OnEquipmentChanged(event, equipmentSlot)
     if equipmentSlot == trinket1 or equipmentSlot == trinket2 then
         self:RefreshEquipmentSlotEntries("equipment", nil)
     else
-        self:MarkCooldownsDirty()
+        self:MarkCooldownsDirty("equipment-changed")
     end
 end
 
@@ -194,13 +194,22 @@ function CooldownCompanion:OnSpellsChanged()
 end
 
 function CooldownCompanion:OnSpellUpdateIcon()
+    local anyDeferred = false
     self:ForEachButton(function(button, bd)
         if bd.cdmChildSlot then
             button._iconDirty = true
+            anyDeferred = true
         else
             self:UpdateButtonIcon(button)
         end
     end)
+    -- A skipped idle tick doesn't walk, so a deferred cdmChildSlot icon refresh
+    -- (_iconDirty, consumed in UpdateButtonCooldown) must mark dirty to force a
+    -- walk; otherwise it waits for the ~1s idle-skip safety walk. Conservative:
+    -- only ever adds a walk. Mirrors the assisted-spell dirty-mark in Lifecycle.
+    if anyDeferred then
+        self:MarkCooldownsDirty("icon")
+    end
 end
 
 local function GetRangeCheckSpellID(buttonData)
@@ -257,12 +266,12 @@ function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInR
         end
     end)
     if changed then
-        self:MarkCooldownsDirty()
+        self:MarkCooldownsDirty("range-check")
     end
 end
 
 function CooldownCompanion:OnBagChanged()
-    self:MarkCooldownsDirty()
+    self:MarkCooldownsDirty("bag-changed")
     self:RefreshChargeFlags("item")
     self:RefreshConfigPanel()
 end
@@ -569,7 +578,7 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
                     end
                 end
             end)
-            self:MarkCooldownsDirty()
+            self:MarkCooldownsDirty("player-entering-world")
         end)
     end
 end

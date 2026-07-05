@@ -186,7 +186,8 @@ local function IsUnusableVisualActive(button, buttonData)
     if buttonData and buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
         return false
     end
-    if buttonData.isPassive or buttonData.isPassiveCooldown then
+    -- aura entries (by add-intent, not the runtime auraTracking flag) show aura state, not castability
+    if buttonData.isPassive or buttonData.isPassiveCooldown or buttonData.addedAs == "aura" then
         return false
     end
     if button._conditionalUnusablePreview then

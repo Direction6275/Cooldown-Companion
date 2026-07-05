@@ -2865,7 +2865,7 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
         end
     end
 
-    self:MarkCooldownsDirty()
+    self:MarkCooldownsDirty("availability-rebuild")
 end
 
 function CooldownCompanion:RefreshAllGroupsForSpellAvailability()
@@ -2878,7 +2878,12 @@ function CooldownCompanion:RefreshAllGroupsForSpellAvailability()
         self:RefreshAllGroupsVisibilityOnly()
     end
 
+    ST.TagRefreshPass("availability-rebuild")
     self:UpdateAllCooldowns()
+
+    -- D3: spec/talent/spell-availability churn can change override identity
+    -- without repopulating buttons — refresh the identity index (coalesced).
+    self:RequestSpellButtonIndexRebuild("availability")
 end
 
 function CooldownCompanion:CreateAllGroupFrames()
@@ -3319,6 +3324,8 @@ function CooldownCompanion:UnloadGroup(groupId)
     self._dormantFrames = self._dormantFrames or {}
     self._dormantFrames[groupId] = frame
     self.groupFrames[groupId] = nil
+    -- D3: frame left the live set — refresh the identity index (coalesced).
+    self:RequestSpellButtonIndexRebuild("unload")
     if self.RefreshCursorAnchorTicker then
         self:RefreshCursorAnchorTicker()
     end
@@ -3365,6 +3372,10 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
         self:SetupAlphaSync(frame, frame.anchoredToParent)
     end
 
+    -- D3: frame re-entered the live set without repopulation — refresh the
+    -- identity index (coalesced).
+    self:RequestSpellButtonIndexRebuild("recover")
+
     return frame
 end
 
@@ -3385,7 +3396,14 @@ function CooldownCompanion:DiscardDormantFrame(groupId)
     end
 end
 
-function CooldownCompanion:UpdateAllCooldowns()
+-- A1 shared per-pass input snapshot: the GCD state (spell 61304), the
+-- assisted-highlight hostile-target gate, and the CDM viewer CVar -- the three
+-- reads every button in a pass must see identically (D4 inventory A1). Extracted
+-- so routed mini-passes (F1 3b) take the same once-per-batch snapshot the broad
+-- walk uses. Deliberately does NOT touch _cooldownUpdatePassActive or
+-- _passTimeStateSeen: a mini-pass must not set either (3b constraints 4-5), so
+-- those stay in UpdateAllCooldowns below.
+function CooldownCompanion:SnapshotCooldownPassContext()
     self._gcdInfo = C_Spell.GetSpellCooldown(61304)
     -- GCD activity: isActive is NeverSecret (12.0.1 hotfix)
     self._gcdActive = self._gcdInfo and self._gcdInfo.isActive or false
@@ -3404,15 +3422,49 @@ function CooldownCompanion:UpdateAllCooldowns()
 
     -- Cache CDM viewer CVar once per tick (avoids per-button GetCVarBool in ResolveBuffViewerFrameForSpell)
     self._cdmViewerEnabled = C_CVar_GetCVarBool("cooldownViewerEnabled") == true
+end
+
+function CooldownCompanion:UpdateAllCooldowns()
+    local T = ST.RefreshTelemetry
+    local telemetryOn = T and T.enabled
+    local t0, frames, buttons
+    if telemetryOn then
+        t0 = debugprofilestop()
+        frames, buttons = 0, 0
+    end
+
+    self:SnapshotCooldownPassContext()
     self._cooldownUpdatePassActive = true
+    -- F2 idle skip: reset the per-pass time-animation flag. Any button that renders
+    -- time-driven state this walk sets it true (NoteButtonTimeState); a walk that
+    -- ends with it still false latches idle-eligible below. Fail open.
+    self._passTimeStateSeen = false
 
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame.UpdateCooldowns and frame:IsShown() then
             frame:UpdateCooldowns()
+            if telemetryOn then
+                frames = frames + 1
+                buttons = buttons + (frame.buttons and #frame.buttons or 0)
+            end
         end
     end
 
     self._cooldownUpdatePassActive = nil
+    -- F2 idle-skip eligibility: a completed full walk that saw no time-animated
+    -- button latches idle-eligible. Only this line may latch it true; every
+    -- other writer (NoteButtonTimeState) may only clear it to false. It is thus
+    -- never older than the last completed walk. Maintained unconditionally (not
+    -- gated on telemetry) so the live-skip predicate (CanSkipIdleTickerRefresh)
+    -- can read it. Fail open.
+    self._tickerIdleEligible = not self._passTimeStateSeen
+    -- F2: any completed walk restarts the idle-skip safety clock (see
+    -- TICKER_MAX_CONSECUTIVE_SKIPS). Covers every walk path, not just the ticker.
+    self._tickerSkipStreak = 0
+    if telemetryOn then
+        local elapsed = debugprofilestop() - t0
+        T:RecordPass(frames, buttons, elapsed)
+    end
 end
 
 function CooldownCompanion:UpdateAllGroupLayouts()

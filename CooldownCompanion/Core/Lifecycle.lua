@@ -99,9 +99,16 @@ function CooldownCompanion:EnsureRuntimeInitialized()
 
     if not self.updateTicker then
         self.updateTicker = C_Timer.NewTicker(0.1, function()
-            -- Read assisted combat recommended spell (plain table field, no API call)
+            -- Read assisted combat recommended spell (plain table field, no API
+            -- call). A skipped tick doesn't walk, so a changed recommendation
+            -- must mark dirty to force a walk. Conservative: a new dirty source
+            -- only ever adds walks, never removes them.
             if AssistedCombatManager then
-                self.assistedSpellID = AssistedCombatManager.lastNextCastSpellID
+                local nextCast = AssistedCombatManager.lastNextCastSpellID
+                if nextCast ~= self.assistedSpellID then
+                    self.assistedSpellID = nextCast
+                    self:MarkCooldownsDirty("assisted")
+                end
             end
 
             self:TickCooldownRefresh()
@@ -114,6 +121,20 @@ function CooldownCompanion:EnsureRuntimeInitialized()
 end
 
 function CooldownCompanion:OnEnable()
+    -- Audit-program switches removed (2026-07): scrub stale keys.
+    self.db.global.cooldownDoneSignalDisabled = nil
+    self.db.global.combatTickerFloorDisabled = nil
+    self.db.global.cooldownBroadcastDemotion = nil
+    self.db.global.cooldownRouting = nil
+    self.db.global.combatTickerFloor = nil
+
+    -- F6: render-layer flattening is now permanent (applied unconditionally at
+    -- button creation); drop the saved switch key from any earlier build.
+    self.db.global.renderFlattenEnabled = nil
+
+    -- F2: reset the idle-skip safety-walk streak.
+    self._tickerSkipStreak = 0
+
     -- Cooldown events can expose very short ready windows, so refresh them
     -- immediately instead of waiting for the ticker.
     for _, evt in ipairs({
@@ -123,8 +144,11 @@ function CooldownCompanion:OnEnable()
     end
 
     -- Broader state changes can wait for the regular ticker pass.
+    -- PLAYER_SOFT_ENEMY_CHANGED refreshes the assisted-highlight hostile gate
+    -- when there is no hard target and the softenemy fallback changes.
     for _, evt in ipairs({
         "LOSS_OF_CONTROL_ADDED", "LOSS_OF_CONTROL_UPDATE", "ITEM_COUNT_CHANGED",
+        "PLAYER_SOFT_ENEMY_CHANGED",
     }) do
         self:RegisterEvent(evt, "MarkCooldownsDirty")
     end
@@ -133,21 +157,18 @@ function CooldownCompanion:OnEnable()
 
     self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnPlayerEnteringWorld")
 
-    -- High-frequency unit events. RegisterUnitEvent filters before dispatch,
-    -- avoiding global UNIT_* traffic through AceEvent.
+    -- Filtered unit events. RegisterUnitEvent avoids global UNIT_* traffic
+    -- through AceEvent.
     if not self._unitEventFrame then
         self._unitEventFrame = CreateFrame("Frame")
         self._unitEventFrame:SetScript("OnEvent", function(_, event, ...)
-            if event == "UNIT_POWER_FREQUENT" then
-                self:MarkCooldownsDirty()
-            elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+            if event == "UNIT_SPELLCAST_SUCCEEDED" then
                 self:OnSpellCast(event, ...)
             elseif event == "UNIT_AURA" then
                 self:OnUnitAura(event, ...)
             end
         end)
     end
-    self._unitEventFrame:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
     self._unitEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
     self._unitEventFrame:RegisterUnitEvent("UNIT_AURA", "player", "target")
 
@@ -219,7 +240,8 @@ function CooldownCompanion:OnEnable()
             if ST._QueueInheritedUnitFrameAlphaResync then
                 ST._QueueInheritedUnitFrameAlphaResync()
             end
-            self:MarkCooldownsDirty()
+            self:MarkCooldownsDirty("unit-target")
+            ST.TagRefreshPass("unit-target-direct")
             self:UpdateAllCooldowns()
         end)
     end
@@ -314,8 +336,26 @@ function CooldownCompanion:OnEnable()
     self:FinalizeContainerAnchorsToScreenOffsets()
 end
 
-function CooldownCompanion:OnCooldownStateChanged()
-    self:MarkCooldownsDirty()
+function CooldownCompanion:OnCooldownStateChanged(event, ...)
+    -- F1 3b: readable-identity SPELL fires route to their index-matched buttons
+    -- (mini-pass) or drop (no tracked button). Anything the router cannot fully
+    -- classify -- secret/nil arg, panel-matched button, generation churn --
+    -- returns false and falls through to the broad path below unchanged.
+    if event == "SPELL_UPDATE_COOLDOWN" then
+        if self:RouteCooldownEventFire(...) then
+            return
+        end
+    end
+    if event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "BAG_UPDATE_COOLDOWN" then
+        -- F1 3a: identity-less broadcast events carry no data CC consumes
+        -- (D2 + demotion trace); everything they signal is re-polled by the
+        -- next walk. Dirty-only: the next tick walks (<=0.1s), in combat and
+        -- OOC alike. SPELL_UPDATE_COOLDOWN keeps immediate accuracy below.
+        self:MarkCooldownsDirty(event == "BAG_UPDATE_COOLDOWN"
+            and "bag-cd-broadcast" or "actionbar-cd-broadcast")
+        return
+    end
+    self:MarkCooldownsDirty("cooldown-event")
     -- Preserve immediate cooldown-event accuracy. This refresh only suppresses
     -- the next ticker walk when no other dirty state appears afterward.
     self:RunImmediateCooldownRefresh("cooldown-event")
@@ -348,7 +388,12 @@ function CooldownCompanion:OnDisable()
         self._alphaFrame = nil
     end
 
+    local T = ST.RefreshTelemetry
+    if self._queuedCooldownRefreshSource and T and T.enabled then
+        T:ClearQueueHistory()
+    end
     self:ResetCooldownRefreshState()
+    self:ResetRoutedCooldownBatch()
 
     -- Disable all range check registrations
     for spellId in pairs(self._rangeCheckSpells) do
@@ -409,7 +454,7 @@ end
 
 function CooldownCompanion:OnProcGlowHide(event, spellID)
     self.procOverlaySpells[spellID] = nil
-    self:MarkCooldownsDirty()
+    self:MarkCooldownsDirty("proc-hide")
     self:QueueCooldownRefresh("proc-event")
 end
 

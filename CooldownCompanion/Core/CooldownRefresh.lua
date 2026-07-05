@@ -17,6 +17,12 @@
     - _cooldownRefreshQueueFrame/_cooldownRefreshQueueArmed: parentless helper
       frame and arm flag used to flush queued work on the next OnUpdate
       boundary. The frame must stay shown; hidden frames do not receive OnUpdate.
+    - _tickerIdleEligible (set in GroupOperations.UpdateAllCooldowns): true after
+      a completed walk that saw no time-animated button. Read by
+      IsIdleTickerSkipEligible; it gates the idle ticker skip
+      (CanSkipIdleTickerRefresh) and its observe-only would-skip cross-check.
+    - _tickerSkipStreak: consecutive idle skips since the last walk; forces a 1s
+      safety walk (TICKER_MAX_CONSECUTIVE_SKIPS). Reset by every walk.
 
     Invariants:
     - Only cooldown-event requests write _cooldownRefreshSatisfiedSerial.
@@ -26,10 +32,84 @@
       If another dirty mark lands before the flush, the later ticker walks
       instead of skipping. That is intentionally conservative: displays can only
       be fresher, never staler.
+    - Refresh telemetry fields are observe-only and never change scheduling.
+    - The idle ticker skip (PR F2) can only suppress the ticker's clean broad
+      walk. It never suppresses dirty ticks, queued flushes, immediate
+      refreshes, or direct passes, and never touches serials or queue state.
+    - _tickerIdleEligible is latched true only by a completed
+      UpdateAllCooldowns walk that saw no time-animated button; every other
+      writer may only clear it. Eligibility is never older than the last walk.
+    - The skip fails open: config or any unclassified state forces walking. A 1s
+      safety walk runs while skipping.
+    - Accepted residual: no-event fallback probes that ride the clean walk
+      (e.g. the 0.25s icon texture staleness probe in CooldownUpdate.lua) run
+      at safety-walk cadence (~1s) while skipping. Owner-approved (PR #505).
+    - Accepted residual: during aura override the real spell cooldown has no
+      expiry signal (OnCooldownDone rides button.cooldown, which the aura owns;
+      the walk-time probe in CooldownUpdate.lua re-checks it). For a buff that
+      outlasts its spell's cooldown, the ready transition (desat clear, ready
+      glow) can lag up to the ~1s safety walk while skipping.
+      Owner-approved (2026-07-04).
+    - cd-done marks come from ST.OnButtonCooldownDone (ButtonFrame/Helpers.lua)
+      and are ordinary MarkCooldownsDirty calls.
+    - The combat ticker floor extends the idle skip into combat for
+      self-animating display modes only, via three coupled changes:
+        1. Mode-aware classifier (NoteButtonTimeState): an active cooldown/aura/
+           GCD swipe on an icon or bar button no longer forces a walk (the swipe,
+           numbers, and iconFill self-animate). Text mode, charge recharge,
+           target-switch holds, ready-glow windows, previews, and any
+           secret/unproven state still force walks.
+        2. Pandemic edge-hook: the crossing is secret in combat, so the CDM's
+           pooled pandemic FX frames' OnShow/OnHide (hooked per viewer via
+           pandemicIconPool) mark dirty ("pandemic-edge") -- a one-tick
+           event-covered edge, not a poll. An aura button is skippable only once
+           its viewer's pandemic pool is hooked (_pandemicEdgeUncovered nil);
+           until then it forces (fail open).
+        3. Power-mark demotion: UNIT_POWER_FREQUENT does not mark dirty; the
+           castability tint rides walk cadence (safety walk ~1s worst case).
+      Discrete edges stay event-covered (cooldown start/end, aura apply/remove,
+      pandemic enter/exit). The safety walk (TICKER_MAX_CONSECUTIVE_SKIPS) is now
+      load-bearing in combat.
+    - Broadcast demotion (F1 3a) may downgrade ACTIONBAR/BAG cooldown events
+      from immediate-broad to dirty-only. It never suppresses the mark itself
+      and never touches SPELL_UPDATE_COOLDOWN. Bounded by the next ticker
+      walk; dirty ticks always walk.
+    - Routed mini-passes (F1 3b) run beside the scheduler: they never mark
+      dirty, never touch serials/queue/latch state, never set
+      _cooldownUpdatePassActive, and their batch is dropped whenever a broad
+      refresh is queued at flush time. Their shared per-button pipeline still
+      reaches NoteButtonTimeState, which may push the F2 accumulators
+      (_passTimeStateSeen, _tickerIdleEligible) in the conservative direction
+      (forcing an extra walk) for a forced routed button -- never the permissive
+      one: only a completed broad walk latches _tickerIdleEligible true, so a
+      mini-pass cannot cause a false idle-skip. A secret or nil PRIMARY arg,
+      panel-matched, rebuild-pending, assistant-excluded, and generation-churned
+      fires all take the broad path. A secret/unreadable BASE arg is ignored as
+      a refinement key -- the readable primary still routes; identity-churn
+      rebuilds keep base identities indexed (owner decision 2026-07-04: forcing
+      broad on secret bases would gut the router's combat win). Index-miss
+      fires are counted drops. Only routed
+      (hit) and dropped (miss) fires skip the dirty mark; every other cooldown
+      fire marks dirty exactly as today.
 ]]
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+
+-- F2: while the idle skip is active, force a full walk at least once per this
+-- many ticks (1.0s at the 0.1s ticker) so nothing can go stale longer than the
+-- safety window even if the predicate ever mis-latched. Skip at most this many
+-- ticks in a row; the next tick walks.
+local TICKER_MAX_CONSECUTIVE_SKIPS = 9
+
+-- F2: authoritative "config UI is open" check (read-only, nil-safe; the same
+-- indicator used elsewhere, e.g. AuraTexturesDisplay). Conditional previews are
+-- the only time-animated config surface, so an open config forces walking.
+local function IsConfigWindowOpen()
+    local cs = ST._configState
+    return cs and cs.configFrame and cs.configFrame.frame
+        and cs.configFrame.frame:IsShown() and true or false
+end
 
 local function CooldownRefreshQueueOnUpdate(frame)
     local addon = frame._cooldownCompanion
@@ -38,9 +118,13 @@ local function CooldownRefreshQueueOnUpdate(frame)
     end
 end
 
-function CooldownCompanion:MarkCooldownsDirty()
+function CooldownCompanion:MarkCooldownsDirty(source)
     self._cooldownsDirty = true
     self._cooldownDirtySerial = (self._cooldownDirtySerial or 0) + 1
+    local T = ST.RefreshTelemetry
+    if T and T.enabled then
+        T:CountDirty(source or "unspecified")
+    end
 end
 
 function CooldownCompanion:ClearCooldownsDirty()
@@ -65,6 +149,10 @@ function CooldownCompanion:FlushQueuedCooldownRefresh()
     self:ResetCooldownRefreshState()
 
     if queuedSource then
+        local T = ST.RefreshTelemetry
+        if T and T.enabled then
+            T:SetPending("queue-flush", queuedSource, T:TakeQueueHistory(), nil)
+        end
         self:UpdateAllCooldowns()
         if cooldownEventSerial then
             self._cooldownRefreshSatisfiedSerial = cooldownEventSerial
@@ -76,6 +164,10 @@ function CooldownCompanion:QueueCooldownRefresh(source)
     self._queuedCooldownRefreshSource = source or "event"
     if source == "cooldown-event" then
         self._queuedCooldownRefreshCooldownEventSerial = self._cooldownDirtySerial or 0
+    end
+    local T = ST.RefreshTelemetry
+    if T and T.enabled then
+        T:CountQueue(source or "event")
     end
     self:EnsureCooldownRefreshQueueFrame()
 end
@@ -91,10 +183,17 @@ function CooldownCompanion:RunImmediateCooldownRefresh(source)
         cooldownEventSerial = self._cooldownDirtySerial or 0
     end
 
+    local T = ST.RefreshTelemetry
+    if self._queuedCooldownRefreshSource and T and T.enabled then
+        T:ClearQueueHistory()
+    end
     self._queuedCooldownRefreshSource = nil
     self._queuedCooldownRefreshCooldownEventSerial = nil
     self._cooldownImmediateRefreshThisFrame = true
     self:EnsureCooldownRefreshQueueFrame()
+    if T and T.enabled then
+        T:SetPending("immediate", source, nil, nil)
+    end
     self:UpdateAllCooldowns()
     if cooldownEventSerial then
         self._cooldownRefreshSatisfiedSerial = cooldownEventSerial
@@ -108,13 +207,65 @@ function CooldownCompanion:CanSkipTickerCooldownRefresh()
         and self._cooldownRefreshSatisfiedSerial == (self._cooldownDirtySerial or 0)
 end
 
+-- F2 idle-skip eligibility (inner predicate of CanSkipIdleTickerRefresh; every
+-- term except the config-open interlock). It latches on _tickerIdleEligible,
+-- which a completed walk sets true only when it saw no time-animated button.
+-- Fail open: any term unclear forces a walk.
+function CooldownCompanion:IsIdleTickerSkipEligible()
+    return not self._cooldownsDirty
+        and not self._queuedCooldownRefreshSource
+        and self._tickerIdleEligible == true
+end
+
+-- F2 live-skip predicate: the shared inner eligibility plus the config-open
+-- interlock. Fail open on every term (any false forces a walk).
+function CooldownCompanion:CanSkipIdleTickerRefresh()
+    return self:IsIdleTickerSkipEligible()
+        and not IsConfigWindowOpen()
+end
+
 function CooldownCompanion:TickCooldownRefresh()
+    local T = ST.RefreshTelemetry
+    local telemetryOn = T and T.enabled
+    local dirtyAtStart
+    if telemetryOn then
+        dirtyAtStart = self._cooldownsDirty and true or false
+    end
     if self._queuedCooldownRefreshSource then
         self:FlushQueuedCooldownRefresh()
         return false
     end
     if self:CanSkipTickerCooldownRefresh() then
+        if telemetryOn then T:CountSkip() end
         return true
+    end
+    -- F2 cross-check: count every tick the live-skip predicate accepts, whether
+    -- it then skips or walks as a safety tick. Consistency invariant:
+    -- wouldSkipTotal == tickerIdleSkips + "safety-tick" pass count.
+    local canSkipIdle = self:CanSkipIdleTickerRefresh()
+    if telemetryOn and canSkipIdle then
+        T:CountWouldSkip()
+    end
+    -- F2 live skip: early-return a clean idle tick when the predicate holds,
+    -- except after TICKER_MAX_CONSECUTIVE_SKIPS skips in a row, where the next
+    -- tick walks anyway (safety-tick) so nothing goes stale longer than ~1s.
+    -- This only ever suppresses the clean broad walk; queued flushes and dirty
+    -- ticks were already handled above.
+    if canSkipIdle then
+        if (self._tickerSkipStreak or 0) >= TICKER_MAX_CONSECUTIVE_SKIPS then
+            if telemetryOn then
+                T:SetPending("safety-tick", nil, nil, false)
+            end
+            self:UpdateAllCooldowns()   -- resets _tickerSkipStreak
+            return false
+        end
+        self._tickerSkipStreak = (self._tickerSkipStreak or 0) + 1
+        if telemetryOn then T:CountIdleSkip() end
+        return true
+    end
+    if telemetryOn then
+        T:SetPending(dirtyAtStart and "ticker-dirty" or "ticker-clean",
+            nil, nil, dirtyAtStart)
     end
     self:UpdateAllCooldowns()
     return false

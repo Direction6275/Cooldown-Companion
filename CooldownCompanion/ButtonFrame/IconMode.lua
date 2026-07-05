@@ -7,6 +7,8 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
 local EntryRuntime = ST.EntryRuntime
+-- F2 canary sink (loaded before this file; dev-gated, observe-only).
+local RefreshTelemetry = ST.RefreshTelemetry
 local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
@@ -355,6 +357,9 @@ local function ResolveIconFillPreviewRemaining(button)
         return nil, nil
     end
 
+    -- F2 canary: past the guard, an icon-fill conditional-preview remaining is
+    -- computed this walk (covered by the conditionalPreview classifier term).
+    if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
     local remaining
     if button._conditionalPreviewLoop
         and button._conditionalPreviewLoopStartTime
@@ -396,6 +401,11 @@ local function SetIconFillFromCooldownWidget(button)
 
     local value = ResolveIconFillTimerValue(button, elapsed / durMs)
 
+    -- F2 canary: cooldown-widget icon fill draws remaining this walk (covered by
+    -- the _cooldownState == COOLDOWN / _auraActive classifier terms, guarded above).
+    -- Under the combat ticker floor this fill self-animates (its own OnUpdate,
+    -- usesOnUpdate), so the walk-time render is redundant -- do not count it, or it
+    -- would falsely trip falseIdleTotal against the now-skippable icon.
     button.iconFill:SetValue(value)
     return true
 end
@@ -423,6 +433,10 @@ local function SetIconFillValue(button)
         end
 
         if button._auraCooldownStart and button._auraCooldownDuration and button._auraCooldownDuration > 0 then
+            -- F2 canary: aura-cooldown icon fill draws remaining this walk
+            -- (covered by the _auraActive classifier term). Skipped under the
+            -- combat ticker floor -- this fill self-animates (own OnUpdate), so
+            -- counting it would falsely trip falseIdleTotal against a skippable icon.
             local elapsed = GetTime() - button._auraCooldownStart
             if elapsed < 0 then elapsed = 0 end
             if elapsed > button._auraCooldownDuration then elapsed = button._auraCooldownDuration end
@@ -450,6 +464,10 @@ local function SetIconFillValue(button)
     if button._iconFillMode == "cooldown" and IsEntryItemLike(button.buttonData) then
         local durationSeconds = button._itemCdDuration or 0
         if durationSeconds > 0 then
+            -- F2 canary: item cooldown icon fill draws remaining this walk
+            -- (covered by the _cooldownState == COOLDOWN classifier term). Skipped
+            -- under the combat ticker floor -- this fill self-animates (own
+            -- OnUpdate), so counting it would falsely trip falseIdleTotal.
             local elapsed = GetTime() - (button._itemCdStart or 0)
             if elapsed < 0 then elapsed = 0 end
             local value = elapsed / durationSeconds
@@ -658,6 +676,10 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local button = CreateFrame("Frame", parent:GetName() .. "Button" .. index, parent)
     button:SetSize(width, height)
 
+    -- F6: flatten this button's render layers into one render pass
+    -- (owner-validated V1-V10: no visual difference).
+    button:SetFlattensRenderLayers(true)
+
     -- Background
     button.bg = button:CreateTexture(nil, "BACKGROUND")
     button.bg:SetAllPoints()
@@ -723,6 +745,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
     -- Always fully non-interactive: disable both clicks and motion
     SetFrameClickThroughRecursive(button.cooldown, true, true)
+    button.cooldown:SetScript("OnCooldownDone", ST.OnButtonCooldownDone)
 
     -- Loss of control cooldown frame (red swipe showing lockout duration)
     button.locCooldown = CreateFrame("Cooldown", button:GetName() .. "LocCooldown", button, "CooldownFrameTemplate")
@@ -1150,6 +1173,14 @@ function CooldownCompanion:UpdateButtonIcon(button)
     -- Update cooldown secrecy when override spell changes (e.g. Command Demon → pet ability)
     if displayId ~= prevDisplayId and buttonData.type == "spell" then
         buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(displayId)
+        -- The router's index keys on _displaySpellId, and silent transforms
+        -- mutate it here with no structural rebuild -- without one, a cooldown
+        -- fire for the new identity index-misses and is dropped. Change-edge
+        -- only, so steady-state walks request nothing. Virtual buttons are
+        -- index-excluded and churn permanently; never rebuild for them.
+        if buttonData._rotationAssistantVirtual ~= true then
+            self:RequestSpellButtonIndexRebuild("display-id")
+        end
     end
 
     -- Update bar name text when the display spell changes (e.g. transform)
@@ -1384,7 +1415,16 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
 
     -- Ready glow (glow while off cooldown)
     if button.readyGlow then
-        local showReady = glowIntent and glowIntent.ready and glowIntent.ready.active == true
+        local readyIntent = glowIntent and glowIntent.ready
+        local showReady = readyIntent and readyIntent.active == true
+        -- F2 canary: a finite ready-glow duration window is lit this walk; its
+        -- OFF edge is walk-evaluated (covered by the ready-glow window
+        -- classifier term). durationWindow is reset on every resolve, so this
+        -- cannot read a stale flag.
+        if showReady and readyIntent.durationWindow == true
+            and RefreshTelemetry and RefreshTelemetry.enabled then
+            RefreshTelemetry:NoteTimeRender()
+        end
         SetReadyGlow(button, showReady)
     end
 end
