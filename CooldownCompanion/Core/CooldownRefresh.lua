@@ -82,9 +82,13 @@
       (_passTimeStateSeen, _tickerIdleEligible) in the conservative direction
       (forcing an extra walk) for a forced routed button -- never the permissive
       one: only a completed broad walk latches _tickerIdleEligible true, so a
-      mini-pass cannot cause a false idle-skip. Secret-arg, nil-arg, panel-
-      matched, rebuild-pending, assistant-excluded, and generation-churned fires
-      all take the broad path; index-miss fires are counted drops. Only routed
+      mini-pass cannot cause a false idle-skip. A secret or nil PRIMARY arg,
+      panel-matched, rebuild-pending, assistant-excluded, and generation-churned
+      fires all take the broad path. A secret/unreadable BASE arg is ignored as
+      a refinement key -- the readable primary still routes; identity-churn
+      rebuilds keep base identities indexed (owner decision 2026-07-04: forcing
+      broad on secret bases would gut the router's combat win). Index-miss
+      fires are counted drops. Only routed
       (hit) and dropped (miss) fires skip the dirty mark; every other cooldown
       fire marks dirty exactly as today.
 ]]
