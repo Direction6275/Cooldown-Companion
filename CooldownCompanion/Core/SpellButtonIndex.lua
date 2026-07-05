@@ -243,7 +243,7 @@ end
 -- Self-check for one spellID: buttons a live scan maps to the ID (deriving
 -- keys NOW) vs buttons the index has for it (keys derived at last rebuild).
 -- A difference means identity churned without a structural rebuild request —
--- exactly the bug class Phase 1 exists to catch early.
+-- exactly the bug class this self-check exists to catch.
 function CooldownCompanion:VerifySpellButtonIndex(spellID)
     local expected = {}
     local expectedCount = 0

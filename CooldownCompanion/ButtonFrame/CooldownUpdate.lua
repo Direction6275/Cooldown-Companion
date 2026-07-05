@@ -802,9 +802,9 @@ local function HasPendingReadyGlowWindow(button, now)
     return (startTime and (now - startTime) <= dur) or false
 end
 
--- F2 shadow: report whether this button is in any time-animated state the clean
--- ticker must keep re-rendering, so a walk that draws nothing time-driven can
--- latch idle-eligible. ORs only; never clears the pass flag to a false negative.
+-- F2 idle-skip classifier: report whether this button is in any time-animated state
+-- the clean ticker must keep re-rendering, so a walk that draws nothing time-driven
+-- can latch idle-eligible. ORs only; never clears the pass flag to a false negative.
 -- Fail open -- any unclear or ambiguous state counts as active. Setting
 -- _tickerIdleEligible false directly (not only the pass-scoped flag) also keeps
 -- direct frame:UpdateCooldowns() callers outside a broad pass conservative for

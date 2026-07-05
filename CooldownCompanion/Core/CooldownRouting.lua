@@ -147,7 +147,8 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
     end
     if type(spellID) ~= "number" then
         -- Non-nil non-number is unreadable (broad); nil is the broadcast form
-        -- (nil demotion is out of scope for this PR).
+        -- and stays broad (nil demotion is deliberately shelved, spec
+        -- 2026-07-04-017 §9).
         return false
     end
 
