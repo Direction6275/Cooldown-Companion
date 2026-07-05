@@ -835,7 +835,7 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
     local readyGlow = HasPendingReadyGlowWindow(button, now)    -- finite ready-glow window still running
     local forced = charge or targetSwitch or preview or readyGlow
 
-    local text, pandemicUncovered, pandemicGrace = false, false, false
+    local text, pandemicUncovered, pandemicGrace, auraGrace = false, false, false, false
     if not forced then
         local timeActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN -- spell/item/deferred cooldown
             or button._auraActive                            -- aura display (incl. target-switch hold); truthy on purpose, fail open
@@ -848,10 +848,13 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
             elseif button._auraActive and button._pandemicGraceStart
                 and (now - button._pandemicGraceStart) <= 0.3 then
                 pandemicGrace = true                         -- pandemic grace-hold expiry is time-gated with no edge (CONTRACT)
+            elseif button._auraActive and button._auraGraceStart
+                and (now - button._auraGraceStart) <= 0.3 then
+                auraGrace = true                             -- aura grace-hold expiry is time-gated with no edge (CONTRACT); 0.3 matches EntryRuntime's hold
             end
             -- else: icon/bar self-animating cooldown/aura/GCD, pandemic covered
             -- or absent -- skippable; discrete edges stay event-covered.
-            forced = text or pandemicUncovered or pandemicGrace
+            forced = text or pandemicUncovered or pandemicGrace or auraGrace
         end
     end
 
@@ -877,6 +880,7 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
             if text then RefreshTelemetry:CountForce("text") end
             if pandemicUncovered then RefreshTelemetry:CountForce("pandemic-uncovered") end
             if pandemicGrace then RefreshTelemetry:CountForce("pandemic-grace") end
+            if auraGrace then RefreshTelemetry:CountForce("aura-grace") end
             if floorForce then RefreshTelemetry:CountForce(floorFailOpen) end
         end
     end
@@ -914,7 +918,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- panels ride dirty ticks + the safety walk like icon visuals (disposition
     -- doc 2026-07-04-023; forcing-attribution captures showed the old blanket
     -- force cost ~25 ms/s in combat and defeated the idle skip entirely).
-    local floorFailOpen = (buttonData.hideWhileUnusable == true
+    local floorFailOpen = (buttonData.hideWhileUnusable
             and not buttonData.isPassive and not buttonData.isPassiveCooldown
             and "hide-unusable")
         or nil
@@ -951,6 +955,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local previousLiveOverrideId = button._liveOverrideSpellId
         liveOverrideId = GetLiveOverrideSpellID(buttonData)
         button._liveOverrideSpellId = liveOverrideId
+        -- The router's index keys on the live override (read at rebuild time);
+        -- this edge can fire before UpdateButtonIcon moves _displaySpellId, so
+        -- it needs its own rebuild request. Change-edge only; virtual buttons
+        -- are index-excluded and churn permanently -- never rebuild for them.
+        if liveOverrideId ~= previousLiveOverrideId
+                and buttonData._rotationAssistantVirtual ~= true then
+            CooldownCompanion:RequestSpellButtonIndexRebuild("override-edge")
+        end
         if liveOverrideId then
             if liveOverrideId ~= cooldownSpellId then
                 refreshIcon = true

@@ -117,6 +117,17 @@ function CooldownCompanion:EnsureRoutedBatchFrame()
     end
 end
 
+-- OnDisable teardown: disarm the flush frame and drop any pending batch so a
+-- fire routed just before disable cannot flush next frame and re-arm the
+-- scheduler state OnDisable just reset.
+function CooldownCompanion:ResetRoutedCooldownBatch()
+    if self._routedBatchFrame then
+        self._routedBatchFrame:SetScript("OnUpdate", nil)
+    end
+    self._routedBatchArmed = nil
+    ClearRoutedBatch()
+end
+
 -- Dispatch classifier, called from OnCooldownStateChanged for readable-arg
 -- SPELL_UPDATE_COOLDOWN when routing is on. Returns true only when the fire is
 -- fully handled (routed into the batch, or dropped as an index miss); false
@@ -169,7 +180,8 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
 
     if fireCount == 0 then
         -- Index miss: no tracked button displays this identity -> drop. No dirty
-        -- mark, no walk.
+        -- mark, no walk. Counted (dev-gated) so wrong drops are observable.
+        self:CountRoutedDrop()
         return true
     end
     if firePanel then

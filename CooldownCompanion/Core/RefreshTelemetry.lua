@@ -15,6 +15,9 @@
       broad walk (per-term button counts in forcingCounts, per-walk term
       combinations in passForceCombos, and a "force" field on passLog entries)
       -- names what keeps the idle skip from engaging
+    - routed drops: cooldown-event fires the router dropped as index misses
+      (no dirty mark, no walk) -- the riskiest router outcome, watched so a
+      wrong drop starving a button is observable
     Read via CooldownCompanion:GetRefreshTelemetry(); reset via
     CooldownCompanion:ResetRefreshTelemetry(). Never alters refresh behavior.
 ]]
@@ -54,6 +57,8 @@ local T = {
     forcingCounts = {},
     passForceCombos = {},
     passForceTerms = {},
+    -- Router index-miss drops (fires handled with no dirty mark and no walk).
+    routedDrops = 0,
     passLog = {},               -- ring buffer of reused entry tables
     passCursor = 0,             -- last written index (1..RING_SIZE)
     passTotal = 0,              -- total passes recorded since reset
@@ -117,6 +122,13 @@ end
 function CooldownCompanion:CountTickerForce(term)
     if T.enabled then
         T:CountForce(term)
+    end
+end
+
+-- Enabled-gated: the router dropped a cooldown-event fire as an index miss.
+function CooldownCompanion:CountRoutedDrop()
+    if T.enabled then
+        T.routedDrops = T.routedDrops + 1
     end
 end
 
@@ -225,6 +237,7 @@ function CooldownCompanion:ResetRefreshTelemetry()
     T.wouldSkipTotal = 0
     T.falseIdleTotal = 0
     T.tickerIdleSkips = 0
+    T.routedDrops = 0
     T.passCursor = 0
     T.passTotal = 0
     T.queueHistoryLen = 0

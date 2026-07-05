@@ -1173,6 +1173,14 @@ function CooldownCompanion:UpdateButtonIcon(button)
     -- Update cooldown secrecy when override spell changes (e.g. Command Demon → pet ability)
     if displayId ~= prevDisplayId and buttonData.type == "spell" then
         buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(displayId)
+        -- The router's index keys on _displaySpellId, and silent transforms
+        -- mutate it here with no structural rebuild -- without one, a cooldown
+        -- fire for the new identity index-misses and is dropped. Change-edge
+        -- only, so steady-state walks request nothing. Virtual buttons are
+        -- index-excluded and churn permanently; never rebuild for them.
+        if buttonData._rotationAssistantVirtual ~= true then
+            self:RequestSpellButtonIndexRebuild("display-id")
+        end
     end
 
     -- Update bar name text when the display spell changes (e.g. transform)
