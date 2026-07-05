@@ -757,6 +757,7 @@ local function ClearReusableButtonRuntime(button)
     button._zeroChargesConfirmed = nil
     button._nilConfirmPending = nil
     button._hideCooldownChargesActive = nil
+    button._gcdSwipeDrawActive = nil
     button._displayCountZeroUsabilityFallback = nil
     button._itemCount = nil
     button._auraSpellID = nil
