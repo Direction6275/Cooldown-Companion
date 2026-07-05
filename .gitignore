@@ -1,5 +1,6 @@
 .agents
 .codex
+.claude/skills
 .mcp.json
 .vscode
 .local-tools
