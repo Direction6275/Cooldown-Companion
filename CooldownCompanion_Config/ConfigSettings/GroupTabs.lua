@@ -55,6 +55,7 @@ local AddPreviewBadge = ST._AddPreviewBadge
 local AddConditionalPreviewBadge = ST._AddConditionalPreviewBadge
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
+local BuildAuraDurationSwipeAdvancedControls = ST._BuildAuraDurationSwipeAdvancedControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 
@@ -2603,11 +2604,11 @@ local function BuildEffectsTab(container)
         " ",
         {"Does not work while Masque is enabled.", 1, 1, 1, true},
         " ",
-        {"Show Cooldown/Duration Swipe and Blizzard CDM Aura Swipe Style are unavailable while Icon Fill Timer is active.", 0.7, 0.7, 0.7, true},
+        {"Show Cooldown Swipe, Show Aura Duration Swipe, and Blizzard CDM Aura Swipe Style are unavailable while Icon Fill Timer is active.", 0.7, 0.7, 0.7, true},
     }, tabInfoButtons)
 
     local swipeCb = AceGUI:Create("CheckBox")
-    swipeCb:SetLabel("Show Cooldown/Duration Swipe")
+    swipeCb:SetLabel("Show Cooldown Swipe")
     swipeCb:SetValue(style.showCooldownSwipe ~= false)
     swipeCb:SetFullWidth(true)
     swipeCb:SetDisabled(iconFillTimerActive)
@@ -2686,26 +2687,30 @@ local function BuildEffectsTab(container)
     end
 
 
-    local auraSwipeCb = BuildAuraDurationSwipeControls(container, style, function()
+    local auraDurationCb = BuildAuraDurationSwipeControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:UpdateAllCooldowns()
     end, {
         masqueEnabled = group.masqueEnabled == true,
+        showAdvancedControlsInline = false,
     })
-    local auraSwipePromoteBtn
+    local function BuildAuraDurationSwipeAdvanced(panel)
+        if BuildAuraDurationSwipeAdvancedControls then
+            BuildAuraDurationSwipeAdvancedControls(panel, style, function()
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                CooldownCompanion:UpdateAllCooldowns()
+            end, {
+                masqueEnabled = group.masqueEnabled == true,
+            })
+        end
+    end
+    local _, auraDurationAdvBtn = AddAdvancedToggle(auraDurationCb, "auraDurationSwipe", tabInfoButtons, style.showAuraDurationSwipe ~= false and not iconFillTimerActive, {
+        title = "Aura Duration Swipe Advanced",
+        build = BuildAuraDurationSwipeAdvanced,
+    })
     if not iconFillTimerActive then
-        auraSwipePromoteBtn = CreateCheckboxPromoteButton(auraSwipeCb, nil, "auraDurationSwipe", group, style)
+        CreateCheckboxPromoteButton(auraDurationCb, auraDurationAdvBtn, "auraDurationSwipe", group, style)
     end
-    local auraSwipeInfoAnchor = auraSwipeCb.checkbg
-    local auraSwipeInfoXOff = auraSwipeCb.text:GetStringWidth() + 4
-    if auraSwipePromoteBtn and auraSwipePromoteBtn:IsShown() then
-        auraSwipeInfoAnchor = auraSwipePromoteBtn
-        auraSwipeInfoXOff = 4
-    end
-    CreateInfoButton(auraSwipeCb.frame, auraSwipeInfoAnchor, "LEFT", "RIGHT", auraSwipeInfoXOff, 0, {
-        "Blizzard-style Aura Duration Swipe",
-        {"While this style is shown for an active aura, the Cooldown/Duration Swipe settings do not affect that aura overlay.", 1, 1, 1, true},
-    }, tabInfoButtons)
 
     local gcdCb = AceGUI:Create("CheckBox")
     gcdCb:SetLabel("Show GCD Swipe")

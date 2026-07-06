@@ -32,6 +32,10 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     " ",
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
+local AURA_BLIZZARD_SWIPE_TOOLTIP = {
+    "Blizzard-style Aura Duration Swipe",
+    {"Uses Blizzard's fixed aura duration swipe style while Aura Duration Swipe is enabled. The normal aura duration swipe style settings do not affect this overlay.", 1, 1, 1, true},
+}
 local function ResolvePreviewOption(value)
     if type(value) == "function" then
         return value()
@@ -616,7 +620,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
 
     local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Show Cooldown/Duration Swipe")
+    cb:SetLabel("Show Cooldown Swipe")
     cb:SetValue(styleTable.showCooldownSwipe ~= false)
     cb:SetFullWidth(true)
     cb:SetDisabled(disabledByIconFill)
@@ -793,22 +797,115 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
     AddColorPicker(container, styleTable, "iconFillAuraColor", "Aura Fill Color", {0.2, 1.0, 0.2, 0.55}, true, refreshCallback, refreshCallback)
 end
 
+local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
+    local blizzardStyleActive = styleTable.auraUseBlizzardSwipe == true
+    local normalStyleDisabled = disabledByIconFill or blizzardStyleActive
+
+    local blizzardCb = AceGUI:Create("CheckBox")
+    blizzardCb:SetLabel("Blizzard CDM Aura Swipe Style")
+    blizzardCb:SetValue(styleTable.auraUseBlizzardSwipe == true)
+    blizzardCb:SetFullWidth(true)
+    blizzardCb:SetDisabled(disabledByIconFill)
+    blizzardCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if disabledByIconFill then return end
+        styleTable.auraUseBlizzardSwipe = val == true
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(blizzardCb)
+    CreateInfoButton(blizzardCb.frame, blizzardCb.checkbg, "LEFT", "RIGHT", blizzardCb.text:GetStringWidth() + 4, 0, AURA_BLIZZARD_SWIPE_TOOLTIP, blizzardCb)
+    ApplyOverrideCheckboxIndent(blizzardCb, opts)
+
+    local reverseCb = AceGUI:Create("CheckBox")
+    reverseCb:SetLabel("Reverse Swipe")
+    reverseCb:SetValue(styleTable.auraDurationSwipeReverse or false)
+    reverseCb:SetFullWidth(true)
+    reverseCb:SetDisabled(normalStyleDisabled)
+    reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if normalStyleDisabled then return end
+        styleTable.auraDurationSwipeReverse = val
+        refreshCallback()
+    end)
+    container:AddChild(reverseCb)
+    ApplyOverrideCheckboxIndent(reverseCb, opts)
+
+    local fillCb = AceGUI:Create("CheckBox")
+    fillCb:SetLabel("Show Swipe Fill")
+    fillCb:SetValue(styleTable.showAuraDurationSwipeFill ~= false)
+    fillCb:SetFullWidth(true)
+    fillCb:SetDisabled(normalStyleDisabled)
+    fillCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if normalStyleDisabled then return end
+        styleTable.showAuraDurationSwipeFill = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(fillCb)
+    ApplyOverrideCheckboxIndent(fillCb, opts)
+
+    if styleTable.showAuraDurationSwipeFill ~= false then
+        local alphaSlider = AceGUI:Create("Slider")
+        alphaSlider:SetLabel("Swipe Fill Opacity")
+        alphaSlider:SetSliderValues(0, 1, 0.05)
+        alphaSlider:SetIsPercent(true)
+        alphaSlider:SetValue(styleTable.auraDurationSwipeAlpha or 0.8)
+        alphaSlider:SetFullWidth(true)
+        if alphaSlider.SetDisabled then alphaSlider:SetDisabled(normalStyleDisabled) end
+        alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if normalStyleDisabled then return end
+            styleTable.auraDurationSwipeAlpha = val
+            refreshCallback()
+        end)
+        container:AddChild(alphaSlider)
+    end
+
+    local edgeCb = AceGUI:Create("CheckBox")
+    edgeCb:SetLabel("Show Swipe Edge")
+    edgeCb:SetValue(styleTable.showAuraDurationSwipeEdge ~= false)
+    edgeCb:SetFullWidth(true)
+    edgeCb:SetDisabled(normalStyleDisabled)
+    edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if normalStyleDisabled then return end
+        styleTable.showAuraDurationSwipeEdge = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(edgeCb)
+    ApplyOverrideCheckboxIndent(edgeCb, opts)
+
+    if styleTable.showAuraDurationSwipeEdge ~= false then
+        local edgeColor = AddColorPicker(container, styleTable, "auraDurationSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+        if edgeColor.SetDisabled then edgeColor:SetDisabled(normalStyleDisabled) end
+    end
+end
+
 local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
     local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
 
-    local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Blizzard CDM Aura Swipe Style")
-    cb:SetValue(styleTable.auraUseBlizzardSwipe == true)
-    cb:SetFullWidth(true)
-    cb:SetDisabled(disabledByIconFill)
-    cb:SetCallback("OnValueChanged", function(widget, event, val)
+    local auraCb = AceGUI:Create("CheckBox")
+    auraCb:SetLabel("Show Aura Duration Swipe")
+    auraCb:SetValue(styleTable.showAuraDurationSwipe ~= false)
+    auraCb:SetFullWidth(true)
+    auraCb:SetDisabled(disabledByIconFill)
+    auraCb:SetCallback("OnValueChanged", function(widget, event, val)
         if disabledByIconFill then return end
-        styleTable.auraUseBlizzardSwipe = val == true
+        styleTable.showAuraDurationSwipe = val
         refreshCallback()
+        if val == true and type(opts.onEnabled) == "function" then
+            opts.onEnabled()
+        end
+        RefreshStructuralControls(container)
     end)
-    container:AddChild(cb)
-    return cb
+    container:AddChild(auraCb)
+
+    if opts.showAdvancedControlsInline ~= false and styleTable.showAuraDurationSwipe ~= false then
+        BuildAuraDurationSwipeAdvancedControls(container, styleTable, refreshCallback, opts)
+    end
+
+    return auraCb
 end
 
 local function BuildLossOfControlControls(container, styleTable, refreshCallback)
@@ -1785,6 +1882,7 @@ ST._BuildCooldownSwipeControls = BuildCooldownSwipeControls
 ST._BuildIconFillTimerControls = BuildIconFillTimerControls
 ST._BuildIconFillTimerAdvancedControls = BuildIconFillTimerAdvancedControls
 ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
+ST._BuildAuraDurationSwipeAdvancedControls = BuildAuraDurationSwipeAdvancedControls
 ST._BuildLossOfControlControls = BuildLossOfControlControls
 ST._BuildUnusableDimmingControls = BuildUnusableDimmingControls
 ST._BuildIconTintControls = BuildIconTintControls

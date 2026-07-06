@@ -179,6 +179,162 @@ local function BackfillUnusableVisualOverrideModes(profile)
     return changed
 end
 
+local AURA_DURATION_SWIPE_STYLE_MIRRORS = {
+    { auraKey = "showAuraDurationSwipeFill", cooldownKey = "showCooldownSwipeFill", default = true },
+    { auraKey = "auraDurationSwipeReverse", cooldownKey = "cooldownSwipeReverse", default = false },
+    { auraKey = "showAuraDurationSwipeEdge", cooldownKey = "showCooldownSwipeEdge", default = true },
+    { auraKey = "auraDurationSwipeAlpha", cooldownKey = "cooldownSwipeAlpha", default = 0.8 },
+    { auraKey = "auraDurationSwipeEdgeColor", cooldownKey = "cooldownSwipeEdgeColor", default = {1, 1, 1, 1} },
+}
+
+local function CaptureAuraDurationSwipeStyleState(style)
+    if type(style) ~= "table" then
+        return nil
+    end
+
+    local values = {
+        showCooldownSwipe = rawget(style, "showCooldownSwipe"),
+        auraUseBlizzardSwipe = rawget(style, "auraUseBlizzardSwipe"),
+    }
+    local auraKeys = {
+        showAuraDurationSwipe = rawget(style, "showAuraDurationSwipe") ~= nil,
+    }
+
+    for _, mirror in ipairs(AURA_DURATION_SWIPE_STYLE_MIRRORS) do
+        values[mirror.cooldownKey] = rawget(style, mirror.cooldownKey)
+        auraKeys[mirror.auraKey] = rawget(style, mirror.auraKey) ~= nil
+    end
+
+    return {
+        values = values,
+        auraKeys = auraKeys,
+    }
+end
+
+local function HasCapturedAuraDurationSwipeKey(styleState, auraKey)
+    return type(styleState) == "table"
+        and type(styleState.auraKeys) == "table"
+        and styleState.auraKeys[auraKey] == true
+end
+
+local function ShouldBackfillAuraDurationSwipeKey(style, styleState, auraKey)
+    if type(style) ~= "table" then
+        return false
+    end
+    if rawget(style, auraKey) == nil then
+        return true
+    end
+    return styleState ~= nil and not HasCapturedAuraDurationSwipeKey(styleState, auraKey)
+end
+
+local function ResolveStyleValue(style, styleState, fallbackStyle, fallbackState, key, defaultValue)
+    local values = type(styleState) == "table" and styleState.values
+    local value
+    if type(values) == "table" then
+        value = values[key]
+    end
+    if value == nil and type(style) == "table" then
+        value = rawget(style, key)
+    end
+
+    if value == nil then
+        local fallbackValues = type(fallbackState) == "table" and fallbackState.values
+        if type(fallbackValues) == "table" then
+            value = fallbackValues[key]
+        end
+    end
+    if value == nil and type(fallbackStyle) == "table" then
+        value = rawget(fallbackStyle, key)
+    end
+    if value == nil then
+        value = defaultValue
+    end
+    if type(value) == "table" then
+        return CopyTable(value)
+    end
+    return value
+end
+
+local function BackfillAuraDurationSwipeStyle(style, fallbackStyle, styleState, fallbackState)
+    if type(style) ~= "table" then
+        return false
+    end
+
+    local changed = false
+    if ShouldBackfillAuraDurationSwipeKey(style, styleState, "showAuraDurationSwipe") then
+        local auraUseBlizzardSwipe = ResolveStyleValue(style, styleState, fallbackStyle, fallbackState, "auraUseBlizzardSwipe", false)
+        if auraUseBlizzardSwipe == true then
+            style.showAuraDurationSwipe = true
+        else
+            local showCooldownSwipe = ResolveStyleValue(style, styleState, fallbackStyle, fallbackState, "showCooldownSwipe", true)
+            style.showAuraDurationSwipe = showCooldownSwipe ~= false
+        end
+        changed = true
+    end
+
+    for _, mirror in ipairs(AURA_DURATION_SWIPE_STYLE_MIRRORS) do
+        if ShouldBackfillAuraDurationSwipeKey(style, styleState, mirror.auraKey) then
+            style[mirror.auraKey] = ResolveStyleValue(style, styleState, fallbackStyle, fallbackState, mirror.cooldownKey, mirror.default)
+            changed = true
+        end
+    end
+
+    return changed
+end
+
+local function BackfillAuraDurationSwipeSettings(profile, savedProfileState)
+    if type(profile) ~= "table" then
+        return false
+    end
+
+    local globalStyleState = savedProfileState and savedProfileState.globalStyle
+    local changed = BackfillAuraDurationSwipeStyle(profile.globalStyle, nil, globalStyleState)
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" then
+                if BackfillAuraDurationSwipeStyle(group.style, profile.globalStyle) then
+                    changed = true
+                end
+
+                if type(group.buttons) == "table" then
+                    for _, buttonData in ipairs(group.buttons) do
+                        if type(buttonData) == "table" then
+                            local overrideSections = buttonData.overrideSections
+                            local hasAuraSwipeOverride = type(overrideSections) == "table"
+                                and (overrideSections.cooldownSwipe == true or overrideSections.auraDurationSwipe == true)
+                            if hasAuraSwipeOverride and BackfillAuraDurationSwipeStyle(buttonData.styleOverrides, group.style) then
+                                changed = true
+                            end
+
+                            if type(overrideSections) == "table"
+                                and overrideSections.cooldownSwipe == true
+                                and overrideSections.auraDurationSwipe ~= true then
+                                overrideSections.auraDurationSwipe = true
+                                changed = true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if type(profile.groupSettingPresets) == "table" then
+        for _, presetStore in pairs(profile.groupSettingPresets) do
+            if type(presetStore) == "table" then
+                for _, presetData in pairs(presetStore) do
+                    if type(presetData) == "table" and BackfillAuraDurationSwipeStyle(presetData.style, profile.globalStyle) then
+                        changed = true
+                    end
+                end
+            end
+        end
+    end
+
+    return changed
+end
+
 local function ClearRetiredAutoAddPrefs(profile)
     if type(profile) ~= "table" or profile.autoAddPrefs == nil then
         return false
@@ -233,6 +389,9 @@ function CooldownCompanion:InspectSavedProfileCheckpoint(savedVariables, default
     state.profileExisted = true
     state.profileLookedLikePayload = LooksLikeProfilePayload(profile)
     state.profileHadSupportedCheckpoint = HasSupportedCheckpoint(profile)
+    state.auraDurationSwipe = {
+        globalStyle = CaptureAuraDurationSwipeStyleState(profile.globalStyle),
+    }
     return state
 end
 
@@ -331,6 +490,7 @@ function CooldownCompanion:RunAllMigrations()
     ClearRetiredAutoAddPrefs(self.db and self.db.profile)
     NormalizePassiveCooldownButtons(self.db and self.db.profile)
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
+    BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
     if self.RunResourceBarClassScopeMigration then
         self:RunResourceBarClassScopeMigration()
     end
