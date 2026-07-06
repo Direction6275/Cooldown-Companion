@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.22",
         "1.21",
         "1.20.1",
         "1.20",
@@ -48,6 +49,24 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.22"] = {
+            markdown = [[
+## Polish | QoL
+
+- **Separate cooldown and aura duration swipes:** The single combined swipe toggle is now split into Show Cooldown Swipe and Show Aura Duration Swipe, so you can control each independently. The Blizzard Cooldown Manager aura swipe style now lives inside the Aura Duration Swipe advanced settings. Existing swipe settings carry over automatically after updating.
+- **Open bar settings from previews:** In Bars & Frames, clicking a Resource or Custom Bar preview in Layout & Order now opens that bar's settings, matching the Custom Bars & Resources list.
+
+## Bug Fixes
+
+- **Custom Bars follow talent swaps:** Custom Bars with talent or load conditions now appear and disappear correctly right after you change talents, with no reload needed. The config panel's Active and Inactive lists, along with indicator previews, now reflect only the bars that will actually load for your current spec, talents, and conditions.
+- **Aura displays ignore spell-only states:** While a tracked aura is active, its entry now reflects aura state only. It no longer dims or hides based on the spell's castability, turns red for range, or desaturates for usability. Normal range and usability visuals return once the aura fades.
+- **GCD swipe works with the cooldown swipe off:** On icon panels, Show GCD Swipe now draws the global-cooldown sweep even when Show Cooldown Swipe is turned off. Previously that exact combination showed nothing, so the toggle appeared to do nothing.
+
+## Performance
+
+- **Much lower combat CPU:** A large backend restructuring makes Cooldown Companion now uses roughly a third of the CPU it previously used during combat, and close to none while you are out of combat or idle. Every display behaves exactly as before, including swipes, charges, text countdowns, pandemic glow, proc glows, target-switch behavior, panels, and bars.
+]],
+        },
         ["1.21"] = {
             markdown = [[
 ## New Features
