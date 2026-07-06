@@ -221,7 +221,7 @@ local function ShouldBackfillAuraDurationSwipeKey(style, styleState, auraKey)
     if type(style) ~= "table" then
         return false
     end
-    if style[auraKey] == nil then
+    if rawget(style, auraKey) == nil then
         return true
     end
     return styleState ~= nil and not HasCapturedAuraDurationSwipeKey(styleState, auraKey)
@@ -229,17 +229,22 @@ end
 
 local function ResolveStyleValue(style, styleState, fallbackStyle, fallbackState, key, defaultValue)
     local values = type(styleState) == "table" and styleState.values
-    local value = type(values) == "table" and values[key] or nil
+    local value
+    if type(values) == "table" then
+        value = values[key]
+    end
     if value == nil and type(style) == "table" then
-        value = style[key]
+        value = rawget(style, key)
     end
 
     if value == nil then
         local fallbackValues = type(fallbackState) == "table" and fallbackState.values
-        value = type(fallbackValues) == "table" and fallbackValues[key] or nil
+        if type(fallbackValues) == "table" then
+            value = fallbackValues[key]
+        end
     end
     if value == nil and type(fallbackStyle) == "table" then
-        value = fallbackStyle[key]
+        value = rawget(fallbackStyle, key)
     end
     if value == nil then
         value = defaultValue
