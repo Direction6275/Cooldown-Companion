@@ -1193,9 +1193,11 @@ local function CreateSegmentedBar(parent, numSegments)
     holder.textLayer:SetAllPoints(holder)
     holder.textLayer:SetFrameLevel(holder:GetFrameLevel() + 8)
 
-    holder.text = holder.textLayer:CreateFontString(nil, "OVERLAY")
+    local textFont = CooldownCompanion:FetchFont("Friz Quadrata TT")
     local textOutline = ST.GetEffectiveFontOutline("OUTLINE")
-    holder.text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, textOutline)
+
+    holder.text = holder.textLayer:CreateFontString(nil, "OVERLAY")
+    holder.text:SetFont(textFont, 10, textOutline)
     ST.ApplyFontShadowForOutline(holder.text, textOutline)
     holder.text:SetPoint("CENTER")
     holder.text:SetTextColor(1, 1, 1, 1)
@@ -1204,8 +1206,7 @@ local function CreateSegmentedBar(parent, numSegments)
     holder.rechargeTexts = {}
     for i = 1, numSegments do
         local text = holder.textLayer:CreateFontString(nil, "OVERLAY")
-        local textOutline = ST.GetEffectiveFontOutline("OUTLINE")
-        text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, textOutline)
+        text:SetFont(textFont, 10, textOutline)
         ST.ApplyFontShadowForOutline(text, textOutline)
         text:SetPoint("CENTER", holder.segments[i], "CENTER", 0, 0)
         text:SetTextColor(1, 1, 1, 1)

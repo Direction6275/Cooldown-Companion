@@ -521,9 +521,7 @@ local function ApplyFontStyle(region, source, prefix, defaultSize)
     local size = source[prefix .. "FontSize"] or defaultSize or 12
     local outline = ST.GetEffectiveFontOutline(source[prefix .. "FontOutline"] or "OUTLINE")
     region:SetFont(font, size, outline)
-    if ST.ApplyFontShadowForOutline then
-        ST.ApplyFontShadowForOutline(region, outline)
-    end
+    ST.ApplyFontShadowForOutline(region, outline)
     local color = source[prefix .. "FontColor"] or {1, 1, 1, 1}
     region:SetTextColor(color[1], color[2], color[3], color[4])
 end

@@ -120,7 +120,7 @@ end
 local function GetProfileWideFontOutlinePickerValue()
     local outline = ST.GetProfileWideFontOutline and ST.GetProfileWideFontOutline()
     if type(outline) == "string" then
-        return ST.NormalizeFontOutline and ST.NormalizeFontOutline(outline) or outline
+        return ST.NormalizeFontOutline(outline)
     end
     return ST.DEFAULT_FONT_OUTLINE or "OUTLINE"
 end

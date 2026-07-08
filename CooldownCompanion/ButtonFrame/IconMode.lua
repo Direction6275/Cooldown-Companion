@@ -807,15 +807,9 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Aura/ready glow frame levels are now managed by ApplyStrataOrder (called below)
 
     -- Apply custom cooldown text font settings
-    local cooldownFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
-    local cooldownFontSize = style.cooldownFontSize or 12
-    local cooldownFontOutline = ST.GetEffectiveFontOutline(style.cooldownFontOutline or "OUTLINE")
     local region = button.cooldown:GetRegions()
     if region and region.SetFont then
-        region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
-        ST.ApplyFontShadowForOutline(region, cooldownFontOutline)
-        local cdColor = style.cooldownFontColor or DEFAULT_WHITE
-        region:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+        ApplyFontStyle(region, style, "cooldown")
         region:ClearAllPoints()
         local cdAnchor = style.cooldownTextAnchor or "CENTER"
         local cdXOff = style.cooldownTextXOffset or 0
@@ -854,10 +848,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
             local secXOff = style.cooldownTextXOffset or 0
             local secYOff = style.cooldownTextYOffset or 0
             secRegion:SetPoint(secAnchor, button.overlayFrame, secAnchor, secXOff, secYOff)
-            secRegion:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
-            ST.ApplyFontShadowForOutline(secRegion, cooldownFontOutline)
-            local cdColor = style.cooldownFontColor or DEFAULT_WHITE
-            secRegion:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+            ApplyFontStyle(secRegion, style, "cooldown")
             button._secondaryCdTextRegion = secRegion
         end
     end
@@ -1649,15 +1640,9 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     end
 
     -- Update cooldown font settings (default state; per-tick logic handles aura mode)
-    local cooldownFont = CooldownCompanion:FetchFont(style.cooldownFont or "Friz Quadrata TT")
-    local cooldownFontSize = style.cooldownFontSize or 12
-    local cooldownFontOutline = ST.GetEffectiveFontOutline(style.cooldownFontOutline or "OUTLINE")
     local region = button.cooldown:GetRegions()
     if region and region.SetFont then
-        region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
-        ST.ApplyFontShadowForOutline(region, cooldownFontOutline)
-        local cdColor = style.cooldownFontColor or DEFAULT_WHITE
-        region:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+        ApplyFontStyle(region, style, "cooldown")
         region:ClearAllPoints()
         local cdAnchor = style.cooldownTextAnchor or "CENTER"
         local cdXOff = style.cooldownTextXOffset or 0
@@ -1666,10 +1651,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     end
     if button._secondaryCdTextRegion and button._secondaryCdTextRegion.SetFont then
         local secRegion = button._secondaryCdTextRegion
-        secRegion:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
-        ST.ApplyFontShadowForOutline(secRegion, cooldownFontOutline)
-        local cdColor = style.cooldownFontColor or DEFAULT_WHITE
-        secRegion:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+        ApplyFontStyle(secRegion, style, "cooldown")
         secRegion:ClearAllPoints()
         local cdAnchor = style.cooldownTextAnchor or "CENTER"
         local cdXOff = style.cooldownTextXOffset or 0
