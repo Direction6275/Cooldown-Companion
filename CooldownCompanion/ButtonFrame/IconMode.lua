@@ -1664,6 +1664,18 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         local cdYOff = style.cooldownTextYOffset or 0
         region:SetPoint(cdAnchor, cdXOff, cdYOff)
     end
+    if button._secondaryCdTextRegion and button._secondaryCdTextRegion.SetFont then
+        local secRegion = button._secondaryCdTextRegion
+        secRegion:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
+        ST.ApplyFontShadowForOutline(secRegion, cooldownFontOutline)
+        local cdColor = style.cooldownFontColor or DEFAULT_WHITE
+        secRegion:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
+        secRegion:ClearAllPoints()
+        local cdAnchor = style.cooldownTextAnchor or "CENTER"
+        local cdXOff = style.cooldownTextXOffset or 0
+        local cdYOff = style.cooldownTextYOffset or 0
+        secRegion:SetPoint(cdAnchor, button.overlayFrame, cdAnchor, cdXOff, cdYOff)
+    end
     -- Clear cached text mode so per-tick logic re-applies the correct font
     button._cdTextMode = nil
     button._cdTextHidden = nil

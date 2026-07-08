@@ -340,32 +340,69 @@ function ST.FontOutlineUsesSlug(outline)
     return type(outline) == "string" and outline:find("SLUG", 1, true) ~= nil
 end
 
-function ST.ApplyFontShadowForOutline(fontString, outline, shadowEnabled)
-    if not fontString then return end
+local capturedFontShadows = setmetatable({}, { __mode = "k" })
 
-    if ST.FontOutlineUsesSlug(outline) then
+local function ClearCapturedFontShadow(fontString)
+    capturedFontShadows[fontString] = nil
+end
+
+local function CaptureFontShadow(fontString)
+    if capturedFontShadows[fontString] then return end
+    if not (fontString.GetShadowColor and fontString.GetShadowOffset) then return end
+
+    local r, g, b, a = fontString:GetShadowColor()
+    local x, y = fontString:GetShadowOffset()
+    capturedFontShadows[fontString] = { r, g, b, a, x, y }
+end
+
+local function RestoreCapturedFontShadow(fontString)
+    local shadow = capturedFontShadows[fontString]
+    if not shadow then return false end
+
+    if fontString.SetShadowColor then
+        fontString:SetShadowColor(shadow[1] or 0, shadow[2] or 0, shadow[3] or 0, shadow[4] or 0)
+    end
+    if fontString.SetShadowOffset then
+        fontString:SetShadowOffset(shadow[5] or 0, shadow[6] or 0)
+    end
+
+    ClearCapturedFontShadow(fontString)
+    return true
+end
+
+local function ApplyExplicitFontShadow(fontString, enabled)
+    if enabled then
+        if fontString.SetShadowColor then
+            fontString:SetShadowColor(0, 0, 0, 0.8)
+        end
+        if fontString.SetShadowOffset then
+            fontString:SetShadowOffset(1, -1)
+        end
+    else
         if fontString.SetShadowColor then
             fontString:SetShadowColor(0, 0, 0, 0)
         end
         if fontString.SetShadowOffset then
             fontString:SetShadowOffset(0, 0)
         end
-    elseif shadowEnabled ~= nil then
-        if shadowEnabled then
-            if fontString.SetShadowColor then
-                fontString:SetShadowColor(0, 0, 0, 0.8)
-            end
-            if fontString.SetShadowOffset then
-                fontString:SetShadowOffset(1, -1)
-            end
+    end
+end
+
+function ST.ApplyFontShadowForOutline(fontString, outline, shadowEnabled)
+    if not fontString then return end
+
+    if ST.FontOutlineUsesSlug(outline) then
+        if shadowEnabled == nil then
+            CaptureFontShadow(fontString)
         else
-            if fontString.SetShadowColor then
-                fontString:SetShadowColor(0, 0, 0, 0)
-            end
-            if fontString.SetShadowOffset then
-                fontString:SetShadowOffset(0, 0)
-            end
+            ClearCapturedFontShadow(fontString)
         end
+        ApplyExplicitFontShadow(fontString, false)
+    elseif shadowEnabled ~= nil then
+        ClearCapturedFontShadow(fontString)
+        ApplyExplicitFontShadow(fontString, shadowEnabled)
+    else
+        RestoreCapturedFontShadow(fontString)
     end
 end
 
