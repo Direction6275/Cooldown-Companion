@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "1.22.1",
         "1.22",
         "1.21",
         "1.20.1",
@@ -49,6 +50,13 @@ ST._changelogData = {
         "1.10.25",
     },
     entries = {
+        ["1.22.1"] = {
+            markdown = [[
+## New Features
+
+- **Outline + Slug font outlines:** Added an Outline + Slug font outline option for addon text.
+]],
+        },
         ["1.22"] = {
             markdown = [[
 ## Polish | QoL
