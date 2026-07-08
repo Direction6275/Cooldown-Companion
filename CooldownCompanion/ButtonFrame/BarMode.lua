@@ -1125,11 +1125,13 @@ local function UpdateBarFill(button)
                     local s = button.style.auraTextFontSize or 12
                     local o = ST.GetEffectiveFontOutline(button.style.auraTextFontOutline or "OUTLINE")
                     button.timeText:SetFont(f, s, o)
+                    ST.ApplyFontShadowForOutline(button.timeText, o)
                 else
                     local f = CooldownCompanion:FetchFont(button.style.cooldownFont or "Friz Quadrata TT")
                     local s = button.style.cooldownFontSize or 12
                     local o = ST.GetEffectiveFontOutline(button.style.cooldownFontOutline or "OUTLINE")
                     button.timeText:SetFont(f, s, o)
+                    ST.ApplyFontShadowForOutline(button.timeText, o)
                 end
             end
             if button._barTextColorDirty then
@@ -1186,6 +1188,7 @@ local function UpdateBarFill(button)
                     local s = button.style.barReadyFontSize or 12
                     local o = ST.GetEffectiveFontOutline(button.style.barReadyFontOutline or "OUTLINE")
                     button.timeText:SetFont(f, s, o)
+                    ST.ApplyFontShadowForOutline(button.timeText, o)
                 end
                 SetBarTimeText(button, button.style.barReadyText or "Ready")
             else

@@ -473,6 +473,9 @@ function CooldownCompanion:SetProfileWideFontOutline(outline, opts)
     if not profile or type(outline) ~= "string" then
         return false
     end
+    if ST.NormalizeFontOutline then
+        outline = ST.NormalizeFontOutline(outline)
+    end
 
     local changed = profile.profileWideFontOutline ~= outline
     if changed then

@@ -813,6 +813,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local region = button.cooldown:GetRegions()
     if region and region.SetFont then
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
+        ST.ApplyFontShadowForOutline(region, cooldownFontOutline)
         local cdColor = style.cooldownFontColor or DEFAULT_WHITE
         region:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
         region:ClearAllPoints()
@@ -854,6 +855,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
             local secYOff = style.cooldownTextYOffset or 0
             secRegion:SetPoint(secAnchor, button.overlayFrame, secAnchor, secXOff, secYOff)
             secRegion:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
+            ST.ApplyFontShadowForOutline(secRegion, cooldownFontOutline)
             local cdColor = style.cooldownFontColor or DEFAULT_WHITE
             secRegion:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
             button._secondaryCdTextRegion = secRegion
@@ -1386,6 +1388,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
             if button._cdTextMode ~= mode then
                 button._cdTextMode = mode
                 button._cdTextRegion:SetFont(wantFont, wantSize, wantOutline)
+                ST.ApplyFontShadowForOutline(button._cdTextRegion, wantOutline)
             end
         else
             button._cdTextRegion:SetTextColor(0, 0, 0, 0)
@@ -1652,6 +1655,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     local region = button.cooldown:GetRegions()
     if region and region.SetFont then
         region:SetFont(cooldownFont, cooldownFontSize, cooldownFontOutline)
+        ST.ApplyFontShadowForOutline(region, cooldownFontOutline)
         local cdColor = style.cooldownFontColor or DEFAULT_WHITE
         region:SetTextColor(cdColor[1], cdColor[2], cdColor[3], cdColor[4])
         region:ClearAllPoints()

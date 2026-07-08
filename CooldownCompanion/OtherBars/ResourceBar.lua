@@ -977,6 +977,7 @@ local function StyleRechargeTexts(holder, powerType, settings)
     local font = CooldownCompanion:FetchFont(fontName)
     for i, text in ipairs(holder.rechargeTexts) do
         text:SetFont(font, fontSize, outline)
+        ST.ApplyFontShadowForOutline(text, outline)
         text:SetTextColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
         text:ClearAllPoints()
         text:SetPoint(anchor, holder.segments[i], anchor, xOffset, yOffset)
@@ -1651,6 +1652,7 @@ local function StyleContinuousBar(bar, powerType, settings)
 
     local textFont = CooldownCompanion:FetchFont(textFontName)
     bar.text:SetFont(textFont, textSize, textOutline)
+    ST.ApplyFontShadowForOutline(bar.text, textOutline)
     bar.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
 
     bar.text:ClearAllPoints()
@@ -1703,6 +1705,7 @@ local function StyleSegmentedText(holder, powerType, settings)
 
     local textFont = CooldownCompanion:FetchFont(textFontName)
     holder.text:SetFont(textFont, textSize, textOutline)
+    ST.ApplyFontShadowForOutline(holder.text, textOutline)
     holder.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
 
     holder.text:ClearAllPoints()

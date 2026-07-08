@@ -44,6 +44,7 @@ ST._InvalidateFontCache = InvalidateFontCache
 local outlineOptions = {
     [""] = "None",
     ["OUTLINE"] = "Outline",
+    ["OUTLINE, SLUG"] = "Outline + Slug",
     ["THICKOUTLINE"] = "Thick Outline",
     ["MONOCHROME"] = "Monochrome",
 }
@@ -119,7 +120,7 @@ end
 local function GetProfileWideFontOutlinePickerValue()
     local outline = ST.GetProfileWideFontOutline and ST.GetProfileWideFontOutline()
     if type(outline) == "string" then
-        return outline
+        return ST.NormalizeFontOutline and ST.NormalizeFontOutline(outline) or outline
     end
     return ST.DEFAULT_FONT_OUTLINE or "OUTLINE"
 end

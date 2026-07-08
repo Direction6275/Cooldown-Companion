@@ -2333,13 +2333,7 @@ local function ApplyTextGroupHeader(self, frame, group, style, isTextMode)
         frame.textHeader:SetFont(font, fontSize, fontOutline)
         local hdrColor = style.textHeaderFontColor or {1, 1, 1, 1}
         frame.textHeader:SetTextColor(hdrColor[1], hdrColor[2], hdrColor[3], hdrColor[4] or 1)
-        if style.textShadow then
-            frame.textHeader:SetShadowColor(0, 0, 0, 0.8)
-            frame.textHeader:SetShadowOffset(1, -1)
-        else
-            frame.textHeader:SetShadowColor(0, 0, 0, 0)
-            frame.textHeader:SetShadowOffset(0, 0)
-        end
+        ST.ApplyFontShadowForOutline(frame.textHeader, fontOutline, style.textShadow == true)
         local align = style.textAlignment or "LEFT"
         frame.textHeader:SetJustifyH(align)
         frame.textHeader:SetText(group.name or "")
