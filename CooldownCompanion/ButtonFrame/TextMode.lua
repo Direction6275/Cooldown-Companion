@@ -921,13 +921,7 @@ local function UpdateTextStyle(button, newStyle)
     button.textString:SetJustifyH(align)
 
     -- Text shadow
-    if newStyle.textShadow then
-        button.textString:SetShadowColor(0, 0, 0, 0.8)
-        button.textString:SetShadowOffset(1, -1)
-    else
-        button.textString:SetShadowColor(0, 0, 0, 0)
-        button.textString:SetShadowOffset(0, 0)
-    end
+    ST.ApplyFontShadowForOutline(button.textString, fontOutline, newStyle.textShadow == true)
 
     -- Anchor text within frame respecting border
     button.textString:ClearAllPoints()
@@ -994,13 +988,7 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button.textString:SetJustifyH(align)
 
     -- Text shadow
-    if style.textShadow then
-        button.textString:SetShadowColor(0, 0, 0, 0.8)
-        button.textString:SetShadowOffset(1, -1)
-    else
-        button.textString:SetShadowColor(0, 0, 0, 0)
-        button.textString:SetShadowOffset(0, 0)
-    end
+    ST.ApplyFontShadowForOutline(button.textString, fontOutline, style.textShadow == true)
 
     local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode)
     local inset = ((borderSize > 0 or ST.IsEffectiveCrispBorderRenderMode(borderRenderMode, nil, borderSize)) and borderLayoutSize or 0) + 2

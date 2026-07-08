@@ -24,6 +24,14 @@ ST.BORDER_RENDER_MODE_CRISP = "crisp"
 ST.DEFAULT_FONT_NAME = ST.DEFAULT_FONT_NAME or "Friz Quadrata TT"
 ST.DEFAULT_FONT_OUTLINE = ST.DEFAULT_FONT_OUTLINE or "OUTLINE"
 
+local SUPPORTED_FONT_OUTLINES = {
+    [""] = true,
+    ["OUTLINE"] = true,
+    ["THICKOUTLINE"] = true,
+    ["MONOCHROME"] = true,
+    ["OUTLINE, SLUG"] = true,
+}
+
 local statusBarInterpolation = Enum and Enum.StatusBarInterpolation
 local statusBarTimerDirection = Enum and Enum.StatusBarTimerDirection
 ST.STATUS_BAR_INTERPOLATION_SMOOTH = statusBarInterpolation and statusBarInterpolation.ExponentialEaseOut
@@ -321,6 +329,83 @@ function ST.GetProfileWideFontOutline()
     return nil
 end
 
+function ST.NormalizeFontOutline(outline)
+    if type(outline) == "string" and SUPPORTED_FONT_OUTLINES[outline] then
+        return outline
+    end
+    return ST.DEFAULT_FONT_OUTLINE
+end
+
+function ST.FontOutlineUsesSlug(outline)
+    return type(outline) == "string" and outline:find("SLUG", 1, true) ~= nil
+end
+
+local capturedFontShadows = setmetatable({}, { __mode = "k" })
+
+local function ClearCapturedFontShadow(fontString)
+    capturedFontShadows[fontString] = nil
+end
+
+local function CaptureFontShadow(fontString)
+    if capturedFontShadows[fontString] then return end
+    if not (fontString.GetShadowColor and fontString.GetShadowOffset) then return end
+
+    local r, g, b, a = fontString:GetShadowColor()
+    local x, y = fontString:GetShadowOffset()
+    capturedFontShadows[fontString] = { r, g, b, a, x, y }
+end
+
+local function RestoreCapturedFontShadow(fontString)
+    local shadow = capturedFontShadows[fontString]
+    if not shadow then return false end
+
+    if fontString.SetShadowColor then
+        fontString:SetShadowColor(shadow[1] or 0, shadow[2] or 0, shadow[3] or 0, shadow[4] or 0)
+    end
+    if fontString.SetShadowOffset then
+        fontString:SetShadowOffset(shadow[5] or 0, shadow[6] or 0)
+    end
+
+    ClearCapturedFontShadow(fontString)
+    return true
+end
+
+local function ApplyExplicitFontShadow(fontString, enabled)
+    if enabled then
+        if fontString.SetShadowColor then
+            fontString:SetShadowColor(0, 0, 0, 0.8)
+        end
+        if fontString.SetShadowOffset then
+            fontString:SetShadowOffset(1, -1)
+        end
+    else
+        if fontString.SetShadowColor then
+            fontString:SetShadowColor(0, 0, 0, 0)
+        end
+        if fontString.SetShadowOffset then
+            fontString:SetShadowOffset(0, 0)
+        end
+    end
+end
+
+function ST.ApplyFontShadowForOutline(fontString, outline, shadowEnabled)
+    if not fontString then return end
+
+    if ST.FontOutlineUsesSlug(outline) then
+        if shadowEnabled == nil then
+            CaptureFontShadow(fontString)
+        else
+            ClearCapturedFontShadow(fontString)
+        end
+        ApplyExplicitFontShadow(fontString, false)
+    elseif shadowEnabled ~= nil then
+        ClearCapturedFontShadow(fontString)
+        ApplyExplicitFontShadow(fontString, shadowEnabled)
+    else
+        RestoreCapturedFontShadow(fontString)
+    end
+end
+
 function ST.GetEffectiveFontName(localFontName)
     if ST.IsProfileWideFontEnabled() then
         return ST.GetProfileWideFontName() or ST.DEFAULT_FONT_NAME
@@ -335,12 +420,12 @@ function ST.GetEffectiveFontOutline(localOutline)
     if ST.IsProfileWideFontEnabled() then
         local profileOutline = ST.GetProfileWideFontOutline()
         if profileOutline ~= nil then
-            return profileOutline
+            return ST.NormalizeFontOutline(profileOutline)
         end
         return ST.DEFAULT_FONT_OUTLINE
     end
     if type(localOutline) == "string" then
-        return localOutline
+        return ST.NormalizeFontOutline(localOutline)
     end
     return ST.DEFAULT_FONT_OUTLINE
 end

@@ -1261,6 +1261,7 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
                 local ns = settings.nameFontSize or 10
                 local no = ST.GetEffectiveFontOutline(settings.nameFontOutline or "OUTLINE")
                 cb.Text:SetFont(nf, ns, no)
+                ST.ApplyFontShadowForOutline(cb.Text, no)
                 cb.Text:ClearAllPoints()
                 cb.Text:SetPoint("LEFT", cb, "LEFT", 4, 0)
                 cb.Text:SetPoint("RIGHT", cb, "RIGHT", -4, 0)
@@ -1283,6 +1284,7 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
                 local cts = settings.castTimeFontSize or 10
                 local cto = ST.GetEffectiveFontOutline(settings.castTimeFontOutline or "OUTLINE")
                 cb.CastTimeText:SetFont(ctf, cts, cto)
+                ST.ApplyFontShadowForOutline(cb.CastTimeText, cto)
                 cb.CastTimeText:ClearAllPoints()
                 local xOfs = settings.castTimeXOffset or 0
                 local ctYOfs = settings.castTimeYOffset or 0

@@ -936,7 +936,9 @@ function CooldownCompanion.GetTriggerTextDisplayMetrics(fontString, settings)
     fontString:SetJustifyV("MIDDLE")
     fontString:SetJustifyH(settings.textAlignment or "CENTER")
     fontString:SetWidth(0)
-    fontString:SetFont(font, settings.textFontSize or 12, ST.GetEffectiveFontOutline(settings.textFontOutline or "OUTLINE"))
+    local fontOutline = ST.GetEffectiveFontOutline(settings.textFontOutline or "OUTLINE")
+    fontString:SetFont(font, settings.textFontSize or 12, fontOutline)
+    ST.ApplyFontShadowForOutline(fontString, fontOutline)
     fontString:SetText(textValue)
 
     local textWidth = 1

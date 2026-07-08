@@ -789,6 +789,7 @@ function HealthBar.Style(bar, settings)
     end
 
     bar.text:SetFont(CooldownCompanion:FetchFont(textFontName), textSize, textOutline)
+    ST.ApplyFontShadowForOutline(bar.text, textOutline)
     bar.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
     bar.text:ClearAllPoints()
     bar.text:SetPoint(

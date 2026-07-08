@@ -1270,6 +1270,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
             local durationTextFont = CooldownCompanion:FetchFont(durationTextFontName)
             barInfo.frame.text:SetFont(durationTextFont, durationTextSize, durationTextOutline)
+            ST.ApplyFontShadowForOutline(barInfo.frame.text, durationTextOutline)
             barInfo.frame.text:SetTextColor(durationTextColor[1], durationTextColor[2], durationTextColor[3], durationTextColor[4] ~= nil and durationTextColor[4] or 1)
             if not barInfo.frame.stackText then
                 barInfo.frame.stackText = (barInfo.frame.textLayer or barInfo.frame):CreateFontString(nil, "OVERLAY")
@@ -1284,6 +1285,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
             local stackTextFont = CooldownCompanion:FetchFont(stackTextFontName)
             barInfo.frame.stackText:SetFont(stackTextFont, stackTextSize, stackTextOutline)
+            ST.ApplyFontShadowForOutline(barInfo.frame.stackText, stackTextOutline)
             barInfo.frame.stackText:SetTextColor(stackTextColor[1], stackTextColor[2], stackTextColor[3], stackTextColor[4] ~= nil and stackTextColor[4] or 1)
             barInfo.frame.brightnessOverlay:Hide()
         end
