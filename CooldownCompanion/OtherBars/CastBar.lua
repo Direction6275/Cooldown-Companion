@@ -695,8 +695,11 @@ end
 ------------------------------------------------------------------------
 
 local function ApplyPosition(cb, s, height)
-    -- Remove from managed layout (OnShow re-adds on each cast via AddManagedFrame)
-    UIParentBottomManagedFrameContainer:RemoveManagedFrame(cb)
+    -- Remove from managed layout (OnShow re-adds on each cast via AddManagedFrame).
+    -- cb.layoutParent is the container (12.1: BottomManagedFrameContainer; the old
+    -- UIParentBottomManagedFrameContainer global is gone) — same reference
+    -- ManagedFrameMixin:OnShow/OnHide use.
+    cb.layoutParent:RemoveManagedFrame(cb)
 
     -- Inline icon: inset bar on the icon side so fill/spark stay within bar area
     local iconInsetLeft, iconInsetRight = 0, 0
@@ -961,7 +964,7 @@ function CooldownCompanion:RevertCastBar()
                         ai2.offsetX / scale, ai2.offsetY / scale)
         end
     else
-        UIParentBottomManagedFrameContainer:AddManagedFrame(cb)
+        cb.layoutParent:AddManagedFrame(cb)
     end
 
     -- Restore bar fill to default atlas and reset color tint
@@ -1128,9 +1131,9 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
     local cb = PlayerCastingBarFrame
     if not cb then return end
 
-    -- Remove from managed layout — C method on CONTAINER, not on cast bar
+    -- Remove from managed layout — method on CONTAINER, not on cast bar
     -- (we do NOT set cb.ignoreFramePositionManager — that taints OnEvent)
-    UIParentBottomManagedFrameContainer:RemoveManagedFrame(cb)
+    cb.layoutParent:RemoveManagedFrame(cb)
     cb:SetParent(UIParent)
     cb:SetFixedFrameStrata(true)
     cb:SetFrameStrata("HIGH")
@@ -1427,7 +1430,7 @@ local function ApplyPreview()
     if not s or not s.enabled then return end
 
     -- Ensure the managed frame system doesn't fight us
-    UIParentBottomManagedFrameContainer:RemoveManagedFrame(cb)
+    cb.layoutParent:RemoveManagedFrame(cb)
 
     cb:SetAlpha(1)
     cb:Show()
