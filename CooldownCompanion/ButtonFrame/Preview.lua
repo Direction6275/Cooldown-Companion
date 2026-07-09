@@ -224,10 +224,6 @@ end
 
 local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
     cooldown = { kind = "cooldown", duration = 12, remaining = 8, loop = true },
-    aura = { kind = "aura", duration = 12, remaining = 8, stackText = "3" },
-    aura_duration_text = { kind = "aura_duration_text", duration = 12, remaining = 8, loop = true },
-    aura_stack_text = { kind = "aura_stack_text", stackText = "3" },
-    pandemic = { kind = "pandemic", duration = 12, remaining = 3, stackText = "3" },
     charge_full = { kind = "charge_full" },
     charge_missing = { kind = "charge_missing" },
     charge_zero = { kind = "charge_zero" },
@@ -266,24 +262,6 @@ local function BuildConditionalVisualPreviewState(previewKind, sampleState)
 end
 
 local function ClearConditionalVisualPreviewDerivedFields(button)
-    if button._conditionalAuraPreview then
-        button._auraActive = false
-        button._auraHasTimer = false
-        button._auraStackText = ""
-        if button.auraStackCount then
-            button.auraStackCount:SetText("")
-        end
-    end
-    if button._conditionalAuraStackTextPreview then
-        button._auraStackText = ""
-        if button.auraStackCount then
-            button.auraStackCount:SetText("")
-        end
-    end
-    if button._conditionalPandemicPreview then
-        button._inPandemic = false
-        EntryRuntime.ClearAuraPandemicRuntimeState(button)
-    end
     button._conditionalPreviewKind = nil
     button._conditionalPreviewStartTime = nil
     button._conditionalPreviewDuration = nil
@@ -292,14 +270,9 @@ local function ClearConditionalVisualPreviewDerivedFields(button)
     button._conditionalPreviewLoopStartTime = nil
     button._conditionalPreviewLoopDuration = nil
     button._conditionalPreviewDomain = nil
-    button._conditionalAuraPreview = nil
-    button._conditionalAuraDurationTextPreview = nil
-    button._conditionalAuraStackTextPreview = nil
-    button._conditionalPandemicPreview = nil
     button._conditionalUnusablePreview = nil
     button._conditionalOutOfRangePreview = nil
     button._conditionalReadyPreview = nil
-    button._conditionalBarAuraActivePreview = nil
 end
 
 local function RefreshConditionalVisualPreviewButton(self, button)

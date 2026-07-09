@@ -135,7 +135,6 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
     -- Phase 1: Evaluate each hide condition and accumulate active reasons as bits.
     local hideReasons = 0
     local zeroOnlyChargeSpellHide = false
-    local auraTrackingReady = button._auraTrackingReady == true
     local barAuraStackDisplay = button._barAuraStackDisplay == true
     local itemUsesResolvedCooldownState = IsEntryItemLike(buttonData)
         and button._resolvedItemQuantityKind == "stacks"
@@ -189,18 +188,6 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
             if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN and not auraOwnsPrimarySwipe then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
-        end
-    end
-
-    -- Check hideWhileAuraNotActive
-    if auraTrackingReady and buttonData.hideWhileAuraNotActive and not auraOverrideActive then
-        hideReasons = bit_bor(hideReasons, HIDE_AURA_NOT_ACTIVE)
-    end
-
-    -- Check hideWhileAuraActive
-    if auraTrackingReady and buttonData.hideWhileAuraActive and auraOverrideActive then
-        if not (buttonData.hideAuraActiveExceptPandemic and button._inPandemic) then
-            hideReasons = bit_bor(hideReasons, HIDE_AURA_ACTIVE)
         end
     end
 

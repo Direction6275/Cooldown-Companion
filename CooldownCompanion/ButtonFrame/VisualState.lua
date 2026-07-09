@@ -7,7 +7,6 @@ local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
 local ResolveIconDesaturationIntent = ST._ResolveIconDesaturationIntent
 local GetButtonVisibilityReasonNames = ST._GetButtonVisibilityReasonNames
 local DEFAULT_ICON_FILL_COOLDOWN_COLOR = {0.6, 0.13, 0.18, 0.55}
-local DEFAULT_ICON_FILL_AURA_COLOR = {0.2, 1.0, 0.2, 0.55}
 local UsesChargeBehavior = CooldownCompanion and CooldownCompanion.UsesChargeBehavior
 local InCombatLockdown = InCombatLockdown
 local GetTime = GetTime
@@ -473,30 +472,7 @@ local function ResolveIconFillIntent(button, buttonData, style, target)
         end
     end
 
-    local auraPreview = button._conditionalAuraPreview == true
-        or button._conditionalAuraDurationTextPreview == true
     local cooldownPreview = button._conditionalPreviewDomain == "cooldown"
-
-    if button._auraPrimarySwipeActive == true or auraPreview then
-        local mode = "aura"
-        local reason = "aura"
-        local static = false
-        if button._auraHasTimer == false and not auraPreview then
-            mode = "aura_static"
-            reason = "aura-static"
-            static = true
-        end
-        return SetIconFillIntent(
-            target,
-            true,
-            true,
-            reason,
-            mode,
-            style.iconFillAuraColor or DEFAULT_ICON_FILL_AURA_COLOR,
-            true,
-            static
-        )
-    end
 
     local cooldownReason
     if cooldownPreview then

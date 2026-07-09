@@ -226,15 +226,9 @@ local function ResolveIconTintIntent(button, buttonData, style, target)
     end
 
     if buttonData.isPassive then
-        local c
-        local reason = "base"
-        if style.iconAuraTintEnabled and buttonData.auraTracking and button._auraActive and style.iconAuraTintColor then
-            c = style.iconAuraTintColor
-            reason = "aura"
-        end
-        c = c or style.iconTintColor
+        local c = style.iconTintColor
         local r, g, b, a = c and c[1] or 1, c and c[2] or 1, c and c[3] or 1, c and c[4] or 1
-        return SetTintIntent(target, reason ~= "base", reason, false, r, g, b, a)
+        return SetTintIntent(target, false, "base", false, r, g, b, a)
     end
 
     local bc = style.iconTintColor
@@ -285,13 +279,7 @@ local function ResolveIconTintIntent(button, buttonData, style, target)
 
     -- Apply user-configured icon tint when no state override is active.
     if not stateOverride then
-        if style.iconAuraTintEnabled and buttonData.auraTracking and button._auraActive then
-            local c = style.iconAuraTintColor
-            if c then
-                r, g, b, a = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
-            end
-            reason = "aura"
-        elseif style.iconCooldownTintEnabled and button._desatCooldownActive then
+        if style.iconCooldownTintEnabled and button._desatCooldownActive then
             local c = style.iconCooldownTintColor
             if c then
                 r, g, b, a = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
@@ -334,33 +322,7 @@ local function ResolveDesaturationIntent(button, buttonData, style, target)
 
     style = style or {}
 
-    if button._auraTrackingReady == true then
-        if buttonData.isPassive then
-            if buttonData.neverDesaturate then
-                target.active = false
-            elseif buttonData.invertAuraDesaturationLogic then
-                target.active = button._auraActive == true
-                if target.active then
-                    target.reason = "passive-aura-active-inverted"
-                end
-            else
-                target.active = not button._auraActive
-                if target.active then
-                    target.reason = "passive-aura-missing"
-                end
-            end
-        else
-            target.active = buttonData.desaturateWhileAuraNotActive and not button._auraActive or false
-            if target.active then
-                target.reason = "aura-missing"
-            end
-        end
-        if not target.active and not button._auraActive
-            and style.desaturateOnCooldown and button._desatCooldownActive then
-            target.active = true
-            target.reason = "cooldown"
-        end
-    elseif style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges
+    if style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges
         or buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
         if style.desaturateOnCooldown and button._desatCooldownActive then
             target.active = true

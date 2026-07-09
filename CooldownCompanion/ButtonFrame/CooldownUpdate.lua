@@ -106,25 +106,6 @@ function CooldownCompanion:RefreshButtonVisualStateSnapshot(button, context, pha
 end
 
 local function ClearConditionalVisualPreviewFields(button)
-    -- Aura runtime evaluation is gone (12.1 demolition): nothing overwrites
-    -- these fields next tick, so preview state must be cleared unconditionally.
-    if button._conditionalAuraPreview then
-        button._auraActive = false
-        button._auraHasTimer = false
-        button._auraStackText = ""
-        if button.auraStackCount then
-            button.auraStackCount:SetText("")
-        end
-    end
-    if button._conditionalAuraStackTextPreview then
-        button._auraStackText = ""
-        if button.auraStackCount then
-            button.auraStackCount:SetText("")
-        end
-    end
-    if button._conditionalPandemicPreview then
-        button._inPandemic = false
-    end
     button._conditionalPreviewKind = nil
     button._conditionalPreviewStartTime = nil
     button._conditionalPreviewDuration = nil
@@ -133,14 +114,9 @@ local function ClearConditionalVisualPreviewFields(button)
     button._conditionalPreviewLoopStartTime = nil
     button._conditionalPreviewLoopDuration = nil
     button._conditionalPreviewDomain = nil
-    button._conditionalAuraPreview = nil
-    button._conditionalAuraDurationTextPreview = nil
-    button._conditionalAuraStackTextPreview = nil
-    button._conditionalPandemicPreview = nil
     button._conditionalUnusablePreview = nil
     button._conditionalOutOfRangePreview = nil
     button._conditionalReadyPreview = nil
-    button._conditionalBarAuraActivePreview = nil
 end
 
 local function HideIconFillForHiddenButton(button)
@@ -247,48 +223,6 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
         if button.cooldown then
             button.cooldown:SetCooldown(startTime, duration)
-        end
-        return
-    end
-
-    if kind == "aura" or kind == "pandemic" then
-        local startTime, duration, remaining, loopStartTime, loopDuration = GetConditionalPreviewTiming(preview, now)
-        if not startTime then return end
-        button._auraActive = true
-        button._auraHasTimer = true
-        button._auraStackText = preview.stackText or "3"
-        button._inPandemic = kind == "pandemic"
-        button._conditionalAuraPreview = true
-        button._conditionalPandemicPreview = kind == "pandemic" or nil
-        button._conditionalBarAuraActivePreview = true
-        button._conditionalPreviewDomain = "aura"
-        SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
-        if button.cooldown then
-            button.cooldown:SetCooldown(startTime, duration)
-        end
-        if button.auraStackCount and style.showAuraStackText ~= false then
-            button.auraStackCount:SetText(button._auraStackText or "")
-        end
-        return
-    end
-
-    if kind == "aura_duration_text" then
-        local startTime, duration, remaining, loopStartTime, loopDuration = GetConditionalPreviewTiming(preview, now)
-        if not startTime then return end
-        button._conditionalAuraDurationTextPreview = true
-        button._conditionalPreviewDomain = "aura_text"
-        SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
-        if button.cooldown then
-            button.cooldown:SetCooldown(startTime, duration)
-        end
-        return
-    end
-
-    if kind == "aura_stack_text" then
-        button._auraStackText = preview.stackText or "3"
-        button._conditionalAuraStackTextPreview = true
-        if button.auraStackCount and style.showAuraStackText ~= false then
-            button.auraStackCount:SetText(button._auraStackText or "")
         end
         return
     end
