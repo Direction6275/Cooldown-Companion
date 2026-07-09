@@ -244,11 +244,11 @@ local function ShowResourceBarConflictChooser(classKey, opts)
     AddResourceBarConflictSpacer(chooser, 14)
 
     local bullets = {
-        "The Resource settings and Resource Aura overlays from the setup you KEEP will be saved for the whole class.",
+        "The Resource settings from the setup you KEEP will be saved for the whole class.",
         "Custom Bars from every listed same-class setup will be preserved and added to the saved class setup.",
-        "The other listed character Resource settings and Resource Aura overlays will be removed.",
+        "The other listed character Resource settings will be removed.",
         "Going forward, every character of this class will use the saved setup.",
-        "Per-spec layouts, resource overrides, and aura overlays still work inside that class setup.",
+        "Per-spec layouts and resource overrides still work inside that class setup.",
     }
     for index, text in ipairs(bullets) do
         AddResourceBarConflictText(chooser, "- " .. text, GameFontHighlight)
@@ -1832,7 +1832,7 @@ local function AcceptResourceSpecCopy(self, data)
 end
 
 StaticPopupDialogs["CDC_CONFIRM_RESOURCE_SPEC_COPY"] = {
-    text = "Copy Resource Bar settings from %s?\n\nThis copies Appearance, Layout, resource colors, and non-aura Resource Settings into the current spec. If that spec is using defaults, those default values are copied. Health settings, Custom Bars, and aura overlays are not copied.",
+    text = "Copy Resource Bar settings from %s?\n\nThis copies Appearance, Layout, resource colors, and Resource Settings into the current spec. If that spec is using defaults, those default values are copied. Health settings and Custom Bars are not copied.",
     button1 = "Copy",
     button2 = "Cancel",
     OnAccept = AcceptResourceSpecCopy,

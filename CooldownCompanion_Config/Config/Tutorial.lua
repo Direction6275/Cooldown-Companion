@@ -72,7 +72,7 @@ local STEP_DATA = {
     },
     panels_column_intro = {
         title = "Panels",
-        text = "Panels are containers for the things you want to track, like spells, auras, and items. The type of panel you choose determines how tracked entries are displayed.\n\nRead the descriptions of each type of panel in the column to become familiar with available panel types.",
+        text = "Panels are containers for the things you want to track, like spells and items. The type of panel you choose determines how tracked entries are displayed.\n\nRead the descriptions of each type of panel in the column to become familiar with available panel types.",
         anchor = "panels_column_area",
         placement = "right",
     },
@@ -90,7 +90,7 @@ local STEP_DATA = {
     },
     entry_settings_intro = {
         title = "Entry Settings",
-        text = "This column is dedicated to editing and styling single, specific entries. Aura tracking settings, per-button visibility rules, sound alerts, and more is configured in this column.",
+        text = "This column is dedicated to editing and styling single, specific entries. Cooldown settings, per-button visibility rules, sound alerts, and more is configured in this column.",
         anchor = "col3_area",
         placement = "right",
     },
