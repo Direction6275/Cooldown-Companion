@@ -296,7 +296,6 @@ ST._configState = {
     barPanelTab = "resource_anchoring",
     resourceStylingTab = "bar_text",
     castBarStylingTab = "styling",
-    resourceAuraOverlayDrafts = {},
     customBarSettingsTab = "appearance",
     selectedCustomBarId = nil,
     customBarSpecExpandedId = nil,
@@ -329,13 +328,10 @@ ST._configState = {
     IsStrataOrderComplete = nil,
     InitPendingStrataOrder = nil,
     StartPickFrame = nil,
-    StartPickCDM = nil,
     ShowPopupAboveConfig = nil,
     ShowAutocompleteResults = nil,
     HideAutocomplete = nil,
     SearchAutocompleteInCache = nil,
-    SearchCDMAuraAutocomplete = nil,
-    ResolveCDMAuraAutocompleteEntry = nil,
     HandleAutocompleteKeyDown = nil,
     ConsumeAutocompleteEnter = nil,
     SetupAutocompleteKeyHandler = nil,
@@ -489,7 +485,7 @@ local function GetConfigEntryDisplayName(buttonData, opts)
             if addedAs ~= "aura" then
                 icons = icons .. "|A:ui_adv_atk:15:15|a"
             end
-            if addedAs == "aura" or buttonData.auraTracking then
+            if addedAs == "aura" then
                 icons = icons .. "|A:ui_adv_health:15:15|a"
             end
             if icons ~= "" then
@@ -1884,7 +1880,6 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcWarnBtn then entry.frame._cdcWarnBtn:Hide() end
     if entry.frame._cdcOverrideBadge then entry.frame._cdcOverrideBadge:Hide() end
     if entry.frame._cdcSoundBadge then entry.frame._cdcSoundBadge:Hide() end
-    if entry.frame._cdcAuraBadge then entry.frame._cdcAuraBadge:Hide() end
     if entry.frame._cdcFallbackBadge then entry.frame._cdcFallbackBadge:Hide() end
     if entry.frame._cdcTalentBadge then entry.frame._cdcTalentBadge:Hide() end
     if entry.frame._cdcCollapseIcon then entry.frame._cdcCollapseIcon:Hide() end
@@ -1901,7 +1896,6 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcHeaderDisabledBadge then entry.frame._cdcHeaderDisabledBadge:Hide() end
     if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end
     if entry.frame._cdcCustomBarTypeBadge then entry.frame._cdcCustomBarTypeBadge:Hide() end
-    if entry.frame._cdcCustomBarAuraStatusBadge then entry.frame._cdcCustomBarAuraStatusBadge:Hide() end
     if entry.frame._cdcCustomBarDisabledBadge then entry.frame._cdcCustomBarDisabledBadge:Hide() end
     if entry.frame._cdcCustomBarSpecBadges then
         for _, badge in ipairs(entry.frame._cdcCustomBarSpecBadges) do badge:Hide() end
@@ -1911,9 +1905,6 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcPriorityDownBtn then entry.frame._cdcPriorityDownBtn:Hide() end
     if entry.frame._cdcFallbackUpBtn then entry.frame._cdcFallbackUpBtn:Hide() end
     if entry.frame._cdcFallbackDownBtn then entry.frame._cdcFallbackDownBtn:Hide() end
-    CleanFrameButton(entry.frame._cdcCustomBarAuraUpBtn)
-    CleanFrameButton(entry.frame._cdcCustomBarAuraDownBtn)
-    CleanFrameButton(entry.frame._cdcResourceAuraClearBtn)
     if entry.frame._cdcMarkerLeft then entry.frame._cdcMarkerLeft:Hide() end
     if entry.frame._cdcMarkerRight then entry.frame._cdcMarkerRight:Hide() end
     entry._cdcAfterConfigRowLayout = nil
@@ -2755,9 +2746,6 @@ local function SelectConfigButtonPanel(panelId, opts)
 end
 
 local function ClearConfigCustomBarPreviewState()
-    if CooldownCompanion.ClearAllCustomAuraBarPreviews then
-        CooldownCompanion:ClearAllCustomAuraBarPreviews()
-    end
     if CS.customBarIndicatorPreviewActive and CooldownCompanion.StopResourceBarPreview then
         CooldownCompanion:StopResourceBarPreview()
     end

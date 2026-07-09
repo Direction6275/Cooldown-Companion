@@ -17,11 +17,11 @@ local AddColorPicker = ST._AddColorPicker
 local formatEditorFrame = nil
 
 -- Token list for insert buttons
-local TOKEN_LIST = {"name", "time", "charges", "maxcharges", "stacks", "aura", "keybind", "status", "icon", "br"}
+local TOKEN_LIST = {"name", "time", "charges", "maxcharges", "stacks", "keybind", "status", "icon", "br"}
 
 -- Tokens available as conditional targets.
 local COND_TOKEN_LIST = {}
-local COND_TOKEN_ORDER = {"time", "available", "charges", "maxcharges", "missingcharges", "zerocharges", "stacks", "aura", "keybind", "pandemic", "proc", "unusable", "oor", "incombat"}
+local COND_TOKEN_ORDER = {"time", "available", "charges", "maxcharges", "missingcharges", "zerocharges", "stacks", "keybind", "proc", "unusable", "oor", "incombat"}
 for _, t in ipairs(COND_TOKEN_ORDER) do
     COND_TOKEN_LIST[t] = t
 end
@@ -867,10 +867,9 @@ local function OpenFormatEditor(style, groupId, opts)
         {"|cff00ff00{time}|r  Cooldown time remaining", 1, 1, 1},
         {"|cff00ff00{charges}|r  Current charges (if spell has charges)", 1, 1, 1},
         {"|cff00ff00{maxcharges}|r  Maximum charges (if spell has charges)", 1, 1, 1},
-        {"|cff00ff00{stacks}|r  Aura stacks / item count", 1, 1, 1},
-        {"|cff00ff00{aura}|r  Aura duration remaining", 1, 1, 1},
+        {"|cff00ff00{stacks}|r  Item count", 1, 1, 1},
         {"|cff00ff00{keybind}|r  Keybind text", 1, 1, 1},
-        {"|cff00ff00{status}|r  Shows ready, cooldown, or aura automatically", 1, 1, 1},
+        {"|cff00ff00{status}|r  Shows ready or cooldown automatically", 1, 1, 1},
         {"|cff00ff00{icon}|r  Inline spell icon", 1, 1, 1},
         {"|cff00ff00{br}|r  Insert a manual line break", 1, 1, 1},
     }, tokenHeading)
@@ -1004,10 +1003,8 @@ local function OpenFormatEditor(style, groupId, opts)
         {"|cffffff00{maxcharges}|r  At max charges", 1, 1, 1, true},
         {"|cffffff00{missingcharges}|r  Recharging with charges left", 1, 1, 1, true},
         {"|cffffff00{zerocharges}|r  All charges spent", 1, 1, 1, true},
-        {"|cffffff00{stacks}|r  Aura stacks / item count", 1, 1, 1, true},
-        {"|cffffff00{aura}|r  Aura duration remaining", 1, 1, 1, true},
+        {"|cffffff00{stacks}|r  Item count", 1, 1, 1, true},
         {"|cffffff00{keybind}|r  Keybind text", 1, 1, 1, true},
-        {"|cffffff00{pandemic}|r  Aura in pandemic window", 1, 1, 1, true},
         {"|cffffff00{proc}|r  Spell proc overlay active", 1, 1, 1, true},
         {"|cffffff00{unusable}|r  Spell/item not usable", 1, 1, 1, true},
         {"|cffffff00{oor}|r  Target out of range", 1, 1, 1, true},

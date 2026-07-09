@@ -9,7 +9,6 @@ local CS = ST._configState
 
 -- Imports from earlier Config/ files
 local IsSpellInCDMBuffBar = ST._IsSpellInCDMBuffBar
-local IsSpellInCDMCooldown = ST._IsSpellInCDMCooldown
 local IsPassiveOrProc = ST._IsPassiveOrProc
 local IsPassiveCooldownSpell = ST.IsPassiveCooldownSpell
 local IsNeverTrackableSpell = ST._IsNeverTrackableSpell
@@ -17,9 +16,6 @@ local ShouldSuppressSpellbookEntry = ST._ShouldSuppressSpellbookEntry
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local SelectConfigPanel = ST._SelectConfigPanel
 local SelectConfigButton = ST._SelectConfigButton
-local IsConcreteSpellID = ST.IsConcreteSpellID
-local ResolveCDMAuraSpellID = ST.ResolveCDMAuraSpellID
-local IsDistinctCDMAuraIdentity = ST.IsDistinctCDMAuraIdentity
 
 -- After a successful add, set selection state to the new button so the
 -- next RefreshConfigPanel shows its settings in Column 3.
@@ -59,71 +55,6 @@ local function IsTriggerPanelTarget(groupId)
     return group and group.displayMode == "trigger"
 end
 
-local function CDMAuraChildrenShareResolvedSpellID(children)
-    local resolvedID
-    for _, child in ipairs(children or {}) do
-        local childID = child and ResolveCDMAuraSpellID(child.cooldownInfo)
-        if childID then
-            if resolvedID and resolvedID ~= childID then
-                return false
-            end
-            resolvedID = childID
-        end
-    end
-    return resolvedID ~= nil
-end
-
-local function CooldownInfoReferencesSpellID(cooldownInfo, spellID)
-    if type(cooldownInfo) ~= "table" or not IsConcreteSpellID(spellID) then
-        return false
-    end
-    if cooldownInfo.spellID == spellID
-        or cooldownInfo.overrideSpellID == spellID
-        or cooldownInfo.overrideTooltipSpellID == spellID then
-        return true
-    end
-    if cooldownInfo.linkedSpellIDs then
-        for _, linkedSpellID in ipairs(cooldownInfo.linkedSpellIDs) do
-            if linkedSpellID == spellID then
-                return true
-            end
-        end
-    end
-    return false
-end
-
-local function AddCDMAuraIDForReferencedSpell(cdmAuraIDsByBase, spellID, auraID)
-    if not (IsConcreteSpellID(spellID) and auraID) then
-        return
-    end
-    local byBase = cdmAuraIDsByBase[spellID]
-    if not byBase then
-        byBase = {}
-        cdmAuraIDsByBase[spellID] = byBase
-    end
-    byBase[auraID] = true
-end
-
-local function TrackedCDMAuraIdentitiesAreDistinct(spellID)
-    local found = false
-    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
-        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
-        if ids then
-            for _, cdID in ipairs(ids) do
-                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if CooldownInfoReferencesSpellID(info, spellID) then
-                    found = true
-                    local auraID = ResolveCDMAuraSpellID(info)
-                    if not (auraID and IsDistinctCDMAuraIdentity(spellID, auraID)) then
-                        return false
-                    end
-                end
-            end
-        end
-    end
-    return found
-end
-
 -- File-local state
 local autocompleteDropdown
 
@@ -138,20 +69,17 @@ local AUTOCOMPLETE_TYPE_GAP = 4
 
 local AUTOCOMPLETE_TYPE_DISPLAY = {
     spell = { label = "Spell", atlas = "ui_adv_atk" },
-    aura = { label = "Aura", atlas = "ui_adv_health" },
     equipment = { label = "Equipment", atlas = "Crosshair_repairnpc_32" },
     item = { label = "Item", atlas = "auctionhouse-icon-coin-gold" },
 }
 
 local function GetAutocompleteTypeDisplay(entry)
     local kind = entry and entry.autocompleteKind
-    if kind ~= "spell" and kind ~= "aura" and kind ~= "equipment" and kind ~= "item" then
+    if kind ~= "spell" and kind ~= "equipment" and kind ~= "item" then
         if entry and entry.isEquipmentSlot then
             kind = "equipment"
         elseif entry and entry.isItem then
             kind = "item"
-        elseif entry and (entry.forceAura == true or entry.isCDMAura == true or entry.isPassive == true) then
-            kind = "aura"
         else
             kind = "spell"
         end
@@ -171,7 +99,7 @@ end
 ------------------------------------------------------------------------
 -- Helper: Add spell to selected group
 ------------------------------------------------------------------------
-local function TryAddSpell(input, isPetSpell, forceAura, displayNameOverride)
+local function TryAddSpell(input, isPetSpell)
     if input == "" or not CS.selectedGroup then return false end
 
     local spellId = tonumber(input)
@@ -200,55 +128,12 @@ local function TryAddSpell(input, isPetSpell, forceAura, displayNameOverride)
             PrintBlockedSpellMessage(spellName)
             return false
         end
-        if CooldownCompanion.ABILITY_BUFF_OVERRIDES
-            and CooldownCompanion.ABILITY_BUFF_OVERRIDES[spellId]
-        then
-            CooldownCompanion:Print("Choose a specific CDM aura for " .. spellName .. ".")
-            return false
-        end
         local passiveOrProc = IsPassiveOrProc(spellId)
-        -- forceAura overrides passive/proc classification for dual-CDM spells
-        if forceAura == false then
-            passiveOrProc = false   -- Cooldown mode: treat as normal spell
-        elseif forceAura == true then
-            passiveOrProc = true    -- Buff mode: treat as passive/proc
-        end
-        if displayNameOverride and passiveOrProc then
-            spellName = displayNameOverride
-        end
         if passiveOrProc and not IsSpellInCDMBuffBar(spellId) then
             CooldownCompanion:Print("Passive/proc spell " .. spellName .. " is not tracked in the Cooldown Manager.")
             return false
         end
-        -- Multi-CDM-child entries only expand when all rows represent the same
-        -- aura spell ID. If CDM exposes distinct aura IDs, the user must pick
-        -- the specific aura instead of a generic base entry.
-        if passiveOrProc then
-            local allChildren = CooldownCompanion.viewerAuraAllChildren[spellId]
-            if allChildren and #allChildren > 1 and not CDMAuraChildrenShareResolvedSpellID(allChildren) then
-                CooldownCompanion:Print("Choose a specific CDM aura for " .. spellName .. ".")
-                return false
-            end
-            if allChildren and #allChildren > 1
-                and not IsTexturePanelTarget(CS.selectedGroup)
-                and not IsTriggerPanelTarget(CS.selectedGroup)
-            then
-                local count = #allChildren
-                local firstIdx
-                for i = 1, count do
-                    local idx = CooldownCompanion:AddButtonToGroup(
-                        CS.selectedGroup, "spell", spellId, spellName,
-                        isPetSpell, true, forceAura, i)
-                    if i == 1 then firstIdx = idx end
-                end
-                SelectNewButton(CS.selectedGroup, firstIdx)
-                CooldownCompanion:Print("Added " .. count .. " buttons for "
-                    .. spellName .. " (one per CDM entry). Their icons will "
-                    .. "update during combat to show the active variant.")
-                return true
-            end
-        end
-        local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, isPetSpell, passiveOrProc or nil, forceAura)
+        local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, isPetSpell, passiveOrProc or nil)
         if not idx then
             return false
         end
@@ -419,24 +304,14 @@ local function TryAdd(input)
         -- Passive/proc spell: require CDM presence
         if spellFound and passiveOrProc then
             if IsSpellInCDMBuffBar(id) then
-                return TryAddSpell(tostring(id), nil, true)
+                return TryAddSpell(tostring(id))
             end
             -- Not in CDM — fall through to try as item, then report error
         end
 
         -- Non-passive spell → add it
         if spellFound and not passiveOrProc then
-            if IsSpellInCDMBuffBar(id)
-                and not IsSpellInCDMCooldown(id)
-                and not IsPassiveCooldownSpell(id)
-                and not TrackedCDMAuraIdentitiesAreDistinct(id) then
-                return TryAddSpell(tostring(id), nil, true)
-            end
-            local forceAura = nil
-            if IsSpellInCDMCooldown(id) and IsSpellInCDMBuffBar(id) then
-                forceAura = false  -- dual-CDM: default to cooldown mode
-            end
-            local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name, nil, nil, forceAura)
+            local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name)
             if not idx then
                 return false
             end
@@ -521,16 +396,10 @@ local function TryAdd(input)
             local passiveOrProc = IsPassiveOrProc(spellId)
             if passiveOrProc then
                 if IsSpellInCDMBuffBar(spellId) then
-                    return TryAddSpell(tostring(spellId), nil, true)
+                    return TryAddSpell(tostring(spellId))
                 end
                 -- Not in CDM — fall through to try as item, then report error
             else
-                if IsSpellInCDMBuffBar(spellId)
-                    and not IsSpellInCDMCooldown(spellId)
-                    and not IsPassiveCooldownSpell(spellId)
-                    and not TrackedCDMAuraIdentitiesAreDistinct(spellId) then
-                    return TryAddSpell(tostring(spellId), nil, true)
-                end
                 local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName)
                 if not idx then
                     return false
@@ -642,85 +511,8 @@ end
 local function BuildAutocompleteCache()
     local cache = {}
     local seen = {}
-    local seenAuras = {}
 
     AddEquipmentSlotAutocompleteEntries(cache)
-
-    -- Pre-compute dual-CDM spell set (spells in both cooldown and buff CDM categories)
-    local cdmCooldownSet = {}
-    for _, cat in ipairs({Enum.CooldownViewerCategory.Essential, Enum.CooldownViewerCategory.Utility}) do
-        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
-        if ids then
-            for _, cdID in ipairs(ids) do
-                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info and info.spellID then
-                    cdmCooldownSet[info.spellID] = true
-                    if info.overrideSpellID then cdmCooldownSet[info.overrideSpellID] = true end
-                    if info.overrideTooltipSpellID then cdmCooldownSet[info.overrideTooltipSpellID] = true end
-                end
-            end
-        end
-    end
-    local cdmBuffSet = {}
-    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
-        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
-        if ids then
-            for _, cdID in ipairs(ids) do
-                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info and info.spellID then
-                    cdmBuffSet[info.spellID] = true
-                    if info.overrideSpellID then cdmBuffSet[info.overrideSpellID] = true end
-                    if info.overrideTooltipSpellID then cdmBuffSet[info.overrideTooltipSpellID] = true end
-                end
-            end
-        end
-    end
-    local dualCDMSet = {}
-    for id in pairs(cdmCooldownSet) do
-        if cdmBuffSet[id] then
-            dualCDMSet[id] = true
-        end
-    end
-
-    local cdmDistinctAuraBaseSet = {}
-    local cdmAllAuraIDsDistinctByBase = {}
-    local cdmAuraIDsByBase = {}
-    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
-        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
-        if ids then
-            for _, cdID in ipairs(ids) do
-                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info then
-                    local auraID = ResolveCDMAuraSpellID(info)
-                    if auraID then
-                        AddCDMAuraIDForReferencedSpell(cdmAuraIDsByBase, info.spellID, auraID)
-                        AddCDMAuraIDForReferencedSpell(cdmAuraIDsByBase, info.overrideSpellID, auraID)
-                        AddCDMAuraIDForReferencedSpell(cdmAuraIDsByBase, info.overrideTooltipSpellID, auraID)
-                        if info.linkedSpellIDs then
-                            for _, linkedSpellID in ipairs(info.linkedSpellIDs) do
-                                AddCDMAuraIDForReferencedSpell(cdmAuraIDsByBase, linkedSpellID, auraID)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    for baseID, auraIDs in pairs(cdmAuraIDsByBase) do
-        local sawAuraID = false
-        local allDistinct = true
-        for auraID in pairs(auraIDs) do
-            sawAuraID = true
-            if IsDistinctCDMAuraIdentity(baseID, auraID) then
-                cdmDistinctAuraBaseSet[baseID] = true
-            else
-                allDistinct = false
-            end
-        end
-        if sawAuraID and allDistinct then
-            cdmAllAuraIDsDistinctByBase[baseID] = true
-        end
-    end
 
     -- Iterate spellbook skill lines
     local numLines = C_SpellBook.GetNumSpellBookSkillLines()
@@ -740,57 +532,19 @@ local function BuildAutocompleteCache()
                     and itemInfo.itemType ~= Enum.SpellBookItemType.FutureSpell
                 then
                     local isAura = IsPassiveOrProc(id)
-                    local isBuffOnlyCDMSpell = not passiveCooldown and cdmBuffSet[id] and not cdmCooldownSet[id]
-                    if isBuffOnlyCDMSpell and cdmAllAuraIDsDistinctByBase[id] then
-                        isBuffOnlyCDMSpell = false
-                    end
                     if ShouldSuppressSpellbookEntry(id, lineIdx, isAura) then
                         -- Omit filtered entries to reduce autocomplete noise.
                     elseif not seen[id] then
                         seen[id] = true
-                        if isBuffOnlyCDMSpell then
-                            -- The CDM aura row below is the addable identity for buff/bar-only entries.
-                        elseif dualCDMSet[id] then
-                            -- Dual-CDM spell: insert separate Cooldown and Buff entries
-                            table.insert(cache, {
-                                id = id,
-                                name = itemInfo.name,
-                                nameLower = itemInfo.name:lower(),
-                                icon = itemInfo.iconID or 134400,
-                                category = category,
-                                autocompleteKind = "spell",
-                                isItem = false,
-                                forceAura = false,
-                            })
-                            local resolvedSpellInfo = C_Spell.GetSpellInfo(id)
-                            local spellbookNameIsSpecific = not resolvedSpellInfo
-                                or not resolvedSpellInfo.name
-                                or resolvedSpellInfo.name == itemInfo.name
-                            if not cdmDistinctAuraBaseSet[id] and spellbookNameIsSpecific then
-                                seenAuras[id] = true
-                                table.insert(cache, {
-                                    id = id,
-                                    name = itemInfo.name,
-                                    nameLower = itemInfo.name:lower(),
-                                    icon = itemInfo.iconID or 134400,
-                                    category = "Tracked Buff",
-                                    autocompleteKind = "aura",
-                                    isItem = false,
-                                    isCDMAura = true,
-                                    forceAura = true,
-                                })
-                            end
-                        else
-                            table.insert(cache, {
-                                id = id,
-                                name = itemInfo.name,
-                                nameLower = itemInfo.name:lower(),
-                                icon = itemInfo.iconID or 134400,
-                                category = category,
-                                autocompleteKind = (isAura and not passiveCooldown) and "aura" or "spell",
-                                isItem = false,
-                            })
-                        end
+                        table.insert(cache, {
+                            id = id,
+                            name = itemInfo.name,
+                            nameLower = itemInfo.name:lower(),
+                            icon = itemInfo.iconID or 134400,
+                            category = category,
+                            autocompleteKind = "spell",
+                            isItem = false,
+                        })
                     end
                 end
             end
@@ -816,7 +570,7 @@ local function BuildAutocompleteCache()
                         nameLower = itemInfo.name:lower(),
                         icon = itemInfo.iconID or 134400,
                         category = "Pet",
-                        autocompleteKind = (isAura and not passiveCooldown) and "aura" or "spell",
+                        autocompleteKind = "spell",
                         isItem = false,
                         isPetSpell = true,
                     })
@@ -852,104 +606,8 @@ local function BuildAutocompleteCache()
         end
     end
 
-    -- Iterate CDM TrackedBuff + TrackedBar entries by their specific aura
-    -- identity. Some tracked auras are active spellbook spells, so CDM
-    -- membership is the important addability signal here.
-    for _, cat in ipairs({Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar}) do
-        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
-        if ids then
-            for _, cdID in ipairs(ids) do
-                local cdInfo = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if cdInfo and cdInfo.spellID then
-                    local id = ResolveCDMAuraSpellID(cdInfo)
-                    if id and not IsNeverTrackableSpell(id) and not seenAuras[id] then
-                        local spellInfo = C_Spell.GetSpellInfo(id)
-                        if spellInfo and spellInfo.name then
-                            seenAuras[id] = true
-                            table.insert(cache, {
-                                id = id,
-                                name = spellInfo.name,
-                                nameLower = spellInfo.name:lower(),
-                                icon = spellInfo.iconID or 134400,
-                                category = "Cooldown Manager",
-                                autocompleteKind = "aura",
-                                isItem = false,
-                                isCDMAura = true,
-                                isPassive = true,
-                                forceAura = true,
-                            })
-                        end
-                    end
-                end
-            end
-        end
-    end
-
     CS.autocompleteCache = cache
     return cache
-end
-
-local cdmAuraAutocompleteCache = nil
-local cdmAuraAutocompleteSource = nil
-
-local function BuildCDMAuraAutocompleteCache()
-    local sharedCache = CS.autocompleteCache or BuildAutocompleteCache()
-    if cdmAuraAutocompleteCache and cdmAuraAutocompleteSource == sharedCache then
-        return cdmAuraAutocompleteCache
-    end
-
-    local cache = {}
-    for _, entry in ipairs(sharedCache) do
-        if type(entry) == "table" and entry.isCDMAura == true then
-            cache[#cache + 1] = entry
-        end
-    end
-
-    cdmAuraAutocompleteCache = cache
-    cdmAuraAutocompleteSource = sharedCache
-    return cache
-end
-
-local function ResolveCDMAuraAutocompleteEntry(text)
-    if not text then
-        return nil, "empty"
-    end
-
-    local cleaned = tostring(text):gsub("^%s+", ""):gsub("%s+$", "")
-    if cleaned == "" then
-        return nil, "empty"
-    end
-
-    local numeric = cleaned:match("^%d+$") and tonumber(cleaned) or nil
-    local lookup = cleaned:lower()
-    local cache = BuildCDMAuraAutocompleteCache()
-    local matchedEntry
-    local matchedID
-
-    for _, entry in ipairs(cache) do
-        local entryID = tonumber(entry.id)
-        local matches = false
-        if numeric then
-            matches = entryID == numeric
-        else
-            local entryName = type(entry.name) == "string" and entry.name:lower() or nil
-            matches = entry.nameLower == lookup or entryName == lookup
-        end
-
-        if matches then
-            if matchedID and matchedID ~= entryID then
-                return nil, "ambiguous"
-            end
-            matchedEntry = entry
-            matchedID = entryID
-        end
-    end
-
-    if matchedEntry then
-        return matchedEntry
-    end
-
-    return nil, "notFound"
 end
 
 ------------------------------------------------------------------------
@@ -1011,10 +669,6 @@ local function SearchAutocompleteInCache(query, cache)
     return #results > 0 and results or nil
 end
 
-local function SearchCDMAuraAutocomplete(query)
-    return SearchAutocompleteInCache(query, BuildCDMAuraAutocompleteCache())
-end
-
 local function SearchAutocomplete(query)
     local cache = CS.autocompleteCache or BuildAutocompleteCache()
     local groupId = CS.addingToPanelId or CS.selectedGroup
@@ -1071,14 +725,7 @@ local function OnAutocompleteSelect(entry)
     elseif entry.isItem then
         added = TryAddItem(tostring(entry.id))
     else
-        local displayNameOverride
-        if entry.isCDMAura == true
-            and type(entry.name) == "string"
-            and entry.name ~= ""
-        then
-            displayNameOverride = entry.name
-        end
-        added = TryAddSpell(tostring(entry.id), entry.isPetSpell, entry.forceAura, displayNameOverride)
+        added = TryAddSpell(tostring(entry.id), entry.isPetSpell)
     end
     if added then
         if NotifyTutorialAction and CS.selectedGroup and CS.selectedButton then
@@ -1297,8 +944,6 @@ end
 CS.ShowAutocompleteResults = ShowAutocompleteResults
 CS.HideAutocomplete = HideAutocomplete
 CS.SearchAutocompleteInCache = SearchAutocompleteInCache
-CS.SearchCDMAuraAutocomplete = SearchCDMAuraAutocomplete
-CS.ResolveCDMAuraAutocompleteEntry = ResolveCDMAuraAutocompleteEntry
 CS.HandleAutocompleteKeyDown = HandleAutocompleteKeyDown
 CS.ConsumeAutocompleteEnter = ConsumeAutocompleteEnter
 

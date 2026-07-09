@@ -361,19 +361,6 @@ local function ClearBarAuraStackVisual(button, keepIndicator)
     end
 end
 
-function CooldownCompanion:RefreshBarPanelAuraStackVisual(button)
-    if not button then return end
-    button._barAuraStackLayoutKey = nil
-    button._barAuraStackAppliedState = nil
-    if button._barAuraStackIndicatorInfo then
-        button._barAuraStackIndicatorInfo._barAuraStackIndicatorKey = nil
-    end
-    if button._barAuraStackContinuousInfo then
-        button._barAuraStackContinuousInfo._barAuraStackIndicatorKey = nil
-    end
-    button._barFillElapsed = button._barTextUpdateInterval or BAR_TEXT_UPDATE_INTERVAL
-end
-
 local function ClearBarAuraStackIndicatorInfo(info, RB)
     if not info then return end
     if RB and RB.ClearMaxStacksIndicator then

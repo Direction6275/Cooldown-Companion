@@ -50,16 +50,12 @@ local SOUND_ALERT_EVENT_ORDER = {
     "available",
     "onCooldown",
     "chargeGained",
-    "onAuraApplied",
-    "onAuraRemoved",
 }
 
 local SOUND_ALERT_EVENT_LABELS = {
     available = "Available",
     onCooldown = "On Cooldown",
     chargeGained = "Charge Gained",
-    onAuraApplied = "On Aura Applied",
-    onAuraRemoved = "On Aura Removed",
 }
 local CHARGE_AVAILABLE_MERGED_LABEL = "Available / Charge Gained"
 local TRIGGER_PANEL_SOUND_EVENT_LABELS = {
@@ -72,17 +68,10 @@ local SPELL_SOUND_ALERT_EVENTS = {
     chargeGained = true,
 }
 
-local AURA_SOUND_ALERT_EVENTS = {
-    onAuraApplied = true,
-    onAuraRemoved = true,
-}
-
 local EVENT_ENUM_TO_KEY = {
     [Enum.CooldownViewerAlertEventType.Available] = "available",
     [Enum.CooldownViewerAlertEventType.OnCooldown] = "onCooldown",
     [Enum.CooldownViewerAlertEventType.ChargeGained] = "chargeGained",
-    [Enum.CooldownViewerAlertEventType.OnAuraApplied] = "onAuraApplied",
-    [Enum.CooldownViewerAlertEventType.OnAuraRemoved] = "onAuraRemoved",
 }
 
 local COOLDOWN_VIEWER_CATEGORIES = {
@@ -246,72 +235,19 @@ function CooldownCompanion:GetValidSoundAlertEventsForButton(buttonData, spellID
 end
 
 local function GetSoundAlertEntryScope(buttonData)
-    if not buttonData or buttonData.type ~= "spell" then return nil, nil end
+    if not buttonData or buttonData.type ~= "spell" then return nil end
 
+    -- 12.1 aura teardown: aura sound events are gone, so dormant aura
+    -- entries have no valid sound alert scope.
     if buttonData.addedAs == "aura" then
-        if buttonData.auraTracking then
-            return false, true
-        end
-        return nil, nil
+        return nil
     end
 
-    if buttonData.auraTracking then
-        return true, true
-    end
-
-    return true, false
-end
-
-local function AddUniqueSpellID(dest, seen, spellID)
-    if not spellID or spellID == 0 then return end
-    if seen[spellID] then return end
-    seen[spellID] = true
-    dest[#dest + 1] = spellID
-end
-
-local function BuildAuraSourceSpellIDs(self, buttonData, spellIDOverride)
-    local spellIDs = {}
-    local seen = {}
-
-    if buttonData and buttonData.type == "spell" and buttonData.addedAs == "aura" then
-        local orderedAuraIDs = self.GetOrderedAuraCandidateIDs and self:GetOrderedAuraCandidateIDs(buttonData) or nil
-        if orderedAuraIDs then
-            for _, spellID in ipairs(orderedAuraIDs) do
-                AddUniqueSpellID(spellIDs, seen, spellID)
-            end
-        end
-    elseif buttonData then
-        if buttonData.auraSpellID then
-            for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
-                AddUniqueSpellID(spellIDs, seen, tonumber(id))
-            end
-        end
-
-        if buttonData.type == "spell" then
-            local auraID = C_UnitAuras.GetCooldownAuraBySpellID(buttonData.id)
-            AddUniqueSpellID(spellIDs, seen, auraID)
-            AddUniqueSpellID(spellIDs, seen, buttonData.id)
-
-            local overrideBuffs = self.ABILITY_BUFF_OVERRIDES and self.ABILITY_BUFF_OVERRIDES[buttonData.id]
-            if overrideBuffs then
-                for id in tostring(overrideBuffs):gmatch("%d+") do
-                    AddUniqueSpellID(spellIDs, seen, tonumber(id))
-                end
-            end
-        end
-    end
-
-    if spellIDOverride and buttonData and buttonData.type == "spell" then
-        local overrideAuraID = C_UnitAuras.GetCooldownAuraBySpellID(spellIDOverride)
-        AddUniqueSpellID(spellIDs, seen, overrideAuraID)
-        AddUniqueSpellID(spellIDs, seen, spellIDOverride)
-    end
-
-    return spellIDs
+    return true
 end
 
 function CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, spellIDOverride)
-    local allowSpellEvents, allowAuraEvents = GetSoundAlertEntryScope(buttonData)
+    local allowSpellEvents = GetSoundAlertEntryScope(buttonData)
     if allowSpellEvents == nil then
         return nil
     end
@@ -324,20 +260,6 @@ function CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, s
             for eventKey in pairs(spellEvents) do
                 if SPELL_SOUND_ALERT_EVENTS[eventKey] then
                     scopedEvents[eventKey] = true
-                end
-            end
-        end
-    end
-
-    if allowAuraEvents then
-        local auraSourceSpellIDs = BuildAuraSourceSpellIDs(self, buttonData, spellIDOverride)
-        for _, auraSourceSpellID in ipairs(auraSourceSpellIDs) do
-            local auraEvents = self:GetValidSoundAlertEventsForButton(buttonData, auraSourceSpellID)
-            if auraEvents then
-                for eventKey in pairs(auraEvents) do
-                    if AURA_SOUND_ALERT_EVENTS[eventKey] then
-                        scopedEvents[eventKey] = true
-                    end
                 end
             end
         end
@@ -366,8 +288,9 @@ function CooldownCompanion:GetScopedValidSoundAlertEventsForCustomBar(customBar)
     local entryType = customBar.entryType or "aura"
     local scopedEvents = {}
     if entryType == "aura" then
-        scopedEvents.onAuraApplied = true
-        scopedEvents.onAuraRemoved = true
+        -- 12.1 aura teardown: aura-driven custom bars are dormant and aura
+        -- sound events no longer exist.
+        return nil
     elseif entryType == "spell" then
         return NormalizeSpellCustomBarAlertEvents(self:GetScopedValidSoundAlertEventsForButton({
             type = "spell",

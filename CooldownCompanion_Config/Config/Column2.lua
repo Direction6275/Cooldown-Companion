@@ -1318,28 +1318,8 @@ local function LayoutRowBadges(frame, ...)
     end
 end
 
-local function IsAuraTrackingConfigReady(buttonData, cdmEnabled)
-    local viewerFrame = CooldownCompanion:ResolveButtonAuraViewerFrame(buttonData)
-    local auraStatus = CooldownCompanion:ResolveAuraTrackingConfigStatus(buttonData, cdmEnabled, viewerFrame)
-    return auraStatus.ready == true, auraStatus
-end
-
 IsTriggerPanelGroup = function(group)
     return group and group.displayMode == "trigger"
-end
-
-local function TriggerRowNeedsAuraIndicator(buttonData)
-    if not (buttonData and buttonData.type == "spell") then
-        return false
-    end
-
-    if buttonData.isPassive == true or buttonData.addedAs == "aura" then
-        return true
-    end
-
-    return CooldownCompanion.TriggerRowUsesCondition
-        and CooldownCompanion:TriggerRowUsesCondition(buttonData, "auraActive")
-        or false
 end
 
 local function GetTriggerRowDisplayText(buttonData)
@@ -1357,8 +1337,7 @@ local function GetTriggerRowDisplayText(buttonData)
         local icons = ""
         if addedAs ~= "aura" then
             icons = icons .. "|A:ui_adv_atk:15:15|a"
-        end
-        if TriggerRowNeedsAuraIndicator(buttonData) then
+        else
             icons = icons .. "|A:ui_adv_health:15:15|a"
         end
         if icons ~= "" then
@@ -2059,8 +2038,6 @@ local function RefreshColumn2()
             RenderColumn2NoPanelsState(cc)
             return
         end
-
-        local cdmEnabled = GetCVarBool("cooldownViewerEnabled")
 
         -- Metadata for cross-panel drag detection
         local col2RenderedRows = {}
@@ -2774,7 +2751,7 @@ local function RefreshColumn2()
                     -- Right-side row badges
                     local rowFrame = entry.frame
                     local rowBadgeLevel = rowFrame:GetFrameLevel() + 5
-                    local warnBadge, overrideBadge, soundBadge, auraBadge, fallbackBadge
+                    local warnBadge, overrideBadge, soundBadge, fallbackBadge
 
                     if not usable and buttonData.enabled ~= false then
                         warnBadge = EnsureRowBadge(rowFrame, "_cdcWarnBtn", "Ping_Marker_Icon_Warning")
@@ -2814,35 +2791,6 @@ local function RefreshColumn2()
                             SetRowBadgeTooltip(soundBadge, "Sound alerts enabled")
                             soundBadge:Show()
                         end
-
-                        local showAuraBadge = buttonData.auraTracking
-                        if IsTriggerPanelGroup(panel) then
-                            showAuraBadge = TriggerRowNeedsAuraIndicator(buttonData)
-                        end
-
-                        if showAuraBadge then
-                            auraBadge = EnsureRowBadge(rowFrame, "_cdcAuraBadge", "icon_trackedbuffs")
-                            auraBadge:SetFrameLevel(rowBadgeLevel)
-                            local auraReady, auraStatus = IsAuraTrackingConfigReady(buttonData, cdmEnabled)
-                            if auraReady then
-                                auraBadge.icon:SetVertexColor(1, 1, 1, 1)
-                                SetRowBadgeTooltip(auraBadge, "Aura tracking: Active", 0.2, 1, 0.2)
-                            else
-                                auraBadge.icon:SetVertexColor(1, 0.2, 0.2, 1)
-                                local tooltipText = "Aura tracking: Inactive"
-                                if auraStatus and auraStatus.state == "cdmDisabled" then
-                                    tooltipText = "Aura tracking: Inactive (Blizzard CDM disabled)"
-                                elseif auraStatus and auraStatus.state == "trackedAuraUnavailable" then
-                                    tooltipText = "Aura tracking: Inactive (tracked in CDM, but the Buffs/Debuffs viewer is not currently readable)"
-                                elseif auraStatus and auraStatus.state == "associatedAuraNotTracked" then
-                                    tooltipText = "Aura tracking: Inactive (associated aura is not currently tracked in CDM)"
-                                elseif auraStatus and auraStatus.state == "noAssociatedAura" then
-                                    tooltipText = "Aura tracking: Inactive (no associated aura found)"
-                                end
-                                SetRowBadgeTooltip(auraBadge, tooltipText, 1, 0.2, 0.2)
-                            end
-                            auraBadge:Show()
-                        end
                     end
 
                     local talentBadge = EnsureRowBadge(rowFrame, "_cdcTalentBadge", "UI-HUD-MicroMenu-SpecTalents-Mouseover")
@@ -2860,7 +2808,7 @@ local function RefreshColumn2()
                         disabledBadge:Show()
                     end
 
-                    LayoutRowBadges(rowFrame, disabledBadge, warnBadge, overrideBadge, fallbackBadge, soundBadge, auraBadge, talentBadge)
+                    LayoutRowBadges(rowFrame, disabledBadge, warnBadge, overrideBadge, fallbackBadge, soundBadge, talentBadge)
 
                     entry:SetCallback("OnClick", function(widget, event, mouseButton)
                         if mouseButton == "LeftButton" and not IsControlKeyDown() and not GetCursorInfo() then
@@ -2944,7 +2892,7 @@ local function RefreshColumn2()
                                     iconInfo.text = "Override Icon..."
                                     iconInfo.notCheckable = true
                                     iconInfo.tooltipTitle = "|cffffd100Override Icon|r"
-                                    iconInfo.tooltipText = "|cffffffffReplaces the default spell or item icon. If aura tracking with Show Aura Icon is active, the aura icon still takes priority while the aura is up.|r"
+                                    iconInfo.tooltipText = "|cffffffffReplaces the default spell or item icon.|r"
                                     iconInfo.tooltipOnButton = true
                                     iconInfo.func = function()
                                         CloseDropDownMenus()

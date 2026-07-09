@@ -1177,6 +1177,13 @@ function CooldownCompanion:TriggerRowUsesCondition(buttonData, conditionKey)
     return false
 end
 
+-- 12.1 aura teardown: auraActive stays VALID for stored clauses (removing it
+-- from the validation lists would make NormalizeTriggerConditionRowData drop
+-- saved aura clauses at load), but it is no longer OFFERED for new clauses.
+local RETIRED_TRIGGER_CONDITION_OFFERS = {
+    auraActive = true,
+}
+
 function CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, excludedKeys)
     local order = GetTriggerConditionOrderForButtonData(buttonData)
     local excluded = {}
@@ -1196,7 +1203,7 @@ function CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, excludedKe
     local options = {}
     local filteredOrder = {}
     for _, key in ipairs(order) do
-        if not excluded[key] then
+        if not excluded[key] and not RETIRED_TRIGGER_CONDITION_OFFERS[key] then
             options[key] = TRIGGER_CONDITION_LABELS[key]
             filteredOrder[#filteredOrder + 1] = key
         end

@@ -479,46 +479,16 @@ end
 
 --------------------------------------------------------------------------------
 -- Aura Glow Preview
+-- (12.1 aura teardown: config entry-point setters removed; ClearAll* kept for
+-- recycled-frame safety until the aura rebuild.)
 --------------------------------------------------------------------------------
-
-function CooldownCompanion:SetAuraGlowPreview(groupId, buttonIndex, show)
-    SetButtonPreview(self, groupId, buttonIndex, show, "_auraGlowPreview", "_auraGlowActive", false, nil, true)
-end
-
-function CooldownCompanion:SetGroupAuraGlowPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_auraGlowPreview", "_auraGlowActive", false, nil, true)
-end
 
 function CooldownCompanion:ClearAllAuraGlowPreviews()
     ClearAllPreviews(self, "_auraGlowPreview", "_auraGlowActive", false, nil, true)
 end
 
--- Bar Aura Active Preview (simulates full aura-active state: aura color,
--- bar glow, alpha pulse, color shift — everything the aura indicator shows)
--- Optional buttonIndex targets a single button (per-button override preview).
-
-function CooldownCompanion:SetBarAuraActivePreview(groupId, buttonIndex, show)
-    if not groupId then return end
-    if buttonIndex then
-        SetActiveButtonPreviewFlag(groupId, buttonIndex, "_barAuraActivePreview", show)
-    else
-        SetActiveGroupPreviewFlag(groupId, "_barAuraActivePreview", show)
-        ClearActiveButtonPreviewFlagForGroup(groupId, "_barAuraActivePreview")
-    end
-
-    local frame = self.groupFrames[groupId]
-    if not frame then return end
-    for _, button in ipairs(frame.buttons) do
-        if not buttonIndex or button.index == buttonIndex then
-            button._barAuraActivePreview = show or nil
-            if button.UpdateCooldown then button:UpdateCooldown() end
-        end
-    end
-end
-
-function CooldownCompanion:IsBarAuraActivePreviewActive(groupId, buttonIndex)
-    return self:IsPreviewFlagActive(groupId, buttonIndex, "_barAuraActivePreview")
-end
+-- Bar Aura Active Preview: setters removed with the 12.1 aura teardown;
+-- ClearAll kept for recycled-frame safety until the aura rebuild.
 
 function CooldownCompanion:ClearAllBarAuraActivePreviews()
     ClearActivePreviewFlag("_barAuraActivePreview")
@@ -534,15 +504,9 @@ end
 
 --------------------------------------------------------------------------------
 -- Pandemic Preview
+-- (12.1 aura teardown: config entry-point setters removed; ClearAll* kept for
+-- recycled-frame safety until the aura rebuild.)
 --------------------------------------------------------------------------------
-
-function CooldownCompanion:SetPandemicPreview(groupId, buttonIndex, show)
-    SetButtonPreview(self, groupId, buttonIndex, show, "_pandemicPreview", "_auraGlowActive", false, pandemicOnToggle, true)
-end
-
-function CooldownCompanion:SetGroupPandemicPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_pandemicPreview", "_auraGlowActive", false, pandemicOnToggle, true)
-end
 
 function CooldownCompanion:ClearAllPandemicPreviews()
     ClearAllPreviews(self, "_pandemicPreview", "_auraGlowActive", false, pandemicOnClear, true)

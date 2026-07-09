@@ -62,7 +62,6 @@ end
 local function GetCustomBarEntryTabs(entry)
     local tabs = {
         { value = "appearance", text = "Appearance" },
-        { value = "indicators", text = "Indicators" },
     }
 
     tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
@@ -71,7 +70,7 @@ local function GetCustomBarEntryTabs(entry)
 end
 
 local function IsCustomBarEntryTabAllowed(entry, tab)
-    if tab == "appearance" or tab == "indicators" or tab == "soundalerts" or tab == "loadconditions" then
+    if tab == "appearance" or tab == "soundalerts" or tab == "loadconditions" then
         return true
     end
     return false

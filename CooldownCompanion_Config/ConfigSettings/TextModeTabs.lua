@@ -178,9 +178,6 @@ local function BuildTextAppearanceTab(container, group, style)
     local function BuildFormatPreviewAdvanced(panel)
         if AddConditionalPreviewButton then
             AddConditionalPreviewButton(panel, "Preview Cooldown State", "cooldown")
-            AddConditionalPreviewButton(panel, "Preview Aura Duration Text", "aura_duration_text")
-            AddConditionalPreviewButton(panel, "Preview Aura Stack Text", "aura_stack_text")
-            AddConditionalPreviewButton(panel, "Preview Pandemic State", "pandemic")
             AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable")
             AddConditionalPreviewButton(panel, "Preview Out of Range State", "out_of_range")
         end

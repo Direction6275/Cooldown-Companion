@@ -101,9 +101,7 @@ local thresholdTickEditorErrors = {}
 -- Imports from ResourceBarPanelsHelpers
 local RBP = ST._RBP
 local resourceBarCollapsedSections = RBP.collapsedSections
-local BuildResourceAuraOverlaySection = RBP.BuildResourceAuraOverlaySection
 local BuildResourceBarConflictGate = RBP.BuildResourceBarConflictGate
-local AddResourceAuraOverrideControls = RBP.AddResourceAuraOverrideControls
 local GetConfigActiveResources = RBP.GetConfigActiveResources
 local GetCurrentConfigSpecID = RBP.GetCurrentConfigSpecID
 local ReadSpecOverrideKey = RBP.ReadSpecOverrideKey
@@ -951,12 +949,11 @@ local function AddResourceSpecCopyButton(enableCb)
         GameTooltip:AddLine("- Appearance tab", 1, 1, 1, true)
         GameTooltip:AddLine("- Layout tab", 1, 1, 1, true)
         GameTooltip:AddLine("- Resource colors", 1, 1, 1, true)
-        GameTooltip:AddLine("- Resource Settings except aura overlays", 1, 1, 1, true)
+        GameTooltip:AddLine("- Resource Settings", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("What is not copied:", 1, 0.82, 0, true)
         GameTooltip:AddLine("- Health settings", 1, 1, 1, true)
         GameTooltip:AddLine("- Custom Bars", 1, 1, 1, true)
-        GameTooltip:AddLine("- Aura overlays", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function()
@@ -1923,7 +1920,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     local showResourceSettings = mode == "resource_settings" and resourceSettingsPowerType ~= nil
     local showBarText = (mode == "all" or mode == "bar_text" or showResourceSettings)
     local showHealthColors = (mode == "all" or mode == "health")
-    local showAuraOverlays = (mode == "all")
     local showResourceText = showResourceSettings
     local showThresholdsTicks = false
 
@@ -2264,28 +2260,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         end
     end
 
-    end
-
-    if showResourceSettings then
-        local auraHeading = AceGUI:Create("Heading")
-        auraHeading:SetText("Aura Overlay")
-        ColorHeading(auraHeading)
-        auraHeading:SetFullWidth(true)
-        container:AddChild(auraHeading)
-
-        local rbAuraOverlayAdvBtns = {}
-        local resourceName = POWER_NAMES[resourceSettingsPowerType] or ("Power " .. resourceSettingsPowerType)
-        AddResourceAuraOverrideControls(container, settings, resourceSettingsPowerType, resourceName, rbAuraOverlayAdvBtns, {
-            specID = displaySpecID,
-            context = {
-                selectedResourcePowerType = resourceSettingsPowerType,
-                resourceSettingsSpecID = displaySpecID,
-            },
-        })
-    end
-
-    if showAuraOverlays then
-        BuildResourceAuraOverlaySection(container, settings)
     end
 
 end

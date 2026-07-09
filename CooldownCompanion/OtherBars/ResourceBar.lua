@@ -2312,75 +2312,8 @@ function CooldownCompanion:GetSpecLayoutOrder()
     return GetSpecLayoutOrder(settings)
 end
 
-local function RefreshCustomAuraBarPreviewState(cabConfig, previewKey, show)
-    local anyUpdated = false
-
-    for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.cabConfig == cabConfig and barInfo.frame then
-            barInfo.frame[previewKey] = show or nil
-            if barInfo.barType == "custom_cooldown" then
-                RB.UpdateCustomCooldownBar(barInfo)
-            else
-                UpdateCustomAuraBar(barInfo)
-            end
-            if barInfo.barType == "custom_continuous" or barInfo.barType == "custom_cooldown" then
-                AnimateCustomAuraBarIndicator(barInfo.frame)
-            end
-            anyUpdated = true
-        end
-    end
-
-    if anyUpdated and layoutDirty then
-        RelayoutResourceStack()
-    end
-end
-
-local function IsCustomAuraBarPreviewStateActive(cabConfig, previewKey)
-    if not (cabConfig and previewKey) then
-        return false
-    end
-    for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.cabConfig == cabConfig and barInfo.frame and barInfo.frame[previewKey] then
-            return true
-        end
-    end
-    return false
-end
-
-function CooldownCompanion:SetCustomAuraBarActivePreview(cabConfig, show)
-    if not cabConfig then return end
-    if show then
-        local specID = RB.GetCurrentSpecID and RB.GetCurrentSpecID()
-        if not (specID and RB.CustomBarHasSpec and RB.CustomBarHasSpec(cabConfig, specID)) then
-            show = nil
-        end
-    end
-    activeCustomAuraBarActivePreviews[cabConfig] = show or nil
-    RefreshCustomAuraBarPreviewState(cabConfig, "_barAuraActivePreview", show)
-end
-
-function CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig)
-    return activeCustomAuraBarActivePreviews[cabConfig] == true
-        or IsCustomAuraBarPreviewStateActive(cabConfig, "_barAuraActivePreview")
-end
-
-function CooldownCompanion:SetCustomAuraBarPandemicPreview(cabConfig, show)
-    if not cabConfig then return end
-    if show then
-        local specID = RB.GetCurrentSpecID and RB.GetCurrentSpecID()
-        if not (specID and RB.CustomBarHasSpec and RB.CustomBarHasSpec(cabConfig, specID)) then
-            show = nil
-        end
-    end
-    activeCustomAuraBarPandemicPreviews[cabConfig] = show or nil
-    RefreshCustomAuraBarPreviewState(cabConfig, "_pandemicPreview", show)
-end
-
-function CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(cabConfig)
-    return activeCustomAuraBarPandemicPreviews[cabConfig] == true
-        or IsCustomAuraBarPreviewStateActive(cabConfig, "_pandemicPreview")
-end
-
+-- 12.1 aura teardown: custom-bar preview setters removed with the config UI;
+-- ClearAllCustomAuraBarPreviews stays (Preview.lua recycled-frame safety).
 function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     wipe(activeCustomAuraBarActivePreviews)
     wipe(activeCustomAuraBarPandemicPreviews)

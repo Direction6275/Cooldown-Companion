@@ -32,10 +32,6 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     " ",
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
-local AURA_BLIZZARD_SWIPE_TOOLTIP = {
-    "Blizzard-style Aura Duration Swipe",
-    {"Uses Blizzard's fixed aura duration swipe style while Aura Duration Swipe is enabled. The normal aura duration swipe style settings do not affect this overlay.", 1, 1, 1, true},
-}
 local function ResolvePreviewOption(value)
     if type(value) == "function" then
         return value()
@@ -338,10 +334,6 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback,
     if showCooldownText == nil and type(fallbackStyle) == "table" then
         showCooldownText = fallbackStyle.showCooldownText
     end
-    local showAuraText = styleTable.showAuraText
-    if showAuraText == nil and type(fallbackStyle) == "table" then
-        showAuraText = fallbackStyle.showAuraText
-    end
 
     local cdTextCb = AceGUI:Create("CheckBox")
     cdTextCb:SetLabel("Show Cooldown Text")
@@ -354,89 +346,16 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback,
     end)
     container:AddChild(cdTextCb)
 
-    if not (opts and opts.isOverride) and (showCooldownText or showAuraText ~= false) then
+    if not (opts and opts.isOverride) and showCooldownText then
         AddDurationFormatDropdown(container, styleTable, refreshCallback, opts)
     end
 
     if showCooldownText then
         AddFontControls(container, styleTable, "cooldown", {}, refreshCallback)
         AddColorPicker(container, styleTable, "cooldownFontColor", "Font Color", {1, 1, 1, 1}, false, refreshCallback, refreshCallback)
-
-        local cdAnchorDrop = AddAnchorDropdown(container, styleTable, "cooldownTextAnchor", "CENTER", refreshCallback)
-
-        -- (?) tooltip for shared positioning
-        CreateInfoButton(cdAnchorDrop.frame, cdAnchorDrop.label, "LEFT", "RIGHT", 4, 0, {
-            "Shared Position",
-            {"Position is shared with Aura Duration Text by default. Enable 'Separate Text Positions' in the Aura Duration Text section to use independent positions.", 1, 1, 1, true},
-        }, cdAnchorDrop)
-
+        AddAnchorDropdown(container, styleTable, "cooldownTextAnchor", "CENTER", refreshCallback)
         AddOffsetSliders(container, styleTable, "cooldownTextXOffset", "cooldownTextYOffset", {}, refreshCallback)
 
-    end
-end
-
-local function BuildAuraTextControls(container, styleTable, refreshCallback)
-    local auraTextCb = AceGUI:Create("CheckBox")
-    auraTextCb:SetLabel("Show Aura Duration Text")
-    auraTextCb:SetValue(styleTable.showAuraText ~= false)
-    auraTextCb:SetFullWidth(true)
-    auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showAuraText = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(auraTextCb)
-
-    -- (?) tooltip for shared positioning note
-    CreateInfoButton(auraTextCb.frame, auraTextCb.checkbg, "LEFT", "RIGHT", auraTextCb.text:GetStringWidth() + 4, 0, {
-        "Shared Position",
-        {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' below to use independent positions.", 1, 1, 1, true},
-    }, auraTextCb)
-
-    if styleTable.showAuraText ~= false then
-        AddFontControls(container, styleTable, "auraText", {}, refreshCallback)
-        AddColorPicker(container, styleTable, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshCallback, refreshCallback)
-
-        local sepPosCb = AceGUI:Create("CheckBox")
-        sepPosCb:SetLabel("Separate Text Positions")
-        sepPosCb:SetValue(styleTable.separateTextPositions or false)
-        sepPosCb:SetFullWidth(true)
-        sepPosCb:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable.separateTextPositions = val
-            refreshCallback()
-            RefreshStructuralControls(container)
-        end)
-        container:AddChild(sepPosCb)
-
-        CreateInfoButton(sepPosCb.frame, sepPosCb.checkbg, "LEFT", "RIGHT", sepPosCb.text:GetStringWidth() + 4, 0, {
-            "Separate Text Positions",
-            {"When enabled, aura duration text and cooldown text use independent positions. Aura text position controls appear below when toggled on; cooldown text position is in the Cooldown Text section.", 1, 1, 1, true},
-        }, sepPosCb)
-
-        if styleTable.separateTextPositions then
-            AddAnchorDropdown(container, styleTable, "auraTextAnchor", "TOPLEFT", refreshCallback)
-            AddOffsetSliders(container, styleTable, "auraTextXOffset", "auraTextYOffset", {x = 2, y = -2}, refreshCallback)
-        end
-    end
-end
-
-local function BuildAuraStackTextControls(container, styleTable, refreshCallback)
-    local auraStackCb = AceGUI:Create("CheckBox")
-    auraStackCb:SetLabel("Show Aura Stack Text")
-    auraStackCb:SetValue(styleTable.showAuraStackText ~= false)
-    auraStackCb:SetFullWidth(true)
-    auraStackCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showAuraStackText = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(auraStackCb)
-
-    if styleTable.showAuraStackText ~= false then
-        AddFontControls(container, styleTable, "auraStack", {}, refreshCallback)
-        AddColorPicker(container, styleTable, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-        AddAnchorDropdown(container, styleTable, "auraStackAnchor", "BOTTOMLEFT", refreshCallback)
-        AddOffsetSliders(container, styleTable, "auraStackXOffset", "auraStackYOffset", {x = 2, y = 2}, refreshCallback)
     end
 end
 
@@ -569,21 +488,6 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
 
     if styleTable.iconCooldownTintEnabled then
         AddColorPicker(container, styleTable, "iconCooldownTintColor", "Cooldown Icon Color", {1, 0, 0.102, 1}, true, refreshCallback, refreshCallback)
-    end
-
-    local auraTintCb = AceGUI:Create("CheckBox")
-    auraTintCb:SetLabel("Use Separate Aura Tint")
-    auraTintCb:SetValue(styleTable.iconAuraTintEnabled or false)
-    auraTintCb:SetFullWidth(true)
-    auraTintCb:SetCallback("OnValueChanged", function(w, e, val)
-        styleTable.iconAuraTintEnabled = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(auraTintCb)
-
-    if styleTable.iconAuraTintEnabled then
-        AddColorPicker(container, styleTable, "iconAuraTintColor", "Aura Active Icon Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback)
     end
 
     if styleTable.showUnusable and ST.UnusableVisualUsesDimTint(styleTable) then
@@ -794,118 +698,6 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
     container:AddChild(timerMotionDrop)
 
     AddColorPicker(container, styleTable, "iconFillCooldownColor", "Cooldown Fill Color", {0.6, 0.13, 0.18, 0.55}, true, refreshCallback, refreshCallback)
-    AddColorPicker(container, styleTable, "iconFillAuraColor", "Aura Fill Color", {0.2, 1.0, 0.2, 0.55}, true, refreshCallback, refreshCallback)
-end
-
-local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-    local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
-    local blizzardStyleActive = styleTable.auraUseBlizzardSwipe == true
-    local normalStyleDisabled = disabledByIconFill or blizzardStyleActive
-
-    local blizzardCb = AceGUI:Create("CheckBox")
-    blizzardCb:SetLabel("Blizzard CDM Aura Swipe Style")
-    blizzardCb:SetValue(styleTable.auraUseBlizzardSwipe == true)
-    blizzardCb:SetFullWidth(true)
-    blizzardCb:SetDisabled(disabledByIconFill)
-    blizzardCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if disabledByIconFill then return end
-        styleTable.auraUseBlizzardSwipe = val == true
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(blizzardCb)
-    CreateInfoButton(blizzardCb.frame, blizzardCb.checkbg, "LEFT", "RIGHT", blizzardCb.text:GetStringWidth() + 4, 0, AURA_BLIZZARD_SWIPE_TOOLTIP, blizzardCb)
-    ApplyOverrideCheckboxIndent(blizzardCb, opts)
-
-    local reverseCb = AceGUI:Create("CheckBox")
-    reverseCb:SetLabel("Reverse Swipe")
-    reverseCb:SetValue(styleTable.auraDurationSwipeReverse or false)
-    reverseCb:SetFullWidth(true)
-    reverseCb:SetDisabled(normalStyleDisabled)
-    reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if normalStyleDisabled then return end
-        styleTable.auraDurationSwipeReverse = val
-        refreshCallback()
-    end)
-    container:AddChild(reverseCb)
-    ApplyOverrideCheckboxIndent(reverseCb, opts)
-
-    local fillCb = AceGUI:Create("CheckBox")
-    fillCb:SetLabel("Show Swipe Fill")
-    fillCb:SetValue(styleTable.showAuraDurationSwipeFill ~= false)
-    fillCb:SetFullWidth(true)
-    fillCb:SetDisabled(normalStyleDisabled)
-    fillCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if normalStyleDisabled then return end
-        styleTable.showAuraDurationSwipeFill = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(fillCb)
-    ApplyOverrideCheckboxIndent(fillCb, opts)
-
-    if styleTable.showAuraDurationSwipeFill ~= false then
-        local alphaSlider = AceGUI:Create("Slider")
-        alphaSlider:SetLabel("Swipe Fill Opacity")
-        alphaSlider:SetSliderValues(0, 1, 0.05)
-        alphaSlider:SetIsPercent(true)
-        alphaSlider:SetValue(styleTable.auraDurationSwipeAlpha or 0.8)
-        alphaSlider:SetFullWidth(true)
-        if alphaSlider.SetDisabled then alphaSlider:SetDisabled(normalStyleDisabled) end
-        alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if normalStyleDisabled then return end
-            styleTable.auraDurationSwipeAlpha = val
-            refreshCallback()
-        end)
-        container:AddChild(alphaSlider)
-    end
-
-    local edgeCb = AceGUI:Create("CheckBox")
-    edgeCb:SetLabel("Show Swipe Edge")
-    edgeCb:SetValue(styleTable.showAuraDurationSwipeEdge ~= false)
-    edgeCb:SetFullWidth(true)
-    edgeCb:SetDisabled(normalStyleDisabled)
-    edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if normalStyleDisabled then return end
-        styleTable.showAuraDurationSwipeEdge = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(edgeCb)
-    ApplyOverrideCheckboxIndent(edgeCb, opts)
-
-    if styleTable.showAuraDurationSwipeEdge ~= false then
-        local edgeColor = AddColorPicker(container, styleTable, "auraDurationSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-        if edgeColor.SetDisabled then edgeColor:SetDisabled(normalStyleDisabled) end
-    end
-end
-
-local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-    local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
-
-    local auraCb = AceGUI:Create("CheckBox")
-    auraCb:SetLabel("Show Aura Duration Swipe")
-    auraCb:SetValue(styleTable.showAuraDurationSwipe ~= false)
-    auraCb:SetFullWidth(true)
-    auraCb:SetDisabled(disabledByIconFill)
-    auraCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if disabledByIconFill then return end
-        styleTable.showAuraDurationSwipe = val
-        refreshCallback()
-        if val == true and type(opts.onEnabled) == "function" then
-            opts.onEnabled()
-        end
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(auraCb)
-
-    if opts.showAdvancedControlsInline ~= false and styleTable.showAuraDurationSwipe ~= false then
-        BuildAuraDurationSwipeAdvancedControls(container, styleTable, refreshCallback, opts)
-    end
-
-    return auraCb
 end
 
 local function BuildLossOfControlControls(container, styleTable, refreshCallback)
@@ -1199,80 +991,9 @@ local LCG_GLOW_STYLE_OPTIONS = {
 }
 local LCG_GLOW_STYLE_ORDER = {"solid", "pixel", "glow", "lcgButton", "lcgAutoCast"}
 
-local BAR_BORDER_INDICATOR_OPTIONS = {
-    none = "None",
-    pixel = "Pixel Glow",
-    solid = "Solid Border",
-    pulsingBorder = "Pulsing Border",
-}
-local BAR_BORDER_INDICATOR_ORDER = {"none", "pixel", "solid", "pulsingBorder"}
-
-local MAX_STACK_BORDER_INDICATOR_OPTIONS = {
-    none = "None",
-    pixelGlow = "Pixel Glow",
-    solidBorder = "Solid Border",
-    pulsingBorder = "Pulsing Border",
-}
-local MAX_STACK_BORDER_INDICATOR_ORDER = {"none", "pixelGlow", "solidBorder", "pulsingBorder"}
-
-local function AddIndicatorSettingsHeading(container, text)
-    local heading = AceGUI:Create("Heading")
-    heading:SetText(text)
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    container:AddChild(heading)
-end
-
-local function NormalizeActiveAuraIndicatorSettings(styleTable)
-    local style = styleTable and styleTable.barAuraEffect or "none"
-    if style == "color" then
-        return "none"
-    elseif style == "pixel" or style == "solid" or style == "pulsingBorder" then
-        return style
-    end
-    return "none"
-end
-
-local function NormalizeMaxStackIndicatorSettings(styleTable)
-    local style = styleTable and styleTable.maxStacksGlowStyle or "solidBorder"
-    if style == "pulsingOverlay" or style == "none" then
-        return "none"
-    elseif style == "pixelGlow" or style == "solidBorder" or style == "pulsingBorder" then
-        return style
-    end
-    return "solidBorder"
-end
-
-local function IsSolidLikeBorderIndicator(style)
-    return style == "solid" or style == "pulsingBorder"
-        or style == "solidBorder"
-end
-
-local function IsPixelBorderIndicator(style)
-    return style == "pixel" or style == "pixelGlow"
-end
-
-local function ApplyBorderIndicatorDefaultSize(styleTable, sizeKey, oldStyle, newStyle, solidDefault, pixelDefault)
-    if not styleTable or not sizeKey then return end
-    if IsSolidLikeBorderIndicator(newStyle) and not IsSolidLikeBorderIndicator(oldStyle) then
-        styleTable[sizeKey] = solidDefault or 2
-    elseif IsPixelBorderIndicator(newStyle) and not IsPixelBorderIndicator(oldStyle) then
-        styleTable[sizeKey] = pixelDefault or 8
-    end
-end
-
-local function ApplyBorderIndicatorDefaultSpeed(styleTable, speedKey, oldStyle, newStyle, pulseDefault, pixelDefault)
-    if not styleTable or not speedKey then return end
-    if newStyle == "pulsingBorder" and oldStyle ~= "pulsingBorder" then
-        styleTable[speedKey] = pulseDefault or 0.5
-    elseif IsPixelBorderIndicator(newStyle) and not IsPixelBorderIndicator(oldStyle) then
-        styleTable[speedKey] = pixelDefault or 50
-    end
-end
-
 -- Generic glow style builder (Group A): style dropdown + color picker +
--- conditional sliders. Replaces BuildProcGlowControls,
--- BuildPandemicGlowControls, BuildAuraIndicatorControls.
+-- conditional sliders. Backs BuildProcGlowControls, BuildReadyGlowControls,
+-- BuildKeyPressHighlightControls.
 --
 -- cfg = { styleKey, colorKey, colorLabel, sizeKey, thicknessKey,
 --         speedKey, linesKey, defaultStyle, defaultColor }
@@ -1361,119 +1082,6 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     }, refreshCallback, 1)
 end
 
--- Generic bar effect builder (Group B): primary color picker + effect
--- dropdown (none/pixel/solid) + conditional effect color +
--- conditional sliders. Replaces BuildPandemicBarControls,
--- BuildBarActiveAuraControls.
---
--- cfg = { colorKey, colorLabel, defaultColor, effectKey, effectLabel,
---         effectColorKey, effectColorLabel, defaultEffectColor,
---         effectSizeKey, effectThicknessKey, effectSpeedKey, effectLinesKey }
-local function BuildBarEffectControls(container, styleTable, refreshCallback, cfg, opts)
-    local isOverrideMode = opts and opts.isOverride == true
-    local isEnabled
-    if cfg.enableKey then
-        local enabledVal = rawget(styleTable, cfg.enableKey)
-        if enabledVal == nil and cfg.deriveEnableFromEffect and rawget(styleTable, cfg.effectKey) ~= nil then
-            enabledVal = (styleTable[cfg.effectKey] or "none") ~= "none"
-        end
-        if enabledVal == nil and opts and opts.fallbackStyle then
-            enabledVal = opts.fallbackStyle[cfg.enableKey]
-            if enabledVal == nil and cfg.deriveEnableFromEffect then
-                enabledVal = (opts.fallbackStyle[cfg.effectKey] or "none") ~= "none"
-            end
-        end
-        isEnabled = enabledVal ~= false
-    else
-        isEnabled = (styleTable[cfg.effectKey] or "none") ~= "none"
-    end
-
-    if isOverrideMode and cfg.enableLabel then
-        local enableCb = AceGUI:Create("CheckBox")
-        enableCb:SetLabel(cfg.enableLabel)
-        enableCb:SetValue(isEnabled)
-        enableCb:SetFullWidth(true)
-        enableCb:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[cfg.enableKey] = val
-            refreshCallback()
-            RefreshStructuralControls(container)
-        end)
-        container:AddChild(enableCb)
-
-        if not isEnabled then
-            return
-        end
-    end
-
-    if opts and opts.afterEnableCallback then
-        opts.afterEnableCallback(container)
-    end
-
-    if not (opts and opts.hidePrimaryColorPicker) then
-        if cfg.primaryColorSectionLabel then
-            AddIndicatorSettingsHeading(container, cfg.primaryColorSectionLabel)
-        end
-        AddColorPicker(container, styleTable, cfg.colorKey, cfg.colorLabel, cfg.defaultColor, true, refreshCallback, refreshCallback)
-    end
-
-    if cfg.effectSectionLabel then
-        AddIndicatorSettingsHeading(container, cfg.effectSectionLabel)
-    end
-
-    local effectDrop = AceGUI:Create("Dropdown")
-    effectDrop:SetLabel(cfg.effectLabel)
-    effectDrop:SetList(cfg.effectOptions or {
-        ["none"] = "None",
-        ["pixel"] = "Pixel Glow",
-        ["solid"] = "Solid Border",
-    }, cfg.effectOrder or {"none", "pixel", "solid"})
-    local currentEffect = styleTable[cfg.effectKey] or "none"
-    local displayEffect = cfg.normalizeEffectForDisplay
-        and cfg.normalizeEffectForDisplay(styleTable)
-        or currentEffect
-    effectDrop:SetValue(displayEffect)
-    effectDrop:SetFullWidth(true)
-    effectDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        local oldEffect = cfg.normalizeEffectForDisplay
-            and cfg.normalizeEffectForDisplay(styleTable)
-            or (styleTable[cfg.effectKey] or "none")
-        styleTable[cfg.effectKey] = cfg.mapEffectSelection
-            and cfg.mapEffectSelection(val)
-            or val
-        ApplyBorderIndicatorDefaultSize(
-            styleTable,
-            cfg.effectSizeKey,
-            oldEffect,
-            val,
-            cfg.effectSolidSizeDefault,
-            cfg.effectPixelSizeDefault
-        )
-        ApplyBorderIndicatorDefaultSpeed(
-            styleTable,
-            cfg.effectSpeedKey,
-            oldEffect,
-            val,
-            cfg.effectPulseSpeedDefault,
-            cfg.effectPixelSpeedDefault
-        )
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(effectDrop)
-
-    currentEffect = cfg.normalizeEffectForDisplay
-        and cfg.normalizeEffectForDisplay(styleTable)
-        or (styleTable[cfg.effectKey] or "none")
-    if currentEffect ~= "none" then
-        AddColorPicker(container, styleTable, cfg.effectColorKey, cfg.effectColorLabel, cfg.defaultEffectColor, true, refreshCallback, refreshCallback)
-
-        BuildGlowSliders(container, styleTable, currentEffect, {
-            size = cfg.effectSizeKey, thickness = cfg.effectThicknessKey, speed = cfg.effectSpeedKey, lines = cfg.effectLinesKey,
-            solidSizeDefault = cfg.effectSolidSizeDefault,
-        }, refreshCallback, 2)
-    end
-end
-
 ------------------------------------------------------------------------
 -- PUBLIC GLOW/EFFECT WRAPPERS (same signatures as original functions)
 ------------------------------------------------------------------------
@@ -1483,28 +1091,6 @@ local function BuildProcGlowControls(container, styleTable, refreshCallback, opt
         sizeKey = "procGlowSize", thicknessKey = "procGlowThickness", speedKey = "procGlowSpeed", linesKey = "procGlowLines",
         defaultStyle = "glow", defaultColor = {1, 1, 1, 1},
         enableLabel = "Show Proc Glow",
-        styleOptions = LCG_GLOW_STYLE_OPTIONS,
-        styleOrder = LCG_GLOW_STYLE_ORDER,
-    }, opts)
-end
-
-local function BuildPandemicGlowControls(container, styleTable, refreshCallback, opts)
-    BuildGlowStyleControls(container, styleTable, refreshCallback, {
-        styleKey = "pandemicGlowStyle", colorKey = "pandemicGlowColor", colorLabel = "Glow Color",
-        sizeKey = "pandemicGlowSize", thicknessKey = "pandemicGlowThickness", speedKey = "pandemicGlowSpeed", linesKey = "pandemicGlowLines",
-        defaultStyle = "solid", defaultColor = {1, 0.5, 0, 1},
-        enableKey = "showPandemicGlow", enableLabel = "Show Pandemic Glow",
-        styleOptions = LCG_GLOW_STYLE_OPTIONS,
-        styleOrder = LCG_GLOW_STYLE_ORDER,
-    }, opts)
-end
-
-local function BuildAuraIndicatorControls(container, styleTable, refreshCallback, opts)
-    BuildGlowStyleControls(container, styleTable, refreshCallback, {
-        styleKey = "auraGlowStyle", colorKey = "auraGlowColor", colorLabel = "Indicator Color",
-        sizeKey = "auraGlowSize", thicknessKey = "auraGlowThickness", speedKey = "auraGlowSpeed", linesKey = "auraGlowLines",
-        defaultStyle = "pixel", defaultColor = {1, 0.84, 0, 0.9},
-        enableLabel = "Show Aura Glow",
         styleOptions = LCG_GLOW_STYLE_OPTIONS,
         styleOrder = LCG_GLOW_STYLE_ORDER,
     }, opts)
@@ -1533,187 +1119,6 @@ local function BuildKeyPressHighlightControls(container, styleTable, refreshCall
         styleOptions = KPH_STYLE_OPTIONS,
         styleOrder = KPH_STYLE_ORDER,
     }, opts)
-end
-
-local function BuildPandemicBarControls(container, styleTable, refreshCallback, opts)
-    BuildBarEffectControls(container, styleTable, refreshCallback, {
-        colorKey = "barPandemicColor", colorLabel = "Pandemic Bar Color",
-        defaultColor = {1, 0.5, 0, 1},
-        enableKey = "showPandemicGlow", enableLabel = "Show Pandemic Indicator",
-        effectKey = "pandemicBarEffect", effectLabel = "Pandemic Effect",
-        effectColorKey = "pandemicBarEffectColor", effectColorLabel = "Pandemic Effect Color",
-        defaultEffectColor = {1, 0.5, 0, 1},
-        effectSizeKey = "pandemicBarEffectSize", effectThicknessKey = "pandemicBarEffectThickness",
-        effectSpeedKey = "pandemicBarEffectSpeed", effectLinesKey = "pandemicBarEffectLines",
-    }, opts)
-end
-
-local function BuildBarActiveAuraControls(container, styleTable, refreshCallback, opts)
-    BuildBarEffectControls(container, styleTable, refreshCallback, {
-        enableKey = "barAuraIndicatorEnabled", enableLabel = "Enable Active Aura Indicator",
-        deriveEnableFromEffect = true,
-        colorKey = "barAuraColor", colorLabel = "Active Aura Color",
-        primaryColorSectionLabel = "Active Aura Color",
-        defaultColor = {0.2, 1.0, 0.2, 1.0},
-        effectKey = "barAuraEffect", effectLabel = "Border Indicator",
-        effectSectionLabel = "Border Indicator",
-        effectOptions = BAR_BORDER_INDICATOR_OPTIONS, effectOrder = BAR_BORDER_INDICATOR_ORDER,
-        normalizeEffectForDisplay = NormalizeActiveAuraIndicatorSettings,
-        mapEffectSelection = function(value) return value == "none" and "color" or value end,
-        effectColorKey = "barAuraEffectColor", effectColorLabel = "Border Color",
-        defaultEffectColor = {1, 0.84, 0, 0.9},
-        effectSizeKey = "barAuraEffectSize", effectThicknessKey = "barAuraEffectThickness",
-        effectSpeedKey = "barAuraEffectSpeed", effectLinesKey = "barAuraEffectLines",
-        effectSolidSizeDefault = 2,
-        effectPixelSizeDefault = 8,
-        effectPulseSpeedDefault = 0.5,
-        effectPixelSpeedDefault = 50,
-    }, opts)
-end
-
-------------------------------------------------------------------------
--- BAR MODE PULSE / COLOR SHIFT CONTROLS
-------------------------------------------------------------------------
-
--- cfg = { pulseKey, pulseSpeedKey,
---         colorShiftKey, colorShiftSpeedKey, colorShiftColorKey, defaultShiftColor }
-local function BuildBarPulseControls(container, styleTable, refreshCallback, cfg, opts)
-    local fb = opts and opts.fallbackStyle
-    local function resolve(key, default)
-        local v = styleTable[key]
-        if v == nil and fb then v = fb[key] end
-        if v == nil and cfg.legacyColorShiftStyleKey
-            and styleTable[cfg.legacyColorShiftStyleKey] == cfg.legacyColorShiftStyleValue then
-            if key == cfg.colorShiftKey then
-                v = true
-            elseif key == cfg.colorShiftSpeedKey then
-                v = styleTable[cfg.legacyColorShiftSpeedKey]
-            elseif key == cfg.colorShiftColorKey then
-                v = styleTable[cfg.legacyColorShiftColorKey]
-            end
-        end
-        if v ~= nil then return v end
-        return default
-    end
-
-    if opts and opts.sectionLabel then
-        AddIndicatorSettingsHeading(container, opts.sectionLabel)
-    end
-
-    -- Alpha Pulse
-    local pulseCb = AceGUI:Create("CheckBox")
-    pulseCb:SetLabel("Alpha Pulse")
-    pulseCb:SetValue(resolve(cfg.pulseKey, false))
-    pulseCb:SetFullWidth(true)
-    pulseCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable[cfg.pulseKey] = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(pulseCb)
-
-    if resolve(cfg.pulseKey, false) then
-        local speedSlider = AceGUI:Create("Slider")
-        speedSlider:SetLabel("Pulse Duration")
-        speedSlider:SetSliderValues(0.1, 2.0, 0.05)
-        speedSlider:SetValue(resolve(cfg.pulseSpeedKey, 0.5))
-        speedSlider:SetFullWidth(true)
-        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[cfg.pulseSpeedKey] = val
-            refreshCallback()
-        end)
-        container:AddChild(speedSlider)
-    end
-
-    -- Color Shift
-    local shiftCb = AceGUI:Create("CheckBox")
-    shiftCb:SetLabel("Color Shift")
-    shiftCb:SetValue(resolve(cfg.colorShiftKey, false))
-    shiftCb:SetFullWidth(true)
-    shiftCb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable[cfg.colorShiftKey] = val
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(shiftCb)
-
-    if resolve(cfg.colorShiftKey, false) then
-        AddColorPicker(container, styleTable, cfg.colorShiftColorKey, "Shift Color", resolve(cfg.colorShiftColorKey, cfg.defaultShiftColor), true, refreshCallback, refreshCallback)
-
-        local shiftSpeedSlider = AceGUI:Create("Slider")
-        shiftSpeedSlider:SetLabel("Shift Duration")
-        shiftSpeedSlider:SetSliderValues(0.1, 2.0, 0.05)
-        shiftSpeedSlider:SetValue(resolve(cfg.colorShiftSpeedKey, 0.5))
-        shiftSpeedSlider:SetFullWidth(true)
-        shiftSpeedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[cfg.colorShiftSpeedKey] = val
-            refreshCallback()
-        end)
-        container:AddChild(shiftSpeedSlider)
-    end
-end
-
-local function BuildBarAuraPulseControls(container, styleTable, refreshCallback, opts)
-    BuildBarPulseControls(container, styleTable, refreshCallback, {
-        pulseKey = "barAuraPulseEnabled", pulseSpeedKey = "barAuraPulseSpeed",
-        colorShiftKey = "barAuraColorShiftEnabled", colorShiftSpeedKey = "barAuraColorShiftSpeed",
-        colorShiftColorKey = "barAuraColorShiftColor", defaultShiftColor = {1, 1, 1, 1},
-    }, opts or { sectionLabel = "Bar Effect" })
-end
-
-local function BuildPandemicBarPulseControls(container, styleTable, refreshCallback, opts)
-    BuildBarPulseControls(container, styleTable, refreshCallback, {
-        pulseKey = "pandemicBarPulseEnabled", pulseSpeedKey = "pandemicBarPulseSpeed",
-        colorShiftKey = "pandemicBarColorShiftEnabled", colorShiftSpeedKey = "pandemicBarColorShiftSpeed",
-        colorShiftColorKey = "pandemicBarColorShiftColor", defaultShiftColor = {1, 1, 1, 1},
-    }, opts)
-end
-
-local function BuildMaxStacksIndicatorAdvancedControls(container, styleTable, refreshCallback)
-    AddIndicatorSettingsHeading(container, "Border Indicator")
-
-    local currentStyle = NormalizeMaxStackIndicatorSettings(styleTable)
-    local styleDrop = AceGUI:Create("Dropdown")
-    styleDrop:SetLabel("Border Indicator")
-    styleDrop:SetList(MAX_STACK_BORDER_INDICATOR_OPTIONS, MAX_STACK_BORDER_INDICATOR_ORDER)
-    styleDrop:SetValue(currentStyle)
-    styleDrop:SetFullWidth(true)
-    styleDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        local oldStyle = NormalizeMaxStackIndicatorSettings(styleTable)
-        styleTable.maxStacksGlowStyle = val
-        ApplyBorderIndicatorDefaultSize(styleTable, "maxStacksGlowSize", oldStyle, val, 2, 8)
-        ApplyBorderIndicatorDefaultSpeed(styleTable, "maxStacksGlowSpeed", oldStyle, val, 0.5, 50)
-        refreshCallback()
-        RefreshStructuralControls(container)
-    end)
-    container:AddChild(styleDrop)
-
-    if currentStyle ~= "none" then
-        AddColorPicker(container, styleTable, "maxStacksGlowColor", "Border Color", {1, 0.84, 0, 0.9}, true,
-            refreshCallback, refreshCallback)
-
-        BuildGlowSliders(container, styleTable, currentStyle == "pixelGlow" and "pixel" or currentStyle == "solidBorder" and "solid" or currentStyle, {
-            size = "maxStacksGlowSize",
-            thickness = "maxStacksGlowThickness",
-            speed = "maxStacksGlowSpeed",
-            lines = "maxStacksGlowLines",
-            solidSizeDefault = 2,
-        }, refreshCallback, 2)
-    end
-
-    AddIndicatorSettingsHeading(container, "Bar Effect")
-    if currentStyle == "none" and RB.HasMaxStacksBarEffects(styleTable) then
-        AddColorPicker(container, styleTable, "maxStacksGlowColor", "Bar Effect Color", {1, 0.84, 0, 0.9}, true,
-            refreshCallback, refreshCallback)
-    end
-
-    BuildBarPulseControls(container, styleTable, refreshCallback, {
-        pulseKey = "maxStacksBarPulseEnabled", pulseSpeedKey = "maxStacksBarPulseSpeed",
-        colorShiftKey = "maxStacksBarColorShiftEnabled", colorShiftSpeedKey = "maxStacksBarColorShiftSpeed",
-        colorShiftColorKey = "maxStacksBarColorShiftColor", defaultShiftColor = {1, 1, 1, 1},
-        legacyColorShiftStyleKey = "maxStacksGlowStyle", legacyColorShiftStyleValue = "pulsingOverlay",
-        legacyColorShiftSpeedKey = "maxStacksGlowSpeed", legacyColorShiftColorKey = "maxStacksGlowColor",
-    })
 end
 
 local function BuildBarNameTextControls(container, styleTable, refreshCallback)
@@ -1852,8 +1257,6 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback)
         build = BuildReadyTextAdvanced,
     })
     readyAdvBtn:SetPoint("LEFT", readyColorPicker.colorSwatch, "RIGHT", readyColorPicker.text:GetStringWidth() + 8, 0)
-
-    AddColorPicker(container, styleTable, "textAuraColor", "Aura Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback)
 end
 
 ------------------------------------------------------------------------
@@ -1868,8 +1271,6 @@ ST._ClearActivePreviewBadgeButton = ClearActivePreviewBadgeButton
 ST._RefreshAdvancedSettingsPreviewButtons = RefreshActiveAdvancedPreviewToggleButtons
 ST._AddConditionalPreviewButton = AddConditionalPreviewButton
 ST._AddConditionalPreviewBadge = AddConditionalPreviewBadge
-ST._BuildAuraTextControls = BuildAuraTextControls
-ST._BuildAuraStackTextControls = BuildAuraStackTextControls
 ST._BuildKeybindTextControls = BuildKeybindTextControls
 ST._BuildChargeTextControls = BuildChargeTextControls
 ST._BuildBorderControls = BuildBorderControls
@@ -1881,22 +1282,13 @@ ST._BuildShowGCDSwipeControls = BuildShowGCDSwipeControls
 ST._BuildCooldownSwipeControls = BuildCooldownSwipeControls
 ST._BuildIconFillTimerControls = BuildIconFillTimerControls
 ST._BuildIconFillTimerAdvancedControls = BuildIconFillTimerAdvancedControls
-ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
-ST._BuildAuraDurationSwipeAdvancedControls = BuildAuraDurationSwipeAdvancedControls
 ST._BuildLossOfControlControls = BuildLossOfControlControls
 ST._BuildUnusableDimmingControls = BuildUnusableDimmingControls
 ST._BuildIconTintControls = BuildIconTintControls
 ST._BuildAssistedHighlightControls = BuildAssistedHighlightControls
 ST._BuildProcGlowControls = BuildProcGlowControls
-ST._BuildPandemicGlowControls = BuildPandemicGlowControls
-ST._BuildPandemicBarControls = BuildPandemicBarControls
-ST._BuildAuraIndicatorControls = BuildAuraIndicatorControls
 ST._BuildReadyGlowControls = BuildReadyGlowControls
 ST._BuildKeyPressHighlightControls = BuildKeyPressHighlightControls
-ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
-ST._BuildBarAuraPulseControls = BuildBarAuraPulseControls
-ST._BuildPandemicBarPulseControls = BuildPandemicBarPulseControls
-ST._BuildMaxStacksIndicatorAdvancedControls = BuildMaxStacksIndicatorAdvancedControls
 ST._BuildBarNameTextControls = BuildBarNameTextControls
 ST._BuildBarReadyTextControls = BuildBarReadyTextControls
 ST._BuildTextFontControls = BuildTextFontControls
