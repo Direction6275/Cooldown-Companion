@@ -176,6 +176,10 @@ end
 ------------------------------------------------------------------------
 local resourceBarCollapsedSections = {}
 
+local function CopyTableValue(value)
+    return type(value) == "table" and CopyTable(value) or value
+end
+
 local function GetCurrentConfigSpecID()
     local specIdx = C_SpecializationInfo.GetSpecialization()
     if specIdx then
@@ -575,6 +579,7 @@ end
 
 ST._RBP = {
     collapsedSections = resourceBarCollapsedSections,
+    CopyTableValue = CopyTableValue,
     GetConfigActiveResources = GetConfigActiveResources,
     GetConfigEditableResources = GetConfigEditableResources,
     GetResourceApplicableSpecIDs = GetResourceApplicableSpecIDs,

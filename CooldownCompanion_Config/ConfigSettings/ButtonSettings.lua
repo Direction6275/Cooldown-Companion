@@ -503,13 +503,6 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
 
 end
 
-local function BuildSpellSettings(scroll, buttonData, infoButtons)
-    -- Aura Tracking / Bar Panel Aura Display sections removed with the 12.1
-    -- aura teardown; kept as an (empty) builder because Panel.lua dispatches
-    -- to it for spell entries and surrounding sections build around it.
-    -- Charge text settings now live in group Appearance tab (with per-button overrides)
-end
-
 local function BuildItemSettings(scroll, buttonData, infoButtons)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
@@ -1358,7 +1351,6 @@ local function BuildCustomKeybindSection(scroll, buttonData)
 end
 
 -- Expose for Config.lua
-ST._BuildSpellSettings = BuildSpellSettings
 ST._BuildItemSettings = BuildItemSettings
 ST._BuildEquipItemSettings = BuildEquipItemSettings
 ST._BuildItemFallbacksTab = BuildItemFallbacksTab

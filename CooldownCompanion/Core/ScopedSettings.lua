@@ -1991,10 +1991,6 @@ function CooldownCompanion:GetPendingResourceBarConflictSummary()
     return BuildResourceBarConflictSummary(profile)
 end
 
-function CooldownCompanion:HasPendingResourceBarConflicts()
-    return #self:GetPendingResourceBarConflictSummary() > 0
-end
-
 function CooldownCompanion:GetPendingResourceBarConflictExportMessage()
     local summaries = self:GetPendingResourceBarConflictSummary()
     return FormatResourceBarConflictExportMessage(summaries)

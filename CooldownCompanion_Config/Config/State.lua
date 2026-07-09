@@ -299,7 +299,6 @@ ST._configState = {
     customBarSettingsTab = "appearance",
     selectedCustomBarId = nil,
     customBarSpecExpandedId = nil,
-    customBarIndicatorPreviewActive = nil,
     groupPresetSelection = {
         icons = nil,
         bars = nil,
@@ -313,7 +312,6 @@ ST._configState = {
     SetFontOutlineDropdownCallback = SetFontOutlineDropdownCallback,
     GetProfileWideFontPickerValue = GetProfileWideFontPickerValue,
     GetProfileWideFontOutlinePickerValue = GetProfileWideFontOutlinePickerValue,
-    GetBarTextureOptions = GetBarTextureOptions,
     SetupBarTextureDropdown = SetupBarTextureDropdown,
     SetBarTextureDropdownCallback = SetBarTextureDropdownCallback,
     GetProfileWideBarTexturePickerValue = GetProfileWideBarTexturePickerValue,
@@ -1860,15 +1858,6 @@ local function EnsureConfigRowHandlers(entry)
 end
 
 local function CleanRecycledEntry(entry)
-    local function CleanFrameButton(button)
-        if not button then return end
-        button:Hide()
-        button:ClearAllPoints()
-        button:SetScript("OnClick", nil)
-        button:SetScript("OnEnter", nil)
-        button:SetScript("OnLeave", nil)
-    end
-
     if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
     if entry._cdcModeBadgeHitRect then entry._cdcModeBadgeHitRect:Hide() end
     if entry.frame._cdcBadges then
@@ -1910,8 +1899,6 @@ local function CleanRecycledEntry(entry)
     entry._cdcAfterConfigRowLayout = nil
     entry.frame:SetScript("OnMouseUp", nil)
     entry.frame:SetScript("OnReceiveDrag", nil)
-    entry.frame._cdcOnMouseDown = nil
-    entry.frame._cdcLastClickTime = nil
     ClearConfigRowLayout(entry, true)
 end
 
@@ -2745,23 +2732,11 @@ local function SelectConfigButtonPanel(panelId, opts)
     end
 end
 
-local function ClearConfigCustomBarPreviewState()
-    if CS.customBarIndicatorPreviewActive and CooldownCompanion.StopResourceBarPreview then
-        CooldownCompanion:StopResourceBarPreview()
-    end
-end
-
-local function SetConfigCustomBarSettingsTab(tab, clearPreviewOnNonIndicator)
+local function SetConfigCustomBarSettingsTab(tab)
     CS.customBarSettingsTab = tab or "appearance"
-    if clearPreviewOnNonIndicator and CS.customBarSettingsTab ~= "indicators" then
-        ClearConfigCustomBarPreviewState()
-    end
 end
 
-local function ClearConfigCustomBarSelection(clearPreview, opts)
-    if clearPreview then
-        ClearConfigCustomBarPreviewState()
-    end
+local function ClearConfigCustomBarSelection(opts)
     CS.selectedCustomBarId = nil
     if opts and opts.clearExpanded then
         CS.customBarSpecExpandedId = nil
@@ -2773,14 +2748,11 @@ end
 local function SelectConfigCustomBar(customBarId, opts)
     local selectionChanged = CS.selectedCustomBarId ~= customBarId
     if opts and opts.toggle and not selectionChanged then
-        ClearConfigCustomBarSelection(opts.clearPreview)
+        ClearConfigCustomBarSelection()
         return true
     end
 
     ClearConfigResourceSelection()
-    if selectionChanged and opts and opts.clearPreview then
-        ClearConfigCustomBarPreviewState()
-    end
     CS.selectedCustomBarId = customBarId
     if opts and opts.resetTab then
         SetConfigCustomBarSettingsTab("appearance")
@@ -2803,7 +2775,6 @@ local function ToggleConfigCustomBarMultiSelect(customBarId)
     if CS.selectedCustomBarId and not CS.selectedCustomBars[CS.selectedCustomBarId] and next(CS.selectedCustomBars) then
         CS.selectedCustomBars[CS.selectedCustomBarId] = true
     end
-    ClearConfigCustomBarPreviewState()
 end
 
 local function SetConfigResourceSettingsSpecID(specID)
@@ -2836,7 +2807,6 @@ local function SelectConfigResource(powerType, opts)
         return true
     end
 
-    ClearConfigCustomBarPreviewState()
     CS.selectedCustomBarId = nil
     CS.customBarSpecExpandedId = nil
     wipe(CS.selectedCustomBars)
@@ -3290,7 +3260,6 @@ ST._ToggleConfigPanelMultiSelect = ToggleConfigPanelMultiSelect
 ST._SelectConfigButton = SelectConfigButton
 ST._SelectConfigRotationAssistantEntry = SelectConfigRotationAssistantEntry
 ST._SelectConfigButtonPanel = SelectConfigButtonPanel
-ST._ClearConfigCustomBarPreviewState = ClearConfigCustomBarPreviewState
 ST._SetConfigCustomBarSettingsTab = SetConfigCustomBarSettingsTab
 ST._ClearConfigCustomBarSelection = ClearConfigCustomBarSelection
 ST._SelectConfigCustomBar = SelectConfigCustomBar

@@ -1223,12 +1223,6 @@ local function RefreshColumn1(preserveDrag)
             end
         end)
 
-        -- Tag entry frame with metadata for drag system
-        entry.frame._cdcItemKind = "container"
-        entry.frame._cdcGroupId = containerId
-        entry.frame._cdcInFolder = inFolder and container.folderId or nil
-        entry.frame._cdcSection = sectionTag
-
         TrackRenderedRow({
             kind = "container",
             id = containerId,
@@ -1293,10 +1287,8 @@ local function RefreshColumn1(preserveDrag)
         CS.col1Scroll:AddChild(entry)
         SetupFolderRowIndicators(entry, folder)
 
-        -- Tag entry frame with metadata for drag system
-        entry.frame._cdcItemKind = "folder"
+        -- Tag entry frame for the drag system's folder-row alpha pass
         entry.frame._cdcFolderId = folderId
-        entry.frame._cdcSection = sectionTag
 
         local collapseBtn = entry.frame._cdcCollapseBtn
         if not collapseBtn then

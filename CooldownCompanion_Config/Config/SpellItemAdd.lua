@@ -39,14 +39,6 @@ local function SelectNewButton(panelId, buttonIndex)
     SelectConfigButton(panelId, buttonIndex, { force = true })
 end
 
-local function IsTexturePanelTarget(groupId)
-    local group = groupId and CooldownCompanion.db
-        and CooldownCompanion.db.profile
-        and CooldownCompanion.db.profile.groups
-        and CooldownCompanion.db.profile.groups[groupId]
-    return group and group.displayMode == "textures"
-end
-
 local function IsTriggerPanelTarget(groupId)
     local group = groupId and CooldownCompanion.db
         and CooldownCompanion.db.profile

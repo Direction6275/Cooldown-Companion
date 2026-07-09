@@ -1561,7 +1561,6 @@ local function SelectPreviewSlot(slot)
 
     if slot.kind == "custom" and slot.customBarId ~= nil and ST._SelectConfigCustomBar then
         ST._SelectConfigCustomBar(slot.customBarId, {
-            clearPreview = true,
             toggle = true,
         })
         return true

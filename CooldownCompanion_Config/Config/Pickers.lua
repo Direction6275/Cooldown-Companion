@@ -40,13 +40,6 @@ local function IsAccessibleNumber(value)
     return true
 end
 
-local function IsAccessibleString(value)
-    if type(value) ~= "string" then return false end
-    if issecretvalue and issecretvalue(value) then return false end
-    if canaccessvalue and not canaccessvalue(value) then return false end
-    return true
-end
-
 local function IsShownSafe(region)
     if not region or not region.IsShown then return false end
     if region.IsForbidden and region:IsForbidden() then return false end
@@ -430,7 +423,6 @@ end
 ------------------------------------------------------------------------
 -- Helper: Check if a spell is in CDM Essential or Utility categories
 ------------------------------------------------------------------------
-local IsSpellInCDMCooldown = ST.IsSpellInCDMCooldown
 
 ------------------------------------------------------------------------
 -- Helper: Detect passive or proc spells (zero-cooldown CDM-tracked spells)
@@ -484,7 +476,6 @@ end
 -- ST._ exports
 ------------------------------------------------------------------------
 ST._IsSpellInCDMBuffBar = IsSpellInCDMBuffBar
-ST._IsSpellInCDMCooldown = IsSpellInCDMCooldown
 ST._IsPassiveOrProc = IsPassiveOrProc
 ST._IsNeverTrackableSpell = IsNeverTrackableSpell
 ST._ShouldSuppressSpellbookEntry = ShouldSuppressSpellbookEntry

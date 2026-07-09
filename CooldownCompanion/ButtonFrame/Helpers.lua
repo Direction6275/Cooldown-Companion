@@ -111,19 +111,6 @@ CooldownCompanion.DURATION_FORMAT_DECIMAL_UNDER_60 = DURATION_FORMAT_DECIMAL_UND
 
 local secondsFormatterCache = {}
 local durationTextFormatterCache = {}
-local durationTextBindingCounters = {
-    bindAttempts = 0,
-    bindSuccesses = 0,
-    bindingsCreated = 0,
-    bindingsReused = 0,
-    formatterUpdates = 0,
-    durationUpdates = 0,
-    unbinds = 0,
-    unsupported = 0,
-    manualUpdates = 0,
-    manualUpdatesBySurface = {},
-    nativeBindsBySurface = {},
-}
 
 local function NormalizeDurationFormat(value, decimalTimers)
     if DURATION_FORMAT_SET[value] then
@@ -233,38 +220,6 @@ local function GetDurationSecretFormatSpec(source)
     return "%.0f"
 end
 CooldownCompanion.GetDurationSecretFormatSpec = GetDurationSecretFormatSpec
-
-local function IncrementDurationTextCounter(key, surface)
-    durationTextBindingCounters[key] = (durationTextBindingCounters[key] or 0) + 1
-    if surface then
-        local bySurfaceKey = key == "manualUpdates" and "manualUpdatesBySurface" or "nativeBindsBySurface"
-        local bySurface = durationTextBindingCounters[bySurfaceKey]
-        bySurface[surface] = (bySurface[surface] or 0) + 1
-    end
-end
-
-function CooldownCompanion:GetDurationTextBindingDebugCounters()
-    return durationTextBindingCounters
-end
-
-function CooldownCompanion:ResetDurationTextBindingDebugCounters()
-    for key, value in pairs(durationTextBindingCounters) do
-        if type(value) == "table" then
-            for childKey in pairs(value) do
-                value[childKey] = nil
-            end
-        else
-            durationTextBindingCounters[key] = 0
-        end
-    end
-    for key in pairs(durationTextFormatterCache) do
-        durationTextFormatterCache[key] = nil
-    end
-end
-
-function CooldownCompanion.RecordDurationTextManualUpdate(surface)
-    IncrementDurationTextCounter("manualUpdates", surface)
-end
 
 local function GetDurationTextRoundingDown()
     return GetEnumValue("NumericRuleFormatRounding", "Down", 2)
@@ -407,7 +362,6 @@ local function UnbindDurationText(fontString, clearText)
     local wasActive = fontString._ccDurationTextBindingActive
     if binding and wasActive and type(binding.Disable) == "function" then
         binding:Disable()
-        IncrementDurationTextCounter("unbinds")
     end
 
     fontString._ccDurationTextBindingActive = nil
@@ -419,18 +373,14 @@ local function UnbindDurationText(fontString, clearText)
 end
 CooldownCompanion.UnbindDurationText = UnbindDurationText
 
-local function BindDurationText(fontString, durationObj, source, surface)
-    IncrementDurationTextCounter("bindAttempts")
-
+local function BindDurationText(fontString, durationObj, source)
     if not (fontString and durationObj and IsDurationTextBindingSupported()) then
-        IncrementDurationTextCounter("unsupported")
         UnbindDurationText(fontString, true)
         return false
     end
 
     local formatter, formatKey = GetDurationTextFormatter(source)
     if not formatter then
-        IncrementDurationTextCounter("unsupported")
         UnbindDurationText(fontString, true)
         return false
     end
@@ -439,7 +389,6 @@ local function BindDurationText(fontString, durationObj, source, surface)
     if not binding then
         binding = C_DurationUtil.CreateDurationTextBinding()
         if not DurationTextBindingHasMethods(binding) then
-            IncrementDurationTextCounter("unsupported")
             UnbindDurationText(fontString, true)
             return false
         end
@@ -450,21 +399,17 @@ local function BindDurationText(fontString, durationObj, source, surface)
         binding:SetUpdateInterval(0.1)
         fontString._ccDurationTextBinding = binding
         fontString._ccDurationTextBindingReady = true
-        IncrementDurationTextCounter("bindingsCreated")
     elseif not fontString._ccDurationTextBindingReady and not DurationTextBindingHasMethods(binding) then
-        IncrementDurationTextCounter("unsupported")
         UnbindDurationText(fontString, true)
         return false
     else
         fontString._ccDurationTextBindingReady = true
-        IncrementDurationTextCounter("bindingsReused")
     end
 
     local changed = false
     if fontString._ccDurationTextFormatterKey ~= formatKey then
         binding:SetFormatter(formatter)
         fontString._ccDurationTextFormatterKey = formatKey
-        IncrementDurationTextCounter("formatterUpdates")
         changed = true
     end
 
@@ -472,7 +417,6 @@ local function BindDurationText(fontString, durationObj, source, surface)
     if fontString._ccDurationTextDuration ~= durationObj then
         binding:SetDuration(durationObj)
         fontString._ccDurationTextDuration = durationObj
-        IncrementDurationTextCounter("durationUpdates")
         changed = true
     end
 
@@ -484,7 +428,6 @@ local function BindDurationText(fontString, durationObj, source, surface)
         binding:UpdateFontString()
     end
     fontString._ccDurationTextBindingActive = true
-    IncrementDurationTextCounter("bindSuccesses", surface)
     return true
 end
 CooldownCompanion.BindDurationText = BindDurationText

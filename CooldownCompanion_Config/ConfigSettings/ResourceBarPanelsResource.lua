@@ -101,6 +101,7 @@ local thresholdTickEditorErrors = {}
 -- Imports from ResourceBarPanelsHelpers
 local RBP = ST._RBP
 local resourceBarCollapsedSections = RBP.collapsedSections
+local CopyTableValue = RBP.CopyTableValue
 local BuildResourceBarConflictGate = RBP.BuildResourceBarConflictGate
 local GetConfigActiveResources = RBP.GetConfigActiveResources
 local GetCurrentConfigSpecID = RBP.GetCurrentConfigSpecID
@@ -131,10 +132,6 @@ local function EnsureResourceLayoutAnchor(settings, layout)
     if layout.independentWidth == nil then
         layout.independentWidth = settings.independentWidth
     end
-end
-
-local function CopyTableValue(value)
-    return type(value) == "table" and CopyTable(value) or value
 end
 
 local function SeedSpecResourceDisplaySettings(settings, powerType, specID, keys)

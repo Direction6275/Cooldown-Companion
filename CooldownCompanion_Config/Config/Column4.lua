@@ -460,7 +460,7 @@ local function RefreshColumn4(container)
                         tabGroup:SetLayout("Fill")
                         tabGroup.frame:SetParent(container)
                         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
-                            SetConfigCustomBarSettingsTab(tab, true)
+                            SetConfigCustomBarSettingsTab(tab)
                             ClearInfoButtons(CS.customBarInfoButtons)
                             widget:ReleaseChildren()
 

@@ -11,7 +11,6 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 local IsPassiveOrProc = ST._IsPassiveOrProc
 local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
-local ClearCustomBarPreviewState = ST._ClearConfigCustomBarPreviewState
 local SelectConfigCustomBar = ST._SelectConfigCustomBar
 local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
 
@@ -88,10 +87,7 @@ local ResolveAuraBarAutocompleteEntry = RBP.ResolveAuraBarAutocompleteEntry
 local ShowAuraBarAutocompleteResults = RBP.ShowAuraBarAutocompleteResults
 local BuildAuraBarAutocompleteCache = RBP.BuildAuraBarAutocompleteCache
 local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
-
-local function CopyTableValue(value)
-    return type(value) == "table" and CopyTable(value) or value
-end
+local CopyTableValue = RBP.CopyTableValue
 
 ------------------------------------------------------------------------
 -- Custom Bars detail panel
@@ -337,9 +333,6 @@ local function AddCustomBarSpecFilterControls(container, settings, entry, curren
                 if RB.RemoveCustomBarFromSpec then
                     RB.RemoveCustomBarFromSpec(settings, entry, spec.id)
                 end
-                if spec.id == currentSpecID then
-                    ClearCustomBarPreviewState()
-                end
             end
             ApplyCustomAuraBarPanelChanges({
                 updateAnchors = true,
@@ -576,7 +569,6 @@ local function OpenCustomBarRowMenu(customBars, specID, customBarId, entry)
             local newId = DuplicateCustomBarById(CooldownCompanion:GetResourceBarSettings(), specID, customBars, customBarId)
             if newId then
                 SelectConfigCustomBar(newId, {
-                    clearPreview = true,
                     resetTab = true,
                 })
             end
@@ -614,7 +606,7 @@ local function OpenCustomBarRowMenu(customBars, specID, customBarId, entry)
             local settings = CooldownCompanion:GetResourceBarSettings()
             if DeleteCustomBarById(settings, specID, customBars, customBarId) then
                 if CS.selectedCustomBarId == customBarId then
-                    ClearConfigCustomBarSelection(true)
+                    ClearConfigCustomBarSelection()
                 end
                 if CS.customBarSpecExpandedId == customBarId then
                     CS.customBarSpecExpandedId = nil
@@ -1165,7 +1157,6 @@ local function BuildCustomBarsListPanel(container)
             end
             if mouseButton == "RightButton" then
                 local selectionChanged = ST._SelectConfigCustomBar(customBarId, {
-                    clearPreview = true,
                     clearButtonMulti = true,
                 })
                 if selectionChanged then
@@ -1180,7 +1171,6 @@ local function BuildCustomBarsListPanel(container)
                 end
 
                 ST._SelectConfigCustomBar(customBarId, {
-                    clearPreview = true,
                     toggle = true,
                 })
                 CooldownCompanion:RefreshConfigPanel()

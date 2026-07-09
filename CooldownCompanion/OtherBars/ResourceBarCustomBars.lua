@@ -62,7 +62,6 @@ local LayoutOverlaySegments = RB.LayoutOverlaySegments
 local FormatTime = CooldownCompanion.FormatTime
 local BindDurationText = CooldownCompanion.BindDurationText or function() return false end
 local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
-local RecordDurationTextManualUpdate = CooldownCompanion.RecordDurationTextManualUpdate or function() end
 local SetAuraStackCountText = EntryRuntime.SetAuraStackCountText
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
@@ -71,12 +70,9 @@ local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
 local SetStatusBarElapsedDuration = ST.SetStatusBarElapsedDuration
 local SetStatusBarRemainingDuration = ST.SetStatusBarRemainingDuration
 
-local function SetManualDurationText(fontString, text, countManualDurationText)
+local function SetManualDurationText(fontString, text)
     if not fontString then return end
     UnbindDurationText(fontString)
-    if countManualDurationText then
-        RecordDurationTextManualUpdate("resource")
-    end
     fontString:SetText(text)
 end
 
@@ -323,16 +319,16 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             -- Duration text (bar.text): driven by showDurationText, independent of drain
             if bar.text and bar.text:IsShown() then
                 if durationObj then
-                    BindDurationText(bar.text, durationObj, cabConfig, "resource")
+                    BindDurationText(bar.text, durationObj, cabConfig)
                 elseif auraCooldownStart and auraCooldownDuration and auraCooldownDuration > 0 then
                     local remaining = auraCooldownStart + auraCooldownDuration - GetTime()
                     if remaining > 0 then
-                        SetManualDurationText(bar.text, FormatTime(remaining, cabConfig), true)
+                        SetManualDurationText(bar.text, FormatTime(remaining, cabConfig))
                     else
                         SetManualDurationText(bar.text, "")
                     end
                 elseif indicatorPreview then
-                    SetManualDurationText(bar.text, FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig), true)
+                    SetManualDurationText(bar.text, FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig))
                 else
                     SetManualDurationText(bar.text, "")
                 end
@@ -587,9 +583,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
             if bar.text and bar.text:IsShown() then
                 if auraDurationObj then
-                    BindDurationText(bar.text, auraDurationObj, cabConfig, "resource")
+                    BindDurationText(bar.text, auraDurationObj, cabConfig)
                 elseif auraPreview or pandemicPreview then
-                    SetManualDurationText(bar.text, FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig), true)
+                    SetManualDurationText(bar.text, FormatTime(CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION, cabConfig))
                 else
                     SetManualDurationText(bar.text, "")
                 end
@@ -629,7 +625,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         if bar.text and bar.text:IsShown() then
             if cooldownActive and durationObj then
-                BindDurationText(bar.text, durationObj, cabConfig, "resource")
+                BindDurationText(bar.text, durationObj, cabConfig)
             else
                 SetManualDurationText(bar.text, "")
             end

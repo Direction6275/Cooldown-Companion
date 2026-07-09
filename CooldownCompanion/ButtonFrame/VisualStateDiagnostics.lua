@@ -468,10 +468,6 @@ local function CaptureButtonVisualStateDiagnostics(addon, options)
     return result
 end
 
-function CooldownCompanion:CollectButtonVisualStateDiagnostics(options)
-    return CollectButtonVisualStateDiagnostics(self, options)
-end
-
 function CooldownCompanion:CaptureButtonVisualStateDiagnostics(options)
     return CaptureButtonVisualStateDiagnostics(self, options)
 end

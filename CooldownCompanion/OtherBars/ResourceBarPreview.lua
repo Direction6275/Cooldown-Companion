@@ -392,10 +392,6 @@ function RB.CreateResourceBarPreviewModule(deps)
     end
 
     function CooldownCompanion:StopResourceBarPreview()
-        local state = ST._configState
-        if state then
-            state.customBarIndicatorPreviewActive = nil
-        end
         if not GetPreviewActive() then return end
         SetPreviewActive(false)
         wipe(HEALTH_EFFECTS.preview)

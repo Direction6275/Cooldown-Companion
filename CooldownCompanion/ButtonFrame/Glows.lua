@@ -977,7 +977,6 @@ ST._HideGlowStyles = HideGlowStyles
 ST._ShowGlowStyle = ShowGlowStyle
 ST._CreateGlowContainer = CreateGlowContainer
 ST._CreateAssistedHighlight = CreateAssistedHighlight
-ST._GetViewerAuraStackText = GetViewerAuraStackText
 ST._ShowButtonTooltip = ShowButtonTooltip
 ST._SetupTooltipScripts = SetupTooltipScripts
 ST.IsBarAuraIndicatorEnabled = IsBarAuraIndicatorEnabled

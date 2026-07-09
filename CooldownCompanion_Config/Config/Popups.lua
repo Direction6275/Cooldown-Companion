@@ -892,7 +892,7 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_CUSTOM_BARS"] = {
             for _, customBarId in ipairs(data.ids) do
                 rb.DeleteCustomBar(settings, customBarId)
             end
-            ClearConfigCustomBarSelection(true, { clearExpanded = true })
+            ClearConfigCustomBarSelection({ clearExpanded = true })
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:UpdateAnchorStacking()
             CooldownCompanion:RefreshConfigPanel()

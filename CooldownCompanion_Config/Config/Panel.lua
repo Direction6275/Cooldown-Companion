@@ -2067,9 +2067,7 @@ local function CreateConfigPanel()
             if group.displayMode == "trigger" then
                 ST._BuildTriggerConditionSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
             else
-                if buttonData.type == "spell" then
-                    ST._BuildSpellSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-                elseif buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
+                if buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
                     ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
                 elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
                     ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
