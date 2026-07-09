@@ -965,7 +965,7 @@ local function PreparePooledButtonForUse(self, frame, group, button, index, butt
     if self.UpdateButtonIcon then
         self:UpdateButtonIcon(button)
     end
-    if group and (group.displayMode == "textures" or group.displayMode == "trigger") then
+    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         button:SetAlpha(0)
         button._lastVisAlpha = 0
     else
@@ -1289,7 +1289,7 @@ local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, 
 end
 
 local function GetCursorAnchoredStandaloneHost(frame, group)
-    if not (frame and group and (group.displayMode == "textures" or group.displayMode == "trigger")) then
+    if not (frame and CooldownCompanion:IsStandaloneTexturePanelGroup(group)) then
         return nil
     end
 
@@ -1341,7 +1341,7 @@ local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
     end
 
     local selected = active and IsCursorAnchorLayoutPreviewSelected(self, groupId)
-    local isStandaloneDisplay = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
 
     if active then
         if not (InCombatLockdown() and frame:IsProtected()) then
@@ -1455,7 +1455,7 @@ local function BeginCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId)
     if not (frame and group and IsCursorAnchor(group.anchor)) then
         return false
     end
-    if group.displayMode == "textures" or group.displayMode == "trigger" then
+    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         return false
     end
     if not IsCursorAnchorLayoutPreviewSelected(self, groupId) then
@@ -1833,7 +1833,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
 
     -- Make it movable when unlocked. Texture panels use direct texture dragging
     -- instead of the standard panel drag handle.
-    local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
     frame:SetMovable(true)
     frame:EnableMouse((not isLocked) and (not isTextureMode))
     frame:RegisterForDrag("LeftButton")
@@ -2283,7 +2283,7 @@ local function GetButtonDimensions(group, buttonUsabilityOptions, groupId)
     local style = group.style or {}
     local isBarMode = group.displayMode == "bars"
     local isTextMode = group.displayMode == "text"
-    local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
     local w, h
     if isTextureMode then
         w, h = 1, 1
@@ -2525,7 +2525,6 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
     local isBarMode = group.displayMode == "bars"
     local style = group.style or {}
-    local isTriggerMode = group.displayMode == "trigger"
     local sourceButtons = GetRuntimeGroupButtonList(self, frame, group)
 
     -- Release existing buttons into bounded per-frame pools.
@@ -2553,7 +2552,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
                     button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle)
                 else
                     button = self:CreateButtonFrame(frame, i, buttonData, effectiveStyle)
-                    if group.displayMode == "textures" or isTriggerMode then
+                    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
                         button:SetAlpha(0)
                         button._lastVisAlpha = 0
                     end
@@ -2820,7 +2819,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
 
     -- Update drag handle text and lock state
     local hasButtons = self:IsRotationAssistantGroup(group) or #group.buttons > 0
-    local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     local isCursorLayoutPreviewSelected = isCursorAnchored
         and IsCursorAnchorLayoutPreviewSelected(self, groupId)
@@ -2867,7 +2866,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     end
 
     if isActive
-        and (group.displayMode == "textures" or group.displayMode == "trigger")
+        and CooldownCompanion:IsStandaloneTexturePanelGroup(group)
         and self.UpdateAuraTextureVisual
         and frame
         and frame.buttons
@@ -3145,7 +3144,6 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
 
     local style = group.style or {}
     local isTextMode = group.displayMode == "text"
-    local isTriggerMode = group.displayMode == "trigger"
     local headerHeight = ApplyTextGroupHeader(self, frame, group, style, isTextMode)
 
     for visibleIndex = 1, entries.count do
@@ -3154,7 +3152,7 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
         if button.UpdateStyle then
             button:UpdateStyle(entry.style)
         end
-        if group.displayMode == "textures" or isTriggerMode then
+        if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
             button:SetAlpha(0)
             button._lastVisAlpha = 0
         end
@@ -3172,7 +3170,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     if not frame or not group then return end
 
     local isLocked = GetContainerState(groupId)
-    local isTextureMode = group.displayMode == "textures" or group.displayMode == "trigger"
+    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     local isCursorLayoutPreviewSelected = isCursorAnchored
         and IsCursorAnchorLayoutPreviewSelected(self, groupId)
@@ -3576,7 +3574,7 @@ function CooldownCompanion:StartContainerPreviewMemberDrag(containerId, groupId)
     end
     self:StartContainerMemberPreviewTracking(containerId, groupId)
 
-    if group.displayMode == "textures" or group.displayMode == "trigger" then
+    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         if self.StartGroupedStandalonePreviewHostDrag and self:StartGroupedStandalonePreviewHostDrag(groupId, containerId) then
             return true
         end
@@ -3603,7 +3601,7 @@ function CooldownCompanion:StopContainerPreviewMemberDrag(containerId, groupId)
         return
     end
 
-    if group.displayMode == "textures" or group.displayMode == "trigger" then
+    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         if self.StopGroupedStandalonePreviewHostDrag then
             self:StopGroupedStandalonePreviewHostDrag(groupId, containerId)
         end
@@ -3676,7 +3674,7 @@ end
 local function GetContainerMemberDisplayRect(self, containerFrame, groupId, group)
     local groupFrame = self.groupFrames and self.groupFrames[groupId]
     local rect = nil
-    local isStandaloneDisplay = group and (group.displayMode == "textures" or group.displayMode == "trigger")
+    local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
 
     if isStandaloneDisplay then
         local driverButton = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
@@ -3821,7 +3819,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     for labelIndex, rect in ipairs(previewRects) do
         local isSelected = selectedGroupId == rect.groupId
         local isHovered = hoveredGroupId == rect.groupId
-        local isStandaloneDisplay = rect.group and (rect.group.displayMode == "textures" or rect.group.displayMode == "trigger")
+        local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(rect.group)
 
         local overlay = EnsureContainerMemberOverlay(frame, labelIndex)
         usedOverlayIndices[labelIndex] = true
@@ -3880,7 +3878,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         local groupId = panelInfo.groupId
         local groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
         local isSelected = selectedGroupId == groupId and previewedGroupIds[groupId]
-        local isStandaloneDisplay = group and (group.displayMode == "textures" or group.displayMode == "trigger")
+        local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
         local isCursorAnchored = group and IsCursorAnchor(group.anchor)
 
         if groupFrame and not isStandaloneDisplay then

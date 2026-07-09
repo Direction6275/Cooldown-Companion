@@ -456,20 +456,20 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
             -- F2 canary: secret remaining text is still a time-driven render,
             -- and the combat ticker floor skips in combat too -- this branch
             -- must feed the false-idle canary like the readable one below.
-            if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
+            RefreshTelemetry:NoteTimeRender()
             durationIsSecret = true
             durationRemaining = rem
         elseif rem and rem > 0 then
             -- F2 canary: spell-cooldown / aura remaining text is drawn from the
             -- duration object this walk (covered by the _cooldownState ==
             -- COOLDOWN / _auraActive classifier terms).
-            if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
+            RefreshTelemetry:NoteTimeRender()
             durationRemaining = rem
         end
     elseif not auraActive and button._itemCdStart and button._itemCdDuration and button._itemCdDuration > 0 then
         -- F2 canary: item cooldown text remaining is drawn this walk (covered by
         -- the _cooldownState == COOLDOWN classifier term).
-        if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
+        RefreshTelemetry:NoteTimeRender()
         local now = GetTime()
         local elapsed = now - button._itemCdStart
         local rem = button._itemCdDuration - elapsed

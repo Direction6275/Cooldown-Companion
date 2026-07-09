@@ -390,7 +390,7 @@ local function ResolveIconFillPreviewRemaining(button)
 
     -- F2 canary: past the guard, an icon-fill conditional-preview remaining is
     -- computed this walk (covered by the conditionalPreview classifier term).
-    if RefreshTelemetry and RefreshTelemetry.enabled then RefreshTelemetry:NoteTimeRender() end
+    RefreshTelemetry:NoteTimeRender()
     local remaining
     if button._conditionalPreviewLoop
         and button._conditionalPreviewLoopStartTime
@@ -1481,8 +1481,7 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
         -- OFF edge is walk-evaluated (covered by the ready-glow window
         -- classifier term). durationWindow is reset on every resolve, so this
         -- cannot read a stale flag.
-        if showReady and readyIntent.durationWindow == true
-            and RefreshTelemetry and RefreshTelemetry.enabled then
+        if showReady and readyIntent.durationWindow == true then
             RefreshTelemetry:NoteTimeRender()
         end
         SetReadyGlow(button, showReady)

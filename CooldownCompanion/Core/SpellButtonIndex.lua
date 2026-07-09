@@ -61,7 +61,6 @@ local index = {
     generation = 0,
 }
 
-local pendingRebuildToken = 0
 local pendingRebuildReason = nil
 
 -- Shared key derivation, used by both the rebuild and the self-checks so a
@@ -134,21 +133,14 @@ function CooldownCompanion:RebuildSpellButtonIndex(reason)
     index.keyCount = 0
     index.excludedCount = 0
 
-    for _, frame in pairs(self.groupFrames) do
-        if frame and frame.buttons then
-            for _, button in ipairs(frame.buttons) do
-                local buttonData = button.buttonData
-                if buttonData then
-                    if buttonData._rotationAssistantVirtual == true then
-                        index.excludedCount = index.excludedCount + 1
-                    else
-                        index.buttonCount = index.buttonCount + 1
-                        ForEachIdentityKey(button, buttonData, AddIndexKey)
-                    end
-                end
-            end
+    self:ForEachButton(function(button, buttonData)
+        if buttonData._rotationAssistantVirtual == true then
+            index.excludedCount = index.excludedCount + 1
+        else
+            index.buttonCount = index.buttonCount + 1
+            ForEachIdentityKey(button, buttonData, AddIndexKey)
         end
-    end
+    end)
 
     index.rebuildCount = index.rebuildCount + 1
     index.generation = index.generation + 1
@@ -158,13 +150,15 @@ end
 
 -- Coalesced next-frame rebuild request. Structural paths can fire several
 -- requests in one action (e.g. RefreshAllGroups repopulating every group);
--- they collapse into one rebuild. Never called from the per-tick walk.
+-- they collapse into one rebuild: only the nil->pending transition schedules
+-- a timer, and the first reason is kept (it names what armed the rebuild).
+-- Never called from the per-tick walk.
 function CooldownCompanion:RequestSpellButtonIndexRebuild(reason)
-    pendingRebuildReason = reason or pendingRebuildReason or "unspecified"
-    pendingRebuildToken = pendingRebuildToken + 1
-    local token = pendingRebuildToken
+    if pendingRebuildReason ~= nil then
+        return
+    end
+    pendingRebuildReason = reason or "unspecified"
     C_Timer.After(0, function()
-        if pendingRebuildToken ~= token then return end
         local rebuildReason = pendingRebuildReason
         pendingRebuildReason = nil
         CooldownCompanion:RebuildSpellButtonIndex(rebuildReason)
@@ -187,17 +181,15 @@ function CooldownCompanion:IsSpellButtonIndexRebuildPending()
 end
 
 -- Shared fire->buttons resolution used by the live router (F1 3b).
--- callback(button) runs once per button indexed under this readable spellID;
--- returns true when at least one button is indexed.
+-- callback(button) runs once per button indexed under this readable spellID.
 function CooldownCompanion:ForEachIndexedSpellButton(spellID, callback)
     local bucket = index.spell[spellID]
     if not bucket then
-        return false
+        return
     end
     for _, button in ipairs(bucket) do
         callback(button)
     end
-    return true
 end
 
 local function DescribeButton(button)
@@ -253,16 +245,11 @@ function CooldownCompanion:VerifySpellButtonIndex(spellID)
             expectedCount = expectedCount + 1
         end
     end
-    for _, frame in pairs(self.groupFrames) do
-        if frame and frame.buttons then
-            for _, button in ipairs(frame.buttons) do
-                local buttonData = button.buttonData
-                if buttonData and buttonData._rotationAssistantVirtual ~= true then
-                    ForEachIdentityKey(button, buttonData, CollectMatch)
-                end
-            end
+    self:ForEachButton(function(button, buttonData)
+        if buttonData._rotationAssistantVirtual ~= true then
+            ForEachIdentityKey(button, buttonData, CollectMatch)
         end
-    end
+    end)
 
     local missing, extra = 0, 0
     local bucket = index.spell[spellID]
@@ -328,17 +315,12 @@ function CooldownCompanion:VerifySpellButtonIndexAll()
         end
     end
 
-    for _, frame in pairs(self.groupFrames) do
-        if frame and frame.buttons then
-            for _, button in ipairs(frame.buttons) do
-                local buttonData = button.buttonData
-                if buttonData and buttonData._rotationAssistantVirtual ~= true then
-                    liveButtons = liveButtons + 1
-                    ForEachIdentityKey(button, buttonData, CheckLiveKey)
-                end
-            end
+    self:ForEachButton(function(button, buttonData)
+        if buttonData._rotationAssistantVirtual ~= true then
+            liveButtons = liveButtons + 1
+            ForEachIdentityKey(button, buttonData, CheckLiveKey)
         end
-    end
+    end)
 
     -- Reverse check: every indexed link must exist in the fresh derivation.
     for _, kind in ipairs({ "spell", "item", "slot" }) do

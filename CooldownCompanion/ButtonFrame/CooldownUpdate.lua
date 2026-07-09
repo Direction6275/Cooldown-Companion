@@ -620,11 +620,30 @@ end
 -- every mode.
 -- Discrete edges (cooldown start/end) stay event-covered; the skip only
 -- suppresses the redundant continuous middle.
+-- Pin the ticker: this pass saw time-driven state, so the next tick must walk
+-- and idle-skip eligibility is lost. term (optional) names the forcing term
+-- for the dev-gated attribution counters.
+local function PinTickerForce(term)
+    CooldownCompanion._passTimeStateSeen = true
+    CooldownCompanion._tickerIdleEligible = false
+    if term then
+        CooldownCompanion:CountTickerForce(term)
+    end
+end
+
 local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, floorFailOpen)
+    local telemetryOn = RefreshTelemetry and RefreshTelemetry.enabled
     local charge = button._chargeRecharging and true or false   -- charge recharge (charge-color heuristic, walk-driven)
     local preview = conditionalPreview ~= nil                   -- conditional visual preview active
-    local readyGlow = HasPendingReadyGlowWindow(button, now)    -- finite ready-glow window still running
-    local forced = charge or preview or readyGlow
+    local readyGlow, forced
+    if telemetryOn then
+        -- Attribution needs every term evaluated so the counters can name
+        -- each one that pinned the walk.
+        readyGlow = HasPendingReadyGlowWindow(button, now)      -- finite ready-glow window still running
+        forced = charge or preview or readyGlow
+    else
+        forced = charge or preview or HasPendingReadyGlowWindow(button, now)
+    end
 
     local text = false
     if not forced then
@@ -648,11 +667,10 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
     end
 
     if forced then
-        CooldownCompanion._passTimeStateSeen = true
-        CooldownCompanion._tickerIdleEligible = false
+        PinTickerForce()
         -- Forcing attribution (dev-gated, observe-only): name the term(s) that
         -- pinned this walk. Inert without the CC_DevBridge dev addon.
-        if RefreshTelemetry and RefreshTelemetry.enabled then
+        if telemetryOn then
             if charge then RefreshTelemetry:CountForce("charge") end
             if preview then RefreshTelemetry:CountForce("preview") end
             if readyGlow then RefreshTelemetry:CountForce("ready-glow") end
@@ -1405,9 +1423,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- pin the ticker here for hideWhileUnusable (the walk is what re-shows the
             -- button when usability flips).
             if floorFailOpen then
-                CooldownCompanion._passTimeStateSeen = true
-                CooldownCompanion._tickerIdleEligible = false
-                CooldownCompanion:CountTickerForce(floorFailOpen)
+                PinTickerForce(floorFailOpen)
             end
             return  -- Skip all visual updates
         else
@@ -1431,9 +1447,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
             -- Combat ticker floor fail-open: see the non-compact branch above.
             if floorFailOpen then
-                CooldownCompanion._passTimeStateSeen = true
-                CooldownCompanion._tickerIdleEligible = false
-                CooldownCompanion:CountTickerForce(floorFailOpen)
+                PinTickerForce(floorFailOpen)
             end
             return  -- Skip visual updates for hidden buttons
         else

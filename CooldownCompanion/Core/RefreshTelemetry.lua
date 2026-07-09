@@ -75,11 +75,17 @@ local T = {
 }
 ST.RefreshTelemetry = T
 
+-- Every recording method gates on T.enabled internally, so call sites do not
+-- need (and should not add) their own enabled guards. Callers still check
+-- T.enabled where telemetry drives extra caller-side work (timing captures,
+-- dirty-at-start snapshots, per-term evaluation).
 function T:CountDirty(source)
+    if not self.enabled then return end
     self.dirtyCounts[source] = (self.dirtyCounts[source] or 0) + 1
 end
 
 function T:CountQueue(source)
+    if not self.enabled then return end
     self.queueCounts[source] = (self.queueCounts[source] or 0) + 1
     if self.queueHistoryLen < QUEUE_HISTORY_CAP then
         self.queueHistoryLen = self.queueHistoryLen + 1
@@ -88,22 +94,26 @@ function T:CountQueue(source)
 end
 
 function T:CountSkip()
+    if not self.enabled then return end
     self.tickerSkips = self.tickerSkips + 1
 end
 
 -- F2 cross-check: a clean tick the live-skip predicate accepted (then either
 -- skipped or walked as a safety tick). Observe-only.
 function T:CountWouldSkip()
+    if not self.enabled then return end
     self.wouldSkipTotal = self.wouldSkipTotal + 1
 end
 
 -- F2 live skip: a clean idle tick was actually suppressed (early return).
 function T:CountIdleSkip()
+    if not self.enabled then return end
     self.tickerIdleSkips = self.tickerIdleSkips + 1
 end
 
 -- Combat ticker floor: an edge-hook was installed on a pooled pandemic FX frame.
 function T:CountPandemicEdgeHook()
+    if not self.enabled then return end
     self.pandemicEdgeHooks = self.pandemicEdgeHooks + 1
 end
 
@@ -111,21 +121,20 @@ end
 -- walking. Only broad walks are relevant to idle-skip pinning (mirrors
 -- NoteTimeRender), so ignore routed mini-pass renders.
 function T:CountForce(term)
+    if not self.enabled then return end
     if not CooldownCompanion._cooldownUpdatePassActive then return end
     self.forcingCounts[term] = (self.forcingCounts[term] or 0) + 1
     self.passForceTerms[term] = true
 end
 
--- Enabled-gated wrapper for call sites inside UpdateButtonCooldown, which sits
--- at the Lua 5.1 60-upvalue ceiling and cannot capture a new file-local; it
--- reaches this through the CooldownCompanion upvalue it already holds.
+-- Wrapper for call sites inside UpdateButtonCooldown, which sits at the
+-- Lua 5.1 60-upvalue ceiling and cannot capture a new file-local; it reaches
+-- this through the CooldownCompanion upvalue it already holds.
 function CooldownCompanion:CountTickerForce(term)
-    if T.enabled then
-        T:CountForce(term)
-    end
+    T:CountForce(term)
 end
 
--- Enabled-gated: the router dropped a cooldown-event fire as an index miss.
+-- The router dropped a cooldown-event fire as an index miss.
 function CooldownCompanion:CountRoutedDrop()
     if T.enabled then
         T.routedDrops = T.routedDrops + 1
@@ -139,6 +148,7 @@ end
 -- pass that began clean and idle-eligible is a proven false idle: the predicate
 -- said "nothing time-animated" yet something drew remaining time.
 function T:NoteTimeRender()
+    if not self.enabled then return end
     if not CooldownCompanion._cooldownUpdatePassActive then return end
     self.pendingRenderedTime = true
     if self.pendingIdleEligible and self.pendingDirtyAtStart == false then
@@ -159,6 +169,7 @@ function T:ClearQueueHistory()
 end
 
 function T:SetPending(source, detail, hist, dirtyAtStart)
+    if not self.enabled then return end
     self.pendingSource = source
     self.pendingDetail = detail
     self.pendingHist = hist
@@ -180,7 +191,13 @@ function T:RecordPass(frames, buttons, ms)
     -- stable sorted combo key (nil when nothing forced -- an idle-eligible walk).
     local force
     if next(self.passForceTerms) then
-        local terms = {}
+        -- Reused scratch (wiped each pass) instead of a per-pass allocation.
+        local terms = self.comboScratch
+        if not terms then
+            terms = {}
+            self.comboScratch = terms
+        end
+        wipe(terms)
         for term in pairs(self.passForceTerms) do
             terms[#terms + 1] = term
         end

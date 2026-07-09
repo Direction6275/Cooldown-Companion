@@ -390,9 +390,8 @@ function CooldownCompanion:OnDisable()
         self._alphaFrame = nil
     end
 
-    local T = ST.RefreshTelemetry
-    if self._queuedCooldownRefreshSource and T and T.enabled then
-        T:ClearQueueHistory()
+    if self._queuedCooldownRefreshSource then
+        ST.RefreshTelemetry:ClearQueueHistory()
     end
     self:ResetCooldownRefreshState()
     self:ResetRoutedCooldownBatch()

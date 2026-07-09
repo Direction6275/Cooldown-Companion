@@ -2131,7 +2131,7 @@ function CooldownCompanion:IsGroupAvailableForPanelAnchorTarget(groupId)
     else
         if not group.parentContainerId then return false end
         if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then return false end
-        if group.displayMode == "textures" or group.displayMode == "trigger" then return false end
+        if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then return false end
     end
 
     local container = self:GetParentContainer(group)
