@@ -866,25 +866,10 @@ local function GetViewerAuraStackText(viewerFrame)
     return ""
 end
 
-local function IsTooltipAuraUnit(unit)
-    return unit == "player" or unit == "target"
-end
-
 local function ShowButtonTooltip(button, tooltip)
     if not (button and tooltip and button.buttonData) then return false end
 
     local buttonData = button.buttonData
-    local auraUnit = button._auraUnit
-    local auraInstanceID = button._auraInstanceID
-    if button._auraActive == true
-        and type(auraInstanceID) == "number"
-        and IsTooltipAuraUnit(auraUnit)
-        and tooltip.SetUnitAuraByAuraInstanceID then
-        if tooltip:SetUnitAuraByAuraInstanceID(auraUnit, auraInstanceID, "INCLUDE_NAME_PLATE_ONLY") then
-            return true
-        end
-    end
-
     if buttonData.type == "spell" then
         tooltip:SetSpellByID(button._displaySpellId or buttonData.id)
         return true

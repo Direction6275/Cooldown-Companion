@@ -24,7 +24,6 @@ local string_format = string.format
 local table_concat = table.concat
 local issecretvalue = issecretvalue
 local wipe = wipe
-local C_UnitAuras_GetAuraApplicationDisplayCount = C_UnitAuras.GetAuraApplicationDisplayCount
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
 -- Imports from Helpers
@@ -249,15 +248,6 @@ local function ResolveTextModeStackDisplay(button)
         local previewStackText = button._auraStackText
         if previewStackText and (issecretvalue(previewStackText) or previewStackText ~= "") then
             return previewStackText, "aura"
-        end
-    end
-
-    local auraUnit = button._auraUnit
-    local auraInstanceID = button._auraInstanceID
-    if auraUnit and auraInstanceID then
-        local displayCount = C_UnitAuras_GetAuraApplicationDisplayCount(auraUnit, auraInstanceID, 1)
-        if displayCount and (issecretvalue(displayCount) or displayCount ~= "") then
-            return displayCount, "aura"
         end
     end
 
@@ -1047,7 +1037,7 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button._auraCooldownStart = nil
     button._auraCooldownDuration = nil
     button._auraPrimarySwipeActive = nil
-    button._auraTrackingReady = buttonData.isPassive == true
+    button._auraTrackingReady = nil
     button._showingAuraIcon = false
     button._auraViewerFrame = nil
     button._activeAuraSpellID = nil

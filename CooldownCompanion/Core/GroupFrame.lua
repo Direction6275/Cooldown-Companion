@@ -889,7 +889,7 @@ local function ResolveReusableButtonEntryState(button, buttonData)
         and CooldownCompanion:ResolveAuraSpellID(buttonData)
         or nil
     button._auraUnit = buttonData and buttonData.auraUnit or "player"
-    button._auraTrackingReady = buttonData and buttonData.isPassive == true or false
+    button._auraTrackingReady = nil
 end
 
 local function DeactivatePooledButton(self, groupId, button)

@@ -270,6 +270,9 @@ local function ClearConditionalVisualPreviewDerivedFields(button)
         button._auraActive = false
         button._auraHasTimer = false
         button._auraStackText = ""
+        if button.auraStackCount then
+            button.auraStackCount:SetText("")
+        end
     end
     if button._conditionalAuraStackTextPreview then
         button._auraStackText = ""

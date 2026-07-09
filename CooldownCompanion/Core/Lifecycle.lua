@@ -170,7 +170,9 @@ function CooldownCompanion:OnEnable()
         end)
     end
     self._unitEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-    self._unitEventFrame:RegisterUnitEvent("UNIT_AURA", "player", "target")
+    -- Player-only: the slim OnUnitAura handler only invalidates the Dracthyr
+    -- Soar mount-alpha cache (12.1 demolition removed aura tracking).
+    self._unitEventFrame:RegisterUnitEvent("UNIT_AURA", "player")
 
     -- Combat events
     self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnCombatStart")

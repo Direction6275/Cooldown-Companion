@@ -1,13 +1,13 @@
 --[[
-    CooldownCompanion - Core/Aura.lua: Aura event handlers (OnUnitAura, ClearAuraUnit,
-    OnTargetChanged), aura resolution, ABILITY_BUFF_OVERRIDES, CDM viewer system
-    (ApplyCdmAlpha, BuildViewerAuraMap, FindViewerChildForSpell, FindCooldownViewerChild,
-    OnViewerSpellOverrideUpdated)
+    CooldownCompanion - Core/Aura.lua: slim aura event handlers (OnUnitAura,
+    OnTargetChanged), config-time aura resolution, ABILITY_BUFF_OVERRIDES, CDM
+    viewer system (ApplyCdmAlpha, BuildViewerAuraMap, FindViewerChildForSpell,
+    FindCooldownViewerChild, OnViewerSpellOverrideUpdated).
+    12.1 demolition: runtime aura reading removed pending the AuraContainer rebuild.
 ]]
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local EntryRuntime = ST.EntryRuntime
 
 
 local ipairs = ipairs
@@ -35,11 +35,6 @@ local COOLDOWN_VIEWER_ASSOCIATION_CATEGORIES = {
     Enum.CooldownViewerCategory.TrackedBuff,
     Enum.CooldownViewerCategory.TrackedBar,
 }
-
-local GetAuraInstanceIDSets = ST.GetAuraInstanceIDSets
-
--- Immutable — shared across calls; never write to this table.
-local CLEAR_TRACKED_AURA_FALSE_STATE_OPTS = { useFalseState = true }
 
 local function IsBuffViewerChild(frame)
     if not frame then return false end
@@ -464,103 +459,20 @@ local function ForEachAuraLayoutInfo(callback)
     return true
 end
 
+-- Slim (12.1 demolition): aura tracking removed. Sole surviving duty is the
+-- Dracthyr Soar mount-alpha cache invalidation (AlphaFade.lua Soar read is a
+-- flagged follow-up).
 function CooldownCompanion:OnUnitAura(event, unit, updateInfo)
-    self:MarkCooldownsDirty(unit == "player" and "aura-player" or "aura-other")
     if unit == "player" and self._isDracthyr then
         self:InvalidateMountAlphaCache()
     end
-
-    if not updateInfo then return end
-
-    -- Merged single-pass processing: removals, pandemic updates, and target-switch
-    -- signaling in one ForEachButton call instead of three separate iterations.
-    -- Removals are processed first so refreshed auras (remove + add in same event)
-    -- work correctly — the update path re-checks _auraInstanceID after removals.
-    local removedIDs = updateInfo.removedAuraInstanceIDs
-    local updatedIDs = updateInfo.updatedAuraInstanceIDs
-    local removedIDSet, updatedIDSet = GetAuraInstanceIDSets(updateInfo)
-    local isTarget = (unit == "target")
-    if removedIDs or updatedIDs or isTarget then
-        self:ForEachButton(function(button)
-            if button._auraInstanceID and button._auraUnit == unit then
-                if removedIDSet and removedIDSet[button._auraInstanceID] then
-                    button._auraInstanceID = nil
-                    button._inPandemic = false
-                    EntryRuntime.ClearAuraPandemicRuntimeState(button)
-                    button._auraEventRemoved = true
-                end
-                -- Updates are dirty signals, not proof of refresh. Let the shared
-                -- resolver compare fresh semantic range and readable aura timing.
-                if updatedIDSet
-                    and button._auraInstanceID
-                    and updatedIDSet[button._auraInstanceID] then
-                    EntryRuntime.MarkAuraPandemicStateDirty(button, unit, button._auraInstanceID)
-                end
-            end
-            -- Signal that the server has delivered target aura data, so the hold
-            -- logic in CooldownUpdate can terminate early instead of waiting for the
-            -- safety cap timeout.
-            if isTarget and button._targetSwitchAt then
-                button._targetSwitchDataReceived = true
-            end
-        end)
-    end
-
-    -- Refresh immediately on the first aura event this frame. CDM viewer
-    -- frames registered their event handlers before our addon loaded, so by
-    -- the time this handler fires the CDM has already refreshed its children
-    -- with fresh auraInstanceID data. Bursts later in the same frame coalesce.
-    if unit == "target" or unit == "player" then
-        self:RunImmediateCooldownRefresh("aura-event")
-    end
 end
 
--- Clear aura state on buttons tracking a unit when that unit changes (target/focus switch).
--- The viewer will re-evaluate on its next tick; this ensures stale data is cleared promptly.
-function CooldownCompanion:ClearAuraUnit(unitToken)
-    self:ForEachButton(function(button, bd)
-        if bd.auraTracking or bd.isPassive then
-            local configUnit = bd.auraUnit or "player"
-            local shouldClear = button._auraUnit == unitToken
-            if not shouldClear and configUnit == unitToken then
-                shouldClear = true
-            end
-            if shouldClear then
-                EntryRuntime.ClearTrackedAuraOwnerState(button, configUnit, CLEAR_TRACKED_AURA_FALSE_STATE_OPTS)
-                button._auraPrimarySwipeActive = nil
-            end
-        end
-    end)
-    self:MarkCooldownsDirty("aura-clear")
-end
-
+-- Slim (12.1 demolition): kept because FrameAnchoring.lua hooksecurefunc's this
+-- method (inheritAlpha resync rides the hook); the dirty mark keeps
+-- target-dependent kept visuals (range tint, {oor} text) repainting promptly.
 function CooldownCompanion:OnTargetChanged()
-    if not UnitExists("target") then
-        -- Deselected target: clear all target aura state immediately
-        self:ClearAuraUnit("target")
-        return
-    end
-    -- New target: clear stale instance IDs so the viewer path doesn't
-    -- read old auraInstanceIDs.  Keep _auraActive so the hold can
-    -- maintain visual continuity while CDM refreshes.
-    local now = GetTime()
-    self:ForEachButton(function(button, bd)
-        if bd.auraTracking or bd.isPassive then
-            local configUnit = bd.auraUnit or "player"
-            local isTarget = button._auraUnit == "target"
-                or configUnit == "target"
-            if isTarget then
-                EntryRuntime.StartTrackedAuraTargetSwitch(button, now, "target")
-            end
-        end
-    end)
-    -- Synchronous probe: CDM viewer frames register their event handlers on
-    -- Blizzard frames created before addons load.  If UNIT_TARGET has already
-    -- been processed by the time PLAYER_TARGET_CHANGED fires, the CDM children
-    -- will have fresh auraInstanceID data.  Probing immediately lets the
-    -- primary path clear _targetSwitchAt in the same frame — zero hold.
-    ST.TagRefreshPass("target-probe")
-    self:UpdateAllCooldowns()
+    self:MarkCooldownsDirty("target-changed")
 end
 
 

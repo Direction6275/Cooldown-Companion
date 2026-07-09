@@ -183,79 +183,9 @@ local function IsResourceAuraOverlayEnabled(resource)
 end
 
 local function GetResourceAuraState(powerType, settings, auraActiveCache)
-    if not settings or not settings.resources then return nil, nil, false end
-    local resource = settings.resources[powerType]
-    if not resource then return nil, nil, false end
-    if not IsResourceAuraOverlayEnabled(resource) then return nil, nil, false end
-    local auraEntry = GetActiveResourceAuraEntry(resource)
-    if not auraEntry then
-        return nil, nil, false
-    end
-
-    local auraSpellID = tonumber(auraEntry.auraColorSpellID)
-    if not auraSpellID or auraSpellID <= 0 then
-        return nil, nil, false
-    end
-
-    local configUnit = GetResolvedResourceAuraUnit and GetResolvedResourceAuraUnit(auraEntry, auraSpellID) or "player"
-    local cacheKey = configUnit .. ":" .. auraSpellID
-    local cached
-    if auraActiveCache then
-        cached = auraActiveCache[cacheKey]
-    end
-
-    if not cached then
-        cached = { active = false, applications = nil, hasApplications = false }
-
-        if C_CVar.GetCVarBool("cooldownViewerEnabled") then
-            local viewerFrame = CooldownCompanion.viewerAuraFrames and CooldownCompanion.viewerAuraFrames[auraSpellID]
-            local instId = viewerFrame and viewerFrame.auraInstanceID
-            if instId then
-                local viewerUnit = viewerFrame.auraDataUnit or configUnit
-                if viewerUnit == configUnit then
-                    local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID(configUnit, instId)
-                    if auraData then
-                        cached.active = true
-                        if type(auraData.applications) == "number" then
-                            -- applications can be secret in combat for some auras.
-                            -- Keep as pass-through only (no Lua math/comparisons).
-                            cached.applications = auraData.applications
-                            cached.hasApplications = true
-                        end
-                    end
-                end
-            end
-        end
-
-        if not cached.active and configUnit == "player" then
-            -- Fallback for non-CDM spell IDs. In combat, secret aura restrictions can
-            -- cause this API to return nil for some active auras.
-            local auraData = C_UnitAuras.GetPlayerAuraBySpellID(auraSpellID)
-            if auraData then
-                cached.active = true
-                if type(auraData.applications) == "number" then
-                    -- applications can be secret in combat for some auras.
-                    -- Keep as pass-through only (no Lua math/comparisons).
-                    cached.applications = auraData.applications
-                    cached.hasApplications = true
-                end
-            end
-        end
-
-        if auraActiveCache then
-            auraActiveCache[cacheKey] = cached
-        end
-    end
-
-    if not cached.active then
-        return nil, nil, false
-    end
-
-    local color = auraEntry.auraActiveColor
-    if type(color) ~= "table" or not color[1] or not color[2] or not color[3] then
-        color = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
-    end
-    return color, cached.applications, cached.hasApplications
+    -- 12.1 demolition: aura reads removed. Resource aura recolor and aura-stack
+    -- segments stay inert (base colors) until the AuraContainer rebuild.
+    return nil, nil, false
 end
 
 local function HideResourceAuraStackSegments(holder)

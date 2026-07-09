@@ -100,10 +100,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
     -- Reusable scratch opts — single call site each; wiped immediately before
     -- each fill, so a previous update can never leak values into the next one
     -- even if an error aborts an update mid-call.
-    local spellCustomBarAuraStateOpts = {}
-    local customAuraBarAuraStateOpts = {}
-    local customAuraBarPandemicStateOpts = {}
-    local customCooldownBarPandemicStateOpts = {}
     local customAuraWakeRetryQueue = {}
     local customAuraWakeRetryPending = {}
     local customAuraWakeRetryScheduled = false
@@ -144,54 +140,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end)
     end
 
-    -- Reusable scratch buttonData -- returned to callers but only consumed
-    -- synchronously within the same bar update; never retain between updates
-    -- and never assign to a button.buttonData field (style caches key on
-    -- buttonData table identity). The wipe is enforcement so no field can
-    -- leak between fills.
-    local customBarAuraButtonDataScratch = {}
-
-    local function BuildCustomBarAuraButtonData(cabConfig, addedAsAura)
-        local spellID = tonumber(cabConfig and cabConfig.spellID)
-        if not spellID then
-            return nil, spellID
-        end
-
-        if addedAsAura then
-            if RB.IsSpellCustomBarConfig(cabConfig) then
-                return nil, spellID
-            end
-        elseif not (cabConfig and cabConfig.auraTracking == true) then
-            return nil, nil
-        end
-
-        local buttonData = customBarAuraButtonDataScratch
-        wipe(buttonData)
-        buttonData.type = "spell"
-        buttonData.id = spellID
-        buttonData.auraSpellID = cabConfig.auraSpellID
-        buttonData.auraTracking = true
-        buttonData.auraUnit = GetResolvedCustomAuraBarAuraUnit(cabConfig, spellID)
-        buttonData.addedAs = addedAsAura and "aura" or nil
-        return buttonData, spellID
-    end
-
     local function ResolveSpellCustomBarAuraState(barInfo)
-        local cabConfig = barInfo and barInfo.cabConfig
-        local bar = barInfo and barInfo.frame
-        local buttonData, spellID = BuildCustomBarAuraButtonData(cabConfig, false)
-        if not (buttonData and spellID and bar) then
-            return nil
-        end
-
-        local configUnit = buttonData.auraUnit or "player"
-        local resolvedAuraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
-        wipe(spellCustomBarAuraStateOpts)
-        spellCustomBarAuraStateOpts.configUnit = configUnit
-        spellCustomBarAuraStateOpts.allowDurationlessAuraInstance = true
-        spellCustomBarAuraStateOpts.useButtonAuraViewerFallback = true
-        spellCustomBarAuraStateOpts.validateCachedAuraData = EntryRuntime.AuraDataMatchesTrackedSpell
-        return EntryRuntime.EvaluateTrackedAuraState(bar, buttonData, resolvedAuraSpellID, spellCustomBarAuraStateOpts)
+        -- 12.1 demolition: aura runtime evaluation removed. Stack display stays
+        -- inert until the AuraContainer rebuild.
+        return nil
     end
 
     local function UpdateCustomAuraBar(barInfo)
@@ -222,18 +174,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
 
         if spellAuraStackDisplay then
             auraState = ResolveSpellCustomBarAuraState(barInfo)
-        elseif not isSpellCustomBar then
-            local buttonData, spellID = BuildCustomBarAuraButtonData(cabConfig, true)
-            if buttonData and spellID then
-                configUnit = buttonData.auraUnit or configUnit
-                wipe(customAuraBarAuraStateOpts)
-                customAuraBarAuraStateOpts.configUnit = configUnit
-                customAuraBarAuraStateOpts.allowDurationlessAuraInstance = true
-                customAuraBarAuraStateOpts.allowPlayerAuraFallbackWithoutReady = true
-                auraState = EntryRuntime.EvaluateTrackedAuraState(barInfo.frame, buttonData, spellID, customAuraBarAuraStateOpts)
-                viewerFrame = auraState and auraState.viewerFrame or nil
-            end
         end
+        -- 12.1 demolition: pure aura bars no longer evaluate aura state; the
+        -- display block below stays for the preview path only.
 
         if auraState then
             configUnit = auraState.configUnit or configUnit
@@ -295,14 +238,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
 
         local pandemicStateFrame = barInfo.frame
-        wipe(customAuraBarPandemicStateOpts)
-        customAuraBarPandemicStateOpts.enabled = configUnit == "target" and auraPresent
-        customAuraBarPandemicStateOpts.previewActive = pandemicPreview == true
-        customAuraBarPandemicStateOpts.clearWhenDisabled = true
-        customAuraBarPandemicStateOpts.auraState = auraState
-        customAuraBarPandemicStateOpts.auraUnit = auraUnit
-        customAuraBarPandemicStateOpts.auraInstanceID = instId
-        local inPandemic = EntryRuntime.ResolveAuraPandemicState(pandemicStateFrame, viewerFrame, customAuraBarPandemicStateOpts)
+        local inPandemic = pandemicPreview == true
 
         if isActive and bar then
             if auraPresent then
@@ -590,14 +526,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
         end
 
-        local configUnit = (auraState and auraState.configUnit)
-            or GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
-        wipe(customCooldownBarPandemicStateOpts)
-        customCooldownBarPandemicStateOpts.enabled = configUnit == "target" and auraPresent
-        customCooldownBarPandemicStateOpts.previewActive = pandemicPreview == true
-        customCooldownBarPandemicStateOpts.clearWhenDisabled = true
-        customCooldownBarPandemicStateOpts.auraState = auraState
-        local inPandemic = EntryRuntime.ResolveAuraPandemicState(bar, auraState and auraState.viewerFrame, customCooldownBarPandemicStateOpts)
+        local inPandemic = pandemicPreview == true
 
         if auraState
             and auraState.ready == true

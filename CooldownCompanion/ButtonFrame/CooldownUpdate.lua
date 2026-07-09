@@ -21,20 +21,12 @@ local type = type
 local issecretvalue = issecretvalue
 local math_max = math.max
 
--- Imports from Glows
-local GetViewerAuraStackText = ST._GetViewerAuraStackText
-
 -- Imports from Visibility
 local EvaluateButtonVisibility = ST._EvaluateButtonVisibility
 
 -- Pre-defined color constant tables to avoid per-tick allocation.
 -- IMPORTANT: These tables are read-only — never write to their indices.
 local DEFAULT_WHITE = {1, 1, 1, 1}
--- Reusable scratch opts — single call site each; wiped immediately before
--- each fill, so a previous walk can never leak values into the next call
--- even if an error aborts a walk mid-call.
-local evaluateButtonAuraStateOpts = {}
-local buttonAuraPandemicStateOpts = {}
 
 -- Silent-transform icon staleness probe interval (seconds). Event-driven icon
 -- refresh paths are unaffected; this only paces the no-event fallback probe.
@@ -114,12 +106,14 @@ function CooldownCompanion:RefreshButtonVisualStateSnapshot(button, context, pha
 end
 
 local function ClearConditionalVisualPreviewFields(button)
+    -- Aura runtime evaluation is gone (12.1 demolition): nothing overwrites
+    -- these fields next tick, so preview state must be cleared unconditionally.
     if button._conditionalAuraPreview then
-        local buttonData = button.buttonData
-        if not (buttonData and (buttonData.auraTracking or buttonData.isPassive)) then
-            button._auraActive = false
-            button._auraHasTimer = false
-            button._auraStackText = ""
+        button._auraActive = false
+        button._auraHasTimer = false
+        button._auraStackText = ""
+        if button.auraStackCount then
+            button.auraStackCount:SetText("")
         end
     end
     if button._conditionalAuraStackTextPreview then
@@ -129,11 +123,7 @@ local function ClearConditionalVisualPreviewFields(button)
         end
     end
     if button._conditionalPandemicPreview then
-        local buttonData = button.buttonData
-        if not (buttonData and buttonData.auraTracking) then
-            button._inPandemic = false
-            EntryRuntime.ClearAuraPandemicRuntimeState(button)
-        end
+        button._inPandemic = false
     end
     button._conditionalPreviewKind = nil
     button._conditionalPreviewStartTime = nil
@@ -349,58 +339,6 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
     end
 end
 
-local function GetViewerNameFontString(viewerFrame)
-    -- BuffBar viewer items render name text on Bar.Name. BuffIcon entries have no name text.
-    local bar = viewerFrame and viewerFrame.Bar
-    return bar and bar.Name or nil
-end
-
--- Reusable per-button scratch -- only valid within the current cooldown walk.
--- Never retain or read directly between calls.
-local function CreateAuraDisplayNameState(button)
-    local state = button._auraDisplayNameStateScratch
-    if state then
-        wipe(state)
-    else
-        state = {}
-        button._auraDisplayNameStateScratch = state
-    end
-    state.priorReadableName = button._auraDisplayName
-    state.priorSecretTextActive = button._isText and button._textSecretNameActive == true or false
-    return state
-end
-
-local function RecordAuraDisplayName(state, auraData)
-    if not (state and auraData) then return end
-    local auraName = auraData.name
-    if issecretvalue(auraName) then
-        state.secretName = auraName
-        state.hasSecretName = true
-        state.nameApplied = true
-        return true
-    elseif auraName and auraName ~= "" then
-        state.readableName = auraName
-        state.nameApplied = true
-        return true
-    end
-end
-
-local function PreserveSecretAuraTextRender(state)
-    if not (state and state.priorSecretTextActive) then return end
-    state.preserveSecretTextRender = true
-    state.nameApplied = true
-end
-
-local function PreserveAuraDisplayNameDuringGrace(state)
-    if not state then return end
-    if state.priorReadableName then
-        state.readableName = state.priorReadableName
-        state.nameApplied = true
-    elseif state.priorSecretTextActive then
-        PreserveSecretAuraTextRender(state)
-    end
-end
-
 local function RestoreBaseDisplayName(button, buttonData)
     if not (button and button.nameText and buttonData) or buttonData.customName then
         return
@@ -420,85 +358,6 @@ local function RestoreBaseDisplayName(button, buttonData)
     if baseName then
         button.nameText:SetText(baseName)
     end
-end
-
-local function CommitAuraDisplayName(button, buttonData, viewerFrame, auraOverrideActive, state)
-    if auraOverrideActive then
-        if state and state.readableName then
-            button._auraDisplayName = state.readableName
-            if button.nameText and not buttonData.customName then
-                button.nameText:SetText(state.readableName)
-                button._auraNameOverrideActive = true
-            end
-        elseif state and state.hasSecretName then
-            if button.nameText and not buttonData.customName then
-                button.nameText:SetText(state.secretName)
-                button._auraNameOverrideActive = true
-            end
-        elseif state and state.preserveSecretTextRender then
-            button._auraNameOverrideActive = true
-        end
-
-        if viewerFrame then
-            local viewerName = GetViewerNameFontString(viewerFrame)
-            if not (state and state.nameApplied) and button.nameText and not buttonData.customName and viewerName and viewerName.GetText then
-                -- Pass through the CDM-rendered text directly; avoid calling viewer mixin methods
-                -- from tainted code (they can execute secret-value logic internally).
-                button.nameText:SetText(viewerName:GetText())
-            end
-            -- Multi-slot buttons read their icon from the viewer's Icon widget.
-            -- Event-driven UpdateButtonIcon calls can race with the CDM viewer's
-            -- internal icon update on transforms (e.g. Diabolic Ritual), so re-sync
-            -- the icon every tick to ensure it reflects the viewer's current state.
-            if buttonData.cdmChildSlot then
-                CooldownCompanion:UpdateButtonIcon(button)
-            end
-            button._viewerAuraVisualsActive = true
-        end
-    elseif button._viewerAuraVisualsActive or button._auraNameOverrideActive then
-        button._viewerAuraVisualsActive = nil
-        button._auraNameOverrideActive = nil
-        RestoreBaseDisplayName(button, buttonData)
-        -- Multi-slot buttons got their icon from per-tick viewer reads while
-        -- the aura was active. Now that the aura has dropped, re-sync the icon
-        -- to the viewer's current (base) state.
-        if buttonData.cdmChildSlot then
-            CooldownCompanion:UpdateButtonIcon(button)
-        end
-    end
-end
-
-local function ActiveAuraIconNeedsRefresh(button, auraState, previousIcon, previousIconAvailable, previousAuraInstanceID)
-    local currentIconAvailable = button._activeAuraIconAvailable == true
-    if currentIconAvailable ~= (previousIconAvailable == true) then
-        return true
-    end
-
-    local currentAuraInstanceID = button._auraInstanceID
-    if not (issecretvalue(currentAuraInstanceID) or issecretvalue(previousAuraInstanceID))
-        and currentAuraInstanceID ~= previousAuraInstanceID then
-        return true
-    end
-
-    if currentIconAvailable then
-        local currentIcon = button._activeAuraIcon
-        if auraState and auraState.activeAuraIconResolved == true and issecretvalue(currentIcon) then
-            return true
-        end
-        if previousIconAvailable == true
-            and not (issecretvalue(currentIcon) or issecretvalue(previousIcon))
-            and currentIcon ~= previousIcon then
-            return true
-        end
-    end
-
-    return false
-end
-local function ShouldUseActiveAuraIcon(buttonData)
-    return buttonData
-        and (buttonData.auraShowAuraIcon == true
-            or buttonData.addedAs == "aura"
-            or buttonData.isPassive == true)
 end
 
 local function DispatchStandaloneTextureVisual(button, group)
@@ -819,43 +678,30 @@ end
 -- a running ready-glow duration window) -- must have a term here, or the idle
 -- skip will starve it until the ~1s safety walk.
 --
--- Combat ticker floor: the cooldown swipe/numbers, aura swipe, and GCD swipe
--- self-animate in icon/bar mode (Blizzard CooldownFrameTemplate /
--- BarModeOnUpdate) -- they do NOT need a walk to keep drawing. Those states stop
--- forcing walks EXCEPT in text mode (redrawn from GetTime() each walk) or when
--- an active aura's pandemic glow applies but its edge-hook is not yet covering
--- it. Everything else (charge-color heuristic, target-switch hold, preview,
--- ready-glow window) stays walk-forcing in every mode.
--- Discrete edges (cooldown start/end, aura apply/remove, pandemic enter/exit)
--- stay event-covered; the skip only suppresses the redundant continuous middle.
+-- Combat ticker floor: the cooldown swipe/numbers and GCD swipe self-animate
+-- in icon/bar mode (Blizzard CooldownFrameTemplate / BarModeOnUpdate) -- they
+-- do NOT need a walk to keep drawing. Those states stop forcing walks EXCEPT
+-- in text mode (redrawn from GetTime() each walk). Everything else
+-- (charge-color heuristic, preview, ready-glow window) stays walk-forcing in
+-- every mode.
+-- Discrete edges (cooldown start/end) stay event-covered; the skip only
+-- suppresses the redundant continuous middle.
 local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, floorFailOpen)
     local charge = button._chargeRecharging and true or false   -- charge recharge (charge-color heuristic, walk-driven)
-    local targetSwitch = button._targetSwitchAt ~= nil          -- target-switch continuity hold
     local preview = conditionalPreview ~= nil                   -- conditional visual preview active
     local readyGlow = HasPendingReadyGlowWindow(button, now)    -- finite ready-glow window still running
-    local forced = charge or targetSwitch or preview or readyGlow
+    local forced = charge or preview or readyGlow
 
-    local text, pandemicUncovered, pandemicGrace, auraGrace = false, false, false, false
+    local text = false
     if not forced then
         local timeActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN -- spell/item/deferred cooldown
-            or button._auraActive                            -- aura display (incl. target-switch hold); truthy on purpose, fail open
             or (isGCDOnly and button.style and button.style.showGCDSwipe == true) -- GCD swipe presentation
-        if timeActive then
-            if button._isText then
-                text = true                                  -- text mode is walk-driven (FormatTime + SetText)
-            elseif button._auraActive and button._pandemicEdgeUncovered then
-                pandemicUncovered = true                     -- pandemic applies but its edge isn't hooked (fail open)
-            elseif button._auraActive and button._pandemicGraceStart
-                and (now - button._pandemicGraceStart) <= 0.3 then
-                pandemicGrace = true                         -- pandemic grace-hold expiry is time-gated with no edge (CONTRACT)
-            elseif button._auraActive and button._auraGraceStart
-                and (now - button._auraGraceStart) <= 0.3 then
-                auraGrace = true                             -- aura grace-hold expiry is time-gated with no edge (CONTRACT); 0.3 matches EntryRuntime's hold
-            end
-            -- else: icon/bar self-animating cooldown/aura/GCD, pandemic covered
-            -- or absent -- skippable; discrete edges stay event-covered.
-            forced = text or pandemicUncovered or pandemicGrace or auraGrace
+        if timeActive and button._isText then
+            text = true                                      -- text mode is walk-driven (FormatTime + SetText)
+            forced = true
         end
+        -- else: icon/bar self-animating cooldown/GCD -- skippable; discrete
+        -- edges stay event-covered.
     end
 
     -- Combat ticker floor fail-open: hideWhileUnusable visibility is not covered
@@ -874,13 +720,9 @@ local function NoteButtonTimeState(button, conditionalPreview, isGCDOnly, now, f
         -- pinned this walk. Inert without the CC_DevBridge dev addon.
         if RefreshTelemetry and RefreshTelemetry.enabled then
             if charge then RefreshTelemetry:CountForce("charge") end
-            if targetSwitch then RefreshTelemetry:CountForce("target-switch") end
             if preview then RefreshTelemetry:CountForce("preview") end
             if readyGlow then RefreshTelemetry:CountForce("ready-glow") end
             if text then RefreshTelemetry:CountForce("text") end
-            if pandemicUncovered then RefreshTelemetry:CountForce("pandemic-uncovered") end
-            if pandemicGrace then RefreshTelemetry:CountForce("pandemic-grace") end
-            if auraGrace then RefreshTelemetry:CountForce("aura-grace") end
             if floorForce then RefreshTelemetry:CountForce(floorFailOpen) end
         end
     end
@@ -895,9 +737,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
     local barAuraStackConfigured = button._isBar and CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
     local barAuraStackDisplay = false
-    local previousBarAuraStackValue = button._barAuraStackValue
-    local previousBarAuraStackValueAvailable = button._barAuraStackValueAvailable == true
-    local previousBarAuraStackValueSecret = button._barAuraStackValueSecret == true
     local usesChargeBehavior = UsesChargeBehavior(buttonData)
     local useChargeTextLane = UsesChargeTextLane(buttonData)
     local now = GetTime()
@@ -1064,13 +903,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- Clear per-tick DurationObject; set below if cooldown/aura active.
+    -- Clear per-tick DurationObject; set below if a cooldown is active.
     -- Used by bar fill, desaturation, visibility checks instead of
     -- GetCooldownTimes() which returns secret values after
     -- SetCooldownFromDurationObject() in 12.0.1.
-    -- Save previous aura DurationObject for one-tick grace period on target switch.
-    local wasAuraActive = button._auraActive == true
-    local prevAuraDurationObj = wasAuraActive and button._auraDurationObj or nil
     button._durationObj = nil
     button._auraDurationObj = nil
     button._auraCooldownStart = nil
@@ -1094,177 +930,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local spellCooldownDuration
     local spellRealCooldownShown = false
     local spellCooldownResult
-    -- Aura-override probe: cached for reuse by secondary CD and sound alerts.
-    local auraProbeInfo, auraProbeIsGCDOnly
-    local auraProbeDuration
-    local auraProbeNormalCooldownShown = false
-    local auraProbeRealCooldownShown = false
-    local auraDisplayNameState
-    local previousActiveAuraSpellID = button._activeAuraSpellID
-    local previousActiveAuraSpellIDFromFallback = button._activeAuraSpellIDFromFallback == true
-    local previousActiveAuraIcon = button._activeAuraIcon
-    local previousActiveAuraIconAvailable = button._activeAuraIconAvailable == true
-    local previousAuraInstanceID = button._auraInstanceID
-    local auraApplications
-    local auraGraceHeld = false
-    local barAuraSecretStackValue
-    local preserveBarAuraStackText
-
-    -- Aura tracking: check for active buff/debuff and decide whether it owns the primary swipe.
-    local auraOverrideActive = false
-    local keepSpellCooldownSwipe = buttonData.auraKeepSpellCooldownSwipe == true
-        and buttonData.addedAs ~= "aura"
-        and buttonData.isPassive ~= true
-        and not button._isBar
-        and not button._isText
-        and buttonDisplayMode == "icons"
-    local auraPrimarySwipeAllowed = not keepSpellCooldownSwipe
-    local auraHasTimer = button._auraHasTimer == true
-    local auraTrackingReady = buttonData.isPassive == true
-    if buttonData.auraTracking and button._auraSpellID then
-        auraDisplayNameState = CreateAuraDisplayNameState(button)
-        button._auraDisplayName = nil
-        wipe(evaluateButtonAuraStateOpts)
-        evaluateButtonAuraStateOpts.now = now
-        evaluateButtonAuraStateOpts.allowDurationlessAuraInstance = barAuraStackConfigured
-        evaluateButtonAuraStateOpts.previousAuraDurationObj = prevAuraDurationObj
-        evaluateButtonAuraStateOpts.wasAuraActive = wasAuraActive
-        local auraState = EntryRuntime.EvaluateTrackedAuraState(
-            button,
-            buttonData,
-            button._auraSpellID,
-            evaluateButtonAuraStateOpts
-        )
-        local viewerFrame = auraState.viewerFrame
-        auraTrackingReady = auraState.auraTrackingReady == true
-        auraOverrideActive = auraState.auraPresent == true
-        auraApplications = auraState.auraApplications
-        auraGraceHeld = auraState.auraGraceHeld == true
-        auraHasTimer = auraState.auraHasTimer == true
-        button._viewerBar = auraState.viewerBar
-
-        if auraState.auraData then
-            RecordAuraDisplayName(auraDisplayNameState, auraState.auraData)
-        elseif auraGraceHeld then
-            PreserveAuraDisplayNameDuringGrace(auraDisplayNameState)
-        end
-
-        if auraOverrideActive then
-            if auraState.durationObj then
-                button._auraDurationObj = auraState.durationObj
-                if auraHasTimer and auraPrimarySwipeAllowed then
-                    button._durationObj = auraState.durationObj
-                    button.cooldown:SetCooldownFromDurationObject(auraState.durationObj)
-                elseif auraPrimarySwipeAllowed then
-                    button.cooldown:SetCooldown(0, 0)
-                    button.cooldown:Hide()
-                end
-            elseif auraState.auraCooldownStart and auraState.auraCooldownDuration and auraPrimarySwipeAllowed then
-                button.cooldown:SetCooldown(auraState.auraCooldownStart, auraState.auraCooldownDuration)
-            elseif auraPrimarySwipeAllowed then
-                button.cooldown:SetCooldown(0, 0)
-                button.cooldown:Hide()
-            end
-            fetchOk = true
-        end
-
-        -- Viewer icon change detection: for passive aura-tracked buttons, the
-        -- viewer frame's Icon widget updates per-stage (e.g. Heating Up → Hot Streak)
-        -- but UpdateButtonIcon is not called per-tick. Detect texture changes here
-        -- and trigger an icon update only when the viewer icon actually changes.
-        if buttonData.isPassive and viewerFrame then
-            local iconObj = viewerFrame.Icon
-            if iconObj and not iconObj.GetTextureFileID then
-                iconObj = iconObj.Icon
-            end
-            if iconObj and iconObj.GetTextureFileID then
-                local vfTexId = iconObj:GetTextureFileID()
-                if issecretvalue(vfTexId) then
-                    -- Secret in combat: can't compare, always refresh
-                    -- (SetTexture accepts secret values as pass-through)
-                    button._auraViewerFrame = viewerFrame
-                    CooldownCompanion:UpdateButtonIcon(button)
-                elseif vfTexId ~= button._lastViewerTexId then
-                    button._lastViewerTexId = vfTexId
-                    button._auraViewerFrame = viewerFrame
-                    CooldownCompanion:UpdateButtonIcon(button)
-                end
-            end
-        elseif buttonData.isPassive and button._lastViewerTexId then
-            button._lastViewerTexId = nil
-            button._auraViewerFrame = nil
-            CooldownCompanion:UpdateButtonIcon(button)
-        end
-
-        -- Aura icon swap: trigger icon update on _auraActive transition
-        if ShouldUseActiveAuraIcon(buttonData) and button._auraSpellID then
-            local shouldShow = auraOverrideActive
-            button._auraViewerFrame = shouldShow and viewerFrame or nil
-            local activeAuraSpellChanged = shouldShow
-                and (button._activeAuraSpellID ~= previousActiveAuraSpellID
-                    or (button._activeAuraSpellIDFromFallback == true) ~= previousActiveAuraSpellIDFromFallback)
-            local activeAuraIconChanged = shouldShow
-                and ActiveAuraIconNeedsRefresh(
-                    button,
-                    auraState,
-                    previousActiveAuraIcon,
-                    previousActiveAuraIconAvailable,
-                    previousAuraInstanceID
-                )
-            if shouldShow ~= (button._showingAuraIcon or false)
-                or activeAuraSpellChanged
-                or activeAuraIconChanged then
-                button._showingAuraIcon = shouldShow
-                CooldownCompanion:UpdateButtonIcon(button)
-            elseif shouldShow and viewerFrame then
-                -- Detect viewer Icon texture changes for stage transitions
-                -- within an already-active aura (e.g. Heating Up → Hot Streak).
-                local iconObj = viewerFrame.Icon
-                if iconObj and not iconObj.GetTextureFileID then
-                    iconObj = iconObj.Icon
-                end
-                if iconObj and iconObj.GetTextureFileID then
-                    local vfTexId = iconObj:GetTextureFileID()
-                    if issecretvalue(vfTexId) then
-                        -- Secret in combat: can't compare, always refresh
-                        CooldownCompanion:UpdateButtonIcon(button)
-                    elseif vfTexId ~= button._lastViewerTexId then
-                        button._lastViewerTexId = vfTexId
-                        CooldownCompanion:UpdateButtonIcon(button)
-                    end
-                end
-            end
-        else
-            button._showingAuraIcon = nil
-            -- Don't clear _auraViewerFrame for passive buttons — managed above
-            if not buttonData.isPassive then
-                button._auraViewerFrame = nil
-            end
-        end
-
-        -- Read aura stack text from viewer frame (combat-safe, secret pass-through)
-        if button._auraTrackingReady or buttonData.isPassive then
-            if auraOverrideActive and viewerFrame then
-                button._auraStackText = GetViewerAuraStackText(viewerFrame)
-            else
-                button._auraStackText = ""
-            end
-        end
-
-        wipe(buttonAuraPandemicStateOpts)
-        buttonAuraPandemicStateOpts.now = now
-        buttonAuraPandemicStateOpts.enabled = auraOverrideActive and (style.showPandemicGlow ~= false or buttonData.hideAuraActiveExceptPandemic)
-        buttonAuraPandemicStateOpts.previewActive = button._pandemicPreview == true
-        buttonAuraPandemicStateOpts.clearWhenDisabled = true
-        buttonAuraPandemicStateOpts.auraState = auraState
-        button._inPandemic = EntryRuntime.ResolveAuraPandemicState(button, viewerFrame, buttonAuraPandemicStateOpts)
-
-        -- Pass through aura display names while keeping icon writes owned by UpdateButtonIcon.
-        CommitAuraDisplayName(button, buttonData, viewerFrame, auraOverrideActive, auraDisplayNameState)
-    end
-    button._auraTrackingReady = auraTrackingReady
-    local auraOwnsPrimarySwipe = auraOverrideActive and auraPrimarySwipeAllowed
-    button._auraPrimarySwipeActive = auraOwnsPrimarySwipe or nil
 
     -- Stack-count aura bars own the bar surface even while the aura is inactive.
     -- Inactive auras render as zero stacks so segmented/overlay placeholders stay visible.
@@ -1292,81 +957,18 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._viewerBar = nil
         button.cooldown:SetCooldown(0, 0)
         button.cooldown:Hide()
-
-        barAuraSecretStackValue, preserveBarAuraStackText = EntryRuntime.ApplyBarAuraStackState(
-            button,
-            auraOverrideActive,
-            auraApplications,
-            auraGraceHeld,
-            previousBarAuraStackValue,
-            previousBarAuraStackValueAvailable,
-            previousBarAuraStackValueSecret
-        )
     end
 
-    if buttonData.isPassive and not auraOverrideActive then
+    if buttonData.isPassive then
         button.cooldown:Hide()
     end
 
-    -- Probe spell CD during aura override (shared by secondary CD and sound alerts).
-    -- Accepted residual: expiry mid-override has no widget signal (OnCooldownDone
-    -- rides button.cooldown, which the aura owns), so a buff outlasting its spell's
-    -- cooldown shows the ready transition up to ~1s late while the ticker skips.
-    -- Owner-approved 2026-07-04 (CooldownRefresh.lua header, accepted residuals).
-    if auraOwnsPrimarySwipe and not barAuraStackDisplay and buttonData.type == "spell" and not buttonData.isPassive then
-        auraProbeInfo = C_Spell.GetSpellCooldown(cooldownSpellId)
-        if auraProbeInfo and auraProbeInfo.isActive then
-            local auraProbeNormalDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId)
-            auraProbeNormalCooldownShown = EntryRuntime.DurationObjectShowsCooldown(auraProbeNormalDuration)
-            auraProbeDuration = C_Spell.GetSpellCooldownDuration(cooldownSpellId, true)
-            auraProbeRealCooldownShown = EntryRuntime.DurationObjectShowsCooldown(auraProbeDuration)
-        end
-        auraProbeIsGCDOnly = CooldownLogic.IsSpellGCDOnly(auraProbeInfo, auraProbeNormalCooldownShown, auraProbeRealCooldownShown)
-    end
-
-    -- Secondary cooldown text display during aura override
-    if auraOwnsPrimarySwipe and not barAuraStackDisplay and button.secondaryCooldown then
-        if buttonData.type == "spell" and not buttonData.isPassive then
-            if auraProbeInfo then
-                if not auraProbeIsGCDOnly then
-                    if auraProbeDuration and auraProbeRealCooldownShown then
-                        button.secondaryCooldown:SetCooldownFromDurationObject(auraProbeDuration)
-                        button._secondaryCdActive = true
-                    else
-                        button.secondaryCooldown:SetCooldown(0, 0)
-                        button._secondaryCdActive = false
-                    end
-                else
-                    button.secondaryCooldown:SetCooldown(0, 0)
-                    button._secondaryCdActive = false
-                end
-            else
-                button.secondaryCooldown:SetCooldown(0, 0)
-                button._secondaryCdActive = false
-            end
-        elseif IsEntryItemLike(buttonData) then
-            local itemID = button._resolvedItemId or buttonData.id
-            if itemID then
-                local cdStart, cdDuration = C_Item.GetItemCooldown(itemID)
-                local probeIsGCDOnly = CooldownLogic.IsItemGCDOnly(cdStart, cdDuration, CooldownCompanion._gcdInfo)
-                if cdDuration and cdDuration > 0 and not probeIsGCDOnly then
-                    button.secondaryCooldown:SetCooldown(cdStart, cdDuration)
-                    button._secondaryCdActive = true
-                else
-                    button.secondaryCooldown:SetCooldown(0, 0)
-                    button._secondaryCdActive = false
-                end
-            else
-                button.secondaryCooldown:SetCooldown(0, 0)
-                button._secondaryCdActive = false
-            end
-        end
-    elseif button.secondaryCooldown and button._secondaryCdActive then
+    if button.secondaryCooldown and button._secondaryCdActive then
         button._secondaryCdActive = false
         button.secondaryCooldown:SetCooldown(0, 0)
     end
 
-    if not auraOwnsPrimarySwipe and not barAuraStackDisplay then
+    if not barAuraStackDisplay then
         if buttonData.type == "spell" and not buttonData.isPassive then
             spellCooldownResult = EntryRuntime.EvaluateButtonSpellCooldown(
                 buttonData,
@@ -1406,18 +1008,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button.cooldown:SetCooldown(0, 0)
                 end
                 fetchOk = true
-            elseif not fetchOk or auraOverrideActive then
+            else
                 button.cooldown:SetCooldown(0, 0)
             end
         elseif IsEntryItemLike(buttonData) then
             isGCDOnly = EvaluateItemCooldown(button, buttonData, style, true)
             fetchOk = true
         end
-    elseif not barAuraStackDisplay and IsEntryItemLike(buttonData) then
-        -- Items keep underlying cooldown state during aura override for visibility/desaturation.
-        -- Spell aura overrides intentionally do not: the aura owns the spell visual state.
-        isGCDOnly = EvaluateItemCooldown(button, buttonData, style, false)
-        fetchOk = true
     end
 
     -- Update spell charge data before zero-charge state classification.
@@ -1583,7 +1180,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             local probeShown, probeRealShown = EntryRuntime.ResolveSlotProbeShown(spellCooldownResult, buttonData.id, cooldownSpellId)
             if probeShown ~= nil then
                 button._mainCDShown = probeRealShown == true
-            elseif not auraOwnsPrimarySwipe then
+            else
                 -- No action bar slot found; use the ignoreGCD-backed real cooldown state.
                 if spellCooldownResult and spellCooldownResult.fetchOk then
                     button._mainCDShown = spellCooldownResult.state == COOLDOWN_STATE_COOLDOWN
@@ -1636,8 +1233,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._desatCooldownActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     elseif usesChargeBehavior then
         button._desatCooldownActive = button._chargeState == CHARGE_STATE_ZERO
-    elseif auraOwnsPrimarySwipe and auraProbeInfo then
-        button._desatCooldownActive = (auraProbeRealCooldownShown and not auraProbeIsGCDOnly) or false
     else
         button._desatCooldownActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     end
@@ -1655,13 +1250,13 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Bar/text mode: charge bars are driven by the recharge DurationObject, not
         -- the main spell CD or GCD. Save and clear the main CD so recharge
         -- timing fully controls bar fill for charge spells.
-        if (button._isBar or button._isText) and not auraOwnsPrimarySwipe and button._chargeDurationObj then
+        if (button._isBar or button._isText) and button._chargeDurationObj then
             button._durationObj = nil
         end
 
         local normalCooldownDisplayActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
             or (isGCDOnly and style.showGCDSwipe == true)
-        if not auraOwnsPrimarySwipe and button._chargeDurationObj then
+        if button._chargeDurationObj then
             if not button._isBar and not button._isText then
                 if button._chargeCooldownVisualActive then
                     -- Icon mode: active recharge owns the shared cooldown frame.
@@ -1674,7 +1269,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 -- Bar/text mode: only set _durationObj if actually recharging
                 button._durationObj = button._chargeDurationObj
             end
-        elseif not button._isBar and not button._isText and not auraOwnsPrimarySwipe then
+        elseif not button._isBar and not button._isText then
             -- Icon mode fallback: no chargeDurationObj, try fetching one.
             -- Only an active charge DurationObject may replace an existing GCD display.
             local chargeSpellID = cooldownSpellId or buttonData.id
@@ -1728,36 +1323,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- Aura stack count display (aura-tracking spells with stackable auras)
-    -- Text is a secret value in combat — pass through directly to SetText.
-    -- Blizzard sets it to "" when stacks <= 1 and the count string when > 1.
-    if button.auraStackCount and button._barAuraStackDisplay then
-        if style.showAuraStackText ~= false and button._auraActive then
-            if not preserveBarAuraStackText then
-                local stackTextFormat = CooldownCompanion:GetBarPanelAuraStackTextFormat(buttonData)
-
-                if barAuraSecretStackValue ~= nil then
-                    EntryRuntime.SetAuraStackCountText(button.auraStackCount, barAuraSecretStackValue, button._barAuraStackMax, stackTextFormat)
-                elseif button._barAuraStackValueAvailable and not issecretvalue(button._barAuraStackValue) then
-                    EntryRuntime.SetAuraStackCountText(button.auraStackCount, button._barAuraStackValue, button._barAuraStackMax, stackTextFormat)
-                elseif button._auraStackText ~= nil then
-                    EntryRuntime.SetAuraStackCountText(button.auraStackCount, button._auraStackText, button._barAuraStackMax, stackTextFormat)
-                else
-                    button.auraStackCount:SetText("")
-                end
-            end
-        else
-            button.auraStackCount:SetText("")
-        end
-    elseif button.auraStackCount and (button._auraTrackingReady or buttonData.isPassive or button._conditionalAuraStackTextPreview)
-       and (style.showAuraStackText ~= false) then
-        if button._auraActive or button._conditionalAuraStackTextPreview then
-            button.auraStackCount:SetText(button._auraStackText or "")
-        else
-            button.auraStackCount:SetText("")
-        end
-    end
-
     -- Charge text color: three-state (zero / partial / max).
     -- Uses the canonical charge state resolved above.
     ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)
@@ -1796,14 +1361,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             if usesChargeBehavior then
                 -- Charge spells: cooldown-active means zero available charges.
                 cooldownActive = button._chargeState == CHARGE_STATE_ZERO
-            elseif auraOwnsPrimarySwipe then
-                -- Aura visuals replace button.cooldown; reuse the shared
-                -- probe computed above (same spell, same tick).
-                if auraProbeInfo then
-                    cooldownActive = auraProbeRealCooldownShown and not auraProbeIsGCDOnly
-                else
-                    cooldownActive = false
-                end
             else
                 -- Normal path: real cooldown ignores GCD-only presentation.
                 cooldownActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
@@ -1814,7 +1371,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 cooldownSpellId,
                 isOnGCD or false,
                 cooldownActive,
-                auraOverrideActive,
+                false,
                 currentCharges,
                 maxCharges,
                 chargeRecharging,
@@ -1827,7 +1384,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Per-button visibility evaluation (after charge tracking)
     button._procOverlayActive = procOverlayActive
-    EvaluateButtonVisibility(button, buttonData, auraOverrideActive, procOverlayActive, auraOwnsPrimarySwipe)
+    EvaluateButtonVisibility(button, buttonData, false, procOverlayActive, false)
     button._rawVisibilityHidden = button._visibilityHidden
     button._rawVisibilityAlphaOverride = button._visibilityAlphaOverride
     button._rawVisibilityReasonBits = button._visibilityReasonBits
@@ -1880,7 +1437,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button._visualStateContext = visualStateContext
         end
         visualStateContext.displayMode = buttonDisplayMode
-        visualStateContext.preserveSecretTextRender = auraDisplayNameState and auraDisplayNameState.preserveSecretTextRender == true
+        visualStateContext.preserveSecretTextRender = false
     end
     -- Track visibility/force-visible state changes for compact layout reflow.
     local visibilityChanged = button._visibilityHidden ~= button._prevVisibilityHidden
@@ -2008,9 +1565,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Mode-specific visual dispatch
     if button._isText then
-        if not (auraDisplayNameState and auraDisplayNameState.preserveSecretTextRender) then
-            UpdateTextDisplay(button, auraDisplayNameState and auraDisplayNameState.secretName, auraDisplayNameState and auraDisplayNameState.hasSecretName == true)
-        end
+        UpdateTextDisplay(button)
     elseif button._isBar then
         UpdateBarDisplay(button)
         DispatchStandaloneTextureVisual(button, group)

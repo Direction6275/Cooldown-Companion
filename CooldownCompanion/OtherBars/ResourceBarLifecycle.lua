@@ -5,17 +5,11 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local EntryRuntime = ST.EntryRuntime
 
 local math_abs = math.abs
 local ipairs = ipairs
 
 local RB = ST._RB
-
-local GetAuraInstanceIDSets = ST.GetAuraInstanceIDSets
-
--- Immutable — shared across calls; never write to this table.
-local CLEAR_CUSTOM_BAR_AURA_OPTS = { useFalseState = true, clearCustomAuraStacks = true }
 
 function RB.CreateResourceBarLifecycleModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
@@ -23,10 +17,8 @@ function RB.CreateResourceBarLifecycleModule(deps)
     local GetSpecLayoutOrder = deps.GetSpecLayoutOrder or RB.GetSpecLayoutOrder
     local GetEffectiveAnchorGroupId = deps.GetEffectiveAnchorGroupId or RB.GetEffectiveAnchorGroupId
     local GetResourcePrimaryLength = deps.GetResourcePrimaryLength or RB.GetResourcePrimaryLength
-    local GetResolvedCustomAuraBarAuraUnit = deps.GetResolvedCustomAuraBarAuraUnit or RB.GetResolvedCustomAuraBarAuraUnit
     local GetLastAppliedPrimaryLength = deps.GetLastAppliedPrimaryLength
     local UpdateMWMaxStacks = deps.UpdateMWMaxStacks
-    local RefreshEventDrivenCustomAuraBarsForUnit = deps.RefreshEventDrivenCustomAuraBarsForUnit
     local hooksInstalled = false
     local eventFrame = nil
     local eventFrameEnabled = false
@@ -34,19 +26,6 @@ function RB.CreateResourceBarLifecycleModule(deps)
     local pendingTalentResourceRefreshToken = 0
     local lifecycleEventsEnabled = false
     local InstallHooks
-
-    local function IsCustomBarAuraRuntimeTracked(barInfo, cabConfig)
-        if not (barInfo and cabConfig) then return false end
-        return barInfo.barType == "custom_continuous"
-            or barInfo.barType == "custom_segmented"
-            or barInfo.barType == "custom_overlay"
-            or (barInfo.barType == "custom_cooldown"
-                and cabConfig.auraTracking == true)
-    end
-
-    local function ClearCustomBarAuraRuntime(bar, configUnit)
-        EntryRuntime.ClearTrackedAuraOwnerState(bar, configUnit, CLEAR_CUSTOM_BAR_AURA_OPTS)
-    end
 
     local function RebuildResourceBarTalentEligibilityCache()
         if CooldownCompanion.CacheCurrentSpec then
@@ -156,70 +135,6 @@ function RB.CreateResourceBarLifecycleModule(deps)
                     if unit == "player" then
                         CooldownCompanion:ApplyResourceBars()
                     end
-                elseif event == "UNIT_AURA" then
-                    local unit, updateInfo = ...
-                    if unit ~= "player" and unit ~= "target" then return end
-                    if not updateInfo then return end
-
-                    local removedIDs = updateInfo.removedAuraInstanceIDs
-                    local updatedIDs = updateInfo.updatedAuraInstanceIDs
-                    local removedIDSet, updatedIDSet = GetAuraInstanceIDSets(updateInfo)
-                    local hasAuraChange = updateInfo.isFullUpdate or updateInfo.addedAuras or removedIDs or updatedIDs
-                    local targetSwitchDataReceived = false
-
-                    if removedIDs or updatedIDs or unit == "target" then
-                        for _, barInfo in ipairs(resourceBarFrames) do
-                            local bar = barInfo and barInfo.frame
-                            local cabConfig = barInfo and barInfo.cabConfig
-                            local configUnit = cabConfig and GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
-                            if IsCustomBarAuraRuntimeTracked(barInfo, cabConfig)
-                                and bar
-                                and (bar._auraUnit == unit or configUnit == unit) then
-                                if removedIDSet
-                                    and bar._auraInstanceID
-                                    and bar._auraUnit == unit
-                                    and removedIDSet[bar._auraInstanceID] then
-                                    ClearCustomBarAuraRuntime(bar, configUnit)
-                                    bar._auraEventRemoved = true
-                                end
-                                if updatedIDSet
-                                    and bar._auraInstanceID
-                                    and bar._auraUnit == unit
-                                    and updatedIDSet[bar._auraInstanceID] then
-                                    EntryRuntime.MarkAuraPandemicStateDirty(bar, unit, bar._auraInstanceID)
-                                end
-                                if unit == "target" and bar._targetSwitchAt then
-                                    bar._targetSwitchDataReceived = true
-                                    targetSwitchDataReceived = true
-                                end
-                            end
-                        end
-                    end
-                    if hasAuraChange or targetSwitchDataReceived then
-                        RefreshEventDrivenCustomAuraBarsForUnit(unit)
-                    end
-                elseif event == "PLAYER_TARGET_CHANGED" then
-                    local hasTarget = UnitExists("target")
-                    local now = GetTime()
-                    for _, barInfo in ipairs(resourceBarFrames) do
-                        local bar = barInfo and barInfo.frame
-                        local cabConfig = barInfo and barInfo.cabConfig
-                        if IsCustomBarAuraRuntimeTracked(barInfo, cabConfig)
-                            and bar
-                            and GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID) == "target" then
-                            if hasTarget then
-                                EntryRuntime.StartTrackedAuraTargetSwitch(bar, now, "target")
-                            else
-                                ClearCustomBarAuraRuntime(bar, "target")
-                            end
-                        end
-                    end
-                    RefreshEventDrivenCustomAuraBarsForUnit("target")
-                elseif event == "UNIT_TARGET" then
-                    local unitToken = ...
-                    if unitToken == "player" then
-                        RefreshEventDrivenCustomAuraBarsForUnit("target")
-                    end
                 end
             end)
         end
@@ -227,9 +142,6 @@ function RB.CreateResourceBarLifecycleModule(deps)
         -- UNIT_MAXHEALTH: stagger bar max is health-based; only matters for Brewmaster
         -- but RegisterUnitEvent with "player" filter has negligible overhead for others
         eventFrame:RegisterUnitEvent("UNIT_MAXHEALTH", "player")
-        eventFrame:RegisterUnitEvent("UNIT_AURA", "player", "target")
-        eventFrame:RegisterUnitEvent("UNIT_TARGET", "player")
-        eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
         eventFrameEnabled = true
     end
 

@@ -50,39 +50,6 @@ ST.EDGE_ANCHOR_SPEC = {
 }
 
 --------------------------------------------------------------------------------
--- Aura Instance ID Sets
---------------------------------------------------------------------------------
-
--- Module-owned scratch sets for GetAuraInstanceIDSets. Only the getter below
--- may touch these; callers use only the returned sets.
-local removedAuraIDSetScratch = {}
-local updatedAuraIDSetScratch = {}
-
--- Fills a scratch set from a UNIT_AURA instance-ID array and returns it, or
--- returns nil when the array is empty/absent (the nil path deliberately skips
--- the wipe, so scratch contents are stale between calls).
-local function FillAuraInstanceIDSet(scratch, auraInstanceIDs)
-    if not (auraInstanceIDs and auraInstanceIDs[1]) then
-        return nil
-    end
-
-    wipe(scratch)
-    for _, auraInstanceID in ipairs(auraInstanceIDs) do
-        scratch[auraInstanceID] = true
-    end
-    return scratch
-end
-
--- Returns removedIDSet, updatedIDSet lookup sets for a UNIT_AURA updateInfo;
--- either may be nil when its instance-ID array is empty/absent. Both are
--- shared scratch sets: use them only within the same synchronous event
--- dispatch and never retain them.
-function ST.GetAuraInstanceIDSets(updateInfo)
-    return FillAuraInstanceIDSet(removedAuraIDSetScratch, updateInfo and updateInfo.removedAuraInstanceIDs),
-        FillAuraInstanceIDSet(updatedAuraIDSetScratch, updateInfo and updateInfo.updatedAuraInstanceIDs)
-end
-
---------------------------------------------------------------------------------
 -- StatusBar Motion Helpers
 --------------------------------------------------------------------------------
 

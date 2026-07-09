@@ -1777,7 +1777,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button._auraCooldownStart = nil
     button._auraCooldownDuration = nil
     button._auraPrimarySwipeActive = nil
-    button._auraTrackingReady = buttonData.isPassive == true
+    button._auraTrackingReady = nil
     button._showingAuraIcon = false
     button._auraViewerFrame = nil
     button._activeAuraSpellID = nil

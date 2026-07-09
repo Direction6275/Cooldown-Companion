@@ -98,55 +98,6 @@ function CooldownCompanion:EnsureEquipmentSlotItemLoadFrame()
     end)
 end
 
-local function PlayerHasTrackedAuraForButton(button, buttonData)
-    if button._activeAuraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(button._activeAuraSpellID) then
-        return true
-    end
-
-    if buttonData.type == "spell" and buttonData.addedAs == "aura" then
-        local orderedAuraIDs = CooldownCompanion:GetOrderedAuraCandidateIDs(buttonData)
-        for _, spellID in ipairs(orderedAuraIDs) do
-            if C_UnitAuras.GetPlayerAuraBySpellID(spellID) then
-                return true
-            end
-        end
-        return false
-    end
-
-    if buttonData.auraSpellID then
-        local includesButtonID
-        for id in tostring(buttonData.auraSpellID):gmatch("%d+") do
-            local spellID = tonumber(id)
-            if spellID then
-                if spellID == buttonData.id then
-                    includesButtonID = true
-                end
-                if C_UnitAuras.GetPlayerAuraBySpellID(spellID) then
-                    return true
-                end
-            end
-        end
-        if not includesButtonID and buttonData.type == "spell" then
-            local baseId = C_Spell.GetBaseSpell(buttonData.id)
-            if baseId and baseId ~= button._auraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(baseId) then
-                return true
-            end
-        end
-        return false
-    end
-
-    if buttonData.type ~= "spell" then
-        return button._auraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID) ~= nil
-    end
-
-    local baseId = C_Spell.GetBaseSpell(buttonData.id)
-    if baseId and baseId ~= button._auraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(baseId) then
-        return true
-    end
-
-    return button._auraSpellID and C_UnitAuras.GetPlayerAuraBySpellID(button._auraSpellID) ~= nil
-end
-
 function CooldownCompanion:RefreshSpellAvailabilityState(opts)
     opts = opts or {}
     self:CachePlayerState()
@@ -526,58 +477,10 @@ function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReload
             QueueSpellAvailabilitySettlingRefresh(self)
         end
     end)
-    -- Post-login sweep: clear buttons falsely stuck as aura-active from stale
-    -- CDM viewer data during the first seconds after login/reload.
+    -- Post-login settle repaint (12.1 demolition: the false-aura-active sweep
+    -- is gone with the aura backend; keep the 2s settle dirty mark).
     if isFullInit then
         C_Timer.After(2, function()
-            self:ForEachButton(function(button, bd)
-                if bd.auraTracking and button._auraActive and not bd.isPassive then
-                    -- Mirror the tick code's viewer resolution order:
-                    -- cdmChildSlot → ResolveBuffViewerFrameForSpell
-                    local vf
-                    if bd.cdmChildSlot then
-                        local allChildren = self.viewerAuraAllChildren[bd.id]
-                        if allChildren then
-                            vf = allChildren[bd.cdmChildSlot]
-                        end
-                    end
-                    if not vf and button._auraSpellID then
-                        vf = self:ResolveBuffViewerFrameForSpell(button._auraSpellID)
-                    end
-                    -- Confirm via auraInstanceID, viewer cooldown widget, or totem slot
-                    local viewerConfirms = vf and (vf.auraInstanceID ~= nil)
-                    if not viewerConfirms and vf then
-                        local vc = vf.Cooldown
-                        if vc and vc:IsShown() then
-                            viewerConfirms = true
-                        elseif vf.preferredTotemUpdateSlot and vf:IsVisible() then
-                            viewerConfirms = true
-                        end
-                    end
-                    if not viewerConfirms then
-                        local unit = button._auraUnit or "player"
-                        local apiConfirms = false
-                        if unit == "player" and button._auraSpellID then
-                            apiConfirms = PlayerHasTrackedAuraForButton(button, bd)
-                        elseif unit == "target" and UnitExists("target") and button._auraInstanceID then
-                            apiConfirms = C_UnitAuras.GetAuraDuration("target", button._auraInstanceID) ~= nil
-                        end
-                        if not apiConfirms then
-                            button._auraActive = false
-                            button._auraInstanceID = nil
-                            button._auraUnit = bd.auraUnit or "player"
-                            button._inPandemic = false
-                            button._durationObj = nil
-                            button._auraDurationObj = nil
-                            button._auraCooldownStart = nil
-                            button._auraCooldownDuration = nil
-                            button._auraPrimarySwipeActive = nil
-                            button.cooldown:SetCooldown(0, 0)
-                            button.cooldown:Hide()
-                        end
-                    end
-                end
-            end)
             self:MarkCooldownsDirty("player-entering-world")
         end)
     end

@@ -1297,28 +1297,9 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
     end
     local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
 
-    -- Read stacks from viewer frame (applications is plain for MW)
+    -- 12.1 demolition: MW stack reads removed (aura data blocked in combat).
+    -- The bar renders permanently empty until the AuraContainer rebuild.
     local stacks = 0
-    local viewerFrame = CooldownCompanion.viewerAuraFrames and CooldownCompanion.viewerAuraFrames[MW_SPELL_ID]
-    local instId = viewerFrame and viewerFrame.auraInstanceID
-    if instId then
-        local auraData = C_UnitAuras.GetAuraDataByAuraInstanceID("player", instId)
-        if auraData then
-            stacks = auraData.applications or 0
-        end
-    end
-    if issecretvalue and issecretvalue(stacks) then
-        for i = 1, #holder.segments do
-            SetStatusBarImmediateValue(holder.segments[i], 0)
-            if holder.overlaySegments and holder.overlaySegments[i] then
-                SetStatusBarImmediateValue(holder.overlaySegments[i], 0)
-                holder.overlaySegments[i]:SetAlpha(0)
-            end
-        end
-        HideResourceAuraStackSegments(holder)
-        ClearSegmentedText(holder)
-        return
-    end
 
     local half = #holder.segments
     local baseColor, overlayColor, maxColor = GetResourceColors(100, settings)
