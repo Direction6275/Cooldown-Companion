@@ -10,6 +10,7 @@ local tonumber = tonumber
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
+local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreatePromoteButton = ST._CreatePromoteButton
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
@@ -1720,17 +1721,7 @@ local function BuildLayoutTab(container)
     -- ================================================================
     -- ADVANCED: Strata — Frame Strata (all modes) + Custom Strata (icon mode only)
     -- ================================================================
-    local strataHeading = AceGUI:Create("Heading")
-    strataHeading:SetText("Strata")
-    ColorHeading(strataHeading)
-    strataHeading:SetFullWidth(true)
-    container:AddChild(strataHeading)
-
-    local strataCollapsed = CS.collapsedSections["layout_strata"]
-    AttachCollapseButton(strataHeading, strataCollapsed, function()
-        CS.collapsedSections["layout_strata"] = not CS.collapsedSections["layout_strata"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local strataHeading, strataCollapsed = BuildCollapsibleSection(container, "Strata", "layout_strata")
 
     if not strataCollapsed then
 
@@ -2988,17 +2979,7 @@ local function BuildAppearanceTab(container)
     -- ================================================================
     -- Icon Settings (size, spacing)
     -- ================================================================
-    local iconHeading = AceGUI:Create("Heading")
-    iconHeading:SetText("Icon Settings")
-    ColorHeading(iconHeading)
-    iconHeading:SetFullWidth(true)
-    container:AddChild(iconHeading)
-
-    local iconSettingsCollapsed = CS.collapsedSections["appearance_icons"]
-    AttachCollapseButton(iconHeading, iconSettingsCollapsed, function()
-        CS.collapsedSections["appearance_icons"] = not CS.collapsedSections["appearance_icons"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local iconHeading, iconSettingsCollapsed = BuildCollapsibleSection(container, "Icon Settings", "appearance_icons")
 
     if not iconSettingsCollapsed then
     local squareCb = AceGUI:Create("CheckBox")
@@ -3213,17 +3194,7 @@ local function BuildAppearanceTab(container)
     end
 
     -- Border heading
-    local borderHeading = AceGUI:Create("Heading")
-    borderHeading:SetText("Border")
-    ColorHeading(borderHeading)
-    borderHeading:SetFullWidth(true)
-    container:AddChild(borderHeading)
-
-    local borderCollapsed = CS.collapsedSections["appearance_border"]
-    AttachCollapseButton(borderHeading, borderCollapsed, function()
-        CS.collapsedSections["appearance_border"] = not CS.collapsedSections["appearance_border"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local borderHeading, borderCollapsed = BuildCollapsibleSection(container, "Border", "appearance_border")
     CreatePromoteButton(borderHeading, "borderSettings", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     if not borderCollapsed then
@@ -3234,17 +3205,7 @@ local function BuildAppearanceTab(container)
     end -- not borderCollapsed
 
     -- Icon Tint
-    local iconTintHeading = AceGUI:Create("Heading")
-    iconTintHeading:SetText("Icon Tint")
-    ColorHeading(iconTintHeading)
-    iconTintHeading:SetFullWidth(true)
-    container:AddChild(iconTintHeading)
-
-    local iconTintCollapsed = CS.collapsedSections["appearance_iconTint"]
-    AttachCollapseButton(iconTintHeading, iconTintCollapsed, function()
-        CS.collapsedSections["appearance_iconTint"] = not CS.collapsedSections["appearance_iconTint"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local iconTintHeading, iconTintCollapsed = BuildCollapsibleSection(container, "Icon Tint", "appearance_iconTint")
     local iconTintPromoteBtn = CreatePromoteButton(iconTintHeading, "iconTint", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     local iconTintInfoBtn = CreateInfoButton(iconTintHeading.frame, iconTintPromoteBtn, "LEFT", "RIGHT", 2, 0, {
@@ -3289,17 +3250,7 @@ local function BuildAppearanceTab(container)
 
     -- Masque skinning (icon-only)
     if CooldownCompanion.Masque then
-        local masqueHeading = AceGUI:Create("Heading")
-        masqueHeading:SetText("Masque")
-        ColorHeading(masqueHeading)
-        masqueHeading:SetFullWidth(true)
-        container:AddChild(masqueHeading)
-
-        local masqueCollapsed = CS.collapsedSections["appearance_masque"]
-        AttachCollapseButton(masqueHeading, masqueCollapsed, function()
-            CS.collapsedSections["appearance_masque"] = not CS.collapsedSections["appearance_masque"]
-            CooldownCompanion:RefreshConfigPanel()
-        end)
+        local masqueHeading, masqueCollapsed = BuildCollapsibleSection(container, "Masque", "appearance_masque")
 
         if not masqueCollapsed then
         local masqueCb = AceGUI:Create("CheckBox")
@@ -3367,17 +3318,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
     -- ================================================================
     -- Layout
     -- ================================================================
-    local layoutHeading = AceGUI:Create("Heading")
-    layoutHeading:SetText("Layout")
-    ColorHeading(layoutHeading)
-    layoutHeading:SetFullWidth(true)
-    scroll:AddChild(layoutHeading)
-
-    local layoutCollapsed = CS.collapsedSections["container_layout"]
-    AttachCollapseButton(layoutHeading, layoutCollapsed, function()
-        CS.collapsedSections["container_layout"] = not CS.collapsedSections["container_layout"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local layoutHeading, layoutCollapsed = BuildCollapsibleSection(scroll, "Layout", "container_layout")
 
     if not layoutCollapsed then
         container.anchor = CooldownCompanion:NormalizeContainerAnchor(container.anchor)
@@ -3434,17 +3375,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
     -- ================================================================
     -- Group Alpha
     -- ================================================================
-    local alphaHeading = AceGUI:Create("Heading")
-    alphaHeading:SetText("Group Alpha")
-    ColorHeading(alphaHeading)
-    alphaHeading:SetFullWidth(true)
-    scroll:AddChild(alphaHeading)
-
-    local alphaCollapsed = CS.collapsedSections["container_alpha"]
-    AttachCollapseButton(alphaHeading, alphaCollapsed, function()
-        CS.collapsedSections["container_alpha"] = not CS.collapsedSections["container_alpha"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local alphaHeading, alphaCollapsed = BuildCollapsibleSection(scroll, "Group Alpha", "container_alpha")
 
     if not alphaCollapsed then
         local function RefreshContainerAlphaSettings()
@@ -3581,17 +3512,7 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
     })
 
     -- Class/spec eligibility section
-    local specHeading = AceGUI:Create("Heading")
-    specHeading:SetText("Class & Specialization Eligibility")
-    ColorHeading(specHeading)
-    specHeading:SetFullWidth(true)
-    scroll:AddChild(specHeading)
-
-    local specCollapsed = CS.collapsedSections["container_loadconditions_spec"]
-    AttachCollapseButton(specHeading, specCollapsed, function()
-        CS.collapsedSections["container_loadconditions_spec"] = not CS.collapsedSections["container_loadconditions_spec"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local specHeading, specCollapsed = BuildCollapsibleSection(scroll, "Class & Specialization Eligibility", "container_loadconditions_spec")
 
     if not specCollapsed then
         if hasFolderSpecs then
@@ -3712,17 +3633,7 @@ local function BuildFolderLoadConditionsTab(scroll, folderId)
         onChanged = RefreshFolderOnly,
     })
 
-    local specHeading = AceGUI:Create("Heading")
-    specHeading:SetText("Class & Specialization Eligibility")
-    ColorHeading(specHeading)
-    specHeading:SetFullWidth(true)
-    scroll:AddChild(specHeading)
-
-    local specCollapsed = CS.collapsedSections["folder_loadconditions_spec"]
-    AttachCollapseButton(specHeading, specCollapsed, function()
-        CS.collapsedSections["folder_loadconditions_spec"] = not CS.collapsedSections["folder_loadconditions_spec"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local specHeading, specCollapsed = BuildCollapsibleSection(scroll, "Class & Specialization Eligibility", "folder_loadconditions_spec")
 
     if not specCollapsed then
         AddClassSpecEligibilityControls(scroll, {

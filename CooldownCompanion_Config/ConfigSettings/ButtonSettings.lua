@@ -6,7 +6,7 @@ local math_pi = math.pi
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
-local AttachCollapseButton = ST._AttachCollapseButton
+local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local HasTooltipCooldown = ST.HasTooltipCooldown
@@ -510,18 +510,8 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     -- Charge text settings now live in group Appearance tab (with per-button overrides)
     if UsesChargeBehavior(buttonData) then return end
 
-    local itemHeading = AceGUI:Create("Heading")
-    itemHeading:SetText("Item Settings")
-    ColorHeading(itemHeading)
-    itemHeading:SetFullWidth(true)
-    scroll:AddChild(itemHeading)
-
     local itemKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_itemsettings"
-    local itemCollapsed = CS.collapsedSections[itemKey]
-    AttachCollapseButton(itemHeading, itemCollapsed, function()
-        CS.collapsedSections[itemKey] = not CS.collapsedSections[itemKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local itemHeading, itemCollapsed = BuildCollapsibleSection(scroll, "Item Settings", itemKey)
 
 
     if not itemCollapsed then
@@ -1273,19 +1263,8 @@ local function BuildCustomNameSection(scroll, buttonData)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group or group.displayMode ~= "bars" then return end
 
-    local customNameHeading = AceGUI:Create("Heading")
-    customNameHeading:SetText("Custom Name")
-    ColorHeading(customNameHeading)
-    customNameHeading:SetFullWidth(true)
-    scroll:AddChild(customNameHeading)
-
     local customNameKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_customname"
-    local customNameCollapsed = CS.collapsedSections[customNameKey]
-
-    AttachCollapseButton(customNameHeading, customNameCollapsed, function()
-        CS.collapsedSections[customNameKey] = not CS.collapsedSections[customNameKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local customNameHeading, customNameCollapsed = BuildCollapsibleSection(scroll, "Custom Name", customNameKey)
 
     if not customNameCollapsed then
         local customNameBox = AceGUI:Create("EditBox")
@@ -1316,19 +1295,8 @@ local function BuildCustomKeybindSection(scroll, buttonData)
         return
     end
 
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Custom Keybind Text")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    scroll:AddChild(heading)
-
     local collapseKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_customkeybind"
-    local isCollapsed = CS.collapsedSections[collapseKey]
-
-    AttachCollapseButton(heading, isCollapsed, function()
-        CS.collapsedSections[collapseKey] = not CS.collapsedSections[collapseKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local heading, isCollapsed = BuildCollapsibleSection(scroll, "Custom Keybind Text", collapseKey)
 
     if not isCollapsed then
         local customKeybindBox = AceGUI:Create("EditBox")

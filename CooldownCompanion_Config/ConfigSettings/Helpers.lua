@@ -65,6 +65,31 @@ local function AttachCollapseButton(heading, isCollapsed, onClickFn)
     return btn
 end
 
+-- Helper: build a class-colored collapsible section Heading wired to a
+-- collapse-state store. store defaults to CS.collapsedSections (the config
+-- columns' store); resource-bar panels pass their own. refreshFn defaults to
+-- a full config-panel refresh. Returns the heading, its collapsed state, and
+-- the collapse button (for callers that anchor extra controls to it).
+local function BuildCollapsibleSection(container, title, key, store, refreshFn)
+    store = store or CS.collapsedSections
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(title)
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    local collapsed = store[key]
+    local btn = AttachCollapseButton(heading, collapsed, function()
+        store[key] = not store[key]
+        if refreshFn then
+            refreshFn()
+        else
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end)
+    return heading, collapsed, btn
+end
+
 -- Helper: add an advanced-settings button on a parent widget (CheckBox or Heading).
 -- The button opens the shared side editor when options.build is provided.
 local ADVANCED_TOGGLE_ATLAS = "QuestLog-icon-setting"
@@ -1316,6 +1341,7 @@ end
 -- Expose helpers for other ConfigSettings files
 ST._ColorHeading = ColorHeading
 ST._AttachCollapseButton = AttachCollapseButton
+ST._BuildCollapsibleSection = BuildCollapsibleSection
 ST._AddAdvancedToggle = AddAdvancedToggle
 ST._CreatePromoteButton = CreatePromoteButton
 ST._CreateRevertButton = CreateRevertButton

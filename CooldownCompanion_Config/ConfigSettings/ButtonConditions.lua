@@ -11,6 +11,7 @@ local CS = ST._configState
 -- Imports from Helpers.lua and State.lua
 local ColorHeading = ST._ColorHeading
 local AttachCollapseButton = ST._AttachCollapseButton
+local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 
@@ -2064,20 +2065,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
         return false
     end
 
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Visibility Rules")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    scroll:AddChild(heading)
-
     local visKey = isBatch
         and (CS.selectedGroup .. "_batch_visibility")
         or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_visibility")
-    local visCollapsed = CS.collapsedSections[visKey]
-    AttachCollapseButton(heading, visCollapsed, function()
-        CS.collapsedSections[visKey] = not CS.collapsedSections[visKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local heading, visCollapsed = BuildCollapsibleSection(scroll, "Visibility Rules", visKey)
 
 
     if not visCollapsed then
@@ -2490,20 +2481,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     -- TALENT CONDITIONS (independent section, not nested under Visibility Rules)
     ------------------------------------------------------------------------
 
-    local talentHeading = AceGUI:Create("Heading")
-    talentHeading:SetText("Talent Conditions")
-    ColorHeading(talentHeading)
-    talentHeading:SetFullWidth(true)
-    scroll:AddChild(talentHeading)
-
     local talentKey = isBatch
         and (CS.selectedGroup .. "_batch_talentcondition")
         or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_talentcondition")
-    local talentCollapsed = CS.collapsedSections[talentKey]
-    local talentCollapseBtn = AttachCollapseButton(talentHeading, talentCollapsed, function()
-        CS.collapsedSections[talentKey] = not CS.collapsedSections[talentKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local talentHeading, talentCollapsed, talentCollapseBtn = BuildCollapsibleSection(scroll, "Talent Conditions", talentKey)
 
     local talentInfoBtn = CreateInfoButton(talentHeading.frame, talentCollapseBtn, "LEFT", "RIGHT", 2, 0, {
         "Talent Conditions",
@@ -2795,17 +2776,7 @@ local function BuildLoadConditionsTab(container)
         onChanged = RefreshPanelLoadConditions,
     })
 
-    local specHeading = AceGUI:Create("Heading")
-    specHeading:SetText("Class & Specialization Eligibility")
-    ColorHeading(specHeading)
-    specHeading:SetFullWidth(true)
-    container:AddChild(specHeading)
-
-    local specCollapsed = CS.collapsedSections["loadconditions_spec"]
-    AttachCollapseButton(specHeading, specCollapsed, function()
-        CS.collapsedSections["loadconditions_spec"] = not CS.collapsedSections["loadconditions_spec"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local specHeading, specCollapsed = BuildCollapsibleSection(container, "Class & Specialization Eligibility", "loadconditions_spec")
 
     if not specCollapsed then
         if inheritedSpecFilter or inheritedHeroFilter then

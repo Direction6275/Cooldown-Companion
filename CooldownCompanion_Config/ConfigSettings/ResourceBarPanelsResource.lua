@@ -14,7 +14,7 @@ local ShowPopupAboveConfig = CS.ShowPopupAboveConfig
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
-local AttachCollapseButton = ST._AttachCollapseButton
+local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local AddColorPicker = ST._AddColorPicker
@@ -308,19 +308,8 @@ end
 local function BuildResourceTextControls(container, settings, powerType, displaySpecID, applyBars, collapsedKey)
     local rbTextAdvBtns = {}
 
-    local textHeading = AceGUI:Create("Heading")
-    textHeading:SetText("Text")
-    ColorHeading(textHeading)
-    textHeading:SetFullWidth(true)
-    container:AddChild(textHeading)
-
     local textKey = collapsedKey or "rb_text"
-    local textCollapsed = resourceBarCollapsedSections[textKey]
-
-    local textCollapseBtn = AttachCollapseButton(textHeading, textCollapsed, function()
-        resourceBarCollapsedSections[textKey] = not resourceBarCollapsedSections[textKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local textHeading, textCollapsed, textCollapseBtn = BuildCollapsibleSection(container, "Text", textKey, resourceBarCollapsedSections)
 
     textHeading.right:ClearAllPoints()
     textHeading.right:SetPoint("RIGHT", textHeading.frame, "RIGHT", -3, 0)
@@ -686,17 +675,8 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         gradientEnabled = DEFAULT_HEALTH_BACKGROUND_GRADIENT
     end
 
-    local fillHeading = AceGUI:Create("Heading")
-    fillHeading:SetText("Health")
-    ColorHeading(fillHeading)
-    fillHeading:SetFullWidth(true)
-    container:AddChild(fillHeading)
     local healthFillKey = "rb_health_fill"
-    local healthFillCollapsed = resourceBarCollapsedSections[healthFillKey]
-    AttachCollapseButton(fillHeading, healthFillCollapsed, function()
-        resourceBarCollapsedSections[healthFillKey] = not resourceBarCollapsedSections[healthFillKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local fillHeading, healthFillCollapsed = BuildCollapsibleSection(container, "Health", healthFillKey, resourceBarCollapsedSections)
 
     if not healthFillCollapsed then
         local fillGradientCb = AceGUI:Create("CheckBox")
@@ -720,17 +700,8 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         HealthResource.AddOpacitySlider(container, health, "healthBarOpacity", "Health Opacity", DEFAULT_HEALTH_BAR_OPACITY, applyBars)
     end
 
-    local missingHeading = AceGUI:Create("Heading")
-    missingHeading:SetText("Missing Health")
-    ColorHeading(missingHeading)
-    missingHeading:SetFullWidth(true)
-    container:AddChild(missingHeading)
     local healthMissingKey = "rb_health_missing"
-    local healthMissingCollapsed = resourceBarCollapsedSections[healthMissingKey]
-    local healthMissingCollapseBtn = AttachCollapseButton(missingHeading, healthMissingCollapsed, function()
-        resourceBarCollapsedSections[healthMissingKey] = not resourceBarCollapsedSections[healthMissingKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local missingHeading, healthMissingCollapsed, healthMissingCollapseBtn = BuildCollapsibleSection(container, "Missing Health", healthMissingKey, resourceBarCollapsedSections)
     local missingInfoBtn = CreateInfoButton(missingHeading.frame, healthMissingCollapseBtn, "LEFT", "RIGHT", 4, 0, {
         "Missing Health",
         {"Resource Background Color is used by regular resource bars. Health uses Missing Health for its empty region.", 1, 1, 1, true},
@@ -764,17 +735,8 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
 
     BuildResourceTextControls(container, settings, HealthResource.ID, specID, applyBars, "rb_health_text")
 
-    local effectsHeading = AceGUI:Create("Heading")
-    effectsHeading:SetText("Health Effects")
-    ColorHeading(effectsHeading)
-    effectsHeading:SetFullWidth(true)
-    container:AddChild(effectsHeading)
     local healthEffectsKey = "rb_health_effects"
-    local healthEffectsCollapsed = resourceBarCollapsedSections[healthEffectsKey]
-    AttachCollapseButton(effectsHeading, healthEffectsCollapsed, function()
-        resourceBarCollapsedSections[healthEffectsKey] = not resourceBarCollapsedSections[healthEffectsKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local effectsHeading, healthEffectsCollapsed = BuildCollapsibleSection(container, "Health Effects", healthEffectsKey, resourceBarCollapsedSections)
 
     if healthEffectsCollapsed then
         return
@@ -1058,19 +1020,8 @@ local function BuildResourceBarAnchoringPanel(container)
     container:AddChild(previewCb)
 
     -- ============ Resource Toggles Section ============
-    local toggleHeading = AceGUI:Create("Heading")
-    toggleHeading:SetText("Resource Toggles")
-    ColorHeading(toggleHeading)
-    toggleHeading:SetFullWidth(true)
-    container:AddChild(toggleHeading)
-
     local toggleKey = "rb_toggles"
-    local toggleCollapsed = resourceBarCollapsedSections[toggleKey]
-
-    AttachCollapseButton(toggleHeading, toggleCollapsed, function()
-        resourceBarCollapsedSections[toggleKey] = not resourceBarCollapsedSections[toggleKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local toggleHeading, toggleCollapsed = BuildCollapsibleSection(container, "Resource Toggles", toggleKey, resourceBarCollapsedSections)
 
     if not toggleCollapsed then
         -- Only show mana toggle for classes that actually use mana
@@ -1244,19 +1195,8 @@ local function BuildResourceBarPositioningPanel(container)
 
     -- ============ Anchor Settings (independent mode only) ============
     if isIndependentStack then
-        local stackPosHeading = AceGUI:Create("Heading")
-        stackPosHeading:SetText("Anchor Settings")
-        ColorHeading(stackPosHeading)
-        stackPosHeading:SetFullWidth(true)
-        container:AddChild(stackPosHeading)
-
         local stackPosKey = "rb_stack_position"
-        local stackPosCollapsed = resourceBarCollapsedSections[stackPosKey]
-
-        AttachCollapseButton(stackPosHeading, stackPosCollapsed, function()
-            resourceBarCollapsedSections[stackPosKey] = not resourceBarCollapsedSections[stackPosKey]
-            CooldownCompanion:RefreshConfigPanel()
-        end)
+        local stackPosHeading, stackPosCollapsed = BuildCollapsibleSection(container, "Anchor Settings", stackPosKey, resourceBarCollapsedSections)
 
         if not stackPosCollapsed then
             EnsureResourceLayoutAnchor(settings, layout)
@@ -1324,19 +1264,8 @@ local function BuildResourceBarPositioningPanel(container)
 
     -- ============ Layout Section (attached mode only) ============
     if not isIndependentStack then
-        local posHeading = AceGUI:Create("Heading")
-        posHeading:SetText("Layout")
-        ColorHeading(posHeading)
-        posHeading:SetFullWidth(true)
-        container:AddChild(posHeading)
-
         local posKey = "rb_position"
-        local posCollapsed = resourceBarCollapsedSections[posKey]
-
-        AttachCollapseButton(posHeading, posCollapsed, function()
-            resourceBarCollapsedSections[posKey] = not resourceBarCollapsedSections[posKey]
-            CooldownCompanion:RefreshConfigPanel()
-        end)
+        local posHeading, posCollapsed = BuildCollapsibleSection(container, "Layout", posKey, resourceBarCollapsedSections)
 
         if not posCollapsed then
             local gapSlider = AceGUI:Create("Slider")
@@ -1568,19 +1497,8 @@ local function BuildResourceColorControls(container, settings, powerType, specID
         return false
     end
 
-    local colorHeading = AceGUI:Create("Heading")
-    colorHeading:SetText("Colors")
-    ColorHeading(colorHeading)
-    colorHeading:SetFullWidth(true)
-    container:AddChild(colorHeading)
-
     local colorKey = "rb_colors_" .. tostring(powerType) .. "_" .. tostring(specID)
-    local colorCollapsed = resourceBarCollapsedSections[colorKey]
-
-    local colorCollapseBtn = AttachCollapseButton(colorHeading, colorCollapsed, function()
-        resourceBarCollapsedSections[colorKey] = not resourceBarCollapsedSections[colorKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local colorHeading, colorCollapsed, colorCollapseBtn = BuildCollapsibleSection(container, "Colors", colorKey, resourceBarCollapsedSections)
 
     colorHeading.right:ClearAllPoints()
     colorHeading.right:SetPoint("RIGHT", colorHeading.frame, "RIGHT", -3, 0)
@@ -2063,19 +1981,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
 
     if showThresholdsTicks then
     -- ============ Thresholds & Ticks Section ============
-    local thresholdHeading = AceGUI:Create("Heading")
-    thresholdHeading:SetText("Thresholds & Ticks")
-    ColorHeading(thresholdHeading)
-    thresholdHeading:SetFullWidth(true)
-    container:AddChild(thresholdHeading)
-
     local thresholdKey = "rb_thresholds_ticks"
-    local thresholdCollapsed = resourceBarCollapsedSections[thresholdKey]
-
-    local thresholdCollapseBtn = AttachCollapseButton(thresholdHeading, thresholdCollapsed, function()
-        resourceBarCollapsedSections[thresholdKey] = not resourceBarCollapsedSections[thresholdKey]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local thresholdHeading, thresholdCollapsed, thresholdCollapseBtn = BuildCollapsibleSection(container, "Thresholds & Ticks", thresholdKey, resourceBarCollapsedSections)
 
     local thresholdInfoBtn = CreateInfoButton(thresholdHeading.frame, thresholdCollapseBtn, "LEFT", "RIGHT", 4, 0, {
         "Thresholds & Ticks",

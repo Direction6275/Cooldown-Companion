@@ -16,7 +16,7 @@ local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
 
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
-local AttachCollapseButton = ST._AttachCollapseButton
+local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
@@ -1467,19 +1467,8 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                 end -- isSpellCustomBar
 
                 -- ---- Talent Conditions section ----
-                local talentHeading = AceGUI:Create("Heading")
-                talentHeading:SetText("Talent Conditions")
-                ColorHeading(talentHeading)
-                talentHeading:SetFullWidth(true)
-                container:AddChild(talentHeading)
-
                 local talentKey = "cab_talent_" .. capturedKey
-                local talentCollapsed = resourceBarCollapsedSections[talentKey]
-
-                local talentCollapseBtn = AttachCollapseButton(talentHeading, talentCollapsed, function()
-                    resourceBarCollapsedSections[talentKey] = not resourceBarCollapsedSections[talentKey]
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
+                local talentHeading, talentCollapsed, talentCollapseBtn = BuildCollapsibleSection(container, "Talent Conditions", talentKey, resourceBarCollapsedSections)
 
                 local talentInfoBtn = CreateInfoButton(talentHeading.frame, talentCollapseBtn, "LEFT", "RIGHT", 2, 0, {
                     "Talent Conditions",

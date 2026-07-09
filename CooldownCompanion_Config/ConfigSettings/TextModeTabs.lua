@@ -8,8 +8,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 -- Imports from Helpers.lua
-local ColorHeading = ST._ColorHeading
-local AttachCollapseButton = ST._AttachCollapseButton
+local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
@@ -84,17 +83,7 @@ local function BuildTextAppearanceTab(container, group, style)
     -- ================================================================
     -- Text Settings (width, height, spacing)
     -- ================================================================
-    local textHeading = AceGUI:Create("Heading")
-    textHeading:SetText("Text Settings")
-    ColorHeading(textHeading)
-    textHeading:SetFullWidth(true)
-    container:AddChild(textHeading)
-
-    local textSettingsCollapsed = CS.collapsedSections["textappearance_settings"]
-    AttachCollapseButton(textHeading, textSettingsCollapsed, function()
-        CS.collapsedSections["textappearance_settings"] = not CS.collapsedSections["textappearance_settings"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local textHeading, textSettingsCollapsed = BuildCollapsibleSection(container, "Text Settings", "textappearance_settings")
 
     if not textSettingsCollapsed then
     local widthSlider = AceGUI:Create("Slider")
@@ -164,17 +153,7 @@ local function BuildTextAppearanceTab(container, group, style)
     -- ================================================================
     -- Format String
     -- ================================================================
-    local fmtHeading = AceGUI:Create("Heading")
-    fmtHeading:SetText("Format String")
-    ColorHeading(fmtHeading)
-    fmtHeading:SetFullWidth(true)
-    container:AddChild(fmtHeading)
-
-    local fmtCollapsed = CS.collapsedSections["textappearance_format"]
-    local fmtCollapseBtn = AttachCollapseButton(fmtHeading, fmtCollapsed, function()
-        CS.collapsedSections["textappearance_format"] = not CS.collapsedSections["textappearance_format"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local fmtHeading, fmtCollapsed, fmtCollapseBtn = BuildCollapsibleSection(container, "Format String", "textappearance_format")
     local function BuildFormatPreviewAdvanced(panel)
         if AddConditionalPreviewButton then
             AddConditionalPreviewButton(panel, "Preview Cooldown State", "cooldown")
@@ -262,17 +241,7 @@ local function BuildTextAppearanceTab(container, group, style)
     -- ================================================================
     -- Font
     -- ================================================================
-    local fontHeading = AceGUI:Create("Heading")
-    fontHeading:SetText("Font")
-    ColorHeading(fontHeading)
-    fontHeading:SetFullWidth(true)
-    container:AddChild(fontHeading)
-
-    local fontCollapsed = CS.collapsedSections["textappearance_font"]
-    AttachCollapseButton(fontHeading, fontCollapsed, function()
-        CS.collapsedSections["textappearance_font"] = not CS.collapsedSections["textappearance_font"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local fontHeading, fontCollapsed = BuildCollapsibleSection(container, "Font", "textappearance_font")
 
     CreatePromoteButton(fontHeading, "textFont", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
@@ -335,17 +304,7 @@ local function BuildTextAppearanceTab(container, group, style)
     -- ================================================================
     -- Colors
     -- ================================================================
-    local colorsHeading = AceGUI:Create("Heading")
-    colorsHeading:SetText("Colors")
-    ColorHeading(colorsHeading)
-    colorsHeading:SetFullWidth(true)
-    container:AddChild(colorsHeading)
-
-    local colorsCollapsed = CS.collapsedSections["textappearance_colors"]
-    AttachCollapseButton(colorsHeading, colorsCollapsed, function()
-        CS.collapsedSections["textappearance_colors"] = not CS.collapsedSections["textappearance_colors"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local colorsHeading, colorsCollapsed = BuildCollapsibleSection(container, "Colors", "textappearance_colors")
 
     CreatePromoteButton(colorsHeading, "textColors", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
@@ -358,17 +317,7 @@ local function BuildTextAppearanceTab(container, group, style)
     -- ================================================================
     -- Background & Border
     -- ================================================================
-    local bgHeading = AceGUI:Create("Heading")
-    bgHeading:SetText("Background & Border")
-    ColorHeading(bgHeading)
-    bgHeading:SetFullWidth(true)
-    container:AddChild(bgHeading)
-
-    local bgCollapsed = CS.collapsedSections["textappearance_bg"]
-    AttachCollapseButton(bgHeading, bgCollapsed, function()
-        CS.collapsedSections["textappearance_bg"] = not CS.collapsedSections["textappearance_bg"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local bgHeading, bgCollapsed = BuildCollapsibleSection(container, "Background & Border", "textappearance_bg")
 
     CreatePromoteButton(bgHeading, "textBackground", CS.selectedButton and group.buttons[CS.selectedButton], style)
 

@@ -4,7 +4,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 local ColorHeading = ST._ColorHeading
-local AttachCollapseButton = ST._AttachCollapseButton
+local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateRevertButton = ST._CreateRevertButton
 local CreateInfoButton = ST._CreateInfoButton
@@ -378,18 +378,8 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
             local sectionAllowed, sectionUnavailableReason = CanButtonUseConfigOverrideSection(buttonData, sectionId)
             if sectionDef and sectionAllowed and sectionDef.modes[displayMode] then
                 visibleOverrideSections = visibleOverrideSections + 1
-                local heading = AceGUI:Create("Heading")
-                heading:SetText(sectionDef.label)
-                ColorHeading(heading)
-                heading:SetFullWidth(true)
-                scroll:AddChild(heading)
-
                 local overrideKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_override_" .. sectionId
-                local overrideCollapsed = CS.collapsedSections[overrideKey]
-                AttachCollapseButton(heading, overrideCollapsed, function()
-                    CS.collapsedSections[overrideKey] = not CS.collapsedSections[overrideKey]
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
+                local heading, overrideCollapsed = BuildCollapsibleSection(scroll, sectionDef.label, overrideKey)
 
                 local revertBtn = CreateRevertButton(heading, buttonData, sectionId)
                 table.insert(infoButtons, revertBtn)

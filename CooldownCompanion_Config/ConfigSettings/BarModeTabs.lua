@@ -8,8 +8,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 -- Imports from Helpers.lua
-local ColorHeading = ST._ColorHeading
-local AttachCollapseButton = ST._AttachCollapseButton
+local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateCheckboxPromoteButton = ST._CreateCheckboxPromoteButton
 local CreateColorPickerPromoteButton = ST._CreateColorPickerPromoteButton
@@ -40,17 +39,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- ================================================================
     -- Bar Settings (length, height, spacing, bar color)
     -- ================================================================
-    local barHeading = AceGUI:Create("Heading")
-    barHeading:SetText("Bar Settings")
-    ColorHeading(barHeading)
-    barHeading:SetFullWidth(true)
-    container:AddChild(barHeading)
-
-    local barSettingsCollapsed = CS.collapsedSections["barappearance_settings"]
-    AttachCollapseButton(barHeading, barSettingsCollapsed, function()
-        CS.collapsedSections["barappearance_settings"] = not CS.collapsedSections["barappearance_settings"]
-        CooldownCompanion:RefreshConfigPanel()
-    end)
+    local barHeading, barSettingsCollapsed = BuildCollapsibleSection(container, "Bar Settings", "barappearance_settings")
 
     if not barSettingsCollapsed then
     local lengthSlider = AceGUI:Create("Slider")
