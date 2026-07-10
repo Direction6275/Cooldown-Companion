@@ -799,10 +799,11 @@ function CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
     return nil
 end
 
--- Build a mapping from spellID → Blizzard cooldown viewer child frame.
--- The viewer frames (EssentialCooldownViewer, UtilityCooldownViewer, etc.)
--- run untainted code that reads secret aura data and stores the result
--- (auraInstanceID, auraDataUnit) as plain frame properties we can read.
+-- Map readable cooldownInfo spell identities to Blizzard cooldown viewer
+-- children for retained config-time and association behavior. In 12.1, do not
+-- treat child aura fields as runtime truth: auraSpellID/auraInstanceID become
+-- secret in combat, and instance-ID aura APIs hard-error for addon code in
+-- restricted combat.
 function CooldownCompanion:BuildViewerAuraMap()
     wipe(self.viewerAuraFrames)
     wipe(self.viewerAuraAllChildren)

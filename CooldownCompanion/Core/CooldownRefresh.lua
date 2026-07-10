@@ -44,36 +44,23 @@
     - Accepted residual: no-event fallback probes that ride the clean walk
       (e.g. the 0.25s icon texture staleness probe in CooldownUpdate.lua) run
       at safety-walk cadence (~1s) while skipping. Owner-approved (PR #505).
-    - Accepted residual: during aura override the real spell cooldown has no
-      expiry signal (OnCooldownDone rides button.cooldown, which the aura owns;
-      the walk-time probe in CooldownUpdate.lua re-checks it). For a buff that
-      outlasts its spell's cooldown, the ready transition (desat clear, ready
-      glow) can lag up to the ~1s safety walk while skipping.
-      Owner-approved (2026-07-04).
     - cd-done marks come from ST.OnButtonCooldownDone (ButtonFrame/Helpers.lua)
       and are ordinary MarkCooldownsDirty calls.
     - The combat ticker floor extends the idle skip into combat for
-      self-animating display modes only, via three coupled changes:
-        1. Mode-aware classifier (NoteButtonTimeState): an active cooldown/aura/
-           GCD swipe on an icon or bar button no longer forces a walk (the swipe,
-           numbers, and iconFill self-animate). Text mode, charge recharge,
-           target-switch holds, ready-glow windows, previews, and any
-           secret/unproven state still force walks.
-        2. Pandemic edge-hook: the crossing is secret in combat, so the CDM's
-           pooled pandemic FX frames' OnShow/OnHide (hooked per viewer via
-           pandemicIconPool) mark dirty ("pandemic-edge") -- a one-tick
-           event-covered edge, not a poll. An aura button is skippable only once
-           its viewer's pandemic pool is hooked (_pandemicEdgeUncovered nil);
-           until then it forces (fail open).
-        3. Power-mark demotion: UNIT_POWER_FREQUENT does not mark dirty; the
+      self-animating display modes only, via two coupled rules:
+        1. Mode-aware classifier (NoteButtonTimeState): an active cooldown or
+           GCD swipe on an icon or bar button no longer forces a walk because
+           its swipe, numbers, and iconFill self-animate. Text mode, charge
+           recharge, ready-glow windows, conditional previews, hide-unusable
+           fail-open state still force walks.
+        2. Power-mark demotion: UNIT_POWER_FREQUENT does not mark dirty; the
            castability tint rides walk cadence (safety walk ~1s worst case).
            Coupled to the hide-unusable floorFailOpen term in
            CooldownUpdate.UpdateButtonCooldown: usability has no event
            precisely because power marks are demoted, so lifting the demotion
            and lifting that floor must be decided together.
-      Discrete edges stay event-covered (cooldown start/end, aura apply/remove,
-      pandemic enter/exit). The safety walk (TICKER_MAX_CONSECUTIVE_SKIPS) is now
-      load-bearing in combat.
+      Discrete cooldown start/end edges stay event-covered. The safety walk
+      (TICKER_MAX_CONSECUTIVE_SKIPS) is load-bearing in combat.
     - Broadcast demotion (F1 3a) may downgrade ACTIONBAR/BAG cooldown events
       from immediate-broad to dirty-only. It never suppresses the mark itself
       and never touches SPELL_UPDATE_COOLDOWN. Bounded by the next ticker
