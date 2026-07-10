@@ -22,7 +22,6 @@ local wipe = wipe
 
 -- Shared click-through and border helpers from Utils.lua
 local SetFrameClickThrough = ST.SetFrameClickThrough
-local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 local HideGlowStyles = ST._HideGlowStyles
 local EntryRuntime = ST.EntryRuntime
 local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end

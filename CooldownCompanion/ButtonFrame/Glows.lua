@@ -850,22 +850,6 @@ local function CreateGlowContainer(parent, overhang, withOverlay)
     return container
 end
 
--- Returns the raw Applications FontString text from a viewer frame.
--- The text is a secret value in combat, so return it as-is for pass-through
--- to SetText(). Blizzard sets it to "" when stacks <= 1 and to the count
--- string when stacks > 1.
-local function GetViewerAuraStackText(viewerFrame)
-    -- BuffIcon viewer items: Applications frame -> Applications FontString
-    if viewerFrame.Applications and viewerFrame.Applications.Applications then
-        return viewerFrame.Applications.Applications:GetText()
-    end
-    -- BuffBar viewer items: Icon frame -> Applications FontString
-    if viewerFrame.Icon and viewerFrame.Icon.Applications then
-        return viewerFrame.Icon.Applications:GetText()
-    end
-    return ""
-end
-
 local function ShowButtonTooltip(button, tooltip)
     if not (button and tooltip and button.buttonData) then return false end
 

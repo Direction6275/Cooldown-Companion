@@ -25,20 +25,14 @@ local MAX_STACKS_PIXEL_GLOW_KEY = "CooldownCompanionMaxStacks"
 -- Import from ResourceBarConstants & ResourceBarHelpers
 local RB = ST._RB
 local POWER_ATLAS_INFO = RB.POWER_ATLAS_INFO
-local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 local DEFAULT_CUSTOM_AURA_MAX_COLOR = RB.DEFAULT_CUSTOM_AURA_MAX_COLOR
 local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
-local RESOURCE_MAELSTROM_WEAPON = RB.RESOURCE_MAELSTROM_WEAPON
-local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
 local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
 local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetCurrentSpecID = RB.GetCurrentSpecID
 local GetResourceColors = RB.GetResourceColors
 local GetContinuousTickEntriesConfig = RB.GetContinuousTickEntriesConfig
 local GetSpecResourceDisplayProfile = RB.GetSpecResourceDisplayProfile
-local GetSafeRGBColor = RB.GetSafeRGBColor
-local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
-local GetResolvedResourceAuraUnit = RB.GetResolvedResourceAuraUnit
 
 local function GetResourceDisplayStyle(settings)
     return GetSpecResourceDisplayProfile and GetSpecResourceDisplayProfile(settings) or settings
@@ -1453,7 +1447,6 @@ RB.HidePixelBorders = HidePixelBorders
 RB.IsCustomAuraMaxThresholdEnabled = IsCustomAuraMaxThresholdEnabled
 RB.GetCustomAuraMaxThresholdColor = GetCustomAuraMaxThresholdColor
 RB.SetCustomAuraMaxThresholdRange = SetCustomAuraMaxThresholdRange
-RB.HasMaxStacksBarEffects = HasMaxStacksBarEffects
 RB.IsCustomAuraMaxBarEffectEnabled = IsCustomAuraMaxBarEffectEnabled
 RB.GetCustomAuraMaxBarEffectColor = GetCustomAuraMaxBarEffectColor
 RB.ApplyCustomAuraMaxBarEffects = ApplyCustomAuraMaxBarEffects

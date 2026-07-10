@@ -1246,90 +1246,6 @@ local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit, explicit)
     return GetDefaultSpellCustomBarAuraUnit(cabConfig, resolvedSpellID)
 end
 
-local function RefreshCustomAuraBarAuraUnitForSpell(cabConfig, spellID)
-    local resolvedSpellID = spellID
-    if resolvedSpellID == nil and type(cabConfig) == "table" then
-        resolvedSpellID = cabConfig.spellID
-    end
-
-    if HasExplicitCustomAuraBarAuraUnit(cabConfig) then
-        return cabConfig.auraUnit
-    end
-
-    local defaultUnit = GetDefaultCustomAuraUnit(resolvedSpellID)
-    if type(cabConfig) == "table" and cabConfig.entryType == "spell" then
-        defaultUnit = GetDefaultSpellCustomBarAuraUnit(cabConfig, resolvedSpellID)
-    end
-    return EnsureCustomAuraBarAuraUnit(cabConfig, resolvedSpellID, defaultUnit, false)
-end
-
-local function IsValidResourceAuraUnit(unit)
-    return unit == "player" or unit == "target"
-end
-
-local function GetDefaultResourceAuraUnit(spellID)
-    return (spellID and C_Spell.IsSpellHarmful(spellID)) and "target" or "player"
-end
-
-local function HasExplicitResourceAuraUnit(resourceAuraEntry)
-    return type(resourceAuraEntry) == "table"
-        and resourceAuraEntry.auraUnitExplicit == true
-        and IsValidResourceAuraUnit(resourceAuraEntry.auraUnit)
-end
-
-local function GetResolvedResourceAuraUnit(resourceAuraEntry, spellID)
-    local resolvedSpellID = spellID
-    if resolvedSpellID == nil and type(resourceAuraEntry) == "table" then
-        resolvedSpellID = tonumber(resourceAuraEntry.auraColorSpellID) or nil
-    end
-
-    if type(resourceAuraEntry) == "table" and IsValidResourceAuraUnit(resourceAuraEntry.auraUnit) then
-        return resourceAuraEntry.auraUnit
-    end
-
-    return GetDefaultResourceAuraUnit(resolvedSpellID)
-end
-
-local function EnsureResourceAuraUnit(resourceAuraEntry, spellID, unit, explicit)
-    local resolvedSpellID = spellID
-    if resolvedSpellID == nil and type(resourceAuraEntry) == "table" then
-        resolvedSpellID = tonumber(resourceAuraEntry.auraColorSpellID) or nil
-    end
-
-    if type(resourceAuraEntry) == "table" then
-        local wasExplicit = HasExplicitResourceAuraUnit(resourceAuraEntry)
-        local resolvedUnit = IsValidResourceAuraUnit(unit) and unit
-            or GetResolvedResourceAuraUnit(resourceAuraEntry, resolvedSpellID)
-
-        resourceAuraEntry.auraUnit = resolvedUnit
-
-        if IsValidResourceAuraUnit(unit) then
-            resourceAuraEntry.auraUnitExplicit = explicit == false and nil or true
-        elseif not wasExplicit then
-            resourceAuraEntry.auraUnitExplicit = nil
-        end
-
-        if IsValidResourceAuraUnit(resourceAuraEntry.auraUnit) then
-            return resourceAuraEntry.auraUnit
-        end
-    end
-
-    return GetDefaultResourceAuraUnit(resolvedSpellID)
-end
-
-local function RefreshResourceAuraUnitForSpell(resourceAuraEntry, spellID)
-    local resolvedSpellID = spellID
-    if resolvedSpellID == nil and type(resourceAuraEntry) == "table" then
-        resolvedSpellID = tonumber(resourceAuraEntry.auraColorSpellID) or nil
-    end
-
-    if HasExplicitResourceAuraUnit(resourceAuraEntry) then
-        return resourceAuraEntry.auraUnit
-    end
-
-    return EnsureResourceAuraUnit(resourceAuraEntry, resolvedSpellID, GetDefaultResourceAuraUnit(resolvedSpellID), false)
-end
-
 local function CopyIndependentAnchor(anchor)
     if type(anchor) ~= "table" then
         return nil
@@ -2093,14 +2009,9 @@ RB.EnsureCustomBarLayout = EnsureCustomBarLayout
 RB.IsConfiguredCustomBar = IsConfiguredCustomBar
 RB.GetCustomBarEntryType = GetCustomBarEntryType
 RB.IsSpellCustomBarConfig = IsSpellCustomBarConfig
-RB.GetCustomBarTrackingMode = GetCustomBarTrackingMode
 RB.IsSpellCustomBarAuraStackDisplay = IsSpellCustomBarAuraStackDisplay
 RB.GetResolvedCustomAuraBarAuraUnit = GetResolvedCustomAuraBarAuraUnit
 RB.EnsureCustomAuraBarAuraUnit = EnsureCustomAuraBarAuraUnit
-RB.RefreshCustomAuraBarAuraUnitForSpell = RefreshCustomAuraBarAuraUnitForSpell
-RB.GetResolvedResourceAuraUnit = GetResolvedResourceAuraUnit
-RB.EnsureResourceAuraUnit = EnsureResourceAuraUnit
-RB.RefreshResourceAuraUnitForSpell = RefreshResourceAuraUnitForSpell
 RB.GetSpecLayoutOrder = GetSpecLayoutOrder
 RB.GetSpecResourceDisplayProfile = GetSpecResourceDisplayProfile
 RB.GetResourceDisplayValue = GetResourceDisplayValue

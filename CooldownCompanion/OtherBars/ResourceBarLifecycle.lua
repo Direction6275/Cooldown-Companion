@@ -12,7 +12,6 @@ local ipairs = ipairs
 local RB = ST._RB
 
 function RB.CreateResourceBarLifecycleModule(deps)
-    local resourceBarFrames = deps.resourceBarFrames
     local GetResourceBarSettings = deps.GetResourceBarSettings or RB.GetResourceBarSettings
     local GetSpecLayoutOrder = deps.GetSpecLayoutOrder or RB.GetSpecLayoutOrder
     local GetEffectiveAnchorGroupId = deps.GetEffectiveAnchorGroupId or RB.GetEffectiveAnchorGroupId

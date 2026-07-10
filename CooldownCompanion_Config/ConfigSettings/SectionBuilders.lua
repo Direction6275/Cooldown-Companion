@@ -2,10 +2,8 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
-local RB = ST._RB
 
 -- Imports from Helpers.lua
-local ColorHeading = ST._ColorHeading
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
@@ -17,7 +15,6 @@ local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
 -- Module-level aliases
 local tabInfoButtons = CS.tabInfoButtons
-local appearanceTabElements = CS.appearanceTabElements
 
 ------------------------------------------------------------------------
 -- REUSABLE SECTION BUILDER FUNCTIONS

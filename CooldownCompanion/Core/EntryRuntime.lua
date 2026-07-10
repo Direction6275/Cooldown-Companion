@@ -267,10 +267,6 @@ local function ProbeActionSlotCooldownForSpell(baseSpellID, displaySpellID)
 
     return result
 end
--- Public alias: external callers receive the same scratch table on every
--- call, so two calls never yield independent results -- consume synchronously,
--- never retain.
-EntryRuntime.ProbeActionSlotCooldownForSpell = ProbeActionSlotCooldownForSpell
 
 -- Resolve the action-slot probe state cached on a lane result, re-probing when
 -- the lane stored none (nil slotProbeShown means "not probed"). Returns

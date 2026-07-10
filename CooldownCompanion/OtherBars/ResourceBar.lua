@@ -49,8 +49,6 @@ local CLEAR_CUSTOM_AURA_STACKS_OPTS = { clearCustomAuraStacks = true }
 local RB = ST._RB
 local UPDATE_INTERVAL = RB.UPDATE_INTERVAL
 local PERCENT_SCALE_CURVE = RB.PERCENT_SCALE_CURVE
-local CUSTOM_AURA_BAR_BASE = RB.CUSTOM_AURA_BAR_BASE
-local MW_SPELL_ID = RB.MW_SPELL_ID
 local RAGING_MAELSTROM_SPELL_ID = RB.RAGING_MAELSTROM_SPELL_ID
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local RESOURCE_MAELSTROM_WEAPON = RB.RESOURCE_MAELSTROM_WEAPON
@@ -64,7 +62,6 @@ local IsBarsConfigActive = RB.IsBarsConfigActive
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
 local POWER_ATLAS_INFO = RB.POWER_ATLAS_INFO
 local RESOURCE_COLOR_DEFS = RB.RESOURCE_COLOR_DEFS
-local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 
 -- Helpers
 local GetResourceBarSettings = RB.GetResourceBarSettings
@@ -78,8 +75,6 @@ local GetVerticalSideFallback = RB.GetVerticalSideFallback
 local GetEffectiveAnchorGroupId = RB.GetEffectiveAnchorGroupId
 local GetPlayerClassID = RB.GetPlayerClassID
 local GetSpecCustomAuraBars = RB.GetSpecCustomAuraBars
-local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
-local EnsureCustomAuraBarAuraUnit = RB.EnsureCustomAuraBarAuraUnit
 local GetSpecLayoutOrder = RB.GetSpecLayoutOrder
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
 local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
@@ -87,7 +82,6 @@ local GetResourceDisplayConfig = RB.GetResourceDisplayConfig
 local GetAnchorOffset = RB.GetAnchorOffset
 local RoundToTenths = RB.RoundToTenths
 local ClampIndependentDimension = RB.ClampIndependentDimension
-local NormalizeCustomAuraStackTextFormat = RB.NormalizeCustomAuraStackTextFormat
 local DetermineActiveResources = RB.DetermineActiveResources
 local GetResourceColors = RB.GetResourceColors
 local IsUnitPowerSecret = RB.IsUnitPowerSecret
@@ -109,27 +103,15 @@ local UpdateContinuousTickMarker = RB.UpdateContinuousTickMarker
 local ApplyContinuousFillColor = RB.ApplyContinuousFillColor
 local ApplyPixelBorders = RB.ApplyPixelBorders
 local HidePixelBorders = RB.HidePixelBorders
-local IsCustomAuraMaxThresholdEnabled = RB.IsCustomAuraMaxThresholdEnabled
-local GetCustomAuraMaxThresholdColor = RB.GetCustomAuraMaxThresholdColor
-local SetCustomAuraMaxThresholdRange = RB.SetCustomAuraMaxThresholdRange
-local EnsureMaxStacksIndicator = RB.EnsureMaxStacksIndicator
-local LayoutMaxStacksIndicator = RB.LayoutMaxStacksIndicator
 local ClearMaxStacksIndicator = RB.ClearMaxStacksIndicator
-local EnsureCustomAuraContinuousThresholdOverlay = RB.EnsureCustomAuraContinuousThresholdOverlay
-local EnsureCustomAuraSegmentThresholdOverlays = RB.EnsureCustomAuraSegmentThresholdOverlays
-local EnsureCustomAuraOverlayThresholdOverlays = RB.EnsureCustomAuraOverlayThresholdOverlays
-local LayoutCustomAuraContinuousThresholdOverlay = RB.LayoutCustomAuraContinuousThresholdOverlay
 local CreateContinuousBar = RB.CreateContinuousBar
 local CreateSegmentedBar = RB.CreateSegmentedBar
 local LayoutSegments = RB.LayoutSegments
 local CreateOverlayBar = RB.CreateOverlayBar
 local LayoutOverlaySegments = RB.LayoutOverlaySegments
-local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
-local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
 
 -- Shared helper from ButtonFrame/Helpers.lua
 local FormatTime = CooldownCompanion.FormatTime
-local GetDurationSecretFormatSpec = CooldownCompanion.GetDurationSecretFormatSpec
 -- Other ST imports
 local CreateGlowContainer = ST._CreateGlowContainer
 local SetBarAuraEffect = ST._SetBarAuraEffect
@@ -1370,11 +1352,6 @@ local customBarsModule = RB.CreateResourceBarCustomBarsModule({
     MarkLayoutDirty = function()
         layoutDirty = true
     end,
-    RelayoutResourceStack = function()
-        if RelayoutResourceStack then
-            RelayoutResourceStack()
-        end
-    end,
     ClearStaleRecycledBarRuntimeState = ClearStaleRecycledBarRuntimeState,
     ClearCustomAuraBarIndicatorState = ClearCustomAuraBarIndicatorState,
     ClearCustomAuraBarIndicatorVisualState = ClearCustomAuraBarIndicatorVisualState,
@@ -1383,8 +1360,6 @@ local customBarsModule = RB.CreateResourceBarCustomBarsModule({
 })
 local UpdateCustomAuraBar = customBarsModule.UpdateCustomAuraBar
 local ShouldUpdateHiddenCustomAuraPandemicWake = customBarsModule.ShouldUpdateHiddenCustomAuraPandemicWake
-local ClearDeferredCustomAuraWakeRetries = customBarsModule.ClearDeferredCustomAuraWakeRetries
-local RefreshEventDrivenCustomAuraBarsForUnit = customBarsModule.RefreshEventDrivenCustomAuraBarsForUnit
 local FinalizeAppliedBarVisibility = customBarsModule.FinalizeAppliedBarVisibility
 local HideUnusedResourceBarFrames = customBarsModule.HideUnusedResourceBarFrames
 local PrepareCustomAuraBar = customBarsModule.PrepareCustomAuraBar
@@ -2246,7 +2221,6 @@ function CooldownCompanion:RevertResourceBars()
     lastAppliedBarSpacing = nil
     lastAppliedBarThickness = nil
     layoutDirty = false
-    ClearDeferredCustomAuraWakeRetries()
 
     -- Stop alpha sync, unregister module alpha, restore alpha
     CooldownCompanion:UnregisterModuleAlpha("rb")
@@ -2545,17 +2519,14 @@ ApplyPreviewData = previewModule.ApplyPreviewData
 ------------------------------------------------------------------------
 
 lifecycleModule = RB.CreateResourceBarLifecycleModule({
-    resourceBarFrames = resourceBarFrames,
     GetResourceBarSettings = GetResourceBarSettings,
     GetSpecLayoutOrder = GetSpecLayoutOrder,
     GetEffectiveAnchorGroupId = GetEffectiveAnchorGroupId,
     GetResourcePrimaryLength = GetResourcePrimaryLength,
-    GetResolvedCustomAuraBarAuraUnit = GetResolvedCustomAuraBarAuraUnit,
     GetLastAppliedPrimaryLength = function()
         return lastAppliedPrimaryLength
     end,
     UpdateMWMaxStacks = UpdateMWMaxStacks,
-    RefreshEventDrivenCustomAuraBarsForUnit = RefreshEventDrivenCustomAuraBarsForUnit,
 })
 EnableLifecycleEvents = lifecycleModule.EnableLifecycleEvents
 DisableLifecycleEvents = lifecycleModule.DisableLifecycleEvents

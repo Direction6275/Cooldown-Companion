@@ -184,32 +184,8 @@ function ST.IsActiveSpellBookSpell(spellId)
 end
 
 --------------------------------------------------------------------------------
--- CDM (Cooldown Manager) Helpers
+-- Passive Cooldown Helpers
 --------------------------------------------------------------------------------
-
--- Returns true if spellId (or its override/tooltip override) is tracked by
--- Blizzard's Cooldown Manager in the Essential or Utility categories.
--- Spells with externally-applied cooldowns (class aura / talent passive) are
--- tracked here even when GetSpellBaseCooldown returns 0; true GCD-only spells
--- are not.
-function ST.IsSpellInCDMCooldown(spellId)
-    if not spellId then return false end
-    for _, cat in ipairs({Enum.CooldownViewerCategory.Essential, Enum.CooldownViewerCategory.Utility}) do
-        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
-        if ids then
-            for _, cdID in ipairs(ids) do
-                local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info then
-                    if info.spellID == spellId or info.overrideSpellID == spellId
-                       or info.overrideTooltipSpellID == spellId then
-                        return true
-                    end
-                end
-            end
-        end
-    end
-    return false
-end
 
 function ST.IsPassiveCooldownSpell(spellId)
     if not spellId or not C_Spell.IsSpellPassive(spellId) then

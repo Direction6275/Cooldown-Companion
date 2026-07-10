@@ -7,7 +7,6 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local EntryRuntime = ST.EntryRuntime
 
 -- Imports from Glows
 local SetBarAuraEffect = ST._SetBarAuraEffect

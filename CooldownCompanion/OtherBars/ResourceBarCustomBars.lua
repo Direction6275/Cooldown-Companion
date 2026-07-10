@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - ResourceBarCustomBars
-    Custom aura bars, spell custom bars, visibility wakeups, styling, and frame preparation.
+    Custom aura bars, spell custom bars, styling, and frame preparation.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -86,20 +86,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
     local GetPreviewActive = deps.GetPreviewActive
     local MarkLayoutDirty = deps.MarkLayoutDirty
-    local RelayoutResourceStack = deps.RelayoutResourceStack
     local ClearStaleRecycledBarRuntimeState = deps.ClearStaleRecycledBarRuntimeState
     local ClearCustomAuraBarIndicatorState = deps.ClearCustomAuraBarIndicatorState
     local ClearCustomAuraBarIndicatorVisualState = deps.ClearCustomAuraBarIndicatorVisualState
         or ClearCustomAuraBarIndicatorState
     local UpdateCustomAuraBarIndicatorVisuals = deps.UpdateCustomAuraBarIndicatorVisuals
     local ApplyCustomAuraBarPreviewState = deps.ApplyCustomAuraBarPreviewState
-    -- Reusable scratch opts — single call site each; wiped immediately before
-    -- each fill, so a previous update can never leak values into the next one
-    -- even if an error aborts an update mid-call.
-    local customAuraWakeRetryQueue = {}
-    local customAuraWakeRetryPending = {}
-    local customAuraWakeRetryScheduled = false
-    local processingCustomAuraWakeRetryQueue = false
     local customBarPresentationRefreshPending = false
 
     ------------------------------------------------------------------------
@@ -670,20 +662,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
     end
 
-    local function GetHiddenCustomAuraWakeUnit(cabConfig)
-        if not cabConfig or not cabConfig.spellID then
-            return nil
-        end
-        return EnsureCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
-    end
-
-    local function IsEventDrivenCustomAuraBar(barInfo)
-        return barInfo
-            and (barInfo.barType == "custom_segmented"
-                or barInfo.barType == "custom_overlay"
-                or barInfo.barType == "custom_cooldown")
-    end
-
     local function ShouldUpdateHiddenCustomAuraPandemicWake(barInfo)
         local frame = barInfo and barInfo.frame
         local cabConfig = barInfo and barInfo.cabConfig
@@ -708,141 +686,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
 
         return GetResolvedCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID) == "target"
-    end
-
-    local function ClearDeferredCustomAuraWakeRetries()
-        wipe(customAuraWakeRetryQueue)
-        wipe(customAuraWakeRetryPending)
-        customAuraWakeRetryScheduled = false
-        processingCustomAuraWakeRetryQueue = false
-    end
-
-    local function ResolveDeferredCustomAuraWakeRetryBarInfo(entry)
-        if not entry or not entry.customBarId or not entry.cabConfig then
-            return nil
-        end
-
-        -- ApplyResourceBars() can recreate the custom aura bar before the next-frame
-        -- retry fires, so re-resolve the active barInfo instead of trusting the
-        -- captured table/frame from queue time.
-        for _, candidate in ipairs(resourceBarFrames) do
-            if candidate
-                and candidate.customBarId == entry.customBarId
-                and candidate.cabConfig == entry.cabConfig then
-                return candidate
-            end
-        end
-
-        return nil
-    end
-
-    local function ProcessDeferredCustomAuraWakeRetries()
-        customAuraWakeRetryScheduled = false
-        if processingCustomAuraWakeRetryQueue then return end
-        if #customAuraWakeRetryQueue == 0 then return end
-
-        processingCustomAuraWakeRetryQueue = true
-        local queue = customAuraWakeRetryQueue
-        customAuraWakeRetryQueue = {}
-        customAuraWakeRetryPending = {}
-
-        local relayoutNeeded = false
-        for _, entry in ipairs(queue) do
-            local barInfo = ResolveDeferredCustomAuraWakeRetryBarInfo(entry)
-            local frame = barInfo and barInfo.frame
-            local cabConfig = barInfo and barInfo.cabConfig
-            if barInfo
-                and frame
-                and cabConfig
-                and barInfo.cabConfig == entry.cabConfig
-                and IsEventDrivenCustomAuraBar(barInfo)
-                and (cabConfig.hideWhenInactive == true or cabConfig.hideWhileAuraActive == true)
-                and GetHiddenCustomAuraWakeUnit(cabConfig) == entry.unit
-                and not frame:IsShown()
-            then
-                if barInfo.barType == "custom_cooldown" then
-                    RB.UpdateCustomCooldownBar(barInfo)
-                else
-                    UpdateCustomAuraBar(barInfo)
-                end
-                if frame:IsShown() then
-                    relayoutNeeded = true
-                end
-            end
-        end
-
-        processingCustomAuraWakeRetryQueue = false
-
-        if relayoutNeeded then
-            RelayoutResourceStack()
-        end
-    end
-
-    local function QueueDeferredCustomAuraWakeRetry(barInfo, unit)
-        if processingCustomAuraWakeRetryQueue then return end
-        if unit ~= "player" and unit ~= "target" then return end
-        if not IsEventDrivenCustomAuraBar(barInfo) then return end
-
-        local frame = barInfo and barInfo.frame
-        local cabConfig = barInfo and barInfo.cabConfig
-        local customBarId = barInfo and barInfo.customBarId
-        if not frame
-            or not cabConfig
-            or not customBarId
-            or not (cabConfig.hideWhenInactive == true or cabConfig.hideWhileAuraActive == true) then
-            return
-        end
-        if frame:IsShown() then return end
-        if GetHiddenCustomAuraWakeUnit(cabConfig) ~= unit then return end
-        if customAuraWakeRetryPending[cabConfig] then return end
-
-        customAuraWakeRetryPending[cabConfig] = true
-        customAuraWakeRetryQueue[#customAuraWakeRetryQueue + 1] = {
-            cabConfig = cabConfig,
-            customBarId = customBarId,
-            unit = unit,
-        }
-
-        if customAuraWakeRetryScheduled then
-            return
-        end
-
-        customAuraWakeRetryScheduled = true
-        C_Timer.After(0, function()
-            ProcessDeferredCustomAuraWakeRetries()
-        end)
-    end
-
-    local function RefreshEventDrivenCustomAuraBarsForUnit(unit)
-        if unit ~= "player" and unit ~= "target" then return end
-
-        for _, barInfo in ipairs(resourceBarFrames) do
-            local frame = barInfo and barInfo.frame
-            local cabConfig = barInfo and barInfo.cabConfig
-            local shouldRefresh = frame and (
-                IsEventDrivenCustomAuraBar(barInfo)
-                or (not frame:IsShown()
-                    and cabConfig
-                    and (cabConfig.hideWhenInactive or cabConfig.hideWhileAuraActive))
-            )
-            if shouldRefresh
-                and cabConfig
-                and (barInfo.barType == "custom_continuous"
-                    or barInfo.barType == "custom_segmented"
-                    or barInfo.barType == "custom_overlay"
-                    or barInfo.barType == "custom_cooldown")
-                and GetHiddenCustomAuraWakeUnit(cabConfig) == unit then
-                local wasShown = frame:IsShown()
-                if barInfo.barType == "custom_cooldown" then
-                    RB.UpdateCustomCooldownBar(barInfo)
-                else
-                    UpdateCustomAuraBar(barInfo)
-                end
-                if not wasShown and not frame:IsShown() then
-                    QueueDeferredCustomAuraWakeRetry(barInfo, unit)
-                end
-            end
-        end
     end
 
     ------------------------------------------------------------------------
@@ -1262,8 +1105,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
     return {
         UpdateCustomAuraBar = UpdateCustomAuraBar,
         ShouldUpdateHiddenCustomAuraPandemicWake = ShouldUpdateHiddenCustomAuraPandemicWake,
-        ClearDeferredCustomAuraWakeRetries = ClearDeferredCustomAuraWakeRetries,
-        RefreshEventDrivenCustomAuraBarsForUnit = RefreshEventDrivenCustomAuraBarsForUnit,
         FinalizeAppliedBarVisibility = FinalizeAppliedBarVisibility,
         HideUnusedResourceBarFrames = HideUnusedResourceBarFrames,
         PrepareCustomAuraBar = PrepareCustomAuraBar,

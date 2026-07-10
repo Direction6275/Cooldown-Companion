@@ -61,7 +61,6 @@ local EvaluateDesaturation = ST._EvaluateDesaturation
 
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
-local ClearStatusBarMotion = ST.ClearStatusBarMotion
 local SetStatusBarImmediateRange = ST.SetStatusBarImmediateRange
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
@@ -1439,9 +1438,9 @@ local function BarModeOnUpdate(self, elapsed)
     -- Detect aura expiry via HasSecretValues + GetRemainingDuration.
     -- Non-secret (out of combat): instant expiry detection.
     -- Secret (in combat): skip; UpdateButtonCooldown handles expiry next tick.
-    -- Skip when cooldowns are dirty (target switch / UNIT_AURA just fired,
-    -- ticker hasn't processed yet — old DurationObject may be invalidated)
-    -- or grace period active (holdover DurationObject from previous target).
+    -- Skip while the shared cooldown pipeline is dirty (for example after a
+    -- target change, when the previous DurationObject may be stale), or while
+    -- a retained grace/target hold is active.
     if self._auraActive and self._durationObj
        and not self._auraGraceStart and not self._targetSwitchAt and not CooldownCompanion._cooldownsDirty then
         if not self._durationObj:HasSecretValues() then

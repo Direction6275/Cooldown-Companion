@@ -25,12 +25,10 @@ local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
 local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
-local AddPreviewBadge = ST._AddPreviewBadge
 local AddConditionalPreviewBadge = ST._AddConditionalPreviewBadge
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 
 local tabInfoButtons = CS.tabInfoButtons
-local appearanceTabElements = CS.appearanceTabElements
 
 
 local function BuildBarAppearanceTab(container, group, style)

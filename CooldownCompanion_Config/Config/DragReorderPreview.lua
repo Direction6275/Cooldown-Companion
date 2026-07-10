@@ -18,7 +18,6 @@ local SetupFolderRowIndicators = ST._SetupFolderRowIndicators
 local ApplyColumn1MarkerAppearance = ST._ApplyColumn1MarkerAppearance
 local FindCol1SectionDividerTarget = DR.FindCol1SectionDividerTarget
 local FindCol1FolderBlockRange = DR.FindCol1FolderBlockRange
-local IsExternalFolderChildTarget = DR.IsExternalFolderChildTarget
 
 local PREVIEW_ANIM_DURATION = 0.08
 local PREVIEW_PANEL_INSET = 8

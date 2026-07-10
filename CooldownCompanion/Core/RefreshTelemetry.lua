@@ -45,11 +45,6 @@ local T = {
     -- F2 live skip: clean idle ticks actually suppressed. The "safety-tick"
     -- pass source counts the forced ~1/s walks while skipping.
     tickerIdleSkips = 0,
-    -- Combat ticker floor: count of pooled pandemic FX frames the edge-hook has
-    -- installed on (coverage). Pairs with the "pandemic-edge" dirtyCounts entry
-    -- (fires) to gauge the edge-hook. The pool is small and reused across DoTs,
-    -- so this is a handful, not one-per-DoT.
-    pandemicEdgeHooks = 0,
     -- Forcing attribution (observe-only): which NoteButtonTimeState term(s)
     -- forced walking. forcingCounts = term -> per-button occurrences across all
     -- broad walks; passForceCombos = sorted "term(+term)" combo -> walks pinned
@@ -109,12 +104,6 @@ end
 function T:CountIdleSkip()
     if not self.enabled then return end
     self.tickerIdleSkips = self.tickerIdleSkips + 1
-end
-
--- Combat ticker floor: an edge-hook was installed on a pooled pandemic FX frame.
-function T:CountPandemicEdgeHook()
-    if not self.enabled then return end
-    self.pandemicEdgeHooks = self.pandemicEdgeHooks + 1
 end
 
 -- Forcing attribution: a classifier term forced this button to keep the ticker

@@ -1048,10 +1048,6 @@ local function ApplyIconTexCoord(icon, width, height)
     end
 end
 
--- Shared click-through helpers from Utils.lua
-local SetFrameClickThrough = ST.SetFrameClickThrough
-local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
-
 -- Fit a Blizzard highlight template frame to a button.
 -- The flipbook texture must overhang the button edges to create the border effect.
 -- Original template: 45x45 frame, 66x66 texture => ~23% overhang per side.

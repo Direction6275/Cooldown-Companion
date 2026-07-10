@@ -23,7 +23,6 @@ local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local AddColorPicker = ST._AddColorPicker
 local CleanRecycledEntry = ST._CleanRecycledEntry
 local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
-local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 
 local function RefreshLayoutOrderPreview()
@@ -1225,8 +1224,6 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     local capturedId = EnsureCustomBarId(settings, cab)
     local capturedKey = capturedId or tostring(capturedIdx)
     local currentConfigSpecID = GetCurrentConfigSpecID()
-    local customBarLoadedForCurrentSpec = not RB.CustomBarHasSpec or RB.CustomBarHasSpec(cab, currentConfigSpecID)
-    local customBarPreviewsEnabled = customBarLoadedForCurrentSpec and CooldownCompanion:IsCustomBarRuntimeEligible(cab)
     local function resolveLayoutSpecID(entry, fallbackSpecID)
         fallbackSpecID = tonumber(fallbackSpecID) or fallbackSpecID
         if RB.CustomBarHasSpec and fallbackSpecID and RB.CustomBarHasSpec(entry, fallbackSpecID) then

@@ -23,7 +23,6 @@ local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
 local tabInfoButtons = CS.tabInfoButtons
-local appearanceTabElements = CS.appearanceTabElements
 
 -- Syntax colors for summary (matching FormatEditor.lua)
 local SUM_TOKEN  = "ff00ff00"

@@ -7,12 +7,9 @@ local math_pi = math.pi
 -- Imports from Helpers.lua
 local ColorHeading = ST._ColorHeading
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
-local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local HasTooltipCooldown = ST.HasTooltipCooldown
 local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
-local HookSliderEditBox = ST._HookSliderEditBox
 local CleanRecycledEntry = ST._CleanRecycledEntry
 local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
@@ -20,8 +17,6 @@ local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local NormalizeItemFallbacks = CooldownCompanion.NormalizeItemFallbacks
 local UpdateItemChargeMetadata = CooldownCompanion.UpdateItemChargeMetadata
 
-local tabInfoButtons = CS.tabInfoButtons
-local appearanceTabElements = CS.appearanceTabElements
 local RefreshButtonSettingsMultiSelect = ST._RefreshButtonSettingsMultiSelect
 local RefreshPanelMultiSelect = ST._RefreshPanelMultiSelect
 local BuildOverridesTab = ST._BuildOverridesTab
