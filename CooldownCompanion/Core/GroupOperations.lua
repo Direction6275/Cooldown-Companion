@@ -2226,6 +2226,11 @@ local function IsResourceBarIndependentAnchor(settings, specId)
     return independent
 end
 
+function CooldownCompanion:IsResourceBarAnchorIndependent()
+    local settings = self.GetResourceBarSettings and self:GetResourceBarSettings() or nil
+    return IsResourceBarIndependentAnchor(settings, self._currentSpecId)
+end
+
 function CooldownCompanion:IsGroupStableExternalAnchor(groupId)
     groupId = tonumber(groupId)
     if not groupId then

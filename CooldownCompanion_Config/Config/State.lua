@@ -299,6 +299,8 @@ ST._configState = {
     customBarSettingsTab = "appearance",
     selectedCustomBarId = nil,
     customBarSpecExpandedId = nil,
+    resourcesEntrySelected = false,
+    resourcesSettingsTab = "general",
     groupPresetSelection = {
         icons = nil,
         bars = nil,
@@ -2556,6 +2558,7 @@ ClearConfigPrimarySelection = function()
     CS.selectedFolder = nil
     CS.selectedContainer = nil
     CS.selectedGroup = nil
+    CS.resourcesEntrySelected = false
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedGroups)
@@ -2569,6 +2572,7 @@ local function SelectConfigFolder(folderId)
     CS.selectedFolder = folderId
     CS.selectedContainer = nil
     CS.selectedGroup = nil
+    CS.resourcesEntrySelected = false
     ClearSelectedButton()
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
@@ -2593,6 +2597,7 @@ local function SelectConfigContainer(containerId, opts)
         CS.selectedGroup = nil
     end
 
+    CS.resourcesEntrySelected = false
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     if opts and opts.clearFinder then
@@ -2617,6 +2622,7 @@ local function ToggleConfigContainerMultiSelect(containerId)
     CS.selectedFolder = nil
     CS.selectedContainer = nil
     CS.selectedGroup = nil
+    CS.resourcesEntrySelected = false
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedCustomBars)
@@ -2641,6 +2647,7 @@ local function SelectConfigPanel(panelId, opts)
         CS.selectedGroup = panelId
     end
 
+    CS.resourcesEntrySelected = false
     ClearSelectedButton()
     RefreshAlphaDriverForConfigSelection()
 end
@@ -2657,6 +2664,7 @@ local function ToggleConfigPanelMultiSelect(panelId)
     end
 
     CS.selectedGroup = nil
+    CS.resourcesEntrySelected = false
     ClearSelectedButton()
     CS.addingToPanelId = nil
     RefreshAlphaDriverForConfigSelection()
@@ -2667,6 +2675,7 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
     end
+    CS.resourcesEntrySelected = false
     if panelChanged then
         CS.selectedGroup = panelId
         ClearSelectedButton()
@@ -2713,6 +2722,7 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     CS.selectedGroup = panelId
     CS.selectedButton = nil
     CS.selectedRotationAssistantEntry = true
+    CS.resourcesEntrySelected = false
     wipe(CS.selectedButtons)
     CS.buttonSettingsTab = "loadconditions"
     CooldownCompanion:ClearAllConfigPreviews()
@@ -2723,6 +2733,7 @@ local function SelectConfigButtonPanel(panelId, opts)
     if CS.selectedGroup ~= panelId then
         CooldownCompanion:ClearAllConfigPreviews()
         CS.selectedGroup = panelId
+        CS.resourcesEntrySelected = false
         ClearSelectedButton()
         RefreshAlphaDriverForConfigSelection()
     end
@@ -2856,6 +2867,40 @@ local function PruneConfigCustomBarSelection(customBarExists, resetTab)
     end
 end
 
+local function SelectConfigResourcesEntry(opts)
+    CooldownCompanion:ClearAllConfigPreviews()
+    if opts and opts.toggle and CS.resourcesEntrySelected then
+        CS.resourcesEntrySelected = false
+    else
+        CS.resourcesEntrySelected = true
+    end
+    CS.selectedFolder = nil
+    CS.selectedGroup = nil
+    ClearSelectedButton()
+    wipe(CS.selectedPanels)
+    wipe(CS.selectedGroups)
+    ClearConfigResourceSelection()
+    ClearConfigCustomBarSelection({ clearExpanded = true })
+    RefreshAlphaDriverForConfigSelection()
+end
+
+-- Where the "Resource Bars" entry lives in the panel list right now.
+-- Returns "disabled" | "independent" | "attached", anchorPanelId (nil when
+-- enabled+dependent but no eligible anchor panel exists).
+local function GetResourcesEntryPlacement()
+    local settings = CooldownCompanion.GetResourceBarSettings
+        and CooldownCompanion:GetResourceBarSettings()
+        or nil
+    if not settings or settings.enabled ~= true then
+        return "disabled"
+    end
+    if CooldownCompanion.IsResourceBarAnchorIndependent
+        and CooldownCompanion:IsResourceBarAnchorIndependent() then
+        return "independent"
+    end
+    return "attached", CooldownCompanion:GetFirstAvailableAnchorGroup()
+end
+
 local function ResetConfigSelection(full)
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedFolder = nil
@@ -2871,6 +2916,7 @@ local function ResetConfigSelection(full)
     if full then
         CS.selectedContainer = nil
         CS.selectedGroup = nil
+        CS.resourcesEntrySelected = false
         wipe(CS.selectedGroups)
         wipe(CS.selectedCustomBars)
         CS.addingToPanelId = nil
@@ -3268,6 +3314,8 @@ ST._PruneConfigCustomBarSelection = PruneConfigCustomBarSelection
 ST._SelectConfigResource = SelectConfigResource
 ST._SetConfigResourceSettingsSpecID = SetConfigResourceSettingsSpecID
 ST._PruneConfigResourceSelection = PruneConfigResourceSelection
+ST._SelectConfigResourcesEntry = SelectConfigResourcesEntry
+ST._GetResourcesEntryPlacement = GetResourcesEntryPlacement
 ST._ResetConfigSelection = ResetConfigSelection
 ST._SetConfigPrimaryModeImpl = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs
