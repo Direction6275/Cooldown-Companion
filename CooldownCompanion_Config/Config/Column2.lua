@@ -1584,6 +1584,104 @@ end
 ------------------------------------------------------------------------
 -- COLUMN 2: Panels
 ------------------------------------------------------------------------
+------------------------------------------------------------------------
+-- "Resource Bars" entry (the resource module's home in the panel list):
+-- nested under the current anchor panel when attached, pinned otherwise.
+-- Deliberately kept out of col2RenderedRows/col2PanelMetas/_panelDropTargets
+-- so drag-reorder and multi-select never see it.
+------------------------------------------------------------------------
+
+local function AddResourcesEntryRow(labelText, opts)
+    local row = AceGUI:Create("InteractiveLabel")
+    if CleanRecycledEntry then CleanRecycledEntry(row) end
+    row:SetText(labelText)
+    row:SetFullWidth(true)
+    row:SetFontObject(GameFontHighlight)
+    row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    if ApplyConfigTextRow then
+        ApplyConfigTextRow(row, "LEFT", (opts and opts.indent) or 4, 4)
+    end
+    if CS.resourcesEntrySelected then
+        row:SetColor(0.4, 0.7, 1.0)
+    elseif opts and opts.grayed then
+        row:SetColor(0.55, 0.55, 0.55)
+    end
+    if row.frame and row.frame.RegisterForClicks then
+        row.frame:RegisterForClicks("AnyUp")
+    end
+    row:SetCallback("OnClick", function() end)
+    row.frame:SetScript("OnMouseUp", function(self, mouseButton)
+        if mouseButton == "LeftButton" then
+            if ST._SelectConfigResourcesEntry then
+                ST._SelectConfigResourcesEntry({ toggle = true })
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end)
+    CS.col2Scroll:AddChild(row)
+end
+
+local function AddResourcesEnableRow()
+    local row = AceGUI:Create("InteractiveLabel")
+    if CleanRecycledEntry then CleanRecycledEntry(row) end
+    row:SetText("|cff44dd44Enable Resource Bars|r")
+    row:SetFullWidth(true)
+    row:SetFontObject(GameFontHighlight)
+    row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    if ApplyConfigTextRow then
+        ApplyConfigTextRow(row, "LEFT", 16, 4)
+    end
+    if row.frame and row.frame.RegisterForClicks then
+        row.frame:RegisterForClicks("AnyUp")
+    end
+    row:SetCallback("OnClick", function() end)
+    row.frame:SetScript("OnMouseUp", function(self, mouseButton)
+        if mouseButton ~= "LeftButton" then return end
+        local settings = CooldownCompanion:GetResourceBarSettings()
+        if not settings then return end
+        settings.enabled = true
+        CooldownCompanion:EvaluateResourceBars()
+        CooldownCompanion:UpdateAnchorStacking()
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    CS.col2Scroll:AddChild(row)
+end
+
+local function AddPinnedResourcesEntry(placement, anchorPanelId, opts)
+    if not (opts and opts.skipSpacer) then
+        local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+        AddClassAccentSpacer(CS.col2Scroll, cc)
+    end
+
+    if placement == "disabled" then
+        AddResourcesEntryRow("Resource Bars |cff808080(disabled)|r", { grayed = true })
+        local hasConflict = CooldownCompanion.GetCurrentResourceBarConflict
+            and CooldownCompanion:GetCurrentResourceBarConflict() ~= nil
+        if not hasConflict then
+            AddResourcesEnableRow()
+        end
+        return
+    end
+
+    local subtitle
+    if placement == "independent" then
+        subtitle = "(independently positioned)"
+    elseif anchorPanelId then
+        local db = CooldownCompanion.db.profile
+        local anchorGroup = db.groups and db.groups[anchorPanelId]
+        local anchorContainer = anchorGroup and db.groupContainers and db.groupContainers[anchorGroup.parentContainerId]
+        local panelName = anchorGroup and anchorGroup.name or "another panel"
+        if anchorContainer and anchorContainer.name then
+            subtitle = "(anchored to " .. panelName .. " in " .. anchorContainer.name .. ")"
+        else
+            subtitle = "(anchored to " .. panelName .. ")"
+        end
+    else
+        subtitle = "(no eligible anchor panel)"
+    end
+    AddResourcesEntryRow("Resource Bars |cff808080" .. subtitle .. "|r")
+end
+
 local function RefreshColumn2()
     if not CS.col2Scroll then return end
     local col2 = CS.configFrame and CS.configFrame.col2
@@ -2034,7 +2132,21 @@ local function RefreshColumn2()
 
         local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
 
+        -- Where the Resource Bars entry lives this refresh (nested vs pinned)
+        local resourcesPlacement, resourcesAnchorPanelId
+        if ST._GetResourcesEntryPlacement then
+            resourcesPlacement, resourcesAnchorPanelId = ST._GetResourcesEntryPlacement()
+        end
+        local resourcesNestedHere = false
+        if resourcesPlacement == "attached" and resourcesAnchorPanelId then
+            local anchorGroup = CooldownCompanion.db.profile.groups[resourcesAnchorPanelId]
+            resourcesNestedHere = (anchorGroup and anchorGroup.parentContainerId) == CS.selectedContainer
+        end
+
         if panelCount == 0 then
+            if resourcesPlacement then
+                AddPinnedResourcesEntry(resourcesPlacement, resourcesAnchorPanelId, { skipSpacer = true })
+            end
             RenderColumn2NoPanelsState(cc)
             return
         end
@@ -3012,7 +3124,17 @@ local function RefreshColumn2()
                 BuildInlineAddControls(panelContainer, panelMeta, panel, panelId, btnCount)
             end -- not collapsed
             table.insert(col2PanelMetas, panelMeta)
+
+            -- Resource Bars entry, nested under the panel it is anchored to
+            if resourcesNestedHere and resourcesAnchorPanelId == panelId then
+                AddResourcesEntryRow("Resource Bars |cff808080(anchored here)|r", { indent = 16 })
+            end
         end -- panel loop
+
+        -- Pinned Resource Bars entry (independent / disabled / anchored elsewhere)
+        if resourcesPlacement and not resourcesNestedHere then
+            AddPinnedResourcesEntry(resourcesPlacement, resourcesAnchorPanelId)
+        end
 
         CS.lastCol2RenderedRows = col2RenderedRows
         CS.lastCol2PanelMetas = col2PanelMetas
@@ -3030,6 +3152,12 @@ local function RefreshColumn2()
         label:SetText("Select a group first")
         label:SetFullWidth(true)
         CS.col2Scroll:AddChild(label)
+        if ST._GetResourcesEntryPlacement then
+            local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
+            if placement then
+                AddPinnedResourcesEntry(placement, anchorPanelId)
+            end
+        end
         return
     end
 
