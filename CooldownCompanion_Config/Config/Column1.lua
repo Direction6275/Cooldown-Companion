@@ -1977,6 +1977,18 @@ local function RefreshColumn1(preserveDrag)
         end
     end
 
+    -- Pinned "Resource Bars" entry: the resource module's config home.
+    -- Kept out of col1RenderedRows so drag-reorder never sees it.
+    if not CS.otherClassLibraryActive
+        and not searchResults
+        and ST._AddPinnedResourcesEntry
+        and ST._GetResourcesEntryPlacement then
+        local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
+        if placement then
+            ST._AddPinnedResourcesEntry(CS.col1Scroll, placement, anchorPanelId)
+        end
+    end
+
     CS.lastCol1RenderedRows = col1RenderedRows
 
     if CS.otherClassLibraryActive then

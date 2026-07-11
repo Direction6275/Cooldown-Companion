@@ -1585,13 +1585,14 @@ end
 -- COLUMN 2: Panels
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
--- "Resource Bars" entry (the resource module's home in the panel list):
--- nested under the current anchor panel when attached, pinned otherwise.
--- Deliberately kept out of col2RenderedRows/col2PanelMetas/_panelDropTargets
--- so drag-reorder and multi-select never see it.
+-- "Resource Bars" entry rows. The permanent home is pinned in Column 1
+-- (rendered there via the ST._ exports below); Column 2 only shows the
+-- nested "(anchored here)" signal row under the current anchor panel.
+-- Rows are deliberately kept out of the rendered-row/drop-target
+-- structures so drag-reorder and multi-select never see them.
 ------------------------------------------------------------------------
 
-local function AddResourcesEntryRow(labelText, opts)
+local function AddResourcesEntryRow(scroll, labelText, opts)
     local row = AceGUI:Create("InteractiveLabel")
     if CleanRecycledEntry then CleanRecycledEntry(row) end
     row:SetText(labelText)
@@ -1618,10 +1619,10 @@ local function AddResourcesEntryRow(labelText, opts)
             CooldownCompanion:RefreshConfigPanel()
         end
     end)
-    CS.col2Scroll:AddChild(row)
+    scroll:AddChild(row)
 end
 
-local function AddResourcesEnableRow()
+local function AddResourcesEnableRow(scroll)
     local row = AceGUI:Create("InteractiveLabel")
     if CleanRecycledEntry then CleanRecycledEntry(row) end
     row:SetText("|cff44dd44Enable Resource Bars|r")
@@ -1644,21 +1645,21 @@ local function AddResourcesEnableRow()
         CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:RefreshConfigPanel()
     end)
-    CS.col2Scroll:AddChild(row)
+    scroll:AddChild(row)
 end
 
-local function AddPinnedResourcesEntry(placement, anchorPanelId, opts)
+local function AddPinnedResourcesEntry(scroll, placement, anchorPanelId, opts)
     if not (opts and opts.skipSpacer) then
         local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
-        AddClassAccentSpacer(CS.col2Scroll, cc)
+        AddClassAccentSpacer(scroll, cc)
     end
 
     if placement == "disabled" then
-        AddResourcesEntryRow("Resource Bars |cff808080(disabled)|r", { grayed = true })
+        AddResourcesEntryRow(scroll, "Resource Bars |cff808080(disabled)|r", { grayed = true })
         local hasConflict = CooldownCompanion.GetCurrentResourceBarConflict
             and CooldownCompanion:GetCurrentResourceBarConflict() ~= nil
         if not hasConflict then
-            AddResourcesEnableRow()
+            AddResourcesEnableRow(scroll)
         end
         return
     end
@@ -1679,8 +1680,9 @@ local function AddPinnedResourcesEntry(placement, anchorPanelId, opts)
     else
         subtitle = "(no eligible anchor panel)"
     end
-    AddResourcesEntryRow("Resource Bars |cff808080" .. subtitle .. "|r")
+    AddResourcesEntryRow(scroll, "Resource Bars |cff808080" .. subtitle .. "|r")
 end
+ST._AddPinnedResourcesEntry = AddPinnedResourcesEntry
 
 local function RefreshColumn2()
     if not CS.col2Scroll then return end
@@ -2144,9 +2146,6 @@ local function RefreshColumn2()
         end
 
         if panelCount == 0 then
-            if resourcesPlacement then
-                AddPinnedResourcesEntry(resourcesPlacement, resourcesAnchorPanelId, { skipSpacer = true })
-            end
             RenderColumn2NoPanelsState(cc)
             return
         end
@@ -3125,16 +3124,11 @@ local function RefreshColumn2()
             end -- not collapsed
             table.insert(col2PanelMetas, panelMeta)
 
-            -- Resource Bars entry, nested under the panel it is anchored to
+            -- Resource Bars signal row, nested under the panel it is anchored to
             if resourcesNestedHere and resourcesAnchorPanelId == panelId then
-                AddResourcesEntryRow("Resource Bars |cff808080(anchored here)|r", { indent = 16 })
+                AddResourcesEntryRow(CS.col2Scroll, "Resource Bars |cff808080(anchored here)|r", { indent = 16 })
             end
         end -- panel loop
-
-        -- Pinned Resource Bars entry (independent / disabled / anchored elsewhere)
-        if resourcesPlacement and not resourcesNestedHere then
-            AddPinnedResourcesEntry(resourcesPlacement, resourcesAnchorPanelId)
-        end
 
         CS.lastCol2RenderedRows = col2RenderedRows
         CS.lastCol2PanelMetas = col2PanelMetas
@@ -3152,12 +3146,6 @@ local function RefreshColumn2()
         label:SetText("Select a group first")
         label:SetFullWidth(true)
         CS.col2Scroll:AddChild(label)
-        if ST._GetResourcesEntryPlacement then
-            local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
-            if placement then
-                AddPinnedResourcesEntry(placement, anchorPanelId)
-            end
-        end
         return
     end
 
