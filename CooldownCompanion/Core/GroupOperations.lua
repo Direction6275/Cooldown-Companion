@@ -2109,6 +2109,7 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
         return false
     end
     if self.IsIconLikeDisplayMode and not self:IsIconLikeDisplayMode(group.displayMode) then return false end
+    if group.anchorEligible == false then return false end
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end
     if container and not container.isGlobal and container.anchorEligible == false then return false end

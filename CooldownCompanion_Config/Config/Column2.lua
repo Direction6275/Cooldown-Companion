@@ -2432,6 +2432,27 @@ local function RefreshColumn2()
                                 UIDropDownMenu_AddButton(info, level)
                             end
 
+                            -- Auto-anchoring eligibility (icon-like modes only — others are never eligible)
+                            if CooldownCompanion:IsIconLikeDisplayMode(ctxPanel.displayMode) then
+                                info = UIDropDownMenu_CreateInfo()
+                                info.text = ctxPanel.anchorEligible ~= false and "Exclude from Auto-Anchoring" or "Include in Auto-Anchoring"
+                                info.notCheckable = true
+                                info.func = function()
+                                    CloseDropDownMenus()
+                                    if ctxPanel.anchorEligible ~= false then
+                                        ctxPanel.anchorEligible = false
+                                    else
+                                        ctxPanel.anchorEligible = nil
+                                    end
+                                    CooldownCompanion:EvaluateResourceBars()
+                                    CooldownCompanion:UpdateAnchorStacking()
+                                    CooldownCompanion:EvaluateCastBar()
+                                    CooldownCompanion:EvaluateFrameAnchoring()
+                                    CooldownCompanion:RefreshConfigPanel()
+                                end
+                                UIDropDownMenu_AddButton(info, level)
+                            end
+
                             if ctxPanel.displayMode ~= ST.DISPLAY_MODE_ROTATION_ASSISTANT then
                                 local switchModes = {
                                     { mode = "icons", label = "Icons" },

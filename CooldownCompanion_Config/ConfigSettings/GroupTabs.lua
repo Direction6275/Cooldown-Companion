@@ -1695,6 +1695,34 @@ local function BuildLayoutTab(container)
     end
 
     -- ================================================================
+    -- Auto-Anchoring eligibility (icon-like modes only — others are never eligible)
+    -- ================================================================
+    if CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) then
+        local anchorEligibleCheck = AceGUI:Create("CheckBox")
+        anchorEligibleCheck:SetLabel("Include in Auto-Anchoring")
+        anchorEligibleCheck:SetValue(group.anchorEligible ~= false)
+        anchorEligibleCheck:SetFullWidth(true)
+        anchorEligibleCheck:SetCallback("OnValueChanged", function(widget, event, val)
+            if val then
+                group.anchorEligible = nil
+            else
+                group.anchorEligible = false
+            end
+            CooldownCompanion:EvaluateResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+            CooldownCompanion:EvaluateCastBar()
+            CooldownCompanion:EvaluateFrameAnchoring()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(anchorEligibleCheck)
+
+        CreateInfoButton(anchorEligibleCheck.frame, anchorEligibleCheck.checkbg, "LEFT", "RIGHT", anchorEligibleCheck.text:GetStringWidth() + 4, 0, {
+            "Include in Auto-Anchoring",
+            {"Resource Bars, the Cast Bar, and Unit Frames attach to the first available panel automatically. Uncheck this to skip this panel so they attach to the next eligible one instead.", 1, 1, 1, true},
+        }, tabInfoButtons)
+    end
+
+    -- ================================================================
     -- ADVANCED: Alpha (from Extras)
     -- ================================================================
     BuildAlphaControls(container, group, function()

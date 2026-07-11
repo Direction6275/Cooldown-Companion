@@ -634,6 +634,7 @@ local function IsGroupConfigAvailableForPreview(groupId, checkLoadConditions)
     if not group then return false end
     if not group.parentContainerId then return false end
     if not CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) then return false end
+    if group.anchorEligible == false then return false end
     if CooldownCompanion.DoesAnchorTargetReachCursorRoot
         and CooldownCompanion:DoesAnchorTargetReachCursorRoot("CooldownCompanionGroup" .. tostring(groupId)) then
         return false
