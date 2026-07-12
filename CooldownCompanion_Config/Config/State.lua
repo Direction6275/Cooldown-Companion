@@ -1994,6 +1994,9 @@ local function AcquireBadge(frame, index)
     badge:SetSize(BADGE_SIZE, BADGE_SIZE)
     badge.text:SetText("")
     badge:SetFrameLevel(frame:GetFrameLevel() + 5)
+    badge:EnableMouse(false)
+    badge:SetScript("OnEnter", nil)
+    badge:SetScript("OnLeave", nil)
     return badge
 end
 
@@ -2039,6 +2042,9 @@ local function SetupGroupRowIndicators(entry, group)
         AddAtlasBadge("ShipMissionIcon-Training-Map")
     end
     -- Resource Bars anchored to a panel in this group (pin badge).
+    -- Mouse is enabled for the tooltip with clicks propagating to the row;
+    -- SetPropagateMouseClicks is protected in combat, so the tooltip is
+    -- skipped when refreshed mid-combat.
     -- ST._ lookup: GetResourcesEntryPlacement is declared later in this file.
     if ST._GetResourcesEntryPlacement then
         local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
@@ -2048,7 +2054,22 @@ local function SetupGroupRowIndicators(entry, group)
             local anchorContainer = anchorGroup and dbProfile.groupContainers
                 and dbProfile.groupContainers[anchorGroup.parentContainerId]
             if anchorContainer ~= nil and anchorContainer == group then
-                AddAtlasBadge("Waypoint-MapPin-ChatIcon")
+                local anchorPanelName = anchorGroup.name or "a panel"
+                badgeIndex = badgeIndex + 1
+                local badge = AcquireBadge(frame, badgeIndex)
+                badge.icon:SetAtlas("Waypoint-MapPin-Tracked", false)
+                if not InCombatLockdown() and badge.SetPropagateMouseClicks then
+                    badge:EnableMouse(true)
+                    badge:SetPropagateMouseClicks(true)
+                    badge:SetScript("OnEnter", function(self)
+                        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                        GameTooltip:AddLine("Resource Bars")
+                        GameTooltip:AddLine("Your resource bars are anchored to " .. anchorPanelName .. " in this group.", 1, 1, 1, true)
+                        GameTooltip:Show()
+                    end)
+                    badge:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                end
+                badge:Show()
             end
         end
     end

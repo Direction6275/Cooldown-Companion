@@ -1082,53 +1082,7 @@ local function CreateConfigPanel()
         UpdateModeRowLayout()
     end
 
-    -- Cooldown Manager button — left of Collapse
-    local cdmBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
-    cdmBtn:SetSize(16, 16)
-    local cdmIcon = cdmBtn:CreateTexture(nil, "ARTWORK")
-    cdmIcon:SetAtlas("icon_cooldownmanager", false)
-    cdmIcon:SetAllPoints()
-    cdmBtn:SetHighlightAtlas("icon_cooldownmanager")
-    cdmBtn:GetHighlightTexture():SetAlpha(0.3)
-
-    local cdmBtnBorder = nil
-    local function UpdateCdmBtnHighlight()
-        if CooldownViewerSettings and CooldownViewerSettings:IsShown() then
-            if not cdmBtnBorder then
-                cdmBtnBorder = cdmBtn:CreateTexture(nil, "OVERLAY")
-                cdmBtnBorder:SetPoint("TOPLEFT", -1, 1)
-                cdmBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
-                cdmBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
-            end
-            cdmBtnBorder:Show()
-        else
-            if cdmBtnBorder then
-                cdmBtnBorder:Hide()
-            end
-        end
-    end
-
-    cdmBtn:SetScript("OnClick", function()
-        if CooldownViewerSettings then
-            CooldownViewerSettings:TogglePanel()
-            UpdateCdmBtnHighlight()
-        end
-    end)
-    cdmBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("Cooldown Manager")
-        GameTooltip:AddLine("Open the Blizzard Cooldown Manager settings panel", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    cdmBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    if CooldownViewerSettings then
-        hooksecurefunc(CooldownViewerSettings, "Hide", function()
-            UpdateCdmBtnHighlight()
-        end)
-    end
-
-    -- CDM Display toggle button — left of CDM button
+    -- CDM Display toggle button — left of the Other Classes button
     local cdmDisplayBtn = CreateFrame("Button", nil, content)
     cdmDisplayBtn:SetSize(20, 20)
     local cdmDisplayIcon = cdmDisplayBtn:CreateTexture(nil, "ARTWORK")
@@ -1158,6 +1112,27 @@ local function CreateConfigPanel()
         GameTooltip:Show()
     end)
     cdmDisplayBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    -- Import button — left of the CDM display toggle
+    local importClusterBtn = CreateFrame("Button", nil, content)
+    importClusterBtn:SetSize(18, 18)
+    local importClusterIcon = importClusterBtn:CreateTexture(nil, "ARTWORK")
+    importClusterIcon:SetAtlas("streamcinematic-downloadicon", false)
+    importClusterIcon:SetAllPoints()
+    importClusterBtn:SetHighlightAtlas("streamcinematic-downloadicon")
+    importClusterBtn:GetHighlightTexture():SetAlpha(0.3)
+    importClusterBtn:SetScript("OnClick", function()
+        if ST._OpenImportReviewWindow then
+            ST._OpenImportReviewWindow()
+        end
+    end)
+    importClusterBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Import")
+        GameTooltip:AddLine("Paste an export string to import groups, panels, or bars.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    importClusterBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     -- Other Classes browse button — between the Changelog and CDM buttons
     local otherClassBrowseBtn = CreateFrame("Button", nil, content)
@@ -1310,8 +1285,8 @@ local function CreateConfigPanel()
     gearBtn:SetPoint("RIGHT", collapseBtn, "LEFT", -4, 0)
     changelogBtn:SetPoint("RIGHT", gearBtn, "LEFT", -4, 0)
     otherClassBrowseBtn:SetPoint("RIGHT", changelogBtn, "LEFT", -4, 0)
-    cdmBtn:SetPoint("RIGHT", otherClassBrowseBtn, "LEFT", -4, 0)
-    cdmDisplayBtn:SetPoint("RIGHT", cdmBtn, "LEFT", -4, 0)
+    cdmDisplayBtn:SetPoint("RIGHT", otherClassBrowseBtn, "LEFT", -4, 0)
+    importClusterBtn:SetPoint("RIGHT", cdmDisplayBtn, "LEFT", -4, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
@@ -1979,11 +1954,12 @@ local function CreateConfigPanel()
     CS.columnInfoButtons[3] = bsInfoBtn
     CS.columnInfoButtons[4] = settingsInfoBtn
 
-    -- Static button bar at bottom of column 1 (New Group + New Folder + Import)
+    -- Static button bar at bottom of column 1, two rows:
+    -- New Group + New Folder + Resources / Cast Bar + Unit Frames
     local btnBar = CreateFrame("Frame", nil, col1.content)
     btnBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 0)
     btnBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 0)
-    btnBar:SetHeight(30)
+    btnBar:SetHeight(52)
     CS.col1ButtonBar = btnBar
 
     -- AceGUI ScrollFrames in columns 1 and 2
@@ -1992,7 +1968,7 @@ local function CreateConfigPanel()
     scroll1.frame:SetParent(col1.content)
     scroll1.frame:ClearAllPoints()
     scroll1.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30)
+    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 52)
     scroll1.frame:Show()
     CS.col1Scroll = scroll1
 

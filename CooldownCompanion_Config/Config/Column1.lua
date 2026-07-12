@@ -24,7 +24,6 @@ local OpenContainerIconPicker = ST._OpenContainerIconPicker
 local IsValidIconTexture = ST._IsValidIconTexture
 local GenerateFolderName = ST._GenerateFolderName
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
-local OpenImportReviewWindow = ST._OpenImportReviewWindow
 local CancelDrag = ST._CancelDrag
 local StartDragTracking = ST._StartDragTracking
 local GetScaledCursorPosition = ST._GetScaledCursorPosition
@@ -742,25 +741,71 @@ local function PopulateColumn1ButtonBar()
     newFolderBtn.frame:Show()
     table.insert(CS.col1BarWidgets, newFolderBtn)
 
-    local importBtn = AceGUI:Create("Button")
-    importBtn:SetText("Import")
-    importBtn:SetCallback("OnClick", function()
-        OpenImportReviewWindow()
+    -- Resources: first-class module home, top row beside group management
+    local resourcesBtn = AceGUI:Create("Button")
+    resourcesBtn:SetText("Resources")
+    resourcesBtn:SetCallback("OnClick", function()
+        CS.barPanelTab = "resource_anchoring"
+        if ST._SetConfigPrimaryMode then
+            ST._SetConfigPrimaryMode("bars")
+        end
     end)
-    importBtn.frame:SetParent(CS.col1ButtonBar)
-    importBtn.frame:ClearAllPoints()
-    importBtn.frame:SetPoint("LEFT", newFolderBtn.frame, "RIGHT", 3, 0)
-    importBtn.frame:SetWidth(thirdW)
-    importBtn.frame:SetHeight(28)
-    importBtn.frame:Show()
-    table.insert(CS.col1BarWidgets, importBtn)
+    resourcesBtn.frame:SetParent(CS.col1ButtonBar)
+    resourcesBtn.frame:ClearAllPoints()
+    resourcesBtn.frame:SetPoint("LEFT", newFolderBtn.frame, "RIGHT", 3, 0)
+    resourcesBtn.frame:SetWidth(thirdW)
+    resourcesBtn.frame:SetHeight(28)
+    resourcesBtn.frame:Show()
+    table.insert(CS.col1BarWidgets, resourcesBtn)
 
-    CS.col1ButtonBar._topRowBtns = { newGroupBtn.frame, newFolderBtn.frame, importBtn.frame }
+    -- Second, slimmer row: satellite modules one notch below Resources
+    local halfW = (barW - 3) / 2
+
+    local castBarBtn = AceGUI:Create("Button")
+    castBarBtn:SetText("Cast Bar")
+    castBarBtn:SetCallback("OnClick", function()
+        CS.barPanelTab = "castbar_anchoring"
+        if ST._SetConfigPrimaryMode then
+            ST._SetConfigPrimaryMode("bars")
+        end
+    end)
+    castBarBtn.frame:SetParent(CS.col1ButtonBar)
+    castBarBtn.frame:ClearAllPoints()
+    castBarBtn.frame:SetPoint("TOPLEFT", newGroupBtn.frame, "BOTTOMLEFT", 0, -2)
+    castBarBtn.frame:SetWidth(halfW)
+    castBarBtn.frame:SetHeight(20)
+    castBarBtn.frame:Show()
+    table.insert(CS.col1BarWidgets, castBarBtn)
+
+    local unitFramesBtn = AceGUI:Create("Button")
+    unitFramesBtn:SetText("Unit Frames")
+    unitFramesBtn:SetCallback("OnClick", function()
+        CS.barPanelTab = "frame_anchoring"
+        if ST._SetConfigPrimaryMode then
+            ST._SetConfigPrimaryMode("bars")
+        end
+    end)
+    unitFramesBtn.frame:SetParent(CS.col1ButtonBar)
+    unitFramesBtn.frame:ClearAllPoints()
+    unitFramesBtn.frame:SetPoint("LEFT", castBarBtn.frame, "RIGHT", 3, 0)
+    unitFramesBtn.frame:SetWidth(halfW)
+    unitFramesBtn.frame:SetHeight(20)
+    unitFramesBtn.frame:Show()
+    table.insert(CS.col1BarWidgets, unitFramesBtn)
+
+    CS.col1ButtonBar._topRowBtns = { newGroupBtn.frame, newFolderBtn.frame, resourcesBtn.frame }
+    CS.col1ButtonBar._bottomRowBtns = { castBarBtn.frame, unitFramesBtn.frame }
     CS.col1ButtonBar:SetScript("OnSizeChanged", function(self, w)
         if self._topRowBtns then
             local tw = (w - 6) / 3
             for _, frame in ipairs(self._topRowBtns) do
                 frame:SetWidth(tw)
+            end
+        end
+        if self._bottomRowBtns then
+            local hw = (w - 3) / 2
+            for _, frame in ipairs(self._bottomRowBtns) do
+                frame:SetWidth(hw)
             end
         end
     end)
@@ -899,21 +944,6 @@ local function RefreshColumn1(preserveDrag)
 
     -- Ensure folders table exists
     if not db.folders then db.folders = {} end
-
-    -- Pinned "Resource Bars" entry: the resource module's config home.
-    -- Rendered inside the current class's section (resource settings are
-    -- class-scoped); kept out of col1RenderedRows so drag-reorder never
-    -- sees it. Flag-guarded so section + fallback call sites render once.
-    local resourcesHomeRendered = false
-    local function RenderResourcesHomeEntry(opts)
-        if resourcesHomeRendered then return end
-        if CS.otherClassLibraryActive or searchResults then return end
-        if not (ST._AddPinnedResourcesEntry and ST._GetResourcesEntryPlacement) then return end
-        local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
-        if not placement then return end
-        ST._AddPinnedResourcesEntry(CS.col1Scroll, placement, anchorPanelId, opts)
-        resourcesHomeRendered = true
-    end
 
     if CooldownCompanion._unsupportedLegacyProfile then
         ClearOtherClassBrowseState()
@@ -1616,11 +1646,6 @@ local function RefreshColumn1(preserveDrag)
 
         RenderItems(loadedItems, "loaded")
 
-        -- Resource Bars home sits at the end of the class's loaded groups
-        if section == "char" and #loadedItems > 0 then
-            RenderResourcesHomeEntry({ skipSpacer = true })
-        end
-
         if #unloadedItems > 0 and not useUnloadedOnlyHeading then
             local sep = AceGUI:Create("Label")
             sep:SetFullWidth(true)
@@ -1644,11 +1669,6 @@ local function RefreshColumn1(preserveDrag)
         end
 
         RenderItems(unloadedItems, "unloaded")
-
-        -- No loaded class groups: home lands at the end of the section instead
-        if section == "char" then
-            RenderResourcesHomeEntry({ skipSpacer = true })
-        end
     end
 
     local function GetClassInfoByID(classID)
@@ -2001,9 +2021,6 @@ local function RefreshColumn1(preserveDrag)
             end
         end
     end
-
-    -- Fallback home when the class section didn't render (no class groups yet)
-    RenderResourcesHomeEntry()
 
     CS.lastCol1RenderedRows = col1RenderedRows
 

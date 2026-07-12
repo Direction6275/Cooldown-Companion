@@ -1584,106 +1584,6 @@ end
 ------------------------------------------------------------------------
 -- COLUMN 2: Panels
 ------------------------------------------------------------------------
-------------------------------------------------------------------------
--- "Resource Bars" entry rows. The permanent home is pinned in Column 1
--- (rendered there via the ST._ exports below); Column 2 only shows the
--- nested "(anchored here)" signal row under the current anchor panel.
--- Rows are deliberately kept out of the rendered-row/drop-target
--- structures so drag-reorder and multi-select never see them.
-------------------------------------------------------------------------
-
-local function AddResourcesEntryRow(scroll, labelText, opts)
-    local row = AceGUI:Create("InteractiveLabel")
-    if CleanRecycledEntry then CleanRecycledEntry(row) end
-    row:SetText(labelText)
-    row:SetFullWidth(true)
-    row:SetFontObject(GameFontHighlight)
-    row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-    if ApplyConfigTextRow then
-        ApplyConfigTextRow(row, "LEFT", (opts and opts.indent) or 4, 4)
-    end
-    if CS.resourcesEntrySelected then
-        row:SetColor(0.4, 0.7, 1.0)
-    elseif opts and opts.grayed then
-        row:SetColor(0.55, 0.55, 0.55)
-    end
-    if row.frame and row.frame.RegisterForClicks then
-        row.frame:RegisterForClicks("AnyUp")
-    end
-    row:SetCallback("OnClick", function() end)
-    row.frame:SetScript("OnMouseUp", function(self, mouseButton)
-        if mouseButton == "LeftButton" then
-            if ST._SelectConfigResourcesEntry then
-                ST._SelectConfigResourcesEntry({ toggle = true })
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end
-    end)
-    scroll:AddChild(row)
-end
-
-local function AddResourcesEnableRow(scroll)
-    local row = AceGUI:Create("InteractiveLabel")
-    if CleanRecycledEntry then CleanRecycledEntry(row) end
-    row:SetText("|cff44dd44Enable Resource Bars|r")
-    row:SetFullWidth(true)
-    row:SetFontObject(GameFontHighlight)
-    row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-    if ApplyConfigTextRow then
-        ApplyConfigTextRow(row, "LEFT", 16, 4)
-    end
-    if row.frame and row.frame.RegisterForClicks then
-        row.frame:RegisterForClicks("AnyUp")
-    end
-    row:SetCallback("OnClick", function() end)
-    row.frame:SetScript("OnMouseUp", function(self, mouseButton)
-        if mouseButton ~= "LeftButton" then return end
-        local settings = CooldownCompanion:GetResourceBarSettings()
-        if not settings then return end
-        settings.enabled = true
-        CooldownCompanion:EvaluateResourceBars()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(row)
-end
-
-local function AddPinnedResourcesEntry(scroll, placement, anchorPanelId, opts)
-    if not (opts and opts.skipSpacer) then
-        local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
-        AddClassAccentSpacer(scroll, cc)
-    end
-
-    if placement == "disabled" then
-        AddResourcesEntryRow(scroll, "Resource Bars |cff808080(disabled)|r", { grayed = true })
-        local hasConflict = CooldownCompanion.GetCurrentResourceBarConflict
-            and CooldownCompanion:GetCurrentResourceBarConflict() ~= nil
-        if not hasConflict then
-            AddResourcesEnableRow(scroll)
-        end
-        return
-    end
-
-    local subtitle
-    if placement == "independent" then
-        subtitle = "(independently positioned)"
-    elseif anchorPanelId then
-        local db = CooldownCompanion.db.profile
-        local anchorGroup = db.groups and db.groups[anchorPanelId]
-        local anchorContainer = anchorGroup and db.groupContainers and db.groupContainers[anchorGroup.parentContainerId]
-        local panelName = anchorGroup and anchorGroup.name or "another panel"
-        if anchorContainer and anchorContainer.name then
-            subtitle = "(anchored to " .. panelName .. " in " .. anchorContainer.name .. ")"
-        else
-            subtitle = "(anchored to " .. panelName .. ")"
-        end
-    else
-        subtitle = "(no eligible anchor panel)"
-    end
-    AddResourcesEntryRow(scroll, "Resource Bars |cff808080" .. subtitle .. "|r")
-end
-ST._AddPinnedResourcesEntry = AddPinnedResourcesEntry
-
 local function RefreshColumn2()
     if not CS.col2Scroll then return end
     local col2 = CS.configFrame and CS.configFrame.col2
@@ -2134,15 +2034,13 @@ local function RefreshColumn2()
 
         local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
 
-        -- Where the Resource Bars entry lives this refresh (nested vs pinned)
-        local resourcesPlacement, resourcesAnchorPanelId
+        -- Panel currently hosting the resource-bar anchor (for the pin badge)
+        local resourcesAnchorPanelId
         if ST._GetResourcesEntryPlacement then
-            resourcesPlacement, resourcesAnchorPanelId = ST._GetResourcesEntryPlacement()
-        end
-        local resourcesNestedHere = false
-        if resourcesPlacement == "attached" and resourcesAnchorPanelId then
-            local anchorGroup = CooldownCompanion.db.profile.groups[resourcesAnchorPanelId]
-            resourcesNestedHere = (anchorGroup and anchorGroup.parentContainerId) == CS.selectedContainer
+            local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
+            if placement == "attached" then
+                resourcesAnchorPanelId = anchorPanelId
+            end
         end
 
         if panelCount == 0 then
@@ -2299,6 +2197,42 @@ local function RefreshColumn2()
                     rightOffset = rightOffset + 22
                 else
                     disabledBadge:Hide()
+                end
+
+                -- Resource Bars anchor badge (pin on the hosting panel).
+                -- Mouse is enabled for the tooltip with clicks propagating to
+                -- the row; SetPropagateMouseClicks is protected in combat, so
+                -- the tooltip is skipped when refreshed mid-combat.
+                local resourcePinBadge = header.frame._cdcResourcePinBadge
+                if not resourcePinBadge then
+                    resourcePinBadge = CreateFrame("Frame", nil, header.frame)
+                    resourcePinBadge:SetSize(16, 16)
+                    resourcePinBadge.icon = resourcePinBadge:CreateTexture(nil, "OVERLAY")
+                    resourcePinBadge.icon:SetAllPoints()
+                    resourcePinBadge.icon:SetAtlas("Waypoint-MapPin-Tracked", false)
+                    resourcePinBadge:SetScript("OnEnter", function(self)
+                        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                        GameTooltip:AddLine("Resource Bars")
+                        GameTooltip:AddLine("Your resource bars are anchored to this panel.", 1, 1, 1, true)
+                        GameTooltip:AddLine("Right-click the panel to exclude it from auto-anchoring.", 0.6, 0.6, 0.6, true)
+                        GameTooltip:Show()
+                    end)
+                    resourcePinBadge:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                    header.frame._cdcResourcePinBadge = resourcePinBadge
+                end
+                resourcePinBadge:ClearAllPoints()
+                resourcePinBadge:SetPoint("LEFT", header.label, "CENTER", rightOffset, 0)
+                if resourcesAnchorPanelId == panelId then
+                    if not InCombatLockdown() and resourcePinBadge.SetPropagateMouseClicks then
+                        resourcePinBadge:EnableMouse(true)
+                        resourcePinBadge:SetPropagateMouseClicks(true)
+                    else
+                        resourcePinBadge:EnableMouse(false)
+                    end
+                    resourcePinBadge:Show()
+                    rightOffset = rightOffset + 22
+                else
+                    resourcePinBadge:Hide()
                 end
 
                 -- Spec / hero talent filter badges (panel-level filters not inherited from container/folder)
@@ -3124,10 +3058,6 @@ local function RefreshColumn2()
             end -- not collapsed
             table.insert(col2PanelMetas, panelMeta)
 
-            -- Resource Bars signal row, nested under the panel it is anchored to
-            if resourcesNestedHere and resourcesAnchorPanelId == panelId then
-                AddResourcesEntryRow(CS.col2Scroll, "Resource Bars |cff808080(anchored here)|r", { indent = 16 })
-            end
         end -- panel loop
 
         CS.lastCol2RenderedRows = col2RenderedRows
