@@ -900,6 +900,21 @@ local function RefreshColumn1(preserveDrag)
     -- Ensure folders table exists
     if not db.folders then db.folders = {} end
 
+    -- Pinned "Resource Bars" entry: the resource module's config home.
+    -- Rendered inside the current class's section (resource settings are
+    -- class-scoped); kept out of col1RenderedRows so drag-reorder never
+    -- sees it. Flag-guarded so section + fallback call sites render once.
+    local resourcesHomeRendered = false
+    local function RenderResourcesHomeEntry(opts)
+        if resourcesHomeRendered then return end
+        if CS.otherClassLibraryActive or searchResults then return end
+        if not (ST._AddPinnedResourcesEntry and ST._GetResourcesEntryPlacement) then return end
+        local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
+        if not placement then return end
+        ST._AddPinnedResourcesEntry(CS.col1Scroll, placement, anchorPanelId, opts)
+        resourcesHomeRendered = true
+    end
+
     if CooldownCompanion._unsupportedLegacyProfile then
         ClearOtherClassBrowseState()
         if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
@@ -1601,6 +1616,11 @@ local function RefreshColumn1(preserveDrag)
 
         RenderItems(loadedItems, "loaded")
 
+        -- Resource Bars home sits at the end of the class's loaded groups
+        if section == "char" and #loadedItems > 0 then
+            RenderResourcesHomeEntry({ skipSpacer = true })
+        end
+
         if #unloadedItems > 0 and not useUnloadedOnlyHeading then
             local sep = AceGUI:Create("Label")
             sep:SetFullWidth(true)
@@ -1624,6 +1644,11 @@ local function RefreshColumn1(preserveDrag)
         end
 
         RenderItems(unloadedItems, "unloaded")
+
+        -- No loaded class groups: home lands at the end of the section instead
+        if section == "char" then
+            RenderResourcesHomeEntry({ skipSpacer = true })
+        end
     end
 
     local function GetClassInfoByID(classID)
@@ -1977,17 +2002,8 @@ local function RefreshColumn1(preserveDrag)
         end
     end
 
-    -- Pinned "Resource Bars" entry: the resource module's config home.
-    -- Kept out of col1RenderedRows so drag-reorder never sees it.
-    if not CS.otherClassLibraryActive
-        and not searchResults
-        and ST._AddPinnedResourcesEntry
-        and ST._GetResourcesEntryPlacement then
-        local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
-        if placement then
-            ST._AddPinnedResourcesEntry(CS.col1Scroll, placement, anchorPanelId)
-        end
-    end
+    -- Fallback home when the class section didn't render (no class groups yet)
+    RenderResourcesHomeEntry()
 
     CS.lastCol1RenderedRows = col1RenderedRows
 
