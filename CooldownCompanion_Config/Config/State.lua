@@ -2038,6 +2038,20 @@ local function SetupGroupRowIndicators(entry, group)
         and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(group)) then
         AddAtlasBadge("ShipMissionIcon-Training-Map")
     end
+    -- Resource Bars anchored to a panel in this group (pin badge).
+    -- ST._ lookup: GetResourcesEntryPlacement is declared later in this file.
+    if ST._GetResourcesEntryPlacement then
+        local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
+        if placement == "attached" and anchorPanelId then
+            local dbProfile = CooldownCompanion.db and CooldownCompanion.db.profile
+            local anchorGroup = dbProfile and dbProfile.groups and dbProfile.groups[anchorPanelId]
+            local anchorContainer = anchorGroup and dbProfile.groupContainers
+                and dbProfile.groupContainers[anchorGroup.parentContainerId]
+            if anchorContainer ~= nil and anchorContainer == group then
+                AddAtlasBadge("Waypoint-MapPin-ChatIcon")
+            end
+        end
+    end
     -- Look up folder data for per-badge filtering: badges that exist at the
     -- folder level are shown on the folder row only, not on child containers.
     local folderId = group.folderId
