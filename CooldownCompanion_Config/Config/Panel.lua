@@ -397,6 +397,9 @@ end
 
 local function GetColumn3HeaderMode(selection)
     if CS.resourceBarPanelActive or CS.resourcesEntrySelected then
+        if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
+            return "resources_intro"
+        end
         return "custom_aura"
     end
     if selection.panelMultiCount >= 2 then
@@ -438,6 +441,8 @@ local function GetColumn3HeaderTitle(selection)
     local mode = GetColumn3HeaderMode(selection)
     if mode == "custom_aura" then
         return GetCustomBarsColumnTitle()
+    elseif mode == "resources_intro" then
+        return "Resource Bars"
     elseif mode == "panel_actions" then
         return "Panel Actions"
     end
@@ -1882,7 +1887,10 @@ local function CreateConfigPanel()
     bsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     bsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if CS.resourceBarPanelActive or CS.resourcesEntrySelected then
+        if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
+            GameTooltip:AddLine("Resource Bars")
+            GameTooltip:AddLine("Enable Resource Bars to configure Resources and Custom Bars here.", 1, 1, 1, true)
+        elseif CS.resourceBarPanelActive or CS.resourcesEntrySelected then
             GameTooltip:AddLine("Custom Bars & Resources")
             GameTooltip:AddLine("Create Custom Bars and manage enabled resource-specific settings.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
@@ -2301,10 +2309,18 @@ local function CreateConfigPanel()
         local usedWidth = (equalColWidth * 4) + (pad * 3)
         local leftoverWidth = math.max(0, w - usedWidth)
 
+        -- Resources empty state: cols 1-2 stay normal, col3 widens across the
+        -- col4 region as a single intro pane, col4 hides.
+        local resourcesEmptyState = ST._IsResourcesEmptyStateActive
+            and ST._IsResourcesEmptyStateActive()
+
         local col1Width = equalColWidth
         local col2Width = equalColWidth
         local col3Width = equalColWidth
         local col4Width = equalColWidth + leftoverWidth
+        if resourcesEmptyState then
+            col3Width = (equalColWidth * 2) + pad + leftoverWidth
+        end
         local finderAvailable = IsConfigFinderAvailable and IsConfigFinderAvailable()
 
         if CS.configFinderBox then
@@ -2343,6 +2359,7 @@ local function CreateConfigPanel()
         col4.frame:ClearAllPoints()
         col4.frame:SetPoint("TOPLEFT", col3.frame, "TOPRIGHT", pad, 0)
         col4.frame:SetSize(col4Width, h)
+        col4.frame:SetShown(not resourcesEmptyState)
 
         UpdateCompactConfigRows()
         PositionPrimaryAxisUI()

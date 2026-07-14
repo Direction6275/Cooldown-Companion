@@ -189,7 +189,18 @@ local function SetActivePreviewBadgeButton(btn, active)
     end
 end
 
-local function EnsurePreviewBadgeButton(frame)
+local function AddPreviewBadge(parentWidget, anchorAfterFrame, label, isActiveFn, setActiveFn, enabled)
+    local hasCheckboxAnchor = parentWidget and parentWidget.frame and parentWidget.checkbg and parentWidget.text
+    local hasLabelAnchor = parentWidget and parentWidget.frame and parentWidget.label
+    if not enabled
+        or not (hasCheckboxAnchor or hasLabelAnchor)
+        or type(isActiveFn) ~= "function"
+        or type(setActiveFn) ~= "function"
+    then
+        return nil
+    end
+
+    local frame = parentWidget.frame
     local btn = frame._cdcPreviewBtn
     if not btn then
         btn = CreateFrame("Button", nil, frame)
@@ -200,10 +211,19 @@ local function EnsurePreviewBadgeButton(frame)
         btn._icon:SetAtlas("CreditsScreen-Assets-Buttons-Play", false)
         frame._cdcPreviewBtn = btn
     end
-    return btn
-end
 
-local function WirePreviewBadge(btn, label, isActiveFn, setActiveFn)
+    btn:SetParent(frame)
+    btn:ClearAllPoints()
+    if anchorAfterFrame and anchorAfterFrame:IsShown() then
+        btn:SetPoint("LEFT", anchorAfterFrame, "RIGHT", 4, 0)
+    elseif hasCheckboxAnchor then
+        btn:SetPoint("LEFT", parentWidget.checkbg, "RIGHT", parentWidget.text:GetStringWidth() + 6, 0)
+    else
+        btn:SetPoint("LEFT", parentWidget.label, "RIGHT", 4, 0)
+    end
+    btn:Show()
+    btn._icon:Show()
+
     SetActivePreviewBadgeButton(btn, isActiveFn())
     btn:SetScript("OnClick", function()
         local showPreview = not isActiveFn()
@@ -222,35 +242,6 @@ local function WirePreviewBadge(btn, label, isActiveFn, setActiveFn)
     btn:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
-end
-
-local function AddPreviewBadge(parentWidget, anchorAfterFrame, label, isActiveFn, setActiveFn, enabled)
-    local hasCheckboxAnchor = parentWidget and parentWidget.frame and parentWidget.checkbg and parentWidget.text
-    local hasLabelAnchor = parentWidget and parentWidget.frame and parentWidget.label
-    if not enabled
-        or not (hasCheckboxAnchor or hasLabelAnchor)
-        or type(isActiveFn) ~= "function"
-        or type(setActiveFn) ~= "function"
-    then
-        return nil
-    end
-
-    local frame = parentWidget.frame
-    local btn = EnsurePreviewBadgeButton(frame)
-
-    btn:SetParent(frame)
-    btn:ClearAllPoints()
-    if anchorAfterFrame and anchorAfterFrame:IsShown() then
-        btn:SetPoint("LEFT", anchorAfterFrame, "RIGHT", 4, 0)
-    elseif hasCheckboxAnchor then
-        btn:SetPoint("LEFT", parentWidget.checkbg, "RIGHT", parentWidget.text:GetStringWidth() + 6, 0)
-    else
-        btn:SetPoint("LEFT", parentWidget.label, "RIGHT", 4, 0)
-    end
-    btn:Show()
-    btn._icon:Show()
-
-    WirePreviewBadge(btn, label, isActiveFn, setActiveFn)
     local advancedBtn = frame._cdcAdvancedBtn
     if not (advancedBtn and advancedBtn:GetParent() == frame) then
         parentWidget:SetCallback("OnRelease", function()
@@ -263,40 +254,6 @@ local function AddPreviewBadge(parentWidget, anchorAfterFrame, label, isActiveFn
         end)
     end
 
-    return btn
-end
-
--- Preview badge pinned to a corner of a raw frame (e.g. the Layout & Order
--- pane) instead of trailing an AceGUI checkbox/label. The host frame persists
--- across refreshes, so a disabled call must hide any badge left from an
--- earlier build.
-local function AttachFramePreviewBadge(frame, label, isActiveFn, setActiveFn, enabled)
-    if not frame then
-        return nil
-    end
-    if not enabled
-        or type(isActiveFn) ~= "function"
-        or type(setActiveFn) ~= "function"
-    then
-        local btn = frame._cdcPreviewBtn
-        if btn then
-            btn:Hide()
-            if CS.activePreviewBadgeButton == btn then
-                CS.activePreviewBadgeButton = nil
-            end
-        end
-        return nil
-    end
-
-    local btn = EnsurePreviewBadgeButton(frame)
-    btn:SetParent(frame)
-    btn:SetFrameLevel(frame:GetFrameLevel() + 40)
-    btn:ClearAllPoints()
-    btn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
-    btn:Show()
-    btn._icon:Show()
-
-    WirePreviewBadge(btn, label, isActiveFn, setActiveFn)
     return btn
 end
 
@@ -1306,7 +1263,6 @@ ST._BuildCooldownTextControls = BuildCooldownTextControls
 ST._AddDurationFormatDropdown = AddDurationFormatDropdown
 ST._AddPreviewToggleButton = AddPreviewToggleButton
 ST._AddPreviewBadge = AddPreviewBadge
-ST._AttachFramePreviewBadge = AttachFramePreviewBadge
 ST._RefreshConfigPanelForPreviewToggle = RefreshConfigPanelForPreviewToggle
 ST._ClearActivePreviewBadgeButton = ClearActivePreviewBadgeButton
 ST._RefreshAdvancedSettingsPreviewButtons = RefreshActiveAdvancedPreviewToggleButtons

@@ -2936,6 +2936,23 @@ local function GetResourcesEntryPlacement()
     return "attached", CooldownCompanion:GetFirstAvailableAnchorGroup()
 end
 
+-- The Resources home shows a single wide intro pane (col3 spanning the col4
+-- region) while Resource Bars are disabled. A profile conflict keeps the
+-- normal split layout so the conflict gate stays reachable.
+local function IsResourcesEmptyStateActive()
+    if not CS.resourcesEntrySelected then
+        return false
+    end
+    if CooldownCompanion.GetCurrentResourceBarConflict
+        and CooldownCompanion:GetCurrentResourceBarConflict() then
+        return false
+    end
+    local settings = CooldownCompanion.GetResourceBarSettings
+        and CooldownCompanion:GetResourceBarSettings()
+        or nil
+    return not (settings and settings.enabled == true)
+end
+
 local function ResetConfigSelection(full)
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedFolder = nil
@@ -3351,6 +3368,7 @@ ST._SetConfigResourceSettingsSpecID = SetConfigResourceSettingsSpecID
 ST._PruneConfigResourceSelection = PruneConfigResourceSelection
 ST._SelectConfigResourcesEntry = SelectConfigResourcesEntry
 ST._GetResourcesEntryPlacement = GetResourcesEntryPlacement
+ST._IsResourcesEmptyStateActive = IsResourcesEmptyStateActive
 ST._ResetConfigSelection = ResetConfigSelection
 ST._SetConfigPrimaryModeImpl = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs

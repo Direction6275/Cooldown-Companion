@@ -4,8 +4,57 @@
 ]]
 
 local ADDON_NAME, ST = ...
+local CooldownCompanion = ST.Addon
 local CS = ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
+
+------------------------------------------------------------------------
+-- Resources empty state: single wide intro pane (col3 spans the col4
+-- region) with centered descriptive text and the enable button.
+------------------------------------------------------------------------
+local function ShowResourcesIntroPane(col3)
+    local pane = col3._resourcesIntroPane
+    if not pane then
+        pane = CreateFrame("Frame", nil, col3.content)
+        pane:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+        pane:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+
+        local title = pane:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+        title:SetPoint("BOTTOM", pane, "CENTER", 0, 64)
+        title:SetText("Track your resources at a glance")
+
+        local body = pane:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        body:SetPoint("TOP", title, "BOTTOM", 0, -14)
+        body:SetPoint("LEFT", pane, "LEFT", 48, 0)
+        body:SetPoint("RIGHT", pane, "RIGHT", -48, 0)
+        body:SetJustifyH("CENTER")
+        body:SetSpacing(3)
+        body:SetText("Health, power, and class resources displayed as bars, attached to one of your panels or positioned anywhere on screen."
+            .. "\n\nAdd Custom Bars to track any aura, cooldown, or charge you choose.")
+
+        local enableBtn = AceGUI:Create("Button")
+        enableBtn:SetText("Enable Resource Bars")
+        enableBtn:SetWidth(220)
+        enableBtn:SetCallback("OnClick", function()
+            local settings = CooldownCompanion:GetResourceBarSettings()
+            if not settings then
+                return
+            end
+            settings.enabled = true
+            CooldownCompanion:EvaluateResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        enableBtn.frame:SetParent(pane)
+        enableBtn.frame:ClearAllPoints()
+        enableBtn.frame:SetPoint("TOP", body, "BOTTOM", 0, -28)
+        pane._enableBtn = enableBtn
+
+        col3._resourcesIntroPane = pane
+    end
+    pane._enableBtn.frame:Show()
+    pane:Show()
+end
 
 ------------------------------------------------------------------------
 -- COLUMN 3: Button Settings (normal) / Custom Bars (bars mode)
@@ -31,6 +80,18 @@ local function RefreshColumn3()
 
         if col3._customAuraTabGroup then
             col3._customAuraTabGroup.frame:Hide()
+        end
+
+        -- Disabled home: the single wide intro pane replaces the list
+        if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
+            if col3._customBarsScroll then
+                col3._customBarsScroll.frame:Hide()
+            end
+            ShowResourcesIntroPane(col3)
+            return
+        end
+        if col3._resourcesIntroPane then
+            col3._resourcesIntroPane:Hide()
         end
 
         if not col3._customBarsScroll then
@@ -62,6 +123,9 @@ local function RefreshColumn3()
     end
     if col3Normal and col3Normal._customBarsScroll then
         col3Normal._customBarsScroll.frame:Hide()
+    end
+    if col3Normal and col3Normal._resourcesIntroPane then
+        col3Normal._resourcesIntroPane:Hide()
     end
 
     -- Panel multi-select: batch operations in Column 3
