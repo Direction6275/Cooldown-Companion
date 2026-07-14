@@ -498,8 +498,8 @@ local function RefreshColumn4(container)
         if not (settings and settings.enabled) then
             if ST._ShowColumnIntroPane then
                 ST._ShowColumnIntroPane(container, "_unitFramesIntroPane", {
-                    title = "Follow your unit frames",
-                    body = "Anchor a panel to your player and target unit frames.",
+                    title = "Unit Frames",
+                    body = "Anchor your player and target unit frames to your panels.",
                     buttonText = "Enable Frame Anchoring",
                     sideInset = 24,
                     onEnable = function()

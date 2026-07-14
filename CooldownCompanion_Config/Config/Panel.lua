@@ -1916,7 +1916,7 @@ local function CreateConfigPanel()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if CS.castFramesEntrySelected then
             GameTooltip:AddLine("Cast Bar")
-            GameTooltip:AddLine("Replace the default cast bar with one attached to a panel or positioned independently.", 1, 1, 1, true)
+            GameTooltip:AddLine("Skins the Blizzard cast bar and anchors it to a panel, or positions it anywhere on screen.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
         elseif ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
@@ -1972,7 +1972,7 @@ local function CreateConfigPanel()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if CS.castFramesEntrySelected then
             GameTooltip:AddLine("Unit Frames")
-            GameTooltip:AddLine("Anchor a panel to your player and target unit frames.", 1, 1, 1, true)
+            GameTooltip:AddLine("Anchors your player and target unit frames to your panels.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
         elseif CS.resourcesEntrySelected and not CS.selectedResourcePowerType and not CS.selectedCustomBarId then

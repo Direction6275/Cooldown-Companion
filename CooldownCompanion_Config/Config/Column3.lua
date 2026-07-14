@@ -101,8 +101,8 @@ local function RefreshColumn3()
                 col3._castBarHomeTabGroup.frame:Hide()
             end
             ShowColumnIntroPane(col3, "_castBarIntroPane", {
-                title = "A cast bar that stays close",
-                body = "Replace the default cast bar with one that attaches to a panel or sits anywhere you place it.",
+                title = "Cast Bar",
+                body = "Skin the Blizzard cast bar and anchor it to a panel, or position it anywhere on screen.",
                 buttonText = "Enable Cast Bar",
                 sideInset = 24,
                 onEnable = function()
