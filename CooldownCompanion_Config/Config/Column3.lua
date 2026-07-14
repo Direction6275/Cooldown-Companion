@@ -29,8 +29,8 @@ local function ShowResourcesIntroPane(col3)
         body:SetPoint("RIGHT", pane, "RIGHT", -48, 0)
         body:SetJustifyH("CENTER")
         body:SetSpacing(3)
-        body:SetText("Health, power, and class resources displayed as bars, attached to one of your panels or positioned anywhere on screen."
-            .. "\n\nAdd Custom Bars to track any aura, cooldown, or charge you choose.")
+        body:SetText("Class resources displayed as bars, attached to one of your panels or positioned anywhere on screen."
+            .. "\n\nAdd Custom Bars to track any aura or cooldown you choose.")
 
         local enableBtn = AceGUI:Create("Button")
         enableBtn:SetText("Enable Resource Bars")
