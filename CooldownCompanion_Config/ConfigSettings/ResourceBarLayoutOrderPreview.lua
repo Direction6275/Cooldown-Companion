@@ -2154,11 +2154,10 @@ function ST._BuildLayoutOrderPreviewPanel(container)
 
     local contentWidth
     local contentHeight
-    local iconCenterOffsetY
     if preview.isVerticalLayout then
-        contentWidth, contentHeight, iconCenterOffsetY = RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, castSlots, horizontalBarHeight, verticalBarWidth)
+        contentWidth, contentHeight = RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, castSlots, horizontalBarHeight, verticalBarWidth)
     else
-        contentWidth, contentHeight, iconCenterOffsetY = RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, horizontalBarHeight)
+        contentWidth, contentHeight = RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, horizontalBarHeight)
     end
 
     content:SetSize(contentWidth, contentHeight)
@@ -2171,10 +2170,11 @@ function ST._BuildLayoutOrderPreviewPanel(container)
     local maxHeight = math_max(120, hostHeight - (LAYOUT_PREVIEW_PADDING * 2))
     local scale = math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
 
+    -- Center the whole visual block (icons + attached bars) in the pane so
+    -- dead space stays symmetric regardless of how bars split above/below.
     content:SetScale(scale)
     content:ClearAllPoints()
-    local centerYOffset = ((iconCenterOffsetY or (contentHeight / 2)) - (contentHeight / 2)) * scale
-    content:SetPoint("CENTER", root, "CENTER", 0, centerYOffset)
+    content:SetPoint("CENTER", root, "CENTER", 0, 0)
 
     FinalizePreviewState(preview)
 end
