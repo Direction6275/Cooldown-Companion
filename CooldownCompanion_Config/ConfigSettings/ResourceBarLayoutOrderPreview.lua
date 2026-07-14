@@ -1575,6 +1575,16 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         local slotFrame = AcquireSlot(preview, laneFrame)
         ConfigureSlotPreview(slotFrame, slotModel, preview, slotWidth, slotHeight, axis == "x")
         slotFrame.slotData = slotModel
+
+        -- Outline the bar currently being configured (config's blue selection tint)
+        local isSelected = (slotModel.kind == "resource" and slotModel.powerType ~= nil
+                and tostring(CS.selectedResourcePowerType) == tostring(slotModel.powerType))
+            or (slotModel.kind == "custom" and slotModel.customBarId ~= nil
+                and (tostring(CS.selectedCustomBarId) == tostring(slotModel.customBarId)
+                    or (CS.selectedCustomBars and CS.selectedCustomBars[slotModel.customBarId] == true)))
+        if isSelected then
+            ApplyBackdrop(slotFrame, { 0, 0, 0, 0 }, { 0.4, 0.7, 1.0, 0.9 })
+        end
         slotFrame:SetScript("OnMouseDown", function(self, button)
             if button ~= "LeftButton" or GetCursorInfo() then return end
             layoutDrag.slotCategory = slotModel.slotCategory
