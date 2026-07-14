@@ -758,54 +758,12 @@ local function PopulateColumn1ButtonBar()
     resourcesBtn.frame:Show()
     table.insert(CS.col1BarWidgets, resourcesBtn)
 
-    -- Second, slimmer row: satellite modules one notch below Resources
-    local halfW = (barW - 3) / 2
-
-    local castBarBtn = AceGUI:Create("Button")
-    castBarBtn:SetText("Cast Bar")
-    castBarBtn:SetCallback("OnClick", function()
-        CS.barPanelTab = "castbar_anchoring"
-        if ST._SetConfigPrimaryMode then
-            ST._SetConfigPrimaryMode("bars")
-        end
-    end)
-    castBarBtn.frame:SetParent(CS.col1ButtonBar)
-    castBarBtn.frame:ClearAllPoints()
-    castBarBtn.frame:SetPoint("TOPLEFT", newGroupBtn.frame, "BOTTOMLEFT", 0, -2)
-    castBarBtn.frame:SetWidth(halfW)
-    castBarBtn.frame:SetHeight(20)
-    castBarBtn.frame:Show()
-    table.insert(CS.col1BarWidgets, castBarBtn)
-
-    local unitFramesBtn = AceGUI:Create("Button")
-    unitFramesBtn:SetText("Unit Frames")
-    unitFramesBtn:SetCallback("OnClick", function()
-        CS.barPanelTab = "frame_anchoring"
-        if ST._SetConfigPrimaryMode then
-            ST._SetConfigPrimaryMode("bars")
-        end
-    end)
-    unitFramesBtn.frame:SetParent(CS.col1ButtonBar)
-    unitFramesBtn.frame:ClearAllPoints()
-    unitFramesBtn.frame:SetPoint("LEFT", castBarBtn.frame, "RIGHT", 3, 0)
-    unitFramesBtn.frame:SetWidth(halfW)
-    unitFramesBtn.frame:SetHeight(20)
-    unitFramesBtn.frame:Show()
-    table.insert(CS.col1BarWidgets, unitFramesBtn)
-
     CS.col1ButtonBar._topRowBtns = { newGroupBtn.frame, newFolderBtn.frame, resourcesBtn.frame }
-    CS.col1ButtonBar._bottomRowBtns = { castBarBtn.frame, unitFramesBtn.frame }
     CS.col1ButtonBar:SetScript("OnSizeChanged", function(self, w)
         if self._topRowBtns then
             local tw = (w - 6) / 3
             for _, frame in ipairs(self._topRowBtns) do
                 frame:SetWidth(tw)
-            end
-        end
-        if self._bottomRowBtns then
-            local hw = (w - 3) / 2
-            for _, frame in ipairs(self._bottomRowBtns) do
-                frame:SetWidth(hw)
             end
         end
     end)

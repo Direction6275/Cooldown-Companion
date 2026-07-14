@@ -1134,6 +1134,30 @@ local function CreateConfigPanel()
     end)
     importClusterBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+    -- Cast Bar & Unit Frames button — left of Import
+    local castFramesBtn = CreateFrame("Button", nil, content)
+    castFramesBtn:SetSize(18, 18)
+    local castFramesIcon = castFramesBtn:CreateTexture(nil, "ARTWORK")
+    castFramesIcon:SetAtlas("groupfinder-icon-friend", false)
+    castFramesIcon:SetAllPoints()
+    castFramesBtn:SetHighlightAtlas("groupfinder-icon-friend")
+    castFramesBtn:GetHighlightTexture():SetAlpha(0.3)
+    castFramesBtn:SetScript("OnClick", function()
+        if CS.barPanelTab ~= "frame_anchoring" then
+            CS.barPanelTab = "castbar_anchoring"
+        end
+        if ST._SetConfigPrimaryMode then
+            ST._SetConfigPrimaryMode("bars")
+        end
+    end)
+    castFramesBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Cast Bar & Unit Frames")
+        GameTooltip:AddLine("Configure the cast bar and unit frame attachments.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    castFramesBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     -- Other Classes browse button — between the Changelog and CDM buttons
     local otherClassBrowseBtn = CreateFrame("Button", nil, content)
     otherClassBrowseBtn:SetSize(16, 16)
@@ -1287,6 +1311,7 @@ local function CreateConfigPanel()
     otherClassBrowseBtn:SetPoint("RIGHT", changelogBtn, "LEFT", -4, 0)
     cdmDisplayBtn:SetPoint("RIGHT", otherClassBrowseBtn, "LEFT", -4, 0)
     importClusterBtn:SetPoint("RIGHT", cdmDisplayBtn, "LEFT", -4, 0)
+    castFramesBtn:SetPoint("RIGHT", importClusterBtn, "LEFT", -4, 0)
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
@@ -1954,12 +1979,11 @@ local function CreateConfigPanel()
     CS.columnInfoButtons[3] = bsInfoBtn
     CS.columnInfoButtons[4] = settingsInfoBtn
 
-    -- Static button bar at bottom of column 1, two rows:
-    -- New Group + New Folder + Resources / Cast Bar + Unit Frames
+    -- Static button bar at bottom of column 1 (New Group + New Folder + Resources)
     local btnBar = CreateFrame("Frame", nil, col1.content)
     btnBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 0)
     btnBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 0)
-    btnBar:SetHeight(52)
+    btnBar:SetHeight(30)
     CS.col1ButtonBar = btnBar
 
     -- AceGUI ScrollFrames in columns 1 and 2
@@ -1968,7 +1992,7 @@ local function CreateConfigPanel()
     scroll1.frame:SetParent(col1.content)
     scroll1.frame:ClearAllPoints()
     scroll1.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 52)
+    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30)
     scroll1.frame:Show()
     CS.col1Scroll = scroll1
 
