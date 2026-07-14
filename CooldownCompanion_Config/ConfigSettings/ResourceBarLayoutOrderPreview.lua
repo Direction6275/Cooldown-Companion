@@ -380,18 +380,16 @@ local function CreateSlotFrame(parent)
     frame.hoverHighlight.tex:SetBlendMode("ADD")
     frame.hoverHighlight:Hide()
 
-    -- Selection marker: subtle tint over the bar plus inward-pointing arrows
-    -- flanking it. Elevated like hoverHighlight so it renders above the bar
-    -- visuals (a plain backdrop border draws beneath them).
+    -- Selection marker: same look as the mouse-hover highlight, but held on
+    -- while the bar is selected. Elevated like hoverHighlight so it renders
+    -- above the bar visuals.
     frame.selectedHighlight = CreateFrame("Frame", nil, frame)
     frame.selectedHighlight:SetAllPoints(frame.previewCanvas)
     frame.selectedHighlight:EnableMouse(false)
-    frame.selectedHighlight.fill = frame.selectedHighlight:CreateTexture(nil, "OVERLAY")
-    frame.selectedHighlight.fill:SetAllPoints()
-    frame.selectedHighlight.fill:SetColorTexture(0.4, 0.7, 1.0, 0.10)
-    frame.selectedHighlight.fill:SetBlendMode("ADD")
-    frame.selectedHighlight.side1 = frame.selectedHighlight:CreateTexture(nil, "OVERLAY")
-    frame.selectedHighlight.side2 = frame.selectedHighlight:CreateTexture(nil, "OVERLAY")
+    frame.selectedHighlight.tex = frame.selectedHighlight:CreateTexture(nil, "OVERLAY")
+    frame.selectedHighlight.tex:SetAllPoints()
+    frame.selectedHighlight.tex:SetColorTexture(1, 1, 1, 0.10)
+    frame.selectedHighlight.tex:SetBlendMode("ADD")
     frame.selectedHighlight:Hide()
 
     return frame
@@ -1594,33 +1592,14 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         ConfigureSlotPreview(slotFrame, slotModel, preview, slotWidth, slotHeight, axis == "x")
         slotFrame.slotData = slotModel
 
-        -- Mark the bar currently being configured: tint + flanking arrows
+        -- Hold the hover-style highlight on the bar currently being configured
         local isSelected = (slotModel.kind == "resource" and slotModel.powerType ~= nil
                 and tostring(CS.selectedResourcePowerType) == tostring(slotModel.powerType))
             or (slotModel.kind == "custom" and slotModel.customBarId ~= nil
                 and (tostring(CS.selectedCustomBarId) == tostring(slotModel.customBarId)
                     or (CS.selectedCustomBars and CS.selectedCustomBars[slotModel.customBarId] == true)))
         if isSelected and slotFrame.selectedHighlight then
-            local marker = slotFrame.selectedHighlight
-            local arrowSize = math_max(14, math_min(28, (axis == "x" and slotWidth or slotHeight) + 6))
-            marker.side1:SetSize(arrowSize, arrowSize)
-            marker.side2:SetSize(arrowSize, arrowSize)
-            marker.side1:ClearAllPoints()
-            marker.side2:ClearAllPoints()
-            if axis == "x" then
-                -- Tall vertical bar: arrows above and below, pointing inward
-                marker.side1:SetAtlas("npe_arrowdown", false)
-                marker.side1:SetPoint("BOTTOM", marker, "TOP", 0, 2)
-                marker.side2:SetAtlas("npe_arrowup", false)
-                marker.side2:SetPoint("TOP", marker, "BOTTOM", 0, -2)
-            else
-                -- Wide horizontal bar: arrows at the sides, pointing inward
-                marker.side1:SetAtlas("npe_arrowright", false)
-                marker.side1:SetPoint("RIGHT", marker, "LEFT", -2, 0)
-                marker.side2:SetAtlas("npe_arrowleft", false)
-                marker.side2:SetPoint("LEFT", marker, "RIGHT", 2, 0)
-            end
-            marker:Show()
+            slotFrame.selectedHighlight:Show()
         end
         slotFrame:SetScript("OnMouseDown", function(self, button)
             if button ~= "LeftButton" or GetCursorInfo() then return end
