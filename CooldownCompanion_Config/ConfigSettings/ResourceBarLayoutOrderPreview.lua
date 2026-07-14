@@ -64,8 +64,6 @@ local LAYOUT_PREVIEW_ICON_FALLBACK = "Interface\\Icons\\INV_Misc_QuestionMark"
 local LAYOUT_PREVIEW_ANIM_DURATION = 0.08
 local LAYOUT_PREVIEW_EMPTY_DROP_SIZE = 8
 local LAYOUT_PREVIEW_MAX_REAL_ICONS = 4
-local LAYOUT_PREVIEW_INFO_STRIP_HEIGHT = 28
-local LAYOUT_PREVIEW_INFO_STRIP_OFFSET = 10
 
 local GetLayoutPreviewIcon
 
@@ -439,23 +437,6 @@ local function HidePreviewMessage(preview)
     if preview.messageLabel then
         preview.messageLabel:Hide()
     end
-end
-
-local function ConfigureInfoStrip(preview, root, sourcePanel)
-    local title = AcquireLabel(preview, root, "GameFontHighlight")
-    title:ClearAllPoints()
-    title:SetPoint("TOPLEFT", root, "TOPLEFT", LAYOUT_PREVIEW_PADDING, -LAYOUT_PREVIEW_INFO_STRIP_OFFSET)
-    title:SetPoint("TOPRIGHT", root, "TOPRIGHT", -LAYOUT_PREVIEW_PADDING, -LAYOUT_PREVIEW_INFO_STRIP_OFFSET)
-    title:SetHeight(LAYOUT_PREVIEW_INFO_STRIP_HEIGHT)
-    title.text:SetJustifyH("CENTER")
-    do
-        local font, size, flags = GameFontHighlight:GetFont()
-        if font and size then
-            title.text:SetFont(font, size + 2, flags)
-        end
-    end
-    title.text:SetText("|cffd7b24aMirroring:|r " .. (sourcePanel.panelName or ("Panel " .. tostring(sourcePanel.groupId or ""))))
-    return title
 end
 
 GetLayoutPreviewIcon = function(buttonData)
@@ -2163,7 +2144,6 @@ function ST._BuildLayoutOrderPreviewPanel(container)
     preview.layoutDrag = layoutDrag
 
     local root = preview.root
-    local infoStrip = ConfigureInfoStrip(preview, root, sourcePanel)
     local content = AcquireContainer(preview, root)
     content:SetClipsChildren(false)
 
@@ -2188,8 +2168,7 @@ function ST._BuildLayoutOrderPreviewPanel(container)
     if hostWidth < 40 then hostWidth = 340 end
     if hostHeight < 40 then hostHeight = 520 end
     local maxWidth = math_max(120, hostWidth - (LAYOUT_PREVIEW_PADDING * 2))
-    local stripReserve = (infoStrip and (LAYOUT_PREVIEW_INFO_STRIP_HEIGHT + LAYOUT_PREVIEW_INFO_STRIP_OFFSET + 6)) or 0
-    local maxHeight = math_max(120, hostHeight - (LAYOUT_PREVIEW_PADDING * 2) - stripReserve)
+    local maxHeight = math_max(120, hostHeight - (LAYOUT_PREVIEW_PADDING * 2))
     local scale = math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
 
     content:SetScale(scale)
