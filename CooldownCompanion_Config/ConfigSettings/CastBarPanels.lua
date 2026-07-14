@@ -11,7 +11,7 @@ local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local HookSliderEditBox = ST._HookSliderEditBox
 local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
-local RefreshConfigPanelForPreviewToggle = ST._RefreshConfigPanelForPreviewToggle
+local AddPreviewBadge = ST._AddPreviewBadge
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
 ------------------------------------------------------------------------
@@ -89,13 +89,25 @@ local function BuildCastBarAnchoringPanel(container)
     end)
     container:AddChild(enableCb)
 
-    CreateCharacterCopyButton(enableCb, "castBar", "Cast Bar", function()
+    local charCopyBtn = CreateCharacterCopyButton(enableCb, "castBar", "Cast Bar", function()
         CooldownCompanion:EvaluateCastBar()
         CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:RefreshConfigPanel()
     end)
 
     if not settings.enabled then return end
+
+    -- Live preview badge (ephemeral — not saved to DB): the cast bar is
+    -- invisible outside of casting, so the preview shows what layout can't
+    AddPreviewBadge(enableCb, charCopyBtn, "Preview Cast Bar", function()
+        return CooldownCompanion:IsCastBarPreviewActive()
+    end, function(show)
+        if show then
+            CooldownCompanion:StartCastBarPreview()
+        else
+            CooldownCompanion:StopCastBarPreview()
+        end
+    end, true)
 
     local isIndependent = settings.independentAnchorEnabled == true
 
@@ -115,24 +127,6 @@ local function BuildCastBarAnchoringPanel(container)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(anchorModeDrop)
-
-    -- Preview toggle (ephemeral — not saved to DB)
-    local previewCb = AceGUI:Create("CheckBox")
-    previewCb:SetLabel("Preview Cast Bar")
-    previewCb:SetValue(CooldownCompanion:IsCastBarPreviewActive())
-    previewCb:SetFullWidth(true)
-    previewCb:SetCallback("OnValueChanged", function(widget, event, val)
-        if val then
-            CooldownCompanion:ClearAllConfigPreviews()
-            CooldownCompanion:StartCastBarPreview()
-        else
-            CooldownCompanion:StopCastBarPreview()
-        end
-        if RefreshConfigPanelForPreviewToggle then
-            RefreshConfigPanelForPreviewToggle()
-        end
-    end)
-    container:AddChild(previewCb)
 
     -- Cast Effects
     local sparkTrailCb = AceGUI:Create("CheckBox")

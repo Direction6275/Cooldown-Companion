@@ -9,33 +9,54 @@ local CS = ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
 
 ------------------------------------------------------------------------
--- Resources empty state: single wide intro pane (col3 spans the col4
--- region) with centered descriptive text and the enable button.
+-- Module intro panes: centered descriptive text + an enable button,
+-- shown in place of a module's settings while it is disabled. Used by
+-- the Resources empty state (wide pane) and the Cast Bar / Unit Frames
+-- columns (mini front doors).
 ------------------------------------------------------------------------
-local function ShowResourcesIntroPane(col3)
-    local pane = col3._resourcesIntroPane
+local function ShowColumnIntroPane(col, paneKey, opts)
+    local pane = col[paneKey]
     if not pane then
-        pane = CreateFrame("Frame", nil, col3.content)
-        pane:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-        pane:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+        pane = CreateFrame("Frame", nil, col.content)
+        pane:SetPoint("TOPLEFT", col.content, "TOPLEFT", 0, 0)
+        pane:SetPoint("BOTTOMRIGHT", col.content, "BOTTOMRIGHT", 0, 0)
 
         local title = pane:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
         title:SetPoint("BOTTOM", pane, "CENTER", 0, 64)
-        title:SetText("Track your resources at a glance")
+        title:SetText(opts.title)
 
+        local sideInset = opts.sideInset or 48
         local body = pane:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         body:SetPoint("TOP", title, "BOTTOM", 0, -14)
-        body:SetPoint("LEFT", pane, "LEFT", 48, 0)
-        body:SetPoint("RIGHT", pane, "RIGHT", -48, 0)
+        body:SetPoint("LEFT", pane, "LEFT", sideInset, 0)
+        body:SetPoint("RIGHT", pane, "RIGHT", -sideInset, 0)
         body:SetJustifyH("CENTER")
         body:SetSpacing(3)
-        body:SetText("Class resources displayed as bars, attached to one of your panels or positioned anywhere on screen."
-            .. "\n\nAdd Custom Bars to track any aura or cooldown you choose.")
+        body:SetText(opts.body)
 
         local enableBtn = AceGUI:Create("Button")
-        enableBtn:SetText("Enable Resource Bars")
-        enableBtn:SetWidth(220)
-        enableBtn:SetCallback("OnClick", function()
+        enableBtn:SetText(opts.buttonText)
+        enableBtn:SetWidth(opts.buttonWidth or 220)
+        enableBtn:SetCallback("OnClick", opts.onEnable)
+        enableBtn.frame:SetParent(pane)
+        enableBtn.frame:ClearAllPoints()
+        enableBtn.frame:SetPoint("TOP", body, "BOTTOM", 0, -28)
+        pane._enableBtn = enableBtn
+
+        col[paneKey] = pane
+    end
+    pane._enableBtn.frame:Show()
+    pane:Show()
+end
+ST._ShowColumnIntroPane = ShowColumnIntroPane
+
+local function ShowResourcesIntroPane(col3)
+    ShowColumnIntroPane(col3, "_resourcesIntroPane", {
+        title = "Track your resources at a glance",
+        body = "Class resources displayed as bars, attached to one of your panels or positioned anywhere on screen."
+            .. "\n\nAdd Custom Bars to track any aura or cooldown you choose.",
+        buttonText = "Enable Resource Bars",
+        onEnable = function()
             local settings = CooldownCompanion:GetResourceBarSettings()
             if not settings then
                 return
@@ -44,16 +65,8 @@ local function ShowResourcesIntroPane(col3)
             CooldownCompanion:EvaluateResourceBars()
             CooldownCompanion:UpdateAnchorStacking()
             CooldownCompanion:RefreshConfigPanel()
-        end)
-        enableBtn.frame:SetParent(pane)
-        enableBtn.frame:ClearAllPoints()
-        enableBtn.frame:SetPoint("TOP", body, "BOTTOM", 0, -28)
-        pane._enableBtn = enableBtn
-
-        col3._resourcesIntroPane = pane
-    end
-    pane._enableBtn.frame:Show()
-    pane:Show()
+        end,
+    })
 end
 
 ------------------------------------------------------------------------
@@ -64,6 +77,78 @@ local function RefreshColumn3()
     local col3BrowseClean = CS.configFrame and CS.configFrame.col3
     if col3BrowseClean and col3BrowseClean._browsePlaceholder then
         col3BrowseClean._browsePlaceholder:Hide()
+    end
+
+    -- Cast Bar & Unit Frames home: col3 = Unit Frames
+    if CS.castFramesEntrySelected then
+        local col3 = CS.configFrame and CS.configFrame.col3
+        if not col3 then return end
+
+        -- Hide content that shares the col3 content area
+        if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
+        if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
+        if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
+        if col3._panelTabGroup then col3._panelTabGroup.frame:Hide() end
+        if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
+        if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
+        if col3._customBarsScroll then col3._customBarsScroll.frame:Hide() end
+        if col3._resourcesIntroPane then col3._resourcesIntroPane:Hide() end
+
+        local settings = CooldownCompanion:GetFrameAnchoringSettings()
+        if not (settings and settings.enabled) then
+            if col3._castFramesScroll then
+                col3._castFramesScroll.frame:Hide()
+            end
+            ShowColumnIntroPane(col3, "_unitFramesIntroPane", {
+                title = "Follow your unit frames",
+                body = "Anchor a panel to your player and target frames so cooldowns sit where you're already looking."
+                    .. "\n\nWorks with Blizzard, ElvUI, and other supported unit frame addons, or any custom frame you name.",
+                buttonText = "Enable Frame Anchoring",
+                sideInset = 24,
+                onEnable = function()
+                    local fa = CooldownCompanion:GetFrameAnchoringSettings()
+                    if not fa then
+                        return
+                    end
+                    fa.enabled = true
+                    CooldownCompanion:EvaluateFrameAnchoring()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+            return
+        end
+        if col3._unitFramesIntroPane then
+            col3._unitFramesIntroPane:Hide()
+        end
+
+        if not col3._castFramesScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(col3.content)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+            col3._castFramesScroll = scroll
+        end
+
+        -- Preserve scroll position across value-change refreshes
+        local scroll = col3._castFramesScroll
+        local state = scroll.status or scroll.localstatus
+        local savedOffset, savedScrollvalue
+        if state and state.offset and state.offset > 0 then
+            savedOffset, savedScrollvalue = state.offset, state.scrollvalue
+        end
+
+        scroll:ReleaseChildren()
+        scroll.frame:Show()
+        ST._BuildFrameAnchoringPlayerPanel(scroll)
+        ST._BuildFrameAnchoringTargetPanel(scroll)
+
+        if savedOffset and state then
+            state.offset = savedOffset
+            state.scrollvalue = savedScrollvalue
+        end
+        return
     end
 
     -- Bars & Frames panel mode or the Resources home: show Custom Bars
@@ -81,6 +166,8 @@ local function RefreshColumn3()
         if col3._customAuraTabGroup then
             col3._customAuraTabGroup.frame:Hide()
         end
+        if col3._castFramesScroll then col3._castFramesScroll.frame:Hide() end
+        if col3._unitFramesIntroPane then col3._unitFramesIntroPane:Hide() end
 
         -- Disabled home: the single wide intro pane replaces the list
         if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
@@ -126,6 +213,12 @@ local function RefreshColumn3()
     end
     if col3Normal and col3Normal._resourcesIntroPane then
         col3Normal._resourcesIntroPane:Hide()
+    end
+    if col3Normal and col3Normal._castFramesScroll then
+        col3Normal._castFramesScroll.frame:Hide()
+    end
+    if col3Normal and col3Normal._unitFramesIntroPane then
+        col3Normal._unitFramesIntroPane:Hide()
     end
 
     -- Panel multi-select: batch operations in Column 3

@@ -488,6 +488,27 @@ local function RefreshColumn4(container)
     HideLayoutOrderDisabledScroll(container)
     HideLayoutOrderConflictScroll(container)
 
+    -- Cast Bar & Unit Frames home: col4 = full-height Layout & Order preview
+    if CS.castFramesEntrySelected then
+        HideResourceBarPanelSurfaces(container)
+        if CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict() then
+            ShowLayoutOrderConflictScroll(container)
+            return
+        end
+
+        if not container.layoutOrderHost then
+            local host = CreateFrame("Frame", nil, container)
+            host:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+            host:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+            host:SetClipsChildren(false)
+            host:Hide()
+            container.layoutOrderHost = host
+        end
+        container.layoutOrderHost:Show()
+        ST._BuildLayoutOrderPanel(container.layoutOrderHost)
+        return
+    end
+
     -- Resource Bar panel mode (legacy bars mode or the Resources home):
     -- show selected Custom Bar settings, the resources tab page, or Layout & Order.
     if CS.resourceBarPanelActive or CS.resourcesEntrySelected then

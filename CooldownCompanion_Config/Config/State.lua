@@ -300,6 +300,7 @@ ST._configState = {
     selectedCustomBarId = nil,
     customBarSpecExpandedId = nil,
     resourcesEntrySelected = false,
+    castFramesEntrySelected = false,
     resourcesSettingsTab = "general",
     groupPresetSelection = {
         icons = nil,
@@ -552,6 +553,7 @@ end
 
 local function IsConfigFinderAvailable()
     return not CS.resourceBarPanelActive
+        and not CS.castFramesEntrySelected
         and not CS.talentPickerMode
         and not CooldownCompanion._unsupportedLegacyProfile
 end
@@ -2594,6 +2596,7 @@ ClearConfigPrimarySelection = function()
     CS.selectedContainer = nil
     CS.selectedGroup = nil
     CS.resourcesEntrySelected = false
+    CS.castFramesEntrySelected = false
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedGroups)
@@ -2608,6 +2611,7 @@ local function SelectConfigFolder(folderId)
     CS.selectedContainer = nil
     CS.selectedGroup = nil
     CS.resourcesEntrySelected = false
+    CS.castFramesEntrySelected = false
     ClearSelectedButton()
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
@@ -2633,6 +2637,7 @@ local function SelectConfigContainer(containerId, opts)
     end
 
     CS.resourcesEntrySelected = false
+    CS.castFramesEntrySelected = false
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     if opts and opts.clearFinder then
@@ -2658,6 +2663,7 @@ local function ToggleConfigContainerMultiSelect(containerId)
     CS.selectedContainer = nil
     CS.selectedGroup = nil
     CS.resourcesEntrySelected = false
+    CS.castFramesEntrySelected = false
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedCustomBars)
@@ -2683,6 +2689,7 @@ local function SelectConfigPanel(panelId, opts)
     end
 
     CS.resourcesEntrySelected = false
+    CS.castFramesEntrySelected = false
     ClearSelectedButton()
     RefreshAlphaDriverForConfigSelection()
 end
@@ -2700,6 +2707,7 @@ local function ToggleConfigPanelMultiSelect(panelId)
 
     CS.selectedGroup = nil
     CS.resourcesEntrySelected = false
+    CS.castFramesEntrySelected = false
     ClearSelectedButton()
     CS.addingToPanelId = nil
     RefreshAlphaDriverForConfigSelection()
@@ -2711,6 +2719,7 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
         CS.selectedContainer = opts.containerId
     end
     CS.resourcesEntrySelected = false
+    CS.castFramesEntrySelected = false
     if panelChanged then
         CS.selectedGroup = panelId
         ClearSelectedButton()
@@ -2758,6 +2767,7 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     CS.selectedButton = nil
     CS.selectedRotationAssistantEntry = true
     CS.resourcesEntrySelected = false
+    CS.castFramesEntrySelected = false
     wipe(CS.selectedButtons)
     CS.buttonSettingsTab = "loadconditions"
     CooldownCompanion:ClearAllConfigPreviews()
@@ -2769,6 +2779,7 @@ local function SelectConfigButtonPanel(panelId, opts)
         CooldownCompanion:ClearAllConfigPreviews()
         CS.selectedGroup = panelId
         CS.resourcesEntrySelected = false
+        CS.castFramesEntrySelected = false
         ClearSelectedButton()
         RefreshAlphaDriverForConfigSelection()
     end
@@ -2909,6 +2920,27 @@ local function SelectConfigResourcesEntry(opts)
     else
         CS.resourcesEntrySelected = true
     end
+    CS.castFramesEntrySelected = false
+    CS.selectedFolder = nil
+    CS.selectedGroup = nil
+    ClearSelectedButton()
+    wipe(CS.selectedPanels)
+    wipe(CS.selectedGroups)
+    ClearConfigResourceSelection()
+    ClearConfigCustomBarSelection({ clearExpanded = true })
+    RefreshAlphaDriverForConfigSelection()
+end
+
+-- The Cast Bar & Unit Frames home (title-cluster badge): col2 = Cast Bar,
+-- col3 = Unit Frames, col4 = Layout & Order preview.
+local function SelectConfigCastFramesEntry(opts)
+    CooldownCompanion:ClearAllConfigPreviews()
+    if opts and opts.toggle and CS.castFramesEntrySelected then
+        CS.castFramesEntrySelected = false
+    else
+        CS.castFramesEntrySelected = true
+    end
+    CS.resourcesEntrySelected = false
     CS.selectedFolder = nil
     CS.selectedGroup = nil
     ClearSelectedButton()
@@ -2969,6 +3001,7 @@ local function ResetConfigSelection(full)
         CS.selectedContainer = nil
         CS.selectedGroup = nil
         CS.resourcesEntrySelected = false
+        CS.castFramesEntrySelected = false
         wipe(CS.selectedGroups)
         wipe(CS.selectedCustomBars)
         CS.addingToPanelId = nil
@@ -3367,6 +3400,7 @@ ST._SelectConfigResource = SelectConfigResource
 ST._SetConfigResourceSettingsSpecID = SetConfigResourceSettingsSpecID
 ST._PruneConfigResourceSelection = PruneConfigResourceSelection
 ST._SelectConfigResourcesEntry = SelectConfigResourcesEntry
+ST._SelectConfigCastFramesEntry = SelectConfigCastFramesEntry
 ST._GetResourcesEntryPlacement = GetResourcesEntryPlacement
 ST._IsResourcesEmptyStateActive = IsResourcesEmptyStateActive
 ST._ResetConfigSelection = ResetConfigSelection

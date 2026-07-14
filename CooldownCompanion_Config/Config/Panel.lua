@@ -396,6 +396,9 @@ local function GetConfigSelectionSummary()
 end
 
 local function GetColumn3HeaderMode(selection)
+    if CS.castFramesEntrySelected then
+        return "unit_frames"
+    end
     if CS.resourceBarPanelActive or CS.resourcesEntrySelected then
         if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
             return "resources_intro"
@@ -409,6 +412,9 @@ local function GetColumn3HeaderMode(selection)
 end
 
 local function GetColumn4HeaderMode(selection)
+    if CS.castFramesEntrySelected then
+        return "layout_order"
+    end
     if CS.resourceBarPanelActive or CS.resourcesEntrySelected then
         local resourceBarSettings = CooldownCompanion:GetResourceBarSettings()
         if resourceBarSettings and resourceBarSettings.enabled == true then
@@ -443,6 +449,8 @@ local function GetColumn3HeaderTitle(selection)
         return GetCustomBarsColumnTitle()
     elseif mode == "resources_intro" then
         return "Resource Bars"
+    elseif mode == "unit_frames" then
+        return "Unit Frames"
     elseif mode == "panel_actions" then
         return "Panel Actions"
     end
@@ -486,6 +494,9 @@ end
 local function ApplyConfigColumnTitles(frame)
     if CS.resourceBarPanelActive then
         frame.col1:SetTitle("Bars & Frames")
+    elseif CS.castFramesEntrySelected then
+        frame.col1:SetTitle("Groups")
+        frame.col2:SetTitle("Cast Bar")
     elseif IsConfigFinderActive and IsConfigFinderActive() then
         frame.col1:SetTitle("Groups")
         frame.col2:SetTitle("Search Results")
@@ -1152,18 +1163,35 @@ local function CreateConfigPanel()
     castFramesIcon:SetAllPoints()
     castFramesBtn:SetHighlightAtlas("groupfinder-icon-friend")
     castFramesBtn:GetHighlightTexture():SetAlpha(0.3)
+    local castFramesBtnBorder
+    local function UpdateCastFramesBadgeState()
+        if CS.castFramesEntrySelected then
+            if not castFramesBtnBorder then
+                castFramesBtnBorder = castFramesBtn:CreateTexture(nil, "OVERLAY")
+                castFramesBtnBorder:SetPoint("TOPLEFT", -1, 1)
+                castFramesBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
+                castFramesBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
+            end
+            castFramesBtnBorder:Show()
+        elseif castFramesBtnBorder then
+            castFramesBtnBorder:Hide()
+        end
+    end
+
     castFramesBtn:SetScript("OnClick", function()
-        if CS.barPanelTab ~= "frame_anchoring" then
-            CS.barPanelTab = "castbar_anchoring"
+        if CS.resourceBarPanelActive and ST._SetConfigPrimaryMode then
+            ST._SetConfigPrimaryMode("buttons", { skipRefresh = true })
         end
-        if ST._SetConfigPrimaryMode then
-            ST._SetConfigPrimaryMode("bars")
+        if ST._SelectConfigCastFramesEntry then
+            ST._SelectConfigCastFramesEntry({ toggle = true })
         end
+        CooldownCompanion:RefreshConfigPanel()
     end)
     castFramesBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
         GameTooltip:AddLine("Cast Bar & Unit Frames")
         GameTooltip:AddLine("Configure the cast bar and unit frame attachments.", 1, 1, 1, true)
+        GameTooltip:AddLine("Click again to return to your panels.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     castFramesBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1887,7 +1915,12 @@ local function CreateConfigPanel()
     bsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     bsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
+        if CS.castFramesEntrySelected then
+            GameTooltip:AddLine("Unit Frames")
+            GameTooltip:AddLine("Anchor a panel to your player and target unit frames.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
+        elseif ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
             GameTooltip:AddLine("Resource Bars")
             GameTooltip:AddLine("Enable Resource Bars to configure Resources and Custom Bars here.", 1, 1, 1, true)
         elseif CS.resourceBarPanelActive or CS.resourcesEntrySelected then
@@ -1945,7 +1978,7 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Use Layout & Order to drag attached bars around the mirrored icon panel. Layout is saved per specialization.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Select a resource or Custom Bar in column 3 for per-bar settings.", 1, 1, 1, true)
-        elseif CS.resourceBarPanelActive or CS.resourcesEntrySelected then
+        elseif CS.resourceBarPanelActive or CS.resourcesEntrySelected or CS.castFramesEntrySelected then
             GameTooltip:AddLine("Layout & Order")
                 GameTooltip:AddLine("Arrange attached bars by dragging them around the mirrored icon panel.", 1, 1, 1)
                 GameTooltip:AddLine(" ")
@@ -2399,6 +2432,7 @@ local function CreateConfigPanel()
     frame.LayoutColumns = LayoutColumns
     frame.UpdateCompactConfigRows = UpdateCompactConfigRows
     frame.UpdateModeNavigationUI = UpdateModeNavigationUI
+    frame.UpdateCastFramesBadgeState = UpdateCastFramesBadgeState
     frame.UpdateOtherClassBrowseButtonState = UpdateOtherClassBrowseButtonState
     UpdateModeNavigationUI()
     UpdateOtherClassBrowseButtonState()
@@ -2474,6 +2508,9 @@ function CooldownCompanion:_configRefreshPanelImpl()
     CS.configFrame.versionText:SetText(GetVersionFooterText())
     if CS.configFrame.UpdateModeNavigationUI then
         CS.configFrame.UpdateModeNavigationUI()
+    end
+    if CS.configFrame.UpdateCastFramesBadgeState then
+        CS.configFrame.UpdateCastFramesBadgeState()
     end
     if CS.configFrame.UpdateOtherClassBrowseButtonState then
         CS.configFrame.UpdateOtherClassBrowseButtonState()

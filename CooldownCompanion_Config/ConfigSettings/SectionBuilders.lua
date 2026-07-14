@@ -244,7 +244,11 @@ local function AddPreviewBadge(parentWidget, anchorAfterFrame, label, isActiveFn
     end)
     local advancedBtn = frame._cdcAdvancedBtn
     if not (advancedBtn and advancedBtn:GetParent() == frame) then
-        parentWidget:SetCallback("OnRelease", function()
+        local prevOnRelease = parentWidget.events and parentWidget.events["OnRelease"]
+        parentWidget:SetCallback("OnRelease", function(...)
+            if prevOnRelease then
+                prevOnRelease(...)
+            end
             btn:ClearAllPoints()
             btn:Hide()
             btn:SetParent(nil)

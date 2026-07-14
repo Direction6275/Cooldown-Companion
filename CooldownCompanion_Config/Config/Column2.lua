@@ -104,6 +104,8 @@ local function HideAllBarWidgets(col2)
     if col2._barsStylingScroll then col2._barsStylingScroll.frame:Hide() end
     if col2._resourceStylingTabGroup then col2._resourceStylingTabGroup.frame:Hide() end
     if col2._castBarStylingTabGroup then col2._castBarStylingTabGroup.frame:Hide() end
+    if col2._castBarHomeTabGroup then col2._castBarHomeTabGroup.frame:Hide() end
+    if col2._castBarIntroPane then col2._castBarIntroPane:Hide() end
     col2._resourceStylingSubScroll = nil
 end
 
@@ -1599,6 +1601,112 @@ local function RefreshColumn2()
         widget:Release()
     end
     wipe(CS.col2BarWidgets)
+
+    -- Cast Bar & Unit Frames home: col2 = Cast Bar
+    if CS.castFramesEntrySelected then
+        CancelDrag()
+        CS.HideAutocomplete()
+        CS.col2Scroll.frame:Hide()
+        if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
+        if col2 and col2._infoBtn then col2._infoBtn:Hide() end
+        if not col2 then return end
+        HideAllBarWidgets(col2)
+
+        local settings = CooldownCompanion:GetCastBarSettings()
+        if not (settings and settings.enabled) then
+            if ST._ShowColumnIntroPane then
+                ST._ShowColumnIntroPane(col2, "_castBarIntroPane", {
+                    title = "A cast bar that stays close",
+                    body = "Replace your cast bar with one that attaches to a panel or sits anywhere you place it, complete with spark, interrupt, and finish effects.",
+                    buttonText = "Enable Cast Bar",
+                    sideInset = 24,
+                    onEnable = function()
+                        local cb = CooldownCompanion:GetCastBarSettings()
+                        if not cb then
+                            return
+                        end
+                        cb.enabled = true
+                        CooldownCompanion:EvaluateCastBar()
+                        CooldownCompanion:UpdateAnchorStacking()
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                })
+            end
+            return
+        end
+        if col2._castBarIntroPane then
+            col2._castBarIntroPane:Hide()
+        end
+
+        if not col2._castBarHomeTabGroup then
+            local tabGroup = AceGUI:Create("TabGroup")
+            tabGroup:SetLayout("Fill")
+            tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+                CS.castBarHomeTab = tab
+                -- Clean up info buttons from the previous tab before recycling widgets
+                for _, btn in ipairs(CS.tabInfoButtons) do
+                    btn:ClearAllPoints()
+                    btn:Hide()
+                    btn:SetParent(nil)
+                end
+                wipe(CS.tabInfoButtons)
+                widget:ReleaseChildren()
+                local scroll = AceGUI:Create("ScrollFrame")
+                scroll:SetLayout("List")
+                widget:AddChild(scroll)
+                col2._castBarHomeScroll = scroll
+                col2._castBarHomeScrollKey = "castbar:" .. tab
+                if tab == "general" then
+                    ST._BuildCastBarAnchoringPanel(scroll)
+                elseif tab == "appearance" then
+                    ST._BuildCastBarStylingPanel(scroll)
+                elseif tab == "layout" then
+                    ST._BuildCastBarPositioningPanel(scroll)
+                end
+            end)
+            tabGroup.frame:SetParent(col2.content)
+            tabGroup.frame:ClearAllPoints()
+            tabGroup.frame:SetPoint("TOPLEFT", col2.content, "TOPLEFT", 0, 0)
+            tabGroup.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
+            col2._castBarHomeTabGroup = tabGroup
+        end
+
+        local tabGroup = col2._castBarHomeTabGroup
+        tabGroup:SetTabs({
+            { value = "general", text = "General" },
+            { value = "appearance", text = "Appearance" },
+            { value = "layout", text = "Layout" },
+        })
+
+        local tab = CS.castBarHomeTab
+        if tab ~= "general" and tab ~= "appearance" and tab ~= "layout" then
+            tab = "general"
+        end
+        CS.castBarHomeTab = tab
+
+        -- Preserve scroll position across value-change refreshes
+        local savedOffset, savedScrollvalue
+        local currentScrollKey = "castbar:" .. tab
+        if col2._castBarHomeScroll and col2._castBarHomeScrollKey == currentScrollKey then
+            local state = col2._castBarHomeScroll.status or col2._castBarHomeScroll.localstatus
+            if state and state.offset and state.offset > 0 then
+                savedOffset = state.offset
+                savedScrollvalue = state.scrollvalue
+            end
+        end
+
+        tabGroup.frame:Show()
+        tabGroup:SelectTab(tab)
+
+        if savedOffset and col2._castBarHomeScroll then
+            local state = col2._castBarHomeScroll.status or col2._castBarHomeScroll.localstatus
+            if state then
+                state.offset = savedOffset
+                state.scrollvalue = savedScrollvalue
+            end
+        end
+        return
+    end
 
         -- Bars & Frames panel mode: show shared Appearance/Layout in col2
     if CS.resourceBarPanelActive then
