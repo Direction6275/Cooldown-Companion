@@ -397,7 +397,7 @@ end
 
 local function GetColumn3HeaderMode(selection)
     if CS.castFramesEntrySelected then
-        return "unit_frames"
+        return "cast_bar"
     end
     if CS.resourceBarPanelActive or CS.resourcesEntrySelected then
         if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
@@ -413,7 +413,7 @@ end
 
 local function GetColumn4HeaderMode(selection)
     if CS.castFramesEntrySelected then
-        return "layout_order"
+        return "unit_frames"
     end
     if CS.resourceBarPanelActive or CS.resourcesEntrySelected then
         local resourceBarSettings = CooldownCompanion:GetResourceBarSettings()
@@ -449,8 +449,8 @@ local function GetColumn3HeaderTitle(selection)
         return GetCustomBarsColumnTitle()
     elseif mode == "resources_intro" then
         return "Resource Bars"
-    elseif mode == "unit_frames" then
-        return "Unit Frames"
+    elseif mode == "cast_bar" then
+        return "Cast Bar"
     elseif mode == "panel_actions" then
         return "Panel Actions"
     end
@@ -465,6 +465,8 @@ local function GetColumn4HeaderTitle(selection)
     local mode = GetColumn4HeaderMode(selection)
     if mode == "layout_order" then
         return GetLayoutOrderColumnTitle()
+    elseif mode == "unit_frames" then
+        return "Unit Frames"
     elseif mode == "resources_panel" then
         return "Resource Bars"
     elseif mode == "resource_settings" then
@@ -494,9 +496,6 @@ end
 local function ApplyConfigColumnTitles(frame)
     if CS.resourceBarPanelActive then
         frame.col1:SetTitle("Bars & Frames")
-    elseif CS.castFramesEntrySelected then
-        frame.col1:SetTitle("Groups")
-        frame.col2:SetTitle("Cast Bar")
     elseif IsConfigFinderActive and IsConfigFinderActive() then
         frame.col1:SetTitle("Groups")
         frame.col2:SetTitle("Search Results")
@@ -1916,8 +1915,8 @@ local function CreateConfigPanel()
     bsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if CS.castFramesEntrySelected then
-            GameTooltip:AddLine("Unit Frames")
-            GameTooltip:AddLine("Anchor a panel to your player and target unit frames.", 1, 1, 1, true)
+            GameTooltip:AddLine("Cast Bar")
+            GameTooltip:AddLine("Replace the default cast bar with one attached to a panel or positioned independently.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
         elseif ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
@@ -1971,14 +1970,19 @@ local function CreateConfigPanel()
     settingsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     settingsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if CS.resourcesEntrySelected and not CS.selectedResourcePowerType and not CS.selectedCustomBarId then
+        if CS.castFramesEntrySelected then
+            GameTooltip:AddLine("Unit Frames")
+            GameTooltip:AddLine("Anchor a panel to your player and target unit frames.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
+        elseif CS.resourcesEntrySelected and not CS.selectedResourcePowerType and not CS.selectedCustomBarId then
             GameTooltip:AddLine("Resource Bars")
             GameTooltip:AddLine("Shared resource bar settings, organized into tabs.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Use Layout & Order to drag attached bars around the mirrored icon panel. Layout is saved per specialization.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Select a resource or Custom Bar in column 3 for per-bar settings.", 1, 1, 1, true)
-        elseif CS.resourceBarPanelActive or CS.resourcesEntrySelected or CS.castFramesEntrySelected then
+        elseif CS.resourceBarPanelActive or CS.resourcesEntrySelected then
             GameTooltip:AddLine("Layout & Order")
                 GameTooltip:AddLine("Arrange attached bars by dragging them around the mirrored icon panel.", 1, 1, 1)
                 GameTooltip:AddLine(" ")

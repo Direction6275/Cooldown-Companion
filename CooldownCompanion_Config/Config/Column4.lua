@@ -157,6 +157,8 @@ local function HideResourceBarPanelSurfaces(container)
     HideWidgetFrame(container.resourceSettingsTabGroup)
     HideWidgetFrame(container.resourcesTabGroup)
     HideFrame(container.resourcesPreviewHost)
+    HideWidgetFrame(container.unitFramesScroll)
+    HideFrame(container._unitFramesIntroPane)
     HideLayoutOrderConflictScroll(container)
     HideFrame(container.layoutOrderHost)
 end
@@ -488,24 +490,59 @@ local function RefreshColumn4(container)
     HideLayoutOrderDisabledScroll(container)
     HideLayoutOrderConflictScroll(container)
 
-    -- Cast Bar & Unit Frames home: col4 = full-height Layout & Order preview
+    -- Cast Bar & Unit Frames home: col4 = Unit Frames
     if CS.castFramesEntrySelected then
         HideResourceBarPanelSurfaces(container)
-        if CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict() then
-            ShowLayoutOrderConflictScroll(container)
+
+        local settings = CooldownCompanion:GetFrameAnchoringSettings()
+        if not (settings and settings.enabled) then
+            if ST._ShowColumnIntroPane then
+                ST._ShowColumnIntroPane(container, "_unitFramesIntroPane", {
+                    title = "Follow your unit frames",
+                    body = "Anchor a panel to your player and target unit frames.",
+                    buttonText = "Enable Frame Anchoring",
+                    sideInset = 24,
+                    onEnable = function()
+                        local fa = CooldownCompanion:GetFrameAnchoringSettings()
+                        if not fa then
+                            return
+                        end
+                        fa.enabled = true
+                        CooldownCompanion:EvaluateFrameAnchoring()
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                })
+            end
             return
         end
 
-        if not container.layoutOrderHost then
-            local host = CreateFrame("Frame", nil, container)
-            host:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
-            host:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
-            host:SetClipsChildren(false)
-            host:Hide()
-            container.layoutOrderHost = host
+        if not container.unitFramesScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(container)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+            container.unitFramesScroll = scroll
         end
-        container.layoutOrderHost:Show()
-        ST._BuildLayoutOrderPanel(container.layoutOrderHost)
+
+        -- Preserve scroll position across value-change refreshes
+        local scroll = container.unitFramesScroll
+        local state = scroll.status or scroll.localstatus
+        local savedOffset, savedScrollvalue
+        if state and state.offset and state.offset > 0 then
+            savedOffset, savedScrollvalue = state.offset, state.scrollvalue
+        end
+
+        scroll:ReleaseChildren()
+        scroll.frame:Show()
+        ST._BuildFrameAnchoringPlayerPanel(scroll)
+        ST._BuildFrameAnchoringTargetPanel(scroll)
+
+        if savedOffset and state then
+            state.offset = savedOffset
+            state.scrollvalue = savedScrollvalue
+        end
         return
     end
 
@@ -699,6 +736,12 @@ local function RefreshColumn4(container)
     end
     if container.resourcesPreviewHost then
         container.resourcesPreviewHost:Hide()
+    end
+    if container.unitFramesScroll then
+        container.unitFramesScroll.frame:Hide()
+    end
+    if container._unitFramesIntroPane then
+        container._unitFramesIntroPane:Hide()
     end
     -- Hide layout order scroll if it exists
     if container.layoutOrderScroll then

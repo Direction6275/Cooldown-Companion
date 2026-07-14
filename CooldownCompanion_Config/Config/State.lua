@@ -553,7 +553,6 @@ end
 
 local function IsConfigFinderAvailable()
     return not CS.resourceBarPanelActive
-        and not CS.castFramesEntrySelected
         and not CS.talentPickerMode
         and not CooldownCompanion._unsupportedLegacyProfile
 end
