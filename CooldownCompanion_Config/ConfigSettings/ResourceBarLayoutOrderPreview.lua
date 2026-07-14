@@ -1553,6 +1553,11 @@ local function SelectPreviewSlot(slot)
         return false
     end
 
+    -- Bars can't be edited from the Cast Bar home, so clicks select nothing
+    if CS.castFramesEntrySelected then
+        return false
+    end
+
     if slot.kind == "resource" and slot.powerType ~= nil and ST._SelectConfigResource then
         ST._SelectConfigResource(slot.powerType, { toggle = true })
         return true
@@ -1595,12 +1600,14 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         slotFrame.slotData = slotModel
 
         -- Mark the bar currently being configured: held hover-style glow
-        -- plus inward-pointing arrows
-        local isSelected = (slotModel.kind == "resource" and slotModel.powerType ~= nil
+        -- plus inward-pointing arrows. Not applicable in the Cast Bar home,
+        -- where bars can't be edited.
+        local isSelected = not CS.castFramesEntrySelected
+            and ((slotModel.kind == "resource" and slotModel.powerType ~= nil
                 and tostring(CS.selectedResourcePowerType) == tostring(slotModel.powerType))
             or (slotModel.kind == "custom" and slotModel.customBarId ~= nil
                 and (tostring(CS.selectedCustomBarId) == tostring(slotModel.customBarId)
-                    or (CS.selectedCustomBars and CS.selectedCustomBars[slotModel.customBarId] == true)))
+                    or (CS.selectedCustomBars and CS.selectedCustomBars[slotModel.customBarId] == true))))
         if isSelected and slotFrame.selectedHighlight then
             local marker = slotFrame.selectedHighlight
             local arrowSize = math_max(14, math_min(28, (axis == "x" and slotWidth or slotHeight) + 6))
