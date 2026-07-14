@@ -1885,6 +1885,10 @@ local function CleanRecycledEntry(entry)
         entry.frame._cdcCDMRefreshBadge:SetScript("OnClick", nil)
     end
     if entry.frame._cdcAnchorBadge then entry.frame._cdcAnchorBadge:Hide() end
+    if entry.frame._cdcResourcePinBadge then
+        entry.frame._cdcResourcePinBadge:Hide()
+        entry.frame._cdcResourcePinBadge:EnableMouse(false)
+    end
     if entry.frame._cdcHeaderDisabledBadge then entry.frame._cdcHeaderDisabledBadge:Hide() end
     if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end
     if entry.frame._cdcCustomBarTypeBadge then entry.frame._cdcCustomBarTypeBadge:Hide() end
@@ -2914,6 +2918,7 @@ end
 
 local function SelectConfigResourcesEntry(opts)
     CooldownCompanion:ClearAllConfigPreviews()
+    ResetOtherClassLibraryState()
     if opts and opts.toggle and CS.resourcesEntrySelected then
         CS.resourcesEntrySelected = false
     else
@@ -2930,10 +2935,12 @@ local function SelectConfigResourcesEntry(opts)
     RefreshAlphaDriverForConfigSelection()
 end
 
--- The Cast Bar & Unit Frames home (title-cluster badge): col2 = Cast Bar,
--- col3 = Unit Frames, col4 = Layout & Order preview.
+-- The Cast Bar & Unit Frames home (title-cluster badge): cols 1-2 stay
+-- groups/panels, col3 = Unit Frames, col4 = Cast Bar tabs beneath the
+-- pinned Layout & Order preview pane.
 local function SelectConfigCastFramesEntry(opts)
     CooldownCompanion:ClearAllConfigPreviews()
+    ResetOtherClassLibraryState()
     if opts and opts.toggle and CS.castFramesEntrySelected then
         CS.castFramesEntrySelected = false
     else
