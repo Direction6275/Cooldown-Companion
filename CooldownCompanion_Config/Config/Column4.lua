@@ -156,7 +156,7 @@ local function HideResourceBarPanelSurfaces(container)
     HideWidgetFrame(container.resourceSettingsDetailScroll)
     HideWidgetFrame(container.resourceSettingsTabGroup)
     HideWidgetFrame(container.resourcesTabGroup)
-    HideFrame(container._resourcesLayoutOrderHost)
+    HideFrame(container.resourcesPreviewHost)
     HideLayoutOrderConflictScroll(container)
     HideFrame(container.layoutOrderHost)
 end
@@ -218,6 +218,21 @@ local function ShowLayoutOrderConflictScroll(container)
     scroll:AddChild(label)
 end
 
+-- In the Resources home a persistent Layout & Order preview pane occupies the
+-- top of the column; every settings surface anchors beneath it. Outside the
+-- home (legacy bars mode) surfaces fill the whole column as before.
+local function AnchorResourcesContentFrame(container, frame)
+    frame:ClearAllPoints()
+    local previewHost = container.resourcesPreviewHost
+    if CS.resourcesEntrySelected and previewHost and previewHost:IsShown() then
+        frame:SetPoint("TOPLEFT", previewHost, "BOTTOMLEFT", 0, -4)
+        frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+    else
+        frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+        frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+    end
+end
+
 local function ShowCustomBarMultiSelect(container, selectedIds, selectedEntries)
     HideFrame(container.placeholderLabel)
     HideWidgetFrame(container.customBarEntryTabGroup)
@@ -233,9 +248,7 @@ local function ShowCustomBarMultiSelect(container, selectedIds, selectedEntries)
     end
     local scroll = container.customBarsMultiSelectScroll
     scroll.frame:SetParent(container)
-    scroll.frame:ClearAllPoints()
-    scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
-    scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+    AnchorResourcesContentFrame(container, scroll.frame)
     scroll:ReleaseChildren()
     scroll.frame:Show()
 
@@ -353,9 +366,7 @@ local function ShowResourceSettingsPanel(container)
     end
 
     local tabGroup = container.resourceSettingsTabGroup
-    tabGroup.frame:ClearAllPoints()
-    tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
-    tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+    AnchorResourcesContentFrame(container, tabGroup.frame)
     tabGroup:SetTabs(tabs)
     tabGroup.frame:Show()
 
@@ -385,7 +396,8 @@ end
 -- Tabbed settings page for the Resources home (col1 Resources button).
 -- Re-hosts the existing bars-mode builders unmodified:
 -- General = anchoring, Appearance = bar text styling, Layout = positioning,
--- Health (when the health resource is enabled), Layout & Order (when attached).
+-- Health (when the health resource is enabled). The Layout & Order preview
+-- lives in the persistent pane above this page, not in a tab.
 local function ShowResourcesTabPage(container)
     if not container.resourcesTabGroup then
         local tabGroup = AceGUI:Create("TabGroup")
@@ -401,25 +413,6 @@ local function ShowResourcesTabPage(container)
             end
             wipe(CS.tabInfoButtons)
             widget:ReleaseChildren()
-            if container._resourcesLayoutOrderHost then
-                container._resourcesLayoutOrderHost:Hide()
-            end
-            if tab == "layoutorder" then
-                local host = container._resourcesLayoutOrderHost
-                if not host then
-                    host = CreateFrame("Frame", nil, widget.content)
-                    host:SetClipsChildren(false)
-                    container._resourcesLayoutOrderHost = host
-                end
-                host:SetParent(widget.content)
-                host:ClearAllPoints()
-                host:SetPoint("TOPLEFT", widget.content, "TOPLEFT", 0, 0)
-                host:SetPoint("BOTTOMRIGHT", widget.content, "BOTTOMRIGHT", 0, 0)
-                host:Show()
-                ST._BuildLayoutOrderPanel(host)
-                container.resourcesDetailScroll = nil
-                return
-            end
             local scroll = AceGUI:Create("ScrollFrame")
             scroll:SetLayout("List")
             widget:AddChild(scroll)
@@ -439,18 +432,13 @@ local function ShowResourcesTabPage(container)
     end
 
     local tabGroup = container.resourcesTabGroup
-    tabGroup.frame:ClearAllPoints()
-    tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
-    tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+    AnchorResourcesContentFrame(container, tabGroup.frame)
 
     local settings = CooldownCompanion:GetResourceBarSettings()
     local RESOURCE_HEALTH = ST._RB and ST._RB.RESOURCE_HEALTH
     local health = settings and settings.resources and RESOURCE_HEALTH
         and settings.resources[RESOURCE_HEALTH]
     local healthEnabled = health and health.enabled == true
-    local independent = CooldownCompanion.IsResourceBarAnchorIndependent
-        and CooldownCompanion:IsResourceBarAnchorIndependent()
-        or false
 
     local tabs = {
         { value = "general", text = "General" },
@@ -460,15 +448,11 @@ local function ShowResourcesTabPage(container)
     if healthEnabled then
         tabs[#tabs + 1] = { value = "health", text = "Health" }
     end
-    if not independent then
-        tabs[#tabs + 1] = { value = "layoutorder", text = "Layout & Order" }
-    end
     tabGroup:SetTabs(tabs)
 
     local tab = CS.resourcesSettingsTab
     local valid = { general = true, appearance = true, layout = true }
     if healthEnabled then valid.health = true end
-    if not independent then valid.layoutorder = true end
     if not tab or not valid[tab] then tab = "general" end
     CS.resourcesSettingsTab = tab
 
@@ -518,6 +502,24 @@ local function RefreshColumn4(container)
         if not (resourceBarsEnabled or castBarsEnabled) and not CS.resourcesEntrySelected then
             ShowLayoutOrderDisabledScroll(container)
             return
+        end
+
+        -- Resources home: persistent Layout & Order preview pane at the top of
+        -- the column; every settings surface below anchors beneath it.
+        if CS.resourcesEntrySelected then
+            local previewHost = container.resourcesPreviewHost
+            if not previewHost then
+                previewHost = CreateFrame("Frame", nil, container)
+                previewHost:SetClipsChildren(false)
+                container.resourcesPreviewHost = previewHost
+            end
+            previewHost:ClearAllPoints()
+            previewHost:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+            previewHost:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, 0)
+            local columnHeight = container:GetHeight() or 0
+            previewHost:SetHeight(math.max(150, math.floor(columnHeight * 0.35)))
+            previewHost:Show()
+            ST._BuildLayoutOrderPanel(previewHost)
         end
 
         if resourceBarsEnabled then
@@ -593,9 +595,7 @@ local function RefreshColumn4(container)
 
                     local tabGroup = container.customBarEntryTabGroup
                     HideWidgetFrame(container.customBarsMultiSelectScroll)
-                    tabGroup.frame:ClearAllPoints()
-                    tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
-                    tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+                    AnchorResourcesContentFrame(container, tabGroup.frame)
                     tabGroup:SetTabs(GetCustomBarEntryTabs(selectedEntry))
                     tabGroup.frame:Show()
 
@@ -670,8 +670,8 @@ local function RefreshColumn4(container)
     if container.resourcesTabGroup then
         container.resourcesTabGroup.frame:Hide()
     end
-    if container._resourcesLayoutOrderHost then
-        container._resourcesLayoutOrderHost:Hide()
+    if container.resourcesPreviewHost then
+        container.resourcesPreviewHost:Hide()
     end
     -- Hide layout order scroll if it exists
     if container.layoutOrderScroll then
