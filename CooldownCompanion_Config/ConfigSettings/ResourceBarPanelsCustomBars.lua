@@ -831,7 +831,21 @@ local function BuildCustomBarsListPanel(container)
     local settings = CooldownCompanion:GetResourceBarSettings()
     if not (settings and settings.enabled) then
         ST._AddResourceSettingsListSection(container, nil)
-        ST._AddResourceBarsDisabledLabel(container, "Enable Resource Bars to configure Custom Bars and Resources.")
+        ST._AddResourceBarsDisabledLabel(container, "Track your class resources, and Custom Bars you define, attached to a panel or positioned independently.")
+        local enableBtn = AceGUI:Create("Button")
+        enableBtn:SetText("Enable Resource Bars")
+        enableBtn:SetFullWidth(true)
+        enableBtn:SetCallback("OnClick", function()
+            local rbSettings = CooldownCompanion:GetResourceBarSettings()
+            if not rbSettings then
+                return
+            end
+            rbSettings.enabled = true
+            CooldownCompanion:EvaluateResourceBars()
+            CooldownCompanion:UpdateAnchorStacking()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(enableBtn)
         return
     end
 

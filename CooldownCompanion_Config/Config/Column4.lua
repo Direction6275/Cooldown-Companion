@@ -504,6 +504,12 @@ local function RefreshColumn4(container)
             return
         end
 
+        -- Resources home while disabled: column 3 owns the enable step, so
+        -- this column stays quiet until Resource Bars are enabled.
+        if CS.resourcesEntrySelected and not resourceBarsEnabled then
+            return
+        end
+
         -- Resources home: persistent Layout & Order preview pane at the top of
         -- the column; every settings surface below anchors beneath it.
         if CS.resourcesEntrySelected then

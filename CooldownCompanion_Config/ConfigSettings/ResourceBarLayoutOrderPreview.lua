@@ -2142,6 +2142,21 @@ function ST._BuildLayoutOrderPreviewPanel(container)
     local cbSettings = preview.cbSettings
     local resourceBarsEnabled = rbSettings and rbSettings.enabled == true
     local castBarEnabled = cbSettings and cbSettings.enabled == true
+
+    -- Live in-world preview toggle, pinned to the pane corner so it stays
+    -- reachable from every settings tab
+    if ST._AttachFramePreviewBadge then
+        ST._AttachFramePreviewBadge(container, "Preview Resource Bars", function()
+            return CooldownCompanion:IsResourceBarPreviewActive()
+        end, function(show)
+            if show then
+                CooldownCompanion:StartResourceBarPreview()
+            else
+                CooldownCompanion:StopResourceBarPreview()
+            end
+        end, resourceBarsEnabled)
+    end
+
     if not (resourceBarsEnabled or castBarEnabled) then
         SetPreviewMessage(preview, "Enable Resource Bars or Cast Bar to configure layout.")
         FinalizePreviewState(preview)
