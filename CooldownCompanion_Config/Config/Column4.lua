@@ -157,8 +157,8 @@ local function HideResourceBarPanelSurfaces(container)
     HideWidgetFrame(container.resourceSettingsTabGroup)
     HideWidgetFrame(container.resourcesTabGroup)
     HideFrame(container.resourcesPreviewHost)
-    HideWidgetFrame(container.unitFramesScroll)
-    HideFrame(container._unitFramesIntroPane)
+    HideWidgetFrame(container.castBarHomeTabGroup)
+    HideFrame(container._castBarIntroPane)
     HideLayoutOrderConflictScroll(container)
     HideFrame(container.layoutOrderHost)
 end
@@ -220,13 +220,15 @@ local function ShowLayoutOrderConflictScroll(container)
     scroll:AddChild(label)
 end
 
--- In the Resources home a persistent Layout & Order preview pane occupies the
--- top of the column; every settings surface anchors beneath it. Outside the
--- home (legacy bars mode) surfaces fill the whole column as before.
+-- In the Resources and Cast Bar homes a persistent Layout & Order preview
+-- pane occupies the top of the column; every settings surface anchors
+-- beneath it. Outside those homes (legacy bars mode) surfaces fill the
+-- whole column as before.
 local function AnchorResourcesContentFrame(container, frame)
     frame:ClearAllPoints()
     local previewHost = container.resourcesPreviewHost
-    if CS.resourcesEntrySelected and previewHost and previewHost:IsShown() then
+    if (CS.resourcesEntrySelected or CS.castFramesEntrySelected)
+        and previewHost and previewHost:IsShown() then
         frame:SetPoint("TOPLEFT", previewHost, "BOTTOMLEFT", 0, -4)
         frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
     else
@@ -490,25 +492,31 @@ local function RefreshColumn4(container)
     HideLayoutOrderDisabledScroll(container)
     HideLayoutOrderConflictScroll(container)
 
-    -- Cast Bar & Unit Frames home: col4 = Unit Frames
+    -- Cast Bar & Unit Frames home: col4 = Cast Bar, with the persistent
+    -- Layout & Order preview pane pinned at the top like the Resources home
     if CS.castFramesEntrySelected then
         HideResourceBarPanelSurfaces(container)
+        if CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict() then
+            ShowLayoutOrderConflictScroll(container)
+            return
+        end
 
-        local settings = CooldownCompanion:GetFrameAnchoringSettings()
+        local settings = CooldownCompanion:GetCastBarSettings()
         if not (settings and settings.enabled) then
             if ST._ShowColumnIntroPane then
-                ST._ShowColumnIntroPane(container, "_unitFramesIntroPane", {
-                    title = "Unit Frames",
-                    body = "Anchor your player and target unit frames to your panels.",
-                    buttonText = "Enable Frame Anchoring",
+                ST._ShowColumnIntroPane(container, "_castBarIntroPane", {
+                    title = "Cast Bar",
+                    body = "Skin the Blizzard cast bar and anchor it to a panel, or position it anywhere on screen.",
+                    buttonText = "Enable Cast Bar",
                     sideInset = 24,
                     onEnable = function()
-                        local fa = CooldownCompanion:GetFrameAnchoringSettings()
-                        if not fa then
+                        local cb = CooldownCompanion:GetCastBarSettings()
+                        if not cb then
                             return
                         end
-                        fa.enabled = true
-                        CooldownCompanion:EvaluateFrameAnchoring()
+                        cb.enabled = true
+                        CooldownCompanion:EvaluateCastBar()
+                        CooldownCompanion:UpdateAnchorStacking()
                         CooldownCompanion:RefreshConfigPanel()
                     end,
                 })
@@ -516,32 +524,84 @@ local function RefreshColumn4(container)
             return
         end
 
-        if not container.unitFramesScroll then
-            local scroll = AceGUI:Create("ScrollFrame")
-            scroll:SetLayout("List")
-            scroll.frame:SetParent(container)
-            scroll.frame:ClearAllPoints()
-            scroll.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
-            scroll.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
-            container.unitFramesScroll = scroll
+        local previewHost = container.resourcesPreviewHost
+        if not previewHost then
+            previewHost = CreateFrame("Frame", nil, container)
+            previewHost:SetClipsChildren(false)
+            container.resourcesPreviewHost = previewHost
         end
+        previewHost:ClearAllPoints()
+        previewHost:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+        previewHost:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, 0)
+        local columnHeight = container:GetHeight() or 0
+        previewHost:SetHeight(math.max(150, math.floor(columnHeight * 0.35)))
+        previewHost:Show()
+        ST._BuildLayoutOrderPanel(previewHost)
+
+        if not container.castBarHomeTabGroup then
+            local tabGroup = AceGUI:Create("TabGroup")
+            tabGroup:SetLayout("Fill")
+            tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+                CS.castBarHomeTab = tab
+                -- Clean up info buttons from the previous tab before recycling widgets
+                for _, btn in ipairs(CS.tabInfoButtons) do
+                    btn:ClearAllPoints()
+                    btn:Hide()
+                    btn:SetParent(nil)
+                end
+                wipe(CS.tabInfoButtons)
+                widget:ReleaseChildren()
+                local scroll = AceGUI:Create("ScrollFrame")
+                scroll:SetLayout("List")
+                widget:AddChild(scroll)
+                container.castBarHomeScroll = scroll
+                container._castBarHomeScrollKey = "castbar:" .. tab
+                if tab == "general" then
+                    ST._BuildCastBarAnchoringPanel(scroll)
+                elseif tab == "appearance" then
+                    ST._BuildCastBarStylingPanel(scroll)
+                elseif tab == "layout" then
+                    ST._BuildCastBarPositioningPanel(scroll)
+                end
+            end)
+            tabGroup.frame:SetParent(container)
+            container.castBarHomeTabGroup = tabGroup
+        end
+
+        local tabGroup = container.castBarHomeTabGroup
+        AnchorResourcesContentFrame(container, tabGroup.frame)
+        tabGroup:SetTabs({
+            { value = "general", text = "General" },
+            { value = "appearance", text = "Appearance" },
+            { value = "layout", text = "Layout" },
+        })
+
+        local tab = CS.castBarHomeTab
+        if tab ~= "general" and tab ~= "appearance" and tab ~= "layout" then
+            tab = "general"
+        end
+        CS.castBarHomeTab = tab
 
         -- Preserve scroll position across value-change refreshes
-        local scroll = container.unitFramesScroll
-        local state = scroll.status or scroll.localstatus
         local savedOffset, savedScrollvalue
-        if state and state.offset and state.offset > 0 then
-            savedOffset, savedScrollvalue = state.offset, state.scrollvalue
+        local currentScrollKey = "castbar:" .. tab
+        if container.castBarHomeScroll and container._castBarHomeScrollKey == currentScrollKey then
+            local state = container.castBarHomeScroll.status or container.castBarHomeScroll.localstatus
+            if state and state.offset and state.offset > 0 then
+                savedOffset = state.offset
+                savedScrollvalue = state.scrollvalue
+            end
         end
 
-        scroll:ReleaseChildren()
-        scroll.frame:Show()
-        ST._BuildFrameAnchoringPlayerPanel(scroll)
-        ST._BuildFrameAnchoringTargetPanel(scroll)
+        tabGroup.frame:Show()
+        tabGroup:SelectTab(tab)
 
-        if savedOffset and state then
-            state.offset = savedOffset
-            state.scrollvalue = savedScrollvalue
+        if savedOffset and container.castBarHomeScroll then
+            local state = container.castBarHomeScroll.status or container.castBarHomeScroll.localstatus
+            if state then
+                state.offset = savedOffset
+                state.scrollvalue = savedScrollvalue
+            end
         end
         return
     end
@@ -737,11 +797,11 @@ local function RefreshColumn4(container)
     if container.resourcesPreviewHost then
         container.resourcesPreviewHost:Hide()
     end
-    if container.unitFramesScroll then
-        container.unitFramesScroll.frame:Hide()
+    if container.castBarHomeTabGroup then
+        container.castBarHomeTabGroup.frame:Hide()
     end
-    if container._unitFramesIntroPane then
-        container._unitFramesIntroPane:Hide()
+    if container._castBarIntroPane then
+        container._castBarIntroPane:Hide()
     end
     -- Hide layout order scroll if it exists
     if container.layoutOrderScroll then

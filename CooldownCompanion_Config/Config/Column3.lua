@@ -80,7 +80,7 @@ local function RefreshColumn3()
         col3BrowseClean._browsePlaceholder:Hide()
     end
 
-    -- Cast Bar & Unit Frames home: col3 = Cast Bar
+    -- Cast Bar & Unit Frames home: col3 = Unit Frames
     if CS.castFramesEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
         if not col3 then return end
@@ -95,99 +95,58 @@ local function RefreshColumn3()
         if col3._customBarsScroll then col3._customBarsScroll.frame:Hide() end
         if col3._resourcesIntroPane then col3._resourcesIntroPane:Hide() end
 
-        local settings = CooldownCompanion:GetCastBarSettings()
+        local settings = CooldownCompanion:GetFrameAnchoringSettings()
         if not (settings and settings.enabled) then
-            if col3._castBarHomeTabGroup then
-                col3._castBarHomeTabGroup.frame:Hide()
+            if col3._unitFramesScroll then
+                col3._unitFramesScroll.frame:Hide()
             end
-            ShowColumnIntroPane(col3, "_castBarIntroPane", {
-                title = "Cast Bar",
-                body = "Skin the Blizzard cast bar and anchor it to a panel, or position it anywhere on screen.",
-                buttonText = "Enable Cast Bar",
+            ShowColumnIntroPane(col3, "_unitFramesIntroPane", {
+                title = "Unit Frames",
+                body = "Anchor your player and target unit frames to your panels.",
+                buttonText = "Enable Frame Anchoring",
                 sideInset = 24,
                 onEnable = function()
-                    local cb = CooldownCompanion:GetCastBarSettings()
-                    if not cb then
+                    local fa = CooldownCompanion:GetFrameAnchoringSettings()
+                    if not fa then
                         return
                     end
-                    cb.enabled = true
-                    CooldownCompanion:EvaluateCastBar()
-                    CooldownCompanion:UpdateAnchorStacking()
+                    fa.enabled = true
+                    CooldownCompanion:EvaluateFrameAnchoring()
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             })
             return
         end
-        if col3._castBarIntroPane then
-            col3._castBarIntroPane:Hide()
+        if col3._unitFramesIntroPane then
+            col3._unitFramesIntroPane:Hide()
         end
 
-        if not col3._castBarHomeTabGroup then
-            local tabGroup = AceGUI:Create("TabGroup")
-            tabGroup:SetLayout("Fill")
-            tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
-                CS.castBarHomeTab = tab
-                -- Clean up info buttons from the previous tab before recycling widgets
-                for _, btn in ipairs(CS.tabInfoButtons) do
-                    btn:ClearAllPoints()
-                    btn:Hide()
-                    btn:SetParent(nil)
-                end
-                wipe(CS.tabInfoButtons)
-                widget:ReleaseChildren()
-                local scroll = AceGUI:Create("ScrollFrame")
-                scroll:SetLayout("List")
-                widget:AddChild(scroll)
-                col3._castBarHomeScroll = scroll
-                col3._castBarHomeScrollKey = "castbar:" .. tab
-                if tab == "general" then
-                    ST._BuildCastBarAnchoringPanel(scroll)
-                elseif tab == "appearance" then
-                    ST._BuildCastBarStylingPanel(scroll)
-                elseif tab == "layout" then
-                    ST._BuildCastBarPositioningPanel(scroll)
-                end
-            end)
-            tabGroup.frame:SetParent(col3.content)
-            tabGroup.frame:ClearAllPoints()
-            tabGroup.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-            tabGroup.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
-            col3._castBarHomeTabGroup = tabGroup
+        if not col3._unitFramesScroll then
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            scroll.frame:SetParent(col3.content)
+            scroll.frame:ClearAllPoints()
+            scroll.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+            scroll.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+            col3._unitFramesScroll = scroll
         end
-
-        local tabGroup = col3._castBarHomeTabGroup
-        tabGroup:SetTabs({
-            { value = "general", text = "General" },
-            { value = "appearance", text = "Appearance" },
-            { value = "layout", text = "Layout" },
-        })
-
-        local tab = CS.castBarHomeTab
-        if tab ~= "general" and tab ~= "appearance" and tab ~= "layout" then
-            tab = "general"
-        end
-        CS.castBarHomeTab = tab
 
         -- Preserve scroll position across value-change refreshes
+        local scroll = col3._unitFramesScroll
+        local state = scroll.status or scroll.localstatus
         local savedOffset, savedScrollvalue
-        local currentScrollKey = "castbar:" .. tab
-        if col3._castBarHomeScroll and col3._castBarHomeScrollKey == currentScrollKey then
-            local state = col3._castBarHomeScroll.status or col3._castBarHomeScroll.localstatus
-            if state and state.offset and state.offset > 0 then
-                savedOffset = state.offset
-                savedScrollvalue = state.scrollvalue
-            end
+        if state and state.offset and state.offset > 0 then
+            savedOffset, savedScrollvalue = state.offset, state.scrollvalue
         end
 
-        tabGroup.frame:Show()
-        tabGroup:SelectTab(tab)
+        scroll:ReleaseChildren()
+        scroll.frame:Show()
+        ST._BuildFrameAnchoringPlayerPanel(scroll)
+        ST._BuildFrameAnchoringTargetPanel(scroll)
 
-        if savedOffset and col3._castBarHomeScroll then
-            local state = col3._castBarHomeScroll.status or col3._castBarHomeScroll.localstatus
-            if state then
-                state.offset = savedOffset
-                state.scrollvalue = savedScrollvalue
-            end
+        if savedOffset and state then
+            state.offset = savedOffset
+            state.scrollvalue = savedScrollvalue
         end
         return
     end
@@ -207,8 +166,8 @@ local function RefreshColumn3()
         if col3._customAuraTabGroup then
             col3._customAuraTabGroup.frame:Hide()
         end
-        if col3._castBarHomeTabGroup then col3._castBarHomeTabGroup.frame:Hide() end
-        if col3._castBarIntroPane then col3._castBarIntroPane:Hide() end
+        if col3._unitFramesScroll then col3._unitFramesScroll.frame:Hide() end
+        if col3._unitFramesIntroPane then col3._unitFramesIntroPane:Hide() end
 
         -- Disabled home: the single wide intro pane replaces the list
         if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
@@ -255,11 +214,11 @@ local function RefreshColumn3()
     if col3Normal and col3Normal._resourcesIntroPane then
         col3Normal._resourcesIntroPane:Hide()
     end
-    if col3Normal and col3Normal._castBarHomeTabGroup then
-        col3Normal._castBarHomeTabGroup.frame:Hide()
+    if col3Normal and col3Normal._unitFramesScroll then
+        col3Normal._unitFramesScroll.frame:Hide()
     end
-    if col3Normal and col3Normal._castBarIntroPane then
-        col3Normal._castBarIntroPane:Hide()
+    if col3Normal and col3Normal._unitFramesIntroPane then
+        col3Normal._unitFramesIntroPane:Hide()
     end
 
     -- Panel multi-select: batch operations in Column 3
