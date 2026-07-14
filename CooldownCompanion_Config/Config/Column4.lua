@@ -155,6 +155,8 @@ local function HideResourceBarPanelSurfaces(container)
     HideWidgetFrame(container.customBarEntryTabGroup)
     HideWidgetFrame(container.resourceSettingsDetailScroll)
     HideWidgetFrame(container.resourceSettingsTabGroup)
+    HideWidgetFrame(container.resourcesTabGroup)
+    HideFrame(container._resourcesLayoutOrderHost)
     HideLayoutOrderConflictScroll(container)
     HideFrame(container.layoutOrderHost)
 end
@@ -380,6 +382,120 @@ local function ShowResourceSettingsPanel(container)
     return true
 end
 
+-- Tabbed settings page for the Resources home (col1 Resources button).
+-- Re-hosts the existing bars-mode builders unmodified:
+-- General = anchoring, Appearance = bar text styling, Layout = positioning,
+-- Health (when the health resource is enabled), Layout & Order (when attached).
+local function ShowResourcesTabPage(container)
+    if not container.resourcesTabGroup then
+        local tabGroup = AceGUI:Create("TabGroup")
+        tabGroup:SetLayout("Fill")
+        tabGroup.frame:SetParent(container)
+        tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+            CS.resourcesSettingsTab = tab
+            -- Clean up info buttons from the previous tab before recycling widgets
+            for _, btn in ipairs(CS.tabInfoButtons) do
+                btn:ClearAllPoints()
+                btn:Hide()
+                btn:SetParent(nil)
+            end
+            wipe(CS.tabInfoButtons)
+            widget:ReleaseChildren()
+            if container._resourcesLayoutOrderHost then
+                container._resourcesLayoutOrderHost:Hide()
+            end
+            if tab == "layoutorder" then
+                local host = container._resourcesLayoutOrderHost
+                if not host then
+                    host = CreateFrame("Frame", nil, widget.content)
+                    host:SetClipsChildren(false)
+                    container._resourcesLayoutOrderHost = host
+                end
+                host:SetParent(widget.content)
+                host:ClearAllPoints()
+                host:SetPoint("TOPLEFT", widget.content, "TOPLEFT", 0, 0)
+                host:SetPoint("BOTTOMRIGHT", widget.content, "BOTTOMRIGHT", 0, 0)
+                host:Show()
+                ST._BuildLayoutOrderPanel(host)
+                container.resourcesDetailScroll = nil
+                return
+            end
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            widget:AddChild(scroll)
+            container.resourcesDetailScroll = scroll
+            container._resourcesDetailScrollKey = "resources:" .. tab
+            if tab == "general" then
+                ST._BuildResourceBarAnchoringPanel(scroll)
+            elseif tab == "appearance" then
+                ST._BuildResourceBarBarTextStylingPanel(scroll)
+            elseif tab == "layout" then
+                ST._BuildResourceBarPositioningPanel(scroll)
+            elseif tab == "health" then
+                ST._BuildResourceBarHealthStylingPanel(scroll)
+            end
+        end)
+        container.resourcesTabGroup = tabGroup
+    end
+
+    local tabGroup = container.resourcesTabGroup
+    tabGroup.frame:ClearAllPoints()
+    tabGroup.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+    tabGroup.frame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+
+    local settings = CooldownCompanion:GetResourceBarSettings()
+    local RESOURCE_HEALTH = ST._RB and ST._RB.RESOURCE_HEALTH
+    local health = settings and settings.resources and RESOURCE_HEALTH
+        and settings.resources[RESOURCE_HEALTH]
+    local healthEnabled = health and health.enabled == true
+    local independent = CooldownCompanion.IsResourceBarAnchorIndependent
+        and CooldownCompanion:IsResourceBarAnchorIndependent()
+        or false
+
+    local tabs = {
+        { value = "general", text = "General" },
+        { value = "appearance", text = "Appearance" },
+        { value = "layout", text = "Layout" },
+    }
+    if healthEnabled then
+        tabs[#tabs + 1] = { value = "health", text = "Health" }
+    end
+    if not independent then
+        tabs[#tabs + 1] = { value = "layoutorder", text = "Layout & Order" }
+    end
+    tabGroup:SetTabs(tabs)
+
+    local tab = CS.resourcesSettingsTab
+    local valid = { general = true, appearance = true, layout = true }
+    if healthEnabled then valid.health = true end
+    if not independent then valid.layoutorder = true end
+    if not tab or not valid[tab] then tab = "general" end
+    CS.resourcesSettingsTab = tab
+
+    -- Preserve scroll position across value-change refreshes (same pattern
+    -- as the custom-bar detail tabs)
+    local savedOffset, savedScrollvalue
+    local currentScrollKey = "resources:" .. tab
+    if container.resourcesDetailScroll and container._resourcesDetailScrollKey == currentScrollKey then
+        local state = container.resourcesDetailScroll.status or container.resourcesDetailScroll.localstatus
+        if state and state.offset and state.offset > 0 then
+            savedOffset = state.offset
+            savedScrollvalue = state.scrollvalue
+        end
+    end
+
+    tabGroup.frame:Show()
+    tabGroup:SelectTab(tab)
+
+    if savedOffset and container.resourcesDetailScroll then
+        local state = container.resourcesDetailScroll.status or container.resourcesDetailScroll.localstatus
+        if state then
+            state.offset = savedOffset
+            state.scrollvalue = savedScrollvalue
+        end
+    end
+end
+
 local function RefreshColumn4(container)
     -- Hide browse placeholder
     if container._browsePlaceholder then
@@ -388,8 +504,9 @@ local function RefreshColumn4(container)
     HideLayoutOrderDisabledScroll(container)
     HideLayoutOrderConflictScroll(container)
 
-    -- Resource Bar panel mode: show selected Custom Bar settings, or Layout & Order.
-    if CS.resourceBarPanelActive then
+    -- Resource Bar panel mode (legacy bars mode or the Resources home):
+    -- show selected Custom Bar settings, the resources tab page, or Layout & Order.
+    if CS.resourceBarPanelActive or CS.resourcesEntrySelected then
         HideResourceBarPanelSurfaces(container)
         if CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict() then
             ShowLayoutOrderConflictScroll(container)
@@ -398,7 +515,7 @@ local function RefreshColumn4(container)
 
         local resourceBarsEnabled = AreResourceBarsConfigEnabled()
         local castBarsEnabled = AreCastBarsConfigEnabled()
-        if not (resourceBarsEnabled or castBarsEnabled) then
+        if not (resourceBarsEnabled or castBarsEnabled) and not CS.resourcesEntrySelected then
             ShowLayoutOrderDisabledScroll(container)
             return
         end
@@ -514,6 +631,12 @@ local function RefreshColumn4(container)
             end
         end
 
+        -- Resources home default page: the tabbed settings view
+        if CS.resourcesEntrySelected then
+            ShowResourcesTabPage(container)
+            return
+        end
+
         if not container.layoutOrderHost then
             local host = CreateFrame("Frame", nil, container)
             host:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
@@ -543,6 +666,12 @@ local function RefreshColumn4(container)
     end
     if container.resourceSettingsTabGroup then
         container.resourceSettingsTabGroup.frame:Hide()
+    end
+    if container.resourcesTabGroup then
+        container.resourcesTabGroup.frame:Hide()
+    end
+    if container._resourcesLayoutOrderHost then
+        container._resourcesLayoutOrderHost:Hide()
     end
     -- Hide layout order scroll if it exists
     if container.layoutOrderScroll then

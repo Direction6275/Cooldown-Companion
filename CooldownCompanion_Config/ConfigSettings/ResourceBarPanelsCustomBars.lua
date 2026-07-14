@@ -26,7 +26,7 @@ local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 
 local function RefreshLayoutOrderPreview()
-    if not (CS.resourceBarPanelActive and CS.col4Container and ST._RefreshColumn4) then
+    if not ((CS.resourceBarPanelActive or CS.resourcesEntrySelected) and CS.col4Container and ST._RefreshColumn4) then
         return
     end
     ST._RefreshColumn4(CS.col4Container)

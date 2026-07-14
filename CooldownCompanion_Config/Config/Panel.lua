@@ -396,7 +396,7 @@ local function GetConfigSelectionSummary()
 end
 
 local function GetColumn3HeaderMode(selection)
-    if CS.resourceBarPanelActive then
+    if CS.resourceBarPanelActive or CS.resourcesEntrySelected then
         return "custom_aura"
     end
     if selection.panelMultiCount >= 2 then
@@ -406,7 +406,7 @@ local function GetColumn3HeaderMode(selection)
 end
 
 local function GetColumn4HeaderMode(selection)
-    if CS.resourceBarPanelActive then
+    if CS.resourceBarPanelActive or CS.resourcesEntrySelected then
         local resourceBarSettings = CooldownCompanion:GetResourceBarSettings()
         if resourceBarSettings and resourceBarSettings.enabled == true then
             if CS.selectedResourcePowerType
@@ -419,6 +419,9 @@ local function GetColumn4HeaderMode(selection)
             if CS.selectedCustomBarId then
                 return "custom_bar"
             end
+        end
+        if CS.resourcesEntrySelected then
+            return "resources_panel"
         end
         return "layout_order"
     end
@@ -449,6 +452,8 @@ local function GetColumn4HeaderTitle(selection)
     local mode = GetColumn4HeaderMode(selection)
     if mode == "layout_order" then
         return GetLayoutOrderColumnTitle()
+    elseif mode == "resources_panel" then
+        return "Resource Bars"
     elseif mode == "resource_settings" then
         return GetResourceSettingsColumnTitle()
     elseif mode == "custom_bar" then
@@ -1877,7 +1882,7 @@ local function CreateConfigPanel()
     bsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     bsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if CS.resourceBarPanelActive then
+        if CS.resourceBarPanelActive or CS.resourcesEntrySelected then
             GameTooltip:AddLine("Custom Bars & Resources")
             GameTooltip:AddLine("Create Custom Bars and manage enabled resource-specific settings.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
@@ -1925,7 +1930,14 @@ local function CreateConfigPanel()
     settingsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     settingsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if CS.resourceBarPanelActive then
+        if CS.resourcesEntrySelected and not CS.selectedResourcePowerType and not CS.selectedCustomBarId then
+            GameTooltip:AddLine("Resource Bars")
+            GameTooltip:AddLine("Shared resource bar settings, organized into tabs.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Use Layout & Order to drag attached bars around the mirrored icon panel. Layout is saved per specialization.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Select a resource or Custom Bar in column 3 for per-bar settings.", 1, 1, 1, true)
+        elseif CS.resourceBarPanelActive or CS.resourcesEntrySelected then
             GameTooltip:AddLine("Layout & Order")
                 GameTooltip:AddLine("Arrange attached bars by dragging them around the mirrored icon panel.", 1, 1, 1)
                 GameTooltip:AddLine(" ")
@@ -2420,7 +2432,7 @@ function CooldownCompanion:_configRefreshPanelImpl()
         return col2._barsStylingScroll
     end
     local function getCustomAuraScrollKey()
-        if not CS.resourceBarPanelActive then return nil end
+        if not (CS.resourceBarPanelActive or CS.resourcesEntrySelected) then return nil end
         local selectedId = tostring(CS.selectedCustomBarId or "layout")
         return selectedId .. ":" .. tostring(CS.customBarSettingsTab or "appearance")
     end

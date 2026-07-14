@@ -741,14 +741,17 @@ local function PopulateColumn1ButtonBar()
     newFolderBtn.frame:Show()
     table.insert(CS.col1BarWidgets, newFolderBtn)
 
-    -- Resources: first-class module home, top row beside group management
+    -- Resources: first-class module home, beside group management
     local resourcesBtn = AceGUI:Create("Button")
-    resourcesBtn:SetText("Resources")
+    resourcesBtn:SetText(CS.resourcesEntrySelected and "|cff66b3ffResources|r" or "Resources")
     resourcesBtn:SetCallback("OnClick", function()
-        CS.barPanelTab = "resource_anchoring"
-        if ST._SetConfigPrimaryMode then
-            ST._SetConfigPrimaryMode("bars")
+        if CS.resourceBarPanelActive and ST._SetConfigPrimaryMode then
+            ST._SetConfigPrimaryMode("buttons", { skipRefresh = true })
         end
+        if ST._SelectConfigResourcesEntry then
+            ST._SelectConfigResourcesEntry({ toggle = true })
+        end
+        CooldownCompanion:RefreshConfigPanel()
     end)
     resourcesBtn.frame:SetParent(CS.col1ButtonBar)
     resourcesBtn.frame:ClearAllPoints()
