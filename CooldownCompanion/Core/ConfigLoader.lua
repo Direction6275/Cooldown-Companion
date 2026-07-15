@@ -152,14 +152,7 @@ function CooldownCompanion:RunConfigIntent(intent)
         CloseBlizzardSettings()
     end
 
-    if intent.action == "mode" then
-        if not EnsureConfigOpen(self) then
-            self:Print(FormatConfigLoadFailure(entryPoint, "config panel unavailable"))
-            return false
-        end
-        ST._SetConfigPrimaryMode(intent.mode or "buttons")
-        return true
-    elseif intent.action == "open" then
+    if intent.action == "open" then
         if not EnsureConfigOpen(self) then
             self:Print(FormatConfigLoadFailure(entryPoint, "config panel unavailable"))
             return false

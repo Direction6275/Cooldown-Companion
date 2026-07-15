@@ -545,14 +545,6 @@ function CooldownCompanion:SlashCommand(input)
     input = tostring(input or ""):lower()
     input = input:match("^%s*(.-)%s*$")
 
-    local function SwitchPrimaryConfigMode(mode, entryPoint)
-        self:ToggleConfig({
-            action = "mode",
-            mode = mode,
-            entryPoint = entryPoint or ("/cdc " .. mode),
-        })
-    end
-
     if input == "lock" or input == "unlock" then
         -- Toggle: if any visible container is unlocked, lock all; otherwise unlock all
         local anyUnlocked = false
@@ -593,16 +585,9 @@ function CooldownCompanion:SlashCommand(input)
     elseif input == "help" then
         self:Print("Cooldown Companion commands:")
         self:Print("/cdc - Open settings")
-        self:Print("/cdc buttons - Open settings in Buttons mode")
-        self:Print("/cdc bars - Open settings in Bars & Frames mode")
-        self:Print("/cdc frames - Alias for /cdc bars")
         self:Print("/cdc lock - Toggle lock/unlock all group frames")
         self:Print("/cdc minimap - Toggle minimap icon")
         self:Print("/cdc reset - Reset profile to defaults")
-    elseif input == "bars" or input == "frames" then
-        SwitchPrimaryConfigMode("bars", "/cdc " .. input)
-    elseif input == "buttons" then
-        SwitchPrimaryConfigMode("buttons")
     elseif input == "reset" then
         self:ShowResetProfilePopup()
     elseif input == "debugimport" then
