@@ -1965,7 +1965,7 @@ end
 
 local function IsBarsConfigActive()
     local cs = ST and ST._configState
-    if not cs or not (cs.resourceBarPanelActive or cs.resourcesEntrySelected or cs.castFramesEntrySelected) then
+    if not cs or not (cs.resourcesEntrySelected or cs.castFramesEntrySelected) then
         return false
     end
     if not CooldownCompanion.GetConfigFrame then

@@ -247,17 +247,6 @@ if not AceGUI:GetLayout(MANUAL_COLUMN_LAYOUT) then
     end)
 end
 
-local function SetPrimaryMode(mode, opts)
-    if SetConfigPrimaryMode then
-        return SetConfigPrimaryMode(mode, opts)
-    end
-    CS.resourceBarPanelActive = (mode == "bars")
-    if not (opts and opts.skipRefresh) then
-        CooldownCompanion:RefreshConfigPanel()
-    end
-    return true
-end
-
 local function HasOtherClassInventory()
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
     if not db then return false, false, false end
@@ -399,7 +388,7 @@ local function GetColumn3HeaderMode(selection)
     if CS.castFramesEntrySelected then
         return "unit_frames"
     end
-    if CS.resourceBarPanelActive or CS.resourcesEntrySelected then
+    if CS.resourcesEntrySelected then
         if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
             return "resources_intro"
         end
@@ -415,7 +404,7 @@ local function GetColumn4HeaderMode(selection)
     if CS.castFramesEntrySelected then
         return "cast_bar"
     end
-    if CS.resourceBarPanelActive or CS.resourcesEntrySelected then
+    if CS.resourcesEntrySelected then
         local resourceBarSettings = CooldownCompanion:GetResourceBarSettings()
         if resourceBarSettings and resourceBarSettings.enabled == true then
             if CS.selectedResourcePowerType
@@ -494,9 +483,7 @@ local function GetColumn4HeaderTitle(selection)
 end
 
 local function ApplyConfigColumnTitles(frame)
-    if CS.resourceBarPanelActive then
-        frame.col1:SetTitle("Bars & Frames")
-    elseif IsConfigFinderActive and IsConfigFinderActive() then
+    if IsConfigFinderActive and IsConfigFinderActive() then
         frame.col1:SetTitle("Groups")
         frame.col2:SetTitle("Search Results")
     else
@@ -593,9 +580,6 @@ end
 
 local function IsConfigSpellOverrideRefreshMode()
     if not IsConfigFrameOpenForRefresh() then
-        return false
-    end
-    if CS.resourceBarPanelActive then
         return false
     end
     if CountSelections(CS.selectedGroups) >= 2 then
@@ -729,7 +713,7 @@ local function ResetConfigForProfileChange()
     if ClearConfigFinderText then
         ClearConfigFinderText()
     end
-    SetPrimaryMode("buttons", { skipRefresh = true })
+    SetConfigPrimaryMode("buttons", { skipRefresh = true })
 end
 
 function CooldownCompanion:_configResetForProfileChangeImpl()
@@ -1025,83 +1009,6 @@ local function CreateConfigPanel()
     collapseBtn:SetHighlightAtlas("common-icon-minus")
     collapseBtn:GetHighlightTexture():SetAlpha(0.3)
 
-    -- Bottom text-based mode status row (Currently viewing: <mode button>)
-    local MODE_VIEW_BUTTONS_COLOR = {1.0, 0.82, 0.0}
-    local MODE_VIEW_BARS_COLOR = {0.30, 0.62, 1.0}
-    local MODE_MIN_BUTTON_WIDTH = 90
-    local MODE_BUTTON_TEXT_PADDING = 28
-    local MODE_BUTTON_GROW_STEP = 8
-    local MODE_BUTTON_GROW_MAX = 900
-
-    local modeStatusRow
-    local modeToggleButton
-    local modeValueText
-    local modeToggleTooltipText = "Switch settings mode"
-
-    local function RGBToHex(r, g, b)
-        local function clamp(v)
-            if v < 0 then return 0 end
-            if v > 1 then return 1 end
-            return v
-        end
-        local ri = math.floor((clamp(r or 1) * 255) + 0.5)
-        local gi = math.floor((clamp(g or 1) * 255) + 0.5)
-        local bi = math.floor((clamp(b or 1) * 255) + 0.5)
-        return string.format("%02x%02x%02x", ri, gi, bi)
-    end
-
-    local function UpdateModeRowLayout()
-        if not modeStatusRow or not modeValueText or not modeToggleButton then return end
-
-        local valueW = math.ceil(modeValueText:GetStringWidth() or 0)
-        local buttonW = math.max(MODE_MIN_BUTTON_WIDTH, valueW + MODE_BUTTON_TEXT_PADDING)
-        local buttonH = (modeToggleButton.frame and modeToggleButton.frame:GetHeight()) or 22
-        local rowH = math.max(16, math.ceil(modeValueText:GetStringHeight() or 0), buttonH)
-
-        modeToggleButton.frame:ClearAllPoints()
-        modeToggleButton.frame:SetPoint("LEFT", modeStatusRow, "LEFT", 0, 0)
-        modeToggleButton:SetWidth(buttonW)
-        if modeValueText.IsTruncated and modeValueText:IsTruncated() then
-            local guard = 0
-            while modeValueText:IsTruncated() and buttonW < MODE_BUTTON_GROW_MAX do
-                buttonW = buttonW + MODE_BUTTON_GROW_STEP
-                modeToggleButton:SetWidth(buttonW)
-                guard = guard + 1
-                if guard > 128 then break end
-            end
-        end
-
-        modeStatusRow:SetSize(buttonW, rowH + 2)
-    end
-
-    local function UpdateModeNavigationUI()
-        if not modeValueText or not modeToggleButton then return end
-
-        local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
-        local prefixR, prefixG, prefixB = 1, 0.82, 0
-        if classColor then
-            prefixR, prefixG, prefixB = classColor.r, classColor.g, classColor.b
-        end
-
-        local isBars = CS.resourceBarPanelActive == true
-        local modeLabel, modeR, modeG, modeB
-        if isBars then
-            modeLabel = "Bars & Frames"
-            modeR, modeG, modeB = MODE_VIEW_BARS_COLOR[1], MODE_VIEW_BARS_COLOR[2], MODE_VIEW_BARS_COLOR[3]
-            modeToggleTooltipText = "Switch to Buttons settings"
-        else
-            modeLabel = "Buttons"
-            modeR, modeG, modeB = MODE_VIEW_BUTTONS_COLOR[1], MODE_VIEW_BUTTONS_COLOR[2], MODE_VIEW_BUTTONS_COLOR[3]
-            modeToggleTooltipText = "Switch to Bars & Frames settings"
-        end
-
-        local prefixHex = RGBToHex(prefixR, prefixG, prefixB)
-        local modeHex = RGBToHex(modeR, modeG, modeB)
-        modeToggleButton:SetText("|cff" .. prefixHex .. "Currently Viewing:|r |cff" .. modeHex .. modeLabel .. "|r")
-
-        UpdateModeRowLayout()
-    end
-
     -- CDM Display toggle button — left of the Other Classes button
     local cdmDisplayBtn = CreateFrame("Button", nil, content)
     cdmDisplayBtn:SetSize(20, 20)
@@ -1178,9 +1085,6 @@ local function CreateConfigPanel()
     end
 
     castFramesBtn:SetScript("OnClick", function()
-        if CS.resourceBarPanelActive and ST._SetConfigPrimaryMode then
-            ST._SetConfigPrimaryMode("buttons", { skipRefresh = true })
-        end
         if ST._SelectConfigCastFramesEntry then
             ST._SelectConfigCastFramesEntry({ toggle = true })
         end
@@ -1271,9 +1175,6 @@ local function CreateConfigPanel()
         end
         if not otherClassBrowseAvailable then
             return
-        end
-        if CS.resourceBarPanelActive then
-            SetPrimaryMode("buttons", { skipRefresh = true })
         end
         if ClearConfigPrimarySelection then
             ClearConfigPrimarySelection()
@@ -1680,11 +1581,6 @@ local function CreateConfigPanel()
     profileBar:Hide()
     CS.profileBar = profileBar
 
-    local function SyncModeToggleWithProfileBar()
-        if not modeStatusRow then return end
-        modeStatusRow:SetShown(not profileBar:IsShown())
-    end
-
     profileGear:SetScript("OnClick", function()
         if profileBar:IsShown() then
             profileBar:Hide()
@@ -1692,49 +1588,6 @@ local function CreateConfigPanel()
             RefreshProfileBar(profileBar)
             profileBar:Show()
         end
-        SyncModeToggleWithProfileBar()
-    end)
-    profileBar:HookScript("OnShow", SyncModeToggleWithProfileBar)
-    profileBar:HookScript("OnHide", SyncModeToggleWithProfileBar)
-
-    -- Bottom text-based mode row
-    modeStatusRow = CreateFrame("Frame", nil, content)
-    modeStatusRow:SetPoint("BOTTOM", content, "BOTTOM", 0, 21)
-    modeStatusRow:SetSize(200, 18)
-    SyncModeToggleWithProfileBar()
-
-    modeToggleButton = AceGUI:Create("Button")
-    modeToggleButton:SetText("Currently Viewing: Buttons")
-    modeToggleButton:SetWidth(MODE_MIN_BUTTON_WIDTH)
-    modeToggleButton:SetHeight(22)
-    modeToggleButton:SetCallback("OnClick", function()
-        if CS.resourceBarPanelActive then
-            SetPrimaryMode("buttons")
-        else
-            SetPrimaryMode("bars")
-        end
-    end)
-    modeToggleButton.frame:SetParent(modeStatusRow)
-    modeToggleButton.frame:ClearAllPoints()
-    modeToggleButton.frame:SetPoint("LEFT", modeStatusRow, "LEFT", 0, 0)
-    modeToggleButton.frame:Show()
-    CS.modeToggleButton = modeToggleButton.frame
-
-    modeValueText = modeToggleButton.text
-
-    modeToggleButton.frame:HookScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine("Switch Settings Mode")
-        GameTooltip:AddLine(modeToggleTooltipText, 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    modeToggleButton.frame:HookScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    -- Keep button row vertically centered in the status row.
-    modeToggleButton.frame:HookScript("OnShow", function(self)
-        self:ClearAllPoints()
-        self:SetPoint("LEFT", modeStatusRow, "LEFT", 0, 0)
     end)
 
     -- Column containers fill the content area
@@ -1763,35 +1616,23 @@ local function CreateConfigPanel()
     groupInfoIcon:SetAtlas("QuestRepeatableTurnin")
     groupInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if CS.resourceBarPanelActive then
-            GameTooltip:AddLine("Bars & Frames")
-            GameTooltip:AddLine("Use the tabs to switch between Resources, Cast Bar, and Unit Frames.", 1, 1, 1)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Anchoring", 1, 0.82, 0)
-            GameTooltip:AddLine("Bars and frames auto-anchor to the first eligible icon panel in your group list, from top to bottom.", 1, 1, 1, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Character groups are eligible by default. Global groups are excluded by default.", 1, 1, 1, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Reorder groups to control which panel is chosen. Right-click a group to include or exclude it from auto-anchoring.", 1, 1, 1, true)
-        else
-            GameTooltip:AddLine("Groups")
-            GameTooltip:AddLine("A group contains one or more panels.", 1, 1, 1)
-            GameTooltip:AddLine("Folders are optional organizers for multiple groups.", 1, 1, 1)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Right-click for options.", 1, 1, 1)
-            GameTooltip:AddLine("Hold left-click and drag to reorder.", 1, 1, 1)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Group Rows", 1, 0.82, 0)
-            GameTooltip:AddLine("Left-click to select/deselect.", 1, 1, 1, true)
-            GameTooltip:AddLine("Ctrl+Left-click to multi-select.", 1, 1, 1, true)
-            GameTooltip:AddLine("Middle-click to toggle lock/unlock.", 1, 1, 1, true)
-            GameTooltip:AddLine("Shift+Left-click to set spec filter.", 1, 1, 1, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Folders", 1, 0.82, 0)
-            GameTooltip:AddLine("Left-click to expand/collapse.", 1, 1, 1)
-            GameTooltip:AddLine("Middle-click to lock/unlock all children.", 1, 1, 1, true)
-            GameTooltip:AddLine("Shift+Left-click to set folder-wide filters.", 1, 1, 1, true)
-        end
+        GameTooltip:AddLine("Groups")
+        GameTooltip:AddLine("A group contains one or more panels.", 1, 1, 1)
+        GameTooltip:AddLine("Folders are optional organizers for multiple groups.", 1, 1, 1)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Right-click for options.", 1, 1, 1)
+        GameTooltip:AddLine("Hold left-click and drag to reorder.", 1, 1, 1)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Group Rows", 1, 0.82, 0)
+        GameTooltip:AddLine("Left-click to select/deselect.", 1, 1, 1, true)
+        GameTooltip:AddLine("Ctrl+Left-click to multi-select.", 1, 1, 1, true)
+        GameTooltip:AddLine("Middle-click to toggle lock/unlock.", 1, 1, 1, true)
+        GameTooltip:AddLine("Shift+Left-click to set spec filter.", 1, 1, 1, true)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Folders", 1, 0.82, 0)
+        GameTooltip:AddLine("Left-click to expand/collapse.", 1, 1, 1)
+        GameTooltip:AddLine("Middle-click to lock/unlock all children.", 1, 1, 1, true)
+        GameTooltip:AddLine("Shift+Left-click to set folder-wide filters.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     groupInfoBtn:SetScript("OnLeave", function()
@@ -1922,7 +1763,7 @@ local function CreateConfigPanel()
         elseif ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
             GameTooltip:AddLine("Resource Bars")
             GameTooltip:AddLine("Enable Resource Bars to configure Resources and Custom Bars here.", 1, 1, 1, true)
-        elseif CS.resourceBarPanelActive or CS.resourcesEntrySelected then
+        elseif CS.resourcesEntrySelected then
             GameTooltip:AddLine("Custom Bars & Resources")
             GameTooltip:AddLine("Create Custom Bars and manage enabled resource-specific settings.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
@@ -1984,7 +1825,7 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Use Layout & Order to drag attached bars around the mirrored icon panel. Layout is saved per specialization.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Select a resource or Custom Bar in column 3 for per-bar settings.", 1, 1, 1, true)
-        elseif CS.resourceBarPanelActive or CS.resourcesEntrySelected then
+        elseif CS.resourcesEntrySelected then
             GameTooltip:AddLine("Layout & Order")
                 GameTooltip:AddLine("Arrange attached bars by dragging them around the mirrored icon panel.", 1, 1, 1)
                 GameTooltip:AddLine(" ")
@@ -2272,11 +2113,6 @@ local function CreateConfigPanel()
             yCenterOffset = 40
         end
 
-        if modeStatusRow then
-            modeStatusRow:ClearAllPoints()
-            modeStatusRow:SetPoint("CENTER", content, "BOTTOM", xOffset, yCenterOffset)
-        end
-
         if frame.titlebg then
             frame.titlebg:ClearAllPoints()
             frame.titlebg:SetPoint("TOP", content, "TOP", xOffset, 12)
@@ -2426,7 +2262,6 @@ local function CreateConfigPanel()
     -- Store references
     frame.profileBar = profileBar
     frame.versionText = versionText
-    frame.modeStatusRow = modeStatusRow
     frame.profileGear = profileGear
     frame.changelogOverlay = changelogOverlay
     frame.otherClassBrowseButton = otherClassBrowseBtn
@@ -2437,10 +2272,8 @@ local function CreateConfigPanel()
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
     frame.UpdateCompactConfigRows = UpdateCompactConfigRows
-    frame.UpdateModeNavigationUI = UpdateModeNavigationUI
     frame.UpdateCastFramesBadgeState = UpdateCastFramesBadgeState
     frame.UpdateOtherClassBrowseButtonState = UpdateOtherClassBrowseButtonState
-    UpdateModeNavigationUI()
     UpdateOtherClassBrowseButtonState()
 
     CS.configFrame = frame
@@ -2472,24 +2305,8 @@ function CooldownCompanion:_configRefreshPanelImpl()
     end
 
     -- Save AceGUI scroll state before any column rebuilds.
-    local function getBarsStylingScrollKey()
-        if not CS.resourceBarPanelActive then return nil end
-        local barTab = tostring(CS.barPanelTab or "")
-        if barTab == "resource_anchoring" then
-            local styleTab = tostring(CS.resourceStylingTab or "bar_text")
-            return barTab .. ":" .. styleTab
-        end
-        return barTab
-    end
-    local function getBarsStylingScrollWidget(col2)
-        if not col2 then return nil end
-        if CS.resourceBarPanelActive and CS.barPanelTab == "resource_anchoring" then
-            return col2._resourceStylingSubScroll
-        end
-        return col2._barsStylingScroll
-    end
     local function getCustomAuraScrollKey()
-        if not (CS.resourceBarPanelActive or CS.resourcesEntrySelected) then return nil end
+        if not CS.resourcesEntrySelected then return nil end
         local selectedId = tostring(CS.selectedCustomBarId or "layout")
         return selectedId .. ":" .. tostring(CS.customBarSettingsTab or "appearance")
     end
@@ -2500,9 +2317,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
 
     local saved1   = SaveScrollState(CS.col1Scroll)
     local saved2   = SaveScrollState(CS.col2Scroll)
-    local col2Before = CS.configFrame and CS.configFrame.col2
-    local savedBarsStyling = SaveScrollState(getBarsStylingScrollWidget(col2Before))
-    local savedBarsStylingKey = getBarsStylingScrollKey()
     local col3Before = CS.configFrame and CS.configFrame.col3
     local savedCab = SaveScrollState(getCustomAuraScrollWidget(col3Before))
     local savedCabKey = getCustomAuraScrollKey()
@@ -2512,9 +2326,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
         RefreshProfileBar(CS.configFrame.profileBar)
     end
     CS.configFrame.versionText:SetText(GetVersionFooterText())
-    if CS.configFrame.UpdateModeNavigationUI then
-        CS.configFrame.UpdateModeNavigationUI()
-    end
     if CS.configFrame.UpdateCastFramesBadgeState then
         CS.configFrame.UpdateCastFramesBadgeState()
     end
@@ -2536,16 +2347,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
     -- Restore AceGUI scroll state.
     RestoreScrollState(CS.col1Scroll, saved1)
     RestoreScrollState(CS.col2Scroll, saved2)
-    local col2After = CS.configFrame and CS.configFrame.col2
-    local barsStylingAfter = getBarsStylingScrollWidget(col2After)
-    if barsStylingAfter then
-        local currentBarsKey = getBarsStylingScrollKey()
-        if savedBarsStyling and savedBarsStylingKey and currentBarsKey and savedBarsStylingKey == currentBarsKey then
-            RestoreScrollState(barsStylingAfter, savedBarsStyling)
-        else
-            ClearScrollState(barsStylingAfter)
-        end
-    end
     local col3After = CS.configFrame and CS.configFrame.col3
     local customAuraAfter = getCustomAuraScrollWidget(col3After)
     if customAuraAfter then
@@ -2577,7 +2378,7 @@ end
 function CooldownCompanion:_configToggleImpl()
     if not CS.configFrame then
         CreateConfigPanel()
-        SetPrimaryMode("buttons", { skipRefresh = true })
+        SetConfigPrimaryMode("buttons", { skipRefresh = true })
         -- Defer first refresh until after column layout is computed (next frame)
         C_Timer.After(0, function()
             if not (CS.configFrame and CS.configFrame.frame and CS.configFrame.frame:IsShown()) then
@@ -2609,7 +2410,7 @@ function CooldownCompanion:_configToggleImpl()
         ClearHideActiveCurrentClassPanels()
         CS.configFrame.frame:Hide()
     else
-        SetPrimaryMode("buttons", { skipRefresh = true })
+        SetConfigPrimaryMode("buttons", { skipRefresh = true })
         CS.configFrame.frame:Show()
         self:RefreshConfigPanel()
         MaybeAutoOpenChangelog()

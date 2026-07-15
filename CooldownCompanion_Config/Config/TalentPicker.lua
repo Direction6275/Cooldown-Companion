@@ -1005,7 +1005,6 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     -- Hide col1 normal content
     CS.col1Scroll.frame:Hide()
     CS.col1ButtonBar:Hide()
-    if col1._barsPanelTabGroup then col1._barsPanelTabGroup.frame:Hide() end
 
     -- Hide col3 normal content (all possible states)
     if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
@@ -1018,7 +1017,6 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     configFrame.LayoutColumns()
 
     -- Hide panel elements
-    configFrame.modeStatusRow:Hide()
     if configFrame.profileBar:IsShown() then
         configFrame.profileBar:Hide()
     end
@@ -1169,17 +1167,8 @@ HideTalentPicker = function()
         CS.col1Scroll.frame:Show()
         CS.col1ButtonBar:Show()
 
-        -- Restore modeStatusRow visibility (SyncModeToggleWithProfileBar is a closure,
-        -- so replicate its visibility logic: row shows when profileBar is hidden)
-        if configFrame.modeStatusRow and configFrame.profileBar then
-            configFrame.modeStatusRow:SetShown(not configFrame.profileBar:IsShown())
-        end
-
         -- Recompute layout (4-column mode) then refresh
         configFrame.LayoutColumns()
-        if configFrame.UpdateModeNavigationUI then
-            configFrame.UpdateModeNavigationUI()
-        end
     end
 
     savedCol1Title = nil

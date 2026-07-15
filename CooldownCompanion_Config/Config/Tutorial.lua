@@ -101,9 +101,9 @@ local STEP_DATA = {
         placement = "left",
     },
     view_modes_intro = {
-        title = "Bars And Frames",
-        text = "This button switches between the main Buttons view and optional extras like resource bars, cast bar anchoring and styling, and unit frame anchoring.",
-        anchor = "mode_toggle_button",
+        title = "Resources, Cast Bar & Unit Frames",
+        text = "The Resources button opens resource bar and Custom Bar settings.\n\nThe badge cluster in the top-right corner opens Cast Bar and Unit Frames settings.",
+        anchor = "resources_button",
         placement = "above",
     },
     finish = {
@@ -438,8 +438,6 @@ local function NormalizeTutorialContext()
 
     if ST._SetConfigPrimaryMode then
         ST._SetConfigPrimaryMode("buttons", { skipRefresh = true })
-    else
-        CS.resourceBarPanelActive = false
     end
 
     CooldownCompanion:RefreshConfigPanel()
@@ -671,9 +669,6 @@ local function RebuildTutorialAnchors()
     if CS.gearButton and CS.gearButton:IsShown() then
         anchors.gear_button = CS.gearButton
     end
-    if CS.modeToggleButton and CS.modeToggleButton:IsShown() then
-        anchors.mode_toggle_button = CS.modeToggleButton
-    end
 
     if CS.configFrame and CS.configFrame.col1 and CS.configFrame.col1.frame then
         anchors.groups_column_area = CS.configFrame.col1.frame
@@ -686,6 +681,10 @@ local function RebuildTutorialAnchors()
     local firstCol1Button = col1Widgets[1]
     if firstCol1Button and firstCol1Button.frame then
         anchors.new_group_button = firstCol1Button.frame
+    end
+    local resourcesButton = col1Widgets[3]
+    if resourcesButton and resourcesButton.frame then
+        anchors.resources_button = resourcesButton.frame
     end
 
     local col2Widgets = CS.col2BarWidgets or {}

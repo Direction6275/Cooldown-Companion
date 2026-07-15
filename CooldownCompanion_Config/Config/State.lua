@@ -292,10 +292,6 @@ ST._configState = {
     tabInfoButtons = {},
     customBarInfoButtons = {},
     appearanceTabElements = {},
-    resourceBarPanelActive = false,
-    barPanelTab = "resource_anchoring",
-    resourceStylingTab = "bar_text",
-    castBarStylingTab = "styling",
     customBarSettingsTab = "appearance",
     selectedCustomBarId = nil,
     customBarSpecExpandedId = nil,
@@ -552,8 +548,7 @@ local function ConfigFinderEntryMatches(entryRecord, query)
 end
 
 local function IsConfigFinderAvailable()
-    return not CS.resourceBarPanelActive
-        and not CS.talentPickerMode
+    return not CS.talentPickerMode
         and not CooldownCompanion._unsupportedLegacyProfile
 end
 
@@ -3016,30 +3011,15 @@ local function ResetConfigSelection(full)
     RefreshAlphaDriverForConfigSelection()
 end
 
+-- The legacy Bars & Frames mode is gone; only "buttons" remains and it is
+-- a plain view refresh. The calls still matter: ResourceBarLifecycle
+-- hooksecurefuncs the exported wrapper (ST._SetConfigPrimaryMode) to
+-- re-apply bars whenever the config opens or resets its view — never
+-- delete or replace that wrapper symbol, change only this impl.
 local function SetConfigPrimaryMode(mode, opts)
-    local toBars
-    if mode == "bars" then
-        toBars = true
-    elseif mode == "buttons" then
-        toBars = false
-    else
+    if mode ~= "buttons" then
         return false
     end
-
-    local wasBars = CS.resourceBarPanelActive == true
-    if toBars and not wasBars then
-        -- Preserve existing behavior when entering Bars & Frames mode.
-        ResetConfigSelection(true)
-    elseif (not toBars) and wasBars then
-        -- Stop preview loops when returning to button settings mode.
-        CooldownCompanion:ClearAllConfigPreviews()
-        CS.selectedCustomBarId = nil
-        CS.customBarSettingsTab = "appearance"
-        ClearConfigResourceSelection()
-        ResetOtherClassLibraryState()
-    end
-
-    CS.resourceBarPanelActive = toBars
     if not (opts and opts.skipRefresh) and CS.configFrame and CS.configFrame.frame and CS.configFrame.frame:IsShown() then
         CooldownCompanion:RefreshConfigPanel()
     end

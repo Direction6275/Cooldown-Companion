@@ -151,8 +151,8 @@ local function RefreshColumn3()
         return
     end
 
-    -- Bars & Frames panel mode or the Resources home: show Custom Bars
-    if CS.resourceBarPanelActive or CS.resourcesEntrySelected then
+    -- Resources home: show Custom Bars
+    if CS.resourcesEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
         if not col3 then ST._RefreshButtonSettingsColumn() return end
 

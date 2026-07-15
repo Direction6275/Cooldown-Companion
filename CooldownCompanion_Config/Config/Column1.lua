@@ -745,9 +745,6 @@ local function PopulateColumn1ButtonBar()
     local resourcesBtn = AceGUI:Create("Button")
     resourcesBtn:SetText(CS.resourcesEntrySelected and "|cff66b3ffResources|r" or "Resources")
     resourcesBtn:SetCallback("OnClick", function()
-        if CS.resourceBarPanelActive and ST._SetConfigPrimaryMode then
-            ST._SetConfigPrimaryMode("buttons", { skipRefresh = true })
-        end
         if ST._SelectConfigResourcesEntry then
             ST._SelectConfigResourcesEntry({ toggle = true })
         end
@@ -825,65 +822,6 @@ end
 local function RefreshColumn1(preserveDrag)
     if not CS.col1Scroll then return end
 
-    -- Bars & Frames panel mode: take over col1 with the bar/frame tab group
-    if CS.resourceBarPanelActive then
-        ClearOtherClassBrowseState()
-        CancelDrag()
-        CS.HideAutocomplete()
-        CS.col1Scroll.frame:Hide()
-        if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
-
-        local col1 = CS.configFrame and CS.configFrame.col1
-        if col1 then
-            if not col1._barsPanelTabGroup then
-                local tabGroup = AceGUI:Create("TabGroup")
-                tabGroup:SetTabs({
-                    { value = "resource_anchoring", text = "Resources" },
-                    { value = "castbar_anchoring",  text = "Cast Bar" },
-                    { value = "frame_anchoring",    text = "Unit Frames" },
-                })
-                tabGroup:SetLayout("Fill")
-                tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
-                    CS.barPanelTab = tab
-                    -- Clean up info buttons from previous tab before recycling widgets
-                    for _, btn in ipairs(CS.tabInfoButtons) do
-                        btn:ClearAllPoints()
-                        btn:Hide()
-                        btn:SetParent(nil)
-                    end
-                    wipe(CS.tabInfoButtons)
-                    widget:ReleaseChildren()
-                    local scroll = AceGUI:Create("ScrollFrame")
-                    scroll:SetLayout("List")
-                    widget:AddChild(scroll)
-                    if tab == "resource_anchoring" then
-                        ST._BuildResourceBarAnchoringPanel(scroll)
-                    elseif tab == "castbar_anchoring" then
-                        ST._BuildCastBarAnchoringPanel(scroll)
-                    elseif tab == "frame_anchoring" then
-                        ST._BuildFrameAnchoringPlayerPanel(scroll)
-                        ST._BuildFrameAnchoringTargetPanel(scroll)
-                    end
-                    ST._RefreshColumn2()
-                    ST._RefreshColumn3()
-                end)
-                tabGroup.frame:SetParent(col1.content)
-                tabGroup.frame:ClearAllPoints()
-                tabGroup.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-                tabGroup.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 0)
-                col1._barsPanelTabGroup = tabGroup
-            end
-            col1._barsPanelTabGroup.frame:Show()
-            col1._barsPanelTabGroup:SelectTab(CS.barPanelTab)
-        end
-        return
-    end
-
-    -- Normal mode: hide bars tab group, show groups content
-    local col1NormalMode = CS.configFrame and CS.configFrame.col1
-    if col1NormalMode and col1NormalMode._barsPanelTabGroup then
-        col1NormalMode._barsPanelTabGroup.frame:Hide()
-    end
     CS.col1Scroll.frame:Show()
 
     if CS.col1ButtonBar then CS.col1ButtonBar:Show() end

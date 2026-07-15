@@ -182,10 +182,10 @@ local function BuildConfigDiagnosticSummary(profile, groupFrameStates, container
         selectedContainerTab = CS and CS.selectedContainerTab or nil,
         buttonSettingsTab = CS and CS.buttonSettingsTab or nil,
         panelSettingsTab = CS and CS.panelSettingsTab or nil,
-        resourceBarPanelActive = CS and CS.resourceBarPanelActive == true,
-        barPanelTab = CS and CS.barPanelTab or nil,
-        resourceStylingTab = CS and CS.resourceStylingTab or nil,
-        castBarStylingTab = CS and CS.castBarStylingTab or nil,
+        resourcesEntrySelected = CS and CS.resourcesEntrySelected == true,
+        castFramesEntrySelected = CS and CS.castFramesEntrySelected == true,
+        resourcesSettingsTab = CS and CS.resourcesSettingsTab or nil,
+        castBarHomeTab = CS and CS.castBarHomeTab or nil,
         customBarSettingsTab = CS and CS.customBarSettingsTab or nil,
         selectedCustomBarId = CS and CS.selectedCustomBarId or nil,
         selectedButtons = CS and SortedSelectionString(CS.selectedButtons) or "",
@@ -778,12 +778,13 @@ local function FormatDiagnosticBugReportAsText(diag)
         tostring(c.selectedGroup or "nil"),
         tostring(c.selectedButton or "nil"),
         tostring(c.selectedCustomBarId or "nil")))
-    add(("Tabs: selected=%s container=%s panel=%s button=%s resource=%s customBar=%s"):format(
+    add(("Tabs: selected=%s container=%s panel=%s button=%s resources=%s castBar=%s customBar=%s"):format(
         tostring(c.selectedTab or "nil"),
         tostring(c.selectedContainerTab or "nil"),
         tostring(c.panelSettingsTab or "nil"),
         tostring(c.buttonSettingsTab or "nil"),
-        tostring(c.resourceStylingTab or "nil"),
+        tostring(c.resourcesSettingsTab or "nil"),
+        tostring(c.castBarHomeTab or "nil"),
         tostring(c.customBarSettingsTab or "nil")))
     if c.selectedButtons ~= "" or c.selectedPanels ~= "" or c.selectedGroups ~= "" or c.selectedCustomBars ~= "" then
         add(("Multi-select: buttons=%s panels=%s groups=%s customBars=%s"):format(

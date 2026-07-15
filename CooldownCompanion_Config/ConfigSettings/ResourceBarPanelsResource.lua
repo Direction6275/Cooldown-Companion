@@ -1032,9 +1032,6 @@ local function BuildResourceBarAnchoringPanel(container)
                     settings.resources[pt] = {}
                 end
                 settings.resources[pt].enabled = val
-                if pt == HealthResource.ID then
-                    CS.resourceStylingTab = val and "health" or "bar_text"
-                end
                 CooldownCompanion:ApplyResourceBars()
                 CooldownCompanion:UpdateAnchorStacking()
                 CooldownCompanion:RefreshConfigPanel()
