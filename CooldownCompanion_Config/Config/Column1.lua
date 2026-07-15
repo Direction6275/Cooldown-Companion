@@ -687,6 +687,7 @@ local function ClearColumn1ButtonBar()
         widget:Release()
     end
     wipe(CS.col1BarWidgets)
+    CS.col1ResourcesButton = nil
     if CS.col1ButtonBar then
         CS.col1ButtonBar._topRowBtns = nil
         CS.col1ButtonBar:SetScript("OnSizeChanged", nil)
@@ -756,6 +757,10 @@ local function PopulateColumn1ButtonBar()
     resourcesBtn.frame:SetWidth(thirdW)
     resourcesBtn.frame:SetHeight(28)
     resourcesBtn.frame:Show()
+    CS.col1ResourcesButton = resourcesBtn
+    if CS.tutorialAnchors then
+        CS.tutorialAnchors.resources_button = resourcesBtn.frame
+    end
     table.insert(CS.col1BarWidgets, resourcesBtn)
 
     CS.col1ButtonBar._topRowBtns = { newGroupBtn.frame, newFolderBtn.frame, resourcesBtn.frame }

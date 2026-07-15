@@ -1098,7 +1098,7 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     LayoutSpecFrames(col3.content, pickerSelectedSpecID ~= nil)
     specTreeFrame:Show()
 
-    -- Position accept button at bottom center of main panel (where modeStatusRow normally sits)
+    -- Position accept button at bottom center of main panel
     acceptBtn.frame:SetParent(configFrame.frame)
     acceptBtn.frame:ClearAllPoints()
     acceptBtn.frame:SetPoint("BOTTOM", configFrame.frame, "BOTTOM", 0, 21)

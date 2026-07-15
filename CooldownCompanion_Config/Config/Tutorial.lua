@@ -682,7 +682,7 @@ local function RebuildTutorialAnchors()
     if firstCol1Button and firstCol1Button.frame then
         anchors.new_group_button = firstCol1Button.frame
     end
-    local resourcesButton = col1Widgets[3]
+    local resourcesButton = CS.col1ResourcesButton
     if resourcesButton and resourcesButton.frame then
         anchors.resources_button = resourcesButton.frame
     end

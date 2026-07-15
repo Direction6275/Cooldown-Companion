@@ -71,7 +71,7 @@ local function ShowResourcesIntroPane(col3)
 end
 
 ------------------------------------------------------------------------
--- COLUMN 3: Button Settings (normal) / Custom Bars (bars mode)
+-- COLUMN 3: Button Settings (normal) / Resources home / Unit Frames home
 ------------------------------------------------------------------------
 local function RefreshColumn3()
     -- Hide browse placeholder when not showing it
