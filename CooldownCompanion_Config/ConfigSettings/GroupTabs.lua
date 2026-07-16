@@ -51,6 +51,7 @@ local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildIconTintControls = ST._BuildIconTintControls
 local BuildAssistedHighlightControls = ST._BuildAssistedHighlightControls
 local BuildProcGlowControls = ST._BuildProcGlowControls
+local BuildAuraGlowControls = ST._BuildAuraGlowControls
 local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 local AddPreviewBadge = ST._AddPreviewBadge
 local AddConditionalPreviewBadge = ST._AddConditionalPreviewBadge
@@ -2160,6 +2161,7 @@ end
 local function BuildBarModeEffects(container, group, style)
     if not CS.previewToggleRefreshActive then
         CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
         CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
         CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
     end
@@ -2211,6 +2213,61 @@ local function BuildProcGlowSection(container, group, style)
 
     if style.procGlowStyle == "none" then
         CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
+        return
+    end
+end
+
+-- Aura glow: kit-rendered on the aura slot button, so it appears exactly
+-- while the tracked aura is active. Shown only when the group has an
+-- aura-tracking entry (Phase 3 gating pattern).
+local function BuildAuraGlowSection(container, group, style)
+    if not GroupHasAuraTrackingEntry(group) then
+        -- The section owning an active preview just disappeared (last aura
+        -- entry removed); don't leave the preview glow orphaned.
+        CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
+        return
+    end
+
+    local auraGlowEnabled = (style.auraGlowStyle or "pulse") ~= "none"
+    local auraEnableCb = AceGUI:Create("CheckBox")
+    auraEnableCb:SetLabel("Show Aura Glow")
+    auraEnableCb:SetValue(auraGlowEnabled)
+    auraEnableCb:SetFullWidth(true)
+    auraEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.auraGlowStyle = val and "pulse" or "none"
+        if val then
+            -- Re-enabling forces the pulse style; reset its per-style keys so
+            -- a leftover proc-scale size can't render as a 30px border.
+            style.auraGlowSize = 2
+            style.auraGlowSpeed = 0.5
+        end
+        UpdateSelectedGroupStyle(true)
+    end)
+    container:AddChild(auraEnableCb)
+
+    local function BuildAuraGlowAdvanced(panel)
+        BuildAuraGlowControls(panel, style, UpdateSelectedGroupStyle)
+    end
+
+    local _, auraAdvBtn = AddAdvancedToggle(auraEnableCb, "auraGlow", tabInfoButtons, auraGlowEnabled, {
+        title = "Aura Glow Advanced",
+        build = BuildAuraGlowAdvanced,
+    })
+    local auraPromoteBtn = CreateCheckboxPromoteButton(auraEnableCb, auraAdvBtn, "auraIndicator", group, style)
+    local auraPreviewBtn = AddPreviewBadge(auraEnableCb, auraPromoteBtn or auraAdvBtn, "Preview Aura Glow", function()
+        return CS.selectedGroup and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, nil, "_auraGlowPreview")
+    end, function(show)
+        if CS.selectedGroup then
+            CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, show)
+        end
+    end, auraGlowEnabled)
+    CreateInfoButton(auraEnableCb.frame, auraPreviewBtn or auraPromoteBtn or auraAdvBtn, "LEFT", "RIGHT", 4, 0, {
+        "Aura Glow",
+        {"Adds a glow to a button while its tracked aura is active.", 1, 1, 1, true},
+    }, tabInfoButtons)
+
+    if not auraGlowEnabled then
+        CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
         return
     end
 end
@@ -2430,6 +2487,7 @@ local function BuildEffectsTab(container)
 
     AddIndicatorsHeading(container, "Glows")
     BuildProcGlowSection(container, group, style)
+    BuildAuraGlowSection(container, group, style)
     BuildReadyGlowSection(container, group, style)
     BuildKeyPressHighlightSection(container, group, style)
 

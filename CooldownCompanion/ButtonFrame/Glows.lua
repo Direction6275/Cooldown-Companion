@@ -117,7 +117,10 @@ local function StopSolidBorderPulse(container)
         frame._solidPulseAG:Stop()
     end
     if frame then
-        frame:SetAlpha(1)
+        -- Aura-shell entries latch their glow containers to alpha 0
+        -- (IconMode SetGlowContainerShellAlpha); restoring a flat 1 here
+        -- would resurrect glow edges on an invisible shell button.
+        frame:SetAlpha(container._ccShellAlpha or 1)
     end
 end
 
@@ -724,17 +727,35 @@ local SetProcGlow = MakeGlowSetter({
     cacheSpd = "_procGlowSpd", cacheLn = "_procGlowLn",
 })
 
+-- 12.1: the live aura glow is kit-rendered on the aura slot button (see the
+-- Kit glow section below); this CC-side setter only serves the config
+-- preview. Translate the kit style names to the equivalent legacy renderers
+-- (and dead LCG styles to the pulse border) so preview matches the kit.
+local function NormalizeAuraGlowPreviewStyle(style)
+    if style == "none" or style == "solid" then
+        return style
+    end
+    if style == "glow" or style == "proc" then
+        return "glow"
+    end
+    return "pulsingBorder"
+end
+
 local SetAuraGlow = MakeGlowSetter({
     containerKey       = "auraGlow",
     hasPandemic        = true,
-    normalizeStyle     = NormalizeGlowStyle,
+    normalizeStyle     = NormalizeAuraGlowPreviewStyle,
     noneIsOff          = true,
     fullParams         = true,
     useGetGlowSize     = true,
     defaultAlpha       = 0.9,
     includeFrequencyScale = true,
     optsDefaultAlpha   = 0.9,
-    styleKey           = "auraGlowStyle",       defaultStyle = "pixel",
+    defaultSpeed       = 0.5,
+    -- Matches the kit glow's fallbacks (border 2, overhang 30) so the preview
+    -- renders the same size the slot kit does when no size is stored.
+    defaultSizes       = BAR_AURA_GLOW_SIZES,
+    styleKey           = "auraGlowStyle",       defaultStyle = "pulse",
     colorKey           = "auraGlowColor",       defaultColor = DEFAULT_AURA_GLOW_COLOR,
     sizeKey            = "auraGlowSize",
     thicknessKey       = "auraGlowThickness",
@@ -920,6 +941,141 @@ local function CreateAssistedHighlight(button, style)
     return hl
 end
 
+------------------------------------------------------------------------
+-- Kit glow (12.1 aura display)
+--
+-- The aura glow renders as children of the Blizzard-driven aura slot button:
+-- built once at kit-build time, styled at OOC bind time, shown/hidden by
+-- Blizzard with the aura itself (zero state reads, zero combat writes).
+-- OnUpdate scripts never run on the forbidden subtree, so every animated
+-- style is AnimationGroup-driven (P3-validated working in combat). The LCG
+-- styles (pixel/lcgButton/lcgAutoCast) are impossible there: they reparent
+-- pooled frames INTO the target, which is forbidden (V9b) — never route
+-- LCG or ShowGlowStyle at a kit.
+--
+-- These builders are pure: no stored refs, no CC-button coupling. The SOLE
+-- caller is AuraDisplay.lua's bind path (single-writer rule). The config
+-- preview does NOT use them: it renders equivalent visuals through the
+-- CC-side legacy renderers via NormalizeAuraGlowPreviewStyle above.
+------------------------------------------------------------------------
+
+-- Proc-swirl flipbook parameters from ActionButtonSpellAlertTemplate
+-- (Blizzard_ActionBar/Shared/ActionButtonSpellAlerts.xml, ProcLoop):
+-- 30 frames in a 6-row x 5-column sheet over 1 second, looping.
+local KIT_PROC_ATLAS = "UI-HUD-ActionBar-Proc-Loop-Flipbook"
+
+-- Map a stored aura glow style to a kit-renderable one. "pixel" (the old
+-- default) and the LCG styles died with 12.1 and render as the pulse border;
+-- legacy "glow"/"pulsingBorder" map to their renamed equivalents.
+local function NormalizeKitGlowStyle(style)
+    if style == "none" or style == "solid" or style == "proc" then
+        return style
+    end
+    if style == "glow" then
+        return "proc"
+    end
+    return "pulse"
+end
+
+local function BuildKitGlowRegions(parent)
+    local host = CreateFrame("Frame", nil, parent)
+    host:EnableMouse(false)
+    host:SetAlpha(0)
+
+    local glowKit = { host = host, edges = {} }
+    for i = 1, 4 do
+        glowKit.edges[i] = host:CreateTexture(nil, "OVERLAY")
+    end
+
+    -- Pulse: alpha bounce on the host (same shape as StartSolidBorderPulse).
+    local pulseAG = host:CreateAnimationGroup()
+    pulseAG:SetLooping("BOUNCE")
+    local pulseAnim = pulseAG:CreateAnimation("Alpha")
+    pulseAnim:SetFromAlpha(1.0)
+    pulseAnim:SetToAlpha(0.3)
+    glowKit.pulseAG = pulseAG
+    glowKit.pulseAnim = pulseAnim
+
+    -- Proc: flipbook loop; the AnimationGroup lives on the texture itself so
+    -- the FlipBook animation needs no target plumbing.
+    local flip = host:CreateTexture(nil, "ARTWORK")
+    flip:SetAtlas(KIT_PROC_ATLAS)
+    flip:SetAlpha(0)
+    local flipAG = flip:CreateAnimationGroup()
+    flipAG:SetLooping("REPEAT")
+    local flipAnim = flipAG:CreateAnimation("FlipBook")
+    flipAnim:SetDuration(1)
+    flipAnim:SetFlipBookRows(6)
+    flipAnim:SetFlipBookColumns(5)
+    flipAnim:SetFlipBookFrames(30)
+    glowKit.flip = flip
+    glowKit.flipAG = flipAG
+
+    return glowKit
+end
+
+-- Style a kit glow from the effective style. anchorFrame is the CC host
+-- button: anchoring kit regions TO an outside frame is the validated
+-- direction (kit.bg precedent). Live kits call this at OOC bind time only.
+local function StyleKitGlowRegions(glowKit, styleTable, anchorFrame, enabled)
+    local host = glowKit.host
+    local kitStyle = enabled
+        and NormalizeKitGlowStyle((styleTable and styleTable.auraGlowStyle) or "pulse")
+        or "none"
+
+    glowKit.pulseAG:Stop()
+    glowKit.flipAG:Stop()
+
+    if kitStyle == "none" then
+        host:SetAlpha(0)
+        return
+    end
+
+    host:ClearAllPoints()
+    host:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, 0)
+    host:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
+    host:SetAlpha(1)
+
+    local color = (styleTable and styleTable.auraGlowColor) or DEFAULT_AURA_GLOW_COLOR
+    local r, g, b, a = color[1], color[2], color[3], color[4] or 0.9
+    local size = styleTable and styleTable.auraGlowSize
+
+    if kitStyle == "proc" then
+        for _, tex in ipairs(glowKit.edges) do
+            tex:SetAlpha(0)
+        end
+        local w, h = anchorFrame:GetSize()
+        local pct = (size or 30) / 100
+        glowKit.flip:ClearAllPoints()
+        glowKit.flip:SetPoint("CENTER", anchorFrame, "CENTER", 0, 0)
+        glowKit.flip:SetSize(w + w * pct * 2, h + h * pct * 2)
+        -- 4-arg SetVertexColor overwrites region alpha, so it must come after
+        -- any SetAlpha and carry the color's own alpha (Phase 2 gotcha).
+        glowKit.flip:SetVertexColor(r, g, b, a)
+        glowKit.flipAG:Play()
+        return
+    end
+
+    -- solid / pulse: 4-edge border around the host button.
+    glowKit.flip:SetAlpha(0)
+    ApplyEdgePositions(glowKit.edges, anchorFrame, size or 2)
+    for _, tex in ipairs(glowKit.edges) do
+        tex:SetColorTexture(r, g, b, a)
+        tex:SetAlpha(1)
+        tex:Show()
+    end
+    if kitStyle == "pulse" then
+        local duration = styleTable and styleTable.auraGlowSpeed
+        -- Guard against legacy pixel-scale speeds (10..200); the pulse key
+        -- stores seconds (0.1..2.0).
+        if not duration or duration <= 0 or duration > 2 then
+            duration = 0.5
+        end
+        glowKit.pulseAnim:SetDuration(duration)
+        glowKit.pulseAG:Play()
+    end
+end
+
 local SetBarAuraEffect = MakeGlowSetter({
     containerKey       = "barAuraEffect",
     hasPandemic        = true,
@@ -965,5 +1121,7 @@ ST._ShowButtonTooltip = ShowButtonTooltip
 ST._SetupTooltipScripts = SetupTooltipScripts
 ST.IsBarAuraIndicatorEnabled = IsBarAuraIndicatorEnabled
 ST._SetBarAuraEffect = SetBarAuraEffect
+ST._BuildKitGlowRegions = BuildKitGlowRegions
+ST._StyleKitGlowRegions = StyleKitGlowRegions
 ST._SetReadyGlow = SetReadyGlow
 ST._SetKeyPressHighlight = SetKeyPressHighlight

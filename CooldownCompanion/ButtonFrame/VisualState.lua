@@ -10,7 +10,6 @@ local DEFAULT_ICON_FILL_COOLDOWN_COLOR = {0.6, 0.13, 0.18, 0.55}
 local UsesChargeBehavior = CooldownCompanion and CooldownCompanion.UsesChargeBehavior
 local InCombatLockdown = InCombatLockdown
 local GetTime = GetTime
-local UnitExists = UnitExists
 
 local function IsTrue(value)
     return value == true
@@ -193,16 +192,6 @@ local function IsReadyGlowAtMaxCharges(button, buttonData)
     return button._chargeState == CHARGE_STATE_FULL
 end
 
-local function GetTargetExists(options)
-    if options and options.targetExists ~= nil then
-        return options.targetExists == true
-    end
-    if type(UnitExists) == "function" then
-        return UnitExists("target") == true
-    end
-    return false
-end
-
 local function GetResolverCombatState(options)
     if options and options.inCombat ~= nil then
         return options.inCombat == true
@@ -285,10 +274,12 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
         SetGlowIntent(proc, true, false, "inactive")
     end
 
+    -- 12.1: the live aura glow renders on the aura slot kit (AuraDisplay.lua);
+    -- Blizzard's show/hide of the slot button IS the signal, so no live
+    -- intent can exist here. This resolver only drives the CC-side config
+    -- preview. The pandemic branch is the dormant seam: nothing sets
+    -- _pandemicPreview until the Blizzard curve/formatter fixes land.
     local auraIndicatorEnabled = ResolveAuraIndicatorEnabled(buttonData, style)
-    local auraCombatOnly = style.auraGlowCombatOnly
-    local pandemicCombatOnly = style.pandemicGlowCombatOnly
-    local targetExists
 
     if not button.auraGlow then
         SetGlowIntent(aura, false, false, "missing-widget")
@@ -302,79 +293,8 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
         SetGlowIntent(aura, true, true, "preview")
         aura.preview = true
         aura.auraIndicatorEnabled = auraIndicatorEnabled
-    elseif style.auraGlowInvert then
-        if button._auraTrackingReady == true and button._auraSpellID and not button._auraActive then
-            if auraIndicatorEnabled or style.auraGlowStyle ~= "none" then
-                if auraCombatOnly and not inCombat then
-                    SetGlowIntent(aura, true, false, "combat-only")
-                    aura.combatOnly = true
-                    aura.combatSuppressed = true
-                    aura.invert = true
-                    aura.auraIndicatorEnabled = auraIndicatorEnabled
-                else
-                    targetExists = button._auraUnit ~= "target" or GetTargetExists(options)
-                    SetGlowIntent(
-                        aura,
-                        true,
-                        targetExists,
-                        targetExists and "aura-missing" or "target-missing"
-                    )
-                    aura.invert = true
-                    aura.targetRequired = button._auraUnit == "target"
-                    aura.targetExists = targetExists
-                    aura.auraIndicatorEnabled = auraIndicatorEnabled
-                end
-            else
-                SetGlowIntent(aura, true, false, "disabled")
-                aura.invert = true
-                aura.auraIndicatorEnabled = auraIndicatorEnabled
-            end
-        elseif button._auraActive and button._inPandemic and style.showPandemicGlow ~= false then
-            SetGlowIntent(
-                aura,
-                true,
-                not (pandemicCombatOnly and not inCombat),
-                pandemicCombatOnly and not inCombat and "pandemic-combat-only" or "pandemic"
-            )
-            aura.pandemic = true
-            aura.combatOnly = pandemicCombatOnly and true or false
-            aura.combatSuppressed = pandemicCombatOnly and not inCombat
-            aura.invert = true
-            aura.auraIndicatorEnabled = auraIndicatorEnabled
-        else
-            SetGlowIntent(aura, true, false, "inactive")
-            aura.invert = true
-            aura.auraIndicatorEnabled = auraIndicatorEnabled
-        end
-    elseif button._auraActive then
-        if button._inPandemic and style.showPandemicGlow ~= false
-            and not (pandemicCombatOnly and not inCombat) then
-            SetGlowIntent(
-                aura,
-                true,
-                true,
-                "pandemic"
-            )
-            aura.pandemic = true
-            aura.combatOnly = pandemicCombatOnly and true or false
-            aura.combatSuppressed = false
-            aura.auraIndicatorEnabled = auraIndicatorEnabled
-        elseif auraIndicatorEnabled or style.auraGlowStyle ~= "none" then
-            SetGlowIntent(
-                aura,
-                true,
-                not (auraCombatOnly and not inCombat),
-                auraCombatOnly and not inCombat and "combat-only" or "aura"
-            )
-            aura.combatOnly = auraCombatOnly and true or false
-            aura.combatSuppressed = auraCombatOnly and not inCombat
-            aura.auraIndicatorEnabled = auraIndicatorEnabled
-        else
-            SetGlowIntent(aura, true, false, "disabled")
-            aura.auraIndicatorEnabled = auraIndicatorEnabled
-        end
     else
-        SetGlowIntent(aura, true, false, "aura-missing")
+        SetGlowIntent(aura, true, false, "inactive")
         aura.auraIndicatorEnabled = auraIndicatorEnabled
     end
 

@@ -52,10 +52,22 @@ local SOUND_ALERT_EVENT_ORDER = {
     "chargeGained",
 }
 
+-- Config-facing event order. onAuraApplied is config-only here: the sound is
+-- played natively (C_UnitAuras.AddAuraAppliedSound, registered by AuraDisplay
+-- at bind time), never by the runtime transition engine, which keeps iterating
+-- SOUND_ALERT_EVENT_ORDER above.
+local CONFIG_SOUND_ALERT_EVENT_ORDER = {
+    "available",
+    "onCooldown",
+    "chargeGained",
+    "onAuraApplied",
+}
+
 local SOUND_ALERT_EVENT_LABELS = {
     available = "Available",
     onCooldown = "On Cooldown",
     chargeGained = "Charge Gained",
+    onAuraApplied = "Aura Applied",
 }
 local CHARGE_AVAILABLE_MERGED_LABEL = "Available / Charge Gained"
 local TRIGGER_PANEL_SOUND_EVENT_LABELS = {
@@ -111,6 +123,9 @@ local function NormalizeSpellCustomBarAlertEvents(scopedEvents)
         scopedEvents.available = true
         scopedEvents.chargeGained = nil
     end
+    -- Custom bars have no aura display binding yet; the bars phases own
+    -- custom-bar aura sounds.
+    scopedEvents.onAuraApplied = nil
     return scopedEvents
 end
 
@@ -234,20 +249,23 @@ function CooldownCompanion:GetValidSoundAlertEventsForButton(buttonData, spellID
     return validEvents
 end
 
+-- Returns (allowSpellEvents, allowAuraApplied); nil for non-spell entries.
+-- The aura-applied sound is the one compliant aura sound event: played
+-- natively via C_UnitAuras.AddAuraAppliedSound, registered by AuraDisplay
+-- when the entry's aura display binds. Standalone aura entries have no cast
+-- or cooldown, so it is their only event.
 local function GetSoundAlertEntryScope(buttonData)
     if not buttonData or buttonData.type ~= "spell" then return nil end
 
-    -- 12.1 aura teardown: aura sound events are gone, so dormant aura
-    -- entries have no valid sound alert scope.
     if buttonData.addedAs == "aura" then
-        return nil
+        return false, true
     end
 
-    return true
+    return true, buttonData.auraTracking == true
 end
 
 function CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, spellIDOverride)
-    local allowSpellEvents = GetSoundAlertEntryScope(buttonData)
+    local allowSpellEvents, allowAuraApplied = GetSoundAlertEntryScope(buttonData)
     if allowSpellEvents == nil then
         return nil
     end
@@ -274,6 +292,10 @@ function CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, s
         scopedEvents.chargeGained = nil
     end
 
+    if allowAuraApplied then
+        scopedEvents.onAuraApplied = true
+    end
+
     if not next(scopedEvents) then
         return nil
     end
@@ -292,7 +314,7 @@ function CooldownCompanion:GetScopedValidSoundAlertEventsForCustomBar(customBar)
         -- sound events no longer exist.
         return nil
     elseif entryType == "spell" then
-        return NormalizeSpellCustomBarAlertEvents(self:GetScopedValidSoundAlertEventsForButton({
+        local scoped = NormalizeSpellCustomBarAlertEvents(self:GetScopedValidSoundAlertEventsForButton({
             type = "spell",
             id = customBar.spellID,
             hasCharges = customBar.hasCharges,
@@ -301,6 +323,12 @@ function CooldownCompanion:GetScopedValidSoundAlertEventsForCustomBar(customBar)
             auraSpellID = customBar.auraSpellID,
             auraUnit = customBar.auraUnit,
         }, customBar.spellID))
+        -- Stripping onAuraApplied can empty the set; keep the nil-when-none
+        -- contract so the config shows its "no alertable events" label.
+        if scoped and not next(scoped) then
+            return nil
+        end
+        return scoped
     end
 
     if not next(scopedEvents) then
@@ -575,7 +603,7 @@ function CooldownCompanion:GetSoundAlertOptions()
 end
 
 function CooldownCompanion:GetSoundAlertEventOrder()
-    return SOUND_ALERT_EVENT_ORDER
+    return CONFIG_SOUND_ALERT_EVENT_ORDER
 end
 
 function CooldownCompanion:GetSoundAlertEventLabel(eventKey)
@@ -680,6 +708,38 @@ end
 
 function CooldownCompanion:PreviewSoundAlertSelection(buttonData, soundName)
     return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
+end
+
+-- Options list for the aura-applied event. C_UnitAuras.AddAuraAppliedSound
+-- plays sound FILES, so only shared-media sounds that resolve to a file path
+-- are offered; Blizzard soundkit and text-to-speech selections have no file
+-- form (numeric registrations are excluded as ambiguous — CC treats them as
+-- SoundKit IDs in PlaySharedMediaSound).
+function CooldownCompanion:GetAuraAppliedSoundAlertOptions()
+    local options = { [SOUND_NONE_KEY] = SOUND_NONE_KEY }
+    for _, soundName in ipairs(LSM:List("sound")) do
+        local soundSource = LSM:Fetch("sound", soundName, true)
+        if type(soundSource) == "string" and soundSource ~= "" then
+            options[soundName] = soundName
+        end
+    end
+    return options
+end
+
+-- Resolve the entry's configured aura-applied sound to what
+-- C_UnitAuras.AddAuraAppliedSound accepts. Returns (soundFileName, channel)
+-- or nil when unset or not file-backed.
+function CooldownCompanion:GetAuraAppliedSoundFileForButton(buttonData)
+    local cfg = self:GetButtonSoundAlertConfig(buttonData, false)
+    local soundName = cfg and cfg.events and cfg.events.onAuraApplied
+    if not soundName or soundName == SOUND_NONE_KEY then return nil end
+    if ParseBlizzardSoundSelection(soundName) then return nil end
+
+    local soundSource = LSM:Fetch("sound", soundName)
+    if type(soundSource) == "string" and soundSource ~= "" then
+        return soundSource, self:GetButtonSoundAlertChannel(buttonData)
+    end
+    return nil
 end
 
 function CooldownCompanion:PreviewTriggerPanelSoundAlertSelection(groupOrId, soundName)

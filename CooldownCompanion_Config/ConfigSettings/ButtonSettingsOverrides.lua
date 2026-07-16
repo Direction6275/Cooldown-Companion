@@ -31,6 +31,7 @@ local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildIconTintControls = ST._BuildIconTintControls
 local BuildAssistedHighlightControls = ST._BuildAssistedHighlightControls
 local BuildProcGlowControls = ST._BuildProcGlowControls
+local BuildAuraGlowControls = ST._BuildAuraGlowControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 local BuildBarNameTextControls = ST._BuildBarNameTextControls
@@ -115,6 +116,7 @@ local PREVIEWABLE_OVERRIDE_SECTIONS = {
     unusableDimming = true,
     iconTint = true,
     procGlow = true,
+    auraIndicator = true,
     readyGlow = true,
 }
 
@@ -342,7 +344,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
     local sectionOrder = {
         "borderSettings", "cooldownText", "auraText", "auraStackText",
         "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
-        "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "readyGlow", "keyPressHighlight",
+        "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "auraIndicator", "readyGlow", "keyPressHighlight",
         "barIcon", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
         "textFont", "textColors", "textBackground",
     }
@@ -374,6 +376,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         end,
         assistedHighlight = BuildAssistedHighlightControls,
         procGlow = BuildProcGlowControls,
+        auraIndicator = BuildAuraGlowControls,
         readyGlow = BuildReadyGlowControls,
         keyPressHighlight = BuildKeyPressHighlightControls,
         barIcon = BuildBarIconControls,
@@ -408,6 +411,8 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                     local function BuildOverridePreviewAdvanced(panel)
                         if sectionId == "procGlow" and overrides.procGlowStyle ~= "none" then
                             AddSelectedButtonPreviewToggle(panel, "Preview Proc Glow", "_procGlowPreview", CooldownCompanion.SetProcGlowPreview)
+                        elseif sectionId == "auraIndicator" and overrides.auraGlowStyle ~= "none" then
+                            AddSelectedButtonPreviewToggle(panel, "Preview Aura Glow", "_auraGlowPreview", CooldownCompanion.SetAuraGlowPreview)
                         elseif sectionId == "readyGlow" and overrides.readyGlowStyle and overrides.readyGlowStyle ~= "none" then
                             AddSelectedButtonPreviewToggle(panel, "Preview Ready Glow Style", "_readyGlowPreview", CooldownCompanion.SetReadyGlowPreview)
                         end

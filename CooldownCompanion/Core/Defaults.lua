@@ -162,14 +162,10 @@ local defaults = {
                         pandemicBarColorShiftEnabled = false,
                         pandemicBarColorShiftSpeed = 0.5,
                         pandemicBarColorShiftColor = {1, 1, 1, 1},
-                        auraGlowStyle = "pixel",
+                        auraGlowStyle = "pulse", -- kit styles: none/solid/pulse/proc
                         auraGlowColor = {1, 0.84, 0, 0.9},
-                        auraGlowSize = 8,
-                        auraGlowThickness = 4,
-                        auraGlowSpeed = 50,
-                        auraGlowLines = 8,
-                        auraGlowInvert = false,
-                        auraGlowCombatOnly = false,
+                        auraGlowSize = 2,        -- border px (solid/pulse) or overhang % (proc)
+                        auraGlowSpeed = 0.5,     -- pulse duration in seconds
                         readyGlowStyle = "none",
                         readyGlowColor = {0.2, 1.0, 0.2, 1},
                         readyGlowSize = 5,
@@ -342,14 +338,10 @@ local defaults = {
             pandemicBarColorShiftEnabled = false,
             pandemicBarColorShiftSpeed = 0.5,
             pandemicBarColorShiftColor = {1, 1, 1, 1},
-            auraGlowStyle = "pixel",
+            auraGlowStyle = "pulse", -- kit styles: none/solid/pulse/proc
             auraGlowColor = {1, 0.84, 0, 0.9},
-            auraGlowSize = 8,
-            auraGlowThickness = 4,
-            auraGlowSpeed = 50,
-            auraGlowLines = 8,
-            auraGlowInvert = false,
-            auraGlowCombatOnly = false,
+            auraGlowSize = 2,        -- border px (solid/pulse) or overhang % (proc)
+            auraGlowSpeed = 0.5,     -- pulse duration in seconds
             readyGlowStyle = "none",
             readyGlowColor = {0.2, 1.0, 0.2, 1},
             readyGlowSize = 5,
@@ -941,7 +933,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     auraIndicator = {
         label = "Show Aura Glow",
-        keys = {"auraGlowStyle", "auraGlowColor", "auraGlowSize", "auraGlowThickness", "auraGlowSpeed", "auraGlowLines", "auraGlowInvert", "auraGlowCombatOnly"},
+        keys = {"auraGlowStyle", "auraGlowColor", "auraGlowSize", "auraGlowSpeed"},
         modes = {icons = true},
     },
     auraDurationSwipe = {
@@ -967,7 +959,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     barActiveAura = {
         label = "Active Aura Indicator",
-        keys = {"barAuraIndicatorEnabled", "barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed", "barAuraEffectLines", "auraGlowCombatOnly", "barAuraPulseEnabled", "barAuraPulseSpeed", "barAuraColorShiftEnabled", "barAuraColorShiftSpeed", "barAuraColorShiftColor"},
+        keys = {"barAuraIndicatorEnabled", "barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed", "barAuraEffectLines", "barAuraPulseEnabled", "barAuraPulseSpeed", "barAuraColorShiftEnabled", "barAuraColorShiftSpeed", "barAuraColorShiftColor"},
         modes = {bars = true},
     },
     barIcon = {

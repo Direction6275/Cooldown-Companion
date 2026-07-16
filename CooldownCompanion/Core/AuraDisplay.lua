@@ -164,9 +164,16 @@ local function BuildSlotKit(slotButton)
     kit.swipe:SetDrawBling(false)
     slotButton:SetDurationCooldown(kit.swipe)
 
+    -- Aura active glow: shares the slot's Blizzard-driven visibility, so it
+    -- glows exactly while the aura runs. Animated styles are AnimationGroup-
+    -- driven (P3: they keep playing on the forbidden subtree in combat).
+    -- Above the swipe, below the texts.
+    kit.glow = ST._BuildKitGlowRegions(slotButton)
+    kit.glow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
+
     kit.textOverlay = CreateFrame("Frame", nil, slotButton)
     kit.textOverlay:SetAllPoints(slotButton)
-    kit.textOverlay:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
+    kit.textOverlay:SetFrameLevel(kit.swipe:GetFrameLevel() + 2)
 
     -- Default formatter ONLY: custom formatters/curves error on secret values
     -- mid-refresh and freeze the button (V14/V15 — banned until Blizzard fixes).
@@ -328,6 +335,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- colors are CC styling and persist across those writes.
     CooldownCompanion:ApplyAuraDurationSwipeStyle(kit.swipe, style)
 
+    -- Aura active glow: icon-mode hosts only (the bar-mode analog is the bar
+    -- aura effect, which lands with the bars phase). Style resolution and the
+    -- "none" gate live in the builder; the config preview renders equivalent
+    -- visuals CC-side (Glows.lua NormalizeAuraGlowPreviewStyle), never here.
+    ST._StyleKitGlowRegions(kit.glow, style, button, button._isBar ~= true)
+
     -- Full-button composition for show-only-while-active entries: bg + border
     -- replicas anchored to the host button (pixel-identical to the CC shell).
     -- Icon-mode hosts only — bar mode has no shell counterpart until its
@@ -352,6 +365,62 @@ local function StyleSlotKit(slot, button, buttonData, style)
         kit.bg:SetAlpha(0)
         for _, tex in ipairs(kit.border) do
             tex:SetAlpha(0)
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- Aura-applied sounds — the one compliant aura sound event in 12.1:
+-- C_UnitAuras.AddAuraAppliedSound plays a sound file whenever the spellID's
+-- aura is applied to the unit, entirely Blizzard-side (validated in combat).
+-- Registered at bind, released at park. Refcounted because entries can share
+-- candidate spellIDs (linked-aura sets) and the same sound.
+------------------------------------------------------------------------
+
+local appliedSounds = {} -- key -> { id = auraAppliedSoundID, count = n }
+
+local function RegisterSlotAppliedSounds(slot, buttonData, spellSet)
+    if not (C_UnitAuras.AddAuraAppliedSound and C_UnitAuras.RemoveAuraAppliedSound) then return end
+    local soundFile, channel = CooldownCompanion:GetAuraAppliedSoundFileForButton(buttonData)
+    if not soundFile then return end
+    local keys
+    for spellID in pairs(spellSet) do
+        local key = slot.unit .. ":" .. spellID .. ":" .. soundFile .. ":" .. (channel or "")
+        local entry = appliedSounds[key]
+        if entry then
+            entry.count = entry.count + 1
+        else
+            local id = C_UnitAuras.AddAuraAppliedSound({
+                unitToken = slot.unit,
+                spellID = spellID,
+                soundFileName = soundFile,
+                outputChannel = channel,
+            })
+            if id then
+                entry = { id = id, count = 1 }
+                appliedSounds[key] = entry
+            end
+        end
+        if entry then
+            keys = keys or {}
+            keys[#keys + 1] = key
+        end
+    end
+    slot.appliedSoundKeys = keys
+end
+
+local function ReleaseSlotAppliedSounds(slot)
+    local keys = slot.appliedSoundKeys
+    if not keys then return end
+    slot.appliedSoundKeys = nil
+    for _, key in ipairs(keys) do
+        local entry = appliedSounds[key]
+        if entry then
+            entry.count = entry.count - 1
+            if entry.count <= 0 then
+                appliedSounds[key] = nil
+                C_UnitAuras.RemoveAuraAppliedSound(entry.id)
+            end
         end
     end
 end
@@ -402,6 +471,7 @@ local function ParkSlot(slot)
     if not slot.parked then
         slot.parked = true
         slot.boundEntry = nil
+        ReleaseSlotAppliedSounds(slot)
         slot.slotButton:SetParent(park)
         slot.slotButton:ClearAllPoints()
         slot.slotButton:SetPoint("CENTER", park, "CENTER")
@@ -443,6 +513,7 @@ local function BindSlot(slot, button, buttonData, spellSet, style)
     slotButton:SetPoint("BOTTOMRIGHT", layer, "BOTTOMRIGHT", 0, 0)
     slot.container:SetAuraSlotCandidateFilters(slot.key, BuildCandidateFilters(slot.unit, spellSet))
     StyleSlotKit(slot, button, buttonData, style)
+    RegisterSlotAppliedSounds(slot, buttonData, spellSet)
     -- Tooltip suppression follows the click-through sweep's recorded motion
     -- state (the sweep itself never reaches the slot subtree). P7-validated.
     slotButton:SetMouseMotionEnabled(not button._cdcClickThroughMotion)
@@ -594,7 +665,11 @@ end
 
 -- Read-only status for validation/DevBridge (module state is otherwise local).
 function CooldownCompanion:GetAuraDisplayStatus()
-    local status = { pendingRebind = pendingRebind, units = {} }
+    local appliedSoundCount = 0
+    for _ in pairs(appliedSounds) do
+        appliedSoundCount = appliedSoundCount + 1
+    end
+    local status = { pendingRebind = pendingRebind, appliedSounds = appliedSoundCount, units = {} }
     for unit, unitSlots in pairs(slots) do
         local bound = 0
         for _, slot in ipairs(unitSlots) do

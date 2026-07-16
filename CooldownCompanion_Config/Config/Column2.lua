@@ -2654,6 +2654,14 @@ local function RefreshColumn2()
 
                     if buttonData.type == "spell" then
                         local enabledSoundEvents = CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData)
+                        -- The aura-applied sound is config-only (played by the
+                        -- game's aura system, never the runtime engine above),
+                        -- so it needs its own badge check.
+                        if not enabledSoundEvents
+                            and (buttonData.auraTracking or buttonData.addedAs == "aura")
+                            and CooldownCompanion:GetAuraAppliedSoundFileForButton(buttonData) then
+                            enabledSoundEvents = true
+                        end
                         if enabledSoundEvents then
                             soundBadge = EnsureRowBadge(rowFrame, "_cdcSoundBadge", "common-icon-sound")
                             soundBadge:SetFrameLevel(rowBadgeLevel)

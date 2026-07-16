@@ -592,6 +592,134 @@ local function MigrateAuraTrackingRebuild(self, profile)
     end
 end
 
+-- Aura glow rebuild migration (Phase 4): the aura glow renders on the aura
+-- slot kit now, with styles none/solid/pulse/proc. The old default "pixel"
+-- and the LCG styles cannot run there (OnUpdate scripts never run on the
+-- forbidden subtree; LCG reparents pooled frames into it) and become "pulse";
+-- "glow" becomes "proc", "pulsingBorder" becomes "pulse". Pixel-scale size
+-- and speed values are reset when leaving pixel (they meant line length and
+-- a 10..200 speed; pulse stores border px and seconds). Invert (glow while
+-- missing) and combat-only cannot exist on the write-once kit and are
+-- dropped. Style keys sit physically on every stored style table (full-copy
+-- group creation), so renames run silently; only enabled invert/combat-only
+-- losses are user-visible and counted.
+local function MigrateAuraGlowStyleTable(styleTable, counts)
+    if type(styleTable) ~= "table" then return end
+
+    local oldStyle = rawget(styleTable, "auraGlowStyle")
+    if oldStyle ~= nil and oldStyle ~= "none" and oldStyle ~= "solid"
+        and oldStyle ~= "pulse" and oldStyle ~= "proc" then
+        if oldStyle == "glow" or oldStyle == "lcgProc" then
+            styleTable.auraGlowStyle = "proc"
+        else
+            styleTable.auraGlowStyle = "pulse"
+            if oldStyle ~= "pulsingBorder" then
+                -- Leaving pixel/LCG: size and speed were pixel-scale.
+                if rawget(styleTable, "auraGlowSize") ~= nil then
+                    styleTable.auraGlowSize = nil
+                end
+                if rawget(styleTable, "auraGlowSpeed") ~= nil then
+                    styleTable.auraGlowSpeed = nil
+                end
+            end
+        end
+    end
+
+    -- Pulse speed stores seconds (0.1..2.0); anything larger is a leftover
+    -- pixel-scale value regardless of which style it arrived with.
+    local speed = rawget(styleTable, "auraGlowSpeed")
+    if type(speed) == "number" and speed > 2 then
+        styleTable.auraGlowSpeed = nil
+    end
+
+    -- Border sizes for solid/pulse cap at 8; anything larger is a leftover
+    -- pixel line-length. Needed separately from the style rename above:
+    -- defaults-backed tables (globalStyle) can carry a stored size while the
+    -- default-equal "pixel" style key itself was never stored.
+    local finalStyle = rawget(styleTable, "auraGlowStyle") or "pulse"
+    if finalStyle == "pulse" or finalStyle == "solid" then
+        local size = rawget(styleTable, "auraGlowSize")
+        if type(size) == "number" and size > 8 then
+            styleTable.auraGlowSize = nil
+        end
+    end
+
+    if rawget(styleTable, "auraGlowInvert") ~= nil then
+        if styleTable.auraGlowInvert == true then
+            counts.invert = counts.invert + 1
+        end
+        styleTable.auraGlowInvert = nil
+    end
+    if rawget(styleTable, "auraGlowCombatOnly") ~= nil then
+        if styleTable.auraGlowCombatOnly == true then
+            counts.combatOnly = counts.combatOnly + 1
+        end
+        styleTable.auraGlowCombatOnly = nil
+    end
+    styleTable.auraGlowThickness = nil
+    styleTable.auraGlowLines = nil
+end
+
+-- Aura-applied sounds now play through the game's aura system, which needs a
+-- sound FILE; Blizzard soundkit and text-to-speech selections carried over
+-- from the old CC-played path have no file form and would silently never play.
+local function MigrateAuraAppliedSoundSelection(buttonData, counts)
+    local events = type(buttonData.soundAlerts) == "table"
+        and type(buttonData.soundAlerts.events) == "table"
+        and buttonData.soundAlerts.events or nil
+    local applied = events and events.onAuraApplied
+    if type(applied) == "string"
+        and (applied == "__blz_tts" or applied:find("^__blz_soundkit:")) then
+        events.onAuraApplied = nil
+        counts.soundForm = counts.soundForm + 1
+    end
+end
+
+local function MigrateAuraGlowRebuild(self, profile)
+    if type(profile) ~= "table" or profile._cdcAuraGlowMigrated then return end
+    local counts = { invert = 0, combatOnly = 0, soundForm = 0 }
+
+    MigrateAuraGlowStyleTable(profile.globalStyle, counts)
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" then
+                MigrateAuraGlowStyleTable(group.style, counts)
+                if type(group.buttons) == "table" then
+                    for _, buttonData in ipairs(group.buttons) do
+                        if type(buttonData) == "table" then
+                            MigrateAuraGlowStyleTable(buttonData.styleOverrides, counts)
+                            MigrateAuraAppliedSoundSelection(buttonData, counts)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if type(profile.groupSettingPresets) == "table" then
+        for _, presetStore in pairs(profile.groupSettingPresets) do
+            if type(presetStore) == "table" then
+                for _, presetData in pairs(presetStore) do
+                    if type(presetData) == "table" then
+                        MigrateAuraGlowStyleTable(presetData.style, counts)
+                    end
+                end
+            end
+        end
+    end
+
+    profile._cdcAuraGlowMigrated = true
+    local dropped = {}
+    if counts.invert > 0 then dropped[#dropped + 1] = ("glow-while-missing (x%d)"):format(counts.invert) end
+    if counts.combatOnly > 0 then dropped[#dropped + 1] = ("combat-only aura glow (x%d)"):format(counts.combatOnly) end
+    if counts.soundForm > 0 then dropped[#dropped + 1] = ("aura-applied sounds needing a file-based sound (x%d)"):format(counts.soundForm) end
+    if #dropped > 0 then
+        self:Print("Aura glow updated for 12.1. Dropped settings with no 12.1 equivalent: "
+            .. table.concat(dropped, ", ") .. ".")
+    end
+end
+
 -- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles
 -- that are allowed to continue. Add new post-1.15 migrations here in order.
 function CooldownCompanion:RunAllMigrations()
@@ -624,6 +752,7 @@ function CooldownCompanion:RunAllMigrations()
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
     MigrateAuraTrackingRebuild(self, self.db and self.db.profile)
+    MigrateAuraGlowRebuild(self, self.db and self.db.profile)
     if self.RunResourceBarClassScopeMigration then
         self:RunResourceBarClassScopeMigration()
     end
@@ -643,6 +772,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     local profile = self.db and self.db.profile
     if type(profile) == "table" then
         profile._cdcAuraRebuildMigrated = nil
+        profile._cdcAuraGlowMigrated = nil
     end
 end
 

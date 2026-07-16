@@ -281,15 +281,28 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     local soundOptionOrder = BuildSortedSoundOptionOrder(soundOptions)
     local eventOrder = CooldownCompanion:GetSoundAlertEventOrder()
 
+    -- The aura-applied sound plays through Blizzard's aura system, which
+    -- accepts sound files only — offer the file-backed options.
+    local auraSoundOptions, auraSoundOptionOrder
+    if validEvents.onAuraApplied then
+        auraSoundOptions = CooldownCompanion:GetAuraAppliedSoundAlertOptions()
+        auraSoundOptionOrder = BuildSortedSoundOptionOrder(auraSoundOptions)
+    end
+
     for _, eventKey in ipairs(eventOrder) do
         if validEvents[eventKey] then
+            local isAuraEvent = eventKey == "onAuraApplied"
             local row = AceGUI:Create("SimpleGroup")
             row:SetFullWidth(true)
             row:SetLayout("Flow")
 
             local soundDrop = AceGUI:Create("Dropdown")
             soundDrop:SetLabel(CooldownCompanion:GetSoundAlertEventLabelForButton(buttonData, eventKey))
-            soundDrop:SetList(soundOptions, soundOptionOrder)
+            if isAuraEvent then
+                soundDrop:SetList(auraSoundOptions, auraSoundOptionOrder)
+            else
+                soundDrop:SetList(soundOptions, soundOptionOrder)
+            end
             soundDrop:SetValue(CooldownCompanion:GetButtonSoundAlertSelection(buttonData, eventKey))
             soundDrop:SetFullWidth(true)
             soundDrop:SetCallback("OnOpened", function(widget)
@@ -304,10 +317,21 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
 
             soundDrop:SetCallback("OnValueChanged", function(widget, event, val)
                 CooldownCompanion:SetButtonSoundAlertEvent(buttonData, eventKey, val)
+                if isAuraEvent then
+                    -- The registration lives on the aura display binding.
+                    CooldownCompanion:RequestAuraRebind("config")
+                end
                 if ST._RefreshColumn2 then
                     ST._RefreshColumn2()
                 end
             end)
+
+            if isAuraEvent then
+                CreateInfoButton(soundDrop.frame, soundDrop.label, "LEFT", "RIGHT", 4, 0, {
+                    "Aura Applied",
+                    {"Plays when the tracked aura is applied, handled by the game so it works everywhere. A sound on aura removal is not possible for addons; the Cooldown Manager's own alert settings offer one if needed.", 1, 1, 1, true},
+                }, infoButtons)
+            end
 
             row:AddChild(soundDrop)
             scroll:AddChild(row)

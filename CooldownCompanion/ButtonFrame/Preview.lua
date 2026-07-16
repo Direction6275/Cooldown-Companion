@@ -475,9 +475,18 @@ end
 
 --------------------------------------------------------------------------------
 -- Aura Glow Preview
--- (12.1 aura teardown: config entry-point setters removed; ClearAll* kept for
--- recycled-frame safety until the aura rebuild.)
+-- Renders through the CC-side glow container (SetAuraGlow) with the kit
+-- style names mapped to their legacy renderers, so the preview matches the
+-- live slot-kit glow without ever touching the aura slot subtree.
 --------------------------------------------------------------------------------
+
+function CooldownCompanion:SetAuraGlowPreview(groupId, buttonIndex, show)
+    SetButtonPreview(self, groupId, buttonIndex, show, "_auraGlowPreview", "_auraGlowActive", false, nil, true)
+end
+
+function CooldownCompanion:SetGroupAuraGlowPreview(groupId, show)
+    SetGroupPreview(self, groupId, show, "_auraGlowPreview", "_auraGlowActive", false, nil, true)
+end
 
 function CooldownCompanion:ClearAllAuraGlowPreviews()
     ClearAllPreviews(self, "_auraGlowPreview", "_auraGlowActive", false, nil, true)

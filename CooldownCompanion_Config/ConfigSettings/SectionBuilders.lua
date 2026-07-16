@@ -1064,7 +1064,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
             refreshCallback()
         end)
         container:AddChild(sizeSlider)
-    elseif currentStyle == "pulsingBorder" then
+    elseif currentStyle == "pulsingBorder" or currentStyle == "pulse" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Border Size")
         sizeSlider:SetSliderValues(1, 8, 0.1)
@@ -1132,7 +1132,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
             end)
             container:AddChild(linesSlider)
         end
-    elseif currentStyle == "glow" then
+    elseif currentStyle == "glow" or currentStyle == "proc" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Glow Size")
         sizeSlider:SetSliderValues(0, 60, 0.1)
@@ -1238,6 +1238,12 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
                 end
             else
                 styleTable[cfg.styleKey] = val and cfg.defaultStyle or "none"
+                -- Re-enabling forces the default style, so per-style keys must
+                -- reset with it (a proc-scale size on the pulse border renders
+                -- a 30px wall).
+                if val and cfg.onStyleChanged then
+                    cfg.onStyleChanged(styleTable, cfg.defaultStyle)
+                end
             end
             refreshCallback()
             RefreshStructuralControls(container)
@@ -1277,6 +1283,9 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
             styleTable[cfg.enableKey] = true
         end
         styleTable[cfg.styleKey] = val
+        if cfg.onStyleChanged then
+            cfg.onStyleChanged(styleTable, val)
+        end
         refreshCallback()
         RefreshStructuralControls(container)
     end)
@@ -1288,6 +1297,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
 
     BuildGlowSliders(container, styleTable, currentStyle, {
         size = cfg.sizeKey, thickness = cfg.thicknessKey, speed = cfg.speedKey, lines = cfg.linesKey,
+        solidSizeDefault = cfg.solidSizeDefault,
     }, refreshCallback, 1)
 end
 
@@ -1313,6 +1323,34 @@ local function BuildReadyGlowControls(container, styleTable, refreshCallback, op
         enableLabel = "Show Ready Glow",
         styleOptions = LCG_GLOW_STYLE_OPTIONS,
         styleOrder = LCG_GLOW_STYLE_ORDER,
+    }, opts)
+end
+
+-- Aura glow styles are limited to what the aura slot kit can render: static
+-- textures and AnimationGroup-driven effects. The OnUpdate-driven LCG styles
+-- (pixel/autocast/button glow) cannot run there.
+local AURA_GLOW_STYLE_OPTIONS = {
+    ["solid"] = "Solid Border",
+    ["pulse"] = "Pulsing Border",
+    ["proc"] = "Proc Glow",
+}
+local AURA_GLOW_STYLE_ORDER = {"solid", "pulse", "proc"}
+
+local function BuildAuraGlowControls(container, styleTable, refreshCallback, opts)
+    BuildGlowStyleControls(container, styleTable, refreshCallback, {
+        styleKey = "auraGlowStyle", colorKey = "auraGlowColor", colorLabel = "Glow Color",
+        sizeKey = "auraGlowSize", speedKey = "auraGlowSpeed",
+        defaultStyle = "pulse", defaultColor = {1, 0.84, 0, 0.9},
+        enableLabel = "Show Aura Glow",
+        styleOptions = AURA_GLOW_STYLE_OPTIONS,
+        styleOrder = AURA_GLOW_STYLE_ORDER,
+        solidSizeDefault = 2,
+        -- The size key changes meaning per style (border px vs overhang %),
+        -- so switching styles resets the sliders to that style's defaults.
+        onStyleChanged = function(targetStyle, val)
+            targetStyle.auraGlowSize = (val == "proc") and 30 or 2
+            targetStyle.auraGlowSpeed = 0.5
+        end,
     }, opts)
 end
 
@@ -1500,6 +1538,7 @@ ST._BuildUnusableDimmingControls = BuildUnusableDimmingControls
 ST._BuildIconTintControls = BuildIconTintControls
 ST._BuildAssistedHighlightControls = BuildAssistedHighlightControls
 ST._BuildProcGlowControls = BuildProcGlowControls
+ST._BuildAuraGlowControls = BuildAuraGlowControls
 ST._BuildReadyGlowControls = BuildReadyGlowControls
 ST._BuildKeyPressHighlightControls = BuildKeyPressHighlightControls
 ST._BuildBarNameTextControls = BuildBarNameTextControls

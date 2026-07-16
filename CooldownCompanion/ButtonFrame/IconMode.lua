@@ -537,6 +537,9 @@ end
 
 local function SetGlowContainerShellAlpha(container, alpha)
     if not container then return end
+    -- Stamp the shell alpha so glow state changes can't resurrect the
+    -- container: StopSolidBorderPulse restores this instead of a flat 1.
+    container._ccShellAlpha = alpha
     if container.solidFrame then container.solidFrame:SetAlpha(alpha) end
     if container.procFrame then container.procFrame:SetAlpha(alpha) end
     if container.blizzardFrame then container.blizzardFrame:SetAlpha(alpha) end
