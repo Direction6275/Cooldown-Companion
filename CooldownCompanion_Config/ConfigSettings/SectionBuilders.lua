@@ -1132,17 +1132,87 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
             end)
             container:AddChild(linesSlider)
         end
-    elseif currentStyle == "glow" or currentStyle == "proc" then
+    elseif currentStyle == "glow" or currentStyle == "proc" or currentStyle == "ants" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Glow Size")
         sizeSlider:SetSliderValues(0, 60, 0.1)
-        sizeSlider:SetValue(styleTable[keys.size] or 30)
+        sizeSlider:SetValue(styleTable[keys.size] or (currentStyle == "ants" and 23 or 30))
         sizeSlider:SetFullWidth(true)
         sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
             styleTable[keys.size] = val
             refreshCallback()
         end)
         container:AddChild(sizeSlider)
+    elseif currentStyle == "colorShift" then
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Border Size")
+        sizeSlider:SetSliderValues(1, 8, 0.1)
+        sizeSlider:SetValue(styleTable[keys.size] or keys.solidSizeDefault or 2)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable[keys.size] = val
+            refreshCallback()
+        end)
+        container:AddChild(sizeSlider)
+
+        local speedSlider = AceGUI:Create("Slider")
+        speedSlider:SetLabel("Shift Duration")
+        speedSlider:SetSliderValues(0.1, 2.0, 0.05)
+        speedSlider:SetValue(styleTable[keys.speed] or 0.8)
+        speedSlider:SetFullWidth(true)
+        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable[keys.speed] = val
+            refreshCallback()
+        end)
+        container:AddChild(speedSlider)
+    elseif currentStyle == "dashes" then
+        local sizeSlider = AceGUI:Create("Slider")
+        sizeSlider:SetLabel("Dash Length")
+        sizeSlider:SetSliderValues(2, 20, 0.5)
+        sizeSlider:SetValue(styleTable[keys.size] or 8)
+        sizeSlider:SetFullWidth(true)
+        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable[keys.size] = val
+            refreshCallback()
+        end)
+        container:AddChild(sizeSlider)
+
+        if keys.thickness then
+            local thicknessSlider = AceGUI:Create("Slider")
+            thicknessSlider:SetLabel("Dash Thickness")
+            thicknessSlider:SetSliderValues(1, 8, 0.5)
+            thicknessSlider:SetValue(styleTable[keys.thickness] or 4)
+            thicknessSlider:SetFullWidth(true)
+            thicknessSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable[keys.thickness] = val
+                refreshCallback()
+            end)
+            container:AddChild(thicknessSlider)
+        end
+
+        if keys.lines then
+            local countSlider = AceGUI:Create("Slider")
+            countSlider:SetLabel("Number of Dashes")
+            countSlider:SetSliderValues(1, 8, 1)
+            countSlider:SetValue(styleTable[keys.lines] or 2)
+            countSlider:SetFullWidth(true)
+            countSlider:SetCallback("OnValueChanged", function(widget, event, val)
+                styleTable[keys.lines] = val
+                refreshCallback()
+            end)
+            container:AddChild(countSlider)
+        end
+
+        local speedSlider = AceGUI:Create("Slider")
+        speedSlider:SetLabel("Lap Duration")
+        speedSlider:SetSliderValues(0.1, 2.0, 0.05)
+        speedSlider:SetValue(styleTable[keys.speed] or 2)
+        speedSlider:SetFullWidth(true)
+        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable[keys.speed] = val
+            refreshCallback()
+        end)
+        container:AddChild(speedSlider)
     elseif currentStyle == "lcgButton" then
         local speedSlider = AceGUI:Create("Slider")
         speedSlider:SetLabel("Frequency")
@@ -1295,6 +1365,10 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
         AddColorPicker(container, styleTable, cfg.colorKey, cfg.colorLabel, cfg.defaultColor, true, refreshCallback, refreshCallback)
     end
 
+    if cfg.color2Key and currentStyle == "colorShift" then
+        AddColorPicker(container, styleTable, cfg.color2Key, cfg.color2Label or "Second Color", cfg.defaultColor2, true, refreshCallback, refreshCallback)
+    end
+
     BuildGlowSliders(container, styleTable, currentStyle, {
         size = cfg.sizeKey, thickness = cfg.thicknessKey, speed = cfg.speedKey, lines = cfg.linesKey,
         solidSizeDefault = cfg.solidSizeDefault,
@@ -1332,24 +1406,36 @@ end
 local AURA_GLOW_STYLE_OPTIONS = {
     ["solid"] = "Solid Border",
     ["pulse"] = "Pulsing Border",
+    ["colorShift"] = "Color Shift",
+    ["dashes"] = "Pixel Dashes",
+    ["ants"] = "Marching Ants",
     ["proc"] = "Proc Glow",
+    ["overlay"] = "Overlay",
 }
-local AURA_GLOW_STYLE_ORDER = {"solid", "pulse", "proc"}
+local AURA_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "ants", "proc", "overlay"}
+
+-- The size and speed keys change meaning per style (border/dash px vs
+-- overhang %; cycle vs lap seconds), so switching styles resets the sliders
+-- to that style's defaults.
+local AURA_GLOW_SIZE_RESETS = { proc = 30, ants = 23, dashes = 8 }
+local AURA_GLOW_SPEED_RESETS = { colorShift = 0.8, dashes = 2 }
 
 local function BuildAuraGlowControls(container, styleTable, refreshCallback, opts)
     BuildGlowStyleControls(container, styleTable, refreshCallback, {
         styleKey = "auraGlowStyle", colorKey = "auraGlowColor", colorLabel = "Glow Color",
-        sizeKey = "auraGlowSize", speedKey = "auraGlowSpeed",
+        color2Key = "auraGlowColor2", color2Label = "Second Color", defaultColor2 = {0.1, 0.3, 1, 0.9},
+        sizeKey = "auraGlowSize", speedKey = "auraGlowSpeed", linesKey = "auraGlowDashCount",
+        thicknessKey = "auraGlowDashThickness",
         defaultStyle = "pulse", defaultColor = {1, 0.84, 0, 0.9},
         enableLabel = "Show Aura Glow",
         styleOptions = AURA_GLOW_STYLE_OPTIONS,
         styleOrder = AURA_GLOW_STYLE_ORDER,
         solidSizeDefault = 2,
-        -- The size key changes meaning per style (border px vs overhang %),
-        -- so switching styles resets the sliders to that style's defaults.
         onStyleChanged = function(targetStyle, val)
-            targetStyle.auraGlowSize = (val == "proc") and 30 or 2
-            targetStyle.auraGlowSpeed = 0.5
+            targetStyle.auraGlowSize = AURA_GLOW_SIZE_RESETS[val] or 2
+            targetStyle.auraGlowSpeed = AURA_GLOW_SPEED_RESETS[val] or 0.5
+            targetStyle.auraGlowDashCount = 2
+            targetStyle.auraGlowDashThickness = 4
         end,
     }, opts)
 end

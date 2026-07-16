@@ -593,12 +593,12 @@ local function MigrateAuraTrackingRebuild(self, profile)
 end
 
 -- Aura glow rebuild migration (Phase 4): the aura glow renders on the aura
--- slot kit now, with styles none/solid/pulse/proc. The old default "pixel"
--- and the LCG styles cannot run there (OnUpdate scripts never run on the
--- forbidden subtree; LCG reparents pooled frames into it) and become "pulse";
--- "glow" becomes "proc", "pulsingBorder" becomes "pulse". Pixel-scale size
--- and speed values are reset when leaving pixel (they meant line length and
--- a 10..200 speed; pulse stores border px and seconds). Invert (glow while
+-- slot kit now, with styles none/solid/pulse/colorShift/dashes/ants/proc/
+-- overlay. The old default "pixel" and the LCG styles cannot run there
+-- (OnUpdate scripts never run on the forbidden subtree; LCG reparents pooled
+-- frames into it): "pixel" becomes its "dashes" lookalike (line-length size
+-- kept as dash px, 10..200 speed dropped), the LCG styles become "pulse";
+-- "glow" becomes "proc", "pulsingBorder" becomes "pulse". Invert (glow while
 -- missing) and combat-only cannot exist on the write-once kit and are
 -- dropped. Style keys sit physically on every stored style table (full-copy
 -- group creation), so renames run silently; only enabled invert/combat-only
@@ -608,13 +608,31 @@ local function MigrateAuraGlowStyleTable(styleTable, counts)
 
     local oldStyle = rawget(styleTable, "auraGlowStyle")
     if oldStyle ~= nil and oldStyle ~= "none" and oldStyle ~= "solid"
-        and oldStyle ~= "pulse" and oldStyle ~= "proc" then
+        and oldStyle ~= "pulse" and oldStyle ~= "proc"
+        and oldStyle ~= "colorShift" and oldStyle ~= "dashes"
+        and oldStyle ~= "ants" and oldStyle ~= "overlay" then
         if oldStyle == "glow" or oldStyle == "lcgProc" then
             styleTable.auraGlowStyle = "proc"
+        elseif oldStyle == "pixel" then
+            -- The dashes style is the pixel lookalike. Its size key means
+            -- dash px, close enough to the old line length to keep; the
+            -- speed key was pixel-scale (10..200) and dies with the
+            -- catch-all below. The old line count carries over as the dash
+            -- count (capped at the dash pool size) before the lines key is
+            -- dropped at the end of this function.
+            styleTable.auraGlowStyle = "dashes"
+            local lines = rawget(styleTable, "auraGlowLines")
+            if type(lines) == "number" and lines >= 1 then
+                styleTable.auraGlowDashCount = math.min(math.floor(lines + 0.5), 8)
+            end
+            local thickness = rawget(styleTable, "auraGlowThickness")
+            if type(thickness) == "number" and thickness >= 1 then
+                styleTable.auraGlowDashThickness = math.min(thickness, 8)
+            end
         else
             styleTable.auraGlowStyle = "pulse"
             if oldStyle ~= "pulsingBorder" then
-                -- Leaving pixel/LCG: size and speed were pixel-scale.
+                -- Leaving LCG: size and speed were pixel-scale.
                 if rawget(styleTable, "auraGlowSize") ~= nil then
                     styleTable.auraGlowSize = nil
                 end
@@ -632,14 +650,21 @@ local function MigrateAuraGlowStyleTable(styleTable, counts)
         styleTable.auraGlowSpeed = nil
     end
 
-    -- Border sizes for solid/pulse cap at 8; anything larger is a leftover
-    -- pixel line-length. Needed separately from the style rename above:
+    -- Border sizes for solid/pulse/colorShift cap at 8 and dash lengths at
+    -- 20 (the config slider maximums); anything larger is a leftover pixel
+    -- line-length. Needed separately from the style rename above:
     -- defaults-backed tables (globalStyle) can carry a stored size while the
     -- default-equal "pixel" style key itself was never stored.
     local finalStyle = rawget(styleTable, "auraGlowStyle") or "pulse"
-    if finalStyle == "pulse" or finalStyle == "solid" then
+    local sizeCap
+    if finalStyle == "pulse" or finalStyle == "solid" or finalStyle == "colorShift" then
+        sizeCap = 8
+    elseif finalStyle == "dashes" then
+        sizeCap = 20
+    end
+    if sizeCap then
         local size = rawget(styleTable, "auraGlowSize")
-        if type(size) == "number" and size > 8 then
+        if type(size) == "number" and size > sizeCap then
             styleTable.auraGlowSize = nil
         end
     end
