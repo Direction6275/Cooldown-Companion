@@ -13,6 +13,9 @@ local AddColorPicker = ST._AddColorPicker
 local CanButtonUseConfigOverrideSection = ST._CanButtonUseConfigOverrideSection
 
 local BuildCooldownTextControls = ST._BuildCooldownTextControls
+local BuildAuraTextControls = ST._BuildAuraTextControls
+local BuildAuraStackTextControls = ST._BuildAuraStackTextControls
+local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
 local BuildKeybindTextControls = ST._BuildKeybindTextControls
 local BuildChargeTextControls = ST._BuildChargeTextControls
 local BuildBorderControls = ST._BuildBorderControls
@@ -45,6 +48,8 @@ local function GetHiddenOverrideReasonText(reason)
         return "Saved for this button, but inactive because this entry type cannot use it."
     elseif reason == "displayMode" then
         return "Saved for this button, but inactive in the current display mode."
+    elseif reason == "auraTracking" then
+        return "Saved for this button, but inactive because this entry is not tracking an aura."
     end
     return "Saved for this button, but inactive for this entry right now."
 end
@@ -98,7 +103,12 @@ end
 
 local PREVIEWABLE_OVERRIDE_SECTIONS = {
     cooldownText = true,
+    auraText = true,
+    auraStackText = true,
+    chargeText = true,
     cooldownSwipe = true,
+    auraDurationSwipe = true,
+    lossOfControl = true,
     iconFillTimer = true,
     desaturation = true,
     showOutOfRange = true,
@@ -330,8 +340,8 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
     end
 
     local sectionOrder = {
-        "borderSettings", "cooldownText",
-        "iconFillTimer", "cooldownSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
+        "borderSettings", "cooldownText", "auraText", "auraStackText",
+        "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
         "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "readyGlow", "keyPressHighlight",
         "barIcon", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
         "textFont", "textColors", "textBackground",
@@ -340,6 +350,9 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
     local sectionBuilders = {
         borderSettings = BuildBorderControls,
         cooldownText = BuildCooldownTextControls,
+        auraText = BuildAuraTextControls,
+        auraStackText = BuildAuraStackTextControls,
+        auraDurationSwipe = BuildAuraDurationSwipeControls,
         keybindText = BuildKeybindTextControls,
         chargeText = BuildChargeTextControls,
         desaturation = BuildDesaturationControls,
@@ -350,8 +363,13 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         showTooltips = BuildShowTooltipsControls,
         lossOfControl = BuildLossOfControlControls,
         unusableDimming = BuildUnusableDimmingControls,
-        iconTint = function(container, styleTable, onChange)
-            BuildIconTintControls(container, styleTable, onChange)
+        iconTint = function(container, styleTable, onChange, builderOpts)
+            local showAuraTint = buttonData.auraTracking or buttonData.addedAs == "aura"
+            BuildIconTintControls(container, styleTable, onChange, {
+                isOverride = builderOpts and builderOpts.isOverride,
+                fallbackStyle = builderOpts and builderOpts.fallbackStyle,
+                showAuraTint = showAuraTint or nil,
+            })
             BuildBackgroundColorControls(container, styleTable, onChange)
         end,
         assistedHighlight = BuildAssistedHighlightControls,
@@ -398,6 +416,18 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                             local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
                             if sectionId == "cooldownText" or sectionId == "cooldownSwipe" or sectionId == "desaturation" then
                                 AddConditionalPreviewButton(panel, "Preview Cooldown State", "cooldown", target)
+                            elseif sectionId == "auraText" then
+                                AddConditionalPreviewButton(panel, "Preview Aura Duration Text", "aura_duration_text", target)
+                            elseif sectionId == "auraStackText" then
+                                AddConditionalPreviewButton(panel, "Preview Aura Stack Text", "aura_stack_text", target)
+                            elseif sectionId == "chargeText" then
+                                AddConditionalPreviewButton(panel, "Preview Max Charges", "charge_full", target)
+                                AddConditionalPreviewButton(panel, "Preview Missing Charges", "charge_missing", target)
+                                AddConditionalPreviewButton(panel, "Preview Zero Charges", "charge_zero", target)
+                            elseif sectionId == "auraDurationSwipe" then
+                                AddConditionalPreviewButton(panel, "Preview Aura Duration Swipe", "aura_duration_swipe", target)
+                            elseif sectionId == "lossOfControl" then
+                                AddConditionalPreviewButton(panel, "Preview Loss of Control", "loss_of_control", target)
                             elseif sectionId == "iconFillTimer" and overrides.iconFillEnabled == true and group.masqueEnabled ~= true then
                                 AddConditionalPreviewButton(panel, "Preview Cooldown Fill", "cooldown", target)
                             elseif sectionId == "showOutOfRange" then

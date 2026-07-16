@@ -161,6 +161,7 @@ local function BuildSlotKit(slotButton)
     kit.swipe = CreateFrame("Cooldown", nil, slotButton, "CooldownFrameTemplate")
     kit.swipe:SetAllPoints(slotButton)
     kit.swipe:SetHideCountdownNumbers(true)
+    kit.swipe:SetDrawBling(false)
     slotButton:SetDurationCooldown(kit.swipe)
 
     kit.textOverlay = CreateFrame("Frame", nil, slotButton)
@@ -178,6 +179,64 @@ local function BuildSlotKit(slotButton)
     slotButton:SetApplicationCount(kit.stackText)
 
     return kit
+end
+
+-- Position contract for the aura duration text: it shares the Cooldown Text
+-- position unless separateTextPositions switches it to the aura keys. Shared
+-- with the config preview, which renders a CC-side stand-in FontString from
+-- the same keys (the preview never touches the aura slot subtree).
+function CooldownCompanion:GetAuraDurationTextPlacement(style)
+    style = style or {}
+    if style.separateTextPositions == true then
+        return style.auraTextAnchor or "TOPLEFT", style.auraTextXOffset or 2, style.auraTextYOffset or -2
+    end
+    return style.cooldownTextAnchor or "CENTER", style.cooldownTextXOffset or 0, style.cooldownTextYOffset or 0
+end
+
+-- Blizzard-style aura swipe preset (pre-12.1 parity): the bright highlight
+-- overlay Blizzard draws for tracked auras, rendered in aura display time.
+local BLIZZARD_AURA_SWIPE_TEXTURE = "Interface\\HUD\\UI-HUD-CoolDownManager-Icon-Swipe"
+local BLIZZARD_AURA_SWIPE_TEX_LOW = { x = 0.15, y = 0.15 }
+local BLIZZARD_AURA_SWIPE_TEX_HIGH = { x = 0.85, y = 0.85 }
+-- Solid-fill restore texture: CooldownFrameTemplate's default swipe is a
+-- file-less solid color, which SetSwipeTexture cannot return to directly;
+-- a white fill under the black swipe color renders identically.
+local DEFAULT_SWIPE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
+local DEFAULT_SWIPE_TEX_LOW = { x = 0, y = 0 }
+local DEFAULT_SWIPE_TEX_HIGH = { x = 1, y = 1 }
+
+-- Duration swipe styling: draw flags and colors from the aura swipe keys,
+-- mirroring the CC cooldown swipe's ApplyDefaultCooldownSwipeStyle semantics.
+-- Shared with the config preview, which styles a CC-side stand-in Cooldown
+-- widget from the same keys (the preview never touches the aura slot subtree).
+function CooldownCompanion:ApplyAuraDurationSwipeStyle(swipe, style)
+    style = style or {}
+    local swipeEnabled = style.showAuraDurationSwipe ~= false
+
+    if swipeEnabled and style.auraUseBlizzardSwipe == true then
+        -- Fixed preset: the normal swipe settings below do not apply.
+        swipe:SetUseAuraDisplayTime(true)
+        swipe:SetDrawSwipe(true)
+        swipe:SetDrawEdge(false)
+        swipe:SetReverse(false)
+        swipe:SetSwipeTexture(BLIZZARD_AURA_SWIPE_TEXTURE, 1, 1, 1, 1)
+        swipe:SetSwipeColor(1, 0.95, 0.57, 0.7)
+        swipe:SetTexCoordRange(BLIZZARD_AURA_SWIPE_TEX_LOW, BLIZZARD_AURA_SWIPE_TEX_HIGH)
+        return
+    end
+
+    local fillEnabled = style.showAuraDurationSwipeFill ~= false
+    local edgeEnabled = style.showAuraDurationSwipeEdge ~= false
+    swipe:SetUseAuraDisplayTime(false)
+    swipe:SetSwipeTexture(DEFAULT_SWIPE_TEXTURE, 1, 1, 1, 1)
+    swipe:SetTexCoordRange(DEFAULT_SWIPE_TEX_LOW, DEFAULT_SWIPE_TEX_HIGH)
+    swipe:SetDrawSwipe(swipeEnabled and fillEnabled)
+    swipe:SetDrawEdge(swipeEnabled and edgeEnabled)
+    swipe:SetReverse(swipeEnabled and style.auraDurationSwipeReverse ~= false)
+    swipe:SetSwipeColor(0, 0, 0, style.auraDurationSwipeAlpha or 0.8)
+    local edgeColor = style.auraDurationSwipeEdgeColor
+    swipe:SetEdgeColor(edgeColor and edgeColor[1] or 1, edgeColor and edgeColor[2] or 1,
+        edgeColor and edgeColor[3] or 1, edgeColor and edgeColor[4] or 1)
 end
 
 -- Parity predicate (pre-12.1 ShouldUseActiveAuraIcon): standalone and passive
@@ -200,16 +259,27 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- Occluding cover: the entry's icon, cropped like the CC icon underneath
     -- (read at bind time — CC-owned texture, OOC-safe). Known edge: a combat
     -- icon override (form swap) can't refresh the cover until the next rebind.
+    -- The aura icon gets the same crop: Blizzard writes only the texture into
+    -- it (SetIconTextureForAura), so bind-time texcoords persist, and slots
+    -- are reused across entries so the crop must be reset every bind.
     local ccIcon = button.icon
     if ccIcon and ccIcon.GetTexture and ccIcon:GetTexture() then
         kit.iconCover:SetTexture(ccIcon:GetTexture())
         kit.iconCover:SetTexCoord(ccIcon:GetTexCoord())
-        kit.iconCover:SetAlpha(1)
-    elseif buttonData.type == "spell" and buttonData.id then
-        kit.iconCover:SetTexture(C_Spell.GetSpellTexture(buttonData.id))
+        kit.auraIcon:SetTexCoord(ccIcon:GetTexCoord())
         kit.iconCover:SetAlpha(1)
     else
-        kit.iconCover:SetAlpha(0)
+        local ApplyIconTexCoord = ST._ApplyIconTexCoord
+        if ApplyIconTexCoord then
+            ApplyIconTexCoord(kit.iconCover, button:GetWidth(), button:GetHeight())
+            ApplyIconTexCoord(kit.auraIcon, button:GetWidth(), button:GetHeight())
+        end
+        if buttonData.type == "spell" and buttonData.id then
+            kit.iconCover:SetTexture(C_Spell.GetSpellTexture(buttonData.id))
+            kit.iconCover:SetAlpha(1)
+        else
+            kit.iconCover:SetAlpha(0)
+        end
     end
 
     -- Aura-active icon tint lives on the aura layer now (the layer IS the
@@ -233,18 +303,30 @@ local function StyleSlotKit(slot, button, buttonData, style)
     kit.auraIcon:SetDesaturated(kitDesat)
     kit.iconCover:SetDesaturated(kitDesat)
 
-    -- Duration/stack text: shown per style, anchored with the pre-12.1
-    -- defaults (font styling arrives in Phase 3).
+    -- Duration/stack text: font/color from the aura text style keys (same
+    -- helper the CC texts use), anchored to the HOST BUTTON rect so positions
+    -- match the CC-side texts (the slot itself covers only the icon rect).
+    -- Position contract (pre-12.1 parity, promised by the config tooltips):
+    -- the duration text shares the Cooldown Text position unless the user
+    -- enables separateTextPositions, which switches it to the aura keys.
+    local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
+    if ApplyFontStyle then
+        ApplyFontStyle(kit.durationText, style, "auraText")
+        ApplyFontStyle(kit.stackText, style, "auraStack")
+    end
+    local durAnchor, durX, durY = CooldownCompanion:GetAuraDurationTextPlacement(style)
     kit.durationText:ClearAllPoints()
-    kit.durationText:SetPoint(style.auraTextAnchor or "TOPLEFT",
-        slot.slotButton, style.auraTextAnchor or "TOPLEFT",
-        style.auraTextXOffset or 2, style.auraTextYOffset or -2)
+    kit.durationText:SetPoint(durAnchor, button, durAnchor, durX, durY)
     kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
     kit.stackText:ClearAllPoints()
     kit.stackText:SetPoint(style.auraStackAnchor or "BOTTOMLEFT",
-        slot.slotButton, style.auraStackAnchor or "BOTTOMLEFT",
+        button, style.auraStackAnchor or "BOTTOMLEFT",
         style.auraStackXOffset or 2, style.auraStackYOffset or 2)
     kit.stackText:SetAlpha(style.showAuraStackText ~= false and 1 or 0)
+
+    -- Duration swipe: Blizzard drives the swipe's cooldown; draw flags and
+    -- colors are CC styling and persist across those writes.
+    CooldownCompanion:ApplyAuraDurationSwipeStyle(kit.swipe, style)
 
     -- Full-button composition for show-only-while-active entries: bg + border
     -- replicas anchored to the host button (pixel-identical to the CC shell).
@@ -389,9 +471,41 @@ local function ResolveEntryAuraUnit(self, buttonData)
     return buttonData.auraUnit == "target" and "target" or "player"
 end
 
+-- One combat-defer note per deferral window: config edits made in combat keep
+-- applying to CC-side visuals immediately, but the aura display (slot kit)
+-- only restyles at the deferred rebind, so the player is told once why the
+-- aura visuals lag. Cleared when a rebind actually runs.
+local deferNoteShown = false
+
+local function HasBoundSlots(groupId)
+    for _, unitSlots in pairs(slots) do
+        for _, slot in ipairs(unitSlots) do
+            if slot.boundEntry then
+                if groupId == nil then return true end
+                local host = slot.hostButton
+                if host and host._groupId == groupId then return true end
+            end
+        end
+    end
+    return false
+end
+
+local function NoteDeferredConfigEdit(reason, groupId)
+    if deferNoteShown then return end
+    -- Only config-originated requests note the deferral: "config" is always an
+    -- aura settings edit; "style" is any style edit, so it only matters when
+    -- the edited group actually has an aura display. Automatic requests defer
+    -- silently.
+    if reason == "config" or (reason == "style" and HasBoundSlots(groupId)) then
+        deferNoteShown = true
+        CooldownCompanion:Print("Aura display changes will apply when combat ends.")
+    end
+end
+
 function RunAuraRebind()
     local self = CooldownCompanion
     if not (self.db and self.groupFrames) then return end
+    deferNoteShown = false
 
     -- Collect wanted bindings from live buttons (icon/bar groups only — text
     -- mode has no compliant aura display; trigger/texture panels lost aura
@@ -455,9 +569,10 @@ end)
 -- Single entry point. OOC requests coalesce into one next-frame pass (group
 -- populates arrive once per group on a reload); the timer callback re-checks
 -- combat and re-defers if a pull started in between.
-function CooldownCompanion:RequestAuraRebind(reason)
+function CooldownCompanion:RequestAuraRebind(reason, groupId)
     if not self.db then return end
     if not CanRunRebindNow() then
+        NoteDeferredConfigEdit(reason, groupId)
         if pendingRebind then return end
         pendingRebind = true
         rebindDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -470,6 +585,7 @@ function CooldownCompanion:RequestAuraRebind(reason)
         if CanRunRebindNow() then
             RunAuraRebind()
         elseif not pendingRebind then
+            NoteDeferredConfigEdit(reason, groupId)
             pendingRebind = true
             rebindDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
         end

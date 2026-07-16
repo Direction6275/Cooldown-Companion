@@ -20,6 +20,7 @@ local ipairs = ipairs
 local type = type
 local issecretvalue = issecretvalue
 local math_max = math.max
+local math_ceil = math.ceil
 
 -- Imports from Visibility
 local EvaluateButtonVisibility = ST._EvaluateButtonVisibility
@@ -117,6 +118,7 @@ local function ClearConditionalVisualPreviewFields(button)
     button._conditionalUnusablePreview = nil
     button._conditionalOutOfRangePreview = nil
     button._conditionalReadyPreview = nil
+    button._conditionalLocPreview = nil
 end
 
 local function HideIconFillForHiddenButton(button)
@@ -224,6 +226,93 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         if button.cooldown then
             button.cooldown:SetCooldown(startTime, duration)
         end
+        return
+    end
+
+    if kind == "aura_duration_text" then
+        -- CC-owned stand-in for the slot kit's duration text (previews never
+        -- touch the aura slot subtree): same font keys, same shared/separate
+        -- position contract. Deliberately does NOT set the shared preview
+        -- timing fields — those would leak into the icon fill's preview path.
+        local fs = button._auraTextPreviewFS
+        if style.showAuraText == false then
+            if fs then fs:Hide() end
+            return
+        end
+        local host = button.overlayFrame
+        if not host then return end
+        local startTime, duration, remaining = GetConditionalPreviewTiming(preview, now)
+        if not startTime then return end
+        if not fs then
+            fs = host:CreateFontString(nil, "OVERLAY")
+            button._auraTextPreviewFS = fs
+        end
+        if CooldownCompanion.ApplyFontStyle then
+            CooldownCompanion.ApplyFontStyle(fs, style, "auraText")
+        end
+        local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style)
+        fs:ClearAllPoints()
+        fs:SetPoint(anchor, button, anchor, xOff, yOff)
+        fs:SetFormattedText("%d", math_ceil(remaining))
+        fs:Show()
+        return
+    end
+
+    if kind == "aura_stack_text" then
+        if button.auraStackCount then
+            button.auraStackCount:SetText(style.showAuraStackText ~= false and (preview.stackText or "3") or "")
+        end
+        return
+    end
+
+    if kind == "aura_duration_swipe" then
+        -- CC-owned stand-in for the slot kit's duration swipe (previews never
+        -- touch the aura slot subtree): a looping cooldown on a preview-only
+        -- widget styled by the same helper the kit uses.
+        local widget = button._auraSwipePreviewCooldown
+        if style.showAuraDurationSwipe == false then
+            if widget then
+                widget:SetCooldown(0, 0)
+                widget:Hide()
+            end
+            return
+        end
+        local startTime, duration = GetConditionalPreviewTiming(preview, now)
+        if not startTime then return end
+        if not widget then
+            if not button.icon then return end
+            widget = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+            widget:SetAllPoints(button.icon)
+            widget:SetHideCountdownNumbers(true)
+            widget:SetDrawBling(false)
+            widget:EnableMouse(false)
+            if button.cooldown then
+                widget:SetFrameLevel(button.cooldown:GetFrameLevel())
+            end
+            button._auraSwipePreviewCooldown = widget
+        end
+        if CooldownCompanion.ApplyAuraDurationSwipeStyle then
+            CooldownCompanion:ApplyAuraDurationSwipeStyle(widget, style)
+        end
+        widget:Show()
+        widget:SetCooldown(startTime, duration)
+        return
+    end
+
+    if kind == "loss_of_control" then
+        -- Same gate as the live path (spells only); the preview flag makes
+        -- UpdateLossOfControl skip the widget so the no-LoC clear later this
+        -- tick cannot wipe the preview.
+        if not style.showLossOfControl or not button.locCooldown then
+            return
+        end
+        if buttonData.type ~= "spell" or buttonData.isPassive then
+            return
+        end
+        local startTime, duration = GetConditionalPreviewTiming(preview, now)
+        if not startTime then return end
+        button._conditionalLocPreview = true
+        button.locCooldown:SetCooldown(startTime, duration)
         return
     end
 

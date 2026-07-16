@@ -360,6 +360,82 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback,
     end
 end
 
+local function BuildAuraTextControls(container, styleTable, refreshCallback, opts)
+    local fallbackStyle = opts and opts.fallbackStyle
+    local showAuraText = styleTable.showAuraText
+    if showAuraText == nil and type(fallbackStyle) == "table" then
+        showAuraText = fallbackStyle.showAuraText
+    end
+
+    local auraTextCb = AceGUI:Create("CheckBox")
+    auraTextCb:SetLabel("Show Aura Duration Text")
+    auraTextCb:SetValue(showAuraText ~= false)
+    auraTextCb:SetFullWidth(true)
+    auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showAuraText = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(auraTextCb)
+
+    CreateInfoButton(auraTextCb.frame, auraTextCb.checkbg, "LEFT", "RIGHT", auraTextCb.text:GetStringWidth() + 4, 0, {
+        "Shared Position",
+        {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' below to use independent positions.", 1, 1, 1, true},
+    }, auraTextCb)
+
+    if showAuraText ~= false then
+        AddFontControls(container, styleTable, "auraText", {}, refreshCallback)
+        AddColorPicker(container, styleTable, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshCallback, refreshCallback)
+
+        local sepPosCb = AceGUI:Create("CheckBox")
+        sepPosCb:SetLabel("Separate Text Positions")
+        sepPosCb:SetValue(styleTable.separateTextPositions or false)
+        sepPosCb:SetFullWidth(true)
+        sepPosCb:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.separateTextPositions = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end)
+        container:AddChild(sepPosCb)
+
+        CreateInfoButton(sepPosCb.frame, sepPosCb.checkbg, "LEFT", "RIGHT", sepPosCb.text:GetStringWidth() + 4, 0, {
+            "Separate Text Positions",
+            {"When enabled, aura duration text and cooldown text use independent positions and can show at the same time. Aura text position controls appear below when toggled on; cooldown text position is in the Cooldown Text section.", 1, 1, 1, true},
+        }, sepPosCb)
+
+        if styleTable.separateTextPositions then
+            AddAnchorDropdown(container, styleTable, "auraTextAnchor", "TOPLEFT", refreshCallback)
+            AddOffsetSliders(container, styleTable, "auraTextXOffset", "auraTextYOffset", {x = 2, y = -2}, refreshCallback)
+        end
+    end
+end
+
+local function BuildAuraStackTextControls(container, styleTable, refreshCallback, opts)
+    local fallbackStyle = opts and opts.fallbackStyle
+    local showAuraStackText = styleTable.showAuraStackText
+    if showAuraStackText == nil and type(fallbackStyle) == "table" then
+        showAuraStackText = fallbackStyle.showAuraStackText
+    end
+
+    local auraStackCb = AceGUI:Create("CheckBox")
+    auraStackCb:SetLabel("Show Aura Stack Text")
+    auraStackCb:SetValue(showAuraStackText ~= false)
+    auraStackCb:SetFullWidth(true)
+    auraStackCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showAuraStackText = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(auraStackCb)
+
+    if showAuraStackText ~= false then
+        AddFontControls(container, styleTable, "auraStack", {}, refreshCallback)
+        AddColorPicker(container, styleTable, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+        AddAnchorDropdown(container, styleTable, "auraStackAnchor", "BOTTOMLEFT", refreshCallback)
+        AddOffsetSliders(container, styleTable, "auraStackXOffset", "auraStackYOffset", {x = 2, y = 2}, refreshCallback)
+    end
+end
+
 local function BuildKeybindTextControls(container, styleTable, refreshCallback, opts)
     local label = opts and opts.label or KEYBIND_CUSTOM_LABEL
     local tooltip = opts and opts.tooltip or KEYBIND_CUSTOM_TOOLTIP
@@ -473,7 +549,7 @@ local function BuildShowOutOfRangeControls(container, styleTable, refreshCallbac
     return cb
 end
 
-local function BuildIconTintControls(container, styleTable, refreshCallback)
+local function BuildIconTintControls(container, styleTable, refreshCallback, opts)
     AddColorPicker(container, styleTable, "iconTintColor", "Base Icon Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
 
     local cdTintCb = AceGUI:Create("CheckBox")
@@ -489,6 +565,25 @@ local function BuildIconTintControls(container, styleTable, refreshCallback)
 
     if styleTable.iconCooldownTintEnabled then
         AddColorPicker(container, styleTable, "iconCooldownTintColor", "Cooldown Icon Color", {1, 0, 0.102, 1}, true, refreshCallback, refreshCallback)
+    end
+
+    -- Aura tint applies to the slot-kit aura layer (consumed at bind time by
+    -- AuraDisplay.StyleSlotKit); only offered where an aura display exists.
+    if opts and opts.showAuraTint then
+        local auraTintCb = AceGUI:Create("CheckBox")
+        auraTintCb:SetLabel("Use Separate Aura Tint")
+        auraTintCb:SetValue(styleTable.iconAuraTintEnabled or false)
+        auraTintCb:SetFullWidth(true)
+        auraTintCb:SetCallback("OnValueChanged", function(w, e, val)
+            styleTable.iconAuraTintEnabled = val
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end)
+        container:AddChild(auraTintCb)
+
+        if styleTable.iconAuraTintEnabled then
+            AddColorPicker(container, styleTable, "iconAuraTintColor", "Aura Active Icon Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback)
+        end
     end
 
     if styleTable.showUnusable and ST.UnusableVisualUsesDimTint(styleTable) then
@@ -599,6 +694,119 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
         local edgeColor = AddColorPicker(container, styleTable, "cooldownSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
         if edgeColor.SetDisabled then edgeColor:SetDisabled(disabledByIconFill) end
     end
+end
+
+-- Aura duration swipe (12.1 compositing): the swipe is a slot-kit region that
+-- Blizzard drives directly; these keys are consumed at bind time by
+-- AuraDisplay.StyleSlotKit. Unlike the cooldown swipe there is no icon-fill
+-- coupling: the fill can no longer render aura durations, so disabling the
+-- swipe under it would leave aura entries with no timer at all.
+local AURA_BLIZZARD_SWIPE_TOOLTIP = {
+    "Blizzard Style Aura Swipe",
+    {"Uses Blizzard's fixed bright aura swipe style while Aura Duration Swipe is enabled. The other swipe settings in this panel do not affect it.", 1, 1, 1, true},
+}
+
+local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, refreshCallback, opts)
+    local blizzardStyleActive = styleTable.auraUseBlizzardSwipe == true
+
+    local blizzardCb = AceGUI:Create("CheckBox")
+    blizzardCb:SetLabel("Blizzard Style Aura Swipe")
+    blizzardCb:SetValue(blizzardStyleActive)
+    blizzardCb:SetFullWidth(true)
+    blizzardCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.auraUseBlizzardSwipe = val == true
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(blizzardCb)
+    CreateInfoButton(blizzardCb.frame, blizzardCb.checkbg, "LEFT", "RIGHT", blizzardCb.text:GetStringWidth() + 4, 0, AURA_BLIZZARD_SWIPE_TOOLTIP, blizzardCb)
+    ApplyOverrideCheckboxIndent(blizzardCb, opts)
+
+    local reverseCb = AceGUI:Create("CheckBox")
+    reverseCb:SetLabel("Reverse Swipe")
+    reverseCb:SetValue(styleTable.auraDurationSwipeReverse ~= false)
+    reverseCb:SetFullWidth(true)
+    reverseCb:SetDisabled(blizzardStyleActive)
+    reverseCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if blizzardStyleActive then return end
+        styleTable.auraDurationSwipeReverse = val
+        refreshCallback()
+    end)
+    container:AddChild(reverseCb)
+    ApplyOverrideCheckboxIndent(reverseCb, opts)
+
+    local fillCb = AceGUI:Create("CheckBox")
+    fillCb:SetLabel("Show Swipe Fill")
+    fillCb:SetValue(styleTable.showAuraDurationSwipeFill ~= false)
+    fillCb:SetFullWidth(true)
+    fillCb:SetDisabled(blizzardStyleActive)
+    fillCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if blizzardStyleActive then return end
+        styleTable.showAuraDurationSwipeFill = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(fillCb)
+    ApplyOverrideCheckboxIndent(fillCb, opts)
+
+    if styleTable.showAuraDurationSwipeFill ~= false then
+        local alphaSlider = AceGUI:Create("Slider")
+        alphaSlider:SetLabel("Swipe Fill Opacity")
+        alphaSlider:SetSliderValues(0, 1, 0.05)
+        alphaSlider:SetIsPercent(true)
+        alphaSlider:SetValue(styleTable.auraDurationSwipeAlpha or 0.8)
+        alphaSlider:SetFullWidth(true)
+        alphaSlider:SetDisabled(blizzardStyleActive)
+        alphaSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if blizzardStyleActive then return end
+            styleTable.auraDurationSwipeAlpha = val
+            refreshCallback()
+        end)
+        container:AddChild(alphaSlider)
+    end
+
+    local edgeCb = AceGUI:Create("CheckBox")
+    edgeCb:SetLabel("Show Swipe Edge")
+    edgeCb:SetValue(styleTable.showAuraDurationSwipeEdge ~= false)
+    edgeCb:SetFullWidth(true)
+    edgeCb:SetDisabled(blizzardStyleActive)
+    edgeCb:SetCallback("OnValueChanged", function(widget, event, val)
+        if blizzardStyleActive then return end
+        styleTable.showAuraDurationSwipeEdge = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(edgeCb)
+    ApplyOverrideCheckboxIndent(edgeCb, opts)
+
+    if styleTable.showAuraDurationSwipeEdge ~= false then
+        AddColorPicker(container, styleTable, "auraDurationSwipeEdgeColor", "Swipe Edge Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+    end
+end
+
+local function BuildAuraDurationSwipeControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+    local showAuraDurationSwipe = styleTable.showAuraDurationSwipe
+    if showAuraDurationSwipe == nil and type(opts.fallbackStyle) == "table" then
+        showAuraDurationSwipe = opts.fallbackStyle.showAuraDurationSwipe
+    end
+
+    local auraCb = AceGUI:Create("CheckBox")
+    auraCb:SetLabel("Show Aura Duration Swipe")
+    auraCb:SetValue(showAuraDurationSwipe ~= false)
+    auraCb:SetFullWidth(true)
+    auraCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showAuraDurationSwipe = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(auraCb)
+
+    if opts.showAdvancedControlsInline ~= false and showAuraDurationSwipe ~= false then
+        BuildAuraDurationSwipeAdvancedControls(container, styleTable, refreshCallback, opts)
+    end
+
+    return auraCb
 end
 
 local function BuildIconFillTimerControls(container, styleTable, refreshCallback, opts)
@@ -1272,6 +1480,10 @@ ST._ClearActivePreviewBadgeButton = ClearActivePreviewBadgeButton
 ST._RefreshAdvancedSettingsPreviewButtons = RefreshActiveAdvancedPreviewToggleButtons
 ST._AddConditionalPreviewButton = AddConditionalPreviewButton
 ST._AddConditionalPreviewBadge = AddConditionalPreviewBadge
+ST._BuildAuraTextControls = BuildAuraTextControls
+ST._BuildAuraStackTextControls = BuildAuraStackTextControls
+ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
+ST._BuildAuraDurationSwipeAdvancedControls = BuildAuraDurationSwipeAdvancedControls
 ST._BuildKeybindTextControls = BuildKeybindTextControls
 ST._BuildChargeTextControls = BuildChargeTextControls
 ST._BuildBorderControls = BuildBorderControls

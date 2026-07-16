@@ -269,6 +269,10 @@ end
 local function UpdateLossOfControl(button)
     if not button.locCooldown then return end
 
+    -- Config preview owns the widget while active (the preview write runs
+    -- earlier in the same tick; without this the no-LoC path clears it).
+    if button._conditionalLocPreview then return end
+
     local buttonData = button.buttonData
     if buttonData and buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
         button.locCooldown:SetCooldown(0, 0)

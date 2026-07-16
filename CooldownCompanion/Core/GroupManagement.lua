@@ -1166,11 +1166,10 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.showAuraDurationSwipe == nil then style.showAuraDurationSwipe = style.showCooldownSwipe ~= false end
     if style.showCooldownSwipeFill == nil then style.showCooldownSwipeFill = true end
     if style.showAuraDurationSwipeFill == nil then style.showAuraDurationSwipeFill = style.showCooldownSwipeFill ~= false end
-    if style.auraDurationSwipeReverse == nil then style.auraDurationSwipeReverse = style.cooldownSwipeReverse or false end
+    if style.auraDurationSwipeReverse == nil then style.auraDurationSwipeReverse = true end
     if style.showAuraDurationSwipeEdge == nil then style.showAuraDurationSwipeEdge = style.showCooldownSwipeEdge ~= false end
     if style.auraDurationSwipeAlpha == nil then style.auraDurationSwipeAlpha = style.cooldownSwipeAlpha or 0.8 end
     if style.auraDurationSwipeEdgeColor == nil then style.auraDurationSwipeEdgeColor = CopyTable(style.cooldownSwipeEdgeColor or {1, 1, 1, 1}) end
-    if style.auraUseBlizzardSwipe == nil then style.auraUseBlizzardSwipe = false end
     if style.iconFillEnabled == nil then style.iconFillEnabled = false end
     if style.iconFillOrientation == nil then style.iconFillOrientation = "vertical" end
     if style.iconFillReverse == nil then style.iconFillReverse = false end
@@ -1198,7 +1197,6 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         style.readyGlowStyle = "none"
         style.keyPressHighlightStyle = "none"
         style.iconFillEnabled = false
-        style.auraUseBlizzardSwipe = false
     end
 
     if displayMode == "textures" then

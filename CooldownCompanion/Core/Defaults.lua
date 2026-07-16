@@ -104,10 +104,11 @@ local defaults = {
                         cooldownSwipeAlpha = 0.8,
                         cooldownSwipeEdgeColor = {1, 1, 1, 1},
                         showAuraDurationSwipeFill = true,
-                        auraDurationSwipeReverse = false,
+                        auraDurationSwipeReverse = true,
                         showAuraDurationSwipeEdge = true,
                         auraDurationSwipeAlpha = 0.8,
                         auraDurationSwipeEdgeColor = {1, 1, 1, 1},
+                        auraUseBlizzardSwipe = false,
                         showGCDSwipe = false, -- Show GCD swipe animation on icons
                         showOutOfRange = true, -- Red-tint icons when target is out of range
                         showAssistedHighlight = false, -- Highlight the assisted combat recommended spell
@@ -167,7 +168,6 @@ local defaults = {
                         auraGlowThickness = 4,
                         auraGlowSpeed = 50,
                         auraGlowLines = 8,
-                        auraUseBlizzardSwipe = false,
                         auraGlowInvert = false,
                         auraGlowCombatOnly = false,
                         readyGlowStyle = "none",
@@ -285,10 +285,11 @@ local defaults = {
             cooldownSwipeAlpha = 0.8,
             cooldownSwipeEdgeColor = {1, 1, 1, 1},
             showAuraDurationSwipeFill = true,
-            auraDurationSwipeReverse = false,
+            auraDurationSwipeReverse = true,
             showAuraDurationSwipeEdge = true,
             auraDurationSwipeAlpha = 0.8,
             auraDurationSwipeEdgeColor = {1, 1, 1, 1},
+            auraUseBlizzardSwipe = false,
             showGCDSwipe = false,
             showOutOfRange = true,
             showAssistedHighlight = false,
@@ -347,7 +348,6 @@ local defaults = {
             auraGlowThickness = 4,
             auraGlowSpeed = 50,
             auraGlowLines = 8,
-            auraUseBlizzardSwipe = false,
             auraGlowInvert = false,
             auraGlowCombatOnly = false,
             readyGlowStyle = "none",
@@ -1057,12 +1057,39 @@ ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS = {
     readyGlow = true,
 }
 
+-- Standalone aura entries (addedAs == "aura") have no cast, cooldown, or
+-- charges, so the sections styling those mechanics can never apply. Add
+-- intent is immutable, which makes it safe for GetEffectiveStyle's prune pass
+-- to drop stored overrides for these sections. Gates that CAN toggle (aura
+-- tracking on ordinary entries) must stay config-side only, or the prune pass
+-- would delete saved overrides the moment the toggle turns off. NOT denied:
+-- keybindText (custom keybind text renders on aura entries) and cooldownText
+-- (its position keys place the aura duration text in shared-position mode).
+ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
+    cooldownSwipe = true,
+    showGCDSwipe = true,
+    desaturation = true,
+    showOutOfRange = true,
+    iconFillTimer = true,
+    chargeText = true,
+    lossOfControl = true,
+    unusableDimming = true,
+    assistedHighlight = true,
+    procGlow = true,
+    readyGlow = true,
+    keyPressHighlight = true,
+}
+
 function ST.CanButtonUseOverrideSection(buttonData, sectionId)
     if buttonData and buttonData.type == "equipmentSlot" then
         if ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId] then
             return false, "entryType"
         end
         return true
+    end
+    if buttonData and buttonData.addedAs == "aura"
+        and ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS[sectionId] then
+        return false, "entryType"
     end
     return true
 end

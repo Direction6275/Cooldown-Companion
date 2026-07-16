@@ -699,6 +699,7 @@ local function ClearButtonPreviewState(button)
     button._conditionalUnusablePreview = nil
     button._conditionalOutOfRangePreview = nil
     button._conditionalReadyPreview = nil
+    button._conditionalLocPreview = nil
     button._conditionalBarAuraActivePreview = nil
     button._conditionalVisualPreview = nil
     button._forceVisibleByConfig = nil
@@ -3185,8 +3186,9 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
 
     -- Style-only fast path skips PopulateGroupButtons, but the aura slot kit
     -- consumes style keys at bind time — re-request the (coalesced) rebind so
-    -- the composed aura visuals track style edits too.
-    self:RequestAuraRebind("style")
+    -- the composed aura visuals track style edits too. The groupId scopes the
+    -- in-combat defer note to edits that actually touch an aura display.
+    self:RequestAuraRebind("style", groupId)
 end
 
 function CooldownCompanion:UpdateGroupClickthrough(groupId)

@@ -1302,6 +1302,11 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._iconFillColorB = nil
     button._iconFillColorA = nil
     if button.auraStackCount then button.auraStackCount:SetText("") end
+    if button._auraTextPreviewFS then button._auraTextPreviewFS:Hide() end
+    if button._auraSwipePreviewCooldown then
+        button._auraSwipePreviewCooldown:SetCooldown(0, 0)
+        button._auraSwipePreviewCooldown:Hide()
+    end
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil

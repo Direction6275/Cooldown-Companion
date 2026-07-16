@@ -42,6 +42,8 @@ local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
 local BuildShowOutOfRangeControls = ST._BuildShowOutOfRangeControls
 local BuildShowGCDSwipeControls = ST._BuildShowGCDSwipeControls
 local BuildCooldownSwipeControls = ST._BuildCooldownSwipeControls
+local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
+local BuildAuraDurationSwipeAdvancedControls = ST._BuildAuraDurationSwipeAdvancedControls
 local BuildIconFillTimerControls = ST._BuildIconFillTimerControls
 local BuildIconFillTimerAdvancedControls = ST._BuildIconFillTimerAdvancedControls
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
@@ -108,6 +110,21 @@ local function RefreshActiveAdvancedSettingsPanel()
     if CS.RefreshAdvancedSettingsPanel then
         CS.RefreshAdvancedSettingsPanel()
     end
+end
+
+-- Owner ruling (aura rebuild plan): group-level aura style sections are shown
+-- only while the group actually has an aura-tracking entry.
+local function GroupHasAuraTrackingEntry(group)
+    if not (group and group.buttons) then
+        return false
+    end
+    for _, buttonData in ipairs(group.buttons) do
+        if buttonData.type == "spell"
+            and (buttonData.auraTracking or buttonData.addedAs == "aura") then
+            return true
+        end
+    end
+    return false
 end
 
 local function AddIndicatorsHeading(container, text)
@@ -2467,9 +2484,6 @@ local function BuildEffectsTab(container)
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             end)
         end
-        if AddConditionalPreviewButton then
-            AddConditionalPreviewButton(panel, "Preview Cooldown Fill", "cooldown")
-        end
     end
 
     local _, iconFillAdvBtn = AddAdvancedToggle(iconFillCb, "iconFillTimer", tabInfoButtons, iconFillTimerActive, {
@@ -2480,9 +2494,13 @@ local function BuildEffectsTab(container)
     if not group.masqueEnabled then
         iconFillPromoteBtn = CreateCheckboxPromoteButton(iconFillCb, iconFillAdvBtn, "iconFillTimer", group, style)
     end
+    local iconFillPreviewBtn = AddConditionalPreviewBadge(iconFillCb, iconFillPromoteBtn or iconFillAdvBtn, "Preview Cooldown Fill", "cooldown", iconFillTimerActive)
     local iconFillInfoAnchor = iconFillCb.checkbg
     local iconFillInfoXOff = iconFillCb.text:GetStringWidth() + 4
-    if iconFillPromoteBtn and iconFillPromoteBtn:IsShown() then
+    if iconFillPreviewBtn then
+        iconFillInfoAnchor = iconFillPreviewBtn
+        iconFillInfoXOff = 4
+    elseif iconFillPromoteBtn and iconFillPromoteBtn:IsShown() then
         iconFillInfoAnchor = iconFillPromoteBtn
         iconFillInfoXOff = 4
     elseif iconFillAdvBtn and iconFillAdvBtn:IsShown() then
@@ -2573,8 +2591,30 @@ local function BuildEffectsTab(container)
         title = "Cooldown Swipe Advanced",
         build = BuildCooldownSwipeAdvanced,
     })
+    local swipePromoteBtn
     if not iconFillTimerActive then
-        CreateCheckboxPromoteButton(swipeCb, swipeAdvBtn, "cooldownSwipe", group, style)
+        swipePromoteBtn = CreateCheckboxPromoteButton(swipeCb, swipeAdvBtn, "cooldownSwipe", group, style)
+    end
+    AddConditionalPreviewBadge(swipeCb, swipePromoteBtn or swipeAdvBtn, "Preview Cooldown Swipe", "cooldown", style.showCooldownSwipe ~= false and not iconFillTimerActive)
+
+    -- Aura duration swipe (shown only while the group has an aura-tracking entry)
+    if GroupHasAuraTrackingEntry(group) then
+        local auraDurationCb = BuildAuraDurationSwipeControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end, {
+            showAdvancedControlsInline = false,
+        })
+        local function BuildAuraDurationSwipeAdvanced(panel)
+            BuildAuraDurationSwipeAdvancedControls(panel, style, function()
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end)
+        end
+        local _, auraDurationAdvBtn = AddAdvancedToggle(auraDurationCb, "auraDurationSwipe", tabInfoButtons, style.showAuraDurationSwipe ~= false, {
+            title = "Aura Duration Swipe Advanced",
+            build = BuildAuraDurationSwipeAdvanced,
+        })
+        local auraDurationPromoteBtn = CreateCheckboxPromoteButton(auraDurationCb, auraDurationAdvBtn, "auraDurationSwipe", group, style)
+        AddConditionalPreviewBadge(auraDurationCb, auraDurationPromoteBtn or auraDurationAdvBtn, "Preview Aura Duration Swipe", "aura_duration_swipe", style.showAuraDurationSwipe ~= false)
     end
 
     local gcdCb = AceGUI:Create("CheckBox")
@@ -2611,7 +2651,8 @@ local function BuildEffectsTab(container)
     local locCb = BuildLossOfControlControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
-    CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
+    local locPromoteBtn = CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
+    AddConditionalPreviewBadge(locCb, locPromoteBtn, "Preview Loss of Control", "loss_of_control", style.showLossOfControl)
 
     -- Unusable Visual
     local unusableCb, unusableAdvBtn = BuildUnusableDimmingControls(container, style, function()
@@ -3154,6 +3195,11 @@ local function BuildAppearanceTab(container)
         AddColorPicker(panel, style, "chargeFontColorZero", "Font Color (Zero Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
         AddAnchorDropdown(panel, style, "chargeAnchor", "BOTTOMRIGHT", refreshStyle)
         AddOffsetSliders(panel, style, "chargeXOffset", "chargeYOffset", { x = -2, y = 2 }, refreshStyle)
+        if AddConditionalPreviewButton then
+            AddConditionalPreviewButton(panel, "Preview Max Charges", "charge_full")
+            AddConditionalPreviewButton(panel, "Preview Missing Charges", "charge_missing")
+            AddConditionalPreviewButton(panel, "Preview Zero Charges", "charge_zero")
+        end
     end
 
     local _, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "chargeText", tabInfoButtons, style.showChargeText ~= false, {
@@ -3161,6 +3207,89 @@ local function BuildAppearanceTab(container)
         build = BuildChargeTextAdvanced,
     })
     CreateCheckboxPromoteButton(chargeTextCb, chargeAdvBtn, "chargeText", group, style)
+
+    -- Aura text sections (shown only while the group has an aura-tracking entry)
+    local groupHasAuraEntry = GroupHasAuraTrackingEntry(group)
+    if groupHasAuraEntry then
+        -- Show Aura Duration Text toggle
+        local auraTextCb = AceGUI:Create("CheckBox")
+        auraTextCb:SetLabel("Show Aura Duration Text")
+        auraTextCb:SetValue(style.showAuraText ~= false)
+        auraTextCb:SetFullWidth(true)
+        auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.showAuraText = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(auraTextCb)
+
+        local function BuildAuraDurationTextAdvanced(panel)
+            AddFontControls(panel, style, "auraText", { size = 12 }, refreshStyle)
+            AddColorPicker(panel, style, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshStyle, refreshStyle)
+
+            local sepPosCb = AceGUI:Create("CheckBox")
+            sepPosCb:SetLabel("Separate Text Positions")
+            sepPosCb:SetValue(style.separateTextPositions or false)
+            sepPosCb:SetFullWidth(true)
+            sepPosCb:SetCallback("OnValueChanged", function(widget, event, val)
+                style.separateTextPositions = val
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                RefreshActiveAdvancedSettingsPanel()
+            end)
+            panel:AddChild(sepPosCb)
+
+            CreateInfoButton(sepPosCb.frame, sepPosCb.checkbg, "LEFT", "RIGHT", sepPosCb.text:GetStringWidth() + 4, 0, {
+                "Separate Text Positions",
+                {"When enabled, aura duration text and cooldown text use independent positions and can show at the same time. Aura text position controls appear below when toggled on; cooldown text position is in the Cooldown Text section.", 1, 1, 1, true},
+            }, sepPosCb)
+
+            if style.separateTextPositions then
+                AddAnchorDropdown(panel, style, "auraTextAnchor", "TOPLEFT", refreshStyle)
+                AddOffsetSliders(panel, style, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle)
+            end
+        end
+
+        local _, auraTextAdvBtn = AddAdvancedToggle(auraTextCb, "auraText", tabInfoButtons, style.showAuraText ~= false, {
+            title = "Aura Duration Text Advanced",
+            build = BuildAuraDurationTextAdvanced,
+        })
+        local auraTextPromoteBtn = CreateCheckboxPromoteButton(auraTextCb, auraTextAdvBtn, "auraText", group, style)
+        local auraTextPreviewBtn = AddConditionalPreviewBadge(auraTextCb, auraTextPromoteBtn or auraTextAdvBtn, "Preview Aura Duration Text", "aura_duration_text", style.showAuraText ~= false)
+
+        local auraPosInfo = CreateInfoButton(auraTextCb.frame, auraTextPreviewBtn or auraTextPromoteBtn or auraTextAdvBtn, "LEFT", "RIGHT", 4, 0, {
+            "Shared Position",
+            {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' in advanced settings to use independent positions.", 1, 1, 1, true},
+        }, auraTextCb)
+        if style.showAuraText == false then
+            auraPosInfo:Hide()
+        end
+
+        -- Show Aura Stack Text toggle
+        local auraStackCb = AceGUI:Create("CheckBox")
+        auraStackCb:SetLabel("Show Aura Stack Text")
+        auraStackCb:SetValue(style.showAuraStackText ~= false)
+        auraStackCb:SetFullWidth(true)
+        auraStackCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.showAuraStackText = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(auraStackCb)
+
+        local function BuildAuraStackTextAdvanced(panel)
+            AddFontControls(panel, style, "auraStack", { size = 12 }, refreshStyle)
+            AddColorPicker(panel, style, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+            AddAnchorDropdown(panel, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle)
+            AddOffsetSliders(panel, style, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle)
+        end
+
+        local _, auraStackAdvBtn = AddAdvancedToggle(auraStackCb, "auraStackText", tabInfoButtons, style.showAuraStackText ~= false, {
+            title = "Aura Stack Text Advanced",
+            build = BuildAuraStackTextAdvanced,
+        })
+        local auraStackPromoteBtn = CreateCheckboxPromoteButton(auraStackCb, auraStackAdvBtn, "auraStackText", group, style)
+        AddConditionalPreviewBadge(auraStackCb, auraStackPromoteBtn or auraStackAdvBtn, "Preview Aura Stack Text", "aura_stack_text", style.showAuraStackText ~= false)
+    end
 
     -- Show Keybind/Custom Text toggle
     local kbCb = AceGUI:Create("CheckBox")
@@ -3236,7 +3365,7 @@ local function BuildAppearanceTab(container)
     local iconTintHeading, iconTintCollapsed = BuildCollapsibleSection(container, "Icon Tint", "appearance_iconTint")
     local iconTintPromoteBtn = CreatePromoteButton(iconTintHeading, "iconTint", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
-    local iconTintInfoBtn = CreateInfoButton(iconTintHeading.frame, iconTintPromoteBtn, "LEFT", "RIGHT", 2, 0, {
+    local iconTintTooltip = {
         "Icon Tint",
         {"Recolor or fade icons without affecting cooldown text, glows, or borders.", 1, 1, 1, true},
         " ",
@@ -3248,7 +3377,13 @@ local function BuildAppearanceTab(container)
         " ",
         {"Unusable Dim Color:", 1, 0.82, 0},
         {"A color applied when an ability is not usable and Unusable Visual uses dimming in the Indicators tab.", 1, 1, 1, true},
-    }, tabInfoButtons)
+    }
+    if groupHasAuraEntry then
+        table.insert(iconTintTooltip, " ")
+        table.insert(iconTintTooltip, {"Aura Tint:", 1, 0.82, 0})
+        table.insert(iconTintTooltip, {"A separate color used only while a tracked aura is active.", 1, 1, 1, true})
+    end
+    local iconTintInfoBtn = CreateInfoButton(iconTintHeading.frame, iconTintPromoteBtn, "LEFT", "RIGHT", 2, 0, iconTintTooltip, tabInfoButtons)
 
     iconTintHeading.right:ClearAllPoints()
     iconTintHeading.right:SetPoint("RIGHT", iconTintHeading.frame, "RIGHT", -3, 0)
@@ -3257,7 +3392,7 @@ local function BuildAppearanceTab(container)
     if not iconTintCollapsed then
         BuildIconTintControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
+        end, { showAuraTint = groupHasAuraEntry })
         BuildBackgroundColorControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)

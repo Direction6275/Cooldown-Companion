@@ -228,6 +228,12 @@ local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
     charge_zero = { kind = "charge_zero" },
     unusable = { kind = "unusable" },
     out_of_range = { kind = "out_of_range" },
+    -- 12.1 aura previews render CC-side stand-ins from the same style keys
+    -- the slot kit consumes; they never touch the aura slot subtree.
+    aura_duration_text = { kind = "aura_duration_text", duration = 12, remaining = 8, loop = true },
+    aura_stack_text = { kind = "aura_stack_text", stackText = "3" },
+    aura_duration_swipe = { kind = "aura_duration_swipe", duration = 12, remaining = 8, loop = true },
+    loss_of_control = { kind = "loss_of_control", duration = 12, remaining = 8, loop = true },
 }
 
 local function BuildConditionalVisualPreviewState(previewKind, sampleState)
@@ -261,6 +267,24 @@ local function BuildConditionalVisualPreviewState(previewKind, sampleState)
 end
 
 local function ClearConditionalVisualPreviewDerivedFields(button)
+    -- Aura and loss-of-control previews write CC-side visuals that nothing
+    -- else rewrites per tick (the live aura visuals are Blizzard-driven on
+    -- the slot kit; live LoC skips the widget while the preview flag is up),
+    -- so ending the preview must clear them explicitly.
+    if button._conditionalPreviewKind == "aura_stack_text" and button.auraStackCount then
+        button.auraStackCount:SetText("")
+    end
+    if button._auraTextPreviewFS then
+        button._auraTextPreviewFS:Hide()
+    end
+    if button._auraSwipePreviewCooldown then
+        button._auraSwipePreviewCooldown:SetCooldown(0, 0)
+        button._auraSwipePreviewCooldown:Hide()
+    end
+    if button._conditionalPreviewKind == "loss_of_control" and button.locCooldown then
+        button.locCooldown:SetCooldown(0, 0)
+    end
+    button._conditionalLocPreview = nil
     button._conditionalPreviewKind = nil
     button._conditionalPreviewStartTime = nil
     button._conditionalPreviewDuration = nil

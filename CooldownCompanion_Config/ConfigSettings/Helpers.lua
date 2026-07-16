@@ -300,6 +300,16 @@ local function GetSelectedRuntimeButton(buttonData)
     return nil
 end
 
+-- Aura style sections only apply while an entry tracks an aura. This gate is
+-- config-visibility only, NOT part of ST.CanButtonUseOverrideSection: aura
+-- tracking is a toggle, and the runtime check feeds GetEffectiveStyle's prune
+-- pass, which would permanently delete the saved override on toggle-off.
+local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
+    auraText = true,
+    auraStackText = true,
+    auraDurationSwipe = true,
+}
+
 local function CanButtonUseConfigOverrideSection(buttonData, sectionId)
     if ST.CanButtonUseOverrideSection then
         local allowed, reason = ST.CanButtonUseOverrideSection(buttonData, sectionId)
@@ -310,6 +320,11 @@ local function CanButtonUseConfigOverrideSection(buttonData, sectionId)
         and ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS
         and ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId] then
         return false, "entryType"
+    end
+
+    if AURA_TRACKING_CONFIG_ONLY_SECTIONS[sectionId]
+        and not (buttonData and (buttonData.auraTracking or buttonData.addedAs == "aura")) then
+        return false, "auraTracking"
     end
 
     if not (ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS
@@ -387,8 +402,10 @@ local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupSt
             GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
         elseif buttonData and sectionUnavailableReason == "noCooldown" then
             GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
+        elseif buttonData and sectionUnavailableReason == "auraTracking" then
+            GameTooltip:AddLine("This override is only available for entries that track an aura", 0.5, 0.5, 0.5)
         elseif buttonData and not sectionAllowed then
-            GameTooltip:AddLine("This override is not available for equipment slots", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine("This override is not available for this entry type", 0.5, 0.5, 0.5)
         else
             GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
         end
@@ -489,8 +506,10 @@ local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId
             GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
         elseif btnData and sectionUnavailableReason == "noCooldown" then
             GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
+        elseif btnData and sectionUnavailableReason == "auraTracking" then
+            GameTooltip:AddLine("This override is only available for entries that track an aura", 0.5, 0.5, 0.5)
         elseif btnData and not sectionAllowed then
-            GameTooltip:AddLine("This override is not available for equipment slots", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine("This override is not available for this entry type", 0.5, 0.5, 0.5)
         else
             GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
         end
@@ -560,8 +579,10 @@ local function CreateColorPickerPromoteButton(colorPickerWidget, sectionId, grou
             GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
         elseif btnData and sectionUnavailableReason == "noCooldown" then
             GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
+        elseif btnData and sectionUnavailableReason == "auraTracking" then
+            GameTooltip:AddLine("This override is only available for entries that track an aura", 0.5, 0.5, 0.5)
         elseif btnData and not sectionAllowed then
-            GameTooltip:AddLine("This override is not available for equipment slots", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine("This override is not available for this entry type", 0.5, 0.5, 0.5)
         else
             GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
         end
