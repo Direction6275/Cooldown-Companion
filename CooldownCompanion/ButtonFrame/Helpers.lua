@@ -1018,6 +1018,22 @@ local function ApplyStrataOrder(button, order)
     if button.locCooldown then
         button.locCooldown:SetFrameLevel(baseLevel + #ST.DEFAULT_STRATA_ORDER + 1)
     end
+
+    -- Aura entries: the aura display layer sits above every configurable
+    -- element (and LoC), and CC's text overlay rides above IT so count and
+    -- keybind text stay readable while an aura display is showing. Mirrors
+    -- EnsureAuraLayer (Core/AuraDisplay.lua); keep the two in sync.
+    -- The overlay hoist is gated on the CURRENT entry, not on auraLayer
+    -- existing — pooled buttons keep the layer forever, and a reused host
+    -- showing a non-aura entry must honor the configured chargeText slot.
+    if button.auraLayer then
+        button.auraLayer:SetFrameLevel(baseLevel + #ST.DEFAULT_STRATA_ORDER + 2)
+        local buttonData = button.buttonData
+        if button.overlayFrame and buttonData
+            and (buttonData.auraTracking or buttonData.addedAs == "aura") then
+            button.overlayFrame:SetFrameLevel(baseLevel + #ST.DEFAULT_STRATA_ORDER + 3)
+        end
+    end
 end
 
 -- Apply edge positions to 4 border/highlight textures using the shared spec

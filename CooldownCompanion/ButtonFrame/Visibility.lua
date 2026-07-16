@@ -24,10 +24,10 @@ local tonumber = tonumber
 local type = type
 
 -- Bitmask constants for hide reasons
+-- (12.1: aura visibility is no longer a per-tick rule — hideWhileAuraNotActive
+-- is applied statically by the aura display composition; see AuraDisplay.lua.)
 local HIDE_ON_COOLDOWN      = 0x001
 local HIDE_NOT_ON_COOLDOWN  = 0x002
-local HIDE_AURA_NOT_ACTIVE  = 0x004
-local HIDE_AURA_ACTIVE      = 0x008
 local HIDE_NO_PROC          = 0x010
 local HIDE_ZERO_CHARGES     = 0x020
 local HIDE_ZERO_STACKS      = 0x040
@@ -37,8 +37,6 @@ local HIDE_UNUSABLE         = 0x100
 local HIDE_REASON_NAMES = {
     { bit = HIDE_ON_COOLDOWN,      name = "on-cooldown" },
     { bit = HIDE_NOT_ON_COOLDOWN,  name = "not-on-cooldown" },
-    { bit = HIDE_AURA_NOT_ACTIVE,  name = "aura-missing" },
-    { bit = HIDE_AURA_ACTIVE,      name = "aura-active" },
     { bit = HIDE_NO_PROC,          name = "no-proc" },
     { bit = HIDE_ZERO_CHARGES,     name = "zero-charges" },
     { bit = HIDE_ZERO_STACKS,      name = "zero-stacks" },
@@ -54,8 +52,6 @@ local HIDE_REASON_NAMES = {
 -- Fallbacks do not compose: multiple active reasons = full hide even if
 -- each individually has its fallback enabled.
 local BASELINE_FALLBACKS = {
-    { bit = HIDE_AURA_NOT_ACTIVE, key = "useBaselineAlphaFallback" },
-    { bit = HIDE_AURA_ACTIVE,     key = "useBaselineAlphaFallbackAuraActive" },
     { bit = HIDE_ZERO_CHARGES,    key = "useBaselineAlphaFallbackZeroCharges" },
     { bit = HIDE_ZERO_STACKS,     key = "useBaselineAlphaFallbackZeroStacks" },
     { bit = HIDE_NOT_EQUIPPED,    key = "useBaselineAlphaFallbackNotEquipped" },
@@ -102,7 +98,7 @@ end
 -- Evaluate per-button visibility rules and set hidden/alpha override state.
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
 -- Fast path: if no toggles are enabled, zero overhead.
-local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, procOverlayActive, auraOwnsPrimarySwipe)
+local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
     if buttonData and buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = nil
@@ -111,15 +107,9 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
         return
     end
 
-    if auraOwnsPrimarySwipe == nil then
-        auraOwnsPrimarySwipe = auraOverrideActive
-    end
-
     -- Fast path: no visibility toggles enabled
     if not buttonData.hideWhileOnCooldown
        and not buttonData.hideWhileNotOnCooldown
-       and not buttonData.hideWhileAuraNotActive
-       and not buttonData.hideWhileAuraActive
        and not buttonData.hideWhileNoProc
        and not buttonData.hideWhileZeroCharges
        and not buttonData.hideWhileZeroStacks
@@ -156,7 +146,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         else
-            if button._cooldownState == COOLDOWN_STATE_COOLDOWN and not auraOwnsPrimarySwipe then
+            if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
         end
@@ -185,7 +175,7 @@ local function EvaluateButtonVisibility(button, buttonData, auraOverrideActive, 
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         else
-            if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN and not auraOwnsPrimarySwipe then
+            if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
         end

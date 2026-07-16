@@ -195,9 +195,6 @@ local function IsUnusableVisualActive(button, buttonData)
         return true, "unusable-preview"
     end
     if buttonData.type == "spell" then
-        if EntryRuntime.ShouldSuppressSpellUnusableVisual(button, buttonData) then
-            return false
-        end
         local spellID = button._displaySpellId or buttonData.id
         if not C_Spell_IsSpellUsable(spellID) then
             return true, "unusable"
@@ -242,8 +239,7 @@ local function ResolveIconTintIntent(button, buttonData, style, target)
             r, g, b = 1, 0.2, 0.2
             reason = "out-of-range-preview"
             stateOverride = true
-        elseif buttonData.type == "spell"
-                and not EntryRuntime.ShouldSuppressSpellRangeVisual(button, buttonData) then
+        elseif buttonData.type == "spell" then
             if button._spellOutOfRange then
                 r, g, b = 1, 0.2, 0.2
                 reason = "out-of-range"
@@ -322,6 +318,25 @@ local function ResolveDesaturationIntent(button, buttonData, style, target)
 
     style = style or {}
 
+    -- Aura entries (12.1 compositing): "desaturate while aura missing" is a
+    -- STATIC desaturate on the base icon — while the aura is active the aura
+    -- display layer occludes this icon entirely, so no runtime aura state is
+    -- needed (or readable). Passives keep their pre-12.1 default-on behavior
+    -- with the invert/never opt-outs (invert lives on the aura layer instead).
+    if buttonData.auraTracking or buttonData.addedAs == "aura" then
+        if buttonData.isPassive then
+            if not (buttonData.neverDesaturate or buttonData.invertAuraDesaturationLogic) then
+                target.active = true
+                target.reason = "aura-missing"
+            end
+            return target
+        elseif buttonData.desaturateWhileAuraNotActive then
+            target.active = true
+            target.reason = "aura-missing"
+            return target
+        end
+    end
+
     if style.desaturateOnCooldown or buttonData.desaturateWhileZeroCharges
         or buttonData.desaturateWhileZeroStacks or button._isEquippableNotEquipped then
         if style.desaturateOnCooldown and button._desatCooldownActive then
@@ -358,10 +373,11 @@ local function ResolveDesaturationIntent(button, buttonData, style, target)
     return target
 end
 
--- Icon desaturation: aura-tracked buttons desaturate when aura absent
--- (passive entries can invert this via invertAuraDesaturationLogic,
--- disable it entirely via neverDesaturate;
--- non-passive opt in via desaturateWhileAuraNotActive);
+-- Icon desaturation: aura entries desaturate statically when configured to
+-- reflect a missing aura (the aura display occludes the icon while active;
+-- passives default on, with invertAuraDesaturationLogic handled on the aura
+-- layer and neverDesaturate as the off switch; non-passive entries opt in
+-- via desaturateWhileAuraNotActive);
 -- cooldown buttons desaturate based on _desatCooldownActive (set per-tick from cooldown / item state);
 -- equippable-but-not-equipped items always desaturate.
 -- Shared by icon-mode and bar-mode display paths.

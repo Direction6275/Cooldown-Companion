@@ -131,16 +131,14 @@ local function GetButtonGroup(button)
         and CooldownCompanion.db.profile.groups[groupId]
 end
 
-local function SetIconFillIntent(target, available, active, reason, mode, color, auraActive, static)
+local function SetIconFillIntent(target, available, active, reason, mode, color, static)
     target.available = available == true
     target.active = active == true
     target.reason = reason
     target.mode = mode
-    target.auraActive = auraActive == true
     target.static = static == true
     target.usesOnUpdate = target.active and target.static ~= true or false
     target.suppressCooldownSwipe = target.active
-    target.suppressAuraBlizzardSwipe = target.auraActive
     target.r = color and color[1] or nil
     target.g = color and color[2] or nil
     target.b = color and color[3] or nil
@@ -493,7 +491,6 @@ local function ResolveIconFillIntent(button, buttonData, style, target)
             cooldownReason,
             "cooldown",
             style.iconFillCooldownColor or DEFAULT_ICON_FILL_COOLDOWN_COLOR,
-            false,
             false
         )
     end
@@ -640,13 +637,11 @@ local function RefreshButtonVisualState(button, context)
     local iconFill = EnsureSection(state, "iconFill")
     iconFill.active = IsTrue(button._iconFillActive)
     iconFill.mode = button._iconFillMode
-    iconFill.auraActive = IsTrue(button._iconFillAuraActive)
     iconFill.onUpdateInstalled = IsTrue(button._iconFillOnUpdateInstalled)
     iconFill.intentAvailable = hasIconFillIntent
     iconFill.intentActive = hasIconFillIntent and IsTrue(iconFillIntent.active) or false
     iconFill.intentMode = hasIconFillIntent and iconFillIntent.mode or nil
     iconFill.intentReason = hasIconFillIntent and iconFillIntent.reason or nil
-    iconFill.intentAuraActive = hasIconFillIntent and IsTrue(iconFillIntent.auraActive) or false
     iconFill.intentUsesOnUpdate = hasIconFillIntent and IsTrue(iconFillIntent.usesOnUpdate) or false
 
     local glows = EnsureSection(state, "glows")

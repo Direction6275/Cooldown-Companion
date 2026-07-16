@@ -352,8 +352,6 @@ local function ClearRotationAssistantMissingState(button, buttonData, style)
     button._visibilityReasonMode = "visible"
 
     ClearCooldownWidget(button.cooldown)
-    ClearCooldownWidget(button.secondaryCooldown)
-    ClearCooldownWidget(button.auraBlizzardCooldown)
     ClearCooldownWidget(button.locCooldown)
     ClearCooldownWidget(button.iconGCDCooldown)
     if ClearIconFillVisualState then
@@ -376,9 +374,6 @@ local function ClearRotationAssistantMissingState(button, buttonData, style)
     end
     if button._cdTextRegion then
         button._cdTextRegion:SetTextColor(0, 0, 0, 0)
-    end
-    if button._secondaryCdTextRegion then
-        button._secondaryCdTextRegion:SetTextColor(0, 0, 0, 0)
     end
     if button.SetAlpha and button._lastVisAlpha ~= 1 then
         button:SetAlpha(1)
@@ -915,11 +910,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button.cooldown:Hide()
     end
 
-    if button.secondaryCooldown and button._secondaryCdActive then
-        button._secondaryCdActive = false
-        button.secondaryCooldown:SetCooldown(0, 0)
-    end
-
     if not barAuraStackDisplay then
         if buttonData.type == "spell" and not buttonData.isPassive then
             spellCooldownResult = EntryRuntime.EvaluateButtonSpellCooldown(
@@ -1006,7 +996,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- charge-specific cooldown logic.
         if buttonData.type == "spell"
                 and not barAuraStackDisplay
-                and not (button._auraTrackingReady and button.style and button.style.showAuraStackText ~= false)
                 and button.style and button.style.showChargeText then
             local displayCountShown = false
             local hasCastCountText = HasCastCountText(buttonData)
@@ -1055,8 +1044,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 button.count:SetText("")
             end
         elseif not barAuraStackDisplay
-                and (buttonData._hasDisplayCount or buttonData._displayCountFamily or HasCastCountText(buttonData) or buttonData._castCountCandidate) and buttonData.type == "spell"
-                and not (button._auraTrackingReady and button.style and button.style.showAuraStackText ~= false) then
+                and (buttonData._hasDisplayCount or buttonData._displayCountFamily or HasCastCountText(buttonData) or buttonData._castCountCandidate) and buttonData.type == "spell" then
             -- Count text disabled: ensure display/use-count and cast-count text is cleared.
             button.count:SetText("")
         elseif button._chargeText ~= nil then
@@ -1336,7 +1324,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Per-button visibility evaluation (after charge tracking)
     button._procOverlayActive = procOverlayActive
-    EvaluateButtonVisibility(button, buttonData, false, procOverlayActive, false)
+    EvaluateButtonVisibility(button, buttonData, procOverlayActive)
     button._rawVisibilityHidden = button._visibilityHidden
     button._rawVisibilityAlphaOverride = button._visibilityAlphaOverride
     button._rawVisibilityReasonBits = button._visibilityReasonBits

@@ -16,7 +16,11 @@ local CS = ST._configState
 local ColorHeading = ST._ColorHeading
 local CreateInfoButton = ST._CreateInfoButton
 
+-- Full group refresh, not just a rebind: aura config changes can flip the
+-- CC-side static composition too (shell alpha, countdown text hosting),
+-- which only UpdateButtonStyle applies.
 local function RefreshAuraConfig()
+    CooldownCompanion:RefreshAllGroups()
     CooldownCompanion:RequestAuraRebind("config")
     CooldownCompanion:RefreshConfigPanel()
 end
@@ -204,6 +208,54 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         end
     end)
     scroll:AddChild(addBox)
+
+    -- Display toggles. Standalone and passive entries always show the live
+    -- aura icon (it exists to display the aura), so the opt-in only appears
+    -- on ordinary spell entries.
+    if not (isStandalone or buttonData.isPassive) then
+        local iconCb = AceGUI:Create("CheckBox")
+        iconCb:SetLabel("Show Aura Icon While Active")
+        iconCb:SetValue(buttonData.auraShowAuraIcon == true)
+        iconCb:SetFullWidth(true)
+        iconCb:SetCallback("OnValueChanged", function(_, _, value)
+            buttonData.auraShowAuraIcon = value and true or nil
+            RefreshAuraConfig()
+        end)
+        scroll:AddChild(iconCb)
+    end
+
+    if buttonData.isPassive then
+        -- Passives desaturate while the aura is missing by default.
+        local invertCb = AceGUI:Create("CheckBox")
+        invertCb:SetLabel("Desaturate While Active Instead")
+        invertCb:SetValue(buttonData.invertAuraDesaturationLogic == true)
+        invertCb:SetFullWidth(true)
+        invertCb:SetCallback("OnValueChanged", function(_, _, value)
+            buttonData.invertAuraDesaturationLogic = value and true or nil
+            RefreshAuraConfig()
+        end)
+        scroll:AddChild(invertCb)
+
+        local neverCb = AceGUI:Create("CheckBox")
+        neverCb:SetLabel("Never Desaturate")
+        neverCb:SetValue(buttonData.neverDesaturate == true)
+        neverCb:SetFullWidth(true)
+        neverCb:SetCallback("OnValueChanged", function(_, _, value)
+            buttonData.neverDesaturate = value and true or nil
+            RefreshAuraConfig()
+        end)
+        scroll:AddChild(neverCb)
+    else
+        local desatCb = AceGUI:Create("CheckBox")
+        desatCb:SetLabel("Desaturate Icon While Aura Missing")
+        desatCb:SetValue(buttonData.desaturateWhileAuraNotActive == true)
+        desatCb:SetFullWidth(true)
+        desatCb:SetCallback("OnValueChanged", function(_, _, value)
+            buttonData.desaturateWhileAuraNotActive = value and true or nil
+            RefreshAuraConfig()
+        end)
+        scroll:AddChild(desatCb)
+    end
 end
 
 ST._BuildAuraTab = BuildAuraTab

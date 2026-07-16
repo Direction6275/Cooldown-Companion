@@ -591,13 +591,6 @@ local function ClearButtonCompactSlotCache(button)
     button._compactSlotY = nil
 end
 
-local function NeedsIconSecondaryCooldown(buttonData, style)
-    return style and style.separateTextPositions
-        and buttonData
-        and buttonData.auraTracking
-        and not buttonData.isPassive
-end
-
 local function GetButtonPoolKey(group, buttonData, style)
     local displayMode = group and group.displayMode
     if displayMode == "text" then
@@ -608,8 +601,6 @@ local function GetButtonPoolKey(group, buttonData, style)
         return "textures"
     elseif displayMode == "trigger" then
         return "trigger"
-    elseif NeedsIconSecondaryCooldown(buttonData, style) then
-        return "icons-secondary"
     end
     return "icons"
 end
@@ -647,9 +638,6 @@ local function GetExistingButtonPoolKey(button)
     end
     if button and button._isBar then
         return "bars"
-    end
-    if button and button.secondaryCooldown then
-        return "icons-secondary"
     end
     return "icons"
 end
@@ -915,8 +903,6 @@ local function DeactivatePooledButton(self, groupId, button)
     ClearCooldownWidget(button.cooldown)
     ClearCooldownWidget(button.locCooldown)
     ClearCooldownWidget(button.iconGCDCooldown)
-    ClearCooldownWidget(button.secondaryCooldown)
-    ClearCooldownWidget(button.auraBlizzardCooldown)
     HideButtonGlowContainer(button.assistedHighlight)
     HideButtonGlowContainer(button.procGlow)
     HideButtonGlowContainer(button.auraGlow)
@@ -960,7 +946,17 @@ local function AcquireButtonFromPool(frame, poolKey, buttonData)
         pick = pick or free
         if not pick then return nil end
     else
-        pick = #pool
+        -- Prefer the frame that already hosts this entry: repeated repopulates
+        -- (config refreshes) then converge on a stable entry<->frame mapping
+        -- instead of reversing it each pass, which flip-flopped the statically
+        -- composed aura-shell visuals and churned the aura slot rebinds.
+        for i = #pool, 1, -1 do
+            if pool[i].buttonData == buttonData then
+                pick = i
+                break
+            end
+        end
+        pick = pick or #pool
     end
     local button = table.remove(pool, pick)
     button._pooled = nil
@@ -3186,6 +3182,11 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
     local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
     ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
     FinishGroupButtonRefresh(self, groupId, frame, group)
+
+    -- Style-only fast path skips PopulateGroupButtons, but the aura slot kit
+    -- consumes style keys at bind time — re-request the (coalesced) rebind so
+    -- the composed aura visuals track style edits too.
+    self:RequestAuraRebind("style")
 end
 
 function CooldownCompanion:UpdateGroupClickthrough(groupId)

@@ -2067,6 +2067,43 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 
 
     if not visCollapsed then
+    -- Show Only While Aura Active (aura entries). 12.1: applied statically —
+    -- the aura display composes the whole button over an invisible CC shell,
+    -- so this needs a restyle + rebind, not the per-tick visibility bits.
+    local function FilterAuraEntry(bd)
+        return bd.type == "spell" and (bd.auraTracking or bd.addedAs == "aura")
+    end
+    local function ApplyToAuraEntries(field, value)
+        if isBatch then
+            for idx in pairs(CS.selectedButtons) do
+                local bd = group.buttons[idx]
+                if bd then
+                    if not value or FilterAuraEntry(bd) then
+                        bd[field] = value
+                    end
+                end
+            end
+        else
+            buttonData[field] = value
+        end
+    end
+    local anyAuraEntry
+    if isBatch then anyAuraEntry = AnySelectedMatch(FilterAuraEntry)
+    else anyAuraEntry = FilterAuraEntry(buttonData) end
+    -- Icon groups only for now: bar mode has no shell composition until the
+    -- bars phase lands, and text mode has no aura display at all.
+    if anyAuraEntry and (group.displayMode or "icons") == "icons" then
+        local showOnlyAuraCb = AceGUI:Create("CheckBox")
+        showOnlyAuraCb:SetLabel("Show Only While Aura Active")
+        SetCheckboxValue(showOnlyAuraCb, "hideWhileAuraNotActive", FilterAuraEntry)
+        showOnlyAuraCb:SetFullWidth(true)
+        WrapBatchCallback(showOnlyAuraCb, function(widget, event, val)
+            ApplyToAuraEntries("hideWhileAuraNotActive", val or nil)
+            CooldownCompanion:RefreshAllGroups()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        scroll:AddChild(showOnlyAuraCb)
+    end
     -- Hide While On Cooldown (skip for passives — no cooldown)
     -- Batch: show if not ALL selected are passive
     local allPassive

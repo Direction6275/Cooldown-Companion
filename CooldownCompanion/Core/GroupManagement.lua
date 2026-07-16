@@ -1705,6 +1705,13 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     if buttonType == "spell" then
         if forceAura == true or (isPassive and forceAura ~= false) then
             group.buttons[buttonIndex].addedAs = "aura"
+            -- Explicit aura adds (picked as an aura, not a passive that
+            -- auto-classified) default to showing only while the aura is
+            -- active — the entry exists to display the aura. Icon groups
+            -- only: bar mode has no shell composition until its phase.
+            if forceAura == true and (group.displayMode or "icons") == "icons" then
+                group.buttons[buttonIndex].hideWhileAuraNotActive = true
+            end
         else
             group.buttons[buttonIndex].addedAs = "spell"
         end

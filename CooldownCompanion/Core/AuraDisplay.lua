@@ -131,6 +131,21 @@ end
 local function BuildSlotKit(slotButton)
     local kit = {}
 
+    -- Shell composition (show-only-while-active entries): background and
+    -- border replicas let the slot render the ENTIRE visible button while the
+    -- CC frame underneath is an invisible layout shell. They deliberately
+    -- overhang the slot (which covers only the icon rect); geometry is
+    -- anchored to the host button at bind time and they stay alpha-0 for
+    -- ordinary entries.
+    kit.bg = slotButton:CreateTexture(nil, "BACKGROUND")
+    kit.bg:SetAlpha(0)
+    kit.border = {}
+    for i = 1, 4 do
+        local tex = slotButton:CreateTexture(nil, "OVERLAY")
+        tex:SetAlpha(0)
+        kit.border[i] = tex
+    end
+
     -- Static occluder (two-layer compositing): while the aura runs, this
     -- covers the CC button's own icon + cooldown swipe, so the aura display
     -- REPLACES the cooldown display instead of stacking on it. CC-authored,
@@ -165,15 +180,26 @@ local function BuildSlotKit(slotButton)
     return kit
 end
 
--- Phase 1 styling: defaults only (per-feature style keys arrive in Phases 2-3).
-local function StyleSlotKit(slot, button, buttonData)
+-- Parity predicate (pre-12.1 ShouldUseActiveAuraIcon): standalone and passive
+-- entries always show the live aura icon (Blizzard writes the aura instance's
+-- icon, so snapshot-empowered DoT icons flip in combat); ordinary entries opt
+-- in via auraShowAuraIcon.
+local function ShouldShowAuraIcon(buttonData)
+    return buttonData.auraShowAuraIcon == true
+        or buttonData.addedAs == "aura"
+        or buttonData.isPassive == true
+end
+
+local function StyleSlotKit(slot, button, buttonData, style)
     local kit = slot.kit
     if not kit then return end
-    kit.auraIcon:SetAlpha(buttonData.auraShowAuraIcon and 1 or 0)
+    style = style or {}
+
+    kit.auraIcon:SetAlpha(ShouldShowAuraIcon(buttonData) and 1 or 0)
+
     -- Occluding cover: the entry's icon, cropped like the CC icon underneath
     -- (read at bind time — CC-owned texture, OOC-safe). Known edge: a combat
-    -- icon override (form swap) can't refresh the cover until the next rebind;
-    -- Phase 2's icon-swap work owns that.
+    -- icon override (form swap) can't refresh the cover until the next rebind.
     local ccIcon = button.icon
     if ccIcon and ccIcon.GetTexture and ccIcon:GetTexture() then
         kit.iconCover:SetTexture(ccIcon:GetTexture())
@@ -185,8 +211,67 @@ local function StyleSlotKit(slot, button, buttonData)
     else
         kit.iconCover:SetAlpha(0)
     end
-    kit.durationText:SetAlpha(1)
-    kit.stackText:SetAlpha(1)
+
+    -- Aura-active icon tint lives on the aura layer now (the layer IS the
+    -- aura-active state); the CC icon keeps its own tint pipeline. With no
+    -- aura tint configured, carry the user's base icon tint so the icon
+    -- doesn't visibly un-tint whenever an aura activates.
+    local tint = style.iconAuraTintEnabled and style.iconAuraTintColor or style.iconTintColor
+    local tr = tint and tint[1] or 1
+    local tg = tint and tint[2] or 1
+    local tb = tint and tint[3] or 1
+    local ta = tint and tint[4] or 1
+    kit.auraIcon:SetVertexColor(tr, tg, tb, ta)
+    kit.iconCover:SetVertexColor(tr, tg, tb, ta)
+
+    -- Inverted passive desaturation ("desaturate while active") desaturates
+    -- the aura layer; the default "desaturate while missing" is a static
+    -- desaturate on the CC icon (Tracking.lua) that this layer occludes.
+    local kitDesat = buttonData.isPassive == true
+        and buttonData.invertAuraDesaturationLogic == true
+        and not buttonData.neverDesaturate
+    kit.auraIcon:SetDesaturated(kitDesat)
+    kit.iconCover:SetDesaturated(kitDesat)
+
+    -- Duration/stack text: shown per style, anchored with the pre-12.1
+    -- defaults (font styling arrives in Phase 3).
+    kit.durationText:ClearAllPoints()
+    kit.durationText:SetPoint(style.auraTextAnchor or "TOPLEFT",
+        slot.slotButton, style.auraTextAnchor or "TOPLEFT",
+        style.auraTextXOffset or 2, style.auraTextYOffset or -2)
+    kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
+    kit.stackText:ClearAllPoints()
+    kit.stackText:SetPoint(style.auraStackAnchor or "BOTTOMLEFT",
+        slot.slotButton, style.auraStackAnchor or "BOTTOMLEFT",
+        style.auraStackXOffset or 2, style.auraStackYOffset or 2)
+    kit.stackText:SetAlpha(style.showAuraStackText ~= false and 1 or 0)
+
+    -- Full-button composition for show-only-while-active entries: bg + border
+    -- replicas anchored to the host button (pixel-identical to the CC shell).
+    -- Icon-mode hosts only — bar mode has no shell counterpart until its
+    -- phase lands, so composing over a visible bar would just paint garbage.
+    if buttonData.hideWhileAuraNotActive == true and button._isBar ~= true then
+        kit.bg:ClearAllPoints()
+        kit.bg:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+        kit.bg:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
+        local bgColor = style.backgroundColor or { 0, 0, 0, 0.5 }
+        kit.bg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] or 0.5)
+        kit.bg:SetAlpha(1)
+        local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+        -- Effective mode, not raw: the profile one-pixel-borders option
+        -- promotes CUSTOM to CRISP exactly like ApplyBorderEdgePositions.
+        local renderMode = ST.GetEffectiveBorderRenderMode(ST.GetBorderRenderMode(style), nil, borderSize)
+        ST.ApplyBorderTexturesBetween(kit.border, button, button,
+            style.borderColor or { 0, 0, 0, 1 }, borderSize, renderMode)
+        for _, tex in ipairs(kit.border) do
+            tex:SetAlpha(1)
+        end
+    else
+        kit.bg:SetAlpha(0)
+        for _, tex in ipairs(kit.border) do
+            tex:SetAlpha(0)
+        end
+    end
 end
 
 ------------------------------------------------------------------------
@@ -257,11 +342,17 @@ local function EnsureAuraLayer(button)
         button.auraLayer = layer
     end
     -- Above every configurable button element (LoC sits at baseLevel+7).
+    -- ApplyStrataOrder (ButtonFrame/Helpers.lua) keeps these two levels in
+    -- sync on restyles: CC's text overlay rides ABOVE the aura display so
+    -- count/keybind text stays readable while an aura is showing.
     layer:SetFrameLevel(button:GetFrameLevel() + 8)
+    if button.overlayFrame then
+        button.overlayFrame:SetFrameLevel(button:GetFrameLevel() + 9)
+    end
     return layer
 end
 
-local function BindSlot(slot, button, buttonData, spellSet)
+local function BindSlot(slot, button, buttonData, spellSet, style)
     local layer = EnsureAuraLayer(button)
     local slotButton = slot.slotButton
     slotButton:SetParent(layer)
@@ -269,7 +360,7 @@ local function BindSlot(slot, button, buttonData, spellSet)
     slotButton:SetPoint("TOPLEFT", layer, "TOPLEFT", 0, 0)
     slotButton:SetPoint("BOTTOMRIGHT", layer, "BOTTOMRIGHT", 0, 0)
     slot.container:SetAuraSlotCandidateFilters(slot.key, BuildCandidateFilters(slot.unit, spellSet))
-    StyleSlotKit(slot, button, buttonData)
+    StyleSlotKit(slot, button, buttonData, style)
     -- Tooltip suppression follows the click-through sweep's recorded motion
     -- state (the sweep itself never reaches the slot subtree). P7-validated.
     slotButton:SetMouseMotionEnabled(not button._cdcClickThroughMotion)
@@ -318,7 +409,12 @@ function RunAuraRebind()
                     if spellSet then
                         local unit = ResolveEntryAuraUnit(self, buttonData)
                         local list = wanted[unit]
-                        list[#list + 1] = { button = button, buttonData = buttonData, spellSet = spellSet }
+                        list[#list + 1] = {
+                            button = button,
+                            buttonData = buttonData,
+                            spellSet = spellSet,
+                            style = self:GetEffectiveStyle(group.style, buttonData),
+                        }
                     end
                 end
             end
@@ -335,7 +431,7 @@ function RunAuraRebind()
         for i, want in ipairs(list) do
             local slot = unitSlots[i] or CreateSlot(unit)
             if not slot then break end
-            BindSlot(slot, want.button, want.buttonData, want.spellSet)
+            BindSlot(slot, want.button, want.buttonData, want.spellSet, want.style)
         end
     end
 end

@@ -235,12 +235,10 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     end
     CompareValue(row, "iconFill.active", iconFill.active, IsTrue(button._iconFillActive))
     CompareValue(row, "iconFill.mode", iconFill.mode, button._iconFillMode)
-    CompareValue(row, "iconFill.auraActive", iconFill.auraActive, IsTrue(button._iconFillAuraActive))
     CompareValue(row, "iconFill.onUpdateInstalled", iconFill.onUpdateInstalled, IsTrue(button._iconFillOnUpdateInstalled))
     if compareVisibleIconIntent and iconFill.intentAvailable == true then
         CompareValue(row, "iconFill.intent.active", iconFill.intentActive, iconFill.active)
         CompareValue(row, "iconFill.intent.mode", iconFill.intentMode, iconFill.mode)
-        CompareValue(row, "iconFill.intent.auraActive", iconFill.intentAuraActive, iconFill.auraActive)
         CompareValue(row, "iconFill.intent.usesOnUpdate", iconFill.intentUsesOnUpdate, iconFill.onUpdateInstalled)
     end
     CompareValue(row, "glows.readyActive", glows.readyActive, IsTrue(button._readyGlowActive))
