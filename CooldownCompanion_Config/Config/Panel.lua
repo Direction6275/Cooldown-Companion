@@ -1976,6 +1976,8 @@ local function CreateConfigPanel()
                 ST._BuildCustomKeybindSection(scroll, buttonData)
                 ST._BuildCustomNameSection(scroll, buttonData)
             end
+        elseif tab == "aura" then
+            ST._BuildAuraTab(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
         elseif tab == "soundalerts" then
             if group.displayMode == "trigger" then
                 ST._BuildTriggerPanelSoundAlertsTab(scroll, group, buttonData, CS.buttonSettingsInfoButtons)

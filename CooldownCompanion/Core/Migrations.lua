@@ -460,6 +460,138 @@ function CooldownCompanion:NotifyLegacySupportCutoff(dataLabel)
     self:Print(self:GetLegacySupportCutoffMessage(dataLabel))
 end
 
+-- 12.1 aura rebuild migration: keep-what-maps (field names unchanged), drop
+-- what has no 12.1 equivalent, recompute the tracked unit from spell polarity
+-- (the anti-cheat gate allows only buffs-on-player and own-debuffs-on-target).
+-- Idempotent; gated on a one-time profile stamp so users see the summary once.
+-- Untouched on purpose: pandemic style keys (dormant until Blizzard fixes),
+-- stored auraActive trigger clauses (retired-offer pattern), and custom-bar
+-- aura entries (the later bars phases own their migration).
+local function ClassifyAuraSpellUnit(spellID)
+    if not (spellID and C_Spell.DoesSpellExist and C_Spell.DoesSpellExist(spellID)) then
+        return nil
+    end
+    return C_Spell.IsSpellHarmful(spellID) and "target" or "player"
+end
+
+local function MigrateAuraEntry(self, buttonData, counts)
+    -- hide-while-aura-active: LOST in 12.1 (no compliant mechanism).
+    if buttonData.hideWhileAuraActive ~= nil then
+        buttonData.hideWhileAuraActive = nil
+        counts.hideActive = counts.hideActive + 1
+    end
+
+    -- Aura-removed sounds: no 12.1 API (gain sounds survive natively).
+    local events = type(buttonData.soundAlerts) == "table"
+        and type(buttonData.soundAlerts.events) == "table"
+        and buttonData.soundAlerts.events or nil
+    if events and events.onAuraRemoved ~= nil then
+        events.onAuraRemoved = nil
+        counts.lossSounds = counts.lossSounds + 1
+    end
+
+    -- Bar stack displays: plain numeric text only (pips/segments/overlays
+    -- need the numeric stack value, which is secret in combat).
+    local auraBar = type(buttonData.auraBar) == "table" and buttonData.auraBar or nil
+    if auraBar then
+        local touched = false
+        local mode = auraBar.mode
+        if mode == "stack" or mode == "stack_continuous" or mode == "stack_segmented" or mode == "stack_overlay" then
+            auraBar.mode = "stacks"
+            touched = true
+        end
+        if auraBar.stackDisplayMode ~= nil or auraBar.segmentGap ~= nil
+            or auraBar.segmentedSmoothing ~= nil or auraBar.maxStacks ~= nil then
+            auraBar.stackDisplayMode = nil
+            auraBar.segmentGap = nil
+            auraBar.segmentedSmoothing = nil
+            auraBar.maxStacks = nil
+            touched = true
+        end
+        if touched then
+            counts.stackModes = counts.stackModes + 1
+        end
+    end
+
+    -- Mixed buff/debuff candidate lists are unrepresentable (one slot, one
+    -- polarity): keep the majority polarity plus unclassifiable IDs.
+    local polarity = nil
+    local raw = buttonData.auraSpellID and tostring(buttonData.auraSpellID) or nil
+    if raw then
+        local helpfulCount, harmfulCount = 0, 0
+        for id in raw:gmatch("%d+") do
+            local unit = ClassifyAuraSpellUnit(tonumber(id))
+            if unit == "target" then
+                harmfulCount = harmfulCount + 1
+            elseif unit == "player" then
+                helpfulCount = helpfulCount + 1
+            end
+        end
+        if helpfulCount > 0 and harmfulCount > 0 then
+            local keepUnit = harmfulCount > helpfulCount and "target" or "player"
+            local rebuilt = {}
+            for id in raw:gmatch("%d+") do
+                local numericID = tonumber(id)
+                local unit = ClassifyAuraSpellUnit(numericID)
+                if numericID and (unit == nil or unit == keepUnit) then
+                    rebuilt[#rebuilt + 1] = tostring(numericID)
+                end
+            end
+            buttonData.auraSpellID = table.concat(rebuilt, ",")
+            counts.mixed = counts.mixed + 1
+            polarity = keepUnit
+        elseif harmfulCount > 0 then
+            polarity = "target"
+        elseif helpfulCount > 0 then
+            polarity = "player"
+        end
+    end
+    if polarity == nil then
+        polarity = ClassifyAuraSpellUnit(self:ResolveAuraSpellID(buttonData))
+    end
+    if polarity and buttonData.auraUnit ~= polarity then
+        if buttonData.auraUnit ~= nil then
+            counts.unit = counts.unit + 1
+        end
+        buttonData.auraUnit = polarity
+    end
+
+    -- Re-assert the standalone-entry invariants (idempotent, CDM-free).
+    if buttonData.addedAs == "aura" and self.NormalizeStandaloneAuraButtonData then
+        self:NormalizeStandaloneAuraButtonData(buttonData)
+    end
+end
+
+local function MigrateAuraTrackingRebuild(self, profile)
+    if type(profile) ~= "table" or profile._cdcAuraRebuildMigrated then return end
+    local counts = { hideActive = 0, stackModes = 0, lossSounds = 0, mixed = 0, unit = 0 }
+    local groups = profile.groups
+    if type(groups) == "table" then
+        for _, group in pairs(groups) do
+            local buttons = type(group) == "table" and group.buttons or nil
+            if type(buttons) == "table" then
+                for _, buttonData in ipairs(buttons) do
+                    if type(buttonData) == "table" and buttonData.type == "spell"
+                        and (buttonData.auraTracking or buttonData.addedAs == "aura") then
+                        MigrateAuraEntry(self, buttonData, counts)
+                    end
+                end
+            end
+        end
+    end
+    profile._cdcAuraRebuildMigrated = true
+    local dropped = {}
+    if counts.hideActive > 0 then dropped[#dropped + 1] = ("hide-while-aura-active (x%d)"):format(counts.hideActive) end
+    if counts.stackModes > 0 then dropped[#dropped + 1] = ("bar stack segment displays (x%d)"):format(counts.stackModes) end
+    if counts.lossSounds > 0 then dropped[#dropped + 1] = ("aura-removed sounds (x%d)"):format(counts.lossSounds) end
+    if counts.mixed > 0 then dropped[#dropped + 1] = ("mixed buff/debuff aura lists trimmed (x%d)"):format(counts.mixed) end
+    if counts.unit > 0 then dropped[#dropped + 1] = ("tracked-unit corrections (x%d)"):format(counts.unit) end
+    if #dropped > 0 then
+        self:Print("Aura tracking updated for 12.1. Adjusted settings with no 12.1 equivalent: "
+            .. table.concat(dropped, ", ") .. ".")
+    end
+end
+
 -- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles
 -- that are allowed to continue. Add new post-1.15 migrations here in order.
 function CooldownCompanion:RunAllMigrations()
@@ -491,6 +623,7 @@ function CooldownCompanion:RunAllMigrations()
     NormalizePassiveCooldownButtons(self.db and self.db.profile)
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
+    MigrateAuraTrackingRebuild(self, self.db and self.db.profile)
     if self.RunResourceBarClassScopeMigration then
         self:RunResourceBarClassScopeMigration()
     end
@@ -504,6 +637,12 @@ function CooldownCompanion:RunAllMigrations()
 end
 
 function CooldownCompanion:ClearMigrationSentinels()
-    -- Kept as the import hook for future post-1.15 migrations.
+    -- Import hook: clear one-time stamps so imported pre-rebuild profiles
+    -- re-run their passes (each pass is idempotent; re-running on migrated
+    -- data changes nothing and prints nothing).
+    local profile = self.db and self.db.profile
+    if type(profile) == "table" then
+        profile._cdcAuraRebuildMigrated = nil
+    end
 end
 

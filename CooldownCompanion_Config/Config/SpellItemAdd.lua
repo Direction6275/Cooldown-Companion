@@ -8,7 +8,7 @@ local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
 -- Imports from earlier Config/ files
-local IsSpellInCDMBuffBar = ST._IsSpellInCDMBuffBar
+local ResolveCDMAuraSpellID = ST.ResolveCDMAuraSpellID
 local IsPassiveOrProc = ST._IsPassiveOrProc
 local IsPassiveCooldownSpell = ST.IsPassiveCooldownSpell
 local IsNeverTrackableSpell = ST._IsNeverTrackableSpell
@@ -61,13 +61,14 @@ local AUTOCOMPLETE_TYPE_GAP = 4
 
 local AUTOCOMPLETE_TYPE_DISPLAY = {
     spell = { label = "Spell", atlas = "ui_adv_atk" },
+    aura = { label = "Aura", atlas = "ui_adv_health" },
     equipment = { label = "Equipment", atlas = "Crosshair_repairnpc_32" },
     item = { label = "Item", atlas = "auctionhouse-icon-coin-gold" },
 }
 
 local function GetAutocompleteTypeDisplay(entry)
     local kind = entry and entry.autocompleteKind
-    if kind ~= "spell" and kind ~= "equipment" and kind ~= "item" then
+    if kind ~= "spell" and kind ~= "aura" and kind ~= "equipment" and kind ~= "item" then
         if entry and entry.isEquipmentSlot then
             kind = "equipment"
         elseif entry and entry.isItem then
@@ -91,7 +92,7 @@ end
 ------------------------------------------------------------------------
 -- Helper: Add spell to selected group
 ------------------------------------------------------------------------
-local function TryAddSpell(input, isPetSpell)
+local function TryAddSpell(input, isPetSpell, forceAura)
     if input == "" or not CS.selectedGroup then return false end
 
     local spellId = tonumber(input)
@@ -120,18 +121,17 @@ local function TryAddSpell(input, isPetSpell)
             PrintBlockedSpellMessage(spellName)
             return false
         end
-        local passiveOrProc = IsPassiveOrProc(spellId)
-        if passiveOrProc and not IsSpellInCDMBuffBar(spellId) then
-            CooldownCompanion:Print("Passive/proc spell " .. spellName .. " is not tracked in the Cooldown Manager.")
-            return false
-        end
-        local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, isPetSpell, passiveOrProc or nil)
+        -- 12.1: passives/procs add directly as aura-tracking entries — the new
+        -- AuraContainer backend needs no Cooldown Manager setup. forceAura=true
+        -- comes from "Aura" autocomplete suggestions (tracked buff/bar rows).
+        local addAsAura = forceAura == true or IsPassiveOrProc(spellId)
+        local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, isPetSpell, addAsAura or nil, forceAura)
         if not idx then
             return false
         end
         SelectNewButton(CS.selectedGroup, idx)
         if not notified then
-            CooldownCompanion:Print("Added spell: " .. spellName)
+            CooldownCompanion:Print((addAsAura and "Added aura: " or "Added spell: ") .. spellName)
         end
         return true
     else
@@ -293,12 +293,9 @@ local function TryAdd(input)
         end
         local passiveOrProc = spellFound and IsPassiveOrProc(id)
 
-        -- Passive/proc spell: require CDM presence
+        -- Passive/proc spell → aura-tracking entry (12.1: no CDM requirement)
         if spellFound and passiveOrProc then
-            if IsSpellInCDMBuffBar(id) then
-                return TryAddSpell(tostring(id))
-            end
-            -- Not in CDM — fall through to try as item, then report error
+            return TryAddSpell(tostring(id))
         end
 
         -- Non-passive spell → add it
@@ -387,10 +384,7 @@ local function TryAdd(input)
             end
             local passiveOrProc = IsPassiveOrProc(spellId)
             if passiveOrProc then
-                if IsSpellInCDMBuffBar(spellId) then
-                    return TryAddSpell(tostring(spellId))
-                end
-                -- Not in CDM — fall through to try as item, then report error
+                return TryAddSpell(tostring(spellId))
             else
                 local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName)
                 if not idx then
@@ -598,6 +592,56 @@ local function BuildAutocompleteCache()
         end
     end
 
+    -- Trackable auras, by their specific aura identity. Procs and applied
+    -- auras (e.g. DoT debuffs) are not spellbook items, so this is the only
+    -- discovery surface for standalone aura entries. Sourced from Blizzard's
+    -- tracked buff/bar data (pure data API): membership there means Blizzard
+    -- can track the aura, which is exactly what makes it addable here.
+    -- Rows are deduped by underlying tracked aura: two data rows whose
+    -- resolved/linked spellIDs overlap (e.g. an ability row and its applied
+    -- DoT) would produce identical tracking entries, so only the first shows.
+    local seenAuras = {}
+    for _, cat in ipairs({ Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar }) do
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
+            for _, cdID in ipairs(ids) do
+                local cdInfo = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                local id = cdInfo and cdInfo.spellID and ResolveCDMAuraSpellID(cdInfo)
+                if id and not IsNeverTrackableSpell(id) then
+                    local duplicate = seenAuras[id]
+                    if not duplicate and cdInfo.linkedSpellIDs then
+                        for _, linkedID in ipairs(cdInfo.linkedSpellIDs) do
+                            if seenAuras[linkedID] then
+                                duplicate = true
+                                break
+                            end
+                        end
+                    end
+                    local spellInfo = not duplicate and C_Spell.GetSpellInfo(id)
+                    if spellInfo and spellInfo.name then
+                        seenAuras[id] = true
+                        if cdInfo.linkedSpellIDs then
+                            for _, linkedID in ipairs(cdInfo.linkedSpellIDs) do
+                                seenAuras[linkedID] = true
+                            end
+                        end
+                        table.insert(cache, {
+                            id = id,
+                            name = spellInfo.name,
+                            displayName = ("%s |cff999999(%d)|r"):format(spellInfo.name, id),
+                            nameLower = spellInfo.name:lower(),
+                            icon = spellInfo.iconID or 134400,
+                            category = "Aura",
+                            autocompleteKind = "aura",
+                            isItem = false,
+                            forceAura = true,
+                        })
+                    end
+                end
+            end
+        end
+    end
+
     CS.autocompleteCache = cache
     return cache
 end
@@ -717,7 +761,7 @@ local function OnAutocompleteSelect(entry)
     elseif entry.isItem then
         added = TryAddItem(tostring(entry.id))
     else
-        added = TryAddSpell(tostring(entry.id), entry.isPetSpell)
+        added = TryAddSpell(tostring(entry.id), entry.isPetSpell, entry.forceAura)
     end
     if added then
         if NotifyTutorialAction and CS.selectedGroup and CS.selectedButton then
@@ -856,7 +900,7 @@ local function ShowAutocompleteResults(results, anchorWidget, onSelect, options)
             local entry = results[i]
             row.entry = entry
             row.icon:SetTexture(entry.icon)
-            row.nameText:SetText(entry.name)
+            row.nameText:SetText(entry.displayName or entry.name)
             local typeDisplay = GetAutocompleteTypeDisplay(entry)
             row.typeBadge:SetAtlas(typeDisplay.atlas, false)
             row.typeBadge:Show()

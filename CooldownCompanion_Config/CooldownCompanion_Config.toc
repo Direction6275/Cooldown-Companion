@@ -53,6 +53,7 @@ ConfigSettings\AuraTexturePicker.lua
 ConfigSettings\ButtonSettingsMultiSelect.lua
 ConfigSettings\ButtonSettingsOverrides.lua
 ConfigSettings\ButtonSettings.lua
+ConfigSettings\ButtonSettingsAura.lua
 ConfigSettings\ButtonConditions.lua
 ConfigSettings\BarModeTabs.lua
 ConfigSettings\FormatEditor.lua

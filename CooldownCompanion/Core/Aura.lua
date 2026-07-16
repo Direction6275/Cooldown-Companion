@@ -154,6 +154,31 @@ local function NormalizeResolvedAuraSpellID(baseId, auraSpellID)
     return numericAuraID
 end
 
+-- Abilities that apply an aura under a DIFFERENT spellID (e.g. Rake 1822
+-- applies bleed 155722) get no linkage from GetCooldownAuraBySpellID; the only
+-- API source is the Cooldown Manager's data rows — cooldownInfo.linkedSpellIDs
+-- is the exact list Blizzard's own tracked bars match auras against. Pure data
+-- API (no viewer frames); the spell->cooldownID map is the one SoundAlerts
+-- maintains, rebuilt alongside the viewer aura map.
+local function AppendCdmLinkedAuraIDs(candidateSet, orderedSet, orderedIDs, buttonData, spellID)
+    local addon = CooldownCompanion
+    addon:EnsureSoundAlertSpellMap()
+    local cooldownIDs = addon._soundAlertSpellToCooldownIDs and addon._soundAlertSpellToCooldownIDs[spellID]
+    if not cooldownIDs then
+        return
+    end
+    for cooldownID in pairs(cooldownIDs) do
+        local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
+        if info and info.linkedSpellIDs then
+            for _, linkedID in ipairs(info.linkedSpellIDs) do
+                if not IsDistinctAuraIdentityForButton(buttonData, linkedID) then
+                    AppendOrderedAuraCandidateID(candidateSet, orderedSet, orderedIDs, linkedID)
+                end
+            end
+        end
+    end
+end
+
 local function ResolveViewerFrameForSpellID(spellID, buffOnly)
     local numericID = tonumber(spellID)
     if not numericID or numericID == 0 then
@@ -230,6 +255,8 @@ local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
     AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData.id)
     AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, baseId)
 
+    AppendCdmLinkedAuraIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData, baseId)
+
     local overrideBuffs = CooldownCompanion.ABILITY_BUFF_OVERRIDES and CooldownCompanion.ABILITY_BUFF_OVERRIDES[buttonData.id]
     if overrideBuffs then
         AppendOrderedAuraCandidateIDsFromString(candidateIDs, orderedCandidateSet, orderedCandidateIDs, overrideBuffs)
@@ -288,6 +315,8 @@ local function BuildOrderedAuraCandidateIDs(buttonData)
         if resolvedAuraId and not IsDistinctAuraIdentityForButton(buttonData, resolvedAuraId) then
             AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, resolvedAuraId)
         end
+
+        AppendCdmLinkedAuraIDs(candidateIDs, orderedCandidateSet, orderedCandidateIDs, buttonData, baseId)
     end
 
     if buttonData.addedAs == "aura" then
@@ -364,6 +393,18 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
         return baseId
     end
     return nil
+end
+
+-- Full ordered candidate set as a lookup table, for AuraDisplay's
+-- includeSpellIDs filters (config-time resolution; not combat-blocked).
+function CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData)
+    local orderedCandidateIDs = BuildOrderedAuraCandidateIDs(buttonData)
+    if #orderedCandidateIDs == 0 then return nil end
+    local set = {}
+    for _, spellID in ipairs(orderedCandidateIDs) do
+        set[spellID] = true
+    end
+    return set
 end
 
 function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)

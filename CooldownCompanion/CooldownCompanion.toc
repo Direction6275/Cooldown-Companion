@@ -59,6 +59,7 @@ Core\CooldownRouting.lua
 Core\CooldownRefresh.lua
 Core\Lifecycle.lua
 Core\Aura.lua
+Core\AuraDisplay.lua
 Core\EventHandlers.lua
 Core\Masque.lua
 Core\GroupManagement.lua

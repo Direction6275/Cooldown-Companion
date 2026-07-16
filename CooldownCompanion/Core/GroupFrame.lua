@@ -936,13 +936,33 @@ local function ReleaseButtonToPool(self, frame, groupId, button)
     pool[#pool + 1] = button
 end
 
-local function AcquireButtonFromPool(frame, poolKey)
+local function AcquireButtonFromPool(frame, poolKey, buttonData)
     local pools = frame._buttonFramePools
     local pool = pools and pools[poolKey]
-    if not pool then return nil end
-    local button = pool[#pool]
-    if not button then return nil end
-    pool[#pool] = nil
+    if not pool or #pool == 0 then return nil end
+    local pick
+    if InCombatLockdown() then
+        -- Aura-slot hosts are combat-locked to their entry: the slot subtree
+        -- riding a host is forbidden (untouchable) until the OOC rebind pass,
+        -- so a mismatched host would show another entry's aura on this button.
+        -- Prefer the host already bound to this entry; else any slot-free one;
+        -- else force a fresh CC-owned frame (returning nil).
+        local free
+        for i = #pool, 1, -1 do
+            local token = pool[i]._auraSlotHostToken
+            if token == buttonData then
+                pick = i
+                break
+            elseif token == nil and not free then
+                free = i
+            end
+        end
+        pick = pick or free
+        if not pick then return nil end
+    else
+        pick = #pool
+    end
+    local button = table.remove(pool, pick)
     button._pooled = nil
     button:SetParent(frame)
     return button
@@ -1020,7 +1040,10 @@ end
 -- Textures/FontStrings inherit from their parent frame automatically,
 -- but child Frame objects (cooldown widgets, overlay frames, glow containers)
 -- may not follow a parent strata change — so we force it explicitly.
+-- _ccNoTouch subtrees (aura slot hosts) are skipped entirely: their children
+-- are forbidden to addon code in combat, and they inherit strata implicitly.
 function PropagateFrameStrata(frame, strata)
+    if frame._ccNoTouch then return end
     frame:SetFrameStrata(strata)
     PropagateChildFrameStrata(strata, frame:GetChildren())
 end
@@ -2542,7 +2565,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             and IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
             local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
             local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
-            local button = AcquireButtonFromPool(frame, poolKey)
+            local button = AcquireButtonFromPool(frame, poolKey, buttonData)
             local reusedButton = button ~= nil
             if not button then
                 if group.displayMode == "text" then
@@ -2579,6 +2602,9 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     FinishGroupButtonRefresh(self, groupId, frame, group)
     -- D3: button population changed — refresh the identity index (coalesced).
     self:RequestSpellButtonIndexRebuild("populate")
+    -- Aura slots bind to materialized buttons: re-run the (coalesced,
+    -- OOC-deferred) rebind pass whenever population changes.
+    self:RequestAuraRebind("populate")
     -- _hasBeenSized is now true if the compact resize ran (set by
     -- ResizeGroupFrame), or still false if all buttons were visible and no
     -- compact resize was needed.  When compactLayout is off, it stays false

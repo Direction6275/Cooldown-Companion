@@ -30,6 +30,18 @@ local function GroupUsesTriggerPanelEntries(group)
     return group and group.displayMode == "trigger"
 end
 
+-- 12.1 aura tracking is offered on spell entries in icon/bar groups only:
+-- text mode has no compliant aura display (aura numbers can't enter format
+-- strings), and trigger/texture panels lost aura conditions by design.
+local function EntryOffersAuraTab(group, buttonData)
+    if not (buttonData and buttonData.type == "spell") then return false end
+    if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+        return false
+    end
+    local displayMode = group and group.displayMode or "icons"
+    return displayMode == "icons" or displayMode == "bars"
+end
+
 local function BuildButtonSettingsTabs(group, buttonData)
     if CooldownCompanion:IsRotationAssistantGroup(group) then
         return {
@@ -53,6 +65,9 @@ local function BuildButtonSettingsTabs(group, buttonData)
     local tabs = {
         { value = "settings", text = "Settings" },
     }
+    if EntryOffersAuraTab(group, buttonData) then
+        tabs[#tabs + 1] = { value = "aura", text = "Aura" }
+    end
     if buttonData and buttonData.type == "item" then
         tabs[#tabs + 1] = { value = "fallbacks", text = "Fallbacks" }
     elseif not isEquipmentSlot then
@@ -1200,6 +1215,8 @@ local function RefreshButtonSettingsColumn()
             CS.buttonSettingsTab = "fallbacks"
         elseif buttonData and buttonData.type ~= "item" and CS.buttonSettingsTab == "fallbacks" then
             CS.buttonSettingsTab = "soundalerts"
+        elseif CS.buttonSettingsTab == "aura" and not EntryOffersAuraTab(group, buttonData) then
+            CS.buttonSettingsTab = "settings"
         end
 
         if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end

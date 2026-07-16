@@ -475,7 +475,6 @@ end
 ------------------------------------------------------------------------
 -- ST._ exports
 ------------------------------------------------------------------------
-ST._IsSpellInCDMBuffBar = IsSpellInCDMBuffBar
 ST._IsPassiveOrProc = IsPassiveOrProc
 ST._IsNeverTrackableSpell = IsNeverTrackableSpell
 ST._ShouldSuppressSpellbookEntry = ShouldSuppressSpellbookEntry
