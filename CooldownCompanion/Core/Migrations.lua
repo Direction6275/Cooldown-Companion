@@ -745,6 +745,87 @@ local function MigrateAuraGlowRebuild(self, profile)
     end
 end
 
+-- LibCustomGlow was removed: lcgButton (Action Button Glow) folds into the
+-- built-in "glow" style (its modern Blizzard successor), lcgAutoCast
+-- (Autocast Shine) becomes the CC-rendered "autocast" style with identical
+-- parameters. Styles that never rendered LCG (pandemic glow, key press
+-- highlight) get any stray lcg value reset to their solid default.
+local function MigrateLcgStyleTable(styleTable, counts)
+    if type(styleTable) ~= "table" then return end
+
+    for _, keys in ipairs({
+        { style = "procGlowStyle", size = "procGlowSize" },
+        { style = "readyGlowStyle", size = "readyGlowSize" },
+    }) do
+        local style = rawget(styleTable, keys.style)
+        if style == "lcgButton" or style == "lcgProc" then
+            styleTable[keys.style] = "glow"
+            if style == "lcgButton" then
+                counts.buttonGlow = counts.buttonGlow + 1
+                -- An autocast-scale size (0.2..3) left behind by an earlier
+                -- style switch would render the glow overhang unusably small;
+                -- clear it so the glow default applies.
+                local size = rawget(styleTable, keys.size)
+                if type(size) == "number" and size <= 3 then
+                    styleTable[keys.size] = nil
+                end
+            end
+        elseif style == "lcgAutoCast" then
+            styleTable[keys.style] = "autocast"
+            counts.autocast = counts.autocast + 1
+        end
+    end
+
+    for _, styleKey in ipairs({ "pandemicGlowStyle", "keyPressHighlightStyle" }) do
+        local style = rawget(styleTable, styleKey)
+        if style == "lcgButton" or style == "lcgAutoCast" or style == "lcgProc" then
+            styleTable[styleKey] = "solid"
+        end
+    end
+end
+
+local function MigrateLcgGlowStyles(self, profile)
+    if type(profile) ~= "table" or profile._cdcLcgGlowMigrated then return end
+    local counts = { buttonGlow = 0, autocast = 0 }
+
+    MigrateLcgStyleTable(profile.globalStyle, counts)
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" then
+                MigrateLcgStyleTable(group.style, counts)
+                if type(group.buttons) == "table" then
+                    for _, buttonData in ipairs(group.buttons) do
+                        if type(buttonData) == "table" then
+                            MigrateLcgStyleTable(buttonData.styleOverrides, counts)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if type(profile.groupSettingPresets) == "table" then
+        for _, presetStore in pairs(profile.groupSettingPresets) do
+            if type(presetStore) == "table" then
+                for _, presetData in pairs(presetStore) do
+                    if type(presetData) == "table" then
+                        MigrateLcgStyleTable(presetData.style, counts)
+                    end
+                end
+            end
+        end
+    end
+
+    profile._cdcLcgGlowMigrated = true
+    local changed = {}
+    if counts.buttonGlow > 0 then changed[#changed + 1] = ("Action Button Glow entries now use the standard Glow (x%d)"):format(counts.buttonGlow) end
+    if counts.autocast > 0 then changed[#changed + 1] = ("Autocast Shine is now addon-rendered (x%d)"):format(counts.autocast) end
+    if #changed > 0 then
+        self:Print("Glow styles updated: " .. table.concat(changed, "; ") .. ".")
+    end
+end
+
 -- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles
 -- that are allowed to continue. Add new post-1.15 migrations here in order.
 function CooldownCompanion:RunAllMigrations()
@@ -778,6 +859,7 @@ function CooldownCompanion:RunAllMigrations()
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
     MigrateAuraTrackingRebuild(self, self.db and self.db.profile)
     MigrateAuraGlowRebuild(self, self.db and self.db.profile)
+    MigrateLcgGlowStyles(self, self.db and self.db.profile)
     if self.RunResourceBarClassScopeMigration then
         self:RunResourceBarClassScopeMigration()
     end
@@ -798,6 +880,7 @@ function CooldownCompanion:ClearMigrationSentinels()
     if type(profile) == "table" then
         profile._cdcAuraRebuildMigrated = nil
         profile._cdcAuraGlowMigrated = nil
+        profile._cdcLcgGlowMigrated = nil
     end
 end
 

@@ -1,7 +1,7 @@
 --[[
     CooldownCompanion - ButtonFrame/Glows
-    Glow systems: proc glow, aura glow, pixel glow (via LCG), assisted highlight,
-    bar aura effect, and shared glow container creation
+    Glow systems: proc glow, aura glow, the pixel/autocast perimeter engines,
+    assisted highlight, bar aura effect, and shared glow container creation
 ]]
 
 local ADDON_NAME, ST = ...
@@ -60,25 +60,15 @@ local AURA_GLOW_SPEED_DEFAULTS = {
 -- Shared click-through helpers from Utils.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
 
--- Optional external glow library used for pixel glow and extra proc glow styles.
-local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
-local PROC_STYLE_LCG_BUTTON = "lcgButton"
-local PROC_STYLE_LCG_AUTOCAST = "lcgAutoCast"
-local PROC_GLOW_LCG_KEY = "CooldownCompanionProc"
-local AURA_GLOW_LCG_KEY = "CooldownCompanionAura"
-local PANDEMIC_GLOW_LCG_KEY = "CooldownCompanionPandemic"
-local READY_GLOW_LCG_KEY = "CooldownCompanionReady"
-local BAR_AURA_EFFECT_LCG_KEY = "CooldownCompanionBarAura"
-local PANDEMIC_BAR_EFFECT_LCG_KEY = "CooldownCompanionPandemicBar"
-
-local function IsLibCustomGlowStyle(style)
-    return style == PROC_STYLE_LCG_BUTTON or style == PROC_STYLE_LCG_AUTOCAST
-end
-
--- Legacy profile compatibility: lcgProc was removed because it duplicated Blizzard glow.
+-- Legacy profile compatibility: lcgProc duplicated Blizzard glow; lcgButton
+-- and lcgAutoCast came from the removed LibCustomGlow library (lcgButton maps
+-- to its modern Blizzard successor, lcgAutoCast to the CC-owned rebuild).
 local function NormalizeGlowStyle(style)
-    if style == "lcgProc" then
+    if style == "lcgProc" or style == "lcgButton" then
         return "glow"
+    end
+    if style == "lcgAutoCast" then
+        return "autocast"
     end
     return style
 end
@@ -114,7 +104,7 @@ local function GetGlowSize(styleTable, sizeKey, glowStyle, defaults)
         return size or defaults.dashes
     elseif glowStyle == "pixel" then
         return size or defaults.pixel
-    elseif glowStyle == PROC_STYLE_LCG_AUTOCAST then
+    elseif glowStyle == "autocast" then
         -- AutoCast scale looks best in 0.2..3. Keep old/invalid values from
         -- inflating particles by falling back to a safe default.
         if size and size >= 0.2 and size <= 3 then
@@ -125,9 +115,12 @@ local function GetGlowSize(styleTable, sizeKey, glowStyle, defaults)
     return size or defaults.glow
 end
 
--- Convert user-facing speed (10..200) to LCG AutoCast/ButtonGlow frequency.
-local function SpeedToGlowFrequency(speed)
-    return math_max(speed or 60, 1) / 480
+-- Convert user-facing speed (10..200) to an autocast base lap duration in
+-- seconds. Matches the retired LCG AutoCastGlow timing exactly (frequency
+-- was speed/480, base period = 1/frequency; speed group k laps in k base
+-- periods).
+local function SpeedToAutocastLap(speed)
+    return 480 / math_max(speed or 60, 1)
 end
 
 -- Convert user-facing speed (10..200) to a pixel glow lap duration in
@@ -140,7 +133,7 @@ end
 local function UsesGlowSpeed(glowStyle)
     return glowStyle == "pixel" or glowStyle == "pulsingBorder"
         or glowStyle == "colorShift" or glowStyle == "dashes"
-        or IsLibCustomGlowStyle(glowStyle)
+        or glowStyle == "autocast"
 end
 
 local function StopSolidBorderPulse(container)
@@ -370,102 +363,102 @@ local function CreateDashRegions(parent, dashList, masks, count)
     end
 end
 
--- ButtonGlow_Stop is frame-scoped (no key), so keep per-target ownership to
--- avoid one channel stopping another channel's active lcgButton glow.
-local lcgButtonOwnersByTarget = setmetatable({}, {__mode = "k"})
-local lcgButtonOwnerSequence = 0
+-- Autocast Shine: the retired LCG renderer's orbiting sparks rebuilt on
+-- AnimationGroups. Four speed groups of four sparks each orbit the button
+-- perimeter (up the left edge from the bottom-left corner, then clockwise);
+-- group k laps in k base periods with its sparks a quarter perimeter apart,
+-- so the groups continuously overtake each other — LCG's exact geometry and
+-- timing. Each spark is one texture on a five-Translation REPEAT loop:
+-- finish the current edge, cross the next three, close the remainder back
+-- to its start point. No masks or detours — sparks are dots, so nothing
+-- needs to bend around corners.
+local AUTOCAST_TEXTURE = "Interface\\Artifacts\\Artifacts"
+local AUTOCAST_TEXCOORD_L = 0.8115234375
+local AUTOCAST_TEXCOORD_R = 0.9169921875
+local AUTOCAST_TEXCOORD_T = 0.8798828125
+local AUTOCAST_TEXCOORD_B = 0.9853515625
+local AUTOCAST_GROUP_SIZES = {7, 6, 5, 4}
+local AUTOCAST_SPARKS_PER_GROUP = 4
+local AUTOCAST_SPARK_TOTAL = #AUTOCAST_GROUP_SIZES * AUTOCAST_SPARKS_PER_GROUP
 
-local function AcquireLCGButtonOwner(target, container, color, frequency, frameLevel)
-    if not (target and container) then return end
-    local owners = lcgButtonOwnersByTarget[target]
-    if not owners then
-        owners = setmetatable({}, {__mode = "k"})
-        lcgButtonOwnersByTarget[target] = owners
+local function CreateSparkRegions(parent, sparkList)
+    for i = #sparkList + 1, AUTOCAST_SPARK_TOTAL do
+        local tex = parent:CreateTexture(nil, "OVERLAY", nil, 2)
+        tex:SetTexture(AUTOCAST_TEXTURE)
+        tex:SetTexCoord(AUTOCAST_TEXCOORD_L, AUTOCAST_TEXCOORD_R, AUTOCAST_TEXCOORD_T, AUTOCAST_TEXCOORD_B)
+        -- Desaturated so SetVertexColor owns the full spark color (LCG did
+        -- the same).
+        tex:SetDesaturated(true)
+        tex:SetAlpha(0)
+        local ag = tex:CreateAnimationGroup()
+        ag:SetLooping("REPEAT")
+        local trs = {}
+        for o = 1, 5 do
+            local tr = ag:CreateAnimation("Translation")
+            tr:SetOrder(o)
+            trs[o] = tr
+        end
+        sparkList[i] = { tex = tex, ag = ag, trs = trs }
     end
-    lcgButtonOwnerSequence = lcgButtonOwnerSequence + 1
-    owners[container] = {
-        order = lcgButtonOwnerSequence,
-        color = {color[1], color[2], color[3], color[4]},
-        frequency = frequency,
-        frameLevel = frameLevel,
+end
+
+local function StyleAutocastPerimeter(sparkList, anchorFrame, scale, speed, r, g, b, a)
+    local w, h = anchorFrame:GetSize()
+    local P = 2 * (w + h)
+    -- Perimeter path from the bottom-left corner, relative to the anchor
+    -- TOPLEFT: left edge up, top edge right, right edge down, bottom edge
+    -- left (the retired LCG orbit direction).
+    local edges = {
+        { sx = 0, sy = -h, dx = 0,  dy = 1,  len = h },
+        { sx = 0, sy = 0,  dx = 1,  dy = 0,  len = w },
+        { sx = w, sy = 0,  dx = 0,  dy = -1, len = h },
+        { sx = w, sy = -h, dx = -1, dy = 0,  len = w },
     }
-end
-
-local function ReleaseLCGButtonOwner(target, container)
-    local owners = target and lcgButtonOwnersByTarget[target]
-    if not owners then return nil end
-    owners[container] = nil
-    local fallbackOwner
-    local fallbackOrder = -1
-    for _, owner in pairs(owners) do
-        if owner and owner.order and owner.order > fallbackOrder then
-            fallbackOrder = owner.order
-            fallbackOwner = owner
+    local arc = 0
+    for j = 1, 4 do
+        edges[j].c = arc
+        arc = arc + edges[j].len
+    end
+    local basePeriod = SpeedToAutocastLap(speed)
+    for k = 1, #AUTOCAST_GROUP_SIZES do
+        local lap = basePeriod * k
+        local size = AUTOCAST_GROUP_SIZES[k] * (scale or 1)
+        for i = 1, AUTOCAST_SPARKS_PER_GROUP do
+            local spark = sparkList[(k - 1) * AUTOCAST_SPARKS_PER_GROUP + i]
+            -- LCG phase spacing: spark i starts at space*i along the path.
+            local s0 = (i * P / AUTOCAST_SPARKS_PER_GROUP) % P
+            local ej = 4
+            for j = 1, 4 do
+                if s0 < edges[j].c + edges[j].len then
+                    ej = j
+                    break
+                end
+            end
+            local e = edges[ej]
+            local off = s0 - e.c
+            local trs = spark.trs
+            spark.ag:Stop()
+            spark.tex:SetSize(size, size)
+            -- 4-arg SetVertexColor also writes the region alpha (see
+            -- patterns-and-gotchas), so it is the last alpha write here —
+            -- no SetAlpha after it.
+            spark.tex:SetVertexColor(r, g, b, a)
+            spark.tex:ClearAllPoints()
+            spark.tex:SetPoint("CENTER", anchorFrame, "TOPLEFT", e.sx + e.dx * off, e.sy + e.dy * off)
+            local seg1 = e.len - off
+            trs[1]:SetOffset(e.dx * seg1, e.dy * seg1)
+            trs[1]:SetDuration(lap * seg1 / P)
+            for step = 1, 3 do
+                local ne = edges[(ej - 1 + step) % 4 + 1]
+                trs[step + 1]:SetOffset(ne.dx * ne.len, ne.dy * ne.len)
+                trs[step + 1]:SetDuration(lap * ne.len / P)
+            end
+            trs[5]:SetOffset(e.dx * off, e.dy * off)
+            trs[5]:SetDuration(lap * off / P)
+            spark.tex:Show()
+            spark.ag:Play()
         end
     end
-    if fallbackOwner then
-        return fallbackOwner
-    end
-    lcgButtonOwnersByTarget[target] = nil
-    return nil
-end
-
-local function StopLibCustomGlow(container)
-    if not container then return end
-
-    local lcgStyle = container._lcgStyle
-    local lcgTarget = container._lcgTarget
-    local lcgKey = container._lcgKey
-
-    container._lcgStyle = nil
-    container._lcgTarget = nil
-    container._lcgKey = nil
-    container._autocastGlowLookupKey = nil
-
-    if not (LCG and lcgStyle and lcgTarget) then return end
-
-    if lcgStyle == PROC_STYLE_LCG_BUTTON and LCG.ButtonGlow_Stop then
-        local fallbackOwner = ReleaseLCGButtonOwner(lcgTarget, container)
-        if fallbackOwner and LCG.ButtonGlow_Start then
-            LCG.ButtonGlow_Start(
-                lcgTarget,
-                fallbackOwner.color,
-                fallbackOwner.frequency or 0.25,
-                fallbackOwner.frameLevel or 8
-            )
-        else
-            LCG.ButtonGlow_Stop(lcgTarget)
-        end
-    elseif lcgStyle == PROC_STYLE_LCG_AUTOCAST and LCG.AutoCastGlow_Stop then
-        LCG.AutoCastGlow_Stop(lcgTarget, lcgKey)
-    end
-end
-
-local function StartLibCustomGlow(container, style, button, color, params)
-    if not (LCG and container and button and IsLibCustomGlowStyle(style)) then
-        return false
-    end
-
-    local key = params.key or PROC_GLOW_LCG_KEY
-    local frameLevel = params.frameLevel or 8
-
-    if style == PROC_STYLE_LCG_BUTTON and LCG.ButtonGlow_Start then
-        local frequency = params.frequency or 0.25
-        LCG.ButtonGlow_Start(button, color, frequency, frameLevel)
-        AcquireLCGButtonOwner(button, container, color, frequency, frameLevel)
-    elseif style == PROC_STYLE_LCG_AUTOCAST and LCG.AutoCastGlow_Start then
-        LCG.AutoCastGlow_Start(button, color, 4, params.frequency or 0.25, params.scale or 2, 0, 0, key, frameLevel)
-    else
-        return false
-    end
-
-    container._lcgStyle = style
-    container._lcgTarget = button
-    container._lcgKey = key
-    if style == PROC_STYLE_LCG_AUTOCAST then
-        container._autocastGlowLookupKey = "_AutoCastGlow" .. (key or "")
-    end
-    return true
 end
 
 -- Apply a vertex color tint to a proc glow frame (ActionButtonSpellAlertTemplate).
@@ -515,9 +508,7 @@ end
 
 -- Hide all glow sub-styles in a container table (solidTextures, procFrame, overlayTexture).
 -- Works for procGlow, auraGlow, barAuraEffect, assistedHighlight, and keyPressHighlight containers.
--- LCG button/autocast glow is stopped via StopLibCustomGlow.
 local function HideGlowStyles(container)
-    StopLibCustomGlow(container)
     if container.solidTextures then
         StopSolidBorderPulse(container)
         StopColorShift(container)
@@ -533,6 +524,12 @@ local function HideGlowStyles(container)
                 piece.ag:Stop()
                 piece.tex:Hide()
             end
+        end
+    end
+    if container.sparks then
+        for _, spark in ipairs(container.sparks) do
+            spark.ag:Stop()
+            spark.tex:Hide()
         end
     end
     if container.procFrame then
@@ -551,23 +548,16 @@ local function HideGlowStyles(container)
 end
 
 -- Show the selected glow style on a container.
--- style: "solid", "overlay", "pixel", "glow", "blizzard", or one of the LibCustomGlow proc styles
+-- style: "solid", "pulsingBorder", "colorShift", "overlay", "pixel",
+-- "autocast", "ants", "dashes", "glow", or "blizzard"
 -- button: the parent button frame (for positioning)
 -- color: {r, g, b, a} color table
 -- params: {size, thickness, speed, lines, frequency, scale, key, frameLevel, defaultAlpha} — style-specific parameters
 local function ShowGlowStyle(container, style, button, color, params)
     local size = params.size
     local defaultAlpha = params.defaultAlpha or 1
-    StopLibCustomGlow(container)
     -- Clear any residual vertex tint before another style reuses the edges.
     StopColorShift(container)
-    if IsLibCustomGlowStyle(style) then
-        if StartLibCustomGlow(container, style, button, color, params) then
-            return
-        end
-        -- Library unavailable (or failed start): fall back to built-in proc glow.
-        style = "glow"
-    end
     if style == "solid" or style == "pulsingBorder" then
         ApplyEdgePositions(container.solidTextures, button, size or 2)
         for _, tex in ipairs(container.solidTextures) do
@@ -590,6 +580,11 @@ local function ShowGlowStyle(container, style, button, color, params)
         CreateDashRegions(container.solidFrame, container.dashes, container.dashMasks, count)
         local lap = SpeedToPixelLap(params.speed)
         StyleDashPerimeter(container.dashes, container.dashMasks, button, size or 8, params.thickness, lap, count,
+            color[1], color[2], color[3], color[4] or defaultAlpha)
+    elseif style == "autocast" then
+        container.sparks = container.sparks or {}
+        CreateSparkRegions(container.solidFrame, container.sparks)
+        StyleAutocastPerimeter(container.sparks, button, params.scale or 2, params.speed,
             color[1], color[2], color[3], color[4] or defaultAlpha)
     elseif style == "glow" then
         FitHighlightFrame(container.procFrame, button, size or 32)
@@ -663,19 +658,6 @@ end
 -- key was removed or playback stopped, so the caller can restart instead of
 -- trusting the cached "active" state.
 local function IsGlowAnimationAlive(container)
-    -- LCG button / autocast glow: verify LCG frame reference on the target
-    if container._lcgStyle and container._lcgTarget then
-        if container._lcgStyle == PROC_STYLE_LCG_BUTTON then
-            -- Check this container's ownership, not just whether _ButtonGlow
-            -- exists (another container may share the same target frame).
-            local owners = lcgButtonOwnersByTarget[container._lcgTarget]
-            return owners and owners[container] ~= nil
-        elseif container._lcgStyle == PROC_STYLE_LCG_AUTOCAST then
-            return container._lcgTarget[container._autocastGlowLookupKey] ~= nil
-        else
-            return false  -- unknown LCG style; assume dead to force restart
-        end
-    end
     -- CC proc flipbook: check ProcLoop is still playing (visible frames only;
     -- hidden frames have their AnimationGroup auto-paused by WoW and will resume)
     if container.procFrame and container.procFrame:IsShown() then
@@ -700,6 +682,13 @@ local function IsGlowAnimationAlive(container)
         local piece = container.dashes[1].pieces[1]
         if not piece.tex:IsVisible() then return true end
         return piece.ag:IsPlaying()
+    end
+    -- Autocast sparks: same shared-lifecycle rule as the dashes
+    if container.sparks and container.sparks[1]
+        and container.sparks[1].tex:IsShown() then
+        local spark = container.sparks[1]
+        if not spark.tex:IsVisible() then return true end
+        return spark.ag:IsPlaying()
     end
     -- Overlay is static — without this check, the cache safety net would treat it
     -- as "dead" and restart ShowGlowStyle every tick.
@@ -792,7 +781,7 @@ end
 -- → cache update → HideGlowStyles → ShowGlowStyle. The factory produces a
 -- closure with all config baked in as upvalues (zero per-tick allocation).
 --
--- ~58 upvalues per closure (Lua 5.1 caps at 60 — almost no headroom left;
+-- ~55 upvalues per closure (Lua 5.1 caps at 60 — little headroom left;
 -- the next field added to this factory likely needs to fold existing
 -- upvalues into a table first). Cache comparison
 -- uses upvalue string keys for button[field] lookups — same cost as literal
@@ -807,7 +796,7 @@ local function MakeGlowSetter(cfg)
     local fullParams       = cfg.fullParams
     local useGetGlowSize   = cfg.useGetGlowSize
     local defaultAlpha     = cfg.defaultAlpha or 1
-    local includeFreqScale = cfg.includeFrequencyScale
+    local includeScale     = cfg.includeScale
     local optsDefaultAlpha = cfg.optsDefaultAlpha
     local defaultSizes     = cfg.defaultSizes or DEFAULT_GLOW_SIZES
 
@@ -824,7 +813,6 @@ local function MakeGlowSetter(cfg)
     local lnKey       = cfg.linesKey
     local defStyle    = cfg.defaultStyle
     local defColor    = cfg.defaultColor
-    local lcgKey      = cfg.lcgKey
 
     -- Style keys: pandemic path (nil when hasPandemic is false)
     local panStyleKey = cfg.pandemicStyleKey
@@ -835,7 +823,6 @@ local function MakeGlowSetter(cfg)
     local panLnKey    = cfg.pandemicLinesKey
     local panDefStyle = cfg.pandemicDefaultStyle
     local panDefColor = cfg.pandemicDefaultColor
-    local panLcgKey   = cfg.pandemicLcgKey
 
     -- Cache field names on button (must match existing names for Preview.lua compat)
     local cActive   = cfg.cacheActive
@@ -864,7 +851,7 @@ local function MakeGlowSetter(cfg)
         local container = button[containerKey]
         if not container then return end
 
-        local glowStyle, color, color2, sz, th, spd, ln, usesSpeed, resolvedLcgKey
+        local glowStyle, color, color2, sz, th, spd, ln, usesSpeed
 
         if show then
             local btnStyle = button.style
@@ -873,11 +860,9 @@ local function MakeGlowSetter(cfg)
             if hasPandemic and pandemicOverride then
                 glowStyle = (btnStyle and btnStyle[panStyleKey]) or panDefStyle
                 color = (btnStyle and btnStyle[panColorKey]) or panDefColor
-                resolvedLcgKey = panLcgKey
             else
                 glowStyle = (btnStyle and btnStyle[styleKey]) or defStyle
                 color = (btnStyle and btnStyle[colorKey]) or defColor
-                resolvedLcgKey = lcgKey
             end
 
             -- Apply normalization if configured
@@ -949,14 +934,13 @@ local function MakeGlowSetter(cfg)
         end
 
         -- Build opts table (state-change path only, so allocation is OK)
-        local opts = { size = sz, key = resolvedLcgKey, color2 = color2 }
+        local opts = { size = sz, color2 = color2 }
         if fullParams then
             opts.thickness = th
             opts.speed = spd
             if glowStyle == "pixel" or glowStyle == "dashes" then opts.lines = ln end
         end
-        if includeFreqScale and usesSpeed then
-            opts.frequency = SpeedToGlowFrequency(spd)
+        if includeScale and usesSpeed then
             opts.scale = math_min(math_max(sz, 0.2), 3)
         end
         if optsDefaultAlpha then
@@ -1002,14 +986,13 @@ local SetProcGlow = MakeGlowSetter({
     fullParams         = true,
     useGetGlowSize     = true,
     defaultAlpha       = 1,
-    includeFrequencyScale = true,
+    includeScale       = true,
     styleKey           = "procGlowStyle",       defaultStyle = "glow",
     colorKey           = "procGlowColor",       defaultColor = DEFAULT_WHITE,
     sizeKey            = "procGlowSize",
     thicknessKey       = "procGlowThickness",
     speedKey           = "procGlowSpeed",
     linesKey           = "procGlowLines",
-    lcgKey             = PROC_GLOW_LCG_KEY,
     cacheActive = "_procGlowActive",  cacheStyle = "_procGlowStyle",
     cacheR = "_procGlowR",  cacheG = "_procGlowG",
     cacheB = "_procGlowB",  cacheA = "_procGlowA",
@@ -1045,7 +1028,7 @@ local SetAuraGlow = MakeGlowSetter({
     fullParams         = true,
     useGetGlowSize     = true,
     defaultAlpha       = 0.9,
-    includeFrequencyScale = true,
+    includeScale       = true,
     optsDefaultAlpha   = 0.9,
     defaultSpeed       = 0.5,
     -- Matches the kit glow's fallbacks (border 2, overhang 30) so the preview
@@ -1061,14 +1044,12 @@ local SetAuraGlow = MakeGlowSetter({
     speedKey           = "auraGlowSpeed",
     linesKey           = "auraGlowDashCount",
     defaultLines       = 2,
-    lcgKey             = AURA_GLOW_LCG_KEY,
     pandemicStyleKey     = "pandemicGlowStyle",     pandemicDefaultStyle = "solid",
     pandemicColorKey     = "pandemicGlowColor",     pandemicDefaultColor = DEFAULT_PANDEMIC_COLOR,
     pandemicSizeKey      = "pandemicGlowSize",
     pandemicThicknessKey = "pandemicGlowThickness",
     pandemicSpeedKey     = "pandemicGlowSpeed",
     pandemicLinesKey     = "pandemicGlowLines",
-    pandemicLcgKey       = PANDEMIC_GLOW_LCG_KEY,
     cacheActive = "_auraGlowActive",  cacheStyle = "_auraGlowStyle",
     cacheR = "_auraGlowR",  cacheG = "_auraGlowG",
     cacheB = "_auraGlowB",  cacheA = "_auraGlowA",
@@ -1085,14 +1066,13 @@ local SetReadyGlow = MakeGlowSetter({
     fullParams         = true,
     useGetGlowSize     = true,
     defaultAlpha       = 1,
-    includeFrequencyScale = true,
+    includeScale       = true,
     styleKey           = "readyGlowStyle",      defaultStyle = "solid",
     colorKey           = "readyGlowColor",      defaultColor = DEFAULT_READY_COLOR,
     sizeKey            = "readyGlowSize",
     thicknessKey       = "readyGlowThickness",
     speedKey           = "readyGlowSpeed",
     linesKey           = "readyGlowLines",
-    lcgKey             = READY_GLOW_LCG_KEY,
     cacheActive = "_readyGlowActive",  cacheStyle = "_readyGlowStyle",
     cacheR = "_readyGlowR",  cacheG = "_readyGlowG",
     cacheB = "_readyGlowB",  cacheA = "_readyGlowA",
@@ -1117,7 +1097,7 @@ local SetKeyPressHighlight = MakeGlowSetter({
     sizeOnlyForSolid   = true,
     defaultSize        = 5,
     defaultAlpha       = 1,
-    includeFrequencyScale = false,
+    includeScale       = false,
     styleKey           = "keyPressHighlightStyle",  defaultStyle = "solid",
     colorKey           = "keyPressHighlightColor",  defaultColor = DEFAULT_KEY_PRESS_COLOR,
     sizeKey            = "keyPressHighlightSize",
@@ -1128,7 +1108,8 @@ local SetKeyPressHighlight = MakeGlowSetter({
 })
 
 -- Create a complete glow container with solid border and proc glow sub-frames.
--- Pixel glow is handled by LibCustomGlow (frames created/pooled by the library).
+-- Pixel dash and autocast spark regions are created lazily on solidFrame by
+-- their ShowGlowStyle branches.
 -- parent: parent button frame
 -- overhang: overhang percentage for the proc glow frame (default 32)
 -- withOverlay: if true, also create a full-button overlay texture (only KPH needs this)
@@ -1248,10 +1229,9 @@ end
 -- built once at kit-build time, styled at OOC bind time, shown/hidden by
 -- Blizzard with the aura itself (zero state reads, zero combat writes).
 -- OnUpdate scripts never run on the forbidden subtree, so every animated
--- style is AnimationGroup-driven (P3-validated working in combat). The LCG
--- styles (pixel/lcgButton/lcgAutoCast) are impossible there: they reparent
--- pooled frames INTO the target, which is forbidden (V9b) — never route
--- LCG or ShowGlowStyle at a kit.
+-- style is AnimationGroup-driven (P3-validated working in combat). Never
+-- route ShowGlowStyle at a kit: its containers are CC-button frames, and
+-- creating or reparenting frames into the target is forbidden (V9b).
 --
 -- These builders are pure: no stored refs, no CC-button coupling. The SOLE
 -- caller is AuraDisplay.lua's bind path (single-writer rule). The config
@@ -1265,9 +1245,9 @@ end
 local KIT_PROC_ATLAS = "UI-HUD-ActionBar-Proc-Loop-Flipbook"
 
 -- Map a stored aura glow style to a kit-renderable one. "pixel" (the old
--- default) renders as its dashes lookalike, the LCG styles died with 12.1
--- and render as the pulse border; legacy "glow"/"pulsingBorder" map to
--- their renamed equivalents.
+-- default) renders as its dashes lookalike, retired styles (the removed
+-- LibCustomGlow values) render as the pulse border; legacy
+-- "glow"/"pulsingBorder" map to their renamed equivalents.
 local function NormalizeKitGlowStyle(style)
     if style == "none" or style == "solid" or style == "proc"
         or style == "overlay" or style == "ants"
@@ -1492,7 +1472,7 @@ local SetBarAuraEffect = MakeGlowSetter({
     useGetGlowSize     = true,
     defaultSizes        = BAR_AURA_GLOW_SIZES,
     defaultAlpha       = 0.9,
-    includeFrequencyScale = false,
+    includeScale       = false,
     optsDefaultAlpha   = 0.9,
     styleKey           = "barAuraEffect",           defaultStyle = "none",
     colorKey           = "barAuraEffectColor",      defaultColor = DEFAULT_AURA_GLOW_COLOR,
@@ -1500,14 +1480,12 @@ local SetBarAuraEffect = MakeGlowSetter({
     thicknessKey       = "barAuraEffectThickness",
     speedKey           = "barAuraEffectSpeed",
     linesKey           = "barAuraEffectLines",
-    lcgKey             = BAR_AURA_EFFECT_LCG_KEY,
     pandemicStyleKey     = "pandemicBarEffect",         pandemicDefaultStyle = "none",
     pandemicColorKey     = "pandemicBarEffectColor",     pandemicDefaultColor = DEFAULT_PANDEMIC_COLOR,
     pandemicSizeKey      = "pandemicBarEffectSize",
     pandemicThicknessKey = "pandemicBarEffectThickness",
     pandemicSpeedKey     = "pandemicBarEffectSpeed",
     pandemicLinesKey     = "pandemicBarEffectLines",
-    pandemicLcgKey       = PANDEMIC_BAR_EFFECT_LCG_KEY,
     cacheActive = "_barAuraEffectActive", cacheStyle = "_baeEffect",
     cacheR = "_baeR",  cacheG = "_baeG",
     cacheB = "_baeB",  cacheA = "_baeA",

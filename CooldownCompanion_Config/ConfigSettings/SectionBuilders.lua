@@ -1213,18 +1213,7 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
             refreshCallback()
         end)
         container:AddChild(speedSlider)
-    elseif currentStyle == "lcgButton" then
-        local speedSlider = AceGUI:Create("Slider")
-        speedSlider:SetLabel("Frequency")
-        speedSlider:SetSliderValues(10, 200, 0.1)
-        speedSlider:SetValue(styleTable[keys.speed] or 50)
-        speedSlider:SetFullWidth(true)
-        speedSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            styleTable[keys.speed] = val
-            refreshCallback()
-        end)
-        container:AddChild(speedSlider)
-    elseif currentStyle == "lcgAutoCast" then
+    elseif currentStyle == "autocast" then
         local sizeSlider = AceGUI:Create("Slider")
         sizeSlider:SetLabel("Particle Scale")
         sizeSlider:SetSliderValues(0.2, 3, 0.05)
@@ -1253,22 +1242,26 @@ local function BuildGlowSliders(container, styleTable, currentStyle, keys, refre
     end
 end
 
--- Legacy profile compatibility: lcgProc was removed because it duplicated Blizzard glow.
+-- Legacy profile compatibility: lcgProc duplicated Blizzard glow; lcgButton
+-- and lcgAutoCast came from the removed LibCustomGlow library (lcgButton maps
+-- to its modern Blizzard successor, lcgAutoCast to the CC-owned rebuild).
 local function NormalizeLegacyGlowStyle(style)
-    if style == "lcgProc" then
+    if style == "lcgProc" or style == "lcgButton" then
         return "glow"
+    end
+    if style == "lcgAutoCast" then
+        return "autocast"
     end
     return style
 end
 
-local LCG_GLOW_STYLE_OPTIONS = {
+local PROC_GLOW_STYLE_OPTIONS = {
     ["solid"] = "Solid Border",
     ["pixel"] = "Pixel Glow",
     ["glow"] = "Glow (Blizzard)",
-    ["lcgButton"] = "Action Button Glow",
-    ["lcgAutoCast"] = "Autocast Shine",
+    ["autocast"] = "Autocast Shine",
 }
-local LCG_GLOW_STYLE_ORDER = {"solid", "pixel", "glow", "lcgButton", "lcgAutoCast"}
+local PROC_GLOW_STYLE_ORDER = {"solid", "pixel", "glow", "autocast"}
 
 -- Generic glow style builder (Group A): style dropdown + color picker +
 -- conditional sliders. Backs BuildProcGlowControls, BuildReadyGlowControls,
@@ -1384,8 +1377,8 @@ local function BuildProcGlowControls(container, styleTable, refreshCallback, opt
         sizeKey = "procGlowSize", thicknessKey = "procGlowThickness", speedKey = "procGlowSpeed", linesKey = "procGlowLines",
         defaultStyle = "glow", defaultColor = {1, 1, 1, 1},
         enableLabel = "Show Proc Glow",
-        styleOptions = LCG_GLOW_STYLE_OPTIONS,
-        styleOrder = LCG_GLOW_STYLE_ORDER,
+        styleOptions = PROC_GLOW_STYLE_OPTIONS,
+        styleOrder = PROC_GLOW_STYLE_ORDER,
     }, opts)
 end
 
@@ -1395,14 +1388,15 @@ local function BuildReadyGlowControls(container, styleTable, refreshCallback, op
         sizeKey = "readyGlowSize", thicknessKey = "readyGlowThickness", speedKey = "readyGlowSpeed", linesKey = "readyGlowLines",
         defaultStyle = "solid", defaultColor = {0.2, 1.0, 0.2, 1},
         enableLabel = "Show Ready Glow",
-        styleOptions = LCG_GLOW_STYLE_OPTIONS,
-        styleOrder = LCG_GLOW_STYLE_ORDER,
+        styleOptions = PROC_GLOW_STYLE_OPTIONS,
+        styleOrder = PROC_GLOW_STYLE_ORDER,
     }, opts)
 end
 
 -- Aura glow styles are limited to what the aura slot kit can render: static
--- textures and AnimationGroup-driven effects. The OnUpdate-driven LCG styles
--- (pixel/autocast/button glow) cannot run there.
+-- textures and AnimationGroup-driven effects. The proc/ready-only styles
+-- (pixel/autocast) are not offered here; the kit's dashes style is the
+-- pixel equivalent.
 local AURA_GLOW_STYLE_OPTIONS = {
     ["solid"] = "Solid Border",
     ["pulse"] = "Pulsing Border",
