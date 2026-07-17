@@ -495,8 +495,7 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
                     if row.visuals.auraGlowActive
                         or row.visuals.auraGlowPandemicIntent
                         or row.visuals.auraGlowPreview
-                        or row.visuals.auraGlowCombatSuppressed
-                        or auraGlowReason == "target-missing" then
+                        or row.visuals.auraGlowCombatSuppressed then
                         parts[#parts + 1] = "auraGlow=" .. tostring(row.visuals.auraGlowActive)
                         if row.visuals.auraGlowPandemicIntent or row.visuals.auraGlowPandemicApplied then
                             parts[#parts + 1] = "pandemicGlow=true"

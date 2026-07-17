@@ -244,18 +244,6 @@ local function WrapColor(text, color)
 end
 
 local function ResolveTextModeStackDisplay(button)
-    if button._conditionalAuraStackTextPreview then
-        local previewStackText = button._auraStackText
-        if previewStackText and (issecretvalue(previewStackText) or previewStackText ~= "") then
-            return previewStackText, "aura"
-        end
-    end
-
-    local stackText = button._auraStackText
-    if stackText and (issecretvalue(stackText) or stackText ~= "") then
-        return stackText, "aura"
-    end
-
     local itemCount = button._itemCount
     if itemCount and itemCount > 0 then
         return tostring(itemCount), "item"
@@ -441,9 +429,8 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
     local currentCharges = button._currentReadableCharges
     local maxCharges = button.buttonData.maxCharges
     local stackDisplayText, stackDisplayKind = ResolveTextModeStackDisplay(button)
-    local auraDurationTextPreview = button._conditionalAuraDurationTextPreview == true
-    local auraActive = button._auraActive or auraDurationTextPreview
-    local auraHasTimer = button._auraHasTimer == true or auraDurationTextPreview
+    local auraActive = button._auraActive
+    local auraHasTimer = button._auraHasTimer == true
     -- _durationObj holds either cooldown remaining or aura remaining (when aura override is active).
     -- Determine which domain owns it this tick.
     local durationRemaining = nil
@@ -565,8 +552,6 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
                         hasSecretNameValue = true
                         parts[#parts + 1] = WrapColor("%NAME%", colorOverride or baseColor)
                         name = nil
-                    elseif button._auraActive and button._auraDisplayName then
-                        name = button._auraDisplayName
                     else
                         local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
                         if spellName then name = spellName end
@@ -1033,22 +1018,8 @@ function CooldownCompanion:CreateTextFrame(parent, index, buttonData, style)
     button._auraSpellID = CooldownCompanion:ResolveAuraSpellID(buttonData)
     button._auraUnit = buttonData.auraUnit or "player"
     button._auraActive = false
-    button._auraDurationObj = nil
-    button._auraCooldownStart = nil
-    button._auraCooldownDuration = nil
-    button._auraPrimarySwipeActive = nil
     button._auraTrackingReady = nil
     button._showingAuraIcon = false
-    button._auraViewerFrame = nil
-    button._activeAuraSpellID = nil
-    button._activeAuraSpellIDFromFallback = nil
-    button._activeAuraIcon = nil
-    button._activeAuraIconAvailable = nil
-    button._lastViewerTexId = nil
-    button._auraInstanceID = nil
-    button._viewerBar = nil
-    button._auraDisplayName = nil
-    button._auraNameOverrideActive = nil
     button._textSecretNameActive = nil
 
     if IsEntryItemLike(buttonData) then

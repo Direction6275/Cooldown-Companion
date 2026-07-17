@@ -763,10 +763,8 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     end
 
     -- Spell display texture-monitor cache
-    button._lastViewerTexId = nil
     button._lastSpellTexture = nil
     button._lastTextureCheckAt = nil
-    button._spellTexBaseline = nil
 
     -- Key press highlight runtime state
     button._keyPressHighlightActive = nil
@@ -929,41 +927,10 @@ function CooldownCompanion:UpdateButtonIcon(button)
                     UseIcon(C_Spell.GetSpellTexture(buttonData.id))
                 end
             else
-                -- For non-cdmChildSlot buttons, read the viewer frame's Icon
-                -- (for stage transitions like Heating Up → Hot Streak) but
-                -- prefer the spell API when it has changed from baseline
-                -- (buff transforms like Tiger's Fury empowering Rake/Rip).
-                local vf = button._auraViewerFrame
-                local hasViewerIcon
-                if vf then
-                    local iconTexture = vf.Icon
-                    if iconTexture and not iconTexture.GetTextureFileID then
-                        iconTexture = iconTexture.Icon
-                    end
-                    if iconTexture and iconTexture.GetTextureFileID then
-                        hasViewerIcon = UseIcon(iconTexture:GetTextureFileID())
-                    end
-                end
-                if hasViewerIcon then
-                    -- Disambiguate buff transforms vs stage transitions using
-                    -- _spellTexBaseline (frozen while viewer is active).
-                    -- Buff transform: spell API changed from baseline → use spell.
-                    -- Stage transition: spell API unchanged → keep viewer icon.
-                    -- Baseline only updates when no viewer, so multiple UBI calls
-                    -- in the same tick all detect the transform consistently.
-                    if not issecretvalue(icon) then
-                        local spellIcon = C_Spell.GetSpellTexture(buttonData.id)
-                        if spellIcon ~= nil and spellIcon ~= button._spellTexBaseline then
-                            UseIcon(spellIcon)
-                        end
-                    end
-                else
-                    local spellIcon = C_Spell.GetSpellTexture(buttonData.id)
-                    UseIcon(spellIcon)
-                    -- Update baseline only when no viewer is active — keeps
-                    -- it frozen during viewer presence to prevent oscillation.
-                    button._spellTexBaseline = spellIcon
-                end
+                -- Non-cdmChildSlot buttons: GetSpellTexture on the base spell
+                -- dynamically resolves the current visual (including talent
+                -- transforms).
+                UseIcon(C_Spell.GetSpellTexture(buttonData.id))
             end
         end
         -- Always validate displayId against the Spell API — the viewer child may
@@ -1293,10 +1260,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._liveOverrideSpellId = nil
     button._spellOutOfRange = nil
     button._itemCount = nil
-    button._lastViewerTexId = nil
     button._lastSpellTexture = nil
     button._lastTextureCheckAt = nil
-    button._spellTexBaseline = nil
 
     button._iconFillActive = nil
     button._iconFillMode = nil

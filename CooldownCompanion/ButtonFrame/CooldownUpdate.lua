@@ -441,10 +441,6 @@ end
 
 local function ClearRotationAssistantMissingState(button, buttonData, style)
     button._durationObj = nil
-    button._auraDurationObj = nil
-    button._auraCooldownStart = nil
-    button._auraCooldownDuration = nil
-    button._auraPrimarySwipeActive = nil
     button._cooldownDeferred = nil
     button._cooldownState = COOLDOWN_STATE_READY
     button._chargeState = nil
@@ -456,7 +452,6 @@ local function ClearRotationAssistantMissingState(button, buttonData, style)
     button._isOutOfRange = false
     button._procOverlayActive = false
     button._auraActive = false
-    button._auraStackText = ""
     button._visibilityHidden = false
     button._visibilityAlphaOverride = nil
     button._visibilityReasonBits = 0
@@ -964,10 +959,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- GetCooldownTimes() which returns secret values after
     -- SetCooldownFromDurationObject() in 12.0.1.
     button._durationObj = nil
-    button._auraDurationObj = nil
-    button._auraCooldownStart = nil
-    button._auraCooldownDuration = nil
-    button._auraPrimarySwipeActive = nil
     button._cooldownDeferred = nil
     button._cooldownState = COOLDOWN_STATE_READY
     button._chargeState = nil

@@ -887,10 +887,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._displaySpellId = nil
     button._liveOverrideSpellId = nil
     button._itemCount = nil
-    button._auraDurationObj = nil
-    button._auraCooldownStart = nil
-    button._auraCooldownDuration = nil
-    button._auraPrimarySwipeActive = nil
     EntryRuntime.ClearAuraPandemicRuntimeState(button)
     if button.auraStackCount then button.auraStackCount:SetText("") end
     button._visibilityHidden = false

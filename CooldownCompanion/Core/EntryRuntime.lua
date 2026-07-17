@@ -103,15 +103,8 @@ function EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit, options)
 
     owner._auraActive = inactiveValue
     owner._auraHasTimer = inactiveValue
-    owner._auraDurationObj = nil
-    owner._auraCooldownStart = nil
-    owner._auraCooldownDuration = nil
     owner._auraInstanceID = nil
     owner._auraUnit = configUnit
-    owner._activeAuraSpellID = nil
-    owner._activeAuraSpellIDFromFallback = nil
-    owner._activeAuraIcon = nil
-    owner._activeAuraIconAvailable = nil
     owner._auraEventRemoved = nil
     owner._auraGraceStart = nil
     if not options.preserveTargetSwitch then

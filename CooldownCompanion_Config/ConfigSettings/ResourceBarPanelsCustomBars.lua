@@ -923,10 +923,10 @@ local function BuildCustomBarsListPanel(container)
     local function AddCustomBarFromSpell(spellId, labelOverride, entryType)
         if not spellId then return false end
         if entryType == "aura" then
-            -- 12.1 aura teardown: aura-driven Custom Bars cannot be created
-            -- until the aura rebuild lands. Treat as handled so the add box
+            -- Aura-driven Custom Bars are stubbed until the custom aura bars
+            -- phase group rebuilds them. Treat as handled so the add box
             -- clears without a second "not found" message.
-            CooldownCompanion:Print("Aura-driven Custom Bars are unavailable in 12.1 until aura tracking returns.")
+            CooldownCompanion:Print("Aura-driven Custom Bars return in a later update.")
             return true
         end
         local entry = {
@@ -1294,7 +1294,7 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
     if not isSpellCustomBar then
         local dormantLabel = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(dormantLabel)
-        dormantLabel:SetText("|cffff8800This Custom Bar tracked an aura. Aura tracking is unavailable in 12.1; this bar is inactive until aura support returns.|r")
+        dormantLabel:SetText("|cffff8800This Custom Bar tracked an aura. It is inactive for now and returns in a later update.|r")
         dormantLabel:SetFullWidth(true)
         container:AddChild(dormantLabel)
     end

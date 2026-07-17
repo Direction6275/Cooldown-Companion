@@ -565,9 +565,6 @@ local function ResetButtonGlowTransitionState(button)
         if button.assistedHighlight then
             HideGlowStyles(button.assistedHighlight)
         end
-        if button.barAuraEffect then
-            HideGlowStyles(button.barAuraEffect)
-        end
     end
 
     button._procGlowActive = nil
@@ -692,8 +689,6 @@ local function ClearButtonPreviewState(button)
     button._conditionalPreviewLoopDuration = nil
     button._conditionalPreviewDomain = nil
     button._conditionalAuraPreview = nil
-    button._conditionalAuraDurationTextPreview = nil
-    button._conditionalAuraStackTextPreview = nil
     button._conditionalPandemicPreview = nil
     button._conditionalUnusablePreview = nil
     button._conditionalOutOfRangePreview = nil
@@ -715,7 +710,6 @@ local function ClearReusableButtonRuntime(button)
     button._spellOutOfRange = nil
     button._lastSpellTexture = nil
     button._lastTextureCheckAt = nil
-    button._spellTexBaseline = nil
     button._noCooldown = nil
     button._noCooldownSpellId = nil
     button._baseNoCooldown = nil
@@ -749,24 +743,8 @@ local function ClearReusableButtonRuntime(button)
     button._auraSpellID = nil
     button._auraUnit = nil
     button._auraActive = false
-    button._auraDurationObj = nil
-    button._auraCooldownStart = nil
-    button._auraCooldownDuration = nil
-    button._auraPrimarySwipeActive = nil
     button._auraTrackingReady = nil
     button._showingAuraIcon = false
-    button._auraViewerFrame = nil
-    button._activeAuraSpellID = nil
-    button._activeAuraSpellIDFromFallback = nil
-    button._activeAuraIcon = nil
-    button._activeAuraIconAvailable = nil
-    button._lastViewerTexId = nil
-    button._auraInstanceID = nil
-    button._viewerBar = nil
-    button._viewerAuraVisualsActive = nil
-    button._auraDisplayName = nil
-    button._auraNameOverrideActive = nil
-    button._auraStackText = nil
     button._auraHasTimer = nil
     button._textSecretNameActive = nil
     EntryRuntime.ReleaseTrackedAuraScratch(button)
@@ -897,7 +875,6 @@ local function DeactivatePooledButton(self, groupId, button)
     HideButtonGlowContainer(button.auraGlow)
     HideButtonGlowContainer(button.readyGlow)
     HideButtonGlowContainer(button.keyPressHighlight)
-    HideButtonGlowContainer(button.barAuraEffect)
     ClearReusableButtonRuntime(button)
     button._buttonPoolKey = GetExistingButtonPoolKey(button)
     button._pooled = true
