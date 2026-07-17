@@ -30,6 +30,9 @@ local PANEL_PREVIEW_DISABLED_ALPHA = 0.45
 local PANEL_PREVIEW_RING_COLOR = { 0.38, 0.60, 0.92, 1 }
 -- Above the bar slots' text frame (statusBar level + 2)
 local PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = 5
+-- Badges counter-scale against the preview's scale-to-fit so they stay
+-- readable, clamped so they never dwarf a heavily scaled-down slot.
+local PANEL_PREVIEW_BADGE_SCREEN_SIZE = 12
 local DEFAULT_BAR_COLOR = { 0.2, 0.6, 1.0, 1.0 }
 
 -- Mirror of GroupFrame.lua GetGrowthMultipliers: anchor corner plus x/y
@@ -225,9 +228,68 @@ local function ApplySelectionVisuals(slot, index)
     slot.selectedHighlight:Show()
 end
 
+-- Entry status signals, mirroring the column 2 row badges exactly.
+local function CollectEntryStatus(buttonData, group)
+    local usable = CooldownCompanion:IsButtonUsable(buttonData, group)
+    local loadAllowed = CooldownCompanion:IsButtonLoadConditionMet(buttonData, group)
+    local status = {
+        usable = usable,
+        disabled = buttonData.enabled == false,
+        warn = (not usable) and buttonData.enabled ~= false,
+        loadBlocked = not loadAllowed,
+        override = CooldownCompanion:HasStyleOverrides(buttonData) and true or false,
+        fallback = CooldownCompanion.HasItemFallbacks(buttonData) and true or false,
+        talent = (buttonData.talentConditions and #buttonData.talentConditions > 0) and true or false,
+        sound = false,
+    }
+    if buttonData.type == "spell" then
+        local enabledSoundEvents = CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData)
+        -- The aura-applied sound is config-only (played by the game's aura
+        -- system, never the runtime engine), so it needs its own check.
+        if not enabledSoundEvents
+            and (buttonData.auraTracking or buttonData.addedAs == "aura")
+            and CooldownCompanion:GetAuraAppliedSoundFileForButton(buttonData) then
+            enabledSoundEvents = true
+        end
+        status.sound = enabledSoundEvents and true or false
+    end
+    return status
+end
+
+-- Badge cluster in the slot's top-right corner: same atlases and meaning
+-- as the column 2 entry rows, stacked right-to-left in the same order.
+local function ApplySlotBadges(slot, status, scale)
+    slot.badges = slot.badges or {}
+    local size = math_min(24, math_max(12, PANEL_PREVIEW_BADGE_SCREEN_SIZE / math_max(scale, 0.01)))
+    local shown = 0
+    local function AddBadge(atlas)
+        shown = shown + 1
+        local tex = slot.badges[shown]
+        if not tex then
+            tex = slot:CreateTexture(nil, "OVERLAY", nil, 7)
+            slot.badges[shown] = tex
+        end
+        tex:SetAtlas(atlas, false)
+        tex:SetSize(size, size)
+        tex:ClearAllPoints()
+        tex:SetPoint("TOPRIGHT", slot, "TOPRIGHT", -((shown - 1) * (size + 1)), 0)
+        tex:Show()
+    end
+    if status.disabled then AddBadge("GM-icon-visibleDis-pressed") end
+    if status.warn then AddBadge("Ping_Marker_Icon_Warning") end
+    if status.override then AddBadge("Crosshair_VehichleCursor_32") end
+    if status.fallback then AddBadge("banker") end
+    if status.sound then AddBadge("common-icon-sound") end
+    if status.talent then AddBadge("UI-HUD-MicroMenu-SpecTalents-Mouseover") end
+    for i = shown + 1, #slot.badges do
+        slot.badges[i]:Hide()
+    end
+end
+
 -- Shift-hover shows the real spell/item tooltip, mirroring the column 2
--- entry rows; a plain hover shows the entry name.
-local function ShowEntrySlotTooltip(slot, buttonData)
+-- entry rows; a plain hover shows the decorated entry name plus the same
+-- status lines the row badges carry.
+local function ShowEntrySlotTooltip(slot, buttonData, status)
     GameTooltip:SetOwner(slot, "ANCHOR_RIGHT")
     if IsShiftKeyDown() then
         if buttonData.type == "spell" and buttonData.id then
@@ -249,14 +311,37 @@ local function ShowEntrySlotTooltip(slot, buttonData)
             end
         end
     end
-    GameTooltip:SetText(GetConfigEntryDisplayName(buttonData) or "Entry", 1, 1, 1)
-    if buttonData.enabled == false then
+    local name = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
+    GameTooltip:SetText(name or "Entry", 1, 1, 1)
+    if status.disabled then
         GameTooltip:AddLine("Disabled", 0.6, 0.6, 0.6)
+    end
+    if status.warn then
+        if status.loadBlocked then
+            GameTooltip:AddLine("Hidden by load conditions", 1, 0.3, 0.3)
+        else
+            GameTooltip:AddLine("Spell/item unavailable", 1, 0.3, 0.3)
+        end
+    end
+    if status.override then
+        GameTooltip:AddLine("Has appearance overrides", 1, 1, 1)
+    end
+    if status.fallback then
+        GameTooltip:AddLine("Uses item fallbacks", 1, 1, 1)
+    end
+    if status.sound then
+        GameTooltip:AddLine("Sound alerts enabled", 1, 1, 1)
+    end
+    if status.talent then
+        GameTooltip:AddLine("Has talent conditions", 1, 1, 1)
+    end
+    if CooldownCompanion:HasLocalLoadConditions(buttonData) then
+        GameTooltip:AddLine("This entry adds load conditions.", 0.7, 0.7, 0.7)
     end
     GameTooltip:Show()
 end
 
-local function WireEntryInteraction(slot, panelId, index, buttonData)
+local function WireEntryInteraction(slot, panelId, index, buttonData, status)
     slot:SetScript("OnMouseUp", function(self, mouseButton)
         if CS.dragState and CS.dragState.phase == "active" then return end
         if GetCursorInfo() then return end
@@ -272,7 +357,7 @@ local function WireEntryInteraction(slot, panelId, index, buttonData)
     slot:SetScript("OnEnter", function(self)
         self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
         self.hoverHighlight:Show()
-        ShowEntrySlotTooltip(self, buttonData)
+        ShowEntrySlotTooltip(self, buttonData, status)
     end)
     slot:SetScript("OnLeave", function(self)
         self.hoverHighlight:Hide()
@@ -470,6 +555,16 @@ function ST._BuildButtonPanelPreview(host, panelId)
     local contentWidth = (cols - 1) * (w + spacing) + w
     local contentHeight = (rows - 1) * (h + spacing) + h
 
+    -- Scale is needed while styling (badges counter-scale against it), so
+    -- compute it up front from the grid extents.
+    local hostWidth = host:GetWidth() or 0
+    local hostHeight = host:GetHeight() or 0
+    if hostWidth < 40 then hostWidth = 340 end
+    if hostHeight < 40 then hostHeight = 200 end
+    local maxWidth = math_max(80, hostWidth - (PANEL_PREVIEW_PADDING * 2))
+    local maxHeight = math_max(80, hostHeight - (PANEL_PREVIEW_PADDING * 2))
+    local scale = math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
+
     local content = preview.content
     content:SetSize(contentWidth, contentHeight)
     content:Show()
@@ -494,20 +589,15 @@ function ST._BuildButtonPanelPreview(host, panelId)
             xMul * col * (w + spacing), yMul * row * (h + spacing))
 
         styleFn(slot, buttonData, group)
-        if buttonData.enabled == false then
+        local status = CollectEntryStatus(buttonData, group)
+        slot.icon:SetDesaturated(not status.usable)
+        if status.disabled then
             slot:SetAlpha(PANEL_PREVIEW_DISABLED_ALPHA)
         end
+        ApplySlotBadges(slot, status, scale)
         ApplySelectionVisuals(slot, index)
-        WireEntryInteraction(slot, panelId, index, buttonData)
+        WireEntryInteraction(slot, panelId, index, buttonData, status)
     end
-
-    local hostWidth = host:GetWidth() or 0
-    local hostHeight = host:GetHeight() or 0
-    if hostWidth < 40 then hostWidth = 340 end
-    if hostHeight < 40 then hostHeight = 200 end
-    local maxWidth = math_max(80, hostWidth - (PANEL_PREVIEW_PADDING * 2))
-    local maxHeight = math_max(80, hostHeight - (PANEL_PREVIEW_PADDING * 2))
-    local scale = math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
 
     content:SetScale(scale)
     content:ClearAllPoints()
