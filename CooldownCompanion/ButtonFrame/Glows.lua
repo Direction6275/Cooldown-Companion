@@ -33,8 +33,8 @@ local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}
 local DEFAULT_KEY_PRESS_COLOR = {1, 1, 1, 0.4}
 local DEFAULT_GLOW_SIZES = {solid = 5, pixel = 8, glow = 30, autocast = 2}
 -- ants overhang matches Blizzard's assisted-combat highlight ratio (66px art
--- on a 45px button); dashes size is the line length in px (LCG default 8;
--- thickness is its own key, LCG default 4).
+-- on a 45px button); dashes size is the line length in px and thickness is
+-- its own key (8 and 4: the retired LibCustomGlow pixel defaults).
 local BAR_AURA_GLOW_SIZES = {solid = 2, pixel = 8, glow = 30, autocast = 2, ants = 23, dashes = 8}
 local DEFAULT_AURA_GLOW_DASH_THICKNESS = 4
 -- Marching ants flipbook from ActionBarButtonAssistedCombatHighlightTemplate

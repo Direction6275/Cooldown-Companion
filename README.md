@@ -14,5 +14,3 @@ Thank you to all the libraries that make the addon possible 🙏
 [LibDeflate](https://www.wowinterface.com/downloads/fileinfo.php?id=25453)
 
 [LibSharedMedia](https://www.wowace.com/projects/libsharedmedia-3-0)
-
-[LibCustomGlow](https://www.curseforge.com/wow/addons/libcustomglow)

@@ -34,8 +34,6 @@ externals:
   CooldownCompanion/Libs/LibDBIcon-1.0:
     url: https://repos.wowace.com/wow/libdbicon-1-0/trunk/LibDBIcon-1.0
     tag: latest
-  CooldownCompanion/Libs/LibCustomGlow:
-    url: https://github.com/Stanzilla/LibCustomGlow
   CooldownCompanion_Config/Libs/Ace3/AceGUI-3.0:
     url: https://repos.wowace.com/wow/ace3/trunk/AceGUI-3.0
     tag: latest
@@ -58,16 +56,6 @@ ignore:
   - CooldownCompanion_Config/Libs/LibDeflate/LICENSE.txt
   - CooldownCompanion_Config/Libs/LibDeflate/changelog.md
   - "CooldownCompanion_Config/Libs/LibDeflate/libdeflate-*.rockspec"
-  # LibCustomGlow non-runtime files
-  - CooldownCompanion/Libs/LibCustomGlow/.editorconfig
-  - CooldownCompanion/Libs/LibCustomGlow/.luarc.json
-  - CooldownCompanion/Libs/LibCustomGlow/.pkgmeta
-  - CooldownCompanion/Libs/LibCustomGlow/cspell.json
-  - CooldownCompanion/Libs/LibCustomGlow/LibStub
-  - CooldownCompanion/Libs/LibCustomGlow/LibCustomGlow-1.0.toc
-  - CooldownCompanion/Libs/LibCustomGlow/LibCustomGlow-1.0.xml
-  - CooldownCompanion/Libs/LibCustomGlow/LICENSE
-  - CooldownCompanion/Libs/LibCustomGlow/README.md
   # LibSharedMedia non-runtime files
   - CooldownCompanion/Libs/LibSharedMedia-3.0/CHANGES.txt
   - CooldownCompanion/Libs/LibSharedMedia-3.0/LibSharedMedia-3.0.toc
