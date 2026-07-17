@@ -2090,9 +2090,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
     local anyAuraEntry
     if isBatch then anyAuraEntry = AnySelectedMatch(FilterAuraEntry)
     else anyAuraEntry = FilterAuraEntry(buttonData) end
-    -- Icon groups only for now: bar mode has no shell composition until the
-    -- bars phase lands, and text mode has no aura display at all.
-    if anyAuraEntry and (group.displayMode or "icons") == "icons" then
+    -- Icon and bar groups (both compose a full shell); text mode has no aura
+    -- display at all.
+    local displayMode = group.displayMode or "icons"
+    if anyAuraEntry and (displayMode == "icons" or displayMode == "bars") then
         local showOnlyAuraCb = AceGUI:Create("CheckBox")
         showOnlyAuraCb:SetLabel("Show Only While Aura Active")
         SetCheckboxValue(showOnlyAuraCb, "hideWhileAuraNotActive", FilterAuraEntry)

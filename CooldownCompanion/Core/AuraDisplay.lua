@@ -164,6 +164,37 @@ local function BuildSlotKit(slotButton)
     kit.swipe:SetDrawBling(false)
     slotButton:SetDurationCooldown(kit.swipe)
 
+    -- Bar-mode composition. On bar hosts the slot covers the bar rect: an
+    -- opaque backdrop occludes the CC fill and per-tick bar texts underneath
+    -- (the iconCover analog), and Blizzard drains the registered StatusBar
+    -- while the aura runs (V8b: keeps animating in combat). Alpha-0 until a
+    -- bar bind.
+    kit.barBackdrop = slotButton:CreateTexture(nil, "BACKGROUND", nil, 2)
+    kit.barBackdrop:SetAllPoints(slotButton)
+    kit.barBackdrop:SetAlpha(0)
+    if slotButton.SetDurationBar then
+        kit.barFill = CreateFrame("StatusBar", nil, slotButton)
+        kit.barFill:SetAllPoints(slotButton)
+        kit.barFill:EnableMouse(false)
+        kit.barFill:SetAlpha(0)
+        slotButton:SetDurationBar(kit.barFill, {
+            interpolation = ST.STATUS_BAR_INTERPOLATION_SMOOTH,
+            direction = ST.STATUS_BAR_TIMER_DIRECTION_REMAINING,
+        })
+    end
+
+    -- Bar shell composition (show-only-while-active bar entries): the bar's
+    -- icon square carries its own background and border ring, so the kit
+    -- needs a second replica set beside kit.bg/kit.border.
+    kit.iconBg = slotButton:CreateTexture(nil, "BACKGROUND", nil, 1)
+    kit.iconBg:SetAlpha(0)
+    kit.iconBorder = {}
+    for i = 1, 4 do
+        local tex = slotButton:CreateTexture(nil, "OVERLAY")
+        tex:SetAlpha(0)
+        kit.iconBorder[i] = tex
+    end
+
     -- Aura active glow: shares the slot's Blizzard-driven visibility, so it
     -- glows exactly while the aura runs. Animated styles are AnimationGroup-
     -- driven (P3: they keep playing on the forbidden subtree in combat).
@@ -184,6 +215,15 @@ local function BuildSlotKit(slotButton)
     kit.stackText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmallOutline")
     kit.stackText:SetPoint("TOPRIGHT", slotButton, "TOPRIGHT", -1, -1)
     slotButton:SetApplicationCount(kit.stackText)
+
+    -- Bar name replica: the bar backdrop occludes the CC name text along with
+    -- everything else on the bar, so the kit re-renders the entry name.
+    -- CC-authored, bind-time text (live aura names via SetSpellName are an
+    -- unvalidated future option). The template is a base font only: SetText
+    -- errors on a FontString with no font, and icon-host binds clear the text
+    -- before ApplyFontStyle ever runs (bar binds restyle it).
+    kit.barNameText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
+    kit.barNameText:SetAlpha(0)
 
     return kit
 end
@@ -261,7 +301,32 @@ local function StyleSlotKit(slot, button, buttonData, style)
     if not kit then return end
     style = style or {}
 
-    kit.auraIcon:SetAlpha(ShouldShowAuraIcon(buttonData) and 1 or 0)
+    local slotButton = slot.slotButton
+    local isBar = button._isBar == true
+    local shellEntry = buttonData.hideWhileAuraNotActive == true
+    local barIconShown = isBar and style.showBarIcon ~= false and button.icon ~= nil
+    local showAuraIcon = ShouldShowAuraIcon(buttonData)
+
+    -- Icon regions cover the slot rect on icon hosts. Bar hosts mount the
+    -- slot on the bar rect, so the aura icon and its cover re-anchor onto the
+    -- bar's icon square instead (host regions are sanctioned anchor targets;
+    -- the duration text has host-anchored since Phase 3). Slots are reused
+    -- across entries and modes, so both anchorings reset every bind.
+    local iconAnchor = barIconShown and button.icon or slotButton
+    kit.auraIcon:ClearAllPoints()
+    kit.auraIcon:SetPoint("TOPLEFT", iconAnchor, "TOPLEFT", 0, 0)
+    kit.auraIcon:SetPoint("BOTTOMRIGHT", iconAnchor, "BOTTOMRIGHT", 0, 0)
+    kit.iconCover:ClearAllPoints()
+    kit.iconCover:SetPoint("TOPLEFT", iconAnchor, "TOPLEFT", 0, 0)
+    kit.iconCover:SetPoint("BOTTOMRIGHT", iconAnchor, "BOTTOMRIGHT", 0, 0)
+
+    local auraIconShown = showAuraIcon and (not isBar or barIconShown)
+    kit.auraIcon:SetAlpha(auraIconShown and 1 or 0)
+    -- The cover occludes the CC icon underneath: always on icon hosts; on bar
+    -- hosts only when the icon square participates (aura icon swap enabled,
+    -- or a shell entry whose hidden CC icon needs the static replica).
+    local coverWanted = (not isBar) or (barIconShown and (showAuraIcon or shellEntry))
+    local coverShown = false
 
     -- Occluding cover: the entry's icon, cropped like the CC icon underneath
     -- (read at bind time — CC-owned texture, OOC-safe). Known edge: a combat
@@ -274,7 +339,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
         kit.iconCover:SetTexture(ccIcon:GetTexture())
         kit.iconCover:SetTexCoord(ccIcon:GetTexCoord())
         kit.auraIcon:SetTexCoord(ccIcon:GetTexCoord())
-        kit.iconCover:SetAlpha(1)
+        coverShown = coverWanted
     else
         local ApplyIconTexCoord = ST._ApplyIconTexCoord
         if ApplyIconTexCoord then
@@ -283,11 +348,10 @@ local function StyleSlotKit(slot, button, buttonData, style)
         end
         if buttonData.type == "spell" and buttonData.id then
             kit.iconCover:SetTexture(C_Spell.GetSpellTexture(buttonData.id))
-            kit.iconCover:SetAlpha(1)
-        else
-            kit.iconCover:SetAlpha(0)
+            coverShown = coverWanted
         end
     end
+    kit.iconCover:SetAlpha(coverShown and 1 or 0)
 
     -- Aura-active icon tint lives on the aura layer now (the layer IS the
     -- aura-active state); the CC icon keeps its own tint pipeline. With no
@@ -298,8 +362,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
     local tg = tint and tint[2] or 1
     local tb = tint and tint[3] or 1
     local ta = tint and tint[4] or 1
-    kit.auraIcon:SetVertexColor(tr, tg, tb, ta)
-    kit.iconCover:SetVertexColor(tr, tg, tb, ta)
+    -- The color's own alpha carries each region's visibility: a 4-arg
+    -- SetVertexColor write REPLACES the region alpha through a non-SetAlpha
+    -- C path (Phase 2 gotcha), so a plain tint alpha here would resurrect
+    -- regions the alpha writes above just hid.
+    kit.auraIcon:SetVertexColor(tr, tg, tb, auraIconShown and ta or 0)
+    kit.iconCover:SetVertexColor(tr, tg, tb, coverShown and ta or 0)
 
     -- Inverted passive desaturation ("desaturate while active") desaturates
     -- the aura layer; the default "desaturate while missing" is a static
@@ -321,19 +389,140 @@ local function StyleSlotKit(slot, button, buttonData, style)
         ApplyFontStyle(kit.durationText, style, "auraText")
         ApplyFontStyle(kit.stackText, style, "auraStack")
     end
-    local durAnchor, durX, durY = CooldownCompanion:GetAuraDurationTextPlacement(style)
     kit.durationText:ClearAllPoints()
-    kit.durationText:SetPoint(durAnchor, button, durAnchor, durX, durY)
-    kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
     kit.stackText:ClearAllPoints()
-    kit.stackText:SetPoint(style.auraStackAnchor or "BOTTOMLEFT",
-        button, style.auraStackAnchor or "BOTTOMLEFT",
-        style.auraStackXOffset or 2, style.auraStackYOffset or 2)
-    kit.stackText:SetAlpha(style.showAuraStackText ~= false and 1 or 0)
+    if isBar then
+        -- Bar texts replicate the CC bar's own placement conventions (the
+        -- backdrop occludes the originals): duration text at the bar
+        -- time-text spot, stack text against the icon square like the old
+        -- aura stack count.
+        local cdOffX = style.barCdTextOffsetX or 0
+        local cdOffY = style.barCdTextOffsetY or 0
+        local timeReverse = style.barTimeTextReverse
+        if button._isVertical then
+            if timeReverse then
+                kit.durationText:SetPoint("BOTTOM", slotButton, "BOTTOM", cdOffX, 3 + cdOffY)
+            else
+                kit.durationText:SetPoint("TOP", slotButton, "TOP", cdOffX, -3 + cdOffY)
+            end
+            kit.durationText:SetJustifyH("CENTER")
+        else
+            if timeReverse then
+                kit.durationText:SetPoint("LEFT", slotButton, "LEFT", 3 + cdOffX, cdOffY)
+                kit.durationText:SetJustifyH("LEFT")
+            else
+                kit.durationText:SetPoint("RIGHT", slotButton, "RIGHT", -3 + cdOffX, cdOffY)
+                kit.durationText:SetJustifyH("RIGHT")
+            end
+        end
+        kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
+        local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
+        local stackAnchorTo = barIconShown and button.icon or slotButton
+        kit.stackText:SetPoint(asAnchor, stackAnchorTo, asAnchor,
+            style.auraStackXOffset or 2, style.auraStackYOffset or 2)
+        kit.stackText:SetAlpha(style.showAuraStackText ~= false and 1 or 0)
+    else
+        local durAnchor, durX, durY = CooldownCompanion:GetAuraDurationTextPlacement(style)
+        kit.durationText:SetPoint(durAnchor, button, durAnchor, durX, durY)
+        kit.durationText:SetJustifyH("CENTER")
+        kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
+        kit.stackText:SetPoint(style.auraStackAnchor or "BOTTOMLEFT",
+            button, style.auraStackAnchor or "BOTTOMLEFT",
+            style.auraStackXOffset or 2, style.auraStackYOffset or 2)
+        kit.stackText:SetAlpha(style.showAuraStackText ~= false and 1 or 0)
+    end
+
+    -- Bar name replica: bind-time entry name in the bar name-text style (the
+    -- backdrop occludes CC's name text; a live aura-name override would need
+    -- the unvalidated SetSpellName registration).
+    kit.barNameText:ClearAllPoints()
+    if isBar and (style.showBarNameText ~= false or buttonData.customName) then
+        if ApplyFontStyle then
+            ApplyFontStyle(kit.barNameText, style, "barName", 10)
+        end
+        local nameOffX = style.barNameTextOffsetX or 0
+        local nameOffY = style.barNameTextOffsetY or 0
+        local nameReverse = style.barNameTextReverse
+        if button._isVertical then
+            if nameReverse then
+                kit.barNameText:SetPoint("TOP", slotButton, "TOP", nameOffX, -3 + nameOffY)
+            else
+                kit.barNameText:SetPoint("BOTTOM", slotButton, "BOTTOM", nameOffX, 3 + nameOffY)
+            end
+            kit.barNameText:SetJustifyH("CENTER")
+        else
+            if nameReverse then
+                kit.barNameText:SetPoint("RIGHT", slotButton, "RIGHT", -3 + nameOffX, nameOffY)
+                kit.barNameText:SetJustifyH("RIGHT")
+            else
+                kit.barNameText:SetPoint("LEFT", slotButton, "LEFT", 3 + nameOffX, nameOffY)
+                kit.barNameText:SetJustifyH("LEFT")
+            end
+            -- Same-side truncation guard, replicated from CreateBarFrame:
+            -- when the visible duration text shares the name's side, pin the
+            -- name against it so the two can't overlap.
+            if style.barNameTextReverse == style.barTimeTextReverse
+                and kit.durationText:GetAlpha() > 0 then
+                if nameReverse then
+                    kit.barNameText:SetPoint("LEFT", kit.durationText, "RIGHT", 4, 0)
+                else
+                    kit.barNameText:SetPoint("RIGHT", kit.durationText, "LEFT", -4, 0)
+                end
+            end
+        end
+        local displayName = buttonData.customName
+        if not displayName and buttonData.type == "spell" and buttonData.id then
+            -- Same resolution as the CC name text underneath: the live
+            -- override spell when one is displayed (bind-time CC field read).
+            displayName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
+        end
+        kit.barNameText:SetText(displayName or buttonData.name or "")
+        kit.barNameText:SetAlpha(1)
+    else
+        kit.barNameText:SetText("")
+        kit.barNameText:SetAlpha(0)
+    end
 
     -- Duration swipe: Blizzard drives the swipe's cooldown; draw flags and
-    -- colors are CC styling and persist across those writes.
-    CooldownCompanion:ApplyAuraDurationSwipeStyle(kit.swipe, style)
+    -- colors are CC styling and persist across those writes. Bars have no
+    -- aura swipe — the draining bar is the timer.
+    if isBar then
+        kit.swipe:SetDrawSwipe(false)
+        kit.swipe:SetDrawEdge(false)
+    else
+        CooldownCompanion:ApplyAuraDurationSwipeStyle(kit.swipe, style)
+    end
+
+    -- Bar composition: opaque backdrop occludes the CC bar underneath
+    -- (skipped for shell entries — nothing visible to occlude); Blizzard
+    -- drains the registered fill while the aura runs. Color writes carry
+    -- their own alpha and only happen in the enabled branch
+    -- (SetVertexColor-alpha gotcha: a 4-arg color write after SetAlpha(0)
+    -- would resurrect the region).
+    if isBar then
+        if shellEntry then
+            kit.barBackdrop:SetAlpha(0)
+        else
+            local bg = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
+            -- Backdrop alpha forced opaque: a translucent backdrop would let
+            -- the CC fill bleed through as the aura bar drains.
+            kit.barBackdrop:SetColorTexture(bg[1] or 0.1, bg[2] or 0.1, bg[3] or 0.1, 1)
+            kit.barBackdrop:SetAlpha(1)
+        end
+        if kit.barFill then
+            local auraColor = style.barAuraColor or { 0.2, 1.0, 0.2, 1.0 }
+            kit.barFill:SetOrientation(button._isVertical and "VERTICAL" or "HORIZONTAL")
+            kit.barFill:SetReverseFill(style.barReverseFill or false)
+            kit.barFill:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
+            kit.barFill:SetAlpha(1)
+            kit.barFill:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
+        end
+    else
+        kit.barBackdrop:SetAlpha(0)
+        if kit.barFill then
+            kit.barFill:SetAlpha(0)
+        end
+    end
 
     -- Aura active glow: icon-mode hosts only (the bar-mode analog is the bar
     -- aura effect, which lands with the bars phase). Style resolution and the
@@ -342,10 +531,10 @@ local function StyleSlotKit(slot, button, buttonData, style)
     ST._StyleKitGlowRegions(kit.glow, style, button, button._isBar ~= true)
 
     -- Full-button composition for show-only-while-active entries: bg + border
-    -- replicas anchored to the host button (pixel-identical to the CC shell).
-    -- Icon-mode hosts only — bar mode has no shell counterpart until its
-    -- phase lands, so composing over a visible bar would just paint garbage.
-    if buttonData.hideWhileAuraNotActive == true and button._isBar ~= true then
+    -- replicas anchored to the host frames (pixel-identical to the CC shell).
+    -- Bars carry two chrome sets — the bar ring and the icon square's own
+    -- background/border — so bar shells style the second replica set too.
+    if shellEntry and not isBar then
         kit.bg:ClearAllPoints()
         kit.bg:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
         kit.bg:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
@@ -361,9 +550,53 @@ local function StyleSlotKit(slot, button, buttonData, style)
         for _, tex in ipairs(kit.border) do
             tex:SetAlpha(1)
         end
+        kit.iconBg:SetAlpha(0)
+        for _, tex in ipairs(kit.iconBorder) do
+            tex:SetAlpha(0)
+        end
+    elseif shellEntry and isBar then
+        local bgColor = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
+        local barBounds = button._barBounds or button
+        -- CC parity: with the icon square shown the background covers only
+        -- the bar area (the square has its own), otherwise the whole button.
+        local bgAnchor = barIconShown and barBounds or button
+        kit.bg:ClearAllPoints()
+        kit.bg:SetPoint("TOPLEFT", bgAnchor, "TOPLEFT", 0, 0)
+        kit.bg:SetPoint("BOTTOMRIGHT", bgAnchor, "BOTTOMRIGHT", 0, 0)
+        kit.bg:SetColorTexture(bgColor[1] or 0.1, bgColor[2] or 0.1, bgColor[3] or 0.1, bgColor[4] or 0.8)
+        kit.bg:SetAlpha(1)
+        local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+        local renderMode = ST.GetEffectiveBorderRenderMode(ST.GetBorderRenderMode(style), nil, borderSize)
+        local borderColor = style.borderColor or { 0, 0, 0, 1 }
+        ST.ApplyBorderTexturesBetween(kit.border, barBounds, barBounds,
+            borderColor, borderSize, renderMode)
+        for _, tex in ipairs(kit.border) do
+            tex:SetAlpha(1)
+        end
+        if barIconShown and button._iconBounds then
+            kit.iconBg:ClearAllPoints()
+            kit.iconBg:SetPoint("TOPLEFT", button._iconBounds, "TOPLEFT", 0, 0)
+            kit.iconBg:SetPoint("BOTTOMRIGHT", button._iconBounds, "BOTTOMRIGHT", 0, 0)
+            kit.iconBg:SetColorTexture(bgColor[1] or 0.1, bgColor[2] or 0.1, bgColor[3] or 0.1, bgColor[4] or 0.8)
+            kit.iconBg:SetAlpha(1)
+            ST.ApplyBorderTexturesBetween(kit.iconBorder, button._iconBounds, button._iconBounds,
+                borderColor, borderSize, renderMode)
+            for _, tex in ipairs(kit.iconBorder) do
+                tex:SetAlpha(1)
+            end
+        else
+            kit.iconBg:SetAlpha(0)
+            for _, tex in ipairs(kit.iconBorder) do
+                tex:SetAlpha(0)
+            end
+        end
     else
         kit.bg:SetAlpha(0)
         for _, tex in ipairs(kit.border) do
+            tex:SetAlpha(0)
+        end
+        kit.iconBg:SetAlpha(0)
+        for _, tex in ipairs(kit.iconBorder) do
             tex:SetAlpha(0)
         end
     end
@@ -488,18 +721,37 @@ local function EnsureAuraLayer(button)
     if not layer then
         layer = CreateFrame("Frame", nil, button)
         layer._ccNoTouch = true
-        local anchorTo = button.icon or button
-        layer:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", 0, 0)
-        layer:SetPoint("BOTTOMRIGHT", anchorTo, "BOTTOMRIGHT", 0, 0)
         button.auraLayer = layer
     end
-    -- Above every configurable button element (LoC sits at baseLevel+7).
-    -- ApplyStrataOrder (ButtonFrame/Helpers.lua) keeps these two levels in
-    -- sync on restyles: CC's text overlay rides ABOVE the aura display so
-    -- count/keybind text stays readable while an aura is showing.
-    layer:SetFrameLevel(button:GetFrameLevel() + 8)
-    if button.overlayFrame then
-        button.overlayFrame:SetFrameLevel(button:GetFrameLevel() + 9)
+    -- Re-anchored every call: idempotent, and frame-relative anchoring tracks
+    -- geometry restyles for free. Bar hosts mount the slot on the bar rect
+    -- (statusBar is already inset by the border layout, so the CC border ring
+    -- stays visible around the aura display).
+    local anchorTo = (button._isBar and button.statusBar) or button.icon or button
+    layer:ClearAllPoints()
+    layer:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", 0, 0)
+    layer:SetPoint("BOTTOMRIGHT", anchorTo, "BOTTOMRIGHT", 0, 0)
+    if button._isBar and button.barTextFrame then
+        -- Above barTextFrame (statusBar+20): CC keeps writing cooldown time
+        -- text per tick with no way to know an aura is showing, so the kit
+        -- backdrop must occlude it. Charge/count text hoists above the kit's
+        -- textOverlay (slot+3) to stay readable. UpdateBarStyle re-sets
+        -- barTextFrame's level on restyles, and UpdateGroupStyle always
+        -- re-requests a rebind, so this ordering re-converges after every
+        -- style edit.
+        layer:SetFrameLevel(button.barTextFrame:GetFrameLevel() + 1)
+        if button.overlayFrame then
+            button.overlayFrame:SetFrameLevel(layer:GetFrameLevel() + 10)
+        end
+    else
+        -- Above every configurable button element (LoC sits at baseLevel+7).
+        -- ApplyStrataOrder (ButtonFrame/Helpers.lua) keeps these two levels in
+        -- sync on restyles: CC's text overlay rides ABOVE the aura display so
+        -- count/keybind text stays readable while an aura is showing.
+        layer:SetFrameLevel(button:GetFrameLevel() + 8)
+        if button.overlayFrame then
+            button.overlayFrame:SetFrameLevel(button:GetFrameLevel() + 9)
+        end
     end
     return layer
 end

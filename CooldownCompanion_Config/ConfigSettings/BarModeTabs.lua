@@ -20,6 +20,7 @@ local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
+local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 
 -- Imports from SectionBuilders.lua
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
@@ -126,6 +127,75 @@ local function BuildBarAppearanceTab(container, group, style)
 
     local borderColorPicker = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
     CreateColorPickerPromoteButton(borderColorPicker, "borderSettings", group, style)
+
+    -- Bar aura timer section: fills the Blizzard-driven aura bar composited
+    -- over the CC bar, plus the aura text toggles. Shown only while the group
+    -- has an aura-tracking entry (same gate as the icon-side aura sections).
+    -- Style edits route through refreshStyle -> UpdateGroupStyle ->
+    -- RequestAuraRebind, which defers to combat end with the one-time note
+    -- when needed.
+    if GroupHasAuraTrackingEntry(group) then
+        AddColorPicker(container, style, "barAuraColor", "Bar Aura Timer Color", {0.2, 1.0, 0.2, 1.0}, true, refreshStyle, refreshStyle)
+
+        -- Aura duration text: rendered by the aura display at the bar's time
+        -- text position (it follows the Flip Time Text and offset settings
+        -- from the Cooldown Text section).
+        local auraTextCb = AceGUI:Create("CheckBox")
+        auraTextCb:SetLabel("Show Aura Duration Text")
+        auraTextCb:SetValue(style.showAuraText ~= false)
+        auraTextCb:SetFullWidth(true)
+        auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.showAuraText = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(auraTextCb)
+
+        local function BuildBarAuraTextAdvanced(panel)
+            AddFontControls(panel, style, "auraText", { size = 12 }, refreshStyle)
+            AddColorPicker(panel, style, "auraTextFontColor", "Font Color", {0, 0.925, 1, 1}, false, refreshStyle, refreshStyle)
+        end
+        local _, auraTextAdvBtn = AddAdvancedToggle(auraTextCb, "barAuraText", tabInfoButtons, style.showAuraText ~= false, {
+            title = "Aura Duration Text Advanced",
+            build = BuildBarAuraTextAdvanced,
+        })
+        -- Always enabled: the preview drains the bar in the aura color, which
+        -- is worth seeing even with the duration text hidden.
+        local auraTextPreviewBtn = AddConditionalPreviewBadge(auraTextCb, auraTextAdvBtn, "Preview Aura Timer", "aura_duration_bar", true)
+        CreateInfoButton(auraTextCb.frame, auraTextPreviewBtn or auraTextAdvBtn, "LEFT", "RIGHT", 4, 0, {
+            "Aura Duration Text",
+            {"Shows the remaining aura time at the bar's time text position while the aura is active. Position follows the flip and offset settings in the Cooldown Text section.", 1, 1, 1, true},
+        }, auraTextCb)
+
+        -- Aura stack text: Blizzard writes the live stack count; anchored to
+        -- the icon square (or the bar with the icon hidden).
+        local auraStackCb = AceGUI:Create("CheckBox")
+        auraStackCb:SetLabel("Show Aura Stack Text")
+        auraStackCb:SetValue(style.showAuraStackText ~= false)
+        auraStackCb:SetFullWidth(true)
+        auraStackCb:SetCallback("OnValueChanged", function(widget, event, val)
+            style.showAuraStackText = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        container:AddChild(auraStackCb)
+
+        local function BuildBarAuraStackTextAdvanced(panel)
+            AddFontControls(panel, style, "auraStack", { size = 12 }, refreshStyle)
+            AddColorPicker(panel, style, "auraStackFontColor", "Font Color", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
+            AddAnchorDropdown(panel, style, "auraStackAnchor", "BOTTOMLEFT", refreshStyle)
+            AddOffsetSliders(panel, style, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle)
+        end
+        local _, auraStackAdvBtn = AddAdvancedToggle(auraStackCb, "barAuraStackText", tabInfoButtons, style.showAuraStackText ~= false, {
+            title = "Aura Stack Text Advanced",
+            build = BuildBarAuraStackTextAdvanced,
+        })
+        local auraStackPreviewBtn = AddConditionalPreviewBadge(auraStackCb, auraStackAdvBtn, "Preview Aura Stack Text", "aura_stack_text", style.showAuraStackText ~= false)
+        CreateInfoButton(auraStackCb.frame, auraStackPreviewBtn or auraStackAdvBtn, "LEFT", "RIGHT", 4, 0, {
+            "Aura Stack Text",
+            {"Shows the live stack count while the aura is active, drawn by the game so it stays accurate in combat. Stack counts cannot drive the bar fill; the count is hidden from addons during combat.", 1, 1, 1, true},
+        }, auraStackCb)
+    end
 
     -- ================================================================
     -- Show Icon (standalone checkbox with advanced toggle + promote)

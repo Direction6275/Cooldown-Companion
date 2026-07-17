@@ -150,7 +150,7 @@ local function ApplyChargeTextColor(button, buttonData, style, usesChargeBehavio
         cc = style.chargeFontColor or DEFAULT_WHITE
     elseif usesChargeBehavior then
         cc = style.chargeFontColor or DEFAULT_WHITE
-    elseif UsesChargeTextLane(buttonData) and not (button and button._barAuraStackDisplay) then
+    elseif UsesChargeTextLane(buttonData) then
         cc = style.chargeFontColor or DEFAULT_WHITE
     end
 
@@ -229,6 +229,24 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         return
     end
 
+    if kind == "aura_duration_bar" then
+        -- Bar aura timer preview: the CC bar drains in barAuraColor (bar
+        -- hosts only). Rendering happens in UpdateBarFill/UpdateBarDisplay
+        -- off the "aura" preview domain; the live aura bar is the
+        -- Blizzard-driven slot kit and previews never touch it.
+        if not button._isBar then return end
+        local startTime, duration, remaining, loopStartTime, loopDuration = GetConditionalPreviewTiming(preview, now)
+        if not startTime then return end
+        button._conditionalPreviewDomain = "aura"
+        SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
+        -- Shell entries hide the CC bar this preview draws on; expose while
+        -- the preview runs (the preview clear path restores).
+        if ST._ApplyBarAuraShellVisuals then
+            ST._ApplyBarAuraShellVisuals(button, buttonData)
+        end
+        return
+    end
+
     if kind == "aura_duration_text" then
         -- CC-owned stand-in for the slot kit's duration text (previews never
         -- touch the aura slot subtree): same font keys, same shared/separate
@@ -261,6 +279,10 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
     if kind == "aura_stack_text" then
         if button.auraStackCount then
             button.auraStackCount:SetText(style.showAuraStackText ~= false and (preview.stackText or "3") or "")
+        end
+        if button._isBar and ST._ApplyBarAuraShellVisuals then
+            -- Bar shells hide the text frame this preview writes to.
+            ST._ApplyBarAuraShellVisuals(button, buttonData)
         end
         return
     end
@@ -771,8 +793,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         self:RefreshRotationAssistantButton(button)
         buttonData = button.buttonData
     end
-    local barAuraStackConfigured = button._isBar and CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
-    local barAuraStackDisplay = false
     local usesChargeBehavior = UsesChargeBehavior(buttonData)
     local useChargeTextLane = UsesChargeTextLane(buttonData)
     local now = GetTime()
@@ -952,13 +972,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     button._cooldownState = COOLDOWN_STATE_READY
     button._chargeState = nil
     button._chargeCooldownVisualActive = nil
-    button._barAuraStackDisplay = nil
-    button._barAuraStackValue = nil
-    button._barAuraStackValueAvailable = nil
-    button._barAuraStackMax = nil
-    button._barAuraStackMode = nil
-    button._barAuraStackValueSecret = nil
-    button._barAuraStackValueDirty = nil
     -- Fetch cooldown data and update the cooldown widget.
     -- isOnGCD is NeverSecret (always readable even during restricted combat).
     local fetchOk, isOnGCD
@@ -967,85 +980,55 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local spellRealCooldownShown = false
     local spellCooldownResult
 
-    -- Stack-count aura bars own the bar surface even while the aura is inactive.
-    -- Inactive auras render as zero stacks so segmented/overlay placeholders stay visible.
-    barAuraStackDisplay = barAuraStackConfigured or false
-    if barAuraStackDisplay then
-        button._barAuraStackDisplay = true
-        button._barAuraStackValue = 0
-        button._barAuraStackValueAvailable = true
-        button._barAuraStackMax = CooldownCompanion:GetBarPanelAuraMaxStacks(buttonData)
-        button._barAuraStackMode = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
-    end
-    usesChargeBehavior = UsesChargeBehavior(buttonData) and not barAuraStackDisplay
-    useChargeTextLane = UsesChargeTextLane(buttonData) and not barAuraStackDisplay
-    if button.count and button._countTextLaneStyled ~= useChargeTextLane then
-        if button._isBar then
-            ApplyBarCountTextStyle(button, style)
-        elseif not button._isText then
-            ApplyIconCountTextStyle(button, style)
-        else
-            button._countTextLaneStyled = useChargeTextLane
-        end
-    end
-
-    if barAuraStackDisplay then
-        button._viewerBar = nil
-        button.cooldown:SetCooldown(0, 0)
-        button.cooldown:Hide()
-    end
-
     if buttonData.isPassive then
         button.cooldown:Hide()
     end
 
-    if not barAuraStackDisplay then
-        if buttonData.type == "spell" and not buttonData.isPassive then
-            spellCooldownResult = EntryRuntime.EvaluateButtonSpellCooldown(
-                buttonData,
-                cooldownSpellId,
-                button._noCooldown,
-                button._resourceGateCost,
-                button._baseNoCooldown,
-                button._baseResourceGateCost
-            )
-            if spellCooldownResult and spellCooldownResult.fetchOk then
-                spellCooldownInfo = spellCooldownResult.info
-                spellCooldownDuration = spellCooldownResult.durationObj
-                spellRealCooldownShown = spellCooldownResult.realCooldownShown == true
-                isOnGCD = spellCooldownResult.isOnGCD or false
-                button._cooldownState = spellCooldownResult.state or COOLDOWN_STATE_READY
-                local renderDurationObj = spellCooldownResult.renderDurationObj
-                button._cooldownDeferred = spellCooldownResult.deferred or nil
-                local cooldownPresentationState = spellCooldownResult.presentationState or button._cooldownState
-                isGCDOnly = button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
-                    and cooldownPresentationState == COOLDOWN_STATE_GCD
+    if buttonData.type == "spell" and not buttonData.isPassive then
+        spellCooldownResult = EntryRuntime.EvaluateButtonSpellCooldown(
+            buttonData,
+            cooldownSpellId,
+            button._noCooldown,
+            button._resourceGateCost,
+            button._baseNoCooldown,
+            button._baseResourceGateCost
+        )
+        if spellCooldownResult and spellCooldownResult.fetchOk then
+            spellCooldownInfo = spellCooldownResult.info
+            spellCooldownDuration = spellCooldownResult.durationObj
+            spellRealCooldownShown = spellCooldownResult.realCooldownShown == true
+            isOnGCD = spellCooldownResult.isOnGCD or false
+            button._cooldownState = spellCooldownResult.state or COOLDOWN_STATE_READY
+            local renderDurationObj = spellCooldownResult.renderDurationObj
+            button._cooldownDeferred = spellCooldownResult.deferred or nil
+            local cooldownPresentationState = spellCooldownResult.presentationState or button._cooldownState
+            isGCDOnly = button._cooldownState ~= COOLDOWN_STATE_COOLDOWN
+                and cooldownPresentationState == COOLDOWN_STATE_GCD
 
-                if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
-                    if renderDurationObj then
-                        button._durationObj = renderDurationObj
-                        button.cooldown:SetCooldownFromDurationObject(renderDurationObj)
-                    else
-                        button.cooldown:SetCooldown(0, 0)
-                    end
-                elseif cooldownPresentationState == COOLDOWN_STATE_GCD then
-                    if style.showGCDSwipe == true and renderDurationObj then
-                        button.cooldown:SetCooldownFromDurationObject(renderDurationObj)
-                    else
-                        button.cooldown:SetCooldown(0, 0)
-                        button.cooldown:Hide()
-                    end
+            if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
+                if renderDurationObj then
+                    button._durationObj = renderDurationObj
+                    button.cooldown:SetCooldownFromDurationObject(renderDurationObj)
                 else
                     button.cooldown:SetCooldown(0, 0)
                 end
-                fetchOk = true
+            elseif cooldownPresentationState == COOLDOWN_STATE_GCD then
+                if style.showGCDSwipe == true and renderDurationObj then
+                    button.cooldown:SetCooldownFromDurationObject(renderDurationObj)
+                else
+                    button.cooldown:SetCooldown(0, 0)
+                    button.cooldown:Hide()
+                end
             else
                 button.cooldown:SetCooldown(0, 0)
             end
-        elseif IsEntryItemLike(buttonData) then
-            isGCDOnly = EvaluateItemCooldown(button, buttonData, style, true)
             fetchOk = true
+        else
+            button.cooldown:SetCooldown(0, 0)
         end
+    elseif IsEntryItemLike(buttonData) then
+        isGCDOnly = EvaluateItemCooldown(button, buttonData, style, true)
+        fetchOk = true
     end
 
     -- Update spell charge data before zero-charge state classification.
@@ -1084,7 +1067,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Both intentionally reuse the charge-text font/toggle without driving
         -- charge-specific cooldown logic.
         if buttonData.type == "spell"
-                and not barAuraStackDisplay
                 and button.style and button.style.showChargeText then
             local displayCountShown = false
             local hasCastCountText = HasCastCountText(buttonData)
@@ -1132,8 +1114,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             elseif not displayCountShown then
                 button.count:SetText("")
             end
-        elseif not barAuraStackDisplay
-                and (buttonData._hasDisplayCount or buttonData._displayCountFamily or HasCastCountText(buttonData) or buttonData._castCountCandidate) and buttonData.type == "spell" then
+        elseif (buttonData._hasDisplayCount or buttonData._displayCountFamily or HasCastCountText(buttonData) or buttonData._castCountCandidate) and buttonData.type == "spell" then
             -- Count text disabled: ensure display/use-count and cast-count text is cleared.
             button.count:SetText("")
         elseif button._chargeText ~= nil then
@@ -1147,7 +1128,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Skip for charge spells: their _durationObj is the recharge cycle, never the GCD.
     if button._isBar then
         button._barGCDSuppressed = fetchOk and isGCDOnly
-            and not usesChargeBehavior and not buttonData.isPassive and not barAuraStackDisplay
+            and not usesChargeBehavior and not buttonData.isPassive
     end
 
     -- Bar mode icon-only GCD swipe.

@@ -114,19 +114,9 @@ local function RefreshActiveAdvancedSettingsPanel()
 end
 
 -- Owner ruling (aura rebuild plan): group-level aura style sections are shown
--- only while the group actually has an aura-tracking entry.
-local function GroupHasAuraTrackingEntry(group)
-    if not (group and group.buttons) then
-        return false
-    end
-    for _, buttonData in ipairs(group.buttons) do
-        if buttonData.type == "spell"
-            and (buttonData.auraTracking or buttonData.addedAs == "aura") then
-            return true
-        end
-    end
-    return false
-end
+-- only while the group actually has an aura-tracking entry. Shared helper
+-- (Helpers.lua) so BarModeTabs can gate its aura section too.
+local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 
 local function AddIndicatorsHeading(container, text)
     local heading = AceGUI:Create("Heading")

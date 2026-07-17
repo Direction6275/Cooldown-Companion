@@ -300,6 +300,22 @@ local function GetSelectedRuntimeButton(buttonData)
     return nil
 end
 
+-- Owner ruling (aura rebuild plan): group-level aura style sections are shown
+-- only while the group actually has an aura-tracking entry. Shared by
+-- GroupTabs and BarModeTabs (load order: Helpers loads first).
+local function GroupHasAuraTrackingEntry(group)
+    if not (group and group.buttons) then
+        return false
+    end
+    for _, buttonData in ipairs(group.buttons) do
+        if buttonData.type == "spell"
+            and (buttonData.auraTracking or buttonData.addedAs == "aura") then
+            return true
+        end
+    end
+    return false
+end
+
 -- Aura style sections only apply while an entry tracks an aura. This gate is
 -- config-visibility only, NOT part of ST.CanButtonUseOverrideSection: aura
 -- tracking is a toggle, and the runtime check feeds GetEffectiveStyle's prune
@@ -1370,6 +1386,7 @@ ST._CreateRevertButton = CreateRevertButton
 ST._CreateCheckboxPromoteButton = CreateCheckboxPromoteButton
 ST._CreateColorPickerPromoteButton = CreateColorPickerPromoteButton
 ST._CanButtonUseConfigOverrideSection = CanButtonUseConfigOverrideSection
+ST._GroupHasAuraTrackingEntry = GroupHasAuraTrackingEntry
 ST._CreateInfoButton = CreateInfoButton
 ST._BuildCompactModeControls = BuildCompactModeControls
 ST._BuildGroupSettingPresetControls = BuildGroupSettingPresetControls

@@ -125,13 +125,12 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
     -- Phase 1: Evaluate each hide condition and accumulate active reasons as bits.
     local hideReasons = 0
     local zeroOnlyChargeSpellHide = false
-    local barAuraStackDisplay = button._barAuraStackDisplay == true
     local itemUsesResolvedCooldownState = IsEntryItemLike(buttonData)
         and button._resolvedItemQuantityKind == "stacks"
     local noCooldownForVisibility = IsNoCooldownForVisibility(button)
 
     -- Check hideWhileOnCooldown (skip for no-CD spells — always "not on CD")
-    if buttonData.hideWhileOnCooldown and not noCooldownForVisibility and not barAuraStackDisplay then
+    if buttonData.hideWhileOnCooldown and not noCooldownForVisibility then
         if itemUsesResolvedCooldownState then
             if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
@@ -153,7 +152,7 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
     end
 
     -- Check hideWhileNotOnCooldown (skip for no-CD spells — would permanently hide)
-    if buttonData.hideWhileNotOnCooldown and not noCooldownForVisibility and not barAuraStackDisplay then
+    if buttonData.hideWhileNotOnCooldown and not noCooldownForVisibility then
         if itemUsesResolvedCooldownState then
             if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
@@ -194,7 +193,6 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
 
     -- Check hideWhileZeroCharges (charge-based spells and items)
     if buttonData.hideWhileZeroCharges
-            and not barAuraStackDisplay
             and not CooldownCompanion.HasItemFallbacks(buttonData)
             and button._chargeState == CHARGE_STATE_ZERO then
         hideReasons = bit_bor(hideReasons, HIDE_ZERO_CHARGES)

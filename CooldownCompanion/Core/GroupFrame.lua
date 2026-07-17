@@ -576,9 +576,9 @@ local function ResetButtonGlowTransitionState(button)
     button._readyGlowMaxChargesStartTime = nil
     button._readyGlowMaxChargesActive = false
     button._barAuraEffectActive = nil
-    button._barPulseActive = nil
-    button._barColorShiftActive = nil
-    if button.statusBar then button.statusBar:SetAlpha(1.0) end
+    -- No statusBar alpha reset here: the deleted aura pulse animation was the
+    -- only writer it undid, and it would unhide a show-only-while-active
+    -- shell's bar on compact re-show. Shell state owns statusBar alpha now.
     if button.assistedHighlight then
         button.assistedHighlight.currentState = nil
     end
@@ -675,7 +675,6 @@ local function ClearButtonPreviewState(button)
     button._pandemicPreview = nil
     button._readyGlowPreview = nil
     button._keyPressHighlightPreview = nil
-    button._barAuraActivePreview = nil
     button._textureProcPreview = nil
     button._textureAuraPreview = nil
     button._texturePandemicPreview = nil
@@ -700,7 +699,6 @@ local function ClearButtonPreviewState(button)
     button._conditionalOutOfRangePreview = nil
     button._conditionalReadyPreview = nil
     button._conditionalLocPreview = nil
-    button._conditionalBarAuraActivePreview = nil
     button._conditionalVisualPreview = nil
     button._forceVisibleByConfig = nil
     button._prevForceVisibleByConfig = nil
@@ -811,16 +809,6 @@ local function ClearReusableButtonRuntime(button)
     button._readyGlowMaxChargesActive = nil
     button._readyGlowMaxChargesSpellID = nil
     button._barAuraEffectActive = nil
-    button._barPulseActive = nil
-    button._barColorShiftActive = nil
-    button._barAuraStackDisplay = nil
-    button._barAuraStackValue = nil
-    button._barAuraStackValueAvailable = nil
-    button._barAuraStackValueSecret = nil
-    button._barAuraStackValueDirty = nil
-    button._barAuraStackMax = nil
-    button._barAuraStackMode = nil
-    button._barAuraVisualSettings = nil
     button._barGCDSuppressed = nil
     button._barCdColor = nil
     button._barAuraColor = nil

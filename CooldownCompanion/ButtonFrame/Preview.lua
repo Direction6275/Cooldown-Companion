@@ -231,6 +231,7 @@ local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
     -- 12.1 aura previews render CC-side stand-ins from the same style keys
     -- the slot kit consumes; they never touch the aura slot subtree.
     aura_duration_text = { kind = "aura_duration_text", duration = 12, remaining = 8, loop = true },
+    aura_duration_bar = { kind = "aura_duration_bar", duration = 12, remaining = 8, loop = true },
     aura_stack_text = { kind = "aura_stack_text", stackText = "3" },
     aura_duration_swipe = { kind = "aura_duration_swipe", duration = 12, remaining = 8, loop = true },
     loss_of_control = { kind = "loss_of_control", duration = 12, remaining = 8, loop = true },
@@ -283,6 +284,11 @@ local function ClearConditionalVisualPreviewDerivedFields(button)
     end
     if button._conditionalPreviewKind == "loss_of_control" and button.locCooldown then
         button.locCooldown:SetCooldown(0, 0)
+    end
+    -- Bar aura previews expose a show-only-while-active shell while running
+    -- (CooldownUpdate); re-hide it now that the preview state is gone.
+    if button._isBar and ST._ApplyBarAuraShellVisuals then
+        ST._ApplyBarAuraShellVisuals(button, button.buttonData)
     end
     button._conditionalLocPreview = nil
     button._conditionalPreviewKind = nil
@@ -490,21 +496,6 @@ end
 
 function CooldownCompanion:ClearAllAuraGlowPreviews()
     ClearAllPreviews(self, "_auraGlowPreview", "_auraGlowActive", false, nil, true)
-end
-
--- Bar Aura Active Preview: setters removed with the 12.1 aura teardown;
--- ClearAll kept for recycled-frame safety until the aura rebuild.
-
-function CooldownCompanion:ClearAllBarAuraActivePreviews()
-    ClearActivePreviewFlag("_barAuraActivePreview")
-    for _, frame in pairs(self.groupFrames) do
-        for _, button in ipairs(frame.buttons) do
-            if button._barAuraActivePreview then
-                button._barAuraActivePreview = nil
-                if button.UpdateCooldown then button:UpdateCooldown() end
-            end
-        end
-    end
 end
 
 --------------------------------------------------------------------------------
@@ -794,9 +785,6 @@ function CooldownCompanion:ClearAllConfigPreviews()
     end
     if self.ClearAllKeyPressHighlightPreviews then
         self:ClearAllKeyPressHighlightPreviews()
-    end
-    if self.ClearAllBarAuraActivePreviews then
-        self:ClearAllBarAuraActivePreviews()
     end
     if self.ClearAllConditionalVisualPreviews then
         self:ClearAllConditionalVisualPreviews()

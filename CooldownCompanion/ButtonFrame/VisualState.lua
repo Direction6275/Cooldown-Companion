@@ -67,23 +67,11 @@ local TEXT_APPLIED_FIELDS = {
 local BAR_INTENT_FIELDS = {
     "domain",
     "colorReason",
-    "auraColorReason",
-    "auraEffectActive",
-    "auraEffectReason",
-    "pulseActive",
-    "pulseMode",
-    "colorShiftActive",
-    "colorShiftMode",
-    "stackDisplay",
-    "stackMode",
     "gcdSuppressed",
 }
 
 local BAR_APPLIED_FIELDS = {
     appliedColorReason = "colorReason",
-    appliedAuraEffectActive = "auraEffectActive",
-    appliedPulseActive = "pulseActive",
-    appliedColorShiftActive = "colorShiftActive",
     appliedGcdSuppressed = "gcdSuppressed",
 }
 
@@ -459,9 +447,7 @@ local function CopyBarVisualState(button, bar, context)
     bar.intentAvailable = hasIntent
     CopyFieldList(bar, hasIntent and intent or nil, BAR_INTENT_FIELDS)
     if not hasIntent then
-        bar.domain = IsTrue(button._barAuraStackDisplay) and "stack" or nil
-        bar.stackDisplay = IsTrue(button._barAuraStackDisplay)
-        bar.stackMode = button._barAuraStackMode
+        bar.domain = nil
         bar.gcdSuppressed = IsTrue(button._barGCDSuppressed)
     end
 
