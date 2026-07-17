@@ -17,12 +17,19 @@ local math_max = math.max
 local math_ceil = math.ceil
 
 local StyleMirroredIconFrame = ST._StyleMirroredIconFrame
+local GetLayoutPreviewIcon = ST._GetLayoutPreviewIcon
 local GetConfigEntryDisplayName = ST._GetConfigEntryDisplayName
 local SelectConfigButton = ST._SelectConfigButton
+local SetIconAreaPoints = ST._SetIconAreaPoints
+local SetBarAreaPoints = ST._SetBarAreaPoints
+local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 
 local PANEL_PREVIEW_PADDING = 12
 local PANEL_PREVIEW_DISABLED_ALPHA = 0.45
 local PANEL_PREVIEW_RING_COLOR = { 0.38, 0.60, 0.92, 1 }
+-- Above the bar slots' text frame (statusBar level + 2)
+local PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = 5
+local DEFAULT_BAR_COLOR = { 0.2, 0.6, 1.0, 1.0 }
 
 -- Mirror of GroupFrame.lua GetGrowthMultipliers: anchor corner plus x/y
 -- offset signs for the configured growth origin.
@@ -42,8 +49,8 @@ local function EnsurePreviewState(host)
 
     preview = {
         buildId = 1,
-        pools = { slots = {} },
-        used = { slots = 0 },
+        pools = { iconSlots = {}, barSlots = {} },
+        used = { iconSlots = 0, barSlots = 0 },
     }
     host._cdcPanelPreview = preview
 
@@ -61,36 +68,28 @@ local function EnsurePreviewState(host)
 end
 
 local function ResetPreviewState(preview)
-    preview.used.slots = 0
+    for poolName in pairs(preview.pools) do
+        preview.used[poolName] = 0
+    end
     preview.root:Show()
 end
 
 local function FinalizePreviewState(preview)
-    local pool = preview.pools.slots
-    for index = (preview.used.slots or 0) + 1, #pool do
-        local frame = pool[index]
-        frame:Hide()
-        frame:ClearAllPoints()
-        frame:SetScript("OnMouseUp", nil)
-        frame:SetScript("OnEnter", nil)
-        frame:SetScript("OnLeave", nil)
+    for poolName, pool in pairs(preview.pools) do
+        local used = preview.used[poolName] or 0
+        for index = used + 1, #pool do
+            local frame = pool[index]
+            frame:Hide()
+            frame:ClearAllPoints()
+            frame:SetScript("OnMouseUp", nil)
+            frame:SetScript("OnEnter", nil)
+            frame:SetScript("OnLeave", nil)
+        end
     end
 end
 
-local function CreateEntrySlot(parent)
-    local frame = CreateFrame("Button", nil, parent)
-    frame:SetClipsChildren(false)
-
-    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
-    frame.bg:SetAllPoints()
-    frame.icon = frame:CreateTexture(nil, "ARTWORK")
-    frame.countText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-    frame.countText:SetPoint("CENTER")
-    frame.borderTextures = {}
-    for i = 1, 4 do
-        frame.borderTextures[i] = frame:CreateTexture(nil, "OVERLAY")
-    end
-
+-- Hover glow and selection marker shared by both slot kinds.
+local function AttachSlotHighlights(frame)
     frame.hoverHighlight = CreateFrame("Frame", nil, frame)
     frame.hoverHighlight:SetAllPoints(frame)
     frame.hoverHighlight:EnableMouse(false)
@@ -115,17 +114,73 @@ local function CreateEntrySlot(parent)
         frame.selectedHighlight.ringTextures[i] = frame.selectedHighlight:CreateTexture(nil, "OVERLAY")
     end
     frame.selectedHighlight:Hide()
+end
 
+-- Icon-mode slot: the frame shape ST._StyleMirroredIconFrame expects
+-- (bg, icon, countText, borderTextures[4]).
+local function CreateIconSlot(parent)
+    local frame = CreateFrame("Button", nil, parent)
+    frame:SetClipsChildren(false)
+
+    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
+    frame.bg:SetAllPoints()
+    frame.icon = frame:CreateTexture(nil, "ARTWORK")
+    frame.countText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+    frame.countText:SetPoint("CENTER")
+    frame.borderTextures = {}
+    for i = 1, 4 do
+        frame.borderTextures[i] = frame:CreateTexture(nil, "OVERLAY")
+    end
+
+    AttachSlotHighlights(frame)
     return frame
 end
 
-local function AcquireSlot(preview, parent)
-    local pool = preview.pools.slots
-    local index = (preview.used.slots or 0) + 1
-    preview.used.slots = index
+-- Bar-mode slot: static twin of the frames BarMode.lua CreateBarFrame
+-- builds (minus cooldowns, time text, and counts).
+local function CreateBarSlot(parent)
+    local frame = CreateFrame("Button", nil, parent)
+    frame:SetClipsChildren(false)
+
+    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
+    frame.iconBg = frame:CreateTexture(nil, "BACKGROUND")
+    frame.icon = frame:CreateTexture(nil, "ARTWORK")
+
+    frame.iconBounds = CreateFrame("Frame", nil, frame)
+    frame.iconBounds:EnableMouse(false)
+    frame.barBounds = CreateFrame("Frame", nil, frame)
+    frame.barBounds:EnableMouse(false)
+
+    frame.statusBar = CreateFrame("StatusBar", nil, frame)
+    frame.statusBar:EnableMouse(false)
+
+    frame.textFrame = CreateFrame("Frame", nil, frame)
+    frame.textFrame:EnableMouse(false)
+    frame.nameText = frame.textFrame:CreateFontString(nil, "OVERLAY")
+
+    frame.iconBorderTextures = {}
+    frame.borderTextures = {}
+    for i = 1, 4 do
+        frame.iconBorderTextures[i] = frame:CreateTexture(nil, "OVERLAY")
+        frame.borderTextures[i] = frame:CreateTexture(nil, "OVERLAY")
+    end
+
+    AttachSlotHighlights(frame)
+    return frame
+end
+
+local SLOT_FACTORIES = {
+    iconSlots = CreateIconSlot,
+    barSlots = CreateBarSlot,
+}
+
+local function AcquireSlot(preview, parent, poolName)
+    local pool = preview.pools[poolName]
+    local index = (preview.used[poolName] or 0) + 1
+    preview.used[poolName] = index
     local frame = pool[index]
     if not frame then
-        frame = CreateEntrySlot(parent)
+        frame = SLOT_FACTORIES[poolName](parent)
         pool[index] = frame
     end
     frame:SetParent(parent)
@@ -163,7 +218,7 @@ local function ApplySelectionVisuals(slot, index)
         slot.selectedHighlight:Hide()
         return
     end
-    slot.selectedHighlight:SetFrameLevel(slot:GetFrameLevel() + 2)
+    slot.selectedHighlight:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
     ST.ApplyBorderTextures(slot.selectedHighlight.ringTextures, slot.selectedHighlight,
         PANEL_PREVIEW_RING_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
     slot.selectedHighlight:Show()
@@ -179,7 +234,7 @@ local function WireEntryInteraction(slot, panelId, index, buttonData)
         end
     end)
     slot:SetScript("OnEnter", function(self)
-        self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + 2)
+        self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
         self.hoverHighlight:Show()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(GetConfigEntryDisplayName(buttonData) or "Entry", 1, 1, 1)
@@ -194,12 +249,15 @@ local function WireEntryInteraction(slot, panelId, index, buttonData)
     end)
 end
 
--- Icon-mode geometry mirrored from GroupFrame.lua (GetButtonDimensions +
--- ApplyActiveButtonLayout row/col math).
-local function GetIconModeGeometry(group)
+-- Entry footprint and grid settings mirrored from GroupFrame.lua
+-- (GetButtonDimensions + ApplyActiveButtonLayout).
+local function GetPanelGeometry(group, isBarMode)
     local style = group.style or {}
     local w, h
-    if style.maintainAspectRatio then
+    if isBarMode then
+        w, h = style.barLength or 180, style.barHeight or 20
+        if style.barFillVertical then w, h = h, w end
+    elseif style.maintainAspectRatio then
         local size = style.buttonSize or ST.BUTTON_SIZE
         w, h = size, size
     else
@@ -210,7 +268,7 @@ local function GetIconModeGeometry(group)
         entryWidth = w,
         entryHeight = h,
         spacing = style.buttonSpacing or ST.BUTTON_SPACING,
-        orientation = style.orientation or "horizontal",
+        orientation = style.orientation or (isBarMode and "vertical" or "horizontal"),
         buttonsPerRow = style.buttonsPerRow or 12,
     }
 end
@@ -226,6 +284,116 @@ local function IsIconModePanel(group)
     return true
 end
 
+local function StyleIconEntry(slot, buttonData, group)
+    StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
+end
+
+-- Static mirror of BarMode.lua CreateBarFrame: same saved settings, same
+-- shared area/border helpers, full fill, no runtime state.
+local function StyleBarEntry(slot, buttonData, group)
+    local style = group.style or {}
+    if CooldownCompanion.GetEffectiveStyle then
+        style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+    end
+
+    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+    local borderRenderMode = ST.GetBorderRenderMode(style)
+    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(slot, borderSize, borderRenderMode)
+    local showIcon = style.showBarIcon ~= false
+    local isVertical = style.barFillVertical or false
+    local iconReverse = showIcon and (style.barIconReverse or false)
+    local barHeight = style.barHeight or 20
+    local iconSize = (style.barIconSizeOverride and style.barIconSize) or barHeight
+    local iconOffset = showIcon and (style.barIconOffset or 0) or 0
+    local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
+    local barAreaTop = barAreaLeft
+    local bgColor = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
+    local borderColor = style.borderColor or { 0, 0, 0, 1 }
+
+    slot.bg:ClearAllPoints()
+    if showIcon then
+        SetBarAreaPoints(slot.bg, slot, isVertical, iconReverse, barAreaLeft, barAreaTop, 0)
+    else
+        slot.bg:SetAllPoints()
+    end
+    slot.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+
+    if showIcon then
+        SetIconAreaPoints(slot.icon, slot, isVertical, iconReverse, iconSize, borderLayoutSize)
+        slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        slot.icon:SetTexture(GetLayoutPreviewIcon(buttonData))
+        slot.icon:Show()
+        SetIconAreaPoints(slot.iconBg, slot, isVertical, iconReverse, iconSize, 0)
+        slot.iconBg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+        slot.iconBg:Show()
+        SetIconAreaPoints(slot.iconBounds, slot, isVertical, iconReverse, iconSize, 0)
+        for i = 1, 4 do
+            slot.iconBorderTextures[i]:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+        end
+        ApplyBorderEdgePositions(slot.iconBorderTextures, slot.iconBounds, borderSize, borderRenderMode)
+    else
+        slot.icon:Hide()
+        slot.iconBg:Hide()
+        for i = 1, 4 do
+            slot.iconBorderTextures[i]:Hide()
+        end
+    end
+
+    if showIcon then
+        SetBarAreaPoints(slot.barBounds, slot, isVertical, iconReverse, barAreaLeft, barAreaTop, 0)
+    else
+        slot.barBounds:ClearAllPoints()
+        slot.barBounds:SetAllPoints()
+    end
+
+    SetBarAreaPoints(slot.statusBar, slot, isVertical, iconReverse, barAreaLeft, barAreaTop, borderLayoutSize)
+    slot.statusBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+    slot.statusBar:SetMinMaxValues(0, 1)
+    slot.statusBar:SetValue(1)
+    slot.statusBar:SetReverseFill(style.barReverseFill or false)
+    slot.statusBar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
+    local barColor = style.barColor or DEFAULT_BAR_COLOR
+    slot.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
+    slot.statusBar:Show()
+
+    SetBarAreaPoints(slot.textFrame, slot, isVertical, iconReverse, barAreaLeft, barAreaTop, borderLayoutSize)
+    slot.textFrame:SetFrameLevel(slot.statusBar:GetFrameLevel() + 2)
+
+    local nameText = slot.nameText
+    CooldownCompanion.ApplyFontStyle(nameText, style, "barName", 10)
+    local nameOffX = style.barNameTextOffsetX or 0
+    local nameOffY = style.barNameTextOffsetY or 0
+    local nameReverse = style.barNameTextReverse
+    nameText:ClearAllPoints()
+    if isVertical then
+        if nameReverse then
+            nameText:SetPoint("TOP", nameOffX, -3 + nameOffY)
+        else
+            nameText:SetPoint("BOTTOM", nameOffX, 3 + nameOffY)
+        end
+        nameText:SetJustifyH("CENTER")
+    else
+        if nameReverse then
+            nameText:SetPoint("RIGHT", -3 + nameOffX, nameOffY)
+            nameText:SetJustifyH("RIGHT")
+        else
+            nameText:SetPoint("LEFT", 3 + nameOffX, nameOffY)
+            nameText:SetJustifyH("LEFT")
+        end
+    end
+    if style.showBarNameText ~= false or buttonData.customName then
+        nameText:SetText(buttonData.customName or buttonData.name or GetConfigEntryDisplayName(buttonData) or "")
+        nameText:Show()
+    else
+        nameText:Hide()
+    end
+
+    for i = 1, 4 do
+        slot.borderTextures[i]:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+    end
+    ApplyBorderEdgePositions(slot.borderTextures, slot.barBounds, borderSize, borderRenderMode)
+end
+
 function ST._BuildButtonPanelPreview(host, panelId)
     local preview = EnsurePreviewState(host)
     ResetPreviewState(preview)
@@ -239,7 +407,8 @@ function ST._BuildButtonPanelPreview(host, panelId)
         return
     end
 
-    if not IsIconModePanel(group) then
+    local isBarMode = group.displayMode == "bars"
+    if not isBarMode and not IsIconModePanel(group) then
         SetPreviewMessage(preview, "Preview for this panel type is coming in a later update.")
         FinalizePreviewState(preview)
         return
@@ -253,7 +422,7 @@ function ST._BuildButtonPanelPreview(host, panelId)
         return
     end
 
-    local geo = GetIconModeGeometry(group)
+    local geo = GetPanelGeometry(group, isBarMode)
     local w, h = geo.entryWidth, geo.entryHeight
     local spacing = geo.spacing
     local perRow = math_max(1, geo.buttonsPerRow)
@@ -274,8 +443,11 @@ function ST._BuildButtonPanelPreview(host, panelId)
     content:SetSize(contentWidth, contentHeight)
     content:Show()
 
+    local poolName = isBarMode and "barSlots" or "iconSlots"
+    local styleFn = isBarMode and StyleBarEntry or StyleIconEntry
+
     for index, buttonData in ipairs(buttons) do
-        local slot = AcquireSlot(preview, content)
+        local slot = AcquireSlot(preview, content, poolName)
         slot:SetSize(w, h)
 
         local row, col
@@ -290,7 +462,7 @@ function ST._BuildButtonPanelPreview(host, panelId)
         slot:SetPoint(growthAnchor, content, growthAnchor,
             xMul * col * (w + spacing), yMul * row * (h + spacing))
 
-        StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
+        styleFn(slot, buttonData, group)
         if buttonData.enabled == false then
             slot:SetAlpha(PANEL_PREVIEW_DISABLED_ALPHA)
         end
