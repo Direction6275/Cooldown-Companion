@@ -90,15 +90,15 @@ local STEP_DATA = {
     },
     entry_settings_intro = {
         title = "Entry Settings",
-        text = "This column is dedicated to editing and styling single, specific entries. Cooldown settings, per-button visibility rules, sound alerts, and more is configured in this column.",
+        text = "Your panel is previewed at the top of this column. Click a button in the preview to select it - its settings appear below: cooldown settings, per-button visibility rules, sound alerts, and more.",
         anchor = "col3_area",
         placement = "right",
     },
     panel_settings_intro = {
         title = "Panel Settings",
-        text = "This column is dedicated to editing and styling all entries in a panel. Panel layout, text elements, and indicators are all found here.\n\nImportant:\n\n|A:Crosshair_VehichleCursor_32:14:14|a: Whenever you see the |A:Crosshair_VehichleCursor_32:14:14|a next to a setting, that means you can override a panel-wide setting for a specific entry.\n\n|A:QuestLog-icon-setting:14:14|a: Whenever you see the |A:QuestLog-icon-setting:14:14|a next to a setting, that opens advanced settings for it.",
-        anchor = "col4_area",
-        placement = "left",
+        text = "Click the selected button again to deselect it, and this same column shows the panel's settings - layout, text elements, and indicators, applying to every entry in the panel.\n\nImportant:\n\n|A:Crosshair_VehichleCursor_32:14:14|a: Whenever you see the |A:Crosshair_VehichleCursor_32:14:14|a next to a setting, that means you can override a panel-wide setting for a specific entry.\n\n|A:QuestLog-icon-setting:14:14|a: Whenever you see the |A:QuestLog-icon-setting:14:14|a next to a setting, that opens advanced settings for it.",
+        anchor = "col3_area",
+        placement = "right",
     },
     view_modes_intro = {
         title = "Resources, Cast Bar & Unit Frames",
@@ -704,7 +704,17 @@ local function RebuildTutorialAnchors()
 
     if selectedPanelMeta then
         anchors.selected_panel_area = selectedPanelMeta.panelFrame or selectedPanelMeta.headerFrame
-        anchors.selected_panel_add_input = selectedPanelMeta.addInputFrame
+        -- Wide buttons view: the add box lives under the preview instead of
+        -- inline in column 2.
+        local addInput = selectedPanelMeta.addInputFrame
+        if not addInput then
+            local col3 = CS.configFrame and CS.configFrame.col3
+            local addBox = col3 and col3.buttonsAddBox
+            if addBox and addBox.frame and addBox.frame:IsShown() then
+                addInput = addBox.frame
+            end
+        end
+        anchors.selected_panel_add_input = addInput
     end
 
     if CS.configFrame and CS.configFrame.col3 and CS.configFrame.col3.frame then

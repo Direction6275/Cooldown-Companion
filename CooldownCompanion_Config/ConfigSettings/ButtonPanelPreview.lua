@@ -404,6 +404,126 @@ local function StyleIconEntry(slot, buttonData, group)
     StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
 end
 
+local function GetHostFitScale(host, contentWidth, contentHeight)
+    local hostWidth = host:GetWidth() or 0
+    local hostHeight = host:GetHeight() or 0
+    if hostWidth < 40 then hostWidth = 340 end
+    if hostHeight < 40 then hostHeight = 200 end
+    local maxWidth = math_max(80, hostWidth - (PANEL_PREVIEW_PADDING * 2))
+    local maxHeight = math_max(80, hostHeight - (PANEL_PREVIEW_PADDING * 2))
+    return math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
+end
+
+-- Fallback for panel types with no meaningful geometric mirror (text,
+-- trigger, texture, and rotation-assistant panels): a flat strip of
+-- clickable entry icons with the same selection, badges, tooltips, and
+-- context-menu behavior as the mirrored slots.
+local STRIP_ICON_SIZE = 36
+local STRIP_SPACING = 4
+local STRIP_PER_ROW = 8
+
+local function BuildSelectionStrip(preview, host, panelId, group)
+    local isRA = group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
+    local entries = {}
+    if isRA then
+        local spellID = CooldownCompanion:GetRotationAssistantActionSpellID()
+        entries[1] = {
+            buttonData = {
+                type = "spell",
+                id = spellID,
+                name = ST.ROTATION_ASSISTANT_NAME,
+                manualIcon = CooldownCompanion:GetRotationAssistantFallbackIcon(spellID),
+            },
+            isRotationAssistant = true,
+        }
+    else
+        for index, buttonData in ipairs(group.buttons or {}) do
+            entries[#entries + 1] = { buttonData = buttonData, index = index }
+        end
+    end
+
+    local count = #entries
+    if count == 0 then
+        SetPreviewMessage(preview, "This panel has no entries yet. Add spells or items in the Panels column.")
+        FinalizePreviewState(preview)
+        return
+    end
+
+    local w, h = STRIP_ICON_SIZE, STRIP_ICON_SIZE
+    local cols = math_min(count, STRIP_PER_ROW)
+    local rows = math_ceil(count / STRIP_PER_ROW)
+    local contentWidth = (cols - 1) * (w + STRIP_SPACING) + w
+    local contentHeight = (rows - 1) * (h + STRIP_SPACING) + h
+    local scale = GetHostFitScale(host, contentWidth, contentHeight)
+
+    local content = preview.content
+    content:SetSize(contentWidth, contentHeight)
+    content:Show()
+
+    for i, entryInfo in ipairs(entries) do
+        local slot = AcquireSlot(preview, content, "iconSlots")
+        slot:SetSize(w, h)
+        local row = math_floor((i - 1) / STRIP_PER_ROW)
+        local col = (i - 1) % STRIP_PER_ROW
+        slot:ClearAllPoints()
+        slot:SetPoint("TOPLEFT", content, "TOPLEFT",
+            col * (w + STRIP_SPACING), -(row * (h + STRIP_SPACING)))
+
+        local buttonData = entryInfo.buttonData
+        StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
+
+        if entryInfo.isRotationAssistant then
+            slot.icon:SetDesaturated(false)
+            for b = 1, #(slot.badges or {}) do
+                slot.badges[b]:Hide()
+            end
+            if CS.selectedRotationAssistantEntry == true then
+                slot.selectedHighlight:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
+                ST.ApplyBorderTextures(slot.selectedHighlight.ringTextures, slot.selectedHighlight,
+                    PANEL_PREVIEW_RING_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
+                slot.selectedHighlight:Show()
+            end
+            slot:SetScript("OnMouseUp", function(self, mouseButton)
+                if CS.dragState and CS.dragState.phase == "active" then return end
+                if GetCursorInfo() then return end
+                if mouseButton ~= "LeftButton" then return end
+                if CS.selectedRotationAssistantEntry == true then
+                    ST._SelectConfigButtonPanel(panelId, { clearPanelMulti = true })
+                else
+                    ST._SelectConfigRotationAssistantEntry(panelId, { containerId = CS.selectedContainer })
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end)
+            slot:SetScript("OnEnter", function(self)
+                self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
+                self.hoverHighlight:Show()
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(ST.ROTATION_ASSISTANT_NAME, 1, 1, 1)
+                GameTooltip:Show()
+            end)
+            slot:SetScript("OnLeave", function(self)
+                self.hoverHighlight:Hide()
+                GameTooltip:Hide()
+            end)
+        else
+            local status = CollectEntryStatus(buttonData, group)
+            slot.icon:SetDesaturated(not status.usable)
+            if status.disabled then
+                slot:SetAlpha(PANEL_PREVIEW_DISABLED_ALPHA)
+            end
+            ApplySlotBadges(slot, status, scale)
+            ApplySelectionVisuals(slot, entryInfo.index)
+            WireEntryInteraction(slot, panelId, entryInfo.index, buttonData, status)
+        end
+    end
+
+    content:SetScale(scale)
+    content:ClearAllPoints()
+    content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
+
+    FinalizePreviewState(preview)
+end
+
 -- Static mirror of BarMode.lua CreateBarFrame: same saved settings, same
 -- shared area/border helpers, full fill, no runtime state.
 local function StyleBarEntry(slot, buttonData, group)
@@ -525,9 +645,7 @@ function ST._BuildButtonPanelPreview(host, panelId)
 
     local isBarMode = group.displayMode == "bars"
     if not isBarMode and not IsIconModePanel(group) then
-        SetPreviewMessage(preview, "Preview for this panel type is coming in a later update.")
-        FinalizePreviewState(preview)
-        return
+        return BuildSelectionStrip(preview, host, panelId, group)
     end
 
     local buttons = group.buttons or {}
@@ -557,13 +675,7 @@ function ST._BuildButtonPanelPreview(host, panelId)
 
     -- Scale is needed while styling (badges counter-scale against it), so
     -- compute it up front from the grid extents.
-    local hostWidth = host:GetWidth() or 0
-    local hostHeight = host:GetHeight() or 0
-    if hostWidth < 40 then hostWidth = 340 end
-    if hostHeight < 40 then hostHeight = 200 end
-    local maxWidth = math_max(80, hostWidth - (PANEL_PREVIEW_PADDING * 2))
-    local maxHeight = math_max(80, hostHeight - (PANEL_PREVIEW_PADDING * 2))
-    local scale = math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
+    local scale = GetHostFitScale(host, contentWidth, contentHeight)
 
     local content = preview.content
     content:SetSize(contentWidth, contentHeight)

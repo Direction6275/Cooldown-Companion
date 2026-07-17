@@ -1726,6 +1726,10 @@ local function RefreshColumn2()
         return
     end
 
+    -- In the wide buttons view column 2 lists panels only: entries live in
+    -- the preview (other-class browsing keeps its rows - no preview there).
+    local wideView = ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() or false
+
     -- Restore scroll bottom offset for button bar space (browse mode may have cleared it)
     CS.col2Scroll.frame:SetPoint("BOTTOMRIGHT", CS.col2Scroll.frame:GetParent(), "BOTTOMRIGHT", 0, 30)
 
@@ -2310,9 +2314,15 @@ local function RefreshColumn2()
                         local lastClick = CS.panelClickTimes[panelId] or 0
                         CS.panelClickTimes[panelId] = now
                         if (now - lastClick) < 0.3 then
+                            -- Double-click collapse only applies while entry
+                            -- rows render (browse mode); in the wide view the
+                            -- second click is swallowed so it can't
+                            -- toggle-deselect the panel.
                             CS.panelClickTimes[panelId] = 0
-                            CS.collapsedPanels[panelId] = not CS.collapsedPanels[panelId] or nil
-                            CooldownCompanion:RefreshConfigPanel()
+                            if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then
+                                CS.collapsedPanels[panelId] = not CS.collapsedPanels[panelId] or nil
+                                CooldownCompanion:RefreshConfigPanel()
+                            end
                             return
                         end
 
@@ -2664,6 +2674,14 @@ local function RefreshColumn2()
                         CooldownCompanion:Print(addBtnRejectMessage)
                         return
                     end
+                    -- Wide view: the add box lives under the preview - select
+                    -- the panel and focus it there.
+                    if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
+                        SelectConfigPanel(addBtnPanelId, { keepPanelMulti = true })
+                        CS.pendingWideAddFocus = true
+                        CooldownCompanion:RefreshConfigPanel()
+                        return
+                    end
                     if CS.addingToPanelId == addBtnPanelId then
                         CS.addingToPanelId = nil
                     else
@@ -2688,8 +2706,9 @@ local function RefreshColumn2()
                 }
                 panelMeta.count = btnCount
 
-            -- Button list for this panel (skip if collapsed)
-            if not isCollapsed then
+            -- Button list for this panel (skip if collapsed; the wide view
+            -- lists panels only - entries live in the preview)
+            if not isCollapsed and not wideView then
                 local panelButtons = panel.buttons or {}
 
                 if panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
