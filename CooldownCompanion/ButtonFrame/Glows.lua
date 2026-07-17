@@ -44,6 +44,10 @@ local KIT_ANTS_ATLAS = "rotationhelper_ants_flipbook"
 -- Dash pool ceiling for the dashes aura glow style. The kit prebuilds this
 -- many (write-once regions); the CC-side preview grows its pool lazily.
 local MAX_AURA_GLOW_DASHES = 8
+-- Dash pool ceiling for the pixel glow style (proc/ready containers grow
+-- lazily, so the higher ceiling costs nothing until a user asks for it; the
+-- lines slider tops out at 16).
+local MAX_PIXEL_DASHES = 16
 -- Aura glow speed key semantics per style, in seconds: pulse/colorShift store
 -- a cycle duration, dashes stores one full lap around the button. Keyed by
 -- both kit names and their normalized preview names.
@@ -126,9 +130,11 @@ local function SpeedToGlowFrequency(speed)
     return math_max(speed or 60, 1) / 480
 end
 
--- Convert user-facing speed to LCG PixelGlow frequency (4x faster than AutoCast).
-local function SpeedToPixelFrequency(speed)
-    return math_max(speed or 60, 1) / 120
+-- Convert user-facing speed (10..200) to a pixel glow lap duration in
+-- seconds. Matches the retired LCG PixelGlow timing exactly (frequency was
+-- speed/120, lap = 1/frequency), so stored speeds keep their meaning.
+local function SpeedToPixelLap(speed)
+    return 120 / math_max(speed or 60, 1)
 end
 
 local function UsesGlowSpeed(glowStyle)
@@ -407,16 +413,6 @@ end
 local function StopLibCustomGlow(container)
     if not container then return end
 
-    -- Stop LCG pixel glow (tracked separately from _lcgStyle)
-    if container._pixelTarget then
-        if LCG and LCG.PixelGlow_Stop then
-            LCG.PixelGlow_Stop(container._pixelTarget, container._pixelKey or "")
-        end
-        container._pixelTarget = nil
-        container._pixelKey = nil
-        container._pixelGlowLookupKey = nil
-    end
-
     local lcgStyle = container._lcgStyle
     local lcgTarget = container._lcgTarget
     local lcgKey = container._lcgKey
@@ -519,7 +515,7 @@ end
 
 -- Hide all glow sub-styles in a container table (solidTextures, procFrame, overlayTexture).
 -- Works for procGlow, auraGlow, barAuraEffect, assistedHighlight, and keyPressHighlight containers.
--- LCG pixel glow is stopped via StopLibCustomGlow.
+-- LCG button/autocast glow is stopped via StopLibCustomGlow.
 local function HideGlowStyles(container)
     StopLibCustomGlow(container)
     if container.solidTextures then
@@ -584,29 +580,17 @@ local function ShowGlowStyle(container, style, button, color, params)
             StopSolidBorderPulse(container)
         end
     elseif style == "pixel" then
-        if LCG and LCG.PixelGlow_Start then
-            local key = params.key or ""
-            local frequency = SpeedToPixelFrequency(params.speed)
-            -- Derive frame level from the container's solidFrame so pixel glow
-            -- respects ApplyStrataOrder positioning (icon mode) while staying
-            -- reasonable in bar mode where no strata ordering is applied.
-            local relativeLevel = 1
-            if container.solidFrame then
-                relativeLevel = math_max(container.solidFrame:GetFrameLevel() - button:GetFrameLevel(), 1)
-            end
-            LCG.PixelGlow_Start(button, color, params.lines or 8, frequency,
-                size or 8, params.thickness or 4, 0, 0, false, key, relativeLevel)
-            container._pixelTarget = button
-            container._pixelKey = key
-            container._pixelGlowLookupKey = "_PixelGlow" .. key
-        else
-            -- Fallback to solid border if LCG unavailable
-            ApplyEdgePositions(container.solidTextures, button, size or 8)
-            for _, tex in ipairs(container.solidTextures) do
-                tex:SetColorTexture(color[1], color[2], color[3], color[4] or defaultAlpha)
-                tex:Show()
-            end
-        end
+        -- CC-owned dash engine (same machinery as the dashes style): regions
+        -- live on solidFrame, so ApplyStrataOrder positioning and shell alpha
+        -- stamping apply — unlike the retired LCG renderer, which parented to
+        -- the button and ignored both.
+        local count = math_min(math_max(params.lines or 8, 1), MAX_PIXEL_DASHES)
+        container.dashes = container.dashes or {}
+        container.dashMasks = container.dashMasks or CreateDashMasks(container.solidFrame)
+        CreateDashRegions(container.solidFrame, container.dashes, container.dashMasks, count)
+        local lap = SpeedToPixelLap(params.speed)
+        StyleDashPerimeter(container.dashes, container.dashMasks, button, size or 8, params.thickness, lap, count,
+            color[1], color[2], color[3], color[4] or defaultAlpha)
     elseif style == "glow" then
         FitHighlightFrame(container.procFrame, button, size or 32)
         PrepareProcGlowLoop(container.procFrame, color, true)
@@ -679,10 +663,6 @@ end
 -- key was removed or playback stopped, so the caller can restart instead of
 -- trusting the cached "active" state.
 local function IsGlowAnimationAlive(container)
-    -- LCG pixel glow: verify LCG still owns the frame on the target
-    if container._pixelTarget then
-        return container._pixelTarget[container._pixelGlowLookupKey] ~= nil
-    end
     -- LCG button / autocast glow: verify LCG frame reference on the target
     if container._lcgStyle and container._lcgTarget then
         if container._lcgStyle == PROC_STYLE_LCG_BUTTON then
@@ -1550,5 +1530,8 @@ ST.IsBarAuraIndicatorEnabled = IsBarAuraIndicatorEnabled
 ST._SetBarAuraEffect = SetBarAuraEffect
 ST._BuildKitGlowRegions = BuildKitGlowRegions
 ST._StyleKitGlowRegions = StyleKitGlowRegions
+ST._StyleDashPerimeter = StyleDashPerimeter
+ST._CreateDashMasks = CreateDashMasks
+ST._CreateDashRegions = CreateDashRegions
 ST._SetReadyGlow = SetReadyGlow
 ST._SetKeyPressHighlight = SetKeyPressHighlight
