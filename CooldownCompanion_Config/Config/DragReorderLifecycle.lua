@@ -457,14 +457,15 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
     local sourceGroup = db.groups[sourcePanelId]
     local targetGroup = db.groups[targetPanelId]
     if not sourceGroup or not targetGroup then return nil end
+    local buttonData = sourceGroup.buttons[sourceIndex]
+    if not buttonData then return nil end
     local rejectMessage = CooldownCompanion.GetPanelManualEntryRejectMessage
-        and CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup)
+        and CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup, buttonData)
     if rejectMessage then
         CooldownCompanion:Print(rejectMessage)
         return nil
     end
-    local buttonData = table.remove(sourceGroup.buttons, sourceIndex)
-    if not buttonData then return nil end
+    table.remove(sourceGroup.buttons, sourceIndex)
     -- Resolve "append" targets (nil targetIndex = after last button)
     if not targetIndex then
         targetIndex = #targetGroup.buttons + 1
@@ -667,12 +668,13 @@ local function FinishButtonDrag(state)
         else
             local sourceGroup = CooldownCompanion.db.profile.groups[state.groupId]
             local targetGroup = CooldownCompanion.db.profile.groups[dt.targetPanelId]
+            local dragButtonData = sourceGroup and sourceGroup.buttons[state.sourceIndex]
             local rejectMessage = CooldownCompanion.GetPanelManualEntryRejectMessage
-                and CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup)
+                and CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup, dragButtonData)
             if rejectMessage then
                 CooldownCompanion:Print(rejectMessage)
             else
-                local buttonData = sourceGroup and sourceGroup.buttons[state.sourceIndex]
+                local buttonData = dragButtonData
                 if buttonData and ButtonHasOverrides(buttonData) then
                     ShowPopupAboveConfig("CDC_CROSS_PANEL_STRIP_OVERRIDES", buttonData.name or "this button", {
                         sourcePanelId = state.groupId,

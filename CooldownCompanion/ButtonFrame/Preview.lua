@@ -285,10 +285,12 @@ local function ClearConditionalVisualPreviewDerivedFields(button)
     if button._conditionalPreviewKind == "loss_of_control" and button.locCooldown then
         button.locCooldown:SetCooldown(0, 0)
     end
-    -- Bar aura previews expose a show-only-while-active shell while running
+    -- Aura previews expose a show-only-while-active shell while running
     -- (CooldownUpdate); re-hide it now that the preview state is gone.
     if button._isBar and ST._ApplyBarAuraShellVisuals then
         ST._ApplyBarAuraShellVisuals(button, button.buttonData)
+    elseif not button._isBar and ST._ApplyAuraShellVisuals then
+        ST._ApplyAuraShellVisuals(button, button.buttonData)
     end
     button._conditionalLocPreview = nil
     button._conditionalPreviewKind = nil
@@ -486,16 +488,26 @@ end
 -- live slot-kit glow without ever touching the aura slot subtree.
 --------------------------------------------------------------------------------
 
+-- Show-only-while-active icon shells hide the glow containers this preview
+-- renders through; reapply the shell helper on every toggle and clear (the
+-- flag is already set/cleared when these hooks run, so the exposure
+-- predicate sees the current state).
+local function auraGlowShellReapply(button)
+    if not button._isBar and ST._ApplyAuraShellVisuals then
+        ST._ApplyAuraShellVisuals(button, button.buttonData)
+    end
+end
+
 function CooldownCompanion:SetAuraGlowPreview(groupId, buttonIndex, show)
-    SetButtonPreview(self, groupId, buttonIndex, show, "_auraGlowPreview", "_auraGlowActive", false, nil, true)
+    SetButtonPreview(self, groupId, buttonIndex, show, "_auraGlowPreview", "_auraGlowActive", false, auraGlowShellReapply, true)
 end
 
 function CooldownCompanion:SetGroupAuraGlowPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_auraGlowPreview", "_auraGlowActive", false, nil, true)
+    SetGroupPreview(self, groupId, show, "_auraGlowPreview", "_auraGlowActive", false, auraGlowShellReapply, true)
 end
 
 function CooldownCompanion:ClearAllAuraGlowPreviews()
-    ClearAllPreviews(self, "_auraGlowPreview", "_auraGlowActive", false, nil, true)
+    ClearAllPreviews(self, "_auraGlowPreview", "_auraGlowActive", false, auraGlowShellReapply, true)
 end
 
 --------------------------------------------------------------------------------
@@ -700,6 +712,11 @@ local function ApplyPreviewFlagToButton(button, previewFlag)
         button._procGlowActive = false
     elseif previewFlag == "_auraGlowPreview" or previewFlag == "_pandemicPreview" then
         button._auraGlowActive = false
+        if previewFlag == "_auraGlowPreview" then
+            -- Repopulated buttons re-hid their icon shell before this flag
+            -- was restored; reapply so the preview stays visible.
+            auraGlowShellReapply(button)
+        end
         if previewFlag == "_pandemicPreview" then
             pandemicOnToggle(button, true)
         end

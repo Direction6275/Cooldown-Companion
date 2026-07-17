@@ -261,6 +261,11 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         if not host then return end
         local startTime, duration, remaining = GetConditionalPreviewTiming(preview, now)
         if not startTime then return end
+        -- Icon shells hide the overlayFrame this preview draws on; expose
+        -- while the preview runs (the preview clear path restores).
+        if not button._isBar and ST._ApplyAuraShellVisuals then
+            ST._ApplyAuraShellVisuals(button, buttonData)
+        end
         if not fs then
             fs = host:CreateFontString(nil, "OVERLAY")
             button._auraTextPreviewFS = fs
@@ -283,6 +288,9 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         if button._isBar and ST._ApplyBarAuraShellVisuals then
             -- Bar shells hide the text frame this preview writes to.
             ST._ApplyBarAuraShellVisuals(button, buttonData)
+        elseif not button._isBar and ST._ApplyAuraShellVisuals then
+            -- Icon shells hide the overlayFrame hosting auraStackCount.
+            ST._ApplyAuraShellVisuals(button, buttonData)
         end
         return
     end
@@ -301,6 +309,11 @@ local function ApplyConditionalVisualPreview(button, buttonData, style, preview,
         end
         local startTime, duration = GetConditionalPreviewTiming(preview, now)
         if not startTime then return end
+        -- Icon shells hide the button chrome around this preview widget;
+        -- expose while the preview runs (the preview clear path restores).
+        if not button._isBar and ST._ApplyAuraShellVisuals then
+            ST._ApplyAuraShellVisuals(button, buttonData)
+        end
         if not widget then
             if not button.icon then return end
             widget = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")

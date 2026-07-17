@@ -1342,6 +1342,17 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
         return false
     end
 
+    -- Primary aura entries only display through the aura system, which binds
+    -- to icon and bar panels; refuse conversions that would strand them.
+    if oldMode ~= newMode and newMode ~= "icons" and newMode ~= "bars" and newMode ~= nil then
+        for _, bd in ipairs(group.buttons or {}) do
+            if bd.addedAs == "aura" then
+                self:Print("This panel contains aura entries, which can only be tracked in icon or bar panels. Remove them first, or convert to icons or bars.")
+                return false
+            end
+        end
+    end
+
     if (oldMode == "textures" or oldMode == "trigger") and newMode ~= oldMode then
         -- Leaving texture mode should carry the standalone texture position
         -- back into the normal panel anchor so the panel does not jump back.

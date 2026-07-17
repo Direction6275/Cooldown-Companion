@@ -840,6 +840,13 @@ function CooldownCompanion:BuildViewerAuraMap()
             end
         end
     end
+
+    -- Aura candidate sets resolve through this map (linked-aura sets, buff
+    -- viewer children), so bound slot filters go stale when it changes —
+    -- re-request the coalesced, OOC-deferred rebind every rebuild.
+    if self.RequestAuraRebind then
+        self:RequestAuraRebind("viewer-map")
+    end
 end
 
 -- For each tracked button, ensure viewerAuraFrames contains an entry

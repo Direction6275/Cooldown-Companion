@@ -125,6 +125,17 @@ local function TryAddSpell(input, isPetSpell, forceAura)
         -- AuraContainer backend needs no Cooldown Manager setup. forceAura=true
         -- comes from "Aura" autocomplete suggestions (tracked buff/bar rows).
         local addAsAura = forceAura == true or IsPassiveOrProc(spellId)
+        -- The aura display only binds to icon and bar groups (AuraDisplay
+        -- rebind pass); refuse aura adds elsewhere instead of adding an entry
+        -- that can never display anything.
+        if addAsAura then
+            local group = CooldownCompanion.db and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+            local displayMode = group and (group.displayMode or "icons")
+            if displayMode ~= "icons" and displayMode ~= "bars" then
+                CooldownCompanion:Print("Auras can only be tracked in icon or bar groups.")
+                return false
+            end
+        end
         local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName, isPetSpell, addAsAura or nil, forceAura)
         if not idx then
             return false

@@ -1383,7 +1383,7 @@ local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGrou
     if not CanMoveEntryToGroup(sourceGroupId, targetGroupId) then
         return false
     end
-    local rejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup)
+    local rejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup, entryData)
     if rejectMessage then
         CooldownCompanion:Print(rejectMessage)
         return false

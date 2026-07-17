@@ -545,8 +545,26 @@ local function SetGlowContainerShellAlpha(container, alpha)
     if container.blizzardFrame then container.blizzardFrame:SetAlpha(alpha) end
 end
 
+-- Aura config previews render on CC-side regions — the exact ones a
+-- show-only-while-active shell hides (the text preview FontString lives on
+-- overlayFrame) — so the shell exposes while one runs. Restored by the
+-- preview clear path (Preview.lua) and every restyle. Mirrors BarMode's
+-- IsAuraPreviewExposingShell.
+local function IsAuraPreviewExposingShell(button)
+    if button._auraGlowPreview == true then
+        -- The aura-glow preview renders through the CC-side glow container,
+        -- whose shell alpha this helper stamps — expose it too.
+        return true
+    end
+    local preview = button._conditionalVisualPreview
+    local kind = preview and preview.kind
+    return kind == "aura_duration_text"
+        or kind == "aura_stack_text"
+        or kind == "aura_duration_swipe"
+end
+
 local function ApplyAuraShellVisuals(button, buttonData)
-    local alpha = IsAuraShellEntry(buttonData) and 0 or 1
+    local alpha = (IsAuraShellEntry(buttonData) and not IsAuraPreviewExposingShell(button)) and 0 or 1
     button.bg:SetAlpha(alpha)
     -- The icon must be hidden by shown-state, not alpha: the per-tick tint
     -- pipeline writes icon:SetVertexColor(r,g,b,a) on every intent change,
@@ -1503,4 +1521,5 @@ ST._UnregisterKeyPressHighlightButton = UnregisterKeyPressHighlightButton
 ST._UpdateIconModeVisuals = UpdateIconModeVisuals
 ST._UpdateIconModeGlows = UpdateIconModeGlows
 ST._ApplyIconCountTextStyle = ApplyCountTextStyle
+ST._ApplyAuraShellVisuals = ApplyAuraShellVisuals
 ST._ClearIconFillVisualState = ClearIconFillVisualState

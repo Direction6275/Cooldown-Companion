@@ -47,7 +47,24 @@ local slots = { player = {}, target = {} } -- unit -> array of slot records
 local slotCounter = 0
 local pendingRebind = false
 local rebindQueued = false
-local containerCreateFailed = false
+
+-- Deferred-rebind retry events: PLAYER_REGEN_ENABLED for player combat, and
+-- target-scoped UNIT_FLAGS for the case where ONLY target combat blocks (an
+-- OOC player never gets a regen event, so the target's own combat-flag change
+-- must wake the retry). The handler re-checks the gate, so extra fires are
+-- harmless; PLAYER_TARGET_CHANGED retries live on the target watcher.
+local rebindDeferFrame = CreateFrame("Frame")
+
+local function ArmRebindRetry()
+    pendingRebind = true
+    rebindDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    rebindDeferFrame:RegisterUnitEvent("UNIT_FLAGS", "target")
+end
+
+local function DisarmRebindRetry()
+    rebindDeferFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    rebindDeferFrame:UnregisterEvent("UNIT_FLAGS")
+end
 
 ------------------------------------------------------------------------
 -- Containers
@@ -81,6 +98,7 @@ local function EnsureTargetWatcher()
         -- A deferred rebind may have been blocked only by target combat.
         if pendingRebind and CanRunRebindNow() then
             pendingRebind = false
+            DisarmRebindRetry()
             RunAuraRebind()
         end
     end)
@@ -89,7 +107,6 @@ end
 local function EnsureContainer(unit)
     local container = containers[unit]
     if container then return container end
-    if containerCreateFailed then return nil end
     if not holder then
         -- P1a: the holder must stay SHOWN — a hidden parent makes the
         -- container unregister UNIT_AURA (AuraContainerPrivateMixin:
@@ -106,14 +123,10 @@ local function EnsureContainer(unit)
         park:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 2, 2)
         park:Hide()
     end
-    local ok, created = pcall(CreateFrame, "AuraContainer", nil, holder, "CustomAuraContainerTemplate")
-    if not ok or not created then
-        -- Degrade to no aura display rather than erroring on load; this only
-        -- fires if the client predates the AuraContainer API.
-        containerCreateFailed = true
-        CooldownCompanion:Print("Aura tracking unavailable: AuraContainer API missing on this client.")
-        return nil
-    end
+    -- Direct call, no pcall: the TOC pins this client generation, so the
+    -- AuraContainer API always exists — a failure here is a real setup error
+    -- that must surface, not read as "feature unavailable".
+    local created = CreateFrame("AuraContainer", nil, holder, "CustomAuraContainerTemplate")
     created:SetUnit(unit)
     containers[unit] = created
     if unit == "target" then
@@ -224,6 +237,13 @@ local function BuildSlotKit(slotButton)
     -- before ApplyFontStyle ever runs (bar binds restyle it).
     kit.barNameText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
     kit.barNameText:SetAlpha(0)
+
+    -- Keybind replica (icon shells): show-only-while-active entries hide CC's
+    -- overlayFrame — and CC can't re-show it with aura state (secret in
+    -- combat) — so the kit re-renders the keybind text while the aura display
+    -- is the whole visible button. Base font template only; styled at bind.
+    kit.keybindText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
+    kit.keybindText:SetAlpha(0)
 
     return kit
 end
@@ -600,6 +620,31 @@ local function StyleSlotKit(slot, button, buttonData, style)
             tex:SetAlpha(0)
         end
     end
+
+    -- Keybind replica (icon shells only): same style keys, placement, and
+    -- text resolution as CC's own keybindText (IconMode), read at bind time.
+    -- Keybind edits are config-time and every restyle re-requests a rebind,
+    -- so bind-time reads stay current. Bars keep their CC-side conventions
+    -- (bar hosts never showed keybind text).
+    local keybindText
+    if shellEntry and not isBar and style.showKeybindText then
+        keybindText = CooldownCompanion.GetDisplayedKeybindText
+            and CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId, button)
+    end
+    if keybindText and keybindText ~= "" then
+        if ApplyFontStyle then
+            ApplyFontStyle(kit.keybindText, style, "keybind", 10)
+        end
+        kit.keybindText:ClearAllPoints()
+        local kbAnchor = style.keybindAnchor or "TOPRIGHT"
+        kit.keybindText:SetPoint(kbAnchor, button, kbAnchor,
+            style.keybindXOffset or -2, style.keybindYOffset or -2)
+        kit.keybindText:SetText(keybindText)
+        kit.keybindText:SetAlpha(1)
+    else
+        kit.keybindText:SetText("")
+        kit.keybindText:SetAlpha(0)
+    end
 end
 
 ------------------------------------------------------------------------
@@ -679,14 +724,16 @@ local function CreateSlot(unit)
         key = "cc" .. slotCounter,
         unit = unit,
     }
-    local ok, slotButton = pcall(container.AddAuraSlot, container, record.key, UNIT_FILTER[unit], {
+    -- Direct call, no pcall: a real AddAuraSlot error must surface (repo
+    -- rule); the nil check below covers the documented soft-failure return.
+    local slotButton = container:AddAuraSlot(record.key, UNIT_FILTER[unit], {
         candidateFilters = BuildCandidateFilters(unit, { [PARK_SENTINEL[unit]] = true }),
         initializeFrame = function(frame)
             record.kit = BuildSlotKit(frame)
         end,
     })
-    if not ok or not slotButton then
-        CooldownCompanion:Print("Aura slot creation failed: " .. tostring(slotButton))
+    if not slotButton then
+        CooldownCompanion:Print("Aura slot creation failed.")
         return nil
     end
     record.slotButton = slotButton
@@ -858,34 +905,48 @@ function RunAuraRebind()
         end
     end
 
+    -- Authoritative P11 gate: CanRunRebindNow only sees EXISTING target slots,
+    -- so the very first target bind could otherwise slip into the forbidden
+    -- window (target fighting while the player is OOC). Existing target slots
+    -- can't reach here blocked — every caller checks CanRunRebindNow first —
+    -- so skipping the target unit skips only the first-bind case; player
+    -- binds proceed and the armed retry re-runs the full pass.
+    local targetBlocked = #wanted.target > 0
+        and UnitExists("target") and UnitAffectingCombat("target")
+
     for unit, list in pairs(wanted) do
-        local unitSlots = slots[unit]
-        -- Park everything first (also clears host tokens), then bind fresh —
-        -- simple and idempotent; runs at config-change frequency, never per tick.
-        for _, slot in ipairs(unitSlots) do
-            ParkSlot(slot)
+        if not (unit == "target" and targetBlocked) then
+            local unitSlots = slots[unit]
+            -- Park everything first (also clears host tokens), then bind fresh —
+            -- simple and idempotent; runs at config-change frequency, never per tick.
+            for _, slot in ipairs(unitSlots) do
+                ParkSlot(slot)
+            end
+            for i, want in ipairs(list) do
+                local slot = unitSlots[i] or CreateSlot(unit)
+                if not slot then break end
+                BindSlot(slot, want.button, want.buttonData, want.spellSet, want.style)
+            end
         end
-        for i, want in ipairs(list) do
-            local slot = unitSlots[i] or CreateSlot(unit)
-            if not slot then break end
-            BindSlot(slot, want.button, want.buttonData, want.spellSet, want.style)
-        end
+    end
+
+    if targetBlocked then
+        ArmRebindRetry()
     end
 end
 
-local rebindDeferFrame = CreateFrame("Frame")
-rebindDeferFrame:SetScript("OnEvent", function(frame)
-    -- Unregister BEFORE running so an error can't leave the event stuck
+rebindDeferFrame:SetScript("OnEvent", function()
+    -- Unregister BEFORE running so an error can't leave the events stuck
     -- (FrameAnchoring's combat-defer pattern).
-    frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    DisarmRebindRetry()
     pendingRebind = false
     if CanRunRebindNow() then
+        -- RunAuraRebind re-arms itself if a first target bind is still blocked.
         RunAuraRebind()
     else
         -- Still blocked (target fighting while we left combat): re-arm; the
         -- target watcher also retries on target changes.
-        pendingRebind = true
-        frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        ArmRebindRetry()
     end
 end)
 
@@ -897,8 +958,7 @@ function CooldownCompanion:RequestAuraRebind(reason, groupId)
     if not CanRunRebindNow() then
         NoteDeferredConfigEdit(reason, groupId)
         if pendingRebind then return end
-        pendingRebind = true
-        rebindDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        ArmRebindRetry()
         return
     end
     if rebindQueued then return end
@@ -909,8 +969,7 @@ function CooldownCompanion:RequestAuraRebind(reason, groupId)
             RunAuraRebind()
         elseif not pendingRebind then
             NoteDeferredConfigEdit(reason, groupId)
-            pendingRebind = true
-            rebindDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+            ArmRebindRetry()
         end
     end)
 end
