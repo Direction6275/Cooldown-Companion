@@ -1812,8 +1812,9 @@ local function BuildLayoutTab(container)
             CS.pendingStrataOrder = nil
             CS.InitPendingStrataOrder(CS.selectedGroup)
         end
-        if CS.col4Container and CS.col4Container.tabGroup then
-            CS.col4Container.tabGroup:SelectTab(CS.selectedTab)
+        local host = CS.groupSettingsActiveHost or CS.col4Container
+        if host and host.tabGroup then
+            host.tabGroup:SelectTab(CS.selectedTab)
         end
     end)
     container:AddChild(strataToggle)

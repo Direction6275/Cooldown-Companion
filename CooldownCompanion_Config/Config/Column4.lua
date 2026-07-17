@@ -452,6 +452,12 @@ local function ShowResourcesTabPage(container)
 end
 
 local function RefreshColumn4(container)
+    -- Plain buttons view: column 4 is hidden and the wide column 3 hosts
+    -- the group-side surfaces instead (ButtonsWideColumn.lua).
+    if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
+        return
+    end
+
     -- Hide browse placeholder
     if container._browsePlaceholder then
         container._browsePlaceholder:Hide()

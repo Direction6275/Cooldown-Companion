@@ -432,24 +432,6 @@ local function GetColumn4HeaderMode(selection)
     return "group"
 end
 
-local function GetColumn3HeaderTitle(selection)
-    local mode = GetColumn3HeaderMode(selection)
-    if mode == "custom_aura" then
-        return GetCustomBarsColumnTitle()
-    elseif mode == "resources_intro" then
-        return "Resource Bars"
-    elseif mode == "unit_frames" then
-        return "Unit Frames"
-    elseif mode == "panel_actions" then
-        return "Panel Actions"
-    end
-    local entryName = GetSelectedEntryHeaderName()
-    if entryName then
-        return "Entry: " .. entryName
-    end
-    return "Button Settings"
-end
-
 local function GetColumn4HeaderTitle(selection)
     local mode = GetColumn4HeaderMode(selection)
     if mode == "layout_order" then
@@ -480,6 +462,33 @@ local function GetColumn4HeaderTitle(selection)
         return "Group: " .. groupName
     end
     return "Group Settings"
+end
+
+local function GetColumn3HeaderTitle(selection)
+    local mode = GetColumn3HeaderMode(selection)
+    if mode == "custom_aura" then
+        return GetCustomBarsColumnTitle()
+    elseif mode == "resources_intro" then
+        return "Resource Bars"
+    elseif mode == "unit_frames" then
+        return "Unit Frames"
+    elseif mode == "panel_actions" then
+        return "Panel Actions"
+    end
+    local entryName = GetSelectedEntryHeaderName()
+    if entryName then
+        return "Entry: " .. entryName
+    end
+    if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
+        -- Merged wide column: entry surfaces are titled here, everything
+        -- else takes the group-side title (panel/folder/group).
+        if CountSelections(CS.selectedButtons) >= 2
+            or CS.selectedRotationAssistantEntry == true then
+            return "Button Settings"
+        end
+        return GetColumn4HeaderTitle(selection)
+    end
+    return "Button Settings"
 end
 
 local function ApplyConfigColumnTitles(frame)
@@ -1779,12 +1788,14 @@ local function CreateConfigPanel()
                 GameTooltip:AddLine("Panel Actions")
                 GameTooltip:AddLine("Select multiple panels to batch-manage them here.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Single-panel settings stay in column 4.", 1, 1, 1, true)
+                GameTooltip:AddLine("Select a single panel to configure it here instead.", 1, 1, 1, true)
             else
-                GameTooltip:AddLine("Button Settings")
-                GameTooltip:AddLine("Select a button to configure that entry here.", 1, 1, 1)
+                GameTooltip:AddLine("Settings")
+                GameTooltip:AddLine("Shows settings for the selected group, panel, or entry.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("These settings only apply to the selected entry.", 1, 1, 1, true)
+                GameTooltip:AddLine("Panel settings apply to every button in the panel. Selecting a button shows that entry's own settings; deselect it to return to the panel settings.", 1, 1, 1, true)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("To override a panel setting for one button, click the |A:Crosshair_VehichleCursor_32:14:14|a badge next to that setting while the button is selected.", 1, 1, 1, true)
             end
         end
         GameTooltip:Show()
@@ -2186,16 +2197,19 @@ local function CreateConfigPanel()
         local usedWidth = (equalColWidth * 4) + (pad * 3)
         local leftoverWidth = math.max(0, w - usedWidth)
 
-        -- Resources empty state: cols 1-2 stay normal, col3 widens across the
-        -- col4 region as a single intro pane, col4 hides.
+        -- Wide col3 layouts: cols 1-2 stay normal, col3 widens across the
+        -- col4 region, col4 hides. Used by the Resources empty state (single
+        -- intro pane) and the plain buttons view (merged settings column).
         local resourcesEmptyState = ST._IsResourcesEmptyStateActive
             and ST._IsResourcesEmptyStateActive()
+        local wideCol3 = resourcesEmptyState
+            or (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive())
 
         local col1Width = equalColWidth
         local col2Width = equalColWidth
         local col3Width = equalColWidth
         local col4Width = equalColWidth + leftoverWidth
-        if resourcesEmptyState then
+        if wideCol3 then
             col3Width = (equalColWidth * 2) + pad + leftoverWidth
         end
         local finderAvailable = IsConfigFinderAvailable and IsConfigFinderAvailable()
@@ -2236,7 +2250,7 @@ local function CreateConfigPanel()
         col4.frame:ClearAllPoints()
         col4.frame:SetPoint("TOPLEFT", col3.frame, "TOPRIGHT", pad, 0)
         col4.frame:SetSize(col4Width, h)
-        col4.frame:SetShown(not resourcesEmptyState)
+        col4.frame:SetShown(not wideCol3)
 
         UpdateCompactConfigRows()
         PositionPrimaryAxisUI()

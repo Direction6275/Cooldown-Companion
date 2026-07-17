@@ -21,6 +21,9 @@ end
 
 local function RefreshGroupSettingsHost(container, anchorFn)
     anchorFn = anchorFn or FillHostFrame
+    -- Callers that re-select the panel tab (e.g. the custom strata toggle)
+    -- need the host that most recently built these surfaces.
+    CS.groupSettingsActiveHost = container
 
     -- Multi-group selection: show placeholder
     local multiGroupCount = 0

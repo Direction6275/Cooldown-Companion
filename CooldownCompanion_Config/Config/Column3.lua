@@ -80,6 +80,11 @@ local function RefreshColumn3()
         col3BrowseClean._browsePlaceholder:Hide()
     end
 
+    -- Plain buttons view: the wide merged column owns col3
+    if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
+        return ST._RefreshButtonsWideColumn()
+    end
+
     -- Cast Bar & Unit Frames home: col3 = Unit Frames
     if CS.castFramesEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
@@ -94,6 +99,7 @@ local function RefreshColumn3()
         if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
         if col3._customBarsScroll then col3._customBarsScroll.frame:Hide() end
         if col3._resourcesIntroPane then col3._resourcesIntroPane:Hide() end
+        if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
 
         local settings = CooldownCompanion:GetFrameAnchoringSettings()
         if not (settings and settings.enabled) then
@@ -162,6 +168,7 @@ local function RefreshColumn3()
         if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
         if col3._panelTabGroup then col3._panelTabGroup.frame:Hide() end
         if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
+        if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
 
         if col3._customAuraTabGroup then
             col3._customAuraTabGroup.frame:Hide()
@@ -199,6 +206,9 @@ local function RefreshColumn3()
 
     -- Normal mode: hide Custom Bars panel
     local col3Normal = CS.configFrame and CS.configFrame.col3
+    if col3Normal and col3Normal.groupSettingsHost then
+        col3Normal.groupSettingsHost:Hide()
+    end
     if col3Normal and col3Normal._customAuraTabGroup then
         col3Normal._customAuraTabGroup.frame:Hide()
     end

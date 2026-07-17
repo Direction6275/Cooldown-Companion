@@ -2986,6 +2986,16 @@ local function IsResourcesEmptyStateActive()
     return not (settings and settings.enabled == true)
 end
 
+-- The plain buttons view uses a wide 3-column layout: column 3 spans the
+-- col4 region and hosts both entry settings and the group-side settings,
+-- while column 4 stays hidden. Every other view keeps the 4-column split.
+local function IsButtonsWideViewActive()
+    return not (CS.resourcesEntrySelected
+        or CS.castFramesEntrySelected
+        or CS.talentPickerMode
+        or CS.otherClassLibraryActive)
+end
+
 local function ResetConfigSelection(full)
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedFolder = nil
@@ -3389,6 +3399,7 @@ ST._SelectConfigResourcesEntry = SelectConfigResourcesEntry
 ST._SelectConfigCastFramesEntry = SelectConfigCastFramesEntry
 ST._GetResourcesEntryPlacement = GetResourcesEntryPlacement
 ST._IsResourcesEmptyStateActive = IsResourcesEmptyStateActive
+ST._IsButtonsWideViewActive = IsButtonsWideViewActive
 ST._ResetConfigSelection = ResetConfigSelection
 ST._SetConfigPrimaryModeImpl = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs

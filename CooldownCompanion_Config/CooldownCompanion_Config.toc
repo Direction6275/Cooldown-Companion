@@ -36,6 +36,7 @@ Config\Column1.lua
 Config\Column2.lua
 Config\Column3.lua
 Config\GroupSettingsHost.lua
+Config\ButtonsWideColumn.lua
 Config\Column4.lua
 Config\PanelChangelogOverlay.lua
 Config\Panel.lua
