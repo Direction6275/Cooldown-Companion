@@ -100,6 +100,7 @@ local function RefreshColumn3()
         if col3._customBarsScroll then col3._customBarsScroll.frame:Hide() end
         if col3._resourcesIntroPane then col3._resourcesIntroPane:Hide() end
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+        if col3.buttonsPreviewHost then col3.buttonsPreviewHost:Hide() end
 
         local settings = CooldownCompanion:GetFrameAnchoringSettings()
         if not (settings and settings.enabled) then
@@ -169,6 +170,7 @@ local function RefreshColumn3()
         if col3._panelTabGroup then col3._panelTabGroup.frame:Hide() end
         if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+        if col3.buttonsPreviewHost then col3.buttonsPreviewHost:Hide() end
 
         if col3._customAuraTabGroup then
             col3._customAuraTabGroup.frame:Hide()
@@ -208,6 +210,9 @@ local function RefreshColumn3()
     local col3Normal = CS.configFrame and CS.configFrame.col3
     if col3Normal and col3Normal.groupSettingsHost then
         col3Normal.groupSettingsHost:Hide()
+    end
+    if col3Normal and col3Normal.buttonsPreviewHost then
+        col3Normal.buttonsPreviewHost:Hide()
     end
     if col3Normal and col3Normal._customAuraTabGroup then
         col3Normal._customAuraTabGroup.frame:Hide()
@@ -263,6 +268,17 @@ local function RefreshColumn3()
     -- Hide panel multi-select scroll when not active
     if col3Normal and col3Normal._panelMultiSelectScroll then
         col3Normal._panelMultiSelectScroll.frame:Hide()
+    end
+
+    -- Entry surfaces may still be anchored below the (hidden) wide-view
+    -- preview host; restore their full-column anchors for this path.
+    if col3Normal and ST._AnchorButtonsContentFrame then
+        if col3Normal.bsTabGroup then
+            ST._AnchorButtonsContentFrame(col3Normal, col3Normal.bsTabGroup.frame)
+        end
+        if col3Normal.multiSelectScroll then
+            ST._AnchorButtonsContentFrame(col3Normal, col3Normal.multiSelectScroll.frame)
+        end
     end
 
     ST._RefreshButtonSettingsColumn()

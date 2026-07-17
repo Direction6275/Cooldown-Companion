@@ -2233,3 +2233,10 @@ function ST._BuildLayoutOrderPreviewPanel(container)
 
     FinalizePreviewState(preview)
 end
+
+-- Shared with ButtonPanelPreview.lua: config-safe icon resolution and the
+-- mirrored icon styling both previews use. StyleMirroredIconFrame expects an
+-- icon frame carrying bg, icon, countText, and borderTextures[4]; pass
+-- button as { buttonData = ... } to style purely from saved settings.
+ST._GetLayoutPreviewIcon = GetLayoutPreviewIcon
+ST._StyleMirroredIconFrame = StyleMirroredIconFrame

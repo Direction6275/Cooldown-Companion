@@ -46,6 +46,7 @@ ConfigSettings\SectionBuilders.lua
 ConfigSettings\CastBarPanels.lua
 ConfigSettings\ResourceBarPanelsHelpers.lua
 ConfigSettings\ResourceBarLayoutOrderPreview.lua
+ConfigSettings\ButtonPanelPreview.lua
 ConfigSettings\ResourceBarPanelsResource.lua
 ConfigSettings\ResourceBarPanelsCustomBars.lua
 ConfigSettings\ResourceBarPanelsLayoutOrder.lua

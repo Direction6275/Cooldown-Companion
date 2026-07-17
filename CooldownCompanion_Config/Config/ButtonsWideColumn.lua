@@ -11,10 +11,58 @@ local CooldownCompanion = ST.Addon
 local CS = ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
 
+local PREVIEW_GAP = 4
+
 local function HideEntrySurfaces(col3)
     if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
     if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
     if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
+end
+
+-- Settings surfaces anchor beneath the pinned preview when it is shown,
+-- and fill the whole column otherwise (same pattern as the Resources home).
+local function AnchorButtonsContentFrame(col3, frame)
+    frame:ClearAllPoints()
+    local previewHost = col3.buttonsPreviewHost
+    if previewHost and previewHost:IsShown() then
+        frame:SetPoint("TOPLEFT", previewHost, "BOTTOMLEFT", 0, -PREVIEW_GAP)
+        frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+    else
+        frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+        frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+    end
+end
+
+local function HidePanelPreview(col3)
+    local host = col3.buttonsPreviewHost
+    if host then
+        host:Hide()
+        if ST._ReleaseButtonPanelPreview then
+            ST._ReleaseButtonPanelPreview(host)
+        end
+    end
+end
+
+-- Pinned preview of the selected panel at the top of the wide column.
+local function UpdatePanelPreview(col3)
+    if not CS.selectedGroup then
+        HidePanelPreview(col3)
+        return
+    end
+
+    local host = col3.buttonsPreviewHost
+    if not host then
+        host = CreateFrame("Frame", nil, col3.content)
+        host:SetClipsChildren(false)
+        col3.buttonsPreviewHost = host
+    end
+    host:ClearAllPoints()
+    host:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+    host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
+    local columnHeight = col3.content:GetHeight() or 0
+    host:SetHeight(math.max(150, math.floor(columnHeight * 0.35)))
+    host:Show()
+    ST._BuildButtonPanelPreview(host, CS.selectedGroup)
 end
 
 -- True when the column should show entry settings instead of the
@@ -59,6 +107,7 @@ local function RefreshButtonsWideColumn()
     end
     if panelMultiCount >= 2 and CS.selectedContainer then
         HideEntrySurfaces(col3)
+        HidePanelPreview(col3)
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
 
         if not col3._panelMultiSelectScroll then
@@ -79,26 +128,39 @@ local function RefreshButtonsWideColumn()
         col3._panelMultiSelectScroll.frame:Hide()
     end
 
-    -- Entry selected: the entry settings surfaces own the column
+    -- Entry selected: the entry settings surfaces own the settings area
     if IsEntrySelectionActive() then
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+        UpdatePanelPreview(col3)
+        if col3.bsTabGroup then
+            AnchorButtonsContentFrame(col3, col3.bsTabGroup.frame)
+        end
+        if col3.multiSelectScroll then
+            AnchorButtonsContentFrame(col3, col3.multiSelectScroll.frame)
+        end
         ST._RefreshButtonSettingsColumn()
+        -- The multi-select scroll may have been created just now with fill
+        -- anchors; re-anchor it below the preview.
+        if col3.multiSelectScroll then
+            AnchorButtonsContentFrame(col3, col3.multiSelectScroll.frame)
+        end
         return
     end
 
     -- Otherwise the group-side surfaces (panel, container, folder settings,
-    -- placeholders) own the column
+    -- placeholders) own the settings area
     HideEntrySurfaces(col3)
+    UpdatePanelPreview(col3)
 
     local host = col3.groupSettingsHost
     if not host then
         host = CreateFrame("Frame", nil, col3.content)
-        host:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-        host:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
         col3.groupSettingsHost = host
     end
+    AnchorButtonsContentFrame(col3, host)
     host:Show()
     ST._RefreshGroupSettingsHost(host)
 end
 
 ST._RefreshButtonsWideColumn = RefreshButtonsWideColumn
+ST._AnchorButtonsContentFrame = AnchorButtonsContentFrame
