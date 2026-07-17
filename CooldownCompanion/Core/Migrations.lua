@@ -827,11 +827,11 @@ local function MigrateLcgGlowStyles(self, profile)
 end
 
 -- The bar aura effect now renders through the aura kit (barActiveAura
--- wiring): remap stored values from the retired renderers to the kit
--- vocabulary. "pixel" becomes its dashes lookalike (line count capped at
--- the kit pool ceiling of 8), "glow" its proc flipbook, removed
--- LibCustomGlow values the pulse border; pixel-scale speeds (10..200)
--- clear so the style default in seconds applies.
+-- wiring), offering border styles only: remap stored values from the
+-- retired renderers to that vocabulary. "pixel" becomes its dashes
+-- lookalike (line count capped at the kit pool ceiling of 8); "glow" and
+-- removed LibCustomGlow values become the pulse border; pixel-scale speeds
+-- (10..200) clear so the style default in seconds applies.
 local function MigrateBarAuraEffectTable(styleTable, counts)
     if type(styleTable) ~= "table" then return end
 
@@ -843,9 +843,8 @@ local function MigrateBarAuraEffectTable(styleTable, counts)
         local mapped
         if style == "pixel" then
             mapped = "dashes"
-        elseif style == "glow" then
-            mapped = "proc"
-        elseif style == "lcgButton" or style == "lcgAutoCast" or style == "lcgProc" then
+        elseif style == "glow" or style == "proc" or style == "ants" or style == "overlay"
+            or style == "lcgButton" or style == "lcgAutoCast" or style == "lcgProc" then
             mapped = "pulse"
         end
         if mapped then

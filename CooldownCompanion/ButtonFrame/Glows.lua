@@ -76,17 +76,14 @@ end
 -- CC-side preview normalizer for the bar aura effect (SetBarAuraEffect only
 -- serves the config preview and the dormant custom-bar path; the live bar
 -- render is the kit). Maps stored values to the CC renderer equivalents of
--- what the kit draws, mirroring NormalizeKitBarEffectStyle below.
+-- what the kit draws, mirroring NormalizeKitBarEffectStyle below (border
+-- styles only on bars).
 local function NormalizeBarAuraEffectStyle(style)
     if style == "color" or style == "none" then
         return "none"
     end
-    if style == "solid" or style == "overlay" or style == "ants"
-        or style == "colorShift" or style == "dashes" then
+    if style == "solid" or style == "colorShift" or style == "dashes" then
         return style
-    end
-    if style == "glow" or style == "proc" then
-        return "glow"
     end
     if style == "pixel" then
         return "dashes"
@@ -1489,14 +1486,22 @@ local function StyleKitGlowRegions(glowKit, styleTable, anchorFrame, enabled)
 end
 
 -- Map a stored bar aura effect to a kit-renderable style. "color" is the
--- fill-tint-only mode (no border effect); everything else shares the aura
--- glow vocabulary via NormalizeKitGlowStyle (legacy "pixel" renders as its
--- dashes lookalike, retired LibCustomGlow values as the pulse border).
+-- fill-tint-only mode (no border effect). Bars offer border styles only
+-- (owner ruling): legacy "pixel" renders as its dashes lookalike; the
+-- flipbook/fill styles (glow/proc/ants/overlay), retired LibCustomGlow
+-- values, and anything unknown render as the pulse border.
 local function NormalizeKitBarEffectStyle(style)
     if style == nil or style == "color" then
         return "none"
     end
-    return NormalizeKitGlowStyle(style)
+    if style == "none" or style == "solid"
+        or style == "colorShift" or style == "dashes" then
+        return style
+    end
+    if style == "pixel" then
+        return "dashes"
+    end
+    return "pulse"
 end
 
 -- Resolve the bar-mode barAura* keys and style the kit. Same core renderer;

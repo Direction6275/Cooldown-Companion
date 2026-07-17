@@ -1439,17 +1439,16 @@ end
 -- the only signal (the stored default). The preview renders the border
 -- effect CC-side and simulates the aura fill color plus the fill
 -- pulse/color-shift effects (BarMode.lua).
+-- Border styles only (owner ruling): the flipbook/fill styles (ants, proc,
+-- overlay) are not offered on bars.
 local BAR_AURA_EFFECT_STYLE_OPTIONS = {
     ["color"] = "None (bar color only)",
     ["solid"] = "Solid Border",
     ["pulse"] = "Pulsing Border",
     ["colorShift"] = "Color Shift",
     ["dashes"] = "Pixel Dashes",
-    ["ants"] = "Marching Ants",
-    ["proc"] = "Proc Glow",
-    ["overlay"] = "Overlay",
 }
-local BAR_AURA_EFFECT_STYLE_ORDER = {"color", "solid", "pulse", "colorShift", "dashes", "ants", "proc", "overlay"}
+local BAR_AURA_EFFECT_STYLE_ORDER = {"color", "solid", "pulse", "colorShift", "dashes"}
 
 local function BuildBarActiveAuraControls(container, styleTable, refreshCallback, opts)
     BuildGlowStyleControls(container, styleTable, refreshCallback, {
