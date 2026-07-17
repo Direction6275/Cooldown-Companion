@@ -1485,6 +1485,11 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         end
     end
     if opts and opts.isOverride == true and enabledVal == false then
+        -- The preview toggle disappears with the disabled section; make sure
+        -- a preview it owned doesn't keep rendering.
+        if CS.selectedGroup and CS.selectedButton and CooldownCompanion.SetBarAuraEffectPreview then
+            CooldownCompanion:SetBarAuraEffectPreview(CS.selectedGroup, CS.selectedButton, false)
+        end
         return
     end
 

@@ -1542,6 +1542,8 @@ local SetBarAuraEffect = MakeGlowSetter({
     defaultLines       = 2,
     styleKey           = "barAuraEffect",           defaultStyle = "none",
     colorKey           = "barAuraEffectColor",      defaultColor = DEFAULT_AURA_GLOW_COLOR,
+    color2Key          = "barAuraColorShiftColor",  defaultColor2 = DEFAULT_WHITE,
+    cacheColor2        = "_baeC2",
     sizeKey            = "barAuraEffectSize",
     thicknessKey       = "barAuraEffectThickness",
     speedKey           = "barAuraEffectSpeed",

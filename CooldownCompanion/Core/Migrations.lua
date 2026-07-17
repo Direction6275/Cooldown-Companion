@@ -762,13 +762,11 @@ local function MigrateLcgStyleTable(styleTable, counts)
             styleTable[keys.style] = "glow"
             if style == "lcgButton" then
                 counts.buttonGlow = counts.buttonGlow + 1
-                -- An autocast-scale size (0.2..3) left behind by an earlier
-                -- style switch would render the glow overhang unusably small;
-                -- clear it so the glow default applies.
-                local size = rawget(styleTable, keys.size)
-                if type(size) == "number" and size <= 3 then
-                    styleTable[keys.size] = nil
-                end
+                -- lcgButton never consumed the size key (its only parameter
+                -- was frequency), so any stored value is a leftover from an
+                -- earlier style and would render as a tiny Glow overhang.
+                -- Clear unconditionally so the glow default (30) applies.
+                styleTable[keys.size] = nil
             end
         elseif style == "lcgAutoCast" then
             styleTable[keys.style] = "autocast"
@@ -829,27 +827,37 @@ end
 -- The bar aura effect now renders through the aura kit (barActiveAura
 -- wiring), offering border styles only: remap stored values from the
 -- retired renderers to that vocabulary. "pixel" becomes its dashes
--- lookalike (line count capped at the kit pool ceiling of 8); "glow" and
--- removed LibCustomGlow values become the pulse border; pixel-scale speeds
--- (10..200) clear so the style default in seconds applies.
+-- lookalike (size kept: dash length px matches; line count capped at the
+-- kit pool ceiling of 8); "pulsingBorder" canonicalizes to "pulse" (size
+-- kept: border px); "glow" and the removed LibCustomGlow values become the
+-- pulse border with their overhang/scale sizes cleared so the border
+-- default applies; pixel-scale speeds (10..200) clear so the style default
+-- in seconds applies.
 local function MigrateBarAuraEffectTable(styleTable, counts)
     if type(styleTable) ~= "table" then return end
 
     for _, keys in ipairs({
-        { style = "barAuraEffect", speed = "barAuraEffectSpeed", lines = "barAuraEffectLines" },
-        { style = "pandemicBarEffect", speed = "pandemicBarEffectSpeed", lines = "pandemicBarEffectLines" },
+        { style = "barAuraEffect", size = "barAuraEffectSize", speed = "barAuraEffectSpeed", lines = "barAuraEffectLines" },
+        { style = "pandemicBarEffect", size = "pandemicBarEffectSize", speed = "pandemicBarEffectSpeed", lines = "pandemicBarEffectLines" },
     }) do
         local style = rawget(styleTable, keys.style)
         local mapped
+        local clearSize = false
         if style == "pixel" then
             mapped = "dashes"
+        elseif style == "pulsingBorder" then
+            mapped = "pulse"
         elseif style == "glow" or style == "proc" or style == "ants" or style == "overlay"
             or style == "lcgButton" or style == "lcgAutoCast" or style == "lcgProc" then
             mapped = "pulse"
+            clearSize = true
         end
         if mapped then
             styleTable[keys.style] = mapped
             counts.remapped = counts.remapped + 1
+            if clearSize then
+                styleTable[keys.size] = nil
+            end
             local lines = rawget(styleTable, keys.lines)
             if type(lines) == "number" and lines > 8 then
                 styleTable[keys.lines] = 8
@@ -864,8 +872,31 @@ local function MigrateBarAuraEffectTable(styleTable, counts)
     end
 end
 
+-- Custom-bar entries (the inactive custom-aura-bar path) carry the same
+-- effect keys directly on the entry table; canonicalize them too so the
+-- feature returns to clean stored values. Entries live either in a shared
+-- store ({entries = {id = entry}}) or as a plain id-to-entry map.
+local function MigrateCustomBarEntries(settings, counts)
+    if type(settings) ~= "table" or type(settings.customBars) ~= "table" then return end
+    local customBars = settings.customBars
+    local entries = customBars
+    if type(customBars.entries) == "table" or type(customBars.order) == "table" then
+        entries = customBars.entries
+    end
+    if type(entries) ~= "table" then return end
+    for _, entry in pairs(entries) do
+        if type(entry) == "table" then
+            MigrateBarAuraEffectTable(entry, counts)
+        end
+    end
+end
+
 local function MigrateBarAuraEffectStyles(self, profile)
-    if type(profile) ~= "table" or profile._cdcBarAuraGlowMigrated then return end
+    -- Sentinel renamed from _cdcBarAuraGlowMigrated when the pass gained the
+    -- size resets and custom-bar traversal, so already-stamped profiles
+    -- re-run it once (idempotent).
+    if type(profile) ~= "table" or profile._cdcBarAuraEffectMigrated then return end
+    profile._cdcBarAuraGlowMigrated = nil
     local counts = { remapped = 0 }
 
     MigrateBarAuraEffectTable(profile.globalStyle, counts)
@@ -897,7 +928,18 @@ local function MigrateBarAuraEffectStyles(self, profile)
         end
     end
 
-    profile._cdcBarAuraGlowMigrated = true
+    -- Every scope of the resource-bar stores can hold custom-bar entries.
+    MigrateCustomBarEntries(profile.resourceBars, counts)
+    for _, storeKey in ipairs({ "resourceBarsByChar", "resourceBarsByClass" }) do
+        local store = profile[storeKey]
+        if type(store) == "table" then
+            for _, settings in pairs(store) do
+                MigrateCustomBarEntries(settings, counts)
+            end
+        end
+    end
+
+    profile._cdcBarAuraEffectMigrated = true
     if counts.remapped > 0 then
         self:Print(("Bar aura effect styles updated to the new renderer (x%d)."):format(counts.remapped))
     end
@@ -960,6 +1002,7 @@ function CooldownCompanion:ClearMigrationSentinels()
         profile._cdcAuraGlowMigrated = nil
         profile._cdcLcgGlowMigrated = nil
         profile._cdcBarAuraGlowMigrated = nil
+        profile._cdcBarAuraEffectMigrated = nil
     end
 end
 

@@ -670,6 +670,7 @@ local function ClearButtonPreviewState(button)
     button._procGlowPreview = nil
     button._auraGlowPreview = nil
     button._pandemicPreview = nil
+    button._barAuraEffectPreview = nil
     button._readyGlowPreview = nil
     button._keyPressHighlightPreview = nil
     button._textureProcPreview = nil
@@ -875,6 +876,7 @@ local function DeactivatePooledButton(self, groupId, button)
     HideButtonGlowContainer(button.auraGlow)
     HideButtonGlowContainer(button.readyGlow)
     HideButtonGlowContainer(button.keyPressHighlight)
+    HideButtonGlowContainer(button.barAuraEffect)
     ClearReusableButtonRuntime(button)
     button._buttonPoolKey = GetExistingButtonPoolKey(button)
     button._pooled = true

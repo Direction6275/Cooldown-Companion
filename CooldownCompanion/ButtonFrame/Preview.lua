@@ -541,7 +541,10 @@ local function barAuraEffectOnToggle(button, show)
         if button._isBar and not button.barAuraEffect and ST._CreateGlowContainer then
             button.barAuraEffect = ST._CreateGlowContainer(button, 32, false)
         end
-        SetBarAuraEffect(button, true)
+        -- Live parity: the kit renders nothing while the indicator is
+        -- disabled, so a preview on a disabled button must not either (and
+        -- passing false here clears a border left by a just-disabled one).
+        SetBarAuraEffect(button, ST.IsBarAuraIndicatorEnabled(button.style) == true)
     else
         SetBarAuraEffect(button, button._auraActive)
     end
