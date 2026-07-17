@@ -22,6 +22,8 @@ local AddOffsetSliders = ST._AddOffsetSliders
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
+local ColorHeading = ST._ColorHeading
+local AddPreviewBadge = ST._AddPreviewBadge
 
 -- Imports from SectionBuilders.lua
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
@@ -196,14 +198,6 @@ local function BuildBarAppearanceTab(container, group, style)
             "Aura Stack Text",
             {"Shows the live stack count while the aura is active, drawn by the game so it stays accurate in combat. Stack counts cannot drive the bar fill; the count is hidden from addons during combat.", 1, 1, 1, true},
         }, auraStackCb)
-
-        -- Active aura indicator: border effect + fill effects rendered while
-        -- the tracked aura runs (live renderer: the aura kit). Fill effects
-        -- show on real bars only, not in the config preview.
-        local _, aaiCollapsed = BuildCollapsibleSection(container, "Active Aura Indicator", "barappearance_activeAura")
-        if not aaiCollapsed then
-            BuildBarActiveAuraControls(container, style, refreshStyle)
-        end
     end
 
     -- ================================================================
@@ -421,13 +415,107 @@ end
 
 ------------------------------------------------------------------------
 -- EFFECTS TAB (Glows / Indicators)
+-- Mirrors the icon-mode Indicators tab layout: Glows / Timers / States
+-- headings with checkbox rows (advanced toggle + promote + preview badge).
 ------------------------------------------------------------------------
+
+local function AddIndicatorsHeading(container, text)
+    local heading = AceGUI:Create("Heading")
+    heading:SetText(text)
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+    return heading
+end
+
+-- Active aura indicator: border effect + fill effects rendered by the aura
+-- kit while the tracked aura runs. The checkbox reflects whether anything
+-- actually renders (enabled AND a visible effect chosen); checking it with
+-- no visible effect forces the pulse border, mirroring the icon aura glow.
+local function BuildBarActiveAuraSection(container, group, style)
+    if not GroupHasAuraTrackingEntry(group) then
+        -- The section owning an active preview just disappeared (last aura
+        -- entry removed); don't leave the preview glow orphaned.
+        CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, false)
+        return false
+    end
+
+    local hasBorderEffect = style.barAuraEffect ~= nil
+        and style.barAuraEffect ~= "color" and style.barAuraEffect ~= "none"
+    local anyEffect = hasBorderEffect
+        or style.barAuraPulseEnabled == true
+        or style.barAuraColorShiftEnabled == true
+    local indicatorOn = ST.IsBarAuraIndicatorEnabled(style) and anyEffect
+
+    local enableCb = AceGUI:Create("CheckBox")
+    enableCb:SetLabel("Show Active Aura Indicator")
+    enableCb:SetValue(indicatorOn)
+    enableCb:SetFullWidth(true)
+    enableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.barAuraIndicatorEnabled = val
+        if val and not (style.barAuraEffect and style.barAuraEffect ~= "color" and style.barAuraEffect ~= "none"
+            or style.barAuraPulseEnabled == true or style.barAuraColorShiftEnabled == true) then
+            -- Nothing visible was configured; force the pulse border and
+            -- reset its per-style keys (a leftover proc-scale size would
+            -- render a 30px wall).
+            style.barAuraEffect = "pulse"
+            style.barAuraEffectSize = 2
+            style.barAuraEffectSpeed = 0.5
+        end
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    container:AddChild(enableCb)
+
+    local function BuildBarActiveAuraAdvanced(panel)
+        BuildBarActiveAuraControls(panel, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+    end
+
+    local _, aaiAdvBtn = AddAdvancedToggle(enableCb, "barActiveAura", tabInfoButtons, indicatorOn, {
+        title = "Active Aura Indicator Advanced",
+        build = BuildBarActiveAuraAdvanced,
+    })
+    local aaiPromoteBtn = CreateCheckboxPromoteButton(enableCb, aaiAdvBtn, "barActiveAura", group, style)
+    local aaiPreviewBtn = AddPreviewBadge(enableCb, aaiPromoteBtn or aaiAdvBtn, "Preview Active Aura Indicator", function()
+        return CS.selectedGroup and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, nil, "_barAuraEffectPreview")
+    end, function(show)
+        if CS.selectedGroup then
+            CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, show)
+        end
+    end, indicatorOn)
+    CreateInfoButton(enableCb.frame, aaiPreviewBtn or aaiPromoteBtn or aaiAdvBtn, "LEFT", "RIGHT", 4, 0, {
+        "Active Aura Indicator",
+        {"Adds a border effect to a bar while its tracked aura is active, with optional fill pulse and fill color shift. The fill effects show on real bars only, not in the config preview.", 1, 1, 1, true},
+    }, tabInfoButtons)
+
+    if not indicatorOn then
+        CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, false)
+    end
+    return true
+end
+
 local function BuildBarEffectsTab(container, group, style)
+    local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
 
     -- ================================================================
-    -- Desaturate on Cooldown
+    -- Glows
     -- ================================================================
+    if GroupHasAuraTrackingEntry(group) then
+        AddIndicatorsHeading(container, "Glows")
+    end
+    -- Runs even without the heading: the section clears its own orphaned
+    -- preview when the last aura entry disappears.
+    BuildBarActiveAuraSection(container, group, style)
+
+    -- The remaining indicators all render on the bar's icon square.
     if style.showBarIcon ~= false then
+        -- ================================================================
+        -- Timers
+        -- ================================================================
+        AddIndicatorsHeading(container, "Timers")
+
         local gcdCb = AceGUI:Create("CheckBox")
         gcdCb:SetLabel("Show GCD Swipe")
         gcdCb:SetValue(style.showGCDSwipe == true)
@@ -438,6 +526,11 @@ local function BuildBarEffectsTab(container, group, style)
         end)
         container:AddChild(gcdCb)
         CreateCheckboxPromoteButton(gcdCb, nil, "showGCDSwipe", group, style)
+
+        -- ================================================================
+        -- States
+        -- ================================================================
+        AddIndicatorsHeading(container, "States")
 
         local desatCb = AceGUI:Create("CheckBox")
         desatCb:SetLabel("Show Desaturate On Cooldown")
@@ -450,17 +543,9 @@ local function BuildBarEffectsTab(container, group, style)
         container:AddChild(desatCb)
         CreateCheckboxPromoteButton(desatCb, nil, "desaturation", group, style)
 
-        -- ================================================================
-        -- Loss of Control
-        -- ================================================================
-        local locCb = BuildLossOfControlControls(container, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
+        local locCb = BuildLossOfControlControls(container, style, refreshStyle)
         CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
 
-        -- ================================================================
-        -- Unusable Visual
-        -- ================================================================
         local unusableCb, unusableAdvBtn = BuildUnusableDimmingControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
@@ -468,10 +553,7 @@ local function BuildBarEffectsTab(container, group, style)
         local unusablePromoteBtn = CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
         AddConditionalPreviewBadge(unusableCb, unusablePromoteBtn or unusableAdvBtn, "Preview Unusable State", "unusable", style.showUnusable)
 
-        -- Show Tooltips
-        local tooltipCb = BuildShowTooltipsControls(container, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
+        local tooltipCb = BuildShowTooltipsControls(container, style, refreshStyle)
         CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
     end
 

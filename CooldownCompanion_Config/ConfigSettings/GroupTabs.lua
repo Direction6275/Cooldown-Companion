@@ -2154,6 +2154,7 @@ local function BuildBarModeEffects(container, group, style)
         CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
         CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
         CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, false)
     end
     BuildBarEffectsTab(container, group, style)
 end
