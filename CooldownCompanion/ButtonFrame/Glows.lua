@@ -73,11 +73,25 @@ local function NormalizeGlowStyle(style)
     return style
 end
 
+-- CC-side preview normalizer for the bar aura effect (SetBarAuraEffect only
+-- serves the config preview and the dormant custom-bar path; the live bar
+-- render is the kit). Maps stored values to the CC renderer equivalents of
+-- what the kit draws, mirroring NormalizeKitBarEffectStyle below.
 local function NormalizeBarAuraEffectStyle(style)
-    if style == "color" then
+    if style == "color" or style == "none" then
         return "none"
     end
-    return style
+    if style == "solid" or style == "overlay" or style == "ants"
+        or style == "colorShift" or style == "dashes" then
+        return style
+    end
+    if style == "glow" or style == "proc" then
+        return "glow"
+    end
+    if style == "pixel" then
+        return "dashes"
+    end
+    return "pulsingBorder"
 end
 
 local function IsBarAuraIndicatorEnabled(style)
@@ -1354,11 +1368,12 @@ local function StyleKitFlipbook(tex, anchorFrame, pct, r, g, b, a)
     tex:SetVertexColor(r, g, b, a)
 end
 
-local function StyleKitGlowRegions(glowKit, styleTable, anchorFrame, enabled)
+-- Shared styling core: full reset, then light the requested branch. The
+-- per-surface key resolution lives in the thin resolvers below
+-- (StyleKitGlowRegions for the icon auraGlow* keys, StyleKitBarGlowRegions
+-- for the bar barAura* keys).
+local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, size, speed, count, thickness)
     local host = glowKit.host
-    local kitStyle = enabled
-        and NormalizeKitGlowStyle((styleTable and styleTable.auraGlowStyle) or "pulse")
-        or "none"
 
     -- Full reset: stop every animation and blank every sub-visual, then the
     -- active branch lights only its own. The VertexColor anims leave a
@@ -1392,15 +1407,7 @@ local function StyleKitGlowRegions(glowKit, styleTable, anchorFrame, enabled)
     host:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
     host:SetAlpha(1)
 
-    local color = (styleTable and styleTable.auraGlowColor) or DEFAULT_AURA_GLOW_COLOR
     local r, g, b, a = color[1], color[2], color[3], color[4] or 0.9
-    local size = styleTable and styleTable.auraGlowSize
-    local speed = styleTable and styleTable.auraGlowSpeed
-    -- Speed keys store seconds (0.1..2.0); guard against legacy pixel-scale
-    -- values (10..200) with the style's own default.
-    if not speed or speed <= 0 or speed > 2 then
-        speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
-    end
 
     if kitStyle == "proc" then
         -- The closing SetVertexColor already raises the region alpha to the
@@ -1423,11 +1430,10 @@ local function StyleKitGlowRegions(glowKit, styleTable, anchorFrame, enabled)
     end
 
     if kitStyle == "dashes" then
-        local count = (styleTable and styleTable.auraGlowDashCount) or 2
-        count = math_min(math_max(count, 1), MAX_AURA_GLOW_DASHES)
+        count = math_min(math_max(count or 2, 1), MAX_AURA_GLOW_DASHES)
         StyleDashPerimeter(glowKit.dashes, glowKit.dashMasks, anchorFrame,
             size or BAR_AURA_GLOW_SIZES.dashes,
-            (styleTable and styleTable.auraGlowDashThickness) or DEFAULT_AURA_GLOW_DASH_THICKNESS,
+            thickness or DEFAULT_AURA_GLOW_DASH_THICKNESS,
             speed or AURA_GLOW_SPEED_DEFAULTS.dashes,
             count, r, g, b, a)
         return
@@ -1450,7 +1456,6 @@ local function StyleKitGlowRegions(glowKit, styleTable, anchorFrame, enabled)
         glowKit.pulseAnim:SetDuration(speed or AURA_GLOW_SPEED_DEFAULTS.pulse)
         glowKit.pulseAG:Play()
     elseif kitStyle == "colorShift" then
-        local color2 = (styleTable and styleTable.auraGlowColor2) or DEFAULT_AURA_GLOW_COLOR2
         local startColor = CreateColor(r, g, b, a)
         local endColor = CreateColor(color2[1], color2[2], color2[3], color2[4] or 0.9)
         for i = 1, 4 do
@@ -1461,6 +1466,58 @@ local function StyleKitGlowRegions(glowKit, styleTable, anchorFrame, enabled)
             glowKit.csAGs[i]:Play()
         end
     end
+end
+
+-- Resolve the icon-mode auraGlow* keys and style the kit.
+local function StyleKitGlowRegions(glowKit, styleTable, anchorFrame, enabled)
+    local kitStyle = enabled
+        and NormalizeKitGlowStyle((styleTable and styleTable.auraGlowStyle) or "pulse")
+        or "none"
+    local speed = styleTable and styleTable.auraGlowSpeed
+    -- Speed keys store seconds (0.1..2.0); guard against legacy pixel-scale
+    -- values (10..200) with the style's own default.
+    if not speed or speed <= 0 or speed > 2 then
+        speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
+    end
+    StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
+        (styleTable and styleTable.auraGlowColor) or DEFAULT_AURA_GLOW_COLOR,
+        (styleTable and styleTable.auraGlowColor2) or DEFAULT_AURA_GLOW_COLOR2,
+        styleTable and styleTable.auraGlowSize,
+        speed,
+        styleTable and styleTable.auraGlowDashCount,
+        styleTable and styleTable.auraGlowDashThickness)
+end
+
+-- Map a stored bar aura effect to a kit-renderable style. "color" is the
+-- fill-tint-only mode (no border effect); everything else shares the aura
+-- glow vocabulary via NormalizeKitGlowStyle (legacy "pixel" renders as its
+-- dashes lookalike, retired LibCustomGlow values as the pulse border).
+local function NormalizeKitBarEffectStyle(style)
+    if style == nil or style == "color" then
+        return "none"
+    end
+    return NormalizeKitGlowStyle(style)
+end
+
+-- Resolve the bar-mode barAura* keys and style the kit. Same core renderer;
+-- the effect anchors to the whole bar rect (the anchor host button).
+local function StyleKitBarGlowRegions(glowKit, styleTable, anchorFrame, enabled)
+    local kitStyle = "none"
+    if enabled and IsBarAuraIndicatorEnabled(styleTable) then
+        kitStyle = NormalizeKitBarEffectStyle(styleTable and styleTable.barAuraEffect)
+    end
+    local speed = styleTable and styleTable.barAuraEffectSpeed
+    -- Same legacy pixel-scale speed guard as the icon resolver.
+    if not speed or speed <= 0 or speed > 2 then
+        speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
+    end
+    StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
+        (styleTable and styleTable.barAuraEffectColor) or DEFAULT_AURA_GLOW_COLOR,
+        (styleTable and styleTable.barAuraColorShiftColor) or DEFAULT_WHITE,
+        styleTable and styleTable.barAuraEffectSize,
+        speed,
+        styleTable and styleTable.barAuraEffectLines,
+        styleTable and styleTable.barAuraEffectThickness)
 end
 
 local SetBarAuraEffect = MakeGlowSetter({
@@ -1474,6 +1531,10 @@ local SetBarAuraEffect = MakeGlowSetter({
     defaultAlpha       = 0.9,
     includeScale       = false,
     optsDefaultAlpha   = 0.9,
+    -- Kit style vocabulary: speed keys store seconds (matches SetAuraGlow).
+    defaultSpeed       = 0.5,
+    defaultSpeeds      = AURA_GLOW_SPEED_DEFAULTS,
+    defaultLines       = 2,
     styleKey           = "barAuraEffect",           defaultStyle = "none",
     colorKey           = "barAuraEffectColor",      defaultColor = DEFAULT_AURA_GLOW_COLOR,
     sizeKey            = "barAuraEffectSize",
@@ -1508,6 +1569,7 @@ ST.IsBarAuraIndicatorEnabled = IsBarAuraIndicatorEnabled
 ST._SetBarAuraEffect = SetBarAuraEffect
 ST._BuildKitGlowRegions = BuildKitGlowRegions
 ST._StyleKitGlowRegions = StyleKitGlowRegions
+ST._StyleKitBarGlowRegions = StyleKitBarGlowRegions
 ST._StyleDashPerimeter = StyleDashPerimeter
 ST._CreateDashMasks = CreateDashMasks
 ST._CreateDashRegions = CreateDashRegions

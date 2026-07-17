@@ -521,6 +521,41 @@ function CooldownCompanion:ClearAllPandemicPreviews()
 end
 
 --------------------------------------------------------------------------------
+-- Bar Aura Effect Preview (barActiveAura)
+-- Renders through the CC-side glow container (SetBarAuraEffect) with the kit
+-- style names mapped to their legacy renderers (Glows.lua
+-- NormalizeBarAuraEffectStyle), so the preview matches the live kit bar glow
+-- without touching the aura slot subtree. The fill pulse/color-shift effects
+-- do not preview (accepted gap; they render on real bars only).
+--------------------------------------------------------------------------------
+
+-- Group bar buttons build the barAuraEffect container lazily: only the
+-- dormant custom-aura-bar path creates it eagerly, and previews are the
+-- first consumer on ordinary bars.
+local function barAuraEffectOnToggle(button, show)
+    if show then
+        if button._isBar and not button.barAuraEffect and ST._CreateGlowContainer then
+            button.barAuraEffect = ST._CreateGlowContainer(button, 32, false)
+        end
+        SetBarAuraEffect(button, true)
+    else
+        SetBarAuraEffect(button, button._auraActive)
+    end
+end
+
+function CooldownCompanion:SetBarAuraEffectPreview(groupId, buttonIndex, show)
+    SetButtonPreview(self, groupId, buttonIndex, show, "_barAuraEffectPreview", "_barAuraEffectActive", false, barAuraEffectOnToggle, false)
+end
+
+function CooldownCompanion:SetGroupBarAuraEffectPreview(groupId, show)
+    SetGroupPreview(self, groupId, show, "_barAuraEffectPreview", "_barAuraEffectActive", false, barAuraEffectOnToggle, false)
+end
+
+function CooldownCompanion:ClearAllBarAuraEffectPreviews()
+    ClearAllPreviews(self, "_barAuraEffectPreview", "_barAuraEffectActive", false, pandemicOnClear, false)
+end
+
+--------------------------------------------------------------------------------
 -- Ready Glow Preview
 --------------------------------------------------------------------------------
 
@@ -720,6 +755,9 @@ local function ApplyPreviewFlagToButton(button, previewFlag)
         if previewFlag == "_pandemicPreview" then
             pandemicOnToggle(button, true)
         end
+    elseif previewFlag == "_barAuraEffectPreview" then
+        button._barAuraEffectActive = false
+        barAuraEffectOnToggle(button, true)
     elseif previewFlag == "_readyGlowPreview" then
         button._readyGlowActive = false
     elseif previewFlag == "_keyPressHighlightPreview" then

@@ -966,6 +966,10 @@ ST.OVERRIDE_SECTIONS = {
         modes = {icons = true},
     },
     -- Bar Mode — Appearance Tab
+    -- pandemicBar is deliberately unwired (not in the config sectionOrder):
+    -- pandemic timing is dead in combat until the game-side fix lands, same
+    -- as the icon-mode pandemic glow. barActiveAura is live (LCG-removal
+    -- project wired it through the aura kit).
     pandemicBar = {
         label = "Pandemic Indicator",
         keys = {"showPandemicGlow", "barPandemicColor", "pandemicBarEffect", "pandemicBarEffectColor", "pandemicBarEffectSize", "pandemicBarEffectThickness", "pandemicBarEffectSpeed", "pandemicBarEffectLines", "pandemicGlowCombatOnly", "pandemicBarPulseEnabled", "pandemicBarPulseSpeed", "pandemicBarColorShiftEnabled", "pandemicBarColorShiftSpeed", "pandemicBarColorShiftColor"},

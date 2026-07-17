@@ -1434,6 +1434,115 @@ local function BuildAuraGlowControls(container, styleTable, refreshCallback, opt
     }, opts)
 end
 
+-- Bar aura indicator (barActiveAura): the border effect shares the aura glow
+-- kit vocabulary plus the "color" value, which keeps the aura fill color as
+-- the only signal (the stored default). The fill pulse/color-shift effects
+-- render on real bars only; the config preview shows the border effect.
+local BAR_AURA_EFFECT_STYLE_OPTIONS = {
+    ["color"] = "None (bar color only)",
+    ["solid"] = "Solid Border",
+    ["pulse"] = "Pulsing Border",
+    ["colorShift"] = "Color Shift",
+    ["dashes"] = "Pixel Dashes",
+    ["ants"] = "Marching Ants",
+    ["proc"] = "Proc Glow",
+    ["overlay"] = "Overlay",
+}
+local BAR_AURA_EFFECT_STYLE_ORDER = {"color", "solid", "pulse", "colorShift", "dashes", "ants", "proc", "overlay"}
+
+local function BuildBarActiveAuraControls(container, styleTable, refreshCallback, opts)
+    BuildGlowStyleControls(container, styleTable, refreshCallback, {
+        styleKey = "barAuraEffect", colorKey = "barAuraEffectColor", colorLabel = "Effect Color",
+        color2Key = "barAuraColorShiftColor", color2Label = "Second Color", defaultColor2 = {1, 1, 1, 1},
+        sizeKey = "barAuraEffectSize", speedKey = "barAuraEffectSpeed", linesKey = "barAuraEffectLines",
+        thicknessKey = "barAuraEffectThickness",
+        defaultStyle = "color", defaultColor = {1, 0.84, 0, 0.9},
+        enableLabel = "Show Active Aura Indicator",
+        enableKey = "barAuraIndicatorEnabled",
+        deriveEnableFromEffect = true, effectKey = "barAuraEffect",
+        styleOptions = BAR_AURA_EFFECT_STYLE_OPTIONS,
+        styleOrder = BAR_AURA_EFFECT_STYLE_ORDER,
+        solidSizeDefault = 2,
+        onStyleChanged = function(targetStyle, val)
+            targetStyle.barAuraEffectSize = AURA_GLOW_SIZE_RESETS[val] or 2
+            targetStyle.barAuraEffectSpeed = AURA_GLOW_SPEED_RESETS[val] or 0.5
+            targetStyle.barAuraEffectLines = 2
+            targetStyle.barAuraEffectThickness = 4
+        end,
+    }, opts)
+
+    -- Fill effects apply while the indicator is enabled, independent of the
+    -- border effect choice. Same enable derivation as the builder above so
+    -- these controls collapse with the section in override mode.
+    local enabledVal = rawget(styleTable, "barAuraIndicatorEnabled")
+    if enabledVal == nil and rawget(styleTable, "barAuraEffect") ~= nil then
+        enabledVal = (styleTable.barAuraEffect or "none") ~= "none"
+    end
+    if enabledVal == nil and opts and opts.fallbackStyle then
+        enabledVal = opts.fallbackStyle.barAuraIndicatorEnabled
+        if enabledVal == nil then
+            enabledVal = (opts.fallbackStyle.barAuraEffect or "none") ~= "none"
+        end
+    end
+    if opts and opts.isOverride == true and enabledVal == false then
+        return
+    end
+
+    local pulseCb = AceGUI:Create("CheckBox")
+    pulseCb:SetLabel("Pulse Bar Fill")
+    pulseCb:SetValue(styleTable.barAuraPulseEnabled == true)
+    pulseCb:SetFullWidth(true)
+    pulseCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.barAuraPulseEnabled = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(pulseCb)
+    CreateInfoButton(pulseCb.frame, pulseCb.checkbg, "LEFT", "RIGHT", pulseCb.text:GetStringWidth() + 4, 0, {
+        "Fill Effects",
+        {"The bar fill breathes (pulse) or cycles color (color shift) while the aura is active. These two effects show on real bars only, not in the config preview.", 1, 1, 1, true},
+    }, pulseCb)
+
+    if styleTable.barAuraPulseEnabled == true then
+        local pulseSpeed = AceGUI:Create("Slider")
+        pulseSpeed:SetLabel("Pulse Duration")
+        pulseSpeed:SetSliderValues(0.1, 2.0, 0.05)
+        pulseSpeed:SetValue(styleTable.barAuraPulseSpeed or 0.5)
+        pulseSpeed:SetFullWidth(true)
+        pulseSpeed:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.barAuraPulseSpeed = val
+            refreshCallback()
+        end)
+        container:AddChild(pulseSpeed)
+    end
+
+    local shiftCb = AceGUI:Create("CheckBox")
+    shiftCb:SetLabel("Color Shift Bar Fill")
+    shiftCb:SetValue(styleTable.barAuraColorShiftEnabled == true)
+    shiftCb:SetFullWidth(true)
+    shiftCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.barAuraColorShiftEnabled = val
+        refreshCallback()
+        RefreshStructuralControls(container)
+    end)
+    container:AddChild(shiftCb)
+
+    if styleTable.barAuraColorShiftEnabled == true then
+        local shiftSpeed = AceGUI:Create("Slider")
+        shiftSpeed:SetLabel("Shift Duration")
+        shiftSpeed:SetSliderValues(0.1, 2.0, 0.05)
+        shiftSpeed:SetValue(styleTable.barAuraColorShiftSpeed or 0.5)
+        shiftSpeed:SetFullWidth(true)
+        shiftSpeed:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.barAuraColorShiftSpeed = val
+            refreshCallback()
+        end)
+        container:AddChild(shiftSpeed)
+
+        AddColorPicker(container, styleTable, "barAuraColorShiftColor", "Shift Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+    end
+end
+
 local KPH_STYLE_OPTIONS = {["solid"] = "Solid Border", ["overlay"] = "Overlay"}
 local KPH_STYLE_ORDER = {"solid", "overlay"}
 
@@ -1619,6 +1728,7 @@ ST._BuildIconTintControls = BuildIconTintControls
 ST._BuildAssistedHighlightControls = BuildAssistedHighlightControls
 ST._BuildProcGlowControls = BuildProcGlowControls
 ST._BuildAuraGlowControls = BuildAuraGlowControls
+ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
 ST._BuildReadyGlowControls = BuildReadyGlowControls
 ST._BuildKeyPressHighlightControls = BuildKeyPressHighlightControls
 ST._BuildBarNameTextControls = BuildBarNameTextControls

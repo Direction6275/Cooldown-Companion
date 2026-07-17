@@ -325,6 +325,7 @@ local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
     auraStackText = true,
     auraDurationSwipe = true,
     auraIndicator = true,
+    barActiveAura = true,
 }
 
 local function CanButtonUseConfigOverrideSection(buttonData, sectionId)

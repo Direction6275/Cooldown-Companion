@@ -826,6 +826,84 @@ local function MigrateLcgGlowStyles(self, profile)
     end
 end
 
+-- The bar aura effect now renders through the aura kit (barActiveAura
+-- wiring): remap stored values from the retired renderers to the kit
+-- vocabulary. "pixel" becomes its dashes lookalike (line count capped at
+-- the kit pool ceiling of 8), "glow" its proc flipbook, removed
+-- LibCustomGlow values the pulse border; pixel-scale speeds (10..200)
+-- clear so the style default in seconds applies.
+local function MigrateBarAuraEffectTable(styleTable, counts)
+    if type(styleTable) ~= "table" then return end
+
+    for _, keys in ipairs({
+        { style = "barAuraEffect", speed = "barAuraEffectSpeed", lines = "barAuraEffectLines" },
+        { style = "pandemicBarEffect", speed = "pandemicBarEffectSpeed", lines = "pandemicBarEffectLines" },
+    }) do
+        local style = rawget(styleTable, keys.style)
+        local mapped
+        if style == "pixel" then
+            mapped = "dashes"
+        elseif style == "glow" then
+            mapped = "proc"
+        elseif style == "lcgButton" or style == "lcgAutoCast" or style == "lcgProc" then
+            mapped = "pulse"
+        end
+        if mapped then
+            styleTable[keys.style] = mapped
+            counts.remapped = counts.remapped + 1
+            local lines = rawget(styleTable, keys.lines)
+            if type(lines) == "number" and lines > 8 then
+                styleTable[keys.lines] = 8
+            end
+        end
+        if style ~= nil then
+            local speed = rawget(styleTable, keys.speed)
+            if type(speed) == "number" and speed > 2 then
+                styleTable[keys.speed] = nil
+            end
+        end
+    end
+end
+
+local function MigrateBarAuraEffectStyles(self, profile)
+    if type(profile) ~= "table" or profile._cdcBarAuraGlowMigrated then return end
+    local counts = { remapped = 0 }
+
+    MigrateBarAuraEffectTable(profile.globalStyle, counts)
+
+    if type(profile.groups) == "table" then
+        for _, group in pairs(profile.groups) do
+            if type(group) == "table" then
+                MigrateBarAuraEffectTable(group.style, counts)
+                if type(group.buttons) == "table" then
+                    for _, buttonData in ipairs(group.buttons) do
+                        if type(buttonData) == "table" then
+                            MigrateBarAuraEffectTable(buttonData.styleOverrides, counts)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if type(profile.groupSettingPresets) == "table" then
+        for _, presetStore in pairs(profile.groupSettingPresets) do
+            if type(presetStore) == "table" then
+                for _, presetData in pairs(presetStore) do
+                    if type(presetData) == "table" then
+                        MigrateBarAuraEffectTable(presetData.style, counts)
+                    end
+                end
+            end
+        end
+    end
+
+    profile._cdcBarAuraGlowMigrated = true
+    if counts.remapped > 0 then
+        self:Print(("Bar aura effect styles updated to the new renderer (x%d)."):format(counts.remapped))
+    end
+end
+
 -- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles
 -- that are allowed to continue. Add new post-1.15 migrations here in order.
 function CooldownCompanion:RunAllMigrations()
@@ -860,6 +938,7 @@ function CooldownCompanion:RunAllMigrations()
     MigrateAuraTrackingRebuild(self, self.db and self.db.profile)
     MigrateAuraGlowRebuild(self, self.db and self.db.profile)
     MigrateLcgGlowStyles(self, self.db and self.db.profile)
+    MigrateBarAuraEffectStyles(self, self.db and self.db.profile)
     if self.RunResourceBarClassScopeMigration then
         self:RunResourceBarClassScopeMigration()
     end
@@ -881,6 +960,7 @@ function CooldownCompanion:ClearMigrationSentinels()
         profile._cdcAuraRebuildMigrated = nil
         profile._cdcAuraGlowMigrated = nil
         profile._cdcLcgGlowMigrated = nil
+        profile._cdcBarAuraGlowMigrated = nil
     end
 end
 

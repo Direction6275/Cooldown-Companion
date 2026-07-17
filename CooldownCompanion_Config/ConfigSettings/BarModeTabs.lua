@@ -21,6 +21,7 @@ local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
+local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 
 -- Imports from SectionBuilders.lua
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
@@ -195,6 +196,14 @@ local function BuildBarAppearanceTab(container, group, style)
             "Aura Stack Text",
             {"Shows the live stack count while the aura is active, drawn by the game so it stays accurate in combat. Stack counts cannot drive the bar fill; the count is hidden from addons during combat.", 1, 1, 1, true},
         }, auraStackCb)
+
+        -- Active aura indicator: border effect + fill effects rendered while
+        -- the tracked aura runs (live renderer: the aura kit). Fill effects
+        -- show on real bars only, not in the config preview.
+        local _, aaiCollapsed = BuildCollapsibleSection(container, "Active Aura Indicator", "barappearance_activeAura")
+        if not aaiCollapsed then
+            BuildBarActiveAuraControls(container, style, refreshStyle)
+        end
     end
 
     -- ================================================================

@@ -194,6 +194,22 @@ local function BuildSlotKit(slotButton)
             interpolation = ST.STATUS_BAR_INTERPOLATION_SMOOTH,
             direction = ST.STATUS_BAR_TIMER_DIRECTION_REMAINING,
         })
+
+        -- Fill effects for the bar aura indicator: alpha pulse on the fill
+        -- frame, color shift on the fill texture. Write-once AnimationGroups
+        -- (forbidden-subtree rule), configured at bar bind time. The texture
+        -- region is materialized here so the VertexColor anim has its target;
+        -- later SetStatusBarTexture calls swap the file on the same region.
+        kit.barFillPulseAG = kit.barFill:CreateAnimationGroup()
+        kit.barFillPulseAG:SetLooping("BOUNCE")
+        kit.barFillPulseAnim = kit.barFillPulseAG:CreateAnimation("Alpha")
+        kit.barFillPulseAnim:SetFromAlpha(1.0)
+        kit.barFillPulseAnim:SetToAlpha(0.3)
+        kit.barFill:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        local fillTex = kit.barFill:GetStatusBarTexture()
+        kit.barFillCsAG = fillTex:CreateAnimationGroup()
+        kit.barFillCsAG:SetLooping("BOUNCE")
+        kit.barFillCsAnim = kit.barFillCsAG:CreateAnimation("VertexColor")
     end
 
     -- Bar shell composition (show-only-while-active bar entries): the bar's
@@ -536,19 +552,49 @@ local function StyleSlotKit(slot, button, buttonData, style)
             kit.barFill:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
             kit.barFill:SetAlpha(1)
             kit.barFill:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
+
+            -- Bar aura fill effects: pulse breathes the fill alpha; color
+            -- shift bounces the fill tint between the aura color and the
+            -- shift color. While shifting, the base color stays white so the
+            -- VertexColor animation owns the full color range (same trick as
+            -- the kit border colorShift).
+            kit.barFillPulseAG:Stop()
+            kit.barFillCsAG:Stop()
+            kit.barFill:GetStatusBarTexture():SetVertexColor(1, 1, 1, 1)
+            local indicatorOn = ST.IsBarAuraIndicatorEnabled(style)
+            if indicatorOn and style.barAuraPulseEnabled then
+                kit.barFillPulseAnim:SetDuration(style.barAuraPulseSpeed or 0.5)
+                kit.barFillPulseAG:Play()
+            end
+            if indicatorOn and style.barAuraColorShiftEnabled then
+                kit.barFill:SetStatusBarColor(1, 1, 1, auraColor[4] or 1)
+                local shift = style.barAuraColorShiftColor or { 1, 1, 1, 1 }
+                kit.barFillCsAnim:SetStartColor(CreateColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1))
+                kit.barFillCsAnim:SetEndColor(CreateColor(shift[1], shift[2], shift[3], shift[4] or 1))
+                kit.barFillCsAnim:SetDuration(style.barAuraColorShiftSpeed or 0.5)
+                kit.barFillCsAG:Play()
+            end
         end
     else
         kit.barBackdrop:SetAlpha(0)
         if kit.barFill then
+            kit.barFillPulseAG:Stop()
+            kit.barFillCsAG:Stop()
+            kit.barFill:GetStatusBarTexture():SetVertexColor(1, 1, 1, 1)
             kit.barFill:SetAlpha(0)
         end
     end
 
-    -- Aura active glow: icon-mode hosts only (the bar-mode analog is the bar
-    -- aura effect, which lands with the bars phase). Style resolution and the
-    -- "none" gate live in the builder; the config preview renders equivalent
-    -- visuals CC-side (Glows.lua NormalizeAuraGlowPreviewStyle), never here.
-    ST._StyleKitGlowRegions(kit.glow, style, button, button._isBar ~= true)
+    -- Aura active glow: icon hosts style from the auraGlow* keys, bar hosts
+    -- from the barAura* keys (whole-bar anchor). Style resolution and the
+    -- "none"/enable gates live in the builders; the config preview renders
+    -- equivalent visuals CC-side (Glows.lua NormalizeAuraGlowPreviewStyle /
+    -- NormalizeBarAuraEffectStyle), never here.
+    if isBar then
+        ST._StyleKitBarGlowRegions(kit.glow, style, button, true)
+    else
+        ST._StyleKitGlowRegions(kit.glow, style, button, true)
+    end
 
     -- Full-button composition for show-only-while-active entries: bg + border
     -- replicas anchored to the host frames (pixel-identical to the CC shell).

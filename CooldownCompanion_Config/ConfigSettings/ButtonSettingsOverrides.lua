@@ -32,6 +32,7 @@ local BuildIconTintControls = ST._BuildIconTintControls
 local BuildAssistedHighlightControls = ST._BuildAssistedHighlightControls
 local BuildProcGlowControls = ST._BuildProcGlowControls
 local BuildAuraGlowControls = ST._BuildAuraGlowControls
+local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 local BuildBarNameTextControls = ST._BuildBarNameTextControls
@@ -118,6 +119,7 @@ local PREVIEWABLE_OVERRIDE_SECTIONS = {
     procGlow = true,
     auraIndicator = true,
     readyGlow = true,
+    barActiveAura = true,
 }
 
 local function AddSelectedButtonPreviewToggle(container, label, previewFlag, setPreviewFn)
@@ -345,7 +347,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         "borderSettings", "cooldownText", "auraText", "auraStackText",
         "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
         "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "auraIndicator", "readyGlow", "keyPressHighlight",
-        "barIcon", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
+        "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
         "textFont", "textColors", "textBackground",
     }
 
@@ -380,6 +382,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         readyGlow = BuildReadyGlowControls,
         keyPressHighlight = BuildKeyPressHighlightControls,
         barIcon = BuildBarIconControls,
+        barActiveAura = BuildBarActiveAuraControls,
         barColor = BuildSingleBarColorControl("barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}),
         barCooldownColor = BuildSingleBarColorControl("barCooldownColor", "Bar Cooldown Color", {0.6, 0.6, 0.6, 1.0}),
         barChargeColor = BuildSingleBarColorControl("barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1.0}),
@@ -415,6 +418,8 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                             AddSelectedButtonPreviewToggle(panel, "Preview Aura Glow", "_auraGlowPreview", CooldownCompanion.SetAuraGlowPreview)
                         elseif sectionId == "readyGlow" and overrides.readyGlowStyle and overrides.readyGlowStyle ~= "none" then
                             AddSelectedButtonPreviewToggle(panel, "Preview Ready Glow Style", "_readyGlowPreview", CooldownCompanion.SetReadyGlowPreview)
+                        elseif sectionId == "barActiveAura" then
+                            AddSelectedButtonPreviewToggle(panel, "Preview Active Aura Indicator", "_barAuraEffectPreview", CooldownCompanion.SetBarAuraEffectPreview)
                         end
 
                         if AddConditionalPreviewButton then
