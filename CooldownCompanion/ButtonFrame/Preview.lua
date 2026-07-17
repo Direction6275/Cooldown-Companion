@@ -525,9 +525,12 @@ end
 -- Renders through the CC-side glow container (SetBarAuraEffect) with the kit
 -- style names mapped to their legacy renderers (Glows.lua
 -- NormalizeBarAuraEffectStyle), so the preview matches the live kit bar glow
--- without touching the aura slot subtree. While the preview runs, the CC
--- fill also simulates the aura color and the fill pulse/color-shift effects
--- (BarMode.lua UpdateBarDisplay, keyed off _barAuraEffectPreview).
+-- without touching the aura slot subtree. The toggle also runs the
+-- aura_duration_bar conditional preview — a fake looping aura drain in the
+-- aura color, with shell exposure for show-only-while-active bars — so the
+-- bar looks exactly as if the aura were live; the fill pulse/color-shift
+-- effects ride that simulation (BarMode.lua UpdateBarDisplay, keyed off
+-- _barAuraEffectPreview).
 --------------------------------------------------------------------------------
 
 -- Group bar buttons build the barAuraEffect container lazily: only the
@@ -545,13 +548,17 @@ local function barAuraEffectOnToggle(button, show)
 end
 
 function CooldownCompanion:SetBarAuraEffectPreview(groupId, buttonIndex, show)
+    self:SetConditionalVisualPreviewActive(groupId, buttonIndex, "aura_duration_bar", show)
     SetButtonPreview(self, groupId, buttonIndex, show, "_barAuraEffectPreview", "_barAuraEffectActive", false, barAuraEffectOnToggle, true)
 end
 
 function CooldownCompanion:SetGroupBarAuraEffectPreview(groupId, show)
+    self:SetConditionalVisualPreviewActive(groupId, nil, "aura_duration_bar", show)
     SetGroupPreview(self, groupId, show, "_barAuraEffectPreview", "_barAuraEffectActive", false, barAuraEffectOnToggle, true)
 end
 
+-- The fake drain is cleared by ClearAllConditionalVisualPreviews; every
+-- caller of this (ClearAllConfigPreviews) runs both.
 function CooldownCompanion:ClearAllBarAuraEffectPreviews()
     ClearAllPreviews(self, "_barAuraEffectPreview", "_barAuraEffectActive", false, pandemicOnClear, true)
 end
@@ -835,6 +842,9 @@ function CooldownCompanion:ClearAllConfigPreviews()
     end
     if self.ClearAllPandemicPreviews then
         self:ClearAllPandemicPreviews()
+    end
+    if self.ClearAllBarAuraEffectPreviews then
+        self:ClearAllBarAuraEffectPreviews()
     end
     if self.ClearAllReadyGlowPreviews then
         self:ClearAllReadyGlowPreviews()

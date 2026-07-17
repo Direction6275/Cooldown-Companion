@@ -356,10 +356,10 @@ local function UpdateBarDisplay(button)
     local chargeState = button._chargeState
     -- Bar aura timer preview (config-side): the CC fill drains in the aura
     -- color. The live aura bar is the Blizzard-driven slot kit; this preview
-    -- never touches the slot subtree. The Active Aura Indicator preview also
-    -- simulates the aura fill color so its fill effects read correctly.
+    -- never touches the slot subtree. The Active Aura Indicator preview
+    -- drives the same simulation (Preview.lua starts the aura_duration_bar
+    -- conditional preview alongside its flag).
     local auraPreview = button._conditionalPreviewDomain == "aura"
-        or button._barAuraEffectPreview == true
     local onCooldown
     if itemUsesResolvedCooldownState then
         onCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
@@ -440,7 +440,8 @@ local function UpdateBarDisplay(button)
     -- color range (kit trick); the aura-color reset path above restores the
     -- normal color when the preview clears.
     local wantPulse, wantShift = false, false
-    if button._barAuraEffectPreview == true and ST.IsBarAuraIndicatorEnabled(style) then
+    if auraPreview and button._barAuraEffectPreview == true
+        and ST.IsBarAuraIndicatorEnabled(style) then
         wantPulse = style.barAuraPulseEnabled == true
         wantShift = style.barAuraColorShiftEnabled == true
     end
