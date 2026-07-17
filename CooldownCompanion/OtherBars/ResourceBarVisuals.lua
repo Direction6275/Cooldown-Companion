@@ -19,8 +19,13 @@ local math_max = math.max
 local math_sin = math.sin
 local math_pi = math.pi
 local issecretvalue = issecretvalue
-local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
-local MAX_STACKS_PIXEL_GLOW_KEY = "CooldownCompanionMaxStacks"
+
+-- CC dash engine (ButtonFrame/Glows.lua, loaded earlier) — renders the
+-- max-stacks pixel glow since LibCustomGlow was removed.
+local StyleDashPerimeter = ST._StyleDashPerimeter
+local CreateDashMasks = ST._CreateDashMasks
+local CreateDashRegions = ST._CreateDashRegions
+local MAX_STACKS_PIXEL_DASHES = 16
 
 -- Import from ResourceBarConstants & ResourceBarHelpers
 local RB = ST._RB
@@ -542,17 +547,11 @@ end
 -- below max → fill=0% (invisible), at max → fill=100% (visible).
 ------------------------------------------------------------------------
 
-local function IsMaxStacksPixelGlowAvailable()
-    return LCG ~= nil and LCG.PixelGlow_Start ~= nil and LCG.PixelGlow_Stop ~= nil
-end
-
 local function GetMaxStacksFrameTreatmentStyle(cabConfig)
     local style = cabConfig and cabConfig.maxStacksGlowStyle or "solidBorder"
     if style == "none" or style == "pulsingOverlay" then
         return "none"
-    elseif style == "pixelGlow" then
-        return IsMaxStacksPixelGlowAvailable() and "pixelGlow" or "solidBorder"
-    elseif style == "solidBorder" or style == "pulsingBorder" then
+    elseif style == "pixelGlow" or style == "solidBorder" or style == "pulsingBorder" then
         return style
     end
     return "solidBorder"
@@ -640,8 +639,14 @@ end
 
 local function StopMaxStacksPixelGlow(indicator)
     if indicator and indicator._maxStacksPixelGlowTarget then
-        if IsMaxStacksPixelGlowAvailable() then
-            LCG.PixelGlow_Stop(indicator._maxStacksPixelGlowTarget, MAX_STACKS_PIXEL_GLOW_KEY)
+        local target = indicator._maxStacksPixelGlowTarget
+        if target._dashes then
+            for _, d in ipairs(target._dashes) do
+                for _, piece in ipairs(d.pieces) do
+                    piece.ag:Stop()
+                    piece.tex:Hide()
+                end
+            end
         end
         indicator._maxStacksPixelGlowTarget = nil
     end
@@ -667,14 +672,6 @@ local function EnsureMaxStacksPixelGlowTarget(indicator)
 end
 
 local function ConfigureMaxStacksPixelGlow(indicator, cabConfig)
-    if not IsMaxStacksPixelGlowAvailable() then
-        StopMaxStacksPixelGlow(indicator)
-        if indicator then
-            indicator._maxStacksPixelGlowConfig = nil
-        end
-        return
-    end
-
     local fillTexture = indicator:GetStatusBarTexture()
     if not fillTexture then
         StopMaxStacksPixelGlow(indicator)
@@ -698,18 +695,22 @@ local function ConfigureMaxStacksPixelGlow(indicator, cabConfig)
 
     StopMaxStacksPixelGlow(indicator)
     local color = cabConfig.maxStacksGlowColor or {1, 0.84, 0, 0.9}
-    LCG.PixelGlow_Start(
+    -- CC dash engine on the clipped target: same param semantics as the
+    -- retired LCG renderer (lap = 1/frequency = 120/speed).
+    local count = math_min(math_max(cabConfig.maxStacksGlowLines or 8, 1), MAX_STACKS_PIXEL_DASHES)
+    target._dashes = target._dashes or {}
+    target._dashMasks = target._dashMasks or CreateDashMasks(target)
+    CreateDashRegions(target, target._dashes, target._dashMasks, count)
+    local lap = 1 / MaxStacksPixelFrequency(cabConfig.maxStacksGlowSpeed)
+    StyleDashPerimeter(
+        target._dashes,
+        target._dashMasks,
         target,
-        color,
-        cabConfig.maxStacksGlowLines or 8,
-        MaxStacksPixelFrequency(cabConfig.maxStacksGlowSpeed),
         cabConfig.maxStacksGlowSize or 8,
         cabConfig.maxStacksGlowThickness or 4,
-        0,
-        0,
-        false,
-        MAX_STACKS_PIXEL_GLOW_KEY,
-        1
+        lap,
+        count,
+        color[1], color[2], color[3], color[4] or 0.9
     )
     indicator._maxStacksPixelGlowTarget = target
 end
