@@ -2120,13 +2120,18 @@ local function BuildTriggerEffectsTab(container, group)
     end
 
     local heading = AddIndicatorsHeading(container, "Trigger Panel Effects")
-    AddPreviewBadge(heading, nil, "Preview Effects", function()
+    local effectsBadge = AddPreviewBadge(heading, nil, "Preview Effects", function()
         return CS.selectedGroup and CooldownCompanion:IsTriggerPanelEffectsPreviewActive(CS.selectedGroup)
     end, function(show)
         if CS.selectedGroup then
             CooldownCompanion:SetTriggerPanelEffectsPreview(CS.selectedGroup, show)
         end
     end, anyEnabled)
+    if effectsBadge then
+        heading.right:ClearAllPoints()
+        heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+        heading.right:SetPoint("LEFT", effectsBadge, "RIGHT", 4, 0)
+    end
 
     for _, effectKey in ipairs(effectOrder) do
         BuildTriggerPanelEffectSection(container, effects, effectKey)
@@ -2858,12 +2863,15 @@ local function BuildAppearanceTab(container)
         container:AddChild(heading)
 
         if not isTriggerPanel then
-            CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
+            local textureInfoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
                 "Texture Panel",
                 {"This panel shows one standalone texture on your screen.", 1, 1, 1, true},
                 " ",
                 {"Its single entry decides when that texture appears.", 1, 1, 1, true},
             }, tabInfoButtons)
+            heading.right:ClearAllPoints()
+            heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+            heading.right:SetPoint("LEFT", textureInfoBtn, "RIGHT", 4, 0)
         end
 
         if not buttonData and not isTriggerPanel then
@@ -3631,6 +3639,9 @@ local function BuildContainerGeneralTab(scroll, containerId)
     -- ================================================================
     local strataHeading = AceGUI:Create("Heading")
     strataHeading:SetText("Frame Strata")
+    strataHeading.right:ClearAllPoints()
+    strataHeading.right:SetPoint("RIGHT", strataHeading.frame, "RIGHT", -3, 0)
+    strataHeading.right:SetPoint("LEFT", strataHeading.label, "RIGHT", 5, 0)
     strataHeading:SetFullWidth(true)
     scroll:AddChild(strataHeading)
 

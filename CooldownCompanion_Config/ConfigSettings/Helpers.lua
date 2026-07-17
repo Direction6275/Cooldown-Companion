@@ -7,12 +7,20 @@ local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
 local IsNoCooldownSpellID = ST.IsNoCooldownSpell
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 
--- Helper: tint AceGUI Heading labels with player class color
+-- Helper: tint AceGUI Heading labels with player class color.
+-- Also restores the stock right-line anchors: AceGUI recycles Heading
+-- widgets and neither OnAcquire nor SetText repairs the right line, so a
+-- heading whose right line was re-anchored to a decoration (info button,
+-- collapse arrow, preview badge) carries that stale anchor into its next
+-- life. Decorated call sites re-anchor again after calling this.
 local function ColorHeading(heading)
     local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
     if cc then
         heading.label:SetTextColor(cc.r, cc.g, cc.b)
     end
+    heading.right:ClearAllPoints()
+    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+    heading.right:SetPoint("LEFT", heading.label, "RIGHT", 5, 0)
 end
 
 -- Helper: attach a reusable collapse/expand arrow button to an AceGUI Heading.

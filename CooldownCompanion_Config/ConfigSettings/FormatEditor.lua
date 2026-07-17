@@ -733,6 +733,9 @@ local function OpenFormatEditor(style, groupId, opts)
     -- ================================================================
     local previewHeading = AceGUI:Create("Heading")
     previewHeading:SetText("Preview")
+    previewHeading.right:ClearAllPoints()
+    previewHeading.right:SetPoint("RIGHT", previewHeading.frame, "RIGHT", -3, 0)
+    previewHeading.right:SetPoint("LEFT", previewHeading.label, "RIGHT", 5, 0)
     previewHeading:SetFullWidth(true)
     window:AddChild(previewHeading)
 

@@ -150,7 +150,7 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
     ColorHeading(heading)
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
-    CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
+    local auraInfoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
         "Aura Tracking",
         {"Blizzard tracks the aura and drives the display directly; the addon never reads aura state in combat.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
@@ -158,6 +158,9 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         {" ", 1, 1, 1, true},
         {"With no auras listed, the entry tracks its own aura. Added aura IDs override that; for spell entries the entry's own aura is always kept as a fallback.", 1, 1, 1, true},
     }, infoButtons)
+    heading.right:ClearAllPoints()
+    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+    heading.right:SetPoint("LEFT", auraInfoBtn, "RIGHT", 4, 0)
 
     if not isStandalone then
         local enable = AceGUI:Create("CheckBox")

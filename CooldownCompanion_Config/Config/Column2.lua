@@ -1630,6 +1630,9 @@ local function RefreshColumn2()
         heading:SetText(multiGroupCount .. " Groups Selected")
         local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
         if cc then heading.label:SetTextColor(cc.r, cc.g, cc.b) end
+        heading.right:ClearAllPoints()
+        heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
+        heading.right:SetPoint("LEFT", heading.label, "RIGHT", 5, 0)
         heading:SetFullWidth(true)
         CS.col2Scroll:AddChild(heading)
 
