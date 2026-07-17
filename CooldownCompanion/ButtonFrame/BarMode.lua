@@ -356,8 +356,10 @@ local function UpdateBarDisplay(button)
     local chargeState = button._chargeState
     -- Bar aura timer preview (config-side): the CC fill drains in the aura
     -- color. The live aura bar is the Blizzard-driven slot kit; this preview
-    -- never touches the slot subtree.
+    -- never touches the slot subtree. The Active Aura Indicator preview also
+    -- simulates the aura fill color so its fill effects read correctly.
     local auraPreview = button._conditionalPreviewDomain == "aura"
+        or button._barAuraEffectPreview == true
     local onCooldown
     if itemUsesResolvedCooldownState then
         onCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
@@ -431,8 +433,72 @@ local function UpdateBarDisplay(button)
             button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
         end
     end
+    -- Active Aura Indicator fill-effect preview: the live pulse/color-shift
+    -- render on the slot kit fill, which only exists while a real aura runs,
+    -- so the preview replicates them on the CC fill texture. While shifting,
+    -- the fill color goes white so the VertexColor animation owns the full
+    -- color range (kit trick); the aura-color reset path above restores the
+    -- normal color when the preview clears.
+    local wantPulse, wantShift = false, false
+    if button._barAuraEffectPreview == true and ST.IsBarAuraIndicatorEnabled(style) then
+        wantPulse = style.barAuraPulseEnabled == true
+        wantShift = style.barAuraColorShiftEnabled == true
+    end
+    local pulseKey = wantPulse and (style.barAuraPulseSpeed or 0.5) or false
+    local shiftKey = false
+    if wantShift then
+        local base = style.barAuraColor or DEFAULT_BAR_AURA_COLOR
+        local shift = style.barAuraColorShiftColor or DEFAULT_WHITE
+        shiftKey = (style.barAuraColorShiftSpeed or 0.5)
+            .. ST.FormatColorKey(base) .. ST.FormatColorKey(shift)
+    end
+    if button._barFillFxPulse ~= pulseKey or button._barFillFxShift ~= shiftKey then
+        button._barFillFxPulse = pulseKey
+        button._barFillFxShift = shiftKey
+        local fillTex = button.statusBar:GetStatusBarTexture()
+        if button._barFillFxPulseAG then button._barFillFxPulseAG:Stop() end
+        if button._barFillFxCsAG then button._barFillFxCsAG:Stop() end
+        if fillTex then
+            -- Clears residual shift tint; 4-arg SetVertexColor is the last
+            -- alpha write on this region (Phase 2 gotcha).
+            fillTex:SetVertexColor(1, 1, 1, 1)
+            if pulseKey then
+                if not button._barFillFxPulseAG then
+                    local ag = fillTex:CreateAnimationGroup()
+                    ag:SetLooping("BOUNCE")
+                    local anim = ag:CreateAnimation("Alpha")
+                    anim:SetFromAlpha(1.0)
+                    anim:SetToAlpha(0.3)
+                    button._barFillFxPulseAG = ag
+                    button._barFillFxPulseAnim = anim
+                end
+                button._barFillFxPulseAnim:SetDuration(pulseKey)
+                button._barFillFxPulseAG:Play()
+            end
+            if shiftKey then
+                if not button._barFillFxCsAG then
+                    local ag = fillTex:CreateAnimationGroup()
+                    ag:SetLooping("BOUNCE")
+                    button._barFillFxCsAG = ag
+                    button._barFillFxCsAnim = ag:CreateAnimation("VertexColor")
+                end
+                local base = style.barAuraColor or DEFAULT_BAR_AURA_COLOR
+                local shift = style.barAuraColorShiftColor or DEFAULT_WHITE
+                button._barFillFxCsAnim:SetStartColor(CreateColor(base[1], base[2], base[3], base[4] or 1))
+                button._barFillFxCsAnim:SetEndColor(CreateColor(shift[1], shift[2], shift[3], shift[4] or 1))
+                button._barFillFxCsAnim:SetDuration(style.barAuraColorShiftSpeed or 0.5)
+                button._barFillFxCsAG:Play()
+            end
+        end
+    end
+
     if wantAuraColor then
-        button.statusBar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4])
+        if wantShift then
+            -- White base while the shift animation owns the color.
+            button.statusBar:SetStatusBarColor(1, 1, 1, wantAuraColor[4] or 1)
+        else
+            button.statusBar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4])
+        end
     end
 
     if shouldStoreBarVisualState then

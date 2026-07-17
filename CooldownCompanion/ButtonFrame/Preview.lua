@@ -525,8 +525,9 @@ end
 -- Renders through the CC-side glow container (SetBarAuraEffect) with the kit
 -- style names mapped to their legacy renderers (Glows.lua
 -- NormalizeBarAuraEffectStyle), so the preview matches the live kit bar glow
--- without touching the aura slot subtree. The fill pulse/color-shift effects
--- do not preview (accepted gap; they render on real bars only).
+-- without touching the aura slot subtree. While the preview runs, the CC
+-- fill also simulates the aura color and the fill pulse/color-shift effects
+-- (BarMode.lua UpdateBarDisplay, keyed off _barAuraEffectPreview).
 --------------------------------------------------------------------------------
 
 -- Group bar buttons build the barAuraEffect container lazily: only the
@@ -544,15 +545,15 @@ local function barAuraEffectOnToggle(button, show)
 end
 
 function CooldownCompanion:SetBarAuraEffectPreview(groupId, buttonIndex, show)
-    SetButtonPreview(self, groupId, buttonIndex, show, "_barAuraEffectPreview", "_barAuraEffectActive", false, barAuraEffectOnToggle, false)
+    SetButtonPreview(self, groupId, buttonIndex, show, "_barAuraEffectPreview", "_barAuraEffectActive", false, barAuraEffectOnToggle, true)
 end
 
 function CooldownCompanion:SetGroupBarAuraEffectPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_barAuraEffectPreview", "_barAuraEffectActive", false, barAuraEffectOnToggle, false)
+    SetGroupPreview(self, groupId, show, "_barAuraEffectPreview", "_barAuraEffectActive", false, barAuraEffectOnToggle, true)
 end
 
 function CooldownCompanion:ClearAllBarAuraEffectPreviews()
-    ClearAllPreviews(self, "_barAuraEffectPreview", "_barAuraEffectActive", false, pandemicOnClear, false)
+    ClearAllPreviews(self, "_barAuraEffectPreview", "_barAuraEffectActive", false, pandemicOnClear, true)
 end
 
 --------------------------------------------------------------------------------

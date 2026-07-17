@@ -487,7 +487,7 @@ local function BuildBarActiveAuraSection(container, group, style)
     end, indicatorOn)
     CreateInfoButton(enableCb.frame, aaiPreviewBtn or aaiPromoteBtn or aaiAdvBtn, "LEFT", "RIGHT", 4, 0, {
         "Active Aura Indicator",
-        {"Adds a border effect to a bar while its tracked aura is active, with optional fill pulse and fill color shift. The fill effects show on real bars only, not in the config preview.", 1, 1, 1, true},
+        {"Adds a border effect to a bar while its tracked aura is active, with optional fill pulse and fill color shift. The preview shows the bar as if the aura were running.", 1, 1, 1, true},
     }, tabInfoButtons)
 
     if not indicatorOn then

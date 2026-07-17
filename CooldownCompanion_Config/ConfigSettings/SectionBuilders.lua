@@ -1436,8 +1436,9 @@ end
 
 -- Bar aura indicator (barActiveAura): the border effect shares the aura glow
 -- kit vocabulary plus the "color" value, which keeps the aura fill color as
--- the only signal (the stored default). The fill pulse/color-shift effects
--- render on real bars only; the config preview shows the border effect.
+-- the only signal (the stored default). The preview renders the border
+-- effect CC-side and simulates the aura fill color plus the fill
+-- pulse/color-shift effects (BarMode.lua).
 local BAR_AURA_EFFECT_STYLE_OPTIONS = {
     ["color"] = "None (bar color only)",
     ["solid"] = "Solid Border",
@@ -1500,7 +1501,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
     container:AddChild(pulseCb)
     CreateInfoButton(pulseCb.frame, pulseCb.checkbg, "LEFT", "RIGHT", pulseCb.text:GetStringWidth() + 4, 0, {
         "Fill Effects",
-        {"The bar fill breathes (pulse) or cycles color (color shift) while the aura is active. These two effects show on real bars only, not in the config preview.", 1, 1, 1, true},
+        {"The bar fill breathes (pulse) or cycles color (color shift) while the aura is active. Use the preview toggle to see them without a live aura.", 1, 1, 1, true},
     }, pulseCb)
 
     if styleTable.barAuraPulseEnabled == true then
