@@ -34,6 +34,7 @@ local EncodeExportData = ST._EncodeExportData
 local BuildEligibilityBadgeMap = ST._BuildEligibilityBadgeMap
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
 local NotifyTutorialAction = ST._NotifyTutorialAction
+local PerformButtonReorder = ST._PerformButtonReorder
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
 local SelectConfigFinderResult = ST._SelectConfigFinderResult
@@ -1574,6 +1575,128 @@ local function AddEntryMoveDestinationButtons(level, sourceGroupId, sourceIndex,
     end
 end
 
+-- Shared entry context menu: used by the column 2 entry rows and the wide
+-- column's panel preview slots.
+local function ShowEntryContextMenu(panelId, index, buttonData)
+    if not CS.buttonContextMenu then
+        CS.buttonContextMenu = CreateFrame("Frame", "CDCButtonContextMenu", UIParent, "UIDropDownMenuTemplate")
+    end
+    local sourceGroupId = panelId
+    local sourceIndex = index
+    local entryData = buttonData
+    UIDropDownMenu_Initialize(CS.buttonContextMenu, function(self, level, menuList)
+        level = level or 1
+        if level == 1 then
+            -- Disable / Enable button
+            local toggleInfo = UIDropDownMenu_CreateInfo()
+            toggleInfo.text = (entryData.enabled ~= false) and "Disable" or "Enable"
+            toggleInfo.notCheckable = true
+            toggleInfo.func = function()
+                CloseDropDownMenus()
+                entryData.enabled = not (entryData.enabled ~= false)
+                CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                CooldownCompanion:RefreshConfigPanel()
+            end
+            UIDropDownMenu_AddButton(toggleInfo, level)
+
+            local sourceGroup = CooldownCompanion.db.profile.groups[sourceGroupId]
+            if not (sourceGroup and sourceGroup.displayMode == "textures") then
+                local dupInfo = UIDropDownMenu_CreateInfo()
+                dupInfo.text = "Duplicate"
+                dupInfo.notCheckable = true
+                dupInfo.func = function()
+                    local copy = CopyTable(entryData)
+                    table.insert(CooldownCompanion.db.profile.groups[sourceGroupId].buttons, sourceIndex + 1, copy)
+                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                    CooldownCompanion:RefreshConfigPanel()
+                    CloseDropDownMenus()
+                end
+                UIDropDownMenu_AddButton(dupInfo, level)
+            end
+
+            local iconInfo = UIDropDownMenu_CreateInfo()
+            iconInfo.text = "Override Icon..."
+            iconInfo.notCheckable = true
+            iconInfo.tooltipTitle = "|cffffd100Override Icon|r"
+            iconInfo.tooltipText = "|cffffffffReplaces the default spell or item icon.|r"
+            iconInfo.tooltipOnButton = true
+            iconInfo.func = function()
+                CloseDropDownMenus()
+                ST._OpenButtonIconPicker(sourceGroupId, sourceIndex)
+            end
+            UIDropDownMenu_AddButton(iconInfo, level)
+
+            if ST._IsValidIconTexture(entryData.manualIcon) then
+                local resetIconInfo = UIDropDownMenu_CreateInfo()
+                resetIconInfo.text = "Reset Icon"
+                resetIconInfo.notCheckable = true
+                resetIconInfo.func = function()
+                    CloseDropDownMenus()
+                    entryData.manualIcon = nil
+                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                UIDropDownMenu_AddButton(resetIconInfo, level)
+            end
+
+            local entryCount = sourceGroup and sourceGroup.buttons and #sourceGroup.buttons or 0
+            if sourceIndex > 1 then
+                local upInfo = UIDropDownMenu_CreateInfo()
+                upInfo.text = "Move Up"
+                upInfo.notCheckable = true
+                upInfo.func = function()
+                    CloseDropDownMenus()
+                    PerformButtonReorder(sourceGroupId, sourceIndex, sourceIndex - 1)
+                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                UIDropDownMenu_AddButton(upInfo, level)
+            end
+            if sourceIndex < entryCount then
+                local downInfo = UIDropDownMenu_CreateInfo()
+                downInfo.text = "Move Down"
+                downInfo.notCheckable = true
+                downInfo.func = function()
+                    CloseDropDownMenus()
+                    PerformButtonReorder(sourceGroupId, sourceIndex, sourceIndex + 2)
+                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                UIDropDownMenu_AddButton(downInfo, level)
+            end
+
+            local moveInfo = UIDropDownMenu_CreateInfo()
+            moveInfo.text = "Move to..."
+            moveInfo.notCheckable = true
+            moveInfo.hasArrow = true
+            moveInfo.menuList = "MOVE_TO_GROUP"
+            UIDropDownMenu_AddButton(moveInfo, level)
+
+            local removeInfo = UIDropDownMenu_CreateInfo()
+            removeInfo.text = "Remove"
+            removeInfo.notCheckable = true
+            removeInfo.func = function()
+                CloseDropDownMenus()
+                local name = entryData.name or "this entry"
+                ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = sourceGroupId, buttonIndex = sourceIndex })
+            end
+            UIDropDownMenu_AddButton(removeInfo, level)
+        elseif menuList == "MOVE_TO_GROUP"
+            or ParseEntryMoveContainerId(menuList)
+        then
+            AddEntryMoveDestinationButtons(
+                level,
+                sourceGroupId,
+                sourceIndex,
+                entryData,
+                menuList
+            )
+        end
+    end, "MENU")
+    CS.buttonContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+    ToggleDropDownMenu(1, nil, CS.buttonContextMenu, "cursor", 0, 0)
+end
+
 ------------------------------------------------------------------------
 -- COLUMN 2: Panels
 ------------------------------------------------------------------------
@@ -2732,97 +2855,7 @@ local function RefreshColumn2()
                         elseif mouseButton == "RightButton" then
                             -- Auto-select panel on right-click too
                             SelectConfigButtonPanel(btnPanelId, { clearPanelMulti = true })
-                            if not CS.buttonContextMenu then
-                                CS.buttonContextMenu = CreateFrame("Frame", "CDCButtonContextMenu", UIParent, "UIDropDownMenuTemplate")
-                            end
-                            local sourceGroupId = btnPanelId
-                            local sourceIndex = btnIndex
-                            local entryData = buttonData
-                            UIDropDownMenu_Initialize(CS.buttonContextMenu, function(self, level, menuList)
-                                level = level or 1
-                                if level == 1 then
-                                    -- Disable / Enable button
-                                    local toggleInfo = UIDropDownMenu_CreateInfo()
-                                    toggleInfo.text = (entryData.enabled ~= false) and "Disable" or "Enable"
-                                    toggleInfo.notCheckable = true
-                                    toggleInfo.func = function()
-                                        CloseDropDownMenus()
-                                        entryData.enabled = not (entryData.enabled ~= false)
-                                        CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                                        CooldownCompanion:RefreshConfigPanel()
-                                    end
-                                    UIDropDownMenu_AddButton(toggleInfo, level)
-
-                                    local sourceGroup = CooldownCompanion.db.profile.groups[sourceGroupId]
-                                    if not (sourceGroup and sourceGroup.displayMode == "textures") then
-                                        local dupInfo = UIDropDownMenu_CreateInfo()
-                                        dupInfo.text = "Duplicate"
-                                        dupInfo.notCheckable = true
-                                        dupInfo.func = function()
-                                            local copy = CopyTable(entryData)
-                                            table.insert(CooldownCompanion.db.profile.groups[sourceGroupId].buttons, sourceIndex + 1, copy)
-                                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                                            CooldownCompanion:RefreshConfigPanel()
-                                            CloseDropDownMenus()
-                                        end
-                                        UIDropDownMenu_AddButton(dupInfo, level)
-                                    end
-
-                                    local iconInfo = UIDropDownMenu_CreateInfo()
-                                    iconInfo.text = "Override Icon..."
-                                    iconInfo.notCheckable = true
-                                    iconInfo.tooltipTitle = "|cffffd100Override Icon|r"
-                                    iconInfo.tooltipText = "|cffffffffReplaces the default spell or item icon.|r"
-                                    iconInfo.tooltipOnButton = true
-                                    iconInfo.func = function()
-                                        CloseDropDownMenus()
-                                        ST._OpenButtonIconPicker(sourceGroupId, sourceIndex)
-                                    end
-                                    UIDropDownMenu_AddButton(iconInfo, level)
-
-                                    if ST._IsValidIconTexture(entryData.manualIcon) then
-                                        local resetIconInfo = UIDropDownMenu_CreateInfo()
-                                        resetIconInfo.text = "Reset Icon"
-                                        resetIconInfo.notCheckable = true
-                                        resetIconInfo.func = function()
-                                            CloseDropDownMenus()
-                                            entryData.manualIcon = nil
-                                            CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                                            CooldownCompanion:RefreshConfigPanel()
-                                        end
-                                        UIDropDownMenu_AddButton(resetIconInfo, level)
-                                    end
-
-                                    local moveInfo = UIDropDownMenu_CreateInfo()
-                                    moveInfo.text = "Move to..."
-                                    moveInfo.notCheckable = true
-                                    moveInfo.hasArrow = true
-                                    moveInfo.menuList = "MOVE_TO_GROUP"
-                                    UIDropDownMenu_AddButton(moveInfo, level)
-
-                                    local removeInfo = UIDropDownMenu_CreateInfo()
-                                    removeInfo.text = "Remove"
-                                    removeInfo.notCheckable = true
-                                    removeInfo.func = function()
-                                        CloseDropDownMenus()
-                                        local name = entryData.name or "this entry"
-                                        ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = sourceGroupId, buttonIndex = sourceIndex })
-                                    end
-                                    UIDropDownMenu_AddButton(removeInfo, level)
-                                elseif menuList == "MOVE_TO_GROUP"
-                                    or ParseEntryMoveContainerId(menuList)
-                                then
-                                    AddEntryMoveDestinationButtons(
-                                        level,
-                                        sourceGroupId,
-                                        sourceIndex,
-                                        entryData,
-                                        menuList
-                                    )
-                                end
-                            end, "MENU")
-                            CS.buttonContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
-                            ToggleDropDownMenu(1, nil, CS.buttonContextMenu, "cursor", 0, 0)
+                            ShowEntryContextMenu(btnPanelId, btnIndex, buttonData)
                         elseif mouseButton == "MiddleButton" then
                             SelectConfigButtonPanel(btnPanelId)
                             if not CS.moveMenuFrame then
@@ -2899,3 +2932,4 @@ end
 -- ST._ exports
 ------------------------------------------------------------------------
 ST._RefreshColumn2 = RefreshColumn2
+ST._ShowEntryContextMenu = ShowEntryContextMenu

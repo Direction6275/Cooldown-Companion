@@ -20,6 +20,7 @@ local StyleMirroredIconFrame = ST._StyleMirroredIconFrame
 local GetLayoutPreviewIcon = ST._GetLayoutPreviewIcon
 local GetConfigEntryDisplayName = ST._GetConfigEntryDisplayName
 local SelectConfigButton = ST._SelectConfigButton
+local ShowEntryContextMenu = ST._ShowEntryContextMenu
 local SetIconAreaPoints = ST._SetIconAreaPoints
 local SetBarAreaPoints = ST._SetBarAreaPoints
 local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
@@ -224,6 +225,37 @@ local function ApplySelectionVisuals(slot, index)
     slot.selectedHighlight:Show()
 end
 
+-- Shift-hover shows the real spell/item tooltip, mirroring the column 2
+-- entry rows; a plain hover shows the entry name.
+local function ShowEntrySlotTooltip(slot, buttonData)
+    GameTooltip:SetOwner(slot, "ANCHOR_RIGHT")
+    if IsShiftKeyDown() then
+        if buttonData.type == "spell" and buttonData.id then
+            GameTooltip:SetSpellByID(buttonData.id)
+            GameTooltip:Show()
+            return
+        elseif buttonData.type == "item" and buttonData.id then
+            GameTooltip:SetItemByID(buttonData.id)
+            GameTooltip:Show()
+            return
+        elseif CooldownCompanion.IsEquipmentSlotEntry
+            and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+            local effectiveItem = CooldownCompanion.ResolveEffectiveItem
+                and CooldownCompanion.ResolveEffectiveItem(buttonData, true) or nil
+            if effectiveItem and effectiveItem.trackable and effectiveItem.itemID then
+                GameTooltip:SetItemByID(effectiveItem.itemID)
+                GameTooltip:Show()
+                return
+            end
+        end
+    end
+    GameTooltip:SetText(GetConfigEntryDisplayName(buttonData) or "Entry", 1, 1, 1)
+    if buttonData.enabled == false then
+        GameTooltip:AddLine("Disabled", 0.6, 0.6, 0.6)
+    end
+    GameTooltip:Show()
+end
+
 local function WireEntryInteraction(slot, panelId, index, buttonData)
     slot:SetScript("OnMouseUp", function(self, mouseButton)
         if CS.dragState and CS.dragState.phase == "active" then return end
@@ -231,17 +263,16 @@ local function WireEntryInteraction(slot, panelId, index, buttonData)
         if mouseButton == "LeftButton" then
             SelectConfigButton(panelId, index, { multi = IsControlKeyDown() })
             CooldownCompanion:RefreshConfigPanel()
+        elseif mouseButton == "RightButton" or mouseButton == "MiddleButton" then
+            if ShowEntryContextMenu then
+                ShowEntryContextMenu(panelId, index, buttonData)
+            end
         end
     end)
     slot:SetScript("OnEnter", function(self)
         self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
         self.hoverHighlight:Show()
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(GetConfigEntryDisplayName(buttonData) or "Entry", 1, 1, 1)
-        if buttonData.enabled == false then
-            GameTooltip:AddLine("Disabled", 0.6, 0.6, 0.6)
-        end
-        GameTooltip:Show()
+        ShowEntrySlotTooltip(self, buttonData)
     end)
     slot:SetScript("OnLeave", function(self)
         self.hoverHighlight:Hide()

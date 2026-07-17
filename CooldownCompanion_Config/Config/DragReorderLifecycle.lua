@@ -966,6 +966,7 @@ ST._ApplyCol1Drop = ApplyCol1Drop
 ST._HideDragIndicator = HideDragIndicator
 ST._GetScaledCursorPosition = GetScaledCursorPosition
 ST._PerformCrossPanelMove = PerformCrossPanelMove
+ST._PerformButtonReorder = PerformButtonReorder
 ST._StripButtonOverrides = StripButtonOverrides
 ST._UpdateCol2CursorPreview = UpdateCol2CursorPreview
 ST._ClearCol2AnimatedPreview = ClearCol2AnimatedPreview

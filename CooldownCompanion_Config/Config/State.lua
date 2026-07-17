@@ -279,6 +279,7 @@ ST._configState = {
     -- Autocomplete state
     autocompleteCache = nil,
     pendingEditBoxFocus = false,
+    pendingWideAddFocus = false,
 
     -- Config finder state
     configSearchText = "",
