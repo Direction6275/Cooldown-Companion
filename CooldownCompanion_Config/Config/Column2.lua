@@ -2674,14 +2674,6 @@ local function RefreshColumn2()
                         CooldownCompanion:Print(addBtnRejectMessage)
                         return
                     end
-                    -- Wide view: the add box lives under the preview - select
-                    -- the panel and focus it there.
-                    if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
-                        SelectConfigPanel(addBtnPanelId, { keepPanelMulti = true })
-                        CS.pendingWideAddFocus = true
-                        CooldownCompanion:RefreshConfigPanel()
-                        return
-                    end
                     if CS.addingToPanelId == addBtnPanelId then
                         CS.addingToPanelId = nil
                     else
@@ -2692,7 +2684,9 @@ local function RefreshColumn2()
                     end
                     CooldownCompanion:RefreshConfigPanel()
                 end)
-                addBtn:SetShown(not addBtnRejectMessage)
+                -- Wide view: adding lives in the permanent add box under the
+                -- preview, so the header button only renders in browse mode.
+                addBtn:SetShown(not addBtnRejectMessage and not wideView)
 
                 panelContainer:AddChild(header)
                 table.insert(col2RenderedRows, { kind = "header", panelId = panelId, isCollapsed = isCollapsed, widget = header })

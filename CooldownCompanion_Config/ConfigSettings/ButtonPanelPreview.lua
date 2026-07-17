@@ -32,7 +32,7 @@ local PANEL_PREVIEW_RING_COLOR = { 0.38, 0.60, 0.92, 1 }
 local PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = 5
 -- Badges counter-scale against the preview's scale-to-fit so they stay
 -- readable, clamped so they never dwarf a heavily scaled-down slot.
-local PANEL_PREVIEW_BADGE_SCREEN_SIZE = 12
+local PANEL_PREVIEW_BADGE_SCREEN_SIZE = 14
 local DEFAULT_BAR_COLOR = { 0.2, 0.6, 1.0, 1.0 }
 
 -- Mirror of GroupFrame.lua GetGrowthMultipliers: anchor corner plus x/y
@@ -256,34 +256,55 @@ local function CollectEntryStatus(buttonData, group)
     return status
 end
 
--- Badge cluster in the slot's top-right corner: same atlases and meaning
--- as the column 2 entry rows, stacked right-to-left in the same order.
+-- Ordered badge descriptors, same atlases and meaning as the retired
+-- column 2 entry rows; the identity strip in the wide column renders the
+-- full set. The "warn" label is replaced with the load-conditions wording
+-- when status.loadBlocked is set.
+local ENTRY_STATUS_BADGES = {
+    { key = "disabled", atlas = "GM-icon-visibleDis-pressed", label = "Disabled" },
+    { key = "warn", atlas = "Ping_Marker_Icon_Warning", label = "Spell/item unavailable" },
+    { key = "override", atlas = "Crosshair_VehichleCursor_32", label = "Has appearance overrides" },
+    { key = "fallback", atlas = "banker", label = "Uses item fallbacks" },
+    { key = "sound", atlas = "common-icon-sound", label = "Sound alerts enabled" },
+    { key = "talent", atlas = "UI-HUD-MicroMenu-SpecTalents-Mouseover", label = "Has talent conditions" },
+}
+
+-- Single problem indicator in the slot's top-right corner: only states
+-- where the entry won't behave normally (disabled, or unusable/blocked)
+-- earn a mark on the icon, drawn over a dark backdrop so it reads against
+-- bright icon art. Informational badges (talent, sound, override,
+-- fallback) live in the identity strip and the hover tooltip instead.
 local function ApplySlotBadges(slot, status, scale)
-    slot.badges = slot.badges or {}
+    local atlas
+    if status.disabled then
+        atlas = "GM-icon-visibleDis-pressed"
+    elseif status.warn then
+        atlas = "Ping_Marker_Icon_Warning"
+    end
+    if not atlas then
+        if slot.problemBadge then slot.problemBadge:Hide() end
+        if slot.problemBadgeBack then slot.problemBadgeBack:Hide() end
+        return
+    end
+    local tex = slot.problemBadge
+    local back = slot.problemBadgeBack
+    if not tex then
+        back = slot:CreateTexture(nil, "OVERLAY", nil, 6)
+        back:SetColorTexture(0, 0, 0, 0.7)
+        slot.problemBadgeBack = back
+        tex = slot:CreateTexture(nil, "OVERLAY", nil, 7)
+        slot.problemBadge = tex
+    end
     local size = math_min(24, math_max(12, PANEL_PREVIEW_BADGE_SCREEN_SIZE / math_max(scale, 0.01)))
-    local shown = 0
-    local function AddBadge(atlas)
-        shown = shown + 1
-        local tex = slot.badges[shown]
-        if not tex then
-            tex = slot:CreateTexture(nil, "OVERLAY", nil, 7)
-            slot.badges[shown] = tex
-        end
-        tex:SetAtlas(atlas, false)
-        tex:SetSize(size, size)
-        tex:ClearAllPoints()
-        tex:SetPoint("TOPRIGHT", slot, "TOPRIGHT", -((shown - 1) * (size + 1)), 0)
-        tex:Show()
-    end
-    if status.disabled then AddBadge("GM-icon-visibleDis-pressed") end
-    if status.warn then AddBadge("Ping_Marker_Icon_Warning") end
-    if status.override then AddBadge("Crosshair_VehichleCursor_32") end
-    if status.fallback then AddBadge("banker") end
-    if status.sound then AddBadge("common-icon-sound") end
-    if status.talent then AddBadge("UI-HUD-MicroMenu-SpecTalents-Mouseover") end
-    for i = shown + 1, #slot.badges do
-        slot.badges[i]:Hide()
-    end
+    tex:SetAtlas(atlas, false)
+    tex:SetSize(size, size)
+    tex:ClearAllPoints()
+    tex:SetPoint("TOPRIGHT", slot, "TOPRIGHT", 0, 0)
+    back:ClearAllPoints()
+    back:SetPoint("CENTER", tex, "CENTER", 0, 0)
+    back:SetSize(size + 2, size + 2)
+    tex:Show()
+    back:Show()
 end
 
 -- Shift-hover shows the real spell/item tooltip, mirroring the column 2
@@ -717,6 +738,9 @@ function ST._BuildButtonPanelPreview(host, panelId)
 
     FinalizePreviewState(preview)
 end
+
+ST._CollectEntryStatus = CollectEntryStatus
+ST._EntryStatusBadges = ENTRY_STATUS_BADGES
 
 function ST._ReleaseButtonPanelPreview(host)
     local preview = host and host._cdcPanelPreview

@@ -13,6 +13,19 @@ local AceGUI = LibStub("AceGUI-3.0")
 
 local PREVIEW_GAP = 4
 local ADD_BOX_HEIGHT = 26
+local STRIP_HEIGHT = 30
+local STRIP_ICON_SIZE = 22
+local STRIP_BADGE_SIZE = 18
+local STRIP_BADGE_GAP = 3
+
+local DISPLAY_MODE_LABELS = {
+    icons = "Icons",
+    bars = "Bars",
+    text = "Text",
+    textures = "Textures",
+    trigger = "Trigger",
+    [ST.DISPLAY_MODE_ROTATION_ASSISTANT] = "Rotation Assistant",
+}
 
 local function HideEntrySurfaces(col3)
     if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
@@ -20,14 +33,18 @@ local function HideEntrySurfaces(col3)
     if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
 end
 
--- Settings surfaces anchor beneath the pinned preview and its add box when
--- shown, and fill the whole column otherwise (Resources-home pattern).
+-- Settings surfaces anchor beneath the pinned preview, its add box, and
+-- the identity strip when shown, and fill the whole column otherwise
+-- (Resources-home pattern).
 local function AnchorButtonsContentFrame(col3, frame)
     frame:ClearAllPoints()
     local previewHost = col3.buttonsPreviewHost
     local addBox = col3.buttonsAddBox
+    local strip = col3.buttonsIdentityStrip
     local topAnchor
-    if addBox and addBox.frame:IsShown() then
+    if strip and strip:IsShown() then
+        topAnchor = strip
+    elseif addBox and addBox.frame:IsShown() then
         topAnchor = addBox.frame
     elseif previewHost and previewHost:IsShown() then
         topAnchor = previewHost
@@ -124,6 +141,9 @@ local function HidePanelPreview(col3)
     end
     if col3.buttonsAddBox then
         col3.buttonsAddBox.frame:Hide()
+    end
+    if col3.buttonsIdentityStrip then
+        col3.buttonsIdentityStrip:Hide()
     end
 end
 
@@ -244,6 +264,149 @@ local function UpdateAddBox(col3)
     end
 end
 
+local function EnsureIdentityStrip(col3)
+    local strip = col3.buttonsIdentityStrip
+    if strip then return strip end
+
+    strip = CreateFrame("Frame", nil, col3.content)
+    strip:SetHeight(STRIP_HEIGHT)
+
+    strip.icon = strip:CreateTexture(nil, "ARTWORK")
+    strip.icon:SetSize(STRIP_ICON_SIZE, STRIP_ICON_SIZE)
+    strip.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    strip.name = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
+    strip.name:SetJustifyH("LEFT")
+    strip.name:SetWordWrap(false)
+
+    local divider = strip:CreateTexture(nil, "ARTWORK")
+    divider:SetColorTexture(1, 1, 1, 0.08)
+    divider:SetHeight(1)
+    divider:SetPoint("BOTTOMLEFT", strip, "BOTTOMLEFT", 0, 0)
+    divider:SetPoint("BOTTOMRIGHT", strip, "BOTTOMRIGHT", 0, 0)
+
+    strip.badges = {}
+    col3.buttonsIdentityStrip = strip
+    return strip
+end
+
+local function AcquireStripBadge(strip, index)
+    local badge = strip.badges[index]
+    if not badge then
+        badge = CreateFrame("Frame", nil, strip)
+        badge:SetSize(STRIP_BADGE_SIZE, STRIP_BADGE_SIZE)
+        badge:EnableMouse(true)
+        badge.icon = badge:CreateTexture(nil, "ARTWORK")
+        badge.icon:SetAllPoints()
+        badge:SetScript("OnEnter", function(self)
+            if not self._cdcLabel then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(self._cdcLabel, 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        badge:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        strip.badges[index] = badge
+    end
+    return badge
+end
+
+-- Identity strip between the add box and the settings surfaces: names what
+-- the settings below are editing (selected entry or panel) and carries the
+-- full status badge row the retired column 2 entry rows used to show.
+local function UpdateIdentityStrip(col3)
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local icon, name, badgeStatus
+    if group then
+        local multiCount = 0
+        for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
+        if multiCount >= 2 then
+            -- Entry multi-select surface lists its members itself.
+        elseif CS.selectedRotationAssistantEntry == true
+            and CooldownCompanion:IsRotationAssistantGroup(group) then
+            local spellID = CooldownCompanion:GetRotationAssistantActionSpellID()
+            icon = CooldownCompanion:GetRotationAssistantFallbackIcon(spellID)
+            name = ST.ROTATION_ASSISTANT_NAME
+        elseif CS.selectedButton and group.buttons[CS.selectedButton] then
+            local buttonData = group.buttons[CS.selectedButton]
+            icon = ST._GetLayoutPreviewIcon and ST._GetLayoutPreviewIcon(buttonData)
+            name = ST._GetConfigEntryDisplayName
+                and ST._GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
+                or buttonData.name
+            badgeStatus = ST._CollectEntryStatus and ST._CollectEntryStatus(buttonData, group)
+        else
+            name = group.name or "Panel"
+            local modeLabel = DISPLAY_MODE_LABELS[group.displayMode or "icons"]
+            if modeLabel then
+                name = name .. " |cff808080(" .. modeLabel .. ")|r"
+            end
+        end
+    end
+
+    local strip = col3.buttonsIdentityStrip
+    if not name then
+        if strip then strip:Hide() end
+        return
+    end
+    strip = EnsureIdentityStrip(col3)
+
+    if icon then
+        strip.icon:SetTexture(icon)
+        strip.icon:Show()
+    else
+        strip.icon:Hide()
+    end
+
+    local shown = 0
+    local rightAnchor
+    if badgeStatus and ST._EntryStatusBadges then
+        for _, desc in ipairs(ST._EntryStatusBadges) do
+            if badgeStatus[desc.key] then
+                shown = shown + 1
+                local badge = AcquireStripBadge(strip, shown)
+                badge.icon:SetAtlas(desc.atlas, false)
+                badge._cdcLabel = (desc.key == "warn" and badgeStatus.loadBlocked)
+                    and "Hidden by load conditions" or desc.label
+                badge:ClearAllPoints()
+                if rightAnchor then
+                    badge:SetPoint("RIGHT", rightAnchor, "LEFT", -STRIP_BADGE_GAP, 0)
+                else
+                    badge:SetPoint("RIGHT", strip, "RIGHT", -2, 0)
+                end
+                badge:Show()
+                rightAnchor = badge
+            end
+        end
+    end
+    for i = shown + 1, #strip.badges do
+        strip.badges[i]:Hide()
+    end
+
+    strip.name:SetText(name)
+    strip.name:ClearAllPoints()
+    if icon then
+        strip.icon:ClearAllPoints()
+        strip.icon:SetPoint("LEFT", strip, "LEFT", 2, 0)
+        strip.name:SetPoint("LEFT", strip.icon, "RIGHT", 8, 0)
+    else
+        strip.name:SetPoint("LEFT", strip, "LEFT", 2, 0)
+    end
+    if rightAnchor then
+        strip.name:SetPoint("RIGHT", rightAnchor, "LEFT", -8, 0)
+    else
+        strip.name:SetPoint("RIGHT", strip, "RIGHT", -2, 0)
+    end
+
+    local addBox = col3.buttonsAddBox
+    local top = (addBox and addBox.frame:IsShown()) and addBox.frame
+        or col3.buttonsPreviewHost
+    strip:ClearAllPoints()
+    strip:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, -PREVIEW_GAP)
+    strip:SetPoint("TOPRIGHT", top, "BOTTOMRIGHT", 0, -PREVIEW_GAP)
+    strip:Show()
+end
+
 -- True when the column should show entry settings instead of the
 -- group-side surfaces: a valid single entry (including the rotation
 -- assistant's virtual entry) or an entry multi-select.
@@ -312,6 +475,7 @@ local function RefreshButtonsWideColumn()
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
         UpdatePanelPreview(col3)
         UpdateAddBox(col3)
+        UpdateIdentityStrip(col3)
         if col3.bsTabGroup then
             AnchorButtonsContentFrame(col3, col3.bsTabGroup.frame)
         end
@@ -332,6 +496,7 @@ local function RefreshButtonsWideColumn()
     HideEntrySurfaces(col3)
     UpdatePanelPreview(col3)
     UpdateAddBox(col3)
+    UpdateIdentityStrip(col3)
 
     local host = col3.groupSettingsHost
     if not host then

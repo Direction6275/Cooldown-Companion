@@ -475,18 +475,14 @@ local function GetColumn3HeaderTitle(selection)
     elseif mode == "panel_actions" then
         return "Panel Actions"
     end
+    if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
+        -- Merged wide column: the identity strip under the preview names
+        -- the selection, so the header stays static instead of tracking it.
+        return "Buttons"
+    end
     local entryName = GetSelectedEntryHeaderName()
     if entryName then
         return "Entry: " .. entryName
-    end
-    if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
-        -- Merged wide column: entry surfaces are titled here, everything
-        -- else takes the group-side title (panel/folder/group).
-        if CountSelections(CS.selectedButtons) >= 2
-            or CS.selectedRotationAssistantEntry == true then
-            return "Button Settings"
-        end
-        return GetColumn4HeaderTitle(selection)
     end
     return "Button Settings"
 end
