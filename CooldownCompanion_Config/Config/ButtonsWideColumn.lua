@@ -4,8 +4,11 @@
     hosts the entry settings surfaces (bsTabGroup, entry multi-select),
     the panel batch actions, and the group-side settings surfaces (via
     GroupSettingsHost) in one column spanning the old col3+col4 region.
-    Browsing skips the pinned preview cluster (panels render live in the
-    world).
+    The column frames two labeled areas: the pinned Live Preview above the
+    split divider (the column title names it) and the editing surface
+    below it (the "Editing:" header, add box, identity strip, and settings
+    on a more opaque backdrop). Browsing skips the pinned preview cluster
+    (panels render live in the world).
 ]]
 
 local ADDON_NAME, ST = ...
@@ -20,9 +23,15 @@ local STRIP_ICON_SIZE = 20
 local STRIP_BADGE_SIZE = 18
 local STRIP_BADGE_GAP = 3
 local DIVIDER_HEIGHT = 9
+local DIVIDER_HIT_EXTEND = 5
 local PREVIEW_SPLIT_DEFAULT = 0.42
 local PREVIEW_MIN_HEIGHT = 100
 local SETTINGS_MIN_HEIGHT = 150
+local EDIT_INSET = 6
+local EDIT_HEADER_TOP_GAP = 6
+local EDIT_HEADER_HEIGHT = 16
+local EDIT_HEADER_GAP = 5
+local EDIT_BOTTOM_INSET = 6
 
 -- The preview/settings split is owner-adjustable via the drag divider below;
 -- the chosen fraction persists per profile.
@@ -73,14 +82,117 @@ local function RebuildActiveWidePreview(col3)
     end
 end
 
--- Vertical space the add box and identity strip claim between the preview
--- host and the split divider (shared by the divider drag and the height
+-- The editing surface: the visually distinct, more opaque container below
+-- the split divider. It frames the "Editing:" header, the add box, the
+-- identity strip, and the settings surfaces so the workspace reads as two
+-- labeled areas (Live Preview above the divider, Editing below it).
+local function EnsureEditingSurface(col3)
+    local surface = col3._cdcEditingSurface
+    if surface then return surface end
+
+    surface = CreateFrame("Frame", nil, col3.content, "BackdropTemplate")
+    surface:SetBackdrop({
+        bgFile = "Interface\\BUTTONS\\WHITE8X8",
+        edgeFile = "Interface\\BUTTONS\\WHITE8X8",
+        edgeSize = 1,
+    })
+    surface:SetBackdropColor(0, 0, 0, 0.3)
+    surface:SetBackdropBorderColor(1, 1, 1, 0.06)
+    -- Same frame level as the column content so the fill draws behind the
+    -- settings widgets (siblings created at content level + 1).
+    surface:SetFrameLevel(col3.content:GetFrameLevel())
+
+    local header = surface:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    header:SetPoint("TOPLEFT", surface, "TOPLEFT", EDIT_INSET, -EDIT_HEADER_TOP_GAP)
+    header:SetPoint("TOPRIGHT", surface, "TOPRIGHT", -EDIT_INSET, -EDIT_HEADER_TOP_GAP)
+    header:SetHeight(EDIT_HEADER_HEIGHT)
+    header:SetJustifyH("LEFT")
+    header:SetWordWrap(false)
+    surface._cdcHeader = header
+
+    col3._cdcEditingSurface = surface
+    return surface
+end
+
+-- Path shown in the editing header: the parent context dimmed, the leaf
+-- (what the settings below actually edit) emphasized.
+local function GetEditingHeaderPath()
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if CS.castFramesEntrySelected then
+        if CS.castFramesSelectedItem == "player" then
+            return "Cast Bar & Unit Frames", "Player Frame"
+        elseif CS.castFramesSelectedItem == "target" then
+            return "Cast Bar & Unit Frames", "Target Frame"
+        end
+        return "Cast Bar & Unit Frames", "Cast Bar"
+    end
+    if CS.resourcesEntrySelected then
+        local multiCount = 0
+        for _ in pairs(CS.selectedCustomBars) do multiCount = multiCount + 1 end
+        if multiCount >= 2 then
+            return "Resources", "Custom Bars"
+        end
+        local settings = CooldownCompanion.GetResourceBarSettings
+            and CooldownCompanion:GetResourceBarSettings()
+        if CS.selectedResourcePowerType and ST._RBP
+            and ST._RBP.IsResourceEditableInColumn4
+            and ST._RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings) then
+            local powerNames = ST._RB and ST._RB.POWER_NAMES
+            local resourceName = powerNames and powerNames[tonumber(CS.selectedResourcePowerType)]
+            return "Resources", resourceName or "Resource"
+        end
+        if CS.selectedCustomBarId then
+            local entry = ST._FindSelectedConfigCustomBar and ST._FindSelectedConfigCustomBar()
+            if entry then
+                return "Resources", entry.label or "Custom Bar"
+            end
+        end
+        return nil, "Resources"
+    end
+    local group = db and CS.selectedGroup and db.groups[CS.selectedGroup]
+    if not group then return nil, nil end
+    local containerId = group.parentContainerId or CS.selectedContainer
+    local container = containerId and db.groupContainers and db.groupContainers[containerId]
+    return container and container.name, group.name or "Panel"
+end
+
+local function UpdateEditingHeader(col3)
+    local header = EnsureEditingSurface(col3)._cdcHeader
+    local parent, leaf = GetEditingHeaderPath()
+    if not leaf then
+        header:SetText("Editing")
+        return
+    end
+    if parent then
+        header:SetFormattedText("Editing: |cff9d9587%s \194\187 |r|cffffffff%s|r", parent, leaf)
+    else
+        header:SetFormattedText("Editing: |cffffffff%s|r", leaf)
+    end
+end
+
+-- Shared hide for the divider and the editing surface: every path that
+-- stops showing the preview/editing split must run this so the chrome
+-- never lingers over a full-column surface.
+local function HideEditingChrome(col3)
+    if col3.buttonsSplitDivider then
+        col3.buttonsSplitDivider:CancelDrag()
+        col3.buttonsSplitDivider:Hide()
+    end
+    if col3._cdcEditingSurface then
+        col3._cdcEditingSurface:Hide()
+    end
+end
+
+-- Vertical space the editing surface's fixed chrome (header, add box,
+-- identity strip, gaps, and insets) claims below the split divider before
+-- the settings surface (shared by the divider drag and the height
 -- computation below).
-local function GetPreviewOverhead(col3)
-    local overhead = 0
+local function GetEditingOverhead(col3)
+    local overhead = EDIT_HEADER_TOP_GAP + EDIT_HEADER_HEIGHT
+        + PREVIEW_GAP + EDIT_BOTTOM_INSET
     local addBox = col3.buttonsAddBox
     if addBox and addBox.frame:IsShown() then
-        overhead = overhead + PREVIEW_GAP + ADD_BOX_HEIGHT
+        overhead = overhead + EDIT_HEADER_GAP + ADD_BOX_HEIGHT
     end
     local strip = col3.buttonsIdentityStrip
     if strip and strip:IsShown() then
@@ -98,8 +210,8 @@ local function ComputePreviewHostHeight(col3)
     local fraction, custom = GetPreviewSplit()
     local minHeight = custom and PREVIEW_MIN_HEIGHT or 170
     local desired = math.max(minHeight, math.floor(columnHeight * fraction))
-    local maxHeight = columnHeight - GetPreviewOverhead(col3)
-        - DIVIDER_HEIGHT - SETTINGS_MIN_HEIGHT
+    local maxHeight = columnHeight - DIVIDER_HEIGHT
+        - GetEditingOverhead(col3) - SETTINGS_MIN_HEIGHT
     -- Degenerate tiny column: the preview floor wins (the config window's
     -- own minimum height makes this a transient state at worst).
     if maxHeight < PREVIEW_MIN_HEIGHT then
@@ -132,9 +244,9 @@ local function ReapplyPanelPreviewSplit()
     RebuildActiveWidePreview(col3)
 end
 
--- Draggable divider between the preview region (preview + add box + strip)
--- and the settings surfaces: drag to rebalance the split, double-click to
--- reset to the default. The fraction persists per profile.
+-- Draggable divider between the pinned preview and the editing surface:
+-- drag to rebalance the split, double-click to reset to the default. The
+-- fraction persists per profile.
 local function EnsurePreviewDivider(col3)
     local divider = col3.buttonsSplitDivider
     if divider then return divider end
@@ -143,6 +255,9 @@ local function EnsurePreviewDivider(col3)
     divider = CreateFrame("Button", nil, col3.content)
     divider:SetHeight(DIVIDER_HEIGHT)
     divider:EnableMouse(true)
+    -- The visual bar stays slim; the invisible drag target extends a few
+    -- pixels above and below it.
+    divider:SetHitRectInsets(0, 0, -DIVIDER_HIT_EXTEND, -DIVIDER_HIT_EXTEND)
 
     local line = divider:CreateTexture(nil, "ARTWORK")
     line:SetColorTexture(1, 1, 1, 0.08)
@@ -199,10 +314,10 @@ local function EnsurePreviewDivider(col3)
             if not contentTop or columnHeight <= 0 then return end
             local _, cursorY = GetCursorPosition()
             cursorY = cursorY / col3.content:GetEffectiveScale()
-            local overhead = GetPreviewOverhead(col3)
-            local maxHeight = columnHeight - overhead - DIVIDER_HEIGHT - SETTINGS_MIN_HEIGHT
+            local maxHeight = columnHeight - DIVIDER_HEIGHT
+                - GetEditingOverhead(col3) - SETTINGS_MIN_HEIGHT
             if maxHeight < PREVIEW_MIN_HEIGHT then return end
-            local desired = (contentTop - cursorY) - overhead - (DIVIDER_HEIGHT / 2)
+            local desired = (contentTop - cursorY) - (DIVIDER_HEIGHT / 2)
             desired = math.max(PREVIEW_MIN_HEIGHT, math.min(desired, maxHeight))
             host:SetHeight(desired)
             -- Rescale the preview as the host resizes, throttled.
@@ -237,35 +352,39 @@ local function EnsurePreviewDivider(col3)
     return divider
 end
 
--- Settings surfaces anchor beneath the pinned preview (whichever host is
--- registered), its add box, and the identity strip when shown (below the
--- split divider), and fill the whole column otherwise.
+-- Settings surfaces anchor inside the editing surface below the split
+-- divider (which sits directly under the pinned preview), beneath the
+-- editing header, the add box, and the identity strip when shown; they
+-- fill the whole column when no preview is active.
 local function AnchorButtonsContentFrame(col3, frame)
     frame:ClearAllPoints()
     local previewHost = col3._cdcActiveWideHost
-    local addBox = col3.buttonsAddBox
-    local strip = col3.buttonsIdentityStrip
-    local topAnchor
-    if strip and strip:IsShown() then
-        topAnchor = strip
-    elseif addBox and addBox.frame:IsShown() then
-        topAnchor = addBox.frame
-    elseif previewHost and previewHost:IsShown() then
-        topAnchor = previewHost
-    end
-    if topAnchor then
+    if previewHost and previewHost:IsShown() then
         local divider = EnsurePreviewDivider(col3)
         divider:ClearAllPoints()
-        divider:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, 0)
-        divider:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, 0)
+        divider:SetPoint("TOPLEFT", previewHost, "BOTTOMLEFT", 0, 0)
+        divider:SetPoint("TOPRIGHT", previewHost, "BOTTOMRIGHT", 0, 0)
         divider:Show()
-        frame:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, 0)
-        frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
-    else
-        if col3.buttonsSplitDivider then
-            col3.buttonsSplitDivider:CancelDrag()
-            col3.buttonsSplitDivider:Hide()
+
+        local surface = EnsureEditingSurface(col3)
+        surface:ClearAllPoints()
+        surface:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, 0)
+        surface:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+        surface:Show()
+        UpdateEditingHeader(col3)
+
+        local topAnchor = surface._cdcHeader
+        local strip = col3.buttonsIdentityStrip
+        local addBox = col3.buttonsAddBox
+        if strip and strip:IsShown() then
+            topAnchor = strip
+        elseif addBox and addBox.frame:IsShown() then
+            topAnchor = addBox.frame
         end
+        frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -PREVIEW_GAP)
+        frame:SetPoint("BOTTOMRIGHT", surface, "BOTTOMRIGHT", -EDIT_INSET, EDIT_BOTTOM_INSET)
+    else
+        HideEditingChrome(col3)
         frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
         frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
     end
@@ -361,10 +480,7 @@ local function HidePanelPreview(col3)
     if col3.buttonsIdentityStrip then
         col3.buttonsIdentityStrip:Hide()
     end
-    if col3.buttonsSplitDivider then
-        col3.buttonsSplitDivider:CancelDrag()
-        col3.buttonsSplitDivider:Hide()
-    end
+    HideEditingChrome(col3)
 end
 
 -- Pinned preview of the selected panel at the top of the wide column.
@@ -400,8 +516,9 @@ local function UpdatePanelPreview(col3)
     UpdatePreviewDropOverlay()
 end
 
--- Add-entry box pinned under the preview, scoped to the selected panel.
--- Reuses the same TryAdd/autocomplete plumbing as the column 2 inline add.
+-- Add-entry box inside the editing surface (under its header), scoped to
+-- the selected panel. Reuses the same TryAdd/autocomplete plumbing as the
+-- column 2 inline add.
 local function EnsureAddBox(col3)
     local addBox = col3.buttonsAddBox
     if addBox then return addBox end
@@ -485,9 +602,10 @@ local function UpdateAddBox(col3)
     end
 
     local addBox = EnsureAddBox(col3)
+    local header = EnsureEditingSurface(col3)._cdcHeader
     addBox.frame:ClearAllPoints()
-    addBox.frame:SetPoint("TOPLEFT", host, "BOTTOMLEFT", 0, -PREVIEW_GAP)
-    addBox.frame:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", 0, -PREVIEW_GAP)
+    addBox.frame:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+    addBox.frame:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
     addBox.frame:SetHeight(ADD_BOX_HEIGHT)
     addBox.frame:Show()
 
@@ -696,7 +814,7 @@ local function UpdateIdentityStrip(col3)
 
     local addBox = col3.buttonsAddBox
     local top = (addBox and addBox.frame:IsShown()) and addBox.frame
-        or col3.buttonsPreviewHost
+        or EnsureEditingSurface(col3)._cdcHeader
     strip:ClearAllPoints()
     strip:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, -PREVIEW_GAP)
     strip:SetPoint("TOPRIGHT", top, "BOTTOMRIGHT", 0, -PREVIEW_GAP)
@@ -936,6 +1054,9 @@ ST._RefreshButtonsPreviewMirror = RefreshButtonsPreviewMirror
 ST._IsPanelMirrorPreviewActive = IsPanelMirrorPreviewActive
 ST._ReapplyPanelPreviewSplit = ReapplyPanelPreviewSplit
 ST._ClearWideAddBoxAfterAdd = ClearWideAddBoxAfterAdd
+-- Divider + editing-surface hide for view branches that release the split
+-- while their own preview host holds it (Resources/cast homes).
+ST._HideWideEditingChrome = HideEditingChrome
 -- Shared teardown for view switches away from the buttons view (resources,
 -- cast frames, talent picker, config close): hides the preview surfaces AND
 -- releases the preview so its conditional ticker stops and override

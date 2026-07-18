@@ -138,8 +138,12 @@ local function HideResourcesWideSurfaces(col3)
     local host = col3._resourcesPreviewHost
     if host then
         if col3.buttonsSplitDivider and col3._cdcActiveWideHost == host then
-            col3.buttonsSplitDivider:CancelDrag()
-            col3.buttonsSplitDivider:Hide()
+            if ST._HideWideEditingChrome then
+                ST._HideWideEditingChrome(col3)
+            else
+                col3.buttonsSplitDivider:CancelDrag()
+                col3.buttonsSplitDivider:Hide()
+            end
         end
         if ST._ClearActiveWidePreview then
             ST._ClearActiveWidePreview(col3, host)

@@ -494,7 +494,16 @@ local function ApplyConfigColumnTitles(frame)
     end
 
     local selection = GetConfigSelectionSummary()
-    frame.col3:SetTitle(GetColumn3HeaderTitle(selection))
+    -- Two labeled workspace areas: while a pinned preview is showing, the
+    -- column title names the preview region and the editing surface below
+    -- the divider carries its own "Editing:" header; without a preview the
+    -- title keeps naming the settings content.
+    local activeHost = frame.col3._cdcActiveWideHost
+    if activeHost and activeHost:IsShown() then
+        frame.col3:SetTitle("Live Preview")
+    else
+        frame.col3:SetTitle(GetColumn3HeaderTitle(selection))
+    end
 end
 
 local function SaveScrollState(widget)
