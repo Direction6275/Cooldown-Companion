@@ -447,6 +447,12 @@ local function PerformButtonReorder(groupId, sourceIndex, dropIndex)
             CS.selectedButton = CS.selectedButton + 1
         end
     end
+    -- Structural-mutation contract (matches the delete and cross-panel move
+    -- paths): the other index-keyed stores — multi-selection and per-button
+    -- preview state — are cleared rather than remapped, or they would stay
+    -- attached to whatever entries now occupy the old indexes.
+    wipe(CS.selectedButtons)
+    CooldownCompanion:ClearAllConfigPreviews()
 end
 
 ------------------------------------------------------------------------

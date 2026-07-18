@@ -1607,6 +1607,14 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 dupInfo.func = function()
                     local copy = CopyTable(entryData)
                     table.insert(CooldownCompanion.db.profile.groups[sourceGroupId].buttons, sourceIndex + 1, copy)
+                    -- Structural-mutation contract: entries after the insert
+                    -- point shifted, so remap the single selection and clear
+                    -- the index-keyed multi-selection and preview stores.
+                    if CS.selectedButton and CS.selectedButton > sourceIndex then
+                        CS.selectedButton = CS.selectedButton + 1
+                    end
+                    wipe(CS.selectedButtons)
+                    CooldownCompanion:ClearAllConfigPreviews()
                     CooldownCompanion:RefreshGroupFrame(sourceGroupId)
                     CooldownCompanion:RefreshConfigPanel()
                     CloseDropDownMenus()
