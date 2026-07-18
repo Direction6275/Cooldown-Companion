@@ -3000,18 +3000,12 @@ local function IsButtonsWideViewActive()
         or CS.otherClassLibraryActive)
 end
 
--- Views that use the wide col3 layout: column 3 spans the col4 region and
--- column 4 hides. True for the plain buttons view, the Resources home, and
--- the Cast Bar & Unit Frames home; the talent picker replaces the columns
--- with its own 2-column layout and Other Class browsing keeps the 4-column
--- split.
+-- Views that use the wide col3 layout: column 3 spans the col4 region.
+-- True everywhere - the buttons view, the Resources home, the Cast Bar &
+-- Unit Frames home, and Other Class browsing - except the talent picker,
+-- which replaces the columns with its own 2-column layout.
 local function IsWideCol3LayoutActive()
-    if CS.talentPickerMode or CS.otherClassLibraryActive then
-        return false
-    end
-    return IsButtonsWideViewActive()
-        or CS.resourcesEntrySelected
-        or CS.castFramesEntrySelected
+    return not CS.talentPickerMode
 end
 
 local function ResetConfigSelection(full)

@@ -739,15 +739,24 @@ local function RefreshButtonsWideColumn()
         col3._panelMultiSelectScroll.frame:Hide()
     end
 
+    -- Other Class browsing shares this merged column but skips the pinned
+    -- preview cluster: browsed panels render live in the world, and column
+    -- 2 keeps its entry rows there.
+    local browse = CS.otherClassLibraryActive
+
     -- Entry selected: the entry settings surfaces own the settings area
     if IsEntrySelectionActive() then
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
-        UpdatePanelPreview(col3)
-        UpdateAddBox(col3)
-        UpdateIdentityStrip(col3)
-        -- Final height pass: the add box and strip just settled their
-        -- visibility, which feeds the settings-minimum clamp.
-        ReapplyPanelPreviewSplit()
+        if browse then
+            HidePanelPreview(col3)
+        else
+            UpdatePanelPreview(col3)
+            UpdateAddBox(col3)
+            UpdateIdentityStrip(col3)
+            -- Final height pass: the add box and strip just settled their
+            -- visibility, which feeds the settings-minimum clamp.
+            ReapplyPanelPreviewSplit()
+        end
         if col3.bsTabGroup then
             AnchorButtonsContentFrame(col3, col3.bsTabGroup.frame)
         end
@@ -766,11 +775,15 @@ local function RefreshButtonsWideColumn()
     -- Otherwise the group-side surfaces (panel, container, folder settings,
     -- placeholders) own the settings area
     HideEntrySurfaces(col3)
-    UpdatePanelPreview(col3)
-    UpdateAddBox(col3)
-    UpdateIdentityStrip(col3)
-    -- Final height pass (see the entry branch above).
-    ReapplyPanelPreviewSplit()
+    if browse then
+        HidePanelPreview(col3)
+    else
+        UpdatePanelPreview(col3)
+        UpdateAddBox(col3)
+        UpdateIdentityStrip(col3)
+        -- Final height pass (see the entry branch above).
+        ReapplyPanelPreviewSplit()
+    end
 
     local host = col3.groupSettingsHost
     if not host then

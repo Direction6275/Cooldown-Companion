@@ -133,76 +133,11 @@ local function RefreshColumn3()
         return ST._RefreshResourcesWideColumn(col3)
     end
 
-    -- Normal mode: hide Custom Bars panel
-    local col3Normal = CS.configFrame and CS.configFrame.col3
-    if col3Normal and col3Normal.groupSettingsHost then
-        col3Normal.groupSettingsHost:Hide()
-    end
-    -- This fall-through only runs on view switches away from the buttons
-    -- view (the wide view returns early above), so release the preview:
-    -- the conditional ticker stops and override targeting disarms.
-    if col3Normal and ST._HideButtonsPanelPreviewSurfaces then
-        ST._HideButtonsPanelPreviewSurfaces(col3Normal)
-    end
-    if col3Normal and ST._HideResourcesWideSurfaces then
-        ST._HideResourcesWideSurfaces(col3Normal)
-    end
-    if col3Normal and col3Normal._customAuraTabGroup then
-        col3Normal._customAuraTabGroup.frame:Hide()
-    end
-    if col3Normal then
-        col3Normal._customAuraSubScroll = nil
-    end
-    if col3Normal and col3Normal._customAuraScroll then
-        col3Normal._customAuraScroll.frame:Hide()
-    end
-
-    -- Panel multi-select: batch operations in Column 3
-    local panelMultiCount = 0
-    local multiPanelIds = {}
-    for pid in pairs(CS.selectedPanels) do
-        panelMultiCount = panelMultiCount + 1
-        multiPanelIds[#multiPanelIds + 1] = pid
-    end
-    if panelMultiCount >= 2 and CS.selectedContainer then
-        if col3Normal then
-            if col3Normal.bsTabGroup then col3Normal.bsTabGroup.frame:Hide() end
-            if col3Normal.bsPlaceholder then col3Normal.bsPlaceholder:Hide() end
-            if col3Normal.multiSelectScroll then col3Normal.multiSelectScroll.frame:Hide() end
-            if col3Normal._panelTabGroup then col3Normal._panelTabGroup.frame:Hide() end
-
-            if not col3Normal._panelMultiSelectScroll then
-                local scroll = AceGUI:Create("ScrollFrame")
-                scroll:SetLayout("List")
-                scroll.frame:SetParent(col3Normal.content)
-                scroll.frame:ClearAllPoints()
-                scroll.frame:SetPoint("TOPLEFT", col3Normal.content, "TOPLEFT", 0, 0)
-                scroll.frame:SetPoint("BOTTOMRIGHT", col3Normal.content, "BOTTOMRIGHT", 0, 0)
-                col3Normal._panelMultiSelectScroll = scroll
-            end
-            col3Normal._panelMultiSelectScroll:ReleaseChildren()
-            col3Normal._panelMultiSelectScroll.frame:Show()
-            ST._RefreshPanelMultiSelect(col3Normal._panelMultiSelectScroll, panelMultiCount, multiPanelIds)
-        end
-        return
-    end
-    -- Hide panel multi-select scroll when not active
-    if col3Normal and col3Normal._panelMultiSelectScroll then
-        col3Normal._panelMultiSelectScroll.frame:Hide()
-    end
-
-    -- Entry surfaces may still be anchored below the (hidden) wide-view
-    -- preview host; restore their full-column anchors for this path.
-    if col3Normal and ST._AnchorButtonsContentFrame then
-        if col3Normal.bsTabGroup then
-            ST._AnchorButtonsContentFrame(col3Normal, col3Normal.bsTabGroup.frame)
-        end
-        if col3Normal.multiSelectScroll then
-            ST._AnchorButtonsContentFrame(col3Normal, col3Normal.multiSelectScroll.frame)
-        end
-    end
-
-    ST._RefreshButtonSettingsColumn()
+    -- Other Class browsing (and any residual state): the same merged wide
+    -- column. RefreshButtonsWideColumn skips the pinned preview cluster
+    -- while browsing - browsed panels render live in the world - and its
+    -- first refresh after a view switch releases the buttons preview.
+    return ST._RefreshButtonsWideColumn()
 end
 
 ------------------------------------------------------------------------
