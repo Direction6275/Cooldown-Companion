@@ -154,8 +154,10 @@ local function UpdatePanelPreview(col3)
     host:ClearAllPoints()
     host:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
     host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
+    -- Taller than the resources home's 35%: the preview is the primary
+    -- surface here, and larger panels scale down less at 42%.
     local columnHeight = col3.content:GetHeight() or 0
-    host:SetHeight(math.max(150, math.floor(columnHeight * 0.35)))
+    host:SetHeight(math.max(170, math.floor(columnHeight * 0.42)))
     host:Show()
     ST._BuildButtonPanelPreview(host, CS.selectedGroup)
     UpdatePreviewDropOverlay()

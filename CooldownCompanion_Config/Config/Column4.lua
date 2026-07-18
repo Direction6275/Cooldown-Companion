@@ -458,10 +458,6 @@ local function RefreshColumn4(container)
         return
     end
 
-    -- Hide browse placeholder
-    if container._browsePlaceholder then
-        container._browsePlaceholder:Hide()
-    end
     HideLayoutOrderConflictScroll(container)
 
     -- Cast Bar & Unit Frames home: col4 = Cast Bar, with the persistent

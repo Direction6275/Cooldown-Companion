@@ -74,12 +74,6 @@ end
 -- COLUMN 3: Button Settings (normal) / Resources home / Unit Frames home
 ------------------------------------------------------------------------
 local function RefreshColumn3()
-    -- Hide browse placeholder when not showing it
-    local col3BrowseClean = CS.configFrame and CS.configFrame.col3
-    if col3BrowseClean and col3BrowseClean._browsePlaceholder then
-        col3BrowseClean._browsePlaceholder:Hide()
-    end
-
     -- Plain buttons view: the wide merged column owns col3
     if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
         return ST._RefreshButtonsWideColumn()
