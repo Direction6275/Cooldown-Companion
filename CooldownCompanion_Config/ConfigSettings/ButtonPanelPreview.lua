@@ -32,6 +32,7 @@ local CreateGlowContainer = ST._CreateGlowContainer
 local SetBarAuraEffect = ST._SetBarAuraEffect
 local GetStoredConditionalPreviewState = ST._GetStoredConditionalPreviewState
 local GetConditionalPreviewTiming = ST._GetConditionalPreviewTiming
+local ParseFormatString = ST._ParseFormatString
 local ApplyIconCountTextStyle = ST._ApplyIconCountTextStyle
 local ApplyBarCountTextStyle = ST._ApplyBarCountTextStyle
 local AnchorIconFill = ST._AnchorIconFill
@@ -1645,6 +1646,10 @@ local function StopConditionalTicker(preview)
     end
 end
 
+-- Forward declaration: defined with the text-slot suite below, referenced
+-- by the ticker for the text countdown re-render.
+local RenderTextSlot
+
 -- Drives the animated conditional previews: countdown numbers for the
 -- aura duration text, and re-arming the looping Cooldown widgets when
 -- the stored preview state wraps to a new cycle (within a cycle the
@@ -1712,6 +1717,16 @@ local function EnsureConditionalTicker(preview)
                 end
             end
         end
+        -- Text slots: re-render the format so the countdown ticks
+        local textPool = preview.pools.textSlots
+        local usedText = preview.used.textSlots or 0
+        for i = 1, usedText do
+            local slot = textPool[i]
+            local state = slot and slot:IsShown() and slot._cdcCondAnim or nil
+            if state and RenderTextSlot then
+                RenderTextSlot(slot, slot.buttonData, slot.style or {}, state, now)
+            end
+        end
     end)
 end
 
@@ -1749,7 +1764,274 @@ local function StyleTextEntry(slot, buttonData, group)
     ts:ClearAllPoints()
     ts:SetPoint("TOPLEFT", inset, -1)
     ts:SetPoint("BOTTOMRIGHT", -inset, 1)
-    ts:SetText(buttonData.customName or buttonData.name or GetConfigEntryDisplayName(buttonData) or "")
+    -- Text content is rendered by ApplyTextSlotConditionalPreview (the
+    -- entry's real token format, in its base or previewed state).
+    slot.style = style
+end
+
+------------------------------------------------------------------------
+-- Text-slot format rendering + conditional previews: the text mirror
+-- renders each entry's real token format through the TextMode.lua parser
+-- and a mirror-side substitution that reads only saved settings, static
+-- name/keybind lookups, and the stored conditional preview state (never
+-- live cooldown/aura/charge values). Idle base state: no time, aura
+-- inactive, full charges, no stacks. The {pulse} animation is the one
+-- live effect the static mirror does not run (its content still shows).
+------------------------------------------------------------------------
+-- TextMode.lua constants
+local DEFAULT_TEXT_FORMAT = "{name}  {status}"
+local DEFAULT_CD_COLOR = { 1, 0.3, 0.3, 1 }
+local DEFAULT_READY_COLOR = { 0.2, 1.0, 0.2, 1 }
+local DEFAULT_TEXT_AURA_COLOR = { 0, 0.925, 1, 1 }
+local DEFAULT_CUSTOM_COLOR = { 1, 0.82, 0, 1 }
+
+-- TextMode.lua WrapColor
+local function WrapTextColor(text, color)
+    if not text or text == "" then return "" end
+    if not color then return text end
+    return string.format("|cff%02x%02x%02x%s|r",
+        math_floor(color[1] * 255),
+        math_floor(color[2] * 255),
+        math_floor(color[3] * 255),
+        text)
+end
+
+-- TextMode.lua IsAuraOnlyEntry
+local function IsAuraOnlyTextEntry(buttonData)
+    return buttonData
+        and buttonData.type == "spell"
+        and buttonData.addedAs == "aura"
+        and buttonData.auraTracking == true
+end
+
+-- Mirror twin of TextMode.lua SubstituteTokens for the static + preview
+-- domain. Token-for-token parity where the mirror has the data; runtime
+-- domains the mirror never reads (live time, aura, stacks) render as
+-- their idle state.
+local function SubstituteMirrorTokens(segments, style, buttonData, condState, now)
+    local parts = {}
+    local baseColor = style.textFontColor or { 1, 1, 1, 1 }
+    local cdColor = style.textCooldownColor or DEFAULT_CD_COLOR
+    local readyColor = style.textReadyColor or DEFAULT_READY_COLOR
+    local auraColor = style.textAuraColor or DEFAULT_TEXT_AURA_COLOR
+    local customColor = style.textCustomColor or DEFAULT_CUSTOM_COLOR
+    local chargeFull = style.chargeFontColor or { 1, 1, 1, 1 }
+    local chargeMissing = style.chargeFontColorMissing or { 1, 1, 1, 1 }
+    local chargeZero = style.chargeFontColorZero or { 1, 1, 1, 1 }
+
+    local kind = condState and condState.kind or nil
+    local timeRemaining
+    if kind == "cooldown" and GetConditionalPreviewTiming then
+        local startTime, _, remaining = GetConditionalPreviewTiming(condState, now)
+        if startTime and remaining and remaining > 0 then
+            timeRemaining = remaining
+        end
+    end
+
+    local usesCharges = CooldownCompanion.UsesChargeBehavior
+        and CooldownCompanion.UsesChargeBehavior(buttonData) or false
+    local currentCharges, maxCharges, chargeState
+    if usesCharges then
+        maxCharges = buttonData.maxCharges
+        if kind == "charge_missing" or kind == "charge_zero" or kind == "charge_full" then
+            local mc = maxCharges or 2
+            if mc < 2 then mc = 2 end
+            maxCharges = mc
+            if kind == "charge_missing" then
+                currentCharges = math_max(1, mc - 1)
+                chargeState = "missing"
+            elseif kind == "charge_zero" then
+                currentCharges = 0
+                chargeState = "zero"
+            else
+                currentCharges = mc
+                chargeState = "full"
+            end
+        else
+            -- Idle mirror state: full charges (live learns the count at
+            -- runtime; a never-observed maxCharges renders empty there too)
+            currentCharges = maxCharges
+            chargeState = "full"
+        end
+    end
+
+    local isUnusable = kind == "unusable"
+    local isOutOfRange = kind == "out_of_range"
+    -- Live {?available}: _desatCooldownActive ~= true
+    local notAvailable = kind == "cooldown" or kind == "charge_zero"
+
+    local function TokenPresent(tokenName)
+        if tokenName == "time" then
+            return timeRemaining ~= nil
+        elseif tokenName == "charges" then
+            return usesCharges
+        elseif tokenName == "maxcharges" then
+            return usesCharges and chargeState == "full"
+        elseif tokenName == "missingcharges" then
+            return usesCharges and chargeState == "missing"
+        elseif tokenName == "zerocharges" then
+            return usesCharges and chargeState == "zero"
+        elseif tokenName == "keybind" then
+            local kb = CooldownCompanion:GetKeybindText(buttonData, nil, nil)
+            return kb ~= nil and kb ~= ""
+        elseif tokenName == "unusable" then
+            return isUnusable
+        elseif tokenName == "oor" then
+            return isOutOfRange
+        elseif tokenName == "available" then
+            return not notAvailable
+        elseif tokenName == "incombat" then
+            return UnitAffectingCombat("player") == true
+        end
+        -- stacks/aura/pandemic/proc: runtime-only domains, idle on the mirror
+        return false
+    end
+
+    local skipDepth = 0
+    local colorOverride = nil
+    local colorStack = {}
+
+    for _, seg in ipairs(segments) do
+        if seg.type == "cond_start" then
+            if skipDepth > 0 then
+                skipDepth = skipDepth + 1
+            else
+                local present = TokenPresent(seg.value)
+                local shouldShow = (seg.negated and not present) or (not seg.negated and present)
+                if not shouldShow then
+                    skipDepth = 1
+                end
+            end
+        elseif seg.type == "cond_end" then
+            if skipDepth > 0 then
+                skipDepth = skipDepth - 1
+            end
+        elseif skipDepth > 0 then
+            -- Inside a false conditional
+        elseif seg.type == "effect_start" or seg.type == "effect_end" then
+            -- {pulse} wrappers: content renders, the animation does not
+        elseif seg.type == "color_start" then
+            colorStack[#colorStack + 1] = colorOverride
+            if seg.value == "cooldown" then colorOverride = cdColor
+            elseif seg.value == "ready" then colorOverride = readyColor
+            elseif seg.value == "active" then colorOverride = auraColor
+            elseif seg.value == "custom" then colorOverride = customColor
+            end
+        elseif seg.type == "color_end" then
+            colorOverride = colorStack[#colorStack]
+            colorStack[#colorStack] = nil
+        elseif seg.type == "literal" then
+            if colorOverride then
+                parts[#parts + 1] = WrapTextColor(seg.value, colorOverride)
+            else
+                parts[#parts + 1] = seg.value
+            end
+        elseif seg.unknown then
+            -- Unknown tokens render as empty
+        else
+            local token = seg.value
+            if token == "name" then
+                local name = buttonData.customName or buttonData.name or ""
+                if not buttonData.customName and buttonData.type == "spell" then
+                    local spellName = C_Spell.GetSpellName(buttonData.id)
+                    if spellName then name = spellName end
+                elseif not buttonData.customName and CooldownCompanion.IsEntryItemLike
+                    and CooldownCompanion.IsEntryItemLike(buttonData) then
+                    local itemName = buttonData.id and C_Item.GetItemNameByID(buttonData.id)
+                    if itemName then name = itemName end
+                end
+                parts[#parts + 1] = WrapTextColor(name, colorOverride or baseColor)
+
+            elseif token == "time" then
+                if timeRemaining then
+                    parts[#parts + 1] = WrapTextColor(
+                        CooldownCompanion.FormatTime(timeRemaining, style), colorOverride or cdColor)
+                end
+
+            elseif token == "charges" then
+                if currentCharges ~= nil then
+                    local cc
+                    if currentCharges == maxCharges then
+                        cc = chargeFull
+                    elseif currentCharges == 0 then
+                        cc = chargeZero
+                    else
+                        cc = chargeMissing
+                    end
+                    parts[#parts + 1] = WrapTextColor(tostring(currentCharges), colorOverride or cc)
+                end
+
+            elseif token == "maxcharges" then
+                if maxCharges and maxCharges > 1 then
+                    parts[#parts + 1] = WrapTextColor(tostring(maxCharges), colorOverride or baseColor)
+                end
+
+            elseif token == "keybind" then
+                local kb = CooldownCompanion:GetKeybindText(buttonData, nil, nil)
+                if kb and kb ~= "" then
+                    parts[#parts + 1] = WrapTextColor(kb, colorOverride or baseColor)
+                end
+
+            elseif token == "status" then
+                if IsAuraOnlyTextEntry(buttonData) then
+                    -- Aura-only entries have no ready/cooldown fallback
+                elseif timeRemaining then
+                    parts[#parts + 1] = WrapTextColor(
+                        CooldownCompanion.FormatTime(timeRemaining, style), colorOverride or cdColor)
+                else
+                    parts[#parts + 1] = WrapTextColor(
+                        style.textReadyText or "Ready", colorOverride or readyColor)
+                end
+
+            elseif token == "icon" then
+                local iconTex = GetLayoutPreviewIcon(buttonData)
+                if iconTex then
+                    parts[#parts + 1] = string.format("|T%s:0|t", tostring(iconTex))
+                end
+
+            elseif token == "br" then
+                parts[#parts + 1] = "\n"
+            end
+            -- stacks/aura tokens: idle (empty) on the mirror
+        end
+    end
+
+    return table.concat(parts)
+end
+
+function RenderTextSlot(slot, buttonData, style, condState, now)
+    local ts = slot.textString
+    if not (ParseFormatString and slot._cdcTextSegments) then
+        -- Parser unavailable: fall back to the plain entry name
+        ts:SetText(buttonData.customName or buttonData.name
+            or GetConfigEntryDisplayName(buttonData) or "")
+        return
+    end
+    ts:SetText(SubstituteMirrorTokens(slot._cdcTextSegments, style, buttonData, condState, now))
+end
+
+local function ApplyTextSlotConditionalPreview(slot, buttonData, group, panelId, index)
+    slot._cdcCondAnim = nil
+    slot.buttonData = buttonData
+
+    local style = slot.style or group.style or {}
+    local fmt = buttonData.textFormat or style.textFormat or DEFAULT_TEXT_FORMAT
+    slot._cdcTextSegments = ParseFormatString and ParseFormatString(fmt) or nil
+
+    -- Live ApplyTextLayout: multiline formats wrap from the top
+    if GetEffectiveTextHeight then
+        local _, isMultiline = GetEffectiveTextHeight(style, fmt)
+        slot.textString:SetJustifyV(isMultiline and "TOP" or "MIDDLE")
+        slot.textString:SetWordWrap(isMultiline and true or false)
+    end
+
+    local state = GetStoredConditionalPreviewState
+        and GetStoredConditionalPreviewState(panelId, index) or nil
+    RenderTextSlot(slot, buttonData, style, state, GetTime())
+    if state and state.kind == "cooldown" then
+        -- The countdown needs re-rendering as it ticks
+        slot._cdcCondAnim = state
+    end
 end
 
 -- Mirror of GroupFrame's ApplyTextGroupHeader, drawn on the content frame.
@@ -2147,7 +2429,9 @@ function ST._BuildButtonPanelPreview(host, panelId)
         end
         if isBarMode then
             ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, index)
-        elseif not isTextMode then
+        elseif isTextMode then
+            ApplyTextSlotConditionalPreview(slot, buttonData, group, panelId, index)
+        else
             ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
         end
         if status.disabled then
