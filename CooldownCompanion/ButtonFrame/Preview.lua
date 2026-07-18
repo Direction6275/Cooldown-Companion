@@ -171,10 +171,40 @@ local function IsActivePreviewFlagStored(groupId, buttonIndex, previewFlag)
     return false
 end
 
+-- Preview-first config: panels the config mirror renders (icon, bar,
+-- and text panels) show their config previews ONLY on the mirror - the
+-- setters store the preview state for the mirror to read and skip the
+-- live world buttons entirely. Panel types without a mirror rendering
+-- (trigger, texture, rotation assistant - the config shows a selection
+-- strip for these) keep live previews as their only surface. Clear
+-- paths stay unconditional: clearing a live button is always safe.
+local function IsMirrorPreviewSurface(groupId)
+    local db = CooldownCompanion.db
+    local group = db and db.profile and db.profile.groups and db.profile.groups[groupId]
+    if not group then
+        return false
+    end
+    local mode = group.displayMode or "icons"
+    if mode == "bars" or mode == "text" then
+        return true
+    end
+    if mode ~= "icons" then
+        return false
+    end
+    if CooldownCompanion.IsStandaloneTexturePanelGroup
+        and CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
+        return false
+    end
+    return true
+end
+
 -- Set preview on a single button.
 -- cacheValue: false forces cache miss on next tick; nil forces re-evaluate.
 local function SetButtonPreview(self, groupId, buttonIndex, show, previewFlag, cacheFlag, cacheValue, onToggle, updateCooldown)
     SetActiveButtonPreviewFlag(groupId, buttonIndex, previewFlag, show)
+    if IsMirrorPreviewSurface(groupId) then
+        return
+    end
     local frame = self.groupFrames[groupId]
     if not frame then return end
     for _, button in ipairs(frame.buttons) do
@@ -194,6 +224,9 @@ end
 local function SetGroupPreview(self, groupId, show, previewFlag, cacheFlag, cacheValue, onToggle, updateCooldown)
     SetActiveGroupPreviewFlag(groupId, previewFlag, show)
     ClearActiveButtonPreviewFlagForGroup(groupId, previewFlag)
+    if IsMirrorPreviewSurface(groupId) then
+        return
+    end
     local frame = self.groupFrames[groupId]
     if not frame then return end
     for _, button in ipairs(frame.buttons) do
@@ -427,6 +460,7 @@ function CooldownCompanion:SetConditionalVisualPreviewActive(groupId, buttonInde
     end
 
     local state = show and BuildConditionalVisualPreviewState(previewKind, sampleState) or nil
+    local mirrorSurface = IsMirrorPreviewSurface(groupId)
     if buttonIndex then
         activeConditionalGroupPreviews[groupId] = nil
         if state then
@@ -440,13 +474,19 @@ function CooldownCompanion:SetConditionalVisualPreviewActive(groupId, buttonInde
                 activeConditionalButtonPreviews[groupId] = nil
             end
         end
-        SetConditionalVisualPreview(self, groupId, buttonIndex, state)
+        -- A clear (state == nil) still reaches the live button so panels
+        -- that just changed display mode can't strand a rendered preview.
+        if not mirrorSurface or not state then
+            SetConditionalVisualPreview(self, groupId, buttonIndex, state)
+        end
         return
     end
 
     activeConditionalButtonPreviews[groupId] = nil
     activeConditionalGroupPreviews[groupId] = CopyPreviewState(state)
-    SetGroupConditionalVisualPreview(self, groupId, state)
+    if not mirrorSurface or not state then
+        SetGroupConditionalVisualPreview(self, groupId, state)
+    end
 end
 
 function CooldownCompanion:ClearAllConditionalVisualPreviews()
@@ -806,7 +846,11 @@ function CooldownCompanion:ApplyConfigPreviewsToGroup(groupId)
         return
     end
 
-    local groupFlags = activeGroupPreviewFlags[groupId]
+    -- Mirror-surface panels never reapply previews to rebuilt live
+    -- frames - the stored state lives on for the mirror alone.
+    local mirrorSurface = IsMirrorPreviewSurface(groupId)
+
+    local groupFlags = not mirrorSurface and activeGroupPreviewFlags[groupId] or nil
     if groupFlags then
         for _, button in ipairs(frame.buttons) do
             for previewFlag in pairs(groupFlags) do
@@ -815,7 +859,7 @@ function CooldownCompanion:ApplyConfigPreviewsToGroup(groupId)
         end
     end
 
-    local buttonFlagsByIndex = activeButtonPreviewFlags[groupId]
+    local buttonFlagsByIndex = not mirrorSurface and activeButtonPreviewFlags[groupId] or nil
     if buttonFlagsByIndex then
         for _, button in ipairs(frame.buttons) do
             local buttonFlags = buttonFlagsByIndex[button.index]
@@ -833,14 +877,14 @@ function CooldownCompanion:ApplyConfigPreviewsToGroup(groupId)
         end
     end
 
-    local groupConditionalPreview = activeConditionalGroupPreviews[groupId]
+    local groupConditionalPreview = not mirrorSurface and activeConditionalGroupPreviews[groupId] or nil
     if groupConditionalPreview then
         for _, button in ipairs(frame.buttons) do
             SetConditionalVisualPreviewOnButton(self, button, CopyPreviewState(groupConditionalPreview))
         end
     end
 
-    local conditionalButtons = activeConditionalButtonPreviews[groupId]
+    local conditionalButtons = not mirrorSurface and activeConditionalButtonPreviews[groupId] or nil
     if conditionalButtons then
         for _, button in ipairs(frame.buttons) do
             local preview = conditionalButtons[button.index]
