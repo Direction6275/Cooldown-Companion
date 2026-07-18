@@ -24,6 +24,9 @@ local ShowEntryContextMenu = ST._ShowEntryContextMenu
 local SetIconAreaPoints = ST._SetIconAreaPoints
 local SetBarAreaPoints = ST._SetBarAreaPoints
 local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
+local PerformButtonReorder = ST._PerformButtonReorder
+local StartDragTracking = ST._StartDragTracking
+local CancelDrag = ST._CancelDrag
 
 local PANEL_PREVIEW_PADDING = 12
 local PANEL_PREVIEW_DISABLED_ALPHA = 0.45
@@ -307,6 +310,169 @@ local function ApplySlotBadges(slot, status, scale)
     back:Show()
 end
 
+------------------------------------------------------------------------
+-- In-preview drag-to-reorder, via the shared "layout-slot" drag kind.
+-- Slots map 1:1 to group.buttons indices; the resolved drop target is an
+-- insertion index in the pre-removal list (PerformButtonReorder's
+-- convention). Raw cursor coordinates are compared against GetScaledRect
+-- values, matching the drag tracker and the resources layout preview.
+------------------------------------------------------------------------
+local function EnsureDropIndicator(preview)
+    local ind = preview.dropIndicator
+    if not ind then
+        -- Own high-level holder so the line draws above the slot frames
+        -- even when zero spacing puts it flush against a slot edge.
+        local holder = CreateFrame("Frame", nil, preview.root)
+        holder:SetAllPoints(preview.root)
+        holder:SetFrameLevel(preview.root:GetFrameLevel() + 40)
+        ind = holder:CreateTexture(nil, "OVERLAY")
+        ind:SetColorTexture(PANEL_PREVIEW_RING_COLOR[1], PANEL_PREVIEW_RING_COLOR[2],
+            PANEL_PREVIEW_RING_COLOR[3], 0.9)
+        preview.dropIndicator = ind
+    end
+    return ind
+end
+
+local function CreatePreviewLayoutDrag(preview, panelId)
+    local layoutDrag = {
+        panelPreview = true,
+        slots = {},
+        count = 0,
+        slotW = 1,
+        slotH = 1,
+        spacing = 0,
+        scale = 1,
+        flowX = 1,
+        flowY = 0,
+    }
+
+    -- Insertion anchors: midpoints between consecutive slot centers, with
+    -- the two end positions extrapolated half a step beyond the run, so
+    -- the nearest anchor is the insertion index. Works for any growth
+    -- origin and wrapping because it only uses actual slot geometry.
+    layoutDrag.resolveDropTarget = function(cursorX, cursorY)
+        local count = layoutDrag.count
+        if count < 2 then return nil end
+        local root = preview.root
+        if not (root and root:IsVisible() and root.GetScaledRect) then return nil end
+        local left, bottom, width, height = root:GetScaledRect()
+        if not left then return nil end
+        local margin = 40
+        if cursorX < left - margin or cursorX > left + width + margin
+            or cursorY < bottom - margin or cursorY > bottom + height + margin then
+            return nil
+        end
+
+        local centers = {}
+        for i = 1, count do
+            local slot = layoutDrag.slots[i]
+            local sl, sb, sw, sh = slot and slot:GetScaledRect()
+            if not sl then return nil end
+            centers[i] = { x = sl + sw / 2, y = sb + sh / 2 }
+        end
+
+        local bestIndex, bestDist
+        for i = 1, count + 1 do
+            local ax, ay
+            if i == 1 then
+                ax = centers[1].x - (centers[2].x - centers[1].x) / 2
+                ay = centers[1].y - (centers[2].y - centers[1].y) / 2
+            elseif i == count + 1 then
+                ax = centers[count].x + (centers[count].x - centers[count - 1].x) / 2
+                ay = centers[count].y + (centers[count].y - centers[count - 1].y) / 2
+            else
+                ax = (centers[i - 1].x + centers[i].x) / 2
+                ay = (centers[i - 1].y + centers[i].y) / 2
+            end
+            local dx, dy = cursorX - ax, cursorY - ay
+            local dist = dx * dx + dy * dy
+            if not bestDist or dist < bestDist then
+                bestDist, bestIndex = dist, i
+            end
+        end
+        return { insertIndex = bestIndex }
+    end
+
+    layoutDrag.onActivate = function(state)
+        GameTooltip:Hide()
+        if state.widget and state.widget.hoverHighlight then
+            state.widget.hoverHighlight:Hide()
+        end
+    end
+
+    layoutDrag.onUpdate = function(state, cursorX, cursorY, dropTarget)
+        local ind = EnsureDropIndicator(preview)
+        local insertIndex = dropTarget and dropTarget.insertIndex
+        local sourceIndex = state.slotData and state.slotData.index
+        -- No target, or a no-op drop back onto the source position
+        if not insertIndex
+            or (sourceIndex and (insertIndex == sourceIndex or insertIndex == sourceIndex + 1)) then
+            ind:Hide()
+            return
+        end
+
+        local count = layoutDrag.count
+        local scale = layoutDrag.scale
+        local gap = (layoutDrag.spacing * scale) / 2
+        local horizontal = layoutDrag.flowY == 0
+        local target, edge, offX, offY
+        if insertIndex <= count then
+            -- Leading edge of the slot the entry would land in front of
+            target = layoutDrag.slots[insertIndex]
+            if horizontal then
+                edge = (layoutDrag.flowX >= 0) and "LEFT" or "RIGHT"
+                offX, offY = (edge == "LEFT") and -gap or gap, 0
+            else
+                edge = (layoutDrag.flowY < 0) and "TOP" or "BOTTOM"
+                offX, offY = 0, (edge == "TOP") and gap or -gap
+            end
+        else
+            -- Trailing edge of the last slot
+            target = layoutDrag.slots[count]
+            if horizontal then
+                edge = (layoutDrag.flowX >= 0) and "RIGHT" or "LEFT"
+                offX, offY = (edge == "RIGHT") and gap or -gap, 0
+            else
+                edge = (layoutDrag.flowY < 0) and "BOTTOM" or "TOP"
+                offX, offY = 0, (edge == "BOTTOM") and -gap or gap
+            end
+        end
+        if not target then
+            ind:Hide()
+            return
+        end
+        -- The indicator lives on the unscaled root, so sizes and offsets
+        -- multiply the content scale to line up with the scaled slots.
+        if horizontal then
+            ind:SetSize(2, layoutDrag.slotH * scale + 4)
+        else
+            ind:SetSize(layoutDrag.slotW * scale + 4, 2)
+        end
+        ind:ClearAllPoints()
+        ind:SetPoint("CENTER", target, edge, offX, offY)
+        ind:Show()
+    end
+
+    layoutDrag.onCancel = function()
+        if preview.dropIndicator then
+            preview.dropIndicator:Hide()
+        end
+    end
+
+    layoutDrag.applyDrop = function(state)
+        local dropTarget = state and state.dropTarget
+        local sourceIndex = state and state.slotData and state.slotData.index
+        local insertIndex = dropTarget and dropTarget.insertIndex
+        if not (PerformButtonReorder and sourceIndex and insertIndex) then return end
+        if insertIndex == sourceIndex or insertIndex == sourceIndex + 1 then return end
+        PerformButtonReorder(panelId, sourceIndex, insertIndex)
+        CooldownCompanion:RefreshGroupFrame(panelId)
+        CooldownCompanion:RefreshConfigPanel()
+    end
+
+    return layoutDrag
+end
+
 -- Shift-hover shows the real spell/item tooltip, mirroring the column 2
 -- entry rows; a plain hover shows the decorated entry name plus the same
 -- status lines the row badges carry.
@@ -368,23 +534,53 @@ local function ShowEntrySlotTooltip(slot, buttonData, status)
     if CooldownCompanion:HasLocalLoadConditions(buttonData) then
         GameTooltip:AddLine("This entry adds load conditions.", 0.7, 0.7, 0.7)
     end
+    if slot._cdcDraggable then
+        GameTooltip:AddLine("Drag to reorder.", 0.75, 0.82, 0.92)
+    end
     GameTooltip:Show()
 end
 
-local function WireEntryInteraction(slot, panelId, index, buttonData, status)
+local function WireEntryInteraction(slot, panelId, index, buttonData, status, layoutDrag)
+    slot._cdcDraggable = layoutDrag ~= nil
+    slot:SetScript("OnMouseDown", function(self, mouseButton)
+        if mouseButton ~= "LeftButton" or GetCursorInfo() then return end
+        if not (layoutDrag and StartDragTracking) then return end
+        local cursorX, cursorY = GetCursorPosition()
+        CS.dragState = {
+            kind = "layout-slot",
+            phase = "pending",
+            widget = self,
+            scrollWidget = UIParent,
+            startX = cursorX,
+            startY = cursorY,
+            layoutDrag = layoutDrag,
+            slotData = { index = index },
+        }
+        StartDragTracking()
+    end)
     slot:SetScript("OnMouseUp", function(self, mouseButton)
-        if CS.dragState and CS.dragState.phase == "active" then return end
         if GetCursorInfo() then return end
         if mouseButton == "LeftButton" then
+            local state = CS.dragState
+            if state then
+                -- Only fall through to selection for our own still-pending
+                -- press; active drags finish through the tracker.
+                if state.kind ~= "layout-slot" or state.phase ~= "pending" or state.widget ~= self then
+                    return
+                end
+                if CancelDrag then CancelDrag() else CS.dragState = nil end
+            end
             SelectConfigButton(panelId, index, { multi = IsControlKeyDown() })
             CooldownCompanion:RefreshConfigPanel()
         elseif mouseButton == "RightButton" or mouseButton == "MiddleButton" then
+            if CS.dragState and CS.dragState.phase == "active" then return end
             if ShowEntryContextMenu then
                 ShowEntryContextMenu(panelId, index, buttonData)
             end
         end
     end)
     slot:SetScript("OnEnter", function(self)
+        if CS.dragState and CS.dragState.phase == "active" then return end
         self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
         self.hoverHighlight:Show()
         ShowEntrySlotTooltip(self, buttonData, status)
@@ -490,6 +686,15 @@ local function BuildSelectionStrip(preview, host, panelId, group)
     content:SetSize(contentWidth, contentHeight)
     content:Show()
 
+    local layoutDrag = CreatePreviewLayoutDrag(preview, panelId)
+    layoutDrag.count = count
+    layoutDrag.slotW, layoutDrag.slotH = w, h
+    layoutDrag.spacing = STRIP_SPACING
+    layoutDrag.scale = scale
+    layoutDrag.flowX, layoutDrag.flowY = 1, 0
+    preview.layoutDrag = layoutDrag
+    local dragModel = (not isRA and count >= 2) and layoutDrag or nil
+
     for i, entryInfo in ipairs(entries) do
         local slot = AcquireSlot(preview, content, "iconSlots")
         slot:SetSize(w, h)
@@ -504,9 +709,10 @@ local function BuildSelectionStrip(preview, host, panelId, group)
 
         if entryInfo.isRotationAssistant then
             slot.icon:SetDesaturated(false)
-            for b = 1, #(slot.badges or {}) do
-                slot.badges[b]:Hide()
-            end
+            if slot.problemBadge then slot.problemBadge:Hide() end
+            if slot.problemBadgeBack then slot.problemBadgeBack:Hide() end
+            -- Recycled slots may carry a drag handler from a grid render
+            slot:SetScript("OnMouseDown", nil)
             if CS.selectedRotationAssistantEntry == true then
                 slot.selectedHighlight:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
                 ST.ApplyBorderTextures(slot.selectedHighlight.ringTextures, slot.selectedHighlight,
@@ -543,7 +749,8 @@ local function BuildSelectionStrip(preview, host, panelId, group)
             end
             ApplySlotBadges(slot, status, scale)
             ApplySelectionVisuals(slot, entryInfo.index)
-            WireEntryInteraction(slot, panelId, entryInfo.index, buttonData, status)
+            layoutDrag.slots[entryInfo.index] = slot
+            WireEntryInteraction(slot, panelId, entryInfo.index, buttonData, status, dragModel)
         end
     end
 
@@ -661,6 +868,11 @@ local function StyleBarEntry(slot, buttonData, group)
 end
 
 function ST._BuildButtonPanelPreview(host, panelId)
+    -- Rebuilding pulls the slot frames out from under an in-flight drag
+    if CS.dragState and CS.dragState.kind == "layout-slot" and CancelDrag then
+        CancelDrag()
+    end
+
     local preview = EnsurePreviewState(host)
     ResetPreviewState(preview)
     HidePreviewMessage(preview)
@@ -714,6 +926,19 @@ function ST._BuildButtonPanelPreview(host, panelId)
     local poolName = isBarMode and "barSlots" or "iconSlots"
     local styleFn = isBarMode and StyleBarEntry or StyleIconEntry
 
+    local layoutDrag = CreatePreviewLayoutDrag(preview, panelId)
+    layoutDrag.count = count
+    layoutDrag.slotW, layoutDrag.slotH = w, h
+    layoutDrag.spacing = spacing
+    layoutDrag.scale = scale
+    if geo.orientation == "horizontal" then
+        layoutDrag.flowX, layoutDrag.flowY = xMul, 0
+    else
+        layoutDrag.flowX, layoutDrag.flowY = 0, yMul
+    end
+    preview.layoutDrag = layoutDrag
+    local dragModel = (count >= 2) and layoutDrag or nil
+
     for index, buttonData in ipairs(buttons) do
         local slot = AcquireSlot(preview, content, poolName)
         slot:SetSize(w, h)
@@ -738,7 +963,8 @@ function ST._BuildButtonPanelPreview(host, panelId)
         end
         ApplySlotBadges(slot, status, scale)
         ApplySelectionVisuals(slot, index)
-        WireEntryInteraction(slot, panelId, index, buttonData, status)
+        layoutDrag.slots[index] = slot
+        WireEntryInteraction(slot, panelId, index, buttonData, status, dragModel)
     end
 
     content:SetScale(scale)
