@@ -308,6 +308,50 @@ local function BuildBarIconControls(container, styleTable, onChange)
     end
 end
 
+-- Shared by the section render loop and the Add Override picker.
+local OVERRIDE_SECTION_ORDER = {
+    "borderSettings", "cooldownText", "auraText", "auraStackText",
+    "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
+    "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "auraIndicator", "readyGlow", "keyPressHighlight",
+    "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
+    "textFont", "textColors", "textBackground",
+}
+
+-- Zero-modal path to per-button overrides (owner ruling 2026-07-18):
+-- pick an eligible section here to promote it for this entry directly,
+-- without going through a panel-tab badge.
+local function AddOverridePicker(scroll, buttonData, group, displayMode)
+    local available, order = {}, {}
+    for _, sectionId in ipairs(OVERRIDE_SECTION_ORDER) do
+        local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
+        if sectionDef and sectionDef.modes[displayMode]
+            and not (buttonData.overrideSections and buttonData.overrideSections[sectionId])
+            and (CanButtonUseConfigOverrideSection(buttonData, sectionId)) then
+            available[sectionId] = sectionDef.label
+            order[#order + 1] = sectionId
+        end
+    end
+    if #order == 0 then return end
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Add Override")
+    ColorHeading(heading)
+    heading:SetFullWidth(true)
+    scroll:AddChild(heading)
+
+    local drop = AceGUI:Create("Dropdown")
+    drop:SetList(available, order)
+    drop:SetText("Choose a setting to override for this entry")
+    drop:SetFullWidth(true)
+    drop:SetCallback("OnValueChanged", function(_, _, sectionId)
+        if not sectionId then return end
+        CooldownCompanion:PromoteSection(buttonData, group.style, sectionId)
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    scroll:AddChild(drop)
+end
+
 function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
@@ -321,10 +365,11 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
         if displayMode ~= "text" then
             local noOverridesLabel = AceGUI:Create("Label")
             ST._ConfigureWrappedHelperLabel(noOverridesLabel)
-            noOverridesLabel:SetText("|cff888888No appearance overrides are currently set.\n\nAppearance overrides still come from the |A:Crosshair_VehichleCursor_32:0:0|a badge next to panel-level appearance settings while this button is selected.|r")
+            noOverridesLabel:SetText("|cff888888No appearance overrides are set for this entry yet. Add one below, or use the |A:Crosshair_VehichleCursor_32:0:0|a badge next to a panel-level setting.|r")
             noOverridesLabel:SetFullWidth(true)
             scroll:AddChild(noOverridesLabel)
         end
+        AddOverridePicker(scroll, buttonData, group, displayMode)
         return
     end
 
@@ -342,14 +387,6 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
     local refreshCallback = function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end
-
-    local sectionOrder = {
-        "borderSettings", "cooldownText", "auraText", "auraStackText",
-        "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "showOutOfRange", "showTooltips",
-        "lossOfControl", "unusableDimming", "iconTint", "assistedHighlight", "procGlow", "auraIndicator", "readyGlow", "keyPressHighlight",
-        "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
-        "textFont", "textColors", "textBackground",
-    }
 
     local sectionBuilders = {
         borderSettings = BuildBorderControls,
@@ -396,7 +433,7 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
 
     local visibleOverrideSections = 0
     local hiddenOverrideSections = {}
-    for _, sectionId in ipairs(sectionOrder) do
+    for _, sectionId in ipairs(OVERRIDE_SECTION_ORDER) do
         if buttonData.overrideSections[sectionId] then
             local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
             local sectionAllowed, sectionUnavailableReason = CanButtonUseConfigOverrideSection(buttonData, sectionId)
@@ -599,4 +636,6 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
     for _, hiddenSection in ipairs(hiddenOverrideSections) do
         AddHiddenOverrideSection(scroll, buttonData, hiddenSection, infoButtons)
     end
+
+    AddOverridePicker(scroll, buttonData, group, displayMode)
 end
