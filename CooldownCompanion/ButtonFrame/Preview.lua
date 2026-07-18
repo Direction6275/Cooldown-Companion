@@ -176,9 +176,16 @@ end
 -- setters store the preview state for the mirror to read and skip the
 -- live world buttons entirely. Panel types without a mirror rendering
 -- (trigger, texture, rotation assistant - the config shows a selection
--- strip for these) keep live previews as their only surface. Clear
+-- strip for these) keep live previews as their only surface. The mirror
+-- must also actually be the active surface for this panel (wide buttons
+-- view, panel selected) - Other Class browsing renders browsed panels
+-- live in the world with no mirror, so previews route live there. Clear
 -- paths stay unconditional: clearing a live button is always safe.
 local function IsMirrorPreviewSurface(groupId)
+    local isMirrorActive = ST._IsPanelMirrorPreviewActive
+    if not (isMirrorActive and isMirrorActive(groupId)) then
+        return false
+    end
     local db = CooldownCompanion.db
     local group = db and db.profile and db.profile.groups and db.profile.groups[groupId]
     if not group then

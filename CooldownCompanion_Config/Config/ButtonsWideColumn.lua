@@ -758,6 +758,15 @@ local function RefreshButtonsWideColumn()
     ST._RefreshGroupSettingsHost(host)
 end
 
+-- The mirror owns a panel's config previews only while the wide buttons
+-- view is showing that panel's pinned preview. Anywhere else - Other
+-- Class browsing being the reachable case, where browsed panels render
+-- live in the world - the live buttons are the only preview surface.
+local function IsPanelMirrorPreviewActive(groupId)
+    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return false end
+    return groupId ~= nil and groupId == CS.selectedGroup
+end
+
 -- Rebuild just the pinned mirror (e.g. after a preview toggle flips, or
 -- from UpdateGroupStyle so style edits reflect immediately) without a full
 -- config refresh. An optional groupId scopes the rebuild: updates to a
@@ -779,6 +788,7 @@ end
 ST._RefreshButtonsWideColumn = RefreshButtonsWideColumn
 ST._AnchorButtonsContentFrame = AnchorButtonsContentFrame
 ST._RefreshButtonsPreviewMirror = RefreshButtonsPreviewMirror
+ST._IsPanelMirrorPreviewActive = IsPanelMirrorPreviewActive
 ST._ReapplyPanelPreviewSplit = ReapplyPanelPreviewSplit
 ST._ClearWideAddBoxAfterAdd = ClearWideAddBoxAfterAdd
 -- Shared teardown for view switches away from the buttons view (resources,
