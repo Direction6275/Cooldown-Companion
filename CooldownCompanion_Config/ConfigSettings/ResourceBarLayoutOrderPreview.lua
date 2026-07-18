@@ -1757,7 +1757,10 @@ local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
     local slotFrameHeight = math_max(8, slotHeight)
     local aboveHeight = GetLaneExtent(#aboveSlots, slotFrameHeight)
     local belowHeight = GetLaneExtent(#belowSlots, slotFrameHeight)
-    local slotWidth = sourcePanel.width
+    -- Live attached bars stretch to the anchor frame's width, so slots
+    -- follow the acquired panel frame (the real mirror when injected),
+    -- not the facsimile's precomputed size.
+    local slotWidth = panelWidth
 
     local aboveLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, aboveHeight, "y", "above", true, aboveSlots, slotWidth, slotFrameHeight, nil)
     aboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
@@ -1790,7 +1793,7 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
         local castAboveHeight = GetLaneExtent(#castAbove, castSlotFrameHeight)
         local castBelowHeight = GetLaneExtent(#castBelow, castSlotFrameHeight)
 
-        local castAboveLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castAboveHeight, "y", "above", true, castAbove, sourcePanel.width, castSlotFrameHeight, "cast")
+        local castAboveLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castAboveHeight, "y", "above", true, castAbove, panelWidth, castSlotFrameHeight, "cast")
         castAboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
 
         castAboveLane.setPreviewOverflow = function(extra)
@@ -1803,7 +1806,7 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
         castPanel:ClearAllPoints()
         castPanel:SetPoint("TOPLEFT", castAboveLane.frame, "BOTTOMLEFT", 0, -LAYOUT_PREVIEW_GAP)
 
-        local castBelowLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castBelowHeight, "y", "below", false, castBelow, sourcePanel.width, castSlotFrameHeight, "cast")
+        local castBelowLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castBelowHeight, "y", "below", false, castBelow, panelWidth, castSlotFrameHeight, "cast")
         castBelowLane.frame:SetPoint("TOPLEFT", castPanel, "BOTTOMLEFT", 0, -LAYOUT_PREVIEW_GAP)
 
         local iconCenterOffsetY = castAboveHeight + LAYOUT_PREVIEW_GAP + (panelHeight / 2)
@@ -1817,7 +1820,7 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
     local rightSlots = SortSlotsForSide(primarySlots, "right", false)
     local leftWidth = GetLaneExtent(#leftSlots, verticalBarWidth)
     local rightWidth = GetLaneExtent(#rightSlots, verticalBarWidth)
-    local verticalBarHeight = sourcePanel.height
+    local verticalBarHeight = panelHeight
 
     local leftLane = BuildLane(preview, content, layoutDrag, nil, leftWidth, panelHeight, "x", "left", true, leftSlots, verticalBarWidth, verticalBarHeight, "primary")
     leftLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
@@ -1846,7 +1849,7 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
         local castAboveHeight = GetLaneExtent(#castAbove, castSlotFrameHeight)
         local castBelowHeight = GetLaneExtent(#castBelow, castSlotFrameHeight)
 
-        local castAboveLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castAboveHeight, "y", "above", true, castAbove, sourcePanel.width, castSlotFrameHeight, "cast")
+        local castAboveLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castAboveHeight, "y", "above", true, castAbove, panelWidth, castSlotFrameHeight, "cast")
         castAboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", leftWidth + LAYOUT_PREVIEW_GAP, -(panelHeight + LAYOUT_PREVIEW_SECTION_GAP))
 
         castAboveLane.setPreviewOverflow = function(extra)
@@ -1859,7 +1862,7 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
         castPanel:ClearAllPoints()
         castPanel:SetPoint("TOPLEFT", castAboveLane.frame, "BOTTOMLEFT", 0, -LAYOUT_PREVIEW_GAP)
 
-        local castBelowLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castBelowHeight, "y", "below", false, castBelow, sourcePanel.width, castSlotFrameHeight, "cast")
+        local castBelowLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castBelowHeight, "y", "below", false, castBelow, panelWidth, castSlotFrameHeight, "cast")
         castBelowLane.frame:SetPoint("TOPLEFT", castPanel, "BOTTOMLEFT", 0, -LAYOUT_PREVIEW_GAP)
 
         totalHeight = panelHeight + LAYOUT_PREVIEW_SECTION_GAP + castAboveHeight + castPanel:GetHeight() + castBelowHeight + (LAYOUT_PREVIEW_GAP * 2)
