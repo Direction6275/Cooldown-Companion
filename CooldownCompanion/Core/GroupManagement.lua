@@ -1363,6 +1363,13 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     if oldMode ~= newMode and ShouldClearCDMPanelSourceForDisplayMode(group, newMode) then
         group.cdmPanelSource = nil
     end
+    -- Config previews are stored per-group and gated by the panel's mirror
+    -- surface at APPLY time; a transition across the mirror boundary (e.g.
+    -- icons -> textures) would migrate previews armed for the config mirror
+    -- onto the live world buttons. Clear them on every mode change.
+    if oldMode ~= newMode and self.ClearAllConfigPreviews then
+        self:ClearAllConfigPreviews()
+    end
     if newMode == "bars" or newMode == "text" then
         group.style.orientation = "vertical"
     end
