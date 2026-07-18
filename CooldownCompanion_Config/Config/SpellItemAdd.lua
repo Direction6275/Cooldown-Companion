@@ -364,6 +364,9 @@ local function TryAdd(input)
                 -- Skip auto-select if the user navigated away during async load
                 local stillOnGroup = CS.selectedGroup == capturedGroup
                 if FinalizeAddItem(itemId, capturedGroup, stillOnGroup) then
+                    if ST._ClearWideAddBoxAfterAdd then
+                        ST._ClearWideAddBoxAfterAdd(input)
+                    end
                     CooldownCompanion:RefreshConfigPanel()
                 elseif passiveOrProc then
                     CooldownCompanion:Print("Passive/proc spell " .. spellInfo.name .. " is not tracked in the Cooldown Manager.")
