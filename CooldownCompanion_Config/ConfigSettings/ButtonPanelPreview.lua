@@ -39,6 +39,8 @@ local PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = 5
 local PANEL_PREVIEW_BADGE_SCREEN_SIZE = 14
 -- Matches the resources layout preview's tween timing
 local PANEL_PREVIEW_ANIM_DURATION = 0.08
+-- Fake cooldown loop on icon-mode slots (config-only, literal times)
+local PANEL_PREVIEW_SWIPE_PERIOD = 10
 local DEFAULT_BAR_COLOR = { 0.2, 0.6, 1.0, 1.0 }
 
 -- Mirror of GroupFrame.lua GetGrowthMultipliers: anchor corner plus x/y
@@ -142,6 +144,13 @@ local function CreateIconSlot(parent)
     for i = 1, 4 do
         frame.borderTextures[i] = frame:CreateTexture(nil, "OVERLAY")
     end
+
+    frame.cooldown = CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
+    frame.cooldown:SetAllPoints(frame.icon)
+    frame.cooldown:SetDrawBling(false)
+    frame.cooldown:SetHideCountdownNumbers(true)
+    frame.cooldown:EnableMouse(false)
+    frame.cooldown:Hide()
 
     AttachSlotHighlights(frame)
     return frame
@@ -848,6 +857,65 @@ local function StyleIconEntry(slot, buttonData, group)
     StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
 end
 
+------------------------------------------------------------------------
+-- Fake cooldown swipe: a slow looping sweep on icon-mode slots so the
+-- mirror previews the panel's swipe styling. Times are literal numbers
+-- from GetTime (config-only; never live cooldown reads). Mirrors
+-- IconMode.lua ApplyDefaultCooldownSwipeStyle.
+------------------------------------------------------------------------
+local function ApplyFakeCooldownSwipe(preview, slot, buttonData, group)
+    local cd = slot.cooldown
+    if not cd then return end
+
+    local style = group.style or {}
+    if CooldownCompanion.GetEffectiveStyle then
+        style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+    end
+
+    local swipeEnabled = style.showCooldownSwipe ~= false
+    local fillEnabled = style.showCooldownSwipeFill ~= false
+    local edgeEnabled = style.showCooldownSwipeEdge ~= false
+    if not swipeEnabled or not (fillEnabled or edgeEnabled) then
+        slot._cdcFakeSwipe = false
+        cd:Clear()
+        cd:Hide()
+        return
+    end
+
+    local alpha = style.cooldownSwipeAlpha or 0.8
+    local edgeColor = style.cooldownSwipeEdgeColor or { 1, 1, 1, 1 }
+    cd:SetDrawSwipe(fillEnabled)
+    cd:SetDrawEdge(edgeEnabled)
+    cd:SetReverse(style.cooldownSwipeReverse or false)
+    cd:SetSwipeColor(0, 0, 0, alpha)
+    cd:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
+    cd:Show()
+    slot._cdcFakeSwipe = true
+    cd:SetCooldown(preview.swipeCycleStart or GetTime(), PANEL_PREVIEW_SWIPE_PERIOD)
+end
+
+local function StopFakeSwipeTicker(preview)
+    if preview.swipeTicker then
+        preview.swipeTicker:Cancel()
+        preview.swipeTicker = nil
+    end
+end
+
+local function EnsureFakeSwipeTicker(preview)
+    if preview.swipeTicker then return end
+    preview.swipeTicker = C_Timer.NewTicker(PANEL_PREVIEW_SWIPE_PERIOD, function()
+        preview.swipeCycleStart = GetTime()
+        local pool = preview.pools.iconSlots
+        local used = preview.used.iconSlots or 0
+        for i = 1, used do
+            local slot = pool[i]
+            if slot and slot._cdcFakeSwipe and slot.cooldown and slot:IsShown() then
+                slot.cooldown:SetCooldown(preview.swipeCycleStart, PANEL_PREVIEW_SWIPE_PERIOD)
+            end
+        end
+    end)
+end
+
 -- Static mirror of TextMode.lua CreateTextFrame: same saved settings,
 -- entry name in place of the live token-substituted format string.
 local function StyleTextEntry(slot, buttonData, group)
@@ -937,6 +1005,8 @@ local STRIP_SPACING = 4
 local STRIP_PER_ROW = 8
 
 local function BuildSelectionStrip(preview, host, panelId, group)
+    StopFakeSwipeTicker(preview)
+    preview.swipeCycleStart = nil
     local isRA = group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
     local entries = {}
     if isRA then
@@ -995,6 +1065,13 @@ local function BuildSelectionStrip(preview, host, panelId, group)
 
         local buttonData = entryInfo.buttonData
         StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
+        -- Selection strips are pickers, not mirrors: no fake swipe here,
+        -- and recycled grid slots must not keep one running.
+        if slot.cooldown then
+            slot._cdcFakeSwipe = false
+            slot.cooldown:Clear()
+            slot.cooldown:Hide()
+        end
 
         if entryInfo.isRotationAssistant then
             slot.icon:SetDesaturated(false)
@@ -1238,6 +1315,20 @@ function ST._BuildButtonPanelPreview(host, panelId)
     local poolName = isBarMode and "barSlots" or (isTextMode and "textSlots" or "iconSlots")
     local styleFn = isBarMode and StyleBarEntry or (isTextMode and StyleTextEntry or StyleIconEntry)
 
+    if not isBarMode and not isTextMode then
+        -- Keep the swipe cycle running across the rebuilds every config
+        -- click triggers; only start a fresh cycle when the old one ended.
+        local now = GetTime()
+        if not preview.swipeCycleStart
+            or (now - preview.swipeCycleStart) >= PANEL_PREVIEW_SWIPE_PERIOD then
+            preview.swipeCycleStart = now
+        end
+        EnsureFakeSwipeTicker(preview)
+    else
+        StopFakeSwipeTicker(preview)
+        preview.swipeCycleStart = nil
+    end
+
     local layoutDrag = CreatePreviewLayoutDrag(preview, panelId)
     layoutDrag.count = count
     layoutDrag.slotW, layoutDrag.slotH = w, h
@@ -1265,6 +1356,9 @@ function ST._BuildButtonPanelPreview(host, panelId)
         ApplyPreviewSlotGeometry(preview, slot, growthAnchor, cx, cy)
 
         styleFn(slot, buttonData, group)
+        if not isBarMode and not isTextMode then
+            ApplyFakeCooldownSwipe(preview, slot, buttonData, group)
+        end
         local status = CollectEntryStatus(buttonData, group)
         if slot.icon then
             slot.icon:SetDesaturated(not status.usable)
@@ -1292,6 +1386,7 @@ ST._EntryStatusBadges = ENTRY_STATUS_BADGES
 function ST._ReleaseButtonPanelPreview(host)
     local preview = host and host._cdcPanelPreview
     if preview then
+        StopFakeSwipeTicker(preview)
         preview.root:Hide()
     end
 end
