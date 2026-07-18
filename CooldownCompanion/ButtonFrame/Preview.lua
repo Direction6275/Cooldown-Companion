@@ -371,6 +371,21 @@ end
 
 ST._GetConditionalVisualPreview = GetConditionalVisualPreview
 
+-- Stored conditional-preview state for (group, button): the per-button
+-- entry wins, else the group-wide entry (the setters keep the two
+-- mutually exclusive per group). Read by the config mirror, which renders
+-- CC-side stand-ins from the same state.
+local function GetStoredConditionalPreviewState(groupId, buttonIndex)
+    if not groupId then
+        return nil
+    end
+    local groupButtons = activeConditionalButtonPreviews[groupId]
+    local buttonState = groupButtons and buttonIndex and groupButtons[buttonIndex] or nil
+    return buttonState or activeConditionalGroupPreviews[groupId]
+end
+
+ST._GetStoredConditionalPreviewState = GetStoredConditionalPreviewState
+
 function CooldownCompanion:IsPreviewFlagActive(groupId, buttonIndex, previewFlag)
     if not previewFlag then
         return false

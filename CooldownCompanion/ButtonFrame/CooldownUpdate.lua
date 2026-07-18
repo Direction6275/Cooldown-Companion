@@ -198,6 +198,11 @@ local function GetConditionalPreviewTiming(preview, now)
     return startTime, duration, remaining
 end
 
+-- Shared with the config mirror, which renders CC-side stand-ins from the
+-- same stored preview state (and stays time-synced with the live preview
+-- through the state's start/loop times).
+ST._GetConditionalPreviewTiming = GetConditionalPreviewTiming
+
 local function SetConditionalPreviewTimingFields(button, startTime, duration, remaining, loopStartTime, loopDuration)
     button._conditionalPreviewStartTime = startTime
     button._conditionalPreviewDuration = duration

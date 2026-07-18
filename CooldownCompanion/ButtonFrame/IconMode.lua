@@ -1523,3 +1523,9 @@ ST._UpdateIconModeGlows = UpdateIconModeGlows
 ST._ApplyIconCountTextStyle = ApplyCountTextStyle
 ST._ApplyAuraShellVisuals = ApplyAuraShellVisuals
 ST._ClearIconFillVisualState = ClearIconFillVisualState
+-- Icon-fill plumbing shared with the config mirror's cooldown preview
+-- (frame-agnostic: they read only .icon/.iconFill/.cooldown/.style).
+ST._AnchorIconFill = AnchorIconFill
+ST._ApplyIconFillGeometry = ApplyIconFillGeometry
+ST._ApplyIconFillLayer = ApplyIconFillLayer
+ST._ResolveIconFillTimerValue = ResolveIconFillTimerValue

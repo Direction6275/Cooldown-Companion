@@ -30,6 +30,13 @@ local CancelDrag = ST._CancelDrag
 local GetEffectiveTextHeight = ST._GetEffectiveTextHeight
 local CreateGlowContainer = ST._CreateGlowContainer
 local SetBarAuraEffect = ST._SetBarAuraEffect
+local GetStoredConditionalPreviewState = ST._GetStoredConditionalPreviewState
+local GetConditionalPreviewTiming = ST._GetConditionalPreviewTiming
+local ApplyIconCountTextStyle = ST._ApplyIconCountTextStyle
+local AnchorIconFill = ST._AnchorIconFill
+local ApplyIconFillGeometry = ST._ApplyIconFillGeometry
+local ApplyIconFillLayer = ST._ApplyIconFillLayer
+local ResolveIconFillTimerValue = ST._ResolveIconFillTimerValue
 
 local PANEL_PREVIEW_PADDING = 12
 local PANEL_PREVIEW_DISABLED_ALPHA = 0.45
@@ -41,8 +48,9 @@ local PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = 5
 local PANEL_PREVIEW_BADGE_SCREEN_SIZE = 14
 -- Matches the resources layout preview's tween timing
 local PANEL_PREVIEW_ANIM_DURATION = 0.08
--- Fake cooldown loop on icon-mode slots (config-only, literal times)
-local PANEL_PREVIEW_SWIPE_PERIOD = 10
+-- Update cadence for animated conditional previews (countdown numbers,
+-- loop re-arms); the swipes and fills self-animate between ticks.
+local PANEL_PREVIEW_COND_TICK = 0.25
 local DEFAULT_BAR_COLOR = { 0.2, 0.6, 1.0, 1.0 }
 
 -- Mirror of GroupFrame.lua GetGrowthMultipliers: anchor corner plus x/y
@@ -860,62 +868,354 @@ local function StyleIconEntry(slot, buttonData, group)
 end
 
 ------------------------------------------------------------------------
--- Fake cooldown swipe: a slow looping sweep on icon-mode slots so the
--- mirror previews the panel's swipe styling. Times are literal numbers
--- from GetTime (config-only; never live cooldown reads). Mirrors
--- IconMode.lua ApplyDefaultCooldownSwipeStyle.
+-- Conditional visual previews on the mirror (icon panels): while a
+-- conditional preview toggle (cooldown, charges, unusable, out of
+-- range, aura duration/stacks, loss of control) is active for an entry
+-- or its whole panel, render the same CC-side stand-in the live world
+-- buttons show - from the same stored preview state (Preview.lua) and
+-- the same timing math (CooldownUpdate.lua), so the mirror stays
+-- time-synced with the live preview. Times are literal numbers from
+-- the stored state (config-only; never live cooldown reads).
 ------------------------------------------------------------------------
-local function ApplyFakeCooldownSwipe(preview, slot, buttonData, group, panelId, index)
-    local cd = slot.cooldown
-    if not cd then return end
+local ICON_FILL_TEXTURE = "Interface\\Buttons\\WHITE8x8"
+-- VisualState.lua DEFAULT_ICON_FILL_COOLDOWN_COLOR
+local DEFAULT_ICON_FILL_COOLDOWN_COLOR = { 0.6, 0.13, 0.18, 0.55 }
 
-    -- Only while the cooldown preview toggle is on for this entry (or its
-    -- whole panel) - the mirror follows the same preview flags as the
-    -- live world buttons.
-    local previewActive = CooldownCompanion.IsConditionalVisualPreviewActive
-        and CooldownCompanion:IsConditionalVisualPreviewActive(panelId, index, "cooldown")
-
-    local style = group.style or {}
-    if CooldownCompanion.GetEffectiveStyle then
-        style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+-- Hosts the count/aura text stand-ins above the cooldown swipe, like
+-- the live buttons' overlayFrame.
+local function EnsureSlotTextOverlay(slot)
+    local overlay = slot.textOverlay
+    if not overlay then
+        overlay = CreateFrame("Frame", nil, slot)
+        overlay:SetAllPoints()
+        overlay:EnableMouse(false)
+        slot.textOverlay = overlay
     end
+    overlay:SetFrameLevel(slot.cooldown:GetFrameLevel() + 1)
+    return overlay
+end
 
-    local swipeEnabled = style.showCooldownSwipe ~= false
-    local fillEnabled = style.showCooldownSwipeFill ~= false
-    local edgeEnabled = style.showCooldownSwipeEdge ~= false
-    if not previewActive or not swipeEnabled or not (fillEnabled or edgeEnabled) then
-        slot._cdcFakeSwipe = false
-        cd:Clear()
-        cd:Hide()
-        return
+local function EnsureSlotCountText(slot)
+    if not slot.count then
+        slot.count = EnsureSlotTextOverlay(slot):CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    else
+        EnsureSlotTextOverlay(slot)
     end
+    return slot.count
+end
 
-    local alpha = style.cooldownSwipeAlpha or 0.8
-    local edgeColor = style.cooldownSwipeEdgeColor or { 1, 1, 1, 1 }
-    cd:SetDrawSwipe(fillEnabled)
-    cd:SetDrawEdge(edgeEnabled)
-    cd:SetReverse(style.cooldownSwipeReverse or false)
-    cd:SetSwipeColor(0, 0, 0, alpha)
-    cd:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
+local function EnsureSlotAuraText(slot)
+    if not slot.auraTextFS then
+        slot.auraTextFS = EnsureSlotTextOverlay(slot):CreateFontString(nil, "OVERLAY")
+    else
+        EnsureSlotTextOverlay(slot)
+    end
+    return slot.auraTextFS
+end
 
-    -- Cooldown text: like live icon mode, restyle the widget's built-in
-    -- countdown region and let it count the fake loop down.
-    local region = cd:GetRegions()
-    if region and region.SetFont then
-        if style.showCooldownText then
-            cd:SetHideCountdownNumbers(false)
-            CooldownCompanion.ApplyFontStyle(region, style, "cooldown")
-            region:ClearAllPoints()
-            region:SetPoint(style.cooldownTextAnchor or "CENTER",
-                style.cooldownTextXOffset or 0, style.cooldownTextYOffset or 0)
-        else
-            cd:SetHideCountdownNumbers(true)
+local function EnsureSlotAuraStackText(slot)
+    if not slot.auraStackCount then
+        slot.auraStackCount = EnsureSlotTextOverlay(slot):CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    else
+        EnsureSlotTextOverlay(slot)
+    end
+    return slot.auraStackCount
+end
+
+local function EnsureSlotAuraSwipe(slot)
+    local widget = slot.auraSwipe
+    if not widget then
+        widget = CreateFrame("Cooldown", nil, slot, "CooldownFrameTemplate")
+        widget:SetAllPoints(slot.icon)
+        widget:SetDrawBling(false)
+        widget:SetHideCountdownNumbers(true)
+        widget:EnableMouse(false)
+        slot.auraSwipe = widget
+    end
+    widget:SetFrameLevel(slot.cooldown:GetFrameLevel())
+    return widget
+end
+
+local function EnsureSlotLocCooldown(slot)
+    local widget = slot.locCooldown
+    if not widget then
+        widget = CreateFrame("Cooldown", nil, slot, "CooldownFrameTemplate")
+        widget:SetAllPoints(slot.icon)
+        widget:SetDrawBling(false)
+        widget:SetHideCountdownNumbers(true)
+        widget:EnableMouse(false)
+        -- Fixed styling per IconMode.lua CreateButtonFrame's locCooldown
+        widget:SetDrawEdge(true)
+        widget:SetDrawSwipe(true)
+        widget:SetSwipeColor(0.17, 0, 0, 0.8)
+        slot.locCooldown = widget
+    end
+    widget:SetFrameLevel(slot.cooldown:GetFrameLevel() + 2)
+    return widget
+end
+
+-- Self-animating fill, like the live icon fill's OnUpdate driver; reads
+-- the stored preview state so loop wraps need no external re-arm.
+local function SlotIconFillOnUpdate(self)
+    local slot = self._owner
+    local state = slot and slot._cdcCondAnim
+    if not (state and GetConditionalPreviewTiming and ResolveIconFillTimerValue) then return end
+    local startTime, duration, remaining = GetConditionalPreviewTiming(state, GetTime())
+    if not (startTime and duration and duration > 0) then return end
+    self:SetValue(ResolveIconFillTimerValue(slot, 1 - (remaining / duration)))
+end
+
+local function EnsureSlotIconFill(slot)
+    local fill = slot.iconFill
+    if not fill then
+        fill = CreateFrame("StatusBar", nil, slot)
+        fill._owner = slot
+        fill:SetMinMaxValues(0, 1)
+        fill:SetStatusBarTexture(ICON_FILL_TEXTURE)
+        fill:EnableMouse(false)
+        slot.iconFill = fill
+    end
+    if AnchorIconFill then AnchorIconFill(slot) end
+    if ApplyIconFillLayer then ApplyIconFillLayer(slot) end
+    return fill
+end
+
+local function ResetSlotConditionalVisuals(slot)
+    slot._cdcCondAnim = nil
+    slot._cdcCondArmedStart = nil
+    if slot.cooldown then
+        slot.cooldown:Clear()
+        slot.cooldown:Hide()
+    end
+    if slot.auraSwipe then
+        slot.auraSwipe:Clear()
+        slot.auraSwipe:Hide()
+    end
+    if slot.locCooldown then
+        slot.locCooldown:Clear()
+        slot.locCooldown:Hide()
+    end
+    if slot.auraTextFS then
+        slot.auraTextFS:Hide()
+    end
+    if slot.auraStackCount then
+        slot.auraStackCount:SetText("")
+        slot.auraStackCount:Hide()
+    end
+    if slot.count then
+        slot.count:SetText("")
+    end
+    if slot.iconFill then
+        slot.iconFill:SetScript("OnUpdate", nil)
+        slot.iconFill:Hide()
+    end
+end
+
+-- Cooldown text: like live icon mode, restyle the widget's built-in
+-- countdown region and let it count the fake loop down. Reapplied after
+-- every SetCooldown re-arm (the CooldownFrame may reset the region).
+-- Passive aura entries never show cooldown text (live parity).
+local function StyleSlotCooldownText(slot, style)
+    local region = slot.cooldown:GetRegions()
+    if not (region and region.SetFont) then return end
+    if style.showCooldownText and not (slot.buttonData and slot.buttonData.isPassive) then
+        slot.cooldown:SetHideCountdownNumbers(false)
+        CooldownCompanion.ApplyFontStyle(region, style, "cooldown")
+        region:ClearAllPoints()
+        region:SetPoint(style.cooldownTextAnchor or "CENTER",
+            style.cooldownTextXOffset or 0, style.cooldownTextYOffset or 0)
+    else
+        slot.cooldown:SetHideCountdownNumbers(true)
+    end
+end
+
+-- Renders the entry's active conditional preview (if any) onto its
+-- mirror slot, and always restores the baseline tint/desaturation a
+-- recycled slot may carry. Runs after the entry-status desaturation:
+-- previews may force desaturation on, never off. Each branch mirrors
+-- the live interpreter (CooldownUpdate.lua ApplyConditionalVisualPreview)
+-- plus that state's render outcome (Tracking.lua tint/desaturation,
+-- IconMode.lua swipe/fill), gated on the same style keys.
+local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
+    ResetSlotConditionalVisuals(slot)
+    -- Read by ApplyIconCountTextStyle and StyleSlotCooldownText
+    slot.buttonData = buttonData
+
+    local style = slot.style or group.style or {}
+    -- Tracking.lua ResolveIconTintIntent: base = configured icon tint.
+    local baseTint = style.iconTintColor
+    local tintR = baseTint and baseTint[1] or 1
+    local tintG = baseTint and baseTint[2] or 1
+    local tintB = baseTint and baseTint[3] or 1
+    local tintA = baseTint and baseTint[4] or 1
+    local forceDesat = false
+
+    local state = GetStoredConditionalPreviewState
+        and GetStoredConditionalPreviewState(panelId, index) or nil
+    local kind = state and state.kind or nil
+    local now = GetTime()
+
+    if kind == "cooldown" and GetConditionalPreviewTiming then
+        local startTime, duration = GetConditionalPreviewTiming(state, now)
+        if startTime then
+            -- An active icon fill owns the cooldown visual and suppresses
+            -- the swipe and edge (VisualState.lua SetIconFillIntent).
+            local fillActive = style.iconFillEnabled == true
+                and group.masqueEnabled ~= true
+                and ResolveIconFillTimerValue ~= nil
+            local cd = slot.cooldown
+            local swipeEnabled = style.showCooldownSwipe ~= false and not fillActive
+            cd:SetDrawSwipe(swipeEnabled and style.showCooldownSwipeFill ~= false)
+            cd:SetDrawEdge(swipeEnabled and style.showCooldownSwipeEdge ~= false)
+            cd:SetReverse(style.cooldownSwipeReverse or false)
+            cd:SetSwipeColor(0, 0, 0, style.cooldownSwipeAlpha or 0.8)
+            local edgeColor = style.cooldownSwipeEdgeColor or { 1, 1, 1, 1 }
+            cd:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
+            StyleSlotCooldownText(slot, style)
+            cd:Show()
+            cd:SetCooldown(startTime, duration)
+            slot._cdcCondAnim = state
+            slot._cdcCondArmedStart = startTime
+
+            if fillActive then
+                local fill = EnsureSlotIconFill(slot)
+                if ApplyIconFillGeometry then
+                    ApplyIconFillGeometry(slot, style)
+                end
+                local c = style.iconFillCooldownColor or DEFAULT_ICON_FILL_COOLDOWN_COLOR
+                fill:SetStatusBarColor(c[1], c[2], c[3], c[4])
+                fill:SetScript("OnUpdate", SlotIconFillOnUpdate)
+                fill:Show()
+                SlotIconFillOnUpdate(fill)
+            end
+
+            if style.desaturateOnCooldown then
+                forceDesat = true
+            end
+            if style.iconCooldownTintEnabled and style.iconCooldownTintColor then
+                local c = style.iconCooldownTintColor
+                tintR, tintG, tintB, tintA = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+            end
+        end
+    elseif kind == "charge_full" or kind == "charge_missing" or kind == "charge_zero" then
+        if CooldownCompanion.UsesChargeBehavior and CooldownCompanion.UsesChargeBehavior(buttonData) then
+            local maxCharges = buttonData.maxCharges or 2
+            if maxCharges < 2 then maxCharges = 2 end
+            local current = maxCharges
+            local colorKey = "chargeFontColor"
+            if kind == "charge_missing" then
+                current = math_max(1, maxCharges - 1)
+                colorKey = "chargeFontColorMissing"
+            elseif kind == "charge_zero" then
+                current = 0
+                colorKey = "chargeFontColorZero"
+            end
+
+            local count = EnsureSlotCountText(slot)
+            if ApplyIconCountTextStyle then
+                ApplyIconCountTextStyle(slot, style)
+            end
+            if style.showChargeText ~= false then
+                count:SetText(current)
+            end
+            -- CooldownUpdate.lua ApplyChargeTextColor: only recolor when
+            -- any charge color is configured at all.
+            if style.chargeFontColor or style.chargeFontColorMissing or style.chargeFontColorZero then
+                local cc = style[colorKey] or { 1, 1, 1, 1 }
+                count:SetTextColor(cc[1], cc[2], cc[3], cc[4] or 1)
+            end
+
+            if kind == "charge_zero" then
+                -- Live zero charges sets _desatCooldownActive, so the
+                -- cooldown desaturate/tint options apply here too.
+                if style.desaturateOnCooldown
+                    or (buttonData.desaturateWhileZeroCharges
+                        and not (CooldownCompanion.HasItemFallbacks
+                            and CooldownCompanion.HasItemFallbacks(buttonData))) then
+                    forceDesat = true
+                end
+                if style.iconCooldownTintEnabled and style.iconCooldownTintColor then
+                    local c = style.iconCooldownTintColor
+                    tintR, tintG, tintB, tintA = c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                end
+            end
+        end
+    elseif kind == "unusable" then
+        -- Tracking.lua IsUnusableVisualActive: aura and passive entries
+        -- never show castability state.
+        if style.showUnusable
+            and not (buttonData.isPassive or buttonData.isPassiveCooldown or buttonData.addedAs == "aura") then
+            if ST.UnusableVisualUsesDesaturation(style) then
+                forceDesat = true
+            end
+            if ST.UnusableVisualUsesDimTint(style) then
+                local uc = style.iconUnusableTintColor
+                tintR = uc and uc[1] or 0.4
+                tintG = uc and uc[2] or 0.4
+                tintB = uc and uc[3] or 0.4
+                tintA = uc and uc[4] or tintA
+            end
+        end
+    elseif kind == "out_of_range" then
+        if style.showOutOfRange and not buttonData.isPassive then
+            tintR, tintG, tintB = 1, 0.2, 0.2
+        end
+    elseif kind == "aura_duration_text" and GetConditionalPreviewTiming then
+        if style.showAuraText ~= false then
+            local startTime, _, remaining = GetConditionalPreviewTiming(state, now)
+            if startTime then
+                local fs = EnsureSlotAuraText(slot)
+                CooldownCompanion.ApplyFontStyle(fs, style, "auraText")
+                local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style)
+                fs:ClearAllPoints()
+                fs:SetPoint(anchor, slot, anchor, xOff, yOff)
+                fs:SetFormattedText("%d", math_ceil(remaining))
+                fs:Show()
+                slot._cdcCondAnim = state
+            end
+        end
+    elseif kind == "aura_stack_text" then
+        if style.showAuraStackText ~= false then
+            local fs = EnsureSlotAuraStackText(slot)
+            CooldownCompanion.ApplyFontStyle(fs, style, "auraStack")
+            fs:ClearAllPoints()
+            fs:SetPoint(style.auraStackAnchor or "BOTTOMLEFT",
+                style.auraStackXOffset or 2, style.auraStackYOffset or 2)
+            fs:SetText(state.stackText or "3")
+            fs:Show()
+        end
+    elseif kind == "aura_duration_swipe" and GetConditionalPreviewTiming then
+        if style.showAuraDurationSwipe ~= false then
+            local startTime, duration = GetConditionalPreviewTiming(state, now)
+            if startTime then
+                local widget = EnsureSlotAuraSwipe(slot)
+                if CooldownCompanion.ApplyAuraDurationSwipeStyle then
+                    CooldownCompanion:ApplyAuraDurationSwipeStyle(widget, style)
+                end
+                widget:Show()
+                widget:SetCooldown(startTime, duration)
+                slot._cdcCondAnim = state
+                slot._cdcCondArmedStart = startTime
+            end
+        end
+    elseif kind == "loss_of_control" and GetConditionalPreviewTiming then
+        -- Live gate (CooldownUpdate.lua): spells only, never passives.
+        if style.showLossOfControl and buttonData.type == "spell" and not buttonData.isPassive then
+            local startTime, duration = GetConditionalPreviewTiming(state, now)
+            if startTime then
+                local widget = EnsureSlotLocCooldown(slot)
+                widget:Show()
+                widget:SetCooldown(startTime, duration)
+                slot._cdcCondAnim = state
+                slot._cdcCondArmedStart = startTime
+            end
         end
     end
 
-    cd:Show()
-    slot._cdcFakeSwipe = true
-    cd:SetCooldown(preview.swipeCycleStart or GetTime(), PANEL_PREVIEW_SWIPE_PERIOD)
+    slot.icon:SetVertexColor(tintR, tintG, tintB, tintA)
+    if forceDesat then
+        slot.icon:SetDesaturated(true)
+    end
 end
 
 ------------------------------------------------------------------------
@@ -990,23 +1290,50 @@ local function ClearSlotEffectPreviews(slot)
     end
 end
 
-local function StopFakeSwipeTicker(preview)
-    if preview.swipeTicker then
-        preview.swipeTicker:Cancel()
-        preview.swipeTicker = nil
+local function StopConditionalTicker(preview)
+    if preview.condTicker then
+        preview.condTicker:Cancel()
+        preview.condTicker = nil
     end
 end
 
-local function EnsureFakeSwipeTicker(preview)
-    if preview.swipeTicker then return end
-    preview.swipeTicker = C_Timer.NewTicker(PANEL_PREVIEW_SWIPE_PERIOD, function()
-        preview.swipeCycleStart = GetTime()
+-- Drives the animated conditional previews: countdown numbers for the
+-- aura duration text, and re-arming the looping Cooldown widgets when
+-- the stored preview state wraps to a new cycle (within a cycle the
+-- computed startTime is constant, so a forward jump means a new cycle).
+local function EnsureConditionalTicker(preview)
+    if preview.condTicker then return end
+    preview.condTicker = C_Timer.NewTicker(PANEL_PREVIEW_COND_TICK, function()
+        if not GetConditionalPreviewTiming then return end
         local pool = preview.pools.iconSlots
         local used = preview.used.iconSlots or 0
+        local now = GetTime()
         for i = 1, used do
             local slot = pool[i]
-            if slot and slot._cdcFakeSwipe and slot.cooldown and slot:IsShown() then
-                slot.cooldown:SetCooldown(preview.swipeCycleStart, PANEL_PREVIEW_SWIPE_PERIOD)
+            local state = slot and slot:IsShown() and slot._cdcCondAnim or nil
+            if state then
+                local startTime, duration, remaining = GetConditionalPreviewTiming(state, now)
+                if startTime then
+                    if state.kind == "aura_duration_text" and slot.auraTextFS then
+                        slot.auraTextFS:SetFormattedText("%d", math_ceil(remaining))
+                    end
+                    local widget
+                    if state.kind == "cooldown" then
+                        widget = slot.cooldown
+                    elseif state.kind == "aura_duration_swipe" then
+                        widget = slot.auraSwipe
+                    elseif state.kind == "loss_of_control" then
+                        widget = slot.locCooldown
+                    end
+                    if widget and slot._cdcCondArmedStart
+                        and startTime > slot._cdcCondArmedStart + 0.05 then
+                        slot._cdcCondArmedStart = startTime
+                        widget:SetCooldown(startTime, duration)
+                        if state.kind == "cooldown" then
+                            StyleSlotCooldownText(slot, slot.style or {})
+                        end
+                    end
+                end
             end
         end
     end)
@@ -1101,8 +1428,7 @@ local STRIP_SPACING = 4
 local STRIP_PER_ROW = 8
 
 local function BuildSelectionStrip(preview, host, panelId, group)
-    StopFakeSwipeTicker(preview)
-    preview.swipeCycleStart = nil
+    StopConditionalTicker(preview)
     local isRA = group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
     local entries = {}
     if isRA then
@@ -1161,13 +1487,10 @@ local function BuildSelectionStrip(preview, host, panelId, group)
 
         local buttonData = entryInfo.buttonData
         StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
-        -- Selection strips are pickers, not mirrors: no fake swipe or
+        -- Selection strips are pickers, not mirrors: no conditional or
         -- effect previews here, and recycled grid slots keep neither.
-        if slot.cooldown then
-            slot._cdcFakeSwipe = false
-            slot.cooldown:Clear()
-            slot.cooldown:Hide()
-        end
+        ResetSlotConditionalVisuals(slot)
+        slot.icon:SetVertexColor(1, 1, 1, 1)
         ClearSlotEffectPreviews(slot)
 
         if entryInfo.isRotationAssistant then
@@ -1412,16 +1735,6 @@ function ST._BuildButtonPanelPreview(host, panelId)
     local poolName = isBarMode and "barSlots" or (isTextMode and "textSlots" or "iconSlots")
     local styleFn = isBarMode and StyleBarEntry or (isTextMode and StyleTextEntry or StyleIconEntry)
 
-    if not isBarMode and not isTextMode then
-        -- Keep the swipe cycle running across the rebuilds every config
-        -- click triggers; only start a fresh cycle when the old one ended.
-        local now = GetTime()
-        if not preview.swipeCycleStart
-            or (now - preview.swipeCycleStart) >= PANEL_PREVIEW_SWIPE_PERIOD then
-            preview.swipeCycleStart = now
-        end
-    end
-
     local layoutDrag = CreatePreviewLayoutDrag(preview, panelId)
     layoutDrag.count = count
     layoutDrag.slotW, layoutDrag.slotH = w, h
@@ -1449,15 +1762,15 @@ function ST._BuildButtonPanelPreview(host, panelId)
         ApplyPreviewSlotGeometry(preview, slot, growthAnchor, cx, cy)
 
         styleFn(slot, buttonData, group)
-        if not isBarMode and not isTextMode then
-            ApplyFakeCooldownSwipe(preview, slot, buttonData, group, panelId, index)
-        end
         if not isTextMode then
             ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, isBarMode)
         end
         local status = CollectEntryStatus(buttonData, group)
         if slot.icon then
             slot.icon:SetDesaturated(not status.usable)
+        end
+        if not isBarMode and not isTextMode then
+            ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
         end
         if status.disabled then
             slot:SetAlpha(PANEL_PREVIEW_DISABLED_ALPHA)
@@ -1469,20 +1782,19 @@ function ST._BuildButtonPanelPreview(host, panelId)
         WireEntryInteraction(slot, panelId, index, buttonData, status, dragModel)
     end
 
-    -- Tick only while at least one slot is actually sweeping
-    local anySwipe = false
+    -- Tick only while at least one slot is animating a conditional preview
+    local anyAnimated = false
     for i = 1, count do
         local s = layoutDrag.slots[i]
-        if s and s._cdcFakeSwipe then
-            anySwipe = true
+        if s and s._cdcCondAnim then
+            anyAnimated = true
             break
         end
     end
-    if anySwipe then
-        EnsureFakeSwipeTicker(preview)
+    if anyAnimated then
+        EnsureConditionalTicker(preview)
     else
-        StopFakeSwipeTicker(preview)
-        preview.swipeCycleStart = nil
+        StopConditionalTicker(preview)
     end
 
     content:SetScale(scale)
@@ -1498,7 +1810,7 @@ ST._EntryStatusBadges = ENTRY_STATUS_BADGES
 function ST._ReleaseButtonPanelPreview(host)
     local preview = host and host._cdcPanelPreview
     if preview then
-        StopFakeSwipeTicker(preview)
+        StopConditionalTicker(preview)
         preview.root:Hide()
     end
 end
