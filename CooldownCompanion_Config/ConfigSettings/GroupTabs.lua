@@ -1324,7 +1324,7 @@ local function BuildLayoutTab(container)
     -- compact widgets into side-by-side pairs; sliders, headings, and
     -- decorated/complex rows stay full width. Other display modes keep the
     -- List layout, where SetCompactWidth falls back to full width.
-    local twoColumn = group.displayMode == "icons"
+    local twoColumn = (group.displayMode or "icons") == "icons"
     if twoColumn then
         container:SetLayout("Flow")
     end
@@ -2184,11 +2184,11 @@ local function BuildBarModeEffects(container, group, style)
     BuildBarEffectsTab(container, group, style)
 end
 
-local function BuildProcGlowSection(container, group, style)
+local function BuildProcGlowSection(container, group, style, setWidth)
     local procEnableCb = AceGUI:Create("CheckBox")
     procEnableCb:SetLabel("Show Proc Glow")
     procEnableCb:SetValue(style.procGlowStyle ~= "none")
-    procEnableCb:SetFullWidth(true)
+    if setWidth then setWidth(procEnableCb) else procEnableCb:SetFullWidth(true) end
     procEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.procGlowStyle = val and "glow" or "none"
         UpdateSelectedGroupStyle(true)
@@ -2236,7 +2236,7 @@ end
 -- Aura glow: kit-rendered on the aura slot button, so it appears exactly
 -- while the tracked aura is active. Shown only when the group has an
 -- aura-tracking entry (Phase 3 gating pattern).
-local function BuildAuraGlowSection(container, group, style)
+local function BuildAuraGlowSection(container, group, style, setWidth)
     if not GroupHasAuraTrackingEntry(group) then
         -- The section owning an active preview just disappeared (last aura
         -- entry removed); don't leave the preview glow orphaned.
@@ -2248,7 +2248,7 @@ local function BuildAuraGlowSection(container, group, style)
     local auraEnableCb = AceGUI:Create("CheckBox")
     auraEnableCb:SetLabel("Show Aura Glow")
     auraEnableCb:SetValue(auraGlowEnabled)
-    auraEnableCb:SetFullWidth(true)
+    if setWidth then setWidth(auraEnableCb) else auraEnableCb:SetFullWidth(true) end
     auraEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.auraGlowStyle = val and "pulse" or "none"
         if val then
@@ -2288,11 +2288,11 @@ local function BuildAuraGlowSection(container, group, style)
     end
 end
 
-local function BuildReadyGlowSection(container, group, style)
+local function BuildReadyGlowSection(container, group, style, setWidth)
     local readyEnableCb = AceGUI:Create("CheckBox")
     readyEnableCb:SetLabel("Show Ready Glow")
     readyEnableCb:SetValue(style.readyGlowStyle and style.readyGlowStyle ~= "none")
-    readyEnableCb:SetFullWidth(true)
+    if setWidth then setWidth(readyEnableCb) else readyEnableCb:SetFullWidth(true) end
     readyEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.readyGlowStyle = val and "solid" or "none"
         UpdateSelectedGroupStyle(true)
@@ -2501,16 +2501,33 @@ local function BuildEffectsTab(container)
         return
     end
 
+    -- Two-column layout for the icon-panel indicators (same pattern as the
+    -- Layout tab): Flow + half-width compact checkboxes. Rows whose badge
+    -- chain can overflow a half cell at minimum config width stay full width.
+    local twoColumn = (displayMode or "icons") == "icons"
+    if twoColumn then
+        container:SetLayout("Flow")
+    end
+    local function SetCompactWidth(widget)
+        if twoColumn then
+            widget:SetRelativeWidth(0.5)
+        else
+            widget:SetFullWidth(true)
+        end
+    end
+
     AddIndicatorsHeading(container, "Glows")
-    BuildProcGlowSection(container, group, style)
-    BuildAuraGlowSection(container, group, style)
-    BuildReadyGlowSection(container, group, style)
+    BuildProcGlowSection(container, group, style, SetCompactWidth)
+    BuildAuraGlowSection(container, group, style, SetCompactWidth)
+    BuildReadyGlowSection(container, group, style, SetCompactWidth)
+    -- Key Press Highlight keeps full width: its label plus badge chain
+    -- overflows a half cell at minimum config width.
     BuildKeyPressHighlightSection(container, group, style)
 
     local assistedCb = AceGUI:Create("CheckBox")
     assistedCb:SetLabel("Show Assisted Highlight")
     assistedCb:SetValue(style.showAssistedHighlight or false)
-    assistedCb:SetFullWidth(true)
+    SetCompactWidth(assistedCb)
     assistedCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showAssistedHighlight = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -2552,6 +2569,7 @@ local function BuildEffectsTab(container)
             end
         end,
     })
+    SetCompactWidth(iconFillCb)
     local function BuildIconFillAdvanced(panel)
         if BuildIconFillTimerAdvancedControls then
             BuildIconFillTimerAdvancedControls(panel, style, function()
@@ -2593,7 +2611,7 @@ local function BuildEffectsTab(container)
     local swipeCb = AceGUI:Create("CheckBox")
     swipeCb:SetLabel("Show Cooldown Swipe")
     swipeCb:SetValue(style.showCooldownSwipe ~= false)
-    swipeCb:SetFullWidth(true)
+    SetCompactWidth(swipeCb)
     swipeCb:SetDisabled(iconFillTimerActive)
     swipeCb:SetCallback("OnValueChanged", function(widget, event, val)
         if iconFillTimerActive then return end
@@ -2671,7 +2689,9 @@ local function BuildEffectsTab(container)
     end
     AddConditionalPreviewBadge(swipeCb, swipePromoteBtn or swipeAdvBtn, "Preview Cooldown Swipe", "cooldown", style.showCooldownSwipe ~= false and not iconFillTimerActive)
 
-    -- Aura duration swipe (shown only while the group has an aura-tracking entry)
+    -- Aura duration swipe (shown only while the group has an aura-tracking entry).
+    -- Full width: its label plus badge chain overflows a half cell at minimum
+    -- config width.
     if GroupHasAuraTrackingEntry(group) then
         local auraDurationCb = BuildAuraDurationSwipeControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -2694,7 +2714,7 @@ local function BuildEffectsTab(container)
     local gcdCb = AceGUI:Create("CheckBox")
     gcdCb:SetLabel("Show GCD Swipe")
     gcdCb:SetValue(style.showGCDSwipe == true)
-    gcdCb:SetFullWidth(true)
+    SetCompactWidth(gcdCb)
     gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showGCDSwipe = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -2706,7 +2726,7 @@ local function BuildEffectsTab(container)
     local desatCb = AceGUI:Create("CheckBox")
     desatCb:SetLabel("Show Desaturate On Cooldown")
     desatCb:SetValue(style.desaturateOnCooldown or false)
-    desatCb:SetFullWidth(true)
+    SetCompactWidth(desatCb)
     desatCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.desaturateOnCooldown = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -2718,6 +2738,7 @@ local function BuildEffectsTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
+    SetCompactWidth(oorCb)
     local oorPromoteBtn = CreateCheckboxPromoteButton(oorCb, nil, "showOutOfRange", group, style)
     AddConditionalPreviewBadge(oorCb, oorPromoteBtn, "Preview Out of Range State", "out_of_range", style.showOutOfRange)
 
@@ -2725,6 +2746,7 @@ local function BuildEffectsTab(container)
     local locCb = BuildLossOfControlControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+    SetCompactWidth(locCb)
     local locPromoteBtn = CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
     AddConditionalPreviewBadge(locCb, locPromoteBtn, "Preview Loss of Control", "loss_of_control", style.showLossOfControl)
 
@@ -2733,6 +2755,7 @@ local function BuildEffectsTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
+    SetCompactWidth(unusableCb)
     local unusablePromoteBtn = CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
     AddConditionalPreviewBadge(unusableCb, unusablePromoteBtn or unusableAdvBtn, "Preview Unusable State", "unusable", style.showUnusable)
 
@@ -2740,6 +2763,7 @@ local function BuildEffectsTab(container)
     local tooltipCb = BuildShowTooltipsControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+    SetCompactWidth(tooltipCb)
     CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
 
 end
