@@ -58,6 +58,23 @@ local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
 
+-- Size-slider wiring for edits the pinned mirror can stand in for: while
+-- the slider is dragged only the saved value and the mirror update; the
+-- live panel restyles once on release. The slider's edit box fires
+-- OnMouseUp on Enter too, so typed values also apply live.
+local function WireMirrorFirstSlider(slider, applyValue)
+    slider:SetCallback("OnValueChanged", function(_, _, value)
+        applyValue(value)
+        if ST._RefreshButtonsPreviewMirror then
+            ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+        end
+    end)
+    slider:SetCallback("OnMouseUp", function(_, _, value)
+        applyValue(value)
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+end
+
 local function PrimeReadyGlowCappedChargeTransitions(groupId)
     local frame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
     if not (frame and frame.buttons) then
@@ -2822,10 +2839,9 @@ local function BuildAppearanceTab(container)
             sizeSlider:SetSliderValues(10, 150, 0.1)
             sizeSlider:SetValue(style.buttonSize or ST.BUTTON_SIZE)
             sizeSlider:SetFullWidth(true)
-            sizeSlider:SetCallback("OnValueChanged", function(widget, event, value)
+            WireMirrorFirstSlider(sizeSlider, function(value)
                 style.buttonSize = value
                 style.buttonsPerRow = 1
-                refreshStyle()
             end)
             HookSliderEditBox(sizeSlider)
             container:AddChild(sizeSlider)
@@ -2835,10 +2851,9 @@ local function BuildAppearanceTab(container)
             widthSlider:SetSliderValues(10, 150, 0.1)
             widthSlider:SetValue(style.iconWidth or style.buttonSize or ST.BUTTON_SIZE)
             widthSlider:SetFullWidth(true)
-            widthSlider:SetCallback("OnValueChanged", function(widget, event, value)
+            WireMirrorFirstSlider(widthSlider, function(value)
                 style.iconWidth = value
                 style.buttonsPerRow = 1
-                refreshStyle()
             end)
             HookSliderEditBox(widthSlider)
             container:AddChild(widthSlider)
@@ -2848,10 +2863,9 @@ local function BuildAppearanceTab(container)
             heightSlider:SetSliderValues(10, 150, 0.1)
             heightSlider:SetValue(style.iconHeight or style.buttonSize or ST.BUTTON_SIZE)
             heightSlider:SetFullWidth(true)
-            heightSlider:SetCallback("OnValueChanged", function(widget, event, value)
+            WireMirrorFirstSlider(heightSlider, function(value)
                 style.iconHeight = value
                 style.buttonsPerRow = 1
-                refreshStyle()
             end)
             HookSliderEditBox(heightSlider)
             container:AddChild(heightSlider)
@@ -3192,9 +3206,8 @@ local function BuildAppearanceTab(container)
         sizeSlider:SetSliderValues(10, 150, 0.1)
         sizeSlider:SetValue(style.buttonSize or ST.BUTTON_SIZE)
         sizeSlider:SetFullWidth(true)
-        sizeSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        WireMirrorFirstSlider(sizeSlider, function(val)
             style.buttonSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(sizeSlider)
     else
@@ -3203,9 +3216,8 @@ local function BuildAppearanceTab(container)
         wSlider:SetSliderValues(10, 150, 0.1)
         wSlider:SetValue(style.iconWidth or style.buttonSize or ST.BUTTON_SIZE)
         wSlider:SetFullWidth(true)
-        wSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        WireMirrorFirstSlider(wSlider, function(val)
             style.iconWidth = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(wSlider)
 
@@ -3214,9 +3226,8 @@ local function BuildAppearanceTab(container)
         hSlider:SetSliderValues(10, 150, 0.1)
         hSlider:SetValue(style.iconHeight or style.buttonSize or ST.BUTTON_SIZE)
         hSlider:SetFullWidth(true)
-        hSlider:SetCallback("OnValueChanged", function(widget, event, val)
+        WireMirrorFirstSlider(hSlider, function(val)
             style.iconHeight = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(hSlider)
     end
