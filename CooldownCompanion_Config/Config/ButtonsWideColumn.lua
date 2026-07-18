@@ -93,8 +93,16 @@ local function ReapplyPanelPreviewSplit()
     if not (host and host:IsShown() and CS.selectedGroup) then return end
     if (col3.content:GetHeight() or 0) <= 0 then return end
     local newHeight = ComputePreviewHostHeight(col3)
-    if math.abs((host:GetHeight() or 0) - newHeight) < 0.5 then return end
-    host:SetHeight(newHeight)
+    local heightChanged = math.abs((host:GetHeight() or 0) - newHeight) >= 0.5
+    -- The mirror's scale-to-fit reads the host width too, so a width-only
+    -- window resize still needs a rebuild even when the split height held.
+    local width = host:GetWidth() or 0
+    local widthChanged = math.abs((host._cdcLastLayoutWidth or 0) - width) >= 0.5
+    if not (heightChanged or widthChanged) then return end
+    if heightChanged then
+        host:SetHeight(newHeight)
+    end
+    host._cdcLastLayoutWidth = width
     if ST._BuildButtonPanelPreview then
         ST._BuildButtonPanelPreview(host, CS.selectedGroup)
     end
