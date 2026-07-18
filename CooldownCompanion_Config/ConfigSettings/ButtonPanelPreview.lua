@@ -400,8 +400,15 @@ local function EnsureTargetingBanner(preview)
         end
     end)
     banner:RegisterEvent("PLAYER_REGEN_DISABLED")
-    banner:SetScript("OnEvent", function(self)
-        self:EnableKeyboard(false)
+    banner:RegisterEvent("PLAYER_REGEN_ENABLED")
+    banner:SetScript("OnEvent", function(self, event)
+        if event == "PLAYER_REGEN_DISABLED" then
+            self:EnableKeyboard(false)
+        elseif self:IsShown() and CS.overrideTargeting then
+            -- Combat ended with targeting still armed: restore Esc capture.
+            self:EnableKeyboard(true)
+            self:SetPropagateKeyboardInput(true)
+        end
     end)
 
     banner:Hide()
