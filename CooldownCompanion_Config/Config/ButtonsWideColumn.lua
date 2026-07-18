@@ -17,6 +17,28 @@ local STRIP_HEIGHT = 30
 local STRIP_ICON_SIZE = 20
 local STRIP_BADGE_SIZE = 18
 local STRIP_BADGE_GAP = 3
+local DIVIDER_HEIGHT = 9
+local PREVIEW_SPLIT_DEFAULT = 0.42
+local PREVIEW_MIN_HEIGHT = 100
+local SETTINGS_MIN_HEIGHT = 150
+
+-- The preview/settings split is owner-adjustable via the drag divider below;
+-- the chosen fraction persists per profile.
+local function GetPreviewSplit()
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local fraction = db and db.configPreviewSplit
+    if type(fraction) ~= "number" then
+        return PREVIEW_SPLIT_DEFAULT, false
+    end
+    return math.max(0.1, math.min(fraction, 0.75)), true
+end
+
+local function SetPreviewSplit(fraction)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if db then
+        db.configPreviewSplit = fraction
+    end
+end
 
 local function HideEntrySurfaces(col3)
     if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
@@ -24,9 +46,128 @@ local function HideEntrySurfaces(col3)
     if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
 end
 
+-- Draggable divider between the preview region (preview + add box + strip)
+-- and the settings surfaces: drag to rebalance the split, double-click to
+-- reset to the default. The fraction persists per profile.
+local function EnsurePreviewDivider(col3)
+    local divider = col3.buttonsSplitDivider
+    if divider then return divider end
+
+    -- A Button, not a Frame: OnDoubleClick is a Button-only script handler.
+    divider = CreateFrame("Button", nil, col3.content)
+    divider:SetHeight(DIVIDER_HEIGHT)
+    divider:EnableMouse(true)
+
+    local line = divider:CreateTexture(nil, "ARTWORK")
+    line:SetColorTexture(1, 1, 1, 0.08)
+    line:SetHeight(1)
+    line:SetPoint("LEFT", divider, "LEFT", 0, 0)
+    line:SetPoint("RIGHT", divider, "RIGHT", 0, 0)
+
+    local grip = divider:CreateTexture(nil, "OVERLAY")
+    grip:SetColorTexture(1, 1, 1, 0.25)
+    grip:SetSize(32, 3)
+    grip:SetPoint("CENTER")
+    divider._grip = grip
+
+    local function SetHot(hot)
+        if hot then
+            grip:SetColorTexture(1, 0.82, 0, 0.7)
+        else
+            grip:SetColorTexture(1, 1, 1, 0.25)
+        end
+    end
+
+    divider:SetScript("OnEnter", function(self)
+        SetHot(true)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Drag to resize the preview")
+        GameTooltip:AddLine("Double-click to reset", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    divider:SetScript("OnLeave", function(self)
+        if not self._dragging then SetHot(false) end
+        GameTooltip:Hide()
+    end)
+
+    local function GetDragOverhead()
+        local overhead = 0
+        local addBox = col3.buttonsAddBox
+        if addBox and addBox.frame:IsShown() then
+            overhead = overhead + PREVIEW_GAP + ADD_BOX_HEIGHT
+        end
+        local strip = col3.buttonsIdentityStrip
+        if strip and strip:IsShown() then
+            overhead = overhead + PREVIEW_GAP + STRIP_HEIGHT
+        end
+        return overhead
+    end
+
+    divider:SetScript("OnMouseDown", function(self, button)
+        if button ~= "LeftButton" then return end
+        local host = col3.buttonsPreviewHost
+        if not (host and host:IsShown()) then return end
+        self._dragging = true
+        self._rebuildElapsed = 0
+        SetHot(true)
+        self:SetScript("OnUpdate", function(dividerSelf, elapsed)
+            local contentTop = col3.content:GetTop()
+            local columnHeight = col3.content:GetHeight() or 0
+            if not contentTop or columnHeight <= 0 then return end
+            local _, cursorY = GetCursorPosition()
+            cursorY = cursorY / col3.content:GetEffectiveScale()
+            local overhead = GetDragOverhead()
+            local maxHeight = columnHeight - overhead - DIVIDER_HEIGHT - SETTINGS_MIN_HEIGHT
+            if maxHeight < PREVIEW_MIN_HEIGHT then return end
+            local desired = (contentTop - cursorY) - overhead - (DIVIDER_HEIGHT / 2)
+            desired = math.max(PREVIEW_MIN_HEIGHT, math.min(desired, maxHeight))
+            host:SetHeight(desired)
+            -- Rescale the mirror as the host resizes, throttled.
+            dividerSelf._rebuildElapsed = dividerSelf._rebuildElapsed + elapsed
+            if dividerSelf._rebuildElapsed >= 0.08 then
+                dividerSelf._rebuildElapsed = 0
+                if CS.selectedGroup and ST._BuildButtonPanelPreview then
+                    ST._BuildButtonPanelPreview(host, CS.selectedGroup)
+                end
+            end
+        end)
+    end)
+    divider:SetScript("OnMouseUp", function(self)
+        if not self._dragging then return end
+        self._dragging = false
+        self:SetScript("OnUpdate", nil)
+        SetHot(false)
+        local host = col3.buttonsPreviewHost
+        local columnHeight = col3.content:GetHeight() or 0
+        if host and columnHeight > 0 then
+            SetPreviewSplit(host:GetHeight() / columnHeight)
+            if CS.selectedGroup and ST._BuildButtonPanelPreview then
+                ST._BuildButtonPanelPreview(host, CS.selectedGroup)
+            end
+        end
+    end)
+    divider:SetScript("OnDoubleClick", function(self)
+        self._dragging = false
+        self:SetScript("OnUpdate", nil)
+        SetHot(false)
+        SetPreviewSplit(nil)
+        local host = col3.buttonsPreviewHost
+        local columnHeight = col3.content:GetHeight() or 0
+        if host and columnHeight > 0 then
+            host:SetHeight(math.max(170, math.floor(columnHeight * PREVIEW_SPLIT_DEFAULT)))
+            if CS.selectedGroup and ST._BuildButtonPanelPreview then
+                ST._BuildButtonPanelPreview(host, CS.selectedGroup)
+            end
+        end
+    end)
+
+    col3.buttonsSplitDivider = divider
+    return divider
+end
+
 -- Settings surfaces anchor beneath the pinned preview, its add box, and
--- the identity strip when shown, and fill the whole column otherwise
--- (Resources-home pattern).
+-- the identity strip when shown (below the split divider), and fill the
+-- whole column otherwise (Resources-home pattern).
 local function AnchorButtonsContentFrame(col3, frame)
     frame:ClearAllPoints()
     local previewHost = col3.buttonsPreviewHost
@@ -41,9 +182,17 @@ local function AnchorButtonsContentFrame(col3, frame)
         topAnchor = previewHost
     end
     if topAnchor then
-        frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -PREVIEW_GAP)
+        local divider = EnsurePreviewDivider(col3)
+        divider:ClearAllPoints()
+        divider:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, 0)
+        divider:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, 0)
+        divider:Show()
+        frame:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, 0)
         frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
     else
+        if col3.buttonsSplitDivider then
+            col3.buttonsSplitDivider:Hide()
+        end
         frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
         frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
     end
@@ -136,6 +285,9 @@ local function HidePanelPreview(col3)
     if col3.buttonsIdentityStrip then
         col3.buttonsIdentityStrip:Hide()
     end
+    if col3.buttonsSplitDivider then
+        col3.buttonsSplitDivider:Hide()
+    end
 end
 
 -- Pinned preview of the selected panel at the top of the wide column.
@@ -154,10 +306,13 @@ local function UpdatePanelPreview(col3)
     host:ClearAllPoints()
     host:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
     host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
-    -- Taller than the resources home's 35%: the preview is the primary
-    -- surface here, and larger panels scale down less at 42%.
+    -- Taller than the resources home's 35% by default: the preview is the
+    -- primary surface here. The split divider can override the fraction, and
+    -- a user-chosen split skips the default's taller minimum.
     local columnHeight = col3.content:GetHeight() or 0
-    host:SetHeight(math.max(170, math.floor(columnHeight * 0.42)))
+    local fraction, custom = GetPreviewSplit()
+    local minHeight = custom and PREVIEW_MIN_HEIGHT or 170
+    host:SetHeight(math.max(minHeight, math.floor(columnHeight * fraction)))
     host:Show()
     ST._BuildButtonPanelPreview(host, CS.selectedGroup)
     UpdatePreviewDropOverlay()

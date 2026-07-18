@@ -97,6 +97,7 @@ local function RefreshColumn3()
         if col3.buttonsPreviewHost then col3.buttonsPreviewHost:Hide() end
         if col3.buttonsAddBox then col3.buttonsAddBox.frame:Hide() end
         if col3.buttonsIdentityStrip then col3.buttonsIdentityStrip:Hide() end
+        if col3.buttonsSplitDivider then col3.buttonsSplitDivider:Hide() end
 
         local settings = CooldownCompanion:GetFrameAnchoringSettings()
         if not (settings and settings.enabled) then
@@ -169,6 +170,7 @@ local function RefreshColumn3()
         if col3.buttonsPreviewHost then col3.buttonsPreviewHost:Hide() end
         if col3.buttonsAddBox then col3.buttonsAddBox.frame:Hide() end
         if col3.buttonsIdentityStrip then col3.buttonsIdentityStrip:Hide() end
+        if col3.buttonsSplitDivider then col3.buttonsSplitDivider:Hide() end
 
         if col3._customAuraTabGroup then
             col3._customAuraTabGroup.frame:Hide()
@@ -217,6 +219,9 @@ local function RefreshColumn3()
     end
     if col3Normal and col3Normal.buttonsIdentityStrip then
         col3Normal.buttonsIdentityStrip:Hide()
+    end
+    if col3Normal and col3Normal.buttonsSplitDivider then
+        col3Normal.buttonsSplitDivider:Hide()
     end
     if col3Normal and col3Normal._customAuraTabGroup then
         col3Normal._customAuraTabGroup.frame:Hide()
