@@ -327,18 +327,11 @@ local function UpdateIdentityStrip(col3)
         elseif CS.selectedButton and group.buttons[CS.selectedButton] then
             local buttonData = group.buttons[CS.selectedButton]
             icon = ST._GetLayoutPreviewIcon and ST._GetLayoutPreviewIcon(buttonData)
+            -- Undecorated name: the decoration marks and tracking kind live
+            -- in the preview icons' hover tooltip instead.
             name = ST._GetConfigEntryDisplayName
-                and ST._GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
+                and ST._GetConfigEntryDisplayName(buttonData)
                 or buttonData.name
-            -- Spell entries: name the tracking kind next to the sword/heart
-            -- decoration icon (same addedAs fallback the decoration uses).
-            if name and buttonData.type == "spell" then
-                local addedAs = buttonData.addedAs
-                if addedAs ~= "spell" and addedAs ~= "aura" then
-                    addedAs = buttonData.isPassive and "aura" or "spell"
-                end
-                name = name .. " |cff808080(" .. (addedAs == "aura" and "Aura" or "Spell") .. ")|r"
-            end
             badgeStatus = ST._CollectEntryStatus and ST._CollectEntryStatus(buttonData, group)
         else
             name = group.name or "Panel"

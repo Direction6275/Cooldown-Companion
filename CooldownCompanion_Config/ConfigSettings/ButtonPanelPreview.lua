@@ -334,6 +334,15 @@ local function ShowEntrySlotTooltip(slot, buttonData, status)
     end
     local name = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
     GameTooltip:SetText(name or "Entry", 1, 1, 1)
+    if buttonData.type == "spell" then
+        -- Same addedAs fallback the name decorations use.
+        local addedAs = buttonData.addedAs
+        if addedAs ~= "spell" and addedAs ~= "aura" then
+            addedAs = buttonData.isPassive and "aura" or "spell"
+        end
+        GameTooltip:AddLine(addedAs == "aura" and "Tracked as an aura" or "Tracked as a spell",
+            0.6, 0.6, 0.6)
+    end
     if status.disabled then
         GameTooltip:AddLine("Disabled", 0.6, 0.6, 0.6)
     end
