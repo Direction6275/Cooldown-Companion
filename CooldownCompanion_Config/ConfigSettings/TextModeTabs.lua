@@ -153,7 +153,7 @@ local function BuildTextAppearanceTab(container, group, style)
         end)
         container:AddChild(headerSizeSlider)
 
-        AddColorPicker(container, style, "textHeaderFontColor", "Header Color", {1, 1, 1, 1}, true, refreshFrame, refreshFrame)
+        SetCompactWidth(AddColorPicker(container, style, "textHeaderFontColor", "Header Color", {1, 1, 1, 1}, true, refreshFrame, refreshFrame))
     end
     end -- not textSettingsCollapsed
 
@@ -318,7 +318,7 @@ local function BuildTextAppearanceTab(container, group, style)
     if not colorsCollapsed then
     BuildTextColorsControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
+    end, SetCompactWidth)
     end -- not colorsCollapsed
 
     -- ================================================================
@@ -329,7 +329,7 @@ local function BuildTextAppearanceTab(container, group, style)
     CreatePromoteButton(bgHeading, "textBackground", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     if not bgCollapsed then
-    AddColorPicker(container, style, "textBgColor", "Background Color", {0, 0, 0, 0}, true, refreshStyle, refreshStyle)
+    SetCompactWidth(AddColorPicker(container, style, "textBgColor", "Background Color", {0, 0, 0, 0}, true, refreshStyle, refreshStyle))
 
     local renderMode, renderModeDrop = AddBorderRenderModeDropdown(container, style, "textBorderRenderMode", function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -353,7 +353,7 @@ local function BuildTextAppearanceTab(container, group, style)
         container:AddChild(borderSlider)
     end
 
-    AddColorPicker(container, style, "textBorderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
+    SetCompactWidth(AddColorPicker(container, style, "textBorderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle))
 
     end -- not bgCollapsed
 

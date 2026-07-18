@@ -3466,6 +3466,7 @@ local function BuildAppearanceTab(container)
     end
 
     local borderColor = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
+    SetCompactWidth(borderColor)
     if group.masqueEnabled then
         borderColor:SetDisabled(true)
     end
@@ -3502,10 +3503,10 @@ local function BuildAppearanceTab(container)
     if not iconTintCollapsed then
         BuildIconTintControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { showAuraTint = groupHasAuraEntry })
+        end, { showAuraTint = groupHasAuraEntry, setWidth = SetCompactWidth })
         BuildBackgroundColorControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
+        end, SetCompactWidth)
 
         local resetTintBtn = AceGUI:Create("Button")
         resetTintBtn:SetText("Reset Colors to Default")

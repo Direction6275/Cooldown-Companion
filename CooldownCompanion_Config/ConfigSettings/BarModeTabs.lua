@@ -101,18 +101,22 @@ local function BuildBarAppearanceTab(container, group, style)
 
     -- Bar Color (basic)
     local barColorPicker = AddColorPicker(container, style, "barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}, true, refreshStyle, refreshStyle)
+    SetCompactWidth(barColorPicker)
     CreateColorPickerPromoteButton(barColorPicker, "barColor", group, style)
 
     end -- not barSettingsCollapsed
 
     -- Contextual color pickers (no heading/collapse/promote)
     local barCooldownColorPicker = AddColorPicker(container, style, "barCooldownColor", "Bar Cooldown Color", {0.6, 0.6, 0.6, 1.0}, true, refreshStyle, refreshStyle)
+    SetCompactWidth(barCooldownColorPicker)
     CreateColorPickerPromoteButton(barCooldownColorPicker, "barCooldownColor", group, style)
 
     local barChargeColorPicker = AddColorPicker(container, style, "barChargeColor", "Bar Recharging Color", {1.0, 0.82, 0.0, 1.0}, true, refreshStyle, refreshStyle)
+    SetCompactWidth(barChargeColorPicker)
     CreateColorPickerPromoteButton(barChargeColorPicker, "barChargeColor", group, style)
 
     local barBgColorPicker = AddColorPicker(container, style, "barBgColor", "Bar Background Color", {0.1, 0.1, 0.1, 0.8}, true, refreshStyle, refreshStyle)
+    SetCompactWidth(barBgColorPicker)
     CreateColorPickerPromoteButton(barBgColorPicker, "barBgColor", group, style)
 
     -- ================================================================
@@ -144,6 +148,7 @@ local function BuildBarAppearanceTab(container, group, style)
     end
 
     local borderColorPicker = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
+    SetCompactWidth(borderColorPicker)
     CreateColorPickerPromoteButton(borderColorPicker, "borderSettings", group, style)
     end -- not borderCollapsed
 
@@ -154,7 +159,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- RequestAuraRebind, which defers to combat end with the one-time note
     -- when needed.
     if GroupHasAuraTrackingEntry(group) then
-        AddColorPicker(container, style, "barAuraColor", "Bar Aura Timer Color", {0.2, 1.0, 0.2, 1.0}, true, refreshStyle, refreshStyle)
+        SetCompactWidth(AddColorPicker(container, style, "barAuraColor", "Bar Aura Timer Color", {0.2, 1.0, 0.2, 1.0}, true, refreshStyle, refreshStyle))
 
         -- Aura duration text: rendered by the aura display at the bar's time
         -- text position (it follows the Flip Time Text and offset settings

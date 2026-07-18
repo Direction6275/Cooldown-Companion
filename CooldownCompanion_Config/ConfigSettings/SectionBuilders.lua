@@ -513,8 +513,9 @@ local function BuildBorderControls(container, styleTable, refreshCallback)
     AddColorPicker(container, styleTable, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshCallback, refreshCallback)
 end
 
-local function BuildBackgroundColorControls(container, styleTable, refreshCallback)
-    AddColorPicker(container, styleTable, "backgroundColor", "Background Color", {0, 0, 0, 0.5}, true, refreshCallback, refreshCallback)
+local function BuildBackgroundColorControls(container, styleTable, refreshCallback, setWidth)
+    local picker = AddColorPicker(container, styleTable, "backgroundColor", "Background Color", {0, 0, 0, 0.5}, true, refreshCallback, refreshCallback)
+    if setWidth then setWidth(picker) end
 end
 
 local function BuildDesaturationControls(container, styleTable, refreshCallback)
@@ -556,12 +557,16 @@ local function BuildShowOutOfRangeControls(container, styleTable, refreshCallbac
 end
 
 local function BuildIconTintControls(container, styleTable, refreshCallback, opts)
-    AddColorPicker(container, styleTable, "iconTintColor", "Base Icon Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+    -- opts.setWidth: width setter for two-column hosts; applies to the
+    -- toggles and color pickers alike. Absent = full width (advanced panels).
+    local setWidth = (opts and opts.setWidth) or function(w) w:SetFullWidth(true) end
+
+    setWidth(AddColorPicker(container, styleTable, "iconTintColor", "Base Icon Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback))
 
     local cdTintCb = AceGUI:Create("CheckBox")
     cdTintCb:SetLabel("Use Separate Cooldown Tint")
     cdTintCb:SetValue(styleTable.iconCooldownTintEnabled or false)
-    cdTintCb:SetFullWidth(true)
+    setWidth(cdTintCb)
     cdTintCb:SetCallback("OnValueChanged", function(w, e, val)
         styleTable.iconCooldownTintEnabled = val
         refreshCallback()
@@ -570,7 +575,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback, opt
     container:AddChild(cdTintCb)
 
     if styleTable.iconCooldownTintEnabled then
-        AddColorPicker(container, styleTable, "iconCooldownTintColor", "Cooldown Icon Color", {1, 0, 0.102, 1}, true, refreshCallback, refreshCallback)
+        setWidth(AddColorPicker(container, styleTable, "iconCooldownTintColor", "Cooldown Icon Color", {1, 0, 0.102, 1}, true, refreshCallback, refreshCallback))
     end
 
     -- Aura tint applies to the slot-kit aura layer (consumed at bind time by
@@ -579,7 +584,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback, opt
         local auraTintCb = AceGUI:Create("CheckBox")
         auraTintCb:SetLabel("Use Separate Aura Tint")
         auraTintCb:SetValue(styleTable.iconAuraTintEnabled or false)
-        auraTintCb:SetFullWidth(true)
+        setWidth(auraTintCb)
         auraTintCb:SetCallback("OnValueChanged", function(w, e, val)
             styleTable.iconAuraTintEnabled = val
             refreshCallback()
@@ -588,12 +593,12 @@ local function BuildIconTintControls(container, styleTable, refreshCallback, opt
         container:AddChild(auraTintCb)
 
         if styleTable.iconAuraTintEnabled then
-            AddColorPicker(container, styleTable, "iconAuraTintColor", "Aura Active Icon Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback)
+            setWidth(AddColorPicker(container, styleTable, "iconAuraTintColor", "Aura Active Icon Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback))
         end
     end
 
     if styleTable.showUnusable and ST.UnusableVisualUsesDimTint(styleTable) then
-        AddColorPicker(container, styleTable, "iconUnusableTintColor", "Unusable Dim Color", {0.4, 0.4, 0.4, 1}, true, refreshCallback, refreshCallback)
+        setWidth(AddColorPicker(container, styleTable, "iconUnusableTintColor", "Unusable Dim Color", {0.4, 0.4, 0.4, 1}, true, refreshCallback, refreshCallback))
     end
 end
 
@@ -1680,11 +1685,16 @@ local function BuildTextFontControls(container, styleTable, refreshCallback)
     container:AddChild(shadowCb)
 end
 
-local function BuildTextColorsControls(container, styleTable, refreshCallback)
-    AddColorPicker(container, styleTable, "textFontColor", "Text Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
-    AddColorPicker(container, styleTable, "textCooldownColor", "Cooldown Color", {1, 0.3, 0.3, 1}, true, refreshCallback, refreshCallback)
+local function BuildTextColorsControls(container, styleTable, refreshCallback, setWidth)
+    local textColorPicker = AddColorPicker(container, styleTable, "textFontColor", "Text Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
+    local cdColorPicker = AddColorPicker(container, styleTable, "textCooldownColor", "Cooldown Color", {1, 0.3, 0.3, 1}, true, refreshCallback, refreshCallback)
 
     local readyColorPicker = AddColorPicker(container, styleTable, "textReadyColor", "Ready Color", {0.2, 1.0, 0.2, 1}, true, refreshCallback, refreshCallback)
+    if setWidth then
+        setWidth(textColorPicker)
+        setWidth(cdColorPicker)
+        setWidth(readyColorPicker)
+    end
 
     local function BuildReadyTextAdvanced(panel)
         local readyTextBox = AceGUI:Create("EditBox")
