@@ -208,11 +208,18 @@ end
 -- Targeted preview rebuild (value changes that only affect the layout
 -- preview), without a full config refresh.
 local function RefreshResourcesLayoutPreview()
-    if not (CS.resourcesEntrySelected or CS.castFramesEntrySelected) then return end
-    local col3 = CS.configFrame and CS.configFrame.col3
-    local host = col3 and col3._resourcesPreviewHost
-    if host and host:IsShown() and ST._BuildLayoutOrderPanel then
-        ST._BuildLayoutOrderPanel(host)
+    if CS.resourcesEntrySelected or CS.castFramesEntrySelected then
+        local col3 = CS.configFrame and CS.configFrame.col3
+        local host = col3 and col3._resourcesPreviewHost
+        if host and host:IsShown() and ST._BuildLayoutOrderPanel then
+            ST._BuildLayoutOrderPanel(host)
+        end
+        return
+    end
+    -- Buttons view: the lanes live inside the unified anchor preview on
+    -- the buttons preview host; the mirror refresh self-gates.
+    if ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
     end
 end
 
@@ -759,3 +766,9 @@ ST._RefreshResourcesWideColumn = RefreshResourcesWideColumn
 ST._RefreshCastFramesWideColumn = RefreshCastFramesWideColumn
 ST._HideResourcesWideSurfaces = HideResourcesWideSurfaces
 ST._RefreshResourcesLayoutPreview = RefreshResourcesLayoutPreview
+-- The unified anchor preview (buttons view) re-hosts these settings
+-- surfaces below its divider when an attached bar is selected there.
+ST._ShowResourceSettingsSurface = ShowResourceSettingsPanel
+ST._ShowCustomBarDetailSurface = ShowCustomBarDetail
+ST._ShowCastBarSettingsSurface = ShowCastBarSettings
+ST._FindSelectedConfigCustomBar = FindSelectedCustomBar

@@ -1468,6 +1468,20 @@ local function RenderMirroredPanel(preview, parent, panelData)
     return frame
 end
 
+-- The unified anchor preview (buttons view) injects the real button-panel
+-- mirror as the primary panel frame; the facsimile renders everywhere else
+-- (and for the vertical layout's separate cast-bar section, which needs a
+-- second copy of the panel).
+local function AcquirePrimaryPanelFrame(preview, parent, panelData)
+    local external = preview.externalPanelFrame
+    if external then
+        external:SetParent(parent)
+        external:Show()
+        return external
+    end
+    return RenderMirroredPanel(preview, parent, panelData)
+end
+
 local function BuildLaneSlotGeometry(lane, index)
     local laneWidth = lane.frame:GetWidth() or lane.slotWidth or 1
     local laneHeight = lane.frame:GetHeight() or lane.slotHeight or 1
@@ -1558,6 +1572,15 @@ local function SelectPreviewSlot(slot)
         return false
     end
 
+    -- Unified anchor preview (buttons view): route to the unified bar
+    -- selection, which owns the entry-vs-bar exclusivity and cast support.
+    if not CS.resourcesEntrySelected then
+        if ST._SelectUnifiedAnchorBar then
+            return ST._SelectUnifiedAnchorBar(slot)
+        end
+        return false
+    end
+
     if slot.kind == "resource" and slot.powerType ~= nil and ST._SelectConfigResource then
         ST._SelectConfigResource(slot.powerType, { toggle = true })
         return true
@@ -1601,13 +1624,28 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
 
         -- Mark the bar currently being configured: held hover-style glow
         -- plus inward-pointing arrows. Not applicable in the Cast Bar home,
-        -- where bars can't be edited.
-        local isSelected = not CS.castFramesEntrySelected
-            and ((slotModel.kind == "resource" and slotModel.powerType ~= nil
+        -- where bars can't be edited. In the buttons view (unified anchor
+        -- preview) the highlight follows the unified bar selection, so a
+        -- stale Resources-home selection can't light a bar up.
+        local isSelected
+        if CS.castFramesEntrySelected then
+            isSelected = false
+        elseif not CS.resourcesEntrySelected then
+            local kind = CS.unifiedBarKind
+            isSelected = (kind == "resource" and slotModel.kind == "resource"
+                    and slotModel.powerType ~= nil
+                    and tostring(CS.selectedResourcePowerType) == tostring(slotModel.powerType))
+                or (kind == "custom" and slotModel.kind == "custom"
+                    and slotModel.customBarId ~= nil
+                    and tostring(CS.selectedCustomBarId) == tostring(slotModel.customBarId))
+                or (kind == "cast" and slotModel.kind == "cast")
+        else
+            isSelected = (slotModel.kind == "resource" and slotModel.powerType ~= nil
                 and tostring(CS.selectedResourcePowerType) == tostring(slotModel.powerType))
             or (slotModel.kind == "custom" and slotModel.customBarId ~= nil
                 and (tostring(CS.selectedCustomBarId) == tostring(slotModel.customBarId)
-                    or (CS.selectedCustomBars and CS.selectedCustomBars[slotModel.customBarId] == true))))
+                    or (CS.selectedCustomBars and CS.selectedCustomBars[slotModel.customBarId] == true)))
+        end
         if isSelected and slotFrame.selectedHighlight then
             local marker = slotFrame.selectedHighlight
             local arrowSize = math_max(14, math_min(28, (axis == "x" and slotWidth or slotHeight) + 6))
@@ -1711,7 +1749,7 @@ local function GetLaneExtent(count, slotSize)
 end
 
 local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel, slots, slotHeight)
-    local panelFrame = RenderMirroredPanel(preview, content, sourcePanel)
+    local panelFrame = AcquirePrimaryPanelFrame(preview, content, sourcePanel)
     local panelWidth = panelFrame:GetWidth()
     local panelHeight = panelFrame:GetHeight()
     local aboveSlots = SortSlotsForSide(slots, "above", true)
@@ -1743,7 +1781,7 @@ end
 
 local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, castSlots, horizontalBarHeight, verticalBarWidth)
     if #primarySlots == 0 and #castSlots > 0 then
-        local castPanel = RenderMirroredPanel(preview, content, sourcePanel)
+        local castPanel = AcquirePrimaryPanelFrame(preview, content, sourcePanel)
         local panelWidth = castPanel:GetWidth()
         local panelHeight = castPanel:GetHeight()
         local castSlotFrameHeight = math_max(8, horizontalBarHeight)
@@ -1772,7 +1810,7 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
         return panelWidth, castAboveHeight + panelHeight + castBelowHeight + (LAYOUT_PREVIEW_GAP * 2), iconCenterOffsetY
     end
 
-    local panelFrame = RenderMirroredPanel(preview, content, sourcePanel)
+    local panelFrame = AcquirePrimaryPanelFrame(preview, content, sourcePanel)
     local panelWidth = panelFrame:GetWidth()
     local panelHeight = panelFrame:GetHeight()
     local leftSlots = SortSlotsForSide(primarySlots, "left", true)
@@ -2126,13 +2164,20 @@ local function CreateLayoutDragModel(preview)
     return layoutDrag
 end
 
-function ST._BuildLayoutOrderPreviewPanel(container)
+function ST._BuildLayoutOrderPreviewPanel(container, opts)
     if CS.dragState and CS.dragState.kind == LAYOUT_PREVIEW_DRAG_KIND and CancelDrag then
         CancelDrag()
     end
 
     local preview = EnsurePreviewState(container)
     preview.host = container
+    -- Unified anchor preview: the caller supplies the real button-panel
+    -- mirror to use as the primary panel frame. Hidden until the render
+    -- path re-shows it, so message-only builds don't leave it floating.
+    preview.externalPanelFrame = opts and opts.externalPanel or nil
+    if preview.externalPanelFrame then
+        preview.externalPanelFrame:Hide()
+    end
     preview.rbSettings = CooldownCompanion:GetResourceBarSettings()
     preview.cbSettings = CooldownCompanion:GetCastBarSettings()
     local layout = CooldownCompanion:GetSpecLayoutOrder()
@@ -2232,6 +2277,39 @@ function ST._BuildLayoutOrderPreviewPanel(container)
     content:SetPoint("CENTER", root, "CENTER", 0, 0)
 
     FinalizePreviewState(preview)
+end
+
+-- True when the Layout & Order lanes would actually render bars around an
+-- anchored panel: something enabled and attached, spec layout loaded, and
+-- at least one active slot. The unified anchor preview gates on this so it
+-- never trades the real mirror for a message-only pane.
+function ST._HasAttachedBarLanesToRender()
+    local rbSettings = CooldownCompanion:GetResourceBarSettings()
+    local cbSettings = CooldownCompanion:GetCastBarSettings()
+    local layout = CooldownCompanion:GetSpecLayoutOrder()
+    if not layout then
+        return false
+    end
+    local resourceBarsEnabled = rbSettings and rbSettings.enabled == true
+    local castBarEnabled = cbSettings and cbSettings.enabled == true
+    local supportsAttachedResourceBars = resourceBarsEnabled
+        and not IsTruthyConfigFlag(layout.independentAnchorEnabled)
+    local hasAttachedCastBar = castBarEnabled
+        and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled)
+    if not supportsAttachedResourceBars and not hasAttachedCastBar then
+        return false
+    end
+    local isVertical = resourceBarsEnabled
+        and IsResourceBarVerticalConfig(rbSettings, layout)
+        or false
+    local primarySlots, castSlots = CollectPreviewSlots(
+        rbSettings,
+        cbSettings,
+        layout,
+        isVertical,
+        supportsAttachedResourceBars
+    )
+    return #primarySlots > 0 or #castSlots > 0
 end
 
 -- Shared with ButtonPanelPreview.lua: config-safe icon resolution and the

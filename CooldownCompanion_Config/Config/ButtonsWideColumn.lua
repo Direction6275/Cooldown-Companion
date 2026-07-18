@@ -349,7 +349,9 @@ local function HidePanelPreview(col3)
         if host._cdcDropOverlay then
             host._cdcDropOverlay:Hide()
         end
-        if ST._ReleaseButtonPanelPreview then
+        if ST._ReleaseAnchorAwarePanelPreview then
+            ST._ReleaseAnchorAwarePanelPreview(host)
+        elseif ST._ReleaseButtonPanelPreview then
             ST._ReleaseButtonPanelPreview(host)
         end
     end
@@ -381,14 +383,20 @@ local function UpdatePanelPreview(col3)
     host:ClearAllPoints()
     host:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
     host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
-    SetActiveWidePreview(col3, host, function(hostFrame)
-        if CS.selectedGroup and ST._BuildButtonPanelPreview then
+    -- Anchor-aware build: the unified preview (real mirror + attached bar
+    -- lanes) on the anchor panel, the plain mirror everywhere else.
+    local function BuildPreview(hostFrame)
+        if not CS.selectedGroup then return end
+        if ST._BuildAnchorAwarePanelPreview then
+            ST._BuildAnchorAwarePanelPreview(hostFrame, CS.selectedGroup)
+        elseif ST._BuildButtonPanelPreview then
             ST._BuildButtonPanelPreview(hostFrame, CS.selectedGroup)
         end
-    end)
+    end
+    SetActiveWidePreview(col3, host, BuildPreview)
     host:SetHeight(ComputePreviewHostHeight(col3))
     host:Show()
-    ST._BuildButtonPanelPreview(host, CS.selectedGroup)
+    BuildPreview(host)
     UpdatePreviewDropOverlay()
 end
 
@@ -569,7 +577,21 @@ local function UpdateIdentityStrip(col3)
     if group then
         local multiCount = 0
         for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
-        if multiCount >= 2 then
+        if CS.unifiedBarKind then
+            -- Unified anchor preview: name the selected attached bar.
+            if CS.unifiedBarKind == "resource" and CS.selectedResourcePowerType then
+                local powerNames = ST._RB and ST._RB.POWER_NAMES
+                name = powerNames and powerNames[tonumber(CS.selectedResourcePowerType)]
+                    or "Resource"
+                kindText = "Resource"
+            elseif CS.unifiedBarKind == "custom" then
+                local entry = ST._FindSelectedConfigCustomBar and ST._FindSelectedConfigCustomBar()
+                name = (entry and entry.label) or "Custom Bar"
+                kindText = "Custom Bar"
+            elseif CS.unifiedBarKind == "cast" then
+                name = "Cast Bar"
+            end
+        elseif multiCount >= 2 then
             -- Entry multi-select surface lists its members itself.
         elseif CS.selectedRotationAssistantEntry == true
             and CooldownCompanion:IsRotationAssistantGroup(group) then
@@ -681,6 +703,45 @@ local function UpdateIdentityStrip(col3)
     strip:Show()
 end
 
+-- Validate the unified bar selection before showing its settings: clears
+-- it (returning nil) when the panel stopped being the anchor target, the
+-- bar was deleted, or its module was disabled.
+local function GetValidatedUnifiedBarKind()
+    local kind = CS.unifiedBarKind
+    if not kind then return nil end
+    if not (ST._ShouldUseUnifiedAnchorPreview
+        and ST._ShouldUseUnifiedAnchorPreview(CS.selectedGroup)) then
+        CS.unifiedBarKind = nil
+        return nil
+    end
+    if kind == "resource" then
+        local settings = CooldownCompanion:GetResourceBarSettings()
+        local RBP = ST._RBP
+        if not (CS.selectedResourcePowerType and RBP and RBP.IsResourceEditableInColumn4
+            and RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings)) then
+            CS.unifiedBarKind = nil
+            return nil
+        end
+    elseif kind == "custom" then
+        if not (CS.selectedCustomBarId and ST._FindSelectedConfigCustomBar
+            and ST._FindSelectedConfigCustomBar()) then
+            CS.unifiedBarKind = nil
+            return nil
+        end
+    elseif kind == "cast" then
+        local cb = CooldownCompanion:GetCastBarSettings()
+        local independent = cb and (cb.independentAnchorEnabled == true or cb.independentAnchorEnabled == 1)
+        if not (cb and cb.enabled == true and not independent) then
+            CS.unifiedBarKind = nil
+            return nil
+        end
+    else
+        CS.unifiedBarKind = nil
+        return nil
+    end
+    return kind
+end
+
 -- True when the column should show entry settings instead of the
 -- group-side surfaces: a valid single entry (including the rotation
 -- assistant's virtual entry) or an entry multi-select.
@@ -745,6 +806,41 @@ local function RefreshButtonsWideColumn()
     -- preview cluster: browsed panels render live in the world, and column
     -- 2 keeps its entry rows there.
     local browse = CS.otherClassLibraryActive
+
+    -- Attached bar selected in the unified anchor preview: that bar's
+    -- settings own the settings area
+    local unifiedBarKind = not browse and GetValidatedUnifiedBarKind() or nil
+    if unifiedBarKind then
+        HideEntrySurfaces(col3)
+        if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+        UpdatePanelPreview(col3)
+        UpdateAddBox(col3)
+        UpdateIdentityStrip(col3)
+        ReapplyPanelPreviewSplit()
+        local shown = false
+        if unifiedBarKind == "resource" then
+            shown = ST._ShowResourceSettingsSurface
+                and ST._ShowResourceSettingsSurface(col3) == true
+        elseif unifiedBarKind == "custom" then
+            local entry = ST._FindSelectedConfigCustomBar and ST._FindSelectedConfigCustomBar()
+            if entry and ST._ShowCustomBarDetailSurface then
+                ST._ShowCustomBarDetailSurface(col3, entry)
+                shown = true
+            end
+        else
+            if ST._ShowCastBarSettingsSurface then
+                ST._ShowCastBarSettingsSurface(col3)
+                shown = true
+            end
+        end
+        if shown then
+            return
+        end
+        -- The surface didn't materialize (transient state); clear the bar
+        -- selection and run a clean pass through the normal branches.
+        CS.unifiedBarKind = nil
+        return RefreshButtonsWideColumn()
+    end
 
     -- Entry selected: the entry settings surfaces own the settings area
     if IsEntrySelectionActive() then
@@ -815,8 +911,12 @@ local function RefreshButtonsPreviewMirror(groupId)
     if groupId and groupId ~= CS.selectedGroup then return end
     local col3 = CS.configFrame and CS.configFrame.col3
     local host = col3 and col3.buttonsPreviewHost
-    if host and host:IsShown() and CS.selectedGroup and ST._BuildButtonPanelPreview then
-        ST._BuildButtonPanelPreview(host, CS.selectedGroup)
+    if host and host:IsShown() and CS.selectedGroup then
+        if ST._BuildAnchorAwarePanelPreview then
+            ST._BuildAnchorAwarePanelPreview(host, CS.selectedGroup)
+        elseif ST._BuildButtonPanelPreview then
+            ST._BuildButtonPanelPreview(host, CS.selectedGroup)
+        end
         -- The strip shares the mirror's data (custom name, status badges) -
         -- keep it in step with every targeted rebuild. It handles its own
         -- visibility, so no shown-state gate is needed.

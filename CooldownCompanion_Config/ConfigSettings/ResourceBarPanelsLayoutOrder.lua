@@ -5,8 +5,8 @@
 
 local ADDON_NAME, ST = ...
 
-local function BuildLayoutOrderPanel(container)
-    ST._BuildLayoutOrderPreviewPanel(container)
+local function BuildLayoutOrderPanel(container, opts)
+    ST._BuildLayoutOrderPreviewPanel(container, opts)
 end
 
 ST._BuildLayoutOrderPanel = BuildLayoutOrderPanel

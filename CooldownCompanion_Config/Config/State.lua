@@ -302,6 +302,10 @@ ST._configState = {
     -- Cast Bar & Unit Frames home: which column-2 row is selected
     -- ("castbar" | "player" | "target")
     castFramesSelectedItem = "castbar",
+    -- Buttons view, unified anchor preview: which attached bar's settings
+    -- own the settings area ("resource" | "custom" | "cast", nil = none).
+    -- The matching id lives in selectedResourcePowerType/selectedCustomBarId.
+    unifiedBarKind = nil,
     resourcesSettingsTab = "general",
     groupPresetSelection = {
         icons = nil,
@@ -2723,6 +2727,7 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
     end
     CS.resourcesEntrySelected = false
     CS.castFramesEntrySelected = false
+    CS.unifiedBarKind = nil
     if panelChanged then
         CS.selectedGroup = panelId
         ClearSelectedButton()
@@ -2771,6 +2776,7 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     CS.selectedRotationAssistantEntry = true
     CS.resourcesEntrySelected = false
     CS.castFramesEntrySelected = false
+    CS.unifiedBarKind = nil
     wipe(CS.selectedButtons)
     CS.buttonSettingsTab = "loadconditions"
     CooldownCompanion:ClearAllConfigPreviews()
@@ -2778,6 +2784,9 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
 end
 
 local function SelectConfigButtonPanel(panelId, opts)
+    -- Selecting the panel (even the already-selected one) always returns
+    -- the settings area to panel settings, so any unified bar selection ends.
+    CS.unifiedBarKind = nil
     if CS.selectedGroup ~= panelId then
         CooldownCompanion:ClearAllConfigPreviews()
         CS.selectedGroup = panelId
@@ -2916,6 +2925,53 @@ local function PruneConfigCustomBarSelection(customBarExists, resetTab)
     end
 end
 
+-- Unified anchor preview (buttons view): clicking an attached bar in the
+-- pinned preview selects it for editing below the divider. Toggle
+-- semantics; a bar selection replaces any entry selection, and the
+-- entry/panel selectors clear unifiedBarKind in return.
+local function SelectUnifiedAnchorBar(slot)
+    if type(slot) ~= "table" then
+        return false
+    end
+
+    if slot.kind == "resource" and slot.powerType ~= nil then
+        if CS.unifiedBarKind == "resource"
+            and tostring(CS.selectedResourcePowerType) == tostring(slot.powerType) then
+            CS.unifiedBarKind = nil
+            ClearConfigResourceSelection()
+            return true
+        end
+        SelectConfigResource(slot.powerType)
+        if CS.selectedResourcePowerType == nil then
+            return false
+        end
+        CS.unifiedBarKind = "resource"
+    elseif slot.kind == "custom" and slot.customBarId ~= nil then
+        if CS.unifiedBarKind == "custom"
+            and tostring(CS.selectedCustomBarId) == tostring(slot.customBarId) then
+            CS.unifiedBarKind = nil
+            ClearConfigCustomBarSelection()
+            return true
+        end
+        SelectConfigCustomBar(slot.customBarId)
+        CS.unifiedBarKind = "custom"
+    elseif slot.kind == "cast" then
+        if CS.unifiedBarKind == "cast" then
+            CS.unifiedBarKind = nil
+            return true
+        end
+        ClearConfigResourceSelection()
+        ClearConfigCustomBarSelection()
+        CS.unifiedBarKind = "cast"
+    else
+        return false
+    end
+
+    -- The bar's settings own the settings area; entry selection ends.
+    ClearSelectedButton()
+    return true
+end
+
 local function SelectConfigResourcesEntry(opts)
     CooldownCompanion:ClearAllConfigPreviews()
     ResetOtherClassLibraryState()
@@ -2927,6 +2983,7 @@ local function SelectConfigResourcesEntry(opts)
     CS.castFramesEntrySelected = false
     CS.selectedFolder = nil
     CS.selectedGroup = nil
+    CS.unifiedBarKind = nil
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedGroups)
@@ -2949,6 +3006,7 @@ local function SelectConfigCastFramesEntry(opts)
     CS.resourcesEntrySelected = false
     CS.selectedFolder = nil
     CS.selectedGroup = nil
+    CS.unifiedBarKind = nil
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedGroups)
@@ -3014,6 +3072,7 @@ local function ResetConfigSelection(full)
     CS.selectedFolder = nil
     CS.selectedButton = nil
     CS.selectedRotationAssistantEntry = nil
+    CS.unifiedBarKind = nil
     CS.selectedCustomBarId = nil
     CS.customBarSpecExpandedId = nil
     CS.customBarSettingsTab = "appearance"
@@ -3407,6 +3466,7 @@ ST._SelectConfigCustomBar = SelectConfigCustomBar
 ST._ToggleConfigCustomBarMultiSelect = ToggleConfigCustomBarMultiSelect
 ST._PruneConfigCustomBarSelection = PruneConfigCustomBarSelection
 ST._SelectConfigResource = SelectConfigResource
+ST._SelectUnifiedAnchorBar = SelectUnifiedAnchorBar
 ST._SetConfigResourceSettingsSpecID = SetConfigResourceSettingsSpecID
 ST._PruneConfigResourceSelection = PruneConfigResourceSelection
 ST._SelectConfigResourcesEntry = SelectConfigResourcesEntry
