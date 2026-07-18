@@ -540,8 +540,7 @@ end
 -- Aura config previews render on CC-side regions — the exact ones a
 -- show-only-while-active shell hides (the text preview FontString lives on
 -- overlayFrame) — so the shell exposes while one runs. Restored by the
--- preview clear path (Preview.lua) and every restyle. Mirrors BarMode's
--- IsAuraPreviewExposingShell.
+-- preview clear path (Preview.lua) and every restyle.
 local function IsAuraPreviewExposingShell(button)
     local preview = button._conditionalVisualPreview
     local kind = preview and preview.kind
