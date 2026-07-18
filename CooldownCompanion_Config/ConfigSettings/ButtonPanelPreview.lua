@@ -384,15 +384,8 @@ local function EnsureTargetingBanner(preview)
     banner.crosshair:SetVertexColor(PANEL_PREVIEW_TARGETING_COLOR[1],
         PANEL_PREVIEW_TARGETING_COLOR[2], PANEL_PREVIEW_TARGETING_COLOR[3])
 
-    local closeBtn = CreateFrame("Button", nil, banner)
-    closeBtn:SetSize(16, 16)
-    closeBtn:SetPoint("RIGHT", banner, "RIGHT", -5, 0)
-    closeBtn.icon = closeBtn:CreateTexture(nil, "OVERLAY")
-    closeBtn.icon:SetSize(12, 12)
-    closeBtn.icon:SetPoint("CENTER")
-    closeBtn.icon:SetAtlas("common-search-clearbutton")
-    closeBtn:SetScript("OnClick", CancelOverrideTargeting)
-    banner.closeBtn = closeBtn
+    -- No close button: Esc, right-click, and re-clicking the armed
+    -- badge are the cancel paths (owner call — keeps the strip clean).
 
     -- Esc cancels. SetPropagateKeyboardInput is combat-restricted
     -- (10.1.5), so keyboard capture only runs out of combat; in combat
