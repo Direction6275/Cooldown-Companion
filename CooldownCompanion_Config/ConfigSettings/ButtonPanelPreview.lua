@@ -2575,6 +2575,11 @@ function ST._BuildButtonPanelPreview(host, panelId)
     HidePreviewMessage(preview)
     preview.content:Hide()
     UpdateTargetingBanner(preview, panelId)
+    -- Stop the animation ticker up front: the early exits below (no group,
+    -- empty panel) render no animated slots, and the main path re-arms it
+    -- only when a slot actually animates. The stored preview state the
+    -- ticker reads lives outside the ticker, so a stop/re-arm is seamless.
+    StopConditionalTicker(preview)
 
     local group = panelId and CooldownCompanion.db.profile.groups[panelId]
     if not group then
