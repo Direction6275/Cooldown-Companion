@@ -786,6 +786,9 @@ local function OnAutocompleteSelect(entry)
         CS.pendingEditBoxFocus = true
         CooldownCompanion:RefreshConfigPanel()
     end
+    -- Callers with persistent edit boxes (the wide add box) clear their
+    -- widget on success; the column 2 inline box rebuilds from CS.newInput.
+    return added and true or false
 end
 
 ------------------------------------------------------------------------

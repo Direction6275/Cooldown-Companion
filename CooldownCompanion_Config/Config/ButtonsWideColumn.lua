@@ -365,7 +365,15 @@ local function EnsureAddBox(col3)
         instructions:SetShown((text or "") == "")
         if text and #text >= 1 then
             local results = ST._SearchAutocomplete(text)
-            CS.ShowAutocompleteResults(results, widget, ST._OnAutocompleteSelect, {
+            -- This box is persistent (not rebuilt from CS.newInput like the
+            -- column 2 inline box), so a successful pick must clear it here
+            -- or the stale text re-adds on the next Enter press.
+            CS.ShowAutocompleteResults(results, widget, function(entry)
+                if ST._OnAutocompleteSelect(entry) then
+                    widget:SetText("")
+                    instructions:Show()
+                end
+            end, {
                 requireExactNumericEnter = true,
             })
         else
