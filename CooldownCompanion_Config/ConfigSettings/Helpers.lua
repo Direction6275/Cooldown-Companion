@@ -1443,6 +1443,16 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
     local tabInfoBtns = opts.infoButtons or CS.tabInfoButtons
     local controlsDisabled = opts.disabled == true
 
+    -- opts.twoColumn: caller's container uses the Flow layout — pair the
+    -- compact checkboxes side by side. Sliders and long rows stay full width.
+    local function SetCompactWidth(widget)
+        if opts.twoColumn then
+            widget:SetRelativeWidth(0.5)
+        else
+            widget:SetFullWidth(true)
+        end
+    end
+
     local function ApplyAlphaSettingChange(refreshPanel)
         if CooldownCompanion.RefreshAlphaUpdateDriver then
             CooldownCompanion:RefreshAlphaUpdateDriver()
@@ -1523,7 +1533,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             cb:SetTriState(true)
             cb:SetLabel(TriStateLabel(label, val))
             cb:SetValue(val)
-            cb:SetFullWidth(true)
+            SetCompactWidth(cb)
             cb:SetDisabled(controlsDisabled)
             cb:SetCallback("OnValueChanged", function(widget, event, newVal)
                 if controlsDisabled then return end
@@ -1563,7 +1573,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         local targetCb = AceGUI:Create("CheckBox")
         targetCb:SetLabel(targetVal and "Target Exists - |cff00ff00Fully Visible|r" or "Target Exists")
         targetCb:SetValue(targetVal)
-        targetCb:SetFullWidth(true)
+        SetCompactWidth(targetCb)
         targetCb:SetDisabled(controlsDisabled)
         targetCb:SetCallback("OnValueChanged", function(widget, event, val)
             if controlsDisabled then return end
@@ -1577,7 +1587,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             local enemyOnlyCb = AceGUI:Create("CheckBox")
             enemyOnlyCb:SetLabel("Enemy Only")
             enemyOnlyCb:SetValue(enemyOnlyVal)
-            enemyOnlyCb:SetFullWidth(true)
+            SetCompactWidth(enemyOnlyCb)
             enemyOnlyCb:SetDisabled(controlsDisabled)
             enemyOnlyCb:SetCallback("OnValueChanged", function(widget, event, val)
                 if controlsDisabled then return end
@@ -1592,7 +1602,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         local focusCb = AceGUI:Create("CheckBox")
         focusCb:SetLabel(focusVal and "Focus Exists - |cff00ff00Fully Visible|r" or "Focus Exists")
         focusCb:SetValue(focusVal)
-        focusCb:SetFullWidth(true)
+        SetCompactWidth(focusCb)
         focusCb:SetDisabled(controlsDisabled)
         focusCb:SetCallback("OnValueChanged", function(widget, event, val)
             if controlsDisabled then return end
@@ -1605,7 +1615,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         local mouseoverCb = AceGUI:Create("CheckBox")
         mouseoverCb:SetLabel(mouseoverVal and "Mouseover - |cff00ff00Fully Visible|r" or "Mouseover")
         mouseoverCb:SetValue(mouseoverVal)
-        mouseoverCb:SetFullWidth(true)
+        SetCompactWidth(mouseoverCb)
         mouseoverCb:SetDisabled(controlsDisabled)
         mouseoverCb:SetCallback("OnValueChanged", function(widget, event, val)
             if controlsDisabled then return end
@@ -1614,7 +1624,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         end)
         container:AddChild(mouseoverCb)
 
-        CreateInfoButton(mouseoverCb.frame, mouseoverCb.text, "LEFT", "RIGHT", 4, 0, {
+        CreateInfoButton(mouseoverCb.frame, mouseoverCb.checkbg, "LEFT", "RIGHT", mouseoverCb.text:GetStringWidth() + 4, 0, {
             "Mouseover",
             {"When enabled, mousing over forces full visibility. Like all |cff00ff00Force Visible|r conditions, this overrides |cffff0000Force Hidden|r.", 1, 1, 1, true},
         }, tabInfoBtns)
@@ -1622,7 +1632,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         local fadeCb = AceGUI:Create("CheckBox")
         fadeCb:SetLabel("Custom Fade Settings")
         fadeCb:SetValue(config.customFade or false)
-        fadeCb:SetFullWidth(true)
+        SetCompactWidth(fadeCb)
         fadeCb:SetDisabled(controlsDisabled)
         fadeCb:SetCallback("OnValueChanged", function(widget, event, val)
             if controlsDisabled then return end

@@ -1753,6 +1753,7 @@ local function BuildLayoutTab(container)
         CooldownCompanion:RefreshConfigPanel()
     end, "layout_alpha", {
         isGlobal = group.isGlobal,
+        twoColumn = twoColumn,
         disabled = alphaControlsDisabled,
         disabledText = alphaDisabledText,
         onBaselineChanged = function(val)
@@ -1799,7 +1800,9 @@ local function BuildLayoutTab(container)
         end)
         container:AddChild(frameStrataDrop)
 
-        CreateInfoButton(frameStrataDrop.frame, frameStrataDrop.label, "LEFT", "RIGHT", 4, 0, {
+        -- Anchor to the label text edge, not the label region (which spans the
+        -- whole cell), so the badge hugs the words at half width.
+        CreateInfoButton(frameStrataDrop.frame, frameStrataDrop.label, "LEFT", "LEFT", frameStrataDrop.label:GetStringWidth() + 4, 0, {
             "Frame Strata",
             {"Sets the rendering layer for this group.", 1, 1, 1, true},
             " ",
