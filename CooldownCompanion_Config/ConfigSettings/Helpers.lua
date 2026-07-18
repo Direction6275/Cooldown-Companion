@@ -390,7 +390,7 @@ end
 -- ButtonPanelPreview.lua owns the banner, slot highlights, click
 -- consumption, and the cancel paths.
 ------------------------------------------------------------------------
-local function CanArmOverrideTargeting(group)
+local function CanArmOverrideTargeting(group, sectionId)
     if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then
         return false
     end
@@ -400,7 +400,15 @@ local function CanArmOverrideTargeting(group)
     if not group or group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
         return false
     end
-    return group.buttons ~= nil and #group.buttons > 0
+    -- Arm only when the click can actually land somewhere: at least one
+    -- entry must be able to use this section (already-overridden entries
+    -- count — targeting them jumps to their Overrides tab).
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if (CanButtonUseConfigOverrideSection(buttonData, sectionId)) then
+            return true
+        end
+    end
+    return false
 end
 
 local function IsOverrideTargetingArmed(sectionId)
@@ -483,7 +491,7 @@ local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupSt
         and buttonData ~= nil
         and sectionAllowed
         and not (buttonData.overrideSections and buttonData.overrideSections[sectionId])
-    local canTarget = not canPromote and CanArmOverrideTargeting(group)
+    local canTarget = not canPromote and CanArmOverrideTargeting(group, sectionId)
 
     ApplyPromoteBadgeState(icon, promoteBtn, canPromote, canTarget, sectionId)
 
@@ -576,7 +584,7 @@ local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId
         and btnData ~= nil
         and sectionAllowed
         and not (btnData.overrideSections and btnData.overrideSections[sectionId])
-    local canTarget = not canPromote and CanArmOverrideTargeting(group)
+    local canTarget = not canPromote and CanArmOverrideTargeting(group, sectionId)
 
     ApplyPromoteBadgeState(icon, promoteBtn, canPromote, canTarget, sectionId)
 
@@ -638,7 +646,7 @@ local function CreateColorPickerPromoteButton(colorPickerWidget, sectionId, grou
         and btnData ~= nil
         and sectionAllowed
         and not (btnData.overrideSections and btnData.overrideSections[sectionId])
-    local canTarget = not canPromote and CanArmOverrideTargeting(group)
+    local canTarget = not canPromote and CanArmOverrideTargeting(group, sectionId)
 
     ApplyPromoteBadgeState(promoteBtn.icon, promoteBtn, canPromote, canTarget, sectionId)
 
