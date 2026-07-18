@@ -286,7 +286,6 @@ end
 ------------------------------------------------------------------------
 local PANEL_PREVIEW_TARGETING_COLOR = { 0.30, 0.90, 0.45, 1 }
 local PANEL_PREVIEW_TARGETING_HEIGHT = 20
-local PANEL_PREVIEW_TARGETING_GAP = 4
 
 local function GetActiveOverrideTargeting(panelId)
     local targeting = CS.overrideTargeting
@@ -335,14 +334,21 @@ local function HandleOverrideTargetingClick(panelId, index, buttonData)
 end
 
 local function EnsureTargetingBanner(preview)
+    local bannerHost = preview.targetingBannerHost or preview.root
     local banner = preview.targetingBanner
-    if banner then return banner end
+    if banner then
+        banner:SetParent(bannerHost)
+        banner:ClearAllPoints()
+        banner:SetPoint("TOPLEFT", bannerHost, "TOPLEFT", 0, 0)
+        banner:SetPoint("TOPRIGHT", bannerHost, "TOPRIGHT", 0, 0)
+        return banner
+    end
 
     -- Slim full-width strip whose dark fill and green accent line fade
     -- out toward the sides: v1's shape with the pill's lighter feel.
-    banner = CreateFrame("Frame", nil, preview.root)
-    banner:SetPoint("TOPLEFT", preview.root, "TOPLEFT", 0, 0)
-    banner:SetPoint("TOPRIGHT", preview.root, "TOPRIGHT", 0, 0)
+    banner = CreateFrame("Frame", nil, bannerHost)
+    banner:SetPoint("TOPLEFT", bannerHost, "TOPLEFT", 0, 0)
+    banner:SetPoint("TOPRIGHT", bannerHost, "TOPRIGHT", 0, 0)
     banner:SetHeight(PANEL_PREVIEW_TARGETING_HEIGHT)
 
     local clear = CreateColor(0, 0, 0, 0)
@@ -440,7 +446,8 @@ local function UpdateTargetingBanner(preview, panelId)
     local sectionDef = ST.OVERRIDE_SECTIONS[targeting.sectionId]
     local label = sectionDef and sectionDef.label or targeting.sectionId
     banner.text:SetText("Click an entry to override |cffffd100" .. label .. "|r")
-    banner:SetFrameLevel(preview.root:GetFrameLevel() + 40)
+    local bannerHost = preview.targetingBannerHost or preview.root
+    banner:SetFrameLevel(bannerHost:GetFrameLevel() + 40)
     banner:Show()
     if InCombatLockdown() then
         banner:EnableKeyboard(false)
@@ -448,14 +455,6 @@ local function UpdateTargetingBanner(preview, panelId)
         banner:EnableKeyboard(true)
         banner:SetPropagateKeyboardInput(true)
     end
-end
-
-local function GetTargetingBannerReserve(preview)
-    local banner = preview.targetingBanner
-    if banner and banner:IsShown() then
-        return PANEL_PREVIEW_TARGETING_HEIGHT + PANEL_PREVIEW_TARGETING_GAP
-    end
-    return 0
 end
 
 -- Green ring on the entries an armed targeting click can land on.
@@ -2363,26 +2362,14 @@ local function UpdateTextGroupHeader(preview, group, style, headerHeight)
     header:Show()
 end
 
-local function GetHostFitScale(preview, host, contentWidth, contentHeight)
+local function GetHostFitScale(host, contentWidth, contentHeight)
     local hostWidth = host:GetWidth() or 0
     local hostHeight = host:GetHeight() or 0
     if hostWidth < 40 then hostWidth = 340 end
     if hostHeight < 40 then hostHeight = 200 end
     local maxWidth = math_max(80, hostWidth - (PANEL_PREVIEW_PADDING * 2))
-    local topReserve = GetTargetingBannerReserve(preview)
-    local maxHeight
-    if topReserve > 0 then
-        maxHeight = math_max(1, hostHeight - (PANEL_PREVIEW_PADDING * 2) - topReserve)
-    else
-        maxHeight = math_max(80, hostHeight - (PANEL_PREVIEW_PADDING * 2))
-    end
+    local maxHeight = math_max(80, hostHeight - (PANEL_PREVIEW_PADDING * 2))
     return math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
-end
-
-local function AnchorPreviewContent(preview)
-    local topReserve = GetTargetingBannerReserve(preview)
-    preview.content:ClearAllPoints()
-    preview.content:SetPoint("CENTER", preview.root, "CENTER", 0, -(topReserve / 2))
 end
 
 -- Fallback for panel types with no meaningful geometric mirror (trigger,
@@ -2426,7 +2413,7 @@ local function BuildSelectionStrip(preview, host, panelId, group)
     local rows = math_ceil(count / STRIP_PER_ROW)
     local contentWidth = (cols - 1) * (w + STRIP_SPACING) + w
     local contentHeight = (rows - 1) * (h + STRIP_SPACING) + h
-    local scale = GetHostFitScale(preview, host, contentWidth, contentHeight)
+    local scale = GetHostFitScale(host, contentWidth, contentHeight)
 
     local content = preview.content
     content:SetSize(contentWidth, contentHeight)
@@ -2509,7 +2496,8 @@ local function BuildSelectionStrip(preview, host, panelId, group)
     end
 
     content:SetScale(scale)
-    AnchorPreviewContent(preview)
+    content:ClearAllPoints()
+    content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
 
     FinalizePreviewState(preview)
 end
@@ -2620,13 +2608,16 @@ local function StyleBarEntry(slot, buttonData, group)
     ApplyBorderEdgePositions(slot.borderTextures, slot.barBounds, borderSize, borderRenderMode)
 end
 
-function ST._BuildButtonPanelPreview(host, panelId)
+function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost)
     -- Rebuilding pulls the slot frames out from under an in-flight drag
     if CS.dragState and CS.dragState.kind == "layout-slot" and CancelDrag then
         CancelDrag()
     end
 
     local preview = EnsurePreviewState(host)
+    -- Unified previews render the icon layout inside a measured inner frame,
+    -- but the targeting instruction belongs to the outer Live Preview area.
+    preview.targetingBannerHost = targetingBannerHost or host
     -- Fresh static layout: discard any tweens or ghost the canceled drag
     -- queued so they can't fight the rebuilt slot positions
     preview.tweens = preview.tweens or {}
@@ -2697,7 +2688,7 @@ function ST._BuildButtonPanelPreview(host, panelId)
 
     -- Scale is needed while styling (badges counter-scale against it), so
     -- compute it up front from the grid extents.
-    local scale = GetHostFitScale(preview, host, contentWidth, contentHeight)
+    local scale = GetHostFitScale(host, contentWidth, contentHeight)
 
     local content = preview.content
     content:SetSize(contentWidth, contentHeight)
@@ -2775,7 +2766,8 @@ function ST._BuildButtonPanelPreview(host, panelId)
     end
 
     content:SetScale(scale)
-    AnchorPreviewContent(preview)
+    content:ClearAllPoints()
+    content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
 
     FinalizePreviewState(preview)
 end

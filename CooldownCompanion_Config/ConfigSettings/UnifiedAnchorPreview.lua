@@ -60,7 +60,9 @@ local function BuildUnifiedAnchorPreview(host, groupId)
     end
     inner:SetSize(UNIFIED_MEASURE_SIZE, UNIFIED_MEASURE_SIZE)
     inner:Show()
-    ST._BuildButtonPanelPreview(inner, groupId)
+    -- Keep the mirror's measured layout inside `inner`, but pin override
+    -- targeting guidance to the outer Live Preview host above the layout.
+    ST._BuildButtonPanelPreview(inner, groupId, host)
 
     -- The mirror content carries the natural (unscaled) panel size; shrink
     -- the inner host to it so the lanes wrap the mirror exactly. Message
