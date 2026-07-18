@@ -234,10 +234,6 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
     if not button.procGlow then
         SetGlowIntent(proc, false, false, "missing-widget")
         proc.procOverlayActive = procOverlayShown
-    elseif button._procGlowPreview == true then
-        SetGlowIntent(proc, true, true, "preview")
-        proc.preview = true
-        proc.procOverlayActive = procOverlayShown
     elseif style.procGlowStyle == "none" then
         SetGlowIntent(proc, true, false, "disabled")
         proc.procOverlayActive = procOverlayShown
@@ -264,9 +260,10 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
 
     -- 12.1: the live aura glow renders on the aura slot kit (AuraDisplay.lua);
     -- Blizzard's show/hide of the slot button IS the signal, so no live
-    -- intent can exist here. This resolver only drives the CC-side config
-    -- preview. The pandemic branch is the dormant seam: nothing sets
-    -- _pandemicPreview until the Blizzard curve/formatter fixes land.
+    -- intent can exist here (the config's aura-glow preview renders on the
+    -- mirror, not through this resolver). The pandemic branch is the dormant
+    -- seam: nothing sets _pandemicPreview until the Blizzard curve/formatter
+    -- fixes land.
     local auraIndicatorEnabled = ResolveAuraIndicatorEnabled(buttonData, style)
 
     if not button.auraGlow then
@@ -277,10 +274,6 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
         aura.preview = true
         aura.pandemic = true
         aura.auraIndicatorEnabled = auraIndicatorEnabled
-    elseif button._auraGlowPreview == true then
-        SetGlowIntent(aura, true, true, "preview")
-        aura.preview = true
-        aura.auraIndicatorEnabled = auraIndicatorEnabled
     else
         SetGlowIntent(aura, true, false, "inactive")
         aura.auraIndicatorEnabled = auraIndicatorEnabled
@@ -290,9 +283,6 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
     local auraSuppressesReady = button._auraTrackingReady == true and button._auraActive == true
     if not button.readyGlow then
         SetGlowIntent(ready, false, false, "missing-widget")
-    elseif button._readyGlowPreview == true then
-        SetGlowIntent(ready, true, true, "preview")
-        ready.preview = true
     elseif not style.readyGlowStyle or style.readyGlowStyle == "none" then
         SetGlowIntent(ready, true, false, "disabled")
     elseif isPassive then
