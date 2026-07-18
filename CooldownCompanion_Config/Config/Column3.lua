@@ -205,17 +205,11 @@ local function RefreshColumn3()
     if col3Normal and col3Normal.groupSettingsHost then
         col3Normal.groupSettingsHost:Hide()
     end
-    if col3Normal and col3Normal.buttonsPreviewHost then
-        col3Normal.buttonsPreviewHost:Hide()
-    end
-    if col3Normal and col3Normal.buttonsAddBox then
-        col3Normal.buttonsAddBox.frame:Hide()
-    end
-    if col3Normal and col3Normal.buttonsIdentityStrip then
-        col3Normal.buttonsIdentityStrip:Hide()
-    end
-    if col3Normal and col3Normal.buttonsSplitDivider then
-        col3Normal.buttonsSplitDivider:Hide()
+    -- This fall-through only runs on view switches away from the buttons
+    -- view (the wide view returns early above), so release the preview:
+    -- the conditional ticker stops and override targeting disarms.
+    if col3Normal and ST._HideButtonsPanelPreviewSurfaces then
+        ST._HideButtonsPanelPreviewSurfaces(col3Normal)
     end
     if col3Normal and col3Normal._customAuraTabGroup then
         col3Normal._customAuraTabGroup.frame:Hide()
