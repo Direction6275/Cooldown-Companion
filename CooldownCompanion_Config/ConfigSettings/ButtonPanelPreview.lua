@@ -755,10 +755,13 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         anchor = "TOPLEFT",
     }
 
-    -- Insertion anchors: midpoints between consecutive slot centers, with
-    -- the two end positions extrapolated half a step beyond the run, so
-    -- the nearest anchor is the insertion index. Works for any growth
-    -- origin and wrapping because it only uses actual slot geometry.
+    -- Insertion anchors: midpoints between consecutive slot centers within
+    -- a run (row or column), end positions extrapolated half a step beyond
+    -- the run, and TWO anchors per wrap boundary (end of the previous run
+    -- plus start of the next, same insertion index) — a raw midpoint there
+    -- would sit diagonally between the runs in empty space and misassign
+    -- drops near row/column edges. Pure geometry: covers both orientations
+    -- and every growth origin.
     layoutDrag.resolveDropTarget = function(cursorX, cursorY)
         local count = layoutDrag.count
         if count < 2 then return nil end
@@ -806,23 +809,62 @@ local function CreatePreviewLayoutDrag(preview, panelId)
             }
         end
 
-        local bestIndex, bestDist
-        for i = 1, count + 1 do
-            local ax, ay
-            if i == 1 then
-                ax = centers[1].x - (centers[2].x - centers[1].x) / 2
-                ay = centers[1].y - (centers[2].y - centers[1].y) / 2
-            elseif i == count + 1 then
-                ax = centers[count].x + (centers[count].x - centers[count - 1].x) / 2
-                ay = centers[count].y + (centers[count].y - centers[count - 1].y) / 2
-            else
-                ax = (centers[i - 1].x + centers[i].x) / 2
-                ay = (centers[i - 1].y + centers[i].y) / 2
+        -- Consecutive centers share a run when they stay on the same row
+        -- line (small y delta) or column line (small x delta); a wrap jump
+        -- always moves a full cell on both axes.
+        local halfW = slotW * factor / 2
+        local halfH = slotH * factor / 2
+        local function sameRun(a, b)
+            return math.abs(centers[b].y - centers[a].y) < halfH
+                or math.abs(centers[b].x - centers[a].x) < halfW
+        end
+        -- Intra-run step at slot i; single-slot runs (e.g. a short last
+        -- row) borrow the first measurable step so their boundary anchors
+        -- still sit beside the slot instead of on top of it.
+        local globalStepX, globalStepY = 0, 0
+        for i = 1, count - 1 do
+            if sameRun(i, i + 1) then
+                globalStepX = centers[i + 1].x - centers[i].x
+                globalStepY = centers[i + 1].y - centers[i].y
+                break
             end
-            local dx, dy = cursorX - ax, cursorY - ay
+        end
+        local function runStep(i)
+            if i < count and sameRun(i, i + 1) then
+                return centers[i + 1].x - centers[i].x, centers[i + 1].y - centers[i].y
+            end
+            if i > 1 and sameRun(i - 1, i) then
+                return centers[i].x - centers[i - 1].x, centers[i].y - centers[i - 1].y
+            end
+            return globalStepX, globalStepY
+        end
+
+        local candidates = {}
+        local function AddCandidate(x, y, insertIndex)
+            candidates[#candidates + 1] = { x = x, y = y, insertIndex = insertIndex }
+        end
+        local sx, sy = runStep(1)
+        AddCandidate(centers[1].x - sx / 2, centers[1].y - sy / 2, 1)
+        for i = 2, count do
+            if sameRun(i - 1, i) then
+                AddCandidate((centers[i - 1].x + centers[i].x) / 2,
+                    (centers[i - 1].y + centers[i].y) / 2, i)
+            else
+                local ex, ey = runStep(i - 1)
+                AddCandidate(centers[i - 1].x + ex / 2, centers[i - 1].y + ey / 2, i)
+                local bx, by = runStep(i)
+                AddCandidate(centers[i].x - bx / 2, centers[i].y - by / 2, i)
+            end
+        end
+        local ex, ey = runStep(count)
+        AddCandidate(centers[count].x + ex / 2, centers[count].y + ey / 2, count + 1)
+
+        local bestIndex, bestDist
+        for _, cand in ipairs(candidates) do
+            local dx, dy = cursorX - cand.x, cursorY - cand.y
             local dist = dx * dx + dy * dy
             if not bestDist or dist < bestDist then
-                bestDist, bestIndex = dist, i
+                bestDist, bestIndex = dist, cand.insertIndex
             end
         end
         return { insertIndex = bestIndex }
