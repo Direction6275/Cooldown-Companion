@@ -315,11 +315,26 @@ local function AddScopedLoadConditionToggles(container, opts)
         container:AddChild(inheritedLabel)
     end
 
+    -- opts.twoColumn: pair the short toggles inside a Flow sub-row (the outer
+    -- container keeps its own layout). Locked rows carry a long "(locked by
+    -- ...)" suffix that would truncate at half width, so they stay full width.
+    local toggleHost = container
+    if opts.twoColumn then
+        toggleHost = AceGUI:Create("SimpleGroup")
+        toggleHost:SetFullWidth(true)
+        toggleHost:SetLayout("Flow")
+        container:AddChild(toggleHost)
+    end
+
     for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
         local inheritedLabel = GetActiveInheritedLabel(inheritedSources, cond.key, cond.default)
         local cb = AceGUI:Create("CheckBox")
         cb:SetLabel(inheritedLabel and (cond.label .. " |cff888888(locked by " .. inheritedLabel .. ")|r") or cond.label)
-        cb:SetFullWidth(true)
+        if opts.twoColumn and not inheritedLabel then
+            cb:SetRelativeWidth(0.5)
+        else
+            cb:SetFullWidth(true)
+        end
         if inheritedLabel then
             cb:SetValue(true)
             cb:SetDisabled(true)
@@ -334,7 +349,7 @@ local function AddScopedLoadConditionToggles(container, opts)
                 if onChanged then onChanged() end
             end)
         end
-        container:AddChild(cb)
+        toggleHost:AddChild(cb)
     end
 end
 
@@ -2779,6 +2794,7 @@ local function BuildLoadConditionsTab(container)
         headingTextWhenInherited = "Also Hide This Panel In",
         inheritedCollapsedKey = "loadconditions_panel_inherited",
         localCollapsedKey = "loadconditions_panel_local",
+        twoColumn = true,
         onChanged = RefreshPanelLoadConditions,
     })
 
