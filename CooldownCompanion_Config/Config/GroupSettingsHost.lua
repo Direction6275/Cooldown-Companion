@@ -217,6 +217,12 @@ local function RefreshGroupSettingsHost(container, anchorFn)
                 ST._BuildLoadConditionsTab(scroll)
             end
 
+            -- Re-run the layout with final widths: AddChild lays out on every
+            -- insertion, so half-width overrides applied after a builder
+            -- returns are invisible until something else triggers a layout
+            -- (the two-column tabs' trailing widgets mis-wrapped otherwise).
+            scroll:DoLayout()
+
         end)
 
         -- Parent the AceGUI widget frame to the raw host frame
