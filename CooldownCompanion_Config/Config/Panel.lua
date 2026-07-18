@@ -2254,6 +2254,12 @@ local function CreateConfigPanel()
 
         UpdateCompactConfigRows()
         PositionPrimaryAxisUI()
+
+        -- Window resizes change the column height the persisted preview
+        -- split is applied against; recompute and re-clamp the preview.
+        if ST._ReapplyPanelPreviewSplit then
+            ST._ReapplyPanelPreviewSplit()
+        end
     end
 
     colParent:SetScript("OnSizeChanged", function()

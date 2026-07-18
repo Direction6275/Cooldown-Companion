@@ -46,6 +46,41 @@ local function HideEntrySurfaces(col3)
     if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
 end
 
+-- Vertical space the add box and identity strip claim between the preview
+-- host and the split divider (shared by the divider drag and the height
+-- computation below).
+local function GetPreviewOverhead(col3)
+    local overhead = 0
+    local addBox = col3.buttonsAddBox
+    if addBox and addBox.frame:IsShown() then
+        overhead = overhead + PREVIEW_GAP + ADD_BOX_HEIGHT
+    end
+    local strip = col3.buttonsIdentityStrip
+    if strip and strip:IsShown() then
+        overhead = overhead + PREVIEW_GAP + STRIP_HEIGHT
+    end
+    return overhead
+end
+
+-- Single source of truth for the preview host height: the persisted split
+-- fraction, floored at the preview minimum (taller default floor when no
+-- custom split is saved) and capped so the settings region below the
+-- divider keeps its own minimum — the same clamp the divider drag applies.
+local function ComputePreviewHostHeight(col3)
+    local columnHeight = col3.content:GetHeight() or 0
+    local fraction, custom = GetPreviewSplit()
+    local minHeight = custom and PREVIEW_MIN_HEIGHT or 170
+    local desired = math.max(minHeight, math.floor(columnHeight * fraction))
+    local maxHeight = columnHeight - GetPreviewOverhead(col3)
+        - DIVIDER_HEIGHT - SETTINGS_MIN_HEIGHT
+    -- Degenerate tiny column: the preview floor wins (the config window's
+    -- own minimum height makes this a transient state at worst).
+    if maxHeight < PREVIEW_MIN_HEIGHT then
+        maxHeight = PREVIEW_MIN_HEIGHT
+    end
+    return math.min(desired, maxHeight)
+end
+
 -- Draggable divider between the preview region (preview + add box + strip)
 -- and the settings surfaces: drag to rebalance the split, double-click to
 -- reset to the default. The fraction persists per profile.
@@ -90,19 +125,6 @@ local function EnsurePreviewDivider(col3)
         GameTooltip:Hide()
     end)
 
-    local function GetDragOverhead()
-        local overhead = 0
-        local addBox = col3.buttonsAddBox
-        if addBox and addBox.frame:IsShown() then
-            overhead = overhead + PREVIEW_GAP + ADD_BOX_HEIGHT
-        end
-        local strip = col3.buttonsIdentityStrip
-        if strip and strip:IsShown() then
-            overhead = overhead + PREVIEW_GAP + STRIP_HEIGHT
-        end
-        return overhead
-    end
-
     divider:SetScript("OnMouseDown", function(self, button)
         if button ~= "LeftButton" then return end
         local host = col3.buttonsPreviewHost
@@ -116,7 +138,7 @@ local function EnsurePreviewDivider(col3)
             if not contentTop or columnHeight <= 0 then return end
             local _, cursorY = GetCursorPosition()
             cursorY = cursorY / col3.content:GetEffectiveScale()
-            local overhead = GetDragOverhead()
+            local overhead = GetPreviewOverhead(col3)
             local maxHeight = columnHeight - overhead - DIVIDER_HEIGHT - SETTINGS_MIN_HEIGHT
             if maxHeight < PREVIEW_MIN_HEIGHT then return end
             local desired = (contentTop - cursorY) - overhead - (DIVIDER_HEIGHT / 2)
@@ -152,9 +174,8 @@ local function EnsurePreviewDivider(col3)
         SetHot(false)
         SetPreviewSplit(nil)
         local host = col3.buttonsPreviewHost
-        local columnHeight = col3.content:GetHeight() or 0
-        if host and columnHeight > 0 then
-            host:SetHeight(math.max(170, math.floor(columnHeight * PREVIEW_SPLIT_DEFAULT)))
+        if host and (col3.content:GetHeight() or 0) > 0 then
+            host:SetHeight(ComputePreviewHostHeight(col3))
             if CS.selectedGroup and ST._BuildButtonPanelPreview then
                 ST._BuildButtonPanelPreview(host, CS.selectedGroup)
             end
@@ -309,10 +330,7 @@ local function UpdatePanelPreview(col3)
     -- Taller than the resources home's 35% by default: the preview is the
     -- primary surface here. The split divider can override the fraction, and
     -- a user-chosen split skips the default's taller minimum.
-    local columnHeight = col3.content:GetHeight() or 0
-    local fraction, custom = GetPreviewSplit()
-    local minHeight = custom and PREVIEW_MIN_HEIGHT or 170
-    host:SetHeight(math.max(minHeight, math.floor(columnHeight * fraction)))
+    host:SetHeight(ComputePreviewHostHeight(col3))
     host:Show()
     ST._BuildButtonPanelPreview(host, CS.selectedGroup)
     UpdatePreviewDropOverlay()
@@ -686,6 +704,24 @@ local function RefreshButtonsWideColumn()
     ST._RefreshGroupSettingsHost(host)
 end
 
+-- Re-apply the persisted split against the CURRENT column height. Called
+-- from LayoutColumns (which runs on every window resize) so resizing can
+-- neither strand a stale preview height nor squeeze the settings region
+-- below its minimum.
+local function ReapplyPanelPreviewSplit()
+    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return end
+    local col3 = CS.configFrame and CS.configFrame.col3
+    local host = col3 and col3.buttonsPreviewHost
+    if not (host and host:IsShown() and CS.selectedGroup) then return end
+    if (col3.content:GetHeight() or 0) <= 0 then return end
+    local newHeight = ComputePreviewHostHeight(col3)
+    if math.abs((host:GetHeight() or 0) - newHeight) < 0.5 then return end
+    host:SetHeight(newHeight)
+    if ST._BuildButtonPanelPreview then
+        ST._BuildButtonPanelPreview(host, CS.selectedGroup)
+    end
+end
+
 -- Rebuild just the pinned mirror (e.g. after a preview toggle flips) so
 -- effect previews reflect immediately without a full config refresh.
 local function RefreshButtonsPreviewMirror()
@@ -700,6 +736,7 @@ end
 ST._RefreshButtonsWideColumn = RefreshButtonsWideColumn
 ST._AnchorButtonsContentFrame = AnchorButtonsContentFrame
 ST._RefreshButtonsPreviewMirror = RefreshButtonsPreviewMirror
+ST._ReapplyPanelPreviewSplit = ReapplyPanelPreviewSplit
 -- Shared teardown for view switches away from the buttons view (resources,
 -- cast frames, talent picker, config close): hides the preview surfaces AND
 -- releases the preview so its conditional ticker stops and override
