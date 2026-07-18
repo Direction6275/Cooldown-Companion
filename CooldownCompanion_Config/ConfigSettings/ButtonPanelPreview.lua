@@ -366,8 +366,11 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         local centers = {}
         for i = 1, count do
             local slot = layoutDrag.slots[i]
-            local sl, sb, sw, sh = slot and slot:GetScaledRect()
-            if not sl then return nil end
+            if not slot then return nil end
+            -- No `and`-chaining here: it would truncate the multiple
+            -- return values to just the first.
+            local sl, sb, sw, sh = slot:GetScaledRect()
+            if not (sl and sb and sw and sh) then return nil end
             centers[i] = { x = sl + sw / 2, y = sb + sh / 2 }
         end
 
