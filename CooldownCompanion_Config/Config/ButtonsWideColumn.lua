@@ -263,7 +263,7 @@ local function EnsureIdentityStrip(col3)
     strip:SetHeight(STRIP_HEIGHT)
 
     strip.name = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
-    strip.name:SetJustifyH("LEFT")
+    strip.name:SetJustifyH("CENTER")
     strip.name:SetWordWrap(false)
 
     strip.tag = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
@@ -394,14 +394,25 @@ local function UpdateIdentityStrip(col3)
         strip.tag:Hide()
     end
 
+    -- Center the name on the strip itself: symmetric insets sized to the
+    -- right-side tag/badge cluster, so its presence never pulls the name
+    -- off-center.
+    local clusterWidth = 2
+    if shown > 0 then
+        clusterWidth = clusterWidth + shown * STRIP_BADGE_SIZE + (shown - 1) * STRIP_BADGE_GAP
+    end
+    if kindText then
+        if shown > 0 then
+            clusterWidth = clusterWidth + STRIP_BADGE_GAP + 3
+        end
+        clusterWidth = clusterWidth + strip.tag:GetStringWidth()
+    end
+    local inset = clusterWidth + 8
+
     strip.name:SetText(name)
     strip.name:ClearAllPoints()
-    strip.name:SetPoint("LEFT", strip, "LEFT", 2, 0)
-    if rightAnchor then
-        strip.name:SetPoint("RIGHT", rightAnchor, "LEFT", -8, 0)
-    else
-        strip.name:SetPoint("RIGHT", strip, "RIGHT", -2, 0)
-    end
+    strip.name:SetPoint("LEFT", strip, "LEFT", inset, 0)
+    strip.name:SetPoint("RIGHT", strip, "RIGHT", -inset, 0)
 
     local addBox = col3.buttonsAddBox
     local top = (addBox and addBox.frame:IsShown()) and addBox.frame
