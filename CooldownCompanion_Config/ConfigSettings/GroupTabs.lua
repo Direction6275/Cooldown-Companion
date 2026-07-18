@@ -3227,30 +3227,6 @@ local function BuildAppearanceTab(container)
         container:AddChild(hSlider)
     end
 
-    local renderMode, renderModeDrop = AddBorderRenderModeDropdown(container, style, "borderRenderMode", function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end, group.masqueEnabled)
-    SetCompactWidth(renderModeDrop)
-    local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
-
-    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-        local borderSlider = AceGUI:Create("Slider")
-        borderSlider:SetLabel("Border Size")
-        borderSlider:SetSliderValues(0, 5, 0.1)
-        borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
-        borderSlider:SetFullWidth(true)
-        if borderThicknessLocked then
-            borderSlider:SetDisabled(true)
-        end
-        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if borderThicknessLocked then return end
-            style.borderSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(borderSlider)
-    end
-
     if group.buttons and #group.buttons > 1 then
         local spacingSlider = AceGUI:Create("Slider")
         spacingSlider:SetLabel("Button Spacing")
@@ -3473,6 +3449,30 @@ local function BuildAppearanceTab(container)
     CreatePromoteButton(borderHeading, "borderSettings", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     if not borderCollapsed then
+    local renderMode, renderModeDrop = AddBorderRenderModeDropdown(container, style, "borderRenderMode", function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end, group.masqueEnabled)
+    SetCompactWidth(renderModeDrop)
+    local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
+
+    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+        local borderSlider = AceGUI:Create("Slider")
+        borderSlider:SetLabel("Border Size")
+        borderSlider:SetSliderValues(0, 5, 0.1)
+        borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
+        borderSlider:SetFullWidth(true)
+        if borderThicknessLocked then
+            borderSlider:SetDisabled(true)
+        end
+        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if borderThicknessLocked then return end
+            style.borderSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(borderSlider)
+    end
+
     local borderColor = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
     if group.masqueEnabled then
         borderColor:SetDisabled(true)
