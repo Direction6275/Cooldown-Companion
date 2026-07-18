@@ -2870,6 +2870,7 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
         inheritedCollapsedKey = "loadconditions_entry_inherited",
         localCollapsedKey = "loadconditions_entry_local",
         preserveMissing = true,
+        twoColumn = true,
         onChanged = function()
             if buttonData.loadConditions and not next(buttonData.loadConditions) then
                 buttonData.loadConditions = nil

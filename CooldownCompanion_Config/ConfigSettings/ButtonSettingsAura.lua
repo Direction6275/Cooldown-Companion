@@ -144,6 +144,10 @@ end
 
 local function BuildAuraTab(scroll, group, buttonData, infoButtons)
     local isStandalone = buttonData.addedAs == "aura"
+    -- Two-column layout (same pattern as the panel tabs): half-width display
+    -- toggles pair side by side; the heading, labels, aura list rows, and add
+    -- box stay full width.
+    scroll:SetLayout("Flow")
 
     local heading = AceGUI:Create("Heading")
     heading:SetText("Aura Tracking")
@@ -166,7 +170,7 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         local enable = AceGUI:Create("CheckBox")
         enable:SetLabel("Track an Aura")
         enable:SetValue(buttonData.auraTracking == true)
-        enable:SetFullWidth(true)
+        enable:SetRelativeWidth(0.5)
         enable:SetCallback("OnValueChanged", function(_, _, value)
             buttonData.auraTracking = value and true or nil
             if value then
@@ -219,7 +223,7 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         local iconCb = AceGUI:Create("CheckBox")
         iconCb:SetLabel("Show Aura Icon While Active")
         iconCb:SetValue(buttonData.auraShowAuraIcon == true)
-        iconCb:SetFullWidth(true)
+        iconCb:SetRelativeWidth(0.5)
         iconCb:SetCallback("OnValueChanged", function(_, _, value)
             buttonData.auraShowAuraIcon = value and true or nil
             RefreshAuraConfig()
@@ -232,7 +236,7 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         local invertCb = AceGUI:Create("CheckBox")
         invertCb:SetLabel("Desaturate While Active Instead")
         invertCb:SetValue(buttonData.invertAuraDesaturationLogic == true)
-        invertCb:SetFullWidth(true)
+        invertCb:SetRelativeWidth(0.5)
         invertCb:SetCallback("OnValueChanged", function(_, _, value)
             buttonData.invertAuraDesaturationLogic = value and true or nil
             RefreshAuraConfig()
@@ -242,7 +246,7 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         local neverCb = AceGUI:Create("CheckBox")
         neverCb:SetLabel("Never Desaturate")
         neverCb:SetValue(buttonData.neverDesaturate == true)
-        neverCb:SetFullWidth(true)
+        neverCb:SetRelativeWidth(0.5)
         neverCb:SetCallback("OnValueChanged", function(_, _, value)
             buttonData.neverDesaturate = value and true or nil
             RefreshAuraConfig()
@@ -252,7 +256,7 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         local desatCb = AceGUI:Create("CheckBox")
         desatCb:SetLabel("Desaturate Icon While Aura Missing")
         desatCb:SetValue(buttonData.desaturateWhileAuraNotActive == true)
-        desatCb:SetFullWidth(true)
+        desatCb:SetRelativeWidth(0.5)
         desatCb:SetCallback("OnValueChanged", function(_, _, value)
             buttonData.desaturateWhileAuraNotActive = value and true or nil
             RefreshAuraConfig()

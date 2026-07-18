@@ -244,6 +244,10 @@ local function ConfigureSoundPreviewRow(item, buttonData, group)
 end
 
 local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
+    -- Two-column layout: the per-event sound rows pair side by side; the
+    -- heading and helper labels stay full width.
+    scroll:SetLayout("Flow")
+
     local soundHeading = AceGUI:Create("Heading")
     soundHeading:SetText("Sound Alerts")
     ColorHeading(soundHeading)
@@ -293,7 +297,7 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
         if validEvents[eventKey] then
             local isAuraEvent = eventKey == "onAuraApplied"
             local row = AceGUI:Create("SimpleGroup")
-            row:SetFullWidth(true)
+            row:SetRelativeWidth(0.5)
             row:SetLayout("Flow")
 
             local soundDrop = AceGUI:Create("Dropdown")
@@ -327,7 +331,9 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
             end)
 
             if isAuraEvent then
-                CreateInfoButton(soundDrop.frame, soundDrop.label, "LEFT", "RIGHT", 4, 0, {
+                -- Anchor to the label text edge, not the label region (which
+                -- spans the whole cell), so the badge hugs the words.
+                CreateInfoButton(soundDrop.frame, soundDrop.label, "LEFT", "LEFT", soundDrop.label:GetStringWidth() + 4, 0, {
                     "Aura Applied",
                     {"Plays when the tracked aura is applied, handled by the game so it works everywhere. A sound on aura removal is not possible for addons; the Cooldown Manager's own alert settings offer one if needed.", 1, 1, 1, true},
                 }, infoButtons)

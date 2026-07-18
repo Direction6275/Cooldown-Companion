@@ -1993,6 +1993,11 @@ local function CreateConfigPanel()
             ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         end
 
+        -- Re-run the layout with final widths (AddChild lays out on every
+        -- insertion; width overrides applied after a builder returns are
+        -- invisible until the next layout).
+        scroll:DoLayout()
+
     end)
 
     bsTabGroup.frame:SetParent(col3.content)
