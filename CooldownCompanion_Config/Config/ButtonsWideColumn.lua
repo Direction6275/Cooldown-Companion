@@ -743,10 +743,13 @@ local function ReapplyPanelPreviewSplit()
     end
 end
 
--- Rebuild just the pinned mirror (e.g. after a preview toggle flips) so
--- effect previews reflect immediately without a full config refresh.
-local function RefreshButtonsPreviewMirror()
+-- Rebuild just the pinned mirror (e.g. after a preview toggle flips, or
+-- from UpdateGroupStyle so style edits reflect immediately) without a full
+-- config refresh. An optional groupId scopes the rebuild: updates to a
+-- panel other than the mirrored one are skipped.
+local function RefreshButtonsPreviewMirror(groupId)
     if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return end
+    if groupId and groupId ~= CS.selectedGroup then return end
     local col3 = CS.configFrame and CS.configFrame.col3
     local host = col3 and col3.buttonsPreviewHost
     if host and host:IsShown() and CS.selectedGroup and ST._BuildButtonPanelPreview then

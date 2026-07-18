@@ -3115,6 +3115,14 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
 end
 
 function CooldownCompanion:UpdateGroupStyle(groupId)
+    -- The config's pinned mirror renders from saved settings, so it rides
+    -- every style update — before the frame guard, because the mirror must
+    -- refresh even when the group has no materialized live frame. No-op
+    -- unless the config's wide view is showing this panel.
+    if ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror(groupId)
+    end
+
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
 
