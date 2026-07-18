@@ -895,6 +895,22 @@ local function ApplyFakeCooldownSwipe(preview, slot, buttonData, group, panelId,
     cd:SetReverse(style.cooldownSwipeReverse or false)
     cd:SetSwipeColor(0, 0, 0, alpha)
     cd:SetEdgeColor(edgeColor[1], edgeColor[2], edgeColor[3], edgeColor[4])
+
+    -- Cooldown text: like live icon mode, restyle the widget's built-in
+    -- countdown region and let it count the fake loop down.
+    local region = cd:GetRegions()
+    if region and region.SetFont then
+        if style.showCooldownText then
+            cd:SetHideCountdownNumbers(false)
+            CooldownCompanion.ApplyFontStyle(region, style, "cooldown")
+            region:ClearAllPoints()
+            region:SetPoint(style.cooldownTextAnchor or "CENTER",
+                style.cooldownTextXOffset or 0, style.cooldownTextYOffset or 0)
+        else
+            cd:SetHideCountdownNumbers(true)
+        end
+    end
+
     cd:Show()
     slot._cdcFakeSwipe = true
     cd:SetCooldown(preview.swipeCycleStart or GetTime(), PANEL_PREVIEW_SWIPE_PERIOD)
