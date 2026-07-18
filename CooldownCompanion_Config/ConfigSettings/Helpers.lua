@@ -867,7 +867,7 @@ end
 -- Builds the compact mode section shared by icon mode (GroupTabs) and
 -- bar mode (BarModeTabs): checkbox → advanced toggle → info button →
 -- conditional growth-direction + max-visible-buttons controls.
-local function BuildCompactModeControls(container, group, tabInfoButtons)
+local function BuildCompactModeControls(container, group, tabInfoButtons, setWidth)
     local stableAnchorLocked = false
     if CooldownCompanion.NormalizeStableExternalAnchorCompactLayout and CS.selectedGroup then
         stableAnchorLocked = CooldownCompanion:NormalizeStableExternalAnchorCompactLayout(CS.selectedGroup, group) == true
@@ -876,7 +876,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons)
     local compactCb = AceGUI:Create("CheckBox")
     compactCb:SetLabel("Compact Mode")
     compactCb:SetValue(group.compactLayout or false)
-    compactCb:SetFullWidth(true)
+    if setWidth then setWidth(compactCb) else compactCb:SetFullWidth(true) end
     compactCb:SetDisabled(stableAnchorLocked)
     compactCb:SetCallback("OnValueChanged", function(widget, event, val)
         if stableAnchorLocked then
@@ -1382,7 +1382,7 @@ local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disab
     end)
     container:AddChild(modeDrop)
 
-    return ST.GetBorderRenderMode(tbl, key)
+    return ST.GetBorderRenderMode(tbl, key), modeDrop
 end
 
 -- Expose helpers for other ConfigSettings files

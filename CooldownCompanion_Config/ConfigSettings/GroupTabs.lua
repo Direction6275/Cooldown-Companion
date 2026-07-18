@@ -3146,6 +3146,21 @@ local function BuildAppearanceTab(container)
         return
     end
 
+    -- Two-column layout for the icon-panel appearance settings (same pattern
+    -- as the Layout tab). Checkboxes whose label plus badge chain can overflow
+    -- a half cell at minimum config width stay full width.
+    local twoColumn = (group.displayMode or "icons") == "icons"
+    if twoColumn then
+        container:SetLayout("Flow")
+    end
+    local function SetCompactWidth(widget)
+        if twoColumn then
+            widget:SetRelativeWidth(0.5)
+        else
+            widget:SetFullWidth(true)
+        end
+    end
+
     -- ================================================================
     -- Icon Settings (size, spacing)
     -- ================================================================
@@ -3155,13 +3170,17 @@ local function BuildAppearanceTab(container)
     local squareCb = AceGUI:Create("CheckBox")
     squareCb:SetLabel("Square Icons")
     squareCb:SetValue(style.maintainAspectRatio or false)
-    squareCb:SetFullWidth(true)
+    -- Full width with Masque: the green "(Masque skinning is active)" note
+    -- rides the label and overflows a half cell.
     if group.masqueEnabled then
+        squareCb:SetFullWidth(true)
         squareCb:SetDisabled(true)
         local masqueLabel = squareCb.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         masqueLabel:SetPoint("LEFT", squareCb.checkbg, "RIGHT", squareCb.text:GetStringWidth() + 8, 0)
         masqueLabel:SetText("|cff00ff00(Masque skinning is active)|r")
         table.insert(appearanceTabElements, masqueLabel)
+    else
+        SetCompactWidth(squareCb)
     end
     squareCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.maintainAspectRatio = val
@@ -3211,10 +3230,11 @@ local function BuildAppearanceTab(container)
         container:AddChild(hSlider)
     end
 
-    local renderMode = AddBorderRenderModeDropdown(container, style, "borderRenderMode", function()
+    local renderMode, renderModeDrop = AddBorderRenderModeDropdown(container, style, "borderRenderMode", function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end, group.masqueEnabled)
+    SetCompactWidth(renderModeDrop)
     local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
@@ -3252,7 +3272,7 @@ local function BuildAppearanceTab(container)
     local cdTextCb = AceGUI:Create("CheckBox")
     cdTextCb:SetLabel("Show Cooldown Text")
     cdTextCb:SetValue(style.showCooldownText or false)
-    cdTextCb:SetFullWidth(true)
+    SetCompactWidth(cdTextCb)
     cdTextCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showCooldownText = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -3277,7 +3297,9 @@ local function BuildAppearanceTab(container)
     local cdTextPromoteBtn = CreateCheckboxPromoteButton(cdTextCb, cdTextAdvBtn, "cooldownText", group, style)
     AddConditionalPreviewBadge(cdTextCb, cdTextPromoteBtn or cdTextAdvBtn, "Preview Cooldown Text", "cooldown", style.showCooldownText)
 
-    -- Show Charge Text toggle
+    -- Show Charge Text toggle. Full width: its label plus badge chain
+    -- overflows a half cell at minimum config width (same for the aura
+    -- duration and keybind/custom text toggles below).
     local chargeTextCb = AceGUI:Create("CheckBox")
     chargeTextCb:SetLabel("Show Count Text (Charges/Uses)")
     chargeTextCb:SetValue(style.showChargeText ~= false)
@@ -3369,7 +3391,7 @@ local function BuildAppearanceTab(container)
         local auraStackCb = AceGUI:Create("CheckBox")
         auraStackCb:SetLabel("Show Aura Stack Text")
         auraStackCb:SetValue(style.showAuraStackText ~= false)
-        auraStackCb:SetFullWidth(true)
+        SetCompactWidth(auraStackCb)
         auraStackCb:SetCallback("OnValueChanged", function(widget, event, val)
             style.showAuraStackText = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -3445,10 +3467,10 @@ local function BuildAppearanceTab(container)
 
 
     -- Compact Mode toggle + Max Visible Buttons slider
-    BuildCompactModeControls(container, group, tabInfoButtons)
+    BuildCompactModeControls(container, group, tabInfoButtons, SetCompactWidth)
 
     if style.showCooldownText then
-        AddDurationFormatDropdown(container, style, refreshStyle)
+        SetCompactWidth(AddDurationFormatDropdown(container, style, refreshStyle))
     end
 
     -- Border heading
@@ -3493,7 +3515,7 @@ local function BuildAppearanceTab(container)
     if not iconTintCollapsed then
         BuildIconTintControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { showAuraTint = groupHasAuraEntry })
+        end, { showAuraTint = groupHasAuraEntry, setWidth = SetCompactWidth })
         BuildBackgroundColorControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
@@ -3520,7 +3542,7 @@ local function BuildAppearanceTab(container)
         local masqueCb = AceGUI:Create("CheckBox")
         masqueCb:SetLabel("Enable Masque Skinning")
         masqueCb:SetValue(group.masqueEnabled or false)
-        masqueCb:SetFullWidth(true)
+        SetCompactWidth(masqueCb)
         masqueCb:SetCallback("OnValueChanged", function(widget, event, val)
             CooldownCompanion:ToggleGroupMasque(CS.selectedGroup, val)
             CooldownCompanion:RefreshConfigPanel()
