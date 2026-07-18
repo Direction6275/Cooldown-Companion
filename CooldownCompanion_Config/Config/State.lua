@@ -2997,6 +2997,17 @@ local function IsButtonsWideViewActive()
         or CS.otherClassLibraryActive)
 end
 
+-- Views that use the wide col3 layout: column 3 spans the col4 region and
+-- column 4 hides. True for the plain buttons view and the Resources home;
+-- the talent picker replaces the columns with its own 2-column layout and
+-- Other Class browsing keeps the 4-column split.
+local function IsWideCol3LayoutActive()
+    if CS.talentPickerMode or CS.otherClassLibraryActive then
+        return false
+    end
+    return IsButtonsWideViewActive() or CS.resourcesEntrySelected
+end
+
 local function ResetConfigSelection(full)
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedFolder = nil
@@ -3402,6 +3413,7 @@ ST._SelectConfigCastFramesEntry = SelectConfigCastFramesEntry
 ST._GetResourcesEntryPlacement = GetResourcesEntryPlacement
 ST._IsResourcesEmptyStateActive = IsResourcesEmptyStateActive
 ST._IsButtonsWideViewActive = IsButtonsWideViewActive
+ST._IsWideCol3LayoutActive = IsWideCol3LayoutActive
 ST._ResetConfigSelection = ResetConfigSelection
 ST._SetConfigPrimaryModeImpl = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs

@@ -46,6 +46,31 @@ local function HideEntrySurfaces(col3)
     if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
 end
 
+-- The wide col3 layout hosts exactly one pinned preview at a time: the
+-- buttons panel mirror or the Resources home's Layout & Order preview.
+-- The split divider, persisted fraction, and height clamps below are
+-- shared; each view registers its host frame and rebuild function while
+-- its preview is showing, and clears the registration when it hides.
+local function SetActiveWidePreview(col3, host, rebuild)
+    col3._cdcActiveWideHost = host
+    col3._cdcActiveWideRebuild = rebuild
+end
+
+local function ClearActiveWidePreview(col3, host)
+    if col3._cdcActiveWideHost == host then
+        col3._cdcActiveWideHost = nil
+        col3._cdcActiveWideRebuild = nil
+    end
+end
+
+local function RebuildActiveWidePreview(col3)
+    local host = col3._cdcActiveWideHost
+    local rebuild = col3._cdcActiveWideRebuild
+    if host and rebuild then
+        rebuild(host)
+    end
+end
+
 -- Vertical space the add box and identity strip claim between the preview
 -- host and the split divider (shared by the divider drag and the height
 -- computation below).
@@ -87,14 +112,13 @@ end
 -- box and identity strip settle their visibility, so the first computation
 -- can run against stale overhead.
 local function ReapplyPanelPreviewSplit()
-    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return end
     local col3 = CS.configFrame and CS.configFrame.col3
-    local host = col3 and col3.buttonsPreviewHost
-    if not (host and host:IsShown() and CS.selectedGroup) then return end
+    local host = col3 and col3._cdcActiveWideHost
+    if not (host and host:IsShown()) then return end
     if (col3.content:GetHeight() or 0) <= 0 then return end
     local newHeight = ComputePreviewHostHeight(col3)
     local heightChanged = math.abs((host:GetHeight() or 0) - newHeight) >= 0.5
-    -- The mirror's scale-to-fit reads the host width too, so a width-only
+    -- The preview's scale-to-fit reads the host width too, so a width-only
     -- window resize still needs a rebuild even when the split height held.
     local width = host:GetWidth() or 0
     local widthChanged = math.abs((host._cdcLastLayoutWidth or 0) - width) >= 0.5
@@ -103,9 +127,7 @@ local function ReapplyPanelPreviewSplit()
         host:SetHeight(newHeight)
     end
     host._cdcLastLayoutWidth = width
-    if ST._BuildButtonPanelPreview then
-        ST._BuildButtonPanelPreview(host, CS.selectedGroup)
-    end
+    RebuildActiveWidePreview(col3)
 end
 
 -- Draggable divider between the preview region (preview + add box + strip)
@@ -164,7 +186,7 @@ local function EnsurePreviewDivider(col3)
 
     divider:SetScript("OnMouseDown", function(self, button)
         if button ~= "LeftButton" then return end
-        local host = col3.buttonsPreviewHost
+        local host = col3._cdcActiveWideHost
         if not (host and host:IsShown()) then return end
         self._dragging = true
         self._rebuildElapsed = 0
@@ -181,37 +203,31 @@ local function EnsurePreviewDivider(col3)
             local desired = (contentTop - cursorY) - overhead - (DIVIDER_HEIGHT / 2)
             desired = math.max(PREVIEW_MIN_HEIGHT, math.min(desired, maxHeight))
             host:SetHeight(desired)
-            -- Rescale the mirror as the host resizes, throttled.
+            -- Rescale the preview as the host resizes, throttled.
             dividerSelf._rebuildElapsed = dividerSelf._rebuildElapsed + elapsed
             if dividerSelf._rebuildElapsed >= 0.08 then
                 dividerSelf._rebuildElapsed = 0
-                if CS.selectedGroup and ST._BuildButtonPanelPreview then
-                    ST._BuildButtonPanelPreview(host, CS.selectedGroup)
-                end
+                RebuildActiveWidePreview(col3)
             end
         end)
     end)
     divider:SetScript("OnMouseUp", function(self)
         if not self._dragging then return end
         self:CancelDrag()
-        local host = col3.buttonsPreviewHost
+        local host = col3._cdcActiveWideHost
         local columnHeight = col3.content:GetHeight() or 0
         if host and columnHeight > 0 then
             SetPreviewSplit(host:GetHeight() / columnHeight)
-            if CS.selectedGroup and ST._BuildButtonPanelPreview then
-                ST._BuildButtonPanelPreview(host, CS.selectedGroup)
-            end
+            RebuildActiveWidePreview(col3)
         end
     end)
     divider:SetScript("OnDoubleClick", function(self)
         self:CancelDrag()
         SetPreviewSplit(nil)
-        local host = col3.buttonsPreviewHost
+        local host = col3._cdcActiveWideHost
         if host and (col3.content:GetHeight() or 0) > 0 then
             host:SetHeight(ComputePreviewHostHeight(col3))
-            if CS.selectedGroup and ST._BuildButtonPanelPreview then
-                ST._BuildButtonPanelPreview(host, CS.selectedGroup)
-            end
+            RebuildActiveWidePreview(col3)
         end
     end)
 
@@ -219,12 +235,12 @@ local function EnsurePreviewDivider(col3)
     return divider
 end
 
--- Settings surfaces anchor beneath the pinned preview, its add box, and
--- the identity strip when shown (below the split divider), and fill the
--- whole column otherwise (Resources-home pattern).
+-- Settings surfaces anchor beneath the pinned preview (whichever host is
+-- registered), its add box, and the identity strip when shown (below the
+-- split divider), and fill the whole column otherwise.
 local function AnchorButtonsContentFrame(col3, frame)
     frame:ClearAllPoints()
-    local previewHost = col3.buttonsPreviewHost
+    local previewHost = col3._cdcActiveWideHost
     local addBox = col3.buttonsAddBox
     local strip = col3.buttonsIdentityStrip
     local topAnchor
@@ -326,6 +342,7 @@ previewCursorWatcher:SetScript("OnEvent", UpdatePreviewDropOverlay)
 local function HidePanelPreview(col3)
     local host = col3.buttonsPreviewHost
     if host then
+        ClearActiveWidePreview(col3, host)
         host:Hide()
         if host._cdcDropOverlay then
             host._cdcDropOverlay:Hide()
@@ -362,9 +379,11 @@ local function UpdatePanelPreview(col3)
     host:ClearAllPoints()
     host:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
     host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
-    -- Taller than the resources home's 35% by default: the preview is the
-    -- primary surface here. The split divider can override the fraction, and
-    -- a user-chosen split skips the default's taller minimum.
+    SetActiveWidePreview(col3, host, function(hostFrame)
+        if CS.selectedGroup and ST._BuildButtonPanelPreview then
+            ST._BuildButtonPanelPreview(hostFrame, CS.selectedGroup)
+        end
+    end)
     host:SetHeight(ComputePreviewHostHeight(col3))
     host:Show()
     ST._BuildButtonPanelPreview(host, CS.selectedGroup)
@@ -692,6 +711,7 @@ local function RefreshButtonsWideColumn()
     if col3._resourcesIntroPane then col3._resourcesIntroPane:Hide() end
     if col3._unitFramesScroll then col3._unitFramesScroll.frame:Hide() end
     if col3._unitFramesIntroPane then col3._unitFramesIntroPane:Hide() end
+    if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3) end
 
     -- Panel multi-select: batch operations replace everything else
     local panelMultiCount = 0
@@ -795,6 +815,12 @@ end
 
 ST._RefreshButtonsWideColumn = RefreshButtonsWideColumn
 ST._AnchorButtonsContentFrame = AnchorButtonsContentFrame
+-- Shared wide-preview plumbing (also used by the Resources wide column):
+-- host registration for the split divider, the height computation, and
+-- the persisted-split reapply.
+ST._SetActiveWidePreview = SetActiveWidePreview
+ST._ClearActiveWidePreview = ClearActiveWidePreview
+ST._ComputeWidePreviewHostHeight = ComputePreviewHostHeight
 ST._RefreshButtonsPreviewMirror = RefreshButtonsPreviewMirror
 ST._IsPanelMirrorPreviewActive = IsPanelMirrorPreviewActive
 ST._ReapplyPanelPreviewSplit = ReapplyPanelPreviewSplit

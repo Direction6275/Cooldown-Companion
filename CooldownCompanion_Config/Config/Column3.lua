@@ -95,6 +95,7 @@ local function RefreshColumn3()
         if col3._resourcesIntroPane then col3._resourcesIntroPane:Hide() end
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
         if ST._HideButtonsPanelPreviewSurfaces then ST._HideButtonsPanelPreviewSurfaces(col3) end
+        if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3) end
 
         local settings = CooldownCompanion:GetFrameAnchoringSettings()
         if not (settings and settings.enabled) then
@@ -152,7 +153,9 @@ local function RefreshColumn3()
         return
     end
 
-    -- Resources home: show Custom Bars
+    -- Resources home: wide column (pinned Layout & Order preview above the
+    -- resources settings surfaces). The Custom Bars & Resources list lives
+    -- in column 2.
     if CS.resourcesEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
         if not col3 then ST._RefreshButtonSettingsColumn() return end
@@ -169,13 +172,14 @@ local function RefreshColumn3()
         if col3._customAuraTabGroup then
             col3._customAuraTabGroup.frame:Hide()
         end
+        if col3._customBarsScroll then col3._customBarsScroll.frame:Hide() end
         if col3._unitFramesScroll then col3._unitFramesScroll.frame:Hide() end
         if col3._unitFramesIntroPane then col3._unitFramesIntroPane:Hide() end
 
-        -- Disabled home: the single wide intro pane replaces the list
+        -- Disabled home: the single wide intro pane replaces the settings
         if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
-            if col3._customBarsScroll then
-                col3._customBarsScroll.frame:Hide()
+            if ST._HideResourcesWideSurfaces then
+                ST._HideResourcesWideSurfaces(col3)
             end
             ShowResourcesIntroPane(col3)
             return
@@ -184,20 +188,7 @@ local function RefreshColumn3()
             col3._resourcesIntroPane:Hide()
         end
 
-        if not col3._customBarsScroll then
-            local scroll = AceGUI:Create("ScrollFrame")
-            scroll:SetLayout("List")
-            scroll.frame:SetParent(col3.content)
-            col3._customBarsScroll = scroll
-        end
-
-        col3._customBarsScroll.frame:ClearAllPoints()
-        col3._customBarsScroll.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-        col3._customBarsScroll.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
-        col3._customBarsScroll:ReleaseChildren()
-        col3._customBarsScroll.frame:Show()
-        ST._BuildCustomBarsListPanel(col3._customBarsScroll)
-        return
+        return ST._RefreshResourcesWideColumn(col3)
     end
 
     -- Normal mode: hide Custom Bars panel
@@ -210,6 +201,9 @@ local function RefreshColumn3()
     -- the conditional ticker stops and override targeting disarms.
     if col3Normal and ST._HideButtonsPanelPreviewSurfaces then
         ST._HideButtonsPanelPreviewSurfaces(col3Normal)
+    end
+    if col3Normal and ST._HideResourcesWideSurfaces then
+        ST._HideResourcesWideSurfaces(col3Normal)
     end
     if col3Normal and col3Normal._customAuraTabGroup then
         col3Normal._customAuraTabGroup.frame:Hide()

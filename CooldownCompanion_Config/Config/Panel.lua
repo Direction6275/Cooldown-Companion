@@ -388,23 +388,12 @@ local function GetColumn3HeaderMode(selection)
     if CS.castFramesEntrySelected then
         return "unit_frames"
     end
+    -- Resources home: the wide column 3 hosts the surfaces column 4 used
+    -- to show, so it takes over column 4's header modes too.
     if CS.resourcesEntrySelected then
         if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
             return "resources_intro"
         end
-        return "custom_aura"
-    end
-    if selection.panelMultiCount >= 2 then
-        return "panel_actions"
-    end
-    return "button"
-end
-
-local function GetColumn4HeaderMode(selection)
-    if CS.castFramesEntrySelected then
-        return "cast_bar"
-    end
-    if CS.resourcesEntrySelected then
         local resourceBarSettings = CooldownCompanion:GetResourceBarSettings()
         if resourceBarSettings and resourceBarSettings.enabled == true then
             if CS.selectedResourcePowerType
@@ -418,10 +407,17 @@ local function GetColumn4HeaderMode(selection)
                 return "custom_bar"
             end
         end
-        if CS.resourcesEntrySelected then
-            return "resources_panel"
-        end
-        return "layout_order"
+        return "resources_panel"
+    end
+    if selection.panelMultiCount >= 2 then
+        return "panel_actions"
+    end
+    return "button"
+end
+
+local function GetColumn4HeaderMode(selection)
+    if CS.castFramesEntrySelected then
+        return "cast_bar"
     end
     if selection.panelMultiCount >= 2 or selection.hasSelectedPanel then
         return "panel"
@@ -466,10 +462,14 @@ end
 
 local function GetColumn3HeaderTitle(selection)
     local mode = GetColumn3HeaderMode(selection)
-    if mode == "custom_aura" then
-        return GetCustomBarsColumnTitle()
-    elseif mode == "resources_intro" then
+    if mode == "resources_intro" then
         return "Resource Bars"
+    elseif mode == "resources_panel" then
+        return "Resource Bars"
+    elseif mode == "resource_settings" then
+        return GetResourceSettingsColumnTitle()
+    elseif mode == "custom_bar" then
+        return "Custom Bar Settings"
     elseif mode == "unit_frames" then
         return "Unit Frames"
     elseif mode == "panel_actions" then
@@ -491,6 +491,10 @@ local function ApplyConfigColumnTitles(frame)
     if IsConfigFinderActive and IsConfigFinderActive() then
         frame.col1:SetTitle("Groups")
         frame.col2:SetTitle("Search Results")
+    elseif CS.resourcesEntrySelected then
+        -- Resources home: column 2 hosts the Custom Bars & Resources list
+        frame.col1:SetTitle("Groups")
+        frame.col2:SetTitle(GetCustomBarsColumnTitle())
     else
         frame.col1:SetTitle("Groups")
         frame.col2:SetTitle("Panels")
@@ -971,6 +975,9 @@ local function CreateConfigPanel()
         -- and disarms override targeting while the config is closed.
         if ST._HideButtonsPanelPreviewSurfaces and CS.configFrame and CS.configFrame.col3 then
             ST._HideButtonsPanelPreviewSurfaces(CS.configFrame.col3)
+        end
+        if ST._HideResourcesWideSurfaces and CS.configFrame and CS.configFrame.col3 then
+            ST._HideResourcesWideSurfaces(CS.configFrame.col3)
         end
         if ClearConfigShiftTooltipHover then
             ClearConfigShiftTooltipHover()
@@ -1690,6 +1697,18 @@ local function CreateConfigPanel()
     infoIcon:SetAtlas("QuestRepeatableTurnin")
     infoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if CS.resourcesEntrySelected then
+            GameTooltip:AddLine("Custom Bars & Resources")
+            GameTooltip:AddLine("Create Custom Bars and manage enabled resource-specific settings.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Active Custom Bars shows Custom Bars currently loadable for your spec and conditions.", 1, 1, 1, true)
+            GameTooltip:AddLine("Resources opens settings for enabled non-health resources.", 1, 1, 1, true)
+            GameTooltip:AddLine("Inactive Custom Bars shows Custom Bars blocked by spec, talents, load conditions, or disabled state.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("No spec filter means a Custom Bar applies to every spec.", 1, 1, 1, true)
+            GameTooltip:Show()
+            return
+        end
         GameTooltip:AddLine("Panels")
         GameTooltip:AddLine("A panel controls dimensions, display mode, and layout for all entries inside it. Every entry needs a panel, even if it's just one.", 1, 1, 1, true)
         GameTooltip:AddLine("Select a panel to preview and edit its entries in the settings column.", 1, 1, 1, true)
@@ -1790,15 +1809,22 @@ local function CreateConfigPanel()
         elseif ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
             GameTooltip:AddLine("Resource Bars")
             GameTooltip:AddLine("Enable Resource Bars to configure Resources and Custom Bars here.", 1, 1, 1, true)
+        elseif CS.resourcesEntrySelected and not CS.selectedResourcePowerType and not CS.selectedCustomBarId then
+            GameTooltip:AddLine("Resource Bars")
+            GameTooltip:AddLine("Shared resource bar settings, organized into tabs.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Use the preview pane to drag attached bars around the mirrored icon panel. Layout is saved per specialization.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Select a resource or Custom Bar in the list column for per-bar settings.", 1, 1, 1, true)
         elseif CS.resourcesEntrySelected then
-            GameTooltip:AddLine("Custom Bars & Resources")
-            GameTooltip:AddLine("Create Custom Bars and manage enabled resource-specific settings.", 1, 1, 1, true)
+            GameTooltip:AddLine("Layout & Order")
+            GameTooltip:AddLine("Arrange attached bars by dragging them around the mirrored icon panel.", 1, 1, 1)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Active Custom Bars shows Custom Bars currently loadable for your spec and conditions.", 1, 1, 1, true)
-            GameTooltip:AddLine("Resources opens settings for enabled non-health resources.", 1, 1, 1, true)
-            GameTooltip:AddLine("Inactive Custom Bars shows Custom Bars blocked by spec, talents, load conditions, or disabled state.", 1, 1, 1, true)
+            GameTooltip:AddLine("This only applies when resource anchoring is using panel anchoring.", 1, 1, 1)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("No spec filter means a Custom Bar applies to every spec.", 1, 1, 1, true)
+            GameTooltip:AddLine("Horizontal layouts drag bars above or below the icon row.\nVertical layouts drag bars to the left or right of the icon row.", 1, 1, 1)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Layout is saved per specialization and swaps automatically.", 1, 1, 1)
         else
             local selection = GetConfigSelectionSummary()
             local mode = GetColumn3HeaderMode(selection)
@@ -2221,12 +2247,10 @@ local function CreateConfigPanel()
         local leftoverWidth = math.max(0, w - usedWidth)
 
         -- Wide col3 layouts: cols 1-2 stay normal, col3 widens across the
-        -- col4 region, col4 hides. Used by the Resources empty state (single
-        -- intro pane) and the plain buttons view (merged settings column).
-        local resourcesEmptyState = ST._IsResourcesEmptyStateActive
-            and ST._IsResourcesEmptyStateActive()
-        local wideCol3 = resourcesEmptyState
-            or (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive())
+        -- col4 region, col4 hides. Used by the plain buttons view (merged
+        -- settings column) and the Resources home (preview + settings).
+        local wideCol3 = ST._IsWideCol3LayoutActive
+            and ST._IsWideCol3LayoutActive()
 
         local col1Width = equalColWidth
         local col2Width = equalColWidth

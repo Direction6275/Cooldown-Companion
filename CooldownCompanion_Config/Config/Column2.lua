@@ -1734,6 +1734,16 @@ local function RefreshColumn2()
         return
     end
 
+    -- Resources home: column 2 hosts the Custom Bars & Resources list
+    -- (moved from column 3 when the resources view went wide). The list
+    -- builder handles the disabled and profile-conflict states itself.
+    if CS.resourcesEntrySelected then
+        if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
+        CS.col2Scroll.frame:SetPoint("BOTTOMRIGHT", CS.col2Scroll.frame:GetParent(), "BOTTOMRIGHT", 0, 0)
+        ST._BuildCustomBarsListPanel(CS.col2Scroll)
+        return
+    end
+
     -- In the wide buttons view column 2 lists panels only: entries live in
     -- the preview (other-class browsing keeps its rows - no preview there).
     local wideView = ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() or false

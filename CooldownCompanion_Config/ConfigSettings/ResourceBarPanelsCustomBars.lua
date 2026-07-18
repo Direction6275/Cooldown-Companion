@@ -26,7 +26,14 @@ local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 
 local function RefreshLayoutOrderPreview()
-    if not ((CS.resourcesEntrySelected or CS.castFramesEntrySelected) and CS.col4Container and ST._RefreshColumn4) then
+    -- Resources home: the preview lives in the wide column 3.
+    if CS.resourcesEntrySelected then
+        if ST._RefreshResourcesLayoutPreview then
+            ST._RefreshResourcesLayoutPreview()
+        end
+        return
+    end
+    if not (CS.castFramesEntrySelected and CS.col4Container and ST._RefreshColumn4) then
         return
     end
     ST._RefreshColumn4(CS.col4Container)
