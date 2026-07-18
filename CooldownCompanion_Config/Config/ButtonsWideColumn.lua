@@ -276,7 +276,7 @@ local function EnsureIdentityStrip(col3)
     strip.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
     strip.name = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
-    strip.name:SetJustifyH("LEFT")
+    strip.name:SetJustifyH("CENTER")
     strip.name:SetWordWrap(false)
 
     local divider = strip:CreateTexture(nil, "ARTWORK")
@@ -334,6 +334,15 @@ local function UpdateIdentityStrip(col3)
             name = ST._GetConfigEntryDisplayName
                 and ST._GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
                 or buttonData.name
+            -- Spell entries: name the tracking kind next to the sword/heart
+            -- decoration icon (same addedAs fallback the decoration uses).
+            if name and buttonData.type == "spell" then
+                local addedAs = buttonData.addedAs
+                if addedAs ~= "spell" and addedAs ~= "aura" then
+                    addedAs = buttonData.isPassive and "aura" or "spell"
+                end
+                name = name .. " |cff808080(" .. (addedAs == "aura" and "Aura" or "Spell") .. ")|r"
+            end
             badgeStatus = ST._CollectEntryStatus and ST._CollectEntryStatus(buttonData, group)
         else
             name = group.name or "Panel"
