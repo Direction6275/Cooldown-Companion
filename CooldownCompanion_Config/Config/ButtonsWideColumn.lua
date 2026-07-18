@@ -7,7 +7,7 @@
     The column frames two labeled areas: the pinned Live Preview above the
     split divider (the column title names it) and the editing surface
     below it (the "Editing:" path and selected-entry context on one line,
-    followed by the add box and settings on a more opaque backdrop).
+    followed by the add box and settings).
     Browsing skips the pinned preview cluster
     (panels render live in the world).
 ]]
@@ -82,24 +82,16 @@ local function RebuildActiveWidePreview(col3)
     end
 end
 
--- The editing surface: the visually distinct, more opaque container below
--- the split divider. It frames the "Editing:" path (including any selected
--- entry context), the add box, and the settings surfaces so the workspace
--- reads as two labeled areas (Live Preview above, Editing below).
+-- Structural container below the split divider. The divider itself separates
+-- Live Preview from Editing; this frame only hosts the Editing path (including
+-- any selected entry context), the add box, and the settings surfaces.
 local function EnsureEditingSurface(col3)
     local surface = col3._cdcEditingSurface
     if surface then return surface end
 
-    surface = CreateFrame("Frame", nil, col3.content, "BackdropTemplate")
-    surface:SetBackdrop({
-        bgFile = "Interface\\BUTTONS\\WHITE8X8",
-        edgeFile = "Interface\\BUTTONS\\WHITE8X8",
-        edgeSize = 1,
-    })
-    surface:SetBackdropColor(0, 0, 0, 0.5)
-    surface:SetBackdropBorderColor(1, 1, 1, 0.06)
-    -- Same frame level as the column content so the fill draws behind the
-    -- settings widgets (siblings created at content level + 1).
+    surface = CreateFrame("Frame", nil, col3.content)
+    -- Keep the structural host at content level; its child header and
+    -- badges then sit alongside the sibling settings widgets.
     surface:SetFrameLevel(col3.content:GetFrameLevel())
 
     local headerLine = CreateFrame("Frame", nil, surface)
