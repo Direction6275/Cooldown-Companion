@@ -128,8 +128,7 @@ local function BuildTextAppearanceTab(container, group, style)
         container:AddChild(spacingSlider)
     end
 
-    SetCompactWidth(AddDurationFormatDropdown(container, style, refreshStyle))
-
+    -- Short widget left of the tall labeled dropdown: [header | format].
     local headerCb = AceGUI:Create("CheckBox")
     headerCb:SetLabel("Show Group Header")
     headerCb:SetValue(style.showTextGroupHeader == true)
@@ -140,6 +139,8 @@ local function BuildTextAppearanceTab(container, group, style)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(headerCb)
+
+    SetCompactWidth(AddDurationFormatDropdown(container, style, refreshStyle))
 
     if style.showTextGroupHeader then
         local headerSizeSlider = AceGUI:Create("Slider")
@@ -275,6 +276,17 @@ local function BuildTextAppearanceTab(container, group, style)
     end)
     container:AddChild(outlineDrop)
 
+    -- Short widget left of the tall labeled dropdown: [shadow | alignment].
+    local shadowCb = AceGUI:Create("CheckBox")
+    shadowCb:SetLabel("Text Shadow")
+    shadowCb:SetValue(style.textShadow == true)
+    SetCompactWidth(shadowCb)
+    shadowCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.textShadow = val or false
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(shadowCb)
+
     local alignDrop = AceGUI:Create("Dropdown")
     alignDrop:SetLabel("Alignment")
     alignDrop:SetList({LEFT = "Left", CENTER = "Center", RIGHT = "Right"})
@@ -285,16 +297,6 @@ local function BuildTextAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(alignDrop)
-
-    local shadowCb = AceGUI:Create("CheckBox")
-    shadowCb:SetLabel("Text Shadow")
-    shadowCb:SetValue(style.textShadow == true)
-    SetCompactWidth(shadowCb)
-    shadowCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.textShadow = val or false
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(shadowCb)
 
     local fontSizeSlider = AceGUI:Create("Slider")
     fontSizeSlider:SetLabel("Font Size")

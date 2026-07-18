@@ -1769,6 +1769,42 @@ local function BuildLayoutTab(container)
 
     if not strataCollapsed then
 
+    local customStrataEnabled = group.displayMode == "icons"
+        and type(style.strataOrder) == "table"
+
+    -- Custom Icon Strata toggle (icon mode only) leads the row: short widget
+    -- left of the tall labeled Frame Strata dropdown. Its layer dropdowns
+    -- render after the dropdown so they pair among themselves.
+    if group.displayMode == "icons" then
+    local strataToggle = AceGUI:Create("CheckBox")
+    strataToggle:SetLabel("Custom Icon Strata")
+    strataToggle:SetValue(customStrataEnabled)
+    SetCompactWidth(strataToggle)
+    strataToggle:SetCallback("OnValueChanged", function(widget, event, val)
+        if not val then
+            style.strataOrder = nil
+            CS.pendingStrataOrder = nil
+            CS.pendingStrataGroup = nil
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        else
+            style.strataOrder = style.strataOrder or {}
+            CS.pendingStrataOrder = nil
+            CS.InitPendingStrataOrder(CS.selectedGroup)
+        end
+        local host = CS.groupSettingsActiveHost or CS.col4Container
+        if host and host.tabGroup then
+            host.tabGroup:SelectTab(CS.selectedTab)
+        end
+    end)
+    container:AddChild(strataToggle)
+
+    CreateInfoButton(strataToggle.frame, strataToggle.checkbg, "LEFT", "RIGHT", strataToggle.text:GetStringWidth() + 4, 0, {
+        "Custom Icon Strata",
+        {"Controls the draw order of visual layers on each icon: Cooldown Swipe, Aura/Pandemic Glow, Ready Glow, Text Overlay, Assisted Highlight, and Proc Glow.", 1, 1, 1, true},
+        {"Layer 6 draws on top, Layer 1 on the bottom. When disabled, the default order is used.", 1, 1, 1, true},
+    }, tabInfoButtons)
+    end -- icons (custom strata toggle)
+
     -- Frame Strata dropdown (available for both icon and bar mode)
     do
         local frameStrataOrder = {"BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG"}
@@ -1802,38 +1838,6 @@ local function BuildLayoutTab(container)
             {"Only change this if you need one group to overlap another.", 1, 1, 1, true},
         }, tabInfoButtons)
     end
-
-    -- Custom Icon Strata (sub-element ordering) — icon mode only
-    if group.displayMode == "icons" then
-    local customStrataEnabled = type(style.strataOrder) == "table"
-
-    local strataToggle = AceGUI:Create("CheckBox")
-    strataToggle:SetLabel("Custom Icon Strata")
-    strataToggle:SetValue(customStrataEnabled)
-    SetCompactWidth(strataToggle)
-    strataToggle:SetCallback("OnValueChanged", function(widget, event, val)
-        if not val then
-            style.strataOrder = nil
-            CS.pendingStrataOrder = nil
-            CS.pendingStrataGroup = nil
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        else
-            style.strataOrder = style.strataOrder or {}
-            CS.pendingStrataOrder = nil
-            CS.InitPendingStrataOrder(CS.selectedGroup)
-        end
-        local host = CS.groupSettingsActiveHost or CS.col4Container
-        if host and host.tabGroup then
-            host.tabGroup:SelectTab(CS.selectedTab)
-        end
-    end)
-    container:AddChild(strataToggle)
-
-    CreateInfoButton(strataToggle.frame, strataToggle.checkbg, "LEFT", "RIGHT", strataToggle.text:GetStringWidth() + 4, 0, {
-        "Custom Icon Strata",
-        {"Controls the draw order of visual layers on each icon: Cooldown Swipe, Aura/Pandemic Glow, Ready Glow, Text Overlay, Assisted Highlight, and Proc Glow.", 1, 1, 1, true},
-        {"Layer 6 draws on top, Layer 1 on the bottom. When disabled, the default order is used.", 1, 1, 1, true},
-    }, tabInfoButtons)
 
     if customStrataEnabled then
         CS.InitPendingStrataOrder(CS.selectedGroup)
@@ -1911,8 +1915,7 @@ local function BuildLayoutTab(container)
             container:AddChild(drop)
             strataDropdowns[pos] = drop
         end
-    end
-    end -- not bars (custom strata)
+    end -- customStrataEnabled
 
     end -- not strataCollapsed
 
@@ -3440,18 +3443,19 @@ local function BuildAppearanceTab(container)
     CreatePromoteButton(borderHeading, "borderSettings", CS.selectedButton and group.buttons[CS.selectedButton], style)
 
     if not borderCollapsed then
+    -- Short widget left of the tall labeled dropdown: [color | thickness].
+    local borderColor = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
+    SetCompactWidth(borderColor)
+    if group.masqueEnabled then
+        borderColor:SetDisabled(true)
+    end
+
     local renderMode, renderModeDrop = AddBorderRenderModeDropdown(container, style, "borderRenderMode", function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end, group.masqueEnabled)
     SetCompactWidth(renderModeDrop)
     local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
-
-    local borderColor = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
-    SetCompactWidth(borderColor)
-    if group.masqueEnabled then
-        borderColor:SetDisabled(true)
-    end
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         local borderSlider = AceGUI:Create("Slider")

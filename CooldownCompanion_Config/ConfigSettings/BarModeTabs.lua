@@ -131,16 +131,17 @@ local function BuildBarAppearanceTab(container, group, style)
     local borderHeading, borderCollapsed = BuildCollapsibleSection(container, "Border", "barappearance_border")
 
     if not borderCollapsed then
+    -- Short widget left of the tall labeled dropdown: [color | thickness].
+    local borderColorPicker = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
+    SetCompactWidth(borderColorPicker)
+    CreateColorPickerPromoteButton(borderColorPicker, "borderSettings", group, style)
+
     local renderMode, renderModeDrop = AddBorderRenderModeDropdown(container, style, "borderRenderMode", function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
     SetCompactWidth(renderModeDrop)
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
-
-    local borderColorPicker = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
-    SetCompactWidth(borderColorPicker)
-    CreateColorPickerPromoteButton(borderColorPicker, "borderSettings", group, style)
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         local borderSlider = AceGUI:Create("Slider")
