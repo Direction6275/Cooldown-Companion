@@ -336,22 +336,35 @@ local function EnsureTargetingBanner(preview)
     local banner = preview.targetingBanner
     if banner then return banner end
 
+    -- Compact centered pill echoing the targeting rings: dark fill with
+    -- a thin green border, crosshair icon, instruction text, close X.
+    -- Width follows the text; UpdateTargetingBanner sizes it.
     banner = CreateFrame("Frame", nil, preview.root)
-    banner:SetPoint("TOPLEFT", preview.root, "TOPLEFT", 0, 0)
-    banner:SetPoint("TOPRIGHT", preview.root, "TOPRIGHT", 0, 0)
-    banner:SetHeight(22)
+    banner:SetPoint("TOP", preview.root, "TOP", 0, -6)
+    banner:SetHeight(24)
     banner.bg = banner:CreateTexture(nil, "BACKGROUND")
     banner.bg:SetAllPoints()
-    banner.bg:SetColorTexture(0, 0, 0, 0.7)
+    banner.bg:SetColorTexture(0, 0, 0, 0.75)
+    banner.ringTextures = {}
+    for i = 1, 4 do
+        banner.ringTextures[i] = banner:CreateTexture(nil, "OVERLAY")
+    end
+
+    banner.crosshair = banner:CreateTexture(nil, "OVERLAY")
+    banner.crosshair:SetSize(12, 12)
+    banner.crosshair:SetPoint("LEFT", banner, "LEFT", 8, 0)
+    banner.crosshair:SetAtlas("Crosshair_VehichleCursor_32")
+    banner.crosshair:SetVertexColor(PANEL_PREVIEW_TARGETING_COLOR[1],
+        PANEL_PREVIEW_TARGETING_COLOR[2], PANEL_PREVIEW_TARGETING_COLOR[3])
+
     banner.text = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    banner.text:SetPoint("LEFT", banner, "LEFT", 24, 0)
-    banner.text:SetPoint("RIGHT", banner, "RIGHT", -24, 0)
-    banner.text:SetJustifyH("CENTER")
+    banner.text:SetPoint("LEFT", banner.crosshair, "RIGHT", 6, 0)
+    banner.text:SetJustifyH("LEFT")
     banner.text:SetWordWrap(false)
 
     local closeBtn = CreateFrame("Button", nil, banner)
     closeBtn:SetSize(16, 16)
-    closeBtn:SetPoint("RIGHT", banner, "RIGHT", -4, 0)
+    closeBtn:SetPoint("RIGHT", banner, "RIGHT", -5, 0)
     closeBtn.icon = closeBtn:CreateTexture(nil, "OVERLAY")
     closeBtn.icon:SetSize(12, 12)
     closeBtn.icon:SetPoint("CENTER")
@@ -402,7 +415,11 @@ local function UpdateTargetingBanner(preview, panelId)
     banner = EnsureTargetingBanner(preview)
     local sectionDef = ST.OVERRIDE_SECTIONS[targeting.sectionId]
     local label = sectionDef and sectionDef.label or targeting.sectionId
-    banner.text:SetText("Click an entry to override: " .. label)
+    banner.text:SetText("Click an entry to override |cffffd100" .. label .. "|r")
+    -- left pad + crosshair + gap + text + gap + close + right pad
+    banner:SetWidth(math_ceil(8 + 12 + 6 + banner.text:GetStringWidth() + 8 + 16 + 5))
+    ST.ApplyBorderTextures(banner.ringTextures, banner,
+        PANEL_PREVIEW_TARGETING_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
     banner:SetFrameLevel(preview.root:GetFrameLevel() + 40)
     banner:Show()
     if InCombatLockdown() then
