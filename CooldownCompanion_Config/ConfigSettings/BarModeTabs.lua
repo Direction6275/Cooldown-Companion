@@ -99,14 +99,20 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(barTexDrop)
 
-    -- Bar Color (basic)
+    end -- not barSettingsCollapsed
+
+    -- Bar color grid (always visible, no heading/collapse): a row break
+    -- first, so the section's trailing half-width widget can't pull the
+    -- first picker up into its row.
+    local colorSpacer = AceGUI:Create("Label")
+    colorSpacer:SetText(" ")
+    colorSpacer:SetFullWidth(true)
+    container:AddChild(colorSpacer)
+
     local barColorPicker = AddColorPicker(container, style, "barColor", "Bar Color", {0.2, 0.6, 1.0, 1.0}, true, refreshStyle, refreshStyle)
     SetCompactWidth(barColorPicker)
     CreateColorPickerPromoteButton(barColorPicker, "barColor", group, style)
 
-    end -- not barSettingsCollapsed
-
-    -- Contextual color pickers (no heading/collapse/promote)
     local barCooldownColorPicker = AddColorPicker(container, style, "barCooldownColor", "Bar Cooldown Color", {0.6, 0.6, 0.6, 1.0}, true, refreshStyle, refreshStyle)
     SetCompactWidth(barCooldownColorPicker)
     CreateColorPickerPromoteButton(barCooldownColorPicker, "barCooldownColor", group, style)
@@ -132,6 +138,10 @@ local function BuildBarAppearanceTab(container, group, style)
     SetCompactWidth(renderModeDrop)
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
+    local borderColorPicker = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
+    SetCompactWidth(borderColorPicker)
+    CreateColorPickerPromoteButton(borderColorPicker, "borderSettings", group, style)
+
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         local borderSlider = AceGUI:Create("Slider")
         borderSlider:SetLabel("Border Size")
@@ -146,10 +156,6 @@ local function BuildBarAppearanceTab(container, group, style)
         end)
         container:AddChild(borderSlider)
     end
-
-    local borderColorPicker = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
-    SetCompactWidth(borderColorPicker)
-    CreateColorPickerPromoteButton(borderColorPicker, "borderSettings", group, style)
     end -- not borderCollapsed
 
     -- Bar aura timer section: fills the Blizzard-driven aura bar composited

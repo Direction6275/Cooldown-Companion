@@ -36,7 +36,6 @@ local BuildEligibilityBadgeMap = ST._BuildEligibilityBadgeMap
 -- Imports from SectionBuilders.lua
 local BuildKeybindTextControls = ST._BuildKeybindTextControls
 local BuildBorderControls = ST._BuildBorderControls
-local BuildBackgroundColorControls = ST._BuildBackgroundColorControls
 local BuildDesaturationControls = ST._BuildDesaturationControls
 local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
 local BuildShowOutOfRangeControls = ST._BuildShowOutOfRangeControls
@@ -3448,6 +3447,12 @@ local function BuildAppearanceTab(container)
     SetCompactWidth(renderModeDrop)
     local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
 
+    local borderColor = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
+    SetCompactWidth(borderColor)
+    if group.masqueEnabled then
+        borderColor:SetDisabled(true)
+    end
+
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
         local borderSlider = AceGUI:Create("Slider")
         borderSlider:SetLabel("Border Size")
@@ -3463,12 +3468,6 @@ local function BuildAppearanceTab(container)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)
         container:AddChild(borderSlider)
-    end
-
-    local borderColor = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
-    SetCompactWidth(borderColor)
-    if group.masqueEnabled then
-        borderColor:SetDisabled(true)
     end
     end -- not borderCollapsed
 
@@ -3503,10 +3502,11 @@ local function BuildAppearanceTab(container)
     if not iconTintCollapsed then
         BuildIconTintControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { showAuraTint = groupHasAuraEntry, setWidth = SetCompactWidth })
-        BuildBackgroundColorControls(container, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, SetCompactWidth)
+        end, {
+            showAuraTint = groupHasAuraEntry,
+            setWidth = SetCompactWidth,
+            includeBackground = true,
+        })
 
         local resetTintBtn = AceGUI:Create("Button")
         resetTintBtn:SetText("Reset Colors to Default")

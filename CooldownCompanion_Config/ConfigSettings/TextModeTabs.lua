@@ -330,6 +330,7 @@ local function BuildTextAppearanceTab(container, group, style)
 
     if not bgCollapsed then
     SetCompactWidth(AddColorPicker(container, style, "textBgColor", "Background Color", {0, 0, 0, 0}, true, refreshStyle, refreshStyle))
+    SetCompactWidth(AddColorPicker(container, style, "textBorderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle))
 
     local renderMode, renderModeDrop = AddBorderRenderModeDropdown(container, style, "textBorderRenderMode", function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -352,8 +353,6 @@ local function BuildTextAppearanceTab(container, group, style)
         end)
         container:AddChild(borderSlider)
     end
-
-    SetCompactWidth(AddColorPicker(container, style, "textBorderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle))
 
     end -- not bgCollapsed
 

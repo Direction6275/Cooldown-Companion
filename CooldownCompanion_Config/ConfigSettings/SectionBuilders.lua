@@ -559,9 +559,28 @@ end
 local function BuildIconTintControls(container, styleTable, refreshCallback, opts)
     -- opts.setWidth: width setter for two-column hosts; applies to the
     -- toggles and color pickers alike. Absent = full width (advanced panels).
+    -- Two-column reading order: the always-present colors group first, then a
+    -- row break, then each tint toggle beside its own color when enabled.
     local setWidth = (opts and opts.setWidth) or function(w) w:SetFullWidth(true) end
 
     setWidth(AddColorPicker(container, styleTable, "iconTintColor", "Base Icon Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback))
+
+    if styleTable.showUnusable and ST.UnusableVisualUsesDimTint(styleTable) then
+        setWidth(AddColorPicker(container, styleTable, "iconUnusableTintColor", "Unusable Dim Color", {0.4, 0.4, 0.4, 1}, true, refreshCallback, refreshCallback))
+    end
+
+    if opts and opts.includeBackground then
+        BuildBackgroundColorControls(container, styleTable, refreshCallback, setWidth)
+    end
+
+    if opts and opts.setWidth then
+        -- Row break between the colors group and the tint toggles, so the
+        -- conditional widgets above never shift the toggle pairing.
+        local spacer = AceGUI:Create("Label")
+        spacer:SetText(" ")
+        spacer:SetFullWidth(true)
+        container:AddChild(spacer)
+    end
 
     local cdTintCb = AceGUI:Create("CheckBox")
     cdTintCb:SetLabel("Use Separate Cooldown Tint")
@@ -595,10 +614,6 @@ local function BuildIconTintControls(container, styleTable, refreshCallback, opt
         if styleTable.iconAuraTintEnabled then
             setWidth(AddColorPicker(container, styleTable, "iconAuraTintColor", "Aura Active Icon Color", {0, 0.925, 1, 1}, true, refreshCallback, refreshCallback))
         end
-    end
-
-    if styleTable.showUnusable and ST.UnusableVisualUsesDimTint(styleTable) then
-        setWidth(AddColorPicker(container, styleTable, "iconUnusableTintColor", "Unusable Dim Color", {0.4, 0.4, 0.4, 1}, true, refreshCallback, refreshCallback))
     end
 end
 
