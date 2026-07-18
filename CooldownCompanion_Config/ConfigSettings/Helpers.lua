@@ -382,6 +382,79 @@ local function CanButtonUseConfigOverrideSection(buttonData, sectionId)
     return true
 end
 
+------------------------------------------------------------------------
+-- One-shot override targeting (owner ruling 2026-07-18): with no entry
+-- selected in the wide view, promote badges stay active and arm a
+-- targeting mode; the next click on an entry in the mirror preview
+-- promotes the section for that entry and lands in its Overrides tab.
+-- ButtonPanelPreview.lua owns the banner, slot highlights, click
+-- consumption, and the cancel paths.
+------------------------------------------------------------------------
+local function CanArmOverrideTargeting(group)
+    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then
+        return false
+    end
+    if CS.selectedButton ~= nil or (CS.selectedButtons and next(CS.selectedButtons)) then
+        return false
+    end
+    if not group or group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+        return false
+    end
+    return group.buttons ~= nil and #group.buttons > 0
+end
+
+local function IsOverrideTargetingArmed(sectionId)
+    local targeting = CS.overrideTargeting
+    return targeting ~= nil
+        and targeting.sectionId == sectionId
+        and targeting.panelId == CS.selectedGroup
+end
+
+local function ToggleOverrideTargeting(sectionId)
+    if IsOverrideTargetingArmed(sectionId) then
+        CS.overrideTargeting = nil
+    else
+        CS.overrideTargeting = { sectionId = sectionId, panelId = CS.selectedGroup }
+    end
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function ApplyPromoteBadgeState(icon, promoteBtn, canPromote, canTarget, sectionId)
+    if canPromote or canTarget then
+        icon:SetAtlas("Crosshair_VehichleCursor_32")
+        promoteBtn:Enable()
+    else
+        icon:SetAtlas("Crosshair_unableVehichleCursor_32")
+        promoteBtn:Disable()
+    end
+    if canTarget and IsOverrideTargetingArmed(sectionId) then
+        icon:SetVertexColor(0.2, 1, 0.4)
+    else
+        icon:SetVertexColor(1, 1, 1)
+    end
+end
+
+local function AddPromoteBadgeTooltipLines(canPromote, canTarget, sectionId, sectionLabel,
+        btnData, sectionAllowed, sectionUnavailableReason)
+    if canPromote then
+        GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
+    elseif canTarget and IsOverrideTargetingArmed(sectionId) then
+        GameTooltip:AddLine("Click an entry in the preview to override " .. sectionLabel)
+        GameTooltip:AddLine("Click again, right-click the preview, or press Esc to cancel", 0.7, 0.7, 0.7)
+    elseif canTarget then
+        GameTooltip:AddLine("Override " .. sectionLabel .. " for one entry")
+        GameTooltip:AddLine("Click, then choose the entry in the preview", 0.7, 0.7, 0.7)
+    elseif btnData and sectionUnavailableReason == "noCooldown" then
+        GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
+    elseif btnData and sectionUnavailableReason == "auraTracking" then
+        GameTooltip:AddLine("This override is only available for entries that track an aura", 0.5, 0.5, 0.5)
+    elseif btnData and not sectionAllowed then
+        GameTooltip:AddLine("This override is not available for this entry type", 0.5, 0.5, 0.5)
+    else
+        GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
+    end
+end
+
 local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupStyle)
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not GroupSupportsPerButtonOverrides(group) then
@@ -410,42 +483,31 @@ local function CreatePromoteButton(headingWidget, sectionId, buttonData, groupSt
         and buttonData ~= nil
         and sectionAllowed
         and not (buttonData.overrideSections and buttonData.overrideSections[sectionId])
+    local canTarget = not canPromote and CanArmOverrideTargeting(group)
 
-    if canPromote then
-        icon:SetAtlas("Crosshair_VehichleCursor_32")
-        promoteBtn:Enable()
-    else
-        icon:SetAtlas("Crosshair_unableVehichleCursor_32")
-        promoteBtn:Disable()
-    end
+    ApplyPromoteBadgeState(icon, promoteBtn, canPromote, canTarget, sectionId)
 
     local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
     local sectionLabel = sectionDef and sectionDef.label or sectionId
 
     promoteBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if canPromote then
-            GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
-        elseif buttonData and sectionUnavailableReason == "noCooldown" then
-            GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
-        elseif buttonData and sectionUnavailableReason == "auraTracking" then
-            GameTooltip:AddLine("This override is only available for entries that track an aura", 0.5, 0.5, 0.5)
-        elseif buttonData and not sectionAllowed then
-            GameTooltip:AddLine("This override is not available for this entry type", 0.5, 0.5, 0.5)
-        else
-            GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
-        end
+        AddPromoteBadgeTooltipLines(canPromote, canTarget, sectionId, sectionLabel,
+            buttonData, sectionAllowed, sectionUnavailableReason)
         GameTooltip:Show()
     end)
     promoteBtn:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
     promoteBtn:SetScript("OnClick", function()
-        if not canPromote then return end
-        CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CS.buttonSettingsTab = "overrides"
-        CooldownCompanion:RefreshConfigPanel()
+        if canPromote then
+            CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CS.buttonSettingsTab = "overrides"
+            CooldownCompanion:RefreshConfigPanel()
+        elseif canTarget then
+            ToggleOverrideTargeting(sectionId)
+        end
     end)
 
     table.insert(tabInfoButtons, promoteBtn)
@@ -514,40 +576,29 @@ local function CreateCheckboxPromoteButton(cbWidget, anchorAfterFrame, sectionId
         and btnData ~= nil
         and sectionAllowed
         and not (btnData.overrideSections and btnData.overrideSections[sectionId])
+    local canTarget = not canPromote and CanArmOverrideTargeting(group)
 
-    if canPromote then
-        icon:SetAtlas("Crosshair_VehichleCursor_32")
-        promoteBtn:Enable()
-    else
-        icon:SetAtlas("Crosshair_unableVehichleCursor_32")
-        promoteBtn:Disable()
-    end
+    ApplyPromoteBadgeState(icon, promoteBtn, canPromote, canTarget, sectionId)
 
     local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
     local sectionLabel = sectionDef and sectionDef.label or sectionId
 
     promoteBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if canPromote then
-            GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
-        elseif btnData and sectionUnavailableReason == "noCooldown" then
-            GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
-        elseif btnData and sectionUnavailableReason == "auraTracking" then
-            GameTooltip:AddLine("This override is only available for entries that track an aura", 0.5, 0.5, 0.5)
-        elseif btnData and not sectionAllowed then
-            GameTooltip:AddLine("This override is not available for this entry type", 0.5, 0.5, 0.5)
-        else
-            GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
-        end
+        AddPromoteBadgeTooltipLines(canPromote, canTarget, sectionId, sectionLabel,
+            btnData, sectionAllowed, sectionUnavailableReason)
         GameTooltip:Show()
     end)
     promoteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     promoteBtn:SetScript("OnClick", function()
-        if not canPromote then return end
-        CooldownCompanion:PromoteSection(btnData, groupStyle, sectionId)
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CS.buttonSettingsTab = "overrides"
-        CooldownCompanion:RefreshConfigPanel()
+        if canPromote then
+            CooldownCompanion:PromoteSection(btnData, groupStyle, sectionId)
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CS.buttonSettingsTab = "overrides"
+            CooldownCompanion:RefreshConfigPanel()
+        elseif canTarget then
+            ToggleOverrideTargeting(sectionId)
+        end
     end)
 
     table.insert(tabInfoButtons, promoteBtn)
@@ -587,40 +638,29 @@ local function CreateColorPickerPromoteButton(colorPickerWidget, sectionId, grou
         and btnData ~= nil
         and sectionAllowed
         and not (btnData.overrideSections and btnData.overrideSections[sectionId])
+    local canTarget = not canPromote and CanArmOverrideTargeting(group)
 
-    if canPromote then
-        promoteBtn.icon:SetAtlas("Crosshair_VehichleCursor_32")
-        promoteBtn:Enable()
-    else
-        promoteBtn.icon:SetAtlas("Crosshair_unableVehichleCursor_32")
-        promoteBtn:Disable()
-    end
+    ApplyPromoteBadgeState(promoteBtn.icon, promoteBtn, canPromote, canTarget, sectionId)
 
     local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
     local sectionLabel = sectionDef and sectionDef.label or sectionId
 
     promoteBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if canPromote then
-            GameTooltip:AddLine("Override " .. sectionLabel .. " for this button")
-        elseif btnData and sectionUnavailableReason == "noCooldown" then
-            GameTooltip:AddLine("This override is not available for spells without a real cooldown", 0.5, 0.5, 0.5)
-        elseif btnData and sectionUnavailableReason == "auraTracking" then
-            GameTooltip:AddLine("This override is only available for entries that track an aura", 0.5, 0.5, 0.5)
-        elseif btnData and not sectionAllowed then
-            GameTooltip:AddLine("This override is not available for this entry type", 0.5, 0.5, 0.5)
-        else
-            GameTooltip:AddLine("Select a button to add an override", 0.5, 0.5, 0.5)
-        end
+        AddPromoteBadgeTooltipLines(canPromote, canTarget, sectionId, sectionLabel,
+            btnData, sectionAllowed, sectionUnavailableReason)
         GameTooltip:Show()
     end)
     promoteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     promoteBtn:SetScript("OnClick", function()
-        if not canPromote then return end
-        CooldownCompanion:PromoteSection(btnData, groupStyle, sectionId)
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CS.buttonSettingsTab = "overrides"
-        CooldownCompanion:RefreshConfigPanel()
+        if canPromote then
+            CooldownCompanion:PromoteSection(btnData, groupStyle, sectionId)
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CS.buttonSettingsTab = "overrides"
+            CooldownCompanion:RefreshConfigPanel()
+        elseif canTarget then
+            ToggleOverrideTargeting(sectionId)
+        end
     end)
 
     colorPickerWidget:SetCallback("OnRelease", function()

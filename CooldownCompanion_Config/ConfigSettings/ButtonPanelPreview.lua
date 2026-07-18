@@ -277,6 +277,156 @@ local function ApplySelectionVisuals(slot, index)
     slot.selectedHighlight:Show()
 end
 
+------------------------------------------------------------------------
+-- One-shot override targeting: armed by the promote badges in the panel
+-- settings tabs (Helpers.lua) while no entry is selected in the wide
+-- view. The next left-click on an eligible entry promotes the armed
+-- section for it and lands in its Overrides tab; the badge, right-click,
+-- Esc, the banner's X, or a panel switch cancels.
+------------------------------------------------------------------------
+local PANEL_PREVIEW_TARGETING_COLOR = { 0.30, 0.90, 0.45, 1 }
+
+local function GetActiveOverrideTargeting(panelId)
+    local targeting = CS.overrideTargeting
+    if targeting and targeting.panelId == panelId then
+        return targeting
+    end
+    return nil
+end
+
+local function CancelOverrideTargeting()
+    if not CS.overrideTargeting then return end
+    CS.overrideTargeting = nil
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function CanTargetEntryForOverride(buttonData, sectionId)
+    -- Resolved at call time: Helpers.lua exports this after this file's
+    -- top-level locals are captured. Parenthesized to drop the reason.
+    local canUse = ST._CanButtonUseConfigOverrideSection
+    if canUse then
+        return (canUse(buttonData, sectionId))
+    end
+    return true
+end
+
+-- Returns true when the click was consumed by targeting mode.
+local function HandleOverrideTargetingClick(panelId, index, buttonData)
+    local targeting = GetActiveOverrideTargeting(panelId)
+    if not targeting then return false end
+    local group = CooldownCompanion.db.profile.groups[panelId]
+    if not group then return false end
+    local sectionId = targeting.sectionId
+    if not CanTargetEntryForOverride(buttonData, sectionId) then
+        -- Ineligible entry: stay armed; the hover tooltip explains why.
+        return true
+    end
+    CS.overrideTargeting = nil
+    SelectConfigButton(panelId, index)
+    if not (buttonData.overrideSections and buttonData.overrideSections[sectionId]) then
+        CooldownCompanion:PromoteSection(buttonData, group.style, sectionId)
+        CooldownCompanion:UpdateGroupStyle(panelId)
+    end
+    CS.buttonSettingsTab = "overrides"
+    CooldownCompanion:RefreshConfigPanel()
+    return true
+end
+
+local function EnsureTargetingBanner(preview)
+    local banner = preview.targetingBanner
+    if banner then return banner end
+
+    banner = CreateFrame("Frame", nil, preview.root)
+    banner:SetPoint("TOPLEFT", preview.root, "TOPLEFT", 0, 0)
+    banner:SetPoint("TOPRIGHT", preview.root, "TOPRIGHT", 0, 0)
+    banner:SetHeight(22)
+    banner.bg = banner:CreateTexture(nil, "BACKGROUND")
+    banner.bg:SetAllPoints()
+    banner.bg:SetColorTexture(0, 0, 0, 0.7)
+    banner.text = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    banner.text:SetPoint("LEFT", banner, "LEFT", 24, 0)
+    banner.text:SetPoint("RIGHT", banner, "RIGHT", -24, 0)
+    banner.text:SetJustifyH("CENTER")
+    banner.text:SetWordWrap(false)
+
+    local closeBtn = CreateFrame("Button", nil, banner)
+    closeBtn:SetSize(16, 16)
+    closeBtn:SetPoint("RIGHT", banner, "RIGHT", -4, 0)
+    closeBtn.icon = closeBtn:CreateTexture(nil, "OVERLAY")
+    closeBtn.icon:SetSize(12, 12)
+    closeBtn.icon:SetPoint("CENTER")
+    closeBtn.icon:SetAtlas("common-search-clearbutton")
+    closeBtn:SetScript("OnClick", CancelOverrideTargeting)
+    banner.closeBtn = closeBtn
+
+    -- Esc cancels. SetPropagateKeyboardInput is combat-restricted
+    -- (10.1.5), so keyboard capture only runs out of combat; in combat
+    -- the badge, right-click, and the X still cancel.
+    banner:SetScript("OnKeyDown", function(self, key)
+        if InCombatLockdown() then return end
+        if key == "ESCAPE" then
+            self:SetPropagateKeyboardInput(false)
+            CancelOverrideTargeting()
+        else
+            self:SetPropagateKeyboardInput(true)
+        end
+    end)
+    banner:RegisterEvent("PLAYER_REGEN_DISABLED")
+    banner:SetScript("OnEvent", function(self)
+        self:EnableKeyboard(false)
+    end)
+
+    banner:Hide()
+    preview.targetingBanner = banner
+    return banner
+end
+
+local function UpdateTargetingBanner(preview, panelId)
+    local targeting = CS.overrideTargeting
+    if targeting and targeting.panelId ~= panelId then
+        -- The preview now shows a different panel: the armed target
+        -- surface is gone. Clear silently — we're already mid-rebuild.
+        CS.overrideTargeting = nil
+        targeting = nil
+    end
+
+    local banner = preview.targetingBanner
+    if not targeting then
+        if banner then
+            banner:Hide()
+            banner:EnableKeyboard(false)
+        end
+        return
+    end
+
+    banner = EnsureTargetingBanner(preview)
+    local sectionDef = ST.OVERRIDE_SECTIONS[targeting.sectionId]
+    local label = sectionDef and sectionDef.label or targeting.sectionId
+    banner.text:SetText("Click an entry to override: " .. label)
+    banner:SetFrameLevel(preview.root:GetFrameLevel() + 40)
+    banner:Show()
+    if InCombatLockdown() then
+        banner:EnableKeyboard(false)
+    else
+        banner:EnableKeyboard(true)
+        banner:SetPropagateKeyboardInput(true)
+    end
+end
+
+-- Green ring on the entries an armed targeting click can land on.
+-- Runs after ApplySelectionVisuals; targeting is only armable with no
+-- selection, so the shared highlight frame is free.
+local function ApplyOverrideTargetingVisuals(slot, panelId, buttonData)
+    local targeting = GetActiveOverrideTargeting(panelId)
+    if not (targeting and CanTargetEntryForOverride(buttonData, targeting.sectionId)) then
+        return
+    end
+    slot.selectedHighlight:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
+    ST.ApplyBorderTextures(slot.selectedHighlight.ringTextures, slot.selectedHighlight,
+        PANEL_PREVIEW_TARGETING_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
+    slot.selectedHighlight:Show()
+end
+
 -- Entry status signals, mirroring the column 2 row badges exactly.
 local function CollectEntryStatus(buttonData, group)
     local usable = CooldownCompanion:IsButtonUsable(buttonData, group)
@@ -764,6 +914,9 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
     slot._cdcDraggable = layoutDrag ~= nil
     slot:SetScript("OnMouseDown", function(self, mouseButton)
         if mouseButton ~= "LeftButton" or GetCursorInfo() then return end
+        -- No drag-reorder while override targeting is armed: the press
+        -- is a targeting click, consumed on mouse-up.
+        if CS.overrideTargeting then return end
         if not (layoutDrag and StartDragTracking) then return end
         local cursorX, cursorY = GetCursorPosition()
         -- No `widget` field: the tracker's dim/restore would fight the
@@ -793,10 +946,15 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
                 end
                 if CancelDrag then CancelDrag() else CS.dragState = nil end
             end
+            if HandleOverrideTargetingClick(panelId, index, buttonData) then return end
             SelectConfigButton(panelId, index, { multi = IsControlKeyDown() })
             CooldownCompanion:RefreshConfigPanel()
         elseif mouseButton == "RightButton" or mouseButton == "MiddleButton" then
             if CS.dragState and CS.dragState.phase == "active" then return end
+            if GetActiveOverrideTargeting(panelId) then
+                CancelOverrideTargeting()
+                return
+            end
             if ShowEntryContextMenu then
                 ShowEntryContextMenu(panelId, index, buttonData)
             end
@@ -807,6 +965,17 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
         self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
         self.hoverHighlight:Show()
         ShowEntrySlotTooltip(self, buttonData, status)
+        local targeting = GetActiveOverrideTargeting(panelId)
+        if targeting then
+            local sectionDef = ST.OVERRIDE_SECTIONS[targeting.sectionId]
+            local label = sectionDef and sectionDef.label or targeting.sectionId
+            if CanTargetEntryForOverride(buttonData, targeting.sectionId) then
+                GameTooltip:AddLine("Click to override " .. label .. " for this entry", 0.3, 0.9, 0.45)
+            else
+                GameTooltip:AddLine("This entry cannot use the " .. label .. " override", 0.5, 0.5, 0.5)
+            end
+            GameTooltip:Show()
+        end
     end)
     slot:SetScript("OnLeave", function(self)
         self.hoverHighlight:Hide()
@@ -2194,6 +2363,7 @@ local function BuildSelectionStrip(preview, host, panelId, group)
             slot._cdcBaseAlpha = status.disabled and PANEL_PREVIEW_DISABLED_ALPHA or 1
             ApplySlotBadges(slot, status, scale)
             ApplySelectionVisuals(slot, entryInfo.index)
+            ApplyOverrideTargetingVisuals(slot, panelId, buttonData)
             layoutDrag.slots[entryInfo.index] = slot
             WireEntryInteraction(slot, panelId, entryInfo.index, buttonData, status, dragModel)
         end
@@ -2334,6 +2504,7 @@ function ST._BuildButtonPanelPreview(host, panelId)
     ResetPreviewState(preview)
     HidePreviewMessage(preview)
     preview.content:Hide()
+    UpdateTargetingBanner(preview, panelId)
 
     local group = panelId and CooldownCompanion.db.profile.groups[panelId]
     if not group then
@@ -2440,6 +2611,7 @@ function ST._BuildButtonPanelPreview(host, panelId)
         slot._cdcBaseAlpha = status.disabled and PANEL_PREVIEW_DISABLED_ALPHA or 1
         ApplySlotBadges(slot, status, scale)
         ApplySelectionVisuals(slot, index)
+        ApplyOverrideTargetingVisuals(slot, panelId, buttonData)
         layoutDrag.slots[index] = slot
         WireEntryInteraction(slot, panelId, index, buttonData, status, dragModel)
     end
@@ -2473,6 +2645,14 @@ function ST._ReleaseButtonPanelPreview(host)
     local preview = host and host._cdcPanelPreview
     if preview then
         StopConditionalTicker(preview)
+        -- The targeting mode's only click surface is this preview; a
+        -- release means the surface is gone, so disarm (state only —
+        -- whoever released us is already driving a refresh).
+        CS.overrideTargeting = nil
+        if preview.targetingBanner then
+            preview.targetingBanner:Hide()
+            preview.targetingBanner:EnableKeyboard(false)
+        end
         preview.root:Hide()
     end
 end
