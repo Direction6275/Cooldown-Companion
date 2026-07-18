@@ -222,6 +222,9 @@ local function TryAddItem(input)
         -- Skip auto-select if the user navigated away during async load
         local stillOnGroup = CS.selectedGroup == capturedGroup
         if FinalizeAddItem(itemId, capturedGroup, stillOnGroup) then
+            if ST._ClearWideAddBoxAfterAdd then
+                ST._ClearWideAddBoxAfterAdd(input)
+            end
             CooldownCompanion:RefreshConfigPanel()
         end
     end)

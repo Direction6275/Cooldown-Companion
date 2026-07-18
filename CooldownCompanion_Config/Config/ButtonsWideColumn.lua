@@ -363,6 +363,9 @@ local function EnsureAddBox(col3)
         CS.HideAutocomplete()
         text = text or ""
         if text == "" or not CS.selectedGroup then return end
+        -- The wide box always targets the selected panel; a stale column 2
+        -- inline-add target left over from browse mode must not win.
+        CS.addingToPanelId = nil
         local targetGroupId = CS.selectedGroup
         if not ST._TryAdd(text) then return end
         if ST._NotifyTutorialAction and CS.selectedButton then
@@ -387,6 +390,9 @@ local function EnsureAddBox(col3)
             -- column 2 inline box), so a successful pick must clear it here
             -- or the stale text re-adds on the next Enter press.
             CS.ShowAutocompleteResults(results, widget, function(entry)
+                -- Explicit target: the shared select handler prefers
+                -- CS.addingToPanelId, which never belongs to this box.
+                CS.addingToPanelId = nil
                 if ST._OnAutocompleteSelect(entry) then
                     widget:SetText("")
                     instructions:Show()
@@ -435,6 +441,21 @@ local function UpdateAddBox(col3)
                 addBox:SetFocus()
             end
         end)
+    end
+end
+
+-- Async adds (uncached item IDs) complete after the add box's Enter
+-- handler already returned false; the loader calls this on success so the
+-- persistent box doesn't keep the added item's text armed for a duplicate
+-- Enter. The text guard skips the clear if the user has typed since.
+local function ClearWideAddBoxAfterAdd(originalInput)
+    local col3 = CS.configFrame and CS.configFrame.col3
+    local addBox = col3 and col3.buttonsAddBox
+    if not (addBox and addBox.frame:IsShown()) then return end
+    if originalInput and addBox:GetText() ~= originalInput then return end
+    addBox:SetText("")
+    if addBox._cdcInstructions then
+        addBox._cdcInstructions:Show()
     end
 end
 
@@ -737,6 +758,7 @@ ST._RefreshButtonsWideColumn = RefreshButtonsWideColumn
 ST._AnchorButtonsContentFrame = AnchorButtonsContentFrame
 ST._RefreshButtonsPreviewMirror = RefreshButtonsPreviewMirror
 ST._ReapplyPanelPreviewSplit = ReapplyPanelPreviewSplit
+ST._ClearWideAddBoxAfterAdd = ClearWideAddBoxAfterAdd
 -- Shared teardown for view switches away from the buttons view (resources,
 -- cast frames, talent picker, config close): hides the preview surfaces AND
 -- releases the preview so its conditional ticker stops and override
