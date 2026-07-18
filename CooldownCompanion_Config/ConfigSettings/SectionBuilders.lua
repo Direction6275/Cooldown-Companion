@@ -130,6 +130,9 @@ local function AddPreviewToggleButton(container, offLabel, isActiveFn, setActive
             ClearActivePreviewBadgeButton()
         end
         setActiveFn(showPreview)
+        if ST._RefreshButtonsPreviewMirror then
+            ST._RefreshButtonsPreviewMirror()
+        end
         if IsAdvancedSettingsPanelContainer(container) then
             RefreshPreviewToggleButtons(container)
         elseif not RefreshConfigPanelForPreviewToggle() then
@@ -233,6 +236,9 @@ local function AddPreviewBadge(parentWidget, anchorAfterFrame, label, isActiveFn
         setActiveFn(showPreview)
         SetActivePreviewBadgeButton(btn, isActiveFn())
         RefreshActiveAdvancedPreviewToggleButtons()
+        if ST._RefreshButtonsPreviewMirror then
+            ST._RefreshButtonsPreviewMirror()
+        end
     end)
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")

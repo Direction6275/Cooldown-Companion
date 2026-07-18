@@ -526,5 +526,17 @@ local function RefreshButtonsWideColumn()
     ST._RefreshGroupSettingsHost(host)
 end
 
+-- Rebuild just the pinned mirror (e.g. after a preview toggle flips) so
+-- effect previews reflect immediately without a full config refresh.
+local function RefreshButtonsPreviewMirror()
+    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return end
+    local col3 = CS.configFrame and CS.configFrame.col3
+    local host = col3 and col3.buttonsPreviewHost
+    if host and host:IsShown() and CS.selectedGroup and ST._BuildButtonPanelPreview then
+        ST._BuildButtonPanelPreview(host, CS.selectedGroup)
+    end
+end
+
 ST._RefreshButtonsWideColumn = RefreshButtonsWideColumn
 ST._AnchorButtonsContentFrame = AnchorButtonsContentFrame
+ST._RefreshButtonsPreviewMirror = RefreshButtonsPreviewMirror

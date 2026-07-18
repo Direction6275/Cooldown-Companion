@@ -863,9 +863,15 @@ end
 -- from GetTime (config-only; never live cooldown reads). Mirrors
 -- IconMode.lua ApplyDefaultCooldownSwipeStyle.
 ------------------------------------------------------------------------
-local function ApplyFakeCooldownSwipe(preview, slot, buttonData, group)
+local function ApplyFakeCooldownSwipe(preview, slot, buttonData, group, panelId, index)
     local cd = slot.cooldown
     if not cd then return end
+
+    -- Only while the cooldown preview toggle is on for this entry (or its
+    -- whole panel) - the mirror follows the same preview flags as the
+    -- live world buttons.
+    local previewActive = CooldownCompanion.IsConditionalVisualPreviewActive
+        and CooldownCompanion:IsConditionalVisualPreviewActive(panelId, index, "cooldown")
 
     local style = group.style or {}
     if CooldownCompanion.GetEffectiveStyle then
@@ -875,7 +881,7 @@ local function ApplyFakeCooldownSwipe(preview, slot, buttonData, group)
     local swipeEnabled = style.showCooldownSwipe ~= false
     local fillEnabled = style.showCooldownSwipeFill ~= false
     local edgeEnabled = style.showCooldownSwipeEdge ~= false
-    if not swipeEnabled or not (fillEnabled or edgeEnabled) then
+    if not previewActive or not swipeEnabled or not (fillEnabled or edgeEnabled) then
         slot._cdcFakeSwipe = false
         cd:Clear()
         cd:Hide()
@@ -1323,10 +1329,6 @@ function ST._BuildButtonPanelPreview(host, panelId)
             or (now - preview.swipeCycleStart) >= PANEL_PREVIEW_SWIPE_PERIOD then
             preview.swipeCycleStart = now
         end
-        EnsureFakeSwipeTicker(preview)
-    else
-        StopFakeSwipeTicker(preview)
-        preview.swipeCycleStart = nil
     end
 
     local layoutDrag = CreatePreviewLayoutDrag(preview, panelId)
@@ -1357,7 +1359,7 @@ function ST._BuildButtonPanelPreview(host, panelId)
 
         styleFn(slot, buttonData, group)
         if not isBarMode and not isTextMode then
-            ApplyFakeCooldownSwipe(preview, slot, buttonData, group)
+            ApplyFakeCooldownSwipe(preview, slot, buttonData, group, panelId, index)
         end
         local status = CollectEntryStatus(buttonData, group)
         if slot.icon then
@@ -1371,6 +1373,22 @@ function ST._BuildButtonPanelPreview(host, panelId)
         ApplySelectionVisuals(slot, index)
         layoutDrag.slots[index] = slot
         WireEntryInteraction(slot, panelId, index, buttonData, status, dragModel)
+    end
+
+    -- Tick only while at least one slot is actually sweeping
+    local anySwipe = false
+    for i = 1, count do
+        local s = layoutDrag.slots[i]
+        if s and s._cdcFakeSwipe then
+            anySwipe = true
+            break
+        end
+    end
+    if anySwipe then
+        EnsureFakeSwipeTicker(preview)
+    else
+        StopFakeSwipeTicker(preview)
+        preview.swipeCycleStart = nil
     end
 
     content:SetScale(scale)
