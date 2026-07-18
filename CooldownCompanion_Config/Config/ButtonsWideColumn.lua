@@ -132,6 +132,16 @@ local function EnsurePreviewDivider(col3)
         end
     end
 
+    -- View switches and config close can hide the divider mid-drag; the
+    -- OnUpdate persists on hidden frames and would resume on re-show with
+    -- no mouse button down, so every hide path must cancel the drag.
+    function divider:CancelDrag()
+        if not self._dragging then return end
+        self._dragging = false
+        self:SetScript("OnUpdate", nil)
+        SetHot(false)
+    end
+
     divider:SetScript("OnEnter", function(self)
         SetHot(true)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -175,9 +185,7 @@ local function EnsurePreviewDivider(col3)
     end)
     divider:SetScript("OnMouseUp", function(self)
         if not self._dragging then return end
-        self._dragging = false
-        self:SetScript("OnUpdate", nil)
-        SetHot(false)
+        self:CancelDrag()
         local host = col3.buttonsPreviewHost
         local columnHeight = col3.content:GetHeight() or 0
         if host and columnHeight > 0 then
@@ -188,9 +196,7 @@ local function EnsurePreviewDivider(col3)
         end
     end)
     divider:SetScript("OnDoubleClick", function(self)
-        self._dragging = false
-        self:SetScript("OnUpdate", nil)
-        SetHot(false)
+        self:CancelDrag()
         SetPreviewSplit(nil)
         local host = col3.buttonsPreviewHost
         if host and (col3.content:GetHeight() or 0) > 0 then
@@ -231,6 +237,7 @@ local function AnchorButtonsContentFrame(col3, frame)
         frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
     else
         if col3.buttonsSplitDivider then
+            col3.buttonsSplitDivider:CancelDrag()
             col3.buttonsSplitDivider:Hide()
         end
         frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
@@ -326,6 +333,7 @@ local function HidePanelPreview(col3)
         col3.buttonsIdentityStrip:Hide()
     end
     if col3.buttonsSplitDivider then
+        col3.buttonsSplitDivider:CancelDrag()
         col3.buttonsSplitDivider:Hide()
     end
 end
