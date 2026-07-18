@@ -3370,6 +3370,7 @@ ST._IsValidIconTexture = IsValidIconTexture
 ST._GenerateFolderName = GenerateFolderName
 ST._ShowPopupAboveConfig = ShowPopupAboveConfig
 ST._BindConfigShiftTooltip = BindConfigShiftTooltip
+ST._ActivateConfigShiftTooltip = ActivateConfigShiftTooltip
 ST._ConfigureWrappedHelperLabel = ConfigureWrappedHelperLabel
 ST._ClearConfigShiftTooltipHover = ClearConfigShiftTooltipHover
 ST._COLUMN_PADDING = COLUMN_PADDING

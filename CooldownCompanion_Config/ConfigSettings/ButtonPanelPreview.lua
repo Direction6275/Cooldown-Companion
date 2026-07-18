@@ -913,31 +913,49 @@ local function CreatePreviewLayoutDrag(preview, panelId)
     return layoutDrag
 end
 
--- Shift-hover shows the real spell/item tooltip, mirroring the column 2
--- entry rows; a plain hover shows the decorated entry name plus the same
--- status lines the row badges carry.
-local function ShowEntrySlotTooltip(slot, buttonData, status)
-    GameTooltip:SetOwner(slot, "ANCHOR_RIGHT")
-    if IsShiftKeyDown() then
-        if buttonData.type == "spell" and buttonData.id then
-            GameTooltip:SetSpellByID(buttonData.id)
-            GameTooltip:Show()
-            return
-        elseif buttonData.type == "item" and buttonData.id then
-            GameTooltip:SetItemByID(buttonData.id)
-            GameTooltip:Show()
-            return
-        elseif CooldownCompanion.IsEquipmentSlotEntry
-            and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
-            local effectiveItem = CooldownCompanion.ResolveEffectiveItem
-                and CooldownCompanion.ResolveEffectiveItem(buttonData, true) or nil
-            if effectiveItem and effectiveItem.trackable and effectiveItem.itemID then
-                GameTooltip:SetItemByID(effectiveItem.itemID)
-                GameTooltip:Show()
-                return
-            end
+-- Shift-hover routes through the shared config Shift-tooltip controller
+-- (State.lua), same as the column 2 entry rows: the real spell/item
+-- tooltip with the resolved override spell ID, shown and hidden live as
+-- the modifier changes. The controller speaks the AceGUI widget shape
+-- (frame + user data), so each raw slot carries a small adapter.
+local function EnsureSlotShiftTooltipAdapter(slot)
+    local adapter = slot._cdcShiftTooltipAdapter
+    if not adapter then
+        adapter = { frame = slot, userdata = {} }
+        function adapter:SetUserData(key, value)
+            self.userdata[key] = value
+        end
+        function adapter:GetUserData(key)
+            return self.userdata[key]
+        end
+        slot._cdcShiftTooltipAdapter = adapter
+    end
+    return adapter
+end
+
+local function ResolveSlotShiftTooltip(buttonData)
+    if buttonData.type == "spell" and buttonData.id then
+        local resolve = ST._ResolveEntryTooltipSpellId
+        return "spell", resolve and resolve(buttonData) or buttonData.id
+    end
+    if buttonData.type == "item" and buttonData.id then
+        return "item", buttonData.id
+    end
+    if CooldownCompanion.IsEquipmentSlotEntry
+        and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+        local effectiveItem = CooldownCompanion.ResolveEffectiveItem
+            and CooldownCompanion.ResolveEffectiveItem(buttonData, true) or nil
+        if effectiveItem and effectiveItem.trackable and effectiveItem.itemID then
+            return "item", effectiveItem.itemID
         end
     end
+    return nil
+end
+
+-- Plain hover: the decorated entry name plus the same status lines the
+-- column 2 row badges carried (Shift is the controller's job above).
+local function ShowEntrySlotTooltip(slot, buttonData, status)
+    GameTooltip:SetOwner(slot, "ANCHOR_RIGHT")
     local name = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
     GameTooltip:SetText(name or "Entry", 1, 1, 1)
     if buttonData.type == "spell" then
@@ -1034,6 +1052,22 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
         if CS.dragState and CS.dragState.phase == "active" then return end
         self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
         self.hoverHighlight:Show()
+        -- Register with the shared Shift-tooltip controller; when Shift is
+        -- already held this shows the real tooltip immediately and the
+        -- decorated one is skipped. Later modifier changes are the
+        -- controller's MODIFIER_STATE_CHANGED handler's job.
+        local kind, id = ResolveSlotShiftTooltip(buttonData)
+        local activate = ST._ActivateConfigShiftTooltip
+        if kind and id and activate then
+            local adapter = EnsureSlotShiftTooltipAdapter(self)
+            adapter:SetUserData("cdcShiftTooltipKind", kind)
+            adapter:SetUserData("cdcShiftTooltipID", id)
+            adapter:SetUserData("cdcShiftTooltipOwner", self)
+            adapter:SetUserData("cdcShiftTooltipAnchor", "ANCHOR_RIGHT")
+            if activate(adapter) then
+                return
+            end
+        end
         ShowEntrySlotTooltip(self, buttonData, status)
         local targeting = GetActiveOverrideTargeting(panelId)
         if targeting then
@@ -1049,6 +1083,9 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
     end)
     slot:SetScript("OnLeave", function(self)
         self.hoverHighlight:Hide()
+        if self._cdcShiftTooltipAdapter and ST._ClearConfigShiftTooltipHover then
+            ST._ClearConfigShiftTooltipHover(self._cdcShiftTooltipAdapter)
+        end
         GameTooltip:Hide()
     end)
 end

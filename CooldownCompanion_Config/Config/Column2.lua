@@ -2954,3 +2954,6 @@ end
 ------------------------------------------------------------------------
 ST._RefreshColumn2 = RefreshColumn2
 ST._ShowEntryContextMenu = ShowEntryContextMenu
+-- Shared with the panel preview mirror: entry tooltips resolve the
+-- currently-active override spell, not the stored base ID.
+ST._ResolveEntryTooltipSpellId = ResolveColumn2TooltipSpellId
