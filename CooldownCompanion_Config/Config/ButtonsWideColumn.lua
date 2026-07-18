@@ -6,8 +6,9 @@
     GroupSettingsHost) in one column spanning the old col3+col4 region.
     The column frames two labeled areas: the pinned Live Preview above the
     split divider (the column title names it) and the editing surface
-    below it (the "Editing:" header, add box, identity strip, and settings
-    on a more opaque backdrop). Browsing skips the pinned preview cluster
+    below it (the "Editing:" path and selected-entry context on one line,
+    followed by the add box and settings on a more opaque backdrop).
+    Browsing skips the pinned preview cluster
     (panels render live in the world).
 ]]
 
@@ -18,10 +19,9 @@ local AceGUI = LibStub("AceGUI-3.0")
 
 local PREVIEW_GAP = 4
 local ADD_BOX_HEIGHT = 26
-local STRIP_HEIGHT = 26
-local STRIP_ICON_SIZE = 20
-local STRIP_BADGE_SIZE = 18
-local STRIP_BADGE_GAP = 3
+local EDIT_CONTEXT_ICON_SIZE = 16
+local EDIT_CONTEXT_BADGE_SIZE = 16
+local EDIT_CONTEXT_BADGE_GAP = 3
 local DIVIDER_HEIGHT = 9
 local DIVIDER_HIT_EXTEND = 5
 local PREVIEW_SPLIT_DEFAULT = 0.42
@@ -83,9 +83,9 @@ local function RebuildActiveWidePreview(col3)
 end
 
 -- The editing surface: the visually distinct, more opaque container below
--- the split divider. It frames the "Editing:" header, the add box, the
--- identity strip, and the settings surfaces so the workspace reads as two
--- labeled areas (Live Preview above the divider, Editing below it).
+-- the split divider. It frames the "Editing:" path (including any selected
+-- entry context), the add box, and the settings surfaces so the workspace
+-- reads as two labeled areas (Live Preview above, Editing below).
 local function EnsureEditingSurface(col3)
     local surface = col3._cdcEditingSurface
     if surface then return surface end
@@ -102,16 +102,45 @@ local function EnsureEditingSurface(col3)
     -- settings widgets (siblings created at content level + 1).
     surface:SetFrameLevel(col3.content:GetFrameLevel())
 
-    local header = surface:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    header:SetPoint("TOPLEFT", surface, "TOPLEFT", EDIT_INSET, -EDIT_HEADER_TOP_GAP)
-    header:SetPoint("TOPRIGHT", surface, "TOPRIGHT", -EDIT_INSET, -EDIT_HEADER_TOP_GAP)
-    header:SetHeight(EDIT_HEADER_HEIGHT)
-    header:SetJustifyH("LEFT")
-    header:SetWordWrap(false)
-    surface._cdcHeader = header
+    local headerLine = CreateFrame("Frame", nil, surface)
+    headerLine:SetPoint("TOPLEFT", surface, "TOPLEFT", EDIT_INSET, -EDIT_HEADER_TOP_GAP)
+    headerLine:SetPoint("TOPRIGHT", surface, "TOPRIGHT", -EDIT_INSET, -EDIT_HEADER_TOP_GAP)
+    headerLine:SetHeight(EDIT_HEADER_HEIGHT)
+    headerLine.badges = {}
+
+    local text = headerLine:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    text:SetPoint("LEFT", headerLine, "LEFT", 0, 0)
+    text:SetPoint("RIGHT", headerLine, "RIGHT", 0, 0)
+    text:SetHeight(EDIT_HEADER_HEIGHT)
+    text:SetJustifyH("LEFT")
+    text:SetWordWrap(false)
+    headerLine.text = text
+    surface._cdcHeader = headerLine
 
     col3._cdcEditingSurface = surface
     return surface
+end
+
+local function AcquireEditingHeaderBadge(headerLine, index)
+    local badge = headerLine.badges[index]
+    if badge then return badge end
+
+    badge = CreateFrame("Frame", nil, headerLine)
+    badge:SetSize(EDIT_CONTEXT_BADGE_SIZE, EDIT_CONTEXT_BADGE_SIZE)
+    badge:EnableMouse(true)
+    badge.icon = badge:CreateTexture(nil, "ARTWORK")
+    badge.icon:SetAllPoints()
+    badge:SetScript("OnEnter", function(self)
+        if not self._cdcLabel then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(self._cdcLabel, 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    badge:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    headerLine.badges[index] = badge
+    return badge
 end
 
 -- Path shown in the editing header: the parent context dimmed, the leaf
@@ -157,13 +186,62 @@ local function GetEditingHeaderPath()
 end
 
 local function UpdateEditingHeader(col3)
-    local header = EnsureEditingSurface(col3)._cdcHeader
+    local headerLine = EnsureEditingSurface(col3)._cdcHeader
+    local header = headerLine.text
     local parent, leaf = GetEditingHeaderPath()
+    local context = col3._cdcEditingContext
+
+    local shown = 0
+    local rightAnchor
+    local badgeStatus = context and context.badgeStatus
+    if badgeStatus and ST._EntryStatusBadges then
+        for _, desc in ipairs(ST._EntryStatusBadges) do
+            if badgeStatus[desc.key] then
+                shown = shown + 1
+                local badge = AcquireEditingHeaderBadge(headerLine, shown)
+                badge.icon:SetAtlas(desc.atlas, false)
+                badge._cdcLabel = (desc.key == "warn" and badgeStatus.loadBlocked)
+                    and "Hidden by load conditions" or desc.label
+                badge:ClearAllPoints()
+                if rightAnchor then
+                    badge:SetPoint("RIGHT", rightAnchor, "LEFT", -EDIT_CONTEXT_BADGE_GAP, 0)
+                else
+                    badge:SetPoint("RIGHT", headerLine, "RIGHT", 0, 0)
+                end
+                badge:Show()
+                rightAnchor = badge
+            end
+        end
+    end
+    for i = shown + 1, #headerLine.badges do
+        headerLine.badges[i]:Hide()
+    end
+
+    header:ClearAllPoints()
+    header:SetPoint("LEFT", headerLine, "LEFT", 0, 0)
+    if rightAnchor then
+        header:SetPoint("RIGHT", rightAnchor, "LEFT", -EDIT_CONTEXT_BADGE_GAP - 3, 0)
+    else
+        header:SetPoint("RIGHT", headerLine, "RIGHT", 0, 0)
+    end
+
     if not leaf then
         header:SetText("Editing")
         return
     end
-    if parent then
+
+    if context and context.name then
+        local contextName = context.name
+        if context.icon then
+            contextName = "|T" .. context.icon .. ":" .. EDIT_CONTEXT_ICON_SIZE
+                .. ":" .. EDIT_CONTEXT_ICON_SIZE .. ":0:0:64:64:5:59:5:59|t " .. contextName
+        end
+        if context.kindText then
+            contextName = contextName .. " |cff7d7566(" .. context.kindText .. ")|r"
+        end
+        local path = parent and (parent .. " \194\187 " .. leaf) or leaf
+        header:SetFormattedText("Editing: |cff9d9587%s \194\187 |r|cffffffff%s|r", path, contextName)
+    elseif parent then
         header:SetFormattedText("Editing: |cff9d9587%s \194\187 |r|cffffffff%s|r", parent, leaf)
     else
         header:SetFormattedText("Editing: |cffffffff%s|r", leaf)
@@ -183,20 +261,15 @@ local function HideEditingChrome(col3)
     end
 end
 
--- Vertical space the editing surface's fixed chrome (header, add box,
--- identity strip, gaps, and insets) claims below the split divider before
--- the settings surface (shared by the divider drag and the height
--- computation below).
+-- Vertical space the editing surface's fixed chrome (header, add box, gaps,
+-- and insets) claims below the split divider before the settings surface
+-- (shared by the divider drag and the height computation below).
 local function GetEditingOverhead(col3)
     local overhead = EDIT_HEADER_TOP_GAP + EDIT_HEADER_HEIGHT
         + PREVIEW_GAP + EDIT_BOTTOM_INSET
     local addBox = col3.buttonsAddBox
     if addBox and addBox.frame:IsShown() then
         overhead = overhead + EDIT_HEADER_GAP + ADD_BOX_HEIGHT
-    end
-    local strip = col3.buttonsIdentityStrip
-    if strip and strip:IsShown() then
-        overhead = overhead + PREVIEW_GAP + STRIP_HEIGHT
     end
     return overhead
 end
@@ -223,8 +296,8 @@ end
 -- Re-apply the persisted split against the CURRENT column height and
 -- overhead. Called from LayoutColumns (which runs on every window resize)
 -- and as the refresh pass's final step — the preview builds before the add
--- box and identity strip settle their visibility, so the first computation
--- can run against stale overhead.
+-- box settles its visibility, so the first computation can run against
+-- stale overhead.
 local function ReapplyPanelPreviewSplit()
     local col3 = CS.configFrame and CS.configFrame.col3
     local host = col3 and col3._cdcActiveWideHost
@@ -354,8 +427,8 @@ end
 
 -- Settings surfaces anchor inside the editing surface below the split
 -- divider (which sits directly under the pinned preview), beneath the
--- editing header, the add box, and the identity strip when shown; they
--- fill the whole column when no preview is active.
+-- editing header and add box; they fill the whole column when no preview
+-- is active.
 local function AnchorButtonsContentFrame(col3, frame)
     frame:ClearAllPoints()
     local previewHost = col3._cdcActiveWideHost
@@ -374,11 +447,8 @@ local function AnchorButtonsContentFrame(col3, frame)
         UpdateEditingHeader(col3)
 
         local topAnchor = surface._cdcHeader
-        local strip = col3.buttonsIdentityStrip
         local addBox = col3.buttonsAddBox
-        if strip and strip:IsShown() then
-            topAnchor = strip
-        elseif addBox and addBox.frame:IsShown() then
+        if addBox and addBox.frame:IsShown() then
             topAnchor = addBox.frame
         end
         frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -PREVIEW_GAP)
@@ -477,9 +547,7 @@ local function HidePanelPreview(col3)
     if col3.buttonsAddBox then
         col3.buttonsAddBox.frame:Hide()
     end
-    if col3.buttonsIdentityStrip then
-        col3.buttonsIdentityStrip:Hide()
-    end
+    col3._cdcEditingContext = nil
     HideEditingChrome(col3)
 end
 
@@ -642,55 +710,10 @@ local function ClearWideAddBoxAfterAdd(originalInput)
     end
 end
 
-local function EnsureIdentityStrip(col3)
-    local strip = col3.buttonsIdentityStrip
-    if strip then return strip end
-
-    strip = CreateFrame("Frame", nil, col3.content)
-    strip:SetHeight(STRIP_HEIGHT)
-
-    strip.name = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
-    strip.name:SetJustifyH("LEFT")
-    strip.name:SetWordWrap(false)
-
-    strip.tag = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
-    strip.tag:SetTextColor(0.5, 0.5, 0.5)
-
-    -- No bottom separator line: the split divider always renders directly
-    -- beneath the strip and carries the single separator line.
-
-    strip.badges = {}
-    col3.buttonsIdentityStrip = strip
-    return strip
-end
-
-local function AcquireStripBadge(strip, index)
-    local badge = strip.badges[index]
-    if not badge then
-        badge = CreateFrame("Frame", nil, strip)
-        badge:SetSize(STRIP_BADGE_SIZE, STRIP_BADGE_SIZE)
-        badge:EnableMouse(true)
-        badge.icon = badge:CreateTexture(nil, "ARTWORK")
-        badge.icon:SetAllPoints()
-        badge:SetScript("OnEnter", function(self)
-            if not self._cdcLabel then return end
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText(self._cdcLabel, 1, 1, 1)
-            GameTooltip:Show()
-        end)
-        badge:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        strip.badges[index] = badge
-    end
-    return badge
-end
-
--- Context strip between the add box and the settings surfaces: shown only
--- for a selected entry or attached bar, where it carries identity, tracking
--- kind, and the status badges the retired column 2 entry rows used to show.
--- The panel itself is already named by the Editing header above.
-local function UpdateIdentityStrip(col3)
+-- Extend the Editing path with a selected entry or attached bar. The entry
+-- icon, tracking kind, and status badges all share that header line instead
+-- of consuming a separate identity row below the add box.
+local function UpdateEditingContext(col3)
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local icon, name, badgeStatus, kindText
     if group then
@@ -737,78 +760,17 @@ local function UpdateIdentityStrip(col3)
         end
     end
 
-    local strip = col3.buttonsIdentityStrip
-    if not name then
-        if strip then strip:Hide() end
-        return
-    end
-    strip = EnsureIdentityStrip(col3)
-
-    -- Inline the entry icon so it aligns (and truncates) with the name;
-    -- the crop matches the 0.08 tex-coord inset used on icon slots.
-    if icon then
-        name = "|T" .. icon .. ":" .. STRIP_ICON_SIZE .. ":" .. STRIP_ICON_SIZE
-            .. ":0:0:64:64:5:59:5:59|t " .. name
-    end
-
-    local shown = 0
-    local rightAnchor
-    if badgeStatus and ST._EntryStatusBadges then
-        for _, desc in ipairs(ST._EntryStatusBadges) do
-            if badgeStatus[desc.key] then
-                shown = shown + 1
-                local badge = AcquireStripBadge(strip, shown)
-                badge.icon:SetAtlas(desc.atlas, false)
-                badge._cdcLabel = (desc.key == "warn" and badgeStatus.loadBlocked)
-                    and "Hidden by load conditions" or desc.label
-                badge:ClearAllPoints()
-                if rightAnchor then
-                    badge:SetPoint("RIGHT", rightAnchor, "LEFT", -STRIP_BADGE_GAP, 0)
-                else
-                    badge:SetPoint("RIGHT", strip, "RIGHT", -2, 0)
-                end
-                badge:Show()
-                rightAnchor = badge
-            end
-        end
-    end
-    for i = shown + 1, #strip.badges do
-        strip.badges[i]:Hide()
-    end
-
-    -- Tracking-kind helper text sits with the badge cluster on the right.
-    if kindText then
-        strip.tag:SetText("(" .. kindText .. ")")
-        strip.tag:ClearAllPoints()
-        if rightAnchor then
-            strip.tag:SetPoint("RIGHT", rightAnchor, "LEFT", -STRIP_BADGE_GAP - 3, 0)
-        else
-            strip.tag:SetPoint("RIGHT", strip, "RIGHT", -2, 0)
-        end
-        strip.tag:Show()
-        rightAnchor = strip.tag
+    if name then
+        col3._cdcEditingContext = {
+            icon = icon,
+            name = name,
+            badgeStatus = badgeStatus,
+            kindText = kindText,
+        }
     else
-        strip.tag:Hide()
+        col3._cdcEditingContext = nil
     end
-
-    -- Keep the contextual identity left-aligned while reserving room for
-    -- the tracking tag and status badges on the right.
-    strip.name:SetText(name)
-    strip.name:ClearAllPoints()
-    strip.name:SetPoint("LEFT", strip, "LEFT", EDIT_INSET, 0)
-    if rightAnchor then
-        strip.name:SetPoint("RIGHT", rightAnchor, "LEFT", -STRIP_BADGE_GAP - 5, 0)
-    else
-        strip.name:SetPoint("RIGHT", strip, "RIGHT", -EDIT_INSET, 0)
-    end
-
-    local addBox = col3.buttonsAddBox
-    local top = (addBox and addBox.frame:IsShown()) and addBox.frame
-        or EnsureEditingSurface(col3)._cdcHeader
-    strip:ClearAllPoints()
-    strip:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, -PREVIEW_GAP)
-    strip:SetPoint("TOPRIGHT", top, "BOTTOMRIGHT", 0, -PREVIEW_GAP)
-    strip:Show()
+    UpdateEditingHeader(col3)
 end
 
 -- Validate the unified bar selection before showing its settings: clears
@@ -923,7 +885,7 @@ local function RefreshButtonsWideColumn()
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
         UpdatePanelPreview(col3)
         UpdateAddBox(col3)
-        UpdateIdentityStrip(col3)
+        UpdateEditingContext(col3)
         ReapplyPanelPreviewSplit()
         local shown = false
         if unifiedBarKind == "resource" then
@@ -958,9 +920,9 @@ local function RefreshButtonsWideColumn()
         else
             UpdatePanelPreview(col3)
             UpdateAddBox(col3)
-            UpdateIdentityStrip(col3)
-            -- Final height pass: the add box and strip just settled their
-            -- visibility, which feeds the settings-minimum clamp.
+            UpdateEditingContext(col3)
+            -- Final height pass: the add box just settled its visibility,
+            -- which feeds the settings-minimum clamp.
             ReapplyPanelPreviewSplit()
         end
         if col3.bsTabGroup then
@@ -986,7 +948,7 @@ local function RefreshButtonsWideColumn()
     else
         UpdatePanelPreview(col3)
         UpdateAddBox(col3)
-        UpdateIdentityStrip(col3)
+        UpdateEditingContext(col3)
         -- Final height pass (see the entry branch above).
         ReapplyPanelPreviewSplit()
     end
@@ -1025,10 +987,9 @@ local function RefreshButtonsPreviewMirror(groupId)
         elseif ST._BuildButtonPanelPreview then
             ST._BuildButtonPanelPreview(host, CS.selectedGroup)
         end
-        -- The strip shares the mirror's data (custom name, status badges) -
-        -- keep it in step with every targeted rebuild. It handles its own
-        -- visibility, so no shown-state gate is needed.
-        UpdateIdentityStrip(col3)
+        -- The Editing header shares the mirror's selection identity and
+        -- status badges, so keep it in step with targeted rebuilds.
+        UpdateEditingContext(col3)
     end
 end
 
