@@ -36,6 +36,8 @@ local PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = 5
 -- Badges counter-scale against the preview's scale-to-fit so they stay
 -- readable, clamped so they never dwarf a heavily scaled-down slot.
 local PANEL_PREVIEW_BADGE_SCREEN_SIZE = 14
+-- Matches the resources layout preview's tween timing
+local PANEL_PREVIEW_ANIM_DURATION = 0.08
 local DEFAULT_BAR_COLOR = { 0.2, 0.6, 1.0, 1.0 }
 
 -- Mirror of GroupFrame.lua GetGrowthMultipliers: anchor corner plus x/y
@@ -317,33 +319,218 @@ end
 -- convention). Raw cursor coordinates are compared against GetScaledRect
 -- values, matching the drag tracker and the resources layout preview.
 ------------------------------------------------------------------------
-local function EnsureDropIndicator(preview)
-    local ind = preview.dropIndicator
-    if not ind then
-        -- Own high-level holder so the line draws above the slot frames
-        -- even when zero spacing puts it flush against a slot edge.
-        local holder = CreateFrame("Frame", nil, preview.root)
-        holder:SetAllPoints(preview.root)
-        holder:SetFrameLevel(preview.root:GetFrameLevel() + 40)
-        ind = holder:CreateTexture(nil, "OVERLAY")
-        ind:SetColorTexture(PANEL_PREVIEW_RING_COLOR[1], PANEL_PREVIEW_RING_COLOR[2],
-            PANEL_PREVIEW_RING_COLOR[3], 0.9)
-        preview.dropIndicator = ind
+-- Slot placement with tween bookkeeping (the resources preview's
+-- ApplySlotGeometry/QueueSlotTween pattern, reduced to position-only:
+-- slot sizes never change during a reorder drag).
+local function ApplyPreviewSlotGeometry(preview, slot, anchor, x, y)
+    slot:ClearAllPoints()
+    slot:SetPoint(anchor, preview.content, anchor, x, y)
+    slot._cdcPrevAnchor = anchor
+    slot._cdcPrevX = x
+    slot._cdcPrevY = y
+    if preview.tweens then
+        preview.tweens[slot] = nil
     end
-    return ind
+end
+
+local function QueuePreviewSlotTween(preview, slot, anchor, x, y)
+    if slot._cdcPrevAnchor ~= anchor or not slot._cdcPrevX then
+        ApplyPreviewSlotGeometry(preview, slot, anchor, x, y)
+        return
+    end
+    local cx, cy = slot._cdcPrevX, slot._cdcPrevY
+    if math.abs(cx - x) < 0.5 and math.abs(cy - y) < 0.5 then
+        ApplyPreviewSlotGeometry(preview, slot, anchor, x, y)
+        return
+    end
+    preview.tweens[slot] = {
+        anchor = anchor,
+        sx = cx, sy = cy,
+        tx = x, ty = y,
+        t0 = GetTime(),
+        dur = PANEL_PREVIEW_ANIM_DURATION,
+    }
+end
+
+local function EaseInOut(t)
+    return t < 0.5 and (2 * t * t) or (1 - (((-2 * t + 2) ^ 2) / 2))
+end
+
+local function Interpolate(a, b, t)
+    return a + ((b - a) * t)
+end
+
+local function UpdateGhostPosition(ghost)
+    if not (ghost and ghost:IsShown()) then return end
+    local uiScale = UIParent:GetEffectiveScale()
+    local cursorX, cursorY = GetCursorPosition()
+    cursorX = cursorX / uiScale
+    cursorY = cursorY / uiScale
+    local offsetX = math_floor((ghost:GetWidth() or 0) / 2)
+    local offsetY = math_floor((ghost:GetHeight() or 0) / 2)
+    ghost:ClearAllPoints()
+    ghost:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cursorX - offsetX, cursorY + offsetY)
+end
+
+local function TickPanelPreview(preview)
+    local active = false
+    local now = GetTime()
+    for slot, tween in pairs(preview.tweens) do
+        local progress = math_min(1, math_max(0, (now - tween.t0) / tween.dur))
+        local eased = EaseInOut(progress)
+        local x = Interpolate(tween.sx, tween.tx, eased)
+        local y = Interpolate(tween.sy, tween.ty, eased)
+        slot:ClearAllPoints()
+        slot:SetPoint(tween.anchor, preview.content, tween.anchor, x, y)
+        slot._cdcPrevAnchor = tween.anchor
+        slot._cdcPrevX = x
+        slot._cdcPrevY = y
+        if progress >= 1 then
+            preview.tweens[slot] = nil
+        else
+            active = true
+        end
+    end
+    UpdateGhostPosition(preview.ghost)
+    if not active and not preview.ghostActive then
+        preview.root:SetScript("OnUpdate", nil)
+    end
+end
+
+local function StartPreviewTicker(preview)
+    preview.root:SetScript("OnUpdate", function()
+        TickPanelPreview(preview)
+    end)
+end
+
+-- Cursor-following ghost: the dragged entry's footprint with its icon
+-- centered, floating on the tooltip strata like the resources ghost.
+local function EnsurePreviewGhost(preview)
+    local ghost = preview.ghost
+    if not ghost then
+        ghost = CreateFrame("Frame", nil, UIParent)
+        ghost:SetFrameStrata("TOOLTIP")
+        ghost:SetFrameLevel(2000)
+        ghost:EnableMouse(false)
+        ghost.bg = ghost:CreateTexture(nil, "BACKGROUND")
+        ghost.bg:SetAllPoints()
+        ghost.bg:SetColorTexture(0.05, 0.10, 0.18, 0.55)
+        ghost.icon = ghost:CreateTexture(nil, "ARTWORK")
+        ghost.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        ghost:Hide()
+        preview.ghost = ghost
+    end
+    return ghost
+end
+
+local function ConfigurePreviewGhost(preview, layoutDrag, buttonData)
+    local ghost = EnsurePreviewGhost(preview)
+    local scale = layoutDrag.scale
+    local gw = math_max(8, layoutDrag.slotW * scale)
+    local gh = math_max(8, layoutDrag.slotH * scale)
+    ghost:SetSize(gw, gh)
+    local iconSize = math_min(gw, gh)
+    ghost.icon:ClearAllPoints()
+    ghost.icon:SetSize(iconSize, iconSize)
+    ghost.icon:SetPoint("CENTER")
+    local icon = GetLayoutPreviewIcon and GetLayoutPreviewIcon(buttonData)
+    if icon then
+        ghost.icon:SetTexture(icon)
+        ghost.icon:Show()
+    else
+        ghost.icon:Hide()
+    end
+    ghost:SetAlpha(0.9)
+    ghost:Show()
+    preview.ghostActive = true
+    UpdateGhostPosition(ghost)
+end
+
+local function ClearPreviewGhost(preview)
+    preview.ghostActive = false
+    if preview.ghost then
+        preview.ghost:Hide()
+    end
+end
+
+-- Translucent marker filling the cell the entry would land in.
+local function EnsureGapFrame(preview)
+    local gap = preview.gapFrame
+    if not gap then
+        gap = CreateFrame("Frame", nil, preview.content)
+        gap.bg = gap:CreateTexture(nil, "BACKGROUND")
+        gap.bg:SetAllPoints()
+        gap.bg:SetColorTexture(PANEL_PREVIEW_RING_COLOR[1], PANEL_PREVIEW_RING_COLOR[2],
+            PANEL_PREVIEW_RING_COLOR[3], 0.18)
+        preview.gapFrame = gap
+    end
+    return gap
+end
+
+-- Slide the remaining slots into the arrangement they'd have after the
+-- drop: the lifted entry's slot goes invisible, the others compact in
+-- order with a gap held open at the insertion cell.
+local function UpdateGridDragPreview(preview, layoutDrag, sourceIndex, dropTarget)
+    local insertIndex = dropTarget and dropTarget.insertIndex
+    local gapPos
+    if insertIndex then
+        gapPos = insertIndex
+        if gapPos > sourceIndex then gapPos = gapPos - 1 end
+        if gapPos > layoutDrag.count then gapPos = layoutDrag.count end
+    end
+    local renderIndex = 1
+    for i = 1, layoutDrag.count do
+        local slot = layoutDrag.slots[i]
+        if slot then
+            if i == sourceIndex then
+                slot:SetAlpha(0)
+            else
+                local displayIndex = renderIndex
+                if gapPos and displayIndex >= gapPos then
+                    displayIndex = displayIndex + 1
+                end
+                local x, y = layoutDrag.cellXY(displayIndex)
+                QueuePreviewSlotTween(preview, slot, layoutDrag.anchor, x, y)
+                renderIndex = renderIndex + 1
+            end
+        end
+    end
+    if gapPos then
+        local gap = EnsureGapFrame(preview)
+        gap:SetSize(layoutDrag.slotW, layoutDrag.slotH)
+        local x, y = layoutDrag.cellXY(gapPos)
+        QueuePreviewSlotTween(preview, gap, layoutDrag.anchor, x, y)
+        gap:Show()
+    elseif preview.gapFrame then
+        preview.gapFrame:Hide()
+    end
+end
+
+local function ResetGridDragPreview(preview, layoutDrag)
+    for i = 1, layoutDrag.count do
+        local slot = layoutDrag.slots[i]
+        if slot then
+            local x, y = layoutDrag.cellXY(i)
+            QueuePreviewSlotTween(preview, slot, layoutDrag.anchor, x, y)
+            slot:SetAlpha(slot._cdcBaseAlpha or 1)
+        end
+    end
+    if preview.gapFrame then
+        preview.gapFrame:Hide()
+    end
 end
 
 local function CreatePreviewLayoutDrag(preview, panelId)
+    -- Builders fill in count, slotW/H, scale, anchor, and cellXY (display
+    -- cell index -> anchored x,y offset) after creating the model.
     local layoutDrag = {
         panelPreview = true,
         slots = {},
         count = 0,
         slotW = 1,
         slotH = 1,
-        spacing = 0,
         scale = 1,
-        flowX = 1,
-        flowY = 0,
+        anchor = "TOPLEFT",
     }
 
     -- Insertion anchors: midpoints between consecutive slot centers, with
@@ -363,15 +550,38 @@ local function CreatePreviewLayoutDrag(preview, panelId)
             return nil
         end
 
+        -- Base cell centers, NOT live slot rects: the slots animate while
+        -- a drag is held, and resolving against moving frames would make
+        -- the drop target oscillate under the cursor (the "stable slots"
+        -- trick from the resources preview).
+        local content = preview.content
+        local cLeft, cBottom, cWidth, cHeight = content:GetScaledRect()
+        if not (cLeft and cBottom and cWidth and cHeight) then return nil end
+        local localW = content:GetWidth() or 1
+        local localH = content:GetHeight() or 1
+        local factor = (localW > 0) and (cWidth / localW) or 1
+        local anchor = layoutDrag.anchor
+        local slotW, slotH = layoutDrag.slotW, layoutDrag.slotH
+
         local centers = {}
         for i = 1, count do
-            local slot = layoutDrag.slots[i]
-            if not slot then return nil end
-            -- No `and`-chaining here: it would truncate the multiple
-            -- return values to just the first.
-            local sl, sb, sw, sh = slot:GetScaledRect()
-            if not (sl and sb and sw and sh) then return nil end
-            centers[i] = { x = sl + sw / 2, y = sb + sh / 2 }
+            local x, y = layoutDrag.cellXY(i)
+            -- Convert the anchored offset to top-left space, then to the
+            -- scaled screen coordinates raw cursor values live in.
+            local tlX, tlY
+            if anchor == "TOPLEFT" then
+                tlX, tlY = x + slotW / 2, y - slotH / 2
+            elseif anchor == "TOPRIGHT" then
+                tlX, tlY = localW + x - slotW / 2, y - slotH / 2
+            elseif anchor == "BOTTOMLEFT" then
+                tlX, tlY = x + slotW / 2, -localH + y + slotH / 2
+            else -- BOTTOMRIGHT
+                tlX, tlY = localW + x - slotW / 2, -localH + y + slotH / 2
+            end
+            centers[i] = {
+                x = cLeft + tlX * factor,
+                y = cBottom + cHeight + tlY * factor,
+            }
         end
 
         local bestIndex, bestDist
@@ -398,68 +608,31 @@ local function CreatePreviewLayoutDrag(preview, panelId)
 
     layoutDrag.onActivate = function(state)
         GameTooltip:Hide()
-        if state.widget and state.widget.hoverHighlight then
-            state.widget.hoverHighlight:Hide()
+        local sourceIndex = state.slotData and state.slotData.index
+        local slot = sourceIndex and layoutDrag.slots[sourceIndex]
+        if slot and slot.hoverHighlight then
+            slot.hoverHighlight:Hide()
         end
+        ConfigurePreviewGhost(preview, layoutDrag, state.slotData and state.slotData.buttonData)
+        UpdateGridDragPreview(preview, layoutDrag, sourceIndex, state.dropTarget)
+        StartPreviewTicker(preview)
     end
 
     layoutDrag.onUpdate = function(state, cursorX, cursorY, dropTarget)
-        local ind = EnsureDropIndicator(preview)
-        local insertIndex = dropTarget and dropTarget.insertIndex
         local sourceIndex = state.slotData and state.slotData.index
-        -- No target, or a no-op drop back onto the source position
-        if not insertIndex
-            or (sourceIndex and (insertIndex == sourceIndex or insertIndex == sourceIndex + 1)) then
-            ind:Hide()
-            return
+        if not sourceIndex then return end
+        UpdateGridDragPreview(preview, layoutDrag, sourceIndex, dropTarget)
+        if not preview.ghostActive then
+            ConfigurePreviewGhost(preview, layoutDrag, state.slotData.buttonData)
         end
-
-        local count = layoutDrag.count
-        local scale = layoutDrag.scale
-        local gap = (layoutDrag.spacing * scale) / 2
-        local horizontal = layoutDrag.flowY == 0
-        local target, edge, offX, offY
-        if insertIndex <= count then
-            -- Leading edge of the slot the entry would land in front of
-            target = layoutDrag.slots[insertIndex]
-            if horizontal then
-                edge = (layoutDrag.flowX >= 0) and "LEFT" or "RIGHT"
-                offX, offY = (edge == "LEFT") and -gap or gap, 0
-            else
-                edge = (layoutDrag.flowY < 0) and "TOP" or "BOTTOM"
-                offX, offY = 0, (edge == "TOP") and gap or -gap
-            end
-        else
-            -- Trailing edge of the last slot
-            target = layoutDrag.slots[count]
-            if horizontal then
-                edge = (layoutDrag.flowX >= 0) and "RIGHT" or "LEFT"
-                offX, offY = (edge == "RIGHT") and gap or -gap, 0
-            else
-                edge = (layoutDrag.flowY < 0) and "BOTTOM" or "TOP"
-                offX, offY = 0, (edge == "BOTTOM") and -gap or gap
-            end
-        end
-        if not target then
-            ind:Hide()
-            return
-        end
-        -- The indicator lives on the unscaled root, so sizes and offsets
-        -- multiply the content scale to line up with the scaled slots.
-        if horizontal then
-            ind:SetSize(2, layoutDrag.slotH * scale + 4)
-        else
-            ind:SetSize(layoutDrag.slotW * scale + 4, 2)
-        end
-        ind:ClearAllPoints()
-        ind:SetPoint("CENTER", target, edge, offX, offY)
-        ind:Show()
+        StartPreviewTicker(preview)
     end
 
     layoutDrag.onCancel = function()
-        if preview.dropIndicator then
-            preview.dropIndicator:Hide()
-        end
+        ResetGridDragPreview(preview, layoutDrag)
+        ClearPreviewGhost(preview)
+        -- Keep ticking so the return-to-rest tween plays out
+        StartPreviewTicker(preview)
     end
 
     layoutDrag.applyDrop = function(state)
@@ -549,15 +722,18 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
         if mouseButton ~= "LeftButton" or GetCursorInfo() then return end
         if not (layoutDrag and StartDragTracking) then return end
         local cursorX, cursorY = GetCursorPosition()
+        -- No `widget` field: the tracker's dim/restore would fight the
+        -- alpha choreography our layoutDrag callbacks run (dragged slot
+        -- goes fully invisible; disabled slots rest at reduced alpha).
         CS.dragState = {
             kind = "layout-slot",
             phase = "pending",
-            widget = self,
+            previewSlot = self,
             scrollWidget = UIParent,
             startX = cursorX,
             startY = cursorY,
             layoutDrag = layoutDrag,
-            slotData = { index = index },
+            slotData = { index = index, buttonData = buttonData },
         }
         StartDragTracking()
     end)
@@ -568,7 +744,7 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
             if state then
                 -- Only fall through to selection for our own still-pending
                 -- press; active drags finish through the tracker.
-                if state.kind ~= "layout-slot" or state.phase ~= "pending" or state.widget ~= self then
+                if state.kind ~= "layout-slot" or state.phase ~= "pending" or state.previewSlot ~= self then
                     return
                 end
                 if CancelDrag then CancelDrag() else CS.dragState = nil end
@@ -692,20 +868,21 @@ local function BuildSelectionStrip(preview, host, panelId, group)
     local layoutDrag = CreatePreviewLayoutDrag(preview, panelId)
     layoutDrag.count = count
     layoutDrag.slotW, layoutDrag.slotH = w, h
-    layoutDrag.spacing = STRIP_SPACING
     layoutDrag.scale = scale
-    layoutDrag.flowX, layoutDrag.flowY = 1, 0
+    layoutDrag.anchor = "TOPLEFT"
+    layoutDrag.cellXY = function(d)
+        local row = math_floor((d - 1) / STRIP_PER_ROW)
+        local col = (d - 1) % STRIP_PER_ROW
+        return col * (w + STRIP_SPACING), -(row * (h + STRIP_SPACING))
+    end
     preview.layoutDrag = layoutDrag
     local dragModel = (not isRA and count >= 2) and layoutDrag or nil
 
     for i, entryInfo in ipairs(entries) do
         local slot = AcquireSlot(preview, content, "iconSlots")
         slot:SetSize(w, h)
-        local row = math_floor((i - 1) / STRIP_PER_ROW)
-        local col = (i - 1) % STRIP_PER_ROW
-        slot:ClearAllPoints()
-        slot:SetPoint("TOPLEFT", content, "TOPLEFT",
-            col * (w + STRIP_SPACING), -(row * (h + STRIP_SPACING)))
+        local cx, cy = layoutDrag.cellXY(i)
+        ApplyPreviewSlotGeometry(preview, slot, "TOPLEFT", cx, cy)
 
         local buttonData = entryInfo.buttonData
         StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
@@ -750,6 +927,7 @@ local function BuildSelectionStrip(preview, host, panelId, group)
             if status.disabled then
                 slot:SetAlpha(PANEL_PREVIEW_DISABLED_ALPHA)
             end
+            slot._cdcBaseAlpha = status.disabled and PANEL_PREVIEW_DISABLED_ALPHA or 1
             ApplySlotBadges(slot, status, scale)
             ApplySelectionVisuals(slot, entryInfo.index)
             layoutDrag.slots[entryInfo.index] = slot
@@ -877,6 +1055,15 @@ function ST._BuildButtonPanelPreview(host, panelId)
     end
 
     local preview = EnsurePreviewState(host)
+    -- Fresh static layout: discard any tweens or ghost the canceled drag
+    -- queued so they can't fight the rebuilt slot positions
+    preview.tweens = preview.tweens or {}
+    wipe(preview.tweens)
+    ClearPreviewGhost(preview)
+    preview.root:SetScript("OnUpdate", nil)
+    if preview.gapFrame then
+        preview.gapFrame:Hide()
+    end
     ResetPreviewState(preview)
     HidePreviewMessage(preview)
     preview.content:Hide()
@@ -932,12 +1119,18 @@ function ST._BuildButtonPanelPreview(host, panelId)
     local layoutDrag = CreatePreviewLayoutDrag(preview, panelId)
     layoutDrag.count = count
     layoutDrag.slotW, layoutDrag.slotH = w, h
-    layoutDrag.spacing = spacing
     layoutDrag.scale = scale
-    if geo.orientation == "horizontal" then
-        layoutDrag.flowX, layoutDrag.flowY = xMul, 0
-    else
-        layoutDrag.flowX, layoutDrag.flowY = 0, yMul
+    layoutDrag.anchor = growthAnchor
+    layoutDrag.cellXY = function(d)
+        local row, col
+        if geo.orientation == "horizontal" then
+            row = math_floor((d - 1) / perRow)
+            col = (d - 1) % perRow
+        else
+            col = math_floor((d - 1) / perRow)
+            row = (d - 1) % perRow
+        end
+        return xMul * col * (w + spacing), yMul * row * (h + spacing)
     end
     preview.layoutDrag = layoutDrag
     local dragModel = (count >= 2) and layoutDrag or nil
@@ -946,17 +1139,8 @@ function ST._BuildButtonPanelPreview(host, panelId)
         local slot = AcquireSlot(preview, content, poolName)
         slot:SetSize(w, h)
 
-        local row, col
-        if geo.orientation == "horizontal" then
-            row = math_floor((index - 1) / perRow)
-            col = (index - 1) % perRow
-        else
-            col = math_floor((index - 1) / perRow)
-            row = (index - 1) % perRow
-        end
-        slot:ClearAllPoints()
-        slot:SetPoint(growthAnchor, content, growthAnchor,
-            xMul * col * (w + spacing), yMul * row * (h + spacing))
+        local cx, cy = layoutDrag.cellXY(index)
+        ApplyPreviewSlotGeometry(preview, slot, growthAnchor, cx, cy)
 
         styleFn(slot, buttonData, group)
         local status = CollectEntryStatus(buttonData, group)
@@ -964,6 +1148,7 @@ function ST._BuildButtonPanelPreview(host, panelId)
         if status.disabled then
             slot:SetAlpha(PANEL_PREVIEW_DISABLED_ALPHA)
         end
+        slot._cdcBaseAlpha = status.disabled and PANEL_PREVIEW_DISABLED_ALPHA or 1
         ApplySlotBadges(slot, status, scale)
         ApplySelectionVisuals(slot, index)
         layoutDrag.slots[index] = slot
