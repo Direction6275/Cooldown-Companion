@@ -266,6 +266,9 @@ local function EnsureIdentityStrip(col3)
     strip.name:SetJustifyH("CENTER")
     strip.name:SetWordWrap(false)
 
+    strip.tag = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
+    strip.tag:SetTextColor(0.5, 0.5, 0.5)
+
     local divider = strip:CreateTexture(nil, "ARTWORK")
     divider:SetColorTexture(1, 1, 1, 0.08)
     divider:SetHeight(1)
@@ -304,7 +307,7 @@ end
 -- full status badge row the retired column 2 entry rows used to show.
 local function UpdateIdentityStrip(col3)
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    local icon, name, badgeStatus
+    local icon, name, badgeStatus, kindText
     if group then
         local multiCount = 0
         for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
@@ -323,6 +326,14 @@ local function UpdateIdentityStrip(col3)
             name = ST._GetConfigEntryDisplayName
                 and ST._GetConfigEntryDisplayName(buttonData)
                 or buttonData.name
+            -- Same addedAs fallback the name decorations use.
+            if buttonData.type == "spell" then
+                local addedAs = buttonData.addedAs
+                if addedAs ~= "spell" and addedAs ~= "aura" then
+                    addedAs = buttonData.isPassive and "aura" or "spell"
+                end
+                kindText = addedAs == "aura" and "Aura" or "Spell"
+            end
             badgeStatus = ST._CollectEntryStatus and ST._CollectEntryStatus(buttonData, group)
         else
             name = group.name or "Panel"
@@ -366,6 +377,21 @@ local function UpdateIdentityStrip(col3)
     end
     for i = shown + 1, #strip.badges do
         strip.badges[i]:Hide()
+    end
+
+    -- Tracking-kind helper text sits with the badge cluster on the right.
+    if kindText then
+        strip.tag:SetText("(" .. kindText .. ")")
+        strip.tag:ClearAllPoints()
+        if rightAnchor then
+            strip.tag:SetPoint("RIGHT", rightAnchor, "LEFT", -STRIP_BADGE_GAP - 3, 0)
+        else
+            strip.tag:SetPoint("RIGHT", strip, "RIGHT", -2, 0)
+        end
+        strip.tag:Show()
+        rightAnchor = strip.tag
+    else
+        strip.tag:Hide()
     end
 
     strip.name:SetText(name)
