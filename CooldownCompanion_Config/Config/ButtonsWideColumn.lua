@@ -263,7 +263,7 @@ local function EnsureIdentityStrip(col3)
     strip:SetHeight(STRIP_HEIGHT)
 
     strip.name = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
-    strip.name:SetJustifyH("CENTER")
+    strip.name:SetJustifyH("LEFT")
     strip.name:SetWordWrap(false)
 
     strip.tag = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
