@@ -896,6 +896,9 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CS.selectedGroup = panelId
     CS.selectedButton = buttonIndex
     CS.selectedRotationAssistantEntry = nil
+    CS.resourcesEntrySelected = false
+    CS.castFramesEntrySelected = false
+    CS.unifiedBarKind = nil
     CS.addingToPanelId = nil
     ClearConfigFinderText({ preservePrimarySelection = true })
     RestoreOtherClassLibraryForScope(selectedScope)
@@ -2975,6 +2978,9 @@ end
 local function SelectConfigResourcesEntry(opts)
     CooldownCompanion:ClearAllConfigPreviews()
     ResetOtherClassLibraryState()
+    -- An active finder query owns column 2; clear it so the home's list
+    -- renders instead of stale search results.
+    ClearConfigFinderText({ preservePrimarySelection = true })
     if opts and opts.toggle and CS.resourcesEntrySelected then
         CS.resourcesEntrySelected = false
     else
@@ -2998,6 +3004,7 @@ end
 local function SelectConfigCastFramesEntry(opts)
     CooldownCompanion:ClearAllConfigPreviews()
     ResetOtherClassLibraryState()
+    ClearConfigFinderText({ preservePrimarySelection = true })
     if opts and opts.toggle and CS.castFramesEntrySelected then
         CS.castFramesEntrySelected = false
     else

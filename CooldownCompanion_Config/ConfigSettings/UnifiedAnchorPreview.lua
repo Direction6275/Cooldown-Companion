@@ -33,6 +33,20 @@ local function ShouldUseUnifiedAnchorPreview(groupId)
         and groupId == CooldownCompanion:GetFirstAvailableAnchorGroup()) then
         return false
     end
+    -- The composition needs a renderable mirror to wrap: an empty panel's
+    -- mirror is a guidance message, which should keep the plain preview
+    -- rather than the bar lanes around a placeholder rect.
+    local group = CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups
+        and CooldownCompanion.db.profile.groups[groupId]
+    if not group then
+        return false
+    end
+    if group.displayMode ~= ST.DISPLAY_MODE_ROTATION_ASSISTANT
+        and #(group.buttons or {}) == 0 then
+        return false
+    end
     return ST._HasAttachedBarLanesToRender
         and ST._HasAttachedBarLanesToRender() == true
 end

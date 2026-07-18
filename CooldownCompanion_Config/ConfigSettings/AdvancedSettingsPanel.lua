@@ -59,6 +59,8 @@ local function BuildContext(extra)
         panelSettingsTab = CS.panelSettingsTab,
         resourcesEntrySelected = BoolValue(CS.resourcesEntrySelected),
         castFramesEntrySelected = BoolValue(CS.castFramesEntrySelected),
+        castFramesSelectedItem = CS.castFramesSelectedItem,
+        unifiedBarKind = CS.unifiedBarKind,
         resourcesSettingsTab = CS.resourcesSettingsTab,
         castBarHomeTab = CS.castBarHomeTab,
         customBarSettingsTab = CS.customBarSettingsTab,
