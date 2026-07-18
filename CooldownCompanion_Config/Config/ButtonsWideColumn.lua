@@ -18,15 +18,6 @@ local STRIP_ICON_SIZE = 20
 local STRIP_BADGE_SIZE = 18
 local STRIP_BADGE_GAP = 3
 
-local DISPLAY_MODE_LABELS = {
-    icons = "Icons",
-    bars = "Bars",
-    text = "Text",
-    textures = "Textures",
-    trigger = "Trigger",
-    [ST.DISPLAY_MODE_ROTATION_ASSISTANT] = "Rotation Assistant",
-}
-
 local function HideEntrySurfaces(col3)
     if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
     if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
@@ -335,10 +326,6 @@ local function UpdateIdentityStrip(col3)
             badgeStatus = ST._CollectEntryStatus and ST._CollectEntryStatus(buttonData, group)
         else
             name = group.name or "Panel"
-            local modeLabel = DISPLAY_MODE_LABELS[group.displayMode or "icons"]
-            if modeLabel then
-                name = name .. " |cff808080(" .. modeLabel .. ")|r"
-            end
         end
     end
 
