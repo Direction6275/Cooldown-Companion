@@ -760,6 +760,10 @@ local function RefreshButtonsPreviewMirror(groupId)
     local host = col3 and col3.buttonsPreviewHost
     if host and host:IsShown() and CS.selectedGroup and ST._BuildButtonPanelPreview then
         ST._BuildButtonPanelPreview(host, CS.selectedGroup)
+        -- The strip shares the mirror's data (custom name, status badges) -
+        -- keep it in step with every targeted rebuild. It handles its own
+        -- visibility, so no shown-state gate is needed.
+        UpdateIdentityStrip(col3)
     end
 end
 

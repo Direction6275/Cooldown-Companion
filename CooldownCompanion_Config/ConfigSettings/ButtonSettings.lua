@@ -328,6 +328,10 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
                 if ST._RefreshColumn2 then
                     ST._RefreshColumn2()
                 end
+                -- Sound status feeds the mirror slot and identity strip badges.
+                if ST._RefreshButtonsPreviewMirror then
+                    ST._RefreshButtonsPreviewMirror()
+                end
             end)
 
             if isAuraEvent then
