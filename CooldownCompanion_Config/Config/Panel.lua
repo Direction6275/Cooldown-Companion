@@ -944,6 +944,11 @@ local function CreateConfigPanel()
             CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
         end
         ClearTransientConfigPreviewState()
+        -- Release the panel-preview mirror: stops its conditional ticker
+        -- and disarms override targeting while the config is closed.
+        if ST._HideButtonsPanelPreviewSurfaces and CS.configFrame and CS.configFrame.col3 then
+            ST._HideButtonsPanelPreviewSurfaces(CS.configFrame.col3)
+        end
         if ClearConfigShiftTooltipHover then
             ClearConfigShiftTooltipHover()
         end

@@ -1014,10 +1014,7 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
     if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
     if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
-    if col3.buttonsPreviewHost then col3.buttonsPreviewHost:Hide() end
-    if col3.buttonsAddBox then col3.buttonsAddBox.frame:Hide() end
-    if col3.buttonsIdentityStrip then col3.buttonsIdentityStrip:Hide() end
-    if col3.buttonsSplitDivider then col3.buttonsSplitDivider:Hide() end
+    if ST._HideButtonsPanelPreviewSurfaces then ST._HideButtonsPanelPreviewSurfaces(col3) end
 
     -- Recompute column layout (2-column mode)
     configFrame.LayoutColumns()

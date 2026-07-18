@@ -94,10 +94,7 @@ local function RefreshColumn3()
         if col3._customBarsScroll then col3._customBarsScroll.frame:Hide() end
         if col3._resourcesIntroPane then col3._resourcesIntroPane:Hide() end
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
-        if col3.buttonsPreviewHost then col3.buttonsPreviewHost:Hide() end
-        if col3.buttonsAddBox then col3.buttonsAddBox.frame:Hide() end
-        if col3.buttonsIdentityStrip then col3.buttonsIdentityStrip:Hide() end
-        if col3.buttonsSplitDivider then col3.buttonsSplitDivider:Hide() end
+        if ST._HideButtonsPanelPreviewSurfaces then ST._HideButtonsPanelPreviewSurfaces(col3) end
 
         local settings = CooldownCompanion:GetFrameAnchoringSettings()
         if not (settings and settings.enabled) then
@@ -167,10 +164,7 @@ local function RefreshColumn3()
         if col3._panelTabGroup then col3._panelTabGroup.frame:Hide() end
         if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
-        if col3.buttonsPreviewHost then col3.buttonsPreviewHost:Hide() end
-        if col3.buttonsAddBox then col3.buttonsAddBox.frame:Hide() end
-        if col3.buttonsIdentityStrip then col3.buttonsIdentityStrip:Hide() end
-        if col3.buttonsSplitDivider then col3.buttonsSplitDivider:Hide() end
+        if ST._HideButtonsPanelPreviewSurfaces then ST._HideButtonsPanelPreviewSurfaces(col3) end
 
         if col3._customAuraTabGroup then
             col3._customAuraTabGroup.frame:Hide()

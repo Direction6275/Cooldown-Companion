@@ -700,3 +700,9 @@ end
 ST._RefreshButtonsWideColumn = RefreshButtonsWideColumn
 ST._AnchorButtonsContentFrame = AnchorButtonsContentFrame
 ST._RefreshButtonsPreviewMirror = RefreshButtonsPreviewMirror
+-- Shared teardown for view switches away from the buttons view (resources,
+-- cast frames, talent picker, config close): hides the preview surfaces AND
+-- releases the preview so its conditional ticker stops and override
+-- targeting disarms. Transient same-view hides must NOT use this - the
+-- following rebuild pass re-shows the preview and targeting should survive.
+ST._HideButtonsPanelPreviewSurfaces = HidePanelPreview
