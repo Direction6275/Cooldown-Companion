@@ -81,6 +81,25 @@ local function ComputePreviewHostHeight(col3)
     return math.min(desired, maxHeight)
 end
 
+-- Re-apply the persisted split against the CURRENT column height and
+-- overhead. Called from LayoutColumns (which runs on every window resize)
+-- and as the refresh pass's final step — the preview builds before the add
+-- box and identity strip settle their visibility, so the first computation
+-- can run against stale overhead.
+local function ReapplyPanelPreviewSplit()
+    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return end
+    local col3 = CS.configFrame and CS.configFrame.col3
+    local host = col3 and col3.buttonsPreviewHost
+    if not (host and host:IsShown() and CS.selectedGroup) then return end
+    if (col3.content:GetHeight() or 0) <= 0 then return end
+    local newHeight = ComputePreviewHostHeight(col3)
+    if math.abs((host:GetHeight() or 0) - newHeight) < 0.5 then return end
+    host:SetHeight(newHeight)
+    if ST._BuildButtonPanelPreview then
+        ST._BuildButtonPanelPreview(host, CS.selectedGroup)
+    end
+end
+
 -- Draggable divider between the preview region (preview + add box + strip)
 -- and the settings surfaces: drag to rebalance the split, double-click to
 -- reset to the default. The fraction persists per profile.
@@ -693,6 +712,9 @@ local function RefreshButtonsWideColumn()
         UpdatePanelPreview(col3)
         UpdateAddBox(col3)
         UpdateIdentityStrip(col3)
+        -- Final height pass: the add box and strip just settled their
+        -- visibility, which feeds the settings-minimum clamp.
+        ReapplyPanelPreviewSplit()
         if col3.bsTabGroup then
             AnchorButtonsContentFrame(col3, col3.bsTabGroup.frame)
         end
@@ -714,6 +736,8 @@ local function RefreshButtonsWideColumn()
     UpdatePanelPreview(col3)
     UpdateAddBox(col3)
     UpdateIdentityStrip(col3)
+    -- Final height pass (see the entry branch above).
+    ReapplyPanelPreviewSplit()
 
     local host = col3.groupSettingsHost
     if not host then
@@ -723,24 +747,6 @@ local function RefreshButtonsWideColumn()
     AnchorButtonsContentFrame(col3, host)
     host:Show()
     ST._RefreshGroupSettingsHost(host)
-end
-
--- Re-apply the persisted split against the CURRENT column height. Called
--- from LayoutColumns (which runs on every window resize) so resizing can
--- neither strand a stale preview height nor squeeze the settings region
--- below its minimum.
-local function ReapplyPanelPreviewSplit()
-    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return end
-    local col3 = CS.configFrame and CS.configFrame.col3
-    local host = col3 and col3.buttonsPreviewHost
-    if not (host and host:IsShown() and CS.selectedGroup) then return end
-    if (col3.content:GetHeight() or 0) <= 0 then return end
-    local newHeight = ComputePreviewHostHeight(col3)
-    if math.abs((host:GetHeight() or 0) - newHeight) < 0.5 then return end
-    host:SetHeight(newHeight)
-    if ST._BuildButtonPanelPreview then
-        ST._BuildButtonPanelPreview(host, CS.selectedGroup)
-    end
 end
 
 -- Rebuild just the pinned mirror (e.g. after a preview toggle flips, or
