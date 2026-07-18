@@ -65,8 +65,8 @@ local function EnsurePreviewDivider(col3)
     line:SetPoint("RIGHT", divider, "RIGHT", 0, 0)
 
     local grip = divider:CreateTexture(nil, "OVERLAY")
-    grip:SetColorTexture(1, 1, 1, 0.25)
-    grip:SetSize(32, 3)
+    grip:SetColorTexture(1, 1, 1, 0.2)
+    grip:SetSize(24, 2)
     grip:SetPoint("CENTER")
     divider._grip = grip
 
@@ -74,7 +74,7 @@ local function EnsurePreviewDivider(col3)
         if hot then
             grip:SetColorTexture(1, 0.82, 0, 0.7)
         else
-            grip:SetColorTexture(1, 1, 1, 0.25)
+            grip:SetColorTexture(1, 1, 1, 0.2)
         end
     end
 
@@ -426,11 +426,8 @@ local function EnsureIdentityStrip(col3)
     strip.tag = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
     strip.tag:SetTextColor(0.5, 0.5, 0.5)
 
-    local divider = strip:CreateTexture(nil, "ARTWORK")
-    divider:SetColorTexture(1, 1, 1, 0.08)
-    divider:SetHeight(1)
-    divider:SetPoint("BOTTOMLEFT", strip, "BOTTOMLEFT", 0, 0)
-    divider:SetPoint("BOTTOMRIGHT", strip, "BOTTOMRIGHT", 0, 0)
+    -- No bottom separator line: the split divider always renders directly
+    -- beneath the strip and carries the single separator line.
 
     strip.badges = {}
     col3.buttonsIdentityStrip = strip
