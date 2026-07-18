@@ -389,7 +389,7 @@ local function EnsureTargetingBanner(preview)
 
     -- Esc cancels. SetPropagateKeyboardInput is combat-restricted
     -- (10.1.5), so keyboard capture only runs out of combat; in combat
-    -- the badge, right-click, and the X still cancel.
+    -- the badge and right-click still cancel.
     banner:SetScript("OnKeyDown", function(self, key)
         if InCombatLockdown() then return end
         if key == "ESCAPE" then
