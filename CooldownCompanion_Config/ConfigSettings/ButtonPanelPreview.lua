@@ -809,7 +809,9 @@ local function GetPanelGeometry(group, isBarMode, isTextMode)
                     and CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
                 local fmt = buttonData.textFormat or effectiveStyle.textFormat
                 w = math_max(w, effectiveStyle.textWidth or 200)
-                h = math_max(h, GetEffectiveTextHeight(effectiveStyle, fmt))
+                -- Parenthesized: GetEffectiveTextHeight returns a second
+                -- (boolean) value that must not reach math_max.
+                h = math_max(h, (GetEffectiveTextHeight(effectiveStyle, fmt)))
             end
         end
     elseif isBarMode then
