@@ -24,7 +24,6 @@ local AnchorBarCountText = ST._AnchorBarCountText
 local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
-local DEFAULT_BAR_AURA_COLOR = ST._DEFAULT_BAR_AURA_COLOR
 local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
 
 -- Imports from VisualState
@@ -34,7 +33,6 @@ local AreButtonVisualStateSnapshotsEnabled = ST._AreButtonVisualStateSnapshotsEn
 -- Pre-defined color constant tables to avoid per-tick allocation.
 -- IMPORTANT: These tables are read-only — never write to their indices.
 local DEFAULT_WHITE = {1, 1, 1, 1}
-local DEFAULT_AURA_TEXT_COLOR = {0, 0.925, 1, 1}
 local DEFAULT_BAR_COLOR = {0.2, 0.6, 1.0, 1.0}
 local DEFAULT_READY_TEXT_COLOR = {0.2, 1.0, 0.2, 1.0}
 
@@ -130,43 +128,6 @@ local function StoreBarDisplayVisualState(button, details)
     applied.gcdSuppressed = button._barGCDSuppressed == true
 end
 
-local function ResolveConditionalPreviewRemaining(button)
-    local previewRemaining = button._conditionalPreviewRemaining
-    local previewDuration = button._conditionalPreviewDuration
-    if not (previewRemaining and previewDuration) then
-        return previewRemaining, previewDuration
-    end
-
-    if button._conditionalPreviewLoop
-        and button._conditionalPreviewLoopStartTime
-        and button._conditionalPreviewLoopDuration
-    then
-        local loopDuration = button._conditionalPreviewLoopDuration
-        if loopDuration > 0 then
-            local now = GetTime()
-            local elapsed = now - button._conditionalPreviewLoopStartTime
-            if elapsed < 0 then
-                elapsed = 0
-            end
-            local cycleElapsed = elapsed % loopDuration
-            previewRemaining = loopDuration - cycleElapsed
-            if previewRemaining > previewDuration then
-                previewRemaining = previewDuration
-            end
-            button._conditionalPreviewRemaining = previewRemaining
-            button._conditionalPreviewStartTime = now - (previewDuration - previewRemaining)
-        end
-        return previewRemaining, previewDuration
-    end
-
-    if button._conditionalPreviewStartTime then
-        previewRemaining = previewDuration - (GetTime() - button._conditionalPreviewStartTime)
-        if previewRemaining < 0 then previewRemaining = 0 end
-        button._conditionalPreviewRemaining = previewRemaining
-    end
-    return previewRemaining, previewDuration
-end
-
 -- Manual text helpers unbind native duration text before writing fallback text.
 local function SetBarTimeText(button, text)
     UnbindDurationText(button.timeText)
@@ -184,26 +145,8 @@ local function UpdateBarFill(button)
     -- Items use stored C_Item.GetItemCooldown values (_itemCdStart/_itemCdDuration).
     local onCooldown = false
     local itemRemaining = 0
-    local previewRemaining, previewDuration = ResolveConditionalPreviewRemaining(button)
 
-    if previewRemaining and previewRemaining > 0 and not button._barGCDSuppressed then
-        onCooldown = true
-        SetStatusBarSmoothRange(button.statusBar, 0, 1)
-        previewDuration = previewDuration or previewRemaining
-        if previewDuration <= 0 then
-            previewDuration = previewRemaining
-        end
-        local frac
-        -- Aura previews drain (1->0) like the live kit bar; cooldowns fill.
-        if button._conditionalPreviewDomain == "aura" or button._conditionalPreviewDomain == "aura_text" then
-            frac = previewRemaining / previewDuration
-        else
-            frac = 1 - (previewRemaining / previewDuration)
-        end
-        if frac < 0 then frac = 0 end
-        if frac > 1 then frac = 1 end
-        SetStatusBarSmoothValue(button.statusBar, frac)
-    elseif button._durationObj and not button._barGCDSuppressed then
+    if button._durationObj and not button._barGCDSuppressed then
         onCooldown = true
         SetStatusBarSmoothRange(button.statusBar, 0, 1)
         if not SetStatusBarElapsedDuration(button.statusBar, button._durationObj) then
@@ -233,43 +176,25 @@ local function UpdateBarFill(button)
     end
 
     if onCooldown then
-        -- The aura drain preview keeps the aura text styling so the config
-        -- preview matches the live kit text; everything else is cooldown text.
-        local auraPreview = button._conditionalPreviewDomain == "aura"
-        local showTimeText = (auraPreview and button.style.showAuraText ~= false)
-            or (not auraPreview and button.style.showCooldownText)
-        if showTimeText then
+        if button.style.showCooldownText then
             -- Switch font/color when mode changes
-            local mode = auraPreview and "aura" or "cd"
-            if button._barTextMode ~= mode then
-                button._barTextMode = mode
+            if button._barTextMode ~= "cd" then
+                button._barTextMode = "cd"
                 button._barTextColorDirty = true
-                if auraPreview then
-                    local f = CooldownCompanion:FetchFont(button.style.auraTextFont or "Friz Quadrata TT")
-                    local s = button.style.auraTextFontSize or 12
-                    local o = ST.GetEffectiveFontOutline(button.style.auraTextFontOutline or "OUTLINE")
-                    button.timeText:SetFont(f, s, o)
-                    ST.ApplyFontShadowForOutline(button.timeText, o)
-                else
-                    local f = CooldownCompanion:FetchFont(button.style.cooldownFont or "Friz Quadrata TT")
-                    local s = button.style.cooldownFontSize or 12
-                    local o = ST.GetEffectiveFontOutline(button.style.cooldownFontOutline or "OUTLINE")
-                    button.timeText:SetFont(f, s, o)
-                    ST.ApplyFontShadowForOutline(button.timeText, o)
-                end
+                local f = CooldownCompanion:FetchFont(button.style.cooldownFont or "Friz Quadrata TT")
+                local s = button.style.cooldownFontSize or 12
+                local o = ST.GetEffectiveFontOutline(button.style.cooldownFontOutline or "OUTLINE")
+                button.timeText:SetFont(f, s, o)
+                ST.ApplyFontShadowForOutline(button.timeText, o)
             end
             if button._barTextColorDirty then
                 button._barTextColorDirty = nil
-                local cc = auraPreview
-                    and (button.style.auraTextFontColor or DEFAULT_AURA_TEXT_COLOR)
-                    or (button.style.cooldownFontColor or DEFAULT_WHITE)
+                local cc = button.style.cooldownFontColor or DEFAULT_WHITE
                 button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             end
             -- Eligible DurationObjects use native text binding; other timer sources stay on the manual path.
             local durationStyle = button.style
-            if previewRemaining and previewRemaining > 0 then
-                SetBarTimeText(button, FormatTime(previewRemaining, durationStyle))
-            elseif button._durationObj then
+            if button._durationObj then
                 button._lastBarTimeText = nil
                 BindDurationText(button.timeText, button._durationObj, durationStyle)
             else
@@ -354,12 +279,6 @@ local function UpdateBarDisplay(button)
         and button._resolvedItemQuantityKind == "stacks"
     local isChargeButton = UsesChargeBehavior(button.buttonData)
     local chargeState = button._chargeState
-    -- Bar aura timer preview (config-side): the CC fill drains in the aura
-    -- color. The live aura bar is the Blizzard-driven slot kit; this preview
-    -- never touches the slot subtree. The Active Aura Indicator preview
-    -- drives the same simulation (Preview.lua starts the aura_duration_bar
-    -- conditional preview alongside its flag).
-    local auraPreview = button._conditionalPreviewDomain == "aura"
     local onCooldown
     if itemUsesResolvedCooldownState then
         onCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
@@ -371,7 +290,7 @@ local function UpdateBarDisplay(button)
     end
 
     -- Time text color: switch between cooldown and ready colors
-    local wantReadyTextColor = not onCooldown and not auraPreview and style.showBarReadyText
+    local wantReadyTextColor = not onCooldown and style.showBarReadyText
     if button._barReadyTextColor ~= wantReadyTextColor then
         button._barReadyTextColor = wantReadyTextColor
         if wantReadyTextColor then
@@ -410,108 +329,14 @@ local function UpdateBarDisplay(button)
     -- Loss of control overlay on bar icon
     UpdateLossOfControl(button)
 
-    -- Bar aura timer preview color: drain in barAuraColor while the config
-    -- preview runs, restore the normal color the moment it clears.
-    local wantAuraColor
-    if auraPreview then
-        wantAuraColor = style.barAuraColor or DEFAULT_BAR_AURA_COLOR
-    end
-    if button._barAuraColor ~= wantAuraColor then
-        button._barAuraColor = wantAuraColor
-        if not wantAuraColor then
-            -- Reset to normal color immediately (don't wait for next tick)
-            button._barCdColor = nil
-            local resetColor
-            if onCooldown then
-                if isChargeButton and chargeState == CHARGE_STATE_MISSING then
-                    resetColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
-                else
-                    resetColor = style.barCooldownColor
-                end
-            end
-            local c = resetColor or style.barColor or DEFAULT_BAR_COLOR
-            button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-        end
-    end
-    -- Active Aura Indicator fill-effect preview: the live pulse/color-shift
-    -- render on the slot kit fill, which only exists while a real aura runs,
-    -- so the preview replicates them on the CC fill texture. While shifting,
-    -- the fill color goes white so the VertexColor animation owns the full
-    -- color range (kit trick); the aura-color reset path above restores the
-    -- normal color when the preview clears.
-    local wantPulse, wantShift = false, false
-    if auraPreview and button._barAuraEffectPreview == true
-        and ST.IsBarAuraIndicatorEnabled(style) then
-        wantPulse = style.barAuraPulseEnabled == true
-        wantShift = style.barAuraColorShiftEnabled == true
-    end
-    local pulseKey = wantPulse and (style.barAuraPulseSpeed or 0.5) or false
-    local shiftKey = false
-    if wantShift then
-        local base = style.barAuraColor or DEFAULT_BAR_AURA_COLOR
-        local shift = style.barAuraColorShiftColor or DEFAULT_WHITE
-        shiftKey = (style.barAuraColorShiftSpeed or 0.5)
-            .. ST.FormatColorKey(base) .. ST.FormatColorKey(shift)
-    end
-    if button._barFillFxPulse ~= pulseKey or button._barFillFxShift ~= shiftKey then
-        button._barFillFxPulse = pulseKey
-        button._barFillFxShift = shiftKey
-        local fillTex = button.statusBar:GetStatusBarTexture()
-        if button._barFillFxPulseAG then button._barFillFxPulseAG:Stop() end
-        if button._barFillFxCsAG then button._barFillFxCsAG:Stop() end
-        if fillTex then
-            -- Clears residual shift tint; 4-arg SetVertexColor is the last
-            -- alpha write on this region (Phase 2 gotcha).
-            fillTex:SetVertexColor(1, 1, 1, 1)
-            if pulseKey then
-                if not button._barFillFxPulseAG then
-                    local ag = fillTex:CreateAnimationGroup()
-                    ag:SetLooping("BOUNCE")
-                    local anim = ag:CreateAnimation("Alpha")
-                    anim:SetFromAlpha(1.0)
-                    anim:SetToAlpha(0.3)
-                    button._barFillFxPulseAG = ag
-                    button._barFillFxPulseAnim = anim
-                end
-                button._barFillFxPulseAnim:SetDuration(pulseKey)
-                button._barFillFxPulseAG:Play()
-            end
-            if shiftKey then
-                if not button._barFillFxCsAG then
-                    local ag = fillTex:CreateAnimationGroup()
-                    ag:SetLooping("BOUNCE")
-                    button._barFillFxCsAG = ag
-                    button._barFillFxCsAnim = ag:CreateAnimation("VertexColor")
-                end
-                local base = style.barAuraColor or DEFAULT_BAR_AURA_COLOR
-                local shift = style.barAuraColorShiftColor or DEFAULT_WHITE
-                button._barFillFxCsAnim:SetStartColor(CreateColor(base[1], base[2], base[3], base[4] or 1))
-                button._barFillFxCsAnim:SetEndColor(CreateColor(shift[1], shift[2], shift[3], shift[4] or 1))
-                button._barFillFxCsAnim:SetDuration(style.barAuraColorShiftSpeed or 0.5)
-                button._barFillFxCsAG:Play()
-            end
-        end
-    end
-
-    if wantAuraColor then
-        if wantShift then
-            -- White base while the shift animation owns the color.
-            button.statusBar:SetStatusBarColor(1, 1, 1, wantAuraColor[4] or 1)
-        else
-            button.statusBar:SetStatusBarColor(wantAuraColor[1], wantAuraColor[2], wantAuraColor[3], wantAuraColor[4])
-        end
-    end
-
     if shouldStoreBarVisualState then
-        local colorReason = (wantAuraColor and "aura")
-            or cdColorReason
-            or "ready"
+        local colorReason = cdColorReason or "ready"
         StoreBarDisplayVisualState(button, {
             domain = colorReason,
             onCooldown = onCooldown,
             chargeState = chargeState,
             colorReason = colorReason,
-            color = wantAuraColor or wantCdColor or style.barColor or DEFAULT_BAR_COLOR,
+            color = wantCdColor or style.barColor or DEFAULT_BAR_COLOR,
         })
     end
 
@@ -542,17 +367,8 @@ local function IsAuraShellEntry(buttonData)
         and buttonData.hideWhileAuraNotActive == true
 end
 
--- Aura config previews render on the CC bar itself — the exact regions a
--- show-only-while-active shell hides — so the shell exposes while one runs.
--- Restored by the preview clear path (Preview.lua) and every restyle.
-local function IsAuraPreviewExposingShell(button)
-    local preview = button._conditionalVisualPreview
-    local kind = preview and preview.kind
-    return kind == "aura_duration_bar" or kind == "aura_stack_text"
-end
-
 local function ApplyBarAuraShellVisuals(button, buttonData)
-    local alpha = (IsAuraShellEntry(buttonData) and not IsAuraPreviewExposingShell(button)) and 0 or 1
+    local alpha = IsAuraShellEntry(buttonData) and 0 or 1
     button.bg:SetAlpha(alpha)
     if button.iconBg then button.iconBg:SetAlpha(alpha) end
     -- The icon must be hidden by shown-state, not alpha: the per-tick tint
@@ -964,7 +780,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._chargeRecharging = nil
     button._chargesSpent = nil
     button._barReadyTextColor = nil
-    button._barAuraColor = nil
     button.statusBar:SetAlpha(1.0)
 
     if isVertical then
