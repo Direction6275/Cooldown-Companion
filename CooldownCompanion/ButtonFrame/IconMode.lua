@@ -106,10 +106,6 @@ local function ShouldEnrollKeyPressHighlightButton(button)
         return false
     end
 
-    if button._keyPressHighlightPreview then
-        return true
-    end
-
     local style = button.style
     if not (style and style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none") then
         return false
@@ -127,10 +123,6 @@ local function ShouldEnrollKeyPressHighlightButton(button)
 end
 
 local function ShouldShowKeyPressHighlight(button, inCombat)
-    if button._keyPressHighlightPreview then
-        return true, inCombat
-    end
-
     local style = button.style
     if style and style.keyPressHighlightCombatOnly then
         if inCombat == nil then
@@ -551,11 +543,6 @@ end
 -- preview clear path (Preview.lua) and every restyle. Mirrors BarMode's
 -- IsAuraPreviewExposingShell.
 local function IsAuraPreviewExposingShell(button)
-    if button._auraGlowPreview == true then
-        -- The aura-glow preview renders through the CC-side glow container,
-        -- whose shell alpha this helper stamps — expose it too.
-        return true
-    end
     local preview = button._conditionalVisualPreview
     local kind = preview and preview.kind
     return kind == "aura_duration_text"
@@ -1419,10 +1406,8 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     if button.keyPressHighlight then
         button.keyPressHighlight.solidFrame:SetAllPoints()
         ApplyEdgePositions(button.keyPressHighlight.solidTextures, button, button.style.keyPressHighlightSize or 5)
-        -- Only reset the glow if not in preview mode; force cache re-evaluation on next frame
-        if not button._keyPressHighlightPreview then
-            SetKeyPressHighlight(button, false)
-        end
+        -- Reset the glow; force cache re-evaluation on next frame
+        SetKeyPressHighlight(button, false)
         button._keyPressHighlightActive = nil
         RefreshKeyPressHighlightEnrollment(button)
     end
