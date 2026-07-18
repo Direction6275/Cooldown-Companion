@@ -474,11 +474,12 @@ end
 -- Async adds (uncached item IDs) complete after the add box's Enter
 -- handler already returned false; the loader calls this on success so the
 -- persistent box doesn't keep the added item's text armed for a duplicate
--- Enter. The text guard skips the clear if the user has typed since.
+-- Enter. The text guard skips the clear if the user has typed since; a
+-- hidden box still clears (its text would otherwise re-arm on re-show).
 local function ClearWideAddBoxAfterAdd(originalInput)
     local col3 = CS.configFrame and CS.configFrame.col3
     local addBox = col3 and col3.buttonsAddBox
-    if not (addBox and addBox.frame:IsShown()) then return end
+    if not addBox then return end
     if originalInput and addBox:GetText() ~= originalInput then return end
     addBox:SetText("")
     if addBox._cdcInstructions then
