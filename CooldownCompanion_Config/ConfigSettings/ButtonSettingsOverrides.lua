@@ -362,13 +362,6 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
     end
 
     if not buttonData.overrideSections or not next(buttonData.overrideSections) then
-        if displayMode ~= "text" then
-            local noOverridesLabel = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(noOverridesLabel)
-            noOverridesLabel:SetText("|cff888888No appearance overrides are set for this entry yet. Add one below, or use the |A:Crosshair_VehichleCursor_32:0:0|a badge next to a panel-level setting.|r")
-            noOverridesLabel:SetFullWidth(true)
-            scroll:AddChild(noOverridesLabel)
-        end
         AddOverridePicker(scroll, buttonData, group, displayMode)
         return
     end
