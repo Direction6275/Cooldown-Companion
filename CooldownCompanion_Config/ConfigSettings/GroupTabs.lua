@@ -2391,11 +2391,11 @@ local function BuildReadyGlowSection(container, group, style, setWidth)
     end
 end
 
-local function BuildKeyPressHighlightSection(container, group, style)
+local function BuildKeyPressHighlightSection(container, group, style, setWidth)
     local kphEnableCb = AceGUI:Create("CheckBox")
     kphEnableCb:SetLabel("Show Key Press Highlight")
     kphEnableCb:SetValue(style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none")
-    kphEnableCb:SetFullWidth(true)
+    if setWidth then setWidth(kphEnableCb) else kphEnableCb:SetFullWidth(true) end
     kphEnableCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.keyPressHighlightStyle = val and "solid" or "none"
         UpdateSelectedGroupStyle(true)
@@ -2520,9 +2520,7 @@ local function BuildEffectsTab(container)
     BuildProcGlowSection(container, group, style, SetCompactWidth)
     BuildAuraGlowSection(container, group, style, SetCompactWidth)
     BuildReadyGlowSection(container, group, style, SetCompactWidth)
-    -- Key Press Highlight keeps full width: its label plus badge chain
-    -- overflows a half cell at minimum config width.
-    BuildKeyPressHighlightSection(container, group, style)
+    BuildKeyPressHighlightSection(container, group, style, SetCompactWidth)
 
     local assistedCb = AceGUI:Create("CheckBox")
     assistedCb:SetLabel("Show Assisted Highlight")
@@ -2689,15 +2687,14 @@ local function BuildEffectsTab(container)
     end
     AddConditionalPreviewBadge(swipeCb, swipePromoteBtn or swipeAdvBtn, "Preview Cooldown Swipe", "cooldown", style.showCooldownSwipe ~= false and not iconFillTimerActive)
 
-    -- Aura duration swipe (shown only while the group has an aura-tracking entry).
-    -- Full width: its label plus badge chain overflows a half cell at minimum
-    -- config width.
+    -- Aura duration swipe (shown only while the group has an aura-tracking entry)
     if GroupHasAuraTrackingEntry(group) then
         local auraDurationCb = BuildAuraDurationSwipeControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end, {
             showAdvancedControlsInline = false,
         })
+        SetCompactWidth(auraDurationCb)
         local function BuildAuraDurationSwipeAdvanced(panel)
             BuildAuraDurationSwipeAdvancedControls(panel, style, function()
                 CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -3297,13 +3294,11 @@ local function BuildAppearanceTab(container)
     local cdTextPromoteBtn = CreateCheckboxPromoteButton(cdTextCb, cdTextAdvBtn, "cooldownText", group, style)
     AddConditionalPreviewBadge(cdTextCb, cdTextPromoteBtn or cdTextAdvBtn, "Preview Cooldown Text", "cooldown", style.showCooldownText)
 
-    -- Show Charge Text toggle. Full width: its label plus badge chain
-    -- overflows a half cell at minimum config width (same for the aura
-    -- duration and keybind/custom text toggles below).
+    -- Show Charge Text toggle
     local chargeTextCb = AceGUI:Create("CheckBox")
     chargeTextCb:SetLabel("Show Count Text (Charges/Uses)")
     chargeTextCb:SetValue(style.showChargeText ~= false)
-    chargeTextCb:SetFullWidth(true)
+    SetCompactWidth(chargeTextCb)
     chargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showChargeText = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -3338,7 +3333,7 @@ local function BuildAppearanceTab(container)
         local auraTextCb = AceGUI:Create("CheckBox")
         auraTextCb:SetLabel("Show Aura Duration Text")
         auraTextCb:SetValue(style.showAuraText ~= false)
-        auraTextCb:SetFullWidth(true)
+        SetCompactWidth(auraTextCb)
         auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
             style.showAuraText = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -3418,7 +3413,7 @@ local function BuildAppearanceTab(container)
     local kbCb = AceGUI:Create("CheckBox")
     kbCb:SetLabel(KEYBIND_CUSTOM_LABEL)
     kbCb:SetValue(style.showKeybindText or false)
-    kbCb:SetFullWidth(true)
+    SetCompactWidth(kbCb)
     kbCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showKeybindText = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -3515,7 +3510,7 @@ local function BuildAppearanceTab(container)
     if not iconTintCollapsed then
         BuildIconTintControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { showAuraTint = groupHasAuraEntry, setWidth = SetCompactWidth })
+        end, { showAuraTint = groupHasAuraEntry })
         BuildBackgroundColorControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end)

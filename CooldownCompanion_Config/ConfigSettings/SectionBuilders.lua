@@ -556,16 +556,12 @@ local function BuildShowOutOfRangeControls(container, styleTable, refreshCallbac
 end
 
 local function BuildIconTintControls(container, styleTable, refreshCallback, opts)
-    -- opts.setWidth: width setter for the compact toggles (two-column hosts);
-    -- color pickers stay full width.
-    local setWidth = (opts and opts.setWidth) or function(w) w:SetFullWidth(true) end
-
     AddColorPicker(container, styleTable, "iconTintColor", "Base Icon Color", {1, 1, 1, 1}, true, refreshCallback, refreshCallback)
 
     local cdTintCb = AceGUI:Create("CheckBox")
     cdTintCb:SetLabel("Use Separate Cooldown Tint")
     cdTintCb:SetValue(styleTable.iconCooldownTintEnabled or false)
-    setWidth(cdTintCb)
+    cdTintCb:SetFullWidth(true)
     cdTintCb:SetCallback("OnValueChanged", function(w, e, val)
         styleTable.iconCooldownTintEnabled = val
         refreshCallback()
@@ -583,7 +579,7 @@ local function BuildIconTintControls(container, styleTable, refreshCallback, opt
         local auraTintCb = AceGUI:Create("CheckBox")
         auraTintCb:SetLabel("Use Separate Aura Tint")
         auraTintCb:SetValue(styleTable.iconAuraTintEnabled or false)
-        setWidth(auraTintCb)
+        auraTintCb:SetFullWidth(true)
         auraTintCb:SetCallback("OnValueChanged", function(w, e, val)
             styleTable.iconAuraTintEnabled = val
             refreshCallback()
