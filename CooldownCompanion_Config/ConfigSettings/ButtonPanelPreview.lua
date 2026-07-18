@@ -27,6 +27,7 @@ local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local PerformButtonReorder = ST._PerformButtonReorder
 local StartDragTracking = ST._StartDragTracking
 local CancelDrag = ST._CancelDrag
+local GetEffectiveTextHeight = ST._GetEffectiveTextHeight
 
 local PANEL_PREVIEW_PADDING = 12
 local PANEL_PREVIEW_DISABLED_ALPHA = 0.45
@@ -58,8 +59,8 @@ local function EnsurePreviewState(host)
 
     preview = {
         buildId = 1,
-        pools = { iconSlots = {}, barSlots = {} },
-        used = { iconSlots = 0, barSlots = 0 },
+        pools = { iconSlots = {}, barSlots = {}, textSlots = {} },
+        used = { iconSlots = 0, barSlots = 0, textSlots = 0 },
     }
     host._cdcPanelPreview = preview
 
@@ -90,6 +91,7 @@ local function FinalizePreviewState(preview)
             local frame = pool[index]
             frame:Hide()
             frame:ClearAllPoints()
+            frame:SetScript("OnMouseDown", nil)
             frame:SetScript("OnMouseUp", nil)
             frame:SetScript("OnEnter", nil)
             frame:SetScript("OnLeave", nil)
@@ -178,9 +180,28 @@ local function CreateBarSlot(parent)
     return frame
 end
 
+-- Text-mode slot: static twin of TextMode.lua CreateTextFrame (bg,
+-- borders, single FontString; no cooldown/count runtime pieces).
+local function CreateTextSlot(parent)
+    local frame = CreateFrame("Button", nil, parent)
+    frame:SetClipsChildren(false)
+
+    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
+    frame.bg:SetAllPoints()
+    frame.textString = frame:CreateFontString(nil, "OVERLAY")
+    frame.borderTextures = {}
+    for i = 1, 4 do
+        frame.borderTextures[i] = frame:CreateTexture(nil, "OVERLAY")
+    end
+
+    AttachSlotHighlights(frame)
+    return frame
+end
+
 local SLOT_FACTORIES = {
     iconSlots = CreateIconSlot,
     barSlots = CreateBarSlot,
+    textSlots = CreateTextSlot,
 }
 
 local function AcquireSlot(preview, parent, poolName)
@@ -772,10 +793,26 @@ end
 
 -- Entry footprint and grid settings mirrored from GroupFrame.lua
 -- (GetButtonDimensions + ApplyActiveButtonLayout).
-local function GetPanelGeometry(group, isBarMode)
+local function GetPanelGeometry(group, isBarMode, isTextMode)
     local style = group.style or {}
     local w, h
-    if isBarMode then
+    if isTextMode then
+        -- Mirror of GroupFrame's text-mode sizing: widest entry width and
+        -- tallest effective format height win (the config mirror measures
+        -- every entry, not just currently usable ones).
+        w = style.textWidth or 200
+        h = style.textHeight or 20
+        if GetEffectiveTextHeight then
+            h = GetEffectiveTextHeight(style, style.textFormat)
+            for _, buttonData in ipairs(group.buttons or {}) do
+                local effectiveStyle = CooldownCompanion.GetEffectiveStyle
+                    and CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+                local fmt = buttonData.textFormat or effectiveStyle.textFormat
+                w = math_max(w, effectiveStyle.textWidth or 200)
+                h = math_max(h, GetEffectiveTextHeight(effectiveStyle, fmt))
+            end
+        end
+    elseif isBarMode then
         w, h = style.barLength or 180, style.barHeight or 20
         if style.barFillVertical then w, h = h, w end
     elseif style.maintainAspectRatio then
@@ -809,6 +846,76 @@ local function StyleIconEntry(slot, buttonData, group)
     StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
 end
 
+-- Static mirror of TextMode.lua CreateTextFrame: same saved settings,
+-- entry name in place of the live token-substituted format string.
+local function StyleTextEntry(slot, buttonData, group)
+    local style = group.style or {}
+    if CooldownCompanion.GetEffectiveStyle then
+        style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+    end
+
+    local bgColor = style.textBgColor or { 0, 0, 0, 0 }
+    slot.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+
+    local borderSize = style.textBorderSize or 0
+    local borderRenderMode = ST.GetBorderRenderMode(style, "textBorderRenderMode")
+    local borderColor = style.textBorderColor or { 0, 0, 0, 1 }
+    for i = 1, 4 do
+        slot.borderTextures[i]:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+    end
+    ApplyBorderEdgePositions(slot.borderTextures, slot, borderSize, borderRenderMode)
+
+    local ts = slot.textString
+    local font = CooldownCompanion:FetchFont(style.textFont or "Friz Quadrata TT")
+    local fontSize = style.textFontSize or 12
+    local fontOutline = ST.GetEffectiveFontOutline(style.textFontOutline or "OUTLINE")
+    ts:SetFont(font, fontSize, fontOutline)
+    local baseColor = style.textFontColor or { 1, 1, 1, 1 }
+    ts:SetTextColor(baseColor[1], baseColor[2], baseColor[3], baseColor[4] or 1)
+    ts:SetJustifyH(style.textAlignment or "LEFT")
+    ST.ApplyFontShadowForOutline(ts, fontOutline, style.textShadow == true)
+    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(slot, borderSize, borderRenderMode)
+    local inset = ((borderSize > 0
+        or ST.IsEffectiveCrispBorderRenderMode(borderRenderMode, nil, borderSize)) and borderLayoutSize or 0) + 2
+    ts:ClearAllPoints()
+    ts:SetPoint("TOPLEFT", inset, -1)
+    ts:SetPoint("BOTTOMRIGHT", -inset, 1)
+    ts:SetText(buttonData.customName or buttonData.name or GetConfigEntryDisplayName(buttonData) or "")
+end
+
+-- Mirror of GroupFrame's ApplyTextGroupHeader, drawn on the content frame.
+local function UpdateTextGroupHeader(preview, group, style, headerHeight)
+    local header = preview.textHeader
+    if headerHeight <= 0 then
+        if header then header:Hide() end
+        return
+    end
+    if not header then
+        header = preview.content:CreateFontString(nil, "OVERLAY")
+        header:SetJustifyV("TOP")
+        preview.textHeader = header
+    end
+    local font = CooldownCompanion:FetchFont(style.textFont or "Friz Quadrata TT")
+    local fontSize = style.textHeaderFontSize or style.textFontSize or 12
+    local fontOutline = ST.GetEffectiveFontOutline(style.textFontOutline or "OUTLINE")
+    header:SetFont(font, fontSize, fontOutline)
+    local hdrColor = style.textHeaderFontColor or { 1, 1, 1, 1 }
+    header:SetTextColor(hdrColor[1], hdrColor[2], hdrColor[3], hdrColor[4] or 1)
+    ST.ApplyFontShadowForOutline(header, fontOutline, style.textShadow == true)
+    local align = style.textAlignment or "LEFT"
+    header:SetJustifyH(align)
+    header:SetText(group.name or "")
+    header:ClearAllPoints()
+    local growthOrigin = style.growthOrigin or "TOPLEFT"
+    local vEdge = (growthOrigin == "BOTTOMLEFT" or growthOrigin == "BOTTOMRIGHT") and "BOTTOM" or "TOP"
+    local anchor = align == "RIGHT" and (vEdge .. "RIGHT") or align == "CENTER" and vEdge or (vEdge .. "LEFT")
+    local xOff = (align == "CENTER") and 0 or (align == "RIGHT") and -2 or 2
+    local yOff = vEdge == "BOTTOM" and 1 or -1
+    header:SetPoint(anchor, preview.content, anchor, xOff, yOff)
+    header:SetWidth(math_max(1, (preview.content:GetWidth() or 0) - 4))
+    header:Show()
+end
+
 local function GetHostFitScale(host, contentWidth, contentHeight)
     local hostWidth = host:GetWidth() or 0
     local hostHeight = host:GetHeight() or 0
@@ -819,8 +926,8 @@ local function GetHostFitScale(host, contentWidth, contentHeight)
     return math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
 end
 
--- Fallback for panel types with no meaningful geometric mirror (text,
--- trigger, texture, and rotation-assistant panels): a flat strip of
+-- Fallback for panel types with no meaningful geometric mirror (trigger,
+-- texture, and rotation-assistant panels): a flat strip of
 -- clickable entry icons with the same selection, badges, tooltips, and
 -- context-menu behavior as the mirrored slots.
 local STRIP_ICON_SIZE = 36
@@ -1064,6 +1171,9 @@ function ST._BuildButtonPanelPreview(host, panelId)
     if preview.gapFrame then
         preview.gapFrame:Hide()
     end
+    if preview.textHeader then
+        preview.textHeader:Hide()
+    end
     ResetPreviewState(preview)
     HidePreviewMessage(preview)
     preview.content:Hide()
@@ -1076,7 +1186,8 @@ function ST._BuildButtonPanelPreview(host, panelId)
     end
 
     local isBarMode = group.displayMode == "bars"
-    if not isBarMode and not IsIconModePanel(group) then
+    local isTextMode = group.displayMode == "text"
+    if not isBarMode and not isTextMode and not IsIconModePanel(group) then
         return BuildSelectionStrip(preview, host, panelId, group)
     end
 
@@ -1088,11 +1199,19 @@ function ST._BuildButtonPanelPreview(host, panelId)
         return
     end
 
-    local geo = GetPanelGeometry(group, isBarMode)
+    local geo = GetPanelGeometry(group, isBarMode, isTextMode)
     local w, h = geo.entryWidth, geo.entryHeight
     local spacing = geo.spacing
     local perRow = math_max(1, geo.buttonsPerRow)
-    local xMul, yMul, growthAnchor = GetGrowthMultipliers((group.style or {}).growthOrigin)
+    local style = group.style or {}
+    local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
+
+    -- Text-mode group header claims a row of space above (or below, for
+    -- bottom growth) the entries, exactly like the live layout.
+    local headerHeight = 0
+    if isTextMode and style.showTextGroupHeader == true then
+        headerHeight = (style.textHeaderFontSize or style.textFontSize or 12) + 4
+    end
 
     local cols, rows
     if geo.orientation == "horizontal" then
@@ -1103,7 +1222,7 @@ function ST._BuildButtonPanelPreview(host, panelId)
         cols = math_ceil(count / perRow)
     end
     local contentWidth = (cols - 1) * (w + spacing) + w
-    local contentHeight = (rows - 1) * (h + spacing) + h
+    local contentHeight = (rows - 1) * (h + spacing) + h + headerHeight
 
     -- Scale is needed while styling (badges counter-scale against it), so
     -- compute it up front from the grid extents.
@@ -1112,9 +1231,10 @@ function ST._BuildButtonPanelPreview(host, panelId)
     local content = preview.content
     content:SetSize(contentWidth, contentHeight)
     content:Show()
+    UpdateTextGroupHeader(preview, group, style, headerHeight)
 
-    local poolName = isBarMode and "barSlots" or "iconSlots"
-    local styleFn = isBarMode and StyleBarEntry or StyleIconEntry
+    local poolName = isBarMode and "barSlots" or (isTextMode and "textSlots" or "iconSlots")
+    local styleFn = isBarMode and StyleBarEntry or (isTextMode and StyleTextEntry or StyleIconEntry)
 
     local layoutDrag = CreatePreviewLayoutDrag(preview, panelId)
     layoutDrag.count = count
@@ -1130,7 +1250,7 @@ function ST._BuildButtonPanelPreview(host, panelId)
             col = math_floor((d - 1) / perRow)
             row = (d - 1) % perRow
         end
-        return xMul * col * (w + spacing), yMul * row * (h + spacing)
+        return xMul * col * (w + spacing), yMul * (row * (h + spacing) + headerHeight)
     end
     preview.layoutDrag = layoutDrag
     local dragModel = (count >= 2) and layoutDrag or nil
@@ -1144,7 +1264,9 @@ function ST._BuildButtonPanelPreview(host, panelId)
 
         styleFn(slot, buttonData, group)
         local status = CollectEntryStatus(buttonData, group)
-        slot.icon:SetDesaturated(not status.usable)
+        if slot.icon then
+            slot.icon:SetDesaturated(not status.usable)
+        end
         if status.disabled then
             slot:SetAlpha(PANEL_PREVIEW_DISABLED_ALPHA)
         end
