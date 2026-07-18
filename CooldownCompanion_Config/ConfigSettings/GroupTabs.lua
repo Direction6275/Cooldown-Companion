@@ -1320,6 +1320,22 @@ local function BuildLayoutTab(container)
         return
     end
 
+    -- Two-column layout (icon panels only for now): Flow wraps half-width
+    -- compact widgets into side-by-side pairs; sliders, headings, and
+    -- decorated/complex rows stay full width. Other display modes keep the
+    -- List layout, where SetCompactWidth falls back to full width.
+    local twoColumn = group.displayMode == "icons"
+    if twoColumn then
+        container:SetLayout("Flow")
+    end
+    local function SetCompactWidth(widget)
+        if twoColumn then
+            widget:SetRelativeWidth(0.5)
+        else
+            widget:SetFullWidth(true)
+        end
+    end
+
     local isPanel = group.parentContainerId ~= nil
     local panelContainerFrame = isPanel and ("CooldownCompanionContainer" .. group.parentContainerId) or nil
     local currentAnchor = group.anchor.relativeTo
@@ -1389,7 +1405,7 @@ local function BuildLayoutTab(container)
         or { "group", "frame" }
     anchorTargetDrop:SetList(anchorTargetList, anchorTargetOrder)
     anchorTargetDrop:SetValue(targetMode)
-    anchorTargetDrop:SetFullWidth(true)
+    SetCompactWidth(anchorTargetDrop)
     anchorTargetDrop:SetCallback("OnValueChanged", function(widget, event, val)
         if val == targetMode then return end
         if val == "group" then
@@ -1485,7 +1501,7 @@ local function BuildLayoutTab(container)
         local panelAnchorDrop = AceGUI:Create("Dropdown")
         panelAnchorDrop:SetLabel("Anchor to Panel")
         CooldownCompanion:PopulatePanelAnchorTargetDropdown(panelAnchorDrop, CS.selectedGroup)
-        panelAnchorDrop:SetFullWidth(true)
+        SetCompactWidth(panelAnchorDrop)
         if currentAnchorGroupId then
             panelAnchorDrop:SetValue(tostring(currentAnchorGroupId))
         else
@@ -1513,7 +1529,7 @@ local function BuildLayoutTab(container)
             custom = "Custom Alpha",
         }, { "inherit", "custom" })
         panelAlphaDrop:SetValue(group.inheritPanelAlpha == false and "custom" or "inherit")
-        panelAlphaDrop:SetFullWidth(true)
+        SetCompactWidth(panelAlphaDrop)
         panelAlphaDrop:SetCallback("OnValueChanged", function(widget, event, val)
             if val == "custom" then
                 group.inheritPanelAlpha = false
@@ -1547,11 +1563,11 @@ local function BuildLayoutTab(container)
         end
     end
 
-    AddAnchorDropdown(container, group.anchor, "point", targetMode == "cursor" and "BOTTOMLEFT" or "CENTER", refreshGroupAnchor, targetMode == "cursor" and "Panel Point" or "Anchor Point")
+    SetCompactWidth(AddAnchorDropdown(container, group.anchor, "point", targetMode == "cursor" and "BOTTOMLEFT" or "CENTER", refreshGroupAnchor, targetMode == "cursor" and "Panel Point" or "Anchor Point"))
     if targetMode == "cursor" then
         group.anchor.relativePoint = "CENTER"
     else
-        AddAnchorDropdown(container, group.anchor, "relativePoint", "CENTER", refreshGroupAnchor, "Relative Point")
+        SetCompactWidth(AddAnchorDropdown(container, group.anchor, "relativePoint", "CENTER", refreshGroupAnchor, "Relative Point"))
     end
 
     -- X Offset
@@ -1654,7 +1670,7 @@ local function BuildLayoutTab(container)
         orientDrop:SetLabel("Orientation")
         orientDrop:SetList({ horizontal = "Horizontal", vertical = "Vertical" })
         orientDrop:SetValue(style.orientation or "horizontal")
-        orientDrop:SetFullWidth(true)
+        SetCompactWidth(orientDrop)
         orientDrop:SetCallback("OnValueChanged", function(widget, event, val)
             style.orientation = val
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
@@ -1678,7 +1694,7 @@ local function BuildLayoutTab(container)
         growthDrop:SetLabel("Growth Direction")
         growthDrop:SetList(labels, order)
         growthDrop:SetValue(style.growthOrigin or "TOPLEFT")
-        growthDrop:SetFullWidth(true)
+        SetCompactWidth(growthDrop)
         growthDrop:SetCallback("OnValueChanged", function(widget, event, val)
             style.growthOrigin = val
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
@@ -1709,7 +1725,7 @@ local function BuildLayoutTab(container)
         local anchorEligibleCheck = AceGUI:Create("CheckBox")
         anchorEligibleCheck:SetLabel("Include in Auto-Anchoring")
         anchorEligibleCheck:SetValue(group.anchorEligible ~= false)
-        anchorEligibleCheck:SetFullWidth(true)
+        SetCompactWidth(anchorEligibleCheck)
         anchorEligibleCheck:SetCallback("OnValueChanged", function(widget, event, val)
             if val then
                 group.anchorEligible = nil
@@ -1776,7 +1792,7 @@ local function BuildLayoutTab(container)
         frameStrataDrop:SetLabel("Frame Strata")
         frameStrataDrop:SetList(frameStrataLabels, frameStrataOrder)
         frameStrataDrop:SetValue(group.frameStrata or "MEDIUM")
-        frameStrataDrop:SetFullWidth(true)
+        SetCompactWidth(frameStrataDrop)
         frameStrataDrop:SetCallback("OnValueChanged", function(widget, event, val)
             group.frameStrata = (val ~= "MEDIUM") and val or nil
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
@@ -1800,7 +1816,7 @@ local function BuildLayoutTab(container)
     local strataToggle = AceGUI:Create("CheckBox")
     strataToggle:SetLabel("Custom Icon Strata")
     strataToggle:SetValue(customStrataEnabled)
-    strataToggle:SetFullWidth(true)
+    SetCompactWidth(strataToggle)
     strataToggle:SetCallback("OnValueChanged", function(widget, event, val)
         if not val then
             style.strataOrder = nil
@@ -1877,7 +1893,7 @@ local function BuildLayoutTab(container)
             drop:SetLabel(label)
             drop:SetList(BuildStrataList())
             drop:SetValue(CS.pendingStrataOrder[pos])
-            drop:SetFullWidth(true)
+            SetCompactWidth(drop)
             drop:SetCallback("OnValueChanged", function(widget, event, val)
                 for i = 1, ELEMENT_COUNT do
                     if i ~= pos and CS.pendingStrataOrder[i] == val then
