@@ -435,9 +435,7 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
     -- Determine which domain owns it this tick.
     local durationRemaining = nil
     local durationIsSecret = false
-    if button._conditionalPreviewRemaining and button._conditionalPreviewRemaining > 0 then
-        durationRemaining = button._conditionalPreviewRemaining
-    elseif button._durationObj then
+    if button._durationObj then
         local rem = button._durationObj:GetRemainingDuration()
         if button._durationObj:HasSecretValues() then
             -- F2 canary: secret remaining text is still a time-driven render,
