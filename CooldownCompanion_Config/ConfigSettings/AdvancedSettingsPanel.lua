@@ -155,7 +155,7 @@ local function GetAdvancedPanelWidth()
     local configFrame = CS.configFrame
     local narrowestWidth
 
-    for _, columnKey in ipairs({ "col1", "col2", "col3", "col4" }) do
+    for _, columnKey in ipairs({ "col1", "col2", "col3" }) do
         local column = configFrame and configFrame[columnKey]
         local frame = column and column.frame
         local visible = frame and (frame:IsVisible() or frame:IsShown())

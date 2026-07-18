@@ -1,9 +1,11 @@
 --[[
     CooldownCompanion - Config/ButtonsWideColumn
-    Wide column 3 for the plain buttons view: hosts the entry settings
-    surfaces (bsTabGroup, entry multi-select), the panel batch actions, and
-    the group-side settings surfaces (via GroupSettingsHost) in one column
-    spanning the col3+col4 region. Column 4 is hidden while this is active.
+    Wide column 3 for the plain buttons view and Other Class browsing:
+    hosts the entry settings surfaces (bsTabGroup, entry multi-select),
+    the panel batch actions, and the group-side settings surfaces (via
+    GroupSettingsHost) in one column spanning the old col3+col4 region.
+    Browsing skips the pinned preview cluster (panels render live in the
+    world).
 ]]
 
 local ADDON_NAME, ST = ...

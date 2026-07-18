@@ -1,6 +1,8 @@
 --[[
-    CooldownCompanion - Config/Column4
-    RefreshColumn4, RefreshProfileBar.
+    CooldownCompanion - Config/ProfileBar
+    RefreshProfileBar (the profile dropdown + action buttons above the
+    columns). Formerly Column4.lua; column 4 is gone - every view uses
+    the merged wide column 3.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -12,26 +14,6 @@ local AceGUI = LibStub("AceGUI-3.0")
 -- Imports from earlier Config/ files
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local ResetConfigSelection = ST._ResetConfigSelection
-local RefreshGroupSettingsHost = ST._RefreshGroupSettingsHost
-
-------------------------------------------------------------------------
--- COLUMN 4: Group / Panel Settings Column
-------------------------------------------------------------------------
-local function RefreshColumn4(container)
-    -- Wide col3 layouts (plain buttons view, Resources home, Cast Bar &
-    -- Unit Frames home): column 4 is hidden and the wide column 3 hosts
-    -- these surfaces instead (ButtonsWideColumn.lua /
-    -- ResourcesWideColumn.lua). Only Other Class browsing still reaches
-    -- this column.
-    if ST._IsWideCol3LayoutActive and ST._IsWideCol3LayoutActive() then
-        return
-    end
-
-    -- Group-side settings surfaces (multi-select placeholders, folder,
-    -- container, and single-panel tabs) live in GroupSettingsHost.lua;
-    -- their widgets are still stored on this container.
-    RefreshGroupSettingsHost(container)
-end
 
 local function RefreshProfileBar(bar)
     -- Release tracked AceGUI widgets
@@ -136,5 +118,4 @@ end
 ------------------------------------------------------------------------
 -- ST._ exports
 ------------------------------------------------------------------------
-ST._RefreshColumn4 = RefreshColumn4
 ST._RefreshProfileBar = RefreshProfileBar

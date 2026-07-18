@@ -105,8 +105,8 @@ local function ResolvePreviewSkin(host)
     local frames = {
         host,
         host and host:GetParent(),
-        CS.configFrame and CS.configFrame.col4 and CS.configFrame.col4.frame,
-        CS.configFrame and CS.configFrame.col4 and CS.configFrame.col4.content,
+        CS.configFrame and CS.configFrame.col3 and CS.configFrame.col3.frame,
+        CS.configFrame and CS.configFrame.col3 and CS.configFrame.col3.content,
     }
 
     local baseBg

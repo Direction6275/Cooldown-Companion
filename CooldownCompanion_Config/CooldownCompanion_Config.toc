@@ -38,7 +38,7 @@ Config\Column3.lua
 Config\GroupSettingsHost.lua
 Config\ButtonsWideColumn.lua
 Config\ResourcesWideColumn.lua
-Config\Column4.lua
+Config\ProfileBar.lua
 Config\PanelChangelogOverlay.lua
 Config\Panel.lua
 ConfigSettings\Helpers.lua

@@ -720,9 +720,6 @@ local function RebuildTutorialAnchors()
     if CS.configFrame and CS.configFrame.col3 and CS.configFrame.col3.frame then
         anchors.col3_area = CS.configFrame.col3.frame
     end
-    if CS.configFrame and CS.configFrame.col4 and CS.configFrame.col4.frame then
-        anchors.col4_area = CS.configFrame.col4.frame
-    end
 end
 
 local function StartFirstIconPanelTutorial(isReplay)

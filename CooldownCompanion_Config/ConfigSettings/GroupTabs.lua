@@ -1791,7 +1791,7 @@ local function BuildLayoutTab(container)
             CS.pendingStrataOrder = nil
             CS.InitPendingStrataOrder(CS.selectedGroup)
         end
-        local host = CS.groupSettingsActiveHost or CS.col4Container
+        local host = CS.groupSettingsActiveHost
         if host and host.tabGroup then
             host.tabGroup:SelectTab(CS.selectedTab)
         end

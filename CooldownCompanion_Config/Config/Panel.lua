@@ -17,7 +17,6 @@ local COLUMN_PADDING = ST._COLUMN_PADDING
 local RefreshColumn1 = ST._RefreshColumn1
 local RefreshColumn2 = ST._RefreshColumn2
 local RefreshColumn3 = ST._RefreshColumn3
-local RefreshColumn4 = ST._RefreshColumn4
 local RefreshProfileBar = ST._RefreshProfileBar
 local SetConfigPrimaryMode = ST._SetConfigPrimaryMode
 local UpdateCol2CursorPreview = ST._UpdateCol2CursorPreview
@@ -91,7 +90,7 @@ local function GetProfileWideSideWindowWidth()
     local configFrame = CS.configFrame
     local narrowestWidth
 
-    for _, columnKey in ipairs({ "col1", "col2", "col3", "col4" }) do
+    for _, columnKey in ipairs({ "col1", "col2", "col3" }) do
         local column = configFrame and configFrame[columnKey]
         local frame = column and column.frame
         local visible = frame and (frame:IsVisible() or frame:IsShown())
@@ -410,7 +409,10 @@ local function GetColumn3HeaderMode(selection)
     return "button"
 end
 
-local function GetColumn4HeaderMode(selection)
+-- Group-side titles (panel / folder / group): used for the wide column 3
+-- header during Other Class browsing, where it hosts both entry and
+-- group-side settings.
+local function GetGroupSideHeaderMode(selection)
     if selection.panelMultiCount >= 2 or selection.hasSelectedPanel then
         return "panel"
     end
@@ -420,8 +422,8 @@ local function GetColumn4HeaderMode(selection)
     return "group"
 end
 
-local function GetColumn4HeaderTitle(selection)
-    local mode = GetColumn4HeaderMode(selection)
+local function GetGroupSideHeaderTitle(selection)
+    local mode = GetGroupSideHeaderMode(selection)
     if mode == "panel" then
         local panelName = GetSelectedPanelHeaderName(selection)
         if panelName then
@@ -466,11 +468,13 @@ local function GetColumn3HeaderTitle(selection)
         -- the selection, so the header stays static instead of tracking it.
         return "Buttons"
     end
+    -- Other Class browsing: no identity strip, so name whatever the wide
+    -- column is showing - the selected entry or the group-side selection.
     local entryName = GetSelectedEntryHeaderName()
     if entryName then
         return "Entry: " .. entryName
     end
-    return "Button Settings"
+    return GetGroupSideHeaderTitle(selection)
 end
 
 local function ApplyConfigColumnTitles(frame)
@@ -491,7 +495,6 @@ local function ApplyConfigColumnTitles(frame)
 
     local selection = GetConfigSelectionSummary()
     frame.col3:SetTitle(GetColumn3HeaderTitle(selection))
-    frame.col4:SetTitle(GetColumn4HeaderTitle(selection))
 end
 
 local function SaveScrollState(widget)
@@ -1852,68 +1855,11 @@ local function CreateConfigPanel()
         GameTooltip:Hide()
     end)
 
-    -- Column 4: Group Settings (AceGUI InlineGroup)
-    local col4 = AceGUI:Create("InlineGroup")
-    col4:SetTitle("Group Settings")
-    col4:SetAutoAdjustHeight(false)
-    col4:SetLayout(MANUAL_COLUMN_LAYOUT)
-    col4.frame:SetParent(colParent)
-    col4.frame:Show()
-
-    -- Info button next to Column 4 title
-    local settingsInfoBtn = CreateFrame("Button", nil, col4.frame)
-    settingsInfoBtn:SetSize(16, 16)
-    settingsInfoBtn:SetPoint("LEFT", col4.titletext, "RIGHT", -2, 0)
-    local settingsInfoIcon = settingsInfoBtn:CreateTexture(nil, "OVERLAY")
-    settingsInfoIcon:SetSize(12, 12)
-    settingsInfoIcon:SetPoint("CENTER")
-    settingsInfoIcon:SetAtlas("QuestRepeatableTurnin")
-    settingsInfoBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        do
-            local selection = GetConfigSelectionSummary()
-            local mode = GetColumn4HeaderMode(selection)
-            if mode == "folder" then
-                GameTooltip:AddLine("Folder Settings")
-                GameTooltip:AddLine("The selected folder is configured here.", 1, 1, 1, true)
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Folder load conditions apply to all groups inside the folder.", 1, 1, 1, true)
-            elseif mode == "panel" then
-                GameTooltip:AddLine("Panel Settings")
-                if selection.panelMultiCount >= 2 then
-                    GameTooltip:AddLine("Select a single panel to configure it here.", 1, 1, 1, true)
-                else
-                    GameTooltip:AddLine("Select a panel header or any button inside it to configure that panel here.", 1, 1, 1, true)
-                end
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Panel settings apply to all buttons in that panel.", 1, 1, 1, true)
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("If you want to override a setting for this specific button, click the |A:Crosshair_VehichleCursor_32:14:14|a badge next to the associated panel level setting while this button is selected.", 1, 1, 1, true)
-            else
-                GameTooltip:AddLine("Group Settings")
-                if selection.groupMultiCount >= 2 then
-                    GameTooltip:AddLine("Select a single group to configure it here.", 1, 1, 1, true)
-                elseif selection.hasSelectedGroup then
-                    GameTooltip:AddLine("The selected group is configured here.", 1, 1, 1, true)
-                else
-                    GameTooltip:AddLine("Select a group to configure it here.", 1, 1, 1, true)
-                end
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Group settings apply to all panels in the group.", 1, 1, 1, true)
-            end
-        end
-        GameTooltip:Show()
-    end)
-    settingsInfoBtn:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-
     -- Store column header (?) buttons for lifecycle cleanup.
     wipe(CS.columnInfoButtons)
     CS.columnInfoButtons[1] = groupInfoBtn
     CS.columnInfoButtons[2] = infoBtn
     CS.columnInfoButtons[3] = bsInfoBtn
-    CS.columnInfoButtons[4] = settingsInfoBtn
 
     -- Static button bar at bottom of column 1 (New Group + New Folder + Resources)
     local btnBar = CreateFrame("Frame", nil, col1.content)
@@ -2133,9 +2079,6 @@ local function CreateConfigPanel()
         UpdatePanelDropScan()
     end)
 
-    -- Column 4 content area (use InlineGroup's content directly)
-    CS.col4Container = col4.content
-
     local function PositionPrimaryAxisUI()
         local contentCenterX = select(1, content:GetCenter())
         local col2Right = select(1, col2.frame:GetRight())
@@ -2202,7 +2145,7 @@ local function CreateConfigPanel()
         local groupReferenceWidth = oldRemaining - math.floor(oldRemaining / 2)
         local equalColWidth = math.min(groupReferenceWidth, math.floor(baseW / 4))
 
-        -- Talent picker mode: 2 wide columns (col1 + col3), col2/col4 hidden
+        -- Talent picker mode: 2 wide columns (col1 + col3), col2 hidden
         if CS.talentPickerMode then
             if CS.configFinderBox then
                 CS.configFinderBox.frame:Hide()
@@ -2227,19 +2170,12 @@ local function CreateConfigPanel()
         local usedWidth = (equalColWidth * 4) + (pad * 3)
         local leftoverWidth = math.max(0, w - usedWidth)
 
-        -- Wide col3 layouts: cols 1-2 stay normal, col3 widens across the
-        -- col4 region, col4 hides. Used by the plain buttons view (merged
-        -- settings column) and the Resources home (preview + settings).
-        local wideCol3 = ST._IsWideCol3LayoutActive
-            and ST._IsWideCol3LayoutActive()
-
+        -- 3-column layout everywhere: cols 1-2 stay narrow, col3 spans the
+        -- old col4 region too (buttons / Resources / Cast Bar & Unit Frames
+        -- homes and Other Class browsing all use the merged wide column).
         local col1Width = equalColWidth
         local col2Width = equalColWidth
-        local col3Width = equalColWidth
-        local col4Width = equalColWidth + leftoverWidth
-        if wideCol3 then
-            col3Width = (equalColWidth * 2) + pad + leftoverWidth
-        end
+        local col3Width = (equalColWidth * 2) + pad + leftoverWidth
         local finderAvailable = IsConfigFinderAvailable and IsConfigFinderAvailable()
 
         if CS.configFinderBox then
@@ -2274,11 +2210,6 @@ local function CreateConfigPanel()
         col3.frame:ClearAllPoints()
         col3.frame:SetPoint("TOPLEFT", col2.frame, "TOPRIGHT", pad, 0)
         col3.frame:SetSize(col3Width, h)
-
-        col4.frame:ClearAllPoints()
-        col4.frame:SetPoint("TOPLEFT", col3.frame, "TOPRIGHT", pad, 0)
-        col4.frame:SetSize(col4Width, h)
-        col4.frame:SetShown(not wideCol3)
 
         UpdateCompactConfigRows()
         PositionPrimaryAxisUI()
@@ -2318,7 +2249,6 @@ local function CreateConfigPanel()
     frame.col1 = col1
     frame.col2 = col2
     frame.col3 = col3
-    frame.col4 = col4
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
     frame.UpdateCompactConfigRows = UpdateCompactConfigRows
@@ -2381,7 +2311,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
         CS.configFrame.UpdateCompactConfigRows()
     end
     RefreshColumn3()
-    RefreshColumn4(CS.col4Container)
     ApplyConfigColumnTitles(CS.configFrame)
 
     -- Restore AceGUI scroll state.

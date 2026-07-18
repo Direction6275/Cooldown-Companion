@@ -986,7 +986,6 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     local col1 = configFrame.col1
     local col2 = configFrame.col2
     local col3 = configFrame.col3
-    local col4 = configFrame.col4
 
     -- Save titles
     savedCol1Title = col1.titletext:GetText()
@@ -998,9 +997,8 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     col3:SetTitle("Spec")
     configFrame:SetTitle("Pick Talent Conditions")
 
-    -- Hide col2 + col4
+    -- Hide col2
     col2.frame:Hide()
-    col4.frame:Hide()
 
     -- Hide col1 normal content
     CS.col1Scroll.frame:Hide()
@@ -1158,9 +1156,8 @@ HideTalentPicker = function()
         if savedCol3Title then configFrame.col3:SetTitle(savedCol3Title) end
         if savedPanelTitle then configFrame:SetTitle(savedPanelTitle) end
 
-        -- Show col2 + col4
+        -- Show col2
         configFrame.col2.frame:Show()
-        configFrame.col4.frame:Show()
 
         -- Restore column info buttons
         if CS.columnInfoButtons[1] then CS.columnInfoButtons[1]:Show() end
@@ -1170,7 +1167,7 @@ HideTalentPicker = function()
         CS.col1Scroll.frame:Show()
         CS.col1ButtonBar:Show()
 
-        -- Recompute layout (4-column mode) then refresh
+        -- Recompute layout (3-column mode) then refresh
         configFrame.LayoutColumns()
     end
 

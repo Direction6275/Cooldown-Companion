@@ -220,7 +220,8 @@ ST._configState = {
     col1ButtonBar = nil,
     col2Scroll = nil,
     col2ButtonBar = nil,
-    col4Container = nil,
+    -- Group-settings scroll inside the active group-side host (the name
+    -- predates the column 4 removal; the host lives in the wide column 3)
     col4Scroll = nil,
 
     -- AceGUI widget tracking for cleanup
@@ -2934,9 +2935,9 @@ local function SelectConfigResourcesEntry(opts)
     RefreshAlphaDriverForConfigSelection()
 end
 
--- The Cast Bar & Unit Frames home (title-cluster badge): cols 1-2 stay
--- groups/panels, col3 = Unit Frames, col4 = Cast Bar tabs beneath the
--- pinned Layout & Order preview pane.
+-- The Cast Bar & Unit Frames home (title-cluster badge): col2 lists the
+-- Cast Bar / Player Frame / Target Frame rows, the wide col3 shows the
+-- pinned Layout & Order preview above the selected row's settings.
 local function SelectConfigCastFramesEntry(opts)
     CooldownCompanion:ClearAllConfigPreviews()
     ResetOtherClassLibraryState()
