@@ -28,6 +28,8 @@ local PerformButtonReorder = ST._PerformButtonReorder
 local StartDragTracking = ST._StartDragTracking
 local CancelDrag = ST._CancelDrag
 local GetEffectiveTextHeight = ST._GetEffectiveTextHeight
+local CreateGlowContainer = ST._CreateGlowContainer
+local SetBarAuraEffect = ST._SetBarAuraEffect
 
 local PANEL_PREVIEW_PADDING = 12
 local PANEL_PREVIEW_DISABLED_ALPHA = 0.45
@@ -916,6 +918,78 @@ local function ApplyFakeCooldownSwipe(preview, slot, buttonData, group, panelId,
     cd:SetCooldown(preview.swipeCycleStart or GetTime(), PANEL_PREVIEW_SWIPE_PERIOD)
 end
 
+------------------------------------------------------------------------
+-- Effect previews on the mirror: while a preview toggle is active for an
+-- entry (or its whole panel), render the same glow the live buttons
+-- show, through the very same Glows.lua setters. Mirror slots carry
+-- their own glow containers and a `style` field - all the setters read.
+-- Parity rule: live glow previews only render where the live frames have
+-- containers (icons: proc/aura/ready/key-press; bars: bar aura effect;
+-- text: none).
+------------------------------------------------------------------------
+local EFFECT_PREVIEWS = {
+    { flag = "_procGlowPreview", containerKey = "procGlow", setter = ST._SetProcGlow },
+    { flag = "_auraGlowPreview", containerKey = "auraGlow", setter = ST._SetAuraGlow },
+    { flag = "_readyGlowPreview", containerKey = "readyGlow", setter = ST._SetReadyGlow },
+    { flag = "_keyPressHighlightPreview", containerKey = "keyPressHighlight",
+        setter = ST._SetKeyPressHighlight, withOverlay = true },
+}
+
+local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, isBarMode)
+    local style = group.style or {}
+    if CooldownCompanion.GetEffectiveStyle then
+        style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+    end
+    slot.style = style
+
+    local canQuery = CooldownCompanion.IsPreviewFlagActive ~= nil
+
+    if not isBarMode then
+        for _, def in ipairs(EFFECT_PREVIEWS) do
+            if def.setter then
+                local active = canQuery
+                    and CooldownCompanion:IsPreviewFlagActive(panelId, index, def.flag) or false
+                if active and not slot[def.containerKey] and CreateGlowContainer then
+                    slot[def.containerKey] = CreateGlowContainer(slot, 32, def.withOverlay)
+                end
+                if slot[def.containerKey] then
+                    def.setter(slot, active)
+                end
+            end
+        end
+        return
+    end
+
+    if SetBarAuraEffect then
+        -- Live parity (Preview.lua barAuraEffectOnToggle): nothing renders
+        -- while the bar aura indicator is disabled.
+        local active = canQuery
+            and CooldownCompanion:IsPreviewFlagActive(panelId, index, "_barAuraEffectPreview")
+            and ST.IsBarAuraIndicatorEnabled
+            and ST.IsBarAuraIndicatorEnabled(style) == true
+            or false
+        if active and not slot.barAuraEffect and CreateGlowContainer then
+            slot.barAuraEffect = CreateGlowContainer(slot, 32, false)
+        end
+        if slot.barAuraEffect then
+            SetBarAuraEffect(slot, active)
+        end
+    end
+end
+
+-- Strip slots recycle from the icon pool; a glow left by a grid render
+-- must not survive into a picker strip.
+local function ClearSlotEffectPreviews(slot)
+    for _, def in ipairs(EFFECT_PREVIEWS) do
+        if slot[def.containerKey] and def.setter then
+            def.setter(slot, false)
+        end
+    end
+    if slot.barAuraEffect and SetBarAuraEffect then
+        SetBarAuraEffect(slot, false)
+    end
+end
+
 local function StopFakeSwipeTicker(preview)
     if preview.swipeTicker then
         preview.swipeTicker:Cancel()
@@ -1087,13 +1161,14 @@ local function BuildSelectionStrip(preview, host, panelId, group)
 
         local buttonData = entryInfo.buttonData
         StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
-        -- Selection strips are pickers, not mirrors: no fake swipe here,
-        -- and recycled grid slots must not keep one running.
+        -- Selection strips are pickers, not mirrors: no fake swipe or
+        -- effect previews here, and recycled grid slots keep neither.
         if slot.cooldown then
             slot._cdcFakeSwipe = false
             slot.cooldown:Clear()
             slot.cooldown:Hide()
         end
+        ClearSlotEffectPreviews(slot)
 
         if entryInfo.isRotationAssistant then
             slot.icon:SetDesaturated(false)
@@ -1376,6 +1451,9 @@ function ST._BuildButtonPanelPreview(host, panelId)
         styleFn(slot, buttonData, group)
         if not isBarMode and not isTextMode then
             ApplyFakeCooldownSwipe(preview, slot, buttonData, group, panelId, index)
+        end
+        if not isTextMode then
+            ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, isBarMode)
         end
         local status = CollectEntryStatus(buttonData, group)
         if slot.icon then
