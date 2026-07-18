@@ -2741,6 +2741,13 @@ function CooldownCompanion:UpdateGroupLayout(groupId)
 end
 
 function CooldownCompanion:RefreshGroupFrame(groupId)
+    -- Layout-only controls route here without UpdateGroupStyle; the config
+    -- mirror renders saved settings, so notify it before the combat
+    -- deferral can return early. The helper self-gates on the wide view.
+    if ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror(groupId)
+    end
+
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
 
