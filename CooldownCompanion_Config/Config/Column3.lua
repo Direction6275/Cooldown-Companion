@@ -79,7 +79,9 @@ local function RefreshColumn3()
         return ST._RefreshButtonsWideColumn()
     end
 
-    -- Cast Bar & Unit Frames home: col3 = Unit Frames
+    -- Cast Bar & Unit Frames home: wide column (pinned Layout & Order
+    -- preview above the selected row's settings). Column 2 lists the Cast
+    -- Bar / Player Frame / Target Frame rows.
     if CS.castFramesEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
         if not col3 then return end
@@ -93,64 +95,11 @@ local function RefreshColumn3()
         if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
         if col3._customBarsScroll then col3._customBarsScroll.frame:Hide() end
         if col3._resourcesIntroPane then col3._resourcesIntroPane:Hide() end
+        if col3._unitFramesScroll then col3._unitFramesScroll.frame:Hide() end
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
         if ST._HideButtonsPanelPreviewSurfaces then ST._HideButtonsPanelPreviewSurfaces(col3) end
-        if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3) end
 
-        local settings = CooldownCompanion:GetFrameAnchoringSettings()
-        if not (settings and settings.enabled) then
-            if col3._unitFramesScroll then
-                col3._unitFramesScroll.frame:Hide()
-            end
-            ShowColumnIntroPane(col3, "_unitFramesIntroPane", {
-                title = "Unit Frames",
-                body = "Anchor your player and target unit frames to your panels.",
-                buttonText = "Enable Frame Anchoring",
-                sideInset = 24,
-                onEnable = function()
-                    local fa = CooldownCompanion:GetFrameAnchoringSettings()
-                    if not fa then
-                        return
-                    end
-                    fa.enabled = true
-                    CooldownCompanion:EvaluateFrameAnchoring()
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-            return
-        end
-        if col3._unitFramesIntroPane then
-            col3._unitFramesIntroPane:Hide()
-        end
-
-        if not col3._unitFramesScroll then
-            local scroll = AceGUI:Create("ScrollFrame")
-            scroll:SetLayout("List")
-            scroll.frame:SetParent(col3.content)
-            scroll.frame:ClearAllPoints()
-            scroll.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-            scroll.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
-            col3._unitFramesScroll = scroll
-        end
-
-        -- Preserve scroll position across value-change refreshes
-        local scroll = col3._unitFramesScroll
-        local state = scroll.status or scroll.localstatus
-        local savedOffset, savedScrollvalue
-        if state and state.offset and state.offset > 0 then
-            savedOffset, savedScrollvalue = state.offset, state.scrollvalue
-        end
-
-        scroll:ReleaseChildren()
-        scroll.frame:Show()
-        ST._BuildFrameAnchoringPlayerPanel(scroll)
-        ST._BuildFrameAnchoringTargetPanel(scroll)
-
-        if savedOffset and state then
-            state.offset = savedOffset
-            state.scrollvalue = savedScrollvalue
-        end
-        return
+        return ST._RefreshCastFramesWideColumn(col3)
     end
 
     -- Resources home: wide column (pinned Layout & Order preview above the

@@ -385,8 +385,15 @@ local function GetConfigSelectionSummary()
 end
 
 local function GetColumn3HeaderMode(selection)
+    -- Cast Bar & Unit Frames home: the wide column 3 shows the selected
+    -- column-2 row's settings.
     if CS.castFramesEntrySelected then
-        return "unit_frames"
+        if CS.castFramesSelectedItem == "player" then
+            return "player_frame"
+        elseif CS.castFramesSelectedItem == "target" then
+            return "target_frame"
+        end
+        return "cast_bar"
     end
     -- Resources home: the wide column 3 hosts the surfaces column 4 used
     -- to show, so it takes over column 4's header modes too.
@@ -416,9 +423,6 @@ local function GetColumn3HeaderMode(selection)
 end
 
 local function GetColumn4HeaderMode(selection)
-    if CS.castFramesEntrySelected then
-        return "cast_bar"
-    end
     if selection.panelMultiCount >= 2 or selection.hasSelectedPanel then
         return "panel"
     end
@@ -470,8 +474,12 @@ local function GetColumn3HeaderTitle(selection)
         return GetResourceSettingsColumnTitle()
     elseif mode == "custom_bar" then
         return "Custom Bar Settings"
-    elseif mode == "unit_frames" then
-        return "Unit Frames"
+    elseif mode == "cast_bar" then
+        return "Cast Bar"
+    elseif mode == "player_frame" then
+        return "Player Frame"
+    elseif mode == "target_frame" then
+        return "Target Frame"
     elseif mode == "panel_actions" then
         return "Panel Actions"
     end
@@ -495,6 +503,9 @@ local function ApplyConfigColumnTitles(frame)
         -- Resources home: column 2 hosts the Custom Bars & Resources list
         frame.col1:SetTitle("Groups")
         frame.col2:SetTitle(GetCustomBarsColumnTitle())
+    elseif CS.castFramesEntrySelected then
+        frame.col1:SetTitle("Groups")
+        frame.col2:SetTitle("Cast Bar & Unit Frames")
     else
         frame.col1:SetTitle("Groups")
         frame.col2:SetTitle("Panels")
@@ -1709,6 +1720,14 @@ local function CreateConfigPanel()
             GameTooltip:Show()
             return
         end
+        if CS.castFramesEntrySelected then
+            GameTooltip:AddLine("Cast Bar & Unit Frames")
+            GameTooltip:AddLine("Select the Cast Bar or a unit frame to configure it in the settings column.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
+            GameTooltip:Show()
+            return
+        end
         GameTooltip:AddLine("Panels")
         GameTooltip:AddLine("A panel controls dimensions, display mode, and layout for all entries inside it. Every entry needs a panel, even if it's just one.", 1, 1, 1, true)
         GameTooltip:AddLine("Select a panel to preview and edit its entries in the settings column.", 1, 1, 1, true)
@@ -1801,7 +1820,14 @@ local function CreateConfigPanel()
     bsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     bsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if CS.castFramesEntrySelected then
+        if CS.castFramesEntrySelected and CS.castFramesSelectedItem ~= "player" and CS.castFramesSelectedItem ~= "target" then
+            GameTooltip:AddLine("Cast Bar")
+            GameTooltip:AddLine("Skins the Blizzard cast bar and anchors it to a panel, or positions it anywhere on screen.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Use the preview pane to drag the attached cast bar around the mirrored icon panel.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
+        elseif CS.castFramesEntrySelected then
             GameTooltip:AddLine("Unit Frames")
             GameTooltip:AddLine("Anchors your player and target unit frames to your panels.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")

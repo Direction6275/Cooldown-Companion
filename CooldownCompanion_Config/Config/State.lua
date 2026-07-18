@@ -298,6 +298,9 @@ ST._configState = {
     customBarSpecExpandedId = nil,
     resourcesEntrySelected = false,
     castFramesEntrySelected = false,
+    -- Cast Bar & Unit Frames home: which column-2 row is selected
+    -- ("castbar" | "player" | "target")
+    castFramesSelectedItem = "castbar",
     resourcesSettingsTab = "general",
     groupPresetSelection = {
         icons = nil,
@@ -2998,14 +3001,17 @@ local function IsButtonsWideViewActive()
 end
 
 -- Views that use the wide col3 layout: column 3 spans the col4 region and
--- column 4 hides. True for the plain buttons view and the Resources home;
--- the talent picker replaces the columns with its own 2-column layout and
--- Other Class browsing keeps the 4-column split.
+-- column 4 hides. True for the plain buttons view, the Resources home, and
+-- the Cast Bar & Unit Frames home; the talent picker replaces the columns
+-- with its own 2-column layout and Other Class browsing keeps the 4-column
+-- split.
 local function IsWideCol3LayoutActive()
     if CS.talentPickerMode or CS.otherClassLibraryActive then
         return false
     end
-    return IsButtonsWideViewActive() or CS.resourcesEntrySelected
+    return IsButtonsWideViewActive()
+        or CS.resourcesEntrySelected
+        or CS.castFramesEntrySelected
 end
 
 local function ResetConfigSelection(full)

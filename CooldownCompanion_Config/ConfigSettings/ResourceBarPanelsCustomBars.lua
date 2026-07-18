@@ -26,17 +26,11 @@ local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 
 local function RefreshLayoutOrderPreview()
-    -- Resources home: the preview lives in the wide column 3.
-    if CS.resourcesEntrySelected then
-        if ST._RefreshResourcesLayoutPreview then
-            ST._RefreshResourcesLayoutPreview()
-        end
-        return
+    -- Both the Resources home and the Cast Bar & Unit Frames home pin the
+    -- preview in the wide column 3; the helper self-gates on view state.
+    if ST._RefreshResourcesLayoutPreview then
+        ST._RefreshResourcesLayoutPreview()
     end
-    if not (CS.castFramesEntrySelected and CS.col4Container and ST._RefreshColumn4) then
-        return
-    end
-    ST._RefreshColumn4(CS.col4Container)
 end
 
 local function BlockCustomBarExportForResourceBarConflict()

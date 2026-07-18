@@ -1,11 +1,13 @@
 --[[
     CooldownCompanion - Config/ResourcesWideColumn
-    Wide column 3 for the Resources home: the pinned Layout & Order
-    preview (sharing the split divider and persisted split fraction from
-    ButtonsWideColumn) above the resources settings surfaces relocated
-    from column 4 - the resources tab page, per-resource settings, the
-    Custom Bar detail tabs, and the Custom Bar multi-select. The Custom
-    Bars & Resources list lives in column 2 (Column2.lua).
+    Wide column 3 for the Resources home and the Cast Bar & Unit Frames
+    home: the pinned Layout & Order preview (sharing the split divider and
+    persisted split fraction from ButtonsWideColumn) above the settings
+    surfaces relocated from column 4 - the resources tab page, per-resource
+    settings, the Custom Bar detail tabs, the Custom Bar multi-select, and
+    the Cast Bar tabs - plus the player/target frame anchoring panels.
+    Column 2 hosts each home's list (Column2.lua): the Custom Bars &
+    Resources list, or the Cast Bar / Player Frame / Target Frame rows.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -128,6 +130,10 @@ local function HideResourcesWideSurfaces(col3)
     HideWidgetFrame(col3._resourceSettingsTabGroup)
     HideWidgetFrame(col3._customBarEntryTabGroup)
     HideWidgetFrame(col3._customBarsMultiSelectScroll)
+    HideWidgetFrame(col3._castBarHomeTabGroup)
+    HideWidgetFrame(col3._castFramesSettingsScroll)
+    if col3._castBarIntroPane then col3._castBarIntroPane:Hide() end
+    if col3._unitFramesIntroPane then col3._unitFramesIntroPane:Hide() end
     local host = col3._resourcesPreviewHost
     if host then
         if col3.buttonsSplitDivider and col3._cdcActiveWideHost == host then
@@ -201,7 +207,7 @@ end
 -- Targeted preview rebuild (value changes that only affect the layout
 -- preview), without a full config refresh.
 local function RefreshResourcesLayoutPreview()
-    if not CS.resourcesEntrySelected then return end
+    if not (CS.resourcesEntrySelected or CS.castFramesEntrySelected) then return end
     local col3 = CS.configFrame and CS.configFrame.col3
     local host = col3 and col3._resourcesPreviewHost
     if host and host:IsShown() and ST._BuildLayoutOrderPanel then
@@ -560,8 +566,195 @@ local function RefreshResourcesWideColumn(col3)
 end
 
 ------------------------------------------------------------------------
+-- Cast Bar & Unit Frames home
+------------------------------------------------------------------------
+
+-- Cast Bar settings tabs (moved from column 4), below the pinned preview.
+local function ShowCastBarSettings(col3)
+    if not col3._castBarHomeTabGroup then
+        local tabGroup = AceGUI:Create("TabGroup")
+        tabGroup:SetLayout("Fill")
+        tabGroup.frame:SetParent(col3.content)
+        tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+            CS.castBarHomeTab = tab
+            -- Clean up info buttons from the previous tab before recycling widgets
+            ClearInfoButtons(CS.tabInfoButtons)
+            widget:ReleaseChildren()
+            local scroll = AceGUI:Create("ScrollFrame")
+            scroll:SetLayout("List")
+            widget:AddChild(scroll)
+            col3._castBarHomeScroll = scroll
+            col3._castBarHomeScrollKey = "castbar:" .. tab
+            if tab == "general" then
+                ST._BuildCastBarAnchoringPanel(scroll)
+            elseif tab == "appearance" then
+                ST._BuildCastBarStylingPanel(scroll)
+            elseif tab == "layout" then
+                ST._BuildCastBarPositioningPanel(scroll)
+            end
+        end)
+        col3._castBarHomeTabGroup = tabGroup
+    end
+
+    local tabGroup = col3._castBarHomeTabGroup
+    ST._AnchorButtonsContentFrame(col3, tabGroup.frame)
+    tabGroup:SetTabs({
+        { value = "general", text = "General" },
+        { value = "appearance", text = "Appearance" },
+        { value = "layout", text = "Layout" },
+    })
+
+    local tab = CS.castBarHomeTab
+    if tab ~= "general" and tab ~= "appearance" and tab ~= "layout" then
+        tab = "general"
+    end
+    CS.castBarHomeTab = tab
+
+    -- Preserve scroll position across value-change refreshes
+    local savedOffset, savedScrollvalue
+    local currentScrollKey = "castbar:" .. tab
+    if col3._castBarHomeScroll and col3._castBarHomeScrollKey == currentScrollKey then
+        local state = col3._castBarHomeScroll.status or col3._castBarHomeScroll.localstatus
+        if state and state.offset and state.offset > 0 then
+            savedOffset = state.offset
+            savedScrollvalue = state.scrollvalue
+        end
+    end
+
+    tabGroup.frame:Show()
+    tabGroup:SelectTab(tab)
+
+    if savedOffset and col3._castBarHomeScroll then
+        local state = col3._castBarHomeScroll.status or col3._castBarHomeScroll.localstatus
+        if state then
+            state.offset = savedOffset
+            state.scrollvalue = savedScrollvalue
+        end
+    end
+end
+
+-- Player or target frame anchoring panel, below the pinned preview.
+local function ShowUnitFrameSettings(col3, item)
+    if not col3._castFramesSettingsScroll then
+        local scroll = AceGUI:Create("ScrollFrame")
+        scroll:SetLayout("List")
+        scroll.frame:SetParent(col3.content)
+        col3._castFramesSettingsScroll = scroll
+    end
+
+    local scroll = col3._castFramesSettingsScroll
+    ST._AnchorButtonsContentFrame(col3, scroll.frame)
+
+    -- Preserve scroll position across value-change refreshes on the same row
+    local savedOffset, savedScrollvalue
+    local currentScrollKey = "unitframe:" .. tostring(item)
+    if col3._castFramesSettingsScrollKey == currentScrollKey then
+        local state = scroll.status or scroll.localstatus
+        if state and state.offset and state.offset > 0 then
+            savedOffset = state.offset
+            savedScrollvalue = state.scrollvalue
+        end
+    end
+
+    scroll:ReleaseChildren()
+    scroll.frame:Show()
+    if item == "player" then
+        ST._BuildFrameAnchoringPlayerPanel(scroll)
+    else
+        ST._BuildFrameAnchoringTargetPanel(scroll)
+    end
+    col3._castFramesSettingsScrollKey = currentScrollKey
+
+    if savedOffset then
+        local state = scroll.status or scroll.localstatus
+        if state then
+            state.offset = savedOffset
+            state.scrollvalue = savedScrollvalue
+        end
+    end
+end
+
+-- Refresh for the Cast Bar & Unit Frames home: column 2's row selection
+-- (Cast Bar / Player Frame / Target Frame) decides what shows beneath the
+-- pinned preview. Disabled modules show their intro pane across the whole
+-- wide column instead.
+local function RefreshCastFramesWideColumn(col3)
+    -- Everything restarts hidden; the active surface re-shows below.
+    HideResourcesWideSurfaces(col3)
+
+    local item = CS.castFramesSelectedItem
+    if item ~= "castbar" and item ~= "player" and item ~= "target" then
+        item = "castbar"
+        CS.castFramesSelectedItem = item
+    end
+
+    local conflict = CooldownCompanion.GetCurrentResourceBarConflict
+        and CooldownCompanion:GetCurrentResourceBarConflict()
+
+    if item == "castbar" then
+        if conflict then
+            ShowResourcesConflictScroll(col3)
+            return
+        end
+        local settings = CooldownCompanion:GetCastBarSettings()
+        if not (settings and settings.enabled) then
+            ST._ShowColumnIntroPane(col3, "_castBarIntroPane", {
+                title = "Cast Bar",
+                body = "Skin the Blizzard cast bar and anchor it to a panel, or position it anywhere on screen.",
+                buttonText = "Enable Cast Bar",
+                onEnable = function()
+                    local cb = CooldownCompanion:GetCastBarSettings()
+                    if not cb then
+                        return
+                    end
+                    cb.enabled = true
+                    CooldownCompanion:EvaluateCastBar()
+                    CooldownCompanion:UpdateAnchorStacking()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+            return
+        end
+        UpdateResourcesPreviewHost(col3)
+        ShowCastBarSettings(col3)
+    else
+        local fa = CooldownCompanion:GetFrameAnchoringSettings()
+        if not (fa and fa.enabled) then
+            ST._ShowColumnIntroPane(col3, "_unitFramesIntroPane", {
+                title = "Unit Frames",
+                body = "Anchor your player and target unit frames to your panels.",
+                buttonText = "Enable Frame Anchoring",
+                onEnable = function()
+                    local settings = CooldownCompanion:GetFrameAnchoringSettings()
+                    if not settings then
+                        return
+                    end
+                    settings.enabled = true
+                    CooldownCompanion:EvaluateFrameAnchoring()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+            return
+        end
+        -- Unit frame settings were never gated behind the resource-bar
+        -- profile conflict; keep them reachable but skip the preview (it
+        -- renders resource/cast bars, which the conflict blocks).
+        if not conflict then
+            UpdateResourcesPreviewHost(col3)
+        end
+        ShowUnitFrameSettings(col3, item)
+    end
+
+    -- Final height pass (see RefreshResourcesWideColumn).
+    if ST._ReapplyPanelPreviewSplit then
+        ST._ReapplyPanelPreviewSplit()
+    end
+end
+
+------------------------------------------------------------------------
 -- ST._ exports
 ------------------------------------------------------------------------
 ST._RefreshResourcesWideColumn = RefreshResourcesWideColumn
+ST._RefreshCastFramesWideColumn = RefreshCastFramesWideColumn
 ST._HideResourcesWideSurfaces = HideResourcesWideSurfaces
 ST._RefreshResourcesLayoutPreview = RefreshResourcesLayoutPreview

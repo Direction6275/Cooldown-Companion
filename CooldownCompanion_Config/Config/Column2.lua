@@ -1744,6 +1744,46 @@ local function RefreshColumn2()
         return
     end
 
+    -- Cast Bar & Unit Frames home: column 2 lists the three configurable
+    -- items; the selected row's settings show in the wide column 3.
+    if CS.castFramesEntrySelected then
+        if CS.col2ButtonBar then CS.col2ButtonBar:Hide() end
+        CS.col2Scroll.frame:SetPoint("BOTTOMRIGHT", CS.col2Scroll.frame:GetParent(), "BOTTOMRIGHT", 0, 0)
+
+        local selectedItem = CS.castFramesSelectedItem
+        if selectedItem ~= "castbar" and selectedItem ~= "player" and selectedItem ~= "target" then
+            selectedItem = "castbar"
+            CS.castFramesSelectedItem = selectedItem
+        end
+
+        local rows = {
+            { key = "castbar", label = "Cast Bar" },
+            { key = "player", label = "Player Frame" },
+            { key = "target", label = "Target Frame" },
+        }
+        for _, rowInfo in ipairs(rows) do
+            local row = AceGUI:Create("InteractiveLabel")
+            if CleanRecycledEntry then CleanRecycledEntry(row) end
+            row:SetText(rowInfo.label)
+            row:SetFullWidth(true)
+            row:SetFontObject(GameFontHighlight)
+            row:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+            if rowInfo.key == selectedItem then
+                row:SetColor(0.4, 0.7, 1.0)
+            else
+                row:SetColor(1, 1, 1)
+            end
+            row:SetCallback("OnClick", function()
+                if CS.castFramesSelectedItem ~= rowInfo.key then
+                    CS.castFramesSelectedItem = rowInfo.key
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end)
+            CS.col2Scroll:AddChild(row)
+        end
+        return
+    end
+
     -- In the wide buttons view column 2 lists panels only: entries live in
     -- the preview (other-class browsing keeps its rows - no preview there).
     local wideView = ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() or false
