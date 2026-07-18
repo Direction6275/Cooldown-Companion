@@ -14,7 +14,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 local PREVIEW_GAP = 4
 local ADD_BOX_HEIGHT = 26
 local STRIP_HEIGHT = 30
-local STRIP_ICON_SIZE = 22
+local STRIP_ICON_SIZE = 20
 local STRIP_BADGE_SIZE = 18
 local STRIP_BADGE_GAP = 3
 
@@ -271,10 +271,6 @@ local function EnsureIdentityStrip(col3)
     strip = CreateFrame("Frame", nil, col3.content)
     strip:SetHeight(STRIP_HEIGHT)
 
-    strip.icon = strip:CreateTexture(nil, "ARTWORK")
-    strip.icon:SetSize(STRIP_ICON_SIZE, STRIP_ICON_SIZE)
-    strip.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
     strip.name = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
     strip.name:SetJustifyH("CENTER")
     strip.name:SetWordWrap(false)
@@ -360,11 +356,11 @@ local function UpdateIdentityStrip(col3)
     end
     strip = EnsureIdentityStrip(col3)
 
+    -- Inline the entry icon so it centers (and truncates) with the name;
+    -- the crop matches the 0.08 tex-coord inset used on icon slots.
     if icon then
-        strip.icon:SetTexture(icon)
-        strip.icon:Show()
-    else
-        strip.icon:Hide()
+        name = "|T" .. icon .. ":" .. STRIP_ICON_SIZE .. ":" .. STRIP_ICON_SIZE
+            .. ":0:0:64:64:5:59:5:59|t " .. name
     end
 
     local shown = 0
@@ -394,13 +390,7 @@ local function UpdateIdentityStrip(col3)
 
     strip.name:SetText(name)
     strip.name:ClearAllPoints()
-    if icon then
-        strip.icon:ClearAllPoints()
-        strip.icon:SetPoint("LEFT", strip, "LEFT", 2, 0)
-        strip.name:SetPoint("LEFT", strip.icon, "RIGHT", 8, 0)
-    else
-        strip.name:SetPoint("LEFT", strip, "LEFT", 2, 0)
-    end
+    strip.name:SetPoint("LEFT", strip, "LEFT", 2, 0)
     if rightAnchor then
         strip.name:SetPoint("RIGHT", rightAnchor, "LEFT", -8, 0)
     else
