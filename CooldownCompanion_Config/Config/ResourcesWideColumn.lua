@@ -132,6 +132,7 @@ local function HideResourcesWideSurfaces(col3)
     HideWidgetFrame(col3._customBarsMultiSelectScroll)
     HideWidgetFrame(col3._castBarHomeTabGroup)
     HideWidgetFrame(col3._castFramesSettingsScroll)
+    if col3._resourcesIntroPane then col3._resourcesIntroPane:Hide() end
     if col3._castBarIntroPane then col3._castBarIntroPane:Hide() end
     if col3._unitFramesIntroPane then col3._unitFramesIntroPane:Hide() end
     local host = col3._resourcesPreviewHost

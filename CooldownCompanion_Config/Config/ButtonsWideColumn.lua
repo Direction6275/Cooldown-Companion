@@ -707,10 +707,6 @@ local function RefreshButtonsWideColumn()
     if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
     col3._customAuraSubScroll = nil
     if col3._customAuraScroll then col3._customAuraScroll.frame:Hide() end
-    if col3._customBarsScroll then col3._customBarsScroll.frame:Hide() end
-    if col3._resourcesIntroPane then col3._resourcesIntroPane:Hide() end
-    if col3._unitFramesScroll then col3._unitFramesScroll.frame:Hide() end
-    if col3._unitFramesIntroPane then col3._unitFramesIntroPane:Hide() end
     if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3) end
 
     -- Panel multi-select: batch operations replace everything else

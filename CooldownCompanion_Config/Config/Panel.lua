@@ -281,18 +281,6 @@ end
 
 local GetClassColoredText = ST._GetClassColoredText
 
-local function GetLayoutOrderColumnTitle()
-    local specIdx = C_SpecializationInfo.GetSpecialization()
-    if not specIdx then
-        return "Layout & Order"
-    end
-    local _, specName = C_SpecializationInfo.GetSpecializationInfo(specIdx)
-    if not specName or specName == "" then
-        return "Layout & Order"
-    end
-    return "Layout & Order: " .. GetClassColoredText(specName)
-end
-
 local function GetCustomBarsColumnTitle()
     return "Custom Bars & Resources"
 end
@@ -434,17 +422,7 @@ end
 
 local function GetColumn4HeaderTitle(selection)
     local mode = GetColumn4HeaderMode(selection)
-    if mode == "layout_order" then
-        return GetLayoutOrderColumnTitle()
-    elseif mode == "cast_bar" then
-        return "Cast Bar"
-    elseif mode == "resources_panel" then
-        return "Resource Bars"
-    elseif mode == "resource_settings" then
-        return GetResourceSettingsColumnTitle()
-    elseif mode == "custom_bar" then
-        return "Custom Bar Settings"
-    elseif mode == "panel" then
+    if mode == "panel" then
         local panelName = GetSelectedPanelHeaderName(selection)
         if panelName then
             return "Panel: " .. panelName
@@ -1892,30 +1870,7 @@ local function CreateConfigPanel()
     settingsInfoIcon:SetAtlas("QuestRepeatableTurnin")
     settingsInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if CS.castFramesEntrySelected then
-            GameTooltip:AddLine("Cast Bar")
-            GameTooltip:AddLine("Skins the Blizzard cast bar and anchors it to a panel, or positions it anywhere on screen.", 1, 1, 1, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Use the preview pane to drag the attached cast bar around the mirrored icon panel.", 1, 1, 1, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
-        elseif CS.resourcesEntrySelected and not CS.selectedResourcePowerType and not CS.selectedCustomBarId then
-            GameTooltip:AddLine("Resource Bars")
-            GameTooltip:AddLine("Shared resource bar settings, organized into tabs.", 1, 1, 1, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Use Layout & Order to drag attached bars around the mirrored icon panel. Layout is saved per specialization.", 1, 1, 1, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Select a resource or Custom Bar in column 3 for per-bar settings.", 1, 1, 1, true)
-        elseif CS.resourcesEntrySelected then
-            GameTooltip:AddLine("Layout & Order")
-                GameTooltip:AddLine("Arrange attached bars by dragging them around the mirrored icon panel.", 1, 1, 1)
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("This only applies when resource anchoring is using panel anchoring.", 1, 1, 1)
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Horizontal layouts drag bars above or below the icon row.\nVertical layouts drag bars to the left or right of the icon row.", 1, 1, 1)
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Layout is saved per specialization and swaps automatically.", 1, 1, 1)
-        else
+        do
             local selection = GetConfigSelectionSummary()
             local mode = GetColumn4HeaderMode(selection)
             if mode == "folder" then
@@ -2399,22 +2354,12 @@ function CooldownCompanion:_configRefreshPanelImpl()
         ClearConfigShiftTooltipHover()
     end
 
-    -- Save AceGUI scroll state before any column rebuilds.
-    local function getCustomAuraScrollKey()
-        if not CS.resourcesEntrySelected then return nil end
-        local selectedId = tostring(CS.selectedCustomBarId or "layout")
-        return selectedId .. ":" .. tostring(CS.customBarSettingsTab or "appearance")
-    end
-    local function getCustomAuraScrollWidget(col3)
-        if not col3 then return nil end
-        return col3._customBarsScroll or col3._customAuraSubScroll or col3._customAuraScroll
-    end
-
+    -- Save AceGUI scroll state before any column rebuilds. (The relocated
+    -- resources/cast settings surfaces preserve their own scroll positions
+    -- inside ResourcesWideColumn.lua; the moved Custom Bars list rides the
+    -- col2 save below.)
     local saved1   = SaveScrollState(CS.col1Scroll)
     local saved2   = SaveScrollState(CS.col2Scroll)
-    local col3Before = CS.configFrame and CS.configFrame.col3
-    local savedCab = SaveScrollState(getCustomAuraScrollWidget(col3Before))
-    local savedCabKey = getCustomAuraScrollKey()
     local savedBtn = SaveScrollState(buttonSettingsScroll)
 
     if CS.configFrame.profileBar:IsShown() then
@@ -2442,16 +2387,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
     -- Restore AceGUI scroll state.
     RestoreScrollState(CS.col1Scroll, saved1)
     RestoreScrollState(CS.col2Scroll, saved2)
-    local col3After = CS.configFrame and CS.configFrame.col3
-    local customAuraAfter = getCustomAuraScrollWidget(col3After)
-    if customAuraAfter then
-        local currentCabKey = getCustomAuraScrollKey()
-        if savedCab and savedCabKey and currentCabKey and savedCabKey == currentCabKey then
-            RestoreScrollState(customAuraAfter, savedCab)
-        else
-            ClearScrollState(customAuraAfter)
-        end
-    end
     RestoreScrollState(buttonSettingsScroll, savedBtn)
 
     if RebuildTutorialAnchors then

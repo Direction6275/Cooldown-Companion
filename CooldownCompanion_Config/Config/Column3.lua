@@ -1,6 +1,8 @@
 --[[
     CooldownCompanion - Config/Column3
-    RefreshColumn3 (button settings / Custom Bars column).
+    RefreshColumn3: routes to the wide buttons column, the wide Resources
+    home, or the wide Cast Bar & Unit Frames home, and hosts the normal
+    button-settings path (Other Class browsing).
 ]]
 
 local ADDON_NAME, ST = ...
@@ -93,9 +95,6 @@ local function RefreshColumn3()
         if col3._panelTabGroup then col3._panelTabGroup.frame:Hide() end
         if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
         if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
-        if col3._customBarsScroll then col3._customBarsScroll.frame:Hide() end
-        if col3._resourcesIntroPane then col3._resourcesIntroPane:Hide() end
-        if col3._unitFramesScroll then col3._unitFramesScroll.frame:Hide() end
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
         if ST._HideButtonsPanelPreviewSurfaces then ST._HideButtonsPanelPreviewSurfaces(col3) end
 
@@ -121,9 +120,6 @@ local function RefreshColumn3()
         if col3._customAuraTabGroup then
             col3._customAuraTabGroup.frame:Hide()
         end
-        if col3._customBarsScroll then col3._customBarsScroll.frame:Hide() end
-        if col3._unitFramesScroll then col3._unitFramesScroll.frame:Hide() end
-        if col3._unitFramesIntroPane then col3._unitFramesIntroPane:Hide() end
 
         -- Disabled home: the single wide intro pane replaces the settings
         if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
@@ -132,9 +128,6 @@ local function RefreshColumn3()
             end
             ShowResourcesIntroPane(col3)
             return
-        end
-        if col3._resourcesIntroPane then
-            col3._resourcesIntroPane:Hide()
         end
 
         return ST._RefreshResourcesWideColumn(col3)
@@ -162,18 +155,6 @@ local function RefreshColumn3()
     end
     if col3Normal and col3Normal._customAuraScroll then
         col3Normal._customAuraScroll.frame:Hide()
-    end
-    if col3Normal and col3Normal._customBarsScroll then
-        col3Normal._customBarsScroll.frame:Hide()
-    end
-    if col3Normal and col3Normal._resourcesIntroPane then
-        col3Normal._resourcesIntroPane:Hide()
-    end
-    if col3Normal and col3Normal._unitFramesScroll then
-        col3Normal._unitFramesScroll.frame:Hide()
-    end
-    if col3Normal and col3Normal._unitFramesIntroPane then
-        col3Normal._unitFramesIntroPane:Hide()
     end
 
     -- Panel multi-select: batch operations in Column 3
