@@ -75,9 +75,17 @@ local function BuildFormatSummary(formatString)
     return parts
 end
 
+-- Two-column layout (same pattern as the icon/bar-panel tabs): the tab
+-- scroll flows half-width compact widgets into side-by-side pairs; sliders,
+-- color pickers, labels, and headings stay full width.
+local function SetCompactWidth(widget)
+    widget:SetRelativeWidth(0.5)
+end
+
 local function BuildTextAppearanceTab(container, group, style)
     local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
     local refreshFrame = function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end
+    container:SetLayout("Flow")
 
     -- ================================================================
     -- Text Settings (width, height, spacing)
@@ -120,12 +128,12 @@ local function BuildTextAppearanceTab(container, group, style)
         container:AddChild(spacingSlider)
     end
 
-    AddDurationFormatDropdown(container, style, refreshStyle)
+    SetCompactWidth(AddDurationFormatDropdown(container, style, refreshStyle))
 
     local headerCb = AceGUI:Create("CheckBox")
     headerCb:SetLabel("Show Group Header")
     headerCb:SetValue(style.showTextGroupHeader == true)
-    headerCb:SetFullWidth(true)
+    SetCompactWidth(headerCb)
     headerCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showTextGroupHeader = val or false
         CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
@@ -249,12 +257,44 @@ local function BuildTextAppearanceTab(container, group, style)
     fontDrop:SetLabel("Font")
     CS.SetupFontDropdown(fontDrop)
     fontDrop:SetValue(style.textFont or "Friz Quadrata TT")
-    fontDrop:SetFullWidth(true)
+    SetCompactWidth(fontDrop)
     CS.SetFontDropdownCallback(fontDrop, function(widget, event, val)
         style.textFont = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(fontDrop)
+
+    local outlineDrop = AceGUI:Create("Dropdown")
+    outlineDrop:SetLabel("Font Outline")
+    CS.SetupFontOutlineDropdown(outlineDrop)
+    outlineDrop:SetValue(style.textFontOutline or "OUTLINE")
+    SetCompactWidth(outlineDrop)
+    CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
+        style.textFontOutline = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(outlineDrop)
+
+    local alignDrop = AceGUI:Create("Dropdown")
+    alignDrop:SetLabel("Alignment")
+    alignDrop:SetList({LEFT = "Left", CENTER = "Center", RIGHT = "Right"})
+    alignDrop:SetValue(style.textAlignment or "LEFT")
+    SetCompactWidth(alignDrop)
+    alignDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        style.textAlignment = val
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(alignDrop)
+
+    local shadowCb = AceGUI:Create("CheckBox")
+    shadowCb:SetLabel("Text Shadow")
+    shadowCb:SetValue(style.textShadow == true)
+    SetCompactWidth(shadowCb)
+    shadowCb:SetCallback("OnValueChanged", function(widget, event, val)
+        style.textShadow = val or false
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    end)
+    container:AddChild(shadowCb)
 
     local fontSizeSlider = AceGUI:Create("Slider")
     fontSizeSlider:SetLabel("Font Size")
@@ -266,38 +306,6 @@ local function BuildTextAppearanceTab(container, group, style)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     container:AddChild(fontSizeSlider)
-
-    local outlineDrop = AceGUI:Create("Dropdown")
-    outlineDrop:SetLabel("Font Outline")
-    CS.SetupFontOutlineDropdown(outlineDrop)
-    outlineDrop:SetValue(style.textFontOutline or "OUTLINE")
-    outlineDrop:SetFullWidth(true)
-    CS.SetFontOutlineDropdownCallback(outlineDrop, function(widget, event, val)
-        style.textFontOutline = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(outlineDrop)
-
-    local alignDrop = AceGUI:Create("Dropdown")
-    alignDrop:SetLabel("Alignment")
-    alignDrop:SetList({LEFT = "Left", CENTER = "Center", RIGHT = "Right"})
-    alignDrop:SetValue(style.textAlignment or "LEFT")
-    alignDrop:SetFullWidth(true)
-    alignDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        style.textAlignment = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(alignDrop)
-
-    local shadowCb = AceGUI:Create("CheckBox")
-    shadowCb:SetLabel("Text Shadow")
-    shadowCb:SetValue(style.textShadow == true)
-    shadowCb:SetFullWidth(true)
-    shadowCb:SetCallback("OnValueChanged", function(widget, event, val)
-        style.textShadow = val or false
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end)
-    container:AddChild(shadowCb)
     end -- not fontCollapsed
 
     -- ================================================================
@@ -323,10 +331,11 @@ local function BuildTextAppearanceTab(container, group, style)
     if not bgCollapsed then
     AddColorPicker(container, style, "textBgColor", "Background Color", {0, 0, 0, 0}, true, refreshStyle, refreshStyle)
 
-    local renderMode = AddBorderRenderModeDropdown(container, style, "textBorderRenderMode", function()
+    local renderMode, renderModeDrop = AddBorderRenderModeDropdown(container, style, "textBorderRenderMode", function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end)
+    SetCompactWidth(renderModeDrop)
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
@@ -351,7 +360,7 @@ local function BuildTextAppearanceTab(container, group, style)
     -- ================================================================
     -- Compact Mode Controls
     -- ================================================================
-    BuildCompactModeControls(container, group, tabInfoButtons)
+    BuildCompactModeControls(container, group, tabInfoButtons, SetCompactWidth)
 end
 
 -- Exports

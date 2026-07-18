@@ -1320,21 +1320,12 @@ local function BuildLayoutTab(container)
         return
     end
 
-    -- Two-column layout: Flow wraps half-width compact widgets into
-    -- side-by-side pairs; sliders, headings, and decorated/complex rows stay
-    -- full width. Modes not yet swept keep the List layout, where
-    -- SetCompactWidth falls back to full width.
-    local layoutDisplayMode = group.displayMode or "icons"
-    local twoColumn = layoutDisplayMode == "icons" or layoutDisplayMode == "bars"
-    if twoColumn then
-        container:SetLayout("Flow")
-    end
+    -- Two-column layout for every mode sharing this path (texture/trigger
+    -- panels returned above): Flow wraps half-width compact widgets into
+    -- side-by-side pairs; sliders, headings, and complex rows stay full width.
+    container:SetLayout("Flow")
     local function SetCompactWidth(widget)
-        if twoColumn then
-            widget:SetRelativeWidth(0.5)
-        else
-            widget:SetFullWidth(true)
-        end
+        widget:SetRelativeWidth(0.5)
     end
 
     local isPanel = group.parentContainerId ~= nil
@@ -1611,7 +1602,7 @@ local function BuildLayoutTab(container)
         orientDrop:SetLabel("Orientation")
         orientDrop:SetList({ horizontal = "Horizontal", vertical = "Vertical" })
         orientDrop:SetValue(style.orientation or "vertical")
-        orientDrop:SetFullWidth(true)
+        SetCompactWidth(orientDrop)
         orientDrop:SetCallback("OnValueChanged", function(widget, event, val)
             style.orientation = val
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
@@ -1754,7 +1745,7 @@ local function BuildLayoutTab(container)
         CooldownCompanion:RefreshConfigPanel()
     end, "layout_alpha", {
         isGlobal = group.isGlobal,
-        twoColumn = twoColumn,
+        twoColumn = true,
         disabled = alphaControlsDisabled,
         disabledText = alphaDisabledText,
         onBaselineChanged = function(val)
