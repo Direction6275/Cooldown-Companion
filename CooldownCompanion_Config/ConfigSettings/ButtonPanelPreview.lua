@@ -1320,6 +1320,9 @@ local function StyleSlotCooldownText(slot, style)
     if not (region and region.SetFont) then return end
     if style.showCooldownText and not (slot.buttonData and slot.buttonData.isPassive) then
         slot.cooldown:SetHideCountdownNumbers(false)
+        if CooldownCompanion.ApplyDurationFormatToCooldown then
+            CooldownCompanion.ApplyDurationFormatToCooldown(slot.cooldown, style)
+        end
         CooldownCompanion.ApplyFontStyle(region, style, "cooldown")
         region:ClearAllPoints()
         region:SetPoint(style.cooldownTextAnchor or "CENTER",
