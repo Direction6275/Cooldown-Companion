@@ -18,7 +18,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 
 local PREVIEW_GAP = 4
 local ADD_BOX_HEIGHT = 26
-local STRIP_HEIGHT = 30
+local STRIP_HEIGHT = 26
 local STRIP_ICON_SIZE = 20
 local STRIP_BADGE_SIZE = 18
 local STRIP_BADGE_GAP = 3
@@ -96,7 +96,7 @@ local function EnsureEditingSurface(col3)
         edgeFile = "Interface\\BUTTONS\\WHITE8X8",
         edgeSize = 1,
     })
-    surface:SetBackdropColor(0, 0, 0, 0.3)
+    surface:SetBackdropColor(0, 0, 0, 0.5)
     surface:SetBackdropBorderColor(1, 1, 1, 0.06)
     -- Same frame level as the column content so the fill draws behind the
     -- settings widgets (siblings created at content level + 1).
@@ -650,7 +650,7 @@ local function EnsureIdentityStrip(col3)
     strip:SetHeight(STRIP_HEIGHT)
 
     strip.name = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
-    strip.name:SetJustifyH("CENTER")
+    strip.name:SetJustifyH("LEFT")
     strip.name:SetWordWrap(false)
 
     strip.tag = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalMed3")
@@ -686,9 +686,10 @@ local function AcquireStripBadge(strip, index)
     return badge
 end
 
--- Identity strip between the add box and the settings surfaces: names what
--- the settings below are editing (selected entry or panel) and carries the
--- full status badge row the retired column 2 entry rows used to show.
+-- Context strip between the add box and the settings surfaces: shown only
+-- for a selected entry or attached bar, where it carries identity, tracking
+-- kind, and the status badges the retired column 2 entry rows used to show.
+-- The panel itself is already named by the Editing header above.
 local function UpdateIdentityStrip(col3)
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local icon, name, badgeStatus, kindText
@@ -733,8 +734,6 @@ local function UpdateIdentityStrip(col3)
                 kindText = addedAs == "aura" and "Aura" or "Spell"
             end
             badgeStatus = ST._CollectEntryStatus and ST._CollectEntryStatus(buttonData, group)
-        else
-            name = group.name or "Panel"
         end
     end
 
@@ -745,7 +744,7 @@ local function UpdateIdentityStrip(col3)
     end
     strip = EnsureIdentityStrip(col3)
 
-    -- Inline the entry icon so it centers (and truncates) with the name;
+    -- Inline the entry icon so it aligns (and truncates) with the name;
     -- the crop matches the 0.08 tex-coord inset used on icon slots.
     if icon then
         name = "|T" .. icon .. ":" .. STRIP_ICON_SIZE .. ":" .. STRIP_ICON_SIZE
@@ -792,25 +791,16 @@ local function UpdateIdentityStrip(col3)
         strip.tag:Hide()
     end
 
-    -- Center the name on the strip itself: symmetric insets sized to the
-    -- right-side tag/badge cluster, so its presence never pulls the name
-    -- off-center.
-    local clusterWidth = 2
-    if shown > 0 then
-        clusterWidth = clusterWidth + shown * STRIP_BADGE_SIZE + (shown - 1) * STRIP_BADGE_GAP
-    end
-    if kindText then
-        if shown > 0 then
-            clusterWidth = clusterWidth + STRIP_BADGE_GAP + 3
-        end
-        clusterWidth = clusterWidth + strip.tag:GetStringWidth()
-    end
-    local inset = clusterWidth + 8
-
+    -- Keep the contextual identity left-aligned while reserving room for
+    -- the tracking tag and status badges on the right.
     strip.name:SetText(name)
     strip.name:ClearAllPoints()
-    strip.name:SetPoint("LEFT", strip, "LEFT", inset, 0)
-    strip.name:SetPoint("RIGHT", strip, "RIGHT", -inset, 0)
+    strip.name:SetPoint("LEFT", strip, "LEFT", EDIT_INSET, 0)
+    if rightAnchor then
+        strip.name:SetPoint("RIGHT", rightAnchor, "LEFT", -STRIP_BADGE_GAP - 5, 0)
+    else
+        strip.name:SetPoint("RIGHT", strip, "RIGHT", -EDIT_INSET, 0)
+    end
 
     local addBox = col3.buttonsAddBox
     local top = (addBox and addBox.frame:IsShown()) and addBox.frame
