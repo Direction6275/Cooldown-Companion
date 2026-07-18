@@ -622,6 +622,17 @@ local function GetSelectedConfigButtonData()
     return group and group.buttons and group.buttons[CS.selectedButton]
 end
 
+local function DoesSelectedPanelReferencePendingOverrideSpell(pendingSpellIds)
+    local profile = GetConfigProfile()
+    local group = profile and profile.groups and profile.groups[CS.selectedGroup]
+    for _, buttonData in ipairs(group and group.buttons or {}) do
+        if DoesButtonReferencePendingOverrideSpell(buttonData, pendingSpellIds) then
+            return true
+        end
+    end
+    return false
+end
+
 function CooldownCompanion:DoesCurrentConfigSelectionReferenceSpell(pendingSpellIds)
     if not IsConfigSpellOverrideRefreshMode() then
         return false
@@ -630,6 +641,13 @@ function CooldownCompanion:DoesCurrentConfigSelectionReferenceSpell(pendingSpell
     local selectedButtonData = GetSelectedConfigButtonData()
     if DoesButtonReferencePendingOverrideSpell(selectedButtonData, pendingSpellIds) then
         return true
+    end
+
+    -- Wide view: entries render only on the selected panel's mirror; the
+    -- retired column 2 entry rows (and their collapse state) are not a
+    -- display surface here, so scan the selected panel unconditionally.
+    if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
+        return DoesSelectedPanelReferencePendingOverrideSpell(pendingSpellIds)
     end
 
     local panels = self:GetPanels(CS.selectedContainer)
@@ -664,6 +682,11 @@ function CooldownCompanion:RefreshConfigForSpellOverride(pendingSpellIds)
     end
     if selectedEntryAffected then
         RefreshColumn3()
+    elseif ST._RefreshButtonsPreviewMirror
+        and DoesSelectedPanelReferencePendingOverrideSpell(pendingSpellIds) then
+        -- Wide view: a non-selected entry of the mirrored panel picked up
+        -- the override — its name/icon render on the mirror, not column 2.
+        ST._RefreshButtonsPreviewMirror()
     end
     ApplyConfigColumnTitles(CS.configFrame)
 
