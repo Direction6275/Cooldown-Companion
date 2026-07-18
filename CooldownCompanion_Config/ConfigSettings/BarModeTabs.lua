@@ -159,6 +159,12 @@ local function BuildBarAppearanceTab(container, group, style)
     end
     end -- not borderCollapsed
 
+    -- ================================================================
+    -- Text & Icon (per-bar display elements)
+    -- ================================================================
+    local textIconHeading, textIconCollapsed = BuildCollapsibleSection(container, "Text & Icon", "barappearance_textIcon")
+
+    if not textIconCollapsed then
     -- Bar aura timer section: fills the Blizzard-driven aura bar composited
     -- over the CC bar, plus the aura text toggles. Shown only while the group
     -- has an aura-tracking entry (same gate as the icon-side aura sections).
@@ -436,6 +442,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- Compact Mode toggle + Max Visible Buttons slider
     BuildCompactModeControls(container, group, tabInfoButtons, SetCompactWidth)
     SetCompactWidth(AddDurationFormatDropdown(container, style, refreshStyle))
+    end -- not textIconCollapsed
 
     BuildGroupSettingPresetControls(container, group, "bars", tabInfoButtons)
 
