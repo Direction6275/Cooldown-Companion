@@ -77,40 +77,13 @@ local function BuildUnifiedAnchorPreview(host, groupId)
     ST._BuildLayoutOrderPanel(host, { externalPanel = inner })
 end
 
--- Slider drags fire a style update (and thus a mirror refresh) every
--- frame; a full unified rebuild per tick stutters badly. Coalesce bursts:
--- the first rebuild runs immediately, rapid follow-ups collapse into one
--- trailing rebuild, so the preview always settles on the final value.
-local UNIFIED_REBUILD_MIN_INTERVAL = 0.1
-
-local BuildAnchorAwarePanelPreview
-
 -- Single build entry for the wide buttons preview: unified when the panel
 -- is the live anchor target with bars to show, the plain mirror otherwise.
 -- Transitions release whichever surface is being vacated (the release
 -- stops the conditional ticker and disarms override targeting, so it only
 -- runs when the surface actually changes hands).
-BuildAnchorAwarePanelPreview = function(host, groupId)
+local function BuildAnchorAwarePanelPreview(host, groupId)
     if ShouldUseUnifiedAnchorPreview(groupId) then
-        local lanes = host._cdcLayoutPreview
-        local alreadyUnified = lanes and lanes.root and lanes.root:IsShown()
-        local now = GetTime()
-        if alreadyUnified
-            and (now - (host._cdcUnifiedLastBuild or 0)) < UNIFIED_REBUILD_MIN_INTERVAL then
-            if not host._cdcUnifiedRebuildQueued then
-                host._cdcUnifiedRebuildQueued = true
-                C_Timer.After(UNIFIED_REBUILD_MIN_INTERVAL, function()
-                    host._cdcUnifiedRebuildQueued = nil
-                    -- Selection or view may have moved on while queued.
-                    if host:IsShown() and CS.selectedGroup then
-                        BuildAnchorAwarePanelPreview(host, CS.selectedGroup)
-                    end
-                end)
-            end
-            return
-        end
-        host._cdcUnifiedLastBuild = now
-
         local plain = host._cdcPanelPreview
         if plain and plain.root and plain.root:IsShown() then
             ST._ReleaseButtonPanelPreview(host)
