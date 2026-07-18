@@ -1320,11 +1320,12 @@ local function BuildLayoutTab(container)
         return
     end
 
-    -- Two-column layout (icon panels only for now): Flow wraps half-width
-    -- compact widgets into side-by-side pairs; sliders, headings, and
-    -- decorated/complex rows stay full width. Other display modes keep the
-    -- List layout, where SetCompactWidth falls back to full width.
-    local twoColumn = (group.displayMode or "icons") == "icons"
+    -- Two-column layout: Flow wraps half-width compact widgets into
+    -- side-by-side pairs; sliders, headings, and decorated/complex rows stay
+    -- full width. Modes not yet swept keep the List layout, where
+    -- SetCompactWidth falls back to full width.
+    local layoutDisplayMode = group.displayMode or "icons"
+    local twoColumn = layoutDisplayMode == "icons" or layoutDisplayMode == "bars"
     if twoColumn then
         container:SetLayout("Flow")
     end
@@ -1635,7 +1636,7 @@ local function BuildLayoutTab(container)
         local vertFillCheck = AceGUI:Create("CheckBox")
         vertFillCheck:SetLabel("Vertical Bar Fill")
         vertFillCheck:SetValue(style.barFillVertical or false)
-        vertFillCheck:SetFullWidth(true)
+        SetCompactWidth(vertFillCheck)
         vertFillCheck:SetCallback("OnValueChanged", function(widget, event, val)
             style.barFillVertical = val or nil
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
@@ -1646,7 +1647,7 @@ local function BuildLayoutTab(container)
         local reverseFillCheck = AceGUI:Create("CheckBox")
         reverseFillCheck:SetLabel("Flip Fill/Drain Direction")
         reverseFillCheck:SetValue(style.barReverseFill or false)
-        reverseFillCheck:SetFullWidth(true)
+        SetCompactWidth(reverseFillCheck)
         reverseFillCheck:SetCallback("OnValueChanged", function(widget, event, val)
             style.barReverseFill = val or nil
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
@@ -1657,7 +1658,7 @@ local function BuildLayoutTab(container)
             local horzLayoutCheck = AceGUI:Create("CheckBox")
             horzLayoutCheck:SetLabel("Horizontal Bar Layout")
             horzLayoutCheck:SetValue((style.orientation or "vertical") == "horizontal")
-            horzLayoutCheck:SetFullWidth(true)
+            SetCompactWidth(horzLayoutCheck)
             horzLayoutCheck:SetCallback("OnValueChanged", function(widget, event, val)
                 style.orientation = val and "horizontal" or "vertical"
                 CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)

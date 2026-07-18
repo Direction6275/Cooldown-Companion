@@ -35,8 +35,16 @@ local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local tabInfoButtons = CS.tabInfoButtons
 
 
+-- Two-column layout (same pattern as the icon-panel tabs): the tab scroll
+-- flows half-width compact widgets into side-by-side pairs; sliders, color
+-- pickers, and headings stay full width.
+local function SetCompactWidth(widget)
+    widget:SetRelativeWidth(0.5)
+end
+
 local function BuildBarAppearanceTab(container, group, style)
     local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
+    container:SetLayout("Flow")
 
     -- ================================================================
     -- Bar Settings (length, height, spacing, bar color)
@@ -66,27 +74,6 @@ local function BuildBarAppearanceTab(container, group, style)
     end)
     container:AddChild(heightSlider)
 
-    local renderMode = AddBorderRenderModeDropdown(container, style, "borderRenderMode", function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    local borderThicknessLocked = ST.IsBorderThicknessLocked()
-
-    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-        local borderSlider = AceGUI:Create("Slider")
-        borderSlider:SetLabel("Border Size")
-        borderSlider:SetSliderValues(0, 5, 0.1)
-        borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
-        borderSlider:SetFullWidth(true)
-        borderSlider:SetDisabled(borderThicknessLocked)
-        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
-            if borderThicknessLocked then return end
-            style.borderSize = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end)
-        container:AddChild(borderSlider)
-    end
-
     if group.buttons and #group.buttons > 1 then
         local spacingSlider = AceGUI:Create("Slider")
         spacingSlider:SetLabel("Bar Spacing")
@@ -105,7 +92,7 @@ local function BuildBarAppearanceTab(container, group, style)
     barTexDrop:SetLabel("Bar Texture")
     CS.SetupBarTextureDropdown(barTexDrop)
     barTexDrop:SetValue(style.barTexture or "Solid")
-    barTexDrop:SetFullWidth(true)
+    SetCompactWidth(barTexDrop)
     CS.SetBarTextureDropdownCallback(barTexDrop, function(widget, event, val)
         style.barTexture = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -128,8 +115,37 @@ local function BuildBarAppearanceTab(container, group, style)
     local barBgColorPicker = AddColorPicker(container, style, "barBgColor", "Bar Background Color", {0.1, 0.1, 0.1, 0.8}, true, refreshStyle, refreshStyle)
     CreateColorPickerPromoteButton(barBgColorPicker, "barBgColor", group, style)
 
+    -- ================================================================
+    -- Border (thickness, size, color — mirrors the icon-mode Border section)
+    -- ================================================================
+    local borderHeading, borderCollapsed = BuildCollapsibleSection(container, "Border", "barappearance_border")
+
+    if not borderCollapsed then
+    local renderMode, renderModeDrop = AddBorderRenderModeDropdown(container, style, "borderRenderMode", function()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    SetCompactWidth(renderModeDrop)
+    local borderThicknessLocked = ST.IsBorderThicknessLocked()
+
+    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+        local borderSlider = AceGUI:Create("Slider")
+        borderSlider:SetLabel("Border Size")
+        borderSlider:SetSliderValues(0, 5, 0.1)
+        borderSlider:SetValue(style.borderSize or ST.DEFAULT_BORDER_SIZE)
+        borderSlider:SetFullWidth(true)
+        borderSlider:SetDisabled(borderThicknessLocked)
+        borderSlider:SetCallback("OnValueChanged", function(widget, event, val)
+            if borderThicknessLocked then return end
+            style.borderSize = val
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        container:AddChild(borderSlider)
+    end
+
     local borderColorPicker = AddColorPicker(container, style, "borderColor", "Border Color", {0, 0, 0, 1}, true, refreshStyle, refreshStyle)
     CreateColorPickerPromoteButton(borderColorPicker, "borderSettings", group, style)
+    end -- not borderCollapsed
 
     -- Bar aura timer section: fills the Blizzard-driven aura bar composited
     -- over the CC bar, plus the aura text toggles. Shown only while the group
@@ -146,7 +162,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local auraTextCb = AceGUI:Create("CheckBox")
         auraTextCb:SetLabel("Show Aura Duration Text")
         auraTextCb:SetValue(style.showAuraText ~= false)
-        auraTextCb:SetFullWidth(true)
+        SetCompactWidth(auraTextCb)
         auraTextCb:SetCallback("OnValueChanged", function(widget, event, val)
             style.showAuraText = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -175,7 +191,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local auraStackCb = AceGUI:Create("CheckBox")
         auraStackCb:SetLabel("Show Aura Stack Text")
         auraStackCb:SetValue(style.showAuraStackText ~= false)
-        auraStackCb:SetFullWidth(true)
+        SetCompactWidth(auraStackCb)
         auraStackCb:SetCallback("OnValueChanged", function(widget, event, val)
             style.showAuraStackText = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -206,7 +222,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local showIconCb = AceGUI:Create("CheckBox")
     showIconCb:SetLabel("Show Icon")
     showIconCb:SetValue(style.showBarIcon ~= false)
-    showIconCb:SetFullWidth(true)
+    SetCompactWidth(showIconCb)
     showIconCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showBarIcon = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -272,7 +288,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local showNameCbBasic = AceGUI:Create("CheckBox")
     showNameCbBasic:SetLabel("Show Name Text")
     showNameCbBasic:SetValue(style.showBarNameText ~= false)
-    showNameCbBasic:SetFullWidth(true)
+    SetCompactWidth(showNameCbBasic)
     showNameCbBasic:SetCallback("OnValueChanged", function(widget, event, val)
         style.showBarNameText = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -306,7 +322,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local showTimeCbBasic = AceGUI:Create("CheckBox")
     showTimeCbBasic:SetLabel("Show Cooldown Text")
     showTimeCbBasic:SetValue(style.showCooldownText or false)
-    showTimeCbBasic:SetFullWidth(true)
+    SetCompactWidth(showTimeCbBasic)
     showTimeCbBasic:SetCallback("OnValueChanged", function(widget, event, val)
         style.showCooldownText = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -347,7 +363,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local chargeTextCb = AceGUI:Create("CheckBox")
     chargeTextCb:SetLabel("Show Count Text (Charges/Uses)")
     chargeTextCb:SetValue(style.showChargeText ~= false)
-    chargeTextCb:SetFullWidth(true)
+    SetCompactWidth(chargeTextCb)
     chargeTextCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showChargeText = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -375,7 +391,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local showReadyCb = AceGUI:Create("CheckBox")
     showReadyCb:SetLabel("Show Ready Text")
     showReadyCb:SetValue(style.showBarReadyText or false)
-    showReadyCb:SetFullWidth(true)
+    SetCompactWidth(showReadyCb)
     showReadyCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.showBarReadyText = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -406,8 +422,8 @@ local function BuildBarAppearanceTab(container, group, style)
     CreateCheckboxPromoteButton(showReadyCb, readyAdvBtn, "barReadyText", group, style)
 
     -- Compact Mode toggle + Max Visible Buttons slider
-    BuildCompactModeControls(container, group, tabInfoButtons)
-    AddDurationFormatDropdown(container, style, refreshStyle)
+    BuildCompactModeControls(container, group, tabInfoButtons, SetCompactWidth)
+    SetCompactWidth(AddDurationFormatDropdown(container, style, refreshStyle))
 
     BuildGroupSettingPresetControls(container, group, "bars", tabInfoButtons)
 
@@ -432,7 +448,7 @@ end
 -- kit while the tracked aura runs. The checkbox reflects whether anything
 -- actually renders (enabled AND a visible effect chosen); checking it with
 -- no visible effect forces the pulse border, mirroring the icon aura glow.
-local function BuildBarActiveAuraSection(container, group, style)
+local function BuildBarActiveAuraSection(container, group, style, setWidth)
     if not GroupHasAuraTrackingEntry(group) then
         -- The section owning an active preview just disappeared (last aura
         -- entry removed); don't leave the preview glow orphaned.
@@ -450,7 +466,7 @@ local function BuildBarActiveAuraSection(container, group, style)
     local enableCb = AceGUI:Create("CheckBox")
     enableCb:SetLabel("Show Active Aura Indicator")
     enableCb:SetValue(indicatorOn)
-    enableCb:SetFullWidth(true)
+    if setWidth then setWidth(enableCb) else enableCb:SetFullWidth(true) end
     enableCb:SetCallback("OnValueChanged", function(widget, event, val)
         style.barAuraIndicatorEnabled = val
         if val and not (style.barAuraEffect and style.barAuraEffect ~= "color" and style.barAuraEffect ~= "none"
@@ -498,6 +514,7 @@ end
 
 local function BuildBarEffectsTab(container, group, style)
     local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
+    container:SetLayout("Flow")
 
     -- ================================================================
     -- Glows
@@ -507,7 +524,7 @@ local function BuildBarEffectsTab(container, group, style)
     end
     -- Runs even without the heading: the section clears its own orphaned
     -- preview when the last aura entry disappears.
-    BuildBarActiveAuraSection(container, group, style)
+    BuildBarActiveAuraSection(container, group, style, SetCompactWidth)
 
     -- The remaining indicators all render on the bar's icon square.
     if style.showBarIcon ~= false then
@@ -519,7 +536,7 @@ local function BuildBarEffectsTab(container, group, style)
         local gcdCb = AceGUI:Create("CheckBox")
         gcdCb:SetLabel("Show GCD Swipe")
         gcdCb:SetValue(style.showGCDSwipe == true)
-        gcdCb:SetFullWidth(true)
+        SetCompactWidth(gcdCb)
         gcdCb:SetCallback("OnValueChanged", function(widget, event, val)
             style.showGCDSwipe = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -535,7 +552,7 @@ local function BuildBarEffectsTab(container, group, style)
         local desatCb = AceGUI:Create("CheckBox")
         desatCb:SetLabel("Show Desaturate On Cooldown")
         desatCb:SetValue(style.desaturateOnCooldown or false)
-        desatCb:SetFullWidth(true)
+        SetCompactWidth(desatCb)
         desatCb:SetCallback("OnValueChanged", function(widget, event, val)
             style.desaturateOnCooldown = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
@@ -544,16 +561,19 @@ local function BuildBarEffectsTab(container, group, style)
         CreateCheckboxPromoteButton(desatCb, nil, "desaturation", group, style)
 
         local locCb = BuildLossOfControlControls(container, style, refreshStyle)
+        SetCompactWidth(locCb)
         CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
 
         local unusableCb, unusableAdvBtn = BuildUnusableDimmingControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end)
+        SetCompactWidth(unusableCb)
         local unusablePromoteBtn = CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
         AddConditionalPreviewBadge(unusableCb, unusablePromoteBtn or unusableAdvBtn, "Preview Unusable State", "unusable", style.showUnusable)
 
         local tooltipCb = BuildShowTooltipsControls(container, style, refreshStyle)
+        SetCompactWidth(tooltipCb)
         CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
     end
 
