@@ -10,6 +10,7 @@ local DR = ST._DragReorder or {}
 ST._DragReorder = DR
 
 local COL1_HIT_X_PAD = 6
+local COL1_SECTION_HYSTERESIS = 8
 local FindCol1SectionDividerTarget
 local activeCol1DropSourceSection
 
@@ -1135,7 +1136,7 @@ local function ResolvePreviousFolderBlockBoundaryTarget(renderedRows, rowIndex, 
     )
 end
 
-local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, sourceKind, sourceSection, sourceFolderId, sourceLoadBucket, previousDropTarget)
+local function ResolveCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, sourceKind, sourceSection, sourceFolderId, sourceLoadBucket, previousDropTarget)
     if not renderedRows or #renderedRows == 0 then return nil end
     activeCol1DropSourceSection = sourceSection
     local sourceIsMixed = IsCol1MixedDragSource(sourceLoadBucket)
@@ -1383,6 +1384,57 @@ local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, s
         end
     end
     return nil
+end
+
+local function FindCol1SectionBoundary(renderedRows, firstSection, secondSection)
+    for i = 1, #(renderedRows or {}) - 1 do
+        local upperRow = renderedRows[i]
+        local lowerRow = renderedRows[i + 1]
+        if upperRow.section ~= lowerRow.section
+            and ((upperRow.section == firstSection and lowerRow.section == secondSection)
+                or (upperRow.section == secondSection and lowerRow.section == firstSection))
+        then
+            local upperFrame = GetCol1DropFrame(upperRow)
+            local lowerFrame = GetCol1DropFrame(lowerRow)
+            local upperBottom = upperFrame and upperFrame:IsShown() and upperFrame:GetBottom()
+            local lowerTop = lowerFrame and lowerFrame:IsShown() and lowerFrame:GetTop()
+            if upperBottom and lowerTop then
+                return (upperBottom + lowerTop) * 0.5
+            end
+        end
+    end
+    return nil
+end
+
+local function StabilizeCol1SectionTarget(renderedRows, cursorY, previousDropTarget, dropTarget)
+    local previousRow = previousDropTarget and previousDropTarget.targetRow
+    local targetRow = dropTarget and dropTarget.targetRow
+    local previousSection = previousRow and previousRow.section
+    local targetSection = targetRow and targetRow.section
+    if not previousSection or not targetSection or previousSection == targetSection then
+        return dropTarget
+    end
+
+    local boundary = FindCol1SectionBoundary(renderedRows, previousSection, targetSection)
+    if boundary and math.abs(cursorY - boundary) <= COL1_SECTION_HYSTERESIS then
+        return previousDropTarget
+    end
+    return dropTarget
+end
+
+local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, sourceKind, sourceSection, sourceFolderId, sourceLoadBucket, previousDropTarget)
+    local dropTarget = ResolveCol1DropTarget(
+        cursorX,
+        cursorY,
+        scrollWidget,
+        renderedRows,
+        sourceKind,
+        sourceSection,
+        sourceFolderId,
+        sourceLoadBucket,
+        previousDropTarget
+    )
+    return StabilizeCol1SectionTarget(renderedRows, cursorY, previousDropTarget, dropTarget)
 end
 
 IsUnloadedTopLevelDrop = function(state, dropTarget, targetFolderId)
