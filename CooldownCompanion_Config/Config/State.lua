@@ -266,6 +266,8 @@ ST._configState = {
     collapsedSections = {},
     collapsedFolders = {},
     collapsedPanels = {},
+    expandedContainer = nil,
+    peekedContainers = {},
     otherClassLibraryActive = false,
     otherClassLibraryClassKey = nil,
     hideActiveCurrentClassPanels = false,
@@ -1012,6 +1014,66 @@ local function GetFolderIcon(folderId, db)
 end
 
 ------------------------------------------------------------------------
+-- Shared compact panel-row presentation helpers
+------------------------------------------------------------------------
+local function GetConfigPanelTypeBadgeAtlas(displayMode)
+    if displayMode == "bars" then
+        return "CreditsScreen-Assets-Buttons-Pause"
+    elseif displayMode == "text" then
+        return "poi-workorders"
+    elseif displayMode == "textures" or displayMode == "trigger" then
+        return "UI-HUD-MicroMenu-Communities-Icon-Notification"
+    end
+
+    return "UI-QuestPoi-QuestNumber-SuperTracked"
+end
+
+local function GetConfigPanelEntryCount(panel)
+    if panel and panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+        return 1
+    end
+    return panel and panel.buttons and #panel.buttons or 0
+end
+
+local function IsConfigPanelEntryUsable(panel, buttonData)
+    return CooldownCompanion:IsButtonUsable(buttonData, panel)
+end
+
+local function ConfigPanelHasWarning(panel)
+    for _, buttonData in ipairs(panel and panel.buttons or {}) do
+        if buttonData.enabled ~= false and not IsConfigPanelEntryUsable(panel, buttonData) then
+            return true
+        end
+    end
+    return false
+end
+
+local function AddClassAccentSpacer(scroll, classColor)
+    local spacer = AceGUI:Create("Label")
+    spacer:SetText(" ")
+    spacer:SetFullWidth(true)
+    spacer:SetHeight(2)
+    local accentBar = spacer.frame._cdcAccentBar
+    if not accentBar then
+        accentBar = spacer.frame:CreateTexture(nil, "ARTWORK")
+        spacer.frame._cdcAccentBar = accentBar
+    end
+    accentBar:SetHeight(1.5)
+    accentBar:ClearAllPoints()
+    local inset = math.floor(spacer.frame:GetWidth() * 0.10 + 0.5)
+    accentBar:SetPoint("LEFT", spacer.frame, "LEFT", inset, 1)
+    accentBar:SetPoint("RIGHT", spacer.frame, "RIGHT", -inset, 1)
+    if classColor then
+        accentBar:SetColorTexture(classColor.r, classColor.g, classColor.b, 0.8)
+    else
+        accentBar:SetColorTexture(1, 1, 1, 0.3)
+    end
+    accentBar:Show()
+    spacer:SetCallback("OnRelease", function() accentBar:Hide() end)
+    scroll:AddChild(spacer)
+end
+
+------------------------------------------------------------------------
 -- Helper: generate a unique folder name
 ------------------------------------------------------------------------
 local function GenerateFolderName(base)
@@ -1740,6 +1802,8 @@ local function ClearConfigRowLayout(entry, restoreHandlers)
         icon:SetTexture(nil)
         icon:SetAtlas(nil)
         icon:SetAlpha(1)
+        icon:SetVertexColor(1, 1, 1, 1)
+        icon:SetTexCoord(0, 1, 0, 1)
         if icon.SetDesaturated then
             icon:SetDesaturated(false)
         end
@@ -1781,17 +1845,23 @@ local function ApplyConfigRowLayout(entry)
     local frame = entry.frame
     local label = entry.label
     local leftPad = 0
+    local indent = row.indent or 0
+    local iconSize = row.iconSize or CONFIG_ROW_ICON_SIZE
+    local iconGap = row.iconGap or CONFIG_ROW_ICON_GAP
 
     if not compact then
         if hasIcon then
-            leftPad = CONFIG_ROW_ICON_SIZE + CONFIG_ROW_ICON_GAP
+            leftPad = indent + iconSize + iconGap
         else
-            leftPad = row.normalLeftPad or 0
+            leftPad = indent + (row.normalLeftPad or 0)
         end
+    else
+        leftPad = indent
     end
 
-    entry:SetHeight(COMPACT_ROW_HEIGHT)
-    frame.height = COMPACT_ROW_HEIGHT
+    local rowHeight = compact and (row.compactRowHeight or COMPACT_ROW_HEIGHT) or (row.rowHeight or COMPACT_ROW_HEIGHT)
+    entry:SetHeight(rowHeight)
+    frame.height = rowHeight
 
     label:ClearAllPoints()
     label:SetPoint("LEFT", frame, "LEFT", leftPad, 0)
@@ -1816,8 +1886,8 @@ local function ApplyConfigRowLayout(entry)
     local icon = entry.image
     if icon then
         icon:ClearAllPoints()
-        icon:SetSize(CONFIG_ROW_ICON_SIZE, CONFIG_ROW_ICON_SIZE)
-        icon:SetPoint("LEFT", frame, "LEFT", 0, 0)
+        icon:SetSize(iconSize, iconSize)
+        icon:SetPoint("LEFT", frame, "LEFT", indent, 0)
 
         if hasIcon and not compact and (row.texture or row.atlas) then
             if row.atlas then
@@ -1825,7 +1895,18 @@ local function ApplyConfigRowLayout(entry)
             else
                 icon:SetAtlas(nil)
                 icon:SetTexture(row.texture)
-                icon:SetTexCoord(0, 1, 0, 1)
+                local texCoord = row.texCoord
+                if texCoord then
+                    icon:SetTexCoord(texCoord[1], texCoord[2], texCoord[3], texCoord[4])
+                else
+                    icon:SetTexCoord(0, 1, 0, 1)
+                end
+            end
+            local vertexColor = row.vertexColor
+            if vertexColor then
+                icon:SetVertexColor(vertexColor[1], vertexColor[2], vertexColor[3], vertexColor[4] or 1)
+            else
+                icon:SetVertexColor(1, 1, 1, 1)
             end
             icon:SetAlpha(1)
             if icon.SetDesaturated then
@@ -1885,6 +1966,25 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcCollapseBtn then entry.frame._cdcCollapseBtn:Hide() end
     if entry.frame._cdcAddBtn then entry.frame._cdcAddBtn:Hide() end
     if entry.frame._cdcGenericRenameBadge then entry.frame._cdcGenericRenameBadge:Hide() end
+    if entry.frame._cdcTreeExpandButton then
+        entry.frame._cdcTreeExpandButton:Hide()
+        entry.frame._cdcTreeExpandButton:ClearAllPoints()
+        entry.frame._cdcTreeExpandButton:SetScript("OnClick", nil)
+        entry.frame._cdcTreeExpandButton:SetScript("OnEnter", nil)
+        entry.frame._cdcTreeExpandButton:SetScript("OnLeave", nil)
+    end
+    if entry.frame._cdcTreePanelMeta then
+        entry.frame._cdcTreePanelMeta:Hide()
+        entry.frame._cdcTreePanelMeta:ClearAllPoints()
+    end
+    if entry.highlight then
+        entry.highlight:ClearAllPoints()
+        entry.highlight:SetAllPoints(entry.frame)
+        entry.highlight:SetVertexColor(1, 1, 1, 1)
+        entry.highlight:SetAlpha(1)
+    end
+    if entry.label then entry.label:SetAlpha(1) end
+    entry.frame:SetAlpha(1)
     if entry.frame._cdcCursorAnchorBadge then entry.frame._cdcCursorAnchorBadge:Hide() end
     if entry.frame._cdcCDMRefreshBadge then
         entry.frame._cdcCDMRefreshBadge:Hide()
@@ -1923,6 +2023,13 @@ local function ApplyConfigRowIcon(entry, texture, opts)
         texture = texture,
         atlas = opts.atlas,
         desaturated = opts.desaturated == true,
+        indent = opts.indent,
+        iconSize = opts.iconSize,
+        iconGap = opts.iconGap,
+        rowHeight = opts.rowHeight,
+        compactRowHeight = opts.compactRowHeight,
+        texCoord = opts.texCoord,
+        vertexColor = opts.vertexColor,
         rightPad = opts.rightPad,
     }
     EnsureConfigRowHandlers(entry)
@@ -1975,10 +2082,23 @@ local function UpdateConfigFolderAccentBars()
     end
 end
 
+local function UpdateNestedPanelAccents(widget)
+    if not widget then return end
+    local frame = widget.frame
+    local accent = frame and frame._cdcNestedPanelAccent
+    if accent then
+        accent:SetShown(CS.compactConfigRows ~= true and frame._cdcNestedPanelAccentActive == true)
+    end
+    for _, child in ipairs(widget.children or {}) do
+        UpdateNestedPanelAccents(child)
+    end
+end
+
 local function RefreshVisibleConfigCompactRows()
     ReapplyConfigRowLayouts(CS.col1Scroll)
     ReapplyConfigRowLayouts(CS.col2Scroll)
     UpdateConfigFolderAccentBars()
+    UpdateNestedPanelAccents(CS.col1Scroll)
     if CS.col1Scroll and CS.col1Scroll.DoLayout then CS.col1Scroll:DoLayout() end
     if CS.col2Scroll and CS.col2Scroll.DoLayout then CS.col2Scroll:DoLayout() end
 end
@@ -2029,7 +2149,7 @@ local function BuildEligibilityBadgeMap(...)
     return badgeMap
 end
 
-local function SetupGroupRowIndicators(entry, group)
+local function SetupGroupRowIndicators(entry, group, opts)
     local frame = entry.frame
     if frame._cdcBadges then
         for _, b in ipairs(frame._cdcBadges) do b:Hide() end
@@ -2104,13 +2224,15 @@ local function SetupGroupRowIndicators(entry, group)
 
     -- Spec filter badges: show own specs, skip any that exist at folder level
     local SPEC_BADGE_SIZE = 16
+    local showInheritedFolderBadges = opts and opts.showInheritedFolderBadges == true
     local specs = BuildEligibilityBadgeMap(
         group.specs,
-        group.loadConditions and group.loadConditions.specAllowlist
+        group.loadConditions and group.loadConditions.specAllowlist,
+        showInheritedFolderBadges and folderSpecs or nil
     )
     if specs then
         for specId in pairs(specs) do
-            if not (folderSpecs and folderSpecs[specId]) then
+            if showInheritedFolderBadges or not (folderSpecs and folderSpecs[specId]) then
                 local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
                 if specIcon then
                     badgeIndex = badgeIndex + 1
@@ -2133,12 +2255,14 @@ local function SetupGroupRowIndicators(entry, group)
 
     -- Hero talent filter badges: show own, skip any that exist at folder level
     local HERO_BADGE_SIZE = SPEC_BADGE_SIZE
-    local heroTalents = group.heroTalents
+    local heroTalents = showInheritedFolderBadges
+        and BuildEligibilityBadgeMap(group.heroTalents, folderHeroTalents)
+        or group.heroTalents
     if heroTalents then
         local configID = C_ClassTalents.GetActiveConfigID()
         if configID then
             for subTreeID in pairs(heroTalents) do
-                if not (folderHeroTalents and folderHeroTalents[subTreeID]) then
+                if showInheritedFolderBadges or not (folderHeroTalents and folderHeroTalents[subTreeID]) then
                     local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
                     if subTreeInfo and subTreeInfo.iconElementID then
                         badgeIndex = badgeIndex + 1
@@ -3403,6 +3527,11 @@ local function CompactUntitledInlineGroupConfig(group)
         releaseContent:ClearAllPoints()
         releaseContent:SetPoint("TOPLEFT", 10, -10)
         releaseContent:SetPoint("BOTTOMRIGHT", -10, 10)
+        if widget.frame and widget.frame._cdcNestedPanelAccent then
+            widget.frame._cdcNestedPanelAccent:Hide()
+            widget.frame._cdcNestedPanelAccent:ClearAllPoints()
+            widget.frame._cdcNestedPanelAccentActive = nil
+        end
         widget.LayoutFinished = originalLayoutFinished
     end)
 end
@@ -3439,6 +3568,11 @@ ST._InvalidateConfigFinderResults = InvalidateConfigFinderResults
 ST._SelectConfigFinderResult = SelectConfigFinderResult
 ST._GetContainerIcon = GetContainerIcon
 ST._GetFolderIcon = GetFolderIcon
+ST._GetConfigPanelTypeBadgeAtlas = GetConfigPanelTypeBadgeAtlas
+ST._GetConfigPanelEntryCount = GetConfigPanelEntryCount
+ST._IsConfigPanelEntryUsable = IsConfigPanelEntryUsable
+ST._ConfigPanelHasWarning = ConfigPanelHasWarning
+ST._AddClassAccentSpacer = AddClassAccentSpacer
 ST._OpenFolderIconPicker = OpenFolderIconPicker
 ST._OpenButtonIconPicker = OpenButtonIconPicker
 ST._OpenTriggerPanelIconPicker = OpenTriggerPanelIconPicker

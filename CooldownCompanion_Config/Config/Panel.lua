@@ -1870,7 +1870,7 @@ local function CreateConfigPanel()
     CS.columnInfoButtons[2] = infoBtn
     CS.columnInfoButtons[3] = bsInfoBtn
 
-    -- Static button bar at bottom of column 1 (New Group + New Folder + Resources)
+    -- Static button bar at bottom of column 1 (New Group + Resources)
     local btnBar = CreateFrame("Frame", nil, col1.content)
     btnBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 0)
     btnBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 0)

@@ -13,6 +13,7 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CleanRecycledEntry = ST._CleanRecycledEntry
 local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local ApplyConfigTextRow = ST._ApplyConfigTextRow
+local CompactUntitledInlineGroupConfig = ST._CompactUntitledInlineGroupConfig
 local SetupGroupRowIndicators = ST._SetupGroupRowIndicators
 local SetupFolderRowIndicators = ST._SetupFolderRowIndicators
 local GetConfigRowBadgeReserve = ST._GetConfigRowBadgeReserve
@@ -40,10 +41,181 @@ local SelectConfigFolder = ST._SelectConfigFolder
 local SelectConfigContainer = ST._SelectConfigContainer
 local ToggleConfigContainerMultiSelect = ST._ToggleConfigContainerMultiSelect
 local SelectConfigPanel = ST._SelectConfigPanel
+local ToggleConfigPanelMultiSelect = ST._ToggleConfigPanelMultiSelect
+local GetConfigPanelTypeBadgeAtlas = ST._GetConfigPanelTypeBadgeAtlas
+local GetConfigPanelEntryCount = ST._GetConfigPanelEntryCount
+local ConfigPanelHasWarning = ST._ConfigPanelHasWarning
+local AddClassAccentSpacer = ST._AddClassAccentSpacer
 local SetHideActiveCurrentClassPanels = ST._SetHideActiveCurrentClassPanels
 local ClearOtherClassBrowseState = ST._ResetOtherClassLibraryState
 
 local GenerateGroupName
+
+local TREE = {
+    GROUP_ROW_HEIGHT = 42,
+    GROUP_ICON_SIZE = 32,
+    PANEL_ROW_HEIGHT = 28,
+    PANEL_ICON_SIZE = 16,
+    PANEL_INDENT = 18,
+    PANEL_META_WIDTH = 42,
+    ICON_GAP = 6,
+}
+
+local function ConfigureTreeExpandButton(entry, isExpanded, isPinned, onClick)
+    local button = entry.frame._cdcTreeExpandButton
+    if not button then
+        button = CreateFrame("Button", nil, entry.frame)
+        button:SetSize(16, 16)
+        button:RegisterForClicks("LeftButtonUp")
+        button:SetPropagateMouseClicks(false)
+        button:SetPropagateMouseMotion(false)
+        button.icon = button:CreateTexture(nil, "ARTWORK")
+        button.icon:SetSize(10, 10)
+        button.icon:SetPoint("CENTER")
+        entry.frame._cdcTreeExpandButton = button
+    end
+
+    button:ClearAllPoints()
+    button:SetPoint("RIGHT", entry.frame, "RIGHT", -4, 0)
+    button:SetFrameLevel(entry.frame:GetFrameLevel() + 25)
+    button.icon:SetAtlas(isExpanded and "common-icon-minus" or "common-icon-plus", false)
+    local baseR, baseG, baseB = 0.67, 0.59, 0.46
+    if isPinned then
+        baseR, baseG, baseB = 1, 0.72, 0.12
+    end
+    button.icon:SetVertexColor(baseR, baseG, baseB, 0.9)
+    button:SetScript("OnClick", function(_, mouseButton)
+        if mouseButton == "LeftButton" then onClick() end
+    end)
+    button:SetScript("OnEnter", function(self)
+        button.icon:SetVertexColor(1, 0.82, 0, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if isPinned then
+            GameTooltip:AddLine("Collapse pinned Group")
+        else
+            GameTooltip:AddLine(isExpanded and "Collapse Group" or "Expand and keep open")
+        end
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function()
+        button.icon:SetVertexColor(baseR, baseG, baseB, 0.9)
+        GameTooltip:Hide()
+    end)
+    button:Show()
+    return 22
+end
+
+local function OffsetGroupStatusBadges(entry, rightOffset)
+    local offsetX = -4 - (rightOffset or 0)
+    for _, badge in ipairs(entry.frame._cdcBadges or {}) do
+        if badge:IsShown() then
+            badge:ClearAllPoints()
+            badge:SetPoint("RIGHT", entry.frame, "RIGHT", offsetX, 0)
+            offsetX = offsetX - badge:GetWidth() - 2
+        end
+    end
+end
+
+local function ConfigureTreePanelMeta(entry, entryCount, panelDisabled, hasWarning)
+    local meta = entry.frame._cdcTreePanelMeta
+    if not meta then
+        meta = CreateFrame("Frame", nil, entry.frame)
+        meta:SetSize(TREE.PANEL_META_WIDTH, 18)
+        meta.status = CreateFrame("Button", nil, meta)
+        meta.status:SetSize(14, 14)
+        meta.status:SetPoint("RIGHT", meta, "RIGHT", -22, 0)
+        meta.status:SetPropagateMouseMotion(false)
+        meta.status.icon = meta.status:CreateTexture(nil, "OVERLAY")
+        meta.status.icon:SetAllPoints()
+        meta.status:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        meta.count = meta:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        meta.count:SetWidth(18)
+        meta.count:SetPoint("RIGHT", meta, "RIGHT", 0, 0)
+        meta.count:SetJustifyH("RIGHT")
+        entry.frame._cdcTreePanelMeta = meta
+    end
+
+    meta:ClearAllPoints()
+    meta:SetPoint("RIGHT", entry.frame, "RIGHT", -4, 0)
+    meta:SetFrameLevel(entry.frame:GetFrameLevel() + 12)
+    if not InCombatLockdown() and meta.status.SetPropagateMouseClicks then
+        meta.status:EnableMouse(true)
+        meta.status:SetPropagateMouseClicks(true)
+    else
+        meta.status:EnableMouse(false)
+    end
+    meta.count:SetText(tostring(entryCount or 0))
+    meta.count:SetTextColor(0.52, 0.49, 0.43, 1)
+    meta.status:SetScript("OnEnter", nil)
+    if panelDisabled then
+        meta.status.icon:SetAtlas("GM-icon-visibleDis-pressed", false)
+        meta.status.icon:SetVertexColor(0.65, 0.65, 0.65, 1)
+        meta.status:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Panel disabled", 0.7, 0.7, 0.7)
+            GameTooltip:Show()
+        end)
+        meta.status:Show()
+    elseif hasWarning then
+        meta.status.icon:SetAtlas("Ping_Marker_Icon_Warning", false)
+        meta.status.icon:SetVertexColor(1, 1, 1, 1)
+        meta.status:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("One or more entries are unavailable", 1, 0.3, 0.3)
+            GameTooltip:Show()
+        end)
+        meta.status:Show()
+    else
+        meta.status:Hide()
+    end
+    meta:Show()
+end
+
+local function ConfigureGroupHeaderLayout(entry, rightReserve)
+    entry._cdcAfterConfigRowLayout = function()
+        local frame = entry.frame
+        local label = entry.label
+        local icon = entry.image
+        local compact = CS.compactConfigRows == true
+        local reserve = rightReserve or 4
+        local leftInset = 2
+
+        label:ClearAllPoints()
+        if compact or not icon or not icon:IsShown() then
+            label:SetPoint("LEFT", frame, "LEFT", leftInset, 0)
+        else
+            icon:ClearAllPoints()
+            icon:SetPoint("LEFT", frame, "LEFT", leftInset, 0)
+            label:SetPoint("LEFT", icon, "RIGHT", TREE.ICON_GAP, 0)
+        end
+        label:SetPoint("RIGHT", frame, "RIGHT", -reserve, 0)
+        label:SetJustifyH("LEFT")
+        label:SetWordWrap(false)
+    end
+    entry:_cdcAfterConfigRowLayout()
+end
+
+local function ConfigureNestedPanelAccent(groupUnit, header, firstPanel, lastPanel, classColor)
+    local frame = groupUnit and groupUnit.frame
+    if not frame then return end
+    local accent = frame._cdcNestedPanelAccent
+    if not accent then
+        accent = frame:CreateTexture(nil, "ARTWORK")
+        frame._cdcNestedPanelAccent = accent
+    end
+    accent:ClearAllPoints()
+    if not (firstPanel and lastPanel and classColor) then
+        frame._cdcNestedPanelAccentActive = nil
+        accent:Hide()
+        return
+    end
+    frame._cdcNestedPanelAccentActive = true
+    accent:SetColorTexture(classColor.r, classColor.g, classColor.b, 0.8)
+    accent:SetWidth(3)
+    accent:SetPoint("TOPLEFT", header.frame, "BOTTOMLEFT", 2, 0)
+    accent:SetPoint("BOTTOMLEFT", lastPanel.frame, "BOTTOMLEFT", 2, 0)
+    accent:SetShown(CS.compactConfigRows ~= true)
+end
 
 local function OpenContainerLoadConditions(containerId)
     SelectConfigContainer(containerId)
@@ -94,14 +266,14 @@ local function EnsureGenericGroupRenameBadge(entry)
     return badge
 end
 
-local function ConfigureGenericGroupRenameBadge(entry, container, containerId, nameWidth)
+local function ConfigureGenericGroupRenameBadge(entry, container, containerId, rightReserve)
     local badge = EnsureGenericGroupRenameBadge(entry)
     badge:ClearAllPoints()
     badge:SetScript("OnClick", nil)
 
     if not IsGenericGroupName(container and container.name) then
         badge:Hide()
-        return
+        return 0
     end
 
     local currentName = TrimGroupName(container and container.name)
@@ -111,13 +283,14 @@ local function ConfigureGenericGroupRenameBadge(entry, container, containerId, n
 
     badge.icon:SetAtlas("QuestLegendary", false)
     badge.icon:SetVertexColor(1, 0.82, 0, 0.85)
-    badge:SetPoint("CENTER", entry.label, "LEFT", nameWidth + 13, 0)
+    badge:SetPoint("RIGHT", entry.frame, "RIGHT", -((rightReserve or 4) + 2), 0)
     badge:SetScript("OnClick", function(_, button)
         if button ~= "LeftButton" then return end
         GameTooltip:Hide()
         ShowPopupAboveConfig("CDC_RENAME_GROUP", currentName, { containerId = containerId })
     end)
     badge:Show()
+    return 18
 end
 
 local PANEL_CREATION_MODES = {
@@ -191,6 +364,282 @@ local function ResolveContainerScopeForConfig(containerId, container, charKey)
     end
     return { scope = "invalid", sectionKey = "invalid", runtimeVisible = false }
 end
+
+local function CanPanelMoveToContainer(panelId, containerId)
+    if CooldownCompanion.ResolveContainerClassScope then
+        local scope = CooldownCompanion:ResolveContainerClassScope(containerId)
+        if scope and scope.isInvalid then return false end
+    end
+    if CooldownCompanion.CanMovePanelToContainer then
+        return CooldownCompanion:CanMovePanelToContainer(panelId, containerId) == true
+    end
+    return true
+end
+
+local function BuildFlatContainerOrder(db, excludedContainerId, panelId)
+    local folderChildren = {}
+    local loose = {}
+    for containerId, container in pairs(db.groupContainers or {}) do
+        if containerId ~= excludedContainerId and (not panelId or CanPanelMoveToContainer(panelId, containerId)) then
+            local item = {
+                kind = "container",
+                id = containerId,
+                name = container.name or ("Group " .. tostring(containerId)),
+                order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, containerId),
+            }
+            if container.folderId and db.folders and db.folders[container.folderId] then
+                folderChildren[container.folderId] = folderChildren[container.folderId] or {}
+                table.insert(folderChildren[container.folderId], item)
+            else
+                table.insert(loose, item)
+            end
+        end
+    end
+
+    local topLevel = {}
+    for folderId, children in pairs(folderChildren) do
+        table.sort(children, function(a, b) return a.order < b.order end)
+        local folder = db.folders[folderId]
+        table.insert(topLevel, {
+            kind = "folder",
+            id = folderId,
+            order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, folderId),
+            children = children,
+        })
+    end
+    for _, item in ipairs(loose) do
+        table.insert(topLevel, item)
+    end
+    table.sort(topLevel, function(a, b) return a.order < b.order end)
+
+    local flattened = {}
+    for _, item in ipairs(topLevel) do
+        if item.kind == "folder" then
+            for _, child in ipairs(item.children) do
+                flattened[#flattened + 1] = child
+            end
+        else
+            flattened[#flattened + 1] = item
+        end
+    end
+    return flattened
+end
+
+local function ShowPanelContextMenu(panelId, containerId)
+    local db = CooldownCompanion.db.profile
+    local panel = db.groups and db.groups[panelId]
+    local container = db.groupContainers and db.groupContainers[containerId]
+    if not (panel and container) then return end
+
+    if not CS.panelContextMenu then
+        CS.panelContextMenu = CreateFrame("Frame", "CDCPanelContextMenu", UIParent, "UIDropDownMenuTemplate")
+    end
+    UIDropDownMenu_Initialize(CS.panelContextMenu, function(_, level, menuList)
+        level = level or 1
+        if level == 1 then
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = "Rename"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                ShowPopupAboveConfig("CDC_RENAME_GROUP", panel.name or "Panel", { groupId = panelId })
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = panel.enabled ~= false and "Disable" or "Enable"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                panel.enabled = not (panel.enabled ~= false)
+                CooldownCompanion:RefreshGroupFrame(panelId)
+                CooldownCompanion:RefreshConfigPanel()
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Load Conditions"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                SelectConfigPanel(panelId, { containerId = containerId })
+                CS.selectedTab = "loadconditions"
+                CS.panelSettingsTab = "loadconditions"
+                CooldownCompanion:RefreshConfigPanel()
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            if not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
+                info = UIDropDownMenu_CreateInfo()
+                info.text = panel.locked == false and "Lock Anchor" or "Unlock Anchor"
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    if panel.locked == false then
+                        panel.locked = nil
+                        CooldownCompanion:Print((panel.name or "Panel") .. " locked.")
+                    else
+                        panel.locked = false
+                        CooldownCompanion:Print((panel.name or "Panel") .. " unlocked. Drag to reposition.")
+                    end
+                    CooldownCompanion:RefreshGroupFrame(panelId)
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+
+            if CooldownCompanion:IsIconLikeDisplayMode(panel.displayMode) then
+                info = UIDropDownMenu_CreateInfo()
+                info.text = panel.anchorEligible ~= false and "Exclude from Auto-Anchoring" or "Include in Auto-Anchoring"
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    panel.anchorEligible = panel.anchorEligible ~= false and false or nil
+                    CooldownCompanion:EvaluateResourceBars()
+                    CooldownCompanion:UpdateAnchorStacking()
+                    CooldownCompanion:EvaluateCastBar()
+                    CooldownCompanion:EvaluateFrameAnchoring()
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+
+            if panel.displayMode ~= ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+                local switchModes = {
+                    { mode = "icons", label = "Icons" },
+                    { mode = "bars", label = "Bars" },
+                    { mode = "text", label = "Text" },
+                    { mode = "textures", label = "Textures" },
+                }
+                for _, modeInfo in ipairs(switchModes) do
+                    if panel.displayMode ~= modeInfo.mode then
+                        info = UIDropDownMenu_CreateInfo()
+                        info.text = "Switch to " .. modeInfo.label
+                        info.notCheckable = true
+                        local targetMode = modeInfo.mode
+                        info.func = function()
+                            CloseDropDownMenus()
+                            if CooldownCompanion:ChangePanelDisplayMode(panelId, targetMode) then
+                                if targetMode == "textures" then
+                                    CS.pendingTexturePickerOpen = panelId
+                                    SelectConfigPanel(panelId, { containerId = containerId })
+                                end
+                                CooldownCompanion:RefreshConfigPanel()
+                            end
+                        end
+                        UIDropDownMenu_AddButton(info, level)
+                    end
+                end
+            end
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Duplicate"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                local newPanelId = CooldownCompanion:DuplicatePanel(containerId, panelId)
+                if newPanelId then
+                    SelectConfigPanel(newPanelId, { containerId = containerId })
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            local copyStyleMode = panel.displayMode == "bars" and "bars"
+                or ((panel.displayMode == nil or panel.displayMode == "icons") and "icons" or nil)
+            if copyStyleMode then
+                local _, copyPanelOrder = CooldownCompanion:GetDirectStyleCopyPanelList(copyStyleMode, panelId)
+                info = UIDropDownMenu_CreateInfo()
+                info.text = "Copy Style From"
+                info.notCheckable = true
+                if #copyPanelOrder > 0 then
+                    info.hasArrow = true
+                    info.menuList = "COPY_STYLE_FROM_PANEL"
+                else
+                    info.disabled = true
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+
+            local moveTargets = BuildFlatContainerOrder(db, containerId, panelId)
+            if #moveTargets > 0 then
+                info = UIDropDownMenu_CreateInfo()
+                info.text = "Move to Group"
+                info.notCheckable = true
+                info.hasArrow = true
+                info.menuList = "MOVE_TO_GROUP"
+                UIDropDownMenu_AddButton(info, level)
+            end
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Export"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                local containerData = BuildContainerExportData(container)
+                containerData.name = panel.name or "Panel"
+                local payload = {
+                    type = "container",
+                    version = 1,
+                    container = containerData,
+                    panels = { BuildGroupExportData(panel) },
+                    _originalContainerId = containerId,
+                }
+                ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = EncodeExportData(payload) })
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "|cffff4444Delete|r"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                ShowPopupAboveConfig("CDC_DELETE_PANEL", panel.name or "Panel", {
+                    containerId = containerId,
+                    panelId = panelId,
+                })
+            end
+            UIDropDownMenu_AddButton(info, level)
+        elseif menuList == "COPY_STYLE_FROM_PANEL" then
+            local copyStyleMode = panel.displayMode == "bars" and "bars" or "icons"
+            local copyPanelList, copyPanelOrder = CooldownCompanion:GetDirectStyleCopyPanelList(copyStyleMode, panelId)
+            for _, sourcePanelId in ipairs(copyPanelOrder) do
+                local sourceName = copyPanelList[sourcePanelId] or ("Panel " .. tostring(sourcePanelId))
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = sourceName
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    ShowPopupAboveConfig("CDC_CONFIRM_PANEL_STYLE_COPY", sourceName, {
+                        mode = copyStyleMode,
+                        sourceGroupId = sourcePanelId,
+                        targetGroupId = panelId,
+                    })
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        elseif menuList == "MOVE_TO_GROUP" then
+            for _, target in ipairs(BuildFlatContainerOrder(db, containerId, panelId)) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = target.name
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    if CooldownCompanion:MovePanel(panelId, target.id) then
+                        CS.expandedContainer = target.id
+                        SelectConfigPanel(panelId, { containerId = target.id })
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end
+    end, "MENU")
+    CS.panelContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+    ToggleDropDownMenu(1, nil, CS.panelContextMenu, "cursor", 0, 0)
+end
+
+ST._ShowPanelContextMenu = ShowPanelContextMenu
 
 local function ResolveFolderScopeForConfig(folderId, folder, charKey)
     if CooldownCompanion.ResolveFolderClassScope then
@@ -299,18 +748,6 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
             end
             UIDropDownMenu_AddButton(info, level)
 
-            local containerScope = ResolveContainerScopeForConfig(containerId, container, charKey)
-            local containerSection = containerScope.sectionKey or (container.isGlobal and "global" or "char")
-            local folderTargets = GetFolderTargetsForSection(db, charKey, containerSection)
-            if #folderTargets > 0 or container.folderId then
-                info = UIDropDownMenu_CreateInfo()
-                info.text = "Move to Folder"
-                info.notCheckable = true
-                info.hasArrow = true
-                info.menuList = "MOVE_TO_FOLDER"
-                UIDropDownMenu_AddButton(info, level)
-            end
-
             info = UIDropDownMenu_CreateInfo()
             info.text = (container.enabled ~= false) and "Disable" or "Enable"
             info.notCheckable = true
@@ -401,30 +838,28 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
             end
             UIDropDownMenu_AddButton(info, level)
 
-            if not container.folderId then
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Set Group Icon..."
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                OpenContainerIconPicker(containerId)
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            if IsValidIconTexture(container.manualIcon) then
                 info = UIDropDownMenu_CreateInfo()
-                info.text = "Set Group Icon..."
+                info.text = "Clear Custom Icon"
                 info.notCheckable = true
                 info.func = function()
                     CloseDropDownMenus()
-                    OpenContainerIconPicker(containerId)
+                    local fresh = db.groupContainers[containerId]
+                    if fresh then
+                        fresh.manualIcon = nil
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
                 end
                 UIDropDownMenu_AddButton(info, level)
-
-                if IsValidIconTexture(container.manualIcon) then
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = "Clear Custom Icon"
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        local fresh = db.groupContainers[containerId]
-                        if fresh then
-                            fresh.manualIcon = nil
-                            CooldownCompanion:RefreshConfigPanel()
-                        end
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-                end
             end
 
             info = UIDropDownMenu_CreateInfo()
@@ -702,7 +1137,7 @@ local function PopulateColumn1ButtonBar()
     ClearColumn1ButtonBar()
 
     local barW = CS.col1ButtonBar:GetWidth() or 300
-    local thirdW = (barW - 6) / 3
+    local halfW = (barW - 3) / 2
 
     local newGroupBtn = AceGUI:Create("Button")
     newGroupBtn:SetText("New Group")
@@ -720,27 +1155,13 @@ local function PopulateColumn1ButtonBar()
     newGroupBtn.frame:SetParent(CS.col1ButtonBar)
     newGroupBtn.frame:ClearAllPoints()
     newGroupBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
-    newGroupBtn.frame:SetWidth(thirdW)
+    newGroupBtn.frame:SetWidth(halfW)
     newGroupBtn.frame:SetHeight(28)
     newGroupBtn.frame:Show()
     if CS.tutorialAnchors then
         CS.tutorialAnchors.new_group_button = newGroupBtn.frame
     end
     table.insert(CS.col1BarWidgets, newGroupBtn)
-
-    local newFolderBtn = AceGUI:Create("Button")
-    newFolderBtn:SetText("New Folder")
-    newFolderBtn:SetCallback("OnClick", function()
-        CooldownCompanion:CreateFolder(GenerateFolderName("New Folder"), "char")
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    newFolderBtn.frame:SetParent(CS.col1ButtonBar)
-    newFolderBtn.frame:ClearAllPoints()
-    newFolderBtn.frame:SetPoint("LEFT", newGroupBtn.frame, "RIGHT", 3, 0)
-    newFolderBtn.frame:SetWidth(thirdW)
-    newFolderBtn.frame:SetHeight(28)
-    newFolderBtn.frame:Show()
-    table.insert(CS.col1BarWidgets, newFolderBtn)
 
     -- Resources: first-class module home, beside group management
     local resourcesBtn = AceGUI:Create("Button")
@@ -753,8 +1174,8 @@ local function PopulateColumn1ButtonBar()
     end)
     resourcesBtn.frame:SetParent(CS.col1ButtonBar)
     resourcesBtn.frame:ClearAllPoints()
-    resourcesBtn.frame:SetPoint("LEFT", newFolderBtn.frame, "RIGHT", 3, 0)
-    resourcesBtn.frame:SetWidth(thirdW)
+    resourcesBtn.frame:SetPoint("LEFT", newGroupBtn.frame, "RIGHT", 3, 0)
+    resourcesBtn.frame:SetWidth(halfW)
     resourcesBtn.frame:SetHeight(28)
     resourcesBtn.frame:Show()
     CS.col1ResourcesButton = resourcesBtn
@@ -763,10 +1184,10 @@ local function PopulateColumn1ButtonBar()
     end
     table.insert(CS.col1BarWidgets, resourcesBtn)
 
-    CS.col1ButtonBar._topRowBtns = { newGroupBtn.frame, newFolderBtn.frame, resourcesBtn.frame }
+    CS.col1ButtonBar._topRowBtns = { newGroupBtn.frame, resourcesBtn.frame }
     CS.col1ButtonBar:SetScript("OnSizeChanged", function(self, w)
         if self._topRowBtns then
-            local tw = (w - 6) / 3
+            local tw = (w - 3) / 2
             for _, frame in ipairs(self._topRowBtns) do
                 frame:SetWidth(tw)
             end
@@ -1052,123 +1473,163 @@ local function RefreshColumn1(preserveDrag)
         return defaultBucket or "loaded"
     end
 
-    -- Helper: render a single container row (reused by both sections)
+    CS.peekedContainers = CS.peekedContainers or {}
+    if CS.expandedContainer and not db.groupContainers[CS.expandedContainer] then
+        CS.expandedContainer = nil
+    end
+    for containerId in pairs(CS.peekedContainers) do
+        if not db.groupContainers[containerId] then
+            CS.peekedContainers[containerId] = nil
+        end
+    end
+
+    local selectedPanel = CS.selectedGroup and db.groups[CS.selectedGroup]
+    if not searchResults
+        and not CS.otherClassLibraryActive
+        and selectedPanel
+        and selectedPanel.parentContainerId
+    then
+        CS.expandedContainer = selectedPanel.parentContainerId
+    end
+
+    local function IsContainerExpanded(containerId)
+        return CS.expandedContainer == containerId or CS.peekedContainers[containerId] == true
+    end
+
+    local function ContainerHasActivePanelSelection(containerId)
+        local panel = CS.selectedGroup and db.groups[CS.selectedGroup]
+        return panel and panel.parentContainerId == containerId
+    end
+
+    local function CollapseContainer(containerId)
+        if ContainerHasActivePanelSelection(containerId) then
+            SelectConfigContainer(containerId)
+        end
+        if CS.expandedContainer == containerId then
+            CS.expandedContainer = nil
+        end
+        CS.peekedContainers[containerId] = nil
+    end
+
+    local function ToggleContainerPeek(containerId)
+        if IsContainerExpanded(containerId) then
+            CollapseContainer(containerId)
+        else
+            CS.peekedContainers[containerId] = true
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end
+
+    local function SelectAndExpandContainer(containerId)
+        CS.expandedContainer = containerId
+        CS.peekedContainers[containerId] = nil
+        SelectConfigContainer(containerId)
+        CooldownCompanion:RefreshConfigPanel()
+    end
+
+    local function GetContainerClassColor(containerId, container)
+        local scope = ResolveContainerScope(containerId, container)
+        if scope and scope.ownerClassKey then
+            local color = C_ClassColor.GetClassColor(scope.ownerClassKey)
+            if color then return color end
+        end
+        return C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    end
+
+    -- Helper: render a framed Group unit and its visible Panel rows.
+    local lastRenderedGroupSection
     local function RenderContainerRow(containerId, inFolder, sectionTag, loadBucket, options)
         local container = db.groupContainers[containerId]
         if not container then return end
-        local disableDrag = options and options.disableDrag == true
+
+        local isInactive = IsContainerInactive(containerId, container)
+        local stats = containerStats[containerId]
+        local panelCount = stats and stats.panelCount or 0
+        local panels = CooldownCompanion:GetPanels(containerId)
+        local isExpanded = IsContainerExpanded(containerId)
+        local allowPanelRows = not searchResults and not (options and options.disableDrag == true)
+        local classColor = GetContainerClassColor(containerId, container)
+
+        if loadBucket == "loaded" and lastRenderedGroupSection == sectionTag then
+            AddClassAccentSpacer(CS.col1Scroll, classColor)
+        end
+        lastRenderedGroupSection = loadBucket == "loaded" and sectionTag or nil
+
+        local groupUnit = AceGUI:Create("InlineGroup")
+        groupUnit:SetTitle("")
+        groupUnit:SetLayout("List")
+        groupUnit:SetFullWidth(true)
+        CompactUntitledInlineGroupConfig(groupUnit)
+        CS.col1Scroll:AddChild(groupUnit)
+        groupUnit.frame:SetAlpha(isInactive and 0.58 or 1)
 
         local entry = AceGUI:Create("InteractiveLabel")
         CleanRecycledEntry(entry)
-        local isInactive = IsContainerInactive(containerId, container)
-
-        -- Show panel count in name when >1 panel
-        local stats = containerStats[containerId]
-        local panelCount = stats and stats.panelCount or 0
         local groupName = container.name or "New Group"
-        local showGenericRenameBadge = IsGenericGroupName(groupName)
-        local displayName = groupName
-        if showGenericRenameBadge then
-            displayName = displayName .. "      "
-        end
-        if panelCount > 1 then
-            displayName = displayName .. "  |cff888888(" .. panelCount .. " panels)|r"
-        end
-
-        entry:SetText(displayName)
+        local countLabel = panelCount == 1 and "1 panel" or (tostring(panelCount) .. " panels")
+        entry:SetText(groupName .. "  |cff777777(" .. countLabel .. ")|r")
         entry:SetFullWidth(true)
         entry:SetFontObject(GameFontHighlight)
-        local groupNameWidth = 0
-        if showGenericRenameBadge and entry.label then
-            entry.label:SetText(groupName)
-            groupNameWidth = entry.label:GetStringWidth()
-            entry:SetText(displayName)
-        end
-        if inFolder then
-            ApplyConfigTextRow(entry, "LEFT", 17)
-        else
-            ApplyConfigRowIcon(entry, GetContainerIcon(containerId, db))
-        end
+        ApplyConfigRowIcon(entry, GetContainerIcon(containerId, db), {
+            indent = 2,
+            iconSize = TREE.GROUP_ICON_SIZE,
+            iconGap = TREE.ICON_GAP,
+            rowHeight = TREE.GROUP_ROW_HEIGHT,
+            compactRowHeight = 30,
+            texCoord = { 0.08, 0.92, 0.08, 0.92 },
+        })
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        groupUnit:AddChild(entry)
 
-        -- Color: blue for multi-selected, green for selected, gray for inactive
+        SetupGroupRowIndicators(entry, container, { showInheritedFolderBadges = true })
+        local expandReserve = 0
+        if allowPanelRows and panelCount > 0 then
+            expandReserve = ConfigureTreeExpandButton(
+                entry,
+                isExpanded,
+                CS.peekedContainers[containerId] == true,
+                function()
+                    ToggleContainerPeek(containerId)
+                end
+            )
+            OffsetGroupStatusBadges(entry, expandReserve)
+        end
+        local rightReserve = expandReserve + GetConfigRowBadgeReserve(entry.frame) + 4
+        rightReserve = rightReserve
+            + ConfigureGenericGroupRenameBadge(entry, container, containerId, rightReserve)
+        ConfigureGroupHeaderLayout(entry, rightReserve)
+
         if CS.selectedGroups[containerId] then
             entry:SetColor(0.4, 0.7, 1.0)
-        elseif CS.selectedContainer == containerId then
+        elseif CS.selectedContainer == containerId and not CS.selectedGroup then
             entry:SetColor(0, 1, 0)
         elseif isInactive then
-            entry:SetColor(0.5, 0.5, 0.5)
+            entry:SetColor(0.55, 0.55, 0.55)
         end
 
-        CS.col1Scroll:AddChild(entry)
-
-        -- No mode badge for containers (panels have individual modes)
-        if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
-
-        SetupGroupRowIndicators(entry, container)
-        if showGenericRenameBadge then
-            ConfigureGenericGroupRenameBadge(entry, container, containerId, groupNameWidth)
-        end
-
-        if not disableDrag then
-            entry:SetCallback("OnClick", function(widget, event, mouseButton)
-                if mouseButton == "LeftButton"
-                    and not searchResults
-                    and not IsShiftKeyDown()
-                    and not IsControlKeyDown()
-                    and not GetCursorInfo()
-                then
-                    local isMulti = next(CS.selectedGroups) and CS.selectedGroups[containerId]
-                    local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
-                    CS.dragState = {
-                        kind = isMulti and "multi-group" or (inFolder and "folder-group" or "group"),
-                        phase = "pending",
-                        sourceGroupId = containerId,
-                        sourceGroupIds = isMulti and CopyTable(CS.selectedGroups) or nil,
-                        sourceSection = sectionTag,
-                        sourceFolderId = inFolder and container.folderId or nil,
-                        sourceLoadBucket = isMulti and ResolveSelectedDragLoadBucket(loadBucket) or (loadBucket or "loaded"),
-                        scrollWidget = CS.col1Scroll,
-                        widget = entry,
-                        startX = cursorX,
-                        startY = cursorY,
-                        col1RenderedRows = col1RenderedRows,
-                    }
-                    StartDragTracking()
-                end
-            end)
-        end
-
-        -- Handle clicks via OnMouseUp
-        entry.frame:SetScript("OnMouseUp", function(self, button)
-            if CS.dragState and CS.dragState.phase == "active" then return end
+        entry.frame:SetScript("OnMouseUp", function(_, button)
             if button == "LeftButton" then
                 if searchResults then
                     SelectConfigContainer(containerId, { clearFinder = true })
                     CooldownCompanion:RefreshConfigPanel()
-                    return
-                end
-                if IsShiftKeyDown() then
+                elseif IsShiftKeyDown() then
                     OpenContainerLoadConditions(containerId)
-                    return
                 elseif IsControlKeyDown() then
-                    -- Ctrl+click: toggle multi-select (container IDs)
                     ToggleConfigContainerMultiSelect(containerId)
                     CooldownCompanion:RefreshConfigPanel()
-                    return
+                elseif options and options.disableDrag == true then
+                    SelectConfigContainer(containerId)
+                    CooldownCompanion:RefreshConfigPanel()
+                else
+                    SelectAndExpandContainer(containerId)
                 end
-                -- Normal click: toggle-through selection, clear multi-select
-                SelectConfigContainer(containerId, { toggle = true })
-                CooldownCompanion:RefreshConfigPanel()
             elseif button == "RightButton" then
                 ShowContainerContextMenu(db, charKey, containerId, container)
-                return
             elseif button == "MiddleButton" then
                 container.locked = not container.locked
                 CooldownCompanion:UpdateContainerDragHandle(containerId, container.locked)
                 CooldownCompanion:RefreshContainerPanels(containerId)
                 CooldownCompanion:RefreshConfigPanel()
-                return
             end
         end)
 
@@ -1176,15 +1637,131 @@ local function RefreshColumn1(preserveDrag)
             kind = "container",
             id = containerId,
             widget = entry,
-            inFolder = inFolder and container.folderId or nil,
+            inFolder = container.folderId,
             section = sectionTag,
-            loadBucket = loadBucket or "loaded",
-            acceptsDrop = (not disableDrag) and (loadBucket or "loaded") ~= "unloaded",
-            previewDraggable = not disableDrag,
+            loadBucket = "loaded",
+            acceptsDrop = false,
+            previewDraggable = false,
             previewProxy = true,
         })
 
-        return entry
+        local firstPanelEntry, lastPanelEntry
+        if allowPanelRows and isExpanded then
+            for _, panelInfo in ipairs(panels) do
+                local panelId = panelInfo.groupId
+                local panel = panelInfo.group
+                local panelEntry = AceGUI:Create("InteractiveLabel")
+                CleanRecycledEntry(panelEntry)
+                panelEntry:SetText(panel.name or ("Panel " .. tostring(panelId)))
+                panelEntry:SetFullWidth(true)
+                panelEntry:SetFontObject(GameFontHighlight)
+
+                local iconTexture = 134400
+                local iconAtlas
+                local vertexColor
+                local texCoord
+                local desaturated = isInactive or panel.enabled == false
+                if panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+                    iconTexture = CooldownCompanion:GetRotationAssistantFallbackIcon()
+                    texCoord = { 0.08, 0.92, 0.08, 0.92 }
+                else
+                    iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
+                    if panel.displayMode == "trigger" then
+                        vertexColor = { 1.0, 0.18, 0.78, 1 }
+                        desaturated = true
+                    end
+                end
+                ApplyConfigRowIcon(panelEntry, iconTexture, {
+                    atlas = iconAtlas,
+                    desaturated = desaturated,
+                    indent = TREE.PANEL_INDENT,
+                    iconSize = TREE.PANEL_ICON_SIZE,
+                    iconGap = TREE.ICON_GAP,
+                    rowHeight = TREE.PANEL_ROW_HEIGHT,
+                    compactRowHeight = 24,
+                    texCoord = texCoord,
+                    vertexColor = vertexColor,
+                    rightPad = TREE.PANEL_META_WIDTH + 8,
+                })
+                panelEntry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+                ConfigureTreePanelMeta(
+                    panelEntry,
+                    GetConfigPanelEntryCount(panel),
+                    panel.enabled == false,
+                    panel.enabled ~= false and ConfigPanelHasWarning(panel)
+                )
+
+                if CS.selectedPanels[panelId] then
+                    panelEntry:SetColor(0.4, 0.7, 1.0)
+                elseif panel.enabled == false or isInactive then
+                    panelEntry:SetColor(0.5, 0.5, 0.5)
+                elseif CS.selectedGroup == panelId
+                    and not CS.selectedButton
+                    and not CS.selectedRotationAssistantEntry then
+                    panelEntry:SetColor(0, 1, 0)
+                end
+
+                groupUnit:AddChild(panelEntry)
+                firstPanelEntry = firstPanelEntry or panelEntry
+                lastPanelEntry = panelEntry
+
+                panelEntry.frame:SetScript("OnMouseUp", function(_, button)
+                    if button == "LeftButton" then
+                        if IsControlKeyDown() then
+                            if CS.selectedContainer ~= containerId then
+                                SelectConfigPanel(panelId, { containerId = containerId })
+                            end
+                            ToggleConfigPanelMultiSelect(panelId)
+                            CooldownCompanion:RefreshConfigPanel()
+                        elseif IsShiftKeyDown() then
+                            SelectConfigPanel(panelId, { containerId = containerId })
+                            CS.selectedTab = "loadconditions"
+                            CS.panelSettingsTab = "loadconditions"
+                            CooldownCompanion:RefreshConfigPanel()
+                        else
+                            SelectConfigPanel(panelId, {
+                                containerId = containerId,
+                                toggle = true,
+                            })
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+                    elseif button == "MiddleButton" then
+                        if CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel) then
+                            CooldownCompanion:Print("Cursor-anchored panels are edited from Layout.")
+                            return
+                        end
+                        if panel.locked == false then
+                            panel.locked = nil
+                            CooldownCompanion:Print((panel.name or "Panel") .. " locked.")
+                        else
+                            panel.locked = false
+                            CooldownCompanion:Print((panel.name or "Panel") .. " unlocked. Drag to reposition.")
+                        end
+                        CooldownCompanion:RefreshGroupFrame(panelId)
+                        CooldownCompanion:RefreshConfigPanel()
+                    elseif button == "RightButton" and ST._ShowPanelContextMenu then
+                        ST._ShowPanelContextMenu(panelId, containerId)
+                    end
+                end)
+
+                TrackRenderedRow({
+                    kind = "aux-block",
+                    rowType = "panel",
+                    id = panelId,
+                    widget = panelEntry,
+                    section = sectionTag,
+                    loadBucket = "aux",
+                    acceptsDrop = false,
+                    previewDraggable = false,
+                    previewProxy = true,
+                    ownerKind = "container",
+                    ownerId = containerId,
+                    ownerFolderId = container.folderId,
+                })
+            end
+        end
+        ConfigureNestedPanelAccent(groupUnit, entry, firstPanelEntry, lastPanelEntry, classColor)
+        return groupUnit
     end
 
     -- Helper: generate a unique group name with the given base
@@ -1425,24 +2002,28 @@ local function RefreshColumn1(preserveDrag)
             end
         end
 
-        -- Partition into loaded (active) and unloaded (inactive)
+        -- Flatten the hidden Folder hierarchy first, then separate active and
+        -- inactive Groups without disturbing either bucket's structural order.
+        local orderedContainerIds = {}
+        for _, item in ipairs(items) do
+            if item.kind == "folder" then
+                for _, containerId in ipairs(folderChildContainers[item.id] or {}) do
+                    orderedContainerIds[#orderedContainerIds + 1] = containerId
+                end
+            elseif item.kind == "container" then
+                orderedContainerIds[#orderedContainerIds + 1] = item.id
+            end
+        end
+
         local loadedItems = {}
         local unloadedItems = {}
-        for _, item in ipairs(items) do
+        for _, containerId in ipairs(orderedContainerIds) do
             if options and options.noLoadBuckets then
-                table.insert(loadedItems, item)
+                loadedItems[#loadedItems + 1] = containerId
+            elseif IsContainerInactive(containerId, db.groupContainers[containerId]) then
+                unloadedItems[#unloadedItems + 1] = containerId
             else
-                local isInactive
-                if item.kind == "folder" then
-                    isInactive = IsFolderFullyInactive(item.id, folderChildContainers[item.id])
-                else
-                    isInactive = IsContainerInactive(item.id, db.groupContainers[item.id])
-                end
-                if isInactive then
-                    table.insert(unloadedItems, item)
-                else
-                    table.insert(loadedItems, item)
-                end
+                loadedItems[#loadedItems + 1] = containerId
             end
         end
 
@@ -1504,47 +2085,15 @@ local function RefreshColumn1(preserveDrag)
             or C_ClassColor.GetClassColor(select(2, UnitClass("player")))
 
         local function RenderItems(itemList, loadBucket)
-            for _, item in ipairs(itemList) do
-                if item.kind == "folder" then
-                    RenderFolderRow(item.id, section, folderChildContainers[item.id], loadBucket, options)
-                    -- If expanded, render children with accent bar
-                    if searchResults or not CS.collapsedFolders[item.id] then
-                        local children = folderChildContainers[item.id]
-                        if children and #children > 0 then
-                            local firstEntry, lastEntry
-                            for _, cid in ipairs(children) do
-                                local entry = RenderContainerRow(cid, true, section, loadBucket, options)
-                                if entry then
-                                    if not firstEntry then firstEntry = entry end
-                                    lastEntry = entry
-                                end
-                            end
-                            -- Create accent bar spanning all child rows
-                            if firstEntry and lastEntry and classColor then
-                                accentBarIndex = accentBarIndex + 1
-                                local bar = CS.folderAccentBars[accentBarIndex]
-                                if not bar then
-                                    bar = CS.col1Scroll.content:CreateTexture(nil, "ARTWORK")
-                                    CS.folderAccentBars[accentBarIndex] = bar
-                                end
-                                bar:SetColorTexture(classColor.r, classColor.g, classColor.b, 0.8)
-                                bar:SetWidth(3)
-                                bar:ClearAllPoints()
-                                bar._cdcFolderId = item.id
-                                bar._cdcFolderAccentActive = true
-                                bar:SetPoint("TOPLEFT", firstEntry.frame, "TOPLEFT", 0, 0)
-                                bar:SetPoint("BOTTOMLEFT", lastEntry.frame, "BOTTOMLEFT", 0, 0)
-                                if CS.compactConfigRows then
-                                    bar:Hide()
-                                else
-                                    bar:Show()
-                                end
-                            end
-                        end
-                    end
-                elseif item.kind == "container" then
-                    RenderContainerRow(item.id, false, section, loadBucket, options)
-                end
+            for _, containerId in ipairs(itemList) do
+                local container = db.groupContainers[containerId]
+                RenderContainerRow(
+                    containerId,
+                    container and container.folderId ~= nil,
+                    section,
+                    loadBucket,
+                    options
+                )
             end
         end
 
@@ -1766,7 +2315,7 @@ local function RefreshColumn1(preserveDrag)
 
     -- Split containers into global, current-class, and other-class inventory.
     local containers = db.groupContainers or {}
-    local showNewUserEmptyState = not next(containers) and not next(db.folders)
+    local showNewUserEmptyState = not next(containers)
     local globalIds = {}
     local charIds = {}
     local otherSections = {}
@@ -1786,15 +2335,6 @@ local function RefreshColumn1(preserveDrag)
         end
     end
 
-    for folderId, folder in pairs(db.folders or {}) do
-        local scope = ResolveFolderScope(folderId, folder)
-        if scope.scope == "other-class" then
-            local section = EnsureOtherClassSection(otherSections, otherSectionOrder, scope)
-            if section then
-                section.count = section.count + 1
-            end
-        end
-    end
     table.sort(otherSectionOrder, function(a, b)
         return (a.title or a.classKey or a.key) < (b.title or b.classKey or b.key)
     end)
@@ -1885,17 +2425,8 @@ local function RefreshColumn1(preserveDrag)
 
         if not renderedOtherClassLibrary then
             local hasGlobalContent = #globalIds > 0
-            if not hasGlobalContent then
-                for folderId, folder in pairs(db.folders) do
-                    local scope = ResolveFolderScope(folderId, folder)
-                    if scope.scope == "global" then
-                        hasGlobalContent = true
-                        break
-                    end
-                end
-            end
 
-            if #globalIds > 0 or next(db.folders) or CS.showPhantomSections then
+            if #globalIds > 0 or CS.showPhantomSections then
                 if hasGlobalContent or CS.showPhantomSections then
                     RenderSection("global", globalIds, "Global Groups", { 0.4, 0.67, 1.0 })
                 end
@@ -1904,15 +2435,6 @@ local function RefreshColumn1(preserveDrag)
             local _, playerClassKey = UnitClass("player")
             local currentClassName = GetClassDisplayName(playerClassKey)
             local hasCharContent = #charIds > 0
-            if not hasCharContent then
-                for folderId, folder in pairs(db.folders) do
-                    local scope = ResolveFolderScope(folderId, folder)
-                    if scope.scope == "current-class" then
-                        hasCharContent = true
-                        break
-                    end
-                end
-            end
             if hasCharContent or CS.showPhantomSections then
                 local cc = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
                 RenderSection(

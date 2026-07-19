@@ -81,19 +81,6 @@ local function CanMoveEntryToGroup(sourceGroupId, targetGroupId)
     return CooldownCompanion:IsGroupVisibleToCurrentChar(targetGroupId)
 end
 
-local function CanAllContainersMoveToFolder(containerIds, folderId)
-    if not CooldownCompanion.CanMoveContainerToFolder then
-        return true
-    end
-    for _, containerId in ipairs(containerIds or {}) do
-        local ok = CooldownCompanion:CanMoveContainerToFolder(containerId, folderId)
-        if not ok then
-            return false
-        end
-    end
-    return true
-end
-
 local function OpenPanelLoadConditions(panelId, containerId)
     SelectConfigPanel(panelId, { containerId = containerId })
     CS.selectedTab = "loadconditions"
@@ -108,7 +95,6 @@ local ROW_BADGE_SIZE = 16
 local OVERRIDE_BADGE_ICON_SIZE = 12
 local ROW_BADGE_SPACING = 2
 local ROW_BADGE_RIGHT_PAD = 4
-local TEXTURE_PANEL_HEADER_BADGE_ATLAS = "UI-HUD-MicroMenu-Communities-Icon-Notification"
 local CURSOR_PANEL_HEADER_BADGE_ATLAS = "cursor_cast_32"
 local CDM_PANEL_HEADER_BADGE_ATLAS = "common-icon-rotateleft"
 local PANEL_HEADER_TYPE_BADGE_GAP = 2
@@ -192,17 +178,7 @@ local function IsActiveCDMPanelSource(panel)
     return expectedMode == nil or panel.displayMode == expectedMode
 end
 
-local function GetPanelTypeBadgeAtlas(displayMode)
-    if displayMode == "bars" then
-        return "CreditsScreen-Assets-Buttons-Pause"
-    elseif displayMode == "text" then
-        return "poi-workorders"
-    elseif displayMode == "textures" or displayMode == "trigger" then
-        return TEXTURE_PANEL_HEADER_BADGE_ATLAS
-    end
-
-    return "UI-QuestPoi-QuestNumber-SuperTracked"
-end
+local GetPanelTypeBadgeAtlas = ST._GetConfigPanelTypeBadgeAtlas
 
 local function BuildPanelHeaderText(panel, panelId, buttonCount, countColor)
     local panelName = panel and panel.name
@@ -214,12 +190,8 @@ local function BuildPanelHeaderText(panel, panelId, buttonCount, countColor)
         tostring(buttonCount or 0) .. ")|r"
 end
 
-local function GetConfigPanelButtonCount(panel)
-    if panel and panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
-        return 1
-    end
-    return panel and panel.buttons and #panel.buttons or 0
-end
+local GetConfigPanelButtonCount = ST._GetConfigPanelEntryCount
+local IsConfigPanelEntryUsable = ST._IsConfigPanelEntryUsable
 
 local function EnsurePanelTypeTooltipTarget(header)
     local target = header._cdcModeBadgeHitRect
@@ -431,30 +403,7 @@ local function ConfigurePanelTypeBadge(header, displayMode, textWidth)
     tooltipTarget:Show()
 end
 
-local function AddClassAccentSpacer(scroll, classColor)
-    local spacer = AceGUI:Create("Label")
-    spacer:SetText(" ")
-    spacer:SetFullWidth(true)
-    spacer:SetHeight(2)
-    local accentBar = spacer.frame._cdcAccentBar
-    if not accentBar then
-        accentBar = spacer.frame:CreateTexture(nil, "ARTWORK")
-        spacer.frame._cdcAccentBar = accentBar
-    end
-    accentBar:SetHeight(1.5)
-    accentBar:ClearAllPoints()
-    local inset = math.floor(spacer.frame:GetWidth() * 0.10 + 0.5)
-    accentBar:SetPoint("LEFT", spacer.frame, "LEFT", inset, 1)
-    accentBar:SetPoint("RIGHT", spacer.frame, "RIGHT", -inset, 1)
-    if classColor then
-        accentBar:SetColorTexture(classColor.r, classColor.g, classColor.b, 0.8)
-    else
-        accentBar:SetColorTexture(1, 1, 1, 0.3)
-    end
-    accentBar:Show()
-    spacer:SetCallback("OnRelease", function() accentBar:Hide() end)
-    scroll:AddChild(spacer)
-end
+local AddClassAccentSpacer = ST._AddClassAccentSpacer
 
 local function FinalizeCreatedPanel(newPanelId, displayMode, opts)
     if not newPanelId then
@@ -1848,97 +1797,12 @@ local function RefreshColumn2()
         end)
         CS.col2Scroll:AddChild(lockBtn)
 
-        local spacer1 = AceGUI:Create("Label")
-        spacer1:SetText(" ")
-        spacer1:SetFullWidth(true)
-        local f1, _, fl1 = spacer1.label:GetFont()
-        spacer1:SetFont(f1, 3, fl1 or "")
-        CS.col2Scroll:AddChild(spacer1)
-
-        -- Move to Folder
-        local moveBtn = AceGUI:Create("Button")
-        moveBtn:SetText("Move to Folder")
-        moveBtn:SetFullWidth(true)
-        moveBtn:SetCallback("OnClick", function()
-            if not CS.moveMenuFrame then
-                CS.moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
-            end
-            UIDropDownMenu_Initialize(CS.moveMenuFrame, function(self, level)
-                local info = UIDropDownMenu_CreateInfo()
-                info.text = "(No Folder)"
-                info.notCheckable = true
-                info.func = function()
-                    CloseDropDownMenus()
-                    for _, cid in ipairs(multiContainerIds) do
-                        CooldownCompanion:MoveGroupToFolder(cid, nil)
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-                UIDropDownMenu_AddButton(info, level)
-
-                local folderList = {}
-                for fid, folder in pairs(db.folders) do
-                    local folderScope = CooldownCompanion.ResolveFolderClassScope
-                        and CooldownCompanion:ResolveFolderClassScope(folder)
-                        or nil
-                    if not (folderScope and folderScope.isInvalid)
-                        and CanAllContainersMoveToFolder(multiContainerIds, fid)
-                    then
-                        local sectionKey = folderScope and folderScope.sectionKey or folder.section
-                        table.insert(folderList, {
-                            id = fid,
-                            name = folder.name,
-                            section = sectionKey,
-                            classKey = folderScope and folderScope.ownerClassKey or nil,
-                            order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, fid),
-                        })
-                    end
-                end
-                table.sort(folderList, function(a, b)
-                    if a.section ~= b.section then
-                        return a.section == "global"
-                    end
-                    return a.order < b.order
-                end)
-
-                for _, f in ipairs(folderList) do
-                    info = UIDropDownMenu_CreateInfo()
-                    local sectionLabel = " (Current Class)"
-                    if f.section == "global" then
-                        sectionLabel = " (Global)"
-                    elseif f.classKey then
-                        sectionLabel = " (" .. f.classKey .. ")"
-                    end
-                    info.text = f.name .. sectionLabel
-                    info.notCheckable = true
-                    info.func = function()
-                        CloseDropDownMenus()
-                        if not CanAllContainersMoveToFolder(multiContainerIds, f.id) then
-                            if CooldownCompanion.Print then
-                                CooldownCompanion:Print("Groups cannot be moved into folders owned by another class.")
-                            end
-                            return
-                        end
-                        for _, cid in ipairs(multiContainerIds) do
-                            CooldownCompanion:MoveGroupToFolder(cid, f.id)
-                        end
-                        CooldownCompanion:RefreshAllGroups()
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
-                    UIDropDownMenu_AddButton(info, level)
-                end
-            end, "MENU")
-            CS.moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-            ToggleDropDownMenu(1, nil, CS.moveMenuFrame, "cursor", 0, 0)
-        end)
-        CS.col2Scroll:AddChild(moveBtn)
-
-        local spacer2 = AceGUI:Create("Label")
-        spacer2:SetText(" ")
-        spacer2:SetFullWidth(true)
-        local f2, _, fl2 = spacer2.label:GetFont()
-        spacer2:SetFont(f2, 3, fl2 or "")
-        CS.col2Scroll:AddChild(spacer2)
+        local spacer = AceGUI:Create("Label")
+        spacer:SetText(" ")
+        spacer:SetFullWidth(true)
+        local spacerFont, _, spacerFlags = spacer.label:GetFont()
+        spacer:SetFont(spacerFont, 3, spacerFlags or "")
+        CS.col2Scroll:AddChild(spacer)
 
         -- Export Selected
         local exportBtn = AceGUI:Create("Button")
@@ -2417,6 +2281,11 @@ local function RefreshColumn2()
                         return
                     end
 
+                    if ST._ShowPanelContextMenu then
+                        ST._ShowPanelContextMenu(ctxPanelId, CS.selectedContainer)
+                        return
+                    end
+
                     if not CS.panelContextMenu then
                         CS.panelContextMenu = CreateFrame("Frame", "CDCPanelContextMenu", UIParent, "UIDropDownMenuTemplate")
                     end
@@ -2771,7 +2640,7 @@ local function RefreshColumn2()
                     for i, buttonData in ipairs(panelButtons) do
                     local entry = AceGUI:Create("InteractiveLabel")
                     CleanRecycledEntry(entry)
-                    local usable = CooldownCompanion:IsButtonUsable(buttonData, panel)
+                    local usable = IsConfigPanelEntryUsable(panel, buttonData)
                     local loadAllowed = CooldownCompanion:IsButtonLoadConditionMet(buttonData, panel)
 
                     local entryName = IsTriggerPanelGroup(panel)
