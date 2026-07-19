@@ -38,6 +38,8 @@ local EDIT_HEADER_GAP = 5
 local EDIT_BOTTOM_INSET = 6
 local EDIT_CHIPS_HEIGHT = 18
 local EDIT_CHIPS_GAP = 4
+local EDIT_CHIPS_SCROLL_STEP = 80
+local EDIT_CHIPS_SCROLL_BUTTON_WIDTH = 18
 local EDIT_HEADER_ACTION_GAP = 3
 
 -- The preview/settings split is owner-adjustable via the drag divider below;
@@ -169,18 +171,67 @@ end
 local function LayoutWideEditingChips(frame)
     if not (frame and frame:IsShown()) then return end
     local label = frame._cdcPrefix
+    local clip = frame._cdcClip
+    local content = frame._cdcContent
+    local previous = frame._cdcPrevious
+    local next = frame._cdcNext
     local buttons = frame._cdcButtons or {}
     label:ClearAllPoints()
     label:SetPoint("LEFT", frame, "LEFT", 0, 0)
 
-    local left = label
+    local contentWidth = 0
+    local selectedLeft
+    local selectedRight
     for _, button in ipairs(buttons) do
         if button:IsShown() then
             button:ClearAllPoints()
-            button:SetPoint("LEFT", left, "RIGHT", 0, 0)
-            left = button
+            button:SetPoint("LEFT", content, "LEFT", contentWidth, 0)
+            if button._cdcSelected then
+                selectedLeft = contentWidth
+                selectedRight = contentWidth + button:GetWidth()
+            end
+            contentWidth = contentWidth + button:GetWidth()
         end
     end
+
+    local labelWidth = math.ceil(label:GetStringWidth())
+    local unscrolledWidth = math.max(0, frame:GetWidth() - labelWidth)
+    local hasOverflow = contentWidth > unscrolledWidth
+    previous:SetShown(hasOverflow)
+    next:SetShown(hasOverflow)
+
+    clip:ClearAllPoints()
+    if hasOverflow then
+        previous:ClearAllPoints()
+        previous:SetPoint("LEFT", label, "RIGHT", 0, 0)
+        next:ClearAllPoints()
+        next:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+        clip:SetPoint("LEFT", previous, "RIGHT", 0, 0)
+        clip:SetPoint("RIGHT", next, "LEFT", 0, 0)
+    else
+        clip:SetPoint("LEFT", label, "RIGHT", 0, 0)
+        clip:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+    end
+
+    local visibleWidth = math.max(0, unscrolledWidth
+        - (hasOverflow and (EDIT_CHIPS_SCROLL_BUTTON_WIDTH * 2) or 0))
+    local maxOffset = math.max(0, contentWidth - visibleWidth)
+    local offset = math.max(0, math.min(frame._cdcScrollOffset or 0, maxOffset))
+    if frame._cdcEnsureSelectedVisible then
+        if selectedLeft and selectedLeft < offset then
+            offset = selectedLeft
+        elseif selectedRight and selectedRight > offset + visibleWidth then
+            offset = selectedRight - visibleWidth
+        end
+        frame._cdcEnsureSelectedVisible = nil
+    end
+    frame._cdcScrollOffset = math.max(0, math.min(offset, maxOffset))
+
+    content:ClearAllPoints()
+    content:SetPoint("LEFT", clip, "LEFT", -frame._cdcScrollOffset, 0)
+    content:SetSize(math.max(1, contentWidth), EDIT_CHIPS_HEIGHT)
+    previous:SetEnabled(frame._cdcScrollOffset > 0)
+    next:SetEnabled(frame._cdcScrollOffset < maxOffset)
 end
 
 local function SetWideEditingChips(col3, prefix, items)
@@ -189,9 +240,28 @@ local function SetWideEditingChips(col3, prefix, items)
     if not frame then
         frame = CreateFrame("Frame", nil, surface)
         frame:SetHeight(EDIT_CHIPS_HEIGHT)
-        frame:SetClipsChildren(true)
         frame._cdcPrefix = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
         frame._cdcPrefix:SetJustifyH("LEFT")
+        frame._cdcClip = CreateFrame("Frame", nil, frame)
+        frame._cdcClip:SetHeight(EDIT_CHIPS_HEIGHT)
+        frame._cdcClip:SetClipsChildren(true)
+        frame._cdcContent = CreateFrame("Frame", nil, frame._cdcClip)
+        frame._cdcContent:SetHeight(EDIT_CHIPS_HEIGHT)
+        frame._cdcPrevious = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        frame._cdcPrevious:SetSize(EDIT_CHIPS_SCROLL_BUTTON_WIDTH, EDIT_CHIPS_HEIGHT)
+        frame._cdcPrevious:SetText("<")
+        frame._cdcPrevious:SetScript("OnClick", function()
+            frame._cdcScrollOffset = math.max(0,
+                (frame._cdcScrollOffset or 0) - EDIT_CHIPS_SCROLL_STEP)
+            LayoutWideEditingChips(frame)
+        end)
+        frame._cdcNext = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        frame._cdcNext:SetSize(EDIT_CHIPS_SCROLL_BUTTON_WIDTH, EDIT_CHIPS_HEIGHT)
+        frame._cdcNext:SetText(">")
+        frame._cdcNext:SetScript("OnClick", function()
+            frame._cdcScrollOffset = (frame._cdcScrollOffset or 0) + EDIT_CHIPS_SCROLL_STEP
+            LayoutWideEditingChips(frame)
+        end)
         frame._cdcButtons = {}
         frame:SetScript("OnSizeChanged", LayoutWideEditingChips)
         col3._cdcEditingChips = frame
@@ -207,7 +277,7 @@ local function SetWideEditingChips(col3, prefix, items)
         local captured = item
         local button = frame._cdcButtons[index]
         if not button then
-            button = CreateFrame("Button", nil, frame)
+            button = CreateFrame("Button", nil, frame._cdcContent)
             button:RegisterForClicks("AnyUp")
             button.text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             button.text:SetAllPoints()
@@ -248,6 +318,7 @@ local function SetWideEditingChips(col3, prefix, items)
         frame._cdcButtons[index]:Hide()
     end
     frame:Show()
+    frame._cdcEnsureSelectedVisible = true
     LayoutWideEditingChips(frame)
 end
 

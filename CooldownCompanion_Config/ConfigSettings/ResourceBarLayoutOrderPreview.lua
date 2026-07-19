@@ -799,7 +799,8 @@ local function GetShortLabel(label)
     return first
 end
 
-local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLayout, includeResourceSlots)
+local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLayout, includeResourceSlots,
+    requireRuntimeEligibleCustomBars)
     includeResourceSlots = includeResourceSlots == true
     local activeResources = includeResourceSlots and GetConfigActiveResources() or {}
     local customBars = includeResourceSlots and CooldownCompanion:GetSpecCustomAuraBars() or {}
@@ -912,7 +913,8 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
     if resourceBarsEnabled then
         for customIndex, customAura in ipairs(customBars or {}) do
             if customAura and customAura.enabled and customAura.spellID
-                and CooldownCompanion:IsCustomBarRuntimeEligible(customAura) then
+                and (not requireRuntimeEligibleCustomBars
+                    or CooldownCompanion:IsCustomBarRuntimeEligible(customAura)) then
                 local customBarId = EnsureCustomBarId(rbSettings, customAura)
                 local spellInfo = C_Spell.GetSpellInfo(customAura.spellID)
                 local label = spellInfo and spellInfo.name or customAura.label or ("Custom Bar " .. customIndex)
@@ -1812,9 +1814,14 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(slotModel.label or "Bar", 1, 1, 1)
-            local dragHelp = preview.independentResources
-                and "Click to edit. Drag to reorder this independent bar."
-                or "Click to edit. Drag to reorder this attached bar."
+            local dragHelp
+            if CS.resourcesEntrySelected and slotModel.kind == "cast" then
+                dragHelp = "Drag to reorder this attached bar. Edit it under Cast Bar & Unit Frames."
+            else
+                dragHelp = preview.independentResources
+                    and "Click to edit. Drag to reorder this independent bar."
+                    or "Click to edit. Drag to reorder this attached bar."
+            end
             GameTooltip:AddLine(dragHelp, 0.75, 0.82, 0.92, true)
             if CS.resourcesEntrySelected and slotModel.kind == "custom" then
                 GameTooltip:AddLine("Ctrl+Click to multi-select. Right-click for actions.", 0.75, 0.82, 0.92, true)
@@ -2483,7 +2490,8 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
             includeCastSlots and cbSettings or nil,
             layout,
             preview.isVerticalLayout,
-            includeResourceSlots
+            includeResourceSlots,
+            CS.resourcesEntrySelected == true
         )
         if not preview.isVerticalLayout then
             for _, castSlot in ipairs(castSlots) do
