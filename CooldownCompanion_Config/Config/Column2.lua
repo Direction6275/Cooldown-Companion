@@ -419,7 +419,9 @@ local function FinalizeCreatedPanel(newPanelId, displayMode, opts)
         CooldownCompanion:RefreshGroupFrame(newPanelId)
     end
 
-    SelectConfigPanel(newPanelId)
+    SelectConfigPanel(newPanelId, {
+        containerId = opts and opts.containerId or nil,
+    })
     local acceptsManualEntries = CooldownCompanion:CanPanelAcceptManualEntry(group)
     if acceptsManualEntries then
         CS.addingToPanelId = newPanelId
@@ -439,8 +441,11 @@ local function FinalizeCreatedPanel(newPanelId, displayMode, opts)
     end
 end
 
-local function CreatePanelInSelectedContainer(displayMode, opts)
-    local newPanelId = CooldownCompanion:CreatePanel(CS.selectedContainer, displayMode)
+local function CreatePanelInSelectedContainer(displayMode, opts, containerId)
+    containerId = containerId or CS.selectedContainer
+    opts = opts or {}
+    opts.containerId = containerId
+    local newPanelId = CooldownCompanion:CreatePanel(containerId, displayMode)
     FinalizeCreatedPanel(newPanelId, displayMode, opts)
 end
 
@@ -544,8 +549,8 @@ local function CreateCDMPanelFromSource(containerId, sourceData)
     return panelId, added
 end
 
-local function CreateMissingCDMPanelsInSelectedContainer()
-    local containerId = CS.selectedContainer
+local function CreateMissingCDMPanelsInSelectedContainer(containerId)
+    containerId = containerId or CS.selectedContainer
     if not containerId then
         return
     end
@@ -1127,9 +1132,9 @@ local function ConfigureInlineAddInstructions(inputBox, placeholderText)
     return Update
 end
 
-local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId, btnCount)
+local function BuildInlineAddControls(panelContainer, panelMeta, panel, panelId, btnCount, opts)
     if panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
-        or CS.addingToPanelId ~= panelId
+        or (CS.addingToPanelId ~= panelId and not (opts and opts.force == true))
         or (panel.displayMode == "textures" and btnCount >= 1) then
         return
     end
@@ -1323,6 +1328,123 @@ local function ResolveColumn2TooltipSpellId(buttonData)
     end
 
     return buttonData.id
+end
+
+-- Shared entry-row presentation for the retired Column 2 surface and the
+-- Other Class browse list that replaces it in the workspace. Interaction is
+-- owned by each surface; identity, dimming, tooltips, and status badges stay
+-- consistent here.
+local function ConfigureConfigEntryRow(entry, panel, panelId, buttonData, buttonIndex)
+    local usable = IsConfigPanelEntryUsable(panel, buttonData)
+    local loadAllowed = CooldownCompanion:IsButtonLoadConditionMet(buttonData, panel)
+    local entryName = IsTriggerPanelGroup(panel)
+        and GetTriggerRowDisplayText(buttonData)
+        or GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
+
+    entry:SetText(entryName or ("Unknown " .. tostring(buttonData.type)))
+    entry:SetFullWidth(true)
+    entry:SetFontObject(GameFontHighlight)
+    ApplyConfigRowIcon(entry, GetButtonIcon(buttonData), {
+        desaturated = not usable,
+        texCoord = { 0.08, 0.92, 0.08, 0.92 },
+    })
+    entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+
+    if buttonData.type == "spell" then
+        BindConfigShiftTooltip(entry, "spell", ResolveColumn2TooltipSpellId(buttonData), entry.frame, "ANCHOR_RIGHT")
+    elseif buttonData.type == "item" then
+        BindConfigShiftTooltip(entry, "item", buttonData.id, entry.frame, "ANCHOR_RIGHT")
+    elseif CooldownCompanion.IsEquipmentSlotEntry
+        and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+        local effectiveItem = CooldownCompanion.ResolveEffectiveItem
+            and CooldownCompanion.ResolveEffectiveItem(buttonData, true) or nil
+        if effectiveItem and effectiveItem.trackable and effectiveItem.itemID then
+            BindConfigShiftTooltip(entry, "item", effectiveItem.itemID, entry.frame, "ANCHOR_RIGHT")
+        end
+    end
+    entry:SetUserData(
+        "cdcShiftTooltipExtraLine",
+        CooldownCompanion:HasLocalLoadConditions(buttonData)
+            and "This entry adds load conditions."
+            or nil
+    )
+
+    if CS.selectedGroup == panelId then
+        if CS.selectedButtons[buttonIndex] or CS.selectedButton == buttonIndex then
+            entry:SetColor(0.4, 0.7, 1.0)
+        elseif not usable then
+            entry:SetColor(0.5, 0.5, 0.5)
+        end
+    elseif not usable then
+        entry:SetColor(0.5, 0.5, 0.5)
+    end
+
+    local rowFrame = entry.frame
+    local rowBadgeLevel = rowFrame:GetFrameLevel() + 5
+    local warnBadge, overrideBadge, soundBadge, fallbackBadge
+
+    if not usable and buttonData.enabled ~= false then
+        warnBadge = EnsureRowBadge(rowFrame, "_cdcWarnBtn", "Ping_Marker_Icon_Warning")
+        warnBadge:SetFrameLevel(rowBadgeLevel)
+        if not loadAllowed then
+            SetRowBadgeTooltip(warnBadge, "Hidden by load conditions", 1, 0.3, 0.3)
+        else
+            SetRowBadgeTooltip(warnBadge, "Spell/item unavailable", 1, 0.3, 0.3)
+        end
+        warnBadge:Show()
+    end
+
+    if CooldownCompanion:HasStyleOverrides(buttonData) then
+        overrideBadge = EnsureRowBadge(
+            rowFrame,
+            "_cdcOverrideBadge",
+            "Crosshair_VehichleCursor_32",
+            OVERRIDE_BADGE_ICON_SIZE
+        )
+        overrideBadge:SetFrameLevel(rowBadgeLevel)
+        SetRowBadgeTooltip(overrideBadge, "Has appearance overrides")
+        overrideBadge:Show()
+    end
+
+    if CooldownCompanion.HasItemFallbacks(buttonData) then
+        fallbackBadge = EnsureRowBadge(rowFrame, "_cdcFallbackBadge", "banker")
+        fallbackBadge:SetFrameLevel(rowBadgeLevel)
+        SetRowBadgeTooltip(fallbackBadge, "Uses item fallbacks")
+        fallbackBadge:Show()
+    end
+
+    if buttonData.type == "spell" then
+        local enabledSoundEvents = CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData)
+        if not enabledSoundEvents
+            and (buttonData.auraTracking or buttonData.addedAs == "aura")
+            and CooldownCompanion:GetAuraAppliedSoundFileForButton(buttonData) then
+            enabledSoundEvents = true
+        end
+        if enabledSoundEvents then
+            soundBadge = EnsureRowBadge(rowFrame, "_cdcSoundBadge", "common-icon-sound")
+            soundBadge:SetFrameLevel(rowBadgeLevel)
+            SetRowBadgeTooltip(soundBadge, "Sound alerts enabled")
+            soundBadge:Show()
+        end
+    end
+
+    local talentBadge = EnsureRowBadge(rowFrame, "_cdcTalentBadge", "UI-HUD-MicroMenu-SpecTalents-Mouseover")
+    talentBadge:SetFrameLevel(rowBadgeLevel)
+    if buttonData.talentConditions and #buttonData.talentConditions > 0 then
+        SetRowBadgeTooltip(talentBadge, "Has talent conditions")
+        talentBadge:Show()
+    end
+
+    local disabledBadge
+    if buttonData.enabled == false then
+        disabledBadge = EnsureRowBadge(rowFrame, "_cdcDisabledBadge", "GM-icon-visibleDis-pressed")
+        disabledBadge:SetFrameLevel(rowBadgeLevel)
+        SetRowBadgeTooltip(disabledBadge, "Disabled", 0.6, 0.6, 0.6)
+        disabledBadge:Show()
+    end
+
+    LayoutRowBadges(rowFrame, disabledBadge, warnBadge, overrideBadge, fallbackBadge, soundBadge, talentBadge)
+    return entryName, usable
 end
 
 local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGroupId, entryData)
@@ -2868,6 +2990,12 @@ end
 ------------------------------------------------------------------------
 ST._RefreshColumn2 = RefreshColumn2
 ST._ShowEntryContextMenu = ShowEntryContextMenu
+ST._ConfigureConfigEntryRow = ConfigureConfigEntryRow
+ST._AddPanelTypeMenuTooltip = AddPanelTypeMenuTooltip
+ST._AddCDMStarterMenuTooltip = AddCDMStarterMenuTooltip
+ST._CreatePanelInSelectedContainer = CreatePanelInSelectedContainer
+ST._CreateMissingCDMPanelsInSelectedContainer = CreateMissingCDMPanelsInSelectedContainer
+ST._BuildInlineAddControls = BuildInlineAddControls
 -- Shared with the panel preview mirror: entry tooltips resolve the
 -- currently-active override spell, not the stored base ID.
 ST._ResolveEntryTooltipSpellId = ResolveColumn2TooltipSpellId

@@ -1010,6 +1010,7 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
     if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
     if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
+    if col3._browseEntryScroll then col3._browseEntryScroll.frame:Hide() end
     if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
     if ST._HideButtonsPanelPreviewSurfaces then ST._HideButtonsPanelPreviewSurfaces(col3) end
     if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3) end
@@ -1156,8 +1157,8 @@ HideTalentPicker = function()
         if savedCol3Title then configFrame.col3:SetTitle(savedCol3Title) end
         if savedPanelTitle then configFrame:SetTitle(savedPanelTitle) end
 
-        -- Show col2
-        configFrame.col2.frame:Show()
+        -- Column 2 remains retired after the picker closes.
+        configFrame.col2.frame:Hide()
 
         -- Restore column info buttons
         if CS.columnInfoButtons[1] then CS.columnInfoButtons[1]:Show() end
@@ -1167,7 +1168,7 @@ HideTalentPicker = function()
         CS.col1Scroll.frame:Show()
         CS.col1ButtonBar:Show()
 
-        -- Recompute layout (3-column mode) then refresh
+        -- Recompute the Navigator/workspace layout, then refresh.
         configFrame.LayoutColumns()
     end
 

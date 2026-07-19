@@ -16,6 +16,8 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
+local CleanRecycledEntry = ST._CleanRecycledEntry
+local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 
 local PREVIEW_GAP = 4
 local ADD_BOX_HEIGHT = 26
@@ -824,6 +826,103 @@ local function IsEntrySelectionActive()
     return CS.selectedButton ~= nil and group.buttons[CS.selectedButton] ~= nil
 end
 
+local function RefreshBrowseEntryList(col3, group)
+    HideEntrySurfaces(col3)
+    HidePanelPreview(col3)
+    if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+
+    local scroll = col3._browseEntryScroll
+    if not scroll then
+        scroll = AceGUI:Create("ScrollFrame")
+        scroll:SetLayout("List")
+        scroll.frame:SetParent(col3.content)
+        scroll.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+        scroll.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+        col3._browseEntryScroll = scroll
+    end
+    scroll:ReleaseChildren()
+    scroll.frame:Show()
+
+    local heading = AceGUI:Create("Label")
+    heading:SetText((group.name or "Panel") .. " Entries")
+    heading:SetFullWidth(true)
+    heading:SetFontObject(GameFontNormal)
+    scroll:AddChild(heading)
+
+    local function AddInlineEntryBox()
+        if ST._BuildInlineAddControls then
+            CS.addingToPanelId = CS.selectedGroup
+            ST._BuildInlineAddControls(
+                scroll,
+                {},
+                group,
+                CS.selectedGroup,
+                #(group.buttons or {}),
+                { force = true }
+            )
+        end
+    end
+
+    if CooldownCompanion:IsRotationAssistantGroup(group) then
+        local entry = AceGUI:Create("InteractiveLabel")
+        CleanRecycledEntry(entry)
+        entry:SetText(ST.ROTATION_ASSISTANT_NAME)
+        entry:SetFullWidth(true)
+        entry:SetFontObject(GameFontHighlight)
+        ApplyConfigRowIcon(entry, CooldownCompanion:GetRotationAssistantFallbackIcon())
+        entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        entry:SetCallback("OnClick", function()
+            if ST._SelectConfigRotationAssistantEntry then
+                ST._SelectConfigRotationAssistantEntry(CS.selectedGroup, {
+                    containerId = CS.selectedContainer,
+                })
+                CooldownCompanion:RefreshConfigPanel()
+            end
+        end)
+        scroll:AddChild(entry)
+        return
+    end
+
+    if #(group.buttons or {}) == 0 then
+        local empty = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(empty)
+        empty:SetText("|cff888888This panel has no entries.|r")
+        empty:SetFullWidth(true)
+        scroll:AddChild(empty)
+        AddInlineEntryBox()
+        return
+    end
+
+    for buttonIndex, buttonData in ipairs(group.buttons or {}) do
+        local entry = AceGUI:Create("InteractiveLabel")
+        CleanRecycledEntry(entry)
+        if ST._ConfigureConfigEntryRow then
+            ST._ConfigureConfigEntryRow(entry, group, CS.selectedGroup, buttonData, buttonIndex)
+        else
+            entry:SetText(buttonData.name or ("Unknown " .. tostring(buttonData.type)))
+            entry:SetFullWidth(true)
+            entry:SetFontObject(GameFontHighlight)
+            ApplyConfigRowIcon(entry, ST._GetButtonIcon and ST._GetButtonIcon(buttonData) or 134400)
+            entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        end
+
+        local panelId = CS.selectedGroup
+        entry.frame:SetScript("OnMouseUp", function(_, mouseButton)
+            if mouseButton == "LeftButton" and ST._SelectConfigButton then
+                ST._SelectConfigButton(panelId, buttonIndex, { multi = IsControlKeyDown() })
+                CooldownCompanion:RefreshConfigPanel()
+            elseif mouseButton == "RightButton" and ST._ShowEntryContextMenu then
+                if ST._SelectConfigButtonPanel then
+                    ST._SelectConfigButtonPanel(panelId, { clearPanelMulti = true })
+                end
+                ST._ShowEntryContextMenu(panelId, buttonIndex, buttonData)
+            end
+        end)
+        scroll:AddChild(entry)
+    end
+    AddInlineEntryBox()
+end
+
 local function RefreshButtonsWideColumn()
     local col3 = CS.configFrame and CS.configFrame.col3
     if not col3 then return end
@@ -833,6 +932,7 @@ local function RefreshButtonsWideColumn()
     col3._customAuraSubScroll = nil
     if col3._customAuraScroll then col3._customAuraScroll.frame:Hide() end
     if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3) end
+    if col3._browseEntryScroll then col3._browseEntryScroll.frame:Hide() end
 
     -- Panel multi-select: batch operations replace everything else
     local panelMultiCount = 0
@@ -868,6 +968,14 @@ local function RefreshButtonsWideColumn()
     -- preview cluster: browsed panels render live in the world, and column
     -- 2 keeps its entry rows there.
     local browse = CS.otherClassLibraryActive
+
+    if browse and CS.selectedGroup and not IsEntrySelectionActive() then
+        local browseGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        if browseGroup then
+            RefreshBrowseEntryList(col3, browseGroup)
+            return
+        end
+    end
 
     -- Attached bar selected in the unified anchor preview: that bar's
     -- settings own the settings area

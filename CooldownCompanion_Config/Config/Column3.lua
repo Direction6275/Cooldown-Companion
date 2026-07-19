@@ -81,9 +81,8 @@ local function RefreshColumn3()
         return ST._RefreshButtonsWideColumn()
     end
 
-    -- Cast Bar & Unit Frames home: wide column (pinned Layout & Order
-    -- preview above the selected row's settings). Column 2 lists the Cast
-    -- Bar / Player Frame / Target Frame rows.
+    -- Cast Bar & Unit Frames home: the Navigator lists Cast Bar / Player
+    -- Frame / Target Frame; the workspace hosts preview and settings.
     if CS.castFramesEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
         if not col3 then return end
@@ -94,6 +93,7 @@ local function RefreshColumn3()
         if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
         if col3._panelTabGroup then col3._panelTabGroup.frame:Hide() end
         if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
+        if col3._browseEntryScroll then col3._browseEntryScroll.frame:Hide() end
         if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
         if ST._HideButtonsPanelPreviewSurfaces then ST._HideButtonsPanelPreviewSurfaces(col3) end
@@ -101,9 +101,8 @@ local function RefreshColumn3()
         return ST._RefreshCastFramesWideColumn(col3)
     end
 
-    -- Resources home: wide column (pinned Layout & Order preview above the
-    -- resources settings surfaces). The Custom Bars & Resources list lives
-    -- in column 2.
+    -- Resources home: the Navigator owns the Custom Bars & Resources list;
+    -- the workspace hosts preview and settings.
     if CS.resourcesEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
         if not col3 then ST._RefreshButtonSettingsColumn() return end
@@ -114,6 +113,7 @@ local function RefreshColumn3()
         if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
         if col3._panelTabGroup then col3._panelTabGroup.frame:Hide() end
         if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
+        if col3._browseEntryScroll then col3._browseEntryScroll.frame:Hide() end
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
         if ST._HideButtonsPanelPreviewSurfaces then ST._HideButtonsPanelPreviewSurfaces(col3) end
 

@@ -268,12 +268,14 @@ ST._configState = {
     collapsedPanels = {},
     expandedContainer = nil,
     peekedContainers = {},
+    lastActiveContainer = nil,
     configFinderExpansionSnapshot = nil,
     configFinderNavigated = nil,
     configFinderRestoredCollapsedContainerId = nil,
     pendingConfigFinderEntryScrollReset = nil,
     otherClassLibraryActive = false,
     otherClassLibraryClassKey = nil,
+    otherClassLibrarySnapshot = nil,
     hideActiveCurrentClassPanels = false,
     panelClickTimes = {},
     addingToPanelId = nil,
@@ -588,22 +590,105 @@ local function ClearOtherClassHideActive(opts)
     return SetHideActiveCurrentClassPanels(false, opts)
 end
 
+local RefreshAlphaDriverForConfigSelection
+
+local function CopyConfigStateMap(source)
+    local copy = {}
+    for key, value in pairs(source or {}) do
+        copy[key] = value
+    end
+    return copy
+end
+
+local function SnapshotOtherClassLibraryState()
+    if CS.otherClassLibrarySnapshot then
+        return
+    end
+    CS.otherClassLibrarySnapshot = {
+        selectedFolder = CS.selectedFolder,
+        selectedContainer = CS.selectedContainer,
+        selectedGroup = CS.selectedGroup,
+        selectedButton = CS.selectedButton,
+        selectedRotationAssistantEntry = CS.selectedRotationAssistantEntry,
+        selectedGroups = CopyConfigStateMap(CS.selectedGroups),
+        selectedPanels = CopyConfigStateMap(CS.selectedPanels),
+        selectedButtons = CopyConfigStateMap(CS.selectedButtons),
+        selectedCustomBars = CopyConfigStateMap(CS.selectedCustomBars),
+        selectedCustomBarId = CS.selectedCustomBarId,
+        selectedResourcePowerType = CS.selectedResourcePowerType,
+        resourceSettingsSpecID = CS.resourceSettingsSpecID,
+        resourcesEntrySelected = CS.resourcesEntrySelected,
+        castFramesEntrySelected = CS.castFramesEntrySelected,
+        castFramesSelectedItem = CS.castFramesSelectedItem,
+        unifiedBarKind = CS.unifiedBarKind,
+        addingToPanelId = CS.addingToPanelId,
+        newInput = CS.newInput,
+        expandedContainer = CS.expandedContainer,
+        peekedContainers = CopyConfigStateMap(CS.peekedContainers),
+    }
+end
+
+local function RestoreOtherClassLibrarySnapshot()
+    local snapshot = CS.otherClassLibrarySnapshot
+    if not snapshot then
+        return
+    end
+
+    CS.selectedFolder = snapshot.selectedFolder
+    CS.selectedContainer = snapshot.selectedContainer
+    CS.selectedGroup = snapshot.selectedGroup
+    CS.selectedButton = snapshot.selectedButton
+    CS.selectedRotationAssistantEntry = snapshot.selectedRotationAssistantEntry
+    wipe(CS.selectedGroups)
+    wipe(CS.selectedPanels)
+    wipe(CS.selectedButtons)
+    wipe(CS.selectedCustomBars)
+    for id, selected in pairs(snapshot.selectedGroups or {}) do CS.selectedGroups[id] = selected end
+    for id, selected in pairs(snapshot.selectedPanels or {}) do CS.selectedPanels[id] = selected end
+    for id, selected in pairs(snapshot.selectedButtons or {}) do CS.selectedButtons[id] = selected end
+    for id, selected in pairs(snapshot.selectedCustomBars or {}) do CS.selectedCustomBars[id] = selected end
+    CS.selectedCustomBarId = snapshot.selectedCustomBarId
+    CS.selectedResourcePowerType = snapshot.selectedResourcePowerType
+    CS.resourceSettingsSpecID = snapshot.resourceSettingsSpecID
+    CS.resourcesEntrySelected = snapshot.resourcesEntrySelected
+    CS.castFramesEntrySelected = snapshot.castFramesEntrySelected
+    CS.castFramesSelectedItem = snapshot.castFramesSelectedItem
+    CS.unifiedBarKind = snapshot.unifiedBarKind
+    CS.addingToPanelId = snapshot.addingToPanelId
+    CS.newInput = snapshot.newInput
+    CS.expandedContainer = snapshot.expandedContainer
+    wipe(CS.peekedContainers)
+    for id, expanded in pairs(snapshot.peekedContainers or {}) do CS.peekedContainers[id] = expanded end
+    CS.otherClassLibrarySnapshot = nil
+end
+
+local function EnterOtherClassLibraryState(classKey)
+    if not CS.otherClassLibraryActive then
+        SnapshotOtherClassLibraryState()
+    end
+    ClearOtherClassHideActive()
+    CS.otherClassLibraryActive = true
+    CS.otherClassLibraryClassKey = classKey
+end
+
 local function ResetOtherClassLibraryState(opts)
+    local wasActive = CS.otherClassLibraryActive == true
     CS.otherClassLibraryActive = false
     CS.otherClassLibraryClassKey = nil
-    return ClearOtherClassHideActive(opts)
+    local hideChanged = ClearOtherClassHideActive(opts)
+    if wasActive then
+        RestoreOtherClassLibrarySnapshot()
+        if RefreshAlphaDriverForConfigSelection then
+            RefreshAlphaDriverForConfigSelection()
+        end
+    end
+    return hideChanged
 end
 
 local ClearConfigPrimarySelection
 
 local function CopyConfigFinderExpansionMap(source)
-    local copy = {}
-    for containerId, expanded in pairs(source or {}) do
-        if expanded then
-            copy[containerId] = true
-        end
-    end
-    return copy
+    return CopyConfigStateMap(source)
 end
 
 local function SnapshotConfigFinderExpansion()
@@ -925,8 +1010,6 @@ local function BuildConfigFinderResults()
     return results
 end
 
-local RefreshAlphaDriverForConfigSelection
-
 local function ResolveConfigContainerClassScope(containerId)
     local selectedContainer = containerId
         and CooldownCompanion.db
@@ -942,9 +1025,7 @@ end
 
 local function RestoreOtherClassLibraryForScope(scope)
     if scope and scope.isOtherClass then
-        ClearOtherClassHideActive()
-        CS.otherClassLibraryActive = true
-        CS.otherClassLibraryClassKey = scope.ownerClassKey
+        EnterOtherClassLibraryState(scope.ownerClassKey)
         return true
     end
     return false
@@ -953,6 +1034,12 @@ end
 local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CooldownCompanion:ClearAllConfigPreviews()
     local selectedScope = ResolveConfigContainerClassScope(containerId)
+    if selectedScope and selectedScope.isOtherClass then
+        EnterOtherClassLibraryState(selectedScope.ownerClassKey)
+    else
+        ResetOtherClassLibraryState({ skipRefresh = true })
+        CS.lastActiveContainer = containerId or CS.lastActiveContainer
+    end
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
     wipe(CS.selectedButtons)
@@ -2839,6 +2926,11 @@ local function SelectConfigContainer(containerId, opts)
         CS.selectedGroup = nil
     end
 
+    local selectedScope = ResolveConfigContainerClassScope(CS.selectedContainer)
+    if CS.selectedContainer and not (selectedScope and selectedScope.isOtherClass) then
+        CS.lastActiveContainer = CS.selectedContainer
+    end
+
     CS.resourcesEntrySelected = false
     CS.castFramesEntrySelected = false
     ClearSelectedButton()
@@ -2890,6 +2982,18 @@ local function SelectConfigPanel(panelId, opts)
         CS.selectedGroup = nil
     else
         CS.selectedGroup = panelId
+    end
+
+    local selectedPanel = panelId
+        and CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups
+        and CooldownCompanion.db.profile.groups[panelId]
+        or nil
+    local activeContainerId = (opts and opts.containerId) or (selectedPanel and selectedPanel.parentContainerId)
+    local activeScope = ResolveConfigContainerClassScope(activeContainerId)
+    if activeContainerId and not (activeScope and activeScope.isOtherClass) then
+        CS.lastActiveContainer = activeContainerId
     end
 
     CS.resourcesEntrySelected = false
@@ -3249,9 +3353,9 @@ local function IsResourcesEmptyStateActive()
     return not (settings and settings.enabled == true)
 end
 
--- The plain buttons view uses a wide 3-column layout: column 3 spans the
--- col4 region and hosts both entry settings and the group-side settings,
--- while column 4 stays hidden. Every other view keeps the 4-column split.
+-- True for the normal panel workspace. Browse, Resources, Cast, and the
+-- talent picker have their own workspace routing even though the cutover
+-- now gives every non-picker view the same Navigator + workspace frame.
 local function IsButtonsWideViewActive()
     return not (CS.resourcesEntrySelected
         or CS.castFramesEntrySelected
@@ -3259,10 +3363,8 @@ local function IsButtonsWideViewActive()
         or CS.otherClassLibraryActive)
 end
 
--- Views that use the wide col3 layout: column 3 spans the col4 region.
--- True everywhere - the buttons view, the Resources home, the Cast Bar &
--- Unit Frames home, and Other Class browsing - except the talent picker,
--- which replaces the columns with its own 2-column layout.
+-- Every cutover view uses the merged workspace except the talent picker,
+-- which temporarily replaces it with its own two-column layout.
 local function IsWideCol3LayoutActive()
     return not CS.talentPickerMode
 end
@@ -3632,6 +3734,7 @@ ST._ClearConfigFinderText = ClearConfigFinderText
 ST._SetHideActiveCurrentClassPanels = SetHideActiveCurrentClassPanels
 ST._ClearOtherClassHideActive = ClearOtherClassHideActive
 ST._ResetOtherClassLibraryState = ResetOtherClassLibraryState
+ST._EnterOtherClassLibraryState = EnterOtherClassLibraryState
 ST._BuildConfigFinderResults = BuildConfigFinderResults
 ST._InvalidateConfigFinderResults = InvalidateConfigFinderResults
 ST._SelectConfigFinderResult = SelectConfigFinderResult

@@ -29,6 +29,7 @@ local SetConfigFinderText = ST._SetConfigFinderText
 local ClearConfigFinderText = ST._ClearConfigFinderText
 local ClearHideActiveCurrentClassPanels = ST._ClearOtherClassHideActive
 local ResetOtherClassBrowseState = ST._ResetOtherClassLibraryState
+local EnterOtherClassBrowseState = ST._EnterOtherClassLibraryState
 local InvalidateConfigFinderResults = ST._InvalidateConfigFinderResults
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
 local MaybeAutoStartFirstIconPanelTutorial = ST._MaybeAutoStartFirstIconPanelTutorial
@@ -478,17 +479,7 @@ local function GetColumn3HeaderTitle(selection)
 end
 
 local function ApplyConfigColumnTitles(frame)
-    if CS.resourcesEntrySelected then
-        -- Resources home: column 2 hosts the Custom Bars & Resources list
-        frame.col1:SetTitle("Groups")
-        frame.col2:SetTitle(GetCustomBarsColumnTitle())
-    elseif CS.castFramesEntrySelected then
-        frame.col1:SetTitle("Groups")
-        frame.col2:SetTitle("Cast Bar & Unit Frames")
-    else
-        frame.col1:SetTitle("Groups")
-        frame.col2:SetTitle("Panels")
-    end
+    frame.col1:SetTitle("Navigator")
 
     local selection = GetConfigSelectionSummary()
     -- Two labeled workspace areas: while a pinned preview is showing, the
@@ -564,12 +555,10 @@ local function QueueConfigFinderRefresh()
 
         local finderActive = IsConfigFinderActive and IsConfigFinderActive()
         local saved1 = not finderActive and SaveScrollState(CS.col1Scroll) or nil
-        local saved2 = SaveScrollState(CS.col2Scroll)
         if finderActive then
             ResetScrollState(CS.col1Scroll)
         end
         RefreshColumn1()
-        RefreshColumn2()
         if CS.configFrame.UpdateCompactConfigRows then
             CS.configFrame.UpdateCompactConfigRows()
         end
@@ -579,7 +568,6 @@ local function QueueConfigFinderRefresh()
         else
             RestoreScrollState(CS.col1Scroll, saved1)
         end
-        RestoreScrollState(CS.col2Scroll, saved2)
     end)
 end
 
@@ -672,11 +660,9 @@ function CooldownCompanion:RefreshConfigForSpellOverride(pendingSpellIds)
         return false
     end
 
-    local savedCol2 = SaveScrollState(CS.col2Scroll)
     local savedButtonSettings = SaveScrollState(CS.buttonSettingsScroll)
     local selectedEntryAffected = DoesButtonReferencePendingOverrideSpell(GetSelectedConfigButtonData(), pendingSpellIds)
 
-    RefreshColumn2()
     if CS.configFrame.UpdateCompactConfigRows then
         CS.configFrame.UpdateCompactConfigRows()
     end
@@ -690,7 +676,6 @@ function CooldownCompanion:RefreshConfigForSpellOverride(pendingSpellIds)
     end
     ApplyConfigColumnTitles(CS.configFrame)
 
-    RestoreScrollState(CS.col2Scroll, savedCol2)
     if selectedEntryAffected then
         RestoreScrollState(CS.buttonSettingsScroll, savedButtonSettings)
     end
@@ -778,7 +763,7 @@ local function CreateConfigPanel()
     local frame = AceGUI:Create("Frame")
     frame:SetTitle("Cooldown Companion")
     frame:SetStatusText("")
-    frame:SetWidth(1384)
+    frame:SetWidth(1180)
     frame:SetHeight(700)
     frame:SetLayout(nil) -- manual positioning
 
@@ -899,7 +884,7 @@ local function CreateConfigPanel()
 
     -- Track full dimensions for minimize/expand restore
     local fullHeight = 700
-    local fullWidth = 1384
+    local fullWidth = 1180
 
     -- Custom resize grip — expand freely, shrink horizontally up to 30% (min 993px)
     content:SetResizable(true)
@@ -1212,12 +1197,12 @@ local function CreateConfigPanel()
         if not otherClassBrowseAvailable then
             return
         end
+        if EnterOtherClassBrowseState then
+            EnterOtherClassBrowseState(nil)
+        end
         if ClearConfigPrimarySelection then
             ClearConfigPrimarySelection()
         end
-        ClearHideActiveCurrentClassPanels()
-        CS.otherClassLibraryActive = true
-        CS.otherClassLibraryClassKey = nil
         CooldownCompanion:RefreshConfigPanel()
     end)
     otherClassBrowseBtn:SetScript("OnEnter", function(self)
@@ -1285,7 +1270,7 @@ local function CreateConfigPanel()
     otherClassBrowseBtn:SetPoint("RIGHT", changelogBtn, "LEFT", -4, 0)
     cdmDisplayBtn:SetPoint("RIGHT", otherClassBrowseBtn, "LEFT", -4, 0)
     importClusterBtn:SetPoint("RIGHT", cdmDisplayBtn, "LEFT", -4, 0)
-    castFramesBtn:SetPoint("RIGHT", importClusterBtn, "LEFT", -4, 0)
+    castFramesBtn:Hide()
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
@@ -1681,7 +1666,7 @@ local function CreateConfigPanel()
     col2:SetAutoAdjustHeight(false)
     col2:SetLayout(MANUAL_COLUMN_LAYOUT)
     col2.frame:SetParent(colParent)
-    col2.frame:Show()
+    col2.frame:Hide()
 
     -- Info button next to Panels title
     local infoBtn = CreateFrame("Button", nil, col2.frame)
@@ -2085,15 +2070,15 @@ local function CreateConfigPanel()
 
     local function PositionPrimaryAxisUI()
         local contentCenterX = select(1, content:GetCenter())
-        local col2Right = select(1, col2.frame:GetRight())
+        local col1Right = select(1, col1.frame:GetRight())
         local col3Left = select(1, col3.frame:GetLeft())
         local contentBottom = content:GetBottom()
         local versionBottom = versionText and versionText:GetBottom()
         local versionTop = versionText and versionText:GetTop()
 
         local xOffset = 0
-        if contentCenterX and col2Right and col3Left then
-            xOffset = ((col2Right + col3Left) * 0.5) - contentCenterX
+        if contentCenterX and col1Right and col3Left then
+            xOffset = ((col1Right + col3Left) * 0.5) - contentCenterX
         end
 
         local yCenterOffset = 0
@@ -2122,13 +2107,11 @@ local function CreateConfigPanel()
 
     local function UpdateCompactConfigRows()
         local col1RowWidth = GetScrollRowWidth(CS.col1Scroll, col1.content)
-        local col2RowWidth = GetScrollRowWidth(CS.col2Scroll, col2.content) - CONFIG_NESTED_INLINE_GROUP_INSET
-        local narrowestRowWidth = math.min(col1RowWidth, math.max(0, col2RowWidth))
-        if narrowestRowWidth <= 0 then
+        if col1RowWidth <= 0 then
             return
         end
 
-        local compact = narrowestRowWidth < CONFIG_COMPACT_ROW_MIN_WIDTH
+        local compact = col1RowWidth < CONFIG_COMPACT_ROW_MIN_WIDTH
         if CS.compactConfigRows ~= compact then
             CS.compactConfigRows = compact
             if RefreshVisibleConfigCompactRows then
@@ -2171,15 +2154,9 @@ local function CreateConfigPanel()
             return
         end
 
-        local usedWidth = (equalColWidth * 4) + (pad * 3)
-        local leftoverWidth = math.max(0, w - usedWidth)
-
-        -- 3-column layout everywhere: cols 1-2 stay narrow, col3 spans the
-        -- old col4 region too (buttons / Resources / Cast Bar & Unit Frames
-        -- homes and Other Class browsing all use the merged wide column).
-        local col1Width = equalColWidth
-        local col2Width = equalColWidth
-        local col3Width = (equalColWidth * 2) + pad + leftoverWidth
+        -- Final cutover layout: one fixed Navigator rail and one workspace.
+        local col1Width = math.min(300, math.max(260, w - 600 - pad))
+        local col3Width = math.max(1, w - col1Width - pad)
         local finderAvailable = IsConfigFinderAvailable and IsConfigFinderAvailable()
 
         if CS.configFinderBox then
@@ -2208,11 +2185,10 @@ local function CreateConfigPanel()
         col1.frame:SetSize(col1Width, h)
 
         col2.frame:ClearAllPoints()
-        col2.frame:SetPoint("TOPLEFT", col1.frame, "TOPRIGHT", pad, 0)
-        col2.frame:SetSize(col2Width, h)
+        col2.frame:Hide()
 
         col3.frame:ClearAllPoints()
-        col3.frame:SetPoint("TOPLEFT", col2.frame, "TOPRIGHT", pad, 0)
+        col3.frame:SetPoint("TOPLEFT", col1.frame, "TOPRIGHT", pad, 0)
         col3.frame:SetSize(col3Width, h)
 
         UpdateCompactConfigRows()
@@ -2288,12 +2264,8 @@ function CooldownCompanion:_configRefreshPanelImpl()
         ClearConfigShiftTooltipHover()
     end
 
-    -- Save AceGUI scroll state before any column rebuilds. (The relocated
-    -- resources/cast settings surfaces preserve their own scroll positions
-    -- inside ResourcesWideColumn.lua; the moved Custom Bars list rides the
-    -- col2 save below.)
+    -- Save the Navigator and entry-settings scroll state before rebuilding.
     local saved1   = SaveScrollState(CS.col1Scroll)
-    local saved2   = SaveScrollState(CS.col2Scroll)
     local savedBtn = SaveScrollState(buttonSettingsScroll)
 
     if CS.configFrame.profileBar:IsShown() then
@@ -2310,7 +2282,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
         CS.configFrame.LayoutColumns()
     end
     RefreshColumn1()
-    RefreshColumn2()
     if CS.configFrame.UpdateCompactConfigRows then
         CS.configFrame.UpdateCompactConfigRows()
     end
@@ -2319,7 +2290,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
 
     -- Restore AceGUI scroll state.
     RestoreScrollState(CS.col1Scroll, saved1)
-    RestoreScrollState(CS.col2Scroll, saved2)
     if CS.pendingConfigFinderEntryScrollReset then
         CS.pendingConfigFinderEntryScrollReset = nil
         ResetScrollState(buttonSettingsScroll)

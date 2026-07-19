@@ -1128,10 +1128,152 @@ local function ClearColumn1ButtonBar()
     end
     wipe(CS.col1BarWidgets)
     CS.col1ResourcesButton = nil
+    CS.col1CreateButton = nil
     if CS.col1ButtonBar then
         CS.col1ButtonBar._topRowBtns = nil
         CS.col1ButtonBar:SetScript("OnSizeChanged", nil)
     end
+end
+
+local function IsCreateTargetContainer(containerId)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local container = db and db.groupContainers and db.groupContainers[containerId]
+    if not container then
+        return false
+    end
+    if CooldownCompanion.ResolveContainerClassScope then
+        local scope = CooldownCompanion:ResolveContainerClassScope(container)
+        return scope and not scope.isInvalid and not scope.isOtherClass
+    end
+    return true
+end
+
+local function ResolveCreateTargetContainer()
+    if IsCreateTargetContainer(CS.selectedContainer) then
+        return CS.selectedContainer
+    end
+    if IsCreateTargetContainer(CS.lastActiveContainer) then
+        return CS.lastActiveContainer
+    end
+
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local ordered = db and BuildFlatContainerOrder(db) or {}
+    for _, item in ipairs(ordered) do
+        if IsCreateTargetContainer(item.id) then
+            return item.id
+        end
+    end
+    return nil
+end
+
+local function CreateGroupFromRail()
+    local containerId, groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
+    SelectConfigContainer(containerId)
+    CooldownCompanion:RefreshConfigPanel()
+    if NotifyTutorialAction then
+        NotifyTutorialAction("group_created", {
+            containerId = containerId,
+            groupId = groupId,
+        })
+    end
+end
+
+local function CreatePanelFromRail(containerId, displayMode, opts)
+    if not (containerId and ST._CreatePanelInSelectedContainer) then
+        return
+    end
+    ST._CreatePanelInSelectedContainer(displayMode, opts, containerId)
+end
+
+local function EnsureRailCreateMenu()
+    if not CS.railCreateMenu then
+        CS.railCreateMenu = CreateFrame("Frame", "CDCRailCreateMenu", UIParent, "UIDropDownMenuTemplate")
+    end
+    return CS.railCreateMenu
+end
+
+local function ShowRailCreateMenu()
+    local targetId = ResolveCreateTargetContainer()
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local target = targetId and db and db.groupContainers and db.groupContainers[targetId]
+    local targetName = target and target.name or nil
+    local targetSuffix = targetName and (" in " .. targetName) or ""
+    local menu = EnsureRailCreateMenu()
+
+    UIDropDownMenu_Initialize(menu, function(_, level, menuList)
+        level = level or 1
+        if level == 1 then
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = "New Group"
+            info.notCheckable = true
+            info.func = function()
+                CloseDropDownMenus()
+                CreateGroupFromRail()
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            for _, modeInfo in ipairs({ PANEL_CREATION_MODES[1], PANEL_CREATION_MODES[2] }) do
+                info = UIDropDownMenu_CreateInfo()
+                info.text = "New " .. modeInfo.label .. targetSuffix
+                info.notCheckable = true
+                info.disabled = targetId == nil
+                local displayMode = modeInfo.mode
+                if ST._AddPanelTypeMenuTooltip then
+                    ST._AddPanelTypeMenuTooltip(info, displayMode)
+                end
+                info.func = function()
+                    CloseDropDownMenus()
+                    CreatePanelFromRail(targetId, displayMode, {
+                        verticalStyle = displayMode == "bars",
+                        notifyTutorial = displayMode == "icons",
+                    })
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "More Panel Types..."
+            info.notCheckable = true
+            info.hasArrow = true
+            info.disabled = targetId == nil
+            info.menuList = "MORE_PANEL_TYPES"
+            UIDropDownMenu_AddButton(info, level)
+        elseif menuList == "MORE_PANEL_TYPES" then
+            for index = 3, #PANEL_CREATION_MODES do
+                local modeInfo = PANEL_CREATION_MODES[index]
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = "New " .. modeInfo.label .. targetSuffix
+                info.notCheckable = true
+                local displayMode = modeInfo.mode
+                if ST._AddPanelTypeMenuTooltip then
+                    ST._AddPanelTypeMenuTooltip(info, displayMode)
+                end
+                info.func = function()
+                    CloseDropDownMenus()
+                    CreatePanelFromRail(targetId, displayMode, {
+                        verticalStyle = displayMode == "text",
+                    })
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = "Add Missing CDM Panels" .. targetSuffix
+            info.notCheckable = true
+            if ST._AddCDMStarterMenuTooltip then
+                ST._AddCDMStarterMenuTooltip(info)
+            end
+            info.func = function()
+                CloseDropDownMenus()
+                if ST._CreateMissingCDMPanelsInSelectedContainer then
+                    ST._CreateMissingCDMPanelsInSelectedContainer(targetId)
+                end
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end, "MENU")
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")
+    ToggleDropDownMenu(1, nil, menu, "cursor", 0, 0)
 end
 
 local function PopulateColumn1ButtonBar()
@@ -1141,63 +1283,17 @@ local function PopulateColumn1ButtonBar()
 
     ClearColumn1ButtonBar()
 
-    local barW = CS.col1ButtonBar:GetWidth() or 300
-    local halfW = (barW - 3) / 2
-
-    local newGroupBtn = AceGUI:Create("Button")
-    newGroupBtn:SetText("New Group")
-    newGroupBtn:SetCallback("OnClick", function()
-        local containerId, groupId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
-        SelectConfigContainer(containerId)
-        CooldownCompanion:RefreshConfigPanel()
-        if NotifyTutorialAction then
-            NotifyTutorialAction("group_created", {
-                containerId = containerId,
-                groupId = groupId,
-            })
-        end
-    end)
-    newGroupBtn.frame:SetParent(CS.col1ButtonBar)
-    newGroupBtn.frame:ClearAllPoints()
-    newGroupBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
-    newGroupBtn.frame:SetWidth(halfW)
-    newGroupBtn.frame:SetHeight(28)
-    newGroupBtn.frame:Show()
-    if CS.tutorialAnchors then
-        CS.tutorialAnchors.new_group_button = newGroupBtn.frame
-    end
-    table.insert(CS.col1BarWidgets, newGroupBtn)
-
-    -- Resources: first-class module home, beside group management
-    local resourcesBtn = AceGUI:Create("Button")
-    resourcesBtn:SetText(CS.resourcesEntrySelected and "|cff66b3ffResources|r" or "Resources")
-    resourcesBtn:SetCallback("OnClick", function()
-        if ST._SelectConfigResourcesEntry then
-            ST._SelectConfigResourcesEntry({ toggle = true })
-        end
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    resourcesBtn.frame:SetParent(CS.col1ButtonBar)
-    resourcesBtn.frame:ClearAllPoints()
-    resourcesBtn.frame:SetPoint("LEFT", newGroupBtn.frame, "RIGHT", 3, 0)
-    resourcesBtn.frame:SetWidth(halfW)
-    resourcesBtn.frame:SetHeight(28)
-    resourcesBtn.frame:Show()
-    CS.col1ResourcesButton = resourcesBtn
-    if CS.tutorialAnchors then
-        CS.tutorialAnchors.resources_button = resourcesBtn.frame
-    end
-    table.insert(CS.col1BarWidgets, resourcesBtn)
-
-    CS.col1ButtonBar._topRowBtns = { newGroupBtn.frame, resourcesBtn.frame }
-    CS.col1ButtonBar:SetScript("OnSizeChanged", function(self, w)
-        if self._topRowBtns then
-            local tw = (w - 3) / 2
-            for _, frame in ipairs(self._topRowBtns) do
-                frame:SetWidth(tw)
-            end
-        end
-    end)
+    local createBtn = AceGUI:Create("Button")
+    createBtn:SetText("Create...")
+    createBtn:SetCallback("OnClick", ShowRailCreateMenu)
+    createBtn.frame:SetParent(CS.col1ButtonBar)
+    createBtn.frame:ClearAllPoints()
+    createBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
+    createBtn.frame:SetPoint("TOPRIGHT", CS.col1ButtonBar, "TOPRIGHT", 0, -1)
+    createBtn.frame:SetHeight(28)
+    createBtn.frame:Show()
+    CS.col1CreateButton = createBtn
+    table.insert(CS.col1BarWidgets, createBtn)
 end
 
 local function PopulateOtherClassBrowseButtonBar()
@@ -1561,8 +1657,9 @@ local function RefreshColumn1(preserveDrag)
         local stats = containerStats[containerId]
         local panelCount = stats and stats.panelCount or 0
         local panels = CooldownCompanion:GetPanels(containerId)
-        local isExpanded = searchResults ~= nil or IsContainerExpanded(containerId)
-        local allowPanelRows = searchResults ~= nil or not (options and options.disableDrag == true)
+        local browsePanels = options and options.browsePanels == true
+        local isExpanded = searchResults ~= nil or browsePanels or IsContainerExpanded(containerId)
+        local allowPanelRows = searchResults ~= nil or browsePanels or not (options and options.disableDrag == true)
         local searchPanels = searchPanelResultsByContainer[containerId]
         local classColor = GetContainerClassColor(containerId, container)
 
@@ -1599,7 +1696,7 @@ local function RefreshColumn1(preserveDrag)
 
         SetupGroupRowIndicators(entry, container, { showInheritedFolderBadges = true })
         local expandReserve = 0
-        if not searchResults and allowPanelRows and panelCount > 0 then
+        if not searchResults and not browsePanels and allowPanelRows and panelCount > 0 then
             expandReserve = ConfigureTreeExpandButton(
                 entry,
                 isExpanded,
@@ -1617,7 +1714,10 @@ local function RefreshColumn1(preserveDrag)
 
         if CS.selectedGroups[containerId] then
             entry:SetColor(0.4, 0.7, 1.0)
-        elseif CS.selectedContainer == containerId and not CS.selectedGroup then
+        elseif CS.selectedContainer == containerId
+            and not CS.selectedGroup
+            and not CS.resourcesEntrySelected
+            and not CS.castFramesEntrySelected then
             entry:SetColor(0, 1, 0)
         elseif isInactive then
             entry:SetColor(0.55, 0.55, 0.55)
@@ -2296,7 +2396,15 @@ local function RefreshColumn1(preserveDrag)
         if options and options.color then
             row:SetColor(options.color[1], options.color[2], options.color[3])
         end
-        if options and options.classKey then
+        if options and options.iconAtlas then
+            ApplyConfigRowIcon(row, 134400, {
+                atlas = options.iconAtlas,
+                indent = options.indent or 0,
+                iconSize = options.iconSize or 16,
+                rowHeight = options.rowHeight or 28,
+                compactRowHeight = 24,
+            })
+        elseif options and options.classKey then
             ApplyConfigRowIcon(row, 134400, { atlas = "classicon-" .. string.lower(options.classKey) })
         else
             ApplyConfigTextRow(row)
@@ -2309,6 +2417,9 @@ local function RefreshColumn1(preserveDrag)
                     options.onClick()
                 end
             end)
+        end
+        if options and options.selected then
+            row:SetColor(0, 1, 0)
         end
         CS.col1Scroll:AddChild(row)
         TrackRenderedRow({
@@ -2324,6 +2435,55 @@ local function RefreshColumn1(preserveDrag)
             stableCount = options and options.stableCount or nil,
         })
         return row
+    end
+
+    local function RenderRailDestinations()
+        local spacer = AceGUI:Create("SimpleGroup")
+        spacer:SetFullWidth(true)
+        spacer:SetHeight(8)
+        spacer.noAutoHeight = true
+        CS.col1Scroll:AddChild(spacer)
+
+        local resourcesRow = RenderNavigationRow("rail-destination", "Resources", {
+            selected = CS.resourcesEntrySelected == true,
+            onClick = function()
+                if ST._SelectConfigResourcesEntry then
+                    ST._SelectConfigResourcesEntry({ toggle = true })
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+        CS.col1ResourcesButton = resourcesRow
+
+        RenderNavigationRow("rail-destination", "Cast Bar & Unit Frames", {
+            iconAtlas = "groupfinder-icon-friend",
+            selected = CS.castFramesEntrySelected == true,
+            onClick = function()
+                if ST._SelectConfigCastFramesEntry then
+                    ST._SelectConfigCastFramesEntry({ toggle = true })
+                end
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+
+        if CS.castFramesEntrySelected then
+            local castRows = {
+                { key = "castbar", label = "Cast Bar" },
+                { key = "player", label = "Player Frame" },
+                { key = "target", label = "Target Frame" },
+            }
+            for _, item in ipairs(castRows) do
+                RenderNavigationRow("rail-destination-child", "    " .. item.label, {
+                    selected = CS.castFramesSelectedItem == item.key,
+                    onClick = function()
+                        CS.castFramesSelectedItem = item.key
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                })
+            end
+        elseif CS.resourcesEntrySelected and ST._BuildCustomBarsListPanel then
+            ST._BuildCustomBarsListPanel(CS.col1Scroll)
+        end
     end
 
     local function FindOtherClassSectionByClassKey(otherSectionOrder, classKey)
@@ -2366,6 +2526,7 @@ local function RefreshColumn1(preserveDrag)
                     classKey = selectedSection.classKey,
                     noLoadBuckets = true,
                     disableDrag = true,
+                    browsePanels = true,
                 }
             )
             return true
@@ -2575,6 +2736,10 @@ local function RefreshColumn1(preserveDrag)
                 end
             end
         end
+    end
+
+    if not searchResults and not CS.otherClassLibraryActive then
+        RenderRailDestinations()
     end
 
     CS.lastCol1RenderedRows = col1RenderedRows

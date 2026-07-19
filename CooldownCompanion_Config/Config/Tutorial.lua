@@ -673,48 +673,37 @@ local function RebuildTutorialAnchors()
     if CS.configFrame and CS.configFrame.col1 and CS.configFrame.col1.frame then
         anchors.groups_column_area = CS.configFrame.col1.frame
     end
-    if CS.configFrame and CS.configFrame.col2 and CS.configFrame.col2.frame then
-        anchors.panels_column_area = CS.configFrame.col2.frame
+    if CS.configFrame and CS.configFrame.col1 and CS.configFrame.col1.frame then
+        anchors.panels_column_area = CS.configFrame.col1.frame
     end
 
     local col1Widgets = CS.col1BarWidgets or {}
     local firstCol1Button = col1Widgets[1]
     if firstCol1Button and firstCol1Button.frame then
         anchors.new_group_button = firstCol1Button.frame
+        anchors.icon_panel_button = firstCol1Button.frame
     end
     local resourcesButton = CS.col1ResourcesButton
     if resourcesButton and resourcesButton.frame then
         anchors.resources_button = resourcesButton.frame
     end
 
-    local col2Widgets = CS.col2BarWidgets or {}
-    local firstCol2Button = col2Widgets[1]
-    if firstCol2Button and firstCol2Button.frame and CS.col2ButtonBar and CS.col2ButtonBar:IsShown() then
-        anchors.icon_panel_button = firstCol2Button.frame
-    end
-
     local selectedPanelId = CS.selectedGroup
-    local selectedPanelMeta
-    for _, panelMeta in ipairs(CS.lastCol2PanelMetas or {}) do
-        if panelMeta.panelId == selectedPanelId then
-            selectedPanelMeta = panelMeta
+    local selectedPanelRow
+    for _, row in ipairs(CS.lastCol1RenderedRows or {}) do
+        if row.rowType == "panel" and row.id == selectedPanelId then
+            selectedPanelRow = row
             break
         end
     end
 
-    if selectedPanelMeta then
-        anchors.selected_panel_area = selectedPanelMeta.panelFrame or selectedPanelMeta.headerFrame
-        -- Wide buttons view: the add box lives under the preview instead of
-        -- inline in column 2.
-        local addInput = selectedPanelMeta.addInputFrame
-        if not addInput then
-            local col3 = CS.configFrame and CS.configFrame.col3
-            local addBox = col3 and col3.buttonsAddBox
-            if addBox and addBox.frame and addBox.frame:IsShown() then
-                addInput = addBox.frame
-            end
+    if selectedPanelRow then
+        anchors.selected_panel_area = selectedPanelRow.widget and selectedPanelRow.widget.frame
+        local col3 = CS.configFrame and CS.configFrame.col3
+        local addBox = col3 and col3.buttonsAddBox
+        if addBox and addBox.frame and addBox.frame:IsShown() then
+            anchors.selected_panel_add_input = addBox.frame
         end
-        anchors.selected_panel_add_input = addInput
     end
 
     if CS.configFrame and CS.configFrame.col3 and CS.configFrame.col3.frame then
