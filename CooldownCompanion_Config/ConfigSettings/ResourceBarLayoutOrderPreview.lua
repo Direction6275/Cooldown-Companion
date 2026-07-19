@@ -1093,8 +1093,8 @@ local function UpdateGhostPosition(ghost)
     local cursorX, cursorY = GetCursorPosition()
     cursorX = cursorX / scale
     cursorY = cursorY / scale
-    local offsetX = ghost._cdcGrabOffsetX or math_floor((ghost:GetWidth() or 0) / 2)
-    local offsetY = ghost._cdcGrabOffsetY or math_floor((ghost:GetHeight() or 0) / 2)
+    local offsetX = math_floor((ghost:GetWidth() or 0) / 2)
+    local offsetY = math_floor((ghost:GetHeight() or 0) / 2)
     ghost:ClearAllPoints()
     ghost:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cursorX - offsetX, cursorY + offsetY)
 end
@@ -1862,12 +1862,18 @@ local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
     return panelWidth, aboveHeight + panelHeight + belowHeight + (LAYOUT_PREVIEW_GAP * 2), iconCenterOffsetY
 end
 
-local function RenderIndependentHorizontalLayout(preview, content, layoutDrag, slots, slotWidth, slotHeight, centerGap)
+local function RenderIndependentHorizontalLayout(preview, content, layoutDrag, slots, slotWidth, slotHeight, anchorGap)
     local aboveSlots = SortSlotsForSide(slots, "above", true)
     local belowSlots = SortSlotsForSide(slots, "below", false)
     local slotFrameHeight = math_max(8, slotHeight)
     local aboveHeight = GetLaneExtent(#aboveSlots, slotFrameHeight)
     local belowHeight = GetLaneExtent(#belowSlots, slotFrameHeight)
+
+    -- Use the attached-resource layout verbatim, with the independent
+    -- stack's invisible one-pixel wrapper standing in for the panel.
+    local anchorFrame = AcquireContainer(preview, content)
+    anchorFrame:SetSize(slotWidth, 1)
+    ApplyBackdrop(anchorFrame, { 0, 0, 0, 0 }, { 0, 0, 0, 0 })
 
     local aboveLane = BuildLane(
         preview,
@@ -1884,10 +1890,17 @@ local function RenderIndependentHorizontalLayout(preview, content, layoutDrag, s
         slotFrameHeight,
         "primary"
     )
-    -- Keep both lanes pinned to the independent wrapper's center. Let the
-    -- insertion placeholder render outside a lane's base extent instead of
-    -- resizing the lane and snapping the opposite side during the drag.
-    aboveLane.frame:SetPoint("BOTTOM", content, "CENTER", 0, centerGap / 2)
+    aboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+
+    aboveLane.setPreviewOverflow = function(extra)
+        aboveLane.frame:ClearAllPoints()
+        aboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, extra)
+        aboveLane.frame:SetSize(aboveLane.baseWidth or slotWidth, (aboveLane.baseHeight or aboveHeight) + extra)
+    end
+    aboveLane.setPreviewOverflow(0)
+
+    anchorFrame:ClearAllPoints()
+    anchorFrame:SetPoint("TOPLEFT", aboveLane.frame, "BOTTOMLEFT", 0, -anchorGap)
 
     local belowLane = BuildLane(
         preview,
@@ -1904,16 +1917,22 @@ local function RenderIndependentHorizontalLayout(preview, content, layoutDrag, s
         slotFrameHeight,
         "primary"
     )
-    belowLane.frame:SetPoint("TOP", content, "CENTER", 0, -(centerGap / 2))
+    belowLane.frame:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, -anchorGap)
 
-    return slotWidth, aboveHeight + centerGap + belowHeight
+    return slotWidth, aboveHeight + 1 + belowHeight + (anchorGap * 2)
 end
 
-local function RenderIndependentVerticalLayout(preview, content, layoutDrag, slots, slotHeight, slotWidth, centerGap)
+local function RenderIndependentVerticalLayout(preview, content, layoutDrag, slots, slotHeight, slotWidth, anchorGap)
     local leftSlots = SortSlotsForSide(slots, "left", true)
     local rightSlots = SortSlotsForSide(slots, "right", false)
     local leftWidth = GetLaneExtent(#leftSlots, slotWidth)
     local rightWidth = GetLaneExtent(#rightSlots, slotWidth)
+
+    -- Use the attached-resource layout verbatim, with the independent
+    -- stack's invisible one-pixel wrapper standing in for the panel.
+    local anchorFrame = AcquireContainer(preview, content)
+    anchorFrame:SetSize(1, slotHeight)
+    ApplyBackdrop(anchorFrame, { 0, 0, 0, 0 }, { 0, 0, 0, 0 })
 
     local leftLane = BuildLane(
         preview,
@@ -1930,10 +1949,17 @@ local function RenderIndependentVerticalLayout(preview, content, layoutDrag, slo
         slotHeight,
         "primary"
     )
-    -- Keep both lanes pinned to the independent wrapper's center. Let the
-    -- insertion placeholder render outside a lane's base extent instead of
-    -- resizing the lane and snapping the opposite side during the drag.
-    leftLane.frame:SetPoint("RIGHT", content, "CENTER", -(centerGap / 2), 0)
+    leftLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+
+    leftLane.setPreviewOverflow = function(extra)
+        leftLane.frame:ClearAllPoints()
+        leftLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", -extra, 0)
+        leftLane.frame:SetSize((leftLane.baseWidth or leftWidth) + extra, leftLane.baseHeight or slotHeight)
+    end
+    leftLane.setPreviewOverflow(0)
+
+    anchorFrame:ClearAllPoints()
+    anchorFrame:SetPoint("TOPLEFT", leftLane.frame, "TOPRIGHT", anchorGap, 0)
 
     local rightLane = BuildLane(
         preview,
@@ -1950,9 +1976,9 @@ local function RenderIndependentVerticalLayout(preview, content, layoutDrag, slo
         slotHeight,
         "primary"
     )
-    rightLane.frame:SetPoint("LEFT", content, "CENTER", centerGap / 2, 0)
+    rightLane.frame:SetPoint("TOPLEFT", anchorFrame, "TOPRIGHT", anchorGap, 0)
 
-    return leftWidth + centerGap + rightWidth, slotHeight
+    return leftWidth + 1 + rightWidth + (anchorGap * 2), slotHeight
 end
 
 local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, castSlots, horizontalBarHeight, verticalBarWidth)
@@ -2311,19 +2337,7 @@ local function ConfigureGhost(preview, slotData, slotFrame)
     ghost:SetFrameStrata("TOOLTIP")
     ghost:SetFrameLevel(2000)
     ApplyBackdrop(ghost, preview.skin.ghostBg, preview.skin.ghostBorder)
-    local uiScale = UIParent:GetEffectiveScale()
-    local slotScale = slotFrame:GetEffectiveScale() / uiScale
-    ghost:SetSize(slotFrame:GetWidth() * slotScale, slotFrame:GetHeight() * slotScale)
-
-    local cursorX, cursorY = GetCursorPosition()
-    local left, _, top = GetScaledFrameRect(slotFrame)
-    if left and top then
-        ghost._cdcGrabOffsetX = (cursorX - left) / uiScale
-        ghost._cdcGrabOffsetY = (top - cursorY) / uiScale
-    else
-        ghost._cdcGrabOffsetX = nil
-        ghost._cdcGrabOffsetY = nil
-    end
+    ghost:SetSize(slotFrame:GetWidth(), slotFrame:GetHeight())
 
     if not ghost._cdcSlot then
         ghost._cdcSlot = CreateSlotFrame(ghost)
@@ -2346,8 +2360,6 @@ end
 local function ClearGhost(preview)
     preview.ghostActive = false
     if preview.ghost then
-        preview.ghost._cdcGrabOffsetX = nil
-        preview.ghost._cdcGrabOffsetY = nil
         preview.ghost:Hide()
     end
 end
@@ -2428,13 +2440,7 @@ local function CreateLayoutDragModel(preview)
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:RepositionCastBar()
             CooldownCompanion:UpdateAnchorStacking()
-            if preview.independentResources then
-                C_Timer.After(0, function()
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
-            else
-                CooldownCompanion:RefreshConfigPanel()
-            end
+            CooldownCompanion:RefreshConfigPanel()
         end
     end
 
@@ -2569,10 +2575,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
             20,
             tonumber(layout.independentWidth or rbSettings.independentWidth) or 200
         )
-        -- The live independent wrapper is one pixel wide/high, with the
-        -- configured anchor gap applied on both sides.
         local anchorGap = tonumber(GetResourceAnchorGap(rbSettings, layout)) or 0
-        local centerGap = math_max(1, (anchorGap * 2) + 1)
         if preview.isVerticalLayout then
             contentWidth, contentHeight = RenderIndependentVerticalLayout(
                 preview,
@@ -2581,7 +2584,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
                 primarySlots,
                 independentLength,
                 resourceThickness,
-                centerGap
+                anchorGap
             )
         else
             contentWidth, contentHeight = RenderIndependentHorizontalLayout(
@@ -2591,7 +2594,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
                 primarySlots,
                 independentLength,
                 resourceThickness,
-                centerGap
+                anchorGap
             )
         end
     elseif sourcePanel and layoutDrag then
