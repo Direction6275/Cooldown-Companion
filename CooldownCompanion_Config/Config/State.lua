@@ -2807,7 +2807,11 @@ local function ClearColumnPreviewHost(previewKey)
 end
 
 local function EnsureCol1PreviewHost()
-    return EnsureColumnPreviewHost("col1Preview", CS.col1Scroll)
+    local preview = EnsureColumnPreviewHost("col1Preview", CS.col1Scroll)
+    if preview and preview.root then
+        preview.root:SetClipsChildren(true)
+    end
+    return preview
 end
 
 local function EnsureCol2PreviewHost()

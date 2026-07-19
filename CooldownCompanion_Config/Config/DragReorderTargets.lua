@@ -1504,7 +1504,7 @@ local function CanRailPanelsMoveToContainer(sourcePanelIds, targetContainerId)
     return true
 end
 
-local function BuildRailPanelDropTarget(rowMeta, cursorY, sourcePanelIds)
+local function BuildRailPanelDropTarget(rowMeta, rowIndex, cursorY, sourcePanelIds)
     local frame = GetCol1DropFrame(rowMeta)
     if not (frame and frame:IsShown()) then
         return nil
@@ -1522,6 +1522,8 @@ local function BuildRailPanelDropTarget(rowMeta, cursorY, sourcePanelIds)
         return {
             action = "append",
             targetContainerId = rowMeta.id,
+            targetRow = rowMeta,
+            rowIndex = rowIndex,
             anchorFrame = frame,
             anchorAbove = false,
             springContainerId = rowMeta.isExpanded and nil or rowMeta.id,
@@ -1540,6 +1542,8 @@ local function BuildRailPanelDropTarget(rowMeta, cursorY, sourcePanelIds)
             action = above and "before" or "after",
             targetContainerId = rowMeta.ownerId,
             targetPanelId = rowMeta.id,
+            targetRow = rowMeta,
+            rowIndex = rowIndex,
             anchorFrame = frame,
             anchorAbove = above,
         }
@@ -1558,8 +1562,8 @@ local function GetRailPanelDropTarget(cursorX, cursorY, scrollWidget, renderedRo
         return nil
     end
 
-    for _, rowMeta in ipairs(renderedRows) do
-        local target = BuildRailPanelDropTarget(rowMeta, cursorY, sourcePanelIds)
+    for rowIndex, rowMeta in ipairs(renderedRows) do
+        local target = BuildRailPanelDropTarget(rowMeta, rowIndex, cursorY, sourcePanelIds)
         if target then
             return target
         end

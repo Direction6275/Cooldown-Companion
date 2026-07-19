@@ -894,6 +894,7 @@ local function CopyCol1PreviewRow(row)
         key = row.key,
         originalIndex = row.originalIndex,
         kind = row.kind,
+        rowType = row.rowType,
         id = row.id,
         inFolder = row.inFolder,
         section = row.section,
@@ -970,6 +971,7 @@ local function BuildCol1BasePreviewLayout()
                 }, ":"),
                 originalIndex = rowIndex,
                 kind = rowMeta.kind,
+                rowType = rowMeta.rowType,
                 id = rowMeta.id,
                 inFolder = rowMeta.inFolder,
                 section = rowMeta.section,
@@ -1056,7 +1058,11 @@ local function IsCol1AuxOwnedBySource(row, source)
     if not (row and row.kind == "aux-block" and source) then
         return false
     end
-    if source.kind == "folder" then
+    if source.kind == "rail-panel" then
+        return row.rowType == "panel"
+            and source.sourcePanelIds
+            and source.sourcePanelIds[row.id] == true
+    elseif source.kind == "folder" then
         return row.ownerFolderId == source.sourceFolderId
     elseif source.kind == "multi-group" and source.sourceGroupIds then
         return row.ownerKind == "container" and source.sourceGroupIds[row.ownerId]
@@ -1069,7 +1075,14 @@ local function BuildCol1DraggedRows(base, source)
     local movedRows = {}
     local movedIndexes = {}
 
-    if source.kind == "folder" then
+    if source.kind == "rail-panel" then
+        for _, row in ipairs(base.rows) do
+            if IsCol1AuxOwnedBySource(row, source) then
+                movedRows[#movedRows + 1] = row
+                movedIndexes[row.originalIndex] = true
+            end
+        end
+    elseif source.kind == "folder" then
         local firstIndex, lastIndex = FindCol1FolderBlockRange(base.rows, source.sourceFolderId)
         if not firstIndex then
             return nil
@@ -1131,7 +1144,11 @@ local function BuildCol1DraggedRows(base, source)
 
     local ghostRow
     local firstRow = movedRows[1]
-    if source.kind == "multi-group" and #movedRows > 1 then
+    if source.kind == "rail-panel" and #movedRows > 1 then
+        ghostRow = CopyCol1PreviewRow(firstRow)
+        ghostRow.text = tostring(#movedRows) .. " panels"
+        ghostRow.height = math.max(firstRow.height, PREVIEW_DEFAULT_ROW_HEIGHT)
+    elseif source.kind == "multi-group" and #movedRows > 1 then
         local selectedCount = 0
         if source.sourceGroupIds then
             for _ in pairs(source.sourceGroupIds) do
@@ -1155,6 +1172,43 @@ local function ResolveCol1PreviewAnchor(base, source, dropTarget)
     end
     if dropTarget.isBelowAll then
         return #base.rows + 1, base.rows[#base.rows]
+    end
+
+    if source.kind == "rail-panel" then
+        if dropTarget.targetPanelId then
+            for _, row in ipairs(base.rows) do
+                if row.kind == "aux-block"
+                    and row.rowType == "panel"
+                    and row.id == dropTarget.targetPanelId
+                then
+                    if dropTarget.action == "before" then
+                        return row.originalIndex, row
+                    end
+                    return row.originalIndex + 1, row
+                end
+            end
+            return nil, nil
+        end
+
+        if dropTarget.action == "append" and dropTarget.targetContainerId then
+            local headerRow
+            local lastPanelRow
+            for _, row in ipairs(base.rows) do
+                if row.kind == "container" and row.id == dropTarget.targetContainerId then
+                    headerRow = row
+                elseif row.kind == "aux-block"
+                    and row.rowType == "panel"
+                    and row.ownerId == dropTarget.targetContainerId
+                then
+                    lastPanelRow = row
+                end
+            end
+            local anchorRow = lastPanelRow or headerRow
+            if anchorRow then
+                return anchorRow.originalIndex + 1, lastPanelRow
+            end
+        end
+        return nil, nil
     end
 
     local targetRow = dropTarget.targetRow
@@ -1441,17 +1495,14 @@ local function SetCol1BaseFramesHidden(hidden, source)
     end
 
     if hidden then
-        for _, rowMeta in ipairs(CS.lastCol1RenderedRows or {}) do
-            local frame = rowMeta.widget and rowMeta.widget.frame
-            if frame and frame ~= preview.root and preview.hiddenFrames[frame] == nil then
-                local shouldHide = rowMeta.previewProxy ~= false
-                if rowMeta.kind == "aux-block" then
-                    shouldHide = IsCol1AuxOwnedBySource(rowMeta, source)
-                end
-                if shouldHide then
-                    preview.hiddenFrames[frame] = frame:GetAlpha()
-                    frame:SetAlpha(0)
-                end
+        -- Match the proven Column 2 drag approach: replace the complete
+        -- AceGUI content surface for the duration of the drag. Hiding only
+        -- tracked child rows leaves InlineGroup shells behind and produces
+        -- overlapping/clipped geometry when addon-owned proxies move.
+        for _, frame in ipairs({ content:GetChildren() }) do
+            if frame ~= preview.root and preview.hiddenFrames[frame] == nil then
+                preview.hiddenFrames[frame] = frame:GetAlpha()
+                frame:SetAlpha(0)
             end
         end
         for _, region in ipairs(CS.folderAccentBars or {}) do

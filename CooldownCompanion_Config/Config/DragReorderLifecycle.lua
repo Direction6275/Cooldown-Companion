@@ -835,6 +835,7 @@ local function RefreshRailPanelDragRows(state)
     if not ST._RefreshColumn1 then
         return
     end
+    ClearCol1AnimatedPreview()
     ST._RefreshColumn1(true)
     state.railPanelRows = CS.lastCol1RenderedRows
     state.dimmedWidgets = {}
@@ -1075,7 +1076,6 @@ local function StartDragTracking()
                     HideDragIndicator()
                 end
             elseif CS.dragState.railPanelRows then
-                ClearCol1AnimatedPreview()
                 ClearCol2AnimatedPreview()
                 local dropTarget = GetRailPanelDropTarget(
                     cursorX,
@@ -1089,8 +1089,22 @@ local function StartDragTracking()
                     HideDragIndicator()
                 elseif dropTarget then
                     ResetDragIndicatorStyle()
-                    ShowDragIndicator(dropTarget.anchorFrame, dropTarget.anchorAbove, CS.dragState.scrollWidget)
+                    HideDragIndicator()
+                    if not RenderCol1AnimatedPreview({
+                        kind = "rail-panel",
+                        sourcePanelIds = CS.dragState.sourcePanelIds,
+                        sourcePanelOrder = CS.dragState.sourcePanelOrder,
+                        dropTarget = dropTarget,
+                    }) then
+                        ClearCol1AnimatedPreview()
+                        ShowDragIndicator(
+                            dropTarget.anchorFrame,
+                            dropTarget.anchorAbove,
+                            CS.dragState.scrollWidget
+                        )
+                    end
                 else
+                    ClearCol1AnimatedPreview()
                     HideDragIndicator()
                 end
             elseif CS.dragState.col1RenderedRows then
