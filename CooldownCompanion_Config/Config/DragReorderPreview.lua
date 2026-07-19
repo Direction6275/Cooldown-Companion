@@ -1324,6 +1324,9 @@ local function BuildCol1PreviewModel(source)
             height = gapHeight,
             gapAfter = (template and template.gapAfter) or 0,
             folderAccentId = folderGapId,
+            ownerKind = source.kind == "rail-panel" and "container" or nil,
+            ownerId = source.kind == "rail-panel"
+                and source.dropTarget.targetContainerId or nil,
         })
     end
 
@@ -1406,6 +1409,81 @@ local function AcquireCol1PreviewAccentBar(preview, index)
         preview.accentBars[index] = bar
     end
     return bar
+end
+
+local function RenderCol1GroupOutlines(preview, model)
+    local ranges = {}
+    local order = {}
+
+    for _, row in ipairs(model and model.rows or {}) do
+        local containerId
+        if row.kind == "container" then
+            containerId = row.id
+        elseif row.ownerKind == "container" then
+            containerId = row.ownerId
+        end
+
+        if containerId and not row.layoutOnly then
+            local range = ranges[containerId]
+            if not range then
+                range = {
+                    left = math.max(0, (row.x or 0) - 8),
+                    right = (row.x or 0) + (row.width or 0) + 4,
+                    top = math.max(0, (row.previewY or 0) - 4),
+                    bottom = (row.previewY or 0) + (row.height or 0) + 4,
+                }
+                ranges[containerId] = range
+                order[#order + 1] = containerId
+            else
+                range.left = math.min(range.left, math.max(0, (row.x or 0) - 8))
+                range.right = math.max(range.right, (row.x or 0) + (row.width or 0) + 4)
+                range.top = math.min(range.top, math.max(0, (row.previewY or 0) - 4))
+                range.bottom = math.max(
+                    range.bottom,
+                    (row.previewY or 0) + (row.height or 0) + 4
+                )
+            end
+        end
+    end
+
+    for _, panelProxy in ipairs(preview.panels or {}) do
+        panelProxy.used = false
+    end
+
+    local rootWidth = preview.root:GetWidth() or 0
+    for index, containerId in ipairs(order) do
+        local range = ranges[containerId]
+        local panelProxy = AcquirePreviewPanelFrame(preview, index)
+        local frame = panelProxy.frame
+        panelProxy.used = true
+        frame._cdcTitle:Hide()
+        frame._cdcModeBadge:Hide()
+        frame:SetBackdropColor(0.025, 0.02, 0.015, 0.20)
+        frame:SetBackdropBorderColor(0.38, 0.33, 0.26, 0.72)
+        frame:SetFrameLevel((preview.root:GetFrameLevel() or 1) + 1)
+
+        local right = range.right
+        if rootWidth > 0 then
+            right = math.min(right, rootWidth - 2)
+        end
+        QueuePreviewTween(
+            preview,
+            frame,
+            range.left,
+            range.top,
+            math.max(1, right - range.left),
+            math.max(1, range.bottom - range.top),
+            1,
+            PREVIEW_ANIM_DURATION
+        )
+        frame:Show()
+    end
+
+    for _, panelProxy in ipairs(preview.panels or {}) do
+        if not panelProxy.used then
+            panelProxy.frame:Hide()
+        end
+    end
 end
 
 local function RenderCol1PreviewAccentBars(preview, model)
@@ -1540,8 +1618,13 @@ local function UpdateCol1Ghost(preview, model)
         return
     end
 
-    preview.ghost:SetBackdropColor(0, 0, 0, 0)
-    preview.ghost:SetBackdropBorderColor(0, 0, 0, 0)
+    if row.kind == "container" then
+        preview.ghost:SetBackdropColor(0.025, 0.02, 0.015, 0.82)
+        preview.ghost:SetBackdropBorderColor(0.38, 0.33, 0.26, 0.92)
+    else
+        preview.ghost:SetBackdropColor(0, 0, 0, 0)
+        preview.ghost:SetBackdropBorderColor(0, 0, 0, 0)
+    end
     preview.ghost:SetSize(row.width or 160, row.height or PREVIEW_DEFAULT_ROW_HEIGHT)
     preview.ghost.label:SetText(row.text or "")
     if row.textColor then
@@ -1687,10 +1770,13 @@ local function RenderCol1AnimatedPreview(source)
         rowProxy.used = false
     end
 
+    RenderCol1GroupOutlines(preview, model)
+
     for _, row in ipairs(model.rows) do
         if not row.isGap and not row.layoutOnly then
             local rowProxy = AcquireCol1PreviewRowFrame(preview, row.key or tostring(row.originalIndex))
             local frame = rowProxy.frame
+            frame:SetFrameLevel((preview.root:GetFrameLevel() or 1) + 10)
             local isMarker = row.isMarker and true or false
             if model.highlightRowKey and model.highlightRowKey == row.key then
                 frame:SetBackdropColor(0.30, 0.52, 0.18, 0.18)
