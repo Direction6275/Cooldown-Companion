@@ -1168,6 +1168,10 @@ local function BuildCol1DraggedRows(base, source)
         ghostRow = CopyCol1PreviewRow(firstRow)
     end
 
+    if source.kind == "group" or source.kind == "folder-group" then
+        ghostRow.centerGroupLabel = true
+    end
+
     return movedRows, movedIndexes, gapHeight, ghostRow
 end
 
@@ -1352,6 +1356,9 @@ local function BuildCol1PreviewModel(source)
         mode = PREVIEW_MODE_COL1_LIST,
         rows = rows,
         draggedRow = ghostRow,
+        simplifyGroupBlocks = source.kind == "group"
+            or source.kind == "folder-group"
+            or source.kind == "multi-group",
         highlightRowKey = highlightRowKey,
         highlightFolderId = highlightFolderId,
         suppressedAccentFolderId = source.kind == "folder" and source.sourceFolderId or nil,
@@ -1417,6 +1424,39 @@ local function AcquireCol1PreviewAccentBar(preview, index)
     return bar
 end
 
+local function CenterCol1GroupPreviewLabel(frame, icon, label, row, availableWidth)
+    local width = math.max(1, availableWidth or frame:GetWidth() or 1)
+    label:SetText(row.text or "")
+    if row.textColor then
+        label:SetTextColor(row.textColor[1] or 1, row.textColor[2] or 1, row.textColor[3] or 1)
+    else
+        label:SetTextColor(1, 1, 1)
+    end
+
+    local hasIcon = row.icon and (row.iconAlpha or 1) > 0.05
+    local iconSize = math.min(32, (row.iconRect and row.iconRect.height) or 32)
+    local gap = hasIcon and 8 or 0
+    local maxTextWidth = math.max(1, width - (hasIcon and (iconSize + gap + 16) or 16))
+    local textWidth = math.min(label:GetStringWidth(), maxTextWidth)
+    local totalWidth = textWidth + (hasIcon and (iconSize + gap) or 0)
+
+    label:ClearAllPoints()
+    label:SetWidth(textWidth)
+    label:SetJustifyH("LEFT")
+    if hasIcon then
+        icon:SetTexture(row.icon)
+        icon:SetAlpha(row.iconAlpha or 1)
+        icon:SetSize(iconSize, iconSize)
+        icon:ClearAllPoints()
+        icon:SetPoint("LEFT", frame, "CENTER", -(totalWidth / 2), 0)
+        icon:Show()
+        label:SetPoint("LEFT", icon, "RIGHT", gap, 0)
+    else
+        icon:Hide()
+        label:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    end
+end
+
 local function RenderCol1GroupOutlines(preview, model)
     local ranges = {}
     local order = {}
@@ -1433,6 +1473,7 @@ local function RenderCol1GroupOutlines(preview, model)
             local range = ranges[containerId]
             if not range then
                 range = {
+                    headerRow = row.kind == "container" and row or nil,
                     left = math.max(0, (row.x or 0) - 8),
                     right = (row.x or 0) + (row.width or 0) + 4,
                     top = math.max(0, (row.previewY or 0) - 4),
@@ -1441,6 +1482,9 @@ local function RenderCol1GroupOutlines(preview, model)
                 ranges[containerId] = range
                 order[#order + 1] = containerId
             else
+                if row.kind == "container" then
+                    range.headerRow = row
+                end
                 range.left = math.min(range.left, math.max(0, (row.x or 0) - 8))
                 range.right = math.max(range.right, (row.x or 0) + (row.width or 0) + 4)
                 range.top = math.min(range.top, math.max(0, (row.previewY or 0) - 4))
@@ -1462,8 +1506,6 @@ local function RenderCol1GroupOutlines(preview, model)
         local panelProxy = AcquirePreviewPanelFrame(preview, index)
         local frame = panelProxy.frame
         panelProxy.used = true
-        frame._cdcTitle:Hide()
-        frame._cdcModeBadge:Hide()
         frame:SetBackdropColor(0.025, 0.02, 0.015, 0.20)
         frame:SetBackdropBorderColor(0.38, 0.33, 0.26, 0.72)
         frame:SetFrameLevel((preview.root:GetFrameLevel() or 1) + 1)
@@ -1472,12 +1514,26 @@ local function RenderCol1GroupOutlines(preview, model)
         if rootWidth > 0 then
             right = math.min(right, rootWidth - 2)
         end
+        local outlineWidth = math.max(1, right - range.left)
+        if model.simplifyGroupBlocks and range.headerRow then
+            CenterCol1GroupPreviewLabel(
+                frame,
+                frame._cdcModeBadge,
+                frame._cdcTitle,
+                range.headerRow,
+                outlineWidth
+            )
+            frame._cdcTitle:Show()
+        else
+            frame._cdcTitle:Hide()
+            frame._cdcModeBadge:Hide()
+        end
         QueuePreviewTween(
             preview,
             frame,
             range.left,
             range.top,
-            math.max(1, right - range.left),
+            outlineWidth,
             math.max(1, range.bottom - range.top),
             1,
             PREVIEW_ANIM_DURATION
@@ -1639,30 +1695,40 @@ local function UpdateCol1Ghost(preview, model)
         preview.ghost.label:SetTextColor(1, 1, 1)
     end
 
-    if row.icon and (row.iconAlpha or 1) > 0.05 then
-        preview.ghost.icon:SetTexture(row.icon)
-        preview.ghost.icon:SetAlpha(row.iconAlpha or 1)
-        preview.ghost.icon:Show()
-        if not ApplyRelativeRect(preview.ghost.icon, preview.ghost, row.iconRect) then
-            preview.ghost.icon:ClearAllPoints()
-            preview.ghost.icon:SetPoint("LEFT", preview.ghost, "LEFT", 0, 0)
-            preview.ghost.icon:SetSize(
-                (row.iconRect and row.iconRect.width) or 32,
-                (row.iconRect and row.iconRect.height) or 32
-            )
-        end
+    if row.centerGroupLabel then
+        CenterCol1GroupPreviewLabel(
+            preview.ghost,
+            preview.ghost.icon,
+            preview.ghost.label,
+            row,
+            row.width or 160
+        )
     else
-        preview.ghost.icon:Hide()
-    end
-
-    if not ApplyRelativeRect(preview.ghost.label, preview.ghost, row.labelRect) then
-        preview.ghost.label:ClearAllPoints()
-        if preview.ghost.icon:IsShown() then
-            preview.ghost.label:SetPoint("LEFT", preview.ghost.icon, "RIGHT", 8, 0)
+        if row.icon and (row.iconAlpha or 1) > 0.05 then
+            preview.ghost.icon:SetTexture(row.icon)
+            preview.ghost.icon:SetAlpha(row.iconAlpha or 1)
+            preview.ghost.icon:Show()
+            if not ApplyRelativeRect(preview.ghost.icon, preview.ghost, row.iconRect) then
+                preview.ghost.icon:ClearAllPoints()
+                preview.ghost.icon:SetPoint("LEFT", preview.ghost, "LEFT", 0, 0)
+                preview.ghost.icon:SetSize(
+                    (row.iconRect and row.iconRect.width) or 32,
+                    (row.iconRect and row.iconRect.height) or 32
+                )
+            end
         else
-            preview.ghost.label:SetPoint("LEFT", preview.ghost, "LEFT", 8, 0)
+            preview.ghost.icon:Hide()
         end
-        preview.ghost.label:SetPoint("RIGHT", preview.ghost, "RIGHT", -PREVIEW_ROW_TEXT_RIGHT_PAD, 0)
+
+        if not ApplyRelativeRect(preview.ghost.label, preview.ghost, row.labelRect) then
+            preview.ghost.label:ClearAllPoints()
+            if preview.ghost.icon:IsShown() then
+                preview.ghost.label:SetPoint("LEFT", preview.ghost.icon, "RIGHT", 8, 0)
+            else
+                preview.ghost.label:SetPoint("LEFT", preview.ghost, "LEFT", 8, 0)
+            end
+            preview.ghost.label:SetPoint("RIGHT", preview.ghost, "RIGHT", -PREVIEW_ROW_TEXT_RIGHT_PAD, 0)
+        end
     end
 
     HideCol1PreviewBadges(preview.ghost)
@@ -1773,7 +1839,10 @@ local function RenderCol1AnimatedPreview(source)
     RenderCol1GroupOutlines(preview, model)
 
     for _, row in ipairs(model.rows) do
-        if not row.isGap and not row.layoutOnly then
+        local hiddenInsideSimplifiedGroup = model.simplifyGroupBlocks
+            and (row.kind == "container"
+                or (row.kind == "aux-block" and row.ownerKind == "container"))
+        if not row.isGap and not row.layoutOnly and not hiddenInsideSimplifiedGroup then
             local rowProxy = AcquireCol1PreviewRowFrame(preview, row.key or tostring(row.originalIndex))
             local frame = rowProxy.frame
             frame:SetFrameLevel((preview.root:GetFrameLevel() or 1) + 10)
