@@ -42,7 +42,6 @@ local function BuildContext(extra)
         and CooldownCompanion.db.profile.groups[CS.selectedGroup]
 
     local context = {
-        selectedFolder = CS.selectedFolder,
         selectedContainer = CS.selectedContainer,
         selectedGroup = CS.selectedGroup,
         selectedGroupDisplayMode = group and (group.displayMode or "icons") or "",

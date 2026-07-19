@@ -18,6 +18,8 @@ local CS = ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
 local CleanRecycledEntry = ST._CleanRecycledEntry
 local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
+local StartDragTracking = ST._StartDragTracking
+local GetScaledCursorPosition = ST._GetScaledCursorPosition
 
 local PREVIEW_GAP = 4
 local ADD_BOX_HEIGHT = 26
@@ -924,7 +926,30 @@ local function RefreshBrowseEntryList(col3, group)
         end
 
         local panelId = CS.selectedGroup
+        entry:SetCallback("OnClick", function(_, _, mouseButton)
+            if mouseButton ~= "LeftButton"
+                or IsControlKeyDown()
+                or GetCursorInfo()
+            then
+                return
+            end
+            local cursorX, cursorY = GetScaledCursorPosition(scroll)
+            CS.dragState = {
+                kind = "button",
+                phase = "pending",
+                sourceIndex = buttonIndex,
+                groupId = panelId,
+                scrollWidget = scroll,
+                widget = entry,
+                startX = cursorX,
+                startY = cursorY,
+                childOffset = 1,
+                totalDraggable = #(group.buttons or {}),
+            }
+            StartDragTracking()
+        end)
         entry.frame:SetScript("OnMouseUp", function(_, mouseButton)
+            if CS.dragState and CS.dragState.phase == "active" then return end
             if mouseButton == "LeftButton" and ST._SelectConfigButton then
                 ST._SelectConfigButton(panelId, buttonIndex, { multi = IsControlKeyDown() })
                 CooldownCompanion:RefreshConfigPanel()
@@ -1057,7 +1082,7 @@ local function RefreshButtonsWideColumn()
         return
     end
 
-    -- Otherwise the group-side surfaces (panel, container, folder settings,
+    -- Otherwise the group-side surfaces (panel and Group settings,
     -- placeholders) own the settings area
     HideEntrySurfaces(col3)
     if browse then

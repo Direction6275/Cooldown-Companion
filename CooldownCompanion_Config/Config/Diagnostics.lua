@@ -89,7 +89,6 @@ local function SummarizeContainer(containerId, container)
         name = container.name,
         enabled = container.enabled ~= false,
         locked = container.locked ~= false,
-        folderId = container.folderId,
         specCount = CountTableEntries(container.specs),
         heroTalentCount = CountTableEntries(container.heroTalents),
         loadConditionCount = CountTableEntries(container.loadConditions),
@@ -174,7 +173,6 @@ local function BuildConfigDiagnosticSummary(profile, groupFrameStates, container
     end
 
     return {
-        selectedFolder = CS and CS.selectedFolder or nil,
         selectedContainer = selectedContainerId,
         selectedGroup = selectedPanelId,
         selectedButton = selectedButtonIndex,
@@ -364,9 +362,6 @@ local function BuildDiagnosticSnapshot()
     end
     for _, container in pairs(db.profile.groupContainers) do
         cacheSpecsFromTable(container.specs)
-    end
-    for _, folder in pairs(db.profile.folders) do
-        cacheSpecsFromTable(folder.specs)
     end
     local function cacheSpecsFromResourceStores(resourceStores)
         if type(resourceStores) ~= "table" then
@@ -715,8 +710,7 @@ local function AddAgentDebugSignals(add, diag)
     add("Profile Shape: panelModes=" .. FormatCountMap(shape.panelModes)
         .. " | buttonTypes=" .. FormatCountMap(shape.buttonTypes))
 
-    if not c.selectedFolder
-        and not c.selectedContainer
+    if not c.selectedContainer
         and not c.selectedGroup
         and not c.selectedButton
         and not c.selectedCustomBarId then
@@ -771,8 +765,7 @@ local function FormatDiagnosticBugReportAsText(diag)
 
     add("")
     add("--- Current Config Context ---")
-    add(("Selection: folder=%s group=%s panel=%s button=%s customBar=%s"):format(
-        tostring(c.selectedFolder or "nil"),
+    add(("Selection: group=%s panel=%s button=%s customBar=%s"):format(
         tostring(c.selectedContainer or "nil"),
         tostring(c.selectedGroup or "nil"),
         tostring(c.selectedButton or "nil"),

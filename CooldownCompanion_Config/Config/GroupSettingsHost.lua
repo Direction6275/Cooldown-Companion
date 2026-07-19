@@ -1,7 +1,7 @@
 --[[
     CooldownCompanion - Config/GroupSettingsHost
-    Group-side settings surfaces (multi-select placeholders, retained folder
-    tabs, container tabs, single-panel tabs), parameterized on the workspace
+    Group-side settings surfaces (multi-select placeholders, container tabs,
+    single-panel tabs), parameterized on the workspace
     host frame. Surface widgets are stored on the host; anchorFn(host, frame)
     positions each surface and defaults to filling it.
 ]]
@@ -40,9 +40,6 @@ local function RefreshGroupSettingsHost(container, anchorFn)
         if container.containerTabGroup then
             container.containerTabGroup.frame:Hide()
         end
-        if container.folderTabGroup then
-            container.folderTabGroup.frame:Hide()
-        end
         return
     end
 
@@ -62,47 +59,7 @@ local function RefreshGroupSettingsHost(container, anchorFn)
         if container.containerTabGroup then
             container.containerTabGroup.frame:Hide()
         end
-        if container.folderTabGroup then
-            container.folderTabGroup.frame:Hide()
-        end
         return
-    end
-
-    -- Folder settings: direct folder selection with no child group/panel selected.
-    if CS.selectedFolder and not CS.selectedContainer and not CS.selectedGroup then
-        if container.placeholderLabel then container.placeholderLabel:Hide() end
-        if container.tabGroup then container.tabGroup.frame:Hide() end
-        if container.containerTabGroup then container.containerTabGroup.frame:Hide() end
-
-        if not container.folderTabGroup then
-            local tabGroup = AceGUI:Create("TabGroup")
-            tabGroup:SetLayout("Fill")
-            tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
-                widget:ReleaseChildren()
-
-                local scroll = AceGUI:Create("ScrollFrame")
-                scroll:SetLayout("List")
-                widget:AddChild(scroll)
-                CS.col4Scroll = scroll
-
-                ST._BuildFolderLoadConditionsTab(scroll, CS.selectedFolder)
-
-            end)
-            tabGroup.frame:SetParent(container)
-            container.folderTabGroup = tabGroup
-        end
-
-        anchorFn(container, container.folderTabGroup.frame)
-        container.folderTabGroup:SetTabs({
-            { value = "loadconditions",  text = "Load Conditions" },
-        })
-        container.folderTabGroup.frame:Show()
-        container.folderTabGroup:SelectTab("loadconditions")
-        return
-    end
-
-    if container.folderTabGroup then
-        container.folderTabGroup.frame:Hide()
     end
 
     -- Group settings: direct group selection with no panel selected.
@@ -151,9 +108,6 @@ local function RefreshGroupSettingsHost(container, anchorFn)
     -- Hide container tab group when not in container mode
     if container.containerTabGroup then
         container.containerTabGroup.frame:Hide()
-    end
-    if container.folderTabGroup then
-        container.folderTabGroup.frame:Hide()
     end
 
     if not CS.selectedGroup then

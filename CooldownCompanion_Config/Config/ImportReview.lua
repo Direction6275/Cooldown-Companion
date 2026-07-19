@@ -241,7 +241,6 @@ local function BuildProfileSummaryLines(profile, heading, customBarCount)
     AddLine(lines, heading or "Full profile")
     AddLine(lines, FormatCount("Groups", CountPairs(profile and profile.groupContainers)))
     AddLine(lines, FormatCount("Panels", CountPairs(profile and profile.groups)))
-    AddLine(lines, FormatCount("Folders", CountPairs(profile and profile.folders)))
 
     customBarCount = customBarCount or 0
     if customBarCount > 0 then
@@ -337,11 +336,11 @@ local function GetProfileImportDisclaimer(review)
     end
     if review.kind == "diagnostic" then
         return "|cffffd100Diagnostic Restore:|r For bug-report reproduction.\n"
-            .. "|cffff6666This replaces your current profile. For sharing, import selected pieces or export groups, folders, or panels.|r"
+            .. "|cffff6666This replaces your current profile. For sharing, import selected pieces or export groups or panels.|r"
     end
     return "|cffffd100Restore Backup:|r For your own backups.\n"
         .. "|cffff6666This replaces your current profile and may include character data from the exporter. "
-        .. "For sharing, import selected pieces or export groups, folders, or panels.|r"
+        .. "For sharing, import selected pieces or export groups or panels.|r"
 end
 
 local function GetReviewAcceptText(review)
@@ -404,11 +403,10 @@ local function BuildContainersSummaryLines(data)
     return lines
 end
 
-local function BuildFolderSummaryLines(data)
+local function BuildLegacyGroupBundleSummaryLines(data)
     local containers = type(data.containers) == "table" and data.containers or {}
     local lines = {
-        "Folder export",
-        "Name: " .. tostring(data.folder and data.folder.name or "Unnamed"),
+        "Legacy group bundle",
         FormatCount("Groups", #containers),
         FormatCount("Panels", CountContainerPanels(containers)),
     }
@@ -512,8 +510,8 @@ local function ClassifyEntityPayload(data, compactLength)
         if data.groups then
             return BuildLegacyError("folder import")
         end
-        return BuildReview("folder", data, "Folder Import",
-            "Import Folder", BuildFolderSummaryLines(data))
+        return BuildReview("groups", data, "Group Import",
+            "Import Groups", BuildLegacyGroupBundleSummaryLines(data))
     end
 
     if data.type == "container" and type(data.container) == "table" and type(data.panels) == "table" then
@@ -601,7 +599,7 @@ function CooldownCompanion:ApplyReviewedImport(review)
         return ApplyCustomBarsImportData and ApplyCustomBarsImportData(review.data) == true
     end
 
-    if review.kind == "group" or review.kind == "groups" or review.kind == "folder" then
+    if review.kind == "group" or review.kind == "groups" then
         return ApplyGroupImportData and ApplyGroupImportData(review.data) == true
     end
 

@@ -1,5 +1,5 @@
 --[[
-    CooldownCompanion - Core/GroupManagement.lua: Group/folder CRUD, AddButtonToGroup,
+    CooldownCompanion - Core/GroupManagement.lua: Group CRUD, AddButtonToGroup,
     RemoveButtonFromGroup, spell search (FindTalentSpellByName)
 ]]
 
@@ -123,22 +123,6 @@ local function NormalizeCopiedEntityForContainerScope(self, entity, container)
             for _, button in ipairs(entity.buttons) do
                 self:NormalizeEligibilityForCharacterScope(button, opts)
             end
-        end
-    end
-end
-
-local function ClearInvalidCopiedFolderId(self, entity, sourceEntity)
-    if type(entity) ~= "table" or not entity.folderId then
-        return
-    end
-    if sourceEntity and sourceEntity.isGlobal then
-        entity.folderId = nil
-        return
-    end
-    if self.CanMoveContainerToFolder then
-        local ok = self:CanMoveContainerToFolder(entity, entity.folderId)
-        if not ok then
-            entity.folderId = nil
         end
     end
 end
@@ -1045,7 +1029,6 @@ function CooldownCompanion:DuplicateContainer(containerId)
     newContainer.createdBy = self.db.keys.char
     newContainer.isGlobal = false
     NormalizeCopiedEntityForContainerScope(self, newContainer, newContainer)
-    ClearInvalidCopiedFolderId(self, newContainer, sourceContainer)
 
     db.groupContainers[newContainerId] = newContainer
 
@@ -1477,121 +1460,10 @@ function CooldownCompanion:DuplicateGroup(id)
     newGroup.createdBy = self.db.keys.char
     newGroup.isGlobal = false
     NormalizeCopiedEntityForContainerScope(self, newGroup, newGroup)
-    ClearInvalidCopiedFolderId(self, newGroup, sourceGroup)
-
     self.db.profile.groups[newGroupId] = newGroup
     self:CreateGroupFrame(newGroupId)
     RefreshPanelAlphaDependencyTargets(self)
     return newGroupId
-end
-
-function CooldownCompanion:CreateFolder(name, section)
-    local db = self.db.profile
-    local folderId = db.nextFolderId
-    db.nextFolderId = folderId + 1
-    db.folders[folderId] = {
-        name = name,
-        order = folderId,
-        section = section or "char",
-        createdBy = self.db.keys.char,
-    }
-    return folderId
-end
-
-function CooldownCompanion:DeleteFolder(folderId)
-    local db = self.db.profile
-    if not db.folders[folderId] then return end
-    -- Collect child container IDs first (avoid modifying table during pairs iteration)
-    local childIds = {}
-    for containerId, container in pairs(db.groupContainers) do
-        if container.folderId == folderId then
-            childIds[#childIds + 1] = containerId
-        end
-    end
-    for _, containerId in ipairs(childIds) do
-        self:DeleteContainer(containerId)
-    end
-    db.folders[folderId] = nil
-end
-
-function CooldownCompanion:RenameFolder(folderId, newName)
-    local folder = self.db.profile.folders[folderId]
-    if not folder then return false end
-    local normalizedName = tostring(newName or ""):match("^%s*(.-)%s*$")
-    if normalizedName == "" then return false end
-    folder.name = normalizedName
-    return true
-end
-
-function CooldownCompanion:MoveGroupToFolder(id, folderId, opts)
-    local db = self.db.profile
-
-    -- Resolve to container (id may be containerId or panel groupId)
-    local containerId = id
-    local container = db.groupContainers[id]
-    if not container then
-        local group = db.groups[id]
-        if group and group.parentContainerId then
-            containerId = group.parentContainerId
-            container = db.groupContainers[containerId]
-        end
-    end
-    if not container then return end
-
-    if folderId and self.CanMoveContainerToFolder then
-        local ok = self:CanMoveContainerToFolder(containerId, folderId, opts)
-        if not ok then
-            if self.Print then
-                self:Print("Groups cannot be moved into folders owned by another class.")
-            end
-            return false
-        end
-    end
-
-    container.folderId = folderId  -- nil = loose (no folder)
-
-    -- When moving into a folder: clear custom icon (icons only shown on non-foldered
-    -- containers) and stamp folder spec filters onto this container.
-    if folderId then
-        container.manualIcon = nil
-        local folder = db.folders and db.folders[folderId]
-        if folder and folder.specs and next(folder.specs) then
-            container.specs = CopyTable(folder.specs)
-        end
-    end
-
-    -- Refresh all panels in this container (folder change may affect visibility)
-    local panels = self:GetPanels(containerId)
-    for _, p in ipairs(panels) do
-        self:RefreshGroupFrame(p.groupId)
-    end
-    return true
-end
-
-function CooldownCompanion:ToggleFolderGlobal(folderId)
-    local db = self.db.profile
-    local folder = db.folders[folderId]
-    if not folder then return end
-    local newSection = (folder.section == "global") and "char" or "global"
-    folder.section = newSection
-    if newSection == "char" then
-        folder.createdBy = self.db.keys.char
-    end
-    -- Move all child containers to the new section
-    for _, container in pairs(db.groupContainers) do
-        if container.folderId == folderId then
-            if newSection == "global" then
-                container.isGlobal = true
-            else
-                container.isGlobal = false
-                container.createdBy = self.db.keys.char
-            end
-        end
-    end
-    if newSection == "char" and self.NormalizeFolderEligibilityForCharacterScope then
-        self:NormalizeFolderEligibilityForCharacterScope(folderId)
-    end
-    self:RefreshAllGroups()
 end
 
 function CooldownCompanion:ToggleGroupGlobal(containerId)
@@ -2010,11 +1882,6 @@ function CooldownCompanion:EnumerateActiveProfileCharacters()
         for _, container in pairs(profile.groupContainers or {}) do
             if type(container) == "table" and not container.isGlobal then
                 AddCharKey(container.createdBy)
-            end
-        end
-        for _, folder in pairs(profile.folders or {}) do
-            if type(folder) == "table" and folder.section == "char" then
-                AddCharKey(folder.createdBy)
             end
         end
     end

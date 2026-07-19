@@ -264,15 +264,6 @@ local function HasOtherClassInventory()
         end
     end
 
-    if not searchFiltered and CooldownCompanion.ResolveFolderClassScope then
-        for folderId, folder in pairs(db.folders or {}) do
-            local scope = CooldownCompanion:ResolveFolderClassScope(folder or folderId)
-            if scope and scope.scope == "other-class" then
-                return true, false, true
-            end
-        end
-    end
-
     return false, searchFiltered == true, hasOtherInventory
 end
 
@@ -343,23 +334,12 @@ local function GetSelectedGroupHeaderName(selection)
     return container and NormalizeHeaderName(container.name)
 end
 
-local function GetSelectedFolderHeaderName(selection)
-    if not (selection and selection.hasSelectedFolder and CS.selectedFolder) then
-        return nil
-    end
-
-    local profile = GetConfigProfile()
-    local folder = profile and profile.folders and profile.folders[CS.selectedFolder]
-    return folder and NormalizeHeaderName(folder.name)
-end
-
 local function GetConfigSelectionSummary()
     return {
         panelMultiCount = CountSelections(CS.selectedPanels),
         groupMultiCount = CountSelections(CS.selectedGroups),
         hasSelectedPanel = CS.selectedGroup ~= nil,
         hasSelectedGroup = CS.selectedContainer ~= nil,
-        hasSelectedFolder = CS.selectedFolder ~= nil and CS.selectedContainer == nil and CS.selectedGroup == nil,
     }
 end
 
@@ -400,15 +380,12 @@ local function GetColumn3HeaderMode(selection)
     return "button"
 end
 
--- Group-side titles (panel / folder / group): used for the workspace
+-- Group-side titles (panel / group): used for the workspace
 -- header during Other Class browsing, where it hosts both entry and
 -- group-side settings.
 local function GetGroupSideHeaderMode(selection)
     if selection.panelMultiCount >= 2 or selection.hasSelectedPanel then
         return "panel"
-    end
-    if selection.hasSelectedFolder then
-        return "folder"
     end
     return "group"
 end
@@ -421,12 +398,6 @@ local function GetGroupSideHeaderTitle(selection)
             return "Panel: " .. panelName
         end
         return "Panel Settings"
-    elseif mode == "folder" then
-        local folderName = GetSelectedFolderHeaderName(selection)
-        if folderName then
-            return "Folder: " .. folderName
-        end
-        return "Folder Settings"
     end
     local groupName = GetSelectedGroupHeaderName(selection)
     if groupName then
@@ -710,7 +681,6 @@ local function ResetConfigForProfileChange()
         CancelFirstIconPanelTutorial("profile_changed")
     end
     ResetConfigSelection(true)
-    wipe(CS.collapsedFolders)
     wipe(CS.collapsedPanels)
     if ClearConfigFinderText then
         ClearConfigFinderText()

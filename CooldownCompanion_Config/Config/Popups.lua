@@ -360,36 +360,6 @@ end
 
 ST._ShowResourceBarConflictChooser = ShowResourceBarConflictChooser
 
-local function PruneDeletedFolderSelection(folderId)
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    if not db then return end
-
-    if CS.selectedFolder == folderId then
-        CS.selectedFolder = nil
-    end
-
-    if CS.selectedContainer and not (db.groupContainers and db.groupContainers[CS.selectedContainer]) then
-        ClearConfigContainerSelection()
-    elseif CS.selectedGroup and not (db.groups and db.groups[CS.selectedGroup]) then
-        ClearConfigPanelSelection()
-    end
-
-    if CS.addingToPanelId and not (db.groups and db.groups[CS.addingToPanelId]) then
-        CS.addingToPanelId = nil
-    end
-
-    for containerId in pairs(CS.selectedGroups) do
-        if not (db.groupContainers and db.groupContainers[containerId]) then
-            CS.selectedGroups[containerId] = nil
-        end
-    end
-    for panelId in pairs(CS.selectedPanels) do
-        if not (db.groups and db.groups[panelId]) then
-            CS.selectedPanels[panelId] = nil
-        end
-    end
-end
-
 StaticPopupDialogs["CDC_DELETE_GROUP"] = {
     text = "Are you sure you want to delete group '%s'?",
     button1 = "Delete",
@@ -829,39 +799,6 @@ StaticPopupDialogs["CDC_CROSS_PANEL_STRIP_OVERRIDES"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CDC_DRAG_UNGLOBAL_FOLDER"] = {
-    text = "This folder contains groups with foreign eligibility filters. Moving to your current class will remove those filters. Continue?",
-    button1 = "Continue",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        if data and data.dragState then
-            ST._ApplyCol1Drop(data.dragState)
-            CooldownCompanion:RefreshAllGroups()
-            CooldownCompanion:RefreshConfigPanel()
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-StaticPopupDialogs["CDC_UNGLOBAL_FOLDER"] = {
-    text = "This folder contains groups with foreign eligibility filters. Moving '%s' to your current class will remove those filters. Continue?",
-    button1 = "Continue",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        if data and data.folderId then
-            CooldownCompanion:ToggleFolderGlobal(data.folderId)
-            CooldownCompanion:RefreshConfigPanel()
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
 StaticPopupDialogs["CDC_DELETE_SELECTED_GROUPS"] = {
     text = "Delete %d selected groups?",
     button1 = "Delete",
@@ -919,52 +856,8 @@ StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CDC_RENAME_FOLDER"] = {
-    text = "Rename folder '%s' to:",
-    button1 = "Rename",
-    button2 = "Cancel",
-    hasEditBox = true,
-    OnAccept = function(self, data)
-        local newName = self.EditBox:GetText()
-        if newName and newName ~= "" and data and data.folderId then
-            CooldownCompanion:RenameFolder(data.folderId, newName)
-            CooldownCompanion:RefreshConfigPanel()
-        end
-    end,
-    EditBoxOnEnterPressed = function(self)
-        local parent = self:GetParent()
-        StaticPopupDialogs["CDC_RENAME_FOLDER"].OnAccept(parent, parent.data)
-        parent:Hide()
-    end,
-    OnShow = function(self)
-        self.EditBox:SetFocus()
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-StaticPopupDialogs["CDC_DELETE_FOLDER"] = {
-    text = "Delete folder '%s' and all groups inside it?",
-    button1 = "Delete",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        if data and data.folderId then
-            CooldownCompanion:ClearAllConfigPreviews()
-            CooldownCompanion:DeleteFolder(data.folderId)
-            PruneDeletedFolderSelection(data.folderId)
-            CooldownCompanion:RefreshConfigPanel()
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
 ------------------------------------------------------------------------
--- Group/Folder Export and Apply
+-- Group export and apply
 ------------------------------------------------------------------------
 
 local function GetCustomBarExportConflictBlockMessage()
@@ -992,7 +885,6 @@ local function BuildGroupExportData(group)
     end
     data.createdBy = nil
     data.order = nil
-    data.folderId = nil
     data.isGlobal = nil
     data.parentContainerId = nil
     return data
@@ -1013,7 +905,6 @@ local function BuildContainerExportData(container)
     data.createdBy = nil
     data.order = nil
     data.specOrders = nil
-    data.folderId = nil
     data.isGlobal = nil
     return data
 end
@@ -1171,7 +1062,7 @@ local function NewGroupImportState()
     }
 end
 
-local function ImportContainerEntries(db, entries, charKey, folderId, importState, options)
+local function ImportContainerEntries(db, entries, charKey, importState, options)
     importState = importState or NewGroupImportState()
     options = options or {}
     local firstContainerIndex = #importState.importedContainerIds + 1
@@ -1191,9 +1082,21 @@ local function ImportContainerEntries(db, entries, charKey, folderId, importStat
             or ContainerEntryHasPortableEligibility(entry)
         container.createdBy = charKey
         container.isGlobal = importAsGlobal
+        if type(options.legacyFolder) == "table" then
+            -- Decode-only compatibility: apply the retired Folder's inherited
+            -- restrictions through the canonical migration, without ever
+            -- attaching Folder state to the live profile.
+            local legacyProfile = {
+                groupContainers = { [1] = container },
+                groups = {},
+                folders = { [1] = CopyTable(options.legacyFolder) },
+                nextFolderId = 2,
+            }
+            container.folderId = 1
+            CooldownCompanion:MigrateFoldersIntoGroups(legacyProfile)
+        end
         container.order = containerId
         container.specOrders = nil
-        container.folderId = folderId
         container.locked = true
         if importAsGlobal then
             importState.globalizedEligibilityImports = (importState.globalizedEligibilityImports or 0) + 1
@@ -1386,7 +1289,7 @@ local function ApplyGroupImportData(data)
     end
 
     if not data.type then
-        CooldownCompanion:Print("Import failed: this is a profile backup, not a group, folder, or panel export.")
+        CooldownCompanion:Print("Import failed: this is a profile backup, not a group or panel export.")
         return false
     end
 
@@ -1406,7 +1309,7 @@ local function ApplyGroupImportData(data)
         return false
 
     elseif data.type == "containers" and data.containers then
-        local importState, containerCount = ImportContainerEntries(db, data.containers, charKey, nil, rootImportState)
+        local importState, containerCount = ImportContainerEntries(db, data.containers, charKey, rootImportState)
         if not deferAnchorRemap then
             RemapImportedContainerAnchors(db, importState, true)
             RemapImportedPanelAnchors(db, importState)
@@ -1419,8 +1322,6 @@ local function ApplyGroupImportData(data)
             return false
         end
 
-        local folderId = db.nextFolderId
-        db.nextFolderId = folderId + 1
         local importedManualIcon = data.folder.manualIcon
         if type(importedManualIcon) ~= "number" and type(importedManualIcon) ~= "string" then
             importedManualIcon = nil
@@ -1478,9 +1379,9 @@ local function ApplyGroupImportData(data)
                     or importedLoadConditions.specAllowlist
             ))
             or ContainersHavePortableEligibility(data.containers)
-        db.folders[folderId] = {
+        local legacyFolder = {
             name = data.folder.name or "Imported Folder",
-            order = folderId,
+            order = 1,
             section = folderUsesGlobalEligibility and "global" or "char",
             createdBy = charKey,
             manualIcon = importedManualIcon,
@@ -1493,25 +1394,26 @@ local function ApplyGroupImportData(data)
         end
         local count = 0
         if data.containers then
-            local importState, _, panelCount = ImportContainerEntries(
-                db, data.containers, charKey, folderId, rootImportState, {
+            local importState, containerCount = ImportContainerEntries(
+                db, data.containers, charKey, rootImportState, {
                     forceGlobalScope = folderUsesGlobalEligibility and true or false,
+                    legacyFolder = legacyFolder,
                 }
             )
             if not deferAnchorRemap then
                 RemapImportedContainerAnchors(db, importState, true)
                 RemapImportedPanelAnchors(db, importState)
             end
-            count = panelCount
+            count = containerCount
         end
-        CooldownCompanion:Print("Imported folder: " .. (data.folder.name or "Unnamed") .. " (" .. count .. " groups)")
+        CooldownCompanion:Print("Imported " .. count .. " groups.")
 
     elseif data.type == "container" and data.container and data.panels then
         local importState, _, panelCount, containerId = ImportContainerEntries(db, {{
             container = data.container,
             panels = data.panels,
             _originalContainerId = data._originalContainerId,
-        }}, charKey, nil, rootImportState)
+        }}, charKey, rootImportState)
         local container = db.groupContainers[containerId]
         if not deferAnchorRemap then
             RemapImportedContainerAnchors(db, importState, false)

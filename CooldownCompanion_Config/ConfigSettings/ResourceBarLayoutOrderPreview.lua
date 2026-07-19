@@ -653,54 +653,24 @@ local function GetFirstConfiguredAnchorGroup()
     local containers = db and db.groupContainers
     if not groups or not containers then return nil end
 
-    local folders = db.folders or {}
     local specId = CooldownCompanion._currentSpecId
-    local folderContainers = {}
-    local looseContainers = {}
+    local orderedContainers = {}
 
     for containerId, container in pairs(containers) do
-        local folderId = container.folderId
-        local order = CooldownCompanion:GetOrderForSpec(container, specId, containerId)
-        if folderId and folders[folderId] then
-            folderContainers[folderId] = folderContainers[folderId] or {}
-            folderContainers[folderId][#folderContainers[folderId] + 1] = { id = containerId, order = order }
-        else
-            looseContainers[#looseContainers + 1] = { id = containerId, order = order }
-        end
-    end
-
-    for _, children in pairs(folderContainers) do
-        table_sort(children, function(a, b)
-            return a.order < b.order
-        end)
-    end
-    table_sort(looseContainers, function(a, b)
-        return a.order < b.order
-    end)
-
-    local topItems = {}
-    for folderId in pairs(folderContainers) do
-        topItems[#topItems + 1] = {
-            kind = "folder",
-            id = folderId,
-            order = CooldownCompanion:GetOrderForSpec(folders[folderId], specId, folderId),
+        orderedContainers[#orderedContainers + 1] = {
+            id = containerId,
+            order = CooldownCompanion:GetOrderForSpec(container, specId, containerId),
         }
     end
-    for _, info in ipairs(looseContainers) do
-        topItems[#topItems + 1] = { kind = "container", id = info.id, order = info.order }
-    end
-    table_sort(topItems, function(a, b)
+    table_sort(orderedContainers, function(a, b)
         return a.order < b.order
     end)
 
-    for _, item in ipairs(topItems) do
-        local containerList = item.kind == "folder" and folderContainers[item.id] or { item }
-        for _, containerInfo in ipairs(containerList) do
-            local panels = CooldownCompanion:GetPanels(containerInfo.id)
-            for _, panelInfo in ipairs(panels) do
-                if IsGroupConfigAvailableForPreview(panelInfo.groupId, false) then
-                    return panelInfo.groupId
-                end
+    for _, containerInfo in ipairs(orderedContainers) do
+        local panels = CooldownCompanion:GetPanels(containerInfo.id)
+        for _, panelInfo in ipairs(panels) do
+            if IsGroupConfigAvailableForPreview(panelInfo.groupId, false) then
+                return panelInfo.groupId
             end
         end
     end

@@ -3753,14 +3753,6 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
         CooldownCompanion:RefreshContainerPanels(containerId)
     end
     local inheritedSources = CooldownCompanion:GetInheritedLoadConditionSources(container)
-    local folder = container.folderId and db.folders and db.folders[container.folderId]
-    local folderSpecs = folder and BuildEligibilityBadgeMap(
-        folder.specs,
-        folder.loadConditions and folder.loadConditions.specAllowlist
-    )
-    local folderHeroTalents = folder and folder.heroTalents
-    local hasFolderSpecs = folderSpecs and next(folderSpecs)
-    local hasFolderHeroTalents = folderHeroTalents and next(folderHeroTalents) ~= nil
     local function RefreshContainerLoadConditions()
         RefreshPanels()
         CooldownCompanion:RefreshConfigPanel()
@@ -3783,13 +3775,6 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
         eligibilitySubjectLabel = "group",
         allowClassEligibility = container.isGlobal == true,
         ownerCharKey = container.createdBy,
-        useSpecAllowlist = hasFolderSpecs,
-        allowedSpecRestricted = hasFolderSpecs,
-        allowedSpecMap = folderSpecs,
-        effectiveSpecs = folderSpecs,
-        heroTalentsSource = folderHeroTalents,
-        useHeroTalentsSource = hasFolderHeroTalents,
-        disableHeroTalents = hasFolderHeroTalents,
         onChanged = RefreshContainerLoadConditions,
     })
 
@@ -3807,61 +3792,26 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
     local specHeading, specCollapsed = BuildCollapsibleSection(scroll, "Class & Specialization Eligibility", "container_loadconditions_spec")
 
     if not specCollapsed then
-        if hasFolderSpecs then
-            local inheritedLabel = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(inheritedLabel)
-            inheritedLabel:SetText("|cff888888Specs set by the parent folder cannot be changed here.|r")
-            inheritedLabel:SetFullWidth(true)
-            scroll:AddChild(inheritedLabel)
-        end
-
         AddClassSpecEligibilityControls(scroll, {
             target = container,
             inheritedSources = inheritedSources,
             eligibilitySubjectLabel = "group",
             allowClassEligibility = container.isGlobal == true,
             ownerCharKey = container.createdBy,
-            useSpecAllowlist = hasFolderSpecs,
-            allowedSpecRestricted = hasFolderSpecs,
-            allowedSpecMap = folderSpecs,
-            effectiveSpecs = folderSpecs,
-            heroTalentsSource = folderHeroTalents,
-            useHeroTalentsSource = hasFolderHeroTalents,
-            disableHeroTalents = hasFolderHeroTalents,
             onChanged = RefreshContainerLoadConditions,
         })
 
-        -- Only show Clear All when container has specs/hero-talents beyond folder cascade
-        local hasOwnSpecs = false
-        local function CheckOwnSpecs(specs)
-            if type(specs) ~= "table" then
-                return specs ~= nil
-            end
-            for specId in pairs(specs) do
-                if not (folderSpecs and folderSpecs[tonumber(specId) or specId]) then
-                    return true
-                end
-            end
-            return false
-        end
-        if CheckOwnSpecs(container.specs)
-            or CheckOwnSpecs(container.loadConditions and container.loadConditions.specAllowlist)
-        then
-            hasOwnSpecs = true
-        end
-        if not hasOwnSpecs and container.heroTalents and next(container.heroTalents) then
-            hasOwnSpecs = true
-        end
+        local hasOwnSpecs = (type(container.specs) == "table" and next(container.specs) ~= nil)
+            or (type(container.loadConditions) == "table"
+                and type(container.loadConditions.specAllowlist) == "table"
+                and next(container.loadConditions.specAllowlist) ~= nil)
+            or (type(container.heroTalents) == "table" and next(container.heroTalents) ~= nil)
         if hasOwnSpecs then
             local clearBtn = AceGUI:Create("Button")
             clearBtn:SetText("Clear All Spec Filters")
             clearBtn:SetFullWidth(true)
             clearBtn:SetCallback("OnClick", function()
-                if folder and type(folder.specs) == "table" and next(folder.specs) then
-                    container.specs = CopyTable(folder.specs)
-                else
-                    container.specs = nil
-                end
+                container.specs = nil
                 if type(container.loadConditions) == "table" then
                     container.loadConditions.specAllowlist = nil
                 end
@@ -3874,102 +3824,9 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
     end -- not specCollapsed
 end
 
-local function BuildFolderLoadConditionsTab(scroll, folderId)
-    local db = CooldownCompanion.db.profile
-    local folder = db.folders and db.folders[folderId]
-    if not folder then return end
-
-    local function RefreshFolderOnly()
-        CooldownCompanion:RefreshAllGroups()
-        CooldownCompanion:RefreshConfigPanel()
-    end
-
-    local function RefreshFolderSpecDependents()
-        CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
-        RefreshFolderOnly()
-    end
-
-    AddScopedLoadConditionToggles(scroll, {
-        target = folder,
-        defaults = CooldownCompanion:GetLocalLoadConditionDefaults(),
-        inheritedSources = {},
-        headingText = "Hide This Folder In",
-        localCollapsedKey = "folder_loadconditions_local",
-        preserveMissing = true,
-        onChanged = function()
-            if folder.loadConditions and not next(folder.loadConditions) then
-                folder.loadConditions = nil
-            end
-            CooldownCompanion:RefreshAllGroups()
-            CooldownCompanion:RefreshConfigPanel()
-        end,
-    })
-
-    AddActiveEligibilitySummary(scroll, {
-        target = folder,
-        inheritedSources = {},
-        eligibilitySubjectLabel = "folder",
-        allowClassEligibility = folder.section == "global",
-        ownerCharKey = folder.createdBy,
-        characterOnChanged = RefreshFolderOnly,
-        specOnChanged = RefreshFolderSpecDependents,
-    })
-
-    AddCharacterEligibilityControls(scroll, {
-        target = folder,
-        inheritedSources = {},
-        eligibilitySubjectLabel = "folder",
-        allowClassEligibility = folder.section == "global",
-        ownerCharKey = folder.createdBy,
-        characterCollapsedKey = "folder_loadconditions_character",
-        onChanged = RefreshFolderOnly,
-    })
-
-    local specHeading, specCollapsed = BuildCollapsibleSection(scroll, "Class & Specialization Eligibility", "folder_loadconditions_spec")
-
-    if not specCollapsed then
-        AddClassSpecEligibilityControls(scroll, {
-            target = folder,
-            inheritedSources = {},
-            eligibilitySubjectLabel = "folder",
-            allowClassEligibility = folder.section == "global",
-            ownerCharKey = folder.createdBy,
-            onChanged = RefreshFolderSpecDependents,
-        })
-
-        if folder.specs or folder.heroTalents then
-            local clearSpecsBtn = AceGUI:Create("Button")
-            clearSpecsBtn:SetText("Clear Folder Spec Filters")
-            clearSpecsBtn:SetFullWidth(true)
-            clearSpecsBtn:SetCallback("OnClick", function()
-                folder.specs = nil
-                folder.heroTalents = nil
-                if type(folder.loadConditions) == "table" then
-                    folder.loadConditions.specAllowlist = nil
-                end
-                RefreshFolderSpecDependents()
-            end)
-            scroll:AddChild(clearSpecsBtn)
-        end
-    end
-
-    if CooldownCompanion:HasLocalLoadConditions(folder) then
-        local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear Folder Load Conditions")
-        clearBtn:SetFullWidth(true)
-        clearBtn:SetCallback("OnClick", function()
-            folder.loadConditions = nil
-            CooldownCompanion:RefreshAllGroups()
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-        scroll:AddChild(clearBtn)
-    end
-end
-
 -- Expose for Config.lua
 ST._BuildLayoutTab = BuildLayoutTab
 ST._BuildAppearanceTab = BuildAppearanceTab
 ST._BuildEffectsTab = BuildEffectsTab
 ST._BuildContainerGeneralTab = BuildContainerGeneralTab
 ST._BuildContainerLoadConditionsTab = BuildContainerLoadConditionsTab
-ST._BuildFolderLoadConditionsTab = BuildFolderLoadConditionsTab

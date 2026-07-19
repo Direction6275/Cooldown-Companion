@@ -82,7 +82,6 @@ local function CopyGroupForImport(group)
     local data = BuildGroupExportData and BuildGroupExportData(group) or CopyForExport(group)
     data.createdBy = nil
     data.order = nil
-    data.folderId = nil
     data.isGlobal = nil
     data.parentContainerId = nil
     return data
@@ -93,7 +92,6 @@ local function CopyContainerForImport(container)
     data.createdBy = nil
     data.order = nil
     data.specOrders = nil
-    data.folderId = nil
     data.isGlobal = nil
     return data
 end
@@ -486,7 +484,6 @@ end
 local function BuildContainerInfos(profile, panelsByContainer, defaultOwnerKey, currentCharKey, currentInfo, sourceCharacterInfo)
     local containerInfos = {}
     local byKey = {}
-    local byFolder = {}
     for containerId, container in pairs(TableOrEmpty(profile.groupContainers)) do
         if type(container) == "table" then
             local key = NormalizeKey(containerId)
@@ -505,7 +502,6 @@ local function BuildContainerInfos(profile, panelsByContainer, defaultOwnerKey, 
                 kind = "container",
                 sourceId = containerId,
                 sourceKey = key,
-                folderKey = NormalizeKey(container.folderId),
                 container = container,
                 panels = panels,
                 name = container.name,
@@ -519,59 +515,10 @@ local function BuildContainerInfos(profile, panelsByContainer, defaultOwnerKey, 
             }
             containerInfos[#containerInfos + 1] = info
             byKey[key] = info
-            if info.folderKey then
-                byFolder[info.folderKey] = byFolder[info.folderKey] or {}
-                byFolder[info.folderKey][#byFolder[info.folderKey] + 1] = info
-            end
         end
-    end
-    for _, containers in pairs(byFolder) do
-        table.sort(containers, SortByOrderNameId)
     end
     table.sort(containerInfos, SortByOrderNameId)
-    return containerInfos, byKey, byFolder
-end
-
-local function BuildFolderInfos(profile, containersByFolder, defaultOwnerKey, currentCharKey, currentInfo, sourceCharacterInfo)
-    local folderInfos = {}
-    for folderId, folder in pairs(TableOrEmpty(profile.folders)) do
-        if type(folder) == "table" then
-            local key = NormalizeKey(folderId)
-            local ownerKey = ResolveOwnerKey(folder, defaultOwnerKey)
-            local eligible, selected, reason = BuildEligibility(
-                profile,
-                ownerKey,
-                currentCharKey,
-                currentInfo,
-                sourceCharacterInfo
-            )
-            local containers = containersByFolder[key] or {}
-            local panelCount = 0
-            for _, containerInfo in ipairs(containers) do
-                panelCount = panelCount + #containerInfo.panels
-            end
-            local detail = tostring(#containers) .. " group" .. (#containers == 1 and "" or "s")
-                .. ", " .. tostring(panelCount) .. " panel" .. (panelCount == 1 and "" or "s")
-            local info = {
-                kind = "folder",
-                sourceId = folderId,
-                sourceKey = key,
-                folder = folder,
-                containers = containers,
-                name = folder.name,
-                order = folder.order,
-                ownerKey = ownerKey,
-                eligible = eligible,
-                selected = eligible and selected or false,
-                disabledReason = not eligible and reason or nil,
-                note = eligible and reason or nil,
-                detail = detail,
-            }
-            folderInfos[#folderInfos + 1] = info
-        end
-    end
-    table.sort(folderInfos, SortByOrderNameId)
-    return folderInfos
+    return containerInfos, byKey
 end
 
 local function InheritPanelContainerEligibility(panelInfos, containersByKey)
@@ -843,6 +790,13 @@ end
 function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
     if type(profile) ~= "table" then
         profile = {}
+    else
+        profile = CopyTable(profile)
+        if self.MigrateFoldersIntoGroups then
+            -- Present old backups in the supported hierarchy and carry every
+            -- inherited restriction onto the Group rows before selection.
+            self:MigrateFoldersIntoGroups(profile)
+        end
     end
     options = options or {}
     local currentCharKey, currentInfo = GetCurrentCharInfo()
@@ -855,18 +809,14 @@ function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
     local panelInfos, panelsByContainer = BuildPanelInfos(
         profile, defaultOwnerKey, currentCharKey, currentInfo, sourceCharacterInfo
     )
-    local containerInfos, containersByKey, containersByFolder = BuildContainerInfos(
+    local containerInfos, containersByKey = BuildContainerInfos(
         profile, panelsByContainer, defaultOwnerKey, currentCharKey, currentInfo, sourceCharacterInfo
     )
     InheritPanelContainerEligibility(panelInfos, containersByKey)
-    local folderInfos = BuildFolderInfos(
-        profile, containersByFolder, defaultOwnerKey, currentCharKey, currentInfo, sourceCharacterInfo
-    )
     local customBarInfos = BuildCustomBarInfos(profile, currentCharKey, currentInfo, sourceCharacterInfo)
 
     local model = {
         rows = {},
-        folders = folderInfos,
         containers = containerInfos,
         panels = panelInfos,
         customBars = customBarInfos,
@@ -880,7 +830,6 @@ function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
         customBarCount = #customBarInfos,
     }
 
-    AddRows(model, folderInfos, "Folder")
     AddRows(model, containerInfos, "Group")
     AddRows(model, panelInfos, "Panel")
     AddRows(model, customBarInfos, "Custom Bar")
@@ -904,14 +853,12 @@ local function RecountSelection(model)
 end
 
 local function SelectionSets(model)
-    local folders, containers, panels, customBars = {}, {}, {}, {}
+    local containers, panels, customBars = {}, {}, {}
     local deselectedContainers, deselectedPanels = {}, {}
     for _, row in ipairs(model.rows or {}) do
         if row.eligible then
             if row.selected then
-                if row.kind == "folder" then
-                    folders[row.sourceKey] = true
-                elseif row.kind == "container" then
+                if row.kind == "container" then
                     containers[row.sourceKey] = true
                 elseif row.kind == "panel" then
                     panels[row.sourceKey] = true
@@ -927,7 +874,7 @@ local function SelectionSets(model)
             end
         end
     end
-    return folders, containers, panels, customBars, deselectedContainers, deselectedPanels
+    return containers, panels, customBars, deselectedContainers, deselectedPanels
 end
 
 local function EligiblePanels(containerInfo, selectedPanels, deselectedPanels, includeAll)
@@ -978,15 +925,6 @@ local function AddCheckpoint(payload, profile)
         payload._cdcImportCheckpoint = profile._cdcImportCheckpoint
     end
     return payload
-end
-
-local function ContainerHasSelectedPanel(containerInfo, selectedPanels)
-    for _, panelInfo in ipairs(containerInfo.panels or {}) do
-        if selectedPanels[panelInfo.sourceKey] then
-            return true
-        end
-    end
-    return false
 end
 
 local function BeginImportBatch()
@@ -1075,14 +1013,7 @@ local function SetProfileImportPieceSelected(model, row, selected)
     local enabled = selected == true
     row.selected = enabled
     row.userChanged = true
-    if row.kind == "folder" then
-        for _, containerInfo in ipairs(row.containers or {}) do
-            SetChildSelection(containerInfo, enabled)
-            for _, panelInfo in ipairs(containerInfo.panels or {}) do
-                SetChildSelection(panelInfo, enabled)
-            end
-        end
-    elseif row.kind == "container" then
+    if row.kind == "container" then
         for _, panelInfo in ipairs(row.panels or {}) do
             SetChildSelection(panelInfo, enabled)
         end
@@ -1101,41 +1032,13 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
         return false
     end
 
-    local selectedFolders, selectedContainers, selectedPanels, selectedCustomBars, deselectedContainers, deselectedPanels = SelectionSets(model)
+    local selectedContainers, selectedPanels, selectedCustomBars, deselectedContainers, deselectedPanels = SelectionSets(model)
     local selectedCustomBarsPayload = BuildSelectedCustomBarsPayload(model, selectedCustomBars)
 
     local importedContainers = {}
     local batchToken = BeginImportBatch()
     local applied = false
     local failed = false
-
-    for _, folderInfo in ipairs(model.folders or {}) do
-        if selectedFolders[folderInfo.sourceKey] and folderInfo.eligible then
-            local entries = {}
-            for _, containerInfo in ipairs(folderInfo.containers or {}) do
-                local hasSelectedPanel = ContainerHasSelectedPanel(containerInfo, selectedPanels)
-                local includeAll = selectedContainers[containerInfo.sourceKey]
-                    or not deselectedContainers[containerInfo.sourceKey]
-                if includeAll or hasSelectedPanel then
-                    AddContainerEntry(
-                        entries,
-                        containerInfo,
-                        selectedPanels,
-                        deselectedPanels,
-                        includeAll,
-                        importedContainers
-                    )
-                end
-            end
-            local ok = ApplyProfilePiecePayload(profile, {
-                type = "folder",
-                folder = CopyForExport(folderInfo.folder),
-                containers = entries,
-            }, batchToken)
-            applied = ok or applied
-            failed = failed or not ok
-        end
-    end
 
     local looseEntries = {}
     for _, containerInfo in ipairs(model.containers or {}) do

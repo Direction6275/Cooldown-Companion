@@ -359,51 +359,18 @@ local function CanPanelMoveToContainer(panelId, containerId)
 end
 
 local function BuildFlatContainerOrder(db, excludedContainerId, panelId)
-    local folderChildren = {}
-    local loose = {}
+    local flattened = {}
     for containerId, container in pairs(db.groupContainers or {}) do
         if containerId ~= excludedContainerId and (not panelId or CanPanelMoveToContainer(panelId, containerId)) then
-            local item = {
+            table.insert(flattened, {
                 kind = "container",
                 id = containerId,
                 name = container.name or ("Group " .. tostring(containerId)),
                 order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, containerId),
-            }
-            if container.folderId and db.folders and db.folders[container.folderId] then
-                folderChildren[container.folderId] = folderChildren[container.folderId] or {}
-                table.insert(folderChildren[container.folderId], item)
-            else
-                table.insert(loose, item)
-            end
+            })
         end
     end
-
-    local topLevel = {}
-    for folderId, children in pairs(folderChildren) do
-        table.sort(children, function(a, b) return a.order < b.order end)
-        local folder = db.folders[folderId]
-        table.insert(topLevel, {
-            kind = "folder",
-            id = folderId,
-            order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, folderId),
-            children = children,
-        })
-    end
-    for _, item in ipairs(loose) do
-        table.insert(topLevel, item)
-    end
-    table.sort(topLevel, function(a, b) return a.order < b.order end)
-
-    local flattened = {}
-    for _, item in ipairs(topLevel) do
-        if item.kind == "folder" then
-            for _, child in ipairs(item.children) do
-                flattened[#flattened + 1] = child
-            end
-        else
-            flattened[#flattened + 1] = item
-        end
-    end
+    table.sort(flattened, function(a, b) return a.order < b.order end)
     return flattened
 end
 
@@ -1122,9 +1089,6 @@ local function RefreshColumn1(preserveDrag)
         byPanel[result.panelId] = result
     end
 
-    -- Ensure folders table exists
-    if not db.folders then db.folders = {} end
-
     if CooldownCompanion._unsupportedLegacyProfile then
         ClearOtherClassBrowseState()
         if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
@@ -1187,81 +1151,25 @@ local function RefreshColumn1(preserveDrag)
         return { scope = "invalid", sectionKey = "invalid", runtimeVisible = false }
     end
 
-    local function ResolveFolderScope(folderId, folder)
-        if CooldownCompanion.ResolveFolderClassScope then
-            return CooldownCompanion:ResolveFolderClassScope(folder or folderId)
-        end
-        if folder and folder.section == "global" then
-            return { scope = "global", sectionKey = "global", runtimeVisible = true }
-        end
-        if folder and folder.createdBy == charKey then
-            return { scope = "current-class", sectionKey = "char", runtimeVisible = true }
-        end
-        return { scope = "invalid", sectionKey = "invalid", runtimeVisible = false }
-    end
-
     local function ScopeMatchesSection(scope, section)
         return scope and scope.sectionKey == section
     end
 
-    -- Build top-level items for a section (folders + loose containers), sorted by order
+    -- Build the flat Group order for a section.
     local function BuildSectionItems(section, sectionContainerIds)
-        -- Collect folders for this section
-        local sectionFolderIds = {}
-        for fid, folder in pairs(db.folders) do
-            local scope = ResolveFolderScope(fid, folder)
-            if ScopeMatchesSection(scope, section) then
-                table.insert(sectionFolderIds, fid)
-            end
-        end
-
-        -- Determine which containers are in valid folders for this section
-        local validFolderIds = {}
-        for _, fid in ipairs(sectionFolderIds) do
-            validFolderIds[fid] = true
-        end
-
-        -- Split containers: those in a valid folder vs loose
-        local looseContainerIds = {}
-        local folderChildContainers = {}  -- [folderId] = { containerId, ... }
-        for _, cid in ipairs(sectionContainerIds) do
-            local container = db.groupContainers[cid]
-            if searchResults and not searchResults.containerMatches[cid] then
-                -- Search hides non-matching groups while preserving folder context
-                -- for the groups that do match.
-            elseif container.folderId and validFolderIds[container.folderId] then
-                if not folderChildContainers[container.folderId] then
-                    folderChildContainers[container.folderId] = {}
-                end
-                table.insert(folderChildContainers[container.folderId], cid)
-            else
-                table.insert(looseContainerIds, cid)
-            end
-        end
-
-        -- Sort folder children by per-spec container order
-        local specId = CooldownCompanion._currentSpecId
-        for fid, children in pairs(folderChildContainers) do
-            table.sort(children, function(a, b)
-                local orderA = CooldownCompanion:GetOrderForSpec(db.groupContainers[a], specId, a)
-                local orderB = CooldownCompanion:GetOrderForSpec(db.groupContainers[b], specId, b)
-                return orderA < orderB
-            end)
-        end
-
-        -- Build top-level items list: folders + loose containers
         local items = {}
-        for _, fid in ipairs(sectionFolderIds) do
-            if not searchResults or (folderChildContainers[fid] and #folderChildContainers[fid] > 0) then
-                table.insert(items, { kind = "folder", id = fid, order = CooldownCompanion:GetOrderForSpec(db.folders[fid], specId, fid) })
+        local specId = CooldownCompanion._currentSpecId
+        for _, cid in ipairs(sectionContainerIds) do
+            if not searchResults or searchResults.containerMatches[cid] then
+                table.insert(items, {
+                    kind = "container",
+                    id = cid,
+                    order = CooldownCompanion:GetOrderForSpec(db.groupContainers[cid], specId, cid),
+                })
             end
-        end
-        for _, cid in ipairs(looseContainerIds) do
-            table.insert(items, { kind = "container", id = cid, order = CooldownCompanion:GetOrderForSpec(db.groupContainers[cid], specId, cid) })
         end
         table.sort(items, function(a, b) return a.order < b.order end)
-
-        return items, folderChildContainers
+        return items
     end
 
     local function IsContainerInactive(containerId, container)
@@ -1293,9 +1201,8 @@ local function RefreshColumn1(preserveDrag)
             end
         end
 
-        -- Selected groups can stop rendering when their folder is collapsed.
-        -- Fall back to live container activity so hidden selections still affect
-        -- the drag bucket classification.
+        -- Fall back to live container activity when a selected Group is not
+        -- currently rendered (for example, while its class section is collapsed).
         for containerId in pairs(CS.selectedGroups) do
             if not seenSelected[containerId] then
                 local container = db.groupContainers[containerId]
@@ -1316,18 +1223,6 @@ local function RefreshColumn1(preserveDrag)
             return "unloaded"
         end
         return defaultBucket or "loaded"
-    end
-
-    local function SelectedGroupsShareHiddenFolder(sourceContainerId)
-        local source = db.groupContainers[sourceContainerId]
-        local sourceFolderId = source and source.folderId or nil
-        for containerId in pairs(CS.selectedGroups) do
-            local selected = db.groupContainers[containerId]
-            if not selected or selected.folderId ~= sourceFolderId then
-                return false, sourceFolderId
-            end
-        end
-        return true, sourceFolderId
     end
 
     CS.peekedContainers = CS.peekedContainers or {}
@@ -1398,7 +1293,7 @@ local function RefreshColumn1(preserveDrag)
 
     -- Helper: render a framed Group unit and its visible Panel rows.
     local lastRenderedGroupSection
-    local function RenderContainerRow(containerId, inFolder, sectionTag, loadBucket, options)
+    local function RenderContainerRow(containerId, sectionTag, loadBucket, options)
         local container = db.groupContainers[containerId]
         if not container then return end
 
@@ -1443,7 +1338,7 @@ local function RefreshColumn1(preserveDrag)
         entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
         groupUnit:AddChild(entry)
 
-        SetupGroupRowIndicators(entry, container, { showInheritedFolderBadges = true })
+        SetupGroupRowIndicators(entry, container)
         local expandReserve = 0
         if not searchResults and not browsePanels and allowPanelRows and panelCount > 0 then
             expandReserve = ConfigureTreeExpandButton(
@@ -1511,23 +1406,17 @@ local function RefreshColumn1(preserveDrag)
                 end
 
                 local isMulti = next(CS.selectedGroups) and CS.selectedGroups[containerId]
-                local sameFolder, sourceFolderId = SelectedGroupsShareHiddenFolder(containerId)
-                if isMulti and not sameFolder then
-                    return
-                end
 
                 local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
                 CS.dragState = {
-                    kind = isMulti and "multi-group" or (sourceFolderId and "folder-group" or "group"),
+                    kind = isMulti and "multi-group" or "group",
                     phase = "pending",
                     sourceGroupId = containerId,
                     sourceGroupIds = isMulti and CopyTable(CS.selectedGroups) or nil,
                     sourceSection = sectionTag,
-                    sourceFolderId = sourceFolderId,
                     sourceLoadBucket = isMulti
                         and ResolveSelectedDragLoadBucket(loadBucket)
                         or (loadBucket or "loaded"),
-                    preserveHiddenFolderOwnership = true,
                     scrollWidget = CS.col1Scroll,
                     widget = entry,
                     startX = cursorX,
@@ -1542,7 +1431,6 @@ local function RefreshColumn1(preserveDrag)
             kind = "container",
             id = containerId,
             widget = entry,
-            inFolder = container.folderId,
             section = sectionTag,
             loadBucket = loadBucket or "loaded",
             acceptsDrop = not disableDrag,
@@ -1772,7 +1660,6 @@ local function RefreshColumn1(preserveDrag)
                     previewProxy = true,
                     ownerKind = "container",
                     ownerId = containerId,
-                    ownerFolderId = container.folderId,
                     panelIndex = panelInfo.group and panelInfo.group.order or nil,
                 })
 
@@ -1823,7 +1710,6 @@ local function RefreshColumn1(preserveDrag)
                         ownerKind = "container",
                         ownerId = containerId,
                         ownerPanelId = panelId,
-                        ownerFolderId = container.folderId,
                     })
                 end
             end
@@ -1853,7 +1739,7 @@ local function RefreshColumn1(preserveDrag)
 
     -- Render a section (global, current class, or another class)
     local function RenderSection(section, sectionGroupIds, headingText, headingColor, options)
-        local items, folderChildContainers = BuildSectionItems(section, sectionGroupIds)
+        local items = BuildSectionItems(section, sectionGroupIds)
         local isClassSection = options and options.classSection == true
         local stableCount = options and options.stableCount or nil
 
@@ -1909,15 +1795,9 @@ local function RefreshColumn1(preserveDrag)
             end
         end
 
-        -- Flatten the hidden Folder hierarchy first, then separate active and
-        -- inactive Groups without disturbing either bucket's structural order.
         local orderedContainerIds = {}
         for _, item in ipairs(items) do
-            if item.kind == "folder" then
-                for _, containerId in ipairs(folderChildContainers[item.id] or {}) do
-                    orderedContainerIds[#orderedContainerIds + 1] = containerId
-                end
-            elseif item.kind == "container" then
+            if item.kind == "container" then
                 orderedContainerIds[#orderedContainerIds + 1] = item.id
             end
         end
@@ -1993,10 +1873,8 @@ local function RefreshColumn1(preserveDrag)
 
         local function RenderItems(itemList, loadBucket)
             for _, containerId in ipairs(itemList) do
-                local container = db.groupContainers[containerId]
                 RenderContainerRow(
                     containerId,
-                    container and container.folderId ~= nil,
                     section,
                     loadBucket,
                     options

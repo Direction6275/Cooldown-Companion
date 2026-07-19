@@ -11,7 +11,6 @@ ST._DragReorder = DR
 
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
-local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
 local SelectConfigPanel = ST._SelectConfigPanel
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 
@@ -31,9 +30,7 @@ local ShouldShowCol1StaticReorderIndicator = DR.ShouldShowCol1StaticReorderIndic
 local ResolveCol1LoadedUnloadedPlaceholderTarget = DR.ResolveCol1LoadedUnloadedPlaceholderTarget
 local GetCol1DropTarget = DR.GetCol1DropTarget
 local PerformGroupReorder = DR.PerformGroupReorder
-local ResolveCol1GroupDropTargetFolderId = DR.ResolveCol1GroupDropTargetFolderId
 local IsCol1GroupDropNoOp = DR.IsCol1GroupDropNoOp
-local IsCol1FolderDropNoOp = DR.IsCol1FolderDropNoOp
 local IsUnloadedTopLevelDrop = DR.IsUnloadedTopLevelDrop
 local IsCol1MixedDragSource = DR.IsCol1MixedDragSource
 local ShouldIncludeCol1TopLevelOrderRow = DR.ShouldIncludeCol1TopLevelOrderRow
@@ -80,24 +77,8 @@ local function ApplyContainerSection(containerId, container, targetSection)
     return targetSection == GetContainerSection(container)
 end
 
-local function ApplyFolderSection(folderId, folder, targetSection)
-    if targetSection == "global" then
-        folder.section = "global"
-        return true
-    end
-    if targetSection == "char" then
-        folder.section = "char"
-        folder.createdBy = CooldownCompanion.db.keys.char
-        if CooldownCompanion.NormalizeFolderEligibilityForCharacterScope then
-            CooldownCompanion:NormalizeFolderEligibilityForCharacterScope(folderId)
-        end
-        return true
-    end
-    return false
-end
-
 ------------------------------------------------------------------------
--- Apply a column-1 folder-aware drop result
+-- Apply a Navigator Group drop result
 ------------------------------------------------------------------------
 local function ApplyCol1Drop(state)
     local dropTarget = state.dropTarget
@@ -105,15 +86,14 @@ local function ApplyCol1Drop(state)
 
     local db = CooldownCompanion.db.profile
 
-    if state.kind == "group" or state.kind == "folder-group" then
+    if state.kind == "group" then
         -- Navigator Group rows use container IDs (sourceGroupId holds one).
         local sourceContainerId = state.sourceGroupId
         local container = db.groupContainers[sourceContainerId]
         if not container then return end
 
-        if dropTarget.action == "into-folder" or dropTarget.action == "reorder-before" or dropTarget.action == "reorder-after" then
+        if dropTarget.action == "reorder-before" or dropTarget.action == "reorder-after" then
             local targetRow = dropTarget.targetRow
-            local targetFolderId = ResolveCol1GroupDropTargetFolderId(state, dropTarget)
             local targetSection = targetRow.section or state.sourceSection
             if not IsCol1OwnershipMoveAllowed(state.sourceSection, targetSection) then
                 return
@@ -125,106 +105,55 @@ local function ApplyCol1Drop(state)
                     return
                 end
             end
-            if CooldownCompanion:MoveGroupToFolder(sourceContainerId, targetFolderId, { allowScopeChange = true }) == false then
-                return
-            end
-
-            -- Reassign order values for all items in the target section
-            -- to place the dragged container at the right position
-            local section = targetSection
             local renderedRows = state.col1RenderedRows
             if renderedRows then
-                -- Build ordered list of items in the same parent (folder or top-level)
-                -- and reassign order values
-                targetFolderId = container.folderId
-                local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget, targetFolderId)
+                local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget)
                 local orderItems = {}
                 for _, row in ipairs(renderedRows) do
-                    if row.section == section then
-                        if targetFolderId then
-                            -- Ordering within a folder: collect containers in same folder
-                            if row.kind == "container" and row.inFolder == targetFolderId and row.id ~= sourceContainerId then
-                                table.insert(orderItems, row.id)
-                            end
-                        else
-                            -- Top-level ordering: collect top-level items (folders + loose containers)
-                            if ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) then
-                                if row.id ~= sourceContainerId then
-                                    table.insert(orderItems, { kind = row.kind, id = row.id })
-                                end
-                            end
-                        end
+                    if row.section == targetSection
+                        and ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded)
+                        and row.id ~= sourceContainerId
+                    then
+                        table.insert(orderItems, { kind = row.kind, id = row.id })
                     end
                 end
 
-                -- Find insertion position
-                local insertPos
-                if targetFolderId then
-                    -- Within folder: find target container position
-                    insertPos = #orderItems + 1
-                    for idx, cid in ipairs(orderItems) do
-                        if cid == dropTarget.targetRow.id then
-                            insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
-                            break
-                        end
-                    end
-                    table.insert(orderItems, insertPos, sourceContainerId)
-                    local specId = CooldownCompanion._currentSpecId
-                    for i, cid in ipairs(orderItems) do
-                        if db.groupContainers[cid] then
-                            CooldownCompanion:SetOrderForSpec(db.groupContainers[cid], specId, i)
-                        end
-                    end
-                else
-                    -- Top-level: find target position among mixed items
-                    insertPos = includeUnloaded and 1 or (#orderItems + 1)
-                    if dropTarget.targetRow.kind ~= "unloaded-divider" then
-                        insertPos = #orderItems + 1
-                        for idx, item in ipairs(orderItems) do
-                            if item.kind == dropTarget.targetRow.kind and item.id == dropTarget.targetRow.id then
-                                insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
-                                break
-                            end
-                        end
-                    end
-                    table.insert(orderItems, insertPos, { kind = "group", id = sourceContainerId })
-                    local specId = CooldownCompanion._currentSpecId
-                    for i, item in ipairs(orderItems) do
-                        if item.kind == "folder" and db.folders[item.id] then
-                            CooldownCompanion:SetOrderForSpec(db.folders[item.id], specId, i)
-                        elseif db.groupContainers[item.id] then
-                            CooldownCompanion:SetOrderForSpec(db.groupContainers[item.id], specId, i)
-                        end
+                local insertPos = includeUnloaded and 1 or (#orderItems + 1)
+                if dropTarget.targetRow.kind ~= "unloaded-divider" then
+                    insertPos = FindCol1TopLevelInsertPos(
+                        orderItems,
+                        dropTarget.targetRow,
+                        dropTarget.action,
+                        #orderItems + 1
+                    )
+                end
+                table.insert(orderItems, insertPos, { kind = "group", id = sourceContainerId })
+                local specId = CooldownCompanion._currentSpecId
+                for i, item in ipairs(orderItems) do
+                    if db.groupContainers[item.id] then
+                        CooldownCompanion:SetOrderForSpec(db.groupContainers[item.id], specId, i)
                     end
                 end
             end
         end
     elseif state.kind == "multi-group" then
-        -- Multi-select: sourceGroupIds holds Navigator Group container IDs.
         local sourceContainerIds = state.sourceGroupIds
         if not sourceContainerIds then return end
 
         local targetRow = dropTarget.targetRow
-        -- Determine target folder and section
-        local targetFolderId = ResolveCol1GroupDropTargetFolderId(state, dropTarget)
-
         local targetSection = targetRow.section or state.sourceSection
 
-        -- Set folder and cross-section toggle for each selected container
         for cid in pairs(sourceContainerIds) do
-            local c = db.groupContainers[cid]
-            if c then
-                local containerSection = GetContainerSection(c)
+            local container = db.groupContainers[cid]
+            if container then
+                local containerSection = GetContainerSection(container)
                 if not IsCol1OwnershipMoveAllowed(containerSection, targetSection) then
                     return
                 end
                 if containerSection ~= targetSection then
-                    if not ApplyContainerSection(cid, c, targetSection) then
+                    if not ApplyContainerSection(cid, container, targetSection) then
                         return
                     end
-                end
-                if CooldownCompanion:MoveGroupToFolder(cid, targetFolderId, { allowScopeChange = true }) == false then
-                    return
                 end
             end
         end
@@ -243,33 +172,7 @@ local function ApplyCol1Drop(state)
         -- Rebuild order for target section
         local renderedRows = state.col1RenderedRows
         if renderedRows then
-            if targetFolderId then
-                -- Ordering within a folder
-                local orderItems = {}
-                for _, row in ipairs(renderedRows) do
-                    if row.kind == "container" and row.inFolder == targetFolderId and not sourceContainerIds[row.id] then
-                        table.insert(orderItems, row.id)
-                    end
-                end
-
-                -- Find insertion position
-                local insertPos = #orderItems + 1
-                for idx, cid in ipairs(orderItems) do
-                    if cid == targetRow.id then
-                        insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
-                        break
-                    end
-                end
-                -- Insert all selected containers at the position, preserving relative order
-                for i, item in ipairs(sortedSelected) do
-                    table.insert(orderItems, insertPos + i - 1, item.id)
-                end
-                for i, cid in ipairs(orderItems) do
-                    if db.groupContainers[cid] then
-                        CooldownCompanion:SetOrderForSpec(db.groupContainers[cid], specId, i)
-                    end
-                end
-            elseif IsCol1MixedDragSource(state.sourceLoadBucket) then
+            if IsCol1MixedDragSource(state.sourceLoadBucket) then
                 local selectedLoaded, selectedUnloaded = PartitionSelectedContainersByLoadBucket(sourceContainerIds, renderedRows, specId, db)
                 local loadedOrderItems = {}
                 local unloadedOrderItems = {}
@@ -305,7 +208,7 @@ local function ApplyCol1Drop(state)
                 AssignCol1TopLevelOrders(unloadedOrderItems, db, specId, nextOrder)
             else
                 -- Top-level ordering
-                local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget, targetFolderId)
+                local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget)
                 local orderItems = {}
                 for _, row in ipairs(renderedRows) do
                     if row.section == targetSection then
@@ -332,79 +235,6 @@ local function ApplyCol1Drop(state)
                     table.insert(orderItems, insertPos + i - 1, { kind = "group", id = item.id })
                 end
                 for i, item in ipairs(orderItems) do
-                    if item.kind == "folder" and db.folders[item.id] then
-                        CooldownCompanion:SetOrderForSpec(db.folders[item.id], specId, i)
-                    elseif db.groupContainers[item.id] then
-                        CooldownCompanion:SetOrderForSpec(db.groupContainers[item.id], specId, i)
-                    end
-                end
-            end
-        end
-    elseif state.kind == "folder" then
-        local sourceFolderId = state.sourceFolderId
-        local folder = db.folders[sourceFolderId]
-        if not folder then return end
-
-        local dropTarget = state.dropTarget
-        local targetRow = dropTarget.targetRow
-        local section = targetRow.section or state.sourceSection
-        if not IsCol1OwnershipMoveAllowed(state.sourceSection, section) then
-            return
-        end
-
-        -- Cross-section move: toggle folder section and update all child containers
-        if section ~= state.sourceSection then
-            if not ApplyFolderSection(sourceFolderId, folder, section) then
-                return
-            end
-            for containerId, container in pairs(db.groupContainers) do
-                if container.folderId == sourceFolderId then
-                    if not ApplyContainerSection(containerId, container, section) then
-                        return
-                    end
-                end
-            end
-        end
-
-        -- Build top-level items for the section (excluding the source folder)
-        local renderedRows = state.col1RenderedRows
-        if renderedRows then
-            local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget, nil)
-            local orderItems = {}
-            for _, row in ipairs(renderedRows) do
-                if row.section == section then
-                    if ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded)
-                        and row.id ~= sourceFolderId then
-                        table.insert(orderItems, { kind = row.kind, id = row.id })
-                    end
-                end
-            end
-
-            local insertPos = includeUnloaded and 1 or (#orderItems + 1)
-            if targetRow.kind ~= "unloaded-divider" then
-                insertPos = #orderItems + 1
-                for idx, item in ipairs(orderItems) do
-                    local targetKind = targetRow.kind
-                    local targetId = targetRow.id
-                    -- If target is a group inside a folder, use the folder as anchor
-                    if targetRow.inFolder then
-                        targetKind = "folder"
-                        targetId = targetRow.inFolder
-                    end
-                    if item.kind == targetKind and item.id == targetId then
-                        insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
-                        break
-                    end
-                end
-            end
-            table.insert(orderItems, insertPos, { kind = "folder", id = sourceFolderId })
-            local specId = CooldownCompanion._currentSpecId
-            for i, item in ipairs(orderItems) do
-                if item.kind == "folder" then
-                    if db.folders[item.id] then
-                        CooldownCompanion:SetOrderForSpec(db.folders[item.id], specId, i)
-                    end
-                else
                     if db.groupContainers[item.id] then
                         CooldownCompanion:SetOrderForSpec(db.groupContainers[item.id], specId, i)
                     end
@@ -551,36 +381,26 @@ local function FinishLegacyGroupDrag(state)
     CooldownCompanion:RefreshConfigPanel()
 end
 
-local function FinishCol1FolderAwareDrag(state)
+local function FinishButtonDrag(state)
+    PerformButtonReorder(
+        state.groupId,
+        state.sourceIndex,
+        state.dropIndex or state.sourceIndex
+    )
+    CooldownCompanion:RefreshGroupFrame(state.groupId)
+    CooldownCompanion:ClearAllConfigPreviews()
+    ClearConfigButtonSelection()
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function FinishCol1GroupDrag(state)
     local dropTarget = state.dropTarget
-    if dropTarget and state.preserveHiddenFolderOwnership
-        and (state.kind == "group" or state.kind == "folder-group" or state.kind == "multi-group") then
-        local targetFolderId = ResolveCol1GroupDropTargetFolderId(state, dropTarget)
-        local db = CooldownCompanion.db.profile
-        if state.kind == "multi-group" then
-            for containerId in pairs(state.sourceGroupIds or {}) do
-                local container = db.groupContainers[containerId]
-                if not container or container.folderId ~= state.sourceFolderId then
-                    CooldownCompanion:RefreshConfigPanel()
-                    return
-                end
-            end
-        end
-        if targetFolderId ~= state.sourceFolderId then
-            CooldownCompanion:RefreshConfigPanel()
-            return
-        end
-    end
     local changed = true
-    if dropTarget then
-        if state.kind == "group" or state.kind == "folder-group" then
-            changed = not IsCol1GroupDropNoOp(state)
-        elseif state.kind == "folder" then
-            changed = not IsCol1FolderDropNoOp(state)
-        end
+    if dropTarget and state.kind == "group" then
+        changed = not IsCol1GroupDropNoOp(state)
     end
 
-    if dropTarget and (state.kind == "group" or state.kind == "folder-group") then
+    if dropTarget and state.kind == "group" then
         local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
         if targetSection and not IsCol1OwnershipMoveAllowed(state.sourceSection, targetSection) then
             return
@@ -631,23 +451,6 @@ local function FinishCol1FolderAwareDrag(state)
                 })
                 return
             end
-        end
-    end
-
-    if dropTarget and state.kind == "folder" then
-        local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
-        if targetSection and not IsCol1OwnershipMoveAllowed(state.sourceSection, targetSection) then
-            return
-        end
-        if targetSection and targetSection ~= state.sourceSection
-           and state.sourceSection == "global"
-           and targetSection == "char"
-           and FolderHasForeignSpecs
-           and FolderHasForeignSpecs(state.sourceFolderId) then
-            ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_FOLDER", nil, {
-                dragState = state,
-            })
-            return
         end
     end
 
@@ -775,7 +578,6 @@ local function FinishRailPanelDrag(state)
     if #(state.sourcePanelOrder or {}) == 1 then
         SelectConfigPanel(state.sourcePanelOrder[1], { containerId = targetContainerId })
     else
-        CS.selectedFolder = nil
         CS.selectedContainer = targetContainerId
         CS.selectedGroup = nil
         CS.expandedContainer = targetContainerId
@@ -858,10 +660,12 @@ local function FinishDrag()
     ResetDragIndicatorStyle()
     if state.kind == "group" and state.groupIds then
         FinishLegacyGroupDrag(state)
-    elseif state.kind == "group" or state.kind == "folder" or state.kind == "folder-group" or state.kind == "multi-group" then
-        FinishCol1FolderAwareDrag(state)
+    elseif state.kind == "group" or state.kind == "multi-group" then
+        FinishCol1GroupDrag(state)
     elseif state.kind == "rail-panel" then
         FinishRailPanelDrag(state)
+    elseif state.kind == "button" then
+        FinishButtonDrag(state)
     end
 end
 
@@ -934,12 +738,10 @@ local function StartDragTracking()
                         local savedKind = CS.dragState.kind
                         local savedSourceGroupId = CS.dragState.sourceGroupId
                         local savedSourceGroupIds = CS.dragState.sourceGroupIds
-                        local savedSourceFolderId = CS.dragState.sourceFolderId
                         local savedSourceSection = CS.dragState.sourceSection
                         local savedSourceLoadBucket = CS.dragState.sourceLoadBucket
                         local savedScrollWidget = CS.dragState.scrollWidget
                         local savedStartY = CS.dragState.startY
-                        local savedPreserveHiddenFolderOwnership = CS.dragState.preserveHiddenFolderOwnership
                         CS.showPhantomSections = true
                         ST._RefreshColumn1(true)
                         -- Reconstruct drag state with new rendered rows
@@ -948,12 +750,10 @@ local function StartDragTracking()
                             phase = "active",
                             sourceGroupId = savedSourceGroupId,
                             sourceGroupIds = savedSourceGroupIds,
-                            sourceFolderId = savedSourceFolderId,
                             sourceSection = savedSourceSection,
                             sourceLoadBucket = savedSourceLoadBucket,
                             scrollWidget = savedScrollWidget,
                             startY = savedStartY,
-                            preserveHiddenFolderOwnership = savedPreserveHiddenFolderOwnership,
                             col1RenderedRows = CS.lastCol1RenderedRows,
                         }
                         -- Dim the source widget(s) in the new rows
@@ -967,11 +767,7 @@ local function StartDragTracking()
                             end
                         else
                             for _, row in ipairs(CS.dragState.col1RenderedRows) do
-                                if savedKind == "folder" and row.kind == "folder" and row.id == savedSourceFolderId then
-                                    CS.dragState.widget = row.widget
-                                    SetDraggedWidgetAlpha(row.widget, 0.4)
-                                    break
-                                elseif (savedKind == "group" or savedKind == "folder-group") and row.kind == "container" and row.id == savedSourceGroupId then
+                                if savedKind == "group" and row.kind == "container" and row.id == savedSourceGroupId then
                                     CS.dragState.widget = row.widget
                                     SetDraggedWidgetAlpha(row.widget, 0.4)
                                     break
@@ -1027,18 +823,13 @@ local function StartDragTracking()
                     HideDragIndicator()
                 end
             elseif CS.dragState.col1RenderedRows then
-                -- Navigator Group drop detection preserves hidden Folder ownership.
-                local effectiveKind = CS.dragState.kind == "multi-group" and "group" or CS.dragState.kind
                 local dropTarget = GetCol1DropTarget(
                     cursorX,
                     cursorY,
                     CS.dragState.scrollWidget,
                     CS.dragState.col1RenderedRows,
-                    effectiveKind,
                     CS.dragState.sourceSection,
-                    CS.dragState.sourceFolderId,
-                    CS.dragState.sourceLoadBucket,
-                    CS.dragState.dropTarget
+                    CS.dragState.sourceLoadBucket
                 )
                 CS.dragState.dropTarget = dropTarget
                 if dropTarget then
@@ -1053,7 +844,6 @@ local function StartDragTracking()
                         kind = CS.dragState.kind,
                         sourceGroupId = CS.dragState.sourceGroupId,
                         sourceGroupIds = CS.dragState.sourceGroupIds,
-                        sourceFolderId = CS.dragState.sourceFolderId,
                         dropTarget = dropTarget,
                     }) then
                         ClearCol1AnimatedPreview()
@@ -1062,9 +852,7 @@ local function StartDragTracking()
                             CS.dragState.sourceLoadBucket,
                             dropTarget
                         )
-                        if dropTarget.action == "into-folder" then
-                            HideDragIndicator()
-                        elseif unloadedPlaceholderTarget then
+                        if unloadedPlaceholderTarget then
                             HideDragIndicator()
                         elseif ShouldShowCol1StaticReorderIndicator(
                             CS.dragState.sourceLoadBucket,

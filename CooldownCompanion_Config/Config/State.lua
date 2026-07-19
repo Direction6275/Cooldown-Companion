@@ -189,7 +189,6 @@ local COLUMN_PADDING = 8
 ------------------------------------------------------------------------
 ST._configState = {
     -- Selection state
-    selectedFolder = nil,        -- retained Folder selection state (chrome is currently hidden)
     selectedContainer = nil,     -- Group container selected in the Navigator
     selectedGroup = nil,         -- Panel selected in the Navigator
     selectedButton = nil,
@@ -256,7 +255,6 @@ ST._configState = {
 
     -- Collapsed sections state
     collapsedSections = {},
-    collapsedFolders = {},
     collapsedPanels = {},
     expandedContainer = nil,
     peekedContainers = {},
@@ -597,7 +595,6 @@ local function SnapshotOtherClassLibraryState()
         return
     end
     CS.otherClassLibrarySnapshot = {
-        selectedFolder = CS.selectedFolder,
         selectedContainer = CS.selectedContainer,
         selectedGroup = CS.selectedGroup,
         selectedButton = CS.selectedButton,
@@ -626,7 +623,6 @@ local function RestoreOtherClassLibrarySnapshot()
         return
     end
 
-    CS.selectedFolder = snapshot.selectedFolder
     CS.selectedContainer = snapshot.selectedContainer
     CS.selectedGroup = snapshot.selectedGroup
     CS.selectedButton = snapshot.selectedButton
@@ -1038,7 +1034,6 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     wipe(CS.selectedCustomBars)
     CS.selectedResourcePowerType = nil
     CS.resourceSettingsSpecID = nil
-    CS.selectedFolder = nil
     CS.selectedContainer = containerId
     CS.selectedGroup = panelId
     CS.selectedButton = buttonIndex
@@ -2192,7 +2187,7 @@ local function BuildEligibilityBadgeMap(...)
     return badgeMap
 end
 
-local function SetupGroupRowIndicators(entry, group, opts)
+local function SetupGroupRowIndicators(entry, group)
     local frame = entry.frame
     if frame._cdcBadges then
         for _, b in ipairs(frame._cdcBadges) do b:Hide() end
@@ -2248,72 +2243,47 @@ local function SetupGroupRowIndicators(entry, group, opts)
             end
         end
     end
-    -- Look up folder data for per-badge filtering: badges that exist at the
-    -- folder level are shown on the folder row only, not on child containers.
-    local folderId = group.folderId
-    local folderSpecs, folderHeroTalents
-    if folderId then
-        local folders = CooldownCompanion.db and CooldownCompanion.db.profile
-            and CooldownCompanion.db.profile.folders
-        local folder = folders and folders[folderId]
-        if folder then
-            folderSpecs = BuildEligibilityBadgeMap(
-                folder.specs,
-                folder.loadConditions and folder.loadConditions.specAllowlist
-            )
-            folderHeroTalents = folder.heroTalents
-        end
-    end
-
-    -- Spec filter badges: show own specs, skip any that exist at folder level
+    -- Spec filter badges
     local SPEC_BADGE_SIZE = 16
-    local showInheritedFolderBadges = opts and opts.showInheritedFolderBadges == true
     local specs = BuildEligibilityBadgeMap(
         group.specs,
-        group.loadConditions and group.loadConditions.specAllowlist,
-        showInheritedFolderBadges and folderSpecs or nil
+        group.loadConditions and group.loadConditions.specAllowlist
     )
     if specs then
         for specId in pairs(specs) do
-            if showInheritedFolderBadges or not (folderSpecs and folderSpecs[specId]) then
-                local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
-                if specIcon then
-                    badgeIndex = badgeIndex + 1
-                    local badge = AcquireBadge(frame, badgeIndex)
-                    badge:SetSize(SPEC_BADGE_SIZE, SPEC_BADGE_SIZE)
-                    badge.icon:SetTexture(specIcon)
-                    badge.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                    if not badge._cdcCircleMask then
-                        local mask = badge:CreateMaskTexture()
-                        mask:SetAllPoints(badge.icon)
-                        mask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask")
-                        badge._cdcCircleMask = mask
-                    end
-                    badge.icon:AddMaskTexture(badge._cdcCircleMask)
-                    badge:Show()
+            local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
+            if specIcon then
+                badgeIndex = badgeIndex + 1
+                local badge = AcquireBadge(frame, badgeIndex)
+                badge:SetSize(SPEC_BADGE_SIZE, SPEC_BADGE_SIZE)
+                badge.icon:SetTexture(specIcon)
+                badge.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                if not badge._cdcCircleMask then
+                    local mask = badge:CreateMaskTexture()
+                    mask:SetAllPoints(badge.icon)
+                    mask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask")
+                    badge._cdcCircleMask = mask
                 end
+                badge.icon:AddMaskTexture(badge._cdcCircleMask)
+                badge:Show()
             end
         end
     end
 
-    -- Hero talent filter badges: show own, skip any that exist at folder level
+    -- Hero talent filter badges
     local HERO_BADGE_SIZE = SPEC_BADGE_SIZE
-    local heroTalents = showInheritedFolderBadges
-        and BuildEligibilityBadgeMap(group.heroTalents, folderHeroTalents)
-        or group.heroTalents
+    local heroTalents = group.heroTalents
     if heroTalents then
         local configID = C_ClassTalents.GetActiveConfigID()
         if configID then
             for subTreeID in pairs(heroTalents) do
-                if showInheritedFolderBadges or not (folderHeroTalents and folderHeroTalents[subTreeID]) then
-                    local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
-                    if subTreeInfo and subTreeInfo.iconElementID then
-                        badgeIndex = badgeIndex + 1
-                        local badge = AcquireBadge(frame, badgeIndex)
-                        badge:SetSize(HERO_BADGE_SIZE, HERO_BADGE_SIZE)
-                        badge.icon:SetAtlas(subTreeInfo.iconElementID, false)
-                        badge:Show()
-                    end
+                local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
+                if subTreeInfo and subTreeInfo.iconElementID then
+                    badgeIndex = badgeIndex + 1
+                    local badge = AcquireBadge(frame, badgeIndex)
+                    badge:SetSize(HERO_BADGE_SIZE, HERO_BADGE_SIZE)
+                    badge.icon:SetAtlas(subTreeInfo.iconElementID, false)
+                    badge:Show()
                 end
             end
         end
@@ -2725,7 +2695,6 @@ end
 
 ClearConfigPrimarySelection = function()
     CooldownCompanion:ClearAllConfigPreviews()
-    CS.selectedFolder = nil
     CS.selectedContainer = nil
     CS.selectedGroup = nil
     CS.resourcesEntrySelected = false
@@ -2738,28 +2707,12 @@ ClearConfigPrimarySelection = function()
     RefreshAlphaDriverForConfigSelection()
 end
 
-local function SelectConfigFolder(folderId)
-    CooldownCompanion:ClearAllConfigPreviews()
-    CS.configFinderRestoredCollapsedContainerId = nil
-    CS.selectedFolder = folderId
-    CS.selectedContainer = nil
-    CS.selectedGroup = nil
-    CS.resourcesEntrySelected = false
-    CS.castFramesEntrySelected = false
-    ClearSelectedButton()
-    wipe(CS.selectedGroups)
-    wipe(CS.selectedPanels)
-    RefreshAlphaDriverForConfigSelection()
-end
-
 local function SelectConfigContainer(containerId, opts)
     CooldownCompanion:ClearAllConfigPreviews()
     CS.configFinderRestoredCollapsedContainerId = nil
     if not (opts and opts.keepContainerMulti) then
         wipe(CS.selectedGroups)
     end
-    CS.selectedFolder = nil
-
     if opts and opts.toggle and CS.selectedContainer == containerId then
         if CS.selectedGroup then
             CS.selectedGroup = nil
@@ -2799,7 +2752,6 @@ local function ToggleConfigContainerMultiSelect(containerId)
         CS.selectedGroups[CS.selectedContainer] = true
     end
 
-    CS.selectedFolder = nil
     CS.selectedContainer = nil
     CS.selectedGroup = nil
     CS.resourcesEntrySelected = false
@@ -3129,7 +3081,6 @@ local function SelectConfigResourcesEntry(opts)
         CS.resourcesEntrySelected = true
     end
     CS.castFramesEntrySelected = false
-    CS.selectedFolder = nil
     CS.selectedGroup = nil
     CS.unifiedBarKind = nil
     ClearSelectedButton()
@@ -3153,7 +3104,6 @@ local function SelectConfigCastFramesEntry(opts)
         CS.castFramesEntrySelected = true
     end
     CS.resourcesEntrySelected = false
-    CS.selectedFolder = nil
     CS.selectedGroup = nil
     CS.unifiedBarKind = nil
     ClearSelectedButton()
@@ -3216,7 +3166,6 @@ end
 
 local function ResetConfigSelection(full)
     CooldownCompanion:ClearAllConfigPreviews()
-    CS.selectedFolder = nil
     CS.selectedButton = nil
     CS.selectedRotationAssistantEntry = nil
     CS.unifiedBarKind = nil
@@ -3471,35 +3420,6 @@ local function GroupsHaveForeignSpecs(groups, requireGlobal)
     return false
 end
 
-local function FolderHasForeignSpecs(folderId)
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    if not (db and db.folders) then return false end
-
-    local folder = db.folders[folderId]
-    if not folder then return false end
-
-    local playerSpecIds = BuildPlayerSpecSet()
-    local playerClassKey = BuildPlayerClassKey()
-    local playerCharKey = BuildPlayerCharacterKey()
-    local playerHeroTalentIds, hasHeroTalentData = BuildPlayerHeroTalentSet(playerSpecIds)
-    if EntityHasForeignEligibility(folder, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData) then
-        return true
-    end
-    -- Post-migration: specs live on containers, not folders
-    local containers = db.groupContainers
-    if containers then
-        for _, container in pairs(containers) do
-            if container.folderId == folderId then
-                if EntityOrChildPanelsHaveForeignEligibility(container, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData) then
-                    return true
-                end
-            end
-        end
-    end
-
-    return false
-end
-
 ------------------------------------------------------------------------
 -- CompactUntitledInlineGroupConfig (shared utility for bordered panels)
 ------------------------------------------------------------------------
@@ -3604,7 +3524,6 @@ ST._ClearConfigContainerSelection = ClearConfigContainerSelection
 ST._ClearConfigPanelMultiSelection = ClearConfigPanelMultiSelection
 ST._ClearConfigContainerMultiSelection = ClearConfigContainerMultiSelection
 ST._ClearConfigPrimarySelection = ClearConfigPrimarySelection
-ST._SelectConfigFolder = SelectConfigFolder
 ST._SelectConfigContainer = SelectConfigContainer
 ST._ToggleConfigContainerMultiSelect = ToggleConfigContainerMultiSelect
 ST._SelectConfigPanel = SelectConfigPanel
@@ -3631,7 +3550,6 @@ ST._ResetConfigSelection = ResetConfigSelection
 ST._SetConfigPrimaryModeImpl = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs
 ST._ContainersHaveForeignSpecs = ContainersHaveForeignSpecs
-ST._FolderHasForeignSpecs = FolderHasForeignSpecs
 
 ------------------------------------------------------------------------
 -- Helper: Get class-colored text for current player

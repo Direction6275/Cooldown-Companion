@@ -228,12 +228,6 @@ local function AddEntityEffectiveSpecSource(sources, entity, inherited)
     )
 end
 
-local function AddFolderEffectiveSpecSource(sources, profile, folderId)
-    local folders = profile and profile.folders
-    local folder = folderId and folders and folders[folderId]
-    AddEntityEffectiveSpecSource(sources, folder, true)
-end
-
 local function MergeEligibilityAllowlist(state, key, map, normalizer)
     local normalized, malformed, hasRestriction = NormalizeTruthyMap(map, normalizer, true)
     if malformed then
@@ -325,9 +319,9 @@ ST.LOAD_CONDITION_OPTIONS = ST.LOAD_CONDITION_OPTIONS or {
 -- LibSharedMedia for font/texture selection
 local LSM = LibStub("LibSharedMedia-3.0")
 
---- Return the per-spec order for a container or folder, falling back to the
+--- Return the per-spec order for a container, falling back to the
 --- global .order field and then to the supplied default (typically the ID).
---- @param obj table  groupContainer or folder table with optional specOrders
+--- @param obj table  groupContainer with optional specOrders
 --- @param specId number|nil  current specialization ID
 --- @param default number|nil  fallback when no order exists
 function CooldownCompanion:GetOrderForSpec(obj, specId, default)
@@ -338,7 +332,7 @@ function CooldownCompanion:GetOrderForSpec(obj, specId, default)
     return obj.order or default
 end
 
---- Write a per-spec order value to a container or folder.
+--- Write a per-spec order value to a container.
 --- Creates the specOrders table if it doesn't exist.
 function CooldownCompanion:SetOrderForSpec(obj, specId, value)
     if not specId then
@@ -917,15 +911,11 @@ function CooldownCompanion:GetEffectiveSpecs(group)
     if not group then return nil, false end
 
     local sources = {}
-    local profile = self.db and self.db.profile
-
     local container = self:GetParentContainer(group)
     if container then
-        AddFolderEffectiveSpecSource(sources, profile, container.folderId)
         AddEntityEffectiveSpecSource(sources, container, true)
         AddEntityEffectiveSpecSource(sources, group, false)
     else
-        AddFolderEffectiveSpecSource(sources, profile, group.folderId)
         AddEntityEffectiveSpecSource(sources, group, false)
     end
 
@@ -936,14 +926,9 @@ function CooldownCompanion:GetInheritedEffectiveSpecs(group)
     if not group then return nil, false end
 
     local sources = {}
-    local profile = self.db and self.db.profile
-
     local container = self:GetParentContainer(group)
     if container then
-        AddFolderEffectiveSpecSource(sources, profile, container.folderId)
         AddEntityEffectiveSpecSource(sources, container, true)
-    else
-        AddFolderEffectiveSpecSource(sources, profile, group.folderId)
     end
 
     return ResolveEffectiveSources(sources)
@@ -956,21 +941,9 @@ function CooldownCompanion:GetEffectiveHeroTalents(group)
 
     local container = self:GetParentContainer(group)
     if container then
-        local folderId = container.folderId
-        if folderId then
-            local folders = self.db and self.db.profile and self.db.profile.folders
-            local folder = folders and folders[folderId]
-            AddEffectiveSource(sources, folder and folder.heroTalents, true, NormalizeSpecKey)
-        end
         AddEffectiveSource(sources, container.heroTalents, true, NormalizeSpecKey)
         AddEffectiveSource(sources, group.heroTalents, false, NormalizeSpecKey)
     else
-        local folderId = group.folderId
-        if folderId then
-            local folders = self.db and self.db.profile and self.db.profile.folders
-            local folder = folders and folders[folderId]
-            AddEffectiveSource(sources, folder and folder.heroTalents, true, NormalizeSpecKey)
-        end
         AddEffectiveSource(sources, group.heroTalents, false, NormalizeSpecKey)
     end
 
@@ -1167,32 +1140,6 @@ function CooldownCompanion:NormalizeTalentConditions(conditions)
         return nil, true
     end
     return normalized, true
-end
-
--- Folder spec filters are stamped onto child containers so that runtime checks
--- (which read container.specs) pick up folder-level restrictions. Stamping occurs
--- both here (when folder specs change) and in MoveGroupToFolder (when a container
--- joins a folder). Hero talents are NOT stamped — they cascade at read time via
--- GetEffectiveHeroTalents.
-function CooldownCompanion:ApplyFolderSpecFilterToChildren(folderId)
-    local db = self.db and self.db.profile
-    local folder = db and db.folders and db.folders[folderId]
-    if not (db and folder) then return end
-
-    local folderSpecs = folder.specs
-    local hasFolderSpecs = folderSpecs and next(folderSpecs)
-
-    -- Post-migration: folderId lives on containers, not groups
-    local containers = db.groupContainers or {}
-    for _, container in pairs(containers) do
-        if container.folderId == folderId then
-            if hasFolderSpecs then
-                container.specs = CopyTable(folderSpecs)
-            else
-                container.specs = nil
-            end
-        end
-    end
 end
 
 function CooldownCompanion:IsHeroTalentAllowed(group)
@@ -1800,50 +1747,6 @@ function CooldownCompanion:ResolveContainerClassScope(containerOrContainerId, op
     return ResolveProfileEntityClassScope(self, container, opts)
 end
 
-function CooldownCompanion:ResolveFolderClassScope(folderOrFolderId, opts)
-    local folder = folderOrFolderId
-    if type(folderOrFolderId) == "number" then
-        local db = self.db and self.db.profile
-        folder = db and db.folders and db.folders[folderOrFolderId] or nil
-    end
-    opts = opts and CopyTable(opts) or {}
-    opts.isGlobal = type(folder) == "table" and folder.section == "global"
-    return ResolveProfileEntityClassScope(self, folder, opts)
-end
-
-function CooldownCompanion:CanMoveContainerToFolder(containerOrContainerId, folderOrFolderId, opts)
-    opts = opts or {}
-    if folderOrFolderId == nil then
-        return true
-    end
-
-    local containerScope = self:ResolveContainerClassScope(containerOrContainerId)
-    local folderScope = self:ResolveFolderClassScope(folderOrFolderId)
-    if containerScope.isInvalid or folderScope.isInvalid then
-        return false, "invalid-class-scope"
-    end
-
-    if containerScope.scope == folderScope.scope then
-        if containerScope.scope == "global" then
-            return true
-        end
-        return containerScope.ownerClassKey == folderScope.ownerClassKey, "mixed-class-folder"
-    end
-
-    if opts.allowScopeChange == true then
-        if containerScope.scope == "global" and folderScope.scope == "current-class" then
-            return true
-        end
-        if folderScope.scope == "global"
-            and (containerScope.scope == "current-class" or containerScope.scope == "other-class")
-        then
-            return true
-        end
-    end
-
-    return false, "scope-mismatch"
-end
-
 function CooldownCompanion:CanMovePanelToContainer(groupOrGroupId, targetContainerOrContainerId)
     local db = self.db and self.db.profile
     if not (db and db.groups and db.groupContainers) then
@@ -2076,29 +1979,6 @@ function CooldownCompanion:NormalizeContainerEligibilityForCharacterScope(contai
     return changed
 end
 
-function CooldownCompanion:NormalizeFolderEligibilityForCharacterScope(folderId, opts)
-    local db = self.db and self.db.profile
-    if not (db and db.folders) then return false end
-    local folder = db.folders[folderId]
-    if not folder then return false end
-    opts = WithOwnerCharKey(opts, folder.createdBy or (self.db and self.db.keys and self.db.keys.char))
-
-    local changed = self:NormalizeEligibilityForCharacterScope(folder, opts)
-    local childContainerIds = {}
-    for containerId, container in pairs(db.groupContainers or {}) do
-        if type(container) == "table" and container.folderId == folderId then
-            childContainerIds[containerId] = true
-            changed = self:NormalizeEligibilityForCharacterScope(container, opts) or changed
-        end
-    end
-    for _, group in pairs(db.groups or {}) do
-        if type(group) == "table" and childContainerIds[group.parentContainerId] then
-            changed = self:NormalizeEligibilityForCharacterScope(group, opts) or changed
-        end
-    end
-    return changed
-end
-
 function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
@@ -2156,56 +2036,21 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup()
     if not groups then return nil end
     local containers = db.groupContainers
     if not containers then return nil end
-    local folders = db.folders or {}
     local specId = self._currentSpecId
 
-    -- Build container-to-folder mapping
-    local folderContainers = {}  -- [folderId] = { {id, order}, ... }
-    local looseContainers = {}   -- { {id, order}, ... }
-
+    local orderedContainers = {}
     for cid, container in pairs(containers) do
-        local fid = container.folderId
-        if fid and folders[fid] then
-            if not folderContainers[fid] then
-                folderContainers[fid] = {}
-            end
-            folderContainers[fid][#folderContainers[fid] + 1] = { id = cid, order = self:GetOrderForSpec(container, specId, cid) }
-        else
-            looseContainers[#looseContainers + 1] = { id = cid, order = self:GetOrderForSpec(container, specId, cid) }
-        end
+        orderedContainers[#orderedContainers + 1] = {
+            id = cid,
+            order = self:GetOrderForSpec(container, specId, cid),
+        }
     end
+    table.sort(orderedContainers, function(a, b) return a.order < b.order end)
 
-    -- Sort containers within each folder by per-spec order
-    for _, children in pairs(folderContainers) do
-        table.sort(children, function(a, b) return a.order < b.order end)
-    end
-    table.sort(looseContainers, function(a, b) return a.order < b.order end)
-
-    -- Build top-level items: folders + loose containers, sorted by order
-    -- (mirrors Column1.lua BuildSectionItems)
-    local topItems = {}
-    for fid in pairs(folderContainers) do
-        topItems[#topItems + 1] = { kind = "folder", id = fid, order = self:GetOrderForSpec(folders[fid], specId, fid) }
-    end
-    for _, lc in ipairs(looseContainers) do
-        topItems[#topItems + 1] = { kind = "container", id = lc.id, order = lc.order }
-    end
-    table.sort(topItems, function(a, b) return a.order < b.order end)
-
-    -- Iterate in visual order, return first available panel
-    for _, item in ipairs(topItems) do
-        local containerList
-        if item.kind == "folder" then
-            containerList = folderContainers[item.id]
-        else
-            containerList = { item }
-        end
-        for _, cInfo in ipairs(containerList) do
-            local panels = self:GetPanels(cInfo.id)
-            for _, panelInfo in ipairs(panels) do
-                if self:IsGroupAvailableForAnchoring(panelInfo.groupId) then
-                    return panelInfo.groupId
-                end
+    for _, containerInfo in ipairs(orderedContainers) do
+        for _, panelInfo in ipairs(self:GetPanels(containerInfo.id)) do
+            if self:IsGroupAvailableForAnchoring(panelInfo.groupId) then
+                return panelInfo.groupId
             end
         end
     end
@@ -2297,9 +2142,7 @@ end
 function CooldownCompanion:PopulatePanelAnchorTargetDropdown(dropdown, sourceGroupId)
     local db = self.db.profile
     local containers = db.groupContainers or {}
-    local folders = db.folders or {}
-    local folderContainers = {}
-    local looseContainers = {}
+    local groupedPanels = {}
     local eligibleCount = 0
 
     dropdown:SetList({}, {})
@@ -2313,114 +2156,47 @@ function CooldownCompanion:PopulatePanelAnchorTargetDropdown(dropdown, sourceGro
             eligibleCount = eligibleCount + 1
             local cid = group.parentContainerId
             local ctr = containers[cid]
-            local fid = ctr and ctr.folderId
             local contName = ctr and ctr.name or "Group"
-            local panelName = group.name or ("Panel " .. groupId)
-            local panelEntry = {
+            local containerBucket = groupedPanels[cid]
+            if not containerBucket then
+                containerBucket = {
+                    id = cid,
+                    name = contName,
+                    order = self:GetOrderForSpec(ctr or {}, self._currentSpecId, cid),
+                    panels = {},
+                }
+                groupedPanels[cid] = containerBucket
+            end
+            table.insert(containerBucket.panels, {
                 id = groupId,
                 key = tostring(groupId),
-                name = panelName,
+                name = group.name or ("Panel " .. groupId),
                 contName = contName,
                 order = group.order or groupId,
-            }
-            local containerBucket
-            local entry = {
-                id = cid,
-                name = contName,
-                order = self:GetOrderForSpec(ctr or {}, self._currentSpecId, cid),
-                panels = {},
-            }
-            if fid and folders[fid] then
-                folderContainers[fid] = folderContainers[fid] or {}
-                containerBucket = folderContainers[fid][cid]
-                if not containerBucket then
-                    containerBucket = entry
-                    folderContainers[fid][cid] = containerBucket
-                end
-            else
-                containerBucket = looseContainers[cid]
-                if not containerBucket then
-                    containerBucket = entry
-                    looseContainers[cid] = containerBucket
-                end
-            end
-            table.insert(containerBucket.panels, panelEntry)
-        end
-    end
-
-    local sortedFolders = {}
-    for fid, folder in pairs(folders) do
-        if folderContainers[fid] then
-            table.insert(sortedFolders, {
-                id = fid,
-                name = folder.name or ("Folder " .. fid),
-                order = self:GetOrderForSpec(folder, self._currentSpecId, fid),
             })
         end
     end
-    table.sort(sortedFolders, function(a, b) return a.order < b.order end)
 
-    local hasHeaders = #sortedFolders > 0
+    local sortedContainers = {}
+    for _, container in pairs(groupedPanels) do
+        table.insert(sortedContainers, container)
+    end
+    table.sort(sortedContainers, function(a, b)
+        if a.order ~= b.order then return a.order < b.order end
+        return a.name < b.name
+    end)
+    for _, container in ipairs(sortedContainers) do
+        local containerHdrKey = "_panel_ctr_" .. tostring(container.id)
+        dropdown:AddItem(containerHdrKey, "|cffffd100" .. container.name .. "|r")
+        dropdown:SetItemDisabled(containerHdrKey, true)
 
-    for _, folder in ipairs(sortedFolders) do
-        local hdrKey = "_panel_hdr_" .. folder.id
-        dropdown:AddItem(hdrKey, "|cffffd100" .. folder.name .. "|r")
-        dropdown:SetItemDisabled(hdrKey, true)
-
-        local sortedContainers = {}
-        for _, container in pairs(folderContainers[folder.id]) do
-            table.insert(sortedContainers, container)
-        end
-        table.sort(sortedContainers, function(a, b)
+        table.sort(container.panels, function(a, b)
             if a.order ~= b.order then return a.order < b.order end
             return a.name < b.name
         end)
-
-        for _, container in ipairs(sortedContainers) do
-            local containerHdrKey = "_panel_ctr_" .. folder.id .. "_" .. tostring(container.id)
-            dropdown:AddItem(containerHdrKey, "   |cffffd100" .. container.name .. "|r")
-            dropdown:SetItemDisabled(containerHdrKey, true)
-
-            table.sort(container.panels, function(a, b)
-                if a.order ~= b.order then return a.order < b.order end
-                return a.name < b.name
-            end)
-            for _, panel in ipairs(container.panels) do
-                dropdown:AddItem(panel.key, "      " .. panel.name)
-                dropdown.list[panel.key] = panel.contName .. ": " .. panel.name
-            end
-        end
-    end
-
-    local sortedLooseContainers = {}
-    for _, container in pairs(looseContainers) do
-        table.insert(sortedLooseContainers, container)
-    end
-
-    if #sortedLooseContainers > 0 then
-        if hasHeaders then
-            dropdown:AddItem("_panel_hdr_none", "|cffffd100No Folder|r")
-            dropdown:SetItemDisabled("_panel_hdr_none", true)
-        end
-        table.sort(sortedLooseContainers, function(a, b)
-            if a.order ~= b.order then return a.order < b.order end
-            return a.name < b.name
-        end)
-        for _, container in ipairs(sortedLooseContainers) do
-            local containerHdrKey = "_panel_ctr_none_" .. tostring(container.id)
-            local containerPrefix = hasHeaders and "   " or ""
-            dropdown:AddItem(containerHdrKey, containerPrefix .. "|cffffd100" .. container.name .. "|r")
-            dropdown:SetItemDisabled(containerHdrKey, true)
-
-            table.sort(container.panels, function(a, b)
-                if a.order ~= b.order then return a.order < b.order end
-                return a.name < b.name
-            end)
-            for _, panel in ipairs(container.panels) do
-                local panelPrefix = hasHeaders and "      " or "   "
-                dropdown:AddItem(panel.key, panelPrefix .. panel.name)
-                dropdown.list[panel.key] = panel.contName .. ": " .. panel.name
-            end
+        for _, panel in ipairs(container.panels) do
+            dropdown:AddItem(panel.key, "   " .. panel.name)
+            dropdown.list[panel.key] = panel.contName .. ": " .. panel.name
         end
     end
 
@@ -2480,7 +2256,7 @@ function CooldownCompanion:EvaluateLoadConditions(loadConditions, defaults)
     if lc.rested and self._isResting then return false end
 
     -- If pet battle condition is enabled and player is in a pet battle, unload.
-    -- Group/panel scopes default this on; folder/entry scopes default it off.
+    -- Group/panel scopes default this on; entry scopes default it off.
     local petBattle = lc.petBattle
     if petBattle == nil then petBattle = defaults.petBattle or false end
     if petBattle and self._inPetBattle then return false end
@@ -2526,10 +2302,6 @@ local function HasEligibilityAllowlist(loadConditions, allowClassEligibility)
         or loadConditions.characterAllowlist ~= nil
 end
 
-local function IsFolderGlobalScope(folder)
-    return type(folder) == "table" and folder.section == "global"
-end
-
 local function IsContainerGlobalScope(container)
     return type(container) == "table" and container.isGlobal == true
 end
@@ -2541,14 +2313,9 @@ function CooldownCompanion:GetInheritedLoadConditionSources(group)
 
     local container = self:GetParentContainer(group)
     if container then
-        local folder = container.folderId and db.folders and db.folders[container.folderId]
-        AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS, IsFolderGlobalScope(folder))
         AddLoadConditionSource(sources, "Group", container, LOAD_CONDITION_DEFAULTS, IsContainerGlobalScope(container))
         return sources
     end
-
-    local folder = group.folderId and db.folders and db.folders[group.folderId]
-    AddLoadConditionSource(sources, "Folder", folder, LOCAL_LOAD_CONDITION_DEFAULTS, IsFolderGlobalScope(folder))
     return sources
 end
 

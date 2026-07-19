@@ -14,7 +14,6 @@ local ClearCol1PreviewHost = ST._ClearCol1PreviewHost
 local SetupGroupRowIndicators = ST._SetupGroupRowIndicators
 local ApplyColumn1MarkerAppearance = ST._ApplyColumn1MarkerAppearance
 local FindCol1SectionDividerTarget = DR.FindCol1SectionDividerTarget
-local FindCol1FolderBlockRange = DR.FindCol1FolderBlockRange
 
 local PREVIEW_ANIM_DURATION = 0.08
 local PREVIEW_PANEL_INSET = 8
@@ -222,7 +221,6 @@ local function CopyCol1PreviewRow(row)
         kind = row.kind,
         rowType = row.rowType,
         id = row.id,
-        inFolder = row.inFolder,
         section = row.section,
         loadBucket = row.loadBucket,
         acceptsDrop = row.acceptsDrop,
@@ -257,7 +255,6 @@ local function CopyCol1PreviewRow(row)
         layoutOnly = row.layoutOnly,
         ownerKind = row.ownerKind,
         ownerId = row.ownerId,
-        ownerFolderId = row.ownerFolderId,
         shellRect = row.shellRect and {
             x = row.shellRect.x,
             y = row.shellRect.y,
@@ -309,7 +306,6 @@ local function BuildCol1BasePreviewLayout()
                 kind = rowMeta.kind,
                 rowType = rowMeta.rowType,
                 id = rowMeta.id,
-                inFolder = rowMeta.inFolder,
                 section = rowMeta.section,
                 loadBucket = rowMeta.loadBucket,
                 acceptsDrop = rowMeta.acceptsDrop,
@@ -343,7 +339,6 @@ local function BuildCol1BasePreviewLayout()
                 layoutOnly = rowMeta.layoutOnly and true or false,
                 ownerKind = rowMeta.ownerKind,
                 ownerId = rowMeta.ownerId,
-                ownerFolderId = rowMeta.ownerFolderId,
                 shellRect = shellX and {
                     x = shellX,
                     y = shellY,
@@ -404,8 +399,6 @@ local function IsCol1AuxOwnedBySource(row, source)
         return row.rowType == "panel"
             and source.sourcePanelIds
             and source.sourcePanelIds[row.id] == true
-    elseif source.kind == "folder" then
-        return row.ownerFolderId == source.sourceFolderId
     elseif source.kind == "multi-group" and source.sourceGroupIds then
         return row.ownerKind == "container" and source.sourceGroupIds[row.ownerId]
     else
@@ -423,16 +416,6 @@ local function BuildCol1DraggedRows(base, source)
                 movedRows[#movedRows + 1] = row
                 movedIndexes[row.originalIndex] = true
             end
-        end
-    elseif source.kind == "folder" then
-        local firstIndex, lastIndex = FindCol1FolderBlockRange(base.rows, source.sourceFolderId)
-        if not firstIndex then
-            return nil
-        end
-        for i = firstIndex, lastIndex do
-            local row = base.rows[i]
-            movedRows[#movedRows + 1] = row
-            movedIndexes[row.originalIndex] = true
         end
     elseif source.kind == "multi-group" and source.sourceGroupIds then
         for _, row in ipairs(base.rows) do
@@ -486,9 +469,7 @@ local function BuildCol1DraggedRows(base, source)
 
     local ghostRow
     local firstRow = movedRows[1]
-    if (source.kind == "group" or source.kind == "folder-group")
-        and firstRow.shellRect
-    then
+    if source.kind == "group" and firstRow.shellRect then
         gapHeight = firstRow.shellRect.height
     end
     if source.kind == "rail-panel" and #movedRows > 1 then
@@ -505,7 +486,7 @@ local function BuildCol1DraggedRows(base, source)
         ghostRow = CopyCol1PreviewRow(firstRow)
         ghostRow.text = tostring(math.max(1, selectedCount)) .. " groups"
         ghostRow.height = math.max(firstRow.height, PREVIEW_DEFAULT_ROW_HEIGHT)
-    elseif source.kind == "group" or source.kind == "folder-group" then
+    elseif source.kind == "group" then
         ghostRow = CopyCol1PreviewRow(firstRow)
         ghostRow.height = gapHeight
         ghostRow.width = firstRow.shellRect and firstRow.shellRect.width or ghostRow.width
@@ -514,7 +495,7 @@ local function BuildCol1DraggedRows(base, source)
         ghostRow = CopyCol1PreviewRow(firstRow)
     end
 
-    if source.kind == "group" or source.kind == "folder-group" then
+    if source.kind == "group" then
         ghostRow.centerGroupLabel = true
     end
 
@@ -570,28 +551,8 @@ local function ResolveCol1PreviewAnchor(base, source, dropTarget)
     local targetRow = dropTarget.targetRow
     local targetIndex = dropTarget.rowIndex or 1
 
-    if targetRow and targetRow.kind == "folder" then
-        local firstIndex, lastIndex = FindCol1FolderBlockRange(base.rows, targetRow.id)
-        if firstIndex then
-            if dropTarget.action == "reorder-before" then
-                return base.rows[firstIndex].originalIndex, base.rows[firstIndex]
-            end
-            return base.rows[lastIndex].originalIndex + 1, base.rows[firstIndex]
-        end
-    end
-
     if targetRow and targetRow.kind == "unloaded-divider" then
         return targetIndex, FindCol1BaseRowAtOrAfterOriginalIndex(base.rows, targetIndex) or FindCol1BaseRowBeforeOriginalIndex(base.rows, targetIndex)
-    end
-
-    if source.kind == "folder" and targetRow and targetRow.inFolder then
-        local firstIndex, lastIndex = FindCol1FolderBlockRange(base.rows, targetRow.inFolder)
-        if firstIndex then
-            if dropTarget.action == "reorder-before" then
-                return base.rows[firstIndex].originalIndex, base.rows[firstIndex]
-            end
-            return base.rows[lastIndex].originalIndex + 1, base.rows[firstIndex]
-        end
     end
 
     if dropTarget.action == "reorder-before" then
@@ -624,73 +585,35 @@ local function BuildCol1PreviewModel(source)
         end
     end
 
-    local highlightRowKey
-    local highlightFolderId
-    local folderGapId
-    if source.dropTarget.action == "into-folder" then
-        highlightFolderId = source.dropTarget.folderBlockId or source.dropTarget.targetFolderId
-        if source.kind ~= "folder" then
-            folderGapId = highlightFolderId
-        end
-        if not highlightFolderId then
-            local targetOriginalIndex = source.dropTarget.rowIndex
-            local targetRow = FindCol1BaseRowAtOrAfterOriginalIndex(rows, targetOriginalIndex)
-            highlightRowKey = targetRow and targetRow.key or nil
-        else
-            local firstIndex, lastIndex = FindCol1FolderBlockRange(rows, highlightFolderId)
-            if firstIndex and lastIndex then
-                local template = rows[lastIndex] or rows[firstIndex] or movedRows[1]
-                table.insert(rows, lastIndex + 1, {
-                    key = "gap:folder:" .. tostring(highlightFolderId) .. ":append",
-                    isGap = true,
-                    x = (template and template.x) or PREVIEW_PANEL_INSET,
-                    width = (template and template.width) or math.max(120, ghostRow.width or 160),
-                    height = gapHeight,
-                    gapAfter = (template and template.gapAfter) or 0,
-                    folderAccentId = source.kind ~= "folder" and highlightFolderId or nil,
-                    shellRect = movedRows[1] and movedRows[1].shellRect or nil,
-                    shellHeaderY = movedRows[1] and movedRows[1].y or nil,
-                })
-            end
-        end
-    else
-        local anchorOriginalIndex, gapTemplate = ResolveCol1PreviewAnchor(base, source, source.dropTarget)
-        if not anchorOriginalIndex then
-            return nil
-        end
-
-        local insertIndex = #rows + 1
-        local targetRow = source.dropTarget.targetRow
-        for i, row in ipairs(rows) do
-            if row.originalIndex >= anchorOriginalIndex then
-                insertIndex = i
-                break
-            end
-        end
-
-        if targetRow and source.kind ~= "folder" then
-            if targetRow.kind == "container" and targetRow.inFolder then
-                folderGapId = targetRow.inFolder
-            end
-        end
-        local template = gapTemplate or movedRows[1]
-        table.insert(rows, insertIndex, {
-            key = "gap:" .. tostring(source.kind) .. ":" .. tostring(insertIndex),
-            isGap = true,
-            x = (template and template.x) or PREVIEW_PANEL_INSET,
-            width = (template and template.width) or math.max(120, ghostRow.width or 160),
-            height = gapHeight,
-            gapAfter = (template and template.gapAfter) or 0,
-            folderAccentId = folderGapId,
-            ownerKind = source.kind == "rail-panel" and "container" or nil,
-            ownerId = source.kind == "rail-panel"
-                and source.dropTarget.targetContainerId or nil,
-            shellRect = source.kind ~= "rail-panel"
-                and movedRows[1] and movedRows[1].shellRect or nil,
-            shellHeaderY = source.kind ~= "rail-panel"
-                and movedRows[1] and movedRows[1].y or nil,
-        })
+    local anchorOriginalIndex, gapTemplate = ResolveCol1PreviewAnchor(base, source, source.dropTarget)
+    if not anchorOriginalIndex then
+        return nil
     end
+
+    local insertIndex = #rows + 1
+    for i, row in ipairs(rows) do
+        if row.originalIndex >= anchorOriginalIndex then
+            insertIndex = i
+            break
+        end
+    end
+
+    local template = gapTemplate or movedRows[1]
+    table.insert(rows, insertIndex, {
+        key = "gap:" .. tostring(source.kind) .. ":" .. tostring(insertIndex),
+        isGap = true,
+        x = (template and template.x) or PREVIEW_PANEL_INSET,
+        width = (template and template.width) or math.max(120, ghostRow.width or 160),
+        height = gapHeight,
+        gapAfter = (template and template.gapAfter) or 0,
+        ownerKind = source.kind == "rail-panel" and "container" or nil,
+        ownerId = source.kind == "rail-panel"
+            and source.dropTarget.targetContainerId or nil,
+        shellRect = source.kind ~= "rail-panel"
+            and movedRows[1] and movedRows[1].shellRect or nil,
+        shellHeaderY = source.kind ~= "rail-panel"
+            and movedRows[1] and movedRows[1].y or nil,
+    })
 
     local currentY = base.startOffset
     for _, row in ipairs(rows) do
@@ -709,11 +632,7 @@ local function BuildCol1PreviewModel(source)
         rows = rows,
         draggedRow = ghostRow,
         simplifyGroupBlocks = source.kind == "group"
-            or source.kind == "folder-group"
             or source.kind == "multi-group",
-        highlightRowKey = highlightRowKey,
-        highlightFolderId = highlightFolderId,
-        suppressedAccentFolderId = source.kind == "folder" and source.sourceFolderId or nil,
     }
 end
 
@@ -764,16 +683,6 @@ local function AcquireCol1PreviewRowFrame(preview, key)
     preview.rowByKey[key] = rowProxy
     preview.rows[#preview.rows + 1] = rowProxy
     return rowProxy
-end
-
-local function AcquireCol1PreviewAccentBar(preview, index)
-    preview.accentBars = preview.accentBars or {}
-    local bar = preview.accentBars[index]
-    if not bar then
-        bar = preview.root:CreateTexture(nil, "ARTWORK")
-        preview.accentBars[index] = bar
-    end
-    return bar
 end
 
 local function CenterCol1GroupPreviewLabel(frame, icon, label, row, availableWidth)
@@ -1001,57 +910,6 @@ local function RenderCol1DropGap(preview, model)
     gap:Show()
 end
 
-local function RenderCol1PreviewAccentBars(preview, model)
-    local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
-    local suppressedAccentFolderId = model and model.suppressedAccentFolderId
-    local ranges = {}
-    if classColor and model and model.rows then
-        for _, row in ipairs(model.rows) do
-            local accentFolderId = nil
-            if row.kind == "container" and row.inFolder then
-                accentFolderId = row.inFolder
-            elseif row.isGap and row.folderAccentId then
-                accentFolderId = row.folderAccentId
-            end
-
-            if accentFolderId
-                and accentFolderId ~= suppressedAccentFolderId
-                and not row.layoutOnly
-            then
-                local range = ranges[accentFolderId]
-                if not range then
-                    range = {
-                        x = row.x,
-                        top = row.previewY,
-                        bottom = row.previewY + row.height,
-                    }
-                    ranges[accentFolderId] = range
-                else
-                    range.x = math.min(range.x, row.x)
-                    range.top = math.min(range.top, row.previewY)
-                    range.bottom = math.max(range.bottom, row.previewY + row.height)
-                end
-            end
-        end
-    end
-
-    local index = 0
-    for _, range in pairs(ranges) do
-        index = index + 1
-        local bar = AcquireCol1PreviewAccentBar(preview, index)
-        bar:SetColorTexture(classColor.r, classColor.g, classColor.b, 0.8)
-        bar:SetWidth(3)
-        bar:ClearAllPoints()
-        bar:SetPoint("TOPLEFT", preview.root, "TOPLEFT", range.x, -range.top)
-        bar:SetPoint("BOTTOMLEFT", preview.root, "TOPLEFT", range.x, -range.bottom)
-        bar:Show()
-    end
-
-    for i = index + 1, #(preview.accentBars or {}) do
-        preview.accentBars[i]:Hide()
-    end
-end
-
 local function SetCol1BaseFramesHidden(hidden)
     local preview = hidden and EnsureCol1PreviewHost() or CS.col1Preview
     local content = CS.col1Scroll and CS.col1Scroll.content
@@ -1161,7 +1019,7 @@ local function SectionHasLoadedCol1Rows(renderedRows, section)
     for _, row in ipairs(renderedRows or {}) do
         if row.section == section
             and row.loadBucket == "loaded"
-            and (row.kind == "container" or row.kind == "folder")
+            and row.kind == "container"
         then
             return true
         end
@@ -1340,7 +1198,6 @@ local function RenderCol1AnimatedPreview(source)
         end
     end
 
-    RenderCol1PreviewAccentBars(preview, model)
     UpdateCol1Ghost(preview, model)
     preview.root:SetScript("OnUpdate", function()
         TickPreview(preview)

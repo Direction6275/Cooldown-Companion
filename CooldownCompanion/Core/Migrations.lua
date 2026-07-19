@@ -371,8 +371,7 @@ local function MigrateFoldersIntoGroups(addon, profile)
     local containers = type(profile.groupContainers) == "table" and profile.groupContainers or {}
     local groups = type(profile.groups) == "table" and profile.groups or {}
     local storedNextFolderId = rawget(profile, "nextFolderId")
-    local hasFolderState = next(folders) ~= nil
-        or (storedNextFolderId ~= nil and tonumber(storedNextFolderId) ~= 1)
+    local hasFolderState = storedFolders ~= nil or storedNextFolderId ~= nil
 
     for _, container in pairs(containers) do
         if type(container) == "table" and container.folderId ~= nil then
@@ -416,11 +415,8 @@ local function MigrateFoldersIntoGroups(addon, profile)
         end
     end
 
-    -- Transitional scaffolding for the owner gate: the still-loaded config code
-    -- expects these defaults to exist. AceDB strips both defaults from persisted
-    -- SavedVariables; the Folder runtime-deletion step removes the defaults too.
-    profile.folders = {}
-    profile.nextFolderId = 1
+    profile.folders = nil
+    profile.nextFolderId = nil
     return true, flattenedCount
 end
 

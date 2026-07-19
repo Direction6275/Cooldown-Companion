@@ -1833,13 +1833,6 @@ function CooldownCompanion:EnsureLegacyScopedBarSeenCharacters()
         end
     end
 
-    if type(profile.folders) == "table" then
-        for _, folder in pairs(profile.folders) do
-            if type(folder) == "table" and folder.section == "char" then
-                MarkLegacyScopedBarSeenCharacter(snapshot, folder.createdBy)
-            end
-        end
-    end
 
     local currentProfileKey = self.db and self.db.keys and self.db.keys.profile
     local currentCharKey = self.db and self.db.keys and self.db.keys.char

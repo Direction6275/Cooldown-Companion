@@ -129,109 +129,45 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
         local db = CooldownCompanion.db.profile
         local selectedEntries = CollectSelectedEntryData(db, sourceGroupId, indices)
         UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
-            local containers = db.groupContainers or {}
-            local folderGroups, looseGroups = {}, {}
+            local destinationGroups = {}
             for id, groupInfo in pairs(db.groups) do
                 if id ~= sourceGroupId
                     and CanMoveEntryToGroup(sourceGroupId, id)
                     and not GetManualMoveRejectMessage(groupInfo, multiCount, selectedEntries) then
-                    local groupName = groupInfo.name or ("Group " .. id)
-                    local cid = groupInfo.parentContainerId
-                    local container = cid and containers[cid]
-                    local fid = container and container.folderId
-                    if fid and db.folders[fid] then
-                        folderGroups[fid] = folderGroups[fid] or {}
-                        table.insert(folderGroups[fid], { id = id, name = groupName })
-                    else
-                        table.insert(looseGroups, { id = id, name = groupName })
-                    end
-                end
-            end
-            local sortedFolders = {}
-            for fid, folder in pairs(db.folders) do
-                if folderGroups[fid] then
-                    table.insert(sortedFolders, {
-                        id = fid,
-                        name = folder.name or ("Folder " .. fid),
-                        order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, fid),
+                    table.insert(destinationGroups, {
+                        id = id,
+                        name = groupInfo.name or ("Group " .. id),
                     })
                 end
             end
-            table.sort(sortedFolders, function(a, b) return a.order < b.order end)
-            local hasFolders = #sortedFolders > 0
-            for _, folder in ipairs(sortedFolders) do
-                local hdr = UIDropDownMenu_CreateInfo()
-                hdr.text = folder.name
-                hdr.isTitle = true
-                hdr.notCheckable = true
-                UIDropDownMenu_AddButton(hdr, level)
-                table.sort(folderGroups[folder.id], function(a, b) return a.name < b.name end)
-                for _, groupEntry in ipairs(folderGroups[folder.id]) do
-                    local info = UIDropDownMenu_CreateInfo()
-                    info.text = groupEntry.name
-                    info.func = function()
-                        if not CanMoveEntryToGroup(sourceGroupId, groupEntry.id) then
-                            return
-                        end
-                        local targetGroup = db.groups[groupEntry.id]
-                        local rejectMessage = GetManualMoveRejectMessage(targetGroup, multiCount, selectedEntries)
-                        if rejectMessage then
-                            CooldownCompanion:Print(rejectMessage)
-                            return
-                        end
-                        for _, idx in ipairs(indices) do
-                            table.insert(targetGroup.buttons, db.groups[sourceGroupId].buttons[idx])
-                        end
-                        table.sort(indices, function(a, b) return a > b end)
-                        for _, idx in ipairs(indices) do
-                            table.remove(db.groups[sourceGroupId].buttons, idx)
-                        end
-                        CooldownCompanion:RefreshGroupFrame(groupEntry.id)
-                        CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                        ClearConfigButtonSelection()
-                        CooldownCompanion:RefreshConfigPanel()
-                        CloseDropDownMenus()
+            table.sort(destinationGroups, function(a, b) return a.name < b.name end)
+            for _, groupEntry in ipairs(destinationGroups) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = groupEntry.name
+                info.func = function()
+                    if not CanMoveEntryToGroup(sourceGroupId, groupEntry.id) then
+                        return
                     end
-                    UIDropDownMenu_AddButton(info, level)
-                end
-            end
-            if #looseGroups > 0 then
-                if hasFolders then
-                    local hdr = UIDropDownMenu_CreateInfo()
-                    hdr.text = "No Folder"
-                    hdr.isTitle = true
-                    hdr.notCheckable = true
-                    UIDropDownMenu_AddButton(hdr, level)
-                end
-                table.sort(looseGroups, function(a, b) return a.name < b.name end)
-                for _, groupEntry in ipairs(looseGroups) do
-                    local info = UIDropDownMenu_CreateInfo()
-                    info.text = groupEntry.name
-                    info.func = function()
-                        if not CanMoveEntryToGroup(sourceGroupId, groupEntry.id) then
-                            return
-                        end
-                        local targetGroup = db.groups[groupEntry.id]
-                        local rejectMessage = GetManualMoveRejectMessage(targetGroup, multiCount, selectedEntries)
-                        if rejectMessage then
-                            CooldownCompanion:Print(rejectMessage)
-                            return
-                        end
-                        for _, idx in ipairs(indices) do
-                            table.insert(targetGroup.buttons, db.groups[sourceGroupId].buttons[idx])
-                        end
-                        table.sort(indices, function(a, b) return a > b end)
-                        for _, idx in ipairs(indices) do
-                            table.remove(db.groups[sourceGroupId].buttons, idx)
-                        end
-                        CooldownCompanion:RefreshGroupFrame(groupEntry.id)
-                        CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                        ClearConfigButtonSelection()
-                        CooldownCompanion:RefreshConfigPanel()
-                        CloseDropDownMenus()
+                    local targetGroup = db.groups[groupEntry.id]
+                    local rejectMessage = GetManualMoveRejectMessage(targetGroup, multiCount, selectedEntries)
+                    if rejectMessage then
+                        CooldownCompanion:Print(rejectMessage)
+                        return
                     end
-                    UIDropDownMenu_AddButton(info, level)
+                    for _, idx in ipairs(indices) do
+                        table.insert(targetGroup.buttons, db.groups[sourceGroupId].buttons[idx])
+                    end
+                    table.sort(indices, function(a, b) return a > b end)
+                    for _, idx in ipairs(indices) do
+                        table.remove(db.groups[sourceGroupId].buttons, idx)
+                    end
+                    CooldownCompanion:RefreshGroupFrame(groupEntry.id)
+                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                    ClearConfigButtonSelection()
+                    CooldownCompanion:RefreshConfigPanel()
+                    CloseDropDownMenus()
                 end
+                UIDropDownMenu_AddButton(info, level)
             end
         end, "MENU")
         moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -377,84 +313,30 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
             end
             UIDropDownMenu_Initialize(moveMenuFrame, function(self, level)
                 local containers = db.groupContainers or {}
-                local folderContainers, looseContainers = {}, {}
+                local destinations = {}
                 for cid, ctr in pairs(containers) do
                     if cid ~= containerId and CanAllPanelsMoveToContainer(multiPanelIds, cid) then
-                        local name = ctr.name or ("Group " .. cid)
-                        local fid = ctr.folderId
-                        if fid and db.folders[fid] then
-                            folderContainers[fid] = folderContainers[fid] or {}
-                            table.insert(folderContainers[fid], {
-                                id = cid,
-                                name = name,
-                                order = CooldownCompanion:GetOrderForSpec(ctr, CooldownCompanion._currentSpecId, cid),
-                            })
-                        else
-                            table.insert(looseContainers, {
-                                id = cid,
-                                name = name,
-                                order = CooldownCompanion:GetOrderForSpec(ctr, CooldownCompanion._currentSpecId, cid),
-                            })
-                        end
-                    end
-                end
-                local sortedFolders = {}
-                for fid, folder in pairs(db.folders) do
-                    if folderContainers[fid] then
-                        table.insert(sortedFolders, {
-                            id = fid,
-                            name = folder.name or ("Folder " .. fid),
-                            order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, fid),
+                        table.insert(destinations, {
+                            id = cid,
+                            name = ctr.name or ("Group " .. cid),
+                            order = CooldownCompanion:GetOrderForSpec(ctr, CooldownCompanion._currentSpecId, cid),
                         })
                     end
                 end
-                table.sort(sortedFolders, function(a, b) return a.order < b.order end)
-                local hasFolders = #sortedFolders > 0
-                for _, folder in ipairs(sortedFolders) do
-                    local hdr = UIDropDownMenu_CreateInfo()
-                    hdr.text = folder.name
-                    hdr.isTitle = true
-                    hdr.notCheckable = true
-                    UIDropDownMenu_AddButton(hdr, level)
-                    table.sort(folderContainers[folder.id], function(a, b) return a.order < b.order end)
-                    for _, container in ipairs(folderContainers[folder.id]) do
-                        local info = UIDropDownMenu_CreateInfo()
-                        info.text = container.name
-                        info.notCheckable = true
-                        info.func = function()
-                            CloseDropDownMenus()
-                            for _, pid in ipairs(multiPanelIds) do
-                                CooldownCompanion:MovePanel(pid, container.id)
-                            end
-                            ClearConfigPanelMultiSelection({ selectContainerId = container.id })
-                            CooldownCompanion:RefreshConfigPanel()
+                table.sort(destinations, function(a, b) return a.order < b.order end)
+                for _, container in ipairs(destinations) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = container.name
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        for _, pid in ipairs(multiPanelIds) do
+                            CooldownCompanion:MovePanel(pid, container.id)
                         end
-                        UIDropDownMenu_AddButton(info, level)
+                        ClearConfigPanelMultiSelection({ selectContainerId = container.id })
+                        CooldownCompanion:RefreshConfigPanel()
                     end
-                end
-                if #looseContainers > 0 then
-                    if hasFolders then
-                        local hdr = UIDropDownMenu_CreateInfo()
-                        hdr.text = "No Folder"
-                        hdr.isTitle = true
-                        hdr.notCheckable = true
-                        UIDropDownMenu_AddButton(hdr, level)
-                    end
-                    table.sort(looseContainers, function(a, b) return a.order < b.order end)
-                    for _, container in ipairs(looseContainers) do
-                        local info = UIDropDownMenu_CreateInfo()
-                        info.text = container.name
-                        info.notCheckable = true
-                        info.func = function()
-                            CloseDropDownMenus()
-                            for _, pid in ipairs(multiPanelIds) do
-                                CooldownCompanion:MovePanel(pid, container.id)
-                            end
-                            ClearConfigPanelMultiSelection({ selectContainerId = container.id })
-                            CooldownCompanion:RefreshConfigPanel()
-                        end
-                        UIDropDownMenu_AddButton(info, level)
-                    end
+                    UIDropDownMenu_AddButton(info, level)
                 end
             end, "MENU")
             moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")

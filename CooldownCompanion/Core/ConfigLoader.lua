@@ -239,13 +239,6 @@ local function RestampCharacterScopedProfileOwnership(addon)
             end
         end
     end
-    if profile.folders then
-        for _, folder in pairs(profile.folders) do
-            if folder.section == "char" then
-                folder.createdBy = charKey
-            end
-        end
-    end
 end
 
 local function RunProfileMigrationAndRefresh(addon, reason)

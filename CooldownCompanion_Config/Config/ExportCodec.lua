@@ -938,29 +938,6 @@ local function RehydrateContainer(container, formatVersion)
     end
 end
 
-local function CompactFolder(folder, formatVersion)
-    if type(folder) ~= "table" then
-        return nil
-    end
-
-    local compact = {}
-    for key, value in pairs(folder) do
-        if key == "loadConditions" then
-            local compactLoadConditions = CompactLoadConditions(value, formatVersion, true)
-            if compactLoadConditions then
-                compact.loadConditions = compactLoadConditions
-            end
-        elseif key == "specs" or key == "heroTalents" then
-            if type(value) == "table" and next(value) ~= nil then
-                compact[key] = CopyTable(value)
-            end
-        else
-            compact[key] = CopyValue(value)
-        end
-    end
-    return compact
-end
-
 local function RehydrateFolder(folder, formatVersion)
     if type(folder) ~= "table" then
         return
@@ -1135,12 +1112,6 @@ local function CompactProfile(profile, formatVersion)
                     compactContainers[containerId] = CompactContainer(container, formatVersion)
                 end
                 compact.groupContainers = compactContainers
-            elseif key == "folders" and type(value) == "table" then
-                local compactFolders = {}
-                for folderId, folder in pairs(value) do
-                    compactFolders[folderId] = CompactFolder(folder, formatVersion)
-                end
-                compact.folders = compactFolders
             else
                 compact[key] = CopyValue(value)
             end
@@ -1185,10 +1156,6 @@ local function RehydrateProfile(profile, formatVersion)
     if type(profile.groupContainers) ~= "table" then
         profile.groupContainers = {}
     end
-    if type(profile.folders) ~= "table" then
-        profile.folders = {}
-    end
-
     local globalStyleDefaults = profile.globalStyle or profileDefaults.globalStyle or {}
 
     if type(profile.groups) == "table" then
@@ -1263,13 +1230,6 @@ local function CompactEntityPayload(payload, formatVersion)
             compact.containers[index] = compactEntry
         end
     end
-    if payload.folder then
-        compact.folder = CompactFolder(payload.folder, formatVersion)
-    end
-    if type(payload.containers) ~= "table" and payload.type == "folder" then
-        compact.folder = CompactFolder(payload.folder, formatVersion)
-    end
-
     return compact
 end
 

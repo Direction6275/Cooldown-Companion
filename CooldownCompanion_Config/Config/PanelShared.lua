@@ -774,8 +774,7 @@ end
 
 local function BuildEntryMoveDestinationSections(db, sourceGroupId)
     local containers = db and db.groupContainers or {}
-    local groupedByFolder = {}
-    local looseGroups = {}
+    local groupedByContainer = {}
 
     for groupId, group in pairs(db.groups or {}) do
         if groupId ~= sourceGroupId
@@ -785,16 +784,7 @@ local function BuildEntryMoveDestinationSections(db, sourceGroupId)
             local containerId = group.parentContainerId
             local container = containerId and containers[containerId]
             if container then
-                local folderId = container.folderId
-                local bucket
-                if folderId and db.folders and db.folders[folderId] then
-                    groupedByFolder[folderId] = groupedByFolder[folderId] or {}
-                    bucket = groupedByFolder[folderId]
-                else
-                    bucket = looseGroups
-                end
-
-                local entry = bucket[containerId]
+                local entry = groupedByContainer[containerId]
                 if not entry then
                     entry = {
                         containerId = containerId,
@@ -806,7 +796,7 @@ local function BuildEntryMoveDestinationSections(db, sourceGroupId)
                         ),
                         panels = {},
                     }
-                    bucket[containerId] = entry
+                    groupedByContainer[containerId] = entry
                 end
 
                 entry.panels[#entry.panels + 1] = {
@@ -840,42 +830,8 @@ local function BuildEntryMoveDestinationSections(db, sourceGroupId)
         return entries
     end
 
-    local sections = {}
-    local sortedFolders = {}
-    for folderId, _ in pairs(groupedByFolder) do
-        local folder = db.folders and db.folders[folderId]
-        if folder then
-            sortedFolders[#sortedFolders + 1] = {
-                id = folderId,
-                name = folder.name or ("Folder " .. folderId),
-                order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, folderId),
-            }
-        end
-    end
-
-    table.sort(sortedFolders, function(a, b)
-        if a.order ~= b.order then
-            return a.order < b.order
-        end
-        return a.id < b.id
-    end)
-
-    for _, folder in ipairs(sortedFolders) do
-        sections[#sections + 1] = {
-            title = folder.name,
-            entries = BuildSectionEntries(groupedByFolder[folder.id]),
-        }
-    end
-
-    local looseEntries = BuildSectionEntries(looseGroups)
-    if #looseEntries > 0 then
-        sections[#sections + 1] = {
-            title = (#sortedFolders > 0) and "No Folder" or nil,
-            entries = looseEntries,
-        }
-    end
-
-    return sections
+    local entries = BuildSectionEntries(groupedByContainer)
+    return #entries > 0 and { { entries = entries } } or {}
 end
 
 local ENTRY_MOVE_GROUP_MENU_PREFIX = "ENTRY_MOVE_GROUP:"

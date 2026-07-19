@@ -77,8 +77,6 @@ end
 local function BuildPortableEligibilityIndex(profile)
     local index = {
         panelsByContainerId = {},
-        looseGroupsByFolderId = {},
-        containersByFolderId = {},
     }
     if type(profile) ~= "table" then return index end
 
@@ -87,19 +85,7 @@ local function BuildPortableEligibilityIndex(profile)
         if type(group) == "table" then
             if group.parentContainerId ~= nil then
                 AddIndexedEntity(index.panelsByContainerId, group.parentContainerId, group)
-            elseif group.folderId ~= nil then
-                AddIndexedEntity(index.looseGroupsByFolderId, group.folderId, group)
             end
-        end
-    end
-
-    local groupContainers = type(profile.groupContainers) == "table" and profile.groupContainers or {}
-    for containerId, container in pairs(groupContainers) do
-        if type(container) == "table" and container.folderId ~= nil then
-            AddIndexedEntity(index.containersByFolderId, container.folderId, {
-                id = containerId,
-                container = container,
-            })
         end
     end
 
@@ -135,79 +121,16 @@ local function ContainerHasPortableEligibility(profile, containerId, container, 
     return false
 end
 
-local function FolderHasPortableEligibility(profile, folderId, folder, eligibilityIndex)
-    if EntityHasPortableEligibility(folder) then
-        return true
-    end
-
-    local indexedContainers = eligibilityIndex and eligibilityIndex.containersByFolderId[folderId]
-    if indexedContainers then
-        for _, entry in ipairs(indexedContainers) do
-            if ContainerHasPortableEligibility(profile, entry.id, entry.container, eligibilityIndex) then
-                return true
-            end
-        end
-    elseif not eligibilityIndex then
-        local groupContainers = type(profile.groupContainers) == "table" and profile.groupContainers or {}
-        for containerId, container in pairs(groupContainers) do
-            if type(container) == "table"
-                and container.folderId == folderId
-                and ContainerHasPortableEligibility(profile, containerId, container)
-            then
-                return true
-            end
-        end
-    end
-
-    local indexedLooseGroups = eligibilityIndex and eligibilityIndex.looseGroupsByFolderId[folderId]
-    if indexedLooseGroups then
-        for _, group in ipairs(indexedLooseGroups) do
-            if EntityHasPortableEligibility(group) then
-                return true
-            end
-        end
-        return false
-    elseif eligibilityIndex then
-        return false
-    end
-
-    local groups = type(profile.groups) == "table" and profile.groups or {}
-    for _, group in pairs(groups) do
-        if type(group) == "table"
-            and group.folderId == folderId
-            and not group.parentContainerId
-            and EntityHasPortableEligibility(group)
-        then
-            return true
-        end
-    end
-    return false
-end
-
 local function GlobalizePortableCharacterScopedEligibility(profile)
     if type(profile) ~= "table" then return 0 end
 
     local globalized = 0
-    local globalFolders = {}
     local eligibilityIndex = BuildPortableEligibilityIndex(profile)
-    local folders = type(profile.folders) == "table" and profile.folders or {}
-    for folderId, folder in pairs(folders) do
-        if type(folder) == "table"
-            and folder.section == "char"
-            and FolderHasPortableEligibility(profile, folderId, folder, eligibilityIndex)
-        then
-            folder.section = "global"
-            globalFolders[folderId] = true
-            globalized = globalized + 1
-        end
-    end
-
     local groupContainers = type(profile.groupContainers) == "table" and profile.groupContainers or {}
     for containerId, container in pairs(groupContainers) do
         if type(container) == "table"
             and container.isGlobal ~= true
-            and (globalFolders[container.folderId]
-                or ContainerHasPortableEligibility(profile, containerId, container, eligibilityIndex))
+            and ContainerHasPortableEligibility(profile, containerId, container, eligibilityIndex)
         then
             container.isGlobal = true
             globalized = globalized + 1
@@ -219,7 +142,7 @@ local function GlobalizePortableCharacterScopedEligibility(profile)
         if type(group) == "table"
             and not group.parentContainerId
             and group.isGlobal ~= true
-            and (globalFolders[group.folderId] or EntityHasPortableEligibility(group))
+            and EntityHasPortableEligibility(group)
         then
             group.isGlobal = true
             globalized = globalized + 1
@@ -256,16 +179,6 @@ local function RemapCurrentCharacterEntities(profile, charKey, exporterCharKey)
         end
     end
 
-    if type(profile.folders) == "table" then
-        for _, folder in pairs(profile.folders) do
-            if type(folder) == "table"
-                and folder.section == "char"
-                and ShouldRemapExporterOwned(folder.createdBy, exporterCharKey)
-            then
-                folder.createdBy = charKey
-            end
-        end
-    end
 end
 
 local function CountScopedStoreBuckets(store)
@@ -389,14 +302,6 @@ local function CollectForeignCharacterKeys(profile, importerCharInfo, charKey)
             MarkForeignAllowlistKeys(foreignKeys, importerCharInfo, charKey, container)
         end
     end
-    if type(profile.folders) == "table" then
-        for _, folder in pairs(profile.folders) do
-            if type(folder) == "table" and folder.section == "char" then
-                MarkForeignCharKey(foreignKeys, importerCharInfo, charKey, folder.createdBy)
-            end
-            MarkForeignAllowlistKeys(foreignKeys, importerCharInfo, charKey, folder)
-        end
-    end
     return foreignKeys
 end
 
@@ -479,14 +384,6 @@ local function ApplyCharacterRenames(profile, renames)
             RenameAllowlist(container)
         end
     end
-    if type(profile.folders) == "table" then
-        for _, folder in pairs(profile.folders) do
-            if type(folder) == "table" and folder.createdBy and renames[folder.createdBy] then
-                folder.createdBy = renames[folder.createdBy]
-            end
-            RenameAllowlist(folder)
-        end
-    end
 end
 
 local function RenameForeignCharacters(profile, charKey, exportedCharInfo, importerCharInfo)
@@ -548,6 +445,11 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
     strippedCharacterEligibility = strippedCharacterEligibility + (StripCharacterEligibilityFromProfile
         and StripCharacterEligibilityFromProfile(db.profile)
         or 0)
+    if self.MigrateFoldersIntoGroups then
+        -- Legacy backups are flattened before any ownership remapping so all
+        -- later import policy operates on the supported Group-only model.
+        self:MigrateFoldersIntoGroups(db.profile)
+    end
 
     if ResetConfigSelection then
         ResetConfigSelection(true)
