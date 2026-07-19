@@ -268,6 +268,7 @@ ST._configState = {
     collapsedPanels = {},
     expandedContainer = nil,
     peekedContainers = {},
+    springOpenContainer = nil,
     lastActiveContainer = nil,
     configFinderExpansionSnapshot = nil,
     configFinderNavigated = nil,
@@ -2130,6 +2131,11 @@ local function CleanRecycledEntry(entry)
     if entry.frame._cdcTreePanelMeta then
         entry.frame._cdcTreePanelMeta:Hide()
         entry.frame._cdcTreePanelMeta:ClearAllPoints()
+    end
+    if entry.frame._cdcDropOverlay then
+        entry.frame._cdcDropOverlay:Hide()
+        entry.frame._cdcDropOverlay:SetScript("OnReceiveDrag", nil)
+        entry.frame._cdcDropOverlay:SetScript("OnMouseUp", nil)
     end
     if entry.highlight then
         entry.highlight:ClearAllPoints()

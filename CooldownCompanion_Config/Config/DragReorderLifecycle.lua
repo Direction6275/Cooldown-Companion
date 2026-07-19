@@ -50,6 +50,9 @@ local ShouldIncludeCol1TopLevelOrderRow = DR.ShouldIncludeCol1TopLevelOrderRow
 local FindCol1TopLevelInsertPos = DR.FindCol1TopLevelInsertPos
 local AssignCol1TopLevelOrders = DR.AssignCol1TopLevelOrders
 local PartitionSelectedContainersByLoadBucket = DR.PartitionSelectedContainersByLoadBucket
+local GetRailPanelDropTarget = DR.GetRailPanelDropTarget
+
+local RAIL_PANEL_SPRING_DELAY = 0.45
 
 local function IsCol1OwnershipMoveAllowed(sourceSection, targetSection)
     if not targetSection or sourceSection == targetSection then
@@ -506,7 +509,9 @@ local function SetDraggedWidgetAlpha(widget, alpha)
     end
 end
 
-local function CancelDrag()
+local function CancelDrag(opts)
+    local hadSpringOpen = CS.springOpenContainer ~= nil
+    CS.springOpenContainer = nil
     if CS.dragState then
         if CS.dragState.kind == "layout-slot"
             and CS.dragState.layoutDrag
@@ -536,6 +541,10 @@ local function CancelDrag()
         C_Timer.After(0, function()
             CooldownCompanion:RefreshConfigPanel()
         end)
+    elseif hadSpringOpen and not (opts and opts.skipSpringRefresh) then
+        C_Timer.After(0, function()
+            CooldownCompanion:RefreshConfigPanel()
+        end)
     end
 end
 
@@ -561,6 +570,24 @@ end
 
 local function FinishCol1FolderAwareDrag(state)
     local dropTarget = state.dropTarget
+    if dropTarget and state.preserveHiddenFolderOwnership
+        and (state.kind == "group" or state.kind == "folder-group" or state.kind == "multi-group") then
+        local targetFolderId = ResolveCol1GroupDropTargetFolderId(state, dropTarget)
+        local db = CooldownCompanion.db.profile
+        if state.kind == "multi-group" then
+            for containerId in pairs(state.sourceGroupIds or {}) do
+                local container = db.groupContainers[containerId]
+                if not container or container.folderId ~= state.sourceFolderId then
+                    CooldownCompanion:RefreshConfigPanel()
+                    return
+                end
+            end
+        end
+        if targetFolderId ~= state.sourceFolderId then
+            CooldownCompanion:RefreshConfigPanel()
+            return
+        end
+    end
     local changed = true
     if dropTarget then
         if state.kind == "group" or state.kind == "folder-group" then
@@ -660,6 +687,191 @@ local function FinishPanelDrag(state)
     CooldownCompanion:RefreshConfigPanel()
 end
 
+local function GetOrderedPanelIds(containerId)
+    local ids = {}
+    for _, panelInfo in ipairs(CooldownCompanion:GetPanels(containerId) or {}) do
+        ids[#ids + 1] = panelInfo.groupId
+    end
+    return ids
+end
+
+local function BuildRailPanelFinalOrder(state, dropTarget)
+    if not (dropTarget and dropTarget.targetContainerId) then
+        return nil
+    end
+
+    local order = {}
+    for _, panelId in ipairs(GetOrderedPanelIds(dropTarget.targetContainerId)) do
+        if not state.sourcePanelIds[panelId] then
+            order[#order + 1] = panelId
+        end
+    end
+
+    local insertPos = #order + 1
+    if dropTarget.targetPanelId then
+        for index, panelId in ipairs(order) do
+            if panelId == dropTarget.targetPanelId then
+                insertPos = dropTarget.action == "after" and index + 1 or index
+                break
+            end
+        end
+    end
+
+    for index, panelId in ipairs(state.sourcePanelOrder or {}) do
+        table.insert(order, insertPos + index - 1, panelId)
+    end
+    return order
+end
+
+local function RailPanelDropIsNoOp(state, dropTarget, finalOrder)
+    if not finalOrder then
+        return true
+    end
+
+    local db = CooldownCompanion.db.profile
+    for panelId in pairs(state.sourcePanelIds or {}) do
+        local panel = db.groups[panelId]
+        if not panel or panel.parentContainerId ~= dropTarget.targetContainerId then
+            return false
+        end
+    end
+
+    local currentOrder = GetOrderedPanelIds(dropTarget.targetContainerId)
+    if #currentOrder ~= #finalOrder then
+        return false
+    end
+    for index, panelId in ipairs(currentOrder) do
+        if finalOrder[index] ~= panelId then
+            return false
+        end
+    end
+    return true
+end
+
+local function AssignPanelOrder(containerId, orderedPanelIds)
+    local db = CooldownCompanion.db.profile
+    if not db.groupContainers[containerId] then
+        return
+    end
+    for index, panelId in ipairs(orderedPanelIds or GetOrderedPanelIds(containerId)) do
+        local panel = db.groups[panelId]
+        if panel and panel.parentContainerId == containerId then
+            panel.order = index
+        end
+    end
+end
+
+local function FinishRailPanelDrag(state)
+    local dropTarget = state.dropTarget
+    local finalOrder = BuildRailPanelFinalOrder(state, dropTarget)
+    if RailPanelDropIsNoOp(state, dropTarget, finalOrder) then
+        CooldownCompanion:RefreshConfigPanel()
+        return
+    end
+
+    local db = CooldownCompanion.db.profile
+    local targetContainerId = dropTarget.targetContainerId
+    local sourceContainers = {}
+    for _, panelId in ipairs(state.sourcePanelOrder or {}) do
+        local panel = db.groups[panelId]
+        if panel then
+            sourceContainers[panel.parentContainerId] = true
+        end
+    end
+
+    for _, panelId in ipairs(state.sourcePanelOrder or {}) do
+        local panel = db.groups[panelId]
+        if panel and panel.parentContainerId ~= targetContainerId then
+            if CooldownCompanion:MovePanel(panelId, targetContainerId) == false then
+                CooldownCompanion:RefreshConfigPanel()
+                return
+            end
+        end
+    end
+
+    AssignPanelOrder(targetContainerId, finalOrder)
+    for sourceContainerId in pairs(sourceContainers) do
+        if sourceContainerId ~= targetContainerId then
+            AssignPanelOrder(sourceContainerId)
+        end
+    end
+
+    for _, panelId in ipairs(state.sourcePanelOrder or {}) do
+        if db.groups[panelId] then
+            CooldownCompanion:RefreshGroupFrame(panelId)
+        end
+    end
+
+    if #(state.sourcePanelOrder or {}) == 1 then
+        SelectConfigPanel(state.sourcePanelOrder[1], { containerId = targetContainerId })
+    else
+        CS.selectedFolder = nil
+        CS.selectedContainer = targetContainerId
+        CS.selectedGroup = nil
+        CS.expandedContainer = targetContainerId
+        CS.resourcesEntrySelected = false
+        CS.castFramesEntrySelected = false
+        CS.addingToPanelId = nil
+        wipe(CS.selectedPanels)
+        for _, panelId in ipairs(state.sourcePanelOrder or {}) do
+            if db.groups[panelId] then
+                CS.selectedPanels[panelId] = true
+            end
+        end
+        ClearConfigButtonSelection()
+        CooldownCompanion:ClearAllConfigPreviews()
+        if CooldownCompanion.RefreshAlphaUpdateDriver then
+            CooldownCompanion:RefreshAlphaUpdateDriver()
+        end
+    end
+
+    CooldownCompanion:EvaluateResourceBars()
+    CooldownCompanion:UpdateAnchorStacking()
+    CooldownCompanion:EvaluateCastBar()
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function RefreshRailPanelDragRows(state)
+    if not ST._RefreshColumn1 then
+        return
+    end
+    ST._RefreshColumn1(true)
+    state.railPanelRows = CS.lastCol1RenderedRows
+    state.dimmedWidgets = {}
+    for _, row in ipairs(state.railPanelRows or {}) do
+        if row.kind == "aux-block" and row.rowType == "panel" and state.sourcePanelIds[row.id] then
+            SetDraggedWidgetAlpha(row.widget, 0.4)
+            state.dimmedWidgets[#state.dimmedWidgets + 1] = row.widget
+        end
+    end
+end
+
+local function UpdateRailPanelSpringOpen(state, dropTarget)
+    local candidate = dropTarget and dropTarget.springContainerId or nil
+    if not candidate or candidate == CS.springOpenContainer then
+        state.springHoverContainer = nil
+        state.springHoverStarted = nil
+        return false
+    end
+
+    if state.springHoverContainer ~= candidate then
+        state.springHoverContainer = candidate
+        state.springHoverStarted = GetTime()
+        return false
+    end
+
+    if GetTime() - (state.springHoverStarted or GetTime()) < RAIL_PANEL_SPRING_DELAY then
+        return false
+    end
+
+    CS.springOpenContainer = candidate
+    state.springHoverContainer = nil
+    state.springHoverStarted = nil
+    state.dropTarget = nil
+    RefreshRailPanelDragRows(state)
+    return true
+end
+
 local function FinishButtonDrag(state)
     if state.dropTarget then
         local dt = state.dropTarget
@@ -715,7 +927,7 @@ local function FinishDrag()
         return
     end
     CS.showPhantomSections = false  -- clear before CancelDrag to avoid redundant deferred refresh
-    CancelDrag()
+    CancelDrag({ skipSpringRefresh = true })
     ResetDragIndicatorStyle()
     if state.kind == "group" and state.groupIds then
         FinishLegacyGroupDrag(state)
@@ -723,6 +935,8 @@ local function FinishDrag()
         FinishCol1FolderAwareDrag(state)
     elseif state.kind == "panel" then
         FinishPanelDrag(state)
+    elseif state.kind == "rail-panel" then
+        FinishRailPanelDrag(state)
     elseif state.kind == "button" then
         FinishButtonDrag(state)
     end
@@ -772,6 +986,16 @@ local function StartDragTracking()
                             table.insert(CS.dragState.dimmedWidgets, row.widget)
                         end
                     end
+                elseif CS.dragState.kind == "rail-panel" and CS.dragState.sourcePanelIds then
+                    CS.dragState.dimmedWidgets = {}
+                    for _, row in ipairs(CS.dragState.railPanelRows or {}) do
+                        if row.kind == "aux-block"
+                            and row.rowType == "panel"
+                            and CS.dragState.sourcePanelIds[row.id] then
+                            SetDraggedWidgetAlpha(row.widget, 0.4)
+                            table.insert(CS.dragState.dimmedWidgets, row.widget)
+                        end
+                    end
                 elseif CS.dragState.widget then
                     SetDraggedWidgetAlpha(CS.dragState.widget, 0.4)
                 end
@@ -792,6 +1016,7 @@ local function StartDragTracking()
                         local savedSourceLoadBucket = CS.dragState.sourceLoadBucket
                         local savedScrollWidget = CS.dragState.scrollWidget
                         local savedStartY = CS.dragState.startY
+                        local savedPreserveHiddenFolderOwnership = CS.dragState.preserveHiddenFolderOwnership
                         CS.showPhantomSections = true
                         ST._RefreshColumn1(true)
                         -- Reconstruct drag state with new rendered rows
@@ -805,6 +1030,7 @@ local function StartDragTracking()
                             sourceLoadBucket = savedSourceLoadBucket,
                             scrollWidget = savedScrollWidget,
                             startY = savedStartY,
+                            preserveHiddenFolderOwnership = savedPreserveHiddenFolderOwnership,
                             col1RenderedRows = CS.lastCol1RenderedRows,
                         }
                         -- Dim the source widget(s) in the new rows
@@ -845,6 +1071,25 @@ local function StartDragTracking()
                     CS.dragState.layoutDrag.onUpdate(CS.dragState, cursorX, cursorY, dropTarget)
                 elseif dropTarget and CS.dragState.layoutDrag.showIndicator then
                     CS.dragState.layoutDrag.showIndicator(dropTarget)
+                else
+                    HideDragIndicator()
+                end
+            elseif CS.dragState.railPanelRows then
+                ClearCol1AnimatedPreview()
+                ClearCol2AnimatedPreview()
+                local dropTarget = GetRailPanelDropTarget(
+                    cursorX,
+                    cursorY,
+                    CS.dragState.scrollWidget,
+                    CS.dragState.railPanelRows,
+                    CS.dragState.sourcePanelIds
+                )
+                CS.dragState.dropTarget = dropTarget
+                if UpdateRailPanelSpringOpen(CS.dragState, dropTarget) then
+                    HideDragIndicator()
+                elseif dropTarget then
+                    ResetDragIndicatorStyle()
+                    ShowDragIndicator(dropTarget.anchorFrame, dropTarget.anchorAbove, CS.dragState.scrollWidget)
                 else
                     HideDragIndicator()
                 end

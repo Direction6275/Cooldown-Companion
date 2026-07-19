@@ -50,6 +50,7 @@ local ConfigPanelHasWarning = ST._ConfigPanelHasWarning
 local AddClassAccentSpacer = ST._AddClassAccentSpacer
 local SetHideActiveCurrentClassPanels = ST._SetHideActiveCurrentClassPanels
 local ClearOtherClassBrowseState = ST._ResetOtherClassLibraryState
+local TryReceiveCursorDrop = ST._TryReceiveCursorDrop
 
 local GenerateGroupName
 
@@ -1355,6 +1356,10 @@ local function RefreshColumn1(preserveDrag)
 
     if not preserveDrag then CancelDrag() end
     CS.col1Scroll:ReleaseChildren()
+    CS._panelDropTargets = {}
+    if CS._UpdatePanelDropScan then
+        CS._UpdatePanelDropScan()
+    end
 
     -- Hide all accent bars from previous render
     for i, bar in ipairs(CS.folderAccentBars) do
@@ -1583,6 +1588,18 @@ local function RefreshColumn1(preserveDrag)
         return defaultBucket or "loaded"
     end
 
+    local function SelectedGroupsShareHiddenFolder(sourceContainerId)
+        local source = db.groupContainers[sourceContainerId]
+        local sourceFolderId = source and source.folderId or nil
+        for containerId in pairs(CS.selectedGroups) do
+            local selected = db.groupContainers[containerId]
+            if not selected or selected.folderId ~= sourceFolderId then
+                return false, sourceFolderId
+            end
+        end
+        return true, sourceFolderId
+    end
+
     CS.peekedContainers = CS.peekedContainers or {}
     if CS.expandedContainer and not db.groupContainers[CS.expandedContainer] then
         CS.expandedContainer = nil
@@ -1604,7 +1621,9 @@ local function RefreshColumn1(preserveDrag)
     end
 
     local function IsContainerExpanded(containerId)
-        return CS.expandedContainer == containerId or CS.peekedContainers[containerId] == true
+        return CS.expandedContainer == containerId
+            or CS.peekedContainers[containerId] == true
+            or CS.springOpenContainer == containerId
     end
 
     local function ContainerHasActivePanelSelection(containerId)
@@ -1724,6 +1743,7 @@ local function RefreshColumn1(preserveDrag)
         end
 
         entry.frame:SetScript("OnMouseUp", function(_, button)
+            if CS.dragState and CS.dragState.phase == "active" then return end
             if button == "LeftButton" then
                 if searchResults then
                     if SelectConfigFinderResult then
@@ -1750,16 +1770,55 @@ local function RefreshColumn1(preserveDrag)
             end
         end)
 
+        local disableDrag = searchResults ~= nil or (options and options.disableDrag == true)
+        if not disableDrag then
+            entry:SetCallback("OnClick", function(_, _, mouseButton)
+                if mouseButton ~= "LeftButton"
+                    or IsShiftKeyDown()
+                    or IsControlKeyDown()
+                    or GetCursorInfo() then
+                    return
+                end
+
+                local isMulti = next(CS.selectedGroups) and CS.selectedGroups[containerId]
+                local sameFolder, sourceFolderId = SelectedGroupsShareHiddenFolder(containerId)
+                if isMulti and not sameFolder then
+                    return
+                end
+
+                local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
+                CS.dragState = {
+                    kind = isMulti and "multi-group" or (sourceFolderId and "folder-group" or "group"),
+                    phase = "pending",
+                    sourceGroupId = containerId,
+                    sourceGroupIds = isMulti and CopyTable(CS.selectedGroups) or nil,
+                    sourceSection = sectionTag,
+                    sourceFolderId = sourceFolderId,
+                    sourceLoadBucket = isMulti
+                        and ResolveSelectedDragLoadBucket(loadBucket)
+                        or (loadBucket or "loaded"),
+                    preserveHiddenFolderOwnership = true,
+                    scrollWidget = CS.col1Scroll,
+                    widget = entry,
+                    startX = cursorX,
+                    startY = cursorY,
+                    col1RenderedRows = col1RenderedRows,
+                }
+                StartDragTracking()
+            end)
+        end
+
         TrackRenderedRow({
             kind = "container",
             id = containerId,
             widget = entry,
             inFolder = container.folderId,
             section = sectionTag,
-            loadBucket = "loaded",
-            acceptsDrop = false,
-            previewDraggable = false,
+            loadBucket = loadBucket or "loaded",
+            acceptsDrop = not disableDrag,
+            previewDraggable = not disableDrag,
             previewProxy = true,
+            isExpanded = isExpanded,
         })
 
         local firstPanelEntry, lastPanelEntry
@@ -1838,8 +1897,97 @@ local function RefreshColumn1(preserveDrag)
                 firstPanelEntry = firstPanelEntry or panelEntry
                 lastPanelEntry = panelEntry
 
+                if not disableDrag then
+                    panelEntry:SetCallback("OnClick", function(_, _, mouseButton)
+                        if mouseButton ~= "LeftButton"
+                            or IsShiftKeyDown()
+                            or IsControlKeyDown()
+                            or GetCursorInfo() then
+                            return
+                        end
+
+                        local sourcePanelIds = {}
+                        local sourcePanelOrder = {}
+                        local useMulti = CS.selectedPanels[panelId] == true and next(CS.selectedPanels) ~= nil
+                        if useMulti then
+                            for _, sourcePanelInfo in ipairs(panels) do
+                                if CS.selectedPanels[sourcePanelInfo.groupId] then
+                                    sourcePanelIds[sourcePanelInfo.groupId] = true
+                                    sourcePanelOrder[#sourcePanelOrder + 1] = sourcePanelInfo.groupId
+                                end
+                            end
+                        else
+                            sourcePanelIds[panelId] = true
+                            sourcePanelOrder[1] = panelId
+                        end
+
+                        local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
+                        CS.dragState = {
+                            kind = "rail-panel",
+                            phase = "pending",
+                            sourcePanelId = panelId,
+                            sourcePanelIds = sourcePanelIds,
+                            sourcePanelOrder = sourcePanelOrder,
+                            sourceContainerId = containerId,
+                            scrollWidget = CS.col1Scroll,
+                            widget = panelEntry,
+                            startX = cursorX,
+                            startY = cursorY,
+                            railPanelRows = col1RenderedRows,
+                        }
+                        StartDragTracking()
+                    end)
+
+                    local panelFrame = panelEntry.frame
+                    local overlay = panelFrame._cdcDropOverlay
+                    if not overlay then
+                        overlay = CreateFrame("Frame", nil, panelFrame, "BackdropTemplate")
+                        overlay:SetAllPoints(panelFrame)
+                        overlay:SetBackdrop({
+                            bgFile = "Interface\\BUTTONS\\WHITE8X8",
+                            edgeFile = "Interface\\BUTTONS\\WHITE8X8",
+                            edgeSize = 1,
+                        })
+                        overlay:SetBackdropColor(0.15, 0.55, 0.85, 0.18)
+                        overlay:SetBackdropBorderColor(0.3, 0.7, 1.0, 0.55)
+                        overlay:EnableMouse(true)
+                        panelFrame._cdcDropOverlay = overlay
+                    end
+                    overlay:SetFrameLevel(panelFrame:GetFrameLevel() + 30)
+                    overlay:SetAlpha(1)
+                    overlay:Hide()
+                    overlay:SetScript("OnReceiveDrag", function()
+                        local previousPanelId = CS.selectedGroup
+                        CS.selectedGroup = panelId
+                        TryReceiveCursorDrop()
+                        CS.selectedGroup = previousPanelId
+                    end)
+                    overlay:SetScript("OnMouseUp", function(_, mouseButton)
+                        if mouseButton == "LeftButton" and GetCursorInfo() then
+                            local previousPanelId = CS.selectedGroup
+                            CS.selectedGroup = panelId
+                            TryReceiveCursorDrop()
+                            CS.selectedGroup = previousPanelId
+                        end
+                    end)
+                    CS._panelDropTargets[#CS._panelDropTargets + 1] = {
+                        panelId = panelId,
+                        frame = panelFrame,
+                        overlay = overlay,
+                        showHighlight = true,
+                    }
+                end
+
                 panelEntry.frame:SetScript("OnMouseUp", function(_, button)
+                    if CS.dragState and CS.dragState.phase == "active" then return end
                     if button == "LeftButton" then
+                        if not searchResults and GetCursorInfo() then
+                            local previousPanelId = CS.selectedGroup
+                            CS.selectedGroup = panelId
+                            local received = TryReceiveCursorDrop()
+                            CS.selectedGroup = previousPanelId
+                            if received then return end
+                        end
                         if searchResults then
                             if SelectConfigFinderResult then
                                 SelectConfigFinderResult(containerId, panelId, nil)
@@ -1894,6 +2042,7 @@ local function RefreshColumn1(preserveDrag)
                     ownerKind = "container",
                     ownerId = containerId,
                     ownerFolderId = container.folderId,
+                    panelIndex = panelInfo.group and panelInfo.group.order or nil,
                 })
 
                 for _, entryInfo in ipairs(searchPanelResult and searchPanelResult.entryMatches or {}) do
@@ -2743,6 +2892,10 @@ local function RefreshColumn1(preserveDrag)
     end
 
     CS.lastCol1RenderedRows = col1RenderedRows
+
+    if CS._UpdatePanelDropScan then
+        CS._UpdatePanelDropScan()
+    end
 
     if CS.otherClassLibraryActive then
         PopulateOtherClassBrowseButtonBar()

@@ -1002,7 +1002,14 @@ local function ResolveCol1AuxBlockTarget(renderedRows, rowIndex, rowMeta, source
     if rowMeta.ownerFolderId
         and (sourceKind == "group" or sourceKind == "folder-group")
     then
-        return BuildCol1FolderBlockDropResult(renderedRows, rowMeta.ownerFolderId, "into-folder")
+        local folderTarget = BuildCol1FolderBlockDropResult(
+            renderedRows,
+            rowMeta.ownerFolderId,
+            "into-folder"
+        )
+        if folderTarget then
+            return folderTarget
+        end
     end
     local nextTarget = FindFirstCol1DropTargetInSection(renderedRows, rowMeta.section, rowIndex + 1)
     if nextTarget then
@@ -1473,6 +1480,93 @@ local function ResetDragIndicatorStyle()
     end
 end
 
+------------------------------------------------------------------------
+-- Navigator rail Panel drop targets
+------------------------------------------------------------------------
+local function CanRailPanelsMoveToContainer(sourcePanelIds, targetContainerId)
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    if not (db and db.groups and db.groupContainers and db.groupContainers[targetContainerId]) then
+        return false
+    end
+
+    for panelId in pairs(sourcePanelIds or {}) do
+        local panel = db.groups[panelId]
+        if not panel then
+            return false
+        end
+        if panel.parentContainerId ~= targetContainerId then
+            if not CooldownCompanion.CanMovePanelToContainer
+                or CooldownCompanion:CanMovePanelToContainer(panelId, targetContainerId) ~= true then
+                return false
+            end
+        end
+    end
+    return true
+end
+
+local function BuildRailPanelDropTarget(rowMeta, cursorY, sourcePanelIds)
+    local frame = GetCol1DropFrame(rowMeta)
+    if not (frame and frame:IsShown()) then
+        return nil
+    end
+
+    local top, bottom = frame:GetTop(), frame:GetBottom()
+    if not (top and bottom and cursorY <= top and cursorY >= bottom) then
+        return nil
+    end
+
+    if rowMeta.kind == "container" then
+        if not CanRailPanelsMoveToContainer(sourcePanelIds, rowMeta.id) then
+            return nil
+        end
+        return {
+            action = "append",
+            targetContainerId = rowMeta.id,
+            anchorFrame = frame,
+            anchorAbove = false,
+            springContainerId = rowMeta.isExpanded and nil or rowMeta.id,
+        }
+    end
+
+    if rowMeta.kind == "aux-block" and rowMeta.rowType == "panel" then
+        if sourcePanelIds and sourcePanelIds[rowMeta.id] then
+            return nil
+        end
+        if not CanRailPanelsMoveToContainer(sourcePanelIds, rowMeta.ownerId) then
+            return nil
+        end
+        local above = cursorY > ((top + bottom) * 0.5)
+        return {
+            action = above and "before" or "after",
+            targetContainerId = rowMeta.ownerId,
+            targetPanelId = rowMeta.id,
+            anchorFrame = frame,
+            anchorAbove = above,
+        }
+    end
+
+    return nil
+end
+
+local function GetRailPanelDropTarget(cursorX, cursorY, scrollWidget, renderedRows, sourcePanelIds)
+    if not (renderedRows and next(sourcePanelIds or {})) then
+        return nil
+    end
+
+    local left, right = GetCol1HorizontalBounds(scrollWidget, renderedRows)
+    if not IsCursorWithinHorizontalBounds(cursorX, left, right, COL1_HIT_X_PAD) then
+        return nil
+    end
+
+    for _, rowMeta in ipairs(renderedRows) do
+        local target = BuildRailPanelDropTarget(rowMeta, cursorY, sourcePanelIds)
+        if target then
+            return target
+        end
+    end
+    return nil
+end
+
 DR.GetDragIndicator = GetDragIndicator
 DR.HideDragIndicator = HideDragIndicator
 DR.GetScaledCursorCoordinates = GetScaledCursorCoordinates
@@ -1502,3 +1596,4 @@ DR.FindCol1TopLevelInsertPos = FindCol1TopLevelInsertPos
 DR.AssignCol1TopLevelOrders = AssignCol1TopLevelOrders
 DR.PartitionSelectedContainersByLoadBucket = PartitionSelectedContainersByLoadBucket
 DR.ResolveCol1FolderBlockBoundaryTarget = ResolveCol1FolderBlockBoundaryTarget
+DR.GetRailPanelDropTarget = GetRailPanelDropTarget
