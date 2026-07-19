@@ -36,7 +36,6 @@ local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
 local IsTruthyConfigFlag = RB.IsTruthyConfigFlag
 local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetResourceGlobalThickness = RB.GetResourceGlobalThickness
-local GetResourceAnchorGap = RB.GetResourceAnchorGap
 local GetResourceColors = RB.GetResourceColors
 local CreateContinuousBar = RB.CreateContinuousBar
 local CreateSegmentedBar = RB.CreateSegmentedBar
@@ -1022,6 +1021,35 @@ local function SortSlotsForSide(slots, side, reversed)
     return out
 end
 
+local function SortSlotsForIndependentStack(slots, firstSide, secondSide)
+    local firstCount = 0
+    local secondCount = 0
+    local out = {}
+    for _, slot in ipairs(slots) do
+        local side = slot.getPos()
+        if side == firstSide then
+            firstCount = firstCount + 1
+        elseif side == secondSide then
+            secondCount = secondCount + 1
+        end
+        table_insert(out, slot)
+    end
+
+    -- Preserve the visual direction of the side that already owns the
+    -- stack. Ties use the normal below/right direction.
+    local side = firstCount > secondCount and firstSide or secondSide
+    local reversed = side == firstSide
+    table_sort(out, function(a, b)
+        local aOrder = a.getOrder()
+        local bOrder = b.getOrder()
+        if aOrder ~= bOrder then
+            return reversed and aOrder > bOrder or aOrder < bOrder
+        end
+        return tostring(a.id) < tostring(b.id)
+    end)
+    return out, side, reversed
+end
+
 local function ApplySlotGeometry(frame, parent, x, y, width, height, alpha)
     frame:SetParent(parent)
     frame:ClearAllPoints()
@@ -1862,123 +1890,53 @@ local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
     return panelWidth, aboveHeight + panelHeight + belowHeight + (LAYOUT_PREVIEW_GAP * 2), iconCenterOffsetY
 end
 
-local function RenderIndependentHorizontalLayout(preview, content, layoutDrag, slots, slotWidth, slotHeight, anchorGap)
-    local aboveSlots = SortSlotsForSide(slots, "above", true)
-    local belowSlots = SortSlotsForSide(slots, "below", false)
+local function RenderIndependentHorizontalLayout(preview, content, layoutDrag, slots, slotWidth, slotHeight)
+    local stackSlots, stackSide, reversed = SortSlotsForIndependentStack(slots, "above", "below")
     local slotFrameHeight = math_max(8, slotHeight)
-    local aboveHeight = GetLaneExtent(#aboveSlots, slotFrameHeight)
-    local belowHeight = GetLaneExtent(#belowSlots, slotFrameHeight)
+    local stackHeight = GetLaneExtent(#stackSlots, slotFrameHeight)
 
-    -- Use the attached-resource layout verbatim, with the independent
-    -- stack's invisible one-pixel wrapper standing in for the panel.
-    local anchorFrame = AcquireContainer(preview, content)
-    anchorFrame:SetSize(slotWidth, 1)
-    ApplyBackdrop(anchorFrame, { 0, 0, 0, 0 }, { 0, 0, 0, 0 })
-
-    local aboveLane = BuildLane(
+    local lane = BuildLane(
         preview,
         content,
         layoutDrag,
         nil,
         slotWidth,
-        aboveHeight,
+        stackHeight,
         "y",
-        "above",
-        true,
-        aboveSlots,
+        stackSide,
+        reversed,
+        stackSlots,
         slotWidth,
         slotFrameHeight,
         "primary"
     )
-    aboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    lane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
 
-    aboveLane.setPreviewOverflow = function(extra)
-        aboveLane.frame:ClearAllPoints()
-        aboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, extra)
-        aboveLane.frame:SetSize(aboveLane.baseWidth or slotWidth, (aboveLane.baseHeight or aboveHeight) + extra)
-    end
-    aboveLane.setPreviewOverflow(0)
-
-    anchorFrame:ClearAllPoints()
-    anchorFrame:SetPoint("TOPLEFT", aboveLane.frame, "BOTTOMLEFT", 0, -anchorGap)
-
-    local belowLane = BuildLane(
-        preview,
-        content,
-        layoutDrag,
-        nil,
-        slotWidth,
-        belowHeight,
-        "y",
-        "below",
-        false,
-        belowSlots,
-        slotWidth,
-        slotFrameHeight,
-        "primary"
-    )
-    belowLane.frame:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, -anchorGap)
-
-    return slotWidth, aboveHeight + 1 + belowHeight + (anchorGap * 2)
+    return slotWidth, stackHeight
 end
 
-local function RenderIndependentVerticalLayout(preview, content, layoutDrag, slots, slotHeight, slotWidth, anchorGap)
-    local leftSlots = SortSlotsForSide(slots, "left", true)
-    local rightSlots = SortSlotsForSide(slots, "right", false)
-    local leftWidth = GetLaneExtent(#leftSlots, slotWidth)
-    local rightWidth = GetLaneExtent(#rightSlots, slotWidth)
+local function RenderIndependentVerticalLayout(preview, content, layoutDrag, slots, slotHeight, slotWidth)
+    local stackSlots, stackSide, reversed = SortSlotsForIndependentStack(slots, "left", "right")
+    local stackWidth = GetLaneExtent(#stackSlots, slotWidth)
 
-    -- Use the attached-resource layout verbatim, with the independent
-    -- stack's invisible one-pixel wrapper standing in for the panel.
-    local anchorFrame = AcquireContainer(preview, content)
-    anchorFrame:SetSize(1, slotHeight)
-    ApplyBackdrop(anchorFrame, { 0, 0, 0, 0 }, { 0, 0, 0, 0 })
-
-    local leftLane = BuildLane(
+    local lane = BuildLane(
         preview,
         content,
         layoutDrag,
         nil,
-        leftWidth,
+        stackWidth,
         slotHeight,
         "x",
-        "left",
-        true,
-        leftSlots,
+        stackSide,
+        reversed,
+        stackSlots,
         slotWidth,
         slotHeight,
         "primary"
     )
-    leftLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    lane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
 
-    leftLane.setPreviewOverflow = function(extra)
-        leftLane.frame:ClearAllPoints()
-        leftLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", -extra, 0)
-        leftLane.frame:SetSize((leftLane.baseWidth or leftWidth) + extra, leftLane.baseHeight or slotHeight)
-    end
-    leftLane.setPreviewOverflow(0)
-
-    anchorFrame:ClearAllPoints()
-    anchorFrame:SetPoint("TOPLEFT", leftLane.frame, "TOPRIGHT", anchorGap, 0)
-
-    local rightLane = BuildLane(
-        preview,
-        content,
-        layoutDrag,
-        nil,
-        rightWidth,
-        slotHeight,
-        "x",
-        "right",
-        false,
-        rightSlots,
-        slotWidth,
-        slotHeight,
-        "primary"
-    )
-    rightLane.frame:SetPoint("TOPLEFT", anchorFrame, "TOPRIGHT", anchorGap, 0)
-
-    return leftWidth + 1 + rightWidth + (anchorGap * 2), slotHeight
+    return stackWidth, slotHeight
 end
 
 local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, castSlots, horizontalBarHeight, verticalBarWidth)
@@ -2575,7 +2533,6 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
             20,
             tonumber(layout.independentWidth or rbSettings.independentWidth) or 200
         )
-        local anchorGap = tonumber(GetResourceAnchorGap(rbSettings, layout)) or 0
         if preview.isVerticalLayout then
             contentWidth, contentHeight = RenderIndependentVerticalLayout(
                 preview,
@@ -2583,8 +2540,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
                 layoutDrag,
                 primarySlots,
                 independentLength,
-                resourceThickness,
-                anchorGap
+                resourceThickness
             )
         else
             contentWidth, contentHeight = RenderIndependentHorizontalLayout(
@@ -2593,8 +2549,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
                 layoutDrag,
                 primarySlots,
                 independentLength,
-                resourceThickness,
-                anchorGap
+                resourceThickness
             )
         end
     elseif sourcePanel and layoutDrag then
