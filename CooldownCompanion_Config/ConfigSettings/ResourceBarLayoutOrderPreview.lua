@@ -2391,17 +2391,34 @@ local function CreateLayoutDragModel(preview)
             end
         end
 
-        local oldPos = slotData.getPos()
-        local oldOrder = slotData.getOrder()
         local adjustedIndex = math_max(1, math_min(#filtered + 1, dropTarget.insertIndex or 1))
-        local newOrder = (#filtered == 0 and oldPos == lane.side)
-            and oldOrder
-            or GetLayoutOrderForInsertion(filtered, lane.reversed, adjustedIndex)
+        local changed = false
+        if preview.independentResources then
+            -- Independent Resources is one continuous stack. Normalize every
+            -- rendered slot to the chosen lane so the saved runtime layout
+            -- matches the order shown after a drop.
+            table_insert(filtered, adjustedIndex, slotData)
+            local slotCount = #filtered
+            for index, slot in ipairs(filtered) do
+                local normalizedOrder = lane.reversed and (slotCount - index + 1) or index
+                if slot.getPos() ~= lane.side or slot.getOrder() ~= normalizedOrder then
+                    changed = true
+                end
+                slot.setPos(lane.side)
+                slot.setOrder(normalizedOrder)
+            end
+        else
+            local oldPos = slotData.getPos()
+            local oldOrder = slotData.getOrder()
+            local newOrder = (#filtered == 0 and oldPos == lane.side)
+                and oldOrder
+                or GetLayoutOrderForInsertion(filtered, lane.reversed, adjustedIndex)
+            slotData.setPos(lane.side)
+            slotData.setOrder(newOrder)
+            changed = oldPos ~= lane.side or oldOrder ~= newOrder
+        end
 
-        slotData.setPos(lane.side)
-        slotData.setOrder(newOrder)
-
-        if oldPos ~= lane.side or oldOrder ~= newOrder then
+        if changed then
             CooldownCompanion:ApplyResourceBars()
             CooldownCompanion:RepositionCastBar()
             CooldownCompanion:UpdateAnchorStacking()
@@ -2491,7 +2508,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
             layout,
             preview.isVerticalLayout,
             includeResourceSlots,
-            CS.resourcesEntrySelected == true
+            independentResourcesPreview == true
         )
         if not preview.isVerticalLayout then
             for _, castSlot in ipairs(castSlots) do

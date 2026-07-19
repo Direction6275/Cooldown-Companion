@@ -992,7 +992,6 @@ local function ClearColumn1ButtonBar()
         widget:Release()
     end
     wipe(CS.col1BarWidgets)
-    CS.col1ResourcesButton = nil
     CS.col1CreateButton = nil
     if CS.col1ButtonBar then
         CS.col1ButtonBar._topRowBtns = nil

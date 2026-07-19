@@ -684,8 +684,9 @@ local function RebuildTutorialAnchors()
         anchors.icon_panel_button = firstCol1Button.frame
     end
     local resourcesButton = CS.col1ResourcesButton
-    if resourcesButton and resourcesButton.frame then
-        anchors.resources_button = resourcesButton.frame
+    local resourcesFrame = resourcesButton and (resourcesButton.frame or resourcesButton)
+    if resourcesFrame then
+        anchors.resources_button = resourcesFrame
     end
 
     local selectedPanelId = CS.selectedGroup
