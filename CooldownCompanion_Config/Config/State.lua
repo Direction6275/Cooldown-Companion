@@ -2752,6 +2752,15 @@ local function ClearColumnPreviewHost(previewKey)
         return
     end
 
+    local function ResetMotionFrame(frame)
+        if not frame then return end
+        frame._cdcDisplayX = nil
+        frame._cdcDisplayY = nil
+        frame._cdcDisplayW = nil
+        frame._cdcDisplayH = nil
+        frame._cdcDisplayA = nil
+    end
+
     if preview.hiddenFrames then
         for frame, alpha in pairs(preview.hiddenFrames) do
             if frame and frame.SetAlpha then
@@ -2774,6 +2783,7 @@ local function ClearColumnPreviewHost(previewKey)
         for _, row in ipairs(preview.rows) do
             if row.frame then
                 row.frame:Hide()
+                ResetMotionFrame(row.frame)
             end
         end
     end
@@ -2782,8 +2792,20 @@ local function ClearColumnPreviewHost(previewKey)
         for _, panel in ipairs(preview.panels) do
             if panel.frame then
                 panel.frame:Hide()
+                ResetMotionFrame(panel.frame)
+            end
+            for _, row in ipairs(panel.rows or {}) do
+                if row.frame then
+                    row.frame:Hide()
+                    ResetMotionFrame(row.frame)
+                end
             end
         end
+    end
+
+    if preview.dropGap then
+        preview.dropGap:Hide()
+        ResetMotionFrame(preview.dropGap)
     end
 
     if preview.tweens then
@@ -2804,6 +2826,7 @@ local function ClearColumnPreviewHost(previewKey)
     preview.ghostActive = false
     preview.mode = nil
     preview.compactEntries = nil
+    preview.centerGhostOnCursor = nil
 end
 
 local function EnsureCol1PreviewHost()

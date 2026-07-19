@@ -39,7 +39,7 @@ local function Interpolate(a, b, t)
 end
 
 local function EaseInOut(t)
-    return t * t * (3 - 2 * t)
+    return t < 0.5 and (2 * t * t) or (1 - (((-2 * t + 2) ^ 2) / 2))
 end
 
 local function ApplyPreviewBackdrop(frame, bg, border)
@@ -440,6 +440,12 @@ local function QueuePreviewTween(preview, frame, x, y, width, height, alpha, dur
     }
 end
 
+local function SeedCol1PreviewFrame(frame, x, y, width, height)
+    if frame and frame._cdcDisplayX == nil then
+        ApplyPreviewFrameGeometry(frame, x, y, width, height, 1)
+    end
+end
+
 local function UpdatePreviewGhost(preview)
     if not (preview and preview.ghost and preview.ghost:IsShown()) then
         return
@@ -449,7 +455,19 @@ local function UpdatePreviewGhost(preview)
     cursorX = cursorX / scale
     cursorY = cursorY / scale
     preview.ghost:ClearAllPoints()
-    preview.ghost:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cursorX + 14, cursorY - 14)
+    if preview.centerGhostOnCursor then
+        local offsetX = math.floor((preview.ghost:GetWidth() or 0) / 2)
+        local offsetY = math.floor((preview.ghost:GetHeight() or 0) / 2)
+        preview.ghost:SetPoint(
+            "TOPLEFT",
+            UIParent,
+            "BOTTOMLEFT",
+            cursorX - offsetX,
+            cursorY + offsetY
+        )
+    else
+        preview.ghost:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cursorX + 14, cursorY - 14)
+    end
 end
 
 local function TickCol2Preview(preview)
@@ -732,6 +750,7 @@ local function RenderCol2AnimatedPreview(source)
 
     preview.mode = model.mode
     preview.compactEntries = nil
+    preview.centerGhostOnCursor = false
     SetCol2BaseFramesHidden(true)
     preview.root:Show()
 
@@ -932,6 +951,12 @@ local function CopyCol1PreviewRow(row)
         ownerKind = row.ownerKind,
         ownerId = row.ownerId,
         ownerFolderId = row.ownerFolderId,
+        shellRect = row.shellRect and {
+            x = row.shellRect.x,
+            y = row.shellRect.y,
+            width = row.shellRect.width,
+            height = row.shellRect.height,
+        } or nil,
     }
 end
 
@@ -956,6 +981,10 @@ local function BuildCol1BasePreviewLayout()
         local frame = widget and widget.frame
         local x, y, width, height = GetRelativeRect(frame, content)
         if x and y then
+            local shellX, shellY, shellWidth, shellHeight = GetRelativeRect(
+                rowMeta.dragShellFrame,
+                content
+            )
             local label = widget and widget.label
             local image = widget and widget.image
             local isMarker = rowMeta.isMarker
@@ -1008,6 +1037,12 @@ local function BuildCol1BasePreviewLayout()
                 ownerKind = rowMeta.ownerKind,
                 ownerId = rowMeta.ownerId,
                 ownerFolderId = rowMeta.ownerFolderId,
+                shellRect = shellX and {
+                    x = shellX,
+                    y = shellY,
+                    width = shellWidth,
+                    height = shellHeight,
+                } or nil,
             }
         end
     end
@@ -1144,6 +1179,11 @@ local function BuildCol1DraggedRows(base, source)
 
     local ghostRow
     local firstRow = movedRows[1]
+    if (source.kind == "group" or source.kind == "folder-group")
+        and firstRow.shellRect
+    then
+        gapHeight = firstRow.shellRect.height
+    end
     if source.kind == "rail-panel" and #movedRows > 1 then
         ghostRow = CopyCol1PreviewRow(firstRow)
         ghostRow.text = tostring(#movedRows) .. " panels"
@@ -1158,11 +1198,10 @@ local function BuildCol1DraggedRows(base, source)
         ghostRow = CopyCol1PreviewRow(firstRow)
         ghostRow.text = tostring(math.max(1, selectedCount)) .. " groups"
         ghostRow.height = math.max(firstRow.height, PREVIEW_DEFAULT_ROW_HEIGHT)
-    elseif (source.kind == "group" or source.kind == "folder-group")
-        and #movedRows > 1
-    then
+    elseif source.kind == "group" or source.kind == "folder-group" then
         ghostRow = CopyCol1PreviewRow(firstRow)
         ghostRow.height = gapHeight
+        ghostRow.width = firstRow.shellRect and firstRow.shellRect.width or ghostRow.width
         ghostRow.fullContainerGhost = true
     else
         ghostRow = CopyCol1PreviewRow(firstRow)
@@ -1302,6 +1341,8 @@ local function BuildCol1PreviewModel(source)
                     height = gapHeight,
                     gapAfter = (template and template.gapAfter) or 0,
                     folderAccentId = source.kind ~= "folder" and highlightFolderId or nil,
+                    shellRect = movedRows[1] and movedRows[1].shellRect or nil,
+                    shellHeaderY = movedRows[1] and movedRows[1].y or nil,
                 })
             end
         end
@@ -1337,6 +1378,10 @@ local function BuildCol1PreviewModel(source)
             ownerKind = source.kind == "rail-panel" and "container" or nil,
             ownerId = source.kind == "rail-panel"
                 and source.dropTarget.targetContainerId or nil,
+            shellRect = source.kind ~= "rail-panel"
+                and movedRows[1] and movedRows[1].shellRect or nil,
+            shellHeaderY = source.kind ~= "rail-panel"
+                and movedRows[1] and movedRows[1].y or nil,
         })
     end
 
@@ -1474,23 +1519,43 @@ local function RenderCol1GroupOutlines(preview, model)
             if not range then
                 range = {
                     headerRow = row.kind == "container" and row or nil,
-                    left = math.max(0, (row.x or 0) - 8),
-                    right = (row.x or 0) + (row.width or 0) + 4,
-                    top = math.max(0, (row.previewY or 0) - 4),
-                    bottom = (row.previewY or 0) + (row.height or 0) + 4,
+                    shellRect = row.shellRect,
+                    baseContentTop = row.y,
+                    baseContentBottom = row.y and (row.y + (row.height or 0)) or nil,
+                    targetContentTop = row.previewY,
+                    targetContentBottom = (row.previewY or 0) + (row.height or 0),
+                    fallbackLeft = math.max(0, (row.x or 0) - 8),
+                    fallbackRight = (row.x or 0) + (row.width or 0) + 4,
                 }
                 ranges[containerId] = range
                 order[#order + 1] = containerId
             else
                 if row.kind == "container" then
                     range.headerRow = row
+                    range.shellRect = row.shellRect or range.shellRect
                 end
-                range.left = math.min(range.left, math.max(0, (row.x or 0) - 8))
-                range.right = math.max(range.right, (row.x or 0) + (row.width or 0) + 4)
-                range.top = math.min(range.top, math.max(0, (row.previewY or 0) - 4))
-                range.bottom = math.max(
-                    range.bottom,
-                    (row.previewY or 0) + (row.height or 0) + 4
+                if row.y then
+                    range.baseContentTop = range.baseContentTop
+                        and math.min(range.baseContentTop, row.y) or row.y
+                    range.baseContentBottom = range.baseContentBottom
+                        and math.max(range.baseContentBottom, row.y + (row.height or 0))
+                        or (row.y + (row.height or 0))
+                end
+                range.fallbackLeft = math.min(
+                    range.fallbackLeft,
+                    math.max(0, (row.x or 0) - 8)
+                )
+                range.fallbackRight = math.max(
+                    range.fallbackRight,
+                    (row.x or 0) + (row.width or 0) + 4
+                )
+                range.targetContentTop = math.min(
+                    range.targetContentTop,
+                    row.previewY or range.targetContentTop
+                )
+                range.targetContentBottom = math.max(
+                    range.targetContentBottom,
+                    (row.previewY or 0) + (row.height or 0)
                 )
             end
         end
@@ -1510,11 +1575,23 @@ local function RenderCol1GroupOutlines(preview, model)
         frame:SetBackdropBorderColor(0.38, 0.33, 0.26, 0.72)
         frame:SetFrameLevel((preview.root:GetFrameLevel() or 1) + 1)
 
-        local right = range.right
+        local shell = range.shellRect
+        local left = shell and shell.x or range.fallbackLeft
+        local right = shell and (shell.x + shell.width) or range.fallbackRight
+        local baseTop = shell and shell.y
+            or math.max(0, (range.baseContentTop or range.targetContentTop) - 4)
+        local baseBottom = shell and (shell.y + shell.height)
+            or ((range.baseContentBottom or range.targetContentBottom) + 4)
+        local topInset = shell and range.baseContentTop
+            and (range.baseContentTop - shell.y) or 4
+        local bottomInset = shell and range.baseContentBottom
+            and ((shell.y + shell.height) - range.baseContentBottom) or 4
+        local targetTop = math.max(0, range.targetContentTop - topInset)
+        local targetBottom = range.targetContentBottom + bottomInset
         if rootWidth > 0 then
             right = math.min(right, rootWidth - 2)
         end
-        local outlineWidth = math.max(1, right - range.left)
+        local outlineWidth = math.max(1, right - left)
         if model.simplifyGroupBlocks and range.headerRow then
             CenterCol1GroupPreviewLabel(
                 frame,
@@ -1528,13 +1605,20 @@ local function RenderCol1GroupOutlines(preview, model)
             frame._cdcTitle:Hide()
             frame._cdcModeBadge:Hide()
         end
+        SeedCol1PreviewFrame(
+            frame,
+            left,
+            baseTop,
+            outlineWidth,
+            math.max(1, baseBottom - baseTop)
+        )
         QueuePreviewTween(
             preview,
             frame,
-            range.left,
-            range.top,
+            left,
+            targetTop,
             outlineWidth,
-            math.max(1, range.bottom - range.top),
+            math.max(1, targetBottom - targetTop),
             1,
             PREVIEW_ANIM_DURATION
         )
@@ -1546,6 +1630,68 @@ local function RenderCol1GroupOutlines(preview, model)
             panelProxy.frame:Hide()
         end
     end
+end
+
+local function RenderCol1DropGap(preview, model)
+    local gapRow
+    for _, row in ipairs(model and model.rows or {}) do
+        if row.isGap then
+            gapRow = row
+            break
+        end
+    end
+
+    if not gapRow then
+        if preview.dropGap then
+            preview.dropGap:Hide()
+        end
+        return
+    end
+
+    local gap = preview.dropGap
+    if not gap then
+        gap = CreateFrame("Frame", nil, preview.root, "BackdropTemplate")
+        gap:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 1,
+        })
+        gap:EnableMouse(false)
+        preview.dropGap = gap
+    end
+
+    local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    local r = classColor and classColor.r or 0.30
+    local g = classColor and classColor.g or 0.62
+    local b = classColor and classColor.b or 1.00
+    gap:SetBackdropColor(r, g, b, 0.16)
+    gap:SetBackdropBorderColor(r, g, b, 0.58)
+    gap:SetFrameLevel((preview.root:GetFrameLevel() or 1) + 5)
+
+    local x = gapRow.x or PREVIEW_PANEL_INSET
+    local y = gapRow.previewY or 0
+    local width = gapRow.width or 120
+    local height = gapRow.height or PREVIEW_DEFAULT_ROW_HEIGHT
+    if gapRow.shellRect then
+        local shell = gapRow.shellRect
+        local headerInset = (gapRow.shellHeaderY or shell.y) - shell.y
+        x = shell.x
+        y = y - headerInset
+        width = shell.width
+        height = shell.height
+    end
+
+    QueuePreviewTween(
+        preview,
+        gap,
+        x,
+        y,
+        width,
+        height,
+        1,
+        PREVIEW_ANIM_DURATION
+    )
+    gap:Show()
 end
 
 local function RenderCol1PreviewAccentBars(preview, model)
@@ -1742,6 +1888,7 @@ local function UpdateCol1Ghost(preview, model)
 
     preview.ghost:Show()
     preview.ghostActive = true
+    UpdatePreviewGhost(preview)
 end
 
 local ClearCol1AnimatedPreview
@@ -1829,6 +1976,7 @@ local function RenderCol1AnimatedPreview(source)
     end
 
     preview.mode = model.mode
+    preview.centerGhostOnCursor = true
     SetCol1BaseFramesHidden(true, source)
     preview.root:Show()
 
@@ -1837,6 +1985,7 @@ local function RenderCol1AnimatedPreview(source)
     end
 
     RenderCol1GroupOutlines(preview, model)
+    RenderCol1DropGap(preview, model)
 
     for _, row in ipairs(model.rows) do
         local hiddenInsideSimplifiedGroup = model.simplifyGroupBlocks
@@ -1912,6 +2061,7 @@ local function RenderCol1AnimatedPreview(source)
                 end
             end
 
+            SeedCol1PreviewFrame(frame, row.x, row.y, row.width, row.height)
             QueuePreviewTween(
                 preview,
                 frame,

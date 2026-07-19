@@ -1819,6 +1819,7 @@ local function RefreshColumn1(preserveDrag)
             previewDraggable = not disableDrag,
             previewProxy = true,
             isExpanded = isExpanded,
+            dragShellFrame = groupUnit.frame,
         })
 
         local firstPanelEntry, lastPanelEntry
