@@ -800,9 +800,11 @@ local function GetShortLabel(label)
 end
 
 local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLayout, includeResourceSlots,
-    requireRuntimeEligibleCustomBars)
+    requireRuntimeEligibleSlots)
     includeResourceSlots = includeResourceSlots == true
-    local activeResources = includeResourceSlots and GetConfigActiveResources() or {}
+    local activeResources = includeResourceSlots
+        and (requireRuntimeEligibleSlots and RB.DetermineActiveResources() or GetConfigActiveResources())
+        or {}
     local customBars = includeResourceSlots and CooldownCompanion:GetSpecCustomAuraBars() or {}
     local primarySlots = {}
     local castSlots = {}
@@ -913,7 +915,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
     if resourceBarsEnabled then
         for customIndex, customAura in ipairs(customBars or {}) do
             if customAura and customAura.enabled and customAura.spellID
-                and (not requireRuntimeEligibleCustomBars
+                and (not requireRuntimeEligibleSlots
                     or CooldownCompanion:IsCustomBarRuntimeEligible(customAura)) then
                 local customBarId = EnsureCustomBarId(rbSettings, customAura)
                 local spellInfo = C_Spell.GetSpellInfo(customAura.spellID)

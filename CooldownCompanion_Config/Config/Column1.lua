@@ -1240,6 +1240,7 @@ local function RefreshColumn1(preserveDrag)
     if CooldownCompanion._unsupportedLegacyProfile then
         ClearOtherClassBrowseState()
         if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
+        if CS.col1DestinationBar then CS.col1DestinationBar:Hide() end
 
         local spacer = AceGUI:Create("SimpleGroup")
         spacer:SetFullWidth(true)
