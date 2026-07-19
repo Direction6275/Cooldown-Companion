@@ -2069,28 +2069,9 @@ local function CreateConfigPanel()
     end)
 
     local function PositionPrimaryAxisUI()
-        local contentCenterX = select(1, content:GetCenter())
-        local col1Right = select(1, col1.frame:GetRight())
-        local col3Left = select(1, col3.frame:GetLeft())
-        local contentBottom = content:GetBottom()
-        local versionBottom = versionText and versionText:GetBottom()
-        local versionTop = versionText and versionText:GetTop()
-
-        local xOffset = 0
-        if contentCenterX and col1Right and col3Left then
-            xOffset = ((col1Right + col3Left) * 0.5) - contentCenterX
-        end
-
-        local yCenterOffset = 0
-        if contentBottom and versionBottom and versionTop then
-            yCenterOffset = math.floor((((versionBottom + versionTop) * 0.5) - contentBottom) + 0.5)
-        else
-            yCenterOffset = 40
-        end
-
         if frame.titlebg then
             frame.titlebg:ClearAllPoints()
-            frame.titlebg:SetPoint("TOP", content, "TOP", xOffset, 12)
+            frame.titlebg:SetPoint("TOP", content, "TOP", 0, 12)
         end
     end
 
