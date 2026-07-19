@@ -1994,13 +1994,14 @@ local function CreateConfigPanel()
         local col3Width = math.max(1, w - col1Width - pad)
         local finderAvailable = IsConfigFinderAvailable and IsConfigFinderAvailable()
         local destinationBottomInset = finderAvailable and (30 + CONFIG_FINDER_RESERVED_HEIGHT) or 30
+        local showDestinations = not CooldownCompanion._unsupportedLegacyProfile
 
         if CS.col1DestinationBar then
             CS.col1DestinationBar:ClearAllPoints()
             CS.col1DestinationBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, destinationBottomInset)
             CS.col1DestinationBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, destinationBottomInset)
             CS.col1DestinationBar:SetHeight(NAVIGATOR_DESTINATIONS_HEIGHT)
-            CS.col1DestinationBar:Show()
+            CS.col1DestinationBar:SetShown(showDestinations)
         end
 
         if CS.configFinderBox then
@@ -2018,7 +2019,8 @@ local function CreateConfigPanel()
             end
         end
         if CS.col1Scroll and CS.col1Scroll.frame then
-            local bottomInset = destinationBottomInset + NAVIGATOR_DESTINATIONS_HEIGHT
+            local bottomInset = destinationBottomInset
+                + (showDestinations and NAVIGATOR_DESTINATIONS_HEIGHT or 0)
             CS.col1Scroll.frame:ClearAllPoints()
             CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
             CS.col1Scroll.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, bottomInset)
