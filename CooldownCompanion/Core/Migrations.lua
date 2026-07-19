@@ -10,11 +10,423 @@ local next = next
 local rawget = rawget
 local pairs = pairs
 local ipairs = ipairs
+local tonumber = tonumber
+local tostring = tostring
+local table_sort = table.sort
+local string_upper = string.upper
 
 local IMPORT_CHECKPOINT_KEY = "_cdcImportCheckpoint"
 local IMPORT_CHECKPOINT_VERSION = "1.15"
 local LEGACY_SUPPORT_FLOOR_VERSION = IMPORT_CHECKPOINT_VERSION
 local LEGACY_UNSUPPORTED_MAX_VERSION = "1.14"
+
+local FOLDER_LOAD_CONDITION_KEYS = {
+    "raid",
+    "dungeon",
+    "delve",
+    "battleground",
+    "arena",
+    "openWorld",
+    "rested",
+    "petBattle",
+    "vehicleUI",
+}
+
+local function NormalizeNumericRestrictionKey(key)
+    return tonumber(key)
+end
+
+local function NormalizeClassRestrictionKey(key)
+    if type(key) ~= "string" or key == "" then
+        return nil
+    end
+    return string_upper(key)
+end
+
+local function NormalizeCharacterRestrictionKey(key)
+    if type(key) ~= "string" or key == "" then
+        return nil
+    end
+    return key
+end
+
+local function ReadRestrictionMap(map, normalizer)
+    if map == nil then
+        return nil, false
+    end
+    if type(map) ~= "table" then
+        return {}, true
+    end
+
+    local values = {}
+    local sawEntry = false
+    for key, enabled in pairs(map) do
+        sawEntry = true
+        if enabled == true then
+            local normalizedKey = normalizer(key)
+            if normalizedKey ~= nil then
+                values[normalizedKey] = true
+            end
+        end
+    end
+
+    if next(values) then
+        return values, true
+    end
+    if sawEntry then
+        return {}, true
+    end
+    return nil, false
+end
+
+local function CopyRestrictionValues(values)
+    local copy = {}
+    for key in pairs(values or {}) do
+        copy[key] = true
+    end
+    return copy
+end
+
+local function IntersectRestrictionValues(left, right)
+    local intersection = {}
+    for key in pairs(left or {}) do
+        if right and right[key] then
+            intersection[key] = true
+        end
+    end
+    return intersection
+end
+
+local function EncodeRestrictionMap(values)
+    if next(values or {}) then
+        return CopyRestrictionValues(values)
+    end
+
+    -- Restriction readers distinguish a truly empty table (no restriction)
+    -- from a non-empty map with no enabled keys (an explicit empty set).
+    return { [0] = false }
+end
+
+local function GetEntitySpecRestriction(entity)
+    if type(entity) ~= "table" then
+        return nil, false
+    end
+
+    local loadConditions = entity.loadConditions
+    local loadSpecMap = type(loadConditions) == "table" and loadConditions.specAllowlist or nil
+    local loadSpecs, hasLoadSpecs = ReadRestrictionMap(loadSpecMap, NormalizeNumericRestrictionKey)
+    if hasLoadSpecs then
+        -- A load-condition spec allowlist is both part of the entity's effective
+        -- spec source and a second required gate, so it dominates entity.specs.
+        return loadSpecs, true
+    end
+    return ReadRestrictionMap(entity.specs, NormalizeNumericRestrictionKey)
+end
+
+local function EnsureLoadConditions(entity)
+    if type(entity.loadConditions) == "table" then
+        return entity.loadConditions
+    end
+
+    -- Creating a Group-level source would otherwise acquire the Group defaults
+    -- that hide in pet battles and vehicles. Folder sources default both off.
+    entity.loadConditions = {
+        petBattle = false,
+        vehicleUI = false,
+    }
+    return entity.loadConditions
+end
+
+local function MergeFolderInheritanceIntoEntity(entity, folder)
+    if type(entity) ~= "table" or type(folder) ~= "table" then
+        return
+    end
+
+    local folderSpecs, hasFolderSpecs = GetEntitySpecRestriction(folder)
+    if hasFolderSpecs then
+        local entitySpecs, hasEntitySpecs = GetEntitySpecRestriction(entity)
+        local mergedSpecs = hasEntitySpecs
+            and IntersectRestrictionValues(folderSpecs, entitySpecs)
+            or folderSpecs
+        entity.specs = EncodeRestrictionMap(mergedSpecs)
+        if type(entity.loadConditions) == "table" then
+            entity.loadConditions.specAllowlist = nil
+        end
+    end
+
+    local folderHeroTalents, hasFolderHeroTalents = ReadRestrictionMap(
+        folder.heroTalents,
+        NormalizeNumericRestrictionKey
+    )
+    if hasFolderHeroTalents then
+        local entityHeroTalents, hasEntityHeroTalents = ReadRestrictionMap(
+            entity.heroTalents,
+            NormalizeNumericRestrictionKey
+        )
+        local mergedHeroTalents = hasEntityHeroTalents
+            and IntersectRestrictionValues(folderHeroTalents, entityHeroTalents)
+            or folderHeroTalents
+        entity.heroTalents = EncodeRestrictionMap(mergedHeroTalents)
+    end
+
+    local folderLoadConditions = folder.loadConditions
+    if type(folderLoadConditions) ~= "table" then
+        return
+    end
+
+    for _, key in ipairs(FOLDER_LOAD_CONDITION_KEYS) do
+        if folderLoadConditions[key] == true then
+            EnsureLoadConditions(entity)[key] = true
+        end
+    end
+
+    local folderIsGlobal = folder.section == "global"
+    local entityIsGlobal = entity.isGlobal == true
+    if folderIsGlobal then
+        local folderClasses, hasFolderClasses = ReadRestrictionMap(
+            folderLoadConditions.classAllowlist,
+            NormalizeClassRestrictionKey
+        )
+        if hasFolderClasses and entityIsGlobal then
+            local entityLoadConditions = EnsureLoadConditions(entity)
+            local mergedClasses = folderClasses
+            local entityClasses, hasEntityClasses = ReadRestrictionMap(
+                entityLoadConditions.classAllowlist,
+                NormalizeClassRestrictionKey
+            )
+            if hasEntityClasses then
+                mergedClasses = IntersectRestrictionValues(folderClasses, entityClasses)
+            end
+            entityLoadConditions.classAllowlist = EncodeRestrictionMap(mergedClasses)
+        end
+    end
+
+    local folderCharacters, hasFolderCharacters = ReadRestrictionMap(
+        folderLoadConditions.characterAllowlist,
+        NormalizeCharacterRestrictionKey
+    )
+    if hasFolderCharacters then
+        local entityLoadConditions = EnsureLoadConditions(entity)
+        local mergedCharacters = folderCharacters
+        local entityCharacters, hasEntityCharacters = ReadRestrictionMap(
+            entityLoadConditions.characterAllowlist,
+            NormalizeCharacterRestrictionKey
+        )
+        if hasEntityCharacters then
+            mergedCharacters = IntersectRestrictionValues(folderCharacters, entityCharacters)
+        end
+        entityLoadConditions.characterAllowlist = EncodeRestrictionMap(mergedCharacters)
+    end
+end
+
+local function GetEntityScopeKey(addon, entity, isFolder)
+    if type(entity) ~= "table" then
+        return "invalid"
+    end
+    if (isFolder and entity.section == "global") or (not isFolder and entity.isGlobal == true) then
+        return "global"
+    end
+
+    local owner = entity.createdBy
+    local characterInfo = addon
+        and addon.db
+        and addon.db.global
+        and addon.db.global.characterInfo
+    local ownerInfo = type(characterInfo) == "table" and characterInfo[owner] or nil
+    local classFilename = type(ownerInfo) == "table" and ownerInfo.classFilename or nil
+    if type(classFilename) == "string" and classFilename ~= "" then
+        return "class:" .. string_upper(classFilename)
+    end
+    if type(owner) == "string" and owner ~= "" then
+        return "character:" .. owner
+    end
+    return "invalid"
+end
+
+local function GetOrderValue(entity, specId, fallback)
+    local specOrders = type(entity) == "table" and entity.specOrders or nil
+    if specId and type(specOrders) == "table" then
+        local value = specOrders[specId]
+        if value == nil then
+            value = specOrders[tostring(specId)]
+        end
+        value = tonumber(value)
+        if value then
+            return value
+        end
+    end
+    return tonumber(type(entity) == "table" and entity.order) or tonumber(fallback) or 0
+end
+
+local function CompareOrderedItems(left, right)
+    if left.order ~= right.order then
+        return left.order < right.order
+    end
+    if left.kind ~= right.kind then
+        return left.kind == "folder"
+    end
+    return tostring(left.id) < tostring(right.id)
+end
+
+local function AssignFlattenedOrders(addon, profile, folders, specId)
+    local containers = type(profile.groupContainers) == "table" and profile.groupContainers or {}
+    local folderChildren = {}
+    local looseContainers = {}
+
+    for containerId, container in pairs(containers) do
+        if type(container) == "table" then
+            local folderId = container.folderId
+            local folder = folderId and folders[folderId] or nil
+            if type(folder) == "table"
+                and GetEntityScopeKey(addon, container, false) == GetEntityScopeKey(addon, folder, true)
+            then
+                folderChildren[folderId] = folderChildren[folderId] or {}
+                folderChildren[folderId][#folderChildren[folderId] + 1] = {
+                    id = containerId,
+                    entity = container,
+                    order = GetOrderValue(container, specId, containerId),
+                }
+            else
+                looseContainers[#looseContainers + 1] = {
+                    id = containerId,
+                    entity = container,
+                    scopeKey = GetEntityScopeKey(addon, container, false),
+                    order = GetOrderValue(container, specId, containerId),
+                }
+            end
+        end
+    end
+
+    local topItemsByScope = {}
+    for folderId, children in pairs(folderChildren) do
+        local folder = folders[folderId]
+        table_sort(children, CompareOrderedItems)
+        local scopeKey = GetEntityScopeKey(addon, folder, true)
+        topItemsByScope[scopeKey] = topItemsByScope[scopeKey] or {}
+        topItemsByScope[scopeKey][#topItemsByScope[scopeKey] + 1] = {
+            kind = "folder",
+            id = folderId,
+            order = GetOrderValue(folder, specId, folderId),
+            children = children,
+        }
+    end
+    for _, item in ipairs(looseContainers) do
+        topItemsByScope[item.scopeKey] = topItemsByScope[item.scopeKey] or {}
+        item.kind = "container"
+        topItemsByScope[item.scopeKey][#topItemsByScope[item.scopeKey] + 1] = item
+    end
+
+    for _, topItems in pairs(topItemsByScope) do
+        table_sort(topItems, CompareOrderedItems)
+        local nextOrder = 1
+        for _, item in ipairs(topItems) do
+            local orderedContainers = item.kind == "folder" and item.children or { item }
+            for _, containerItem in ipairs(orderedContainers) do
+                local container = containerItem.entity
+                if specId then
+                    container.specOrders = type(container.specOrders) == "table" and container.specOrders or {}
+                    container.specOrders[specId] = nextOrder
+                else
+                    container.order = nextOrder
+                end
+                nextOrder = nextOrder + 1
+            end
+        end
+    end
+end
+
+local function CollectOrderingSpecIds(profile, folders)
+    local specIds = {}
+    local function AddSpecOrders(entity)
+        for specId in pairs(type(entity) == "table" and entity.specOrders or {}) do
+            specId = tonumber(specId)
+            if specId then
+                specIds[specId] = true
+            end
+        end
+    end
+
+    for _, folder in pairs(folders) do
+        AddSpecOrders(folder)
+    end
+    for _, container in pairs(type(profile.groupContainers) == "table" and profile.groupContainers or {}) do
+        AddSpecOrders(container)
+    end
+
+    local sortedSpecIds = {}
+    for specId in pairs(specIds) do
+        sortedSpecIds[#sortedSpecIds + 1] = specId
+    end
+    table_sort(sortedSpecIds)
+    return sortedSpecIds
+end
+
+local function MigrateFoldersIntoGroups(addon, profile)
+    if type(profile) ~= "table" then
+        return false, 0
+    end
+
+    local storedFolders = rawget(profile, "folders")
+    local folders = type(storedFolders) == "table" and storedFolders or {}
+    local containers = type(profile.groupContainers) == "table" and profile.groupContainers or {}
+    local groups = type(profile.groups) == "table" and profile.groups or {}
+    local storedNextFolderId = rawget(profile, "nextFolderId")
+    local hasFolderState = next(folders) ~= nil
+        or (storedNextFolderId ~= nil and tonumber(storedNextFolderId) ~= 1)
+
+    for _, container in pairs(containers) do
+        if type(container) == "table" and container.folderId ~= nil then
+            hasFolderState = true
+            local folder = folders[container.folderId]
+            if type(folder) == "table" then
+                MergeFolderInheritanceIntoEntity(container, folder)
+            end
+        end
+    end
+    for _, group in pairs(groups) do
+        if type(group) == "table" and group.folderId ~= nil then
+            hasFolderState = true
+            local folder = folders[group.folderId]
+            if type(folder) == "table" then
+                MergeFolderInheritanceIntoEntity(group, folder)
+            end
+        end
+    end
+
+    if not hasFolderState then
+        return false, 0
+    end
+
+    AssignFlattenedOrders(addon, profile, folders, nil)
+    for _, specId in ipairs(CollectOrderingSpecIds(profile, folders)) do
+        AssignFlattenedOrders(addon, profile, folders, specId)
+    end
+
+    local flattenedCount = 0
+    for _, container in pairs(containers) do
+        if type(container) == "table" and container.folderId ~= nil then
+            container.folderId = nil
+            flattenedCount = flattenedCount + 1
+        end
+    end
+    for _, group in pairs(groups) do
+        if type(group) == "table" and group.folderId ~= nil then
+            group.folderId = nil
+            flattenedCount = flattenedCount + 1
+        end
+    end
+
+    -- Transitional scaffolding for the owner gate: the still-loaded config code
+    -- expects these defaults to exist. AceDB strips both defaults from persisted
+    -- SavedVariables; the Folder runtime-deletion step removes the defaults too.
+    profile.folders = {}
+    profile.nextFolderId = 1
+    return true, flattenedCount
+end
+
+function CooldownCompanion:MigrateFoldersIntoGroups(profile)
+    return MigrateFoldersIntoGroups(self, profile or (self.db and self.db.profile))
+end
 
 local function CompareVersion(left, right)
     left = tostring(left or "")
@@ -972,6 +1384,7 @@ function CooldownCompanion:RunAllMigrations()
     self._pendingUnsupportedLegacyHide = nil
 
     self:StampImportCheckpoint(self.db and self.db.profile)
+    self:MigrateFoldersIntoGroups(self.db and self.db.profile)
     ClearRetiredAutoAddPrefs(self.db and self.db.profile)
     NormalizePassiveCooldownButtons(self.db and self.db.profile)
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
