@@ -1163,13 +1163,7 @@ local function BuildCol1DraggedRows(base, source)
     then
         ghostRow = CopyCol1PreviewRow(firstRow)
         ghostRow.height = gapHeight
-        ghostRow.blockRows = {}
-        for index = 2, #movedRows do
-            local childRow = CopyCol1PreviewRow(movedRows[index])
-            childRow.blockX = (movedRows[index].x or 0) - (firstRow.x or 0)
-            childRow.blockY = (movedRows[index].y or 0) - (firstRow.y or 0)
-            ghostRow.blockRows[#ghostRow.blockRows + 1] = childRow
-        end
+        ghostRow.fullContainerGhost = true
     else
         ghostRow = CopyCol1PreviewRow(firstRow)
     end
@@ -1617,33 +1611,6 @@ local function SetCol1BaseFramesHidden(hidden, source)
     end
 end
 
-local function AcquireCol1GhostRowFrame(preview, index)
-    preview.ghostRows = preview.ghostRows or {}
-    local frame = preview.ghostRows[index]
-    if frame then
-        return frame
-    end
-
-    frame = CreateFrame("Frame", nil, preview.ghost)
-    frame:EnableMouse(false)
-
-    frame._cdcIcon = frame:CreateTexture(nil, "ARTWORK")
-    frame._cdcIcon:SetSize(16, 16)
-
-    frame._cdcLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    frame._cdcLabel:SetJustifyH("LEFT")
-    frame._cdcLabel:SetWordWrap(false)
-
-    preview.ghostRows[index] = frame
-    return frame
-end
-
-local function HideCol1GhostRows(preview)
-    for _, frame in ipairs(preview and preview.ghostRows or {}) do
-        frame:Hide()
-    end
-end
-
 local function UpdateCol1Ghost(preview, model)
     if not (preview and preview.ghost) then
         return
@@ -1651,7 +1618,6 @@ local function UpdateCol1Ghost(preview, model)
 
     local row = model and model.draggedRow
     preview.ghostActive = false
-    HideCol1GhostRows(preview)
     if not row then
         HideCol1PreviewBadges(preview.ghost)
         preview.ghost:Hide()
@@ -1659,7 +1625,7 @@ local function UpdateCol1Ghost(preview, model)
     end
 
     if row.kind == "container" then
-        preview.ghost:SetBackdropColor(0.025, 0.02, 0.015, 0.82)
+        preview.ghost:SetBackdropColor(0.025, 0.02, 0.015, 0.20)
         preview.ghost:SetBackdropBorderColor(0.38, 0.33, 0.26, 0.92)
     else
         preview.ghost:SetBackdropColor(0, 0, 0, 0)
@@ -1699,67 +1665,8 @@ local function UpdateCol1Ghost(preview, model)
         preview.ghost.label:SetPoint("RIGHT", preview.ghost, "RIGHT", -PREVIEW_ROW_TEXT_RIGHT_PAD, 0)
     end
 
-    for index, childRow in ipairs(row.blockRows or {}) do
-        local childFrame = AcquireCol1GhostRowFrame(preview, index)
-        childFrame:ClearAllPoints()
-        childFrame:SetPoint(
-            "TOPLEFT",
-            preview.ghost,
-            "TOPLEFT",
-            childRow.blockX or 0,
-            -(childRow.blockY or 0)
-        )
-        childFrame:SetSize(
-            math.max(1, math.min(
-                childRow.width or row.width or 1,
-                (row.width or 1) - (childRow.blockX or 0)
-            )),
-            childRow.height or PREVIEW_DEFAULT_ROW_HEIGHT
-        )
-        childFrame._cdcLabel:SetText(childRow.text or "")
-        if childRow.textColor then
-            childFrame._cdcLabel:SetTextColor(
-                childRow.textColor[1] or 1,
-                childRow.textColor[2] or 1,
-                childRow.textColor[3] or 1
-            )
-        else
-            childFrame._cdcLabel:SetTextColor(1, 1, 1)
-        end
-
-        if childRow.icon and (childRow.iconAlpha or 1) > 0.05 then
-            childFrame._cdcIcon:SetTexture(childRow.icon)
-            childFrame._cdcIcon:SetAlpha(childRow.iconAlpha or 1)
-            childFrame._cdcIcon:Show()
-            if not ApplyRelativeRect(childFrame._cdcIcon, childFrame, childRow.iconRect) then
-                childFrame._cdcIcon:ClearAllPoints()
-                childFrame._cdcIcon:SetPoint("LEFT", childFrame, "LEFT", 0, 0)
-                childFrame._cdcIcon:SetSize(16, 16)
-            end
-        else
-            childFrame._cdcIcon:Hide()
-        end
-
-        if not ApplyRelativeRect(childFrame._cdcLabel, childFrame, childRow.labelRect) then
-            childFrame._cdcLabel:ClearAllPoints()
-            if childFrame._cdcIcon:IsShown() then
-                childFrame._cdcLabel:SetPoint("LEFT", childFrame._cdcIcon, "RIGHT", 8, 0)
-            else
-                childFrame._cdcLabel:SetPoint("LEFT", childFrame, "LEFT", 0, 0)
-            end
-            childFrame._cdcLabel:SetPoint("RIGHT", childFrame, "RIGHT", -8, 0)
-        end
-        childFrame:Show()
-    end
-
     HideCol1PreviewBadges(preview.ghost)
-    if row.kind == "container" then
-        local db = CooldownCompanion.db.profile
-        local container = db and db.groupContainers and db.groupContainers[row.id]
-        if container then
-            SetupGroupRowIndicators({ frame = preview.ghost }, container)
-        end
-    elseif row.kind == "folder" then
+    if row.kind == "folder" then
         local db = CooldownCompanion.db.profile
         local folder = db and db.folders and db.folders[row.id]
         if folder then
