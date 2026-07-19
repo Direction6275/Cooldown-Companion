@@ -15,11 +15,9 @@ local ClearConfigPrimarySelection = ST._ClearConfigPrimarySelection
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local COLUMN_PADDING = ST._COLUMN_PADDING
 local RefreshColumn1 = ST._RefreshColumn1
-local RefreshColumn2 = ST._RefreshColumn2
 local RefreshColumn3 = ST._RefreshColumn3
 local RefreshProfileBar = ST._RefreshProfileBar
 local SetConfigPrimaryMode = ST._SetConfigPrimaryMode
-local ClearCol2AnimatedPreview = ST._ClearCol2AnimatedPreview
 local ClearConfigShiftTooltipHover = ST._ClearConfigShiftTooltipHover
 local GetConfigEntryDisplayName = ST._GetConfigEntryDisplayName
 local IsConfigFinderAvailable = ST._IsConfigFinderAvailable
@@ -57,7 +55,7 @@ local CONFIG_FINDER_BOX_HEIGHT = 28
 local CONFIG_FINDER_BUTTON_GAP = 3
 local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
 local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
-local CONFIG_NESTED_INLINE_GROUP_INSET = 20
+local NAVIGATOR_WIDTH = 300
 local CONFIG_DRAG_ALPHA = 0.40
 local PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH = 330
 local PROFILE_WIDE_FONT_WINDOW_HEIGHT = 168
@@ -90,7 +88,7 @@ local function GetProfileWideSideWindowWidth()
     local configFrame = CS.configFrame
     local narrowestWidth
 
-    for _, columnKey in ipairs({ "col1", "col2", "col3" }) do
+    for _, columnKey in ipairs({ "col1", "col3" }) do
         local column = configFrame and configFrame[columnKey]
         local frame = column and column.frame
         local visible = frame and (frame:IsVisible() or frame:IsShown())
@@ -278,12 +276,6 @@ local function HasOtherClassInventory()
     return false, searchFiltered == true, hasOtherInventory
 end
 
-local GetClassColoredText = ST._GetClassColoredText
-
-local function GetCustomBarsColumnTitle()
-    return "Custom Bars & Resources"
-end
-
 local function GetResourceSettingsColumnTitle()
     local powerType = tonumber(CS.selectedResourcePowerType)
     local powerNames = ST._RB and ST._RB.POWER_NAMES
@@ -372,8 +364,8 @@ local function GetConfigSelectionSummary()
 end
 
 local function GetColumn3HeaderMode(selection)
-    -- Cast Bar & Unit Frames home: the wide column 3 shows the selected
-    -- column-2 row's settings.
+    -- Cast Bar & Unit Frames home: the workspace shows the selected
+    -- Navigator row's settings.
     if CS.castFramesEntrySelected then
         if CS.castFramesSelectedItem == "player" then
             return "player_frame"
@@ -382,8 +374,7 @@ local function GetColumn3HeaderMode(selection)
         end
         return "cast_bar"
     end
-    -- Resources home: the wide column 3 hosts the surfaces column 4 used
-    -- to show, so it takes over column 4's header modes too.
+    -- Resources home: the workspace hosts the resource editing surfaces.
     if CS.resourcesEntrySelected then
         if ST._IsResourcesEmptyStateActive and ST._IsResourcesEmptyStateActive() then
             return "resources_intro"
@@ -409,7 +400,7 @@ local function GetColumn3HeaderMode(selection)
     return "button"
 end
 
--- Group-side titles (panel / folder / group): used for the wide column 3
+-- Group-side titles (panel / folder / group): used for the workspace
 -- header during Other Class browsing, where it hosts both entry and
 -- group-side settings.
 local function GetGroupSideHeaderMode(selection)
@@ -630,9 +621,8 @@ function CooldownCompanion:DoesCurrentConfigSelectionReferenceSpell(pendingSpell
         return true
     end
 
-    -- Wide view: entries render only on the selected panel's mirror; the
-    -- retired column 2 entry rows (and their collapse state) are not a
-    -- display surface here, so scan the selected panel unconditionally.
+    -- Entries render only on the selected panel's mirror in the workspace,
+    -- so scan the selected panel unconditionally.
     if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
         return DoesSelectedPanelReferencePendingOverrideSpell(pendingSpellIds)
     end
@@ -669,8 +659,8 @@ function CooldownCompanion:RefreshConfigForSpellOverride(pendingSpellIds)
         RefreshColumn3()
     elseif ST._RefreshButtonsPreviewMirror
         and DoesSelectedPanelReferencePendingOverrideSpell(pendingSpellIds) then
-        -- Wide view: a non-selected entry of the mirrored panel picked up
-        -- the override — its name/icon render on the mirror, not column 2.
+        -- A non-selected entry of the mirrored panel picked up the override;
+        -- its name and icon render on the mirror.
         ST._RefreshButtonsPreviewMirror()
     end
     ApplyConfigColumnTitles(CS.configFrame)
@@ -1081,44 +1071,6 @@ local function CreateConfigPanel()
     end)
     importClusterBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- Cast Bar & Unit Frames button — left of Import
-    local castFramesBtn = CreateFrame("Button", nil, content)
-    castFramesBtn:SetSize(18, 18)
-    local castFramesIcon = castFramesBtn:CreateTexture(nil, "ARTWORK")
-    castFramesIcon:SetAtlas("groupfinder-icon-friend", false)
-    castFramesIcon:SetAllPoints()
-    castFramesBtn:SetHighlightAtlas("groupfinder-icon-friend")
-    castFramesBtn:GetHighlightTexture():SetAlpha(0.3)
-    local castFramesBtnBorder
-    local function UpdateCastFramesBadgeState()
-        if CS.castFramesEntrySelected then
-            if not castFramesBtnBorder then
-                castFramesBtnBorder = castFramesBtn:CreateTexture(nil, "OVERLAY")
-                castFramesBtnBorder:SetPoint("TOPLEFT", -1, 1)
-                castFramesBtnBorder:SetPoint("BOTTOMRIGHT", 1, -1)
-                castFramesBtnBorder:SetColorTexture(0.85, 0.65, 0.0, 0.6)
-            end
-            castFramesBtnBorder:Show()
-        elseif castFramesBtnBorder then
-            castFramesBtnBorder:Hide()
-        end
-    end
-
-    castFramesBtn:SetScript("OnClick", function()
-        if ST._SelectConfigCastFramesEntry then
-            ST._SelectConfigCastFramesEntry({ toggle = true })
-        end
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    castFramesBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:AddLine("Cast Bar & Unit Frames")
-        GameTooltip:AddLine("Configure the cast bar and unit frame attachments.", 1, 1, 1, true)
-        GameTooltip:AddLine("Click again to return to your panels.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    castFramesBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
     -- Other Classes browse button — between the Changelog and CDM buttons
     local otherClassBrowseBtn = CreateFrame("Button", nil, content)
     otherClassBrowseBtn:SetSize(16, 16)
@@ -1269,7 +1221,6 @@ local function CreateConfigPanel()
     otherClassBrowseBtn:SetPoint("RIGHT", changelogBtn, "LEFT", -4, 0)
     cdmDisplayBtn:SetPoint("RIGHT", otherClassBrowseBtn, "LEFT", -4, 0)
     importClusterBtn:SetPoint("RIGHT", cdmDisplayBtn, "LEFT", -4, 0)
-    castFramesBtn:Hide()
     local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
     gearIcon:SetTexture("Interface\\WorldMap\\GEAR_64GREY")
     gearIcon:SetAllPoints()
@@ -1618,15 +1569,15 @@ local function CreateConfigPanel()
     -- Bundled changelog overlay (kept separate from column refreshes).
     changelogOverlay = SetupChangelogOverlay(frame, colParent, UpdateChangelogBtnHighlight)
 
-    -- Column 1: Groups (AceGUI InlineGroup)
+    -- Navigator rail (AceGUI InlineGroup)
     local col1 = AceGUI:Create("InlineGroup")
-    col1:SetTitle("Groups")
+    col1:SetTitle("Navigator")
     col1:SetAutoAdjustHeight(false)
     col1:SetLayout(MANUAL_COLUMN_LAYOUT)
     col1.frame:SetParent(colParent)
     col1.frame:Show()
 
-    -- Info button next to Groups title
+    -- Info button next to the Navigator title
     local groupInfoBtn = CreateFrame("Button", nil, col1.frame)
     groupInfoBtn:SetSize(16, 16)
     groupInfoBtn:SetPoint("LEFT", col1.titletext, "RIGHT", -2, 0)
@@ -1636,9 +1587,8 @@ local function CreateConfigPanel()
     groupInfoIcon:SetAtlas("QuestRepeatableTurnin")
     groupInfoBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Groups")
-        GameTooltip:AddLine("A group contains one or more panels.", 1, 1, 1)
-        GameTooltip:AddLine("Folders are optional organizers for multiple groups.", 1, 1, 1)
+        GameTooltip:AddLine("Navigator")
+        GameTooltip:AddLine("Groups contain panels; panels contain entries.", 1, 1, 1)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Right-click for options.", 1, 1, 1)
         GameTooltip:AddLine("Hold left-click and drag to reorder.", 1, 1, 1)
@@ -1649,72 +1599,14 @@ local function CreateConfigPanel()
         GameTooltip:AddLine("Middle-click to toggle lock/unlock.", 1, 1, 1, true)
         GameTooltip:AddLine("Shift+Left-click to set spec filter.", 1, 1, 1, true)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Folders", 1, 0.82, 0)
-        GameTooltip:AddLine("Left-click to expand/collapse.", 1, 1, 1)
-        GameTooltip:AddLine("Middle-click to lock/unlock all children.", 1, 1, 1, true)
-        GameTooltip:AddLine("Shift+Left-click to set folder-wide filters.", 1, 1, 1, true)
+        GameTooltip:AddLine("Panel Rows", 1, 0.82, 0)
+        GameTooltip:AddLine("Left-click to select; Ctrl+Left-click to multi-select.", 1, 1, 1, true)
+        GameTooltip:AddLine("Middle-click to toggle anchor lock.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     groupInfoBtn:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
-
-    -- Column 2: Panels (AceGUI InlineGroup)
-    local col2 = AceGUI:Create("InlineGroup")
-    col2:SetTitle("Panels")
-    col2:SetAutoAdjustHeight(false)
-    col2:SetLayout(MANUAL_COLUMN_LAYOUT)
-    col2.frame:SetParent(colParent)
-    col2.frame:Hide()
-
-    -- Info button next to Panels title
-    local infoBtn = CreateFrame("Button", nil, col2.frame)
-    infoBtn:SetSize(16, 16)
-    infoBtn:SetPoint("LEFT", col2.titletext, "RIGHT", -2, 0)
-    local infoIcon = infoBtn:CreateTexture(nil, "OVERLAY")
-    infoIcon:SetSize(12, 12)
-    infoIcon:SetPoint("CENTER")
-    infoIcon:SetAtlas("QuestRepeatableTurnin")
-    infoBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if CS.resourcesEntrySelected then
-            GameTooltip:AddLine("Custom Bars & Resources")
-            GameTooltip:AddLine("Create Custom Bars and manage enabled resource-specific settings.", 1, 1, 1, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Active Custom Bars shows Custom Bars currently loadable for your spec and conditions.", 1, 1, 1, true)
-            GameTooltip:AddLine("Resources opens settings for enabled non-health resources.", 1, 1, 1, true)
-            GameTooltip:AddLine("Inactive Custom Bars shows Custom Bars blocked by spec, talents, load conditions, or disabled state.", 1, 1, 1, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("No spec filter means a Custom Bar applies to every spec.", 1, 1, 1, true)
-            GameTooltip:Show()
-            return
-        end
-        if CS.castFramesEntrySelected then
-            GameTooltip:AddLine("Cast Bar & Unit Frames")
-            GameTooltip:AddLine("Select the Cast Bar or a unit frame to configure it in the settings column.", 1, 1, 1, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
-            GameTooltip:Show()
-            return
-        end
-        GameTooltip:AddLine("Panels")
-        GameTooltip:AddLine("A panel controls dimensions, display mode, and layout for all entries inside it. Every entry needs a panel, even if it's just one.", 1, 1, 1, true)
-        GameTooltip:AddLine("Select a panel to preview and edit its entries in the settings column.", 1, 1, 1, true)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Left-click to select/deselect.", 1, 1, 1)
-        GameTooltip:AddLine("Right-click for options.", 1, 1, 1)
-        GameTooltip:AddLine("Hold left-click and drag to reorder.", 1, 1, 1)
-        GameTooltip:AddLine("Ctrl+Left-click to multi-select.", 1, 1, 1, true)
-        GameTooltip:AddLine("Middle-click to toggle anchor lock.", 1, 1, 1, true)
-        GameTooltip:AddLine("Click |cff4dcc4d+|r to add an entry to that panel.", 1, 1, 1, true)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Drag spells/items from your spellbook or inventory onto a panel to add.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    infoBtn:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    col2._infoBtn = infoBtn
 
     -- Config finder searches saved groups, panels, and entries without
     -- changing the active selection while the user types.
@@ -1771,15 +1663,15 @@ local function CreateConfigPanel()
     end
     CS.configFinderBox = configFinder
 
-    -- Column 3: Button Settings
+    -- Workspace: live preview and editing surfaces
     local col3 = AceGUI:Create("InlineGroup")
-    col3:SetTitle("Button Settings")
+    col3:SetTitle("Live Preview")
     col3:SetAutoAdjustHeight(false)
     col3:SetLayout(MANUAL_COLUMN_LAYOUT)
     col3.frame:SetParent(colParent)
     col3.frame:Show()
 
-    -- Info button next to Column 3 title
+    -- Info button next to the workspace title
     local bsInfoBtn = CreateFrame("Button", nil, col3.frame)
     bsInfoBtn:SetSize(16, 16)
     bsInfoBtn:SetPoint("LEFT", col3.titletext, "RIGHT", -2, 0)
@@ -1846,17 +1738,16 @@ local function CreateConfigPanel()
     -- Store column header (?) buttons for lifecycle cleanup.
     wipe(CS.columnInfoButtons)
     CS.columnInfoButtons[1] = groupInfoBtn
-    CS.columnInfoButtons[2] = infoBtn
-    CS.columnInfoButtons[3] = bsInfoBtn
+    CS.columnInfoButtons[2] = bsInfoBtn
 
-    -- Static button bar at bottom of column 1 (New Group + Resources)
+    -- Static Create/browse button bar at the bottom of the Navigator.
     local btnBar = CreateFrame("Frame", nil, col1.content)
     btnBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 0)
     btnBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 0)
     btnBar:SetHeight(30)
     CS.col1ButtonBar = btnBar
 
-    -- AceGUI ScrollFrames in columns 1 and 2
+    -- Navigator scroll
     local scroll1 = AceGUI:Create("ScrollFrame")
     scroll1:SetLayout("List")
     scroll1.frame:SetParent(col1.content)
@@ -1865,23 +1756,6 @@ local function CreateConfigPanel()
     scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30)
     scroll1.frame:Show()
     CS.col1Scroll = scroll1
-
-    local scroll2 = AceGUI:Create("ScrollFrame")
-    scroll2:SetLayout("List")
-    scroll2.frame:SetParent(col2.content)
-    scroll2.frame:ClearAllPoints()
-    scroll2.frame:SetPoint("TOPLEFT", col2.content, "TOPLEFT", 0, 0)
-    scroll2.frame:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 30)
-    scroll2.frame:Show()
-    CS.col2Scroll = scroll2
-
-    -- Static button bar at bottom of column 2 (Icon/Bar/Text Panel)
-    local btnBar2 = CreateFrame("Frame", nil, col2.content)
-    btnBar2:SetPoint("BOTTOMLEFT", col2.content, "BOTTOMLEFT", 0, 0)
-    btnBar2:SetPoint("BOTTOMRIGHT", col2.content, "BOTTOMRIGHT", 0, 0)
-    btnBar2:SetHeight(30)
-    btnBar2:Hide()
-    CS.col2ButtonBar = btnBar2
 
     -- Button Settings TabGroup. The tab list is refreshed later based on the
     -- selected group's display mode, so texture panels can omit Overrides.
@@ -2009,9 +1883,6 @@ local function CreateConfigPanel()
 
         local targets = CS._panelDropTargets
         if not targets or #targets == 0 then
-            if ClearCol2AnimatedPreview then
-                ClearCol2AnimatedPreview()
-            end
             self:Hide()
             return
         end
@@ -2036,9 +1907,6 @@ local function CreateConfigPanel()
                 entry.overlay:SetAlpha(1)
                 entry.overlay:Hide()
             end
-        end
-        if ClearCol2AnimatedPreview then
-            ClearCol2AnimatedPreview()
         end
     end
 
@@ -2110,7 +1978,7 @@ local function CreateConfigPanel()
         local groupReferenceWidth = oldRemaining - math.floor(oldRemaining / 2)
         local equalColWidth = math.min(groupReferenceWidth, math.floor(baseW / 4))
 
-        -- Talent picker mode: 2 wide columns (col1 + col3), col2 hidden
+        -- Talent picker mode: two equally wide surfaces.
         if CS.talentPickerMode then
             if CS.configFinderBox then
                 CS.configFinderBox.frame:Hide()
@@ -2133,7 +2001,7 @@ local function CreateConfigPanel()
         end
 
         -- Final cutover layout: one fixed Navigator rail and one workspace.
-        local col1Width = math.min(300, math.max(260, w - 600 - pad))
+        local col1Width = math.min(NAVIGATOR_WIDTH, math.max(260, w - 600 - pad))
         local col3Width = math.max(1, w - col1Width - pad)
         local finderAvailable = IsConfigFinderAvailable and IsConfigFinderAvailable()
 
@@ -2161,9 +2029,6 @@ local function CreateConfigPanel()
         col1.frame:ClearAllPoints()
         col1.frame:SetPoint("TOPLEFT", colParent, "TOPLEFT", 0, 0)
         col1.frame:SetSize(col1Width, h)
-
-        col2.frame:ClearAllPoints()
-        col2.frame:Hide()
 
         col3.frame:ClearAllPoints()
         col3.frame:SetPoint("TOPLEFT", col1.frame, "TOPRIGHT", pad, 0)
@@ -2205,12 +2070,10 @@ local function CreateConfigPanel()
     frame.changelogOverlay = changelogOverlay
     frame.otherClassBrowseButton = otherClassBrowseBtn
     frame.col1 = col1
-    frame.col2 = col2
     frame.col3 = col3
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
     frame.UpdateCompactConfigRows = UpdateCompactConfigRows
-    frame.UpdateCastFramesBadgeState = UpdateCastFramesBadgeState
     frame.UpdateOtherClassBrowseButtonState = UpdateOtherClassBrowseButtonState
     UpdateOtherClassBrowseButtonState()
 
@@ -2250,9 +2113,6 @@ function CooldownCompanion:_configRefreshPanelImpl()
         RefreshProfileBar(CS.configFrame.profileBar)
     end
     CS.configFrame.versionText:SetText(GetVersionFooterText())
-    if CS.configFrame.UpdateCastFramesBadgeState then
-        CS.configFrame.UpdateCastFramesBadgeState()
-    end
     if CS.configFrame.UpdateOtherClassBrowseButtonState then
         CS.configFrame.UpdateOtherClassBrowseButtonState()
     end

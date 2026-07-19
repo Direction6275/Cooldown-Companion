@@ -18,7 +18,7 @@ local SelectConfigPanel = ST._SelectConfigPanel
 local SelectConfigButton = ST._SelectConfigButton
 
 -- After a successful add, set selection state to the new button so the
--- next RefreshConfigPanel shows its settings in Column 3.
+-- next RefreshConfigPanel shows its settings in the editing workspace.
 -- Precondition: CS.selectedContainer is already set by the caller's
 -- panel/container selection flow.
 local function SelectNewButton(panelId, buttonIndex)
@@ -793,7 +793,7 @@ local function OnAutocompleteSelect(entry)
         CooldownCompanion:RefreshConfigPanel()
     end
     -- Callers with persistent edit boxes (the wide add box) clear their
-    -- widget on success; the column 2 inline box rebuilds from CS.newInput.
+    -- widget on success; the workspace inline box rebuilds from CS.newInput.
     return added and true or false
 end
 

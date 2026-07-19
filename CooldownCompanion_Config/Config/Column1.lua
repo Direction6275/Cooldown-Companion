@@ -1,6 +1,6 @@
 --[[
-    CooldownCompanion - Config/Column1
-    RefreshColumn1 + nested helpers (group list rendering).
+    CooldownCompanion - Config/Navigator
+    Consolidated Group and Panel navigation, search, and rail destinations.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -15,16 +15,12 @@ local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local ApplyConfigTextRow = ST._ApplyConfigTextRow
 local CompactUntitledInlineGroupConfig = ST._CompactUntitledInlineGroupConfig
 local SetupGroupRowIndicators = ST._SetupGroupRowIndicators
-local SetupFolderRowIndicators = ST._SetupFolderRowIndicators
 local GetConfigRowBadgeReserve = ST._GetConfigRowBadgeReserve
 local SetupColumn1MarkerRow = ST._SetupColumn1MarkerRow
 local GetContainerIcon = ST._GetContainerIcon
-local GetFolderIcon = ST._GetFolderIcon
 local GetButtonIcon = ST._GetButtonIcon
-local OpenFolderIconPicker = ST._OpenFolderIconPicker
 local OpenContainerIconPicker = ST._OpenContainerIconPicker
 local IsValidIconTexture = ST._IsValidIconTexture
-local GenerateFolderName = ST._GenerateFolderName
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local CancelDrag = ST._CancelDrag
 local StartDragTracking = ST._StartDragTracking
@@ -33,13 +29,11 @@ local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
 local ContainersHaveForeignSpecs = ST._ContainersHaveForeignSpecs
-local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
 local SelectConfigFinderResult = ST._SelectConfigFinderResult
 local ClearConfigPrimarySelection = ST._ClearConfigPrimarySelection
-local SelectConfigFolder = ST._SelectConfigFolder
 local SelectConfigContainer = ST._SelectConfigContainer
 local ToggleConfigContainerMultiSelect = ST._ToggleConfigContainerMultiSelect
 local SelectConfigPanel = ST._SelectConfigPanel
@@ -229,11 +223,6 @@ local function OpenContainerLoadConditions(containerId)
     CooldownCompanion:RefreshConfigPanel()
 end
 
-local function OpenFolderLoadConditions(folderId)
-    SelectConfigFolder(folderId)
-    CooldownCompanion:RefreshConfigPanel()
-end
-
 local function TrimGroupName(name)
     if name == nil then return "" end
     return tostring(name):match("^%s*(.-)%s*$") or ""
@@ -356,19 +345,6 @@ local function BuildSelectedContainersExportPayload(db, selectedGroups)
         version = 1,
         containers = exportContainers,
     }
-end
-
-local function ResolveContainerScopeForConfig(containerId, container, charKey)
-    if CooldownCompanion.ResolveContainerClassScope then
-        return CooldownCompanion:ResolveContainerClassScope(container or containerId)
-    end
-    if container and container.isGlobal then
-        return { scope = "global", sectionKey = "global", runtimeVisible = true }
-    end
-    if container and container.createdBy == charKey then
-        return { scope = "current-class", sectionKey = "char", runtimeVisible = true }
-    end
-    return { scope = "invalid", sectionKey = "invalid", runtimeVisible = false }
 end
 
 local function CanPanelMoveToContainer(panelId, containerId)
@@ -647,37 +623,6 @@ end
 
 ST._ShowPanelContextMenu = ShowPanelContextMenu
 
-local function ResolveFolderScopeForConfig(folderId, folder, charKey)
-    if CooldownCompanion.ResolveFolderClassScope then
-        return CooldownCompanion:ResolveFolderClassScope(folder or folderId)
-    end
-    if folder and folder.section == "global" then
-        return { scope = "global", sectionKey = "global", runtimeVisible = true }
-    end
-    if folder and folder.createdBy == charKey then
-        return { scope = "current-class", sectionKey = "char", runtimeVisible = true }
-    end
-    return { scope = "invalid", sectionKey = "invalid", runtimeVisible = false }
-end
-
-local function GetFolderTargetsForSection(db, charKey, section)
-    local folderList = {}
-    for fid, folder in pairs(db.folders) do
-        local scope = ResolveFolderScopeForConfig(fid, folder, charKey)
-        local folderSection = scope and scope.sectionKey
-            or (folder.section == "global" and "global" or "char")
-        if folderSection == section then
-            folderList[#folderList + 1] = {
-                id = fid,
-                name = folder.name,
-                order = CooldownCompanion:GetOrderForSpec(folder, CooldownCompanion._currentSpecId, fid),
-            }
-        end
-    end
-    table.sort(folderList, function(a, b) return a.order < b.order end)
-    return folderList
-end
-
 local function BuildColumn1ContainerStats(db, containerIds)
     local statsByContainer = {}
     if not containerIds or not next(containerIds) then return statsByContainer end
@@ -723,7 +668,7 @@ local function BuildColumn1ContainerStats(db, containerIds)
     return statsByContainer
 end
 
-local function ShowContainerContextMenu(db, charKey, containerId, container)
+local function ShowContainerContextMenu(db, containerId, container)
     if not CS.groupContextMenu then
         CS.groupContextMenu = CreateFrame("Frame", "CDCGroupContextMenu", UIParent, "UIDropDownMenuTemplate")
     end
@@ -883,30 +828,6 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
                 ShowPopupAboveConfig("CDC_DELETE_GROUP", container.name, { containerId = containerId })
             end
             UIDropDownMenu_AddButton(info, level)
-        elseif menuList == "MOVE_TO_FOLDER" then
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = "(No Folder)"
-            info.checked = (container.folderId == nil)
-            info.func = function()
-                CloseDropDownMenus()
-                CooldownCompanion:MoveGroupToFolder(containerId, nil)
-                CooldownCompanion:RefreshConfigPanel()
-            end
-            UIDropDownMenu_AddButton(info, level)
-
-            local containerScope = ResolveContainerScopeForConfig(containerId, container, charKey)
-            local containerSection = containerScope.sectionKey or (container.isGlobal and "global" or "char")
-            for _, folderTarget in ipairs(GetFolderTargetsForSection(db, charKey, containerSection)) do
-                info = UIDropDownMenu_CreateInfo()
-                info.text = folderTarget.name
-                info.checked = (container.folderId == folderTarget.id)
-                info.func = function()
-                    CloseDropDownMenus()
-                    CooldownCompanion:MoveGroupToFolder(containerId, folderTarget.id)
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-                UIDropDownMenu_AddButton(info, level)
-            end
         elseif menuList == "ADD_PANEL" then
             for _, modeInfo in ipairs(PANEL_CREATION_MODES) do
                 local info = UIDropDownMenu_CreateInfo()
@@ -941,179 +862,6 @@ local function ShowContainerContextMenu(db, charKey, containerId, container)
 
     CS.groupContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
     ToggleDropDownMenu(1, nil, CS.groupContextMenu, "cursor", 0, 0)
-end
-
-local function ShowFolderContextMenu(db, folderId, folder)
-    if not CS.folderContextMenu then
-        CS.folderContextMenu = CreateFrame("Frame", "CDCFolderContextMenu", UIParent, "UIDropDownMenuTemplate")
-    end
-
-    UIDropDownMenu_Initialize(CS.folderContextMenu, function(self, level)
-        local info = UIDropDownMenu_CreateInfo()
-        info.text = "Rename"
-        info.notCheckable = true
-        info.func = function()
-            CloseDropDownMenus()
-            ShowPopupAboveConfig("CDC_RENAME_FOLDER", folder.name, { folderId = folderId })
-        end
-        UIDropDownMenu_AddButton(info, level)
-
-        info = UIDropDownMenu_CreateInfo()
-        info.text = "Add Group"
-        info.notCheckable = true
-        info.func = function()
-            CloseDropDownMenus()
-            local charKey = CooldownCompanion.db and CooldownCompanion.db.keys and CooldownCompanion.db.keys.char
-            local folderScope = ResolveFolderScopeForConfig(folderId, folder, charKey)
-            if folderScope.scope == "other-class" then
-                CooldownCompanion:Print("Create new groups in your current class, then move them to Global if needed.")
-                return
-            end
-            local containerId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
-            local container = db.groupContainers and db.groupContainers[containerId]
-            if container and folderScope.scope == "global" then
-                container.isGlobal = true
-            end
-            CooldownCompanion:MoveGroupToFolder(containerId, folderId, { allowScopeChange = true })
-            SelectConfigContainer(containerId)
-            CooldownCompanion:RefreshConfigPanel()
-        end
-        UIDropDownMenu_AddButton(info, level)
-
-        info = UIDropDownMenu_CreateInfo()
-        info.text = "Set Folder Icon..."
-        info.notCheckable = true
-        info.func = function()
-            CloseDropDownMenus()
-            OpenFolderIconPicker(folderId)
-        end
-        UIDropDownMenu_AddButton(info, level)
-
-        if type(folder.manualIcon) == "number" or type(folder.manualIcon) == "string" then
-            info = UIDropDownMenu_CreateInfo()
-            info.text = "Clear Custom Icon"
-            info.notCheckable = true
-            info.func = function()
-                CloseDropDownMenus()
-                local currentFolder = db.folders[folderId]
-                if currentFolder then
-                    currentFolder.manualIcon = nil
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-            end
-            UIDropDownMenu_AddButton(info, level)
-        end
-
-        info = UIDropDownMenu_CreateInfo()
-        info.text = folder.section == "global" and "Move to Current Class Folder" or "Make Global Folder"
-        info.notCheckable = true
-        info.func = function()
-            CloseDropDownMenus()
-            if folder.section == "global" and FolderHasForeignSpecs and FolderHasForeignSpecs(folderId) then
-                ShowPopupAboveConfig("CDC_UNGLOBAL_FOLDER", folder.name, { folderId = folderId })
-                return
-            end
-            CooldownCompanion:ToggleFolderGlobal(folderId)
-            CooldownCompanion:RefreshConfigPanel()
-        end
-        UIDropDownMenu_AddButton(info, level)
-
-        local containers = db.groupContainers or {}
-        local anyLocked = false
-        for _, container in pairs(containers) do
-            if container.folderId == folderId and container.locked then
-                anyLocked = true
-                break
-            end
-        end
-
-        info = UIDropDownMenu_CreateInfo()
-        info.text = anyLocked and "Unlock All" or "Lock All"
-        info.notCheckable = true
-        info.func = function()
-            CloseDropDownMenus()
-            local newState = not anyLocked
-            for cid, container in pairs(containers) do
-                if container.folderId == folderId then
-                    container.locked = newState
-                    CooldownCompanion:UpdateContainerDragHandle(cid, newState)
-                    CooldownCompanion:RefreshContainerPanels(cid)
-                end
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end
-        UIDropDownMenu_AddButton(info, level)
-
-        info = UIDropDownMenu_CreateInfo()
-        info.text = "Spec / Hero Filter"
-        info.notCheckable = true
-        info.func = function()
-            CloseDropDownMenus()
-            OpenFolderLoadConditions(folderId)
-        end
-        UIDropDownMenu_AddButton(info, level)
-
-        info = UIDropDownMenu_CreateInfo()
-        info.text = "Export Folder"
-        info.notCheckable = true
-        info.func = function()
-            CloseDropDownMenus()
-            local folderData = { name = folder.name }
-            if type(folder.manualIcon) == "number" or type(folder.manualIcon) == "string" then
-                folderData.manualIcon = folder.manualIcon
-            end
-            if folder.specs and next(folder.specs) then
-                folderData.specs = CopyTable(folder.specs)
-            end
-            if folder.heroTalents and next(folder.heroTalents) then
-                folderData.heroTalents = CopyTable(folder.heroTalents)
-            end
-            if CooldownCompanion:HasLocalLoadConditions(folder) then
-                folderData.loadConditions = CopyTable(folder.loadConditions)
-            end
-
-            local orderedCids = {}
-            for cid, container in pairs(db.groupContainers) do
-                if container.folderId == folderId then
-                    orderedCids[#orderedCids + 1] = {
-                        cid = cid,
-                        order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, cid),
-                    }
-                end
-            end
-            table.sort(orderedCids, function(a, b) return a.order < b.order end)
-
-            local exportContainers = {}
-            for _, item in ipairs(orderedCids) do
-                local container = db.groupContainers[item.cid]
-                if container then
-                    local payload = BuildContainerExportPayload(db, item.cid, container)
-                    exportContainers[#exportContainers + 1] = {
-                        container = payload.container,
-                        panels = payload.panels,
-                        _originalContainerId = payload._originalContainerId,
-                    }
-                end
-            end
-
-            local payload = { type = "folder", version = 2, folder = folderData, containers = exportContainers }
-            local exportString = EncodeExportData(payload)
-            ShowPopupAboveConfig("CDC_EXPORT_GROUP", nil, { exportString = exportString })
-        end
-        UIDropDownMenu_AddButton(info, level)
-
-        info = UIDropDownMenu_CreateInfo()
-        info.text = "|cffff4444Delete Folder|r"
-        info.notCheckable = true
-        info.func = function()
-            CloseDropDownMenus()
-            ShowPopupAboveConfig("CDC_DELETE_FOLDER", folder.name, { folderId = folderId })
-        end
-        UIDropDownMenu_AddButton(info, level)
-    end, "MENU")
-
-    CS.folderContextMenu:SetFrameStrata("FULLSCREEN_DIALOG")
-    ToggleDropDownMenu(1, nil, CS.folderContextMenu, "cursor", 0, 0)
 end
 
 local function ClearColumn1ButtonBar()
@@ -1361,14 +1109,6 @@ local function RefreshColumn1(preserveDrag)
         CS._UpdatePanelDropScan()
     end
 
-    -- Hide all accent bars from previous render
-    for i, bar in ipairs(CS.folderAccentBars) do
-        bar:Hide()
-        bar:ClearAllPoints()
-        bar._cdcFolderAccentActive = nil
-    end
-    local accentBarIndex = 0  -- pool cursor, incremented as bars are used
-
     local db = CooldownCompanion.db.profile
     local charKey = CooldownCompanion.db.keys.char
     local searchResults = IsConfigFinderActive and IsConfigFinderActive() and BuildConfigFinderResults and BuildConfigFinderResults() or nil
@@ -1530,16 +1270,6 @@ local function RefreshColumn1(preserveDrag)
         local stats = containerStats[containerId]
         if not stats or not stats.hasButtons then return true end
         return stats.hasActivePanel ~= true
-    end
-
-    local function IsFolderFullyInactive(folderId, childContainerIds)
-        if not childContainerIds or #childContainerIds == 0 then return true end
-        for _, cid in ipairs(childContainerIds) do
-            if not IsContainerInactive(cid, db.groupContainers[cid]) then
-                return false
-            end
-        end
-        return true
     end
 
     local function ResolveSelectedDragLoadBucket(defaultBucket)
@@ -1761,7 +1491,7 @@ local function RefreshColumn1(preserveDrag)
                     SelectAndExpandContainer(containerId)
                 end
             elseif button == "RightButton" then
-                ShowContainerContextMenu(db, charKey, containerId, container)
+                ShowContainerContextMenu(db, containerId, container)
             elseif button == "MiddleButton" then
                 container.locked = not container.locked
                 CooldownCompanion:UpdateContainerDragHandle(containerId, container.locked)
@@ -2119,167 +1849,6 @@ local function RefreshColumn1(preserveDrag)
             name = name .. " " .. n
         end
         return name
-    end
-
-    -- Helper: render a folder header row
-    local function RenderFolderRow(folderId, sectionTag, childContainerIds, loadBucket, options)
-        local folder = db.folders[folderId]
-        if not folder then return end
-        local disableDrag = options and options.disableDrag == true
-
-        local isCollapsed = CS.collapsedFolders[folderId]
-        local function ToggleFolderCollapsed()
-            CS.collapsedFolders[folderId] = not CS.collapsedFolders[folderId]
-            CooldownCompanion:RefreshConfigPanel()
-        end
-
-        local entry = AceGUI:Create("InteractiveLabel")
-        CleanRecycledEntry(entry)
-        entry:SetText(folder.name)
-        entry:SetFullWidth(true)
-        entry:SetFontObject(GameFontHighlight)
-        ApplyConfigRowIcon(entry, GetFolderIcon(folderId, db))
-        local allChildrenInactive = IsFolderFullyInactive(folderId, childContainerIds)
-        if CS.selectedFolder == folderId and not CS.selectedContainer and not CS.selectedGroup then
-            entry:SetColor(0.25, 0.62, 1.0)
-        elseif allChildrenInactive then
-            entry:SetColor(0.5, 0.5, 0.5)
-        else
-            entry:SetColor(1.0, 0.82, 0.0)
-        end
-        entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-        CS.col1Scroll:AddChild(entry)
-        SetupFolderRowIndicators(entry, folder)
-
-        -- Tag entry frame for the drag system's folder-row alpha pass
-        entry.frame._cdcFolderId = folderId
-
-        local collapseBtn = entry.frame._cdcCollapseBtn
-        if not collapseBtn then
-            collapseBtn = CreateFrame("Button", nil, entry.frame)
-            collapseBtn:SetSize(16, 16)
-            collapseBtn:SetPropagateMouseClicks(false)
-            collapseBtn:SetPropagateMouseMotion(false)
-            collapseBtn._arrow = collapseBtn:CreateTexture(nil, "ARTWORK")
-            collapseBtn._arrow:SetSize(10, 10)
-            collapseBtn._arrow:SetPoint("CENTER")
-            entry.frame._cdcCollapseBtn = collapseBtn
-        end
-        collapseBtn:SetParent(entry.frame)
-        local function PositionCollapseButton()
-            collapseBtn:ClearAllPoints()
-            local collapseButtonGap = 4
-            local collapseButtonWidth = collapseBtn:GetWidth() or 16
-            local badgeReserve = GetConfigRowBadgeReserve(entry.frame)
-            local labelRightPad = badgeReserve + collapseButtonWidth + (collapseButtonGap * 2)
-            local leftPad = 0
-            if entry.label and entry.label.GetPoint then
-                local _, _, _, xOfs = entry.label:GetPoint(1)
-                leftPad = xOfs or 0
-                entry.label:ClearAllPoints()
-                entry.label:SetPoint("LEFT", entry.frame, "LEFT", leftPad, 0)
-            end
-            local folderNameWidth = entry.label and entry.label:GetStringWidth() or 0
-            local rowWidth = entry.frame.width or entry.frame:GetWidth() or 0
-            local visibleLabelWidth = rowWidth > 0 and math.max(1, rowWidth - leftPad - labelRightPad) or (entry.label and entry.label:GetWidth() or 0)
-            if visibleLabelWidth > 0 then
-                if entry.label and entry.label.SetWidth then
-                    entry.label:SetWidth(visibleLabelWidth)
-                end
-                folderNameWidth = math.min(folderNameWidth, visibleLabelWidth)
-            end
-            collapseBtn:SetPoint("LEFT", entry.label, "LEFT", folderNameWidth + collapseButtonGap, 0)
-        end
-        entry._cdcAfterConfigRowLayout = PositionCollapseButton
-        PositionCollapseButton()
-        collapseBtn:SetFrameLevel(entry.frame:GetFrameLevel() + 25)
-        collapseBtn._arrow:SetAtlas(isCollapsed and "common-icon-plus" or "common-icon-minus", false)
-        collapseBtn._arrow:SetRotation(0)
-        collapseBtn:Show()
-        collapseBtn._arrow:Show()
-        collapseBtn:SetScript("OnClick", function()
-            ToggleFolderCollapsed()
-        end)
-        collapseBtn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(isCollapsed and "Expand" or "Collapse")
-            GameTooltip:Show()
-        end)
-        collapseBtn:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-
-        TrackRenderedRow({
-            kind = "folder",
-            id = folderId,
-            widget = entry,
-            section = sectionTag,
-            loadBucket = loadBucket or "loaded",
-            acceptsDrop = (not disableDrag) and (loadBucket or "loaded") ~= "unloaded",
-            previewDraggable = not disableDrag,
-            previewProxy = true,
-        })
-
-        if not disableDrag then
-            entry:SetCallback("OnClick", function(widget, event, mouseButton)
-                if mouseButton == "LeftButton" and not searchResults and not IsShiftKeyDown() and not GetCursorInfo() then
-                    local cursorX, cursorY = GetScaledCursorPosition(CS.col1Scroll)
-                    CS.dragState = {
-                        kind = "folder",
-                        phase = "pending",
-                        sourceFolderId = folderId,
-                        sourceSection = sectionTag,
-                        sourceLoadBucket = loadBucket or "loaded",
-                        scrollWidget = CS.col1Scroll,
-                        widget = entry,
-                        startX = cursorX,
-                        startY = cursorY,
-                        col1RenderedRows = col1RenderedRows,
-                    }
-                    StartDragTracking()
-                end
-            end)
-        end
-
-        -- Handle clicks via OnMouseUp
-        entry.frame:SetScript("OnMouseUp", function(self, button)
-            if CS.dragState and CS.dragState.phase == "active" then return end
-            if button == "LeftButton" then
-                if searchResults then
-                    return
-                end
-                if IsShiftKeyDown() then
-                    OpenFolderLoadConditions(folderId)
-                    return
-                end
-                SelectConfigFolder(folderId)
-                CooldownCompanion:RefreshConfigPanel()
-            elseif button == "MiddleButton" then
-                -- Lock/unlock all containers in this folder
-                local containers = db.groupContainers or {}
-                local anyLocked = false
-                for _, c in pairs(containers) do
-                    if c.folderId == folderId and c.locked then
-                        anyLocked = true
-                        break
-                    end
-                end
-                local newState = not anyLocked
-                for cid, c in pairs(containers) do
-                    if c.folderId == folderId then
-                        c.locked = newState
-                        CooldownCompanion:UpdateContainerDragHandle(cid, newState)
-                        CooldownCompanion:RefreshContainerPanels(cid)
-                    end
-                end
-                CooldownCompanion:RefreshConfigPanel()
-                CooldownCompanion:Print("Folder " .. (folder.name or "Unknown") .. (newState and " locked." or " unlocked."))
-                return
-            elseif button == "RightButton" then
-                ShowFolderContextMenu(db, folderId, folder)
-            end
-        end)
-
     end
 
     -- Render a section (global, current class, or another class)

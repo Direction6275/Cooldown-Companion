@@ -1,8 +1,7 @@
 --[[
     CooldownCompanion - Config/ProfileBar
     RefreshProfileBar (the profile dropdown + action buttons above the
-    columns). Formerly Column4.lua; column 4 is gone - every view uses
-    the merged wide column 3.
+    surfaces). Every view now uses the unified workspace.
 ]]
 
 local ADDON_NAME, ST = ...

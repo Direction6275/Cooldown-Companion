@@ -16,7 +16,6 @@ local SelectConfigPanel = ST._SelectConfigPanel
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 
 local DRAG_THRESHOLD = 8
-local PREVIEW_MODE_PANEL_COMPACT = DR.PREVIEW_MODE_PANEL_COMPACT
 
 local GetRawCursorCoordinates = DR.GetRawCursorCoordinates
 local GetScaledCursorCoordinates = DR.GetScaledCursorCoordinates
@@ -26,20 +25,11 @@ local HideDragIndicator = DR.HideDragIndicator
 local ShowDragIndicator = DR.ShowDragIndicator
 local ResetDragIndicatorStyle = DR.ResetDragIndicatorStyle
 local ClearCol1AnimatedPreview = DR.ClearCol1AnimatedPreview
-local ClearCol2AnimatedPreview = DR.ClearCol2AnimatedPreview
 local RenderCol1AnimatedPreview = DR.RenderCol1AnimatedPreview
-local RenderCol2AnimatedPreview = DR.RenderCol2AnimatedPreview
-local UpdateCol2CursorPreview = DR.UpdateCol2CursorPreview
-local SetDraggedFolderAccentBarHidden = DR.SetDraggedFolderAccentBarHidden
 local ShouldAnimateCol1PreviewForDrop = DR.ShouldAnimateCol1PreviewForDrop
 local ShouldShowCol1StaticReorderIndicator = DR.ShouldShowCol1StaticReorderIndicator
 local ResolveCol1LoadedUnloadedPlaceholderTarget = DR.ResolveCol1LoadedUnloadedPlaceholderTarget
 local GetCol1DropTarget = DR.GetCol1DropTarget
-local GetCol2DropTarget = DR.GetCol2DropTarget
-local GetCol2CompactPanelDropTarget = DR.GetCol2CompactPanelDropTarget
-local GetCol2PanelDropTarget = DR.GetCol2PanelDropTarget
-local PerformPanelReorder = DR.PerformPanelReorder
-local IsPanelReorderNoOp = DR.IsPanelReorderNoOp
 local PerformGroupReorder = DR.PerformGroupReorder
 local ResolveCol1GroupDropTargetFolderId = DR.ResolveCol1GroupDropTargetFolderId
 local IsCol1GroupDropNoOp = DR.IsCol1GroupDropNoOp
@@ -116,7 +106,7 @@ local function ApplyCol1Drop(state)
     local db = CooldownCompanion.db.profile
 
     if state.kind == "group" or state.kind == "folder-group" then
-        -- Column 1 rows are containers now (sourceGroupId holds a containerId)
+        -- Navigator Group rows use container IDs (sourceGroupId holds one).
         local sourceContainerId = state.sourceGroupId
         local container = db.groupContainers[sourceContainerId]
         if not container then return end
@@ -210,7 +200,7 @@ local function ApplyCol1Drop(state)
             end
         end
     elseif state.kind == "multi-group" then
-        -- Multi-select: sourceGroupIds holds container IDs (Column 1 rows are containers)
+        -- Multi-select: sourceGroupIds holds Navigator Group container IDs.
         local sourceContainerIds = state.sourceGroupIds
         if not sourceContainerIds then return end
 
@@ -491,12 +481,6 @@ local function StripButtonOverrides(buttonData)
     buttonData.textFormat = nil
 end
 
-local function ButtonHasOverrides(buttonData)
-    return (buttonData.styleOverrides and next(buttonData.styleOverrides))
-        or (buttonData.overrideSections and next(buttonData.overrideSections))
-        or buttonData.textFormat ~= nil
-end
-
 ------------------------------------------------------------------------
 -- Drag lifecycle
 ------------------------------------------------------------------------
@@ -520,7 +504,6 @@ local function CancelDrag(opts)
         end
     end
     ClearCol1AnimatedPreview()
-    ClearCol2AnimatedPreview()
     if CS.dragState then
         if CS.dragState.dimmedWidgets then
             for _, w in ipairs(CS.dragState.dimmedWidgets) do
@@ -670,19 +653,6 @@ local function FinishCol1FolderAwareDrag(state)
 
     if changed then
         ApplyCol1Drop(state)
-    end
-    CooldownCompanion:RefreshConfigPanel()
-end
-
-local function FinishPanelDrag(state)
-    local dropTarget = state.dropTarget
-    local changed = dropTarget and not IsPanelReorderNoOp(state.sourcePanelId, dropTarget.targetIndex, state.panelDropTargets)
-    if changed then
-        SelectConfigPanel(state.sourcePanelId)
-        PerformPanelReorder(state.sourcePanelId, dropTarget.targetIndex, state.panelDropTargets)
-        for _, entry in ipairs(state.panelDropTargets) do
-            CooldownCompanion:RefreshGroupFrame(entry.panelId)
-        end
     end
     CooldownCompanion:RefreshConfigPanel()
 end
@@ -873,50 +843,6 @@ local function UpdateRailPanelSpringOpen(state, dropTarget)
     return true
 end
 
-local function FinishButtonDrag(state)
-    if state.dropTarget then
-        local dt = state.dropTarget
-        local resolvedIndex = dt.targetIndex
-        if not resolvedIndex then
-            local tg = CooldownCompanion.db.profile.groups[dt.targetPanelId]
-            resolvedIndex = tg and (#tg.buttons + 1) or 1
-        end
-        if dt.targetPanelId == state.groupId then
-            PerformButtonReorder(state.groupId, state.sourceIndex, resolvedIndex)
-            CooldownCompanion:RefreshGroupFrame(state.groupId)
-        else
-            local sourceGroup = CooldownCompanion.db.profile.groups[state.groupId]
-            local targetGroup = CooldownCompanion.db.profile.groups[dt.targetPanelId]
-            local dragButtonData = sourceGroup and sourceGroup.buttons[state.sourceIndex]
-            local rejectMessage = CooldownCompanion.GetPanelManualEntryRejectMessage
-                and CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup, dragButtonData)
-            if rejectMessage then
-                CooldownCompanion:Print(rejectMessage)
-            else
-                local buttonData = dragButtonData
-                if buttonData and ButtonHasOverrides(buttonData) then
-                    ShowPopupAboveConfig("CDC_CROSS_PANEL_STRIP_OVERRIDES", buttonData.name or "this button", {
-                        sourcePanelId = state.groupId,
-                        sourceIndex = state.sourceIndex,
-                        targetPanelId = dt.targetPanelId,
-                        targetIndex = resolvedIndex,
-                    })
-                    return
-                end
-                PerformCrossPanelMove(state.groupId, state.sourceIndex, dt.targetPanelId, resolvedIndex)
-                CooldownCompanion:RefreshGroupFrame(state.groupId)
-                CooldownCompanion:RefreshGroupFrame(dt.targetPanelId)
-            end
-        end
-    else
-        PerformButtonReorder(state.groupId, state.sourceIndex, state.dropIndex or state.sourceIndex)
-        CooldownCompanion:RefreshGroupFrame(state.groupId)
-    end
-    CooldownCompanion:ClearAllConfigPreviews()
-    ClearConfigButtonSelection()
-    CooldownCompanion:RefreshConfigPanel()
-end
-
 local function FinishDrag()
     if not CS.dragState or CS.dragState.phase ~= "active" then
         CancelDrag()
@@ -934,12 +860,8 @@ local function FinishDrag()
         FinishLegacyGroupDrag(state)
     elseif state.kind == "group" or state.kind == "folder" or state.kind == "folder-group" or state.kind == "multi-group" then
         FinishCol1FolderAwareDrag(state)
-    elseif state.kind == "panel" then
-        FinishPanelDrag(state)
     elseif state.kind == "rail-panel" then
         FinishRailPanelDrag(state)
-    elseif state.kind == "button" then
-        FinishButtonDrag(state)
     end
 end
 
@@ -1061,13 +983,11 @@ local function StartDragTracking()
             end
         end
         if CS.dragState.phase == "active" then
-            SetDraggedFolderAccentBarHidden(CS.dragState, true)
             if CS.dragState.kind == "layout-slot" then
                 local dropTarget = CS.dragState.layoutDrag
                     and CS.dragState.layoutDrag.resolveDropTarget
                     and CS.dragState.layoutDrag.resolveDropTarget(cursorX, cursorY, CS.dragState)
                 CS.dragState.dropTarget = dropTarget
-                ClearCol2AnimatedPreview()
                 if CS.dragState.layoutDrag and CS.dragState.layoutDrag.onUpdate then
                     CS.dragState.layoutDrag.onUpdate(CS.dragState, cursorX, cursorY, dropTarget)
                 elseif dropTarget and CS.dragState.layoutDrag.showIndicator then
@@ -1076,7 +996,6 @@ local function StartDragTracking()
                     HideDragIndicator()
                 end
             elseif CS.dragState.railPanelRows then
-                ClearCol2AnimatedPreview()
                 local dropTarget = GetRailPanelDropTarget(
                     cursorX,
                     cursorY,
@@ -1108,8 +1027,7 @@ local function StartDragTracking()
                     HideDragIndicator()
                 end
             elseif CS.dragState.col1RenderedRows then
-                ClearCol2AnimatedPreview()
-                -- Column 1 folder-aware drop detection
+                -- Navigator Group drop detection preserves hidden Folder ownership.
                 local effectiveKind = CS.dragState.kind == "multi-group" and "group" or CS.dragState.kind
                 local dropTarget = GetCol1DropTarget(
                     cursorX,
@@ -1168,48 +1086,8 @@ local function StartDragTracking()
                     ClearCol1AnimatedPreview()
                     HideDragIndicator()
                 end
-            elseif CS.dragState.panelDropTargets then
-                ClearCol1AnimatedPreview()
-                -- Panel reorder detection
-                local preview = CS.col2Preview
-                local dropTarget
-                if preview and preview.mode == PREVIEW_MODE_PANEL_COMPACT then
-                    dropTarget = GetCol2CompactPanelDropTarget(cursorY)
-                else
-                    dropTarget = GetCol2PanelDropTarget(cursorY, CS.dragState.panelDropTargets)
-                end
-                CS.dragState.dropTarget = dropTarget
-                if dropTarget then
-                    HideDragIndicator()
-                    RenderCol2AnimatedPreview({
-                        kind = "panel",
-                        sourcePanelId = CS.dragState.sourcePanelId,
-                        dropTarget = dropTarget,
-                    })
-                else
-                    HideDragIndicator()
-                    ClearCol2AnimatedPreview()
-                end
-            elseif CS.dragState.col2RenderedRows then
-                ClearCol1AnimatedPreview()
-                -- Column 2 cross-panel drop detection
-                local dropTarget = GetCol2DropTarget(cursorY, CS.dragState.col2RenderedRows)
-                CS.dragState.dropTarget = dropTarget
-                if dropTarget then
-                    HideDragIndicator()
-                    RenderCol2AnimatedPreview({
-                        kind = "button",
-                        groupId = CS.dragState.groupId,
-                        sourceIndex = CS.dragState.sourceIndex,
-                        dropTarget = dropTarget,
-                    })
-                else
-                    HideDragIndicator()
-                    ClearCol2AnimatedPreview()
-                end
             else
                 ClearCol1AnimatedPreview()
-                ClearCol2AnimatedPreview()
                 local dropIndex, anchorFrame, anchorAbove = GetDropIndex(
                     CS.dragState.scrollWidget, cursorY,
                     CS.dragState.childOffset or 0,
@@ -1233,5 +1111,3 @@ ST._GetScaledCursorPosition = GetScaledCursorPosition
 ST._PerformCrossPanelMove = PerformCrossPanelMove
 ST._PerformButtonReorder = PerformButtonReorder
 ST._StripButtonOverrides = StripButtonOverrides
-ST._UpdateCol2CursorPreview = UpdateCol2CursorPreview
-ST._ClearCol2AnimatedPreview = ClearCol2AnimatedPreview

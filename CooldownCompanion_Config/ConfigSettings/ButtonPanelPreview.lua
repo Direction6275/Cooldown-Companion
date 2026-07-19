@@ -471,7 +471,7 @@ local function ApplyOverrideTargetingVisuals(slot, panelId, buttonData)
     slot.selectedHighlight:Show()
 end
 
--- Entry status signals, mirroring the column 2 row badges exactly.
+-- Entry status signals shared with the workspace entry-row presentation.
 local function CollectEntryStatus(buttonData, group)
     local usable = CooldownCompanion:IsButtonUsable(buttonData, group)
     local loadAllowed = CooldownCompanion:IsButtonLoadConditionMet(buttonData, group)
@@ -500,7 +500,7 @@ local function CollectEntryStatus(buttonData, group)
 end
 
 -- Ordered badge descriptors, same atlases and meaning as the retired
--- column 2 entry rows; the identity strip in the wide column renders the
+-- workspace entry rows; the identity strip renders the
 -- full set. The "warn" label is replaced with the load-conditions wording
 -- when status.loadBlocked is set.
 local ENTRY_STATUS_BADGES = {
@@ -930,7 +930,7 @@ local function CreatePreviewLayoutDrag(preview, panelId)
 end
 
 -- Shift-hover routes through the shared config Shift-tooltip controller
--- (State.lua), same as the column 2 entry rows: the real spell/item
+-- (State.lua), same as the shared entry rows: the real spell/item
 -- tooltip with the resolved override spell ID, shown and hidden live as
 -- the modifier changes. The controller speaks the AceGUI widget shape
 -- (frame + user data), so each raw slot carries a small adapter.
@@ -969,7 +969,7 @@ local function ResolveSlotShiftTooltip(buttonData)
 end
 
 -- Plain hover: the decorated entry name plus the same status lines the
--- column 2 row badges carried (Shift is the controller's job above).
+-- shared row badges carry (Shift is the controller's job above).
 local function ShowEntrySlotTooltip(slot, buttonData, status)
     GameTooltip:SetOwner(slot, "ANCHOR_RIGHT")
     local name = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })

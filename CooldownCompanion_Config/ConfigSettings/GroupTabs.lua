@@ -2927,7 +2927,7 @@ local function BuildAppearanceTab(container)
             local emptyLabel = AceGUI:Create("Label")
             ST._ConfigureWrappedHelperLabel(emptyLabel)
             emptyLabel:SetFullWidth(true)
-            emptyLabel:SetText("|cff888888Add one entry in Column 2 first. The texture browser will open after that.|r")
+            emptyLabel:SetText("|cff888888Add one entry to this panel first. The texture browser will open after that.|r")
             container:AddChild(emptyLabel)
 
             if CS.pendingTexturePickerOpen == CS.selectedGroup then
@@ -3567,7 +3567,7 @@ local function BuildAppearanceTab(container)
 end
 
 ------------------------------------------------------------------------
--- CONTAINER TAB BUILDERS (for groupContainers settings in Column 4)
+-- CONTAINER TAB BUILDERS (for Group settings in the workspace)
 ------------------------------------------------------------------------
 
 local function BuildContainerGeneralTab(scroll, containerId)

@@ -1,10 +1,9 @@
 --[[
     CooldownCompanion - Config/GroupSettingsHost
-    Group-side settings surfaces (multi-select placeholders, folder tabs,
-    container tabs, single-panel tabs), parameterized on a host frame so
-    Column 4 and future hosts can share them. Surface widgets are stored on
-    the host frame; anchorFn(host, frame) positions each surface and
-    defaults to filling the host.
+    Group-side settings surfaces (multi-select placeholders, retained folder
+    tabs, container tabs, single-panel tabs), parameterized on the workspace
+    host frame. Surface widgets are stored on the host; anchorFn(host, frame)
+    positions each surface and defaults to filling it.
 ]]
 
 local ADDON_NAME, ST = ...

@@ -984,7 +984,6 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     pickerSelectedHeroSubTreeID = nil
 
     local col1 = configFrame.col1
-    local col2 = configFrame.col2
     local col3 = configFrame.col3
 
     -- Save titles
@@ -996,9 +995,6 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     col1:SetTitle("Class")
     col3:SetTitle("Spec")
     configFrame:SetTitle("Pick Talent Conditions")
-
-    -- Hide col2
-    col2.frame:Hide()
 
     -- Hide col1 normal content
     CS.col1Scroll.frame:Hide()
@@ -1025,7 +1021,7 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
 
     -- Hide column info buttons during talent picker
     if CS.columnInfoButtons[1] then CS.columnInfoButtons[1]:Hide() end
-    if CS.columnInfoButtons[3] then CS.columnInfoButtons[3]:Hide() end
+    if CS.columnInfoButtons[2] then CS.columnInfoButtons[2]:Hide() end
 
     -- Initialize pending conditions from initial conditions
     wipe(pendingConditions)
@@ -1157,12 +1153,9 @@ HideTalentPicker = function()
         if savedCol3Title then configFrame.col3:SetTitle(savedCol3Title) end
         if savedPanelTitle then configFrame:SetTitle(savedPanelTitle) end
 
-        -- Column 2 remains retired after the picker closes.
-        configFrame.col2.frame:Hide()
-
         -- Restore column info buttons
         if CS.columnInfoButtons[1] then CS.columnInfoButtons[1]:Show() end
-        if CS.columnInfoButtons[3] then CS.columnInfoButtons[3]:Show() end
+        if CS.columnInfoButtons[2] then CS.columnInfoButtons[2]:Show() end
 
         -- Show col1 normal content
         CS.col1Scroll.frame:Show()

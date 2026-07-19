@@ -134,100 +134,6 @@ local function GetDropIndex(scrollWidget, cursorY, childOffset, totalDraggable)
     return dropIndex, anchorFrame, anchorAbove
 end
 
-local function BuildCol2EntryDropTarget(action, targetPanelId, targetIndex, anchorFrame, anchorAbove)
-    local groups = CooldownCompanion.db and CooldownCompanion.db.profile and CooldownCompanion.db.profile.groups
-    local group = targetPanelId and groups and groups[targetPanelId]
-    if not group or not CooldownCompanion:CanPanelAcceptManualEntry(group) then
-        return nil
-    end
-    return {
-        action = action,
-        targetPanelId = targetPanelId,
-        targetIndex = targetIndex,
-        anchorFrame = anchorFrame,
-        anchorAbove = anchorAbove,
-    }
-end
-
-local function GetCol2DropTarget(cursorY, renderedRows)
-    if not renderedRows or #renderedRows == 0 then return nil end
-
-    for i, rowMeta in ipairs(renderedRows) do
-        local frame = rowMeta.widget and rowMeta.widget.frame
-        if frame and frame:IsShown() then
-            local top = frame:GetTop()
-            local bottom = frame:GetBottom()
-            if top and bottom and cursorY <= top and cursorY >= bottom then
-                local mid = (top + bottom) / 2
-
-                if rowMeta.kind == "button" then
-                    if cursorY > mid then
-                        return BuildCol2EntryDropTarget("insert", rowMeta.panelId, rowMeta.buttonIndex, frame, true)
-                    else
-                        return BuildCol2EntryDropTarget("insert", rowMeta.panelId, rowMeta.buttonIndex + 1, frame, false)
-                    end
-                elseif rowMeta.kind == "header" then
-                    if rowMeta.isCollapsed then
-                        -- Drop onto collapsed header = append to that panel
-                        return BuildCol2EntryDropTarget("append-to-collapsed", rowMeta.panelId, nil, frame, false)
-                    else
-                        return BuildCol2EntryDropTarget("insert", rowMeta.panelId, 1, frame, true)
-                    end
-                end
-            end
-        end
-    end
-
-    -- Cursor is in a vertical gap between visible rows/panels.
-    for i = 1, #renderedRows - 1 do
-        local prevMeta = renderedRows[i]
-        local nextMeta = renderedRows[i + 1]
-        local prevFrame = prevMeta.widget and prevMeta.widget.frame
-        local nextFrame = nextMeta.widget and nextMeta.widget.frame
-        if prevFrame and nextFrame and prevFrame:IsShown() and nextFrame:IsShown() then
-            local prevBottom = prevFrame:GetBottom()
-            local nextTop = nextFrame:GetTop()
-            if prevBottom and nextTop and cursorY <= prevBottom and cursorY >= nextTop then
-                local gapMid = (prevBottom + nextTop) / 2
-                if nextMeta.kind == "header" and prevMeta.panelId ~= nextMeta.panelId then
-                    if cursorY > gapMid then
-                        return BuildCol2EntryDropTarget("append", prevMeta.panelId, nil, prevFrame, false)
-                    end
-
-                    if nextMeta.isCollapsed then
-                        return BuildCol2EntryDropTarget("append-to-collapsed", nextMeta.panelId, nil, nextFrame, true)
-                    end
-
-                    return BuildCol2EntryDropTarget("insert", nextMeta.panelId, 1, nextFrame, true)
-                end
-
-                if nextMeta.kind == "button" then
-                    return BuildCol2EntryDropTarget("insert", nextMeta.panelId, nextMeta.buttonIndex, nextFrame, true)
-                elseif nextMeta.kind == "header" then
-                    return BuildCol2EntryDropTarget(
-                        nextMeta.isCollapsed and "append-to-collapsed" or "insert",
-                        nextMeta.panelId,
-                        nextMeta.isCollapsed and nil or 1,
-                        nextFrame,
-                        true
-                    )
-                end
-            end
-        end
-    end
-
-    -- Below all rows: append to last panel
-    local lastRow = renderedRows[#renderedRows]
-    if lastRow then
-        local panelId = lastRow.panelId
-        local lastFrame = lastRow.widget and lastRow.widget.frame
-        if lastFrame and lastFrame:IsShown() then
-            return BuildCol2EntryDropTarget("append", panelId, nil, lastFrame, false)
-        end
-    end
-    return nil
-end
-
 local function ShowDragIndicator(anchorFrame, anchorAbove, parentScrollWidget)
     if not anchorFrame then
         HideDragIndicator()
@@ -253,7 +159,7 @@ local function ShowDragIndicator(anchorFrame, anchorAbove, parentScrollWidget)
 end
 
 ------------------------------------------------------------------------
--- Column 1 drop no-op helpers
+-- Navigator drop no-op helpers
 ------------------------------------------------------------------------
 
 local IsUnloadedTopLevelDrop
@@ -494,153 +400,6 @@ local function IsCol1FolderDropNoOp(state)
 end
 
 
-local function GetCol2CompactPanelDropTarget(cursorY)
-    local preview = CS.col2Preview
-    local entries = preview and preview.compactEntries
-    if not entries or #entries == 0 then return nil end
-
-    for i, entry in ipairs(entries) do
-        local frame = entry.frame
-        if frame and frame:IsShown() then
-            local top = frame:GetTop()
-            local bottom = frame:GetBottom()
-            if top and bottom then
-                local mid = (top + bottom) / 2
-                if cursorY > mid then
-                    return {
-                        targetIndex = entry.originalIndex,
-                        targetPanelId = entry.panelId,
-                        anchorFrame = frame,
-                        anchorAbove = true,
-                    }
-                elseif i == #entries then
-                    return {
-                        targetIndex = (entry.originalIndex or i) + 1,
-                        targetPanelId = entry.panelId,
-                        anchorFrame = frame,
-                        anchorAbove = false,
-                    }
-                end
-            end
-        end
-    end
-
-    local first = entries[1]
-    if first and first.frame and first.frame:IsShown() then
-        return {
-            targetIndex = first.originalIndex or 1,
-            targetPanelId = first.panelId,
-            anchorFrame = first.frame,
-            anchorAbove = true,
-        }
-    end
-    return nil
-end
-
-------------------------------------------------------------------------
--- Column 2 panel-header drop target detection
-------------------------------------------------------------------------
-local function GetCol2PanelDropTarget(cursorY, panelDropTargets)
-    if not panelDropTargets or #panelDropTargets == 0 then return nil end
-
-    for i, entry in ipairs(panelDropTargets) do
-        local frame = entry.frame
-        if frame and frame:IsShown() then
-            local top = frame:GetTop()
-            local bottom = frame:GetBottom()
-            if top and bottom then
-                local mid = (top + bottom) / 2
-                if cursorY > mid then
-                    -- Cursor is in the upper half → drop above this panel (index i)
-                    return {
-                        targetIndex = i,
-                        targetPanelId = entry.panelId,
-                        anchorFrame = frame,
-                        anchorAbove = true,
-                    }
-                elseif i == #panelDropTargets then
-                    -- Below midpoint of last panel → drop after last
-                    return {
-                        targetIndex = i + 1,
-                        targetPanelId = entry.panelId,
-                        anchorFrame = frame,
-                        anchorAbove = false,
-                    }
-                end
-            end
-        end
-    end
-
-    -- Cursor above all panels → index 1
-    local first = panelDropTargets[1]
-    if first and first.frame and first.frame:IsShown() then
-        return {
-            targetIndex = 1,
-            targetPanelId = first.panelId,
-            anchorFrame = first.frame,
-            anchorAbove = true,
-        }
-    end
-    return nil
-end
-
-------------------------------------------------------------------------
--- Panel reorder
-------------------------------------------------------------------------
-local function PerformPanelReorder(sourcePanelId, dropIndex, panelDropTargets)
-    local db = CooldownCompanion.db.profile
-    -- Build ordered panelIds list from drop targets
-    local panelIds = {}
-    for _, entry in ipairs(panelDropTargets) do
-        table.insert(panelIds, entry.panelId)
-    end
-    -- Find source index
-    local sourceIndex
-    for i, pid in ipairs(panelIds) do
-        if pid == sourcePanelId then
-            sourceIndex = i
-            break
-        end
-    end
-    if not sourceIndex then return end
-    if dropIndex > sourceIndex then dropIndex = dropIndex - 1 end
-    if sourceIndex == dropIndex then return end
-    table.remove(panelIds, sourceIndex)
-    table.insert(panelIds, dropIndex, sourcePanelId)
-    -- Reassign .order based on new list position
-    for i, pid in ipairs(panelIds) do
-        if db.groups[pid] then
-            db.groups[pid].order = i
-        end
-    end
-end
-
-local function IsPanelReorderNoOp(sourcePanelId, dropIndex, panelDropTargets)
-    if not (sourcePanelId and dropIndex and panelDropTargets) then
-        return true
-    end
-
-    local sourceIndex
-    for i, entry in ipairs(panelDropTargets) do
-        if entry.panelId == sourcePanelId then
-            sourceIndex = i
-            break
-        end
-    end
-    if not sourceIndex then
-        return true
-    end
-
-    if dropIndex > sourceIndex then
-        dropIndex = dropIndex - 1
-    end
-
-    return sourceIndex == dropIndex
-end
-
-------------------------------------------------------------------------
--- Group reorder
-------------------------------------------------------------------------
 local function PerformGroupReorder(sourceIndex, dropIndex, groupIds)
     if dropIndex > sourceIndex then dropIndex = dropIndex - 1 end
     if sourceIndex == dropIndex then return end
@@ -656,7 +415,7 @@ local function PerformGroupReorder(sourceIndex, dropIndex, groupIds)
 end
 
 ------------------------------------------------------------------------
--- Drop target detection for column 1 with folder support
+-- Navigator drop targeting with hidden Folder ownership support
 ------------------------------------------------------------------------
 local function GetCol1DropFrame(rowMeta)
     return rowMeta and rowMeta.widget and rowMeta.widget.frame
@@ -1577,12 +1336,7 @@ DR.GetScaledCursorCoordinates = GetScaledCursorCoordinates
 DR.GetScaledCursorPosition = GetScaledCursorPosition
 DR.GetRawCursorCoordinates = GetRawCursorCoordinates
 DR.GetDropIndex = GetDropIndex
-DR.GetCol2DropTarget = GetCol2DropTarget
 DR.ShowDragIndicator = ShowDragIndicator
-DR.GetCol2CompactPanelDropTarget = GetCol2CompactPanelDropTarget
-DR.GetCol2PanelDropTarget = GetCol2PanelDropTarget
-DR.PerformPanelReorder = PerformPanelReorder
-DR.IsPanelReorderNoOp = IsPanelReorderNoOp
 DR.PerformGroupReorder = PerformGroupReorder
 DR.GetCol1DropTarget = GetCol1DropTarget
 DR.ShowFolderDropOverlay = ShowFolderDropOverlay

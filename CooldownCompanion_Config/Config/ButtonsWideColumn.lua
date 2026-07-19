@@ -1,11 +1,11 @@
 --[[
     CooldownCompanion - Config/ButtonsWideColumn
-    Wide column 3 for the plain buttons view and Other Class browsing:
+    Workspace for the plain buttons view and Other Class browsing:
     hosts the entry settings surfaces (bsTabGroup, entry multi-select),
     the panel batch actions, and the group-side settings surfaces (via
-    GroupSettingsHost) in one column spanning the old col3+col4 region.
-    The column frames two labeled areas: the pinned Live Preview above the
-    split divider (the column title names it) and the editing surface
+    GroupSettingsHost) in one unified surface. It frames two labeled areas:
+    the pinned Live Preview above the split divider (the column title names
+    it) and the editing surface
     below it (the "Editing:" path and selected-entry context on one line,
     followed by the add box and settings).
     Browsing skips the pinned preview cluster
@@ -326,23 +326,40 @@ local function EnsurePreviewDivider(col3)
     -- pixels above and below it.
     divider:SetHitRectInsets(0, 0, -DIVIDER_HIT_EXTEND, -DIVIDER_HIT_EXTEND)
 
-    local line = divider:CreateTexture(nil, "ARTWORK")
-    line:SetColorTexture(1, 1, 1, 0.08)
-    line:SetHeight(1)
-    line:SetPoint("LEFT", divider, "LEFT", 0, 0)
-    line:SetPoint("RIGHT", divider, "RIGHT", 0, 0)
+    local leftLine = divider:CreateTexture(nil, "ARTWORK")
+    leftLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
+    leftLine:SetHeight(1)
+    leftLine:SetPoint("LEFT", divider, "LEFT", 0, 0)
+    leftLine:SetPoint("RIGHT", divider, "CENTER", -11, 0)
 
-    local grip = divider:CreateTexture(nil, "OVERLAY")
-    grip:SetColorTexture(1, 1, 1, 0.2)
-    grip:SetSize(24, 2)
-    grip:SetPoint("CENTER")
-    divider._grip = grip
+    local rightLine = divider:CreateTexture(nil, "ARTWORK")
+    rightLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
+    rightLine:SetHeight(1)
+    rightLine:SetPoint("LEFT", divider, "CENTER", 11, 0)
+    rightLine:SetPoint("RIGHT", divider, "RIGHT", 0, 0)
+
+    local diamond = divider:CreateTexture(nil, "OVERLAY")
+    diamond:SetColorTexture(0.62, 0.48, 0.28, 0.72)
+    diamond:SetSize(7, 7)
+    diamond:SetPoint("CENTER")
+    diamond:SetRotation(math.rad(45))
+
+    local diamondCore = divider:CreateTexture(nil, "OVERLAY", nil, 1)
+    diamondCore:SetColorTexture(0.12, 0.08, 0.04, 0.95)
+    diamondCore:SetSize(3, 3)
+    diamondCore:SetPoint("CENTER")
+    diamondCore:SetRotation(math.rad(45))
+    divider._grip = diamond
 
     local function SetHot(hot)
         if hot then
-            grip:SetColorTexture(1, 0.82, 0, 0.7)
+            leftLine:SetColorTexture(0.85, 0.62, 0.22, 0.62)
+            rightLine:SetColorTexture(0.85, 0.62, 0.22, 0.62)
+            diamond:SetColorTexture(1, 0.72, 0.18, 0.92)
         else
-            grip:SetColorTexture(1, 1, 1, 0.2)
+            leftLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
+            rightLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
+            diamond:SetColorTexture(0.62, 0.48, 0.28, 0.72)
         end
     end
 
@@ -466,7 +483,7 @@ local function IsCursorDropPayload(cursorType)
 end
 
 -- Drop-to-add overlay over the preview: shown while a spell/item is on the
--- cursor, mirroring the column 2 panel drop overlays. TryReceiveCursorDrop
+-- cursor, mirroring the Navigator panel drop overlays. TryReceiveCursorDrop
 -- targets CS.selectedGroup, which is exactly the previewed panel.
 local function EnsurePreviewDropOverlay(host)
     local overlay = host._cdcDropOverlay
@@ -580,7 +597,7 @@ end
 
 -- Add-entry box inside the editing surface (under its header), scoped to
 -- the selected panel. Reuses the same TryAdd/autocomplete plumbing as the
--- column 2 inline add.
+-- shared inline add.
 local function EnsureAddBox(col3)
     local addBox = col3.buttonsAddBox
     if addBox then return addBox end
@@ -606,7 +623,7 @@ local function EnsureAddBox(col3)
         CS.HideAutocomplete()
         text = text or ""
         if text == "" or not CS.selectedGroup then return end
-        -- The wide box always targets the selected panel; a stale column 2
+        -- The workspace box always targets the selected panel; a stale
         -- inline-add target left over from browse mode must not win.
         CS.addingToPanelId = nil
         local targetGroupId = CS.selectedGroup
@@ -630,7 +647,7 @@ local function EnsureAddBox(col3)
         if text and #text >= 1 then
             local results = ST._SearchAutocomplete(text)
             -- This box is persistent (not rebuilt from CS.newInput like the
-            -- column 2 inline box), so a successful pick must clear it here
+            -- inline box), so a successful pick must clear it here
             -- or the stale text re-adds on the next Enter press.
             CS.ShowAutocompleteResults(results, widget, function(entry)
                 -- Explicit target: the shared select handler prefers
@@ -671,7 +688,7 @@ local function UpdateAddBox(col3)
     addBox.frame:SetHeight(ADD_BOX_HEIGHT)
     addBox.frame:Show()
 
-    -- Also consume the shared autocomplete focus flag when the column 2
+    -- Also consume the shared autocomplete focus flag when an inline
     -- inline add isn't open (its box consumes it when addingToPanelId is set).
     local wantFocus = CS.pendingWideAddFocus
     if not wantFocus and CS.pendingEditBoxFocus and not CS.addingToPanelId then

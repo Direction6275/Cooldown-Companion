@@ -33,7 +33,7 @@ Config\DragReorderPreview.lua
 Config\DragReorderLifecycle.lua
 Config\DragReorder.lua
 Config\Column1.lua
-Config\Column2.lua
+Config\PanelShared.lua
 Config\Column3.lua
 Config\GroupSettingsHost.lua
 Config\ButtonsWideColumn.lua

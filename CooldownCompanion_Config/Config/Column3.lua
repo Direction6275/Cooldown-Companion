@@ -1,8 +1,7 @@
 --[[
-    CooldownCompanion - Config/Column3
-    RefreshColumn3: routes to the wide buttons column, the wide Resources
-    home, or the wide Cast Bar & Unit Frames home, and hosts the normal
-    button-settings path (Other Class browsing).
+    CooldownCompanion - Config/WorkspaceRouter
+    Routes the workspace to button, Resources, Cast Bar & Unit Frames,
+    or Other Class browsing surfaces.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -73,10 +72,10 @@ local function ShowResourcesIntroPane(col3)
 end
 
 ------------------------------------------------------------------------
--- COLUMN 3: Button Settings (normal) / Resources home / Unit Frames home
+-- Workspace: button settings / Resources home / Unit Frames home
 ------------------------------------------------------------------------
 local function RefreshColumn3()
-    -- Plain buttons view: the wide merged column owns col3
+    -- Plain buttons view: the workspace owns the editing surface.
     if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
         return ST._RefreshButtonsWideColumn()
     end

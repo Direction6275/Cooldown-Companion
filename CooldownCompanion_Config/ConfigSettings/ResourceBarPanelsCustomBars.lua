@@ -27,7 +27,7 @@ local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 
 local function RefreshLayoutOrderPreview()
     -- Both the Resources home and the Cast Bar & Unit Frames home pin the
-    -- preview in the wide column 3; the helper self-gates on view state.
+    -- preview in the workspace; the helper self-gates on view state.
     if ST._RefreshResourcesLayoutPreview then
         ST._RefreshResourcesLayoutPreview()
     end

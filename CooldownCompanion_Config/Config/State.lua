@@ -189,9 +189,9 @@ local COLUMN_PADDING = 8
 ------------------------------------------------------------------------
 ST._configState = {
     -- Selection state
-    selectedFolder = nil,        -- folderId selected in Column 1
-    selectedContainer = nil,     -- containerId selected in Column 1
-    selectedGroup = nil,         -- panelId (groupId) selected in Column 2 panel list
+    selectedFolder = nil,        -- retained Folder selection state (chrome is currently hidden)
+    selectedContainer = nil,     -- Group container selected in the Navigator
+    selectedGroup = nil,         -- Panel selected in the Navigator
     selectedButton = nil,
     selectedRotationAssistantEntry = nil,
     selectedButtons = {},
@@ -218,15 +218,12 @@ ST._configState = {
     -- Column content frames
     col1Scroll = nil,
     col1ButtonBar = nil,
-    col2Scroll = nil,
-    col2ButtonBar = nil,
-    -- Group-settings scroll inside the active group-side host (the name
-    -- predates the column 4 removal; the host lives in the wide column 3)
+    -- Group-settings scroll inside the active workspace host. The legacy
+    -- name remains internal so existing builders do not need a broad rename.
     col4Scroll = nil,
 
     -- AceGUI widget tracking for cleanup
     col1BarWidgets = {},
-    col2BarWidgets = {},
     profileBarAceWidgets = {},
     buttonSettingsInfoButtons = {},
 
@@ -239,13 +236,10 @@ ST._configState = {
     gearDropdownFrame = nil,
     profileWideFontWindow = nil,
     profileWideBarTextureWindow = nil,
-    folderContextMenu = nil,
-    folderIconPickerFrame = nil,
     buttonIconPickerFrame = nil,
     triggerPanelIconPickerFrame = nil,
     containerIconPickerFrame = nil,
     panelContextMenu = nil,
-    col2PanelTypeMenu = nil,
     charCopyMenu = nil,
 
     -- Drag-reorder state
@@ -254,9 +248,7 @@ ST._configState = {
     dragTracker = nil,
     showPhantomSections = false,
     lastCol1RenderedRows = nil,
-    lastCol2PanelMetas = nil,
     col1Preview = nil,
-    col2Preview = nil,
 
     -- Pending strata order state
     pendingStrataOrder = nil,
@@ -280,7 +272,6 @@ ST._configState = {
     hideActiveCurrentClassPanels = false,
     panelClickTimes = {},
     addingToPanelId = nil,
-    folderAccentBars = {},
     _panelDropTargets = {},
 
     -- Talent picker mode (2-column layout)
@@ -1130,45 +1121,6 @@ local function GetContainerIcon(containerId, db)
 end
 
 ------------------------------------------------------------------------
--- Helper: Get icon for a folder (manual override, else first child group's first button)
-------------------------------------------------------------------------
-local function GetAutoFolderIcon(folderId, db)
-    if not db then
-        return 134400
-    end
-    -- Post-migration: folderId lives on containers, not groups
-    local containers = db.groupContainers
-    if containers then
-        local children = {}
-        for cid, container in pairs(containers) do
-            if container.folderId == folderId then
-                table.insert(children, { id = cid, order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, cid) })
-            end
-        end
-        table.sort(children, function(a, b) return a.order < b.order end)
-        if children[1] and db.groups then
-            -- Find first panel of this container for its icon
-            local firstPanel = GetFirstPanelForContainer(children[1].id, db)
-            if firstPanel then
-                return GetGroupIcon(firstPanel)
-            end
-        end
-    end
-    return 134400
-end
-
-local function GetFolderIcon(folderId, db)
-    if not db then
-        return 134400
-    end
-    local folder = db.folders and db.folders[folderId]
-    if folder and IsValidIconTexture(folder.manualIcon) then
-        return folder.manualIcon
-    end
-    return GetAutoFolderIcon(folderId, db)
-end
-
-------------------------------------------------------------------------
 -- Shared compact panel-row presentation helpers
 ------------------------------------------------------------------------
 local function GetConfigPanelTypeBadgeAtlas(displayMode)
@@ -1229,31 +1181,10 @@ local function AddClassAccentSpacer(scroll, classColor)
 end
 
 ------------------------------------------------------------------------
--- Helper: generate a unique folder name
-------------------------------------------------------------------------
-local function GenerateFolderName(base)
-    local db = CooldownCompanion.db.profile
-    local existing = {}
-    for _, f in pairs(db.folders) do
-        existing[f.name] = true
-    end
-    local name = base
-    if existing[name] then
-        local n = 1
-        while existing[name .. " " .. n] do
-            n = n + 1
-        end
-        name = name .. " " .. n
-    end
-    return name
-end
-
-------------------------------------------------------------------------
 -- Shared icon picker helpers
 ------------------------------------------------------------------------
 local STANDALONE_ICON_BROWSER_ADDON = "IconBrowser"
 local CONFIG_ICON_PICKER_CACHE_KEYS = {
-    "folderIconPickerFrame",
     "buttonIconPickerFrame",
     "triggerPanelIconPickerFrame",
     "containerIconPickerFrame",
@@ -1596,31 +1527,6 @@ local function ConfigureMovableIconPickerFrame(frame)
     AttachConfigIconPickerDragScripts(frame.BorderBox, frame)
 end
 
-local FOLDER_ICON_PICKER_SPEC = {
-    cacheKey = "folderIconPickerFrame",
-    frameName = "CDCFolderIconPickerFrame",
-    unavailableMessage = "Folder icon picker is unavailable on this client build.",
-    configureFrame = ConfigureMovableIconPickerFrame,
-    validateContext = function(context, db)
-        local folderId = context and context.folderId
-        return db and db.folders and db.folders[folderId]
-    end,
-    getCurrentIcon = function(folder, context, db)
-        local currentIcon = folder.manualIcon
-        if not IsValidIconTexture(currentIcon) then
-            currentIcon = GetAutoFolderIcon(context.folderId, db)
-        end
-        return currentIcon
-    end,
-    applySelection = function(iconTexture, folder)
-        folder.manualIcon = iconTexture
-        CooldownCompanion:RefreshConfigPanel()
-    end,
-    clearContext = function(frame)
-        frame._cdcPickerContext = nil
-    end,
-}
-
 local BUTTON_ICON_PICKER_SPEC = {
     cacheKey = "buttonIconPickerFrame",
     frameName = "CDCButtonIconPickerFrame",
@@ -1707,15 +1613,6 @@ local CONTAINER_ICON_PICKER_SPEC = {
 }
 
 ------------------------------------------------------------------------
--- Folder icon picker
-------------------------------------------------------------------------
-local function OpenFolderIconPicker(folderId)
-    return OpenConfigIconPicker(FOLDER_ICON_PICKER_SPEC, {
-        folderId = folderId,
-    })
-end
-
-------------------------------------------------------------------------
 -- Button icon picker (per-entry icon art override)
 ------------------------------------------------------------------------
 local function OpenButtonIconPicker(groupId, buttonIndex)
@@ -1735,7 +1632,7 @@ local function OpenTriggerPanelIconPicker(groupId)
 end
 
 ------------------------------------------------------------------------
--- Container icon picker (per-group icon in Column 1)
+-- Container icon picker (per-Group icon in the Navigator)
 ------------------------------------------------------------------------
 local function OpenContainerIconPicker(containerId)
     return OpenConfigIconPicker(CONTAINER_ICON_PICKER_SPEC, {
@@ -2231,17 +2128,6 @@ local function ReapplyConfigRowLayouts(widget)
     end
 end
 
-local function UpdateConfigFolderAccentBars()
-    local showBars = not CS.compactConfigRows
-    for _, bar in ipairs(CS.folderAccentBars or {}) do
-        if showBars and bar._cdcFolderAccentActive then
-            bar:Show()
-        else
-            bar:Hide()
-        end
-    end
-end
-
 local function UpdateNestedPanelAccents(widget)
     if not widget then return end
     local frame = widget.frame
@@ -2256,11 +2142,8 @@ end
 
 local function RefreshVisibleConfigCompactRows()
     ReapplyConfigRowLayouts(CS.col1Scroll)
-    ReapplyConfigRowLayouts(CS.col2Scroll)
-    UpdateConfigFolderAccentBars()
     UpdateNestedPanelAccents(CS.col1Scroll)
     if CS.col1Scroll and CS.col1Scroll.DoLayout then CS.col1Scroll:DoLayout() end
-    if CS.col2Scroll and CS.col2Scroll.DoLayout then CS.col2Scroll:DoLayout() end
 end
 
 local function AcquireBadge(frame, index)
@@ -2437,69 +2320,6 @@ local function SetupGroupRowIndicators(entry, group, opts)
     end
 
     -- Position badges right-to-left
-    local offsetX = -BADGE_RIGHT_PAD
-    if frame._cdcBadges then
-        for i = 1, badgeIndex do
-            local badge = frame._cdcBadges[i]
-            if badge:IsShown() then
-                badge:ClearAllPoints()
-                badge:SetPoint("RIGHT", frame, "RIGHT", offsetX, 0)
-                offsetX = offsetX - badge:GetWidth() - BADGE_SPACING
-            end
-        end
-    end
-end
-
-local function SetupFolderRowIndicators(entry, folder)
-    local frame = entry.frame
-    if frame._cdcBadges then
-        for _, b in ipairs(frame._cdcBadges) do b:Hide() end
-    end
-
-    local badgeIndex = 0
-    local SPEC_BADGE_SIZE = 16
-    local specs = folder and BuildEligibilityBadgeMap(
-        folder.specs,
-        folder.loadConditions and folder.loadConditions.specAllowlist
-    )
-    if specs and next(specs) then
-        for specId in pairs(specs) do
-            local _, _, _, specIcon = GetSpecializationInfoForSpecID(specId)
-            if specIcon then
-                badgeIndex = badgeIndex + 1
-                local badge = AcquireBadge(frame, badgeIndex)
-                badge:SetSize(SPEC_BADGE_SIZE, SPEC_BADGE_SIZE)
-                badge.icon:SetTexture(specIcon)
-                badge.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                if not badge._cdcCircleMask then
-                    local mask = badge:CreateMaskTexture()
-                    mask:SetAllPoints(badge.icon)
-                    mask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask")
-                    badge._cdcCircleMask = mask
-                end
-                badge.icon:AddMaskTexture(badge._cdcCircleMask)
-                badge:Show()
-            end
-        end
-    end
-
-    local HERO_BADGE_SIZE = SPEC_BADGE_SIZE
-    if folder and folder.heroTalents and next(folder.heroTalents) then
-        local configID = C_ClassTalents.GetActiveConfigID()
-        if configID then
-            for subTreeID in pairs(folder.heroTalents) do
-                local subTreeInfo = C_Traits.GetSubTreeInfo(configID, subTreeID)
-                if subTreeInfo and subTreeInfo.iconElementID then
-                    badgeIndex = badgeIndex + 1
-                    local badge = AcquireBadge(frame, badgeIndex)
-                    badge:SetSize(HERO_BADGE_SIZE, HERO_BADGE_SIZE)
-                    badge.icon:SetAtlas(subTreeInfo.iconElementID, false)
-                    badge:Show()
-                end
-            end
-        end
-    end
-
     local offsetX = -BADGE_RIGHT_PAD
     if frame._cdcBadges then
         for i = 1, badgeIndex do
@@ -2837,16 +2657,8 @@ local function EnsureCol1PreviewHost()
     return preview
 end
 
-local function EnsureCol2PreviewHost()
-    return EnsureColumnPreviewHost("col2Preview", CS.col2Scroll)
-end
-
 local function ClearCol1PreviewHost()
     ClearColumnPreviewHost("col1Preview")
-end
-
-local function ClearCol2PreviewHost()
-    ClearColumnPreviewHost("col2Preview")
 end
 
 ------------------------------------------------------------------------
@@ -3328,9 +3140,9 @@ local function SelectConfigResourcesEntry(opts)
     RefreshAlphaDriverForConfigSelection()
 end
 
--- The Cast Bar & Unit Frames home (title-cluster badge): col2 lists the
--- Cast Bar / Player Frame / Target Frame rows, the wide col3 shows the
--- pinned Layout & Order preview above the selected row's settings.
+-- The Cast Bar & Unit Frames home: the Navigator lists the Cast Bar /
+-- Player Frame / Target Frame rows and the workspace shows the pinned
+-- Layout & Order preview above the selected row's settings.
 local function SelectConfigCastFramesEntry(opts)
     CooldownCompanion:ClearAllConfigPreviews()
     ResetOtherClassLibraryState()
@@ -3750,14 +3562,11 @@ ST._ApplyConfigTextRow = ApplyConfigTextRow
 ST._RefreshVisibleConfigCompactRows = RefreshVisibleConfigCompactRows
 ST._BuildEligibilityBadgeMap = BuildEligibilityBadgeMap
 ST._SetupGroupRowIndicators = SetupGroupRowIndicators
-ST._SetupFolderRowIndicators = SetupFolderRowIndicators
 ST._GetConfigRowBadgeReserve = GetConfigRowBadgeReserve
 ST._ApplyColumn1MarkerAppearance = ApplyColumn1MarkerAppearance
 ST._SetupColumn1MarkerRow = SetupColumn1MarkerRow
 ST._EnsureCol1PreviewHost = EnsureCol1PreviewHost
-ST._EnsureCol2PreviewHost = EnsureCol2PreviewHost
 ST._ClearCol1PreviewHost = ClearCol1PreviewHost
-ST._ClearCol2PreviewHost = ClearCol2PreviewHost
 ST._GetButtonIcon = GetButtonIcon
 ST._GetConfigEntryDisplayName = GetConfigEntryDisplayName
 ST._IsConfigFinderAvailable = IsConfigFinderAvailable
@@ -3772,19 +3581,16 @@ ST._BuildConfigFinderResults = BuildConfigFinderResults
 ST._InvalidateConfigFinderResults = InvalidateConfigFinderResults
 ST._SelectConfigFinderResult = SelectConfigFinderResult
 ST._GetContainerIcon = GetContainerIcon
-ST._GetFolderIcon = GetFolderIcon
 ST._GetConfigPanelTypeBadgeAtlas = GetConfigPanelTypeBadgeAtlas
 ST._GetConfigPanelEntryCount = GetConfigPanelEntryCount
 ST._IsConfigPanelEntryUsable = IsConfigPanelEntryUsable
 ST._ConfigPanelHasWarning = ConfigPanelHasWarning
 ST._AddClassAccentSpacer = AddClassAccentSpacer
-ST._OpenFolderIconPicker = OpenFolderIconPicker
 ST._OpenButtonIconPicker = OpenButtonIconPicker
 ST._OpenTriggerPanelIconPicker = OpenTriggerPanelIconPicker
 ST._OpenContainerIconPicker = OpenContainerIconPicker
 ST._CloseConfigIconPicker = CloseConfigIconPicker
 ST._IsValidIconTexture = IsValidIconTexture
-ST._GenerateFolderName = GenerateFolderName
 ST._ShowPopupAboveConfig = ShowPopupAboveConfig
 ST._BindConfigShiftTooltip = BindConfigShiftTooltip
 ST._ActivateConfigShiftTooltip = ActivateConfigShiftTooltip

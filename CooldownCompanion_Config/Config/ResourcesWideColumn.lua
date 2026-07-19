@@ -1,13 +1,13 @@
 --[[
     CooldownCompanion - Config/ResourcesWideColumn
-    Wide column 3 for the Resources home and the Cast Bar & Unit Frames
+    Workspace for the Resources home and the Cast Bar & Unit Frames
     home: the pinned Layout & Order preview (sharing the split divider and
-    persisted split fraction from ButtonsWideColumn) above the settings
-    surfaces relocated from column 4 - the resources tab page, per-resource
+    persisted split fraction from ButtonsWideColumn) above the editing
+    surfaces: the resources tab page, per-resource
     settings, the Custom Bar detail tabs, the Custom Bar multi-select, and
     the Cast Bar tabs - plus the player/target frame anchoring panels.
-    Column 2 hosts each home's list (Column2.lua): the Custom Bars &
-    Resources list, or the Cast Bar / Player Frame / Target Frame rows.
+    The Navigator hosts each home's list: Custom Bars & Resources, or the
+    Cast Bar / Player Frame / Target Frame rows.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -581,7 +581,7 @@ end
 -- Cast Bar & Unit Frames home
 ------------------------------------------------------------------------
 
--- Cast Bar settings tabs (moved from column 4), below the pinned preview.
+-- Cast Bar settings tabs below the pinned preview.
 local function ShowCastBarSettings(col3)
     if not col3._castBarHomeTabGroup then
         local tabGroup = AceGUI:Create("TabGroup")
@@ -686,7 +686,7 @@ local function ShowUnitFrameSettings(col3, item)
     end
 end
 
--- Refresh for the Cast Bar & Unit Frames home: column 2's row selection
+-- Refresh for the Cast Bar & Unit Frames home: the Navigator row selection
 -- (Cast Bar / Player Frame / Target Frame) decides what shows beneath the
 -- pinned preview. Disabled modules show their intro pane across the whole
 -- wide column instead.
