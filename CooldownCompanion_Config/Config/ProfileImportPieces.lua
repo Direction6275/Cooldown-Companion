@@ -788,6 +788,9 @@ local function BuildCustomBarInfos(profile, currentCharKey, currentInfo, sourceC
 end
 
 function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
+    options = options or {}
+    local sourceCharacterInfo = options.sourceCharacterInfo
+        or (type(profile) == "table" and profile._characterInfo)
     if type(profile) ~= "table" then
         profile = {}
     else
@@ -795,14 +798,12 @@ function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
         if self.MigrateFoldersIntoGroups then
             -- Present old backups in the supported hierarchy and carry every
             -- inherited restriction onto the Group rows before selection.
-            self:MigrateFoldersIntoGroups(profile)
+            self:MigrateFoldersIntoGroups(profile, sourceCharacterInfo)
         end
     end
-    options = options or {}
     local currentCharKey, currentInfo = GetCurrentCharInfo()
     currentCharKey = options.currentCharKey or currentCharKey
     currentInfo = options.currentCharInfo or currentInfo
-    local sourceCharacterInfo = options.sourceCharacterInfo
     local defaultOwnerKey = options.exporterCharKey
         or (type(profile) == "table" and profile._exporterCharKey)
 

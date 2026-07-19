@@ -382,8 +382,13 @@ local RETIRED_PROFILE_KEYS = {
     hideInfoButtons = true,
 }
 
+local OUTBOUND_ONLY_RETIRED_PROFILE_KEYS = {
+    folders = true,
+    nextFolderId = true,
+}
+
 local function IsRetiredProfileKey(key)
-    return RETIRED_PROFILE_KEYS[key] == true
+    return RETIRED_PROFILE_KEYS[key] == true or OUTBOUND_ONLY_RETIRED_PROFILE_KEYS[key] == true
 end
 
 local function BuildCurrentCompactProfileDefaults()
@@ -810,7 +815,9 @@ local function CompactPanel(group, styleDefaults, panelContainerRef, formatVersi
     local panelDefaults = GetEffectivePanelDefaults(formatVersion, group)
     local compact = {}
     for key, value in pairs(group) do
-        if key == "style" then
+        if key == "folderId" then
+            -- Decode-only compatibility must never return to outbound data.
+        elseif key == "style" then
             local compactStyle = CompactTableAgainstDefaults(value, styleDefaults)
             if compactStyle then
                 compact.style = compactStyle
@@ -890,7 +897,9 @@ local function CompactContainer(container, formatVersion)
     local containerAnchorDefaults = GetContainerDefaultAnchor(formatVersion)
     local compact = {}
     for key, value in pairs(container) do
-        if key == "loadConditions" then
+        if key == "folderId" then
+            -- Decode-only compatibility must never return to outbound data.
+        elseif key == "loadConditions" then
             local compactLoadConditions = CompactLoadConditions(value, formatVersion)
             if compactLoadConditions then
                 compact.loadConditions = compactLoadConditions
@@ -1189,6 +1198,10 @@ local function CompactEntityPayload(payload, formatVersion)
     end
 
     local compact = CopyTable(payload)
+    compact.folder = nil
+    compact.folders = nil
+    compact.nextFolderId = nil
+    compact.folderId = nil
     local globalStyleDefaults = GetSubsystemDefaults("globalStyle", formatVersion)
 
     if payload.group then

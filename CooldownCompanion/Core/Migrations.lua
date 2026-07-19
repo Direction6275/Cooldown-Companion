@@ -219,7 +219,7 @@ local function MergeFolderInheritanceIntoEntity(entity, folder)
     end
 end
 
-local function GetEntityScopeKey(addon, entity, isFolder)
+local function GetEntityScopeKey(addon, entity, isFolder, sourceCharacterInfo)
     if type(entity) ~= "table" then
         return "invalid"
     end
@@ -228,12 +228,16 @@ local function GetEntityScopeKey(addon, entity, isFolder)
     end
 
     local owner = entity.createdBy
+    local sourceOwnerInfo = type(sourceCharacterInfo) == "table" and sourceCharacterInfo[owner] or nil
     local characterInfo = addon
         and addon.db
         and addon.db.global
         and addon.db.global.characterInfo
-    local ownerInfo = type(characterInfo) == "table" and characterInfo[owner] or nil
-    local classFilename = type(ownerInfo) == "table" and ownerInfo.classFilename or nil
+    local liveOwnerInfo = type(characterInfo) == "table" and characterInfo[owner] or nil
+    local classFilename = type(sourceOwnerInfo) == "table" and sourceOwnerInfo.classFilename or nil
+    if type(classFilename) ~= "string" or classFilename == "" then
+        classFilename = type(liveOwnerInfo) == "table" and liveOwnerInfo.classFilename or nil
+    end
     if type(classFilename) == "string" and classFilename ~= "" then
         return "class:" .. string_upper(classFilename)
     end
@@ -268,7 +272,7 @@ local function CompareOrderedItems(left, right)
     return tostring(left.id) < tostring(right.id)
 end
 
-local function AssignFlattenedOrders(addon, profile, folders, specId)
+local function AssignFlattenedOrders(addon, profile, folders, specId, sourceCharacterInfo)
     local containers = type(profile.groupContainers) == "table" and profile.groupContainers or {}
     local folderChildren = {}
     local looseContainers = {}
@@ -278,7 +282,8 @@ local function AssignFlattenedOrders(addon, profile, folders, specId)
             local folderId = container.folderId
             local folder = folderId and folders[folderId] or nil
             if type(folder) == "table"
-                and GetEntityScopeKey(addon, container, false) == GetEntityScopeKey(addon, folder, true)
+                and GetEntityScopeKey(addon, container, false, sourceCharacterInfo)
+                    == GetEntityScopeKey(addon, folder, true, sourceCharacterInfo)
             then
                 folderChildren[folderId] = folderChildren[folderId] or {}
                 folderChildren[folderId][#folderChildren[folderId] + 1] = {
@@ -290,7 +295,7 @@ local function AssignFlattenedOrders(addon, profile, folders, specId)
                 looseContainers[#looseContainers + 1] = {
                     id = containerId,
                     entity = container,
-                    scopeKey = GetEntityScopeKey(addon, container, false),
+                    scopeKey = GetEntityScopeKey(addon, container, false, sourceCharacterInfo),
                     order = GetOrderValue(container, specId, containerId),
                 }
             end
@@ -301,7 +306,7 @@ local function AssignFlattenedOrders(addon, profile, folders, specId)
     for folderId, children in pairs(folderChildren) do
         local folder = folders[folderId]
         table_sort(children, CompareOrderedItems)
-        local scopeKey = GetEntityScopeKey(addon, folder, true)
+        local scopeKey = GetEntityScopeKey(addon, folder, true, sourceCharacterInfo)
         topItemsByScope[scopeKey] = topItemsByScope[scopeKey] or {}
         topItemsByScope[scopeKey][#topItemsByScope[scopeKey] + 1] = {
             kind = "folder",
@@ -361,7 +366,7 @@ local function CollectOrderingSpecIds(profile, folders)
     return sortedSpecIds
 end
 
-local function MigrateFoldersIntoGroups(addon, profile)
+local function MigrateFoldersIntoGroups(addon, profile, sourceCharacterInfo)
     if type(profile) ~= "table" then
         return false, 0
     end
@@ -396,9 +401,9 @@ local function MigrateFoldersIntoGroups(addon, profile)
         return false, 0
     end
 
-    AssignFlattenedOrders(addon, profile, folders, nil)
+    AssignFlattenedOrders(addon, profile, folders, nil, sourceCharacterInfo)
     for _, specId in ipairs(CollectOrderingSpecIds(profile, folders)) do
-        AssignFlattenedOrders(addon, profile, folders, specId)
+        AssignFlattenedOrders(addon, profile, folders, specId, sourceCharacterInfo)
     end
 
     local flattenedCount = 0
@@ -420,8 +425,8 @@ local function MigrateFoldersIntoGroups(addon, profile)
     return true, flattenedCount
 end
 
-function CooldownCompanion:MigrateFoldersIntoGroups(profile)
-    return MigrateFoldersIntoGroups(self, profile or (self.db and self.db.profile))
+function CooldownCompanion:MigrateFoldersIntoGroups(profile, sourceCharacterInfo)
+    return MigrateFoldersIntoGroups(self, profile or (self.db and self.db.profile), sourceCharacterInfo)
 end
 
 local function CompareVersion(left, right)

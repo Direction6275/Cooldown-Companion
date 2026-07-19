@@ -448,7 +448,7 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
     if self.MigrateFoldersIntoGroups then
         -- Legacy backups are flattened before any ownership remapping so all
         -- later import policy operates on the supported Group-only model.
-        self:MigrateFoldersIntoGroups(db.profile)
+        self:MigrateFoldersIntoGroups(db.profile, exportedCharInfo)
     end
 
     if ResetConfigSelection then

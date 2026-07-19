@@ -325,6 +325,12 @@ function CooldownCompanion:SetupConfig()
     self.db.RegisterCallback(self, "OnProfileCopied", function()
         ResetLoadedConfigForProfileChange(CooldownCompanion)
 
+        if CooldownCompanion.MigrateFoldersIntoGroups then
+            -- Flatten compatibility Folders before copied character-scoped
+            -- entities are restamped to the current character.
+            CooldownCompanion:MigrateFoldersIntoGroups(CooldownCompanion.db and CooldownCompanion.db.profile)
+        end
+
         local suppress = CooldownCompanion._suppressOwnershipRestamp
         CooldownCompanion._suppressOwnershipRestamp = nil
         if not suppress then
