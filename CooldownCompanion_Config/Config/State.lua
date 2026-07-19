@@ -216,6 +216,7 @@ ST._configState = {
 
     -- Column content frames
     col1Scroll = nil,
+    col1DestinationBar = nil,
     col1ButtonBar = nil,
     -- Group-settings scroll inside the active workspace host. The legacy
     -- name remains internal so existing builders do not need a broad rename.
@@ -3071,6 +3072,8 @@ local function SelectUnifiedAnchorBar(slot)
 end
 
 local function SelectConfigResourcesEntry(opts)
+    local keepObjectSelection = CS.resourcesEntrySelected == true
+        and not (opts and opts.toggle)
     CooldownCompanion:ClearAllConfigPreviews()
     ResetOtherClassLibraryState()
     -- Destination navigation exits the temporary filtered-tree view.
@@ -3086,15 +3089,18 @@ local function SelectConfigResourcesEntry(opts)
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedGroups)
-    ClearConfigResourceSelection()
-    ClearConfigCustomBarSelection({ clearExpanded = true })
+    if not keepObjectSelection then
+        ClearConfigResourceSelection()
+        ClearConfigCustomBarSelection({ clearExpanded = true })
+    end
     RefreshAlphaDriverForConfigSelection()
 end
 
--- The Cast Bar & Unit Frames home: the Navigator lists the Cast Bar /
--- Player Frame / Target Frame rows and the workspace shows the pinned
--- Layout & Order preview above the selected row's settings.
+-- The Cast Bar & Unit Frames home: the workspace preview/inactive chips
+-- select Cast Bar / Player Frame / Target Frame beneath the pinned preview.
 local function SelectConfigCastFramesEntry(opts)
+    local keepObjectSelection = CS.castFramesEntrySelected == true
+        and not (opts and opts.toggle)
     CooldownCompanion:ClearAllConfigPreviews()
     ResetOtherClassLibraryState()
     ClearConfigFinderText({ preservePrimarySelection = true })
@@ -3109,9 +3115,20 @@ local function SelectConfigCastFramesEntry(opts)
     ClearSelectedButton()
     wipe(CS.selectedPanels)
     wipe(CS.selectedGroups)
-    ClearConfigResourceSelection()
-    ClearConfigCustomBarSelection({ clearExpanded = true })
+    if not keepObjectSelection then
+        ClearConfigResourceSelection()
+        ClearConfigCustomBarSelection({ clearExpanded = true })
+    end
     RefreshAlphaDriverForConfigSelection()
+end
+
+local function SelectConfigCastFramesItem(item)
+    if item ~= "castbar" and item ~= "player" and item ~= "target" then
+        return false
+    end
+    local changed = CS.castFramesSelectedItem ~= item
+    CS.castFramesSelectedItem = item
+    return changed
 end
 
 -- Where the "Resource Bars" entry lives in the panel list right now.
@@ -3542,6 +3559,7 @@ ST._SetConfigResourceSettingsSpecID = SetConfigResourceSettingsSpecID
 ST._PruneConfigResourceSelection = PruneConfigResourceSelection
 ST._SelectConfigResourcesEntry = SelectConfigResourcesEntry
 ST._SelectConfigCastFramesEntry = SelectConfigCastFramesEntry
+ST._SelectConfigCastFramesItem = SelectConfigCastFramesItem
 ST._GetResourcesEntryPlacement = GetResourcesEntryPlacement
 ST._IsResourcesEmptyStateActive = IsResourcesEmptyStateActive
 ST._IsButtonsWideViewActive = IsButtonsWideViewActive

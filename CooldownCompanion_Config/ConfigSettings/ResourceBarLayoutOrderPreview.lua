@@ -160,6 +160,7 @@ local function EnsurePreviewState(host)
             icons = {},
             slots = {},
             gaps = {},
+            unitProxies = {},
         },
         used = {},
         tweens = {},
@@ -190,6 +191,8 @@ local function ResetPreviewState(preview)
     preview.used.icons = 0
     preview.used.slots = 0
     preview.used.gaps = 0
+    preview.used.unitProxies = 0
+    preview.renderedSelectionKeys = {}
     preview.layoutDrag = nil
     preview.root:Show()
     preview.root:SetScript("OnUpdate", nil)
@@ -352,7 +355,7 @@ end
 local function CreateSlotFrame(parent)
     local frame = CreateFrame("Button", nil, parent, "BackdropTemplate")
     frame:SetClipsChildren(false)
-    frame:RegisterForClicks("LeftButtonDown")
+    frame:RegisterForClicks("LeftButtonDown", "AnyUp")
 
     frame.titleIcon = frame:CreateTexture(nil, "ARTWORK")
     frame.titleIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -429,6 +432,77 @@ local function AcquireGap(preview, parent)
     frame:SetParent(parent)
     frame:Show()
     frame.text:Hide()
+    return frame
+end
+
+local function CreateUnitFrameProxy(parent)
+    local frame = CreateFrame("Button", nil, parent)
+    frame:RegisterForClicks("LeftButtonUp")
+    frame:SetClipsChildren(false)
+
+    frame.portrait = frame:CreateTexture(nil, "ARTWORK")
+    frame.portrait:SetSize(26, 26)
+    frame.portrait:SetPoint("LEFT", frame, "LEFT", 0, 0)
+
+    frame.health = CreateFrame("StatusBar", nil, frame)
+    frame.health:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    frame.health:SetMinMaxValues(0, 100)
+    frame.health:SetValue(72)
+    frame.health:SetStatusBarColor(0.18, 0.72, 0.28, 0.92)
+    frame.health:SetPoint("TOPLEFT", frame.portrait, "TOPRIGHT", 4, -2)
+    frame.health:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 2)
+    frame.health.bg = frame.health:CreateTexture(nil, "BACKGROUND")
+    frame.health.bg:SetAllPoints()
+    frame.health.bg:SetColorTexture(0.04, 0.05, 0.04, 0.88)
+
+    frame.name = frame.health:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.name:SetPoint("LEFT", frame.health, "LEFT", 4, 0)
+    frame.name:SetPoint("RIGHT", frame.health, "RIGHT", -4, 0)
+    frame.name:SetJustifyH("LEFT")
+
+    frame.hover = frame:CreateTexture(nil, "OVERLAY")
+    frame.hover:SetAllPoints(frame.health)
+    frame.hover:SetColorTexture(1, 1, 1, 0.11)
+    frame.hover:SetBlendMode("ADD")
+    frame.hover:Hide()
+
+    frame.selected = frame:CreateTexture(nil, "OVERLAY", nil, 1)
+    frame.selected:SetAllPoints(frame.health)
+    frame.selected:SetColorTexture(1, 1, 1, 0.16)
+    frame.selected:SetBlendMode("ADD")
+    frame.selected:Hide()
+
+    frame.accent = frame:CreateTexture(nil, "OVERLAY", nil, 2)
+    frame.accent:SetWidth(3)
+    frame.accent:SetPoint("TOPLEFT", frame.health, "TOPLEFT", 0, 0)
+    frame.accent:SetPoint("BOTTOMLEFT", frame.health, "BOTTOMLEFT", 0, 0)
+    frame.accent:Hide()
+
+    frame:SetScript("OnEnter", function(self)
+        self.hover:Show()
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(self._cdcLabel or "Unit Frame", 1, 1, 1)
+        GameTooltip:AddLine("Click to edit this frame's anchoring.", 0.75, 0.82, 0.92, true)
+        GameTooltip:Show()
+    end)
+    frame:SetScript("OnLeave", function(self)
+        self.hover:Hide()
+        GameTooltip:Hide()
+    end)
+    return frame
+end
+
+local function AcquireUnitFrameProxy(preview, parent)
+    local pool = preview.pools.unitProxies
+    local index = (preview.used.unitProxies or 0) + 1
+    preview.used.unitProxies = index
+    local frame = pool[index]
+    if not frame then
+        frame = CreateUnitFrameProxy(parent)
+        pool[index] = frame
+    end
+    frame:SetParent(parent)
+    frame:Show()
     return frame
 end
 
@@ -836,7 +910,8 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
 
     if resourceBarsEnabled then
         for customIndex, customAura in ipairs(customBars or {}) do
-            if customAura and customAura.enabled and customAura.spellID then
+            if customAura and customAura.enabled and customAura.spellID
+                and CooldownCompanion:IsCustomBarRuntimeEligible(customAura) then
                 local customBarId = EnsureCustomBarId(rbSettings, customAura)
                 local spellInfo = C_Spell.GetSpellInfo(customAura.spellID)
                 local label = spellInfo and spellInfo.name or customAura.label or ("Custom Bar " .. customIndex)
@@ -1532,13 +1607,20 @@ local function BuildStableLaneSlots(lane, draggedSlotId)
     return laneScale, slotRects
 end
 
-local function SelectPreviewSlot(slot)
+local function SelectPreviewSlot(slot, modifierMulti)
     if type(slot) ~= "table" then
         return false
     end
 
-    -- Bars can't be edited from the Cast Bar home, so clicks select nothing
     if CS.castFramesEntrySelected then
+        if slot.kind == "cast" then
+            if ST._SelectConfigCastFramesItem then
+                ST._SelectConfigCastFramesItem("castbar")
+            else
+                CS.castFramesSelectedItem = "castbar"
+            end
+            return true
+        end
         return false
     end
 
@@ -1557,9 +1639,16 @@ local function SelectPreviewSlot(slot)
     end
 
     if slot.kind == "custom" and slot.customBarId ~= nil and ST._SelectConfigCustomBar then
-        ST._SelectConfigCustomBar(slot.customBarId, {
-            toggle = true,
-        })
+        if modifierMulti and ST._ToggleConfigCustomBarMultiSelect then
+            if not CS.selectedCustomBarId then
+                ST._SelectConfigCustomBar(slot.customBarId)
+            end
+            ST._ToggleConfigCustomBarMultiSelect(slot.customBarId)
+        else
+            ST._SelectConfigCustomBar(slot.customBarId, {
+                toggle = true,
+            })
+        end
         return true
     end
 
@@ -1591,15 +1680,16 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         local slotFrame = AcquireSlot(preview, laneFrame)
         ConfigureSlotPreview(slotFrame, slotModel, preview, slotWidth, slotHeight, axis == "x")
         slotFrame.slotData = slotModel
+        preview.renderedSelectionKeys[slotModel.id] = true
 
         -- Mark the bar currently being configured: held hover-style glow
-        -- plus inward-pointing arrows. Not applicable in the Cast Bar home,
-        -- where bars can't be edited. In the buttons view (unified anchor
-        -- preview) the highlight follows the unified bar selection, so a
-        -- stale Resources-home selection can't light a bar up.
+        -- plus inward-pointing arrows. In the Cast Bar home only its cast
+        -- slot participates; in the buttons view (unified anchor preview)
+        -- the highlight follows the unified bar selection, so a stale
+        -- Resources-home selection can't light a bar up.
         local isSelected
         if CS.castFramesEntrySelected then
-            isSelected = false
+            isSelected = slotModel.kind == "cast" and CS.castFramesSelectedItem == "castbar"
         elseif not CS.resourcesEntrySelected then
             local kind = CS.unifiedBarKind
             isSelected = (kind == "resource" and slotModel.kind == "resource"
@@ -1655,6 +1745,18 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             StartDragTracking()
         end)
         slotFrame:SetScript("OnMouseUp", function(self, button)
+            if button == "RightButton" then
+                if CS.resourcesEntrySelected and slotModel.kind == "custom"
+                    and slotModel.customBarId ~= nil then
+                    ST._SelectConfigCustomBar(slotModel.customBarId)
+                    CooldownCompanion:RefreshConfigPanel()
+                    if ST._OpenConfigCustomBarMenu then
+                        ST._OpenConfigCustomBarMenu(slotModel.customBarId)
+                    end
+                end
+                return
+            end
+
             local state = CS.dragState
             if button ~= "LeftButton"
                 or not state
@@ -1670,7 +1772,7 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
                 CS.dragState = nil
             end
 
-            if SelectPreviewSlot(slotModel) then
+            if SelectPreviewSlot(slotModel, IsControlKeyDown and IsControlKeyDown()) then
                 CooldownCompanion:RefreshConfigPanel()
             end
         end)
@@ -1680,7 +1782,10 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(slotModel.label or "Bar", 1, 1, 1)
-            GameTooltip:AddLine("Drag to reorder this attached bar.", 0.75, 0.82, 0.92, true)
+            GameTooltip:AddLine("Click to edit. Drag to reorder this attached bar.", 0.75, 0.82, 0.92, true)
+            if CS.resourcesEntrySelected and slotModel.kind == "custom" then
+                GameTooltip:AddLine("Ctrl+Click to multi-select. Right-click for actions.", 0.75, 0.82, 0.92, true)
+            end
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function(self)
@@ -1841,6 +1946,87 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
 
     local iconCenterOffsetY = panelHeight / 2
     return totalWidth, totalHeight, iconCenterOffsetY
+end
+
+local function ConfigureUnitFrameProxy(frame, item, label, selected)
+    local r, g, b = 0.40, 0.67, 1.0
+    local _, classKey = UnitClass("player")
+    local classColor = classKey and C_ClassColor.GetClassColor(classKey)
+    if classColor then
+        r, g, b = classColor.r, classColor.g, classColor.b
+    end
+
+    frame._cdcLabel = label
+    frame.name:SetText(label)
+    if item == "player" and classKey then
+        frame.portrait:SetAtlas("classicon-" .. string.lower(classKey), false)
+    else
+        frame.portrait:SetAtlas("groupfinder-icon-friend", false)
+    end
+    frame.portrait:SetVertexColor(1, 1, 1, 1)
+    frame.accent:SetColorTexture(r, g, b, 1)
+    frame.selected:SetShown(selected == true)
+    frame.accent:SetShown(selected == true)
+
+    frame:SetScript("OnEnter", function(self)
+        self.hover:Show()
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(self._cdcLabel or "Unit Frame", 1, 1, 1)
+        GameTooltip:AddLine("Click to edit this frame's anchoring.", 0.75, 0.82, 0.92, true)
+        GameTooltip:Show()
+    end)
+    frame:SetScript("OnLeave", function(self)
+        self.hover:Hide()
+        GameTooltip:Hide()
+    end)
+    frame:SetScript("OnClick", function()
+        if ST._SelectConfigCastFramesItem then
+            ST._SelectConfigCastFramesItem(item)
+        else
+            CS.castFramesSelectedItem = item
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+end
+
+local function AppendUnitFrameProxies(preview, content, contentWidth, contentHeight)
+    local settings = CooldownCompanion.GetFrameAnchoringSettings
+        and CooldownCompanion:GetFrameAnchoringSettings()
+    if not (CS.castFramesEntrySelected and settings and settings.enabled == true) then
+        return contentWidth, contentHeight
+    end
+
+    local proxyWidth = 126
+    local proxyHeight = 30
+    local proxyGap = 14
+    local rowWidth = (proxyWidth * 2) + proxyGap
+    local row = AcquireContainer(preview, content)
+    row:SetSize(rowWidth, proxyHeight)
+    row:ClearAllPoints()
+    row:SetPoint(
+        "TOPLEFT",
+        content,
+        "TOPLEFT",
+        math_max(0, math_floor((math_max(contentWidth, rowWidth) - rowWidth) / 2)),
+        -(contentHeight > 0 and (contentHeight + LAYOUT_PREVIEW_SECTION_GAP) or 0)
+    )
+
+    local player = AcquireUnitFrameProxy(preview, row)
+    player:SetSize(proxyWidth, proxyHeight)
+    player:ClearAllPoints()
+    player:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    ConfigureUnitFrameProxy(player, "player", "Player Frame", CS.castFramesSelectedItem == "player")
+    preview.renderedSelectionKeys["frame:player"] = true
+
+    local target = AcquireUnitFrameProxy(preview, row)
+    target:SetSize(proxyWidth, proxyHeight)
+    target:ClearAllPoints()
+    target:SetPoint("LEFT", player, "RIGHT", proxyGap, 0)
+    ConfigureUnitFrameProxy(target, "target", "Target Frame", CS.castFramesSelectedItem == "target")
+    preview.renderedSelectionKeys["frame:target"] = true
+
+    local height = contentHeight + (contentHeight > 0 and LAYOUT_PREVIEW_SECTION_GAP or 0) + proxyHeight
+    return math_max(contentWidth, rowWidth), height
 end
 
 local function GetLayoutOrderForInsertion(laneSlots, reversed, insertIndex)
@@ -2156,6 +2342,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     local layout = CooldownCompanion:GetSpecLayoutOrder()
     preview.isVerticalLayout = preview.rbSettings
         and preview.rbSettings.enabled == true
+        and not CS.castFramesEntrySelected
         and IsResourceBarVerticalConfig(preview.rbSettings, layout)
         or false
 
@@ -2167,7 +2354,12 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     local cbSettings = preview.cbSettings
     local resourceBarsEnabled = rbSettings and rbSettings.enabled == true
     local castBarEnabled = cbSettings and cbSettings.enabled == true
-    if not (resourceBarsEnabled or castBarEnabled) then
+    local frameAnchoringSettings = CooldownCompanion.GetFrameAnchoringSettings
+        and CooldownCompanion:GetFrameAnchoringSettings()
+    local hasUnitFrameProxies = CS.castFramesEntrySelected
+        and frameAnchoringSettings
+        and frameAnchoringSettings.enabled == true
+    if not (resourceBarsEnabled or castBarEnabled or hasUnitFrameProxies) then
         SetPreviewMessage(preview, "Enable Resource Bars or Cast Bar to configure layout.")
         FinalizePreviewState(preview)
         return
@@ -2175,63 +2367,102 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
 
     local supportsAttachedResourceBars = resourceBarsEnabled and not (layout and IsTruthyConfigFlag(layout.independentAnchorEnabled))
     local hasAttachedCastBar = castBarEnabled and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled)
-    if not supportsAttachedResourceBars and not hasAttachedCastBar then
+    local includeResourceSlots = supportsAttachedResourceBars and not CS.castFramesEntrySelected
+    local hasAttachedBarContext = includeResourceSlots or hasAttachedCastBar
+    if not hasAttachedBarContext and not hasUnitFrameProxies then
         SetPreviewMessage(preview, "These settings apply only when Resource Bars or Cast Bar are anchored to a panel.")
         FinalizePreviewState(preview)
         return
     end
 
-    if not layout then
+    if hasAttachedBarContext and not layout then
         SetPreviewMessage(preview, "Specialization data loading...")
         FinalizePreviewState(preview)
         return
     end
 
-    local sourcePanel, sourceMessage = ResolveLayoutPreviewSourcePanel()
-    if not sourcePanel then
-        SetPreviewMessage(preview, sourceMessage)
-        FinalizePreviewState(preview)
-        return
-    end
+    local primarySlots = {}
+    local castSlots = {}
+    local sourcePanel
+    local sourceMessage
+    if hasAttachedBarContext then
+        primarySlots, castSlots = CollectPreviewSlots(
+            rbSettings,
+            cbSettings,
+            layout,
+            preview.isVerticalLayout,
+            includeResourceSlots
+        )
+        if not preview.isVerticalLayout then
+            for _, castSlot in ipairs(castSlots) do
+                table_insert(primarySlots, castSlot)
+            end
+        end
 
-    local primarySlots, castSlots = CollectPreviewSlots(
-        rbSettings,
-        cbSettings,
-        layout,
-        preview.isVerticalLayout,
-        supportsAttachedResourceBars
-    )
-    if not preview.isVerticalLayout then
-        for _, castSlot in ipairs(castSlots) do
-            table_insert(primarySlots, castSlot)
+        if #primarySlots > 0 or #castSlots > 0 then
+            sourcePanel, sourceMessage = ResolveLayoutPreviewSourcePanel()
+            if not sourcePanel and not hasUnitFrameProxies then
+                SetPreviewMessage(preview, sourceMessage)
+                FinalizePreviewState(preview)
+                return
+            end
+            if not sourcePanel then
+                wipe(primarySlots)
+                wipe(castSlots)
+            end
         end
     end
 
-    if #primarySlots == 0 and #castSlots == 0 then
+    if #primarySlots == 0 and #castSlots == 0 and not hasUnitFrameProxies then
         SetPreviewMessage(preview, "No active bars to order. Enable resources, Custom Bars, or cast bar first.")
         FinalizePreviewState(preview)
         return
     end
 
-    local layoutDrag = CreateLayoutDragModel(preview)
-    preview.layoutDrag = layoutDrag
+    local layoutDrag
+    if #primarySlots > 0 or #castSlots > 0 then
+        layoutDrag = CreateLayoutDragModel(preview)
+        preview.layoutDrag = layoutDrag
+    end
 
     local root = preview.root
     local content = AcquireContainer(preview, root)
     content:SetClipsChildren(false)
 
-    local resourceThickness = (rbSettings and tonumber(GetResourceGlobalThickness(rbSettings))) or math_floor(sourcePanel.iconHeight * 0.56)
-    local castBarHeight = cbSettings and (cbSettings.stylingEnabled and (cbSettings.height or 15) or 11) or resourceThickness
-    local horizontalBarHeight = math_max(8, math_floor(math_max(resourceThickness, castBarHeight)))
-    local verticalBarWidth = math_max(8, math_floor(resourceThickness))
+    local contentWidth = 0
+    local contentHeight = 0
+    if sourcePanel and layoutDrag then
+        local resourceThickness = (rbSettings and tonumber(GetResourceGlobalThickness(rbSettings)))
+            or math_floor(sourcePanel.iconHeight * 0.56)
+        local castBarHeight = cbSettings and (cbSettings.stylingEnabled and (cbSettings.height or 15) or 11)
+            or resourceThickness
+        local horizontalBarHeight = math_max(8, math_floor(math_max(resourceThickness, castBarHeight)))
+        local verticalBarWidth = math_max(8, math_floor(resourceThickness))
 
-    local contentWidth
-    local contentHeight
-    if preview.isVerticalLayout then
-        contentWidth, contentHeight = RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, castSlots, horizontalBarHeight, verticalBarWidth)
-    else
-        contentWidth, contentHeight = RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, horizontalBarHeight)
+        if preview.isVerticalLayout then
+            contentWidth, contentHeight = RenderVerticalLayout(
+                preview,
+                content,
+                layoutDrag,
+                sourcePanel,
+                primarySlots,
+                castSlots,
+                horizontalBarHeight,
+                verticalBarWidth
+            )
+        else
+            contentWidth, contentHeight = RenderHorizontalLayout(
+                preview,
+                content,
+                layoutDrag,
+                sourcePanel,
+                primarySlots,
+                horizontalBarHeight
+            )
+        end
     end
+
+    contentWidth, contentHeight = AppendUnitFrameProxies(preview, content, contentWidth, contentHeight)
 
     content:SetSize(contentWidth, contentHeight)
 
@@ -2250,6 +2481,11 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     content:SetPoint("CENTER", root, "CENTER", 0, 0)
 
     FinalizePreviewState(preview)
+end
+
+function ST._GetLayoutPreviewRenderedSelectionKeys(host)
+    local preview = host and host._cdcLayoutPreview
+    return preview and preview.renderedSelectionKeys or {}
 end
 
 -- True when the Layout & Order lanes would actually render bars around an

@@ -61,6 +61,155 @@ local TREE = {
     ICON_GAP = 6,
 }
 
+local function GetNavigatorClassColor()
+    local _, classKey = UnitClass("player")
+    local color = classKey and C_ClassColor.GetClassColor(classKey)
+    return color and color.r or 0.40, color and color.g or 0.67, color and color.b or 1.0
+end
+
+local function EnsureRailDestinationButton(host, key)
+    host._cdcDestinationButtons = host._cdcDestinationButtons or {}
+    local button = host._cdcDestinationButtons[key]
+    if button then return button end
+
+    button = CreateFrame("Button", nil, host)
+    -- Keep the existing tutorial anchor contract, which expects an AceGUI-
+    -- shaped object with a .frame field.
+    button.frame = button
+    button:RegisterForClicks("LeftButtonUp")
+    button:SetHeight(24)
+
+    button.wash = button:CreateTexture(nil, "BACKGROUND")
+    button.wash:SetAllPoints()
+    button.wash:Hide()
+
+    button.hover = button:CreateTexture(nil, "BACKGROUND", nil, 1)
+    button.hover:SetAllPoints()
+    button.hover:SetColorTexture(1, 1, 1, 0.08)
+    button.hover:Hide()
+
+    button.accent = button:CreateTexture(nil, "ARTWORK")
+    button.accent:SetWidth(3)
+    button.accent:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+    button.accent:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
+    button.accent:Hide()
+
+    button.icon = button:CreateTexture(nil, "ARTWORK")
+    button.icon:SetSize(16, 16)
+    button.icon:SetPoint("LEFT", button, "LEFT", 8, 0)
+
+    button.label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    button.label:SetPoint("LEFT", button.icon, "RIGHT", 7, 0)
+    button.label:SetPoint("RIGHT", button, "RIGHT", -6, 0)
+    button.label:SetJustifyH("LEFT")
+    button.label:SetWordWrap(false)
+
+    button:SetScript("OnEnter", function(self)
+        self.hover:Show()
+        self.label:SetTextColor(1, 0.82, 0)
+    end)
+    button:SetScript("OnLeave", function(self)
+        self.hover:Hide()
+        if self._cdcSelected then
+            self.label:SetTextColor(1, 1, 1)
+        else
+            self.label:SetTextColor(0.82, 0.78, 0.70)
+        end
+    end)
+
+    host._cdcDestinationButtons[key] = button
+    return button
+end
+
+local function ConfigureRailDestinationButton(button, opts)
+    local r, g, b = GetNavigatorClassColor()
+    button.label:SetText(opts.label)
+    button.icon:SetAtlas(opts.atlas, false)
+    button.icon:SetVertexColor(opts.iconR or 0.82, opts.iconG or 0.78, opts.iconB or 0.70, 1)
+    button.wash:SetColorTexture(r, g, b, 0.13)
+    button.accent:SetColorTexture(r, g, b, 0.95)
+    button._cdcSelected = opts.selected == true
+    button.wash:SetShown(button._cdcSelected)
+    button.accent:SetShown(button._cdcSelected)
+    button.label:SetTextColor(
+        button._cdcSelected and 1 or 0.82,
+        button._cdcSelected and 1 or 0.78,
+        button._cdcSelected and 1 or 0.70
+    )
+    button:SetScript("OnClick", opts.onClick)
+    button:Show()
+end
+
+local function UpdateRailDestinations()
+    local host = CS.col1DestinationBar
+    if not host then return end
+    if CS.talentPickerMode then
+        host:Hide()
+        return
+    end
+
+    local r, g, b = GetNavigatorClassColor()
+    if not host._cdcDividerLeft then
+        host._cdcDividerLeft = host:CreateTexture(nil, "ARTWORK")
+        host._cdcDividerRight = host:CreateTexture(nil, "ARTWORK")
+        host._cdcDividerOrnament = host:CreateTexture(nil, "ARTWORK")
+        host._cdcDividerLeft:SetHeight(1)
+        host._cdcDividerRight:SetHeight(1)
+        host._cdcDividerOrnament:SetSize(5, 5)
+        host._cdcDividerLeft:SetPoint("LEFT", host, "LEFT", 8, 0)
+        host._cdcDividerLeft:SetPoint("RIGHT", host, "CENTER", -6, 0)
+        host._cdcDividerRight:SetPoint("LEFT", host, "CENTER", 6, 0)
+        host._cdcDividerRight:SetPoint("RIGHT", host, "RIGHT", -8, 0)
+        host._cdcDividerOrnament:SetPoint("CENTER", host, "CENTER", 0, 0)
+    end
+    host._cdcDividerLeft:SetColorTexture(r, g, b, 0.38)
+    host._cdcDividerRight:SetColorTexture(r, g, b, 0.38)
+    host._cdcDividerOrnament:SetColorTexture(r, g, b, 0.72)
+    host._cdcDividerLeft:ClearAllPoints()
+    host._cdcDividerLeft:SetPoint("TOPLEFT", host, "TOPLEFT", 8, -4)
+    host._cdcDividerLeft:SetPoint("RIGHT", host, "TOP", -6, -4)
+    host._cdcDividerRight:ClearAllPoints()
+    host._cdcDividerRight:SetPoint("LEFT", host, "TOP", 6, -4)
+    host._cdcDividerRight:SetPoint("TOPRIGHT", host, "TOPRIGHT", -8, -4)
+    host._cdcDividerOrnament:ClearAllPoints()
+    host._cdcDividerOrnament:SetPoint("CENTER", host, "TOP", 0, -4)
+
+    local resources = EnsureRailDestinationButton(host, "resources")
+    resources:ClearAllPoints()
+    resources:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -8)
+    resources:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -8)
+    ConfigureRailDestinationButton(resources, {
+        label = "Resources",
+        atlas = "ui_adv_health",
+        selected = CS.resourcesEntrySelected == true,
+        onClick = function()
+            if ST._SelectConfigResourcesEntry then
+                ST._SelectConfigResourcesEntry()
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+    CS.col1ResourcesButton = resources
+
+    local castFrames = EnsureRailDestinationButton(host, "cast-frames")
+    castFrames:ClearAllPoints()
+    castFrames:SetPoint("TOPLEFT", resources, "BOTTOMLEFT", 0, 0)
+    castFrames:SetPoint("TOPRIGHT", resources, "BOTTOMRIGHT", 0, 0)
+    ConfigureRailDestinationButton(castFrames, {
+        label = "Cast Bar & Unit Frames",
+        atlas = "groupfinder-icon-friend",
+        selected = CS.castFramesEntrySelected == true,
+        onClick = function()
+            if ST._SelectConfigCastFramesEntry then
+                ST._SelectConfigCastFramesEntry()
+            end
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
+    host:Show()
+end
+
 local function ConfigureTreeExpandButton(entry, isExpanded, isPinned, onClick)
     local button = entry.frame._cdcTreeExpandButton
     if not button then
@@ -2034,55 +2183,6 @@ local function RefreshColumn1(preserveDrag)
         return row
     end
 
-    local function RenderRailDestinations()
-        local spacer = AceGUI:Create("SimpleGroup")
-        spacer:SetFullWidth(true)
-        spacer:SetHeight(8)
-        spacer.noAutoHeight = true
-        CS.col1Scroll:AddChild(spacer)
-
-        local resourcesRow = RenderNavigationRow("rail-destination", "Resources", {
-            selected = CS.resourcesEntrySelected == true,
-            onClick = function()
-                if ST._SelectConfigResourcesEntry then
-                    ST._SelectConfigResourcesEntry({ toggle = true })
-                end
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-        CS.col1ResourcesButton = resourcesRow
-
-        RenderNavigationRow("rail-destination", "Cast Bar & Unit Frames", {
-            iconAtlas = "groupfinder-icon-friend",
-            selected = CS.castFramesEntrySelected == true,
-            onClick = function()
-                if ST._SelectConfigCastFramesEntry then
-                    ST._SelectConfigCastFramesEntry({ toggle = true })
-                end
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-
-        if CS.castFramesEntrySelected then
-            local castRows = {
-                { key = "castbar", label = "Cast Bar" },
-                { key = "player", label = "Player Frame" },
-                { key = "target", label = "Target Frame" },
-            }
-            for _, item in ipairs(castRows) do
-                RenderNavigationRow("rail-destination-child", "    " .. item.label, {
-                    selected = CS.castFramesSelectedItem == item.key,
-                    onClick = function()
-                        CS.castFramesSelectedItem = item.key
-                        CooldownCompanion:RefreshConfigPanel()
-                    end,
-                })
-            end
-        elseif CS.resourcesEntrySelected and ST._BuildCustomBarsListPanel then
-            ST._BuildCustomBarsListPanel(CS.col1Scroll)
-        end
-    end
-
     local function FindOtherClassSectionByClassKey(otherSectionOrder, classKey)
         if not classKey then return nil end
         for _, section in ipairs(otherSectionOrder or {}) do
@@ -2335,9 +2435,7 @@ local function RefreshColumn1(preserveDrag)
         end
     end
 
-    if not searchResults and not CS.otherClassLibraryActive then
-        RenderRailDestinations()
-    end
+    UpdateRailDestinations()
 
     CS.lastCol1RenderedRows = col1RenderedRows
 

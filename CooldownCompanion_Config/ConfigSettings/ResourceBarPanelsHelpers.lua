@@ -226,7 +226,7 @@ local function GetPlayerClassAndSpecsConfig()
     return classID, specIDs
 end
 
-local function GetConfigEditableResources(settings)
+local function GetConfigEditableResources(settings, includeDisabled)
     settings = settings or CooldownCompanion:GetResourceBarSettings()
     if not (type(settings) == "table" and settings.enabled == true) then
         return {}
@@ -240,14 +240,14 @@ local function GetConfigEditableResources(settings)
     local result = {}
     local seen = {}
     for _, powerType in ipairs(CLASS_RESOURCES_CONFIG[classID] or {}) do
-        if IsResourceConfigEnabled(settings, powerType) then
+        if includeDisabled or IsResourceConfigEnabled(settings, powerType) then
             AddUniqueResource(result, seen, powerType)
         end
     end
 
     for _, specID in ipairs(specIDs) do
         for _, powerType in ipairs(SPEC_RESOURCES_CONFIG[specID] or {}) do
-            if IsResourceConfigEnabled(settings, powerType) then
+            if includeDisabled or IsResourceConfigEnabled(settings, powerType) then
                 AddUniqueResource(result, seen, powerType)
             end
         end
@@ -283,7 +283,7 @@ local function GetResourceApplicableSpecIDs(powerType)
     return applicable
 end
 
-local function IsResourceEditableInColumn4(powerType, settings)
+local function IsResourceEditableInColumn4(powerType, settings, includeDisabled)
     settings = settings or CooldownCompanion:GetResourceBarSettings()
     if powerType == nil or powerType == RESOURCE_HEALTH then
         return false
@@ -291,7 +291,7 @@ local function IsResourceEditableInColumn4(powerType, settings)
     if not (type(settings) == "table" and settings.enabled == true) then
         return false
     end
-    if not IsResourceConfigEnabled(settings, powerType) then
+    if not includeDisabled and not IsResourceConfigEnabled(settings, powerType) then
         return false
     end
     return #GetResourceApplicableSpecIDs(powerType) > 0

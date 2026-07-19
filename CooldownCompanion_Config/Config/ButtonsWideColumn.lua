@@ -33,9 +33,12 @@ local PREVIEW_MIN_HEIGHT = 100
 local SETTINGS_MIN_HEIGHT = 150
 local EDIT_INSET = 6
 local EDIT_HEADER_TOP_GAP = 6
-local EDIT_HEADER_HEIGHT = 16
+local EDIT_HEADER_HEIGHT = 18
 local EDIT_HEADER_GAP = 5
 local EDIT_BOTTOM_INSET = 6
+local EDIT_CHIPS_HEIGHT = 18
+local EDIT_CHIPS_GAP = 4
+local EDIT_HEADER_ACTION_GAP = 3
 
 -- The preview/settings split is owner-adjustable via the drag divider below;
 -- the chosen fraction persists per profile.
@@ -117,6 +120,149 @@ local function EnsureEditingSurface(col3)
     return surface
 end
 
+local function GetActiveEditingAddBox(col3)
+    local alternate = col3._cdcAlternateEditingAddBox
+    if alternate and alternate.frame and alternate.frame:IsShown() then
+        return alternate
+    end
+    local panelAddBox = col3.buttonsAddBox
+    if panelAddBox and panelAddBox.frame and panelAddBox.frame:IsShown() then
+        return panelAddBox
+    end
+    return nil
+end
+
+local function SetWideEditingAddBox(col3, widget)
+    local previous = col3._cdcAlternateEditingAddBox
+    if previous and previous ~= widget and previous.frame then
+        previous.frame:Hide()
+    end
+    col3._cdcAlternateEditingAddBox = widget
+    if widget and widget.frame then
+        widget.frame._cdcEditingHeight = widget.frame._cdcEditingHeight or ADD_BOX_HEIGHT
+        widget.frame:Show()
+    end
+end
+
+local function SetWideEditingHeaderActions(col3, actions)
+    local headerLine = EnsureEditingSurface(col3)._cdcHeader
+    headerLine.actionButtons = headerLine.actionButtons or {}
+    for index, action in ipairs(actions or {}) do
+        local button = headerLine.actionButtons[index]
+        if not button then
+            button = CreateFrame("Button", nil, headerLine, "UIPanelButtonTemplate")
+            button:SetHeight(18)
+            button:SetNormalFontObject(GameFontNormalSmall)
+            button:SetHighlightFontObject(GameFontHighlightSmall)
+            headerLine.actionButtons[index] = button
+        end
+        button:SetText(action.text or "")
+        button:SetWidth(action.width or 64)
+        button:SetScript("OnClick", action.onClick)
+        button:Show()
+    end
+    for index = #(actions or {}) + 1, #headerLine.actionButtons do
+        headerLine.actionButtons[index]:Hide()
+    end
+end
+
+local function LayoutWideEditingChips(frame)
+    if not (frame and frame:IsShown()) then return end
+    local label = frame._cdcPrefix
+    local buttons = frame._cdcButtons or {}
+    label:ClearAllPoints()
+    label:SetPoint("LEFT", frame, "LEFT", 0, 0)
+
+    local left = label
+    for _, button in ipairs(buttons) do
+        if button:IsShown() then
+            button:ClearAllPoints()
+            button:SetPoint("LEFT", left, "RIGHT", 0, 0)
+            left = button
+        end
+    end
+end
+
+local function SetWideEditingChips(col3, prefix, items)
+    local surface = EnsureEditingSurface(col3)
+    local frame = col3._cdcEditingChips
+    if not frame then
+        frame = CreateFrame("Frame", nil, surface)
+        frame:SetHeight(EDIT_CHIPS_HEIGHT)
+        frame:SetClipsChildren(true)
+        frame._cdcPrefix = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        frame._cdcPrefix:SetJustifyH("LEFT")
+        frame._cdcButtons = {}
+        frame:SetScript("OnSizeChanged", LayoutWideEditingChips)
+        col3._cdcEditingChips = frame
+    end
+
+    if not items or #items == 0 then
+        frame:Hide()
+        return
+    end
+
+    frame._cdcPrefix:SetText((prefix or "Not currently shown:") .. " ")
+    for index, item in ipairs(items) do
+        local captured = item
+        local button = frame._cdcButtons[index]
+        if not button then
+            button = CreateFrame("Button", nil, frame)
+            button:RegisterForClicks("AnyUp")
+            button.text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            button.text:SetAllPoints()
+            button.text:SetJustifyH("LEFT")
+            button:SetScript("OnEnter", function(self)
+                self.text:SetTextColor(1, 0.82, 0)
+                if self._cdcTooltip then
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:SetText(self._cdcTooltip, 1, 1, 1)
+                    GameTooltip:Show()
+                end
+            end)
+            button:SetScript("OnLeave", function(self)
+                local color = self._cdcSelected and self._cdcSelectedColor or self._cdcNormalColor
+                self.text:SetTextColor(color[1], color[2], color[3])
+                GameTooltip:Hide()
+            end)
+            frame._cdcButtons[index] = button
+        end
+        button.text:SetText((index > 1 and "  \194\183  " or "") .. tostring(item.label or ""))
+        button:SetSize(math.ceil(button.text:GetStringWidth()) + 2, EDIT_CHIPS_HEIGHT)
+        button._cdcSelected = item.selected == true
+        button._cdcNormalColor = { 0.70, 0.68, 0.64 }
+        button._cdcSelectedColor = { 1, 1, 1 }
+        button._cdcTooltip = item.tooltip
+        local color = button._cdcSelected and button._cdcSelectedColor or button._cdcNormalColor
+        button.text:SetTextColor(color[1], color[2], color[3])
+        button:SetScript("OnClick", function(_, mouseButton)
+            if mouseButton == "RightButton" and captured.onRightClick then
+                captured.onRightClick()
+            elseif mouseButton == "LeftButton" and captured.onClick then
+                captured.onClick()
+            end
+        end)
+        button:Show()
+    end
+    for index = #items + 1, #frame._cdcButtons do
+        frame._cdcButtons[index]:Hide()
+    end
+    frame:Show()
+    LayoutWideEditingChips(frame)
+end
+
+local function ClearWideEditingExtras(col3)
+    local alternate = col3._cdcAlternateEditingAddBox
+    if alternate and alternate.frame then
+        alternate.frame:Hide()
+    end
+    col3._cdcAlternateEditingAddBox = nil
+    if col3._cdcEditingChips then
+        col3._cdcEditingChips:Hide()
+    end
+    SetWideEditingHeaderActions(col3, nil)
+end
+
 local function AcquireEditingHeaderBadge(headerLine, index)
     local badge = headerLine.badges[index]
     if badge then return badge end
@@ -161,7 +307,7 @@ local function GetEditingHeaderPath()
             and CooldownCompanion:GetResourceBarSettings()
         if CS.selectedResourcePowerType and ST._RBP
             and ST._RBP.IsResourceEditableInColumn4
-            and ST._RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings) then
+            and ST._RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings, true) then
             local powerNames = ST._RB and ST._RB.POWER_NAMES
             local resourceName = powerNames and powerNames[tonumber(CS.selectedResourcePowerType)]
             return "Resources", resourceName or "Resource"
@@ -189,6 +335,19 @@ local function UpdateEditingHeader(col3)
 
     local shown = 0
     local rightAnchor
+    local actionButtons = headerLine.actionButtons or {}
+    for index = #actionButtons, 1, -1 do
+        local button = actionButtons[index]
+        if button:IsShown() then
+            button:ClearAllPoints()
+            if rightAnchor then
+                button:SetPoint("RIGHT", rightAnchor, "LEFT", -EDIT_HEADER_ACTION_GAP, 0)
+            else
+                button:SetPoint("RIGHT", headerLine, "RIGHT", 0, 0)
+            end
+            rightAnchor = button
+        end
+    end
     local badgeStatus = context and context.badgeStatus
     if badgeStatus and ST._EntryStatusBadges then
         for _, desc in ipairs(ST._EntryStatusBadges) do
@@ -263,9 +422,14 @@ end
 local function GetEditingOverhead(col3)
     local overhead = EDIT_HEADER_TOP_GAP + EDIT_HEADER_HEIGHT
         + PREVIEW_GAP + EDIT_BOTTOM_INSET
-    local addBox = col3.buttonsAddBox
-    if addBox and addBox.frame:IsShown() then
-        overhead = overhead + EDIT_HEADER_GAP + ADD_BOX_HEIGHT
+    local addBox = GetActiveEditingAddBox(col3)
+    if addBox then
+        overhead = overhead + EDIT_HEADER_GAP
+            + (addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
+    end
+    local chips = col3._cdcEditingChips
+    if chips and chips:IsShown() then
+        overhead = overhead + EDIT_CHIPS_GAP + EDIT_CHIPS_HEIGHT
     end
     return overhead
 end
@@ -460,16 +624,63 @@ local function AnchorButtonsContentFrame(col3, frame)
         UpdateEditingHeader(col3)
 
         local topAnchor = surface._cdcHeader
-        local addBox = col3.buttonsAddBox
-        if addBox and addBox.frame:IsShown() then
+        local addBox = GetActiveEditingAddBox(col3)
+        if addBox then
+            addBox.frame:ClearAllPoints()
+            addBox.frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+            addBox.frame:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+            addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
             topAnchor = addBox.frame
+        end
+        local chips = col3._cdcEditingChips
+        if chips and chips:IsShown() then
+            chips:SetParent(surface)
+            chips:ClearAllPoints()
+            chips:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_CHIPS_GAP)
+            chips:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_CHIPS_GAP)
+            chips:SetHeight(EDIT_CHIPS_HEIGHT)
+            topAnchor = chips
         end
         frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -PREVIEW_GAP)
         frame:SetPoint("BOTTOMRIGHT", surface, "BOTTOMRIGHT", -EDIT_INSET, EDIT_BOTTOM_INSET)
     else
-        HideEditingChrome(col3)
-        frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-        frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+        local addBox = GetActiveEditingAddBox(col3)
+        local chips = col3._cdcEditingChips
+        local hasChips = chips and chips:IsShown()
+        if addBox or hasChips then
+            if col3.buttonsSplitDivider then
+                col3.buttonsSplitDivider:CancelDrag()
+                col3.buttonsSplitDivider:Hide()
+            end
+            local surface = EnsureEditingSurface(col3)
+            surface:ClearAllPoints()
+            surface:SetAllPoints(col3.content)
+            surface:Show()
+            UpdateEditingHeader(col3)
+
+            local topAnchor = surface._cdcHeader
+            if addBox then
+                addBox.frame:ClearAllPoints()
+                addBox.frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+                addBox.frame:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+                addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
+                topAnchor = addBox.frame
+            end
+            if hasChips then
+                chips:SetParent(surface)
+                chips:ClearAllPoints()
+                chips:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_CHIPS_GAP)
+                chips:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_CHIPS_GAP)
+                chips:SetHeight(EDIT_CHIPS_HEIGHT)
+                topAnchor = chips
+            end
+            frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -PREVIEW_GAP)
+            frame:SetPoint("BOTTOMRIGHT", surface, "BOTTOMRIGHT", -EDIT_INSET, EDIT_BOTTOM_INSET)
+        else
+            HideEditingChrome(col3)
+            frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+            frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+        end
     end
 end
 
@@ -1147,6 +1358,10 @@ ST._RefreshButtonsPreviewMirror = RefreshButtonsPreviewMirror
 ST._IsPanelMirrorPreviewActive = IsPanelMirrorPreviewActive
 ST._ReapplyPanelPreviewSplit = ReapplyPanelPreviewSplit
 ST._ClearWideAddBoxAfterAdd = ClearWideAddBoxAfterAdd
+ST._SetWideEditingAddBox = SetWideEditingAddBox
+ST._SetWideEditingHeaderActions = SetWideEditingHeaderActions
+ST._SetWideEditingChips = SetWideEditingChips
+ST._ClearWideEditingExtras = ClearWideEditingExtras
 -- Divider + editing-surface hide for view branches that release the split
 -- while their own preview host holds it (Resources/cast homes).
 ST._HideWideEditingChrome = HideEditingChrome

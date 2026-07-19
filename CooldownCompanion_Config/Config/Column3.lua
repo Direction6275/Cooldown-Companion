@@ -15,6 +15,58 @@ local AceGUI = LibStub("AceGUI-3.0")
 -- the Resources empty state (wide pane) and the Cast Bar / Unit Frames
 -- columns (mini front doors).
 ------------------------------------------------------------------------
+local function UpdateIntroPaneLinks(pane, links)
+    local host = pane._destinationLinks
+    if not host then
+        host = CreateFrame("Frame", nil, pane)
+        host:SetHeight(18)
+        host.prefix = host:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        host.prefix:SetPoint("LEFT", host, "LEFT", 0, 0)
+        host.buttons = {}
+        pane._destinationLinks = host
+    end
+
+    if not links or #links == 0 then
+        host:Hide()
+        return
+    end
+
+    host:ClearAllPoints()
+    host:SetPoint("TOP", pane._enableBtn.frame, "BOTTOM", 0, -14)
+    host:SetWidth(math.max(260, (pane:GetWidth() or 0) - 80))
+    host.prefix:SetText("Not currently shown: ")
+    local left = host.prefix
+    for index, link in ipairs(links) do
+        local captured = link
+        local button = host.buttons[index]
+        if not button then
+            button = CreateFrame("Button", nil, host)
+            button:RegisterForClicks("LeftButtonUp")
+            button.text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            button.text:SetAllPoints()
+            button:SetScript("OnEnter", function(self)
+                self.text:SetTextColor(1, 0.82, 0)
+            end)
+            button:SetScript("OnLeave", function(self)
+                self.text:SetTextColor(0.70, 0.68, 0.64)
+            end)
+            host.buttons[index] = button
+        end
+        button.text:SetText((index > 1 and "  \194\183  " or "") .. captured.label)
+        button.text:SetTextColor(0.70, 0.68, 0.64)
+        button:SetSize(math.ceil(button.text:GetStringWidth()) + 2, 18)
+        button:ClearAllPoints()
+        button:SetPoint("LEFT", left, "RIGHT", 0, 0)
+        button:SetScript("OnClick", captured.onClick)
+        button:Show()
+        left = button
+    end
+    for index = #links + 1, #host.buttons do
+        host.buttons[index]:Hide()
+    end
+    host:Show()
+end
+
 local function ShowColumnIntroPane(col, paneKey, opts)
     local pane = col[paneKey]
     if not pane then
@@ -48,6 +100,7 @@ local function ShowColumnIntroPane(col, paneKey, opts)
         col[paneKey] = pane
     end
     pane._enableBtn.frame:Show()
+    UpdateIntroPaneLinks(pane, opts.links)
     pane:Show()
 end
 ST._ShowColumnIntroPane = ShowColumnIntroPane
@@ -80,8 +133,8 @@ local function RefreshColumn3()
         return ST._RefreshButtonsWideColumn()
     end
 
-    -- Cast Bar & Unit Frames home: the Navigator lists Cast Bar / Player
-    -- Frame / Target Frame; the workspace hosts preview and settings.
+    -- Cast Bar & Unit Frames home: the workspace preview and inactive chips
+    -- select Cast Bar / Player Frame / Target Frame settings.
     if CS.castFramesEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
         if not col3 then return end
@@ -100,8 +153,8 @@ local function RefreshColumn3()
         return ST._RefreshCastFramesWideColumn(col3)
     end
 
-    -- Resources home: the Navigator owns the Custom Bars & Resources list;
-    -- the workspace hosts preview and settings.
+    -- Resources home: the workspace preview and inactive chips select bars;
+    -- the Navigator keeps only the destination row.
     if CS.resourcesEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
         if not col3 then ST._RefreshButtonSettingsColumn() return end

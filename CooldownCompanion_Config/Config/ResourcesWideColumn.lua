@@ -6,14 +6,15 @@
     surfaces: the resources tab page, per-resource
     settings, the Custom Bar detail tabs, the Custom Bar multi-select, and
     the Cast Bar tabs - plus the player/target frame anchoring panels.
-    The Navigator hosts each home's list: Custom Bars & Resources, or the
-    Cast Bar / Player Frame / Target Frame rows.
+    The Navigator keeps only the two destination rows; preview objects and
+    the inactive-object chips below select the concrete bar/frame settings.
 ]]
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
+local RB = ST._RB
 
 -- Imports from earlier Config/ files
 local SetConfigCustomBarSettingsTab = ST._SetConfigCustomBarSettingsTab
@@ -64,6 +65,200 @@ end
 
 local function FindSelectedCustomBar()
     return FindCustomBarById(CooldownCompanion:GetResourceBarSettings(), CS.selectedCustomBarId)
+end
+
+local function GetRenderedDestinationKeys(col3)
+    local host = col3 and col3._resourcesPreviewHost
+    if not (host and host:IsShown()) then
+        return {}
+    end
+    if ST._GetLayoutPreviewRenderedSelectionKeys then
+        return ST._GetLayoutPreviewRenderedSelectionKeys(host)
+    end
+    return {}
+end
+
+local function ExportAllCustomBars()
+    if BlockCustomBarExportForResourceBarConflict and BlockCustomBarExportForResourceBarConflict() then
+        return
+    end
+    local settings = CooldownCompanion:GetResourceBarSettings()
+    local customBars = RB and RB.GetAllCustomBars and RB.GetAllCustomBars(settings)
+        or CooldownCompanion:GetSpecCustomAuraBars()
+    local payload = RB and RB.BuildCustomBarsExportPayload
+        and RB.BuildCustomBarsExportPayload(settings, customBars)
+    local exportString = payload and ST._EncodeExportData and ST._EncodeExportData(payload)
+    if exportString then
+        ST._ShowPopupAboveConfig("CDC_EXPORT_CUSTOM_BARS", nil, { exportString = exportString })
+    else
+        CooldownCompanion:Print("Export failed: Custom Bar data was unavailable.")
+    end
+end
+
+local function EnsureResourcesAddBox(col3)
+    local host = col3._resourcesAddBoxHost
+    if not host then
+        host = AceGUI:Create("SimpleGroup")
+        host:SetLayout("Fill")
+        host:SetHeight(28)
+        host.noAutoHeight = true
+        host.frame:SetParent(col3.content)
+        host.frame._cdcEditingHeight = 28
+        host.frame:SetScript("OnSizeChanged", function(_, width, height)
+            host.content.width = width
+            host.content.height = height
+            host:DoLayout()
+        end)
+        col3._resourcesAddBoxHost = host
+    end
+    host:ReleaseChildren()
+    if ST._BuildCustomBarWorkspaceAddBox then
+        ST._BuildCustomBarWorkspaceAddBox(host)
+    end
+    host.frame:Show()
+    if ST._SetWideEditingAddBox then
+        ST._SetWideEditingAddBox(col3, host)
+    end
+end
+
+local function BuildResourcesInactiveChips(col3, settings)
+    if not ST._SetWideEditingChips then return end
+    local rendered = GetRenderedDestinationKeys(col3)
+    local items = {}
+    local RBP = ST._RBP
+    local powerNames = RB and RB.POWER_NAMES or {}
+
+    for _, powerType in ipairs(RBP and RBP.GetConfigEditableResources
+        and RBP.GetConfigEditableResources(settings, true) or {}) do
+        local capturedPowerType = powerType
+        local key = "resource:" .. tostring(powerType)
+        if not rendered[key] then
+            items[#items + 1] = {
+                label = powerNames[powerType] or ("Power " .. tostring(powerType)),
+                selected = tostring(CS.selectedResourcePowerType) == tostring(powerType),
+                onClick = function()
+                    ST._SelectConfigResource(capturedPowerType, { toggle = true })
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            }
+        end
+    end
+
+    local customBars = RB and RB.GetAllCustomBars and RB.GetAllCustomBars(settings)
+        or CooldownCompanion:GetSpecCustomAuraBars()
+    for index, entry in ipairs(customBars or {}) do
+        local customBarId = RB and RB.EnsureCustomBarId and RB.EnsureCustomBarId(settings, entry)
+            or entry.customBarId
+        local capturedCustomBarId = customBarId
+        local key = customBarId and ("custom:" .. tostring(customBarId)) or nil
+        if customBarId and not rendered[key] then
+            local label = entry.label
+                or (entry.spellID and C_Spell.GetSpellName(entry.spellID))
+                or ("Custom Bar " .. tostring(index))
+            items[#items + 1] = {
+                label = label,
+                selected = tostring(CS.selectedCustomBarId) == tostring(customBarId)
+                    or (CS.selectedCustomBars and CS.selectedCustomBars[customBarId] == true),
+                tooltip = "Left-click to edit. Ctrl+Left-click to multi-select. Right-click for actions.",
+                onClick = function()
+                    if IsControlKeyDown and IsControlKeyDown() then
+                        if not CS.selectedCustomBarId then
+                            ST._SelectConfigCustomBar(capturedCustomBarId)
+                        end
+                        ST._ToggleConfigCustomBarMultiSelect(capturedCustomBarId)
+                    else
+                        ST._SelectConfigCustomBar(capturedCustomBarId, { toggle = true })
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+                onRightClick = function()
+                    ST._SelectConfigCustomBar(capturedCustomBarId)
+                    CooldownCompanion:RefreshConfigPanel()
+                    if ST._OpenConfigCustomBarMenu then
+                        ST._OpenConfigCustomBarMenu(capturedCustomBarId)
+                    end
+                end,
+            }
+        end
+    end
+
+    ST._SetWideEditingChips(col3, "Not currently shown:", items)
+end
+
+local function PrepareResourcesEditingChrome(col3, settings)
+    EnsureResourcesAddBox(col3)
+    if ST._SetWideEditingHeaderActions then
+        ST._SetWideEditingHeaderActions(col3, {
+            {
+                text = "Import",
+                width = 58,
+                onClick = function()
+                    ST._OpenImportReviewWindow()
+                end,
+            },
+            {
+                text = "Export All",
+                width = 72,
+                onClick = ExportAllCustomBars,
+            },
+        })
+    end
+    BuildResourcesInactiveChips(col3, settings)
+end
+
+local function PrepareCastEditingChips(col3)
+    if not ST._SetWideEditingChips then return end
+    local rendered = GetRenderedDestinationKeys(col3)
+    local definitions = {
+        { key = "cast", item = "castbar", label = "Cast Bar" },
+        { key = "frame:player", item = "player", label = "Player Frame" },
+        { key = "frame:target", item = "target", label = "Target Frame" },
+    }
+    local items = {}
+    for _, definition in ipairs(definitions) do
+        if not rendered[definition.key] then
+            local captured = definition
+            items[#items + 1] = {
+                label = captured.label,
+                selected = CS.castFramesSelectedItem == captured.item,
+                onClick = function()
+                    if ST._SelectConfigCastFramesItem then
+                        ST._SelectConfigCastFramesItem(captured.item)
+                    else
+                        CS.castFramesSelectedItem = captured.item
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            }
+        end
+    end
+    ST._SetWideEditingChips(col3, "Not currently shown:", items)
+end
+
+local function BuildCastIntroLinks(currentItem)
+    local definitions = {
+        { item = "castbar", label = "Cast Bar" },
+        { item = "player", label = "Player Frame" },
+        { item = "target", label = "Target Frame" },
+    }
+    local links = {}
+    for _, definition in ipairs(definitions) do
+        if definition.item ~= currentItem then
+            local captured = definition
+            links[#links + 1] = {
+                label = captured.label,
+                onClick = function()
+                    if ST._SelectConfigCastFramesItem then
+                        ST._SelectConfigCastFramesItem(captured.item)
+                    else
+                        CS.castFramesSelectedItem = captured.item
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            }
+        end
+    end
+    return links
 end
 
 local function GetCustomBarEntryTabs(entry)
@@ -132,6 +327,10 @@ local function HideResourcesWideSurfaces(col3)
     HideWidgetFrame(col3._customBarsMultiSelectScroll)
     HideWidgetFrame(col3._castBarHomeTabGroup)
     HideWidgetFrame(col3._castFramesSettingsScroll)
+    HideWidgetFrame(col3._resourcesAddBoxHost)
+    if ST._ClearWideEditingExtras then
+        ST._ClearWideEditingExtras(col3)
+    end
     if col3._resourcesIntroPane then col3._resourcesIntroPane:Hide() end
     if col3._castBarIntroPane then col3._castBarIntroPane:Hide() end
     if col3._unitFramesIntroPane then col3._unitFramesIntroPane:Hide() end
@@ -539,11 +738,12 @@ local function RefreshResourcesWideColumn(col3)
             if not (RBP and RBP.IsResourceEditableInColumn4) then
                 return false
             end
-            return RBP.IsResourceEditableInColumn4(powerType, settings)
+            return RBP.IsResourceEditableInColumn4(powerType, settings, true)
         end)
     end
 
     UpdateResourcesPreviewHost(col3)
+    PrepareResourcesEditingChrome(col3, settings)
 
     local selectedCustomBarIds = {}
     local selectedCustomBarEntries = {}
@@ -686,10 +886,9 @@ local function ShowUnitFrameSettings(col3, item)
     end
 end
 
--- Refresh for the Cast Bar & Unit Frames home: the Navigator row selection
--- (Cast Bar / Player Frame / Target Frame) decides what shows beneath the
--- pinned preview. Disabled modules show their intro pane across the whole
--- wide column instead.
+-- Refresh for the Cast Bar & Unit Frames home: preview or inactive-chip
+-- selection decides what shows beneath the pinned preview. Disabled modules
+-- keep their intro pane across the whole wide column instead.
 local function RefreshCastFramesWideColumn(col3)
     -- Everything restarts hidden; the active surface re-shows below.
     HideResourcesWideSurfaces(col3)
@@ -702,18 +901,19 @@ local function RefreshCastFramesWideColumn(col3)
 
     local conflict = CooldownCompanion.GetCurrentResourceBarConflict
         and CooldownCompanion:GetCurrentResourceBarConflict()
+    if conflict then
+        ShowResourcesConflictScroll(col3)
+        return
+    end
 
     if item == "castbar" then
-        if conflict then
-            ShowResourcesConflictScroll(col3)
-            return
-        end
         local settings = CooldownCompanion:GetCastBarSettings()
         if not (settings and settings.enabled) then
             ST._ShowColumnIntroPane(col3, "_castBarIntroPane", {
                 title = "Cast Bar",
                 body = "Skin the Blizzard cast bar and anchor it to a panel, or position it anywhere on screen.",
                 buttonText = "Enable Cast Bar",
+                links = BuildCastIntroLinks("castbar"),
                 onEnable = function()
                     local cb = CooldownCompanion:GetCastBarSettings()
                     if not cb then
@@ -728,6 +928,7 @@ local function RefreshCastFramesWideColumn(col3)
             return
         end
         UpdateResourcesPreviewHost(col3)
+        PrepareCastEditingChips(col3)
         ShowCastBarSettings(col3)
     else
         local fa = CooldownCompanion:GetFrameAnchoringSettings()
@@ -736,6 +937,7 @@ local function RefreshCastFramesWideColumn(col3)
                 title = "Unit Frames",
                 body = "Anchor your player and target unit frames to your panels.",
                 buttonText = "Enable Frame Anchoring",
+                links = BuildCastIntroLinks(item),
                 onEnable = function()
                     local settings = CooldownCompanion:GetFrameAnchoringSettings()
                     if not settings then
@@ -748,12 +950,8 @@ local function RefreshCastFramesWideColumn(col3)
             })
             return
         end
-        -- Unit frame settings were never gated behind the resource-bar
-        -- profile conflict; keep them reachable but skip the preview (it
-        -- renders resource/cast bars, which the conflict blocks).
-        if not conflict then
-            UpdateResourcesPreviewHost(col3)
-        end
+        UpdateResourcesPreviewHost(col3)
+        PrepareCastEditingChips(col3)
         ShowUnitFrameSettings(col3, item)
     end
 

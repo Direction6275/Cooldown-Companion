@@ -54,6 +54,7 @@ local MANUAL_COLUMN_LAYOUT = "CDC_MANUAL"
 local CONFIG_FINDER_BOX_HEIGHT = 28
 local CONFIG_FINDER_BUTTON_GAP = 3
 local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_BUTTON_GAP
+local NAVIGATOR_DESTINATIONS_HEIGHT = 57
 local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
 local NAVIGATOR_WIDTH = 300
 local CONFIG_DRAG_ALPHA = 0.40
@@ -364,7 +365,7 @@ local function GetColumn3HeaderMode(selection)
             if CS.selectedResourcePowerType
                 and ST._RBP
                 and ST._RBP.IsResourceEditableInColumn4
-                and ST._RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, resourceBarSettings)
+                and ST._RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, resourceBarSettings, true)
             then
                 return "resource_settings"
             end
@@ -1655,7 +1656,7 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Cast Bar")
             GameTooltip:AddLine("Skins the Blizzard cast bar and anchors it to a panel, or positions it anywhere on screen.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Use the preview pane to drag the attached cast bar around the mirrored icon panel.", 1, 1, 1, true)
+            GameTooltip:AddLine("Click the cast bar or unit-frame proxies to edit them; drag the attached cast bar to reorder it.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
         elseif CS.castFramesEntrySelected then
@@ -1670,9 +1671,9 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Resource Bars")
             GameTooltip:AddLine("Shared resource bar settings, organized into tabs.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Use the preview pane to drag attached bars around the mirrored icon panel. Layout is saved per specialization.", 1, 1, 1, true)
+            GameTooltip:AddLine("Click bars to edit them, or drag attached bars around the mirrored icon panel. Layout is saved per specialization.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Select a resource or Custom Bar in the list column for per-bar settings.", 1, 1, 1, true)
+            GameTooltip:AddLine("Click a bar in the preview, or use the inactive row below it, for per-bar settings.", 1, 1, 1, true)
         elseif CS.resourcesEntrySelected then
             GameTooltip:AddLine("Layout & Order")
             GameTooltip:AddLine("Arrange attached bars by dragging them around the mirrored icon panel.", 1, 1, 1)
@@ -1717,13 +1718,28 @@ local function CreateConfigPanel()
     btnBar:SetHeight(30)
     CS.col1ButtonBar = btnBar
 
+    -- Fixed destinations sit between the scrolling Group -> Panel tree and
+    -- the finder/Create controls. Column1 paints the two compact rows here.
+    local destinationBar = CreateFrame("Frame", nil, col1.content)
+    destinationBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 30 + CONFIG_FINDER_RESERVED_HEIGHT)
+    destinationBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30 + CONFIG_FINDER_RESERVED_HEIGHT)
+    destinationBar:SetHeight(NAVIGATOR_DESTINATIONS_HEIGHT)
+    destinationBar:Show()
+    CS.col1DestinationBar = destinationBar
+
     -- Navigator scroll
     local scroll1 = AceGUI:Create("ScrollFrame")
     scroll1:SetLayout("List")
     scroll1.frame:SetParent(col1.content)
     scroll1.frame:ClearAllPoints()
     scroll1.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-    scroll1.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30)
+    scroll1.frame:SetPoint(
+        "BOTTOMRIGHT",
+        col1.content,
+        "BOTTOMRIGHT",
+        0,
+        30 + CONFIG_FINDER_RESERVED_HEIGHT + NAVIGATOR_DESTINATIONS_HEIGHT
+    )
     scroll1.frame:Show()
     CS.col1Scroll = scroll1
 
@@ -1953,6 +1969,9 @@ local function CreateConfigPanel()
             if CS.configFinderBox then
                 CS.configFinderBox.frame:Hide()
             end
+            if CS.col1DestinationBar then
+                CS.col1DestinationBar:Hide()
+            end
             if ClearConfigFinderText then
                 ClearConfigFinderText()
             end
@@ -1974,6 +1993,15 @@ local function CreateConfigPanel()
         local col1Width = math.min(NAVIGATOR_WIDTH, math.max(260, w - 600 - pad))
         local col3Width = math.max(1, w - col1Width - pad)
         local finderAvailable = IsConfigFinderAvailable and IsConfigFinderAvailable()
+        local destinationBottomInset = finderAvailable and (30 + CONFIG_FINDER_RESERVED_HEIGHT) or 30
+
+        if CS.col1DestinationBar then
+            CS.col1DestinationBar:ClearAllPoints()
+            CS.col1DestinationBar:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, destinationBottomInset)
+            CS.col1DestinationBar:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, destinationBottomInset)
+            CS.col1DestinationBar:SetHeight(NAVIGATOR_DESTINATIONS_HEIGHT)
+            CS.col1DestinationBar:Show()
+        end
 
         if CS.configFinderBox then
             if finderAvailable then
@@ -1990,7 +2018,7 @@ local function CreateConfigPanel()
             end
         end
         if CS.col1Scroll and CS.col1Scroll.frame then
-            local bottomInset = finderAvailable and (30 + CONFIG_FINDER_RESERVED_HEIGHT) or 30
+            local bottomInset = destinationBottomInset + NAVIGATOR_DESTINATIONS_HEIGHT
             CS.col1Scroll.frame:ClearAllPoints()
             CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
             CS.col1Scroll.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, bottomInset)
