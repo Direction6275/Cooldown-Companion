@@ -193,6 +193,7 @@ local function ResetPreviewState(preview)
     preview.used.gaps = 0
     preview.used.unitProxies = 0
     preview.renderedSelectionKeys = {}
+    preview.independentResources = false
     preview.layoutDrag = nil
     preview.root:Show()
     preview.root:SetScript("OnUpdate", nil)
@@ -1782,7 +1783,10 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(slotModel.label or "Bar", 1, 1, 1)
-            GameTooltip:AddLine("Click to edit. Drag to reorder this attached bar.", 0.75, 0.82, 0.92, true)
+            local dragHelp = preview.independentResources
+                and "Click to edit. Drag to reorder this independent bar."
+                or "Click to edit. Drag to reorder this attached bar."
+            GameTooltip:AddLine(dragHelp, 0.75, 0.82, 0.92, true)
             if CS.resourcesEntrySelected and slotModel.kind == "custom" then
                 GameTooltip:AddLine("Ctrl+Click to multi-select. Right-click for actions.", 0.75, 0.82, 0.92, true)
             end
@@ -1855,6 +1859,107 @@ local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
 
     local iconCenterOffsetY = aboveHeight + LAYOUT_PREVIEW_GAP + (panelHeight / 2)
     return panelWidth, aboveHeight + panelHeight + belowHeight + (LAYOUT_PREVIEW_GAP * 2), iconCenterOffsetY
+end
+
+local function RenderIndependentHorizontalLayout(preview, content, layoutDrag, slots, slotWidth, slotHeight)
+    local aboveSlots = SortSlotsForSide(slots, "above", true)
+    local belowSlots = SortSlotsForSide(slots, "below", false)
+    local slotFrameHeight = math_max(8, slotHeight)
+    local aboveHeight = GetLaneExtent(#aboveSlots, slotFrameHeight)
+    local belowHeight = GetLaneExtent(#belowSlots, slotFrameHeight)
+    local centerGap = LAYOUT_PREVIEW_GAP * 2
+
+    local aboveLane = BuildLane(
+        preview,
+        content,
+        layoutDrag,
+        nil,
+        slotWidth,
+        aboveHeight,
+        "y",
+        "above",
+        true,
+        aboveSlots,
+        slotWidth,
+        slotFrameHeight,
+        "primary"
+    )
+    aboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    aboveLane.setPreviewOverflow = function(extra)
+        aboveLane.frame:ClearAllPoints()
+        aboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, extra)
+        aboveLane.frame:SetSize(aboveLane.baseWidth or slotWidth, (aboveLane.baseHeight or aboveHeight) + extra)
+    end
+    aboveLane.setPreviewOverflow(0)
+
+    local belowLane = BuildLane(
+        preview,
+        content,
+        layoutDrag,
+        nil,
+        slotWidth,
+        belowHeight,
+        "y",
+        "below",
+        false,
+        belowSlots,
+        slotWidth,
+        slotFrameHeight,
+        "primary"
+    )
+    belowLane.frame:SetPoint("TOPLEFT", aboveLane.frame, "BOTTOMLEFT", 0, -centerGap)
+
+    return slotWidth, aboveHeight + centerGap + belowHeight
+end
+
+local function RenderIndependentVerticalLayout(preview, content, layoutDrag, slots, slotHeight, slotWidth)
+    local leftSlots = SortSlotsForSide(slots, "left", true)
+    local rightSlots = SortSlotsForSide(slots, "right", false)
+    local leftWidth = GetLaneExtent(#leftSlots, slotWidth)
+    local rightWidth = GetLaneExtent(#rightSlots, slotWidth)
+    local centerGap = LAYOUT_PREVIEW_GAP * 2
+
+    local leftLane = BuildLane(
+        preview,
+        content,
+        layoutDrag,
+        nil,
+        leftWidth,
+        slotHeight,
+        "x",
+        "left",
+        true,
+        leftSlots,
+        slotWidth,
+        slotHeight,
+        "primary"
+    )
+    leftLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    leftLane.setPreviewOverflow = function(extra)
+        leftLane.frame:ClearAllPoints()
+        leftLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", -extra, 0)
+        leftLane.frame:SetSize((leftLane.baseWidth or leftWidth) + extra, leftLane.baseHeight or slotHeight)
+    end
+    leftLane.setPreviewOverflow(0)
+
+    local rightLane = BuildLane(
+        preview,
+        content,
+        layoutDrag,
+        nil,
+        rightWidth,
+        slotHeight,
+        "x",
+        "right",
+        false,
+        rightSlots,
+        slotWidth,
+        slotHeight,
+        "primary"
+    )
+    rightLane.frame:SetPoint("TOPLEFT", leftLane.frame, "TOPRIGHT", centerGap, 0)
+
+    return leftWidth + centerGap + rightWidth, slotHeight
 end
 
 local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, castSlots, horizontalBarHeight, verticalBarWidth)
@@ -2365,17 +2470,27 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
         return
     end
 
-    local supportsAttachedResourceBars = resourceBarsEnabled and not (layout and IsTruthyConfigFlag(layout.independentAnchorEnabled))
+    local independentResourcesPreview = CS.resourcesEntrySelected
+        and resourceBarsEnabled
+        and layout
+        and IsTruthyConfigFlag(layout.independentAnchorEnabled)
+    preview.independentResources = independentResourcesPreview == true
+    local supportsAttachedResourceBars = resourceBarsEnabled
+        and not (layout and IsTruthyConfigFlag(layout.independentAnchorEnabled))
     local hasAttachedCastBar = castBarEnabled and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled)
-    local includeResourceSlots = supportsAttachedResourceBars and not CS.castFramesEntrySelected
-    local hasAttachedBarContext = includeResourceSlots or hasAttachedCastBar
-    if not hasAttachedBarContext and not hasUnitFrameProxies then
+    local includeResourceSlots = not CS.castFramesEntrySelected
+        and (supportsAttachedResourceBars or independentResourcesPreview)
+    local includeCastSlots = not independentResourcesPreview
+    local hasAttachedBarContext = not independentResourcesPreview
+        and (includeResourceSlots or hasAttachedCastBar)
+    local hasBarContext = independentResourcesPreview or hasAttachedBarContext
+    if not hasBarContext and not hasUnitFrameProxies then
         SetPreviewMessage(preview, "These settings apply only when Resource Bars or Cast Bar are anchored to a panel.")
         FinalizePreviewState(preview)
         return
     end
 
-    if hasAttachedBarContext and not layout then
+    if hasBarContext and not layout then
         SetPreviewMessage(preview, "Specialization data loading...")
         FinalizePreviewState(preview)
         return
@@ -2385,10 +2500,10 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     local castSlots = {}
     local sourcePanel
     local sourceMessage
-    if hasAttachedBarContext then
+    if hasBarContext then
         primarySlots, castSlots = CollectPreviewSlots(
             rbSettings,
-            cbSettings,
+            includeCastSlots and cbSettings or nil,
             layout,
             preview.isVerticalLayout,
             includeResourceSlots
@@ -2399,7 +2514,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
             end
         end
 
-        if #primarySlots > 0 or #castSlots > 0 then
+        if hasAttachedBarContext and (#primarySlots > 0 or #castSlots > 0) then
             sourcePanel, sourceMessage = ResolveLayoutPreviewSourcePanel()
             if not sourcePanel and not hasUnitFrameProxies then
                 SetPreviewMessage(preview, sourceMessage)
@@ -2414,7 +2529,11 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     end
 
     if #primarySlots == 0 and #castSlots == 0 and not hasUnitFrameProxies then
-        SetPreviewMessage(preview, "No active bars to order. Enable resources, Custom Bars, or cast bar first.")
+        if independentResourcesPreview then
+            SetPreviewMessage(preview, "No active resources to order. Enable a resource or Custom Bar first.")
+        else
+            SetPreviewMessage(preview, "No active bars to order. Enable resources, Custom Bars, or cast bar first.")
+        end
         FinalizePreviewState(preview)
         return
     end
@@ -2431,7 +2550,32 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
 
     local contentWidth = 0
     local contentHeight = 0
-    if sourcePanel and layoutDrag then
+    if independentResourcesPreview and layoutDrag then
+        local resourceThickness = math_max(8, tonumber(GetResourceGlobalThickness(rbSettings)) or 12)
+        local independentLength = math_max(
+            20,
+            tonumber(layout.independentWidth or rbSettings.independentWidth) or 200
+        )
+        if preview.isVerticalLayout then
+            contentWidth, contentHeight = RenderIndependentVerticalLayout(
+                preview,
+                content,
+                layoutDrag,
+                primarySlots,
+                independentLength,
+                resourceThickness
+            )
+        else
+            contentWidth, contentHeight = RenderIndependentHorizontalLayout(
+                preview,
+                content,
+                layoutDrag,
+                primarySlots,
+                independentLength,
+                resourceThickness
+            )
+        end
+    elseif sourcePanel and layoutDrag then
         local resourceThickness = (rbSettings and tonumber(GetResourceGlobalThickness(rbSettings)))
             or math_floor(sourcePanel.iconHeight * 0.56)
         local castBarHeight = cbSettings and (cbSettings.stylingEnabled and (cbSettings.height or 15) or 11)
@@ -2474,8 +2618,8 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     local maxHeight = math_max(120, hostHeight - (LAYOUT_PREVIEW_PADDING * 2))
     local scale = math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
 
-    -- Center the whole visual block (icons + attached bars) in the pane so
-    -- dead space stays symmetric regardless of how bars split above/below.
+    -- Center the whole visual block in the pane so dead space stays
+    -- symmetric regardless of how bars split across their configured sides.
     content:SetScale(scale)
     content:ClearAllPoints()
     content:SetPoint("CENTER", root, "CENTER", 0, 0)
