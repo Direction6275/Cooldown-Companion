@@ -20,6 +20,7 @@ local GetConfigRowBadgeReserve = ST._GetConfigRowBadgeReserve
 local SetupColumn1MarkerRow = ST._SetupColumn1MarkerRow
 local GetContainerIcon = ST._GetContainerIcon
 local GetFolderIcon = ST._GetFolderIcon
+local GetButtonIcon = ST._GetButtonIcon
 local OpenFolderIconPicker = ST._OpenFolderIconPicker
 local OpenContainerIconPicker = ST._OpenContainerIconPicker
 local IsValidIconTexture = ST._IsValidIconTexture
@@ -36,6 +37,7 @@ local FolderHasForeignSpecs = ST._FolderHasForeignSpecs
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local BuildConfigFinderResults = ST._BuildConfigFinderResults
+local SelectConfigFinderResult = ST._SelectConfigFinderResult
 local ClearConfigPrimarySelection = ST._ClearConfigPrimarySelection
 local SelectConfigFolder = ST._SelectConfigFolder
 local SelectConfigContainer = ST._SelectConfigContainer
@@ -57,6 +59,9 @@ local TREE = {
     PANEL_ROW_HEIGHT = 28,
     PANEL_ICON_SIZE = 16,
     PANEL_INDENT = 18,
+    ENTRY_ROW_HEIGHT = 24,
+    ENTRY_ICON_SIZE = 14,
+    ENTRY_INDENT = 38,
     PANEL_META_WIDTH = 42,
     ICON_GAP = 6,
 }
@@ -1266,6 +1271,15 @@ local function RefreshColumn1(preserveDrag)
     local db = CooldownCompanion.db.profile
     local charKey = CooldownCompanion.db.keys.char
     local searchResults = IsConfigFinderActive and IsConfigFinderActive() and BuildConfigFinderResults and BuildConfigFinderResults() or nil
+    local searchPanelResultsByContainer = {}
+    for _, result in ipairs(searchResults and searchResults.panelResults or {}) do
+        local byPanel = searchPanelResultsByContainer[result.containerId]
+        if not byPanel then
+            byPanel = {}
+            searchPanelResultsByContainer[result.containerId] = byPanel
+        end
+        byPanel[result.panelId] = result
+    end
 
     -- Ensure folders table exists
     if not db.folders then db.folders = {} end
@@ -1488,6 +1502,7 @@ local function RefreshColumn1(preserveDrag)
         and not CS.otherClassLibraryActive
         and selectedPanel
         and selectedPanel.parentContainerId
+        and CS.configFinderRestoredCollapsedContainerId ~= selectedPanel.parentContainerId
     then
         CS.expandedContainer = selectedPanel.parentContainerId
     end
@@ -1546,8 +1561,9 @@ local function RefreshColumn1(preserveDrag)
         local stats = containerStats[containerId]
         local panelCount = stats and stats.panelCount or 0
         local panels = CooldownCompanion:GetPanels(containerId)
-        local isExpanded = IsContainerExpanded(containerId)
-        local allowPanelRows = not searchResults and not (options and options.disableDrag == true)
+        local isExpanded = searchResults ~= nil or IsContainerExpanded(containerId)
+        local allowPanelRows = searchResults ~= nil or not (options and options.disableDrag == true)
+        local searchPanels = searchPanelResultsByContainer[containerId]
         local classColor = GetContainerClassColor(containerId, container)
 
         if loadBucket == "loaded" and lastRenderedGroupSection == sectionTag then
@@ -1583,7 +1599,7 @@ local function RefreshColumn1(preserveDrag)
 
         SetupGroupRowIndicators(entry, container, { showInheritedFolderBadges = true })
         local expandReserve = 0
-        if allowPanelRows and panelCount > 0 then
+        if not searchResults and allowPanelRows and panelCount > 0 then
             expandReserve = ConfigureTreeExpandButton(
                 entry,
                 isExpanded,
@@ -1610,8 +1626,9 @@ local function RefreshColumn1(preserveDrag)
         entry.frame:SetScript("OnMouseUp", function(_, button)
             if button == "LeftButton" then
                 if searchResults then
-                    SelectConfigContainer(containerId, { clearFinder = true })
-                    CooldownCompanion:RefreshConfigPanel()
+                    if SelectConfigFinderResult then
+                        SelectConfigFinderResult(containerId, nil, nil)
+                    end
                 elseif IsShiftKeyDown() then
                     OpenContainerLoadConditions(containerId)
                 elseif IsControlKeyDown() then
@@ -1647,9 +1664,25 @@ local function RefreshColumn1(preserveDrag)
 
         local firstPanelEntry, lastPanelEntry
         if allowPanelRows and isExpanded then
+            local visiblePanels = {}
             for _, panelInfo in ipairs(panels) do
+                local searchPanelResult = searchResults
+                    and searchPanels
+                    and searchPanels[panelInfo.groupId]
+                    or nil
+                if not searchResults or searchPanelResult then
+                    visiblePanels[#visiblePanels + 1] = {
+                        panelInfo = panelInfo,
+                        searchResult = searchPanelResult,
+                    }
+                end
+            end
+
+            for _, visiblePanel in ipairs(visiblePanels) do
+                local panelInfo = visiblePanel.panelInfo
                 local panelId = panelInfo.groupId
                 local panel = panelInfo.group
+                local searchPanelResult = visiblePanel.searchResult
                 local panelEntry = AceGUI:Create("InteractiveLabel")
                 CleanRecycledEntry(panelEntry)
                 panelEntry:SetText(panel.name or ("Panel " .. tostring(panelId)))
@@ -1707,7 +1740,11 @@ local function RefreshColumn1(preserveDrag)
 
                 panelEntry.frame:SetScript("OnMouseUp", function(_, button)
                     if button == "LeftButton" then
-                        if IsControlKeyDown() then
+                        if searchResults then
+                            if SelectConfigFinderResult then
+                                SelectConfigFinderResult(containerId, panelId, nil)
+                            end
+                        elseif IsControlKeyDown() then
                             if CS.selectedContainer ~= containerId then
                                 SelectConfigPanel(panelId, { containerId = containerId })
                             end
@@ -1758,6 +1795,57 @@ local function RefreshColumn1(preserveDrag)
                     ownerId = containerId,
                     ownerFolderId = container.folderId,
                 })
+
+                for _, entryInfo in ipairs(searchPanelResult and searchPanelResult.entryMatches or {}) do
+                    local buttonData = entryInfo.button
+                    local buttonIndex = entryInfo.index
+                    local entryDisabled = isInactive or (buttonData and buttonData.enabled == false)
+                    local buttonEntry = AceGUI:Create("InteractiveLabel")
+                    CleanRecycledEntry(buttonEntry)
+                    buttonEntry:SetText(entryInfo.text or (buttonData and buttonData.name) or "Entry")
+                    buttonEntry:SetFullWidth(true)
+                    buttonEntry:SetFontObject(GameFontHighlight)
+                    ApplyConfigRowIcon(buttonEntry, buttonData and GetButtonIcon(buttonData) or 134400, {
+                        desaturated = entryDisabled,
+                        indent = TREE.ENTRY_INDENT,
+                        iconSize = TREE.ENTRY_ICON_SIZE,
+                        iconGap = TREE.ICON_GAP,
+                        rowHeight = TREE.ENTRY_ROW_HEIGHT,
+                        compactRowHeight = 22,
+                        texCoord = { 0.08, 0.92, 0.08, 0.92 },
+                        rightPad = 4,
+                    })
+                    buttonEntry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+                    if entryDisabled then
+                        buttonEntry:SetColor(0.5, 0.5, 0.5)
+                    elseif CS.selectedGroup == panelId and CS.selectedButton == buttonIndex then
+                        buttonEntry:SetColor(0, 1, 0)
+                    end
+                    groupUnit:AddChild(buttonEntry)
+                    lastPanelEntry = buttonEntry
+
+                    buttonEntry.frame:SetScript("OnMouseUp", function(_, button)
+                        if button == "LeftButton" and SelectConfigFinderResult then
+                            SelectConfigFinderResult(containerId, panelId, buttonIndex)
+                        end
+                    end)
+
+                    TrackRenderedRow({
+                        kind = "aux-block",
+                        rowType = "finder-entry",
+                        id = buttonIndex,
+                        widget = buttonEntry,
+                        section = sectionTag,
+                        loadBucket = "aux",
+                        acceptsDrop = false,
+                        previewDraggable = false,
+                        previewProxy = true,
+                        ownerKind = "container",
+                        ownerId = containerId,
+                        ownerPanelId = panelId,
+                        ownerFolderId = container.folderId,
+                    })
+                end
             end
         end
         ConfigureNestedPanelAccent(groupUnit, entry, firstPanelEntry, lastPanelEntry, classColor)
@@ -1951,7 +2039,7 @@ local function RefreshColumn1(preserveDrag)
         local stableCount = options and options.stableCount or nil
 
         if isClassSection then
-            local isCollapsed = CS.collapsedSections[section] ~= false
+            local isCollapsed = not searchResults and CS.collapsedSections[section] ~= false
             local function ToggleClassSection()
                 local currentlyCollapsed = CS.collapsedSections[section] ~= false
                 if currentlyCollapsed then
@@ -1980,7 +2068,7 @@ local function RefreshColumn1(preserveDrag)
             if header.frame then
                 header.frame:SetScript("OnMouseUp", function(_, button)
                     if CS.dragState and CS.dragState.phase == "active" then return end
-                    if button == "LeftButton" then
+                    if button == "LeftButton" and not searchResults then
                         ToggleClassSection()
                     end
                 end)
@@ -2342,7 +2430,7 @@ local function RefreshColumn1(preserveDrag)
     if searchResults and not next(searchResults.containerMatches) then
         local label = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(label)
-        label:SetText("|cff888888No matching groups.|r")
+        label:SetText("|cff888888No matching groups, panels, or entries.|r")
         label:SetFullWidth(true)
         CS.col1Scroll:AddChild(label)
         CS.lastCol1RenderedRows = col1RenderedRows
@@ -2390,6 +2478,19 @@ local function RefreshColumn1(preserveDrag)
         desc.label:SetMaxLines(0)
         CS.col1Scroll:AddChild(desc)
     else
+        if searchResults and searchResults.truncated then
+            local summary = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(summary)
+            summary:SetText(("|cff888888Showing %d of %d matching panels and %d of %d matching entries. Keep typing to narrow results.|r"):format(
+                #searchResults.panelResults,
+                searchResults.totalPanelResults or #searchResults.panelResults,
+                searchResults.renderedEntryResults or 0,
+                searchResults.totalEntryResults or 0
+            ))
+            summary:SetFullWidth(true)
+            CS.col1Scroll:AddChild(summary)
+        end
+
         local statsContainerIds = {}
         local function IncludeVisibleStats(containerId)
             if not searchResults or searchResults.containerMatches[containerId] then
@@ -2401,6 +2502,13 @@ local function RefreshColumn1(preserveDrag)
         end
         for _, id in ipairs(charIds) do
             IncludeVisibleStats(id)
+        end
+        if searchResults then
+            for _, section in ipairs(otherSectionOrder) do
+                for _, id in ipairs(section.containerIds or {}) do
+                    IncludeVisibleStats(id)
+                end
+            end
         end
         local selectedOtherSection = CS.otherClassLibraryActive
             and FindOtherClassSectionByClassKey(otherSectionOrder, CS.otherClassLibraryClassKey)
@@ -2419,7 +2527,7 @@ local function RefreshColumn1(preserveDrag)
 
         -- Render sections
         local renderedOtherClassLibrary = false
-        if CS.otherClassLibraryActive then
+        if CS.otherClassLibraryActive and not searchResults then
             renderedOtherClassLibrary = RenderOtherClassLibrary(otherSectionOrder)
         end
 
@@ -2444,6 +2552,27 @@ local function RefreshColumn1(preserveDrag)
                     cc and { cc.r, cc.g, cc.b } or { 1, 1, 1 },
                     { preferUnloadedHeading = not hasGlobalContent }
                 )
+            end
+
+            if searchResults then
+                for _, section in ipairs(otherSectionOrder) do
+                    local visibleCount = GetOtherClassVisibleCount(section)
+                    if visibleCount > 0 then
+                        RenderSection(
+                            section.key,
+                            section.containerIds,
+                            section.title,
+                            section.color,
+                            {
+                                classSection = true,
+                                classKey = section.classKey,
+                                stableCount = visibleCount,
+                                noLoadBuckets = true,
+                                disableDrag = true,
+                            }
+                        )
+                    end
+                end
             end
         end
     end

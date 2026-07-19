@@ -1678,11 +1678,6 @@ local function RefreshColumn2()
     CS.col2Scroll.frame:Show()
     CS.col2Scroll:ReleaseChildren()
 
-    if IsConfigFinderActive and IsConfigFinderActive() then
-        RenderConfigFinderResults()
-        return
-    end
-
     -- Resources home: column 2 hosts the Custom Bars & Resources list
     -- (moved from column 3 when the resources view went wide). The list
     -- builder handles the disabled and profile-conflict states itself.

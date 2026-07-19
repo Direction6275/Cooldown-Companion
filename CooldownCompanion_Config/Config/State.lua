@@ -268,6 +268,10 @@ ST._configState = {
     collapsedPanels = {},
     expandedContainer = nil,
     peekedContainers = {},
+    configFinderExpansionSnapshot = nil,
+    configFinderNavigated = nil,
+    configFinderRestoredCollapsedContainerId = nil,
+    pendingConfigFinderEntryScrollReset = nil,
     otherClassLibraryActive = false,
     otherClassLibraryClassKey = nil,
     hideActiveCurrentClassPanels = false,
@@ -592,10 +596,65 @@ end
 
 local ClearConfigPrimarySelection
 
+local function CopyConfigFinderExpansionMap(source)
+    local copy = {}
+    for containerId, expanded in pairs(source or {}) do
+        if expanded then
+            copy[containerId] = true
+        end
+    end
+    return copy
+end
+
+local function SnapshotConfigFinderExpansion()
+    CS.configFinderExpansionSnapshot = {
+        expandedContainer = CS.expandedContainer,
+        peekedContainers = CopyConfigFinderExpansionMap(CS.peekedContainers),
+    }
+    CS.configFinderNavigated = nil
+    CS.configFinderRestoredCollapsedContainerId = nil
+end
+
+local function RestoreConfigFinderExpansion()
+    local snapshot = CS.configFinderExpansionSnapshot
+    if not snapshot then
+        return
+    end
+
+    CS.expandedContainer = snapshot.expandedContainer
+    CS.peekedContainers = CS.peekedContainers or {}
+    wipe(CS.peekedContainers)
+    for containerId in pairs(snapshot.peekedContainers or {}) do
+        CS.peekedContainers[containerId] = true
+    end
+
+    local selectedPanel = CS.selectedGroup
+        and CooldownCompanion.db
+        and CooldownCompanion.db.profile
+        and CooldownCompanion.db.profile.groups
+        and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        or nil
+    local selectedContainerId = selectedPanel and selectedPanel.parentContainerId or nil
+    if selectedContainerId
+        and CS.expandedContainer ~= selectedContainerId
+        and CS.peekedContainers[selectedContainerId] ~= true then
+        CS.configFinderRestoredCollapsedContainerId = selectedContainerId
+    else
+        CS.configFinderRestoredCollapsedContainerId = nil
+    end
+
+    CS.configFinderExpansionSnapshot = nil
+end
+
 local function SetConfigFinderText(text, opts)
     text = type(text) == "string" and text or ""
     local wasSearching = IsConfigFinderQueryUsable(CS.configSearchText)
     local willSearch = IsConfigFinderQueryUsable(text)
+    if not wasSearching and willSearch then
+        SnapshotConfigFinderExpansion()
+    elseif wasSearching and not willSearch then
+        RestoreConfigFinderExpansion()
+    end
     if CS.configSearchText ~= text then
         CS._configFinderResults = nil
         CS._configFinderResultsQuery = nil
@@ -604,10 +663,17 @@ local function SetConfigFinderText(text, opts)
     end
     CS.configSearchText = text
     if wasSearching and not willSearch and CS.otherClassLibraryActive then
-        if not (opts and opts.preservePrimarySelection) and ClearConfigPrimarySelection then
+        if not CS.configFinderNavigated
+            and not (opts and opts.preservePrimarySelection)
+            and ClearConfigPrimarySelection then
             ClearConfigPrimarySelection()
         end
-        ResetOtherClassLibraryState()
+        if not CS.configFinderNavigated then
+            ResetOtherClassLibraryState()
+        end
+    end
+    if wasSearching and not willSearch then
+        CS.configFinderNavigated = nil
     end
 
     if opts and opts.syncWidget == false then
@@ -902,7 +968,8 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CS.castFramesEntrySelected = false
     CS.unifiedBarKind = nil
     CS.addingToPanelId = nil
-    ClearConfigFinderText({ preservePrimarySelection = true })
+    CS.configFinderNavigated = true
+    CS.pendingConfigFinderEntryScrollReset = buttonIndex ~= nil
     RestoreOtherClassLibraryForScope(selectedScope)
     RefreshAlphaDriverForConfigSelection()
     CooldownCompanion:RefreshConfigPanel()
@@ -2741,6 +2808,7 @@ end
 
 local function SelectConfigFolder(folderId)
     CooldownCompanion:ClearAllConfigPreviews()
+    CS.configFinderRestoredCollapsedContainerId = nil
     CS.selectedFolder = folderId
     CS.selectedContainer = nil
     CS.selectedGroup = nil
@@ -2754,6 +2822,7 @@ end
 
 local function SelectConfigContainer(containerId, opts)
     CooldownCompanion:ClearAllConfigPreviews()
+    CS.configFinderRestoredCollapsedContainerId = nil
     if not (opts and opts.keepContainerMulti) then
         wipe(CS.selectedGroups)
     end
@@ -2806,6 +2875,7 @@ end
 
 local function SelectConfigPanel(panelId, opts)
     CooldownCompanion:ClearAllConfigPreviews()
+    CS.configFinderRestoredCollapsedContainerId = nil
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
     end
@@ -3102,8 +3172,7 @@ end
 local function SelectConfigResourcesEntry(opts)
     CooldownCompanion:ClearAllConfigPreviews()
     ResetOtherClassLibraryState()
-    -- An active finder query owns column 2; clear it so the home's list
-    -- renders instead of stale search results.
+    -- Destination navigation exits the temporary filtered-tree view.
     ClearConfigFinderText({ preservePrimarySelection = true })
     if opts and opts.toggle and CS.resourcesEntrySelected then
         CS.resourcesEntrySelected = false

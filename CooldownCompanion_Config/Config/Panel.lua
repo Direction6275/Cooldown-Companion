@@ -478,10 +478,7 @@ local function GetColumn3HeaderTitle(selection)
 end
 
 local function ApplyConfigColumnTitles(frame)
-    if IsConfigFinderActive and IsConfigFinderActive() then
-        frame.col1:SetTitle("Groups")
-        frame.col2:SetTitle("Search Results")
-    elseif CS.resourcesEntrySelected then
+    if CS.resourcesEntrySelected then
         -- Resources home: column 2 hosts the Custom Bars & Resources list
         frame.col1:SetTitle("Groups")
         frame.col2:SetTitle(GetCustomBarsColumnTitle())
@@ -567,10 +564,9 @@ local function QueueConfigFinderRefresh()
 
         local finderActive = IsConfigFinderActive and IsConfigFinderActive()
         local saved1 = not finderActive and SaveScrollState(CS.col1Scroll) or nil
-        local saved2 = not finderActive and SaveScrollState(CS.col2Scroll) or nil
+        local saved2 = SaveScrollState(CS.col2Scroll)
         if finderActive then
             ResetScrollState(CS.col1Scroll)
-            ResetScrollState(CS.col2Scroll)
         end
         RefreshColumn1()
         RefreshColumn2()
@@ -580,11 +576,10 @@ local function QueueConfigFinderRefresh()
         ApplyConfigColumnTitles(CS.configFrame)
         if finderActive then
             ResetScrollState(CS.col1Scroll)
-            ResetScrollState(CS.col2Scroll)
         else
             RestoreScrollState(CS.col1Scroll, saved1)
-            RestoreScrollState(CS.col2Scroll, saved2)
         end
+        RestoreScrollState(CS.col2Scroll, saved2)
     end)
 end
 
@@ -1745,8 +1740,8 @@ local function CreateConfigPanel()
     configFinder:DisableButton(true)
     configFinder.frame:SetParent(col1.content)
     configFinder.frame:ClearAllPoints()
-    configFinder.frame:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
-    configFinder.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
+    configFinder.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
+    configFinder.frame:SetPoint("TOPRIGHT", col1.content, "TOPRIGHT", 0, 0)
     configFinder.frame:SetHeight(CONFIG_FINDER_BOX_HEIGHT)
     local configFinderPlaceholder
     if configFinder.editbox then
@@ -2190,8 +2185,8 @@ local function CreateConfigPanel()
         if CS.configFinderBox then
             if finderAvailable then
                 CS.configFinderBox.frame:ClearAllPoints()
-                CS.configFinderBox.frame:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
-                CS.configFinderBox.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
+                CS.configFinderBox.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
+                CS.configFinderBox.frame:SetPoint("TOPRIGHT", col1.content, "TOPRIGHT", 0, 0)
                 CS.configFinderBox.frame:SetHeight(CONFIG_FINDER_BOX_HEIGHT)
                 CS.configFinderBox.frame:Show()
             else
@@ -2202,10 +2197,10 @@ local function CreateConfigPanel()
             end
         end
         if CS.col1Scroll and CS.col1Scroll.frame then
-            local bottomInset = finderAvailable and (30 + CONFIG_FINDER_RESERVED_HEIGHT) or 30
+            local topInset = finderAvailable and CONFIG_FINDER_RESERVED_HEIGHT or 0
             CS.col1Scroll.frame:ClearAllPoints()
-            CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-            CS.col1Scroll.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, bottomInset)
+            CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, -topInset)
+            CS.col1Scroll.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30)
         end
 
         col1.frame:ClearAllPoints()
@@ -2325,7 +2320,12 @@ function CooldownCompanion:_configRefreshPanelImpl()
     -- Restore AceGUI scroll state.
     RestoreScrollState(CS.col1Scroll, saved1)
     RestoreScrollState(CS.col2Scroll, saved2)
-    RestoreScrollState(buttonSettingsScroll, savedBtn)
+    if CS.pendingConfigFinderEntryScrollReset then
+        CS.pendingConfigFinderEntryScrollReset = nil
+        ResetScrollState(buttonSettingsScroll)
+    else
+        RestoreScrollState(buttonSettingsScroll, savedBtn)
+    end
 
     if RebuildTutorialAnchors then
         RebuildTutorialAnchors()
