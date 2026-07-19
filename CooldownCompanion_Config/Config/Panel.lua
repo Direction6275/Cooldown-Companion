@@ -1740,8 +1740,8 @@ local function CreateConfigPanel()
     configFinder:DisableButton(true)
     configFinder.frame:SetParent(col1.content)
     configFinder.frame:ClearAllPoints()
-    configFinder.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-    configFinder.frame:SetPoint("TOPRIGHT", col1.content, "TOPRIGHT", 0, 0)
+    configFinder.frame:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
+    configFinder.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
     configFinder.frame:SetHeight(CONFIG_FINDER_BOX_HEIGHT)
     local configFinderPlaceholder
     if configFinder.editbox then
@@ -2185,8 +2185,8 @@ local function CreateConfigPanel()
         if CS.configFinderBox then
             if finderAvailable then
                 CS.configFinderBox.frame:ClearAllPoints()
-                CS.configFinderBox.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
-                CS.configFinderBox.frame:SetPoint("TOPRIGHT", col1.content, "TOPRIGHT", 0, 0)
+                CS.configFinderBox.frame:SetPoint("BOTTOMLEFT", col1.content, "BOTTOMLEFT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
+                CS.configFinderBox.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30 + CONFIG_FINDER_BUTTON_GAP)
                 CS.configFinderBox.frame:SetHeight(CONFIG_FINDER_BOX_HEIGHT)
                 CS.configFinderBox.frame:Show()
             else
@@ -2197,10 +2197,10 @@ local function CreateConfigPanel()
             end
         end
         if CS.col1Scroll and CS.col1Scroll.frame then
-            local topInset = finderAvailable and CONFIG_FINDER_RESERVED_HEIGHT or 0
+            local bottomInset = finderAvailable and (30 + CONFIG_FINDER_RESERVED_HEIGHT) or 30
             CS.col1Scroll.frame:ClearAllPoints()
-            CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, -topInset)
-            CS.col1Scroll.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, 30)
+            CS.col1Scroll.frame:SetPoint("TOPLEFT", col1.content, "TOPLEFT", 0, 0)
+            CS.col1Scroll.frame:SetPoint("BOTTOMRIGHT", col1.content, "BOTTOMRIGHT", 0, bottomInset)
         end
 
         col1.frame:ClearAllPoints()
