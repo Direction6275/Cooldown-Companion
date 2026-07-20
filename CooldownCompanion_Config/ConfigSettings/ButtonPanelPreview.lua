@@ -31,6 +31,7 @@ local GetEffectiveTextHeight = ST._GetEffectiveTextHeight
 local CreateGlowContainer = ST._CreateGlowContainer
 local SetBarAuraEffect = ST._SetBarAuraEffect
 local GetStoredConditionalPreviewState = ST._GetStoredConditionalPreviewState
+local IsStoredPreviewFlagActive = ST._IsStoredPreviewFlagActive
 local GetConditionalPreviewTiming = ST._GetConditionalPreviewTiming
 local ParseFormatString = ST._ParseFormatString
 local ApplyIconCountTextStyle = ST._ApplyIconCountTextStyle
@@ -56,6 +57,245 @@ local PANEL_PREVIEW_ANIM_DURATION = 0.08
 -- loop re-arms); the swipes and fills self-animate between ticks.
 local PANEL_PREVIEW_COND_TICK = 0.25
 local DEFAULT_BAR_COLOR = { 0.2, 0.6, 1.0, 1.0 }
+
+local BAR_PREVIEW_HIDDEN_ALPHA = 0.35
+local BAR_PREVIEW_EFFECT_FLAGS = {
+    "_procGlowPreview",
+    "_auraGlowPreview",
+    "_barAuraEffectPreview",
+    "_readyGlowPreview",
+    "_keyPressHighlightPreview",
+}
+local BAR_PREVIEW_AURA_KINDS = {
+    aura_duration_text = true,
+    aura_duration_bar = true,
+    aura_stack_text = true,
+    aura_duration_swipe = true,
+}
+local BAR_PREVIEW_REASON_DEFS = {
+    { key = "disabled", label = "Disabled" },
+    { key = "aura-inactive", label = "Aura inactive" },
+    { key = "on-cooldown", label = "On cooldown", fallback = "useBaselineAlphaFallbackOnCooldown" },
+    { key = "not-on-cooldown", label = "Not on cooldown", fallback = "useBaselineAlphaFallbackNotOnCooldown" },
+    { key = "no-proc", label = "No proc", fallback = "useBaselineAlphaFallbackNoProc" },
+    { key = "zero-charges", label = "Zero charges", fallback = "useBaselineAlphaFallbackZeroCharges" },
+    { key = "zero-stacks", label = "Zero stacks", fallback = "useBaselineAlphaFallbackZeroStacks" },
+    { key = "not-equipped", label = "Not equipped", fallback = "useBaselineAlphaFallbackNotEquipped" },
+    { key = "unusable", label = "Unusable", fallback = "useBaselineAlphaFallbackUnusable" },
+}
+
+-- Snapshot the config-owned preview state for a mirror entry. Both sources are
+-- stored by Preview.lua before its live-frame routing decision, so this path
+-- never consults live button fields.
+local function GetStoredBarPreviewState(panelId, index)
+    local conditional = GetStoredConditionalPreviewState
+        and GetStoredConditionalPreviewState(panelId, index) or nil
+    local effectFlags = {}
+    if IsStoredPreviewFlagActive then
+        for _, flag in ipairs(BAR_PREVIEW_EFFECT_FLAGS) do
+            if IsStoredPreviewFlagActive(panelId, index, flag) then
+                effectFlags[flag] = true
+            end
+        end
+    end
+    return {
+        conditional = conditional,
+        effectFlags = effectFlags,
+    }
+end
+
+ST._GetStoredBarPreviewState = GetStoredBarPreviewState
+
+local function HasStoredBarEffectPreview(effectFlags)
+    if type(effectFlags) ~= "table" then
+        return false
+    end
+    for _, flag in ipairs(BAR_PREVIEW_EFFECT_FLAGS) do
+        if effectFlags[flag] == true then
+            return true
+        end
+    end
+    return false
+end
+
+local function IsBarPreviewNoCooldownSpell(buttonData)
+    return buttonData.type == "spell"
+        and type(ST.IsNoCooldownSpell) == "function"
+        and ST.IsNoCooldownSpell(buttonData.id) == true
+end
+
+-- Pure Bar-mirror visibility projection. Inputs are saved entry/group data and
+-- a stored config-preview snapshot only. It deliberately does not accept live
+-- status, button frames, aura state, item counts, usability, or equipment data.
+local function ResolveBarPreviewVisibility(buttonData, group, previewState)
+    buttonData = type(buttonData) == "table" and buttonData or {}
+    group = type(group) == "table" and group or {}
+    previewState = type(previewState) == "table" and previewState or {}
+
+    local conditional = type(previewState.conditional) == "table"
+        and previewState.conditional or nil
+    local kind = conditional and conditional.kind or nil
+    local effectFlags = type(previewState.effectFlags) == "table"
+        and previewState.effectFlags or nil
+    local exactPreview = kind ~= nil or HasStoredBarEffectPreview(effectFlags)
+
+    -- Stable baseline: aura/proc inactive, ready, full charges, and otherwise
+    -- available/usable/equipped. Only a stored preview may replace those facts.
+    local auraActive = conditional and conditional.auraActive == true or false
+    if BAR_PREVIEW_AURA_KINDS[kind]
+        or (effectFlags and (effectFlags._auraGlowPreview or effectFlags._barAuraEffectPreview)) then
+        auraActive = true
+    end
+    local procActive = conditional and conditional.procActive == true or false
+    if effectFlags and effectFlags._procGlowPreview then
+        procActive = true
+    end
+
+    local chargeState = conditional and conditional.chargeState or "full"
+    if kind == "charge_full" then
+        chargeState = "full"
+    elseif kind == "charge_missing" then
+        chargeState = "missing"
+    elseif kind == "charge_zero" then
+        chargeState = "zero"
+    end
+    local onCooldown = conditional and conditional.onCooldown == true or false
+    if kind == "cooldown" then
+        onCooldown = true
+    end
+
+    local itemQuantityKind = conditional and conditional.itemQuantityKind or nil
+    local itemAvailableQuantity = conditional and conditional.itemAvailableQuantity or nil
+    if kind == "charge_zero" and itemQuantityKind == "stacks" then
+        itemAvailableQuantity = 0
+    end
+    local isEquippableNotEquipped = conditional
+        and conditional.isEquippableNotEquipped == true or false
+    local unusable = conditional
+        and (conditional.unusable == true or kind == "unusable") or false
+
+    local activeReasons = {}
+    if buttonData.enabled == false then
+        activeReasons.disabled = true
+    end
+    local isAuraEntry = buttonData.type == "spell"
+        and (buttonData.auraTracking == true or buttonData.addedAs == "aura")
+    if isAuraEntry and buttonData.hideWhileAuraNotActive and not auraActive then
+        activeReasons["aura-inactive"] = true
+    end
+
+    local usesChargeBehavior = type(CooldownCompanion.UsesChargeBehavior) == "function"
+        and CooldownCompanion.UsesChargeBehavior(buttonData) == true
+    local itemUsesResolvedCooldownState = buttonData.type == "item"
+        and itemQuantityKind == "stacks"
+    local noCooldown = IsBarPreviewNoCooldownSpell(buttonData)
+    local zeroOnlyChargeSpellHide = false
+
+    if buttonData.hideWhileOnCooldown and not noCooldown then
+        if itemUsesResolvedCooldownState then
+            if onCooldown then activeReasons["on-cooldown"] = true end
+        elseif usesChargeBehavior then
+            if chargeState == "zero" or chargeState == "missing" then
+                activeReasons["on-cooldown"] = true
+            end
+        elseif onCooldown then
+            activeReasons["on-cooldown"] = true
+        end
+    end
+
+    if buttonData.hideWhileNotOnCooldown and not noCooldown then
+        if itemUsesResolvedCooldownState then
+            if not onCooldown then activeReasons["not-on-cooldown"] = true end
+        elseif usesChargeBehavior then
+            if buttonData.type == "spell"
+                and buttonData.hasCharges == true
+                and buttonData.showOnlyAtZeroCharges then
+                if chargeState == "full" or chargeState == "missing" then
+                    activeReasons["not-on-cooldown"] = true
+                    zeroOnlyChargeSpellHide = true
+                end
+            elseif chargeState == "full" then
+                activeReasons["not-on-cooldown"] = true
+            end
+        elseif not onCooldown then
+            activeReasons["not-on-cooldown"] = true
+        end
+    end
+
+    if buttonData.hideWhileNoProc then
+        local isSpellEntry = buttonData.type == "spell"
+            and buttonData.addedAs ~= "aura"
+            and not buttonData.isPassive
+            and not buttonData.isPassiveCooldown
+        if isSpellEntry and not procActive then
+            activeReasons["no-proc"] = true
+        end
+    end
+
+    local hasItemFallbacks = type(CooldownCompanion.HasItemFallbacks) == "function"
+        and CooldownCompanion.HasItemFallbacks(buttonData) == true
+    if buttonData.hideWhileZeroCharges
+        and not hasItemFallbacks
+        and chargeState == "zero" then
+        activeReasons["zero-charges"] = true
+    end
+    if buttonData.type == "item"
+        and buttonData.hideWhileZeroStacks
+        and itemQuantityKind == "stacks"
+        and (tonumber(itemAvailableQuantity) or 0) == 0 then
+        activeReasons["zero-stacks"] = true
+    end
+    if buttonData.hideWhileNotEquipped and isEquippableNotEquipped then
+        activeReasons["not-equipped"] = true
+    end
+    if buttonData.hideWhileUnusable
+        and not buttonData.isPassive
+        and not buttonData.isPassiveCooldown
+        and unusable then
+        activeReasons.unusable = true
+    end
+
+    local reasons = {}
+    local onlyReason
+    for _, definition in ipairs(BAR_PREVIEW_REASON_DEFS) do
+        if activeReasons[definition.key] then
+            reasons[#reasons + 1] = {
+                key = definition.key,
+                label = definition.label,
+            }
+            onlyReason = definition
+        end
+    end
+
+    local underlyingMode = "visible"
+    local underlyingAlpha = 1
+    if #reasons == 1
+        and onlyReason.fallback
+        and buttonData[onlyReason.fallback]
+        and not (zeroOnlyChargeSpellHide and onlyReason.key == "not-on-cooldown") then
+        underlyingMode = "dimmed"
+        underlyingAlpha = tonumber(group.baselineAlpha) or 0.3
+    elseif #reasons > 0 then
+        underlyingMode = "hidden"
+        underlyingAlpha = BAR_PREVIEW_HIDDEN_ALPHA
+    end
+
+    local mode = exactPreview and "visible" or underlyingMode
+    local visibilityAlpha = exactPreview and 1 or underlyingAlpha
+    return {
+        mode = mode,
+        effectiveMode = mode,
+        visibilityAlpha = visibilityAlpha,
+        visualAlpha = visibilityAlpha,
+        exactPreview = exactPreview,
+        forcedPreview = exactPreview and underlyingMode ~= "visible",
+        underlyingMode = underlyingMode,
+        reasons = reasons,
+        underlyingReasons = reasons,
+    }
+end
+
+ST._ResolveBarPreviewVisibility = ResolveBarPreviewVisibility
 
 -- Mirror of GroupFrame.lua GetGrowthMultipliers: anchor corner plus x/y
 -- offset signs for the configured growth origin.

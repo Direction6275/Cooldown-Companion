@@ -171,6 +171,11 @@ local function IsActivePreviewFlagStored(groupId, buttonIndex, previewFlag)
     return false
 end
 
+-- Stored-only mirror seam. Unlike IsPreviewFlagActive, this never falls
+-- through to live button fields, so config mirrors remain independent of
+-- runtime activity.
+ST._IsStoredPreviewFlagActive = IsActivePreviewFlagStored
+
 -- Preview-first config: panels the config mirror renders (icon, bar,
 -- and text panels) show their config previews ONLY on the mirror - the
 -- setters store the preview state for the mirror to read and skip the
