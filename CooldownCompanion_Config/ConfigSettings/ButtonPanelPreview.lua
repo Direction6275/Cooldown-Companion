@@ -948,25 +948,23 @@ local function ApplyBarSlotPreviewVisibility(slot, visibility, scale, isSelected
     slot._cdcBarPreviewScale = scale
 
     local exactPreview = visibility and visibility.exactPreview == true
-    local affected = visibility and visibility.underlyingMode ~= "visible"
+    local hidden = visibility and visibility.underlyingMode == "hidden"
     local hovered = slot._cdcBarPreviewHovered == true
     if not hovered and slot.IsMouseOver and slot:IsMouseOver() then
         hovered = true
         slot._cdcBarPreviewHovered = true
     end
 
-    local alpha = 1
-    if affected and not exactPreview then
+    local alpha = visibility and visibility.visualAlpha or 1
+    if hidden and not exactPreview then
         if isSelected then
             alpha = 1
         elseif hovered then
             alpha = PANEL_PREVIEW_GHOST_HOVER_ALPHA
-        else
-            alpha = visibility.visualAlpha or PANEL_PREVIEW_GHOST_ALPHA
         end
     end
     ApplyBarSlotVisualAlpha(slot, alpha)
-    ApplyBarVisibilityBadge(slot, affected and not exactPreview, scale)
+    ApplyBarVisibilityBadge(slot, hidden and not exactPreview, scale)
 
     if hovered and not exactPreview then
         slot.hoverHighlight:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
@@ -1441,7 +1439,7 @@ local function ShowEntrySlotTooltip(slot, buttonData, status, visibility)
         GameTooltip:AddLine("Has talent conditions", 1, 1, 1)
     end
     if visibility and not visibility.exactPreview
-        and visibility.underlyingMode ~= "visible" then
+        and visibility.underlyingMode == "hidden" then
         GameTooltip:AddLine("Hidden in simulated state", 1, 0.82, 0.2)
         for _, reason in ipairs(visibility.reasons or {}) do
             GameTooltip:AddLine(reason.label .. " - " .. reason.rule, 0.7, 0.7, 0.7)
@@ -2171,7 +2169,33 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
     previewState = previewState or GetStoredBarPreviewState(panelId, index)
     local state = previewState.conditional
     local kind = state and state.kind or nil
+    local effectFlags = previewState.effectFlags
     local now = GetTime()
+    local auraActive = state and state.auraActive == true or false
+    if BAR_PREVIEW_AURA_KINDS[kind]
+        or (effectFlags and (effectFlags._auraGlowPreview
+            or effectFlags._barAuraEffectPreview)) then
+        auraActive = true
+    end
+    local isAuraEntry = buttonData.type == "spell"
+        and (buttonData.auraTracking == true or buttonData.addedAs == "aura")
+    if isAuraEntry then
+        if auraActive then
+            forceDesat = buttonData.isPassive == true
+                and buttonData.invertAuraDesaturationLogic == true
+                and not buttonData.neverDesaturate
+        elseif buttonData.isPassive then
+            forceDesat = not (buttonData.neverDesaturate
+                or buttonData.invertAuraDesaturationLogic)
+        else
+            forceDesat = buttonData.desaturateWhileAuraNotActive == true
+        end
+    end
+
+    -- Deterministic preview-off fill matches the live ready-state rule.
+    -- Timed condition previews below replace this baseline when active.
+    slot.statusBar:SetValue(buttonData.isPassive and 0 or 1)
+
     local chargePresentationKind = kind
     if not chargePresentationKind
         and CooldownCompanion.UsesChargeBehavior
@@ -2201,7 +2225,6 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         if startTime then
             -- The Active Aura Indicator preview's fill effects ride the
             -- aura drain (live UpdateBarDisplay, keyed off the flag).
-            local effectFlags = previewState.effectFlags
             local fxActive = effectFlags and effectFlags._barAuraEffectPreview == true
                 and ST.IsBarAuraIndicatorEnabled
                 and ST.IsBarAuraIndicatorEnabled(style) == true
@@ -2294,6 +2317,34 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                 elseif chargePresentationKind == "charge_zero" then
                     local c = style.barCooldownColor or style.barColor or DEFAULT_BAR_COLOR
                     slot.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4] or 1)
+                end
+            end
+
+            if chargePresentationKind ~= "charge_full" and GetConditionalPreviewTiming then
+                -- Charge previews have no live recharge object. Use a stable
+                -- local 12-second sample with 8 seconds remaining so the Bar
+                -- mirror still demonstrates runtime-equivalent fill and text.
+                local rechargeDuration = 12
+                local rechargeRemaining = 8
+                local rechargeElapsed = rechargeDuration - rechargeRemaining
+                local rechargeState = {
+                    kind = "cooldown",
+                    duration = rechargeDuration,
+                    startTime = now - rechargeElapsed,
+                    loop = true,
+                    loopDuration = rechargeDuration,
+                    loopStartTime = now - rechargeElapsed,
+                }
+                slot.statusBar._cdcOwner = slot
+                slot.statusBar:SetScript("OnUpdate", BarSlotFillOnUpdate)
+                slot._cdcCondAnim = rechargeState
+                BarSlotFillOnUpdate(slot.statusBar)
+                if style.showCooldownText then
+                    local tt = EnsureBarSlotTimeText(slot)
+                    CooldownCompanion.ApplyFontStyle(tt, style, "cooldown")
+                    AnchorBarSlotTimeText(slot, style)
+                    tt:SetText(CooldownCompanion.FormatTime(rechargeRemaining, style))
+                    tt:Show()
                 end
             end
 
