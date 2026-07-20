@@ -1049,15 +1049,15 @@ end
 
 -- Build the quiet entry row once, using raw frames on col3.content (like the
 -- add box) so it stays off recycled AceGUI frames. Left-click selects the
--- entry -- the only route to its Settings/Sound Alerts/Load Conditions tabs --
--- and the x removes it via the shared delete confirmation.
+-- entry, right/middle-click opens its shared context menu, and the x removes it
+-- via the shared delete confirmation.
 local function EnsureQuietRow(col3)
     local row = col3.buttonsQuietRow
     if row then return row end
 
     row = CreateFrame("Button", nil, col3.content)
     row:SetHeight(ADD_BOX_HEIGHT)
-    row:RegisterForClicks("LeftButtonUp")
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
 
     local classColor = C_ClassColor and C_ClassColor.GetClassColor(select(2, UnitClass("player")))
     local cr, cg, cb = 1, 0.82, 0
@@ -1107,10 +1107,18 @@ local function EnsureQuietRow(col3)
     name:SetWordWrap(false)
     row.nameText = name
 
-    row:SetScript("OnClick", function()
-        if ST._SelectConfigButton and CS.selectedGroup then
+    row:SetScript("OnClick", function(_, mouseButton)
+        if mouseButton == "LeftButton" and ST._SelectConfigButton and CS.selectedGroup then
             ST._SelectConfigButton(CS.selectedGroup, 1)
             CooldownCompanion:RefreshConfigPanel()
+        elseif (mouseButton == "RightButton" or mouseButton == "MiddleButton")
+            and ST._ShowEntryContextMenu and CS.selectedGroup
+        then
+            local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+            local buttonData = group and group.buttons and group.buttons[1]
+            if buttonData then
+                ST._ShowEntryContextMenu(CS.selectedGroup, 1, buttonData)
+            end
         end
     end)
     remove:SetScript("OnClick", function()

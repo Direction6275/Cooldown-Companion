@@ -359,6 +359,12 @@ local function RebuildGrid()
     if not chrome then
         return
     end
+    -- A rebuild can remove the hovered thumbnail without delivering OnLeave
+    -- (for example when its favorite star removes the last filtered result).
+    -- Reset the staged selection before recycling the thumbnail frames.
+    if CS.textureMirrorStage then
+        ClearStagedPreview()
+    end
     ReleaseActiveThumbs()
 
     local entries = CooldownCompanion:GetAuraTexturePickerEntries(currentSearch, currentFilter)
@@ -666,6 +672,19 @@ end
 -- timer), so RefreshConfigPanel here is never re-entrant.
 local function OpenBrowser(opts)
     opts = opts or {}
+
+    -- Match the retired picker window's mutual-exclusion contract before the
+    -- inline browser takes over the settings area.
+    if CS.CloseAdvancedSettingsPanel then
+        CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
+    end
+    if CS.CloseProfileWideFontWindow then
+        CS.CloseProfileWideFontWindow()
+    end
+    if CS.CloseProfileWideBarTextureWindow then
+        CS.CloseProfileWideBarTextureWindow()
+    end
+
     currentGroupId = opts.groupId or CS.selectedGroup
     currentButtonIndex = opts.buttonIndex
     currentOnCommit = opts.callback

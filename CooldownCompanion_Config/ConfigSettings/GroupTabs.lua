@@ -382,6 +382,10 @@ local function AttachTexturePreviewSliderRefresh(sliderWidget, applyValue, previ
     sliderWidget._ccConfirmTextureValue = confirmFn
     sliderWidget._ccCancelTextureValue = cancelFn
     sliderWidget._ccLastLiveTextureValue = nil
+    -- AceGUI wheel changes have no release/confirm event, so these staged
+    -- texture sliders intentionally accept drag or edit-box input only.
+    sliderWidget._ccDisableTextureMouseWheel = true
+    sliderFrame:EnableMouseWheel(false)
 
     local function pushValue(widget, value)
         if not widget then
@@ -438,10 +442,23 @@ local function AttachTexturePreviewSliderRefresh(sliderWidget, applyValue, previ
         widget._ccConfirmTextureValue = nil
         widget._ccCancelTextureValue = nil
         widget._ccLastLiveTextureValue = nil
+        widget._ccDisableTextureMouseWheel = nil
+        sliderFrame:EnableMouseWheel(false)
         if prevOnRelease then
             prevOnRelease(widget, event)
         end
     end)
+
+    local widgetFrame = sliderWidget.frame
+    if widgetFrame and not widgetFrame._ccTextureMouseWheelHooked then
+        widgetFrame._ccTextureMouseWheelHooked = true
+        widgetFrame:HookScript("OnMouseDown", function(frame)
+            local widget = frame.obj
+            if widget and widget._ccDisableTextureMouseWheel and widget.slider then
+                widget.slider:EnableMouseWheel(false)
+            end
+        end)
+    end
 
     if sliderFrame._ccLiveTextureSliderHooked then
         return
