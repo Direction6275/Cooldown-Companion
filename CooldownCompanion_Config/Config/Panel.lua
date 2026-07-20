@@ -39,6 +39,7 @@ local RefreshVisibleConfigCompactRows = ST._RefreshVisibleConfigCompactRows
 
 local function ClearTransientConfigPreviewState()
     ClearHideActiveCurrentClassPanels()
+    CS.textureConfigPreviewStage = nil
     if CS.previewToggleRefreshActive then
         return
     end

@@ -118,11 +118,19 @@ end
 -- Staging (hover live preview)
 --------------------------------------------------------------------------------
 
--- Drop the staged texture from the live world and from the pinned Live Preview
--- mirror, repainting the mirror back to the saved texture. Guarded so no-op
--- rebuilds don't trigger redundant mirror rebuilds.
+local function UsesRuntimePickerPreview()
+    if not currentGroupId then
+        return false
+    end
+    local group = CooldownCompanion.db.profile.groups[currentGroupId]
+    return not CooldownCompanion:IsTexturePanelGroup(group)
+end
+
+-- Drop the staged texture from the active preview surface and repaint the
+-- pinned mirror back to the saved texture. Guarded so no-op rebuilds do not
+-- trigger redundant mirror rebuilds.
 local function ClearStagedPreview()
-    if currentGroupId then
+    if UsesRuntimePickerPreview() then
         CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, nil)
     end
     if CS.textureMirrorStage then
@@ -133,8 +141,9 @@ local function ClearStagedPreview()
     end
 end
 
--- Stage a hovered entry: the live world (both panel types) and, for texture
--- panels, the big-preview mirror both show it without saving.
+-- Stage a hovered entry. Texture panels use the selectable pinned mirror as
+-- their only continuous preview; trigger panels still need the live-world
+-- preview because their pinned panel preview is not a texture canvas.
 local function StageEntryPreview(entry)
     if not currentGroupId then
         return
@@ -144,7 +153,9 @@ local function StageEntryPreview(entry)
         return
     end
     local selection = BuildPreviewSelection(currentGroupId, currentButtonIndex, entry)
-    CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, selection)
+    if UsesRuntimePickerPreview() then
+        CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, selection)
+    end
     CS.textureMirrorStage = { groupId = currentGroupId, selection = selection }
     if ST._RefreshButtonsPreviewMirror then
         ST._RefreshButtonsPreviewMirror(currentGroupId)
@@ -161,7 +172,7 @@ end
 -- is updated by the commit callback, so the mirror repaints to it on rebuild.
 local function CommitSelection(selection)
     CS.inlineTextureBrowserOpen = nil
-    if currentGroupId then
+    if UsesRuntimePickerPreview() then
         CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, nil)
     end
     CS.textureMirrorStage = nil
@@ -175,7 +186,7 @@ end
 -- picked immediately. The flag stays set, so the commit's RefreshConfigPanel
 -- re-renders the grid (now with no selected tile and an empty big preview).
 local function ClearPanelTexture()
-    if currentGroupId then
+    if UsesRuntimePickerPreview() then
         CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, nil)
     end
     CS.textureMirrorStage = nil
@@ -193,7 +204,7 @@ local function CancelPickAuraTexture()
         return
     end
     CS.inlineTextureBrowserOpen = nil
-    if currentGroupId then
+    if UsesRuntimePickerPreview() then
         CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, nil)
     end
     CS.textureMirrorStage = nil

@@ -225,6 +225,9 @@ ST._configState = {
     -- The group id the inline texture browser is open for (nil = closed). Set
     -- by AuraTexturePicker; drives the takeover branch in ButtonsWideColumn.
     inlineTextureBrowserOpen = nil,
+    -- Config-only texture appearance values staged during slider/color edits.
+    -- ButtonPanelPreview consumes them; runtime reads only the saved settings.
+    textureConfigPreviewStage = nil,
 
     -- AceGUI widget tracking for cleanup
     col1BarWidgets = {},

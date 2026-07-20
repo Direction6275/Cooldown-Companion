@@ -368,13 +368,19 @@ end
 -- file, so it must not be captured as an upvalue there).
 ST._UpdateTexturePanelPreview = UpdateTexturePanelPreview
 
-local function AttachLiveTextureSliderRefresh(sliderWidget, applyValue)
+-- Texture-slider wiring keeps the config preview smooth without continuously
+-- redrawing the runtime panel. The value is stored and previewed during drag;
+-- the runtime visual applies once on mouse release (or edit-box confirmation).
+local function AttachTexturePreviewSliderRefresh(sliderWidget, applyValue, previewFn, confirmFn, cancelFn)
     if not sliderWidget or not sliderWidget.slider or type(applyValue) ~= "function" then
         return
     end
 
     local sliderFrame = sliderWidget.slider
     sliderWidget._ccApplyLiveTextureValue = applyValue
+    sliderWidget._ccRefreshTexturePreview = previewFn
+    sliderWidget._ccConfirmTextureValue = confirmFn
+    sliderWidget._ccCancelTextureValue = cancelFn
     sliderWidget._ccLastLiveTextureValue = nil
 
     local function pushValue(widget, value)
@@ -398,6 +404,10 @@ local function AttachLiveTextureSliderRefresh(sliderWidget, applyValue)
         if type(liveApply) == "function" then
             liveApply(value)
         end
+        local refreshPreview = widget._ccRefreshTexturePreview
+        if type(refreshPreview) == "function" then
+            refreshPreview()
+        end
     end
 
     sliderWidget:SetCallback("OnValueChanged", function(widget, _, value)
@@ -409,13 +419,24 @@ local function AttachLiveTextureSliderRefresh(sliderWidget, applyValue)
         sliderFrame:SetScript("OnUpdate", nil)
         sliderFrame._ccLiveTextureSliderActive = nil
         widget._ccLastLiveTextureValue = nil
+        local confirmValue = widget._ccConfirmTextureValue
+        if type(confirmValue) == "function" then
+            confirmValue(value)
+        end
     end)
 
     local prevOnRelease = sliderWidget.events and sliderWidget.events["OnRelease"]
     sliderWidget:SetCallback("OnRelease", function(widget, event)
+        local cancelValue = widget._ccCancelTextureValue
+        if type(cancelValue) == "function" then
+            cancelValue(widget)
+        end
         sliderFrame:SetScript("OnUpdate", nil)
         sliderFrame._ccLiveTextureSliderActive = nil
         widget._ccApplyLiveTextureValue = nil
+        widget._ccRefreshTexturePreview = nil
+        widget._ccConfirmTextureValue = nil
+        widget._ccCancelTextureValue = nil
         widget._ccLastLiveTextureValue = nil
         if prevOnRelease then
             prevOnRelease(widget, event)
@@ -457,6 +478,10 @@ local function AttachLiveTextureSliderRefresh(sliderWidget, applyValue)
         frame:SetScript("OnUpdate", nil)
         local widget = frame.obj
         if widget then
+            local cancelValue = widget._ccCancelTextureValue
+            if type(cancelValue) == "function" then
+                cancelValue(widget)
+            end
             widget._ccLastLiveTextureValue = nil
         end
     end)
@@ -2909,12 +2934,55 @@ local function BuildAppearanceTab(container)
         end
 
         local groupId = CS.selectedGroup
+        if CS.textureConfigPreviewStage and CS.textureConfigPreviewStage.groupId == groupId then
+            CS.textureConfigPreviewStage = nil
+        end
         local buttonData = group.buttons and group.buttons[1] or nil
         local previewWidget = nil
-        local function RefreshTextureVisual()
-            if previewWidget then
-                UpdateTexturePanelPreview(previewWidget, settings)
+
+        -- Runtime refreshes read the saved settings table directly, so texture
+        -- panels need a separate config-only copy while an interaction is in
+        -- progress. Otherwise a normal cooldown refresh could repaint the live
+        -- display before the user releases the slider or confirms the color.
+        local previewSettings = settings
+        if not isTriggerPanel then
+            previewSettings = {}
+            for key, value in pairs(settings) do
+                if type(value) == "table" then
+                    local valueCopy = {}
+                    for nestedKey, nestedValue in pairs(value) do
+                        valueCopy[nestedKey] = nestedValue
+                    end
+                    previewSettings[key] = valueCopy
+                else
+                    previewSettings[key] = value
+                end
             end
+        end
+
+        local function ClearTextureConfigPreviewStage()
+            local staged = CS.textureConfigPreviewStage
+            if staged and staged.groupId == groupId then
+                CS.textureConfigPreviewStage = nil
+                return true
+            end
+            return false
+        end
+
+        local function RefreshTexturePreview()
+            if previewWidget then
+                UpdateTexturePanelPreview(previewWidget, previewSettings)
+            end
+            if not isTriggerPanel and ST._RefreshButtonsPreviewMirror then
+                CS.textureConfigPreviewStage = {
+                    groupId = groupId,
+                    settings = previewSettings,
+                }
+                ST._RefreshButtonsPreviewMirror(groupId)
+            end
+        end
+
+        local function RefreshTextureRuntime()
             local groupFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
             local button = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
             if button then
@@ -2922,6 +2990,53 @@ local function BuildAppearanceTab(container)
             else
                 CooldownCompanion:RefreshAllAuraTextureVisuals()
             end
+        end
+
+        local function RefreshTextureVisual()
+            ClearTextureConfigPreviewStage()
+            if previewWidget then
+                UpdateTexturePanelPreview(previewWidget, settings)
+            end
+            if not isTriggerPanel and ST._RefreshButtonsPreviewMirror then
+                ST._RefreshButtonsPreviewMirror(groupId)
+            end
+            RefreshTextureRuntime()
+        end
+
+        local function CancelTexturePreviewChange()
+            if ClearTextureConfigPreviewStage()
+                and ST._RefreshButtonsPreviewMirror
+            then
+                ST._RefreshButtonsPreviewMirror(groupId)
+            end
+        end
+
+        -- Trigger panels keep their existing in-tab live behavior. Texture
+        -- panels use the pinned mirror during continuous edits and touch the
+        -- runtime panel only when the interaction is confirmed.
+        local textureValueChanged = isTriggerPanel and RefreshTextureVisual or RefreshTexturePreview
+
+        local function AttachTextureValueSlider(slider, key)
+            local confirmValue
+            local cancelValue
+            if not isTriggerPanel then
+                confirmValue = function(value)
+                    settings[key] = value
+                    previewSettings[key] = value
+                    RefreshTextureVisual()
+                end
+                cancelValue = function(widget)
+                    previewSettings[key] = settings[key]
+                    if widget and widget.SetValue then
+                        widget:SetValue(settings[key])
+                    end
+                    CancelTexturePreviewChange()
+                end
+            end
+
+            AttachTexturePreviewSliderRefresh(slider, function(value)
+                previewSettings[key] = value
+            end, textureValueChanged, confirmValue, cancelValue)
         end
 
         local heading = AceGUI:Create("Heading")
@@ -2957,71 +3072,75 @@ local function BuildAppearanceTab(container)
 
         local selectionLabel = GetStandaloneTextureSelectionLabel(group, settings)
 
-        local previewGroup = AceGUI:Create("SimpleGroup")
-        previewGroup:SetFullWidth(true)
-        previewGroup:SetHeight(TEXTURE_PREVIEW_HEIGHT + 4)
-        previewGroup:SetLayout("Fill")
-        container:AddChild(previewGroup)
+        -- Trigger panels do not use the selectable Texture Panel Live Preview,
+        -- so keep their existing in-tab preview and picker controls.
+        if isTriggerPanel then
+            local previewGroup = AceGUI:Create("SimpleGroup")
+            previewGroup:SetFullWidth(true)
+            previewGroup:SetHeight(TEXTURE_PREVIEW_HEIGHT + 4)
+            previewGroup:SetLayout("Fill")
+            container:AddChild(previewGroup)
 
-        local previewFrame = CreateFrame("Frame", nil, previewGroup.frame)
-        previewFrame:SetPoint("TOP", previewGroup.frame, "TOP", 0, -2)
-        previewFrame:SetSize(TEXTURE_PREVIEW_WIDTH, TEXTURE_PREVIEW_HEIGHT)
-        appearanceTabElements[#appearanceTabElements + 1] = previewFrame
+            local previewFrame = CreateFrame("Frame", nil, previewGroup.frame)
+            previewFrame:SetPoint("TOP", previewGroup.frame, "TOP", 0, -2)
+            previewFrame:SetSize(TEXTURE_PREVIEW_WIDTH, TEXTURE_PREVIEW_HEIGHT)
+            appearanceTabElements[#appearanceTabElements + 1] = previewFrame
 
-        local previewShade = previewFrame:CreateTexture(nil, "BACKGROUND")
-        previewShade:SetAllPoints()
-        previewShade:SetColorTexture(0, 0, 0, 0.42)
+            local previewShade = previewFrame:CreateTexture(nil, "BACKGROUND")
+            previewShade:SetAllPoints()
+            previewShade:SetColorTexture(0, 0, 0, 0.42)
 
-        local previewAnchor = CreateFrame("Frame", nil, previewFrame)
-        previewAnchor:SetPoint("CENTER")
-        previewAnchor:SetSize(TEXTURE_PREVIEW_WIDTH - 8, TEXTURE_PREVIEW_HEIGHT - 8)
+            local previewAnchor = CreateFrame("Frame", nil, previewFrame)
+            previewAnchor:SetPoint("CENTER")
+            previewAnchor:SetSize(TEXTURE_PREVIEW_WIDTH - 8, TEXTURE_PREVIEW_HEIGHT - 8)
 
-        local previewPrimary = previewFrame:CreateTexture(nil, "ARTWORK")
-        local previewSecondary = previewFrame:CreateTexture(nil, "ARTWORK")
+            local previewPrimary = previewFrame:CreateTexture(nil, "ARTWORK")
+            local previewSecondary = previewFrame:CreateTexture(nil, "ARTWORK")
 
-        local placeholder = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        placeholder:SetPoint("CENTER")
-        placeholder:SetJustifyH("CENTER")
-        placeholder:SetText("No texture selected")
-        placeholder:SetTextColor(0.65, 0.65, 0.65, 1)
+            local placeholder = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            placeholder:SetPoint("CENTER")
+            placeholder:SetJustifyH("CENTER")
+            placeholder:SetText("No texture selected")
+            placeholder:SetTextColor(0.65, 0.65, 0.65, 1)
 
-        previewWidget = {
-            primary = previewPrimary,
-            secondary = previewSecondary,
-            placeholder = placeholder,
-            anchor = previewAnchor,
-        }
-        UpdateTexturePanelPreview(previewWidget, settings)
+            previewWidget = {
+                primary = previewPrimary,
+                secondary = previewSecondary,
+                placeholder = placeholder,
+                anchor = previewAnchor,
+            }
+            UpdateTexturePanelPreview(previewWidget, settings)
 
-        local actionRow = AceGUI:Create("SimpleGroup")
-        actionRow:SetFullWidth(true)
-        actionRow:SetLayout("Flow")
-        container:AddChild(actionRow)
+            local actionRow = AceGUI:Create("SimpleGroup")
+            actionRow:SetFullWidth(true)
+            actionRow:SetLayout("Flow")
+            container:AddChild(actionRow)
 
-        local browseBtn = AceGUI:Create("Button")
-        browseBtn:SetText("Browse / Change")
-        browseBtn:SetRelativeWidth(0.49)
-        browseBtn:SetCallback("OnClick", function()
-            OpenOrRebindStandaloneTexturePicker(group, settings, true)
-        end)
-        actionRow:AddChild(browseBtn)
+            local browseBtn = AceGUI:Create("Button")
+            browseBtn:SetText("Browse / Change")
+            browseBtn:SetRelativeWidth(0.49)
+            browseBtn:SetCallback("OnClick", function()
+                OpenOrRebindStandaloneTexturePicker(group, settings, true)
+            end)
+            actionRow:AddChild(browseBtn)
 
-        local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear")
-        clearBtn:SetDisabled(not selectionLabel)
-        clearBtn:SetRelativeWidth(0.49)
-        clearBtn:SetCallback("OnClick", function()
-            CooldownCompanion:ClearAllAuraTexturePickerPreviews()
-            GetStandaloneTextureCommitCallback(group)(nil)
-        end)
-        actionRow:AddChild(clearBtn)
+            local clearBtn = AceGUI:Create("Button")
+            clearBtn:SetText("Clear")
+            clearBtn:SetDisabled(not selectionLabel)
+            clearBtn:SetRelativeWidth(0.49)
+            clearBtn:SetCallback("OnClick", function()
+                CooldownCompanion:ClearAllAuraTexturePickerPreviews()
+                GetStandaloneTextureCommitCallback(group)(nil)
+            end)
+            actionRow:AddChild(clearBtn)
+        end
 
         if not selectionLabel then
             if not isTriggerPanel then
                 local emptyStateLabel = AceGUI:Create("Label")
                 ST._ConfigureWrappedHelperLabel(emptyStateLabel)
                 emptyStateLabel:SetFullWidth(true)
-                emptyStateLabel:SetText("|cff888888Pick a texture to show the rest of the display controls.|r")
+                emptyStateLabel:SetText("|cff888888Select a texture from the Live Preview to show the display controls.|r")
                 container:AddChild(emptyStateLabel)
             end
 
@@ -3049,7 +3168,9 @@ local function BuildAppearanceTab(container)
         locationDrop:SetValue(selectedLayoutValue)
         locationDrop:SetFullWidth(true)
         locationDrop:SetCallback("OnValueChanged", function(_, _, value)
-            settings.locationType = tonumber(value) or 0
+            value = tonumber(value) or 0
+            settings.locationType = value
+            previewSettings.locationType = value
             RefreshTextureVisual()
             CooldownCompanion:RefreshConfigPanel()
         end)
@@ -3061,10 +3182,7 @@ local function BuildAppearanceTab(container)
             spacingSlider:SetSliderValues(MIN_TEXTURE_PAIR_SPACING, MAX_TEXTURE_PAIR_SPACING, 0.01)
             spacingSlider:SetValue(settings.pairSpacing or 0)
             spacingSlider:SetFullWidth(true)
-            AttachLiveTextureSliderRefresh(spacingSlider, function(value)
-                settings.pairSpacing = value
-                RefreshTextureVisual()
-            end)
+            AttachTextureValueSlider(spacingSlider, "pairSpacing")
             HookSliderEditBox(spacingSlider)
             container:AddChild(spacingSlider)
         end
@@ -3075,7 +3193,9 @@ local function BuildAppearanceTab(container)
         blendDrop:SetValue(settings.blendMode or "BLEND")
         blendDrop:SetFullWidth(true)
         blendDrop:SetCallback("OnValueChanged", function(_, _, value)
-            settings.blendMode = value or "BLEND"
+            value = value or "BLEND"
+            settings.blendMode = value
+            previewSettings.blendMode = value
             RefreshTextureVisual()
         end)
         container:AddChild(blendDrop)
@@ -3085,10 +3205,7 @@ local function BuildAppearanceTab(container)
         scaleSlider:SetSliderValues(0.25, 4, 0.05)
         scaleSlider:SetValue(settings.scale or 1)
         scaleSlider:SetFullWidth(true)
-        AttachLiveTextureSliderRefresh(scaleSlider, function(value)
-            settings.scale = value
-            RefreshTextureVisual()
-        end)
+        AttachTextureValueSlider(scaleSlider, "scale")
         HookSliderEditBox(scaleSlider)
         container:AddChild(scaleSlider)
 
@@ -3097,10 +3214,7 @@ local function BuildAppearanceTab(container)
         rotationSlider:SetSliderValues(MIN_TEXTURE_ROTATION, MAX_TEXTURE_ROTATION, 1)
         rotationSlider:SetValue(settings.rotation or 0)
         rotationSlider:SetFullWidth(true)
-        AttachLiveTextureSliderRefresh(rotationSlider, function(value)
-            settings.rotation = value
-            RefreshTextureVisual()
-        end)
+        AttachTextureValueSlider(rotationSlider, "rotation")
         HookSliderEditBox(rotationSlider)
         container:AddChild(rotationSlider)
 
@@ -3109,10 +3223,7 @@ local function BuildAppearanceTab(container)
         stretchXSlider:SetSliderValues(MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH, 0.05)
         stretchXSlider:SetValue(settings.stretchX or 0)
         stretchXSlider:SetFullWidth(true)
-        AttachLiveTextureSliderRefresh(stretchXSlider, function(value)
-            settings.stretchX = value
-            RefreshTextureVisual()
-        end)
+        AttachTextureValueSlider(stretchXSlider, "stretchX")
         HookSliderEditBox(stretchXSlider)
         container:AddChild(stretchXSlider)
 
@@ -3121,10 +3232,7 @@ local function BuildAppearanceTab(container)
         stretchYSlider:SetSliderValues(MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH, 0.05)
         stretchYSlider:SetValue(settings.stretchY or 0)
         stretchYSlider:SetFullWidth(true)
-        AttachLiveTextureSliderRefresh(stretchYSlider, function(value)
-            settings.stretchY = value
-            RefreshTextureVisual()
-        end)
+        AttachTextureValueSlider(stretchYSlider, "stretchY")
         HookSliderEditBox(stretchYSlider)
         container:AddChild(stretchYSlider)
 
@@ -3133,14 +3241,50 @@ local function BuildAppearanceTab(container)
         alphaSlider:SetSliderValues(0.05, 1, 0.05)
         alphaSlider:SetValue(settings.alpha or 1)
         alphaSlider:SetFullWidth(true)
-        AttachLiveTextureSliderRefresh(alphaSlider, function(value)
-            settings.alpha = value
-            RefreshTextureVisual()
-        end)
+        AttachTextureValueSlider(alphaSlider, "alpha")
         HookSliderEditBox(alphaSlider)
         container:AddChild(alphaSlider)
 
-        AddColorPicker(container, settings, "color", "Texture Color", { 1, 1, 1, 1 }, true, RefreshTextureVisual, RefreshTextureVisual)
+        local function ConfirmTextureColor()
+            if not isTriggerPanel then
+                local color = previewSettings.color or { 1, 1, 1, 1 }
+                settings.color = { color[1], color[2], color[3], color[4] }
+            end
+            RefreshTextureVisual()
+        end
+        local colorPicker = AddColorPicker(container, previewSettings, "color", "Texture Color", { 1, 1, 1, 1 }, true,
+            ConfirmTextureColor, textureValueChanged)
+        if not isTriggerPanel then
+            colorPicker._ccCancelTextureValue = function(widget)
+                local color = settings.color or { 1, 1, 1, 1 }
+                previewSettings.color = { color[1], color[2], color[3], color[4] }
+                widget:SetColor(color[1], color[2], color[3], color[4])
+                CancelTexturePreviewChange()
+            end
+
+            local prevOnRelease = colorPicker.events and colorPicker.events["OnRelease"]
+            colorPicker:SetCallback("OnRelease", function(widget, event)
+                local cancelValue = widget._ccCancelTextureValue
+                if type(cancelValue) == "function" then
+                    cancelValue(widget)
+                end
+                widget._ccCancelTextureValue = nil
+                if prevOnRelease then
+                    prevOnRelease(widget, event)
+                end
+            end)
+
+            if not colorPicker.frame._ccTexturePreviewHideHooked then
+                colorPicker.frame._ccTexturePreviewHideHooked = true
+                colorPicker.frame:HookScript("OnHide", function(frame)
+                    local widget = frame.obj
+                    local cancelValue = widget and widget._ccCancelTextureValue
+                    if type(cancelValue) == "function" then
+                        cancelValue(widget)
+                    end
+                end)
+            end
+        end
 
         local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
         if shouldOpenPicker then

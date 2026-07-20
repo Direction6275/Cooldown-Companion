@@ -2634,8 +2634,7 @@ local function EnsureTextureMirror(preview)
     mirror.placeholder:SetPoint("CENTER")
     mirror.placeholder:SetText("No texture selected")
 
-    -- Click the rendered texture to reopen the inline browser (a bonus route
-    -- alongside the settings' Browse / Change button). root is a raw,
+    -- Click the rendered texture to open the inline browser. root is a raw,
     -- module-owned frame, so attaching scripts here is safe (not an AceGUI
     -- underlying frame). Mouse is enabled per build (only when the panel has an
     -- entry) so it never steals drop-to-add on an empty panel; the guard skips
@@ -2701,7 +2700,9 @@ local function BuildTextureMirror(preview, host, panelId, group)
     -- saved texture. Both are NormalizeAuraTextureSettings tables, so the shared
     -- renderer needs no per-source handling; nil means the panel has no texture.
     local staged = CS.textureMirrorStage
+    local configStaged = CS.textureConfigPreviewStage
     local settings = (staged and staged.groupId == panelId and staged.selection)
+        or (configStaged and configStaged.groupId == panelId and configStaged.settings)
         or CooldownCompanion:GetTexturePanelSettings(group)
 
     local render = ST._UpdateTexturePanelPreview
