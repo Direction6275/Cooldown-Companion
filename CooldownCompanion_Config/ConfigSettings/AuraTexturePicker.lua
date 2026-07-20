@@ -1,21 +1,56 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
+
+-- Inline texture browser. The catalog used to live in a floating AceGUI Window
+-- ("Browse Texture Panel Visuals"); it now renders as a takeover of the wide
+-- column's settings area (ButtonsWideColumn owns the host + the takeover
+-- branch; this file renders the grid + chrome into it via
+-- ST._RenderInlineTextureBrowser). Hover = live preview, click = commit
+-- immediately (no Apply button), Clear empties the panel, Cancel returns to
+-- the settings. Serves both texture panels and trigger panels.
 
 local BASE_THUMB_SIZE = 64
 local THUMB_GAP = 8
-local DEFAULT_THUMBS_PER_ROW = 5
-local GRID_HEIGHT = 452
+local MIN_COLUMNS = 4
+local CONTENT_INSET = 6
+local TAB_ROW_HEIGHT = 22
+local TAB_GAP = 4
+local TAB_TEXT_PAD = 12
+local SEARCH_WIDTH = 200
+local SEARCH_HEIGHT = 20
+local ROW_GAP = 8
+local BOTTOM_ROW_HEIGHT = 24
+local STAR_SIZE = 16
 local FILTER_SHAREDMEDIA = "sharedMedia"
 local FILTER_FAVORITES = "favorites"
 
-local pickerWindow = nil
-local pickerParkingFrame = CreateFrame("Frame", nil, UIParent)
-pickerParkingFrame:Hide()
-local pickerThumbnailPool = {}
-local pickerScrollFrame = nil
-local pickerScrollChild = nil
+-- Browser state is module-scope (not a window closure) because the surface is
+-- rebuilt from ButtonsWideColumn's refresh, and the chrome is created once and
+-- reused across opens. The host is a persistent raw frame (never an
+-- AceGUI-recycled one), so pooled thumbnails parked on its scroll child cannot
+-- bleed onto sibling surfaces.
+local chrome = nil
+local thumbnailPool = {}
+local activeThumbs = {}
+local currentGroupId = nil
+local currentButtonIndex = nil
+local currentOnCommit = nil
+local currentSelection = nil
+local currentFilter = "symbols"
+local currentSearch = ""
+local currentThumbSize = BASE_THUMB_SIZE
+local suppressSearchChanged = false
+
+-- Selection wash/accent uses the player's class color, matching the quiet row
+-- and the navigator (standing ruling: class wash + solid accent, no gold/glow).
+local function GetSelectionColor()
+    local classColor = C_ClassColor and C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    if classColor then
+        return classColor.r, classColor.g, classColor.b
+    end
+    return 1, 0.82, 0
+end
 
 local function IsSharedMediaFilter(filterValue)
     return filterValue == FILTER_SHAREDMEDIA
@@ -29,15 +64,12 @@ local function GetEntryActionMode(entry)
     if type(entry) ~= "table" then
         return nil
     end
-
     if entry.canRemoveFavorite then
         return "removeFavorite"
     end
-
     if entry.canFavorite then
         return "addFavorite"
     end
-
     return nil
 end
 
@@ -77,711 +109,583 @@ end
 
 local function FindEntryForSelection(entries, selection)
     if CooldownCompanion.FindAuraTexturePickerEntry then
-        local matchedEntry = CooldownCompanion:FindAuraTexturePickerEntry(entries, selection)
-        if matchedEntry then
-            return matchedEntry
-        end
+        return CooldownCompanion:FindAuraTexturePickerEntry(entries, selection)
     end
-
-    if type(selection) ~= "table" then
-        return nil
-    end
-
     return nil
 end
-local function CloseAuraTexturePicker()
-    if pickerWindow then
-        pickerWindow:Fire("OnClose")
+
+--------------------------------------------------------------------------------
+-- Staging (hover live preview)
+--------------------------------------------------------------------------------
+
+-- Drop the staged texture from the live world and from the pinned Live Preview
+-- mirror, repainting the mirror back to the saved texture. Guarded so no-op
+-- rebuilds don't trigger redundant mirror rebuilds.
+local function ClearStagedPreview()
+    if currentGroupId then
+        CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, nil)
     end
-end
-
-local function OpenAuraTexturePicker(opts)
-    opts = opts or {}
-
-    if CS.CloseAdvancedSettingsPanel then
-        CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
-    end
-    if CS.CloseProfileWideFontWindow then
-        CS.CloseProfileWideFontWindow()
-    end
-    if CS.CloseProfileWideBarTextureWindow then
-        CS.CloseProfileWideBarTextureWindow()
-    end
-
-    if pickerWindow then
-        pickerWindow:Show()
-        pickerWindow.frame:Raise()
-        if pickerWindow._rebind then
-            pickerWindow._rebind(opts)
-        end
-        return
-    end
-
-    local window = AceGUI:Create("Window")
-    window:SetTitle(opts.title or "Browse Texture Panel Visuals")
-    window:SetWidth(470)
-    window:SetHeight(610)
-    window:SetLayout("Flow")
-    window:EnableResize(false)
-    pickerWindow = window
-    CS.auraTexturePickerWindow = window
-    if CS.RegisterConfigDragAlphaFrame then
-        CS.RegisterConfigDragAlphaFrame(window.frame)
-    end
-
-    local configFrame = CS.configFrame
-    if configFrame and configFrame.frame and configFrame.frame:IsShown() then
-        window.frame:ClearAllPoints()
-        window.frame:SetPoint("TOPLEFT", configFrame.frame, "TOPRIGHT", 4, 0)
-    end
-
-    local currentGroupId = opts.groupId
-    local currentButtonIndex = opts.buttonIndex
-    local currentOnCommit = opts.callback
-    local currentSelection = opts.initialSelection
-    local currentFilter = "symbols"
-    local currentSearch = ""
-    local selectedEntry = nil
-    local stagedClear = false
-    local activeThumbs = {}
-    local currentThumbSize = BASE_THUMB_SIZE
-    local suppressPathTextChanged = false
-
-    local sourceDrop = AceGUI:Create("Dropdown")
-    sourceDrop:SetLabel("Category")
-    sourceDrop:SetRelativeWidth(0.45)
-    window:AddChild(sourceDrop)
-
-    local searchBox = AceGUI:Create("EditBox")
-    searchBox:SetLabel("Search")
-    searchBox:SetRelativeWidth(0.55)
-    searchBox:DisableButton(true)
-    window:AddChild(searchBox)
-
-    local statusLabel = AceGUI:Create("Label")
-    ST._ConfigureWrappedHelperLabel(statusLabel)
-    statusLabel:SetFullWidth(true)
-    statusLabel:SetFontObject(GameFontHighlightSmall)
-    statusLabel:SetText("")
-    window:AddChild(statusLabel)
-
-    local scrollGroup = AceGUI:Create("SimpleGroup")
-    scrollGroup:SetFullWidth(true)
-    scrollGroup:SetHeight(GRID_HEIGHT)
-    scrollGroup:SetLayout("Fill")
-    window:AddChild(scrollGroup)
-
-    local scrollFrame = pickerScrollFrame
-    local scrollChild = pickerScrollChild
-    if not scrollFrame or not scrollChild then
-        scrollFrame = CreateFrame("ScrollFrame", nil, scrollGroup.frame)
-        scrollChild = CreateFrame("Frame", nil, scrollFrame)
-        pickerScrollFrame = scrollFrame
-        pickerScrollChild = scrollChild
-    else
-        scrollFrame:SetParent(scrollGroup.frame)
-        scrollChild:SetParent(scrollFrame)
-    end
-    scrollFrame:ClearAllPoints()
-    scrollFrame:SetPoint("TOPLEFT", 4, -4)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -4, 4)
-    scrollFrame:Show()
-    scrollFrame:EnableMouseWheel(true)
-
-    scrollChild:SetSize(1, 1)
-    scrollChild:Show()
-    scrollFrame:SetScrollChild(scrollChild)
-    scrollChild:EnableMouseWheel(true)
-    local lastViewportWidth = 0
-
-    local selectionLabel = AceGUI:Create("Label")
-    ST._ConfigureWrappedHelperLabel(selectionLabel)
-    selectionLabel:SetFullWidth(true)
-    selectionLabel:SetText("Hover a texture to preview it. Click to stage it. Apply saves it.")
-    window:AddChild(selectionLabel)
-
-    local applyBtn = AceGUI:Create("Button")
-    applyBtn:SetText("Apply")
-    applyBtn:SetRelativeWidth(0.5)
-    applyBtn:SetDisabled(true)
-    window:AddChild(applyBtn)
-
-    local clearBtn = AceGUI:Create("Button")
-    clearBtn:SetText("Clear")
-    clearBtn:SetRelativeWidth(0.5)
-    window:AddChild(clearBtn)
-
-    local function ReleaseActiveThumbs()
-        for _, thumb in ipairs(activeThumbs) do
-            thumb:Hide()
-            thumb:ClearAllPoints()
-            thumb:SetScript("OnEnter", nil)
-            thumb:SetScript("OnLeave", nil)
-            thumb:SetScript("OnClick", nil)
-            thumb:SetScript("OnMouseWheel", nil)
-            if thumb._deleteBtn then
-                thumb._deleteBtn:Hide()
-                thumb._deleteBtn:SetScript("OnClick", nil)
-                thumb._deleteBtn:SetScript("OnEnter", nil)
-                thumb._deleteBtn:SetScript("OnLeave", nil)
-            end
-            thumb._entry = nil
-            if thumb._hover then thumb._hover:Hide() end
-            if thumb._selected then thumb._selected:Hide() end
-            pickerThumbnailPool[#pickerThumbnailPool + 1] = thumb
-        end
-        wipe(activeThumbs)
-    end
-
-    local function CleanupRawGrid()
-        ReleaseActiveThumbs()
-
-        for _, thumb in ipairs(pickerThumbnailPool) do
-            thumb:Hide()
-            thumb:ClearAllPoints()
-            thumb:SetScript("OnEnter", nil)
-            thumb:SetScript("OnLeave", nil)
-            thumb:SetScript("OnClick", nil)
-            thumb:SetScript("OnMouseWheel", nil)
-            if thumb._deleteBtn then
-                thumb._deleteBtn:Hide()
-                thumb._deleteBtn:SetScript("OnClick", nil)
-                thumb._deleteBtn:SetScript("OnEnter", nil)
-                thumb._deleteBtn:SetScript("OnLeave", nil)
-            end
-            thumb:SetParent(pickerParkingFrame)
-            thumb._entry = nil
-            if thumb._hover then thumb._hover:Hide() end
-            if thumb._selected then thumb._selected:Hide() end
-        end
-
-        -- AceGUI recycles SimpleGroup frames, so these raw child frames must be
-        -- detached before release or they can bleed into unrelated config UIs.
-        -- Keep them parked in module-level pools so repeated open/close cycles
-        -- reuse the same frames instead of quietly accumulating hidden ones.
-        scrollFrame:SetScript("OnMouseWheel", nil)
-        scrollFrame:SetScript("OnSizeChanged", nil)
-        scrollFrame:EnableMouseWheel(false)
-        scrollFrame:SetVerticalScroll(0)
-        scrollFrame:SetScrollChild(scrollChild)
-        scrollFrame:ClearAllPoints()
-        scrollFrame:SetParent(pickerParkingFrame)
-        scrollFrame:Hide()
-
-        scrollChild:SetScript("OnMouseWheel", nil)
-        scrollChild:EnableMouseWheel(false)
-        scrollChild:SetParent(scrollFrame)
-        scrollChild:SetSize(1, 1)
-        scrollChild:Hide()
-    end
-
-    scrollGroup:SetCallback("OnRelease", function()
-        CleanupRawGrid()
-    end)
-
-    local function UpdateSelectionLabel()
-        if selectedEntry then
-            selectionLabel:SetText((selectedEntry.label or "Texture") .. (selectedEntry.subtitle and ("  |  " .. selectedEntry.subtitle) or ""))
-        elseif stagedClear then
-            selectionLabel:SetText("Clear staged. Apply removes the current texture.")
-        elseif currentSelection and currentSelection.label then
-            selectionLabel:SetText("Current: " .. currentSelection.label)
-        else
-            selectionLabel:SetText("Hover a texture to preview it. Click to stage it. Apply saves it.")
-        end
-    end
-
-    local function ClearStagedPreview()
-        if currentGroupId then
-            CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, nil)
-        end
-        -- Drop the staged texture from the pinned Live Preview mirror and repaint
-        -- it back to the saved texture. Guarded so no-selection RebuildGrid and
-        -- rebind passes don't trigger redundant mirror rebuilds.
-        if CS.textureMirrorStage then
-            CS.textureMirrorStage = nil
-            if currentGroupId and ST._RefreshButtonsPreviewMirror then
-                ST._RefreshButtonsPreviewMirror(currentGroupId)
-            end
-        end
-    end
-
-    local function StageEntryPreview(entry)
-        if not currentGroupId then
-            return
-        end
-        if not entry then
-            ClearStagedPreview()
-            return
-        end
-        local selection = BuildPreviewSelection(currentGroupId, currentButtonIndex, entry)
-        CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, selection)
-        -- Feed the same staged selection into the pinned Live Preview mirror so
-        -- hovering a texture updates the big preview at the panel's real settings.
-        CS.textureMirrorStage = { groupId = currentGroupId, selection = selection }
-        if ST._RefreshButtonsPreviewMirror then
+    if CS.textureMirrorStage then
+        CS.textureMirrorStage = nil
+        if currentGroupId and ST._RefreshButtonsPreviewMirror then
             ST._RefreshButtonsPreviewMirror(currentGroupId)
         end
     end
+end
 
-    local function SetSelectedEntry(entry)
-        selectedEntry = entry
-        stagedClear = false
-        applyBtn:SetDisabled(entry == nil)
-        UpdateSelectionLabel()
-        StageEntryPreview(entry)
-        for _, thumb in ipairs(activeThumbs) do
-            thumb._selected:SetShown(thumb._entry == entry)
-        end
+-- Stage a hovered entry: the live world (both panel types) and, for texture
+-- panels, the big-preview mirror both show it without saving.
+local function StageEntryPreview(entry)
+    if not currentGroupId then
+        return
+    end
+    if not entry then
+        ClearStagedPreview()
+        return
+    end
+    local selection = BuildPreviewSelection(currentGroupId, currentButtonIndex, entry)
+    CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, selection)
+    CS.textureMirrorStage = { groupId = currentGroupId, selection = selection }
+    if ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror(currentGroupId)
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Commit / close
+--------------------------------------------------------------------------------
+
+-- Click commits immediately, then returns to the settings. The flag is dropped
+-- BEFORE the commit so the commit's RefreshConfigPanel rebuilds col3 into the
+-- settings view (the takeover branch is gated on the flag). The saved texture
+-- is updated by the commit callback, so the mirror repaints to it on rebuild.
+local function CommitSelection(selection)
+    CS.inlineTextureBrowserOpen = nil
+    if currentGroupId then
+        CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, nil)
+    end
+    CS.textureMirrorStage = nil
+    currentSelection = selection
+    if currentOnCommit then
+        currentOnCommit(selection)
+    end
+end
+
+-- Clear empties the panel but keeps the browser open so a replacement can be
+-- picked immediately. The flag stays set, so the commit's RefreshConfigPanel
+-- re-renders the grid (now with no selected tile and an empty big preview).
+local function ClearPanelTexture()
+    if currentGroupId then
+        CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, nil)
+    end
+    CS.textureMirrorStage = nil
+    currentSelection = nil
+    if currentOnCommit then
+        currentOnCommit(nil)
+    end
+end
+
+-- Public close: drop the flag + staged previews and restore the settings area
+-- (only when the config is up, so config-close cleanup doesn't rebuild col3).
+-- Also the mutual-exclusion hook other side-windows call when they open.
+local function CancelPickAuraTexture()
+    if not CS.inlineTextureBrowserOpen then
+        return
+    end
+    CS.inlineTextureBrowserOpen = nil
+    if currentGroupId then
+        CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, nil)
+    end
+    CS.textureMirrorStage = nil
+    local configFrame = CS.configFrame
+    if configFrame and configFrame.frame and configFrame.frame:IsShown()
+        and ST._RefreshButtonsWideColumn then
+        ST._RefreshButtonsWideColumn()
+    end
+end
+
+--------------------------------------------------------------------------------
+-- Grid
+--------------------------------------------------------------------------------
+
+-- Columns adapt to the wide workspace: as many BASE_THUMB_SIZE columns as the
+-- viewport fits (min MIN_COLUMNS), then the thumbs grow slightly to fill the
+-- leftover width so the grid isn't ragged.
+local function GetGridMetrics(entryCount)
+    local viewportWidth = chrome and chrome.scrollFrame:GetWidth() or 0
+    if not viewportWidth or viewportWidth <= 0 then
+        viewportWidth = (BASE_THUMB_SIZE + THUMB_GAP) * MIN_COLUMNS
     end
 
-    local function AcquireThumb()
-        local thumb = table.remove(pickerThumbnailPool)
-        if thumb then
-            thumb:SetParent(scrollChild)
-            return thumb
-        end
+    local columns = math.max(MIN_COLUMNS,
+        math.floor((viewportWidth + THUMB_GAP) / (BASE_THUMB_SIZE + THUMB_GAP)))
+    local usable = viewportWidth - ((columns - 1) * THUMB_GAP)
+    local thumbSize = math.max(BASE_THUMB_SIZE, math.floor(usable / columns))
+    local contentWidth = math.max(1, (columns * thumbSize) + ((columns - 1) * THUMB_GAP))
+    local rows = math.max(1, math.ceil((entryCount or 0) / columns))
+    local contentHeight = (rows * thumbSize) + ((rows - 1) * THUMB_GAP)
+    return columns, thumbSize, contentWidth, contentHeight
+end
 
-        thumb = CreateFrame("Button", nil, scrollChild, "BackdropTemplate")
-        thumb:SetSize(currentThumbSize, currentThumbSize)
-        thumb:EnableMouseWheel(true)
+local function ClampScrollOffset(offset)
+    local scrollFrame = chrome.scrollFrame
+    local scrollChild = chrome.scrollChild
+    local maxScroll = math.max(0, (scrollChild:GetHeight() or 0) - (scrollFrame:GetHeight() or 0))
+    return math.min(math.max(offset or 0, 0), maxScroll)
+end
 
-        local previewBg = thumb:CreateTexture(nil, "BACKGROUND")
-        previewBg:SetAllPoints()
-        previewBg:SetColorTexture(0, 0, 0, 0.45)
+local function SetGridScroll(offset)
+    chrome.scrollFrame:SetVerticalScroll(ClampScrollOffset(offset))
+end
 
-        local previewTex = thumb:CreateTexture(nil, "ARTWORK")
-        previewTex:SetAllPoints(previewBg)
-        thumb._previewTex = previewTex
+local function ScrollGridByWheel(delta)
+    if not delta or delta == 0 then
+        return
+    end
+    SetGridScroll((chrome.scrollFrame:GetVerticalScroll() or 0) - (delta * (currentThumbSize + THUMB_GAP)))
+end
 
-        local hover = thumb:CreateTexture(nil, "OVERLAY")
-        hover:SetAllPoints()
-        hover:SetColorTexture(1, 1, 1, 0.08)
-        hover:Hide()
-        thumb._hover = hover
+-- Persistent favorite marks: a filled gold star shows on every favorited tile;
+-- the "add" outline star only appears on hover so unfavorited tiles stay quiet.
+local function UpdateThumbStar(thumb, hovered)
+    local star = thumb._star
+    if not star then
+        return
+    end
+    local mode = star._mode
+    if mode == "removeFavorite" then
+        star:Show()
+        star._icon:SetAlpha(hovered and 1 or 0.85)
+    elseif mode == "addFavorite" then
+        star:SetShown(hovered)
+        star._icon:SetAlpha(hovered and 0.9 or 0)
+    else
+        star:Hide()
+    end
+end
 
-        local selected = thumb:CreateTexture(nil, "OVERLAY")
-        selected:SetAllPoints()
-        selected:SetColorTexture(0.2, 0.85, 1, 0.18)
-        selected:Hide()
-        thumb._selected = selected
+local function ConfigureThumbStar(thumb, entry)
+    local star = thumb._star
+    if not star then
+        return
+    end
+    local mode = GetEntryActionMode(entry)
+    star._mode = mode
+    if mode == "removeFavorite" then
+        star._icon:SetAtlas("auctionhouse-icon-favorite", false)
+    elseif mode == "addFavorite" then
+        star._icon:SetAtlas("auctionhouse-icon-favorite-off", false)
+    end
+    UpdateThumbStar(thumb, false)
+end
 
-        local deleteBtn = CreateFrame("Button", nil, thumb)
-        deleteBtn:SetSize(22, 22)
-        deleteBtn:SetPoint("TOPRIGHT", thumb, "TOPRIGHT", -1, -1)
-        deleteBtn:Hide()
-        thumb._deleteBtn = deleteBtn
+local function ReleaseActiveThumbs()
+    for _, thumb in ipairs(activeThumbs) do
+        thumb:Hide()
+        thumb:ClearAllPoints()
+        thumb._entry = nil
+        if thumb._hover then thumb._hover:Hide() end
+        if thumb._selected then thumb._selected:Hide() end
+        if thumb._accent then thumb._accent:Hide() end
+        if thumb._star then thumb._star:Hide() end
+        thumbnailPool[#thumbnailPool + 1] = thumb
+    end
+    wipe(activeThumbs)
+end
 
-        local deleteTex = deleteBtn:CreateTexture(nil, "ARTWORK")
-        deleteTex:SetPoint("TOPLEFT", 2, -2)
-        deleteTex:SetPoint("BOTTOMRIGHT", -2, 2)
-        deleteTex:SetAtlas("common-icon-redx", false)
-        deleteBtn._icon = deleteTex
-
-        local deleteText = deleteBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        deleteText:SetPoint("CENTER")
-        deleteText:SetJustifyH("CENTER")
-        deleteText:SetJustifyV("MIDDLE")
-        deleteText:SetScale(1.75)
-        deleteText:Hide()
-        deleteBtn._text = deleteText
-
+local function AcquireThumb()
+    local thumb = table.remove(thumbnailPool)
+    if thumb then
+        thumb:SetParent(chrome.scrollChild)
         return thumb
     end
 
-    local function SetPathInputText(text)
-        suppressPathTextChanged = true
-        currentSearch = text or ""
-        searchBox:SetText(currentSearch)
-        suppressPathTextChanged = false
+    thumb = CreateFrame("Button", nil, chrome.scrollChild)
+    thumb:EnableMouseWheel(true)
+    thumb:RegisterForClicks("LeftButtonUp")
+
+    local previewBg = thumb:CreateTexture(nil, "BACKGROUND")
+    previewBg:SetAllPoints()
+    previewBg:SetColorTexture(0, 0, 0, 0.45)
+
+    local previewTex = thumb:CreateTexture(nil, "ARTWORK")
+    previewTex:SetAllPoints(previewBg)
+    thumb._previewTex = previewTex
+
+    -- Selected (matches the saved texture): class wash + solid left accent.
+    local selected = thumb:CreateTexture(nil, "OVERLAY")
+    selected:SetAllPoints()
+    selected:Hide()
+    thumb._selected = selected
+
+    local accent = thumb:CreateTexture(nil, "OVERLAY")
+    accent:SetPoint("TOPLEFT", thumb, "TOPLEFT", 0, 0)
+    accent:SetPoint("BOTTOMLEFT", thumb, "BOTTOMLEFT", 0, 0)
+    accent:SetWidth(3)
+    accent:Hide()
+    thumb._accent = accent
+
+    -- HIGHLIGHT layer on a Button is mouse-gated automatically.
+    local hover = thumb:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetAllPoints()
+    hover:SetColorTexture(1, 1, 1, 0.08)
+    thumb._hover = hover
+
+    local star = CreateFrame("Button", nil, thumb)
+    star:SetSize(STAR_SIZE, STAR_SIZE)
+    star:SetPoint("TOPRIGHT", thumb, "TOPRIGHT", -2, -2)
+    star:RegisterForClicks("LeftButtonUp")
+    star:Hide()
+    local starIcon = star:CreateTexture(nil, "OVERLAY")
+    starIcon:SetAllPoints()
+    star._icon = starIcon
+    thumb._star = star
+
+    return thumb
+end
+
+local function RebuildGrid()
+    if not chrome then
+        return
+    end
+    ReleaseActiveThumbs()
+
+    local entries = CooldownCompanion:GetAuraTexturePickerEntries(currentSearch, currentFilter)
+
+    if #entries == 0 then
+        if IsFavoritesFilter(currentFilter) and currentSearch == "" then
+            chrome.statusLabel:SetText("No favorites yet. Hover a texture and click its star to add one.")
+        elseif IsFavoritesFilter(currentFilter) then
+            chrome.statusLabel:SetText("No favorite textures match.")
+        elseif IsSharedMediaFilter(currentFilter) then
+            chrome.statusLabel:SetText("No SharedMedia textures found.")
+        else
+            chrome.statusLabel:SetText("No textures found.")
+        end
+    else
+        chrome.statusLabel:SetText(("%d textures. Hover to preview, click to use."):format(#entries))
     end
 
-    local function GetVisibleEntries()
-        return CooldownCompanion:GetAuraTexturePickerEntries(currentSearch, currentFilter)
-    end
+    local savedMatch = FindEntryForSelection(entries, currentSelection)
 
-    local function ConfigureThumbActionButton(thumb, entry)
-        local actionMode = GetEntryActionMode(entry)
-        local button = thumb._deleteBtn
-        if not button then
-            return
-        end
+    local columns, thumbSize, contentWidth, contentHeight = GetGridMetrics(#entries)
+    currentThumbSize = thumbSize
+    local strideX = thumbSize + THUMB_GAP
+    local strideY = thumbSize + THUMB_GAP
 
-        button._actionMode = actionMode
-        if not actionMode then
-            button:Hide()
-            return
-        end
+    local r, g, b = GetSelectionColor()
 
-        if actionMode == "addFavorite" then
-            if button._icon then
-                button._icon:Hide()
+    for index, entry in ipairs(entries) do
+        local thumb = AcquireThumb()
+        local row = math.floor((index - 1) / columns)
+        local col = (index - 1) % columns
+
+        thumb:ClearAllPoints()
+        thumb:SetSize(thumbSize, thumbSize)
+        thumb:SetPoint("TOPLEFT", chrome.scrollChild, "TOPLEFT", col * strideX, -(row * strideY))
+        thumb._entry = entry
+
+        ApplyEntryTexture(thumb._previewTex, entry)
+
+        local isSaved = (savedMatch ~= nil and entry == savedMatch)
+        thumb._selected:SetColorTexture(r, g, b, 0.18)
+        thumb._selected:SetShown(isSaved)
+        thumb._accent:SetColorTexture(r, g, b, 0.9)
+        thumb._accent:SetShown(isSaved)
+
+        ConfigureThumbStar(thumb, entry)
+
+        thumb:SetScript("OnEnter", function(self)
+            self._hover:Show()
+            UpdateThumbStar(self, true)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(entry.label or "Texture")
+            if entry.subtitle and entry.subtitle ~= "" then
+                GameTooltip:AddLine(entry.subtitle, 1, 1, 1, true)
+            elseif entry.category and entry.category ~= "" then
+                GameTooltip:AddLine(entry.category, 1, 1, 1, true)
             end
-            if button._text then
-                button._text:SetText("+")
-                button._text:SetTextColor(0.55, 1, 0.55, 1)
-                button._text:Show()
+            GameTooltip:Show()
+            StageEntryPreview(entry)
+        end)
+        thumb:SetScript("OnLeave", function(self)
+            if self._star and self._star:IsMouseOver() then
+                return
             end
+            self._hover:Hide()
+            UpdateThumbStar(self, false)
+            GameTooltip:Hide()
+            ClearStagedPreview()
+        end)
+        thumb:SetScript("OnClick", function()
+            CommitSelection(BuildPreviewSelection(currentGroupId, currentButtonIndex, entry))
+        end)
+        thumb:SetScript("OnMouseWheel", function(_, delta)
+            ScrollGridByWheel(delta)
+        end)
+
+        local star = thumb._star
+        star:SetScript("OnEnter", function(self)
+            thumb._hover:Show()
+            UpdateThumbStar(thumb, true)
+            GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+            if self._mode == "addFavorite" then
+                GameTooltip:AddLine("Add To Favorites")
+                GameTooltip:AddLine("Save this texture in the Favorites category.", 1, 1, 1, true)
+            else
+                GameTooltip:AddLine("Remove From Favorites")
+                GameTooltip:AddLine("Keep the texture in its category but drop it from Favorites.", 1, 1, 1, true)
+            end
+            GameTooltip:Show()
+        end)
+        star:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+            if thumb:IsMouseOver() then
+                UpdateThumbStar(thumb, true)
+                return
+            end
+            thumb._hover:Hide()
+            UpdateThumbStar(thumb, false)
+            ClearStagedPreview()
+        end)
+        star:SetScript("OnClick", function(self)
+            if self._mode == "addFavorite" then
+                local saved = CooldownCompanion:SaveFavoriteAuraTexture(thumb._entry)
+                if saved then
+                    chrome.statusLabel:SetText((saved.label or "Texture") .. " added to Favorites.")
+                end
+            elseif self._mode == "removeFavorite" then
+                CooldownCompanion:RemoveFavoriteAuraTexture(thumb._entry)
+            end
+            GameTooltip:Hide()
+            RebuildGrid()
+        end)
+
+        thumb:Show()
+        activeThumbs[#activeThumbs + 1] = thumb
+    end
+
+    chrome.scrollChild:SetWidth(math.max(1, contentWidth))
+    chrome.scrollChild:SetHeight(math.max(1, contentHeight))
+    SetGridScroll(0)
+end
+
+--------------------------------------------------------------------------------
+-- Chrome (category tabs, search, grid scroll, status, buttons)
+--------------------------------------------------------------------------------
+
+local function UpdateTabSelection()
+    if not chrome then
+        return
+    end
+    local r, g, b = GetSelectionColor()
+    for _, tab in ipairs(chrome.tabs) do
+        local selected = tab._filter == currentFilter
+        tab._wash:SetColorTexture(r, g, b, 0.14)
+        tab._wash:SetShown(selected)
+        tab._accent:SetColorTexture(r, g, b, 0.9)
+        tab._accent:SetShown(selected)
+        if selected then
+            tab._label:SetTextColor(r, g, b, 1)
+        else
+            tab._label:SetTextColor(0.6, 0.6, 0.6, 1)
+        end
+    end
+end
+
+local function SelectFilter(filterKey)
+    if currentFilter == filterKey then
+        return
+    end
+    currentFilter = filterKey
+    UpdateTabSelection()
+    RebuildGrid()
+end
+
+local function BuildTabRow(host)
+    local filterList, filterOrder = CooldownCompanion:GetAuraTexturePickerFilters()
+    chrome.tabs = {}
+    local previous
+    -- Iterate the ORDER array (not the options map) so the dormant "Custom"
+    -- filter, which is deliberately excluded from the order, never gets a tab.
+    for _, key in ipairs(filterOrder) do
+        local tab = CreateFrame("Button", nil, host)
+        tab:SetHeight(TAB_ROW_HEIGHT)
+        tab._filter = key
+        tab:RegisterForClicks("LeftButtonUp")
+
+        local wash = tab:CreateTexture(nil, "BACKGROUND")
+        wash:SetAllPoints()
+        wash:Hide()
+        tab._wash = wash
+
+        local accent = tab:CreateTexture(nil, "ARTWORK")
+        accent:SetHeight(2)
+        accent:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, 0)
+        accent:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, 0)
+        accent:Hide()
+        tab._accent = accent
+
+        local hover = tab:CreateTexture(nil, "HIGHLIGHT")
+        hover:SetAllPoints()
+        hover:SetColorTexture(1, 1, 1, 0.06)
+
+        local label = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetPoint("CENTER")
+        label:SetText(filterList[key] or key)
+        tab._label = label
+        tab:SetWidth(label:GetStringWidth() + (TAB_TEXT_PAD * 2))
+
+        tab:SetScript("OnClick", function()
+            SelectFilter(key)
+        end)
+
+        tab:ClearAllPoints()
+        if previous then
+            tab:SetPoint("LEFT", previous, "RIGHT", TAB_GAP, 0)
+        else
+            tab:SetPoint("TOPLEFT", host, "TOPLEFT", CONTENT_INSET, -CONTENT_INSET)
+        end
+        chrome.tabs[#chrome.tabs + 1] = tab
+        previous = tab
+    end
+end
+
+local function BuildChrome(host)
+    chrome = { host = host }
+
+    BuildTabRow(host)
+
+    local searchBox = CreateFrame("EditBox", nil, host, "SearchBoxTemplate")
+    searchBox:SetSize(SEARCH_WIDTH, SEARCH_HEIGHT)
+    searchBox:SetPoint("TOPRIGHT", host, "TOPRIGHT", -CONTENT_INSET, -CONTENT_INSET)
+    searchBox:SetAutoFocus(false)
+    -- HookScript (not SetScript) so the template keeps managing its own clear
+    -- button + "Search" instructions; our handler just re-filters the grid.
+    searchBox:HookScript("OnTextChanged", function(self)
+        if suppressSearchChanged then
             return
         end
+        currentSearch = self:GetText() or ""
+        RebuildGrid()
+    end)
+    chrome.searchBox = searchBox
 
-        if button._icon then
-            button._icon:SetAtlas("common-icon-redx", false)
-            button._icon:Show()
-        end
-        if button._text then
-            button._text:SetText("")
-            button._text:Hide()
-        end
-    end
+    local cancelBtn = CreateFrame("Button", nil, host, "UIPanelButtonTemplate")
+    cancelBtn:SetSize(90, BOTTOM_ROW_HEIGHT)
+    cancelBtn:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -CONTENT_INSET, CONTENT_INSET)
+    cancelBtn:SetText("Cancel")
+    cancelBtn:SetScript("OnClick", function()
+        CancelPickAuraTexture()
+    end)
+    chrome.cancelBtn = cancelBtn
 
-    local function GetGridMetrics(entryCount)
-        local viewportWidth = scrollFrame:GetWidth()
-        if not viewportWidth or viewportWidth <= 0 then
-            viewportWidth = (BASE_THUMB_SIZE + THUMB_GAP) * DEFAULT_THUMBS_PER_ROW
-        end
+    local clearBtn = CreateFrame("Button", nil, host, "UIPanelButtonTemplate")
+    clearBtn:SetSize(90, BOTTOM_ROW_HEIGHT)
+    clearBtn:SetPoint("RIGHT", cancelBtn, "LEFT", -6, 0)
+    clearBtn:SetText("Clear")
+    clearBtn:SetScript("OnClick", function()
+        ClearPanelTexture()
+    end)
+    chrome.clearBtn = clearBtn
 
-        local columns = DEFAULT_THUMBS_PER_ROW
-        local thumbSize = math.max(BASE_THUMB_SIZE, math.floor((viewportWidth - ((columns - 1) * THUMB_GAP)) / columns))
-        local contentWidth = math.max(1, (columns * thumbSize) + ((columns - 1) * THUMB_GAP))
-        local rows = math.max(1, math.ceil((entryCount or 0) / columns))
-        local contentHeight = (rows * thumbSize) + ((rows - 1) * THUMB_GAP)
-        return columns, thumbSize, contentWidth, contentHeight
-    end
+    local statusLabel = host:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    statusLabel:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", CONTENT_INSET, CONTENT_INSET + 4)
+    statusLabel:SetPoint("RIGHT", clearBtn, "LEFT", -8, 0)
+    statusLabel:SetJustifyH("LEFT")
+    statusLabel:SetWordWrap(false)
+    chrome.statusLabel = statusLabel
 
-    local function ClampScrollOffset(offset)
-        local maxScroll = math.max(0, (scrollChild:GetHeight() or 0) - (scrollFrame:GetHeight() or 0))
-        return math.min(math.max(offset or 0, 0), maxScroll)
-    end
+    local scrollFrame = CreateFrame("ScrollFrame", nil, host)
+    scrollFrame:SetPoint("TOPLEFT", host, "TOPLEFT", CONTENT_INSET, -(CONTENT_INSET + TAB_ROW_HEIGHT + ROW_GAP))
+    scrollFrame:SetPoint("TOPRIGHT", host, "TOPRIGHT", -CONTENT_INSET, -(CONTENT_INSET + TAB_ROW_HEIGHT + ROW_GAP))
+    scrollFrame:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", CONTENT_INSET, CONTENT_INSET + BOTTOM_ROW_HEIGHT + ROW_GAP)
+    scrollFrame:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -CONTENT_INSET, CONTENT_INSET + BOTTOM_ROW_HEIGHT + ROW_GAP)
+    scrollFrame:EnableMouseWheel(true)
+    chrome.scrollFrame = scrollFrame
 
-    local function SetGridScroll(offset)
-        scrollFrame:SetVerticalScroll(ClampScrollOffset(offset))
-    end
-
-    local function ScrollGridByWheel(delta)
-        if not delta or delta == 0 then
-            return
-        end
-        SetGridScroll((scrollFrame:GetVerticalScroll() or 0) - (delta * (currentThumbSize + THUMB_GAP)))
-    end
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetSize(1, 1)
+    scrollFrame:SetScrollChild(scrollChild)
+    chrome.scrollChild = scrollChild
 
     scrollFrame:SetScript("OnMouseWheel", function(_, delta)
         ScrollGridByWheel(delta)
     end)
-    scrollChild:SetScript("OnMouseWheel", function(_, delta)
-        ScrollGridByWheel(delta)
-    end)
 
-    local function UpdateInputMode()
-        searchBox:SetLabel("Search")
-    end
-
-    searchBox:SetCallback("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-
-    local function RebuildGrid()
-        ReleaseActiveThumbs()
-        local entries = GetVisibleEntries()
-
-        if #entries == 0 then
-            if IsFavoritesFilter(currentFilter) and currentSearch == "" then
-                statusLabel:SetText("No favorites yet. Click + to save one.")
-            elseif IsFavoritesFilter(currentFilter) then
-                statusLabel:SetText("No favorite textures found.")
-            elseif IsSharedMediaFilter(currentFilter) then
-                statusLabel:SetText("No SharedMedia textures found.")
-            else
-                statusLabel:SetText("No textures found.")
-            end
-        elseif IsFavoritesFilter(currentFilter) then
-            statusLabel:SetText(("%d favorite textures. X removes."):format(#entries))
-        elseif IsSharedMediaFilter(currentFilter) then
-            statusLabel:SetText(("%d SharedMedia textures. + saves, X removes."):format(#entries))
-        else
-            statusLabel:SetText(("%d textures. + saves, X removes."):format(#entries))
-        end
-
-        local matchedSelected = FindEntryForSelection(entries, currentSelection)
-        local visibleSelected = selectedEntry and FindEntryForSelection(entries, selectedEntry) or nil
-        if visibleSelected then
-            selectedEntry = visibleSelected
-        else
-            selectedEntry = matchedSelected
-        end
-
-        local columns, thumbSize, contentWidth, contentHeight = GetGridMetrics(#entries)
-        currentThumbSize = thumbSize
-        local strideX = currentThumbSize + THUMB_GAP
-        local strideY = currentThumbSize + THUMB_GAP
-        for index, entry in ipairs(entries) do
-            local thumb = AcquireThumb()
-            local row = math.floor((index - 1) / columns)
-            local col = (index - 1) % columns
-
-            thumb:ClearAllPoints()
-            thumb:SetSize(currentThumbSize, currentThumbSize)
-            thumb:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", col * strideX, -(row * strideY))
-            thumb._entry = entry
-            thumb._selected:SetShown(selectedEntry == entry)
-            ConfigureThumbActionButton(thumb, entry)
-            ApplyEntryTexture(thumb._previewTex, entry)
-
-            thumb:SetScript("OnEnter", function(self)
-                self._hover:Show()
-                if self._deleteBtn and GetEntryActionMode(entry) then
-                    self._deleteBtn:Show()
-                end
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine(entry.label or "Texture")
-                if entry.subtitle and entry.subtitle ~= "" then
-                    GameTooltip:AddLine(entry.subtitle, 1, 1, 1, true)
-                elseif entry.category and entry.category ~= "" then
-                    GameTooltip:AddLine(entry.category, 1, 1, 1, true)
-                end
-                GameTooltip:Show()
-                StageEntryPreview(entry)
-            end)
-            thumb:SetScript("OnLeave", function(self)
-                if self._deleteBtn and self._deleteBtn:IsMouseOver() then
-                    return
-                end
-                self._hover:Hide()
-                if self._deleteBtn then
-                    self._deleteBtn:Hide()
-                end
-                GameTooltip:Hide()
-                if selectedEntry then
-                    StageEntryPreview(selectedEntry)
-                else
-                    ClearStagedPreview()
-                end
-            end)
-            thumb:SetScript("OnClick", function()
-                SetSelectedEntry(entry)
-            end)
-            if thumb._deleteBtn then
-                thumb._deleteBtn:SetScript("OnEnter", function()
-                    thumb._deleteBtn:Show()
-                    if thumb._hover then
-                        thumb._hover:Show()
-                    end
-                    GameTooltip:SetOwner(thumb._deleteBtn, "ANCHOR_LEFT")
-                    if thumb._deleteBtn._actionMode == "addFavorite" then
-                        GameTooltip:AddLine("Add To Favorites")
-                        GameTooltip:AddLine("Save this texture in the Favorites category.", 1, 1, 1, true)
-                    elseif thumb._deleteBtn._actionMode == "removeFavorite" then
-                        GameTooltip:AddLine("Remove From Favorites")
-                        GameTooltip:AddLine("Keep the texture in its normal category, but remove it from Favorites.", 1, 1, 1, true)
-                    end
-                    GameTooltip:Show()
-                end)
-                thumb._deleteBtn:SetScript("OnLeave", function()
-                    if thumb:IsMouseOver() then
-                        thumb._deleteBtn:Show()
-                        return
-                    end
-                    thumb._deleteBtn:Hide()
-                    if thumb._hover then
-                        thumb._hover:Hide()
-                    end
-                    GameTooltip:Hide()
-                    if selectedEntry then
-                        StageEntryPreview(selectedEntry)
-                    else
-                        ClearStagedPreview()
-                    end
-                end)
-                thumb._deleteBtn:SetScript("OnClick", function()
-                    if thumb._deleteBtn._actionMode == "addFavorite" then
-                        local savedEntry = CooldownCompanion:SaveFavoriteAuraTexture(entry)
-                        if savedEntry then
-                            statusLabel:SetText((savedEntry.label or "Texture") .. " added to Favorites.")
-                        else
-                            statusLabel:SetText("That texture could not be added to Favorites.")
-                        end
-                    elseif thumb._deleteBtn._actionMode == "removeFavorite" then
-                        CooldownCompanion:RemoveFavoriteAuraTexture(entry)
-                        if selectedEntry == entry and IsFavoritesFilter(currentFilter) then
-                            selectedEntry = nil
-                        end
-                        statusLabel:SetText((entry.label or "Texture") .. " removed from Favorites.")
-                    end
-                    GameTooltip:Hide()
-                    RebuildGrid()
-                end)
-            end
-            thumb:SetScript("OnMouseWheel", function(_, delta)
-                ScrollGridByWheel(delta)
-            end)
-
-            thumb:Show()
-            activeThumbs[#activeThumbs + 1] = thumb
-        end
-
-        scrollChild:SetWidth(math.max(1, contentWidth))
-        scrollChild:SetHeight(math.max(1, contentHeight))
-        SetGridScroll(0)
-        applyBtn:SetDisabled(selectedEntry == nil and not stagedClear)
-        UpdateSelectionLabel()
-        -- Keep the live staged preview in sync after list rebuilds so list
-        -- updates cannot leave an older hovered texture showing.
-        if selectedEntry then
-            StageEntryPreview(selectedEntry)
-        elseif stagedClear then
-            ClearStagedPreview()
-        else
-            ClearStagedPreview()
-        end
-    end
-
+    -- Re-lay the grid once the viewport width settles (the host has no width on
+    -- the first render pass); ignore sub-pixel jitter.
+    local lastWidth = 0
     scrollFrame:SetScript("OnSizeChanged", function(_, width)
         if type(width) ~= "number" or width <= 0 then
             return
         end
-        if math.abs(width - lastViewportWidth) <= 1 then
+        if math.abs(width - lastWidth) <= 1 then
             return
         end
-        lastViewportWidth = width
+        lastWidth = width
         RebuildGrid()
     end)
+end
 
-    local filterList, filterOrder = CooldownCompanion:GetAuraTexturePickerFilters()
-    sourceDrop:SetList(filterList, filterOrder)
-    sourceDrop:SetValue(currentFilter)
-    UpdateInputMode()
+--------------------------------------------------------------------------------
+-- Render entry point (called by ButtonsWideColumn's takeover branch)
+--------------------------------------------------------------------------------
 
-    sourceDrop:SetCallback("OnValueChanged", function(_, _, value)
-        currentFilter = value or "symbols"
-        UpdateInputMode()
-        RebuildGrid()
-    end)
-
-    searchBox:SetCallback("OnTextChanged", function(_, _, text)
-        if suppressPathTextChanged then
-            return
-        end
-        currentSearch = text or ""
-        RebuildGrid()
-    end)
-
-    applyBtn:SetCallback("OnClick", function()
-        if (not selectedEntry and not stagedClear) or not currentOnCommit then
-            return
-        end
-        local selection = selectedEntry and BuildPreviewSelection(currentGroupId, currentButtonIndex, selectedEntry) or nil
-        currentSelection = selection
-        currentOnCommit(selection)
-        stagedClear = false
-        if selectedEntry then
-            StageEntryPreview(selectedEntry)
-        else
-            ClearStagedPreview()
-        end
-        UpdateSelectionLabel()
-        CloseAuraTexturePicker()
-    end)
-
-    clearBtn:SetCallback("OnClick", function()
-        selectedEntry = nil
-        stagedClear = currentSelection ~= nil
-        ClearStagedPreview()
-        applyBtn:SetDisabled(not stagedClear)
-        UpdateSelectionLabel()
-        RebuildGrid()
-    end)
-
-    window:SetCallback("OnClose", function(widget)
-        ClearStagedPreview()
-        GameTooltip:Hide()
-        CleanupRawGrid()
-        if CS.UnregisterConfigDragAlphaFrame then
-            CS.UnregisterConfigDragAlphaFrame(widget.frame)
-        end
-        widget._rebind = nil
-        widget._refreshEntries = nil
-        widget._targetGroupId = nil
-        widget._targetButtonIndex = nil
-        pickerWindow = nil
-        CS.auraTexturePickerWindow = nil
-        AceGUI:Release(widget)
-    end)
-
-    window._rebind = function(newOpts)
-        ClearStagedPreview()
-        currentGroupId = newOpts.groupId
-        currentButtonIndex = newOpts.buttonIndex
-        currentOnCommit = newOpts.callback
-        currentSelection = newOpts.initialSelection
-        stagedClear = false
-        window._targetGroupId = currentGroupId
-        window._targetButtonIndex = currentButtonIndex
-        window:SetTitle(newOpts.title or "Browse Texture Panel Visuals")
-
-        currentFilter = CooldownCompanion:GetAuraTexturePickerFilterForSelection(currentSelection)
-        currentSearch = (currentSelection and (currentSelection.label or currentSelection.sourceValue)) or ""
-
-        UpdateInputMode()
-        SetPathInputText(currentSearch or "")
-        sourceDrop:SetValue(currentFilter)
-        RebuildGrid()
+local function RenderInlineTextureBrowser(host)
+    if not chrome then
+        BuildChrome(host)
     end
-
-    currentFilter = CooldownCompanion:GetAuraTexturePickerFilterForSelection(currentSelection)
-    currentSearch = (currentSelection and (currentSelection.label or currentSelection.sourceValue)) or ""
-
-    UpdateInputMode()
-    SetPathInputText(currentSearch)
-    sourceDrop:SetValue(currentFilter)
-    window._targetGroupId = currentGroupId
-    window._targetButtonIndex = currentButtonIndex
-    window._refreshEntries = RebuildGrid
+    UpdateTabSelection()
+    -- Sync the search box to the current filter reset without re-triggering the
+    -- filter handler.
+    suppressSearchChanged = true
+    chrome.searchBox:SetText(currentSearch)
+    suppressSearchChanged = false
     RebuildGrid()
 end
 
-local function StartPickAuraTexture(opts)
-    OpenAuraTexturePicker({
-        title = "Browse Texture Panel Visuals",
-        groupId = opts and opts.groupId or CS.selectedGroup,
-        buttonIndex = opts and opts.buttonIndex or CS.selectedButton,
-        callback = opts and opts.callback,
-        initialSelection = opts and opts.initialSelection,
-    })
+--------------------------------------------------------------------------------
+-- Public contract (preserved for the GroupTabs call sites)
+--------------------------------------------------------------------------------
 
-    if pickerWindow then
-        pickerWindow._targetGroupId = opts and opts.groupId or CS.selectedGroup
-        pickerWindow._targetButtonIndex = opts and opts.buttonIndex or CS.selectedButton
-    end
+-- Open (or re-point) the inline browser for a panel, then refresh col3 so the
+-- takeover branch renders it. Callers always invoke this outside a config
+-- refresh (a Browse click, a big-preview click, or a deferred pending-open
+-- timer), so RefreshConfigPanel here is never re-entrant.
+local function OpenBrowser(opts)
+    opts = opts or {}
+    currentGroupId = opts.groupId or CS.selectedGroup
+    currentButtonIndex = opts.buttonIndex
+    currentOnCommit = opts.callback
+    currentSelection = (opts.initialSelection and opts.initialSelection.sourceType and opts.initialSelection) or nil
+    currentFilter = CooldownCompanion:GetAuraTexturePickerFilterForSelection(currentSelection)
+    currentSearch = ""
+    CS.inlineTextureBrowserOpen = currentGroupId
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function StartPickAuraTexture(opts)
+    OpenBrowser(opts)
 end
 
 local function RebindPickAuraTexture(opts)
-    if not pickerWindow or not pickerWindow._rebind then
-        return
-    end
-
-    pickerWindow._targetGroupId = opts and opts.groupId or CS.selectedGroup
-    pickerWindow._targetButtonIndex = opts and opts.buttonIndex or CS.selectedButton
-    pickerWindow._rebind({
-        title = "Browse Texture Panel Visuals",
-        groupId = opts and opts.groupId or CS.selectedGroup,
-        buttonIndex = opts and opts.buttonIndex or CS.selectedButton,
-        callback = opts and opts.callback,
-        initialSelection = opts and opts.initialSelection,
-    })
+    OpenBrowser(opts)
 end
 
 local function IsAuraTexturePickerOpen()
-    return pickerWindow ~= nil
+    return CS.inlineTextureBrowserOpen ~= nil
 end
 
 local function RefreshAuraTexturePicker()
-    if pickerWindow and pickerWindow._refreshEntries then
-        pickerWindow._refreshEntries()
+    if CS.inlineTextureBrowserOpen and chrome then
+        RebuildGrid()
     end
 end
 
 CS.StartPickAuraTexture = StartPickAuraTexture
-CS.CancelPickAuraTexture = CloseAuraTexturePicker
+CS.CancelPickAuraTexture = CancelPickAuraTexture
 CS.RebindPickAuraTexture = RebindPickAuraTexture
 CS.IsAuraTexturePickerOpen = IsAuraTexturePickerOpen
 CS.RefreshAuraTexturePicker = RefreshAuraTexturePicker
+ST._RenderInlineTextureBrowser = RenderInlineTextureBrowser

@@ -856,6 +856,22 @@ local previewCursorWatcher = CreateFrame("Frame")
 previewCursorWatcher:RegisterEvent("CURSOR_CHANGED")
 previewCursorWatcher:SetScript("OnEvent", UpdatePreviewDropOverlay)
 
+-- Close the inline texture browser from ButtonsWideColumn's side: hide its
+-- grid host and, if it was open, drop the flag and clear both staged previews
+-- (the mirror stage and the live-world staged texture). Clearing the staging
+-- matters when the browser is left without a thumbnail OnLeave firing first --
+-- e.g. Escape-to-close or a jump to Resources with the cursor still on a tile.
+local function CloseInlineTextureBrowser(col3)
+    if col3._inlineTextureBrowserHost then
+        col3._inlineTextureBrowserHost:Hide()
+    end
+    if CS.inlineTextureBrowserOpen then
+        CS.inlineTextureBrowserOpen = nil
+        CS.textureMirrorStage = nil
+        CooldownCompanion:ClearAllAuraTexturePickerPreviews()
+    end
+end
+
 local function HidePanelPreview(col3)
     local host = col3.buttonsPreviewHost
     if host then
@@ -881,12 +897,9 @@ local function HidePanelPreview(col3)
     end
     -- The inline texture browser is another col3.content sibling with the same
     -- hazard. Leaving the buttons preview (Resources/Cast/talent/config close,
-    -- all routed through here) must both hide its grid and drop the open flag,
-    -- so the browser does not reappear on the next visit or config open.
-    if col3._inlineTextureBrowserHost then
-        col3._inlineTextureBrowserHost:Hide()
-    end
-    CS.inlineTextureBrowserOpen = nil
+    -- all routed through here) hides its grid, drops the flag, and clears any
+    -- staged preview so the browser cannot reappear or strand a texture.
+    CloseInlineTextureBrowser(col3)
     col3._cdcEditingContext = nil
     HideEditingChrome(col3)
 end
@@ -1474,7 +1487,7 @@ local function RefreshButtonsWideColumn()
     if CS.inlineTextureBrowserOpen
         and (browse or CS.inlineTextureBrowserOpen ~= CS.selectedGroup)
     then
-        CS.inlineTextureBrowserOpen = nil
+        CloseInlineTextureBrowser(col3)
     end
 
     if browse and CS.selectedGroup and not IsEntrySelectionActive() then
@@ -1508,7 +1521,7 @@ local function RefreshButtonsWideColumn()
         end
         -- Selected panel is no longer a standalone texture/trigger panel; drop
         -- the flag and fall through to the normal branches.
-        CS.inlineTextureBrowserOpen = nil
+        CloseInlineTextureBrowser(col3)
     end
 
     -- Attached bar selected in the unified anchor preview: that bar's
