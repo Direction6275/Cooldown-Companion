@@ -60,7 +60,9 @@ local DEFAULT_BAR_COLOR = { 0.2, 0.6, 1.0, 1.0 }
 local DEFAULT_BAR_READY_TEXT_COLOR = { 0.2, 1.0, 0.2, 1.0 }
 local BAR_PREVIEW_ICON_FALLBACK = 134400
 
-local BAR_PREVIEW_HIDDEN_ALPHA = 0.35
+local PANEL_PREVIEW_GHOST_ALPHA = 0.35
+local PANEL_PREVIEW_GHOST_HOVER_ALPHA = 0.65
+local PANEL_PREVIEW_VISIBILITY_BADGE_ATLAS = "GM-icon-visibleDis-pressed"
 local BAR_PREVIEW_EFFECT_FLAGS = {
     "_procGlowPreview",
     "_auraGlowPreview",
@@ -75,15 +77,22 @@ local BAR_PREVIEW_AURA_KINDS = {
     aura_duration_swipe = true,
 }
 local BAR_PREVIEW_REASON_DEFS = {
-    { key = "disabled", label = "Disabled" },
-    { key = "aura-inactive", label = "Aura inactive" },
-    { key = "on-cooldown", label = "On cooldown", fallback = "useBaselineAlphaFallbackOnCooldown" },
-    { key = "not-on-cooldown", label = "Not on cooldown", fallback = "useBaselineAlphaFallbackNotOnCooldown" },
-    { key = "no-proc", label = "No proc", fallback = "useBaselineAlphaFallbackNoProc" },
-    { key = "zero-charges", label = "Zero charges", fallback = "useBaselineAlphaFallbackZeroCharges" },
-    { key = "zero-stacks", label = "Zero stacks", fallback = "useBaselineAlphaFallbackZeroStacks" },
-    { key = "not-equipped", label = "Not equipped", fallback = "useBaselineAlphaFallbackNotEquipped" },
-    { key = "unusable", label = "Unusable", fallback = "useBaselineAlphaFallbackUnusable" },
+    { key = "disabled", label = "Disabled", rule = "Enabled is off" },
+    { key = "aura-inactive", label = "Aura inactive", rule = "Show Only While Aura Active" },
+    { key = "on-cooldown", label = "On cooldown", rule = "Hide While On Cooldown",
+        fallback = "useBaselineAlphaFallbackOnCooldown" },
+    { key = "not-on-cooldown", label = "Not on cooldown", rule = "Hide While Not On Cooldown",
+        fallback = "useBaselineAlphaFallbackNotOnCooldown" },
+    { key = "no-proc", label = "No proc", rule = "Hide While No Proc",
+        fallback = "useBaselineAlphaFallbackNoProc" },
+    { key = "zero-charges", label = "Zero charges", rule = "Hide While At Zero Charges",
+        fallback = "useBaselineAlphaFallbackZeroCharges" },
+    { key = "zero-stacks", label = "Zero stacks", rule = "Hide While At Zero Stacks",
+        fallback = "useBaselineAlphaFallbackZeroStacks" },
+    { key = "not-equipped", label = "Not equipped", rule = "Hide While Not Equipped",
+        fallback = "useBaselineAlphaFallbackNotEquipped" },
+    { key = "unusable", label = "Unusable", rule = "Hide While Unusable",
+        fallback = "useBaselineAlphaFallbackUnusable" },
 }
 
 -- Snapshot the config-owned preview state for a mirror entry. Both sources are
@@ -264,6 +273,7 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
             reasons[#reasons + 1] = {
                 key = definition.key,
                 label = definition.label,
+                rule = definition.rule,
             }
             onlyReason = definition
         end
@@ -279,7 +289,7 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
         underlyingAlpha = tonumber(group.baselineAlpha) or 0.3
     elseif #reasons > 0 then
         underlyingMode = "hidden"
-        underlyingAlpha = BAR_PREVIEW_HIDDEN_ALPHA
+        underlyingAlpha = PANEL_PREVIEW_GHOST_ALPHA
     end
 
     local mode = exactPreview and "visible" or underlyingMode
@@ -380,11 +390,14 @@ local function ResetPreviewState(preview)
     preview.root:Show()
 end
 
+local ResetBarSlotWorkspaceState
+
 local function FinalizePreviewState(preview)
     for poolName, pool in pairs(preview.pools) do
         local used = preview.used[poolName] or 0
         for index = used + 1, #pool do
             local frame = pool[index]
+            ResetBarSlotWorkspaceState(frame)
             frame:Hide()
             frame:ClearAllPoints()
             frame:SetScript("OnMouseDown", nil)
@@ -483,6 +496,52 @@ local function CreateBarSlot(parent)
     return frame
 end
 
+-- Ghosting is workspace presentation, not button visibility. Keep the root
+-- frame fully opaque/clickable and dim only the regions that reproduce the
+-- runtime bar. This is the sole owner of Bar mirror visual alpha.
+local function ApplyBarSlotVisualAlpha(slot, alpha)
+    if not slot.statusBar then return end
+    alpha = tonumber(alpha) or 1
+    slot._cdcBarVisualAlpha = alpha
+
+    local function SetAlpha(region)
+        if region then region:SetAlpha(alpha) end
+    end
+    SetAlpha(slot.bg)
+    SetAlpha(slot.iconBg)
+    SetAlpha(slot.icon)
+    SetAlpha(slot.statusBar)
+    SetAlpha(slot.textFrame)
+    SetAlpha(slot.textOverlay)
+    SetAlpha(slot.barAuraEffect)
+    for _, texture in ipairs(slot.iconBorderTextures or {}) do
+        texture:SetAlpha(alpha)
+    end
+    for _, texture in ipairs(slot.borderTextures or {}) do
+        texture:SetAlpha(alpha)
+    end
+end
+
+ResetBarSlotWorkspaceState = function(frame)
+    if not frame.statusBar then return end
+    if frame._cdcShiftTooltipAdapter and ST._ClearConfigShiftTooltipHover then
+        ST._ClearConfigShiftTooltipHover(frame._cdcShiftTooltipAdapter)
+    end
+    frame._cdcBarPreviewVisibility = nil
+    frame._cdcBarPreviewHovered = nil
+    frame._cdcBarPreviewScale = nil
+    frame._cdcEntryIndex = nil
+    frame._cdcEntryStatus = nil
+    frame._cdcDraggable = false
+    frame._cdcBaseAlpha = 1
+    ApplyBarSlotVisualAlpha(frame, 1)
+    if frame.visibilityBadge then frame.visibilityBadge:Hide() end
+    if frame.visibilityBadgeBack then frame.visibilityBadgeBack:Hide() end
+    if frame.problemBadge then frame.problemBadge:Hide() end
+    if frame.problemBadgeBack then frame.problemBadgeBack:Hide() end
+    frame._cdcVisibilityBadgeShown = nil
+end
+
 -- Text-mode slot: static twin of TextMode.lua CreateTextFrame (bg,
 -- borders, single FontString; no cooldown/count runtime pieces).
 local function CreateTextSlot(parent)
@@ -517,6 +576,7 @@ local function AcquireSlot(preview, parent, poolName)
         pool[index] = frame
     end
     frame:SetParent(parent)
+    ResetBarSlotWorkspaceState(frame)
     frame:Show()
     frame:SetAlpha(1)
     frame.hoverHighlight:Hide()
@@ -545,9 +605,13 @@ local function HidePreviewMessage(preview)
     end
 end
 
-local function ApplySelectionVisuals(slot, index)
-    local isSelected = CS.selectedButton == index or CS.selectedButtons[index] == true
-    if not isSelected then
+local function IsEntrySelected(index)
+    return CS.selectedButton == index or CS.selectedButtons[index] == true
+end
+
+local function ApplySelectionVisuals(slot, index, suppress)
+    local isSelected = IsEntrySelected(index)
+    if suppress or not isSelected then
         slot.selectedHighlight:Hide()
         return
     end
@@ -779,6 +843,22 @@ local function CollectEntryStatus(buttonData, group)
     return status
 end
 
+-- Bar mirrors are saved-config projections. Live usability and load-condition
+-- results may still inform other preview modes, but they must not leak into a
+-- Bar slot's tint, problem badge, or hidden-state explanation.
+local function SanitizeBarEntryStatus(status)
+    return {
+        usable = true,
+        disabled = false,
+        warn = false,
+        loadBlocked = false,
+        override = status.override,
+        fallback = status.fallback,
+        talent = status.talent,
+        sound = status.sound,
+    }
+end
+
 -- Ordered badge descriptors, same atlases and meaning as the retired
 -- workspace entry rows; the identity strip renders the
 -- full set. The "warn" label is replaced with the load-conditions wording
@@ -797,11 +877,11 @@ local ENTRY_STATUS_BADGES = {
 -- earn a mark on the icon, drawn over a dark backdrop so it reads against
 -- bright icon art. Informational badges (talent, sound, override,
 -- fallback) live in the identity strip and the hover tooltip instead.
-local function ApplySlotBadges(slot, status, scale)
+local function ApplySlotBadges(slot, status, scale, suppress)
     local atlas
-    if status.disabled then
+    if not suppress and status.disabled then
         atlas = "GM-icon-visibleDis-pressed"
-    elseif status.warn then
+    elseif not suppress and status.warn then
         atlas = "Ping_Marker_Icon_Warning"
     end
     if not atlas then
@@ -822,12 +902,87 @@ local function ApplySlotBadges(slot, status, scale)
     tex:SetAtlas(atlas, false)
     tex:SetSize(size, size)
     tex:ClearAllPoints()
-    tex:SetPoint("TOPRIGHT", slot, "TOPRIGHT", 0, 0)
+    local hasVisibilityBadge = slot._cdcVisibilityBadgeShown == true
+    local xOffset = hasVisibilityBadge and -(size + 2) or 0
+    tex:SetPoint("TOPRIGHT", slot, "TOPRIGHT", xOffset, 0)
     back:ClearAllPoints()
     back:SetPoint("CENTER", tex, "CENTER", 0, 0)
     back:SetSize(size + 2, size + 2)
     tex:Show()
     back:Show()
+end
+
+local function ApplyBarVisibilityBadge(slot, show, scale)
+    if not show then
+        if slot.visibilityBadge then slot.visibilityBadge:Hide() end
+        if slot.visibilityBadgeBack then slot.visibilityBadgeBack:Hide() end
+        slot._cdcVisibilityBadgeShown = false
+        return
+    end
+
+    local badge = slot.visibilityBadge
+    local back = slot.visibilityBadgeBack
+    if not badge then
+        back = slot:CreateTexture(nil, "OVERLAY", nil, 6)
+        back:SetColorTexture(0, 0, 0, 0.7)
+        slot.visibilityBadgeBack = back
+        badge = slot:CreateTexture(nil, "OVERLAY", nil, 7)
+        slot.visibilityBadge = badge
+    end
+    local size = math_min(24, math_max(12,
+        PANEL_PREVIEW_BADGE_SCREEN_SIZE / math_max(scale or 1, 0.01)))
+    badge:SetAtlas(PANEL_PREVIEW_VISIBILITY_BADGE_ATLAS, false)
+    badge:SetSize(size, size)
+    badge:ClearAllPoints()
+    badge:SetPoint("TOPRIGHT", slot, "TOPRIGHT", 0, 0)
+    back:ClearAllPoints()
+    back:SetPoint("CENTER", badge, "CENTER", 0, 0)
+    back:SetSize(size + 2, size + 2)
+    badge:Show()
+    back:Show()
+    slot._cdcVisibilityBadgeShown = true
+end
+
+local function ApplyBarSlotPreviewVisibility(slot, visibility, scale, isSelected)
+    slot._cdcBarPreviewVisibility = visibility
+    slot._cdcBarPreviewScale = scale
+
+    local exactPreview = visibility and visibility.exactPreview == true
+    local affected = visibility and visibility.underlyingMode ~= "visible"
+    local hovered = slot._cdcBarPreviewHovered == true
+    if not hovered and slot.IsMouseOver and slot:IsMouseOver() then
+        hovered = true
+        slot._cdcBarPreviewHovered = true
+    end
+
+    local alpha = 1
+    if affected and not exactPreview then
+        if isSelected then
+            alpha = 1
+        elseif hovered then
+            alpha = PANEL_PREVIEW_GHOST_HOVER_ALPHA
+        else
+            alpha = visibility.visualAlpha or PANEL_PREVIEW_GHOST_ALPHA
+        end
+    end
+    ApplyBarSlotVisualAlpha(slot, alpha)
+    ApplyBarVisibilityBadge(slot, affected and not exactPreview, scale)
+
+    if hovered and not exactPreview then
+        slot.hoverHighlight:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
+        slot.hoverHighlight:Show()
+    else
+        slot.hoverHighlight:Hide()
+    end
+end
+
+local function RefreshBarSlotWorkspacePresentation(slot)
+    local visibility = slot._cdcBarPreviewVisibility
+    if not visibility then return end
+    ApplyBarSlotPreviewVisibility(slot, visibility, slot._cdcBarPreviewScale,
+        IsEntrySelected(slot._cdcEntryIndex))
+    ApplySlotBadges(slot, slot._cdcEntryStatus or {}, slot._cdcBarPreviewScale,
+        visibility.exactPreview == true)
 end
 
 ------------------------------------------------------------------------
@@ -1250,7 +1405,7 @@ end
 
 -- Plain hover: the decorated entry name plus the same status lines the
 -- shared row badges carry (Shift is the controller's job above).
-local function ShowEntrySlotTooltip(slot, buttonData, status)
+local function ShowEntrySlotTooltip(slot, buttonData, status, visibility)
     GameTooltip:SetOwner(slot, "ANCHOR_RIGHT")
     local name = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
     GameTooltip:SetText(name or "Entry", 1, 1, 1)
@@ -1285,6 +1440,13 @@ local function ShowEntrySlotTooltip(slot, buttonData, status)
     if status.talent then
         GameTooltip:AddLine("Has talent conditions", 1, 1, 1)
     end
+    if visibility and not visibility.exactPreview
+        and visibility.underlyingMode ~= "visible" then
+        GameTooltip:AddLine("Hidden in simulated state", 1, 0.82, 0.2)
+        for _, reason in ipairs(visibility.reasons or {}) do
+            GameTooltip:AddLine(reason.label .. " - " .. reason.rule, 0.7, 0.7, 0.7)
+        end
+    end
     if CooldownCompanion:HasLocalLoadConditions(buttonData) then
         GameTooltip:AddLine("This entry adds load conditions.", 0.7, 0.7, 0.7)
     end
@@ -1294,8 +1456,10 @@ local function ShowEntrySlotTooltip(slot, buttonData, status)
     GameTooltip:Show()
 end
 
-local function WireEntryInteraction(slot, panelId, index, buttonData, status, layoutDrag)
+local function WireEntryInteraction(slot, panelId, index, buttonData, status, layoutDrag, visibility)
     slot._cdcDraggable = layoutDrag ~= nil
+    slot._cdcEntryIndex = index
+    slot._cdcEntryStatus = status
     slot:SetScript("OnMouseDown", function(self, mouseButton)
         if mouseButton ~= "LeftButton" or GetCursorInfo() then return end
         -- No drag-reorder while override targeting is armed: the press
@@ -1346,8 +1510,13 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
     end)
     slot:SetScript("OnEnter", function(self)
         if CS.dragState and CS.dragState.phase == "active" then return end
-        self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
-        self.hoverHighlight:Show()
+        if self._cdcBarPreviewVisibility then
+            self._cdcBarPreviewHovered = true
+            RefreshBarSlotWorkspacePresentation(self)
+        else
+            self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
+            self.hoverHighlight:Show()
+        end
         -- Register with the shared Shift-tooltip controller; when Shift is
         -- already held this shows the real tooltip immediately and the
         -- decorated one is skipped. Later modifier changes are the
@@ -1364,7 +1533,7 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
                 return
             end
         end
-        ShowEntrySlotTooltip(self, buttonData, status)
+        ShowEntrySlotTooltip(self, buttonData, status, visibility)
         local targeting = GetActiveOverrideTargeting(panelId)
         if targeting then
             local sectionDef = ST.OVERRIDE_SECTIONS[targeting.sectionId]
@@ -1378,7 +1547,12 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
         end
     end)
     slot:SetScript("OnLeave", function(self)
-        self.hoverHighlight:Hide()
+        if self._cdcBarPreviewVisibility then
+            self._cdcBarPreviewHovered = false
+            RefreshBarSlotWorkspacePresentation(self)
+        else
+            self.hoverHighlight:Hide()
+        end
         if self._cdcShiftTooltipAdapter and ST._ClearConfigShiftTooltipHover then
             ST._ClearConfigShiftTooltipHover(self._cdcShiftTooltipAdapter)
         end
@@ -3192,6 +3366,11 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost)
                 effectiveStyle, barPreviewState)
         end
         local status = CollectEntryStatus(buttonData, group)
+        local barVisibility
+        if isBarMode then
+            status = SanitizeBarEntryStatus(status)
+            barVisibility = ResolveBarPreviewVisibility(buttonData, group, barPreviewState)
+        end
         if slot.icon then
             slot.icon:SetDesaturated(not status.usable)
         end
@@ -3203,15 +3382,23 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost)
         else
             ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
         end
-        if status.disabled then
+        if not isBarMode and status.disabled then
             slot:SetAlpha(PANEL_PREVIEW_DISABLED_ALPHA)
         end
-        slot._cdcBaseAlpha = status.disabled and PANEL_PREVIEW_DISABLED_ALPHA or 1
-        ApplySlotBadges(slot, status, scale)
-        ApplySelectionVisuals(slot, index)
-        ApplyOverrideTargetingVisuals(slot, panelId, buttonData)
+        slot._cdcBaseAlpha = isBarMode and 1
+            or (status.disabled and PANEL_PREVIEW_DISABLED_ALPHA or 1)
+        if isBarMode then
+            ApplyBarSlotPreviewVisibility(slot, barVisibility, scale, IsEntrySelected(index))
+        end
+        ApplySlotBadges(slot, status, scale,
+            isBarMode and barVisibility.exactPreview == true)
+        ApplySelectionVisuals(slot, index,
+            isBarMode and barVisibility.exactPreview == true)
+        if not (isBarMode and barVisibility.exactPreview) then
+            ApplyOverrideTargetingVisuals(slot, panelId, buttonData)
+        end
         layoutDrag.slots[index] = slot
-        WireEntryInteraction(slot, panelId, index, buttonData, status, dragModel)
+        WireEntryInteraction(slot, panelId, index, buttonData, status, dragModel, barVisibility)
     end
 
     -- Tick only while at least one slot is animating a conditional preview
@@ -3243,6 +3430,11 @@ function ST._ReleaseButtonPanelPreview(host)
     local preview = host and host._cdcPanelPreview
     if preview then
         StopConditionalTicker(preview)
+        local barPool = preview.pools.barSlots or {}
+        for index = 1, (preview.used.barSlots or 0) do
+            local slot = barPool[index]
+            if slot then ResetBarSlotWorkspaceState(slot) end
+        end
         -- The targeting mode's only click surface is this preview; a
         -- release means the surface is gone, so disarm (state only —
         -- whoever released us is already driving a refresh).
