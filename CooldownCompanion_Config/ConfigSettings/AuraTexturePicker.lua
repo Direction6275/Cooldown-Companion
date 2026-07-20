@@ -295,6 +295,15 @@ local function OpenAuraTexturePicker(opts)
         if currentGroupId then
             CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, nil)
         end
+        -- Drop the staged texture from the pinned Live Preview mirror and repaint
+        -- it back to the saved texture. Guarded so no-selection RebuildGrid and
+        -- rebind passes don't trigger redundant mirror rebuilds.
+        if CS.textureMirrorStage then
+            CS.textureMirrorStage = nil
+            if currentGroupId and ST._RefreshButtonsPreviewMirror then
+                ST._RefreshButtonsPreviewMirror(currentGroupId)
+            end
+        end
     end
 
     local function StageEntryPreview(entry)
@@ -305,11 +314,14 @@ local function OpenAuraTexturePicker(opts)
             ClearStagedPreview()
             return
         end
-        CooldownCompanion:SetAuraTexturePickerPreview(
-            currentGroupId,
-            currentButtonIndex,
-            BuildPreviewSelection(currentGroupId, currentButtonIndex, entry)
-        )
+        local selection = BuildPreviewSelection(currentGroupId, currentButtonIndex, entry)
+        CooldownCompanion:SetAuraTexturePickerPreview(currentGroupId, currentButtonIndex, selection)
+        -- Feed the same staged selection into the pinned Live Preview mirror so
+        -- hovering a texture updates the big preview at the panel's real settings.
+        CS.textureMirrorStage = { groupId = currentGroupId, selection = selection }
+        if ST._RefreshButtonsPreviewMirror then
+            ST._RefreshButtonsPreviewMirror(currentGroupId)
+        end
     end
 
     local function SetSelectedEntry(entry)

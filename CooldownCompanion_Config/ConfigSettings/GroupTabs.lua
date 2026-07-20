@@ -307,7 +307,7 @@ local function ApplyTexturePreviewVisual(texture, settings, alpha, flipH, flipV,
     texture:SetRotation(rotationRadians or 0)
 end
 
-local function UpdateTexturePanelPreview(preview, settings)
+local function UpdateTexturePanelPreview(preview, settings, boxWidth, boxHeight)
     if type(preview) ~= "table" then
         return
     end
@@ -331,8 +331,8 @@ local function UpdateTexturePanelPreview(preview, settings)
     local baseWidth = (tonumber(settings.width) or DEFAULT_TEXTURE_PREVIEW_SIZE) * scale
     local baseHeight = (tonumber(settings.height) or DEFAULT_TEXTURE_PREVIEW_SIZE) * scale
     local geometry = CooldownCompanion:BuildTexturePanelGeometry(settings, baseWidth, baseHeight)
-    local maxWidth = TEXTURE_PREVIEW_WIDTH - 8
-    local maxHeight = TEXTURE_PREVIEW_HEIGHT - 8
+    local maxWidth = tonumber(boxWidth) or (TEXTURE_PREVIEW_WIDTH - 8)
+    local maxHeight = tonumber(boxHeight) or (TEXTURE_PREVIEW_HEIGHT - 8)
     local fit = math_min(maxWidth / math_max(geometry.boundsWidth, 1), maxHeight / math_max(geometry.boundsHeight, 1), 1)
 
     local color = settings.color or { 1, 1, 1, 1 }
@@ -361,6 +361,12 @@ local function UpdateTexturePanelPreview(preview, settings)
 
     preview.placeholder:SetShown(not shown)
 end
+
+-- Exported so the pinned Live Preview mirror (ButtonPanelPreview.lua) can draw
+-- a texture panel's real texture with the same fit-to-box renderer the in-tab
+-- canvas uses. Called at runtime only (ButtonPanelPreview loads before this
+-- file, so it must not be captured as an upvalue there).
+ST._UpdateTexturePanelPreview = UpdateTexturePanelPreview
 
 local function AttachLiveTextureSliderRefresh(sliderWidget, applyValue)
     if not sliderWidget or not sliderWidget.slider or type(applyValue) ~= "function" then

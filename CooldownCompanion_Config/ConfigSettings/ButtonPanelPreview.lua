@@ -2608,6 +2608,67 @@ local function StyleBarEntry(slot, buttonData, group)
     ApplyBorderEdgePositions(slot.borderTextures, slot.barBounds, borderSize, borderRenderMode)
 end
 
+-- Texture-panel Live Preview: draws the panel's actual chosen texture (the
+-- saved one, or the picker's hover/click-staged selection) fit to the host,
+-- instead of the entry-icon selection strip. For a texture panel the texture
+-- IS the visual, so a spell icon here would show something that never renders
+-- in-game. Reuses GroupTabs' fit-to-box renderer (ST._UpdateTexturePanelPreview)
+-- and its "No texture selected" empty state.
+local function EnsureTextureMirror(preview)
+    local mirror = preview.textureMirror
+    if mirror then
+        return mirror
+    end
+
+    local root = CreateFrame("Frame", nil, preview.root)
+    root:SetAllPoints(preview.root)
+    root:SetClipsChildren(false)
+
+    mirror = {
+        root = root,
+        anchor = root,
+        primary = root:CreateTexture(nil, "ARTWORK"),
+        secondary = root:CreateTexture(nil, "ARTWORK"),
+        placeholder = root:CreateFontString(nil, "OVERLAY", "GameFontDisableLarge"),
+    }
+    mirror.placeholder:SetPoint("CENTER")
+    mirror.placeholder:SetText("No texture selected")
+
+    preview.textureMirror = mirror
+    return mirror
+end
+
+local function BuildTextureMirror(preview, host, panelId, group)
+    -- No animated slots on a texture panel; mirror BuildSelectionStrip's setup.
+    StopConditionalTicker(preview)
+
+    local mirror = EnsureTextureMirror(preview)
+    mirror.root:Show()
+
+    -- Fit box from the pinned host, mirroring GetHostFitScale so the texture is
+    -- never squeezed to the 8px floor before the host has been measured.
+    local hostWidth = host:GetWidth() or 0
+    local hostHeight = host:GetHeight() or 0
+    if hostWidth < 40 then hostWidth = 340 end
+    if hostHeight < 40 then hostHeight = 200 end
+    local boxWidth = math_max(80, hostWidth - (PANEL_PREVIEW_PADDING * 2))
+    local boxHeight = math_max(80, hostHeight - (PANEL_PREVIEW_PADDING * 2))
+
+    -- Prefer the picker's staged selection for the panel being edited, else the
+    -- saved texture. Both are NormalizeAuraTextureSettings tables, so the shared
+    -- renderer needs no per-source handling; nil means the panel has no texture.
+    local staged = CS.textureMirrorStage
+    local settings = (staged and staged.groupId == panelId and staged.selection)
+        or CooldownCompanion:GetTexturePanelSettings(group)
+
+    local render = ST._UpdateTexturePanelPreview
+    if render then
+        render(mirror, settings, boxWidth, boxHeight)
+    end
+
+    FinalizePreviewState(preview)
+end
+
 function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost)
     -- Rebuilding pulls the slot frames out from under an in-flight drag
     if CS.dragState and CS.dragState.kind == "layout-slot" and CancelDrag then
@@ -2630,6 +2691,12 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost)
     if preview.textHeader then
         preview.textHeader:Hide()
     end
+    -- Hide the texture mirror up front so switching from a texture panel to any
+    -- other type never leaves a stale texture drawn over the new mirror; only
+    -- BuildTextureMirror re-shows it.
+    if preview.textureMirror then
+        preview.textureMirror.root:Hide()
+    end
     ResetPreviewState(preview)
     HidePreviewMessage(preview)
     preview.content:Hide()
@@ -2650,6 +2717,11 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost)
     local isBarMode = group.displayMode == "bars"
     local isTextMode = group.displayMode == "text"
     if not isBarMode and not isTextMode and not IsIconModePanel(group) then
+        -- Texture panels render their real texture; trigger and rotation-
+        -- assistant panels keep the entry-icon selection strip.
+        if CooldownCompanion:IsTexturePanelGroup(group) then
+            return BuildTextureMirror(preview, host, panelId, group)
+        end
         return BuildSelectionStrip(preview, host, panelId, group)
     end
 

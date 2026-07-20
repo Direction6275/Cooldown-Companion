@@ -134,6 +134,18 @@ local function GetActiveEditingAddBox(col3)
     return nil
 end
 
+-- The texture panel's single tracked entry shows as a compact "quiet row" in
+-- the editing surface (it replaces the entry-icon strip, which texture panels
+-- no longer render). It occupies the same chrome slot as the add box and is
+-- mutually exclusive with it (add box: no entry; row: one entry).
+local function GetActiveEditingRow(col3)
+    local row = col3.buttonsQuietRow
+    if row and row:IsShown() then
+        return row
+    end
+    return nil
+end
+
 local function SetWideEditingAddBox(col3, widget)
     local previous = col3._cdcAlternateEditingAddBox
     if previous and previous ~= widget and previous.frame then
@@ -498,6 +510,9 @@ local function GetEditingOverhead(col3)
         overhead = overhead + EDIT_HEADER_GAP
             + (addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
     end
+    if GetActiveEditingRow(col3) then
+        overhead = overhead + EDIT_HEADER_GAP + ADD_BOX_HEIGHT
+    end
     local chips = col3._cdcEditingChips
     if chips and chips:IsShown() then
         overhead = overhead + EDIT_CHIPS_GAP + EDIT_CHIPS_HEIGHT
@@ -703,6 +718,14 @@ local function AnchorButtonsContentFrame(col3, frame)
             addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
             topAnchor = addBox.frame
         end
+        local quietRow = GetActiveEditingRow(col3)
+        if quietRow then
+            quietRow:ClearAllPoints()
+            quietRow:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+            quietRow:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+            quietRow:SetHeight(ADD_BOX_HEIGHT)
+            topAnchor = quietRow
+        end
         local chips = col3._cdcEditingChips
         if chips and chips:IsShown() then
             chips:SetParent(surface)
@@ -716,9 +739,10 @@ local function AnchorButtonsContentFrame(col3, frame)
         frame:SetPoint("BOTTOMRIGHT", surface, "BOTTOMRIGHT", -EDIT_INSET, EDIT_BOTTOM_INSET)
     else
         local addBox = GetActiveEditingAddBox(col3)
+        local quietRow = GetActiveEditingRow(col3)
         local chips = col3._cdcEditingChips
         local hasChips = chips and chips:IsShown()
-        if addBox or hasChips then
+        if addBox or hasChips or quietRow then
             if col3.buttonsSplitDivider then
                 col3.buttonsSplitDivider:CancelDrag()
                 col3.buttonsSplitDivider:Hide()
@@ -736,6 +760,13 @@ local function AnchorButtonsContentFrame(col3, frame)
                 addBox.frame:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
                 addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
                 topAnchor = addBox.frame
+            end
+            if quietRow then
+                quietRow:ClearAllPoints()
+                quietRow:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+                quietRow:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+                quietRow:SetHeight(ADD_BOX_HEIGHT)
+                topAnchor = quietRow
             end
             if hasChips then
                 chips:SetParent(surface)
@@ -987,6 +1018,122 @@ local function UpdateAddBox(col3)
             end
         end)
     end
+end
+
+-- Build the quiet entry row once, using raw frames on col3.content (like the
+-- add box) so it stays off recycled AceGUI frames. Left-click selects the
+-- entry -- the only route to its Settings/Sound Alerts/Load Conditions tabs --
+-- and the x removes it via the shared delete confirmation.
+local function EnsureQuietRow(col3)
+    local row = col3.buttonsQuietRow
+    if row then return row end
+
+    row = CreateFrame("Button", nil, col3.content)
+    row:SetHeight(ADD_BOX_HEIGHT)
+    row:RegisterForClicks("LeftButtonUp")
+
+    local classColor = C_ClassColor and C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    local cr, cg, cb = 1, 0.82, 0
+    if classColor then cr, cg, cb = classColor.r, classColor.g, classColor.b end
+
+    local wash = row:CreateTexture(nil, "BACKGROUND")
+    wash:SetAllPoints()
+    wash:SetColorTexture(cr, cg, cb, 0.14)
+    wash:Hide()
+    row.wash = wash
+
+    local accent = row:CreateTexture(nil, "BORDER")
+    accent:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    accent:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+    accent:SetWidth(3)
+    accent:SetColorTexture(cr, cg, cb, 0.9)
+    accent:Hide()
+    row.accent = accent
+
+    -- HIGHLIGHT layer on a Button is mouse-gated automatically.
+    local hover = row:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetAllPoints()
+    hover:SetColorTexture(1, 1, 1, 0.06)
+
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(18, 18)
+    icon:SetPoint("LEFT", row, "LEFT", EDIT_INSET, 0)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    row.icon = icon
+
+    local remove = CreateFrame("Button", nil, row)
+    remove:SetSize(16, 16)
+    remove:SetPoint("RIGHT", row, "RIGHT", -EDIT_INSET, 0)
+    remove:RegisterForClicks("LeftButtonUp")
+    local rx = remove:CreateTexture(nil, "ARTWORK")
+    rx:SetAllPoints()
+    rx:SetAtlas("common-icon-redx", false)
+    rx:SetAlpha(0.65)
+    remove:SetScript("OnEnter", function() rx:SetAlpha(1) end)
+    remove:SetScript("OnLeave", function() rx:SetAlpha(0.65) end)
+    row.remove = remove
+
+    local name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    name:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+    name:SetPoint("RIGHT", remove, "LEFT", -6, 0)
+    name:SetJustifyH("LEFT")
+    name:SetWordWrap(false)
+    row.nameText = name
+
+    row:SetScript("OnClick", function()
+        if ST._SelectConfigButton and CS.selectedGroup then
+            ST._SelectConfigButton(CS.selectedGroup, 1)
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end)
+    remove:SetScript("OnClick", function()
+        local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        local buttonData = group and group.buttons and group.buttons[1]
+        if not buttonData then return end
+        local entryName = (ST._GetConfigEntryDisplayName and ST._GetConfigEntryDisplayName(buttonData))
+            or buttonData.name or "this entry"
+        if ST._ShowPopupAboveConfig then
+            ST._ShowPopupAboveConfig("CDC_DELETE_BUTTON", entryName, {
+                groupId = CS.selectedGroup,
+                buttonIndex = 1,
+            })
+        end
+    end)
+
+    col3.buttonsQuietRow = row
+    return row
+end
+
+local function UpdateQuietRow(col3)
+    local host = col3.buttonsPreviewHost
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local buttonData = group and group.buttons and group.buttons[1]
+    local show = host and host:IsShown()
+        and group and CooldownCompanion:IsTexturePanelGroup(group)
+        and buttonData ~= nil
+    if not show then
+        if col3.buttonsQuietRow then
+            col3.buttonsQuietRow:Hide()
+        end
+        return
+    end
+
+    local row = EnsureQuietRow(col3)
+    row.icon:SetTexture((ST._GetLayoutPreviewIcon and ST._GetLayoutPreviewIcon(buttonData)) or 134400)
+    row.nameText:SetText((ST._GetConfigEntryDisplayName and ST._GetConfigEntryDisplayName(buttonData))
+        or buttonData.name or "")
+
+    -- Paint the selection wash + accent only while this entry is selected.
+    local selected = CS.selectedButton == 1
+    row.wash:SetShown(selected)
+    row.accent:SetShown(selected)
+
+    local header = EnsureEditingSurface(col3)._cdcHeader
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
+    row:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
+    row:SetHeight(ADD_BOX_HEIGHT)
+    row:Show()
 end
 
 -- Async adds (uncached item IDs) complete after the add box's Enter
@@ -1344,6 +1491,7 @@ local function RefreshButtonsWideColumn()
         else
             UpdatePanelPreview(col3)
             UpdateAddBox(col3)
+            UpdateQuietRow(col3)
             UpdateEditingContext(col3)
             -- Final height pass: the add box just settled its visibility,
             -- which feeds the settings-minimum clamp.
@@ -1372,6 +1520,7 @@ local function RefreshButtonsWideColumn()
     else
         UpdatePanelPreview(col3)
         UpdateAddBox(col3)
+        UpdateQuietRow(col3)
         UpdateEditingContext(col3)
         -- Final height pass (see the entry branch above).
         ReapplyPanelPreviewSplit()
@@ -1414,6 +1563,7 @@ local function RefreshButtonsPreviewMirror(groupId)
         -- The Editing header shares the mirror's selection identity and
         -- status badges, so keep it in step with targeted rebuilds.
         UpdateEditingContext(col3)
+        UpdateQuietRow(col3)
     end
 end
 
