@@ -2634,6 +2634,40 @@ local function EnsureTextureMirror(preview)
     mirror.placeholder:SetPoint("CENTER")
     mirror.placeholder:SetText("No texture selected")
 
+    -- Click the rendered texture to reopen the inline browser (a bonus route
+    -- alongside the settings' Browse / Change button). root is a raw,
+    -- module-owned frame, so attaching scripts here is safe (not an AceGUI
+    -- underlying frame). Mouse is enabled per build (only when the panel has an
+    -- entry) so it never steals drop-to-add on an empty panel; the guard skips
+    -- while the browser is already open for this panel.
+    local hoverCue = root:CreateTexture(nil, "OVERLAY")
+    hoverCue:SetAllPoints()
+    hoverCue:SetColorTexture(1, 1, 1, 0.06)
+    hoverCue:Hide()
+    mirror.hoverCue = hoverCue
+
+    local function IsBrowsingThisPanel()
+        return CS.inlineTextureBrowserOpen ~= nil
+            and CS.inlineTextureBrowserOpen == CS.selectedGroup
+    end
+    root:SetScript("OnEnter", function(self)
+        if IsBrowsingThisPanel() then return end
+        hoverCue:Show()
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Click to browse textures")
+        GameTooltip:Show()
+    end)
+    root:SetScript("OnLeave", function()
+        hoverCue:Hide()
+        GameTooltip:Hide()
+    end)
+    root:SetScript("OnMouseUp", function()
+        if IsBrowsingThisPanel() then return end
+        if ST._OpenStandaloneTexturePicker and CS.selectedGroup then
+            ST._OpenStandaloneTexturePicker(CS.selectedGroup)
+        end
+    end)
+
     preview.textureMirror = mirror
     return mirror
 end
@@ -2644,6 +2678,15 @@ local function BuildTextureMirror(preview, host, panelId, group)
 
     local mirror = EnsureTextureMirror(preview)
     mirror.root:Show()
+
+    -- Only make the rendered texture clickable when the panel has its entry.
+    -- An empty texture panel still offers drop-to-add on the preview host, and
+    -- an interactive mirror would swallow the drop.
+    local hasEntry = group and group.buttons and group.buttons[1] ~= nil
+    mirror.root:EnableMouse(hasEntry and true or false)
+    if not hasEntry then
+        mirror.hoverCue:Hide()
+    end
 
     -- Fit box from the pinned host, mirroring GetHostFitScale so the texture is
     -- never squeezed to the 8px floor before the host has been measured.

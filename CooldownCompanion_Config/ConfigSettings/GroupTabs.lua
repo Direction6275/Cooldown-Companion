@@ -529,6 +529,19 @@ local function OpenOrRebindStandaloneTexturePicker(group, settings, forceOpen)
     end
 end
 
+-- Open the inline texture browser for a standalone texture/trigger panel by id.
+-- Used by the big-preview click-to-browse affordance, which only has the
+-- panel id at click time. Resolves the group + its texture settings and forces
+-- the browser open.
+function ST._OpenStandaloneTexturePicker(groupId)
+    local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+    if not group then
+        return
+    end
+    local settings = GetStandaloneTextureSettings(group, true)
+    OpenOrRebindStandaloneTexturePicker(group, settings, true)
+end
+
 local TRIGGER_DISPLAY_TYPE_OPTIONS = {
     texture = "Texture",
     icon = "Icon",
