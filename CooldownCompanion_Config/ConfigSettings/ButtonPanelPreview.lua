@@ -199,7 +199,9 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
         and CooldownCompanion.UsesChargeBehavior(buttonData) == true
     local itemUsesResolvedCooldownState = buttonData.type == "item"
         and itemQuantityKind == "stacks"
-    local noCooldown = IsBarPreviewNoCooldownSpell(buttonData)
+    local needsNoCooldownCheck = buttonData.hideWhileOnCooldown
+        or buttonData.hideWhileNotOnCooldown
+    local noCooldown = needsNoCooldownCheck and IsBarPreviewNoCooldownSpell(buttonData) or false
     local zeroOnlyChargeSpellHide = false
 
     if buttonData.hideWhileOnCooldown and not noCooldown then
@@ -815,15 +817,8 @@ local function ApplyOverrideTargetingVisuals(slot, panelId, buttonData)
     slot.selectedHighlight:Show()
 end
 
--- Entry status signals shared with the workspace entry-row presentation.
-local function CollectEntryStatus(buttonData, group)
-    local usable = CooldownCompanion:IsButtonUsable(buttonData, group)
-    local loadAllowed = CooldownCompanion:IsButtonLoadConditionMet(buttonData, group)
+local function CollectEntryMetadata(buttonData)
     local status = {
-        usable = usable,
-        disabled = buttonData.enabled == false,
-        warn = (not usable) and buttonData.enabled ~= false,
-        loadBlocked = not loadAllowed,
         override = CooldownCompanion:HasStyleOverrides(buttonData) and true or false,
         fallback = CooldownCompanion.HasItemFallbacks(buttonData) and true or false,
         talent = (buttonData.talentConditions and #buttonData.talentConditions > 0) and true or false,
@@ -843,20 +838,25 @@ local function CollectEntryStatus(buttonData, group)
     return status
 end
 
+-- Entry status signals shared with the workspace entry-row presentation.
+local function CollectEntryStatus(buttonData, group)
+    local status = CollectEntryMetadata(buttonData)
+    local usable = CooldownCompanion:IsButtonUsable(buttonData, group)
+    local loadAllowed = CooldownCompanion:IsButtonLoadConditionMet(buttonData, group)
+    status.usable = usable
+    status.disabled = buttonData.enabled == false
+    status.warn = (not usable) and buttonData.enabled ~= false
+    status.loadBlocked = not loadAllowed
+    return status
+end
+
 -- Bar mirrors are saved-config projections. Live usability and load-condition
 -- results may still inform other preview modes, but they must not leak into a
 -- Bar slot's tint, problem badge, or hidden-state explanation.
-local function SanitizeBarEntryStatus(status)
-    return {
-        usable = true,
-        disabled = false,
-        warn = false,
-        loadBlocked = false,
-        override = status.override,
-        fallback = status.fallback,
-        talent = status.talent,
-        sound = status.sound,
-    }
+local function CollectBarEntryStatus(buttonData)
+    local status = CollectEntryMetadata(buttonData)
+    status.usable = true
+    return status
 end
 
 -- Ordered badge descriptors, same atlases and meaning as the retired
@@ -3365,10 +3365,10 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost)
             ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, isBarMode,
                 effectiveStyle, barPreviewState)
         end
-        local status = CollectEntryStatus(buttonData, group)
+        local status = isBarMode and CollectBarEntryStatus(buttonData)
+            or CollectEntryStatus(buttonData, group)
         local barVisibility
         if isBarMode then
-            status = SanitizeBarEntryStatus(status)
             barVisibility = ResolveBarPreviewVisibility(buttonData, group, barPreviewState)
         end
         if slot.icon then
