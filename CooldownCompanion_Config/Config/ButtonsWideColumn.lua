@@ -879,6 +879,14 @@ local function HidePanelPreview(col3)
     if col3.buttonsQuietRow then
         col3.buttonsQuietRow:Hide()
     end
+    -- The inline texture browser is another col3.content sibling with the same
+    -- hazard. Leaving the buttons preview (Resources/Cast/talent/config close,
+    -- all routed through here) must both hide its grid and drop the open flag,
+    -- so the browser does not reappear on the next visit or config open.
+    if col3._inlineTextureBrowserHost then
+        col3._inlineTextureBrowserHost:Hide()
+    end
+    CS.inlineTextureBrowserOpen = nil
     col3._cdcEditingContext = nil
     HideEditingChrome(col3)
 end
@@ -1400,6 +1408,19 @@ local function RefreshBrowseEntryList(col3, group)
     AddInlineEntryBox()
 end
 
+-- Persistent raw host for the inline texture browser, parked on col3.content
+-- (same discipline as the quiet row). ButtonsWideColumn owns its lifecycle;
+-- AuraTexturePicker renders its grid + chrome into it via
+-- ST._RenderInlineTextureBrowser. Never an AceGUI-recycled frame, so nothing
+-- bleeds onto sibling surfaces.
+local function EnsureInlineTextureBrowserHost(col3)
+    local host = col3._inlineTextureBrowserHost
+    if host then return host end
+    host = CreateFrame("Frame", nil, col3.content)
+    col3._inlineTextureBrowserHost = host
+    return host
+end
+
 local function RefreshButtonsWideColumn()
     local col3 = CS.configFrame and CS.configFrame.col3
     if not col3 then return end
@@ -1410,6 +1431,7 @@ local function RefreshButtonsWideColumn()
     if col3._customAuraScroll then col3._customAuraScroll.frame:Hide() end
     if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3) end
     if col3._browseEntryScroll then col3._browseEntryScroll.frame:Hide() end
+    if col3._inlineTextureBrowserHost then col3._inlineTextureBrowserHost:Hide() end
 
     -- Panel multi-select: batch operations replace everything else
     local panelMultiCount = 0
@@ -1446,12 +1468,47 @@ local function RefreshButtonsWideColumn()
     -- 2 keeps its entry rows there.
     local browse = CS.otherClassLibraryActive
 
+    -- The inline texture browser is scoped to its own panel; drop a stale flag
+    -- when the selection moved away or Other-Class browsing took over, so
+    -- IsAuraTexturePickerOpen never reports it open over the wrong surface.
+    if CS.inlineTextureBrowserOpen
+        and (browse or CS.inlineTextureBrowserOpen ~= CS.selectedGroup)
+    then
+        CS.inlineTextureBrowserOpen = nil
+    end
+
     if browse and CS.selectedGroup and not IsEntrySelectionActive() then
         local browseGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
         if browseGroup then
             RefreshBrowseEntryList(col3, browseGroup)
             return
         end
+    end
+
+    -- Inline texture browser takeover: while open for the selected standalone
+    -- texture or trigger panel, the browse grid owns the settings area. The
+    -- pinned preview, editing header, and quiet row stay above it so hovering a
+    -- thumbnail live-updates the big preview (texture panels) and the live
+    -- world (both types). The flag is set/cleared by AuraTexturePicker.
+    if CS.inlineTextureBrowserOpen and ST._RenderInlineTextureBrowser then
+        local browserGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        if browserGroup and CooldownCompanion:IsStandaloneTexturePanelGroup(browserGroup) then
+            HideEntrySurfaces(col3)
+            if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+            UpdatePanelPreview(col3)
+            UpdateAddBox(col3)
+            UpdateQuietRow(col3)
+            UpdateEditingContext(col3)
+            ReapplyPanelPreviewSplit()
+            local host = EnsureInlineTextureBrowserHost(col3)
+            AnchorButtonsContentFrame(col3, host)
+            host:Show()
+            ST._RenderInlineTextureBrowser(host)
+            return
+        end
+        -- Selected panel is no longer a standalone texture/trigger panel; drop
+        -- the flag and fall through to the normal branches.
+        CS.inlineTextureBrowserOpen = nil
     end
 
     -- Attached bar selected in the unified anchor preview: that bar's

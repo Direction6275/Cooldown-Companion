@@ -222,6 +222,10 @@ ST._configState = {
     -- name remains internal so existing builders do not need a broad rename.
     col4Scroll = nil,
 
+    -- The group id the inline texture browser is open for (nil = closed). Set
+    -- by AuraTexturePicker; drives the takeover branch in ButtonsWideColumn.
+    inlineTextureBrowserOpen = nil,
+
     -- AceGUI widget tracking for cleanup
     col1BarWidgets = {},
     profileBarAceWidgets = {},
