@@ -1080,8 +1080,13 @@ local function IsStandaloneTextureEditingButton(button)
         end
     end
 
-    local pickerWindow = CS.auraTexturePickerWindow
-    return pickerWindow and pickerWindow._targetGroupId == button._groupId
+    -- The inline texture browser being open for this button's panel keeps it
+    -- editing-visible on the tabs/states the checks above miss (e.g. the Load
+    -- Conditions tab, or an entry selected). Migrated from the retired floating
+    -- picker window's _targetGroupId check; CS.inlineTextureBrowserOpen holds
+    -- the open panel's group id.
+    return CS.inlineTextureBrowserOpen ~= nil
+        and CS.inlineTextureBrowserOpen == button._groupId
 end
 
 local function IsTexturePanelConfigForceVisible(button)
