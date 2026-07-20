@@ -873,6 +873,12 @@ local function HidePanelPreview(col3)
     if col3.buttonsAddBox then
         col3.buttonsAddBox.frame:Hide()
     end
+    -- The quiet row is a col3.content sibling of the editing surface (like the
+    -- add box), so HideEditingChrome does not reach it; hide it here too or it
+    -- lingers, still clickable, over browse / multi-select / Resources / Cast.
+    if col3.buttonsQuietRow then
+        col3.buttonsQuietRow:Hide()
+    end
     col3._cdcEditingContext = nil
     HideEditingChrome(col3)
 end
