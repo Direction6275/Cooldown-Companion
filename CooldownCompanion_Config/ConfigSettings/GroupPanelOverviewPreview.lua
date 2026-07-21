@@ -12,7 +12,6 @@ local CooldownCompanion = ST.Addon
 local math_ceil = math.ceil
 local math_max = math.max
 local math_min = math.min
-local math_sqrt = math.sqrt
 local table_sort = table.sort
 
 local OUTER_PADDING = 8
@@ -36,18 +35,140 @@ local function GetColumnCount(panelCount)
     return 3
 end
 
+local function GetMedian(values)
+    table_sort(values)
+    local middle = (#values + 1) / 2
+    if middle == math.floor(middle) then
+        return values[middle]
+    end
+    local lower = math.floor(middle)
+    return (values[lower] + values[lower + 1]) / 2
+end
+
 local function GetRowMedian(records, firstIndex, count)
     local weights = {}
     for offset = 0, count - 1 do
         weights[#weights + 1] = records[firstIndex + offset].weight
     end
-    table_sort(weights)
-    local middle = (#weights + 1) / 2
-    if middle == math.floor(middle) then
-        return weights[middle]
+    return GetMedian(weights)
+end
+
+local function BuildRowLayouts(records, columns, layoutWidth)
+    local rows = {}
+    local recordIndex = 1
+    local labelHeight = #records > 1 and LABEL_HEIGHT or 0
+
+    while recordIndex <= #records do
+        local rowCount = math_min(columns, #records - recordIndex + 1)
+        local baseColumnWidth = (layoutWidth - ((columns - 1) * TILE_GAP))
+            / columns
+        local rowSpan = (baseColumnWidth * rowCount)
+            + ((rowCount - 1) * TILE_GAP)
+        local rowStartX = (layoutWidth - rowSpan) / 2
+        local distributableWidth = rowSpan - ((rowCount - 1) * TILE_GAP)
+        local median = math_max(1, GetRowMedian(records, recordIndex, rowCount))
+        local weightSum = 0
+        local row = {
+            items = {},
+            preferredHeight = MIN_ROW_HEIGHT,
+        }
+
+        for offset = 0, rowCount - 1 do
+            local record = records[recordIndex + offset]
+            record.layoutWeight = Clamp(record.weight,
+                median * 0.75, median * 1.5)
+            weightSum = weightSum + record.layoutWeight
+        end
+
+        local x = rowStartX
+        for offset = 0, rowCount - 1 do
+            local record = records[recordIndex + offset]
+            local tileWidth = distributableWidth
+                * (record.layoutWeight / weightSum)
+            local visualWidth = math_max(1, tileWidth - (TILE_INSET * 2))
+            local fittedNaturalHeight = math_min(
+                record.naturalHeight,
+                visualWidth * record.naturalHeight
+                    / math_max(1, record.naturalWidth)
+            )
+            row.preferredHeight = math_max(
+                row.preferredHeight,
+                fittedNaturalHeight + labelHeight + (TILE_INSET * 2)
+            )
+            row.items[#row.items + 1] = {
+                record = record,
+                x = x,
+                width = tileWidth,
+            }
+            x = x + tileWidth + TILE_GAP
+        end
+
+        rows[#rows + 1] = row
+        recordIndex = recordIndex + rowCount
     end
-    local lower = math.floor(middle)
-    return (weights[lower] + weights[lower + 1]) / 2
+
+    return rows
+end
+
+local function AllocateRowHeights(rows, visibleHeight, overflow)
+    local preferredHeights = {}
+    for index, row in ipairs(rows) do
+        preferredHeights[index] = row.preferredHeight
+    end
+    local median = math_max(1, GetMedian(preferredHeights))
+    local weightSum = 0
+    for _, row in ipairs(rows) do
+        row.heightWeight = Clamp(row.preferredHeight,
+            median * 0.5, median * 2)
+        weightSum = weightSum + row.heightWeight
+    end
+
+    local gapsHeight = math_max(0, (#rows - 1) * TILE_GAP)
+    local contentHeight = gapsHeight
+    if overflow then
+        for _, row in ipairs(rows) do
+            row.height = math_max(MIN_ROW_HEIGHT, row.heightWeight)
+            contentHeight = contentHeight + row.height
+        end
+        return contentHeight
+    end
+
+    local availableHeight = math_max(
+        MIN_ROW_HEIGHT * #rows,
+        visibleHeight - gapsHeight
+    )
+    local remainingHeight = availableHeight
+    local remainingWeight = weightSum
+    local remainingRows = #rows
+    while remainingRows > 0 do
+        local appliedFloor = false
+        for _, row in ipairs(rows) do
+            if not row.height then
+                local proposedHeight = remainingHeight
+                    * row.heightWeight / remainingWeight
+                if proposedHeight < MIN_ROW_HEIGHT then
+                    row.height = MIN_ROW_HEIGHT
+                    remainingHeight = remainingHeight - MIN_ROW_HEIGHT
+                    remainingWeight = remainingWeight - row.heightWeight
+                    remainingRows = remainingRows - 1
+                    appliedFloor = true
+                end
+            end
+        end
+        if not appliedFloor then
+            for _, row in ipairs(rows) do
+                if not row.height then
+                    row.height = remainingHeight
+                        * row.heightWeight / remainingWeight
+                    remainingRows = remainingRows - 1
+                end
+            end
+        end
+    end
+    for _, row in ipairs(rows) do
+        contentHeight = contentHeight + row.height
+    end
+    return contentHeight
 end
 
 local UpdateScrollThumb
@@ -287,7 +408,10 @@ function ST._BuildGroupPanelOverview(host, containerId)
             naturalWidth = math_max(1, tonumber(naturalWidth) or 220),
             naturalHeight = math_max(1, tonumber(naturalHeight) or 90),
         }
-        record.weight = math_sqrt(record.naturalWidth * record.naturalHeight)
+        -- Row height is intentionally standardized by the overview. Horizontal
+        -- allocation should therefore follow the Panel's saved-design width,
+        -- not its area (which over-rewards tall, narrow Panels).
+        record.weight = record.naturalWidth
         records[index] = record
         tile._cdcOverviewRecord = record
         ApplyTileBorder(tile, TILE_BORDER_COLOR)
@@ -302,11 +426,12 @@ function ST._BuildGroupPanelOverview(host, containerId)
     local visibleHeight = math_max(1, hostHeight - (OUTER_PADDING * 2))
     local columns = GetColumnCount(#records)
     local rowCount = math_ceil(#records / columns)
-    local idealRowHeight = (visibleHeight - ((rowCount - 1) * TILE_GAP)) / rowCount
-    local rowHeight = math_max(MIN_ROW_HEIGHT, idealRowHeight)
-    local contentHeight = (rowCount * rowHeight) + ((rowCount - 1) * TILE_GAP)
-    local overflow = contentHeight > visibleHeight + 0.5
+    local minimumContentHeight = (rowCount * MIN_ROW_HEIGHT)
+        + ((rowCount - 1) * TILE_GAP)
+    local overflow = minimumContentHeight > visibleHeight + 0.5
     local layoutWidth = math_max(1, visibleWidth - (overflow and SCROLL_RESERVE or 0))
+    local rows = BuildRowLayouts(records, columns, layoutWidth)
+    local contentHeight = AllocateRowHeights(rows, visibleHeight, overflow)
 
     overview.visibleHeight = visibleHeight
     overview.contentHeight = contentHeight
@@ -316,36 +441,19 @@ function ST._BuildGroupPanelOverview(host, containerId)
     overview.content:SetSize(visibleWidth, math_max(visibleHeight, contentHeight))
     overview.scrollTrack:SetShown(overflow)
 
-    local recordIndex = 1
-    for row = 1, rowCount do
-        local rowCountActual = math_min(columns, #records - recordIndex + 1)
-        local baseColumnWidth = (layoutWidth - ((columns - 1) * TILE_GAP)) / columns
-        local rowSpan = (baseColumnWidth * rowCountActual)
-            + ((rowCountActual - 1) * TILE_GAP)
-        local rowStartX = (layoutWidth - rowSpan) / 2
-        local distributableWidth = rowSpan - ((rowCountActual - 1) * TILE_GAP)
-        local median = math_max(1, GetRowMedian(records, recordIndex, rowCountActual))
-        local weightSum = 0
-
-        for offset = 0, rowCountActual - 1 do
-            local record = records[recordIndex + offset]
-            record.layoutWeight = Clamp(record.weight, median * 0.75, median * 1.5)
-            weightSum = weightSum + record.layoutWeight
-        end
-
-        local x = rowStartX
-        for offset = 0, rowCountActual - 1 do
-            local record = records[recordIndex + offset]
+    local tileTop = 0
+    for _, row in ipairs(rows) do
+        for _, item in ipairs(row.items) do
+            local record = item.record
             local tile = record.tile
-            local tileWidth = distributableWidth * (record.layoutWeight / weightSum)
+            local tileWidth = item.width
             local tileScale = tile:GetEffectiveScale()
-            local tileTop = (row - 1) * (rowHeight + TILE_GAP)
-            local snappedX = PixelUtil.GetNearestPixelSize(x, tileScale)
+            local snappedX = PixelUtil.GetNearestPixelSize(item.x, tileScale)
             local snappedRight = PixelUtil.GetNearestPixelSize(
-                x + tileWidth, tileScale)
+                item.x + tileWidth, tileScale)
             local snappedTop = PixelUtil.GetNearestPixelSize(tileTop, tileScale)
             local snappedBottom = PixelUtil.GetNearestPixelSize(
-                tileTop + rowHeight, tileScale)
+                tileTop + row.height, tileScale)
             local onePixel = PixelUtil.GetNearestPixelSize(0, tileScale, 1)
             local snappedTileWidth = math_max(onePixel, snappedRight - snappedX)
             local snappedTileHeight = math_max(onePixel,
@@ -377,10 +485,8 @@ function ST._BuildGroupPanelOverview(host, containerId)
             tile.visualHost:SetSize(visualWidth, visualHeight)
             tile:Show()
             ST._BuildReadOnlyPanelPreview(tile.visualHost, record.panelId)
-
-            x = x + tileWidth + TILE_GAP
         end
-        recordIndex = recordIndex + rowCountActual
+        tileTop = tileTop + row.height + TILE_GAP
     end
 
     if not sameContainer then
