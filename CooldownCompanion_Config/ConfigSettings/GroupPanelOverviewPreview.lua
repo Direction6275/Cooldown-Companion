@@ -322,11 +322,8 @@ function ST._BuildGroupPanelOverview(host, containerId)
     local records = {}
     for index, panelInfo in ipairs(panels) do
         local tile = EnsureTile(overview, index)
-        tile.visualHost:SetSize(1, 1)
-        local _, naturalWidth, naturalHeight = ST._BuildReadOnlyPanelPreview(
-            tile.visualHost,
-            panelInfo.groupId
-        )
+        local naturalWidth, naturalHeight =
+            ST._GetReadOnlyPanelPreviewNaturalSize(panelInfo.groupId)
         local record = {
             tile = tile,
             containerId = containerId,

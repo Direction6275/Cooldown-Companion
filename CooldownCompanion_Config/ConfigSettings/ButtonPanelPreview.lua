@@ -2974,13 +2974,26 @@ local function UpdateTextGroupHeader(preview, group, style, headerHeight)
     header:Show()
 end
 
-local function GetHostFitScale(host, contentWidth, contentHeight)
+local function GetHostFitBox(host, readOnly)
     local hostWidth = host:GetWidth() or 0
     local hostHeight = host:GetHeight() or 0
-    if hostWidth < 40 then hostWidth = 340 end
-    if hostHeight < 40 then hostHeight = 200 end
-    local maxWidth = math_max(80, hostWidth - (PANEL_PREVIEW_PADDING * 2))
-    local maxHeight = math_max(80, hostHeight - (PANEL_PREVIEW_PADDING * 2))
+    if readOnly then
+        -- Overview tiles are measured before their final build and can
+        -- legitimately be smaller than the focused preview's 80px guard.
+        -- Only substitute fallback dimensions when no measurement exists.
+        if hostWidth <= 0 then hostWidth = 340 end
+        if hostHeight <= 0 then hostHeight = 200 end
+    else
+        if hostWidth < 40 then hostWidth = 340 end
+        if hostHeight < 40 then hostHeight = 200 end
+    end
+    local minFitSize = readOnly and 1 or 80
+    return math_max(minFitSize, hostWidth - (PANEL_PREVIEW_PADDING * 2)),
+        math_max(minFitSize, hostHeight - (PANEL_PREVIEW_PADDING * 2))
+end
+
+local function GetHostFitScale(host, contentWidth, contentHeight, readOnly)
+    local maxWidth, maxHeight = GetHostFitBox(host, readOnly)
     return math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
 end
 
@@ -3087,7 +3100,7 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly)
     local rows = math_ceil(count / STRIP_PER_ROW)
     local contentWidth = (cols - 1) * (w + STRIP_SPACING) + w
     local contentHeight = (rows - 1) * (h + STRIP_SPACING) + h
-    local scale = GetHostFitScale(host, contentWidth, contentHeight)
+    local scale = GetHostFitScale(host, contentWidth, contentHeight, readOnly)
 
     local content = preview.content
     content:SetSize(contentWidth, contentHeight)
@@ -3368,14 +3381,9 @@ local function BuildTextureMirror(preview, host, panelId, group, readOnly)
         mirror.hoverCue:Hide()
     end
 
-    -- Fit box from the pinned host, mirroring GetHostFitScale so the texture is
-    -- never squeezed to the 8px floor before the host has been measured.
-    local hostWidth = host:GetWidth() or 0
-    local hostHeight = host:GetHeight() or 0
-    if hostWidth < 40 then hostWidth = 340 end
-    if hostHeight < 40 then hostHeight = 200 end
-    local boxWidth = math_max(80, hostWidth - (PANEL_PREVIEW_PADDING * 2))
-    local boxHeight = math_max(80, hostHeight - (PANEL_PREVIEW_PADDING * 2))
+    -- Focused texture mirrors retain the established measurement guard;
+    -- overview mirrors use the tile's actual smaller fit box.
+    local boxWidth, boxHeight = GetHostFitBox(host, readOnly)
 
     -- Prefer the picker's staged selection for the panel being edited, else the
     -- saved texture. Both are NormalizeAuraTextureSettings tables, so the shared
@@ -3497,7 +3505,7 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost, options
 
     -- Scale is needed while styling (badges counter-scale against it), so
     -- compute it up front from the grid extents.
-    local scale = GetHostFitScale(host, contentWidth, contentHeight)
+    local scale = GetHostFitScale(host, contentWidth, contentHeight, readOnly)
 
     local content = preview.content
     content:SetSize(contentWidth, contentHeight)
@@ -3626,10 +3634,15 @@ end
 
 -- Saved-design mirror used by Group Panel Overview tiles. The overview owns
 -- the only mouse surface; this renderer supplies visuals and natural geometry.
+function ST._GetReadOnlyPanelPreviewNaturalSize(panelId)
+    local group = panelId and CooldownCompanion.db.profile.groups[panelId]
+    return GetPanelPreviewNaturalSize(group)
+end
+
 function ST._BuildReadOnlyPanelPreview(host, panelId)
     if not host then return nil, 220, 90 end
-    local group = panelId and CooldownCompanion.db.profile.groups[panelId]
-    local naturalWidth, naturalHeight = GetPanelPreviewNaturalSize(group)
+    local naturalWidth, naturalHeight =
+        ST._GetReadOnlyPanelPreviewNaturalSize(panelId)
     ST._BuildButtonPanelPreview(host, panelId, nil, { readOnly = true })
     local preview = host._cdcPanelPreview
     return preview and preview.root or nil, naturalWidth, naturalHeight
