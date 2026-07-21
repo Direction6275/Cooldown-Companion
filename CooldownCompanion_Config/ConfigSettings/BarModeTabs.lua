@@ -196,9 +196,8 @@ local function BuildBarAppearanceTab(container, group, style)
             title = "Aura Duration Text Advanced",
             build = BuildBarAuraTextAdvanced,
         })
-        -- Always enabled: the preview drains the bar in the aura color, which
-        -- is worth seeing even with the duration text hidden.
-        local auraTextPreviewBtn = AddConditionalPreviewBadge(auraTextCb, auraTextAdvBtn, "Preview Aura Timer", "aura_duration_bar", true)
+        local auraTextPreviewBtn = AddConditionalPreviewBadge(auraTextCb, auraTextAdvBtn,
+            "Preview Aura Duration Text", "aura_duration_text", style.showAuraText ~= false)
         CreateInfoButton(auraTextCb.frame, auraTextPreviewBtn or auraTextAdvBtn, "LEFT", "RIGHT", 4, 0, {
             "Aura Duration Text",
             {"Shows the remaining aura time at the bar's time text position while the aura is active. Position follows the flip and offset settings in the Cooldown Text section.", 1, 1, 1, true},

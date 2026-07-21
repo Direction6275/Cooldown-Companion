@@ -51,6 +51,8 @@ local PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = 5
 -- Badges counter-scale against the preview's scale-to-fit so they stay
 -- readable, clamped so they never dwarf a heavily scaled-down slot.
 local PANEL_PREVIEW_BADGE_SCREEN_SIZE = 14
+-- The crossed-eye atlas has substantial transparent padding around its glyph.
+local PANEL_PREVIEW_VISIBILITY_BADGE_SCREEN_SIZE = 18
 -- Matches the resources layout preview's tween timing
 local PANEL_PREVIEW_ANIM_DURATION = 0.08
 -- Update cadence for animated conditional previews (countdown numbers,
@@ -76,6 +78,20 @@ local BAR_PREVIEW_AURA_KINDS = {
     aura_stack_text = true,
     aura_duration_swipe = true,
 }
+
+local function IsBarPreviewAuraActive(conditional, effectFlags)
+    if conditional and conditional.auraActive == true then
+        return true
+    end
+    local kind = conditional and conditional.kind or nil
+    if BAR_PREVIEW_AURA_KINDS[kind] then
+        return true
+    end
+    return effectFlags
+        and (effectFlags._auraGlowPreview or effectFlags._barAuraEffectPreview)
+        and true or false
+end
+
 local BAR_PREVIEW_REASON_DEFS = {
     { key = "disabled", label = "Disabled", rule = "Enabled is off" },
     { key = "aura-inactive", label = "Aura inactive", rule = "Show Only While Aura Active" },
@@ -135,6 +151,14 @@ local function IsBarPreviewNoCooldownSpell(buttonData)
         and ST.IsNoCooldownSpell(buttonData.id) == true
 end
 
+local function UsesConfigOnlyBarChargeBehavior(buttonData)
+    if type(buttonData) ~= "table" then return false end
+    if buttonData.type == "spell" and buttonData.addedAs == "aura" then
+        return false
+    end
+    return buttonData.hasCharges == true
+end
+
 -- Pure Bar-mirror visibility projection. Inputs are saved entry/group data and
 -- a stored config-preview snapshot only. It deliberately does not accept live
 -- status, button frames, aura state, item counts, usability, or equipment data.
@@ -152,11 +176,7 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
 
     -- Stable baseline: aura/proc inactive, ready, full charges, and otherwise
     -- available/usable/equipped. Only a stored preview may replace those facts.
-    local auraActive = conditional and conditional.auraActive == true or false
-    if BAR_PREVIEW_AURA_KINDS[kind]
-        or (effectFlags and (effectFlags._auraGlowPreview or effectFlags._barAuraEffectPreview)) then
-        auraActive = true
-    end
+    local auraActive = IsBarPreviewAuraActive(conditional, effectFlags)
     local procActive = conditional and conditional.procActive == true or false
     if effectFlags and effectFlags._procGlowPreview then
         procActive = true
@@ -195,8 +215,7 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
         activeReasons["aura-inactive"] = true
     end
 
-    local usesChargeBehavior = type(CooldownCompanion.UsesChargeBehavior) == "function"
-        and CooldownCompanion.UsesChargeBehavior(buttonData) == true
+    local usesChargeBehavior = UsesConfigOnlyBarChargeBehavior(buttonData)
     local itemUsesResolvedCooldownState = buttonData.type == "item"
         and itemQuantityKind == "stacks"
     local needsNoCooldownCheck = buttonData.hideWhileOnCooldown
@@ -515,7 +534,11 @@ local function ApplyBarSlotVisualAlpha(slot, alpha)
     SetAlpha(slot.statusBar)
     SetAlpha(slot.textFrame)
     SetAlpha(slot.textOverlay)
-    SetAlpha(slot.barAuraEffect)
+    local barAuraEffect = slot.barAuraEffect
+    if barAuraEffect then
+        SetAlpha(barAuraEffect.solidFrame)
+        SetAlpha(barAuraEffect.procFrame)
+    end
     for _, texture in ipairs(slot.iconBorderTextures or {}) do
         texture:SetAlpha(alpha)
     end
@@ -538,7 +561,6 @@ ResetBarSlotWorkspaceState = function(frame)
     frame._cdcBaseAlpha = 1
     ApplyBarSlotVisualAlpha(frame, 1)
     if frame.visibilityBadge then frame.visibilityBadge:Hide() end
-    if frame.visibilityBadgeBack then frame.visibilityBadgeBack:Hide() end
     if frame.problemBadge then frame.problemBadge:Hide() end
     if frame.problemBadgeBack then frame.problemBadgeBack:Hide() end
     frame._cdcVisibilityBadgeShown = nil
@@ -903,8 +925,9 @@ local function ApplySlotBadges(slot, status, scale, suppress)
     tex:SetSize(size, size)
     tex:ClearAllPoints()
     local hasVisibilityBadge = slot._cdcVisibilityBadgeShown == true
+    local badgeAnchor = hasVisibilityBadge and slot.barBounds or slot
     local xOffset = hasVisibilityBadge and -(size + 2) or 0
-    tex:SetPoint("TOPRIGHT", slot, "TOPRIGHT", xOffset, 0)
+    tex:SetPoint("TOPRIGHT", badgeAnchor, "TOPRIGHT", xOffset, 0)
     back:ClearAllPoints()
     back:SetPoint("CENTER", tex, "CENTER", 0, 0)
     back:SetSize(size + 2, size + 2)
@@ -915,31 +938,22 @@ end
 local function ApplyBarVisibilityBadge(slot, show, scale)
     if not show then
         if slot.visibilityBadge then slot.visibilityBadge:Hide() end
-        if slot.visibilityBadgeBack then slot.visibilityBadgeBack:Hide() end
         slot._cdcVisibilityBadgeShown = false
         return
     end
 
     local badge = slot.visibilityBadge
-    local back = slot.visibilityBadgeBack
     if not badge then
-        back = slot:CreateTexture(nil, "OVERLAY", nil, 6)
-        back:SetColorTexture(0, 0, 0, 0.7)
-        slot.visibilityBadgeBack = back
         badge = slot:CreateTexture(nil, "OVERLAY", nil, 7)
         slot.visibilityBadge = badge
     end
     local size = math_min(24, math_max(12,
-        PANEL_PREVIEW_BADGE_SCREEN_SIZE / math_max(scale or 1, 0.01)))
+        PANEL_PREVIEW_VISIBILITY_BADGE_SCREEN_SIZE / math_max(scale or 1, 0.01)))
     badge:SetAtlas(PANEL_PREVIEW_VISIBILITY_BADGE_ATLAS, false)
     badge:SetSize(size, size)
     badge:ClearAllPoints()
-    badge:SetPoint("TOPRIGHT", slot, "TOPRIGHT", 0, 0)
-    back:ClearAllPoints()
-    back:SetPoint("CENTER", badge, "CENTER", 0, 0)
-    back:SetSize(size + 2, size + 2)
+    badge:SetPoint("RIGHT", slot.barBounds, "RIGHT", 0, 0)
     badge:Show()
-    back:Show()
     slot._cdcVisibilityBadgeShown = true
 end
 
@@ -1104,7 +1118,8 @@ local function ConfigurePreviewGhost(preview, layoutDrag, buttonData)
     ghost.icon:ClearAllPoints()
     ghost.icon:SetSize(iconSize, iconSize)
     ghost.icon:SetPoint("CENTER")
-    local icon = GetLayoutPreviewIcon and GetLayoutPreviewIcon(buttonData)
+    local iconResolver = layoutDrag.iconResolver or GetLayoutPreviewIcon
+    local icon = iconResolver and iconResolver(buttonData)
     if icon then
         ghost.icon:SetTexture(icon)
         ghost.icon:Show()
@@ -2043,16 +2058,16 @@ end
 local function ApplyBarReadyPresentation(slot, buttonData, style)
     local tt = EnsureBarSlotTimeText(slot)
     AnchorBarSlotTimeText(slot, style)
-    if buttonData.isPassive or style.showBarReadyText ~= true then
-        tt:SetText("")
-        return
-    end
-
     local font = CooldownCompanion:FetchFont(style.barReadyFont or "Friz Quadrata TT")
     local size = style.barReadyFontSize or 12
     local outline = ST.GetEffectiveFontOutline(style.barReadyFontOutline or "OUTLINE")
     tt:SetFont(font, size, outline)
     ST.ApplyFontShadowForOutline(tt, outline)
+    if buttonData.isPassive or style.showBarReadyText ~= true then
+        tt:SetText("")
+        return
+    end
+
     local color = style.barReadyTextColor or DEFAULT_BAR_READY_TEXT_COLOR
     tt:SetTextColor(color[1], color[2], color[3], color[4] or 1)
     tt:SetText(style.barReadyText or "Ready")
@@ -2151,6 +2166,21 @@ local function ResetBarSlotConditionalVisuals(slot)
     end
 end
 
+local function ApplyBarAuraTimeTextPreview(slot, style, remaining)
+    if style.showAuraText == false then return end
+    local tt = EnsureBarSlotTimeText(slot)
+    local font = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
+    local size = style.auraTextFontSize or 12
+    local outline = ST.GetEffectiveFontOutline(style.auraTextFontOutline or "OUTLINE")
+    tt:SetFont(font, size, outline)
+    ST.ApplyFontShadowForOutline(tt, outline)
+    local color = style.auraTextFontColor or DEFAULT_AURA_TEXT_COLOR
+    tt:SetTextColor(color[1], color[2], color[3], color[4])
+    AnchorBarSlotTimeText(slot, style)
+    tt:SetText(CooldownCompanion.FormatTime(remaining, style))
+    tt:Show()
+end
+
 local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, index,
         style, previewState)
     -- Read by ApplyBarCountTextStyle
@@ -2171,16 +2201,11 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
     local kind = state and state.kind or nil
     local effectFlags = previewState.effectFlags
     local now = GetTime()
-    local auraActive = state and state.auraActive == true or false
-    if BAR_PREVIEW_AURA_KINDS[kind]
-        or (effectFlags and (effectFlags._auraGlowPreview
-            or effectFlags._barAuraEffectPreview)) then
-        auraActive = true
-    end
+    local auraPresentationActive = kind == "aura_duration_bar"
     local isAuraEntry = buttonData.type == "spell"
         and (buttonData.auraTracking == true or buttonData.addedAs == "aura")
     if isAuraEntry then
-        if auraActive then
+        if auraPresentationActive then
             forceDesat = buttonData.isPassive == true
                 and buttonData.invertAuraDesaturationLogic == true
                 and not buttonData.neverDesaturate
@@ -2197,17 +2222,15 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
     slot.statusBar:SetValue(buttonData.isPassive and 0 or 1)
 
     local chargePresentationKind = kind
-    if not chargePresentationKind
-        and CooldownCompanion.UsesChargeBehavior
-        and CooldownCompanion.UsesChargeBehavior(buttonData) then
+    if not chargePresentationKind and UsesConfigOnlyBarChargeBehavior(buttonData) then
         chargePresentationKind = "charge_full"
     end
 
-    if (kind == "cooldown" or BAR_PREVIEW_AURA_KINDS[kind]) and slot.timeText then
+    if (kind == "cooldown" or kind == "aura_duration_text") and slot.timeText then
         slot.timeText:SetText("")
     end
 
-    if BAR_PREVIEW_AURA_KINDS[kind] then
+    if kind == "aura_duration_bar" then
         local auraTint = style.iconAuraTintEnabled and style.iconAuraTintColor or baseTint
         tintR = auraTint and auraTint[1] or 1
         tintG = auraTint and auraTint[2] or 1
@@ -2220,8 +2243,14 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         slot.statusBar:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
     end
 
-    if kind == "aura_duration_bar" and GetConditionalPreviewTiming then
-        local startTime, duration, remaining = GetConditionalPreviewTiming(state, now)
+    if kind == "aura_duration_text" and GetConditionalPreviewTiming then
+        local startTime, _, remaining = GetConditionalPreviewTiming(state, now)
+        if startTime then
+            slot._cdcCondAnim = state
+            ApplyBarAuraTimeTextPreview(slot, style, remaining)
+        end
+    elseif kind == "aura_duration_bar" and GetConditionalPreviewTiming then
+        local startTime = GetConditionalPreviewTiming(state, now)
         if startTime then
             -- The Active Aura Indicator preview's fill effects ride the
             -- aura drain (live UpdateBarDisplay, keyed off the flag).
@@ -2243,20 +2272,6 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
             slot.statusBar:SetScript("OnUpdate", BarSlotFillOnUpdate)
             slot._cdcCondAnim = state
             BarSlotFillOnUpdate(slot.statusBar)
-            if style.showAuraText ~= false then
-                -- Aura-styled time text per UpdateBarFill's aura mode
-                local tt = EnsureBarSlotTimeText(slot)
-                local f = CooldownCompanion:FetchFont(style.auraTextFont or "Friz Quadrata TT")
-                local s = style.auraTextFontSize or 12
-                local o = ST.GetEffectiveFontOutline(style.auraTextFontOutline or "OUTLINE")
-                tt:SetFont(f, s, o)
-                ST.ApplyFontShadowForOutline(tt, o)
-                local cc = style.auraTextFontColor or DEFAULT_AURA_TEXT_COLOR
-                tt:SetTextColor(cc[1], cc[2], cc[3], cc[4])
-                AnchorBarSlotTimeText(slot, style)
-                tt:SetText(CooldownCompanion.FormatTime(remaining, style))
-                tt:Show()
-            end
         end
     elseif kind == "cooldown" and GetConditionalPreviewTiming then
         local startTime, duration, remaining = GetConditionalPreviewTiming(state, now)
@@ -2264,6 +2279,16 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
             if not buttonData.isPassive then
                 local c = style.barCooldownColor or style.barColor or DEFAULT_BAR_COLOR
                 slot.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4] or 1)
+                if style.desaturateOnCooldown then
+                    forceDesat = true
+                end
+                if style.iconCooldownTintEnabled and style.iconCooldownTintColor then
+                    local iconTint = style.iconCooldownTintColor
+                    tintR = iconTint[1] or 1
+                    tintG = iconTint[2] or 1
+                    tintB = iconTint[3] or 1
+                    tintA = iconTint[4] or 1
+                end
             end
             slot.statusBar._cdcOwner = slot
             slot.statusBar:SetScript("OnUpdate", BarSlotFillOnUpdate)
@@ -2280,7 +2305,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
     elseif chargePresentationKind == "charge_full"
         or chargePresentationKind == "charge_missing"
         or chargePresentationKind == "charge_zero" then
-        if CooldownCompanion.UsesChargeBehavior and CooldownCompanion.UsesChargeBehavior(buttonData) then
+        if UsesConfigOnlyBarChargeBehavior(buttonData) then
             local maxCharges = buttonData.maxCharges or 2
             if maxCharges < 2 then maxCharges = 2 end
             local current = maxCharges
@@ -2552,9 +2577,11 @@ local function EnsureConditionalTicker(preview)
                 local startTime, duration, remaining = GetConditionalPreviewTiming(state, now)
                 if startTime then
                     if slot.timeText
-                        and (state.kind == "cooldown" or state.kind == "aura_duration_bar") then
+                        and (state.kind == "cooldown"
+                            or state.kind == "aura_duration_text") then
                         local style = slot.style or {}
-                        local showText = (state.kind == "aura_duration_bar" and style.showAuraText ~= false)
+                        local showText = (state.kind == "aura_duration_text"
+                                and style.showAuraText ~= false)
                             or (state.kind == "cooldown" and style.showCooldownText)
                         if showText and CooldownCompanion.FormatTime then
                             slot.timeText:SetText(CooldownCompanion.FormatTime(remaining, style))
@@ -3375,6 +3402,7 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost)
     local styleFn = isBarMode and StyleBarEntry or (isTextMode and StyleTextEntry or StyleIconEntry)
 
     local layoutDrag = CreatePreviewLayoutDrag(preview, panelId)
+    layoutDrag.iconResolver = isBarMode and GetConfigOnlyBarPreviewIcon or GetLayoutPreviewIcon
     layoutDrag.count = count
     layoutDrag.slotW, layoutDrag.slotH = w, h
     layoutDrag.scale = scale
