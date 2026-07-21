@@ -48,6 +48,7 @@ ConfigSettings\CastBarPanels.lua
 ConfigSettings\ResourceBarPanelsHelpers.lua
 ConfigSettings\ResourceBarLayoutOrderPreview.lua
 ConfigSettings\ButtonPanelPreview.lua
+ConfigSettings\GroupPanelOverviewPreview.lua
 ConfigSettings\UnifiedAnchorPreview.lua
 ConfigSettings\ResourceBarPanelsResource.lua
 ConfigSettings\ResourceBarPanelsCustomBars.lua

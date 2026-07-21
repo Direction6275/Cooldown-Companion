@@ -539,6 +539,49 @@ local function ComputePreviewHostHeight(col3)
     return math.min(desired, maxHeight)
 end
 
+-- Anchored widths are not guaranteed to settle until the frame after the
+-- config columns resize. Coalesce resize traffic into one trailing pass so
+-- the preview always rebuilds from the latest propagated host dimensions.
+local function ScheduleFinalWidePreviewLayout(col3, host, forceRebuild)
+    col3._cdcFinalWidePreviewHost = host
+    if forceRebuild then
+        col3._cdcFinalWidePreviewForceRebuild = true
+    end
+    if col3._cdcFinalWidePreviewLayoutScheduled then return end
+    col3._cdcFinalWidePreviewLayoutScheduled = true
+
+    C_Timer.After(0, function()
+        col3._cdcFinalWidePreviewLayoutScheduled = nil
+        local requestedHost = col3._cdcFinalWidePreviewHost
+        local requestedForceRebuild = col3._cdcFinalWidePreviewForceRebuild
+        col3._cdcFinalWidePreviewHost = nil
+        col3._cdcFinalWidePreviewForceRebuild = nil
+        if not (requestedHost
+            and col3._cdcActiveWideHost == requestedHost
+            and requestedHost:IsShown()) then
+            return
+        end
+        if (col3.content:GetHeight() or 0) <= 0 then return end
+
+        local newHeight = ComputePreviewHostHeight(col3)
+        local heightChanged = math.abs(
+            (requestedHost:GetHeight() or 0) - newHeight) >= 0.5
+        if heightChanged then
+            requestedHost:SetHeight(newHeight)
+        end
+
+        local width = requestedHost:GetWidth() or 0
+        local widthChanged = math.abs(
+            (requestedHost._cdcLastLayoutWidth or 0) - width) >= 0.5
+        if not (requestedForceRebuild or heightChanged or widthChanged) then
+            return
+        end
+
+        requestedHost._cdcLastLayoutWidth = width
+        RebuildActiveWidePreview(col3)
+    end)
+end
+
 -- Re-apply the persisted split against the CURRENT column height and
 -- overhead. Called from LayoutColumns (which runs on every window resize)
 -- and as the refresh pass's final step — the preview builds before the add
@@ -555,12 +598,10 @@ local function ReapplyPanelPreviewSplit()
     -- window resize still needs a rebuild even when the split height held.
     local width = host:GetWidth() or 0
     local widthChanged = math.abs((host._cdcLastLayoutWidth or 0) - width) >= 0.5
-    if not (heightChanged or widthChanged) then return end
     if heightChanged then
         host:SetHeight(newHeight)
     end
-    host._cdcLastLayoutWidth = width
-    RebuildActiveWidePreview(col3)
+    ScheduleFinalWidePreviewLayout(col3, host, heightChanged or widthChanged)
 end
 
 -- Draggable divider between the pinned preview and the editing surface:
@@ -872,6 +913,28 @@ local function CloseInlineTextureBrowser(col3)
     end
 end
 
+local function ReleaseButtonsPreviewRenderer(host)
+    if not host then return end
+    if host._cdcButtonsPreviewMode == "group-overview" then
+        if ST._ReleaseGroupPanelOverview then
+            ST._ReleaseGroupPanelOverview(host)
+        end
+    else
+        if ST._ReleaseAnchorAwarePanelPreview then
+            ST._ReleaseAnchorAwarePanelPreview(host)
+        elseif ST._ReleaseButtonPanelPreview then
+            ST._ReleaseButtonPanelPreview(host)
+        end
+    end
+    host._cdcButtonsPreviewMode = nil
+end
+
+local function SetButtonsPreviewRenderer(host, mode)
+    if host._cdcButtonsPreviewMode == mode then return end
+    ReleaseButtonsPreviewRenderer(host)
+    host._cdcButtonsPreviewMode = mode
+end
+
 local function HidePanelPreview(col3)
     local host = col3.buttonsPreviewHost
     if host then
@@ -880,11 +943,7 @@ local function HidePanelPreview(col3)
         if host._cdcDropOverlay then
             host._cdcDropOverlay:Hide()
         end
-        if ST._ReleaseAnchorAwarePanelPreview then
-            ST._ReleaseAnchorAwarePanelPreview(host)
-        elseif ST._ReleaseButtonPanelPreview then
-            ST._ReleaseButtonPanelPreview(host)
-        end
+        ReleaseButtonsPreviewRenderer(host)
     end
     if col3.buttonsAddBox then
         col3.buttonsAddBox.frame:Hide()
@@ -904,9 +963,21 @@ local function HidePanelPreview(col3)
     HideEditingChrome(col3)
 end
 
--- Pinned preview of the selected panel at the top of the wide column.
+-- Pinned preview of the selected Panel, or an organized navigation overview
+-- when a single editable Group is selected with no child Panel selected.
 local function UpdatePanelPreview(col3)
-    if not CS.selectedGroup then
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local panelId = CS.selectedGroup
+    local containerId = not panelId and CS.selectedContainer or nil
+    local hasGroupMulti = next(CS.selectedGroups) ~= nil
+    local hasPanelMulti = next(CS.selectedPanels) ~= nil
+    local container = containerId and db and db.groupContainers
+        and db.groupContainers[containerId] or nil
+
+    if not panelId and (not container
+        or hasGroupMulti
+        or hasPanelMulti
+        or CS.otherClassLibraryActive) then
         HidePanelPreview(col3)
         return
     end
@@ -920,14 +991,26 @@ local function UpdatePanelPreview(col3)
     host:ClearAllPoints()
     host:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
     host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
-    -- Anchor-aware build: the unified preview (real mirror + attached bar
-    -- lanes) on the anchor panel, the plain mirror everywhere else.
     local function BuildPreview(hostFrame)
-        if not CS.selectedGroup then return end
-        if ST._BuildAnchorAwarePanelPreview then
-            ST._BuildAnchorAwarePanelPreview(hostFrame, CS.selectedGroup)
-        elseif ST._BuildButtonPanelPreview then
-            ST._BuildButtonPanelPreview(hostFrame, CS.selectedGroup)
+        local activePanelId = CS.selectedGroup
+        if activePanelId then
+            SetButtonsPreviewRenderer(hostFrame, "panel")
+            -- Anchor-aware build: the unified preview (real mirror + attached
+            -- bar lanes) on the anchor panel, the plain mirror elsewhere.
+            if ST._BuildAnchorAwarePanelPreview then
+                ST._BuildAnchorAwarePanelPreview(hostFrame, activePanelId)
+            elseif ST._BuildButtonPanelPreview then
+                ST._BuildButtonPanelPreview(hostFrame, activePanelId)
+            end
+            return
+        end
+
+        local activeContainerId = CS.selectedContainer
+        local activeContainer = activeContainerId and CooldownCompanion.db.profile.groupContainers
+            and CooldownCompanion.db.profile.groupContainers[activeContainerId] or nil
+        if activeContainer and ST._BuildGroupPanelOverview then
+            SetButtonsPreviewRenderer(hostFrame, "group-overview")
+            ST._BuildGroupPanelOverview(hostFrame, activeContainerId)
         end
     end
     SetActiveWidePreview(col3, host, BuildPreview)
@@ -1635,19 +1718,36 @@ end
 -- panel other than the mirrored one are skipped.
 local function RefreshButtonsPreviewMirror(groupId)
     if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return end
-    if groupId and groupId ~= CS.selectedGroup then return end
     local col3 = CS.configFrame and CS.configFrame.col3
     local host = col3 and col3.buttonsPreviewHost
-    if host and host:IsShown() and CS.selectedGroup then
-        if ST._BuildAnchorAwarePanelPreview then
-            ST._BuildAnchorAwarePanelPreview(host, CS.selectedGroup)
-        elseif ST._BuildButtonPanelPreview then
-            ST._BuildButtonPanelPreview(host, CS.selectedGroup)
+    if not (host and host:IsShown() and col3._cdcActiveWideHost == host) then return end
+
+    if CS.selectedGroup then
+        if groupId and groupId ~= CS.selectedGroup then return end
+        if col3._cdcActiveWideRebuild then
+            col3._cdcActiveWideRebuild(host)
         end
         -- The Editing header shares the mirror's selection identity and
         -- status badges, so keep it in step with targeted rebuilds.
         UpdateEditingContext(col3)
         UpdateQuietRow(col3)
+        return
+    end
+
+    local containerId = CS.selectedContainer
+    if not containerId or host._cdcButtonsPreviewMode ~= "group-overview" then return end
+    if groupId then
+        local belongsToSelectedContainer = false
+        for _, panelInfo in ipairs(CooldownCompanion:GetPanels(containerId) or {}) do
+            if tostring(panelInfo.groupId) == tostring(groupId) then
+                belongsToSelectedContainer = true
+                break
+            end
+        end
+        if not belongsToSelectedContainer then return end
+    end
+    if col3._cdcActiveWideRebuild then
+        col3._cdcActiveWideRebuild(host)
     end
 end
 
