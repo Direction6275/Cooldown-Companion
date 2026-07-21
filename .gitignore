@@ -13,6 +13,7 @@ docs
 tests
 AGENTS.md
 STRATEGY.md
+claude.md
 CooldownCompanion/Libs
 CooldownCompanion_Config/Libs
 nul
