@@ -716,7 +716,7 @@ local function ConfigureConfigEntryRow(entry, panel, panelId, buttonData, button
         local enabledSoundEvents = CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData)
         if not enabledSoundEvents
             and (buttonData.auraTracking or buttonData.addedAs == "aura")
-            and CooldownCompanion:GetAuraAppliedSoundFileForButton(buttonData) then
+            and CooldownCompanion:HasAnyAuraSoundForButton(buttonData) then
             enabledSoundEvents = true
         end
         if enabledSoundEvents then

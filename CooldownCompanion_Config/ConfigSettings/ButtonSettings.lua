@@ -285,17 +285,17 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     local soundOptionOrder = BuildSortedSoundOptionOrder(soundOptions)
     local eventOrder = CooldownCompanion:GetSoundAlertEventOrder()
 
-    -- The aura-applied sound plays through Blizzard's aura system, which
-    -- accepts sound files only — offer the file-backed options.
+    -- The aura sounds play through Blizzard's aura system, which accepts
+    -- sound files only — offer the file-backed options.
     local auraSoundOptions, auraSoundOptionOrder
-    if validEvents.onAuraApplied then
-        auraSoundOptions = CooldownCompanion:GetAuraAppliedSoundAlertOptions()
+    if validEvents.onAuraApplied or validEvents.onAuraStackGained or validEvents.onAuraRemoved then
+        auraSoundOptions = CooldownCompanion:GetAuraSoundAlertOptions()
         auraSoundOptionOrder = BuildSortedSoundOptionOrder(auraSoundOptions)
     end
 
     for _, eventKey in ipairs(eventOrder) do
         if validEvents[eventKey] then
-            local isAuraEvent = eventKey == "onAuraApplied"
+            local isAuraEvent = CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
             local row = AceGUI:Create("SimpleGroup")
             row:SetRelativeWidth(0.5)
             row:SetLayout("Flow")
@@ -331,12 +331,12 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
                 end
             end)
 
-            if isAuraEvent then
+            if eventKey == "onAuraApplied" then
                 -- Anchor to the label text edge, not the label region (which
                 -- spans the whole cell), so the badge hugs the words.
                 CreateInfoButton(soundDrop.frame, soundDrop.label, "LEFT", "LEFT", soundDrop.label:GetStringWidth() + 4, 0, {
-                    "Aura Applied",
-                    {"Plays when the tracked aura is applied, handled by the game so it works everywhere. A sound on aura removal is not possible for addons; the Cooldown Manager's own alert settings offer one if needed.", 1, 1, 1, true},
+                    "Aura Sounds",
+                    {"Aura Applied, Aura Stack Gained, and Aura Removed play when the tracked aura is gained, gains a stack, or is removed. Handled by the game so they work everywhere.", 1, 1, 1, true},
                 }, infoButtons)
             end
 

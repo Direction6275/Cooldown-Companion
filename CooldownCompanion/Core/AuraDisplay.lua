@@ -694,57 +694,70 @@ local function StyleSlotKit(slot, button, buttonData, style)
 end
 
 ------------------------------------------------------------------------
--- Aura-applied sounds — the one compliant aura sound event in 12.1:
--- C_UnitAuras.AddAuraSound (PTR 6 rename of AddAuraAppliedSound; the Added
--- trigger preserves the old on-applied behavior) plays a sound file whenever
--- the spellID's aura is applied to the unit, entirely Blizzard-side
+-- Aura sounds — the compliant aura sound events in 12.1:
+-- C_UnitAuras.AddAuraSound (PTR 6 rename of AddAuraAppliedSound, now with
+-- applied / stack gained / removed triggers) plays a sound file whenever
+-- the spellID's aura hits the trigger on the unit, entirely Blizzard-side
 -- (validated in combat). Registered at bind, released at park. Refcounted
 -- because entries can share candidate spellIDs (linked-aura sets) and the
--- same sound.
+-- same trigger + sound.
 ------------------------------------------------------------------------
 
-local appliedSounds = {} -- key -> { id = auraSoundID, count = n }
+local auraSounds = {} -- key -> { id = auraSoundID, count = n }
 
-local function RegisterSlotAppliedSounds(slot, buttonData, spellSet)
+-- Config event key -> Enum.UnitAuraSoundTrigger name, resolved at
+-- registration time (the enum ships with AddAuraSound, which the
+-- capability guard below already requires).
+local AURA_SOUND_EVENT_TRIGGERS = {
+    { eventKey = "onAuraApplied", triggerName = "Added" },
+    { eventKey = "onAuraStackGained", triggerName = "ApplicationsIncreased" },
+    { eventKey = "onAuraRemoved", triggerName = "Removed" },
+}
+
+local function RegisterSlotAuraSounds(slot, buttonData, spellSet)
     if not (C_UnitAuras.AddAuraSound and C_UnitAuras.RemoveAuraSound) then return end
-    local soundFile, channel = CooldownCompanion:GetAuraAppliedSoundFileForButton(buttonData)
-    if not soundFile then return end
     local keys
-    for spellID in pairs(spellSet) do
-        local key = slot.unit .. ":" .. spellID .. ":" .. soundFile .. ":" .. (channel or "")
-        local entry = appliedSounds[key]
-        if entry then
-            entry.count = entry.count + 1
-        else
-            local id = C_UnitAuras.AddAuraSound(Enum.UnitAuraSoundTrigger.Added, {
-                unitToken = slot.unit,
-                spellID = spellID,
-                soundFileName = soundFile,
-                outputChannel = channel,
-            })
-            if id then
-                entry = { id = id, count = 1 }
-                appliedSounds[key] = entry
+    for _, eventInfo in ipairs(AURA_SOUND_EVENT_TRIGGERS) do
+        local soundFile, channel = CooldownCompanion:GetAuraSoundFileForButton(buttonData, eventInfo.eventKey)
+        if soundFile then
+            local trigger = Enum.UnitAuraSoundTrigger[eventInfo.triggerName]
+            for spellID in pairs(spellSet) do
+                local key = slot.unit .. ":" .. spellID .. ":" .. trigger .. ":" .. soundFile .. ":" .. (channel or "")
+                local entry = auraSounds[key]
+                if entry then
+                    entry.count = entry.count + 1
+                else
+                    local id = C_UnitAuras.AddAuraSound(trigger, {
+                        unitToken = slot.unit,
+                        spellID = spellID,
+                        soundFileName = soundFile,
+                        outputChannel = channel,
+                    })
+                    if id then
+                        entry = { id = id, count = 1 }
+                        auraSounds[key] = entry
+                    end
+                end
+                if entry then
+                    keys = keys or {}
+                    keys[#keys + 1] = key
+                end
             end
         end
-        if entry then
-            keys = keys or {}
-            keys[#keys + 1] = key
-        end
     end
-    slot.appliedSoundKeys = keys
+    slot.auraSoundKeys = keys
 end
 
-local function ReleaseSlotAppliedSounds(slot)
-    local keys = slot.appliedSoundKeys
+local function ReleaseSlotAuraSounds(slot)
+    local keys = slot.auraSoundKeys
     if not keys then return end
-    slot.appliedSoundKeys = nil
+    slot.auraSoundKeys = nil
     for _, key in ipairs(keys) do
-        local entry = appliedSounds[key]
+        local entry = auraSounds[key]
         if entry then
             entry.count = entry.count - 1
             if entry.count <= 0 then
-                appliedSounds[key] = nil
+                auraSounds[key] = nil
                 C_UnitAuras.RemoveAuraSound(entry.id)
             end
         end
@@ -799,7 +812,7 @@ local function ParkSlot(slot)
     if not slot.parked then
         slot.parked = true
         slot.boundEntry = nil
-        ReleaseSlotAppliedSounds(slot)
+        ReleaseSlotAuraSounds(slot)
         slot.slotButton:SetParent(park)
         slot.slotButton:ClearAllPoints()
         slot.slotButton:SetPoint("CENTER", park, "CENTER")
@@ -860,7 +873,7 @@ local function BindSlot(slot, button, buttonData, spellSet, style)
     slotButton:SetPoint("BOTTOMRIGHT", layer, "BOTTOMRIGHT", 0, 0)
     slot.container:SetAuraSlotCandidateFilters(slot.key, BuildCandidateFilters(slot.unit, spellSet))
     StyleSlotKit(slot, button, buttonData, style)
-    RegisterSlotAppliedSounds(slot, buttonData, spellSet)
+    RegisterSlotAuraSounds(slot, buttonData, spellSet)
     -- Tooltip suppression follows the click-through sweep's recorded motion
     -- state (the sweep itself never reaches the slot subtree). P7-validated.
     slotButton:SetMouseMotionEnabled(not button._cdcClickThroughMotion)
@@ -1024,11 +1037,11 @@ end
 
 -- Read-only status for validation/DevBridge (module state is otherwise local).
 function CooldownCompanion:GetAuraDisplayStatus()
-    local appliedSoundCount = 0
-    for _ in pairs(appliedSounds) do
-        appliedSoundCount = appliedSoundCount + 1
+    local auraSoundCount = 0
+    for _ in pairs(auraSounds) do
+        auraSoundCount = auraSoundCount + 1
     end
-    local status = { pendingRebind = pendingRebind, appliedSounds = appliedSoundCount, units = {} }
+    local status = { pendingRebind = pendingRebind, auraSounds = auraSoundCount, units = {} }
     for unit, unitSlots in pairs(slots) do
         local bound = 0
         for _, slot in ipairs(unitSlots) do

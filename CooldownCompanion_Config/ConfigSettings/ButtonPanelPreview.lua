@@ -875,11 +875,11 @@ local function CollectEntryMetadata(buttonData)
     }
     if buttonData.type == "spell" then
         local enabledSoundEvents = CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData)
-        -- The aura-applied sound is config-only (played by the game's aura
-        -- system, never the runtime engine), so it needs its own check.
+        -- The aura sounds are config-only (played by the game's aura
+        -- system, never the runtime engine), so they need their own check.
         if not enabledSoundEvents
             and (buttonData.auraTracking or buttonData.addedAs == "aura")
-            and CooldownCompanion:GetAuraAppliedSoundFileForButton(buttonData) then
+            and CooldownCompanion:HasAnyAuraSoundForButton(buttonData) then
             enabledSoundEvents = true
         end
         status.sound = enabledSoundEvents and true or false
