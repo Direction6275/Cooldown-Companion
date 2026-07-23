@@ -695,16 +695,18 @@ end
 
 ------------------------------------------------------------------------
 -- Aura-applied sounds — the one compliant aura sound event in 12.1:
--- C_UnitAuras.AddAuraAppliedSound plays a sound file whenever the spellID's
--- aura is applied to the unit, entirely Blizzard-side (validated in combat).
--- Registered at bind, released at park. Refcounted because entries can share
--- candidate spellIDs (linked-aura sets) and the same sound.
+-- C_UnitAuras.AddAuraSound (PTR 6 rename of AddAuraAppliedSound; the Added
+-- trigger preserves the old on-applied behavior) plays a sound file whenever
+-- the spellID's aura is applied to the unit, entirely Blizzard-side
+-- (validated in combat). Registered at bind, released at park. Refcounted
+-- because entries can share candidate spellIDs (linked-aura sets) and the
+-- same sound.
 ------------------------------------------------------------------------
 
-local appliedSounds = {} -- key -> { id = auraAppliedSoundID, count = n }
+local appliedSounds = {} -- key -> { id = auraSoundID, count = n }
 
 local function RegisterSlotAppliedSounds(slot, buttonData, spellSet)
-    if not (C_UnitAuras.AddAuraAppliedSound and C_UnitAuras.RemoveAuraAppliedSound) then return end
+    if not (C_UnitAuras.AddAuraSound and C_UnitAuras.RemoveAuraSound) then return end
     local soundFile, channel = CooldownCompanion:GetAuraAppliedSoundFileForButton(buttonData)
     if not soundFile then return end
     local keys
@@ -714,7 +716,7 @@ local function RegisterSlotAppliedSounds(slot, buttonData, spellSet)
         if entry then
             entry.count = entry.count + 1
         else
-            local id = C_UnitAuras.AddAuraAppliedSound({
+            local id = C_UnitAuras.AddAuraSound(Enum.UnitAuraSoundTrigger.Added, {
                 unitToken = slot.unit,
                 spellID = spellID,
                 soundFileName = soundFile,
@@ -743,7 +745,7 @@ local function ReleaseSlotAppliedSounds(slot)
             entry.count = entry.count - 1
             if entry.count <= 0 then
                 appliedSounds[key] = nil
-                C_UnitAuras.RemoveAuraAppliedSound(entry.id)
+                C_UnitAuras.RemoveAuraSound(entry.id)
             end
         end
     end

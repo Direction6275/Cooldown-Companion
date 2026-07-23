@@ -53,7 +53,7 @@ local SOUND_ALERT_EVENT_ORDER = {
 }
 
 -- Config-facing event order. onAuraApplied is config-only here: the sound is
--- played natively (C_UnitAuras.AddAuraAppliedSound, registered by AuraDisplay
+-- played natively (C_UnitAuras.AddAuraSound, registered by AuraDisplay
 -- at bind time), never by the runtime transition engine, which keeps iterating
 -- SOUND_ALERT_EVENT_ORDER above.
 local CONFIG_SOUND_ALERT_EVENT_ORDER = {
@@ -251,7 +251,7 @@ end
 
 -- Returns (allowSpellEvents, allowAuraApplied); nil for non-spell entries.
 -- The aura-applied sound is the one compliant aura sound event: played
--- natively via C_UnitAuras.AddAuraAppliedSound, registered by AuraDisplay
+-- natively via C_UnitAuras.AddAuraSound, registered by AuraDisplay
 -- when the entry's aura display binds. Standalone aura entries have no cast
 -- or cooldown, so it is their only event.
 local function GetSoundAlertEntryScope(buttonData)
@@ -710,7 +710,7 @@ function CooldownCompanion:PreviewSoundAlertSelection(buttonData, soundName)
     return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
 end
 
--- Options list for the aura-applied event. C_UnitAuras.AddAuraAppliedSound
+-- Options list for the aura-applied event. C_UnitAuras.AddAuraSound
 -- plays sound FILES, so only shared-media sounds that resolve to a file path
 -- are offered; Blizzard soundkit and text-to-speech selections have no file
 -- form (numeric registrations are excluded as ambiguous — CC treats them as
@@ -727,7 +727,7 @@ function CooldownCompanion:GetAuraAppliedSoundAlertOptions()
 end
 
 -- Resolve the entry's configured aura-applied sound to what
--- C_UnitAuras.AddAuraAppliedSound accepts. Returns (soundFileName, channel)
+-- C_UnitAuras.AddAuraSound accepts. Returns (soundFileName, channel)
 -- or nil when unset or not file-backed.
 function CooldownCompanion:GetAuraAppliedSoundFileForButton(buttonData)
     local cfg = self:GetButtonSoundAlertConfig(buttonData, false)
