@@ -608,6 +608,44 @@ local function BuildShowTooltipsControls(container, styleTable, refreshCallback)
     return cb
 end
 
+-- Tooltip position + combat hide (tracker D-C1). Group-level only (owner
+-- ruling 2026-07-24) and applied to both the normal button tooltip and the
+-- aura display's tooltip. Callers add these only while Show Tooltips is on.
+local TOOLTIP_ANCHOR_LIST = {
+    default = "Default",
+    above = "Above",
+    below = "Below",
+    left = "Left",
+    right = "Right",
+    cursor = "At Cursor",
+}
+local TOOLTIP_ANCHOR_ORDER = { "default", "above", "below", "left", "right", "cursor" }
+
+local function BuildTooltipBehaviorControls(container, styleTable, refreshCallback)
+    local drop = AceGUI:Create("Dropdown")
+    drop:SetLabel("Tooltip Position")
+    drop:SetList(TOOLTIP_ANCHOR_LIST, TOOLTIP_ANCHOR_ORDER)
+    drop:SetValue(styleTable.tooltipAnchor or "default")
+    drop:SetFullWidth(true)
+    drop:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.tooltipAnchor = val
+        refreshCallback()
+    end)
+    container:AddChild(drop)
+
+    local combatCb = AceGUI:Create("CheckBox")
+    combatCb:SetLabel("Hide Tooltips in Combat")
+    combatCb:SetValue(styleTable.tooltipHideInCombat == true)
+    combatCb:SetFullWidth(true)
+    combatCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.tooltipHideInCombat = val
+        refreshCallback()
+    end)
+    container:AddChild(combatCb)
+
+    return drop, combatCb
+end
+
 local function BuildShowOutOfRangeControls(container, styleTable, refreshCallback)
     local cb = AceGUI:Create("CheckBox")
     cb:SetLabel("Show Out of Range")
@@ -1819,6 +1857,7 @@ ST._BuildBorderControls = BuildBorderControls
 ST._BuildBackgroundColorControls = BuildBackgroundColorControls
 ST._BuildDesaturationControls = BuildDesaturationControls
 ST._BuildShowTooltipsControls = BuildShowTooltipsControls
+ST._BuildTooltipBehaviorControls = BuildTooltipBehaviorControls
 ST._BuildShowOutOfRangeControls = BuildShowOutOfRangeControls
 ST._BuildShowGCDSwipeControls = BuildShowGCDSwipeControls
 ST._BuildCooldownSwipeControls = BuildCooldownSwipeControls

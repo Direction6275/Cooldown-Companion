@@ -39,6 +39,7 @@ local BuildKeybindTextControls = ST._BuildKeybindTextControls
 local BuildBorderControls = ST._BuildBorderControls
 local BuildDesaturationControls = ST._BuildDesaturationControls
 local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
+local BuildTooltipBehaviorControls = ST._BuildTooltipBehaviorControls
 local BuildShowOutOfRangeControls = ST._BuildShowOutOfRangeControls
 local BuildShowGCDSwipeControls = ST._BuildShowGCDSwipeControls
 local BuildCooldownSwipeControls = ST._BuildCooldownSwipeControls
@@ -2560,7 +2561,13 @@ local function BuildEffectsTab(container)
         end)
         BuildShowTooltipsControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
         end)
+        if style.showTooltips == true then
+            BuildTooltipBehaviorControls(container, style, function()
+                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            end)
+        end
         return
     end
 
@@ -2829,12 +2836,22 @@ local function BuildEffectsTab(container)
     local unusablePromoteBtn = CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
     AddConditionalPreviewBadge(unusableCb, unusablePromoteBtn or unusableAdvBtn, "Preview Unusable State", "unusable", style.showUnusable)
 
-    -- Show Tooltips
+    -- Show Tooltips (panel refresh: the position/combat-hide controls below
+    -- only exist while the toggle is on)
     local tooltipCb = BuildShowTooltipsControls(container, style, function()
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
     end)
     SetCompactWidth(tooltipCb)
     CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
+
+    if style.showTooltips == true then
+        local anchorDrop, tooltipCombatCb = BuildTooltipBehaviorControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        end)
+        SetCompactWidth(anchorDrop)
+        SetCompactWidth(tooltipCombatCb)
+    end
 
 end
 

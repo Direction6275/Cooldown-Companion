@@ -1181,11 +1181,40 @@ local function ShowButtonTooltip(button, tooltip)
     return false
 end
 
+-- Tooltip position + combat hide (tracker D-C1). Group-level style keys,
+-- read live at hover time; the aura slot button gets the same behavior at
+-- bind time through the AuraButton tooltip APIs (Core/AuraDisplay.lua).
+local TOOLTIP_ANCHOR_POINTS = {
+    above = "ANCHOR_TOP",
+    below = "ANCHOR_BOTTOM",
+    left = "ANCHOR_LEFT",
+    right = "ANCHOR_RIGHT",
+    cursor = "ANCHOR_CURSOR",
+}
+
+-- Position GameTooltip for a CC button per the group's tooltip settings.
+-- Returns false when the tooltip should not show (hidden in combat).
+local function PrepareButtonTooltip(owner, button)
+    local groups = CooldownCompanion.db and CooldownCompanion.db.profile.groups
+    local group = groups and button._groupId and groups[button._groupId]
+    local style = group and group.style
+    if style and style.tooltipHideInCombat == true and UnitAffectingCombat("player") then
+        return false
+    end
+    local anchor = style and TOOLTIP_ANCHOR_POINTS[style.tooltipAnchor]
+    if anchor then
+        GameTooltip:SetOwner(owner, anchor)
+    else
+        GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
+    end
+    return true
+end
+
 -- Setup tooltip OnEnter/OnLeave scripts on a button frame.
 -- Shared between icon-mode (CreateButtonFrame) and style refreshes.
 local function SetupTooltipScripts(button)
     button:SetScript("OnEnter", function(self)
-        GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
+        if not PrepareButtonTooltip(self, self) then return end
         ShowButtonTooltip(self, GameTooltip)
         GameTooltip:Show()
     end)
@@ -1571,6 +1600,7 @@ ST._ShowGlowStyle = ShowGlowStyle
 ST._CreateGlowContainer = CreateGlowContainer
 ST._CreateAssistedHighlight = CreateAssistedHighlight
 ST._ShowButtonTooltip = ShowButtonTooltip
+ST._PrepareButtonTooltip = PrepareButtonTooltip
 ST._SetupTooltipScripts = SetupTooltipScripts
 ST.IsBarAuraIndicatorEnabled = IsBarAuraIndicatorEnabled
 ST._SetBarAuraEffect = SetBarAuraEffect

@@ -99,6 +99,8 @@ local defaults = {
                         iconWidthRatio = 1.0, -- 1.0 = square, <1 = taller, >1 = wider
                         maintainAspectRatio = true, -- Prevent icon image stretching
                         showTooltips = false,
+                        tooltipAnchor = "default", -- "default"/"above"/"below"/"left"/"right"/"cursor"
+                        tooltipHideInCombat = false,
                         desaturateOnCooldown = true, -- Desaturate icon while on cooldown
                         showCooldownSwipe = true,
                         showAuraDurationSwipe = true,
@@ -281,6 +283,8 @@ local defaults = {
             iconWidthRatio = 1.0,
             maintainAspectRatio = true,
             showTooltips = false,
+            tooltipAnchor = "default",
+            tooltipHideInCombat = false,
             desaturateOnCooldown = true,
             showCooldownSwipe = true,
             showAuraDurationSwipe = true,

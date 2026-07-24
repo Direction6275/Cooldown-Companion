@@ -38,6 +38,7 @@ local DEFAULT_READY_TEXT_COLOR = {0.2, 1.0, 0.2, 1.0}
 
 -- Imports from Glows
 local ShowButtonTooltip = ST._ShowButtonTooltip
+local PrepareButtonTooltip = ST._PrepareButtonTooltip
 
 -- Imports from Visibility
 local UpdateLossOfControl = ST._UpdateLossOfControl
@@ -81,7 +82,7 @@ local function SetBarIconTooltipScripts(button, enable)
         iconBounds:SetScript("OnEnter", function()
             local bd = button.buttonData
             if not bd then return end
-            GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
+            if not PrepareButtonTooltip(iconBounds, button) then return end
             ShowButtonTooltip(button, GameTooltip)
             GameTooltip:Show()
         end)

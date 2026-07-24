@@ -1364,6 +1364,18 @@ local function ParkDisplay(record)
     end
 end
 
+-- Style key -> AuraButton tooltip anchor (tracker D-C1). Unlisted values
+-- (incl. "default"/nil) fall back to ANCHOR_NONE, the untouched-button
+-- behavior. Must stay a subset of the mixin's valid-anchor list — an
+-- invalid name asserts (bind-time, OOC, but still an error to avoid).
+local AURA_TOOLTIP_ANCHORS = {
+    above = "ANCHOR_TOP",
+    below = "ANCHOR_BOTTOM",
+    left = "ANCHOR_LEFT",
+    right = "ANCHOR_RIGHT",
+    cursor = "ANCHOR_CURSOR",
+}
+
 local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax)
     local button = record.button
     local layer = EnsureAuraLayer(button)
@@ -1411,6 +1423,14 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     -- Tooltip suppression follows the click-through sweep's recorded motion
     -- state (the sweep itself never reaches the slot subtree). P7-validated.
     record.slotButton:SetMouseMotionEnabled(not button._cdcClickThroughMotion)
+    -- Tooltip position + combat hide (tracker D-C1): plain per-bind mixin
+    -- state on the slot button, same OOC re-call pattern as the motion line
+    -- above; Blizzard's OnEnter path reads it. ANCHOR_NONE with zero offsets
+    -- is what an untouched button resolves to, so re-calling it converges
+    -- pooled buttons when the setting goes back to Default.
+    record.slotButton:SetTooltipAnchorPoint(
+        AURA_TOOLTIP_ANCHORS[style.tooltipAnchor] or "ANCHOR_NONE", 0, 0)
+    record.slotButton:SetHideTooltipInCombat(style.tooltipHideInCombat == true)
     record.parked = nil
     record.boundEntry = buttonData
     -- Combat pool lock: while this button is pooled in combat it may only be

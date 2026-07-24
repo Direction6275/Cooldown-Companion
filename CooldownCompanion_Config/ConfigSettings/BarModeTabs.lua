@@ -29,6 +29,7 @@ local AddPreviewBadge = ST._AddPreviewBadge
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
 local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
+local BuildTooltipBehaviorControls = ST._BuildTooltipBehaviorControls
 local AddConditionalPreviewBadge = ST._AddConditionalPreviewBadge
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 
@@ -590,9 +591,18 @@ local function BuildBarEffectsTab(container, group, style)
         local unusablePromoteBtn = CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
         AddConditionalPreviewBadge(unusableCb, unusablePromoteBtn or unusableAdvBtn, "Preview Unusable State", "unusable", style.showUnusable)
 
-        local tooltipCb = BuildShowTooltipsControls(container, style, refreshStyle)
+        local tooltipCb = BuildShowTooltipsControls(container, style, function()
+            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
         SetCompactWidth(tooltipCb)
         CreateCheckboxPromoteButton(tooltipCb, nil, "showTooltips", group, style)
+
+        if style.showTooltips == true then
+            local anchorDrop, tooltipCombatCb = BuildTooltipBehaviorControls(container, style, refreshStyle)
+            SetCompactWidth(anchorDrop)
+            SetCompactWidth(tooltipCombatCb)
+        end
     end
 
 end
