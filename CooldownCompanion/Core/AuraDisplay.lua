@@ -12,8 +12,21 @@
         sweeps never recurse into flagged frames.
       * In combat the only permitted aura-system calls are container-level
         (UpdateAllAuras, SetAuraSlotCandidateFilters).
-    Evidence: docs/12.1-aura-tracking-research.md; validation matrix V1-V18 and
-    Phase 0 probes P1-P11.
+
+    PTR 7 (tracker D-A0): aura buttons carry a permanent ChangeParent
+    forbidden aspect — SetParent on a slot button errors even out of combat.
+    The display therefore uses ONE AuraContainer PER HOST BUTTON, created as
+    a child of that button's auraLayer (containers are plain CC frames; the
+    parent is set at CreateFrame and never changed — only the BUTTONS carry
+    the forbidden aspects), with the slot button anchored once inside
+    initializeFrame and never moved, re-leveled, or reparented afterwards.
+    Bind and park are container-mutator filter swaps (park = polarity-crossed
+    sentinel; V25 Q4: Blizzard hides an unmatched slot button entirely).
+    Host Show/Hide, alpha fades, and strata changes reach the slot through
+    plain parentage again, and a re-shown container re-registers its events
+    and refreshes itself (AuraContainerPrivateMixin:OnShow_Intrinsic).
+    Evidence: docs/12.1-aura-tracking-research.md; validation matrix V1-V18,
+    Phase 0 probes P1-P11, and V25 (PTR 7 reparent enforcement).
 ]]
 
 local ADDON_NAME, ST = ...
@@ -26,11 +39,13 @@ local UnitExists = UnitExists
 local UnitAffectingCombat = UnitAffectingCombat
 local CreateFrame = CreateFrame
 
--- Parking (P1b/P1c): slots can never be removed; unbound slots get a sentinel
--- filter + a hidden parent. Empty includeSpellIDs is BANNED — it wedges the
--- slot permanently. Sentinels are POLARITY-CROSSED so they are structurally
--- never-match: a HELPFUL slot parked on a debuff spellID (debuffs can never
--- appear in HELPFUL results) and a HARMFUL slot parked on a buff spellID.
+-- Parking (P1b/P1c + V25 Q4): slots can never be removed; unbound slots get a
+-- sentinel candidate filter, and Blizzard hides an unmatched slot button
+-- entirely — a parked slot renders nothing even though it stays anchored on
+-- its host. Empty includeSpellIDs is BANNED — it wedges the slot permanently.
+-- Sentinels are POLARITY-CROSSED so they are structurally never-match: a
+-- HELPFUL slot parked on a debuff spellID (debuffs can never appear in
+-- HELPFUL results) and a HARMFUL slot parked on a buff spellID.
 local PARK_SENTINEL = {
     player = 155722, -- Rake (a bleed debuff; never matches a HELPFUL filter)
     target = 5217,   -- Tiger's Fury (a self buff; never matches a HARMFUL filter)
@@ -38,12 +53,12 @@ local PARK_SENTINEL = {
 
 local UNIT_FILTER = { player = "HELPFUL", target = "HARMFUL" }
 
--- Module state. Slot records deliberately live only here — no slot-button
--- references are ever stored on CC buttons, so no sweep or diagnostic walk
--- can reach the forbidden subtree by accident.
-local holder, park
-local containers = {}     -- unit -> AuraContainer
-local slots = { player = {}, target = {} } -- unit -> array of slot records
+-- Module state. One display record (container + slot + kit) per host button,
+-- living only here — no slot-button references are ever stored on CC buttons,
+-- so no sweep or diagnostic walk can reach the forbidden subtree by accident.
+-- Records are keyed by host button and permanent (buttons are pooled, never
+-- destroyed; slots can never be removed).
+local displays = {}       -- host button -> display record
 local slotCounter = 0
 local pendingRebind = false
 local rebindQueued = false
@@ -73,12 +88,18 @@ end
 local targetWatcher
 local RunAuraRebind
 
+local function HasTargetDisplays()
+    for _, record in pairs(displays) do
+        if record.unit == "target" then return true end
+    end
+    return false
+end
+
 local function CanRunRebindNow()
     if InCombatLockdown() then return false end
     -- P11 (conservative): secrecy follows the unit's state, so target slots
     -- are only touchable while the target is also out of combat.
-    local hasTargetSlots = #slots.target > 0
-    if hasTargetSlots and UnitExists("target") and UnitAffectingCombat("target") then
+    if HasTargetDisplays() and UnitExists("target") and UnitAffectingCombat("target") then
         return false
     end
     return true
@@ -89,11 +110,15 @@ local function EnsureTargetWatcher()
     targetWatcher = CreateFrame("Frame")
     targetWatcher:RegisterEvent("PLAYER_TARGET_CHANGED")
     targetWatcher:SetScript("OnEvent", function()
-        -- Container-level call: combat-safe (V13, re-validated V18). Without
-        -- it the target container never re-parses on same-token target swaps.
-        local container = containers.target
-        if container then
-            container:UpdateAllAuras()
+        -- Container-level calls: combat-safe (V13, re-validated V18). Without
+        -- them target containers never re-parse on same-token target swaps.
+        -- Hidden hosts self-heal instead: OnShow_Intrinsic re-runs
+        -- UpdateAllAuras, so a container that missed swaps while hidden
+        -- catches up the moment its host shows again.
+        for _, record in pairs(displays) do
+            if record.unit == "target" then
+                record.container:UpdateAllAuras()
+            end
         end
         -- A deferred rebind may have been blocked only by target combat.
         if pendingRebind and CanRunRebindNow() then
@@ -102,37 +127,6 @@ local function EnsureTargetWatcher()
             RunAuraRebind()
         end
     end)
-end
-
-local function EnsureContainer(unit)
-    local container = containers[unit]
-    if container then return container end
-    if not holder then
-        -- P1a: the holder must stay SHOWN — a hidden parent makes the
-        -- container unregister UNIT_AURA (AuraContainerPrivateMixin:
-        -- ShouldRegisterForDynamicEvents requires IsVisible()). It is 2px in
-        -- the corner and owns no textures; nothing ever renders from it
-        -- because slot buttons are reparented out into CC buttons.
-        holder = CreateFrame("Frame", nil, UIParent)
-        holder:SetSize(2, 2)
-        holder:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 2, 2)
-        -- The park frame IS hidden: parked slot buttons must never render,
-        -- and slot visibility does not affect the container's registration.
-        park = CreateFrame("Frame", nil, UIParent)
-        park:SetSize(2, 2)
-        park:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 2, 2)
-        park:Hide()
-    end
-    -- Direct call, no pcall: the TOC pins this client generation, so the
-    -- AuraContainer API always exists — a failure here is a real setup error
-    -- that must surface, not read as "feature unavailable".
-    local created = CreateFrame("AuraContainer", nil, holder, "CustomAuraContainerTemplate")
-    created:SetUnit(unit)
-    containers[unit] = created
-    if unit == "target" then
-        EnsureTargetWatcher()
-    end
-    return created
 end
 
 ------------------------------------------------------------------------
@@ -207,6 +201,12 @@ local function BuildSlotKit(slotButton)
         kit.barFillPulseAnim:SetToAlpha(0.3)
         kit.barFill:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
         local fillTex = kit.barFill:GetStatusBarTexture()
+        -- Creation-time ref, reused at every bind: registered regions are
+        -- write-only once the slot exists (PTR 7 stamps initial secrets at
+        -- creation), so bind-time code must not call getters on barFill.
+        -- Later SetStatusBarTexture(file) calls swap the file on this same
+        -- region (already load-bearing for the VertexColor anim target).
+        kit.barFillTexture = fillTex
         kit.barFillCsAG = fillTex:CreateAnimationGroup()
         kit.barFillCsAG:SetLooping("BOUNCE")
         kit.barFillCsAnim = kit.barFillCsAG:CreateAnimation("VertexColor")
@@ -496,9 +496,15 @@ local function StyleSlotKit(slot, button, buttonData, style)
             end
             -- Same-side truncation guard, replicated from CreateBarFrame:
             -- when the visible duration text shares the name's side, pin the
-            -- name against it so the two can't overlap.
+            -- name against it so the two can't overlap. Decided from the
+            -- style key CC just wrote the alpha FROM — never read back from a
+            -- registered kit region: PTR 7 stamps "initial secrets" into them
+            -- at creation (AuraContainerFrameProviders.lua CreateFrame forces
+            -- UpdateAuraDisplay), so GetAlpha returns a SECRET number even
+            -- OOC and any comparison errors. Registered regions are
+            -- write-only from the moment the slot exists.
             if style.barNameTextReverse == style.barTimeTextReverse
-                and kit.durationText:GetAlpha() > 0 then
+                and style.showAuraText ~= false then
                 if nameReverse then
                     kit.barNameText:SetPoint("LEFT", kit.durationText, "RIGHT", 4, 0)
                 else
@@ -560,7 +566,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
             -- the kit border colorShift).
             kit.barFillPulseAG:Stop()
             kit.barFillCsAG:Stop()
-            kit.barFill:GetStatusBarTexture():SetVertexColor(1, 1, 1, 1)
+            kit.barFillTexture:SetVertexColor(1, 1, 1, 1)
             local indicatorOn = ST.IsBarAuraIndicatorEnabled(style)
             if indicatorOn and style.barAuraPulseEnabled then
                 kit.barFillPulseAnim:SetDuration(style.barAuraPulseSpeed or 0.5)
@@ -580,7 +586,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
         if kit.barFill then
             kit.barFillPulseAG:Stop()
             kit.barFillCsAG:Stop()
-            kit.barFill:GetStatusBarTexture():SetVertexColor(1, 1, 1, 1)
+            kit.barFillTexture:SetVertexColor(1, 1, 1, 1)
             kit.barFill:SetAlpha(0)
         end
     end
@@ -777,51 +783,7 @@ local function BuildCandidateFilters(unit, spellSet)
     return filters
 end
 
-local function CreateSlot(unit)
-    local container = EnsureContainer(unit)
-    if not container then return nil end
-    slotCounter = slotCounter + 1
-    local record = {
-        key = "cc" .. slotCounter,
-        unit = unit,
-    }
-    -- Direct call, no pcall: a real AddAuraSlot error must surface (repo
-    -- rule); the nil check below covers the documented soft-failure return.
-    local slotButton = container:AddAuraSlot(record.key, UNIT_FILTER[unit], {
-        candidateFilters = BuildCandidateFilters(unit, { [PARK_SENTINEL[unit]] = true }),
-        initializeFrame = function(frame)
-            record.kit = BuildSlotKit(frame)
-        end,
-    })
-    if not slotButton then
-        CooldownCompanion:Print("Aura slot creation failed.")
-        return nil
-    end
-    record.slotButton = slotButton
-    record.container = container
-    local unitSlots = slots[unit]
-    unitSlots[#unitSlots + 1] = record
-    return record
-end
-
-local function ParkSlot(slot)
-    if slot.hostButton then
-        slot.hostButton._auraSlotHostToken = nil
-        slot.hostButton = nil
-    end
-    if not slot.parked then
-        slot.parked = true
-        slot.boundEntry = nil
-        ReleaseSlotAuraSounds(slot)
-        slot.slotButton:SetParent(park)
-        slot.slotButton:ClearAllPoints()
-        slot.slotButton:SetPoint("CENTER", park, "CENTER")
-        slot.container:SetAuraSlotCandidateFilters(slot.key,
-            BuildCandidateFilters(slot.unit, { [PARK_SENTINEL[slot.unit]] = true }))
-    end
-end
-
--- The auraLayer is the CC-owned mount point for the slot subtree. It (and
+-- The auraLayer is the CC-owned mount point for the display subtree. It (and
 -- everything under it) is excluded from every recursive frame sweep via the
 -- _ccNoTouch flag; the layer itself is safe to touch, its children are not.
 local function EnsureAuraLayer(button)
@@ -839,6 +801,9 @@ local function EnsureAuraLayer(button)
     layer:ClearAllPoints()
     layer:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", 0, 0)
     layer:SetPoint("BOTTOMRIGHT", anchorTo, "BOTTOMRIGHT", 0, 0)
+    -- Level writes here cascade through the container into the slot subtree
+    -- (the engine preserves children's relative levels), which is how bind-
+    -- time re-levels reach the slot without ever touching it.
     if button._isBar and button.barTextFrame then
         -- Above barTextFrame (statusBar+20): CC keeps writing cooldown time
         -- text per tick with no way to know an aura is showing, so the kit
@@ -864,22 +829,90 @@ local function EnsureAuraLayer(button)
     return layer
 end
 
-local function BindSlot(slot, button, buttonData, spellSet, style)
+-- One display per host button (D-A0 rung (c)): the container is a plain CC
+-- frame whose parent is set once at CreateFrame and never changed (only the
+-- BUTTONS carry the ChangeParent aspect), and the slot button is anchored
+-- inside initializeFrame — the sanctioned setup window — and never moved,
+-- re-leveled, or reparented afterwards. The container is pinned to the
+-- layer's frame level so the slot lands at layer+1, exactly where the
+-- pre-PTR 7 design put it (the ApplyStrataOrder/EnsureAuraLayer overlay
+-- coordination is unchanged). Visibility, alpha, and strata all reach the
+-- slot through plain parentage; a hidden container is inert (P1a) and
+-- re-registers + refreshes itself on show (OnShow_Intrinsic).
+local function EnsureDisplay(button, unit)
+    local record = displays[button]
+    if record then return record end
     local layer = EnsureAuraLayer(button)
-    local slotButton = slot.slotButton
-    slotButton:SetParent(layer)
-    slotButton:ClearAllPoints()
-    slotButton:SetPoint("TOPLEFT", layer, "TOPLEFT", 0, 0)
-    slotButton:SetPoint("BOTTOMRIGHT", layer, "BOTTOMRIGHT", 0, 0)
-    slot.container:SetAuraSlotCandidateFilters(slot.key, BuildCandidateFilters(slot.unit, spellSet))
-    StyleSlotKit(slot, button, buttonData, style)
-    RegisterSlotAuraSounds(slot, buttonData, spellSet)
+    slotCounter = slotCounter + 1
+    record = { button = button, key = "cc" .. slotCounter, unit = unit }
+    -- Direct calls, no pcall: the TOC pins this client generation, so the
+    -- AuraContainer API always exists — a failure here is a real setup error
+    -- that must surface, not read as "feature unavailable".
+    local container = CreateFrame("AuraContainer", nil, layer, "CustomAuraContainerTemplate")
+    container:SetAllPoints(layer)
+    container:SetFrameLevel(layer:GetFrameLevel())
+    container:SetUnit(unit)
+    local slotButton = container:AddAuraSlot(record.key, UNIT_FILTER[unit], {
+        candidateFilters = BuildCandidateFilters(unit, { [PARK_SENTINEL[unit]] = true }),
+        initializeFrame = function(frame)
+            -- The ONLY place the slot button is ever positioned.
+            frame:SetAllPoints(container)
+            record.kit = BuildSlotKit(frame)
+        end,
+    })
+    if not slotButton then
+        CooldownCompanion:Print("Aura slot creation failed.")
+        return nil
+    end
+    record.slotButton = slotButton
+    record.container = container
+    displays[button] = record
+    if unit == "target" then
+        EnsureTargetWatcher()
+    end
+    return record
+end
+
+-- Park = sentinel filter swap, nothing else. The slot stays anchored on its
+-- host; Blizzard hides an unmatched slot button entirely (V25 Q4), so a
+-- parked display renders nothing.
+local function ParkDisplay(record)
+    record.button._auraSlotHostToken = nil
+    if not record.parked then
+        record.parked = true
+        record.boundEntry = nil
+        ReleaseSlotAuraSounds(record)
+        record.container:SetAuraSlotCandidateFilters(record.key,
+            BuildCandidateFilters(record.unit, { [PARK_SENTINEL[record.unit]] = true }))
+    end
+end
+
+local function BindDisplay(record, buttonData, spellSet, unit, style)
+    local button = record.button
+    local layer = EnsureAuraLayer(button)
+    -- Re-pin after the layer's level dance: the cascade keeps the subtree's
+    -- relative levels on its own; this heals any drift without ever touching
+    -- the slot button.
+    record.container:SetFrameLevel(layer:GetFrameLevel())
+    if record.unit ~= unit then
+        -- Polarity swap (player <-> target): container-level mutators only.
+        -- SetAuraSlotFilterString self-refreshes (RebuildAuraParseFilters +
+        -- UpdateAllAuras).
+        record.container:SetUnit(unit)
+        record.container:SetAuraSlotFilterString(record.key, UNIT_FILTER[unit])
+        record.unit = unit
+        if unit == "target" then
+            EnsureTargetWatcher()
+        end
+    end
+    record.container:SetAuraSlotCandidateFilters(record.key, BuildCandidateFilters(unit, spellSet))
+    StyleSlotKit(record, button, buttonData, style)
+    RegisterSlotAuraSounds(record, buttonData, spellSet)
     -- Tooltip suppression follows the click-through sweep's recorded motion
     -- state (the sweep itself never reaches the slot subtree). P7-validated.
-    slotButton:SetMouseMotionEnabled(not button._cdcClickThroughMotion)
-    slot.parked = nil
-    slot.boundEntry = buttonData
-    slot.hostButton = button
+    record.slotButton:SetMouseMotionEnabled(not button._cdcClickThroughMotion)
+    record.parked = nil
+    record.boundEntry = buttonData
     -- Combat pool lock: while this button is pooled in combat it may only be
     -- re-acquired for the same entry (GroupFrame.AcquireButtonFromPool).
     button._auraSlotHostToken = buttonData
@@ -909,13 +942,10 @@ end
 local deferNoteShown = false
 
 local function HasBoundSlots(groupId)
-    for _, unitSlots in pairs(slots) do
-        for _, slot in ipairs(unitSlots) do
-            if slot.boundEntry then
-                if groupId == nil then return true end
-                local host = slot.hostButton
-                if host and host._groupId == groupId then return true end
-            end
+    for _, record in pairs(displays) do
+        if record.boundEntry then
+            if groupId == nil then return true end
+            if record.button._groupId == groupId then return true end
         end
     end
     return false
@@ -941,7 +971,8 @@ function RunAuraRebind()
     -- Collect wanted bindings from live buttons (icon/bar groups only — text
     -- mode has no compliant aura display; trigger/texture panels lost aura
     -- conditions by design; dormant flags there stay dormant).
-    local wanted = { player = {}, target = {} }
+    local wanted = {}
+    local anyTargetWant = false
     for groupId, frame in pairs(self.groupFrames) do
         local group = self.db.profile.groups[groupId]
         local displayMode = group and (group.displayMode or "icons")
@@ -953,11 +984,12 @@ function RunAuraRebind()
                     local spellSet = self:GetAuraCandidateSpellIDSet(buttonData)
                     if spellSet then
                         local unit = ResolveEntryAuraUnit(self, buttonData)
-                        local list = wanted[unit]
-                        list[#list + 1] = {
+                        anyTargetWant = anyTargetWant or unit == "target"
+                        wanted[#wanted + 1] = {
                             button = button,
                             buttonData = buttonData,
                             spellSet = spellSet,
+                            unit = unit,
                             style = self:GetEffectiveStyle(group.style, buttonData),
                         }
                     end
@@ -966,27 +998,27 @@ function RunAuraRebind()
         end
     end
 
-    -- Authoritative P11 gate: CanRunRebindNow only sees EXISTING target slots,
-    -- so the very first target bind could otherwise slip into the forbidden
-    -- window (target fighting while the player is OOC). Existing target slots
-    -- can't reach here blocked — every caller checks CanRunRebindNow first —
-    -- so skipping the target unit skips only the first-bind case; player
-    -- binds proceed and the armed retry re-runs the full pass.
-    local targetBlocked = #wanted.target > 0
+    -- Authoritative P11 gate: CanRunRebindNow only sees EXISTING target
+    -- displays, so the very first target bind could otherwise slip into the
+    -- forbidden window (target fighting while the player is OOC). Existing
+    -- target displays can't reach here blocked — every caller checks
+    -- CanRunRebindNow first — so skipping target wants skips only the
+    -- first-bind case; player binds proceed and the armed retry re-runs the
+    -- full pass. (Parking below is container-mutator-only and never touches
+    -- the slot subtree, so it needs no unit gate.)
+    local targetBlocked = anyTargetWant
         and UnitExists("target") and UnitAffectingCombat("target")
 
-    for unit, list in pairs(wanted) do
-        if not (unit == "target" and targetBlocked) then
-            local unitSlots = slots[unit]
-            -- Park everything first (also clears host tokens), then bind fresh —
-            -- simple and idempotent; runs at config-change frequency, never per tick.
-            for _, slot in ipairs(unitSlots) do
-                ParkSlot(slot)
-            end
-            for i, want in ipairs(list) do
-                local slot = unitSlots[i] or CreateSlot(unit)
-                if not slot then break end
-                BindSlot(slot, want.button, want.buttonData, want.spellSet, want.style)
+    -- Park everything first (also clears host tokens), then bind fresh —
+    -- simple and idempotent; runs at config-change frequency, never per tick.
+    for _, record in pairs(displays) do
+        ParkDisplay(record)
+    end
+    for _, want in ipairs(wanted) do
+        if not (want.unit == "target" and targetBlocked) then
+            local record = EnsureDisplay(want.button, want.unit)
+            if record then
+                BindDisplay(record, want.buttonData, want.spellSet, want.unit, want.style)
             end
         end
     end
@@ -1042,12 +1074,14 @@ function CooldownCompanion:GetAuraDisplayStatus()
         auraSoundCount = auraSoundCount + 1
     end
     local status = { pendingRebind = pendingRebind, auraSounds = auraSoundCount, units = {} }
-    for unit, unitSlots in pairs(slots) do
-        local bound = 0
-        for _, slot in ipairs(unitSlots) do
-            if slot.boundEntry then bound = bound + 1 end
+    status.units.player = { slots = 0, bound = 0 }
+    status.units.target = { slots = 0, bound = 0 }
+    for _, record in pairs(displays) do
+        local unitStatus = status.units[record.unit]
+        if unitStatus then
+            unitStatus.slots = unitStatus.slots + 1
+            if record.boundEntry then unitStatus.bound = unitStatus.bound + 1 end
         end
-        status.units[unit] = { slots = #unitSlots, bound = bound }
     end
     return status
 end
