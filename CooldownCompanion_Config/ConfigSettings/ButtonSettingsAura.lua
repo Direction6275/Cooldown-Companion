@@ -263,6 +263,33 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
         end)
         scroll:AddChild(desatCb)
     end
+
+    -- Pandemic marker per-entry switch. The auto default follows the tracked
+    -- unit (on for target debuffs, off for player buffs); only an explicit
+    -- override is stored, so unchanged entries keep tracking the default.
+    local pandemicDefault = unit == "target"
+    local pandemicCb = AceGUI:Create("CheckBox")
+    pandemicCb:SetLabel("Pandemic Marker")
+    local pandemicValue = buttonData.pandemicMarker
+    if pandemicValue == nil then pandemicValue = pandemicDefault end
+    pandemicCb:SetValue(pandemicValue == true)
+    pandemicCb:SetRelativeWidth(0.5)
+    pandemicCb:SetCallback("OnValueChanged", function(_, _, value)
+        if value == pandemicDefault then
+            buttonData.pandemicMarker = nil
+        else
+            buttonData.pandemicMarker = value and true or false
+        end
+        RefreshAuraConfig()
+    end)
+    scroll:AddChild(pandemicCb)
+
+    CreateInfoButton(pandemicCb.frame, pandemicCb.checkbg, "LEFT", "RIGHT", pandemicCb.text:GetStringWidth() + 4, 0, {
+        "Pandemic Marker",
+        {"Marks the aura duration text during the last 30% of the aura's duration — the refresh window where recasting extends the remaining time instead of wasting it. Blizzard evaluates the timing; the addon never reads combat values.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"On by default for debuffs on your target, off by default for your own buffs. Marker text and color are in the group's Aura Duration Text settings.", 1, 1, 1, true},
+    }, infoButtons)
 end
 
 ST._BuildAuraTab = BuildAuraTab

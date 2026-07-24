@@ -395,6 +395,13 @@ function CooldownCompanion:ResolveAuraSpellID(buttonData)
     return nil
 end
 
+-- Ordered candidate list (primary first), for callers that need priority
+-- order rather than a lookup set — e.g. the pandemic-threshold base-duration
+-- query, which takes the first candidate that reports a real aura duration.
+function CooldownCompanion:GetOrderedAuraCandidateSpellIDs(buttonData)
+    return (BuildOrderedAuraCandidateIDs(buttonData))
+end
+
 -- Full ordered candidate set as a lookup table, for AuraDisplay's
 -- includeSpellIDs filters (config-time resolution; not combat-blocked).
 function CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData)

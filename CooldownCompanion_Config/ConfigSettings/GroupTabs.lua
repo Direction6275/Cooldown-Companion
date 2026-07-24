@@ -18,6 +18,7 @@ local CreateInfoButton = ST._CreateInfoButton
 local BuildCompactModeControls = ST._BuildCompactModeControls
 local BuildGroupSettingPresetControls = ST._BuildGroupSettingPresetControls
 local AddColorPicker = ST._AddColorPicker
+local AddPandemicMarkerControls = ST._AddPandemicMarkerControls
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddFontControls = ST._AddFontControls
 local AddOffsetSliders = ST._AddOffsetSliders
@@ -3526,6 +3527,8 @@ local function BuildAppearanceTab(container)
                 AddAnchorDropdown(panel, style, "auraTextAnchor", "TOPLEFT", refreshStyle)
                 AddOffsetSliders(panel, style, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle)
             end
+
+            AddPandemicMarkerControls(panel, style, refreshStyle, RefreshActiveAdvancedSettingsPanel)
         end
 
         local _, auraTextAdvBtn = AddAdvancedToggle(auraTextCb, "auraText", tabInfoButtons, style.showAuraText ~= false, {

@@ -366,6 +366,67 @@ local function BuildCooldownTextControls(container, styleTable, refreshCallback,
     end
 end
 
+-- Pandemic marker controls (tracker C9), shared between the group-tab
+-- advanced panel and the per-button override builder. The marker rides the
+-- aura duration text, so it lives with these options. rebuildCallback
+-- re-renders the surrounding panel when a structural choice changes.
+local PANDEMIC_COLOR_MODES = {
+    off = "No Color",
+    marker = "Color the Marker",
+    whole = "Color the Whole Text",
+}
+local PANDEMIC_COLOR_MODE_ORDER = { "off", "marker", "whole" }
+
+local function AddPandemicMarkerControls(container, styleTable, refreshCallback, rebuildCallback)
+    local enableCb = AceGUI:Create("CheckBox")
+    enableCb:SetLabel("Pandemic Marker")
+    enableCb:SetValue(styleTable.pandemicMarkerEnabled ~= false)
+    enableCb:SetFullWidth(true)
+    enableCb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.pandemicMarkerEnabled = val
+        refreshCallback()
+        rebuildCallback()
+    end)
+    container:AddChild(enableCb)
+
+    CreateInfoButton(enableCb.frame, enableCb.checkbg, "LEFT", "RIGHT", enableCb.text:GetStringWidth() + 4, 0, {
+        "Pandemic Marker",
+        {"Marks the aura duration text during the last 30% of the aura's duration — the refresh window where recasting extends the remaining time instead of wasting it. Blizzard evaluates the timing; the addon never reads combat values.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"On by default for debuffs on your target; each entry's Aura tab has the per-entry switch. If a game update ever breaks this display, turn it off here to restore standard duration text.", 1, 1, 1, true},
+    }, enableCb)
+
+    if styleTable.pandemicMarkerEnabled ~= false then
+        local markerBox = AceGUI:Create("EditBox")
+        markerBox:SetLabel("Marker Text")
+        markerBox:SetText(styleTable.pandemicMarkerText or "!!")
+        markerBox:SetFullWidth(true)
+        markerBox:SetCallback("OnEnterPressed", function(widget, event, text)
+            text = tostring(text or ""):gsub("[|%%]", ""):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 8)
+            styleTable.pandemicMarkerText = text
+            widget:SetText(text)
+            refreshCallback()
+        end)
+        container:AddChild(markerBox)
+
+        local modeDrop = AceGUI:Create("Dropdown")
+        modeDrop:SetLabel("Pandemic Color")
+        modeDrop:SetList(PANDEMIC_COLOR_MODES, PANDEMIC_COLOR_MODE_ORDER)
+        modeDrop:SetValue(styleTable.pandemicMarkerColorMode or "marker")
+        modeDrop:SetFullWidth(true)
+        modeDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            styleTable.pandemicMarkerColorMode = val
+            refreshCallback()
+            rebuildCallback()
+        end)
+        container:AddChild(modeDrop)
+
+        if (styleTable.pandemicMarkerColorMode or "marker") ~= "off" then
+            AddColorPicker(container, styleTable, "pandemicMarkerColor", "Pandemic Color", {1, 0.5, 0, 1}, false, refreshCallback, refreshCallback)
+        end
+    end
+end
+
 local function BuildAuraTextControls(container, styleTable, refreshCallback, opts)
     local fallbackStyle = opts and opts.fallbackStyle
     local showAuraText = styleTable.showAuraText
@@ -413,6 +474,10 @@ local function BuildAuraTextControls(container, styleTable, refreshCallback, opt
             AddAnchorDropdown(container, styleTable, "auraTextAnchor", "TOPLEFT", refreshCallback)
             AddOffsetSliders(container, styleTable, "auraTextXOffset", "auraTextYOffset", {x = 2, y = -2}, refreshCallback)
         end
+
+        AddPandemicMarkerControls(container, styleTable, refreshCallback, function()
+            RefreshStructuralControls(container)
+        end)
     end
 end
 
@@ -1744,6 +1809,7 @@ ST._RefreshAdvancedSettingsPreviewButtons = RefreshActiveAdvancedPreviewToggleBu
 ST._AddConditionalPreviewButton = AddConditionalPreviewButton
 ST._AddConditionalPreviewBadge = AddConditionalPreviewBadge
 ST._BuildAuraTextControls = BuildAuraTextControls
+ST._AddPandemicMarkerControls = AddPandemicMarkerControls
 ST._BuildAuraStackTextControls = BuildAuraStackTextControls
 ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildAuraDurationSwipeAdvancedControls = BuildAuraDurationSwipeAdvancedControls

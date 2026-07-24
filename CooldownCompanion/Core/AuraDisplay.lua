@@ -235,8 +235,10 @@ local function BuildSlotKit(slotButton)
     kit.textOverlay:SetAllPoints(slotButton)
     kit.textOverlay:SetFrameLevel(kit.swipe:GetFrameLevel() + 2)
 
-    -- Default formatter ONLY: custom formatters/curves error on secret values
-    -- mid-refresh and freeze the button (V14/V15 — banned until Blizzard fixes).
+    -- Initial registration with no options = stock Blizzard formatting.
+    -- Marker binds re-call SetDurationText with per-spell options at bind
+    -- time (StyleSlotKit; V23 PTR 7 — re-calls outside initializeFrame are
+    -- legal again), so nothing CC-owned is registered here.
     kit.durationText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
     kit.durationText:SetPoint("BOTTOM", slotButton, "BOTTOM", 0, 1)
     slotButton:SetDurationText(kit.durationText)
@@ -330,6 +332,164 @@ local function ShouldShowAuraIcon(buttonData)
     return buttonData.auraShowAuraIcon == true
         or buttonData.addedAs == "aura"
         or buttonData.isPassive == true
+end
+
+------------------------------------------------------------------------
+-- Pandemic marker + color (tracker C9): per-spell SetDurationText options
+-- on the kit's duration text. The marker is a breakpoint format suffix
+-- ("4 s !!") below the threshold (V15/V21); pandemic color is a Blizzard-
+-- evaluated color curve over the whole text (V14 PTR 7 — the real,
+-- combat-legal pandemic color) or baked |cff escapes for marker-only
+-- coloring. Every bind RE-CALLS SetDurationText on the creation-captured
+-- fontstring — legal again on PTR 7 (V23) and structurally OOC in the
+-- rebind pass; non-marker binds pass no options, which resets the binding
+-- to stock Blizzard default formatting. Blizzard evaluates everything
+-- against the secret remaining time; CC only bakes static per-spell data.
+-- Threshold: fixed 30% of base duration via the V22 static lookup.
+-- Fragile surface — froze displays on PTR 5; retest each build (tracker
+-- B1/B2), kill switch = style.pandemicMarkerEnabled.
+------------------------------------------------------------------------
+
+local PANDEMIC_FRACTION = 0.3
+local PANDEMIC_MARKER_MAX_LEN = 8
+
+local DURATION_ROUND_DOWN = Enum.NumericRuleFormatRounding
+    and Enum.NumericRuleFormatRounding.Down or 2
+
+-- Effective per-entry enable: the explicit per-button setting wins; the
+-- auto default is on for target debuffs (where pandemic refresh lives)
+-- and off for player buffs. style.pandemicMarkerEnabled is the group-wide
+-- kill switch.
+local function IsPandemicMarkerWanted(buttonData, style, unit)
+    if style.pandemicMarkerEnabled == false then return false end
+    if buttonData.pandemicMarker ~= nil then
+        return buttonData.pandemicMarker == true
+    end
+    return unit == "target"
+end
+
+-- The marker is user text embedded in a format string: pipes would corrupt
+-- the baked color escapes and '%' would read as a format specifier, so both
+-- are stripped rather than escaped.
+local function SanitizePandemicMarkerText(text)
+    text = tostring(text or ""):gsub("[|%%]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    return text:sub(1, PANDEMIC_MARKER_MAX_LEN)
+end
+
+-- V22: GetAuraBaseDuration requires a live aura instance as an anchor, but
+-- the spellID override drives the answer — ANY readable player aura serves.
+-- OOC-only by the rebind pass's structural guarantee. Nil when no anchor
+-- aura exists this pass; the threshold stays uncomputed until a later
+-- rebind (marker silently absent, default formatting).
+local function FindPlayerAuraAnchorInstanceID()
+    for i = 1, 40 do
+        local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
+        if not aura then return nil end
+        if not issecretvalue(aura) and aura.auraInstanceID then
+            return aura.auraInstanceID
+        end
+    end
+    return nil
+end
+
+-- First candidate aura ID that reports a real duration wins: cast-spell IDs
+-- whose aura lives on a linked spell return 0 (V22: Rake), and permanent
+-- auras have no duration — both mean "no pandemic window on this ID".
+local function GetPandemicBaseDuration(buttonData)
+    local anchorID = FindPlayerAuraAnchorInstanceID()
+    if not anchorID then return nil end
+    local candidates = CooldownCompanion:GetOrderedAuraCandidateSpellIDs(buttonData)
+    for _, spellID in ipairs(candidates) do
+        if C_Spell.DoesSpellExist(spellID) then
+            local duration = C_UnitAuras.GetAuraBaseDuration("player", anchorID, spellID)
+            if duration and not issecretvalue(duration) and duration > 0 then
+                return duration
+            end
+        end
+    end
+    return nil
+end
+
+local function PandemicColorEscape(color)
+    local r = math.floor((color and color[1] or 1) * 255 + 0.5)
+    local g = math.floor((color and color[2] or 0.5) * 255 + 0.5)
+    local b = math.floor((color and color[3] or 0) * 255 + 0.5)
+    return ("|cff%02x%02x%02x"):format(r, g, b)
+end
+
+local function AppendLongDurationBreakpoints(list)
+    list[#list + 1] = {
+        threshold = 91,
+        format = "%.0f m",
+        components = { { div = 60, step = 1, rounding = DURATION_ROUND_DOWN } },
+    }
+    list[#list + 1] = {
+        threshold = 5401,
+        format = "%.0f h",
+        components = { { div = 3600, step = 1, rounding = DURATION_ROUND_DOWN } },
+    }
+end
+
+-- Marker formatter for one bind: the number keeps the default "%d s" form
+-- on both sides of the threshold — only the marker distinguishes the
+-- pandemic window. Marker-only coloring is baked escapes (V21); in whole-
+-- text mode the marker stays plain so the curve colors number and marker
+-- together.
+local function BuildPandemicMarkerFormatter(threshold, marker, style)
+    local below
+    if (style.pandemicMarkerColorMode or "marker") == "marker" then
+        below = "%d s " .. PandemicColorEscape(style.pandemicMarkerColor) .. marker .. "|r"
+    else
+        below = "%d s " .. marker
+    end
+    local list = {
+        { threshold = 0, step = 1, rounding = DURATION_ROUND_DOWN, format = below },
+        { threshold = threshold, step = 1, rounding = DURATION_ROUND_DOWN, format = "%d s" },
+    }
+    -- Long-duration brackets only when they keep the list ascending (a
+    -- pandemic threshold above 90s means a 5min+ aura; raw seconds above it
+    -- is an accepted cosmetic edge).
+    if threshold < 91 then
+        AppendLongDurationBreakpoints(list)
+    end
+    local formatter = C_StringUtil.CreateNumericRuleFormatter()
+    formatter:SetBreakpoints(list)
+    return formatter
+end
+
+-- Hard color cut at the threshold (owner ruling: instant switch); the 0.1s
+-- ramp is the V14-proven near-step construction. The curve owns the WHOLE
+-- fontstring while bound, so its above-threshold segment carries the
+-- user's own aura text color — and the fontstring's static color is
+-- forced white at bind so the curve's colors render unmodulated.
+local function BuildPandemicColorCurve(threshold, style)
+    local p = style.pandemicMarkerColor or { 1, 0.5, 0, 1 }
+    local n = style.auraTextFontColor or { 1, 1, 1, 1 }
+    local curve = C_CurveUtil.CreateColorCurve()
+    curve:AddPoint(threshold, CreateColor(p[1] or 1, p[2] or 0.5, p[3] or 0, p[4] or 1))
+    curve:AddPoint(threshold + 0.1, CreateColor(n[1] or 1, n[2] or 1, n[3] or 1, n[4] or 1))
+    return curve
+end
+
+-- SetDurationText options for one marker bind; nil when there is nothing
+-- to render (empty marker without whole-text coloring). With an empty
+-- marker in whole-text mode the options are curve-only: stock Blizzard
+-- formatting, pandemic-colored.
+local function BuildPandemicDurationOptions(baseDuration, style)
+    local threshold = baseDuration * PANDEMIC_FRACTION
+    local marker = SanitizePandemicMarkerText(style.pandemicMarkerText or "!!")
+    local options
+    if marker ~= "" then
+        options = { textFormatter = BuildPandemicMarkerFormatter(threshold, marker, style) }
+    end
+    if (style.pandemicMarkerColorMode or "marker") == "whole" then
+        options = options or {}
+        options.textColor = {
+            curve = BuildPandemicColorCurve(threshold, style),
+            property = Enum.DurationTextBindingProperty.RemainingDuration,
+        }
+    end
+    return options
 end
 
 local function StyleSlotKit(slot, button, buttonData, style)
@@ -467,6 +627,26 @@ local function StyleSlotKit(slot, button, buttonData, style)
             style.auraStackXOffset or 2, style.auraStackYOffset or 2)
         kit.stackText:SetAlpha(style.showAuraStackText ~= false and 1 or 0)
     end
+
+    -- Pandemic marker + color (C9): per-bind SetDurationText re-call on the
+    -- creation-captured fontstring (V23 PTR 7 — re-calls are legal; this
+    -- pass is structurally OOC). Marker binds carry per-spell options; every
+    -- other bind re-calls with none, resetting the binding to stock Blizzard
+    -- formatting — so slots reused across entries always converge.
+    local pandemicOptions
+    if style.showAuraText ~= false and IsPandemicMarkerWanted(buttonData, style, slot.unit) then
+        local baseDuration = GetPandemicBaseDuration(buttonData)
+        if baseDuration then
+            pandemicOptions = BuildPandemicDurationOptions(baseDuration, style)
+        end
+    end
+    if pandemicOptions and pandemicOptions.textColor then
+        -- White base so the curve's colors render unmodulated (the binding
+        -- drives the fontstring's vertex color, which modulates against the
+        -- static text color — same trick as the bar colorShift fill).
+        kit.durationText:SetTextColor(1, 1, 1, 1)
+    end
+    slotButton:SetDurationText(kit.durationText, pandemicOptions)
 
     -- Bar name replica: bind-time entry name in the bar name-text style (the
     -- backdrop occludes CC's name text; a live aura-name override would need

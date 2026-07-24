@@ -92,6 +92,10 @@ local defaults = {
                         auraTextFontSize = 12,
                         auraTextFontOutline = "OUTLINE",
                         auraTextFontColor = {0, 0.925, 1, 1},
+                        pandemicMarkerEnabled = true, -- group-wide kill switch for the marker feature
+                        pandemicMarkerText = "!!",
+                        pandemicMarkerColorMode = "marker", -- "off" / "marker" / "whole"
+                        pandemicMarkerColor = {1, 0.5, 0, 1},
                         iconWidthRatio = 1.0, -- 1.0 = square, <1 = taller, >1 = wider
                         maintainAspectRatio = true, -- Prevent icon image stretching
                         showTooltips = false,
@@ -270,6 +274,10 @@ local defaults = {
             auraTextAnchor = "TOPLEFT",
             auraTextXOffset = 2,
             auraTextYOffset = -2,
+            pandemicMarkerEnabled = true,
+            pandemicMarkerText = "!!",
+            pandemicMarkerColorMode = "marker",
+            pandemicMarkerColor = {1, 0.5, 0, 1},
             iconWidthRatio = 1.0,
             maintainAspectRatio = true,
             showTooltips = false,
@@ -864,7 +872,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     auraText = {
         label = "Aura Duration Text",
-        keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "separateTextPositions", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset"},
+        keys = {"showAuraText", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "separateTextPositions", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset", "pandemicMarkerEnabled", "pandemicMarkerText", "pandemicMarkerColorMode", "pandemicMarkerColor"},
         modes = {icons = true, bars = true},
     },
     auraStackText = {
