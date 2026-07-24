@@ -212,6 +212,55 @@ local function BuildSlotKit(slotButton)
         kit.barFillCsAnim = kit.barFillCsAG:CreateAnimation("VertexColor")
     end
 
+    -- Stack fill (tracker C2): a second StatusBar Blizzard drives with the
+    -- secret application count. Registered at creation with a placeholder
+    -- max of 1 — ALWAYS a number: ApplyApplicationBar runs math.max(max, 1),
+    -- so a nil errors inside Blizzard's refresh and freezes the display.
+    -- Every bar bind whose entry resolves a stacking max RE-CALLS
+    -- SetApplicationBar with that max (the C9 SetDurationText per-bind
+    -- pattern; legal again on PTR 7 per V23, probe-gated for ApplicationBar
+    -- by the v24 retest). Separator stripes and capacity blocks are fixed
+    -- pools sized to the atlas cap — the bound max varies per bind now, and
+    -- regions can only be created here (write-once subtree).
+    if slotButton.SetApplicationBar then
+        kit.stackFill = CreateFrame("StatusBar", nil, slotButton)
+        kit.stackFill:SetAllPoints(slotButton)
+        kit.stackFill:EnableMouse(false)
+        kit.stackFill:SetAlpha(0)
+        slotButton:SetApplicationBar(kit.stackFill, { maxApplications = 1 })
+        -- CC-side memo of the last max written (registered regions are
+        -- write-only; the next bind decides from this, never a read-back).
+        kit.stackFillMax = 1
+
+        kit.stackFillPulseAG = kit.stackFill:CreateAnimationGroup()
+        kit.stackFillPulseAG:SetLooping("BOUNCE")
+        kit.stackFillPulseAnim = kit.stackFillPulseAG:CreateAnimation("Alpha")
+        kit.stackFillPulseAnim:SetFromAlpha(1.0)
+        kit.stackFillPulseAnim:SetToAlpha(0.3)
+        kit.stackFill:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        local stackFillTex = kit.stackFill:GetStatusBarTexture()
+        -- Creation-time ref, same rule as kit.barFillTexture.
+        kit.stackFillTexture = stackFillTex
+        kit.stackFillCsAG = stackFillTex:CreateAnimationGroup()
+        kit.stackFillCsAG:SetLooping("BOUNCE")
+        kit.stackFillCsAnim = kit.stackFillCsAG:CreateAnimation("VertexColor")
+
+        kit.stackSegments = {}
+        for i = 1, ST.STACK_SEGMENT_ATLAS_MAX - 1 do
+            local tex = kit.stackFill:CreateTexture(nil, "OVERLAY")
+            tex:SetAlpha(0)
+            kit.stackSegments[i] = tex
+        end
+        -- Same background layer + sublayer as the barBackdrop slab these
+        -- replace in widget mode.
+        kit.stackBgBlocks = {}
+        for i = 1, ST.STACK_SEGMENT_ATLAS_MAX do
+            local tex = slotButton:CreateTexture(nil, "BACKGROUND", nil, 2)
+            tex:SetAlpha(0)
+            kit.stackBgBlocks[i] = tex
+        end
+    end
+
     -- Bar shell composition (show-only-while-active bar entries): the bar's
     -- icon square carries its own background and border ring, so the kit
     -- needs a second replica set beside kit.bg/kit.border.
@@ -332,6 +381,162 @@ local function ShouldShowAuraIcon(buttonData)
     return buttonData.auraShowAuraIcon == true
         or buttonData.addedAs == "aura"
         or buttonData.isPassive == true
+end
+
+------------------------------------------------------------------------
+-- True-widget stack rendering (tracker C2, owner ruling): standalone aura
+-- entries in stack mode render per-stack blocks with genuinely empty gaps.
+-- The fill uses a bundled block atlas — StatusBars CROP their texture as
+-- they fill (they don't stretch it), so Blizzard's secret-driven fill
+-- reveals whole blocks one stack at a time. Capacity blocks are plain
+-- CC-drawn textures laid out with the SAME proportions as the atlas so the
+-- two always align; BarMode draws an identical set under the kit for the
+-- aura-down state.
+------------------------------------------------------------------------
+
+ST.STACK_SEGMENT_GAP_RATIO = 10 / 512 -- baked into the atlas artwork
+ST.STACK_SEGMENT_ATLAS_MAX = 20
+
+function ST.GetStackSegmentsTexture(max)
+    return "Interface\\AddOns\\CooldownCompanion\\Media\\stack-segments-" .. max .. ".tga"
+end
+
+-- Lay out `max` capacity blocks over `host` with the atlas proportions.
+-- Forced opaque like the bar backdrop: a translucent block would let the
+-- layer underneath bleed through while the aura display is occluding it.
+function ST.LayoutStackBlocks(blocks, host, max, vertical, color)
+    local length = vertical and host:GetHeight() or host:GetWidth()
+    if length <= 0 then
+        ST.HideStackBlocks(blocks)
+        return
+    end
+    local gap = length * ST.STACK_SEGMENT_GAP_RATIO
+    local blockLen = (length - (max - 1) * gap) / max
+    for i, tex in ipairs(blocks) do
+        if i <= max then
+            local start = (i - 1) * (blockLen + gap)
+            tex:SetColorTexture(color[1] or 0.1, color[2] or 0.1, color[3] or 0.1, 1)
+            tex:ClearAllPoints()
+            if vertical then
+                -- VERTICAL fills bottom-up; blocks stack from the bottom.
+                tex:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, start)
+                tex:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, start)
+                tex:SetHeight(blockLen)
+            else
+                tex:SetPoint("TOPLEFT", host, "TOPLEFT", start, 0)
+                tex:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", start, 0)
+                tex:SetWidth(blockLen)
+            end
+            tex:SetAlpha(1)
+        else
+            tex:SetAlpha(0)
+        end
+    end
+end
+
+function ST.HideStackBlocks(blocks)
+    if not blocks then return end
+    for _, tex in ipairs(blocks) do
+        tex:SetAlpha(0)
+    end
+end
+
+-- Shared styling for whichever bar fill carries a bar bind — the duration
+-- fill and the stack fill are visually identical; only the Blizzard-side
+-- driver differs. fillTex is the creation-captured status-bar texture
+-- region (registered regions are write-only — GetStatusBarTexture at bind
+-- time is banned). While color-shifting, the base color stays white so the
+-- VertexColor animation owns the full color range (same trick as the kit
+-- border colorShift). fillTexture/rotates override the user bar texture
+-- for the widget-stack atlas (rotated so vertical bars keep the blocks).
+local function StyleActiveBarFill(fill, fillTex, pulseAG, pulseAnim, csAG, csAnim, button, style, fillTexture, rotates)
+    local auraColor = style.barAuraColor or { 0.2, 1.0, 0.2, 1.0 }
+    fill:SetOrientation(button._isVertical and "VERTICAL" or "HORIZONTAL")
+    fill:SetReverseFill(style.barReverseFill or false)
+    fill:SetRotatesTexture(rotates == true)
+    fill:SetStatusBarTexture(fillTexture or CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
+    fill:SetAlpha(1)
+    fill:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
+
+    pulseAG:Stop()
+    csAG:Stop()
+    fillTex:SetVertexColor(1, 1, 1, 1)
+    local indicatorOn = ST.IsBarAuraIndicatorEnabled(style)
+    if indicatorOn and style.barAuraPulseEnabled then
+        pulseAnim:SetDuration(style.barAuraPulseSpeed or 0.5)
+        pulseAG:Play()
+    end
+    if indicatorOn and style.barAuraColorShiftEnabled then
+        fill:SetStatusBarColor(1, 1, 1, auraColor[4] or 1)
+        local shift = style.barAuraColorShiftColor or { 1, 1, 1, 1 }
+        csAnim:SetStartColor(CreateColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1))
+        csAnim:SetEndColor(CreateColor(shift[1], shift[2], shift[3], shift[4] or 1))
+        csAnim:SetDuration(style.barAuraColorShiftSpeed or 0.5)
+        csAG:Play()
+    end
+end
+
+local function RestBarFill(fill, fillTex, pulseAG, csAG)
+    pulseAG:Stop()
+    csAG:Stop()
+    fillTex:SetVertexColor(1, 1, 1, 1)
+    fill:SetAlpha(0)
+end
+
+-- Segment separators: backdrop-colored stripes at each stack boundary so the
+-- fill reads as "N of max" at a glance. Stacks are whole numbers, so the
+-- Blizzard fill edge always lands exactly on a boundary — a stripe centered
+-- there is pixel-equivalent to live's true per-segment gaps. Stripe width is
+-- the per-button segment gap (0 = solid fill). Pixel positions come from the
+-- host statusBar (CC-owned geometry, valid at bind time; geometry restyles
+-- always re-request a rebind). The stripe pool is sized to the atlas cap;
+-- a larger bound max runs continuous (fill alone still reads correctly).
+local function StyleStackSegments(kit, button, buttonData, style, boundMax, shown)
+    local segments = kit.stackSegments
+    if not segments then return end
+    local vertical = button._isVertical
+    local host = button.statusBar or button
+    local length = vertical and host:GetHeight() or host:GetWidth()
+    local gap = CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData)
+    if not shown or length <= 0 or gap <= 0
+        or not boundMax or boundMax - 1 > #segments then
+        for _, tex in ipairs(segments) do
+            tex:SetAlpha(0)
+        end
+        return
+    end
+    local bg = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
+    for i, tex in ipairs(segments) do
+        if i < boundMax then
+            tex:SetColorTexture(bg[1] or 0.1, bg[2] or 0.1, bg[3] or 0.1, 1)
+            tex:ClearAllPoints()
+            local offset = length * i / boundMax
+            if vertical then
+                -- VERTICAL fills bottom-up; boundaries measure from the bottom.
+                tex:SetHeight(gap)
+                tex:SetPoint("LEFT", kit.stackFill, "BOTTOMLEFT", 0, offset)
+                tex:SetPoint("RIGHT", kit.stackFill, "BOTTOMRIGHT", 0, offset)
+            else
+                tex:SetWidth(gap)
+                tex:SetPoint("TOP", kit.stackFill, "TOPLEFT", offset, 0)
+                tex:SetPoint("BOTTOM", kit.stackFill, "BOTTOMLEFT", offset, 0)
+            end
+            tex:SetAlpha(1)
+        else
+            tex:SetAlpha(0)
+        end
+    end
+end
+
+-- Widget-stack eligibility for the CURRENT bind: a stack-mode bind on a
+-- standalone aura entry whose max fits the block atlas. Other stack binds
+-- use the painted-divider rendering.
+local function IsWidgetStackBind(slot, buttonData)
+    local kit = slot.kit
+    return kit ~= nil and kit.stackFill ~= nil and kit.stackBgBlocks ~= nil
+        and slot.boundStackMax ~= nil
+        and slot.boundStackMax <= ST.STACK_SEGMENT_ATLAS_MAX
+        and buttonData.addedAs == "aura"
 end
 
 ------------------------------------------------------------------------
@@ -722,7 +927,16 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- (SetVertexColor-alpha gotcha: a 4-arg color write after SetAlpha(0)
     -- would resurrect the region).
     if isBar then
-        if shellEntry then
+        -- Fill mode (tracker C2): a stack-mode bind carries boundStackMax
+        -- (resolved by the rebind pass, re-called onto the registered stack
+        -- bar before styling); every other bind runs the duration fill.
+        -- Exactly one fill is visible per bind. Standalone aura entries
+        -- render stacks as true widgets (owner ruling): capacity blocks
+        -- with empty gaps + the block-atlas fill; other entries keep the
+        -- painted-divider look (the CC bar underneath needs the slab).
+        local useStackFill = kit.stackFill ~= nil and slot.boundStackMax ~= nil
+        local widgetStack = IsWidgetStackBind(slot, buttonData)
+        if shellEntry or widgetStack then
             kit.barBackdrop:SetAlpha(0)
         else
             local bg = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
@@ -731,44 +945,46 @@ local function StyleSlotKit(slot, button, buttonData, style)
             kit.barBackdrop:SetColorTexture(bg[1] or 0.1, bg[2] or 0.1, bg[3] or 0.1, 1)
             kit.barBackdrop:SetAlpha(1)
         end
+        if widgetStack then
+            -- Block geometry reads the CC statusBar (sanctioned anchor
+            -- target + CC-owned width), matching BarMode's block set exactly.
+            ST.LayoutStackBlocks(kit.stackBgBlocks, button.statusBar or slotButton,
+                slot.boundStackMax, button._isVertical, style.barBgColor or { 0.1, 0.1, 0.1, 0.8 })
+        else
+            ST.HideStackBlocks(kit.stackBgBlocks)
+        end
         if kit.barFill then
-            local auraColor = style.barAuraColor or { 0.2, 1.0, 0.2, 1.0 }
-            kit.barFill:SetOrientation(button._isVertical and "VERTICAL" or "HORIZONTAL")
-            kit.barFill:SetReverseFill(style.barReverseFill or false)
-            kit.barFill:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
-            kit.barFill:SetAlpha(1)
-            kit.barFill:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
-
-            -- Bar aura fill effects: pulse breathes the fill alpha; color
-            -- shift bounces the fill tint between the aura color and the
-            -- shift color. While shifting, the base color stays white so the
-            -- VertexColor animation owns the full color range (same trick as
-            -- the kit border colorShift).
-            kit.barFillPulseAG:Stop()
-            kit.barFillCsAG:Stop()
-            kit.barFillTexture:SetVertexColor(1, 1, 1, 1)
-            local indicatorOn = ST.IsBarAuraIndicatorEnabled(style)
-            if indicatorOn and style.barAuraPulseEnabled then
-                kit.barFillPulseAnim:SetDuration(style.barAuraPulseSpeed or 0.5)
-                kit.barFillPulseAG:Play()
-            end
-            if indicatorOn and style.barAuraColorShiftEnabled then
-                kit.barFill:SetStatusBarColor(1, 1, 1, auraColor[4] or 1)
-                local shift = style.barAuraColorShiftColor or { 1, 1, 1, 1 }
-                kit.barFillCsAnim:SetStartColor(CreateColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1))
-                kit.barFillCsAnim:SetEndColor(CreateColor(shift[1], shift[2], shift[3], shift[4] or 1))
-                kit.barFillCsAnim:SetDuration(style.barAuraColorShiftSpeed or 0.5)
-                kit.barFillCsAG:Play()
+            if useStackFill then
+                RestBarFill(kit.barFill, kit.barFillTexture, kit.barFillPulseAG, kit.barFillCsAG)
+            else
+                StyleActiveBarFill(kit.barFill, kit.barFillTexture,
+                    kit.barFillPulseAG, kit.barFillPulseAnim,
+                    kit.barFillCsAG, kit.barFillCsAnim, button, style)
             end
         end
+        if kit.stackFill then
+            if useStackFill then
+                local atlas = widgetStack and ST.GetStackSegmentsTexture(slot.boundStackMax) or nil
+                StyleActiveBarFill(kit.stackFill, kit.stackFillTexture,
+                    kit.stackFillPulseAG, kit.stackFillPulseAnim,
+                    kit.stackFillCsAG, kit.stackFillCsAnim, button, style,
+                    atlas, widgetStack and button._isVertical)
+            else
+                RestBarFill(kit.stackFill, kit.stackFillTexture, kit.stackFillPulseAG, kit.stackFillCsAG)
+            end
+        end
+        StyleStackSegments(kit, button, buttonData, style, slot.boundStackMax,
+            useStackFill and not widgetStack)
     else
         kit.barBackdrop:SetAlpha(0)
+        ST.HideStackBlocks(kit.stackBgBlocks)
         if kit.barFill then
-            kit.barFillPulseAG:Stop()
-            kit.barFillCsAG:Stop()
-            kit.barFillTexture:SetVertexColor(1, 1, 1, 1)
-            kit.barFill:SetAlpha(0)
+            RestBarFill(kit.barFill, kit.barFillTexture, kit.barFillPulseAG, kit.barFillCsAG)
         end
+        if kit.stackFill then
+            RestBarFill(kit.stackFill, kit.stackFillTexture, kit.stackFillPulseAG, kit.stackFillCsAG)
+        end
+        StyleStackSegments(kit, button, buttonData, style, nil, false)
     end
 
     -- Aura active glow: icon hosts style from the auraGlow* keys, bar hosts
@@ -811,12 +1027,18 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local barBounds = button._barBounds or button
         -- CC parity: with the icon square shown the background covers only
         -- the bar area (the square has its own), otherwise the whole button.
+        -- Widget-stack shells skip the slab — the capacity blocks laid out
+        -- above ARE the background, and a slab here would fill the gaps.
         local bgAnchor = barIconShown and barBounds or button
-        kit.bg:ClearAllPoints()
-        kit.bg:SetPoint("TOPLEFT", bgAnchor, "TOPLEFT", 0, 0)
-        kit.bg:SetPoint("BOTTOMRIGHT", bgAnchor, "BOTTOMRIGHT", 0, 0)
-        kit.bg:SetColorTexture(bgColor[1] or 0.1, bgColor[2] or 0.1, bgColor[3] or 0.1, bgColor[4] or 0.8)
-        kit.bg:SetAlpha(1)
+        if IsWidgetStackBind(slot, buttonData) then
+            kit.bg:SetAlpha(0)
+        else
+            kit.bg:ClearAllPoints()
+            kit.bg:SetPoint("TOPLEFT", bgAnchor, "TOPLEFT", 0, 0)
+            kit.bg:SetPoint("BOTTOMRIGHT", bgAnchor, "BOTTOMRIGHT", 0, 0)
+            kit.bg:SetColorTexture(bgColor[1] or 0.1, bgColor[2] or 0.1, bgColor[3] or 0.1, bgColor[4] or 0.8)
+            kit.bg:SetAlpha(1)
+        end
         local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
         local renderMode = ST.GetEffectiveBorderRenderMode(ST.GetBorderRenderMode(style), nil, borderSize)
         local borderColor = style.borderColor or { 0, 0, 0, 1 }
@@ -1061,13 +1283,17 @@ local function ParkDisplay(record)
     if not record.parked then
         record.parked = true
         record.boundEntry = nil
+        -- CC-side tag only: parking is container-mutator-only and never
+        -- touches the slot subtree, so the registered max stays whatever the
+        -- last bind wrote (the fill is alpha-0; the next bind converges it).
+        record.boundStackMax = nil
         ReleaseSlotAuraSounds(record)
         record.container:SetAuraSlotCandidateFilters(record.key,
             BuildCandidateFilters(record.unit, { [PARK_SENTINEL[record.unit]] = true }))
     end
 end
 
-local function BindDisplay(record, buttonData, spellSet, unit, style)
+local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax)
     local button = record.button
     local layer = EnsureAuraLayer(button)
     -- Re-pin after the layer's level dance: the cascade keeps the subtree's
@@ -1086,7 +1312,30 @@ local function BindDisplay(record, buttonData, spellSet, unit, style)
         end
     end
     record.container:SetAuraSlotCandidateFilters(record.key, BuildCandidateFilters(unit, spellSet))
+    -- Stack fill re-call (tracker C2): converge the registered max to this
+    -- bind before styling — always a number (ApplyApplicationBar hazard),
+    -- 1 = duration-only bind. Same per-bind re-call pattern as the C9
+    -- SetDurationText below (V23 PTR 7 — re-calls are legal again; the
+    -- ApplicationBar leg is probe-gated by the v24 retest), structurally
+    -- OOC in the rebind pass. Skipped when unchanged: the max is CC-side
+    -- state (kit.stackFillMax), never a read-back.
+    local kit = record.kit
+    if kit and kit.stackFill then
+        local wantMax = stackBarMax or 1
+        if kit.stackFillMax ~= wantMax then
+            record.slotButton:SetApplicationBar(kit.stackFill, { maxApplications = wantMax })
+            kit.stackFillMax = wantMax
+        end
+    end
+    -- Set before styling: StyleSlotKit selects the stack fill from this tag.
+    record.boundStackMax = stackBarMax
     StyleSlotKit(record, button, buttonData, style)
+    -- CC-side capacity blocks sync here too: rebinds are OOC by design, so
+    -- this repairs bars whose style pass ran in combat (where the block
+    -- helper defers).
+    if button._isBar and ST._UpdateBarStackBlocks then
+        ST._UpdateBarStackBlocks(button, style)
+    end
     RegisterSlotAuraSounds(record, buttonData, spellSet)
     -- Tooltip suppression follows the click-through sweep's recorded motion
     -- state (the sweep itself never reaches the slot subtree). P7-validated.
@@ -1165,12 +1414,21 @@ function RunAuraRebind()
                     if spellSet then
                         local unit = ResolveEntryAuraUnit(self, buttonData)
                         anyTargetWant = anyTargetWant or unit == "target"
+                        -- Stack fill (tracker C2): bar hosts only; the max is
+                        -- automatic (owner ruling). A nil resolve means "not
+                        -- a stacking aura" and the bind falls back to the
+                        -- duration fill.
+                        local stackBarMax
+                        if displayMode == "bars" and self:IsBarPanelAuraStackDisplay(buttonData) then
+                            stackBarMax = self:GetAuraStackBarMax(buttonData)
+                        end
                         wanted[#wanted + 1] = {
                             button = button,
                             buttonData = buttonData,
                             spellSet = spellSet,
                             unit = unit,
                             style = self:GetEffectiveStyle(group.style, buttonData),
+                            stackBarMax = stackBarMax,
                         }
                     end
                 end
@@ -1198,7 +1456,8 @@ function RunAuraRebind()
         if not (want.unit == "target" and targetBlocked) then
             local record = EnsureDisplay(want.button, want.unit)
             if record then
-                BindDisplay(record, want.buttonData, want.spellSet, want.unit, want.style)
+                BindDisplay(record, want.buttonData, want.spellSet, want.unit,
+                    want.style, want.stackBarMax)
             end
         end
     end
@@ -1254,13 +1513,14 @@ function CooldownCompanion:GetAuraDisplayStatus()
         auraSoundCount = auraSoundCount + 1
     end
     local status = { pendingRebind = pendingRebind, auraSounds = auraSoundCount, units = {} }
-    status.units.player = { slots = 0, bound = 0 }
-    status.units.target = { slots = 0, bound = 0 }
+    status.units.player = { slots = 0, bound = 0, stackBound = 0 }
+    status.units.target = { slots = 0, bound = 0, stackBound = 0 }
     for _, record in pairs(displays) do
         local unitStatus = status.units[record.unit]
         if unitStatus then
             unitStatus.slots = unitStatus.slots + 1
             if record.boundEntry then unitStatus.bound = unitStatus.bound + 1 end
+            if record.boundStackMax then unitStatus.stackBound = unitStatus.stackBound + 1 end
         end
     end
     return status

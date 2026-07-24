@@ -216,6 +216,58 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
     end)
     scroll:AddChild(addBox)
 
+    -- Bar fill mode (tracker C2): bar hosts can fill the aura bar by stack
+    -- count instead of draining with time. Max stacks is automatic (game
+    -- data); the status line below shows what resolved.
+    if (group.displayMode or "icons") == "bars" then
+        local stacksCb = AceGUI:Create("CheckBox")
+        stacksCb:SetLabel("Bar Shows Stacks")
+        stacksCb:SetValue(CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData))
+        stacksCb:SetRelativeWidth(0.5)
+        stacksCb:SetCallback("OnValueChanged", function(_, _, value)
+            CooldownCompanion:SetBarPanelAuraStackDisplay(buttonData, value)
+            RefreshAuraConfig()
+        end)
+        scroll:AddChild(stacksCb)
+        CreateInfoButton(stacksCb.frame, stacksCb.checkbg, "LEFT", "RIGHT", stacksCb.text:GetStringWidth() + 4, 0, {
+            "Bar Shows Stacks",
+            {"The bar shows the stack count instead of draining with time. Blizzard drives the fill and the maximum comes from the game's spell data — nothing to configure.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"Aura entries render one block per stack with real gaps between them. Spell entries with aura tracking render a single bar with painted dividers (the cooldown bar underneath needs a solid backdrop); their gap width is adjustable.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"If the tracked aura doesn't stack, the bar keeps the normal duration fill.", 1, 1, 1, true},
+        }, infoButtons)
+
+        if CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then
+            -- Painted-divider mode only: widget-mode blocks (aura entries)
+            -- have the gap proportion baked into the bundled fill atlas.
+            if not isStandalone then
+                local gapSlider = AceGUI:Create("Slider")
+                gapSlider:SetLabel("Segment Gap")
+                gapSlider:SetSliderValues(0, 20, 1)
+                gapSlider:SetValue(CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData))
+                gapSlider:SetRelativeWidth(0.5)
+                gapSlider:SetCallback("OnValueChanged", function(_, _, value)
+                    CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
+                    -- Rebind only: the gap is pure slot-kit styling, so no group
+                    -- refresh and no panel rebuild (which would break the drag).
+                    CooldownCompanion:RequestAuraRebind("config")
+                end)
+                scroll:AddChild(gapSlider)
+            end
+
+            local maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData)
+            local statusLabel = AceGUI:Create("Label")
+            if maxStacks then
+                statusLabel:SetText("|cffffd100Stack bar:|r full at " .. maxStacks .. " stacks")
+            else
+                statusLabel:SetText("|cffff9955This aura doesn't stack — the bar will show duration.|r")
+            end
+            statusLabel:SetFullWidth(true)
+            scroll:AddChild(statusLabel)
+        end
+    end
+
     -- Display toggles. Standalone and passive entries always show the live
     -- aura icon (it exists to display the aura), so the opt-in only appears
     -- on ordinary spell entries.

@@ -393,6 +393,49 @@ local function ApplyBarAuraShellVisuals(button, buttonData)
     if button.overlayFrame then button.overlayFrame:SetAlpha(alpha) end
 end
 
+-- True-widget stack rendering (tracker C2): a standalone aura entry in
+-- stack mode replaces the bar background slab with per-stack capacity
+-- blocks, so the gaps between stacks are genuinely empty; the aura kit
+-- overlays an identical set (same proportions as the bundled fill atlas)
+-- while the aura runs. Shell entries render nothing CC-side (the kit is
+-- the whole visible bar). Re-evaluation is OOC-only: the max lookup can
+-- return a secret in restricted contexts, and the aura layer defers its
+-- own restyle through combat anyway.
+local function UpdateBarStackBlocks(button, style)
+    if InCombatLockdown() then return end
+    local buttonData = button.buttonData
+    local max
+    if buttonData and buttonData.addedAs == "aura"
+        and not IsAuraShellEntry(buttonData)
+        and CooldownCompanion.IsBarPanelAuraStackDisplay
+        and CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then
+        max = CooldownCompanion:GetAuraStackBarMax(buttonData)
+        if max and max > ST.STACK_SEGMENT_ATLAS_MAX then max = nil end
+    end
+    if max then
+        local blocks = button._stackBgBlocks
+        if not blocks then
+            blocks = {}
+            button._stackBgBlocks = blocks
+        end
+        for i = #blocks + 1, max do
+            local tex = button:CreateTexture(nil, "BACKGROUND")
+            tex:SetAlpha(0)
+            blocks[i] = tex
+        end
+        ST.LayoutStackBlocks(blocks, button.statusBar or button, max,
+            button._isVertical, style.barBgColor or { 0.1, 0.1, 0.1, 0.8 })
+        button.bg:SetAlpha(0)
+        button._stackBlocksActive = true
+    elseif button._stackBlocksActive then
+        button._stackBlocksActive = nil
+        ST.HideStackBlocks(button._stackBgBlocks)
+        -- Restore shell-aware: ApplyBarAuraShellVisuals runs before this and
+        -- owns the shell alpha; a plain 1 here would resurrect a shell's bg.
+        button.bg:SetAlpha(IsAuraShellEntry(buttonData) and 0 or 1)
+    end
+end
+
 function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local barLength = style.barLength or 180
     local barHeight = style.barHeight or 20
@@ -714,6 +757,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     button:SetScript("OnLeave", nil)
 
     ApplyBarAuraShellVisuals(button, buttonData)
+    UpdateBarStackBlocks(button, style)
 
     return button
 end
@@ -1012,6 +1056,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button:SetScript("OnLeave", nil)
 
     ApplyBarAuraShellVisuals(button, button.buttonData)
+    UpdateBarStackBlocks(button, newStyle)
 
     CooldownCompanion:UpdateAuraTextureVisual(button)
 end
@@ -1020,3 +1065,4 @@ end
 ST._UpdateBarDisplay = UpdateBarDisplay
 ST._ApplyBarCountTextStyle = ApplyBarCountTextStyle
 ST._ApplyBarAuraShellVisuals = ApplyBarAuraShellVisuals
+ST._UpdateBarStackBlocks = UpdateBarStackBlocks

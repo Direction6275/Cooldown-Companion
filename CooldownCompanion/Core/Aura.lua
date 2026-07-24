@@ -657,12 +657,67 @@ function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, sibling
     return changed
 end
 
--- 12.1: bars have exactly one aura display — the Blizzard-driven duration
--- timer (stack-count fill modes died with secret stack values; V15b). The
--- stored auraBar.mode data stays dormant.
+-- 12.1 bar aura fill modes (PTR 6, tracker C2): the Blizzard-driven duration
+-- timer, or the ApplicationBar stack fill. auraBar.mode == "stacks" — kept
+-- dormant by the aura-rebuild migration exactly for this revival — selects
+-- the stack fill; anything else means duration.
 
+function CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    return type(auraBar) == "table" and auraBar.mode == "stacks"
+end
 
+function CooldownCompanion:SetBarPanelAuraStackDisplay(buttonData, wantStacks)
+    if type(buttonData.auraBar) ~= "table" then
+        if not wantStacks then return end
+        buttonData.auraBar = {}
+    end
+    buttonData.auraBar.mode = wantStacks and "stacks" or "duration"
+end
 
+-- Segment gap (live parity): per-button width of the painted gap between
+-- stack segments. Stored raw, clamped on read; 0 = solid unsegmented fill.
+function CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    local value = type(auraBar) == "table" and tonumber(auraBar.segmentGap) or nil
+    if not value then return 4 end
+    value = math.floor(value + 0.5)
+    if value < 0 then return 0 end
+    if value > 20 then return 20 end
+    return value
+end
+
+function CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
+    if type(buttonData.auraBar) ~= "table" then
+        buttonData.auraBar = {}
+    end
+    buttonData.auraBar.segmentGap = value
+end
+
+-- Automatic max-stacks resolution (owner ruling: automatic only, no manual
+-- field). The lookup is talent-aware and returns 0 for IDs that carry no
+-- stacking aura (V24), so the highest candidate wins and anything ≤ 1 means
+-- "not a stacking aura" — callers fall back to the duration fill. The return
+-- is documented SecretWhenUnitAuraRestricted; callers run OOC, but a secret
+-- is still discarded before any comparison.
+function CooldownCompanion:GetAuraStackBarMax(buttonData)
+    local getMax = C_Spell.GetSpellMaxCumulativeAuraApplications
+    if not getMax then return nil end
+    local spellSet = self:GetAuraCandidateSpellIDSet(buttonData)
+    if not spellSet then return nil end
+    local best = 0
+    for spellID in pairs(spellSet) do
+        local maxApplications = getMax(spellID)
+        if not issecretvalue(maxApplications) and type(maxApplications) == "number"
+            and maxApplications > best then
+            best = maxApplications
+        end
+    end
+    if best > 1 then
+        return best
+    end
+    return nil
+end
 
 
 -- Hardcoded ability → buff overrides for spells whose ability ID and buff IDs
