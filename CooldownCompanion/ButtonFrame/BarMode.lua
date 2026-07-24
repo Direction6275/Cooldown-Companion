@@ -423,16 +423,48 @@ local function UpdateBarStackBlocks(button, style)
             tex:SetAlpha(0)
             blocks[i] = tex
         end
+        -- Per-block border rings (owner ruling: each stack its own widget).
+        -- Same OVERLAY layer as the whole-bar ring these replace.
+        local borders = button._stackBlockBorders
+        if not borders then
+            borders = {}
+            button._stackBlockBorders = borders
+        end
+        for i = #borders + 1, max do
+            local set = {}
+            for edge = 1, 4 do
+                local tex = button:CreateTexture(nil, "OVERLAY")
+                tex:SetAlpha(0)
+                set[edge] = tex
+            end
+            borders[i] = set
+        end
         ST.LayoutStackBlocks(blocks, button.statusBar or button, max,
             button._isVertical, style.barBgColor or { 0.1, 0.1, 0.1, 0.8 })
+        ST.LayoutStackBlockBorders(borders, blocks, max, style)
         button.bg:SetAlpha(0)
+        -- Whole-bar ring off: one ring wrapping all stacks is exactly the
+        -- look the ruling rejected.
+        if button.borderTextures then
+            for _, tex in ipairs(button.borderTextures) do
+                tex:SetAlpha(0)
+            end
+        end
         button._stackBlocksActive = true
     elseif button._stackBlocksActive then
         button._stackBlocksActive = nil
         ST.HideStackBlocks(button._stackBgBlocks)
+        ST.HideStackBlockBorders(button._stackBlockBorders)
         -- Restore shell-aware: ApplyBarAuraShellVisuals runs before this and
-        -- owns the shell alpha; a plain 1 here would resurrect a shell's bg.
-        button.bg:SetAlpha(IsAuraShellEntry(buttonData) and 0 or 1)
+        -- owns the shell alpha; a plain 1 here would resurrect a shell's bg
+        -- or border ring.
+        local restoreAlpha = IsAuraShellEntry(buttonData) and 0 or 1
+        button.bg:SetAlpha(restoreAlpha)
+        if button.borderTextures then
+            for _, tex in ipairs(button.borderTextures) do
+                tex:SetAlpha(restoreAlpha)
+            end
+        end
     end
 end
 

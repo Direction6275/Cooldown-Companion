@@ -233,15 +233,18 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
             "Bar Shows Stacks",
             {"The bar shows the stack count instead of draining with time. Blizzard drives the fill and the maximum comes from the game's spell data — nothing to configure.", 1, 1, 1, true},
             {" ", 1, 1, 1, true},
-            {"Aura entries render one block per stack with real gaps between them. Spell entries with aura tracking render a single bar with painted dividers (the cooldown bar underneath needs a solid backdrop); their gap width is adjustable.", 1, 1, 1, true},
+            {"Aura entries render each stack as its own small bordered bar with real gaps between them. Spell entries with aura tracking render a single bar with painted dividers (the cooldown bar underneath needs a solid backdrop); their gap width is adjustable.", 1, 1, 1, true},
             {" ", 1, 1, 1, true},
             {"If the tracked aura doesn't stack, the bar keeps the normal duration fill.", 1, 1, 1, true},
         }, infoButtons)
 
         if CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then
+            local maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData)
             -- Painted-divider mode only: widget-mode blocks (aura entries)
             -- have the gap proportion baked into the bundled fill atlas.
-            if not isStandalone then
+            -- Hidden too when the aura doesn't stack (duration fallback —
+            -- there are no segments for a gap to sit between).
+            if not isStandalone and maxStacks then
                 local gapSlider = AceGUI:Create("Slider")
                 gapSlider:SetLabel("Segment Gap")
                 gapSlider:SetSliderValues(0, 20, 1)
@@ -256,7 +259,6 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
                 scroll:AddChild(gapSlider)
             end
 
-            local maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData)
             local statusLabel = AceGUI:Create("Label")
             if maxStacks then
                 statusLabel:SetText("|cffffd100Stack bar:|r full at " .. maxStacks .. " stacks")

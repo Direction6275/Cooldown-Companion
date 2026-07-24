@@ -259,6 +259,18 @@ local function BuildSlotKit(slotButton)
             tex:SetAlpha(0)
             kit.stackBgBlocks[i] = tex
         end
+        -- Per-block border rings (each stack is its own widget — owner
+        -- ruling): above the fill and the separator stripes.
+        kit.stackBlockBorders = {}
+        for i = 1, ST.STACK_SEGMENT_ATLAS_MAX do
+            local set = {}
+            for edge = 1, 4 do
+                local tex = kit.stackFill:CreateTexture(nil, "OVERLAY", nil, 2)
+                tex:SetAlpha(0)
+                set[edge] = tex
+            end
+            kit.stackBlockBorders[i] = set
+        end
     end
 
     -- Bar shell composition (show-only-while-active bar entries): the bar's
@@ -438,6 +450,46 @@ function ST.HideStackBlocks(blocks)
     if not blocks then return end
     for _, tex in ipairs(blocks) do
         tex:SetAlpha(0)
+    end
+end
+
+-- Per-stack widget borders (owner ruling 2026-07-24): each capacity block
+-- carries its own border ring so a stack-mode bar reads as N separate bar
+-- widgets — the whole-bar border ring is suppressed for these entries
+-- (one ring around all stacks was the look the ruling rejected). Rings are
+-- drawn INSIDE each block's rect (ST.EDGE_ANCHOR_SPEC geometry, same as
+-- every CC border), overlapping the fill edge from an overlay layer, so the
+-- block/atlas proportions are untouched and the gaps stay genuinely empty.
+-- borderSets[i] = 4 edge textures for block i; pools follow their block
+-- pools. Alpha-driven (kit convention), styled from the same border keys as
+-- the ring they replace.
+function ST.LayoutStackBlockBorders(borderSets, blocks, max, style)
+    if not borderSets then return end
+    local size = style.borderSize or ST.DEFAULT_BORDER_SIZE
+    local mode = ST.GetEffectiveBorderRenderMode(ST.GetBorderRenderMode(style), nil, size)
+    local color = style.borderColor or { 0, 0, 0, 1 }
+    local shown = ST.IsCrispBorderRenderMode(mode) or size > 0
+    for i, set in ipairs(borderSets) do
+        if shown and i <= max and blocks[i] then
+            ST.PositionBorderTexturesBetween(set, blocks[i], blocks[i], size, mode)
+            for _, tex in ipairs(set) do
+                tex:SetColorTexture(color[1] or 0, color[2] or 0, color[3] or 0, color[4] or 1)
+                tex:SetAlpha(1)
+            end
+        else
+            for _, tex in ipairs(set) do
+                tex:SetAlpha(0)
+            end
+        end
+    end
+end
+
+function ST.HideStackBlockBorders(borderSets)
+    if not borderSets then return end
+    for _, set in ipairs(borderSets) do
+        for _, tex in ipairs(set) do
+            tex:SetAlpha(0)
+        end
     end
 end
 
@@ -950,8 +1002,11 @@ local function StyleSlotKit(slot, button, buttonData, style)
             -- target + CC-owned width), matching BarMode's block set exactly.
             ST.LayoutStackBlocks(kit.stackBgBlocks, button.statusBar or slotButton,
                 slot.boundStackMax, button._isVertical, style.barBgColor or { 0.1, 0.1, 0.1, 0.8 })
+            ST.LayoutStackBlockBorders(kit.stackBlockBorders, kit.stackBgBlocks,
+                slot.boundStackMax, style)
         else
             ST.HideStackBlocks(kit.stackBgBlocks)
+            ST.HideStackBlockBorders(kit.stackBlockBorders)
         end
         if kit.barFill then
             if useStackFill then
@@ -978,6 +1033,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
     else
         kit.barBackdrop:SetAlpha(0)
         ST.HideStackBlocks(kit.stackBgBlocks)
+        ST.HideStackBlockBorders(kit.stackBlockBorders)
         if kit.barFill then
             RestBarFill(kit.barFill, kit.barFillTexture, kit.barFillPulseAG, kit.barFillCsAG)
         end
@@ -1027,10 +1083,13 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local barBounds = button._barBounds or button
         -- CC parity: with the icon square shown the background covers only
         -- the bar area (the square has its own), otherwise the whole button.
-        -- Widget-stack shells skip the slab — the capacity blocks laid out
-        -- above ARE the background, and a slab here would fill the gaps.
+        -- Widget-stack shells skip the slab AND the whole-bar border ring —
+        -- the capacity blocks laid out above ARE the background, each with
+        -- its own border ring (owner ruling: every stack its own widget; a
+        -- slab would fill the gaps and one ring would wrap all stacks).
         local bgAnchor = barIconShown and barBounds or button
-        if IsWidgetStackBind(slot, buttonData) then
+        local widgetShell = IsWidgetStackBind(slot, buttonData)
+        if widgetShell then
             kit.bg:SetAlpha(0)
         else
             kit.bg:ClearAllPoints()
@@ -1042,10 +1101,16 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
         local renderMode = ST.GetEffectiveBorderRenderMode(ST.GetBorderRenderMode(style), nil, borderSize)
         local borderColor = style.borderColor or { 0, 0, 0, 1 }
-        ST.ApplyBorderTexturesBetween(kit.border, barBounds, barBounds,
-            borderColor, borderSize, renderMode)
-        for _, tex in ipairs(kit.border) do
-            tex:SetAlpha(1)
+        if widgetShell then
+            for _, tex in ipairs(kit.border) do
+                tex:SetAlpha(0)
+            end
+        else
+            ST.ApplyBorderTexturesBetween(kit.border, barBounds, barBounds,
+                borderColor, borderSize, renderMode)
+            for _, tex in ipairs(kit.border) do
+                tex:SetAlpha(1)
+            end
         end
         if barIconShown and button._iconBounds then
             kit.iconBg:ClearAllPoints()
