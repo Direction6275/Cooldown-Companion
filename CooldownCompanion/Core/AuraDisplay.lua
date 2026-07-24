@@ -580,15 +580,17 @@ local function StyleStackSegments(kit, button, buttonData, style, boundMax, show
     end
 end
 
--- Widget-stack eligibility for the CURRENT bind: a stack-mode bind on a
--- standalone aura entry whose max fits the block atlas. Other stack binds
--- use the painted-divider rendering.
+-- Widget-stack eligibility for the CURRENT bind: a SEGMENTED stack-mode
+-- bind on a standalone aura entry whose max fits the block atlas.
+-- Continuous-style binds and spell-entry stack binds use the plain-bar /
+-- painted-divider rendering.
 local function IsWidgetStackBind(slot, buttonData)
     local kit = slot.kit
     return kit ~= nil and kit.stackFill ~= nil and kit.stackBgBlocks ~= nil
         and slot.boundStackMax ~= nil
         and slot.boundStackMax <= ST.STACK_SEGMENT_ATLAS_MAX
         and buttonData.addedAs == "aura"
+        and CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "segmented"
 end
 
 ------------------------------------------------------------------------
@@ -982,12 +984,16 @@ local function StyleSlotKit(slot, button, buttonData, style)
         -- Fill mode (tracker C2): a stack-mode bind carries boundStackMax
         -- (resolved by the rebind pass, re-called onto the registered stack
         -- bar before styling); every other bind runs the duration fill.
-        -- Exactly one fill is visible per bind. Standalone aura entries
-        -- render stacks as true widgets (owner ruling): capacity blocks
-        -- with empty gaps + the block-atlas fill; other entries keep the
-        -- painted-divider look (the CC bar underneath needs the slab).
+        -- Exactly one fill is visible per bind. Stack style (live parity):
+        -- SEGMENTED standalone aura entries render stacks as true widgets
+        -- (owner ruling): capacity blocks with empty gaps + the block-atlas
+        -- fill; segmented spell entries keep the painted-divider look (the
+        -- CC bar underneath needs the slab); CONTINUOUS renders the plain
+        -- bar with no per-stack decoration at all.
         local useStackFill = kit.stackFill ~= nil and slot.boundStackMax ~= nil
         local widgetStack = IsWidgetStackBind(slot, buttonData)
+        local segmentedStyle = useStackFill
+            and CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "segmented"
         if shellEntry or widgetStack then
             kit.barBackdrop:SetAlpha(0)
         else
@@ -1029,7 +1035,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
             end
         end
         StyleStackSegments(kit, button, buttonData, style, slot.boundStackMax,
-            useStackFill and not widgetStack)
+            segmentedStyle and not widgetStack)
     else
         kit.barBackdrop:SetAlpha(0)
         ST.HideStackBlocks(kit.stackBgBlocks)

@@ -675,6 +675,31 @@ function CooldownCompanion:SetBarPanelAuraStackDisplay(buttonData, wantStacks)
     buttonData.auraBar.mode = wantStacks and "stacks" or "duration"
 end
 
+-- Stack display style (live parity, C2 round 3): how a stack-mode bar
+-- renders — "segmented" (per-stack segments/blocks) or "continuous" (plain
+-- fill growing with stacks). Live's specific stack_* mode values were
+-- collapsed to "stacks" by the (stamped) aura-rebuild migration, so the
+-- style cannot auto-revive: migrated buttons default to segmented and the
+-- choice is a fresh 12.1 setting stored in auraBar.stackDisplayMode
+-- (nil = segmented; the migration wipes this key only when converting
+-- live-era data).
+function CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    local mode = type(auraBar) == "table" and auraBar.stackDisplayMode or nil
+    if mode == "continuous" then
+        return "continuous"
+    end
+    return "segmented"
+end
+
+function CooldownCompanion:SetBarPanelAuraStackDisplayMode(buttonData, displayMode)
+    if type(buttonData.auraBar) ~= "table" then
+        if displayMode == nil or displayMode == "segmented" then return end
+        buttonData.auraBar = {}
+    end
+    buttonData.auraBar.stackDisplayMode = displayMode ~= "segmented" and displayMode or nil
+end
+
 -- Segment gap (live parity): per-button width of the painted gap between
 -- stack segments. Stored raw, clamped on read; 0 = solid unsegmented fill.
 function CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData)

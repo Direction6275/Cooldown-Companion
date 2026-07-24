@@ -233,18 +233,39 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
             "Bar Shows Stacks",
             {"The bar shows the stack count instead of draining with time. Blizzard drives the fill and the maximum comes from the game's spell data — nothing to configure.", 1, 1, 1, true},
             {" ", 1, 1, 1, true},
-            {"Aura entries render each stack as its own small bordered bar with real gaps between them. Spell entries with aura tracking render a single bar with painted dividers (the cooldown bar underneath needs a solid backdrop); their gap width is adjustable.", 1, 1, 1, true},
+            {"Stack Style picks the look: Segmented renders per-stack pieces — aura entries as individual bordered bars with real gaps, spell entries as a single bar with painted dividers (adjustable gap; the cooldown bar underneath needs a solid backdrop). Continuous is one plain bar that fills as stacks build.", 1, 1, 1, true},
             {" ", 1, 1, 1, true},
             {"If the tracked aura doesn't stack, the bar keeps the normal duration fill.", 1, 1, 1, true},
         }, infoButtons)
 
         if CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then
             local maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData)
+            local stackStyle = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
+
+            -- Stack style (live parity): segmented per-stack rendering or a
+            -- plain continuous fill. Live's stored style was wiped by the
+            -- aura-rebuild migration, so this is a fresh 12.1 choice.
+            if maxStacks then
+                local styleDrop = AceGUI:Create("Dropdown")
+                styleDrop:SetLabel("Stack Style")
+                styleDrop:SetList({ segmented = "Segmented", continuous = "Continuous" },
+                    { "segmented", "continuous" })
+                styleDrop:SetValue(stackStyle)
+                styleDrop:SetRelativeWidth(0.5)
+                styleDrop:SetCallback("OnValueChanged", function(_, _, value)
+                    CooldownCompanion:SetBarPanelAuraStackDisplayMode(buttonData, value)
+                    CooldownCompanion:RequestAuraRebind("config")
+                    RefreshAuraConfig()
+                end)
+                scroll:AddChild(styleDrop)
+            end
+
             -- Painted-divider mode only: widget-mode blocks (aura entries)
             -- have the gap proportion baked into the bundled fill atlas.
             -- Hidden too when the aura doesn't stack (duration fallback —
-            -- there are no segments for a gap to sit between).
-            if not isStandalone and maxStacks then
+            -- there are no segments for a gap to sit between) and for the
+            -- continuous style (no segments at all).
+            if not isStandalone and maxStacks and stackStyle == "segmented" then
                 local gapSlider = AceGUI:Create("Slider")
                 gapSlider:SetLabel("Segment Gap")
                 gapSlider:SetSliderValues(0, 20, 1)
