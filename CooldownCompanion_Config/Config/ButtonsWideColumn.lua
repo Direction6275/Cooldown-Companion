@@ -1787,7 +1787,7 @@ local function RefreshButtonsWideColumn()
             local host = EnsureGroupSettingsHost(col3)
             AnchorButtonsContentFrame(col3, host)
             host:Show()
-            ST._RefreshGroupSettingsHost(host, nil, ST._UnifiedRowGetScope() ~= "panel")
+            ST._RefreshGroupSettingsHost(host, nil, ST._UnifiedRowGetScope() ~= "primary")
         elseif col3.groupSettingsHost then
             col3.groupSettingsHost:Hide()
         end
@@ -1843,7 +1843,7 @@ local function RefreshButtonsWideColumn()
             host:Show()
             -- Panel tabs first: the entry strip is offset by their measured
             -- width, and only one of the two builds content.
-            ST._RefreshGroupSettingsHost(host, nil, ST._UnifiedRowGetScope() ~= "panel")
+            ST._RefreshGroupSettingsHost(host, nil, ST._UnifiedRowGetScope() ~= "primary")
         end
 
         if col3.bsTabGroup then

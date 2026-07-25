@@ -569,7 +569,7 @@ local function ShowResourceSettingsPanel(col3)
             -- (if it shares the row) drops back to tabs-only.
             ST._UnifiedRowApply()
         end)
-        ST._UnifiedRowInstallStrip(tabGroup, true)
+        ST._UnifiedRowInstallStrip(tabGroup, "detail")
         col3._resourceSettingsTabGroup = tabGroup
     end
 
@@ -580,7 +580,7 @@ local function ShowResourceSettingsPanel(col3)
 
     -- A panel tab is showing its own content: the bar keeps its place in
     -- the row and stays selected, it just does not own the surface.
-    if ST._UnifiedRowPanelOwnsSurface() then
+    if ST._UnifiedRowPrimaryOwnsSurface() then
         ST._UnifiedRowApply()
         return true
     end
@@ -644,7 +644,7 @@ local function ShowCustomBarDetail(col3, selectedEntry)
             -- (if it shares the row) drops back to tabs-only.
             ST._UnifiedRowApply()
         end)
-        ST._UnifiedRowInstallStrip(tabGroup, true)
+        ST._UnifiedRowInstallStrip(tabGroup, "detail")
         col3._customBarEntryTabGroup = tabGroup
     end
 
@@ -655,7 +655,7 @@ local function ShowCustomBarDetail(col3, selectedEntry)
 
     -- A panel tab is showing its own content: the bar keeps its place in
     -- the row and stays selected, it just does not own the surface.
-    if ST._UnifiedRowPanelOwnsSurface() then
+    if ST._UnifiedRowPrimaryOwnsSurface() then
         ST._UnifiedRowApply()
         return
     end
@@ -687,12 +687,16 @@ end
 -- Appearance = bar text styling, Layout = positioning, Health (when the
 -- health resource is enabled). The Layout & Order preview lives in the
 -- pinned host above this page, not in a tab.
-local function ShowResourcesTabPage(col3)
+local function ShowResourcesTabPage(col3, stripOnly)
     if not col3._resourcesTabGroup then
         local tabGroup = AceGUI:Create("TabGroup")
         tabGroup:SetLayout("Fill")
         tabGroup.frame:SetParent(col3.content)
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+            -- These are the module-scope tabs of the Resources home, the
+            -- left cluster of its unified row; selecting one hands them the
+            -- settings surface without dropping the selected bar.
+            ST._UnifiedRowSetScope("primary")
             CS.resourcesSettingsTab = tab
             -- Clean up info buttons from the previous tab before recycling widgets
             ClearInfoButtons(CS.tabInfoButtons)
@@ -711,12 +715,18 @@ local function ShowResourcesTabPage(col3)
             elseif tab == "health" then
                 ST._BuildResourceBarHealthStylingPanel(scroll)
             end
+
+            -- One selected tab across the whole row, and the bar strip (if
+            -- one shares the row) drops back to tabs-only.
+            ST._UnifiedRowApply()
         end)
+        ST._UnifiedRowInstallStrip(tabGroup, "primary")
         col3._resourcesTabGroup = tabGroup
     end
 
     local tabGroup = col3._resourcesTabGroup
     ST._AnchorButtonsContentFrame(col3, tabGroup.frame)
+    tabGroup.frame:Show()
 
     local settings = CooldownCompanion:GetResourceBarSettings()
     local RESOURCE_HEALTH = ST._RB and ST._RB.RESOURCE_HEALTH
@@ -740,6 +750,12 @@ local function ShowResourcesTabPage(col3)
     if not tab or not valid[tab] then tab = "general" end
     CS.resourcesSettingsTab = tab
 
+    -- Tabs-only pass: a selected bar owns the settings surface, so these
+    -- tabs stay in the row unselected and build nothing.
+    if stripOnly then
+        return
+    end
+
     -- Preserve scroll position across value-change refreshes (same pattern
     -- as the custom-bar detail tabs)
     local savedOffset, savedScrollvalue
@@ -752,8 +768,8 @@ local function ShowResourcesTabPage(col3)
         end
     end
 
-    tabGroup.frame:Show()
     tabGroup:SelectTab(tab)
+    ST._UnifiedRowApply()
 
     if savedOffset and col3._resourcesDetailScroll then
         local state = col3._resourcesDetailScroll.status or col3._resourcesDetailScroll.localstatus
@@ -804,18 +820,37 @@ local function RefreshResourcesWideColumn(col3)
     table.sort(selectedCustomBarIds)
 
     if #selectedCustomBarEntries >= 2 then
+        -- Batch edits replace the surface outright, as panel multi-select
+        -- does in the buttons workspace.
         ShowCustomBarMultiSelect(col3, selectedCustomBarIds, selectedCustomBarEntries)
-    elseif CS.selectedResourcePowerType and ShowResourceSettingsPanel(col3) then
-        -- Per-resource settings shown.
     else
         local selectedEntry = CS.selectedCustomBarId and FindSelectedCustomBar()
-        if selectedEntry then
+        local wantsBarDetail = CS.selectedResourcePowerType ~= nil or selectedEntry ~= nil
+
+        -- The module tabs are the left cluster of this home's unified row:
+        -- they stay put while a bar is selected, and the bar's own tabs are
+        -- appended beside them. Built first, since the bar strip is offset
+        -- by their measured width.
+        ShowResourcesTabPage(col3, wantsBarDetail and not ST._UnifiedRowPrimaryOwnsSurface())
+
+        local barShown = false
+        if CS.selectedResourcePowerType then
+            barShown = ShowResourceSettingsPanel(col3) == true
+        end
+        if not barShown and selectedEntry then
             ShowCustomBarDetail(col3, selectedEntry)
-        else
+            barShown = true
+        end
+        if not barShown then
             if CS.selectedCustomBarId then
                 PruneConfigCustomBarSelection(CustomBarExists, true)
             end
-            ShowResourcesTabPage(col3)
+            if wantsBarDetail then
+                -- The bar surface did not materialise after all (a resource
+                -- with no applicable specs); the module tabs take the row
+                -- back rather than leaving it empty.
+                ShowResourcesTabPage(col3)
+            end
         end
     end
 
@@ -861,7 +896,7 @@ local function ShowCastBarSettings(col3)
             -- (if it shares the row) drops back to tabs-only.
             ST._UnifiedRowApply()
         end)
-        ST._UnifiedRowInstallStrip(tabGroup, true)
+        ST._UnifiedRowInstallStrip(tabGroup, "detail")
         col3._castBarHomeTabGroup = tabGroup
     end
 
@@ -882,7 +917,7 @@ local function ShowCastBarSettings(col3)
 
     -- A panel tab is showing its own content: the cast bar keeps its place
     -- in the row and stays selected, it just does not own the surface.
-    if ST._UnifiedRowPanelOwnsSurface() then
+    if ST._UnifiedRowPrimaryOwnsSurface() then
         ST._UnifiedRowApply()
         return
     end

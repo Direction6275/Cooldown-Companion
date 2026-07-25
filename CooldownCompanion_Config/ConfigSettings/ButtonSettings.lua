@@ -1193,7 +1193,7 @@ local function RefreshButtonSettingsColumn()
     -- A panel tab is showing its own content: the entry keeps its place in
     -- the row and its remembered tab, but selecting it here would pull the
     -- surface back to entry scope.
-    if not ST._UnifiedRowPanelOwnsSurface() then
+    if not ST._UnifiedRowPrimaryOwnsSurface() then
         bsCol.bsTabGroup:SelectTab(activeTab)
     end
     ST._UnifiedRowApply()

@@ -204,9 +204,10 @@ ST._configState = {
     buttonSettingsTab = "settings",
     panelSettingsTab = "appearance",
     -- Which half of the unified tab row owns the settings surface while a
-    -- detail cluster (entry, entry multi-select, attached bar) is in it:
-    -- "detail" (the default - selecting one zooms into it) or "panel" (a
-    -- panel tab was opened without dropping that selection).
+    -- detail cluster (entry, entry multi-select, attached bar, resource) is
+    -- in it: "detail" (the default - selecting one zooms into it) or
+    -- "primary" (a panel or module tab was opened without dropping that
+    -- selection).
     unifiedRowScope = "detail",
     newInput = "",
     tutorialAnchors = {},
@@ -2937,6 +2938,9 @@ local function SelectConfigCustomBar(customBarId, opts)
     end
 
     ClearConfigResourceSelection()
+    -- Selecting a bar jumps to its own tabs, the same way selecting an
+    -- entry does, even if a module tab was the last thing shown.
+    CS.unifiedRowScope = "detail"
     CS.selectedCustomBarId = customBarId
     if opts and opts.resetTab then
         SetConfigCustomBarSettingsTab("appearance")
@@ -2994,6 +2998,9 @@ local function SelectConfigResource(powerType, opts)
     CS.selectedCustomBarId = nil
     CS.customBarSpecExpandedId = nil
     wipe(CS.selectedCustomBars)
+    -- Selecting a resource jumps to its own tabs, the same way selecting an
+    -- entry does, even if a module tab was the last thing shown.
+    CS.unifiedRowScope = "detail"
     SetConfigCustomBarSettingsTab("appearance")
     if opts and opts.clearButtonMulti then
         CS.selectedRotationAssistantEntry = nil

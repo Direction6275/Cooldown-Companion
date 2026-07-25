@@ -1939,7 +1939,7 @@ local function CreateConfigPanel()
 
     -- Entry tabs are one of the right-hand clusters of the unified tab row:
     -- offset past the panel tabs and laid out against the space they leave.
-    ST._UnifiedRowInstallStrip(bsTabGroup, true)
+    ST._UnifiedRowInstallStrip(bsTabGroup, "detail")
 
     col3.bsTabGroup = bsTabGroup
 

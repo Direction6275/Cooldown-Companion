@@ -151,8 +151,8 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             -- Selecting a panel tab hands the settings surface to panel
             -- scope. Any entry stays selected: the list highlight,
             -- breadcrumb and preview identity are untouched.
-            local scopeChanged = ST._UnifiedRowGetScope() ~= "panel"
-            ST._UnifiedRowSetScope("panel")
+            local scopeChanged = ST._UnifiedRowGetScope() ~= "primary"
+            ST._UnifiedRowSetScope("primary")
             container._activePanelSettingsTab = tab
             CS.selectedTab = tab
             CS.panelSettingsTab = tab
@@ -201,7 +201,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         tabGroup.frame:SetParent(container)
 
         -- Panel tabs are the left cluster of the unified tab row.
-        ST._UnifiedRowInstallStrip(tabGroup)
+        ST._UnifiedRowInstallStrip(tabGroup, "primary")
 
         container.tabGroup = tabGroup
     end
