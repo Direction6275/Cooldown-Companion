@@ -258,6 +258,32 @@ local function BuildAuraTab(scroll, group, buttonData, infoButtons)
                     RefreshAuraConfig()
                 end)
                 scroll:AddChild(styleDrop)
+
+                -- Segmented style only: Continuous always animates smoothly
+                -- (resource-bar parity), so the toggle would be dead there.
+                if stackStyle == "segmented" then
+                    local smoothDrop = AceGUI:Create("Dropdown")
+                    smoothDrop:SetLabel("Segmented Smoothing")
+                    smoothDrop:SetList({
+                        [ST.SEGMENTED_SMOOTHING_ON] = "On",
+                        [ST.SEGMENTED_SMOOTHING_OFF] = "Off",
+                    }, { ST.SEGMENTED_SMOOTHING_ON, ST.SEGMENTED_SMOOTHING_OFF })
+                    smoothDrop:SetValue(CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData))
+                    smoothDrop:SetRelativeWidth(0.5)
+                    smoothDrop:SetCallback("OnValueChanged", function(_, _, value)
+                        CooldownCompanion:SetBarPanelAuraSegmentedSmoothing(buttonData, value)
+                        -- Rebind only: the option re-registers the stack bar
+                        -- in the next OOC bind pass; no panel rebuild needed.
+                        CooldownCompanion:RequestAuraRebind("config")
+                    end)
+                    scroll:AddChild(smoothDrop)
+                    CreateInfoButton(smoothDrop.frame, smoothDrop.label, "LEFT", "RIGHT", 4, 0, {
+                        "Segmented Smoothing",
+                        {"Segmented stack bars animate smoothly between stack counts, or snap instantly. The same control as the resource bar option.", 1, 1, 1, true},
+                        " ",
+                        {"Continuous stack bars always animate smoothly. Gaining the aura fresh or losing it entirely always snaps — the game animates stack changes only.", 1, 1, 1, true},
+                    }, infoButtons)
+                end
             end
 
             -- Painted-divider mode only: widget-mode blocks (aura entries)

@@ -719,6 +719,29 @@ function CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
     buttonData.auraBar.segmentGap = value
 end
 
+-- Segmented smoothing (live parity revival, tracker C2): whether a
+-- segmented stack bar sweeps or snaps between stack counts. Same key and
+-- "on"/"off" normalizer as the resource-side control — one feature in the
+-- UI even though the mechanism differs (Blizzard's ApplicationBar
+-- interpolation here, CC-side smoothing there). The aura-rebuild migration
+-- wiped live-era values, so nil takes the "on" default. Continuous stack
+-- fills always smooth and ignore this (owner ruling 2026-07-24, resource
+-- parity: the toggle governs segmented displays only).
+function CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData)
+    local auraBar = buttonData and buttonData.auraBar
+    local value = type(auraBar) == "table" and auraBar.segmentedSmoothing or nil
+    return ST.NormalizeSegmentedSmoothing(value)
+end
+
+function CooldownCompanion:SetBarPanelAuraSegmentedSmoothing(buttonData, value)
+    value = ST.NormalizeSegmentedSmoothing(value)
+    if type(buttonData.auraBar) ~= "table" then
+        if value == ST.SEGMENTED_SMOOTHING_ON then return end
+        buttonData.auraBar = {}
+    end
+    buttonData.auraBar.segmentedSmoothing = value ~= ST.SEGMENTED_SMOOTHING_ON and value or nil
+end
+
 -- Automatic max-stacks resolution (owner ruling: automatic only, no manual
 -- field). The lookup is talent-aware and returns 0 for IDs that carry no
 -- stacking aura (V24), so the highest candidate wins and anything ≤ 1 means

@@ -228,9 +228,12 @@ local function BuildSlotKit(slotButton)
         kit.stackFill:EnableMouse(false)
         kit.stackFill:SetAlpha(0)
         slotButton:SetApplicationBar(kit.stackFill, { maxApplications = 1 })
-        -- CC-side memo of the last max written (registered regions are
-        -- write-only; the next bind decides from this, never a read-back).
+        -- CC-side memos of the last options written (registered regions are
+        -- write-only; the next bind decides from these, never a read-back).
+        -- Smoothing (tracker C2 follow-on): stack binds may re-register with
+        -- interpolation so Blizzard sweeps the fill between stack counts.
         kit.stackFillMax = 1
+        kit.stackFillSmooth = false
 
         kit.stackFillPulseAG = kit.stackFill:CreateAnimationGroup()
         kit.stackFillPulseAG:SetLooping("BOUNCE")
@@ -1405,9 +1408,25 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     local kit = record.kit
     if kit and kit.stackFill then
         local wantMax = stackBarMax or 1
-        if kit.stackFillMax ~= wantMax then
-            record.slotButton:SetApplicationBar(kit.stackFill, { maxApplications = wantMax })
+        -- Segmented smoothing (C2 follow-on): Blizzard sweeps the driven
+        -- fill between stack counts (interpolation is Blizzard-evaluated —
+        -- the only smoothing path for secret values; the CC-side resource
+        -- mechanism can't apply here). Continuous style always smooths
+        -- (owner ruling, resource parity); segmented follows the per-entry
+        -- toggle. Plain duration binds (wantMax == 1) never use the stack
+        -- fill, so they keep the creation-time registration untouched.
+        local wantSmooth = false
+        if wantMax > 1 and ST.STATUS_BAR_INTERPOLATION_SMOOTH then
+            wantSmooth = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "continuous"
+                or CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData) == ST.SEGMENTED_SMOOTHING_ON
+        end
+        if kit.stackFillMax ~= wantMax or kit.stackFillSmooth ~= wantSmooth then
+            record.slotButton:SetApplicationBar(kit.stackFill, {
+                maxApplications = wantMax,
+                interpolation = wantSmooth and ST.STATUS_BAR_INTERPOLATION_SMOOTH or nil,
+            })
             kit.stackFillMax = wantMax
+            kit.stackFillSmooth = wantSmooth
         end
     end
     -- Set before styling: StyleSlotKit selects the stack fill from this tag.
