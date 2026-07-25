@@ -306,7 +306,6 @@ local function ShowStrip(col3, tabGroup, tabs, activeTab, scrollKey, stripOnly)
     end
 
     tabGroup:SelectTab(activeTab)
-    ST._UnifiedRowApply()
 
     -- LayoutFinished has already scheduled FixScrollOnUpdate for next
     -- frame; it reads these values.
@@ -610,10 +609,6 @@ local function ShowResourceSettingsPanel(col3)
                 label:SetFullWidth(true)
                 scroll:AddChild(label)
             end
-
-            -- One selected tab across the whole row, and the panel strip
-            -- (if it shares the row) drops back to tabs-only.
-            ST._UnifiedRowApply()
         end)
         ST._UnifiedRowInstallStrip(tabGroup, "detail")
         col3._resourceSettingsTabGroup = tabGroup
@@ -658,10 +653,6 @@ local function ShowCustomBarDetail(col3, selectedEntry)
             widget._cdcScroll = scroll
             widget._cdcScrollKey = GetCustomBarDetailScrollKey()
             ST._BuildCustomAuraBarPanel(scroll, CS.selectedCustomBarId, CS.customBarSettingsTab)
-
-            -- One selected tab across the whole row, and the panel strip
-            -- (if it shares the row) drops back to tabs-only.
-            ST._UnifiedRowApply()
         end)
         ST._UnifiedRowInstallStrip(tabGroup, "detail")
         col3._customBarEntryTabGroup = tabGroup
@@ -707,10 +698,6 @@ local function ShowResourcesTabPage(col3, stripOnly)
             elseif tab == "health" then
                 ST._BuildResourceBarHealthStylingPanel(scroll)
             end
-
-            -- One selected tab across the whole row, and the bar strip (if
-            -- one shares the row) drops back to tabs-only.
-            ST._UnifiedRowApply()
         end)
         ST._UnifiedRowInstallStrip(tabGroup, "primary")
         col3._resourcesTabGroup = tabGroup
@@ -851,10 +838,6 @@ local function ShowCastBarSettings(col3)
             elseif tab == "layout" then
                 ST._BuildCastBarPositioningPanel(scroll)
             end
-
-            -- One selected tab across the whole row, and the panel strip
-            -- (if it shares the row) drops back to tabs-only.
-            ST._UnifiedRowApply()
         end)
         ST._UnifiedRowInstallStrip(tabGroup, "detail")
         col3._castBarHomeTabGroup = tabGroup

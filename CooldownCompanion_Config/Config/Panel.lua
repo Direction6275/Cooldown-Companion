@@ -1925,10 +1925,6 @@ local function CreateConfigPanel()
         -- invisible until the next layout).
         scroll:DoLayout()
 
-        -- One selected tab across the whole row, and the panel strip (still
-        -- in the row) drops back to tabs-only.
-        ST._UnifiedRowApply()
-
     end)
 
     bsTabGroup.frame:SetParent(col3.content)

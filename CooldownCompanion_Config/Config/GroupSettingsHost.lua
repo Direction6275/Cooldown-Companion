@@ -191,10 +191,6 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             -- (the two-column tabs' trailing widgets mis-wrapped otherwise).
             scroll:DoLayout()
 
-            -- One selected tab across the whole row, and the entry strip
-            -- (if any) drops back to tabs-only.
-            ST._UnifiedRowApply()
-
         end)
 
         -- Parent the AceGUI widget frame to the raw host frame

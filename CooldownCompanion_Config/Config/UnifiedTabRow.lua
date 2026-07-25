@@ -248,6 +248,15 @@ local function InstallStripLayout(tabGroup, role)
     local registry = (role == "detail") and detailStrips or primaryStrips
     registry[#registry + 1] = tabGroup
 
+    -- Selecting a tab fires its group's builder synchronously, which means
+    -- the row is settled by the time this returns: re-apply it here rather
+    -- than asking every builder callback to remember to.
+    local baseSelectTab = tabGroup.SelectTab
+    tabGroup.SelectTab = function(self, value)
+        baseSelectTab(self, value)
+        ApplyUnifiedRow()
+    end
+
     tabGroup._cdcBaseBuildTabs = tabGroup.BuildTabs
     tabGroup.BuildTabs = function(self)
         if laying then
