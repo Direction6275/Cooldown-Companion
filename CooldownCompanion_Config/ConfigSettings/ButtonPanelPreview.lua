@@ -377,10 +377,26 @@ local function GetGrowthMultipliers(growthOrigin)
     return 1, -1, "TOPLEFT"
 end
 
+-- Chrome pinned to the bottom of the host (the preview command center)
+-- claims a band the rendered preview must stay clear of. Hosts without
+-- chrome report 0, so measuring frames and overview tiles are unaffected.
+local function GetHostBottomReserve(host)
+    return host and host._cdcPreviewReserveBottom or 0
+end
+
+-- Re-anchored on every build: the reserve appears and disappears with the
+-- selection, and the content centers inside whatever is left.
+local function ApplyHostBottomReserve(host, root)
+    root:ClearAllPoints()
+    root:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+    root:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, GetHostBottomReserve(host))
+end
+
 local function EnsurePreviewState(host)
     local preview = host._cdcPanelPreview
     if preview then
         preview.buildId = (preview.buildId or 0) + 1
+        ApplyHostBottomReserve(host, preview.root)
         return preview
     end
 
@@ -392,9 +408,9 @@ local function EnsurePreviewState(host)
     host._cdcPanelPreview = preview
 
     local root = CreateFrame("Frame", nil, host)
-    root:SetAllPoints(host)
     root:SetClipsChildren(false)
     root:Hide()
+    ApplyHostBottomReserve(host, root)
     preview.root = root
 
     local content = CreateFrame("Frame", nil, root)
@@ -658,6 +674,32 @@ end
 
 local function IsEntrySelected(index)
     return CS.selectedButton == index or CS.selectedButtons[index] == true
+end
+
+-- Glow-family previews draw at the slot's edge, exactly where the blue
+-- selection ring lives, so the two fight for the same pixels. While one
+-- is running on an entry its ring stands down for the duration - the
+-- breadcrumb, the tab row and the preview chooser all still say which
+-- entry is being edited. Conditional state previews (swipes, texts,
+-- tints) draw on the icon face and are left alone.
+local SELECTION_YIELDING_PREVIEW_FLAGS = {
+    "_procGlowPreview",
+    "_auraGlowPreview",
+    "_readyGlowPreview",
+    "_barAuraEffectPreview",
+    "_keyPressHighlightPreview",
+}
+
+local function IsGlowPreviewActiveOnEntry(panelId, index)
+    if not (panelId and index and CooldownCompanion.IsPreviewFlagActive) then
+        return false
+    end
+    for _, flag in ipairs(SELECTION_YIELDING_PREVIEW_FLAGS) do
+        if CooldownCompanion:IsPreviewFlagActive(panelId, index, flag) then
+            return true
+        end
+    end
+    return false
 end
 
 local function ApplySelectionVisuals(slot, index, suppress)
@@ -2976,7 +3018,7 @@ end
 
 local function GetHostFitBox(host, readOnly)
     local hostWidth = host:GetWidth() or 0
-    local hostHeight = host:GetHeight() or 0
+    local hostHeight = (host:GetHeight() or 0) - GetHostBottomReserve(host)
     if readOnly then
         -- Overview tiles are measured before their final build and can
         -- legitimately be smaller than the focused preview's 80px guard.
@@ -3601,7 +3643,8 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost, options
             ApplySlotBadges(slot, status, scale,
                 isBarMode and barVisibility.exactPreview == true)
             ApplySelectionVisuals(slot, index,
-                isBarMode and barVisibility.exactPreview == true)
+                (isBarMode and barVisibility.exactPreview == true)
+                    or IsGlowPreviewActiveOnEntry(panelId, index))
             if not (isBarMode and barVisibility.exactPreview) then
                 ApplyOverrideTargetingVisuals(slot, panelId, buttonData)
             end

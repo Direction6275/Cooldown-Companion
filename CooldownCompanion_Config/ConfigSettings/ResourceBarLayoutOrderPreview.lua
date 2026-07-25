@@ -144,11 +144,25 @@ local function ResolvePreviewSkin(host)
     }
 end
 
+-- Bottom chrome on the host (the preview command center on the buttons
+-- workspace) claims a band the composition must stay clear of. The
+-- Resources home sets no reserve, so it is unaffected.
+local function GetHostBottomReserve(host)
+    return host and host._cdcPreviewReserveBottom or 0
+end
+
+local function ApplyHostBottomReserve(host, root)
+    root:ClearAllPoints()
+    root:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+    root:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, GetHostBottomReserve(host))
+end
+
 local function EnsurePreviewState(host)
     local preview = host._cdcLayoutPreview
     if preview then
         preview.buildId = (preview.buildId or 0) + 1
         preview.skin = ResolvePreviewSkin(host)
+        ApplyHostBottomReserve(host, preview.root)
         return preview
     end
 
@@ -169,9 +183,9 @@ local function EnsurePreviewState(host)
     host._cdcLayoutPreview = preview
 
     local root = CreateFrame("Frame", nil, host)
-    root:SetAllPoints(host)
     root:SetClipsChildren(false)
     root:Hide()
+    ApplyHostBottomReserve(host, root)
     preview.root = root
 
     local ghost = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
@@ -2615,7 +2629,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     content:SetSize(contentWidth, contentHeight)
 
     local hostWidth = container:GetWidth() or 0
-    local hostHeight = container:GetHeight() or 0
+    local hostHeight = (container:GetHeight() or 0) - GetHostBottomReserve(container)
     if hostWidth < 40 then hostWidth = 340 end
     if hostHeight < 40 then hostHeight = 520 end
     local maxWidth = math_max(120, hostWidth - (LAYOUT_PREVIEW_PADDING * 2))

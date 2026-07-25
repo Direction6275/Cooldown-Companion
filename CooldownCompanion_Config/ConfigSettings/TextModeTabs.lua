@@ -18,7 +18,6 @@ local OpenFormatEditor = ST._OpenFormatEditor
 local AddColorPicker = ST._AddColorPicker
 local RenderFormatPreview = ST._RenderFormatPreview
 local ParseFormatString = ST._ParseFormatString
-local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
@@ -162,22 +161,11 @@ local function BuildTextAppearanceTab(container, group, style)
     -- Format String
     -- ================================================================
     local fmtHeading, fmtCollapsed, fmtCollapseBtn = BuildCollapsibleSection(container, "Format String", "textappearance_format")
-    local function BuildFormatPreviewAdvanced(panel)
-        if AddConditionalPreviewButton then
-            AddConditionalPreviewButton(panel, "Preview Cooldown State", "cooldown")
-            AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable")
-            AddConditionalPreviewButton(panel, "Preview Out of Range State", "out_of_range")
-        end
-    end
-
-    local _, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "textFormatPreview", tabInfoButtons, nil, {
-        title = "Format String Advanced",
-        build = BuildFormatPreviewAdvanced,
-    })
-    fmtPreviewAdvBtn:SetPoint("LEFT", fmtCollapseBtn, "RIGHT", 4, 0)
+    -- The cooldown / unusable / out-of-range previews this heading used to
+    -- open now live on the preview command center.
 
     -- Token reference info button
-    local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtPreviewAdvBtn, "LEFT", "RIGHT", 4, 0, {
+    local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtCollapseBtn, "LEFT", "RIGHT", 4, 0, {
         {"Format String", 1, 0.82, 0, true},
         " ",
         {"Controls what each button displays using", 1, 1, 1, true},
