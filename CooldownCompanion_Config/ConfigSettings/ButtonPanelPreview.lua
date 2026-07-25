@@ -676,6 +676,32 @@ local function IsEntrySelected(index)
     return CS.selectedButton == index or CS.selectedButtons[index] == true
 end
 
+-- Glow-family previews draw at the slot's edge, exactly where the blue
+-- selection ring lives, so the two fight for the same pixels. While one
+-- is running on an entry its ring stands down for the duration - the
+-- breadcrumb, the tab row and the preview chooser all still say which
+-- entry is being edited. Conditional state previews (swipes, texts,
+-- tints) draw on the icon face and are left alone.
+local SELECTION_YIELDING_PREVIEW_FLAGS = {
+    "_procGlowPreview",
+    "_auraGlowPreview",
+    "_readyGlowPreview",
+    "_barAuraEffectPreview",
+    "_keyPressHighlightPreview",
+}
+
+local function IsGlowPreviewActiveOnEntry(panelId, index)
+    if not (panelId and index and CooldownCompanion.IsPreviewFlagActive) then
+        return false
+    end
+    for _, flag in ipairs(SELECTION_YIELDING_PREVIEW_FLAGS) do
+        if CooldownCompanion:IsPreviewFlagActive(panelId, index, flag) then
+            return true
+        end
+    end
+    return false
+end
+
 local function ApplySelectionVisuals(slot, index, suppress)
     local isSelected = IsEntrySelected(index)
     if suppress or not isSelected then
@@ -3617,7 +3643,8 @@ function ST._BuildButtonPanelPreview(host, panelId, targetingBannerHost, options
             ApplySlotBadges(slot, status, scale,
                 isBarMode and barVisibility.exactPreview == true)
             ApplySelectionVisuals(slot, index,
-                isBarMode and barVisibility.exactPreview == true)
+                (isBarMode and barVisibility.exactPreview == true)
+                    or IsGlowPreviewActiveOnEntry(panelId, index))
             if not (isBarMode and barVisibility.exactPreview) then
                 ApplyOverrideTargetingVisuals(slot, panelId, buttonData)
             end
