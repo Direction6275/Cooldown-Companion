@@ -39,10 +39,10 @@ local TAB_OVERLAP = 10
 -- this way whenever they fit, so every tab in the row is sized alike.
 local NATURAL_STRIP_BUDGET = 100000
 
--- Floor for the entry cluster's wrap budget. Below this the cluster is
--- unusable as a strip, so it is allowed to run past the right edge instead
--- (the accepted narrow-window edge) rather than wrapping one tab per row.
-local MIN_ENTRY_STRIP = 120
+-- Floor for a cluster's share of a wrapped row. Below this a cluster is
+-- unusable as a strip, so it is allowed to run past its share instead (the
+-- accepted narrow-window edge) rather than wrapping one tab per row.
+local MIN_STRIP_WIDTH = 120
 
 ------------------------------------------------------------------------
 -- Strip geometry
@@ -88,45 +88,9 @@ end
 -- width. Setting the field lets a strip wrap inside a sub-range of its
 -- frame while the frame itself keeps covering the whole settings rect,
 -- which is what its content pane needs.
-local function BuildPanelStrip(tabGroup, baseBuildTabs)
-    tabGroup._cdcStripOffset = 0
-    tabGroup.frame.width = NATURAL_STRIP_BUDGET
-    baseBuildTabs(tabGroup)
-end
-
-local function BuildEntryStrip(tabGroup, baseBuildTabs)
-    local panel = GetPanelStrip()
-    local panelWidth = panel and MeasureStripWidth(panel) or 0
-    local full = tabGroup.frame:GetWidth() or 0
-
-    -- Lay the cluster out at natural widths first: that is both how it
-    -- renders when it fits and how its width is measured.
-    tabGroup.frame.width = NATURAL_STRIP_BUDGET
-    baseBuildTabs(tabGroup)
-
-    if panelWidth <= 0 then
-        -- No panel cluster to sit beside (Other Class browsing hides it):
-        -- the entry tabs are the whole row.
-        tabGroup._cdcStripOffset = 0
-        return
-    end
-
-    local clusterStart = full - MeasureStripWidth(tabGroup)
-    local earliestStart = panelWidth + MIN_CLUSTER_GAP
-    if clusterStart >= earliestStart then
-        -- Fits on one row: pin the cluster to the right edge so it tracks
-        -- the window instead of sitting a fixed distance from the panel
-        -- tabs, and the clear space between them carries the resize.
-        tabGroup._cdcStripOffset = clusterStart
-        return
-    end
-
-    -- Too tight for one row. Start right after the panel tabs and let
-    -- AceGUI wrap the cluster inside what is left; each wrapped row fills
-    -- that space, so the block stays flush with the right edge.
-    tabGroup._cdcStripOffset = earliestStart
-    tabGroup.frame.width = math.max(MIN_ENTRY_STRIP, full - earliestStart)
-    baseBuildTabs(tabGroup)
+local function BuildStrip(tabGroup, budget)
+    tabGroup.frame.width = budget
+    tabGroup._cdcBaseBuildTabs(tabGroup)
 end
 
 -- BuildTabs anchors the first tab of every row to the group's frame and
@@ -170,30 +134,99 @@ end
 
 local ApplyUnifiedRow
 
+local function FinishStrip(tabGroup)
+    CaptureStripAnchors(tabGroup)
+    tabGroup._cdcRowCount = GetStripRowCount(tabGroup)
+end
+
+-- Lays out the whole row at once: both clusters are measured at natural
+-- widths, and only then is it known whether they fit side by side. Either
+-- strip's rebuild runs this, so the two can never be laid out against
+-- different assumptions.
+local function LayoutUnifiedRow(trigger)
+    local panel = GetPanelStrip()
+    local entry = GetEntryStrip()
+    if entry and not entry.frame:IsShown() then entry = nil end
+
+    local full = 0
+    if panel then
+        BuildStrip(panel, NATURAL_STRIP_BUDGET)
+        panel._cdcStripOffset = 0
+        full = panel.frame:GetWidth() or 0
+    end
+    if entry then
+        BuildStrip(entry, NATURAL_STRIP_BUDGET)
+        entry._cdcStripOffset = 0
+        full = math.max(full, entry.frame:GetWidth() or 0)
+    end
+
+    local panelWidth = panel and MeasureStripWidth(panel) or 0
+    local entryWidth = entry and MeasureStripWidth(entry) or 0
+
+    if panelWidth > 0 and entryWidth > 0 then
+        if panelWidth + MIN_CLUSTER_GAP + entryWidth <= full then
+            -- Both clusters fit side by side: panel tabs stay put on the
+            -- left and the entry cluster is pinned to the right edge, so
+            -- the clear space between them carries the resize.
+            entry._cdcStripOffset = full - entryWidth
+        else
+            -- Too tight for one row. Split the row between the clusters in
+            -- proportion to their natural widths so they wrap by the same
+            -- amount and the stack stays balanced, instead of the entry
+            -- cluster absorbing all of it.
+            local available = math.max(MIN_STRIP_WIDTH * 2, full - MIN_CLUSTER_GAP)
+            local panelShare = math.floor(available * panelWidth / (panelWidth + entryWidth))
+            panelShare = math.max(MIN_STRIP_WIDTH, panelShare)
+            local entryShare = math.max(MIN_STRIP_WIDTH, available - panelShare)
+            BuildStrip(panel, panelShare)
+            BuildStrip(entry, entryShare)
+            entry._cdcStripOffset = panelShare + MIN_CLUSTER_GAP
+        end
+    elseif entryWidth > full and full > 0 then
+        -- Entry cluster alone (Other Class browsing hides the panel tabs)
+        -- and wider than the row.
+        BuildStrip(entry, full)
+    elseif panelWidth > full and full > 0 then
+        BuildStrip(panel, full)
+    end
+
+    if panel then FinishStrip(panel) end
+    if entry then FinishStrip(entry) end
+    ApplyUnifiedRow()
+
+    return trigger == panel or trigger == entry
+end
+
 -- Wraps the widget's own BuildTabs so every rebuild - SetTabs, a window
--- resize, and the deferred pass AceGUI schedules after one - lands with
--- the same budget and offset, and so a rebuild that changes the row count
--- (a resize that wraps the entry cluster) takes both content panes with it.
-local function InstallStripLayout(tabGroup, buildFn)
+-- resize, and the deferred pass AceGUI schedules after one - re-lays the
+-- whole row, and so a rebuild that changes the row count takes both
+-- content panes with it.
+local laying = false
+local function InstallStripLayout(tabGroup)
     if not tabGroup or tabGroup._cdcUnifiedStrip then return end
     tabGroup._cdcUnifiedStrip = true
 
-    local baseBuildTabs = tabGroup.BuildTabs
+    tabGroup._cdcBaseBuildTabs = tabGroup.BuildTabs
     tabGroup.BuildTabs = function(self)
-        buildFn(self, baseBuildTabs)
-        CaptureStripAnchors(self)
-        self._cdcRowCount = GetStripRowCount(self)
-        PlaceStrip(self)
-        ApplyUnifiedRow()
+        if laying then
+            -- Nested call from the row layout, which drives the base
+            -- builder itself.
+            self._cdcBaseBuildTabs(self)
+            return
+        end
+        laying = true
+        if not LayoutUnifiedRow(self) then
+            -- This strip is not in the row right now (it or its host is
+            -- hidden), so keep its own tabs current on their own terms; the
+            -- row is laid out again when it comes back.
+            self._cdcStripOffset = 0
+            self._cdcRowShift = 0
+            BuildStrip(self, NATURAL_STRIP_BUDGET)
+            FinishStrip(self)
+            PlaceStrip(self)
+        end
+        laying = false
     end
-end
-
-local function InstallPanelStrip(tabGroup)
-    InstallStripLayout(tabGroup, BuildPanelStrip)
-end
-
-local function InstallEntryStrip(tabGroup)
-    InstallStripLayout(tabGroup, BuildEntryStrip)
 end
 
 ------------------------------------------------------------------------
@@ -267,8 +300,9 @@ end
 ------------------------------------------------------------------------
 -- ST._ exports
 ------------------------------------------------------------------------
-ST._UnifiedRowInstallPanelStrip = InstallPanelStrip
-ST._UnifiedRowInstallEntryStrip = InstallEntryStrip
+-- Both strips install the same layout: which cluster a strip is comes from
+-- where it sits in the row, not from how it was registered.
+ST._UnifiedRowInstallStrip = InstallStripLayout
 ST._UnifiedRowGetScope = GetScope
 ST._UnifiedRowSetScope = SetScope
 ST._UnifiedRowApply = ApplyUnifiedRow

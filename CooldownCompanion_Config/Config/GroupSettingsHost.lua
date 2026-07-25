@@ -200,8 +200,8 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         -- Parent the AceGUI widget frame to the raw host frame
         tabGroup.frame:SetParent(container)
 
-        -- Panel tabs are the fixed left half of the unified tab row.
-        ST._UnifiedRowInstallPanelStrip(tabGroup)
+        -- Panel tabs are the left cluster of the unified tab row.
+        ST._UnifiedRowInstallStrip(tabGroup)
 
         container.tabGroup = tabGroup
     end

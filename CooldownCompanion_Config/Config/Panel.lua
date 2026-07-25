@@ -1937,9 +1937,9 @@ local function CreateConfigPanel()
     bsTabGroup.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
     bsTabGroup.frame:Hide()
 
-    -- Entry tabs are appended to the right of the panel tabs in one shared
-    -- row; the strip is offset and wrap-budgeted for the space that leaves.
-    ST._UnifiedRowInstallEntryStrip(bsTabGroup)
+    -- Entry tabs are the right cluster of the unified tab row: offset past
+    -- the panel tabs and laid out against the space they leave.
+    ST._UnifiedRowInstallStrip(bsTabGroup)
 
     col3.bsTabGroup = bsTabGroup
 
