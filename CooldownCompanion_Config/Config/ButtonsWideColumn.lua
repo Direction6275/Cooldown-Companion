@@ -116,6 +116,21 @@ local function EnsureEditingSurface(col3)
     text:SetJustifyH("LEFT")
     text:SetWordWrap(false)
     headerLine.text = text
+
+    -- Breadcrumb pieces: when the path has clickable ancestor scopes, the
+    -- line renders as the "Editing: " prefix + one crumb button per
+    -- ancestor + the main text (the current selection). With no clickable
+    -- ancestors everything but the main text stays hidden and it renders
+    -- the whole line exactly as before.
+    local prefix = headerLine:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    prefix:SetPoint("LEFT", headerLine, "LEFT", 0, 0)
+    prefix:SetHeight(EDIT_HEADER_HEIGHT)
+    prefix:SetJustifyH("LEFT")
+    prefix:SetWordWrap(false)
+    prefix:Hide()
+    headerLine.prefix = prefix
+    headerLine.crumbs = {}
+
     surface._cdcHeader = headerLine
 
     col3._cdcEditingSurface = surface
@@ -410,6 +425,71 @@ local function GetEditingHeaderPath()
     return container and container.name, group.name or "Panel"
 end
 
+local function AcquireHeaderCrumb(headerLine, index)
+    local crumb = headerLine.crumbs[index]
+    if crumb then return crumb end
+
+    crumb = CreateFrame("Button", nil, headerLine)
+    crumb:SetHeight(EDIT_HEADER_HEIGHT)
+    local crumbText = crumb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    crumbText:SetAllPoints()
+    crumbText:SetJustifyH("LEFT")
+    crumbText:SetWordWrap(false)
+    crumbText:SetTextColor(0.616, 0.584, 0.529)
+    crumb.text = crumbText
+    crumb:SetScript("OnEnter", function(self)
+        self.text:SetTextColor(1, 1, 1)
+        if self._cdcTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(self._cdcTooltip, 1, 1, 1)
+            GameTooltip:Show()
+        end
+    end)
+    crumb:SetScript("OnLeave", function(self)
+        self.text:SetTextColor(0.616, 0.584, 0.529)
+        GameTooltip:Hide()
+    end)
+    crumb:SetScript("OnClick", function(self)
+        if self._cdcOnClick then
+            self._cdcOnClick()
+        end
+    end)
+    headerLine.crumbs[index] = crumb
+    return crumb
+end
+
+-- Breadcrumb click handlers: every ancestor scope in the path navigates.
+-- The group crumb opens the group's own settings (same landing as clicking
+-- the group in the navigator); the panel crumb deselects the entry or
+-- attached bar; the Resources crumb returns to the Resources overview.
+local function BreadcrumbToGroup()
+    local db = CooldownCompanion.db and CooldownCompanion.db.profile
+    local group = db and CS.selectedGroup and db.groups[CS.selectedGroup]
+    local containerId = (group and group.parentContainerId) or CS.selectedContainer
+    if not (containerId and ST._SelectConfigContainer) then return end
+    CS.unifiedBarKind = nil
+    ST._SelectConfigContainer(containerId)
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function BreadcrumbToPanel()
+    CS.unifiedBarKind = nil
+    if ST._ClearConfigButtonSelection then
+        ST._ClearConfigButtonSelection()
+    end
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function BreadcrumbToResourcesHome()
+    if ST._ClearConfigResourceSelection then
+        ST._ClearConfigResourceSelection()
+    end
+    if ST._ClearConfigCustomBarSelection then
+        ST._ClearConfigCustomBarSelection({ clearExpanded = true })
+    end
+    CooldownCompanion:RefreshConfigPanel()
+end
+
 local function UpdateEditingHeader(col3)
     local headerLine = EnsureEditingSurface(col3)._cdcHeader
     local header = headerLine.text
@@ -463,12 +543,34 @@ local function UpdateEditingHeader(col3)
         header:SetPoint("RIGHT", headerLine, "RIGHT", 0, 0)
     end
 
+    local prefix = headerLine.prefix
+    local crumbs = headerLine.crumbs
+
+    local function HideCrumbsFrom(startIndex)
+        for i = startIndex, #crumbs do
+            crumbs[i]:Hide()
+        end
+    end
+
     if not leaf then
+        prefix:Hide()
+        HideCrumbsFrom(1)
         header:SetText("Editing")
         return
     end
 
+    -- Every ancestor scope in the dimmed path is a clickable crumb; only
+    -- the current selection stays plain text. Cast frame items have no
+    -- unselected home state, so that lane stays static.
+    local segments = {}
+    local currentText
     if context and context.name then
+        if parent then
+            segments[#segments + 1] = { label = parent,
+                tooltip = "Back to group settings", onClick = BreadcrumbToGroup }
+        end
+        segments[#segments + 1] = { label = leaf,
+            tooltip = "Back to panel settings", onClick = BreadcrumbToPanel }
         local contextName = context.name
         if context.icon then
             contextName = "|T" .. context.icon .. ":" .. EDIT_CONTEXT_ICON_SIZE
@@ -477,9 +579,50 @@ local function UpdateEditingHeader(col3)
         if context.kindText then
             contextName = contextName .. " |cff7d7566(" .. context.kindText .. ")|r"
         end
-        local path = parent and (parent .. " \194\187 " .. leaf) or leaf
-        header:SetFormattedText("Editing: |cff9d9587%s \194\187 |r|cffffffff%s|r", path, contextName)
-    elseif parent then
+        currentText = contextName
+    elseif CS.resourcesEntrySelected and parent == "Resources" then
+        segments[1] = { label = parent,
+            tooltip = "Back to Resources", onClick = BreadcrumbToResourcesHome }
+        currentText = leaf
+    elseif parent and not CS.castFramesEntrySelected then
+        -- Panel scope in the buttons workspace: the group is the one
+        -- clickable ancestor.
+        segments[1] = { label = parent,
+            tooltip = "Back to group settings", onClick = BreadcrumbToGroup }
+        currentText = leaf
+    end
+
+    if #segments > 0 then
+        prefix:SetText("Editing: ")
+        prefix:Show()
+        local anchor = prefix
+        for index, segment in ipairs(segments) do
+            local crumb = AcquireHeaderCrumb(headerLine, index)
+            crumb.text:SetText(segment.label .. " \194\187 ")
+            crumb.text:SetTextColor(0.616, 0.584, 0.529)
+            crumb:SetWidth(crumb.text:GetStringWidth() + 1)
+            crumb._cdcTooltip = segment.tooltip
+            crumb._cdcOnClick = segment.onClick
+            crumb:ClearAllPoints()
+            crumb:SetPoint("LEFT", anchor, "RIGHT", 0, 0)
+            crumb:Show()
+            anchor = crumb
+        end
+        HideCrumbsFrom(#segments + 1)
+        header:ClearAllPoints()
+        header:SetPoint("LEFT", anchor, "RIGHT", 0, 0)
+        if rightAnchor then
+            header:SetPoint("RIGHT", rightAnchor, "LEFT", -EDIT_CONTEXT_BADGE_GAP - 3, 0)
+        else
+            header:SetPoint("RIGHT", headerLine, "RIGHT", 0, 0)
+        end
+        header:SetFormattedText("|cffffffff%s|r", currentText)
+        return
+    end
+
+    prefix:Hide()
+    HideCrumbsFrom(1)
+    if parent then
         header:SetFormattedText("Editing: |cff9d9587%s \194\187 |r|cffffffff%s|r", parent, leaf)
     else
         header:SetFormattedText("Editing: |cffffffff%s|r", leaf)

@@ -3557,6 +3557,7 @@ ST._SelectConfigRotationAssistantEntry = SelectConfigRotationAssistantEntry
 ST._SelectConfigButtonPanel = SelectConfigButtonPanel
 ST._SetConfigCustomBarSettingsTab = SetConfigCustomBarSettingsTab
 ST._ClearConfigCustomBarSelection = ClearConfigCustomBarSelection
+ST._ClearConfigResourceSelection = ClearConfigResourceSelection
 ST._SelectConfigCustomBar = SelectConfigCustomBar
 ST._ToggleConfigCustomBarMultiSelect = ToggleConfigCustomBarMultiSelect
 ST._PruneConfigCustomBarSelection = PruneConfigCustomBarSelection
