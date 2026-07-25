@@ -17,8 +17,10 @@
     exactly as the settings-side badges have always been.
 
     The bar is a child of the preview host, so every path that hides the
-    host (view switches, talent picker, texture browser, config close)
-    takes the bar with it - it is deliberately NOT a new col3 surface.
+    host (view switches, talent picker, config close) takes the bar with
+    it - it is deliberately NOT a new col3 surface. The inline texture
+    browser is the exception by design: it takes over the settings area
+    while the pinned preview stays, so the bar stays usable there too.
 ]]
 
 local ADDON_NAME, ST = ...
