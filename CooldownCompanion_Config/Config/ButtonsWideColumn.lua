@@ -1134,6 +1134,14 @@ local function UpdatePanelPreview(col3)
     host:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
     host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
     local function BuildPreview(hostFrame)
+        -- Owns the host's bottom reserve, so it must settle before either
+        -- renderer measures itself. Sits inside the build closure so every
+        -- rebuild path (selection, resize, divider drag, preview toggle)
+        -- refreshes the strip without its own hook.
+        if ST._UpdatePreviewCommandCenter then
+            ST._UpdatePreviewCommandCenter(hostFrame)
+        end
+
         local activePanelId = CS.selectedGroup
         if activePanelId then
             SetButtonsPreviewRenderer(hostFrame, "panel")

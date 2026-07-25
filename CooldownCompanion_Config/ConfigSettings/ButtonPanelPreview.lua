@@ -377,10 +377,26 @@ local function GetGrowthMultipliers(growthOrigin)
     return 1, -1, "TOPLEFT"
 end
 
+-- Chrome pinned to the bottom of the host (the preview command center)
+-- claims a band the rendered preview must stay clear of. Hosts without
+-- chrome report 0, so measuring frames and overview tiles are unaffected.
+local function GetHostBottomReserve(host)
+    return host and host._cdcPreviewReserveBottom or 0
+end
+
+-- Re-anchored on every build: the reserve appears and disappears with the
+-- selection, and the content centers inside whatever is left.
+local function ApplyHostBottomReserve(host, root)
+    root:ClearAllPoints()
+    root:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+    root:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, GetHostBottomReserve(host))
+end
+
 local function EnsurePreviewState(host)
     local preview = host._cdcPanelPreview
     if preview then
         preview.buildId = (preview.buildId or 0) + 1
+        ApplyHostBottomReserve(host, preview.root)
         return preview
     end
 
@@ -392,9 +408,9 @@ local function EnsurePreviewState(host)
     host._cdcPanelPreview = preview
 
     local root = CreateFrame("Frame", nil, host)
-    root:SetAllPoints(host)
     root:SetClipsChildren(false)
     root:Hide()
+    ApplyHostBottomReserve(host, root)
     preview.root = root
 
     local content = CreateFrame("Frame", nil, root)
@@ -2976,7 +2992,7 @@ end
 
 local function GetHostFitBox(host, readOnly)
     local hostWidth = host:GetWidth() or 0
-    local hostHeight = host:GetHeight() or 0
+    local hostHeight = (host:GetHeight() or 0) - GetHostBottomReserve(host)
     if readOnly then
         -- Overview tiles are measured before their final build and can
         -- legitimately be smaller than the focused preview's 80px guard.

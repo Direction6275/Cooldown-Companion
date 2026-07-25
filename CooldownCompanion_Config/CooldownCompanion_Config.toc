@@ -37,6 +37,7 @@ Config\PanelShared.lua
 Config\Column3.lua
 Config\UnifiedTabRow.lua
 Config\GroupSettingsHost.lua
+Config\PreviewCommandCenter.lua
 Config\ButtonsWideColumn.lua
 Config\ResourcesWideColumn.lua
 Config\ProfileBar.lua
