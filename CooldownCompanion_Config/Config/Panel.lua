@@ -1877,21 +1877,24 @@ local function CreateConfigPanel()
         if tab == "settings" then
             if group.displayMode == "trigger" then
                 ST._BuildTriggerConditionSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+                -- Trigger panels have no Talent Conditions section to sit above.
+                ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
             else
                 if buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
                     ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
                 elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
                     ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
                 end
-                ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-                ST._BuildCustomKeybindSection(scroll, buttonData)
-                ST._BuildCustomNameSection(scroll, buttonData)
-                ST._BuildItemFallbacksSection(scroll, buttonData, CS.buttonSettingsInfoButtons)
+                -- Talent Conditions is always the last section (owner ruling),
+                -- so everything below Visibility Rules is emitted through the
+                -- visibility builder's mid-point hook rather than after it.
+                ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons, nil, function()
+                    ST._BuildCustomKeybindSection(scroll, buttonData)
+                    ST._BuildCustomNameSection(scroll, buttonData)
+                    ST._BuildItemFallbacksSection(scroll, buttonData, CS.buttonSettingsInfoButtons)
+                    ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
+                end)
             end
-            -- Sound alerts close out the entry's Settings ("Condition" on
-            -- trigger panels) tab on every panel type; they have no tab of
-            -- their own.
-            ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
         elseif tab == "aura" then
             ST._BuildAuraTab(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
         elseif tab == "loadconditions" then
