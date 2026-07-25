@@ -535,10 +535,16 @@ local function MigrateRunningPreview(panelId, buttonIndex, applicable)
     if not control or control.preview.groupScoped then
         return
     end
-    if control.preview.IsActive(panelId, lastButtonIndex) ~= true then
+    -- Gate on what was running at the LAST update, not on live state:
+    -- SelectConfigButton (State.lua) calls ClearAllConfigPreviews on every
+    -- entry selection, so by the time this runs the preview we mean to
+    -- carry over has already been wiped and a live check always says no.
+    -- That is why entry -> entry did nothing while deselecting worked.
+    if not CS.previewCommandCenterWasRunning then
         return
     end
 
+    -- No-op when the seam already cleared it; a real move otherwise.
     control.preview.SetActive(panelId, lastButtonIndex, false)
     if IsControlApplicable(control, applicable) then
         control.preview.SetActive(panelId, buttonIndex, true)
@@ -581,9 +587,16 @@ local function IsPreviewMenuOpen()
         and listFrame.dropdown == CS.previewCommandCenterMenu
 end
 
--- The list auto-hides on the outside mouse-down, which can land before
--- our own handler and leave "was it open?" answering no - so record the
--- close here too. Same guard the config's gear menu needs (Panel.lua).
+-- UIDropDownMenu_HandleGlobalMouseEvent closes the list on GLOBAL_MOUSE_DOWN
+-- whenever the cursor is outside it - which includes a click on our own
+-- chooser, and can land before our handlers run. When that happens the
+-- click has already done the closing, so record it and let the click be
+-- consumed rather than reopening the menu.
+--
+-- Deliberately does NOT test IsMouseButtonDown: during GLOBAL_MOUSE_DOWN
+-- the button is not reliably reported as down yet, which is why the first
+-- attempt at this guard let the menu reopen. Being over the chooser at
+-- the moment the list hides is signal enough.
 local function HookPreviewMenuHide()
     local listFrame = _G.DropDownList1
     if not listFrame or CS.previewCommandCenterHideHooked then
@@ -591,11 +604,11 @@ local function HookPreviewMenuHide()
     end
     CS.previewCommandCenterHideHooked = true
     listFrame:HookScript("OnHide", function(frame)
+        if frame.dropdown ~= CS.previewCommandCenterMenu then
+            return
+        end
         local chooser = CS.previewCommandCenterChooser
-        local closedByChooserClick = chooser
-            and MouseIsOver and MouseIsOver(chooser)
-            and IsMouseButtonDown and IsMouseButtonDown("LeftButton")
-        if frame.dropdown == CS.previewCommandCenterMenu and closedByChooserClick then
+        if chooser and MouseIsOver and MouseIsOver(chooser) then
             CS.previewCommandCenterClosedByClick = true
         end
     end)
@@ -606,6 +619,9 @@ local function OpenPreviewMenu(bar)
     if not panelId then
         return
     end
+
+    -- Opening supersedes any stale "the click already closed it" record.
+    CS.previewCommandCenterClosedByClick = nil
 
     local menu = EnsureMenuFrame()
     UIDropDownMenu_Initialize(menu, function(_, level)
@@ -831,6 +847,9 @@ local function UpdatePreviewCommandCenter(host)
         selected, running = remembered or applicable[1], false
     end
     CS.previewCommandCenterSelection = selected.id
+    -- Read by the migration above on the next pass, since the selection
+    -- seam clears previews before we get to look at live state.
+    CS.previewCommandCenterWasRunning = running
 
     local bar = EnsureBar(host)
     bar._applicable = applicable
