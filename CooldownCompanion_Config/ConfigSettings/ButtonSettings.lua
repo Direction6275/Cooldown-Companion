@@ -751,20 +751,6 @@ local function AddItemFallback(buttonData, itemID)
     return true
 end
 
-local function TryReceiveFallbackItemDrop(buttonData)
-    local cursorType, cursorID = GetCursorInfo()
-    if cursorType ~= "item" or not cursorID then
-        return false
-    end
-
-    local added = AddItemFallback(buttonData, cursorID)
-    ClearCursor()
-    if added then
-        RefreshFallbackEntry(CS.selectedGroup)
-    end
-    return added
-end
-
 local function UpdatePrimaryFallbackItem(buttonData, itemID)
     buttonData.id = itemID
     buttonData.name = GetItemFallbackName(itemID)
@@ -934,10 +920,6 @@ local function InstallFallbackRowMenu(entry, buttonData, rowIndex)
     entry.frame:SetScript("OnMouseUp", function(_, button)
         if button == "RightButton" then
             ShowFallbackRowMenu(buttonData, rowIndex)
-            return
-        end
-        if button == "LeftButton" and GetCursorInfo() then
-            TryReceiveFallbackItemDrop(buttonData)
         end
     end)
 end
