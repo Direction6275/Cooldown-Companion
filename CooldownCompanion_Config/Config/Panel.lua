@@ -1830,7 +1830,6 @@ local function CreateConfigPanel()
     local bsTabGroup = AceGUI:Create("TabGroup")
     bsTabGroup:SetTabs({
         { value = "settings",  text = "Settings" },
-        { value = "soundalerts", text = "Sound Alerts" },
         { value = "overrides", text = "Overrides" },
         { value = "loadconditions", text = "Load Conditions" },
     })
@@ -1887,17 +1886,14 @@ local function CreateConfigPanel()
                 ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
                 ST._BuildCustomKeybindSection(scroll, buttonData)
                 ST._BuildCustomNameSection(scroll, buttonData)
+                ST._BuildItemFallbacksSection(scroll, buttonData, CS.buttonSettingsInfoButtons)
             end
+            -- Sound alerts close out the entry's Settings ("Condition" on
+            -- trigger panels) tab on every panel type; they have no tab of
+            -- their own.
+            ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
         elseif tab == "aura" then
             ST._BuildAuraTab(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
-        elseif tab == "soundalerts" then
-            if group.displayMode == "trigger" then
-                ST._BuildTriggerPanelSoundAlertsTab(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
-            else
-                ST._BuildSpellSoundAlertsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
-            end
-        elseif tab == "fallbacks" then
-            ST._BuildItemFallbacksTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         elseif tab == "loadconditions" then
             ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
         elseif tab == "overrides" then
