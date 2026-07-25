@@ -52,9 +52,6 @@ local BuildIconTintControls = ST._BuildIconTintControls
 local BuildAssistedHighlightControls = ST._BuildAssistedHighlightControls
 local BuildProcGlowControls = ST._BuildProcGlowControls
 local BuildAuraGlowControls = ST._BuildAuraGlowControls
-local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
-local AddPreviewBadge = ST._AddPreviewBadge
-local AddConditionalPreviewBadge = ST._AddConditionalPreviewBadge
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local BuildReadyGlowControls = ST._BuildReadyGlowControls
 local BuildKeyPressHighlightControls = ST._BuildKeyPressHighlightControls
@@ -2453,14 +2450,7 @@ local function BuildKeyPressHighlightSection(container, group, style, setWidth)
         build = BuildKeyPressHighlightAdvanced,
     })
     local kphPromoteBtn = CreateCheckboxPromoteButton(kphEnableCb, kphAdvBtn, "keyPressHighlight", group, style)
-    local kphPreviewBtn = AddPreviewBadge(kphEnableCb, kphPromoteBtn or kphAdvBtn, "Preview Key Press Highlight", function()
-        return CS.selectedGroup and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, nil, "_keyPressHighlightPreview")
-    end, function(show)
-        if CS.selectedGroup then
-            CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, show)
-        end
-    end, style.keyPressHighlightStyle and style.keyPressHighlightStyle ~= "none")
-    CreateInfoButton(kphEnableCb.frame, kphPreviewBtn or kphPromoteBtn or kphAdvBtn, "LEFT", "RIGHT", 4, 0, {
+    CreateInfoButton(kphEnableCb.frame, kphPromoteBtn or kphAdvBtn, "LEFT", "RIGHT", 4, 0, {
         "Key Press Highlight",
         {"Shows a glow overlay on buttons while their action bar keybind is physically held down.", 1, 1, 1, true},
     }, tabInfoButtons)
@@ -2731,8 +2721,7 @@ local function BuildEffectsTab(container)
             title = "Aura Duration Swipe Advanced",
             build = BuildAuraDurationSwipeAdvanced,
         })
-        local auraDurationPromoteBtn = CreateCheckboxPromoteButton(auraDurationCb, auraDurationAdvBtn, "auraDurationSwipe", group, style)
-        AddConditionalPreviewBadge(auraDurationCb, auraDurationPromoteBtn or auraDurationAdvBtn, "Preview Aura Duration Swipe", "aura_duration_swipe", style.showAuraDurationSwipe ~= false)
+        CreateCheckboxPromoteButton(auraDurationCb, auraDurationAdvBtn, "auraDurationSwipe", group, style)
     end
 
     local gcdCb = AceGUI:Create("CheckBox")
@@ -2770,8 +2759,7 @@ local function BuildEffectsTab(container)
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
     SetCompactWidth(locCb)
-    local locPromoteBtn = CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
-    AddConditionalPreviewBadge(locCb, locPromoteBtn, "Preview Loss of Control", "loss_of_control", style.showLossOfControl)
+    CreateCheckboxPromoteButton(locCb, nil, "lossOfControl", group, style)
 
     -- Unusable Visual
     local unusableCb, unusableAdvBtn = BuildUnusableDimmingControls(container, style, function()
@@ -3428,11 +3416,6 @@ local function BuildAppearanceTab(container)
         AddColorPicker(panel, style, "chargeFontColorZero", "Font Color (Zero Charges)", {1, 1, 1, 1}, true, refreshStyle, refreshStyle)
         AddAnchorDropdown(panel, style, "chargeAnchor", "BOTTOMRIGHT", refreshStyle)
         AddOffsetSliders(panel, style, "chargeXOffset", "chargeYOffset", { x = -2, y = 2 }, refreshStyle)
-        if AddConditionalPreviewButton then
-            AddConditionalPreviewButton(panel, "Preview Max Charges", "charge_full")
-            AddConditionalPreviewButton(panel, "Preview Missing Charges", "charge_missing")
-            AddConditionalPreviewButton(panel, "Preview Zero Charges", "charge_zero")
-        end
     end
 
     local _, chargeAdvBtn = AddAdvancedToggle(chargeTextCb, "chargeText", tabInfoButtons, style.showChargeText ~= false, {
@@ -3489,9 +3472,7 @@ local function BuildAppearanceTab(container)
             build = BuildAuraDurationTextAdvanced,
         })
         local auraTextPromoteBtn = CreateCheckboxPromoteButton(auraTextCb, auraTextAdvBtn, "auraText", group, style)
-        local auraTextPreviewBtn = AddConditionalPreviewBadge(auraTextCb, auraTextPromoteBtn or auraTextAdvBtn, "Preview Aura Duration Text", "aura_duration_text", style.showAuraText ~= false)
-
-        local auraPosInfo = CreateInfoButton(auraTextCb.frame, auraTextPreviewBtn or auraTextPromoteBtn or auraTextAdvBtn, "LEFT", "RIGHT", 4, 0, {
+        local auraPosInfo = CreateInfoButton(auraTextCb.frame, auraTextPromoteBtn or auraTextAdvBtn, "LEFT", "RIGHT", 4, 0, {
             "Shared Position",
             {"Position is shared with Cooldown Text by default. Enable 'Separate Text Positions' in advanced settings to use independent positions.", 1, 1, 1, true},
         }, auraTextCb)
@@ -3522,8 +3503,7 @@ local function BuildAppearanceTab(container)
             title = "Aura Stack Text Advanced",
             build = BuildAuraStackTextAdvanced,
         })
-        local auraStackPromoteBtn = CreateCheckboxPromoteButton(auraStackCb, auraStackAdvBtn, "auraStackText", group, style)
-        AddConditionalPreviewBadge(auraStackCb, auraStackPromoteBtn or auraStackAdvBtn, "Preview Aura Stack Text", "aura_stack_text", style.showAuraStackText ~= false)
+        CreateCheckboxPromoteButton(auraStackCb, auraStackAdvBtn, "auraStackText", group, style)
     end
 
     -- Show Keybind/Custom Text toggle

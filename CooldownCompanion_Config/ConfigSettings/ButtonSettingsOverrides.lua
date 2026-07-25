@@ -5,7 +5,6 @@ local CS = ST._configState
 
 local ColorHeading = ST._ColorHeading
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
-local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateRevertButton = ST._CreateRevertButton
 local CreateInfoButton = ST._CreateInfoButton
 local ApplyCheckboxIndent = ST._ApplyCheckboxIndent
@@ -40,7 +39,6 @@ local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
 local BuildTextFontControls = ST._BuildTextFontControls
 local BuildTextColorsControls = ST._BuildTextColorsControls
 local BuildTextBackgroundControls = ST._BuildTextBackgroundControls
-local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 
 local function GetHiddenOverrideReasonText(reason)
     if reason == "noCooldown" then
@@ -101,19 +99,6 @@ local function PrimeSelectedReadyGlowNormalTransition(groupId, buttonIndex)
     end
     button._readyGlowStartTime = GetTime()
 end
-
--- Sections that still open a preview popout. The glow/indicator toggles
--- and the cooldown / unusable / out-of-range states moved to the preview
--- command center on the Live Preview surface (one home per preview), so
--- only the fine-grained previews with no command-center equivalent are
--- left here.
-local PREVIEWABLE_OVERRIDE_SECTIONS = {
-    auraText = true,
-    auraStackText = true,
-    chargeText = true,
-    auraDurationSwipe = true,
-    lossOfControl = true,
-}
 
 local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
     local fmtHeading = AceGUI:Create("Heading")
@@ -402,41 +387,9 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                 local revertBtn = CreateRevertButton(heading, buttonData, sectionId)
                 table.insert(infoButtons, revertBtn)
 
-                local previewAdvExpanded
-                if PREVIEWABLE_OVERRIDE_SECTIONS[sectionId] then
-                    local previewAdvBtn
-                    local function BuildOverridePreviewAdvanced(panel)
-                        if AddConditionalPreviewButton then
-                            local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
-                            if sectionId == "auraText" then
-                                AddConditionalPreviewButton(panel, "Preview Aura Duration Text", "aura_duration_text", target)
-                            elseif sectionId == "auraStackText" then
-                                AddConditionalPreviewButton(panel, "Preview Aura Stack Text", "aura_stack_text", target)
-                            elseif sectionId == "chargeText" then
-                                AddConditionalPreviewButton(panel, "Preview Max Charges", "charge_full", target)
-                                AddConditionalPreviewButton(panel, "Preview Missing Charges", "charge_missing", target)
-                                AddConditionalPreviewButton(panel, "Preview Zero Charges", "charge_zero", target)
-                            elseif sectionId == "auraDurationSwipe" then
-                                AddConditionalPreviewButton(panel, "Preview Aura Duration Swipe", "aura_duration_swipe", target)
-                            elseif sectionId == "lossOfControl" then
-                                AddConditionalPreviewButton(panel, "Preview Loss of Control", "loss_of_control", target)
-                            end
-                        end
-                    end
-
-                    previewAdvExpanded, previewAdvBtn = AddAdvancedToggle(heading, "overridePreview_" .. sectionId, infoButtons, nil, {
-                        title = sectionDef.label .. " Advanced",
-                        build = BuildOverridePreviewAdvanced,
-                        isAvailable = function()
-                            return buttonData.overrideSections and buttonData.overrideSections[sectionId]
-                        end,
-                    })
-                    previewAdvBtn:SetPoint("LEFT", revertBtn, "RIGHT", 4, 0)
-                    heading.right:ClearAllPoints()
-                    heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
-                    heading.right:SetPoint("LEFT", previewAdvBtn, "RIGHT", 4, 0)
-                end
-
+                -- Every override section's preview popout is gone: the
+                -- preview command center on the Live Preview surface is
+                -- the single home for previews now.
                 if not overrideCollapsed then
                     local builder = sectionBuilders[sectionId]
                     if builder then

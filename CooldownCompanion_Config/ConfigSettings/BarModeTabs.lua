@@ -28,7 +28,6 @@ local ColorHeading = ST._ColorHeading
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
 local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
-local AddConditionalPreviewBadge = ST._AddConditionalPreviewBadge
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 
 local tabInfoButtons = CS.tabInfoButtons
@@ -195,9 +194,7 @@ local function BuildBarAppearanceTab(container, group, style)
             title = "Aura Duration Text Advanced",
             build = BuildBarAuraTextAdvanced,
         })
-        local auraTextPreviewBtn = AddConditionalPreviewBadge(auraTextCb, auraTextAdvBtn,
-            "Preview Aura Duration Text", "aura_duration_text", style.showAuraText ~= false)
-        CreateInfoButton(auraTextCb.frame, auraTextPreviewBtn or auraTextAdvBtn, "LEFT", "RIGHT", 4, 0, {
+        CreateInfoButton(auraTextCb.frame, auraTextAdvBtn, "LEFT", "RIGHT", 4, 0, {
             "Aura Duration Text",
             {"Shows the remaining aura time at the bar's time text position while the aura is active. Position follows the flip and offset settings in the Cooldown Text section.", 1, 1, 1, true},
         }, auraTextCb)
@@ -225,8 +222,7 @@ local function BuildBarAppearanceTab(container, group, style)
             title = "Aura Stack Text Advanced",
             build = BuildBarAuraStackTextAdvanced,
         })
-        local auraStackPreviewBtn = AddConditionalPreviewBadge(auraStackCb, auraStackAdvBtn, "Preview Aura Stack Text", "aura_stack_text", style.showAuraStackText ~= false)
-        CreateInfoButton(auraStackCb.frame, auraStackPreviewBtn or auraStackAdvBtn, "LEFT", "RIGHT", 4, 0, {
+        CreateInfoButton(auraStackCb.frame, auraStackAdvBtn, "LEFT", "RIGHT", 4, 0, {
             "Aura Stack Text",
             {"Shows the live stack count while the aura is active, drawn by the game so it stays accurate in combat. Stack counts cannot drive the bar fill; the count is hidden from addons during combat.", 1, 1, 1, true},
         }, auraStackCb)

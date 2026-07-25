@@ -67,6 +67,21 @@ local function FlagPreview(flag, buttonSetter, groupSetter)
     }
 end
 
+-- Previews with no per-entry setter (key press highlight is driven by the
+-- idle enrollment driver, panel-wide only). Selection does not narrow
+-- these; they always run on the whole panel.
+local function GroupOnlyFlagPreview(flag, groupSetter)
+    return {
+        IsActive = function(panelId)
+            return CooldownCompanion:IsPreviewFlagActive(panelId, nil, flag) == true
+        end,
+        SetActive = function(panelId, _, show)
+            local setter = CooldownCompanion[groupSetter]
+            if setter then setter(CooldownCompanion, panelId, show) end
+        end,
+    }
+end
+
 local function ConditionalPreview(kind)
     return {
         IsActive = function(panelId, buttonIndex)
@@ -143,6 +158,13 @@ local function StyleFlagEnabled(group, buttonIndex, styleKey)
     return ResolveTargetStyle(group, buttonIndex)[styleKey] and true or false
 end
 
+-- Same idea for the settings that default ON, where nil means enabled and
+-- only an explicit false disables (the `~= false` shape the shipped
+-- badges gate on).
+local function StyleFlagEnabledByDefault(group, buttonIndex, styleKey)
+    return ResolveTargetStyle(group, buttonIndex)[styleKey] ~= false
+end
+
 -- Glow previews render nothing while the glow style is "none" (the
 -- default for Ready Glow), which is exactly the condition the entry
 -- popout toggles and the panel badges already gate on.
@@ -182,15 +204,26 @@ local function AnyTriggerEffectEnabled(group)
 end
 
 ------------------------------------------------------------------------
--- The curated control set (owner ruling 2026-07-25): the glow/indicator
--- toggles plus the universal states. Labels are the existing ones
--- verbatim - the no-rename ruling holds here too.
+-- Every preview the buttons workspace can run, in menu order, grouped by
+-- what the preview actually is: something CC draws on top, a situation
+-- the button is in, or a readout it displays. Labels are the existing
+-- ones verbatim - the no-rename ruling holds here too.
+--
+-- Note the states are deliberately single entries. The old UI offered
+-- "Preview Cooldown Text", "Preview Cooldown Swipe", "Preview Cooldown
+-- Fill" and "Preview Cooldown Tint" as four separate controls that all
+-- fired the identical cooldown preview; they collapse to one here.
 ------------------------------------------------------------------------
+
+local GROUP_EFFECTS = "Effects"
+local GROUP_STATES = "Button States"
+local GROUP_READOUTS = "Text & Timers"
 
 local CONTROLS = {
     {
         id = "procGlow",
         label = "Preview Proc Glow",
+        group = GROUP_EFFECTS,
         modes = { icons = true },
         section = "procGlow",
         glowStyleKey = "procGlowStyle",
@@ -199,6 +232,7 @@ local CONTROLS = {
     {
         id = "auraGlow",
         label = "Preview Aura Glow",
+        group = GROUP_EFFECTS,
         modes = { icons = true },
         section = "auraIndicator",
         glowStyleKey = "auraGlowStyle",
@@ -207,42 +241,34 @@ local CONTROLS = {
     {
         id = "readyGlow",
         label = "Preview Ready Glow Style",
+        group = GROUP_EFFECTS,
         modes = { icons = true },
         section = "readyGlow",
         glowStyleKey = "readyGlowStyle",
         preview = FlagPreview("_readyGlowPreview", "SetReadyGlowPreview", "SetGroupReadyGlowPreview"),
     },
     {
+        id = "keyPressHighlight",
+        label = "Preview Key Press Highlight",
+        group = GROUP_EFFECTS,
+        modes = { icons = true },
+        section = "keyPressHighlight",
+        glowStyleKey = "keyPressHighlightStyle",
+        preview = GroupOnlyFlagPreview("_keyPressHighlightPreview", "SetGroupKeyPressHighlightPreview"),
+    },
+    {
         id = "barActiveAura",
         label = "Preview Active Aura Indicator",
+        group = GROUP_EFFECTS,
         modes = { bars = true },
         section = "barActiveAura",
         requiresBarAuraIndicator = true,
         preview = FlagPreview("_barAuraEffectPreview", "SetBarAuraEffectPreview", "SetGroupBarAuraEffectPreview"),
     },
     {
-        id = "cooldown",
-        label = "Preview Cooldown State",
-        modes = { icons = true, bars = true, text = true, rotationAssistant = true },
-        preview = ConditionalPreview("cooldown"),
-    },
-    {
-        id = "unusable",
-        label = "Preview Unusable State",
-        modes = { icons = true, bars = true, text = true, rotationAssistant = true },
-        styleKey = "showUnusable",
-        preview = ConditionalPreview("unusable"),
-    },
-    {
-        id = "outOfRange",
-        label = "Preview Out of Range State",
-        modes = { icons = true, text = true, rotationAssistant = true },
-        styleKey = "showOutOfRange",
-        preview = ConditionalPreview("out_of_range"),
-    },
-    {
         id = "textureProc",
         label = "Preview Proc Effect",
+        group = GROUP_EFFECTS,
         modes = { textures = true },
         indicatorKey = "proc",
         preview = TextureIndicatorPreview("proc"),
@@ -250,6 +276,7 @@ local CONTROLS = {
     {
         id = "textureReady",
         label = "Preview Ready Effect",
+        group = GROUP_EFFECTS,
         modes = { textures = true },
         indicatorKey = "ready",
         preview = TextureIndicatorPreview("ready"),
@@ -257,6 +284,7 @@ local CONTROLS = {
     {
         id = "textureUnusable",
         label = "Preview Unusable Effect",
+        group = GROUP_EFFECTS,
         modes = { textures = true },
         indicatorKey = "unusable",
         preview = TextureIndicatorPreview("unusable"),
@@ -264,9 +292,98 @@ local CONTROLS = {
     {
         id = "triggerEffects",
         label = "Preview Effects",
+        group = GROUP_EFFECTS,
         modes = { trigger = true },
         requiresTriggerEffect = true,
         preview = TriggerEffectsPreview,
+    },
+
+    {
+        id = "cooldown",
+        label = "Preview Cooldown State",
+        group = GROUP_STATES,
+        modes = { icons = true, bars = true, text = true, rotationAssistant = true },
+        preview = ConditionalPreview("cooldown"),
+    },
+    {
+        id = "unusable",
+        label = "Preview Unusable State",
+        group = GROUP_STATES,
+        modes = { icons = true, bars = true, text = true, rotationAssistant = true },
+        styleKey = "showUnusable",
+        preview = ConditionalPreview("unusable"),
+    },
+    {
+        id = "outOfRange",
+        label = "Preview Out of Range State",
+        group = GROUP_STATES,
+        modes = { icons = true, text = true, rotationAssistant = true },
+        styleKey = "showOutOfRange",
+        preview = ConditionalPreview("out_of_range"),
+    },
+    {
+        id = "lossOfControl",
+        label = "Preview Loss of Control",
+        group = GROUP_STATES,
+        modes = { icons = true, bars = true, rotationAssistant = true },
+        section = "lossOfControl",
+        styleKey = "showLossOfControl",
+        preview = ConditionalPreview("loss_of_control"),
+    },
+
+    {
+        id = "auraDurationText",
+        label = "Preview Aura Duration Text",
+        group = GROUP_READOUTS,
+        modes = { icons = true, bars = true },
+        section = "auraText",
+        styleKeyDefaultOn = "showAuraText",
+        preview = ConditionalPreview("aura_duration_text"),
+    },
+    {
+        id = "auraStackText",
+        label = "Preview Aura Stack Text",
+        group = GROUP_READOUTS,
+        modes = { icons = true, bars = true },
+        section = "auraStackText",
+        styleKeyDefaultOn = "showAuraStackText",
+        preview = ConditionalPreview("aura_stack_text"),
+    },
+    {
+        id = "auraDurationSwipe",
+        label = "Preview Aura Duration Swipe",
+        group = GROUP_READOUTS,
+        modes = { icons = true },
+        section = "auraDurationSwipe",
+        styleKeyDefaultOn = "showAuraDurationSwipe",
+        preview = ConditionalPreview("aura_duration_swipe"),
+    },
+    {
+        id = "chargeFull",
+        label = "Preview Max Charges",
+        group = GROUP_READOUTS,
+        modes = { icons = true, bars = true },
+        section = "chargeText",
+        styleKeyDefaultOn = "showChargeText",
+        preview = ConditionalPreview("charge_full"),
+    },
+    {
+        id = "chargeMissing",
+        label = "Preview Missing Charges",
+        group = GROUP_READOUTS,
+        modes = { icons = true, bars = true },
+        section = "chargeText",
+        styleKeyDefaultOn = "showChargeText",
+        preview = ConditionalPreview("charge_missing"),
+    },
+    {
+        id = "chargeZero",
+        label = "Preview Zero Charges",
+        group = GROUP_READOUTS,
+        modes = { icons = true, bars = true },
+        section = "chargeText",
+        styleKeyDefaultOn = "showChargeText",
+        preview = ConditionalPreview("charge_zero"),
     },
 }
 
@@ -278,6 +395,10 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
         return false
     end
     if control.styleKey and not StyleFlagEnabled(group, buttonIndex, control.styleKey) then
+        return false
+    end
+    if control.styleKeyDefaultOn
+        and not StyleFlagEnabledByDefault(group, buttonIndex, control.styleKeyDefaultOn) then
         return false
     end
     if control.glowStyleKey and not GlowStyleSelected(group, buttonIndex, control.glowStyleKey) then
@@ -381,7 +502,29 @@ local function OpenPreviewMenu(bar)
 
     local menu = EnsureMenuFrame()
     UIDropDownMenu_Initialize(menu, function(_, level)
-        for _, control in ipairs(bar._applicable or {}) do
+        local applicable = bar._applicable or {}
+        -- Headers only earn their space once the menu actually spans more
+        -- than one group (a texture or trigger panel offers Effects only).
+        local showHeaders = false
+        local firstGroup = applicable[1] and applicable[1].group
+        for _, control in ipairs(applicable) do
+            if control.group ~= firstGroup then
+                showHeaders = true
+                break
+            end
+        end
+
+        local currentGroup
+        for _, control in ipairs(applicable) do
+            if showHeaders and control.group ~= currentGroup then
+                currentGroup = control.group
+                local header = UIDropDownMenu_CreateInfo()
+                header.text = control.group
+                header.isTitle = true
+                header.notCheckable = true
+                UIDropDownMenu_AddButton(header, level)
+            end
+
             local info = UIDropDownMenu_CreateInfo()
             info.text = control.label
             -- Radio, not check: picking one is picking the only one.
