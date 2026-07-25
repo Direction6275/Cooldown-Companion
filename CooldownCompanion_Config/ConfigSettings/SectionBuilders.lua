@@ -107,42 +107,6 @@ local function AddDurationFormatDropdown(container, settings, refreshCallback, o
     return durationDrop
 end
 
-local function AddPreviewToggleButton(container, offLabel, isActiveFn, setActiveFn)
-    if not (container and isActiveFn and setActiveFn) then
-        return nil
-    end
-
-    local btn = AceGUI:Create("Button")
-    btn:SetText(isActiveFn() and "Preview: ON" or offLabel)
-    btn:SetFullWidth(true)
-    if IsAdvancedSettingsPanelContainer(container) then
-        container._previewToggleButtons = container._previewToggleButtons or {}
-        CS.advancedSettingsPreviewToggleButtons = container._previewToggleButtons
-        btn._isActiveFn = isActiveFn
-        btn._offLabel = offLabel
-        table.insert(container._previewToggleButtons, btn)
-    end
-    btn:SetCallback("OnClick", function()
-        local showPreview = not isActiveFn()
-        if showPreview and CooldownCompanion.ClearAllConfigPreviews then
-            CooldownCompanion:ClearAllConfigPreviews()
-        elseif not showPreview and ClearActivePreviewBadgeButton then
-            ClearActivePreviewBadgeButton()
-        end
-        setActiveFn(showPreview)
-        if ST._RefreshButtonsPreviewMirror then
-            ST._RefreshButtonsPreviewMirror()
-        end
-        if IsAdvancedSettingsPanelContainer(container) then
-            RefreshPreviewToggleButtons(container)
-        elseif not RefreshConfigPanelForPreviewToggle() then
-            btn:SetText(isActiveFn() and "Preview: ON" or offLabel)
-        end
-    end)
-    container:AddChild(btn)
-    return btn
-end
-
 local function SetPreviewBadgeActive(btn, active)
     if btn then
         if not btn._activeHighlight then
@@ -265,40 +229,6 @@ local function AddPreviewBadge(parentWidget, anchorAfterFrame, label, isActiveFn
     end
 
     return btn
-end
-
-local function AddConditionalPreviewButton(container, label, previewKind, opts)
-    if not (container and CooldownCompanion.SetConditionalVisualPreviewActive and CooldownCompanion.IsConditionalVisualPreviewActive) then
-        return nil
-    end
-
-    local function ResolveTarget()
-        local groupId = ResolvePreviewOption(opts and opts.groupId) or CS.selectedGroup
-        local buttonIndex = ResolvePreviewOption(opts and opts.buttonIndex)
-        if opts and opts.requireButton and not buttonIndex then
-            return nil, nil
-        end
-        return groupId, buttonIndex
-    end
-
-    return AddPreviewToggleButton(container, label, function()
-        local groupId, buttonIndex = ResolveTarget()
-        if not groupId then
-            return false
-        end
-        return CooldownCompanion:IsConditionalVisualPreviewActive(groupId, buttonIndex, previewKind)
-    end, function(show)
-        local groupId, buttonIndex = ResolveTarget()
-        if groupId then
-            CooldownCompanion:SetConditionalVisualPreviewActive(
-                groupId,
-                buttonIndex,
-                previewKind,
-                show,
-                opts and opts.sampleState
-            )
-        end
-    end)
 end
 
 local function AddConditionalPreviewBadge(parentWidget, anchorAfterFrame, label, previewKind, enabled, opts)
@@ -1858,12 +1788,10 @@ end
 ------------------------------------------------------------------------
 ST._BuildCooldownTextControls = BuildCooldownTextControls
 ST._AddDurationFormatDropdown = AddDurationFormatDropdown
-ST._AddPreviewToggleButton = AddPreviewToggleButton
 ST._AddPreviewBadge = AddPreviewBadge
 ST._RefreshConfigPanelForPreviewToggle = RefreshConfigPanelForPreviewToggle
 ST._ClearActivePreviewBadgeButton = ClearActivePreviewBadgeButton
 ST._RefreshAdvancedSettingsPreviewButtons = RefreshActiveAdvancedPreviewToggleButtons
-ST._AddConditionalPreviewButton = AddConditionalPreviewButton
 ST._AddConditionalPreviewBadge = AddConditionalPreviewBadge
 ST._BuildAuraTextControls = BuildAuraTextControls
 ST._AddPandemicMarkerControls = AddPandemicMarkerControls
