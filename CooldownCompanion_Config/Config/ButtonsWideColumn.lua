@@ -63,7 +63,6 @@ end
 local function HideEntrySurfaces(col3)
     if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
     if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
-    if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
 end
 
 -- The wide col3 layout hosts exactly one pinned preview at a time: the
@@ -1655,6 +1654,18 @@ local function RefreshBrowseEntryList(col3, group)
     AddInlineEntryBox()
 end
 
+-- Raw host for the panel-scope settings surfaces. It carries the panel half
+-- of the unified tab row, so it is shown for an entry selection too - the
+-- entry cluster is appended beside those tabs rather than replacing them.
+local function EnsureGroupSettingsHost(col3)
+    local host = col3.groupSettingsHost
+    if not host then
+        host = CreateFrame("Frame", nil, col3.content)
+        col3.groupSettingsHost = host
+    end
+    return host
+end
+
 -- Persistent raw host for the inline texture browser, parked on col3.content
 -- (same discipline as the quiet row). ButtonsWideColumn owns its lifecycle;
 -- AuraTexturePicker renders its grid + chrome into it via
@@ -1793,9 +1804,9 @@ local function RefreshButtonsWideColumn()
         return RefreshButtonsWideColumn()
     end
 
-    -- Entry selected: the entry settings surfaces own the settings area
+    -- Entry selected: the entry tabs join the panel tabs in one row, and
+    -- whichever scope owns the surface builds its content there.
     if IsEntrySelectionActive() then
-        if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
         if browse then
             HidePanelPreview(col3)
         else
@@ -1807,18 +1818,25 @@ local function RefreshButtonsWideColumn()
             -- which feeds the settings-minimum clamp.
             ReapplyPanelPreviewSplit()
         end
+
+        if browse then
+            -- Other Class browsing has no panel-settings surface to offer,
+            -- so the entry cluster owns the whole row.
+            if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
+            ST._UnifiedRowSetScope("entry")
+        else
+            local host = EnsureGroupSettingsHost(col3)
+            AnchorButtonsContentFrame(col3, host)
+            host:Show()
+            -- Panel tabs first: the entry strip is offset by their measured
+            -- width, and only one of the two builds content.
+            ST._RefreshGroupSettingsHost(host, nil, ST._UnifiedRowGetScope() ~= "panel")
+        end
+
         if col3.bsTabGroup then
             AnchorButtonsContentFrame(col3, col3.bsTabGroup.frame)
         end
-        if col3.multiSelectScroll then
-            AnchorButtonsContentFrame(col3, col3.multiSelectScroll.frame)
-        end
         ST._RefreshButtonSettingsColumn()
-        -- The multi-select scroll may have been created just now with fill
-        -- anchors; re-anchor it below the preview.
-        if col3.multiSelectScroll then
-            AnchorButtonsContentFrame(col3, col3.multiSelectScroll.frame)
-        end
         return
     end
 
@@ -1836,14 +1854,12 @@ local function RefreshButtonsWideColumn()
         ReapplyPanelPreviewSplit()
     end
 
-    local host = col3.groupSettingsHost
-    if not host then
-        host = CreateFrame("Frame", nil, col3.content)
-        col3.groupSettingsHost = host
-    end
+    local host = EnsureGroupSettingsHost(col3)
     AnchorButtonsContentFrame(col3, host)
     host:Show()
     ST._RefreshGroupSettingsHost(host)
+    -- No entry cluster in the row: the panel strip owns the surface again.
+    ST._UnifiedRowApply()
 end
 
 -- The mirror owns a panel's config previews only while the wide buttons

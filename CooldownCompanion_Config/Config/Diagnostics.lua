@@ -180,6 +180,7 @@ local function BuildConfigDiagnosticSummary(profile, groupFrameStates, container
         selectedContainerTab = CS and CS.selectedContainerTab or nil,
         buttonSettingsTab = CS and CS.buttonSettingsTab or nil,
         panelSettingsTab = CS and CS.panelSettingsTab or nil,
+        unifiedRowScope = CS and CS.unifiedRowScope or nil,
         resourcesEntrySelected = CS and CS.resourcesEntrySelected == true,
         castFramesEntrySelected = CS and CS.castFramesEntrySelected == true,
         resourcesSettingsTab = CS and CS.resourcesSettingsTab or nil,
@@ -770,7 +771,8 @@ local function FormatDiagnosticBugReportAsText(diag)
         tostring(c.selectedGroup or "nil"),
         tostring(c.selectedButton or "nil"),
         tostring(c.selectedCustomBarId or "nil")))
-    add(("Tabs: selected=%s container=%s panel=%s button=%s resources=%s castBar=%s customBar=%s"):format(
+    add(("Tabs: scope=%s selected=%s container=%s panel=%s button=%s resources=%s castBar=%s customBar=%s"):format(
+        tostring(c.unifiedRowScope or "nil"),
         tostring(c.selectedTab or "nil"),
         tostring(c.selectedContainerTab or "nil"),
         tostring(c.panelSettingsTab or "nil"),

@@ -203,6 +203,10 @@ ST._configState = {
     selectedContainerTab = "general",
     buttonSettingsTab = "settings",
     panelSettingsTab = "appearance",
+    -- Which half of the unified tab row owns the settings surface while an
+    -- entry is selected: "entry" (the default - selecting an entry zooms
+    -- into it) or "panel" (a panel tab was opened without deselecting).
+    unifiedRowScope = "entry",
     newInput = "",
     tutorialAnchors = {},
     tutorialFrame = nil,
@@ -2827,6 +2831,9 @@ local function ToggleConfigPanelMultiSelect(panelId)
 end
 
 local function SelectConfigButton(panelId, buttonIndex, opts)
+    -- Selecting an entry always jumps to its cluster in the tab row, even
+    -- if a panel tab was the last thing shown.
+    CS.unifiedRowScope = "entry"
     local panelChanged = CS.selectedGroup ~= panelId
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
@@ -2885,6 +2892,7 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     CS.unifiedBarKind = nil
     wipe(CS.selectedButtons)
     CS.buttonSettingsTab = "loadconditions"
+    CS.unifiedRowScope = "entry"
     CooldownCompanion:ClearAllConfigPreviews()
     RefreshAlphaDriverForConfigSelection()
 end

@@ -75,6 +75,59 @@ local function BuildButtonSettingsTabs(group, buttonData)
     return tabs
 end
 
+-- Entry tabs are appended to the panel tabs in one shared row. The gap in
+-- front of the cluster, the entry's own icon on its first tab, and the
+-- selection accent on every entry label are what separate the two scopes -
+-- and what tells the two "Load Conditions" tabs apart without renaming
+-- either of them.
+local function EntryTabIconMarkup(icon)
+    if not icon or icon == "" then return "" end
+    return string.format("|T%s:13:13:0:0|t ", tostring(icon))
+end
+
+local function DecorateEntryTabs(tabs, iconMarkup)
+    for index, tab in ipairs(tabs) do
+        tab.text = ST._GetClassColoredText(tab.text)
+        if index == 1 and iconMarkup ~= "" then
+            tab.text = iconMarkup .. tab.text
+        end
+    end
+    return tabs
+end
+
+local function GetSelectedEntryIconMarkup(group, buttonData)
+    if CooldownCompanion:IsRotationAssistantGroup(group) then
+        return EntryTabIconMarkup(CooldownCompanion:GetRotationAssistantFallbackIcon())
+    end
+    if not buttonData then return "" end
+    return EntryTabIconMarkup(ST._GetButtonIcon(buttonData))
+end
+
+-- Multi-select is one appended tab: a stacked marker built from the first
+-- two selected entries' icons, plus the count.
+local function BuildEntryMultiSelectTabs(group, multiCount, multiIndices)
+    local sorted = {}
+    for _, index in ipairs(multiIndices) do
+        sorted[#sorted + 1] = index
+    end
+    table.sort(sorted)
+
+    local marker = ""
+    for position = 1, math.min(2, #sorted) do
+        local entryData = group and group.buttons and group.buttons[sorted[position]]
+        if entryData then
+            marker = marker .. EntryTabIconMarkup(ST._GetButtonIcon(entryData))
+        end
+    end
+
+    return {
+        {
+            value = "multiselect",
+            text = marker .. ST._GetClassColoredText(multiCount .. " entries"),
+        },
+    }
+end
+
 local function BuildSortedSoundOptionOrder(soundOptions)
     local order = {}
     for optionKey in pairs(soundOptions) do
@@ -1069,36 +1122,10 @@ local function RefreshButtonSettingsColumn()
         end
     end
 
-    if multiCount >= 2 then
-        -- Multiselect: hide tabs and placeholder, show dedicated scroll
-        bsCol.bsTabGroup.frame:Hide()
-        if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
-
-        if not bsCol.multiSelectScroll then
-            local scroll = AceGUI:Create("ScrollFrame")
-            scroll:SetLayout("List")
-            scroll.frame:SetParent(bsCol.content)
-            scroll.frame:ClearAllPoints()
-            scroll.frame:SetPoint("TOPLEFT", bsCol.content, "TOPLEFT", 0, 0)
-            scroll.frame:SetPoint("BOTTOMRIGHT", bsCol.content, "BOTTOMRIGHT", 0, 0)
-            bsCol.multiSelectScroll = scroll
-        end
-        bsCol.multiSelectScroll:ReleaseChildren()
-        bsCol.multiSelectScroll.frame:Show()
-        local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-        local uniformType = group and GetMultiSelectUniformType(group, multiIndices) or nil
-        RefreshButtonSettingsMultiSelect(bsCol.multiSelectScroll, multiCount, multiIndices, uniformType)
-        return
-    end
-
-    -- Hide multiselect scroll when not in multiselect mode
-    if bsCol.multiSelectScroll then
-        bsCol.multiSelectScroll.frame:Hide()
-    end
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
 
     -- Check if a valid single button is selected
     local hasSelection = false
-    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local rotationAssistantSelection = group
         and CooldownCompanion:IsRotationAssistantGroup(group)
         and CS.selectedRotationAssistantEntry == true
@@ -1110,9 +1137,15 @@ local function RefreshButtonSettingsColumn()
         end
     end
 
-    if hasSelection then
+    -- The entry cluster of the unified row: one tab for a multi-select,
+    -- this entry's tab set for a single selection, nothing at all when the
+    -- selection went away.
+    local entryTabs, activeTab
+    if multiCount >= 2 and group then
+        entryTabs = BuildEntryMultiSelectTabs(group, multiCount, multiIndices)
+        activeTab = "multiselect"
+    elseif hasSelection then
         local buttonData = group and group.buttons and group.buttons[CS.selectedButton]
-        bsCol.bsTabGroup:SetTabs(BuildButtonSettingsTabs(group, buttonData))
 
         if rotationAssistantSelection then
             CS.buttonSettingsTab = "loadconditions"
@@ -1129,17 +1162,52 @@ local function RefreshButtonSettingsColumn()
             CS.buttonSettingsTab = "settings"
         end
 
-        if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
-        bsCol.bsTabGroup.frame:Show()
-        bsCol.bsTabGroup:SelectTab(CS.buttonSettingsTab or (rotationAssistantSelection and "loadconditions" or "settings"))
-    else
+        entryTabs = DecorateEntryTabs(
+            BuildButtonSettingsTabs(group, buttonData),
+            GetSelectedEntryIconMarkup(group, buttonData)
+        )
+        activeTab = CS.buttonSettingsTab or (rotationAssistantSelection and "loadconditions" or "settings")
+    end
+
+    if not entryTabs then
         bsCol.bsTabGroup.frame:Hide()
         if bsCol.bsPlaceholder then
-            local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
             bsCol.bsPlaceholder:SetText(GroupUsesTriggerPanelEntries(group) and "Select an entry to configure" or "Select a spell or item to configure")
             bsCol.bsPlaceholder:Show()
         end
+        ST._UnifiedRowApply()
+        return
     end
+
+    if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
+    -- Shown before the tabs are built so the row lays out against its final
+    -- state in one pass.
+    bsCol.bsTabGroup.frame:Show()
+    bsCol.bsTabGroup:SetTabs(entryTabs)
+
+    -- A panel tab is showing its own content: the entry keeps its place in
+    -- the row and its remembered tab, but selecting it here would pull the
+    -- surface back to entry scope.
+    if ST._UnifiedRowGetScope() == "entry" then
+        bsCol.bsTabGroup:SelectTab(activeTab)
+    end
+    ST._UnifiedRowApply()
+end
+
+-- Content for the appended multi-select tab (the batch surface that used to
+-- take the whole settings area over).
+function ST._BuildEntryMultiSelectTab(scroll)
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not group then return end
+
+    local multiCount, multiIndices = 0, {}
+    for index in pairs(CS.selectedButtons) do
+        multiCount = multiCount + 1
+        multiIndices[#multiIndices + 1] = index
+    end
+    if multiCount < 2 then return end
+
+    RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, GetMultiSelectUniformType(group, multiIndices))
 end
 
 local function ConfigureInlineEditBoxInstructions(editBoxWidget, placeholderText, currentValue)

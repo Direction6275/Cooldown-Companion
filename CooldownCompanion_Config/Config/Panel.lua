@@ -1838,8 +1838,14 @@ local function CreateConfigPanel()
     bsTabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
         local previousTab = col3._activeButtonSettingsTab
         local tabChanged = previousTab ~= nil and previousTab ~= tab
+        -- Selecting an entry tab hands the settings surface back to entry
+        -- scope; the panel tabs stay in the row, just unselected.
+        local scopeChanged = ST._UnifiedRowGetScope() ~= "entry"
+        ST._UnifiedRowSetScope("entry")
         col3._activeButtonSettingsTab = tab
-        CS.buttonSettingsTab = tab
+        if tab ~= "multiselect" then
+            CS.buttonSettingsTab = tab
+        end
         -- Clean up info/collapse buttons before releasing
         for _, btn in ipairs(CS.buttonSettingsInfoButtons) do
             btn:ClearAllPoints()
@@ -1848,7 +1854,7 @@ local function CreateConfigPanel()
         end
         wipe(CS.buttonSettingsInfoButtons)
 
-        if tabChanged and not CS.previewToggleRefreshActive then
+        if (tabChanged or scopeChanged) and not CS.previewToggleRefreshActive then
             CooldownCompanion:ClearAllConfigPreviews()
         end
         widget:ReleaseChildren()
@@ -1859,54 +1865,69 @@ local function CreateConfigPanel()
         buttonSettingsScroll = scroll
         CS.buttonSettingsScroll = scroll
 
-        local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-        if not group then return end
+        local function BuildEntryTabContent()
+            local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+            if not group then return end
 
-        if group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
-            and CS.selectedRotationAssistantEntry == true then
-            if tab == "loadconditions" then
-                local buttonData = CooldownCompanion:GetRotationAssistantConfigButtonData(group)
-                ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            -- Entry multi-select joins the row as a single appended tab
+            -- rather than taking the whole surface over.
+            if tab == "multiselect" then
+                ST._BuildEntryMultiSelectTab(scroll)
+                return
             end
-            return
-        end
 
-        local buttonData = CS.selectedButton and group.buttons[CS.selectedButton]
-        if not buttonData then return end
-
-        if tab == "settings" then
-            if group.displayMode == "trigger" then
-                ST._BuildTriggerConditionSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-                -- Trigger panels have no Talent Conditions section to sit above.
-                ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
-            else
-                if buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
-                    ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-                elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
-                    ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            if group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
+                and CS.selectedRotationAssistantEntry == true then
+                if tab == "loadconditions" then
+                    local buttonData = CooldownCompanion:GetRotationAssistantConfigButtonData(group)
+                    ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
                 end
-                -- Talent Conditions is always the last section (owner ruling),
-                -- so everything below Visibility Rules is emitted through the
-                -- visibility builder's mid-point hook rather than after it.
-                ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons, nil, function()
-                    ST._BuildCustomKeybindSection(scroll, buttonData)
-                    ST._BuildCustomNameSection(scroll, buttonData)
-                    ST._BuildItemFallbacksSection(scroll, buttonData, CS.buttonSettingsInfoButtons)
-                    ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
-                end)
+                return
             end
-        elseif tab == "aura" then
-            ST._BuildAuraTab(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
-        elseif tab == "loadconditions" then
-            ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
-        elseif tab == "overrides" then
-            ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
+
+            local buttonData = CS.selectedButton and group.buttons[CS.selectedButton]
+            if not buttonData then return end
+
+            if tab == "settings" then
+                if group.displayMode == "trigger" then
+                    ST._BuildTriggerConditionSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+                    -- Trigger panels have no Talent Conditions section to sit above.
+                    ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
+                else
+                    if buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
+                        ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+                    elseif buttonData.type == "item" and CooldownCompanion.IsItemEquippable(buttonData) then
+                        ST._BuildEquipItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
+                    end
+                    -- Talent Conditions is always the last section (owner ruling),
+                    -- so everything below Visibility Rules is emitted through the
+                    -- visibility builder's mid-point hook rather than after it.
+                    ST._BuildVisibilitySettings(scroll, buttonData, CS.buttonSettingsInfoButtons, nil, function()
+                        ST._BuildCustomKeybindSection(scroll, buttonData)
+                        ST._BuildCustomNameSection(scroll, buttonData)
+                        ST._BuildItemFallbacksSection(scroll, buttonData, CS.buttonSettingsInfoButtons)
+                        ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
+                    end)
+                end
+            elseif tab == "aura" then
+                ST._BuildAuraTab(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
+            elseif tab == "loadconditions" then
+                ST._BuildEntryLoadConditionsTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            elseif tab == "overrides" then
+                ST._BuildOverridesTab(scroll, buttonData, CS.buttonSettingsInfoButtons)
+            end
         end
+
+        BuildEntryTabContent()
 
         -- Re-run the layout with final widths (AddChild lays out on every
         -- insertion; width overrides applied after a builder returns are
         -- invisible until the next layout).
         scroll:DoLayout()
+
+        -- One selected tab across the whole row, and the panel strip (still
+        -- in the row) drops back to tabs-only.
+        ST._UnifiedRowApply()
 
     end)
 
@@ -1915,6 +1936,11 @@ local function CreateConfigPanel()
     bsTabGroup.frame:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
     bsTabGroup.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
     bsTabGroup.frame:Hide()
+
+    -- Entry tabs are appended to the right of the panel tabs in one shared
+    -- row; the strip is offset and wrap-budgeted for the space that leaves.
+    ST._UnifiedRowInstallEntryStrip(bsTabGroup)
+
     col3.bsTabGroup = bsTabGroup
 
     -- Placeholder label shown when no button is selected

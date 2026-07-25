@@ -18,11 +18,21 @@ local function FillHostFrame(host, frame)
     frame:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
 end
 
-local function RefreshGroupSettingsHost(container, anchorFn)
+-- stripOnly: an entry owns the settings surface, so the panel tabs are
+-- painted as the left half of the unified row and no panel content is
+-- built. Clicking one of them selects it, which builds its content and
+-- flips the scope without touching the entry selection.
+local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     anchorFn = anchorFn or FillHostFrame
     -- Callers that re-select the panel tab (e.g. the custom strata toggle)
     -- need the host that most recently built these surfaces.
     CS.groupSettingsActiveHost = container
+
+    -- No panel to show tabs for: the placeholder branches below own the
+    -- host, whatever the caller asked for.
+    if stripOnly and not CS.selectedGroup then
+        stripOnly = false
+    end
 
     -- Multi-group selection: show placeholder
     local multiGroupCount = 0
@@ -138,11 +148,16 @@ local function RefreshGroupSettingsHost(container, anchorFn)
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
             local previousTab = container._activePanelSettingsTab
             local tabChanged = previousTab ~= nil and previousTab ~= tab
+            -- Selecting a panel tab hands the settings surface to panel
+            -- scope. Any entry stays selected: the list highlight,
+            -- breadcrumb and preview identity are untouched.
+            local scopeChanged = ST._UnifiedRowGetScope() ~= "panel"
+            ST._UnifiedRowSetScope("panel")
             container._activePanelSettingsTab = tab
             CS.selectedTab = tab
             CS.panelSettingsTab = tab
             local preservePreviews = CS.previewToggleRefreshActive == true
-            if tabChanged and not preservePreviews then
+            if (tabChanged or scopeChanged) and not preservePreviews then
                 CooldownCompanion:ClearAllConfigPreviews()
             end
             -- Clean up raw (?) info buttons BEFORE releasing children, so they
@@ -176,15 +191,25 @@ local function RefreshGroupSettingsHost(container, anchorFn)
             -- (the two-column tabs' trailing widgets mis-wrapped otherwise).
             scroll:DoLayout()
 
+            -- One selected tab across the whole row, and the entry strip
+            -- (if any) drops back to tabs-only.
+            ST._UnifiedRowApply()
+
         end)
 
         -- Parent the AceGUI widget frame to the raw host frame
         tabGroup.frame:SetParent(container)
 
+        -- Panel tabs are the fixed left half of the unified tab row.
+        ST._UnifiedRowInstallPanelStrip(tabGroup)
+
         container.tabGroup = tabGroup
     end
 
     anchorFn(container, container.tabGroup.frame)
+    -- Shown before the tabs are built: the entry strip measures this one to
+    -- find where its own cluster starts.
+    container.tabGroup.frame:Show()
 
     -- Update tabs every refresh — hide Indicators for text mode (info lives in format editor)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
@@ -199,6 +224,22 @@ local function RefreshGroupSettingsHost(container, anchorFn)
     tabs[#tabs + 1] = { value = "loadconditions",  text = "Load Conditions" }
     container.tabGroup:SetTabs(tabs)
 
+    -- Migrate stale tab keys from previous layout
+    if CS.selectedTab == "extras" then CS.selectedTab = "effects" end
+    if CS.selectedTab == "positioning" then CS.selectedTab = "layout" end
+    -- Text mode has no Indicators tab — redirect to Appearance
+    if isTextMode and CS.selectedTab == "effects" then
+        CS.selectedTab = "appearance"
+    end
+    CS.panelSettingsTab = CS.selectedTab
+
+    -- Tabs-only pass: an entry owns the surface, so the remembered panel
+    -- tab stays remembered and no panel content is built. Its highlight is
+    -- cleared by the unified-row pass that follows.
+    if stripOnly then
+        return
+    end
+
     -- Save AceGUI scroll state before tab re-select (old col4Scroll will be released)
     local savedOffset, savedScrollvalue
     if CS.col4Scroll then
@@ -209,18 +250,8 @@ local function RefreshGroupSettingsHost(container, anchorFn)
         end
     end
 
-    -- Migrate stale tab keys from previous layout
-    if CS.selectedTab == "extras" then CS.selectedTab = "effects" end
-    if CS.selectedTab == "positioning" then CS.selectedTab = "layout" end
-    -- Text mode has no Indicators tab — redirect to Appearance
-    if isTextMode and CS.selectedTab == "effects" then
-        CS.selectedTab = "appearance"
-    end
-    CS.panelSettingsTab = CS.selectedTab
-
     -- Show and refresh the tab content (SelectTab fires callback synchronously,
     -- which releases old col4Scroll and creates a new one)
-    container.tabGroup.frame:Show()
     container.tabGroup:SelectTab(CS.selectedTab)
 
     -- Restore scroll state on the new col4Scroll widget.  LayoutFinished has already
