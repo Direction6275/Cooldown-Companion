@@ -273,6 +273,52 @@ local function AddTabAccent(tabs)
     return tabs
 end
 
+-- Every tab strip in this file shows the same way: its tabs go into the
+-- unified row unconditionally, content is built only when this strip owns
+-- the settings surface, and the scroll position survives a rebuild that
+-- lands on the same tab. Each strip's scroll widget and the key naming
+-- what it was built for live on the strip itself, so no two surfaces can
+-- clobber each other's reference.
+local function GetStripScrollState(tabGroup)
+    local scroll = tabGroup._cdcScroll
+    return scroll and (scroll.status or scroll.localstatus) or nil
+end
+
+local function ShowStrip(col3, tabGroup, tabs, activeTab, scrollKey, stripOnly)
+    ST._AnchorButtonsContentFrame(col3, tabGroup.frame)
+    tabGroup.frame:Show()
+    tabGroup:SetTabs(tabs)
+
+    if stripOnly then
+        -- Another strip owns the surface: these tabs stay in the row
+        -- unselected and build nothing.
+        ST._UnifiedRowApply()
+        return
+    end
+
+    local savedOffset, savedScrollvalue
+    if tabGroup._cdcScrollKey == scrollKey then
+        local state = GetStripScrollState(tabGroup)
+        if state and state.offset and state.offset > 0 then
+            savedOffset = state.offset
+            savedScrollvalue = state.scrollvalue
+        end
+    end
+
+    tabGroup:SelectTab(activeTab)
+    ST._UnifiedRowApply()
+
+    -- LayoutFinished has already scheduled FixScrollOnUpdate for next
+    -- frame; it reads these values.
+    if savedOffset then
+        local state = GetStripScrollState(tabGroup)
+        if state then
+            state.offset = savedOffset
+            state.scrollvalue = savedScrollvalue
+        end
+    end
+end
+
 local function GetCustomBarEntryTabs(entry)
     local tabs = {
         { value = "appearance", text = "Appearance" },
@@ -553,8 +599,8 @@ local function ShowResourceSettingsPanel(col3)
             local scroll = AceGUI:Create("ScrollFrame")
             scroll:SetLayout("List")
             widget:AddChild(scroll)
-            col3._resourceSettingsDetailScroll = scroll
-            col3._resourceSettingsDetailScrollKey = GetResourceSettingsDetailScrollKey()
+            widget._cdcScroll = scroll
+            widget._cdcScrollKey = GetResourceSettingsDetailScrollKey()
             if ST._BuildResourceSettingsPanel then
                 ST._BuildResourceSettingsPanel(scroll, CS.selectedResourcePowerType, CS.resourceSettingsSpecID)
             else
@@ -573,38 +619,11 @@ local function ShowResourceSettingsPanel(col3)
         col3._resourceSettingsTabGroup = tabGroup
     end
 
-    local tabGroup = col3._resourceSettingsTabGroup
-    ST._AnchorButtonsContentFrame(col3, tabGroup.frame)
-    tabGroup.frame:Show()
-    tabGroup:SetTabs(tabs)
-
-    -- A panel tab is showing its own content: the bar keeps its place in
+    -- A primary tab is showing its own content: the bar keeps its place in
     -- the row and stays selected, it just does not own the surface.
-    if ST._UnifiedRowPrimaryOwnsSurface() then
-        ST._UnifiedRowApply()
-        return true
-    end
-
-    local savedOffset, savedScrollvalue
-    local currentScrollKey = GetResourceSettingsDetailScrollKey()
-    if col3._resourceSettingsDetailScroll and col3._resourceSettingsDetailScrollKey == currentScrollKey then
-        local state = col3._resourceSettingsDetailScroll.status or col3._resourceSettingsDetailScroll.localstatus
-        if state and state.offset and state.offset > 0 then
-            savedOffset = state.offset
-            savedScrollvalue = state.scrollvalue
-        end
-    end
-
-    tabGroup:SelectTab(tostring(CS.resourceSettingsSpecID))
-    ST._UnifiedRowApply()
-
-    if savedOffset and col3._resourceSettingsDetailScroll then
-        local state = col3._resourceSettingsDetailScroll.status or col3._resourceSettingsDetailScroll.localstatus
-        if state then
-            state.offset = savedOffset
-            state.scrollvalue = savedScrollvalue
-        end
-    end
+    ShowStrip(col3, col3._resourceSettingsTabGroup, tabs,
+        tostring(CS.resourceSettingsSpecID), GetResourceSettingsDetailScrollKey(),
+        ST._UnifiedRowPrimaryOwnsSurface())
 
     return true
 end
@@ -636,8 +655,8 @@ local function ShowCustomBarDetail(col3, selectedEntry)
             local scroll = AceGUI:Create("ScrollFrame")
             scroll:SetLayout("List")
             widget:AddChild(scroll)
-            col3._customBarsDetailScroll = scroll
-            col3._customBarDetailScrollKey = GetCustomBarDetailScrollKey()
+            widget._cdcScroll = scroll
+            widget._cdcScrollKey = GetCustomBarDetailScrollKey()
             ST._BuildCustomAuraBarPanel(scroll, CS.selectedCustomBarId, CS.customBarSettingsTab)
 
             -- One selected tab across the whole row, and the panel strip
@@ -648,38 +667,11 @@ local function ShowCustomBarDetail(col3, selectedEntry)
         col3._customBarEntryTabGroup = tabGroup
     end
 
-    local tabGroup = col3._customBarEntryTabGroup
-    ST._AnchorButtonsContentFrame(col3, tabGroup.frame)
-    tabGroup.frame:Show()
-    tabGroup:SetTabs(GetCustomBarEntryTabs(selectedEntry))
-
-    -- A panel tab is showing its own content: the bar keeps its place in
+    -- A primary tab is showing its own content: the bar keeps its place in
     -- the row and stays selected, it just does not own the surface.
-    if ST._UnifiedRowPrimaryOwnsSurface() then
-        ST._UnifiedRowApply()
-        return
-    end
-
-    local savedOffset, savedScrollvalue
-    local currentScrollKey = GetCustomBarDetailScrollKey()
-    if col3._customBarsDetailScroll and col3._customBarDetailScrollKey == currentScrollKey then
-        local state = col3._customBarsDetailScroll.status or col3._customBarsDetailScroll.localstatus
-        if state and state.offset and state.offset > 0 then
-            savedOffset = state.offset
-            savedScrollvalue = state.scrollvalue
-        end
-    end
-
-    tabGroup:SelectTab(CS.customBarSettingsTab or "appearance")
-    ST._UnifiedRowApply()
-
-    if savedOffset and col3._customBarsDetailScroll then
-        local state = col3._customBarsDetailScroll.status or col3._customBarsDetailScroll.localstatus
-        if state then
-            state.offset = savedOffset
-            state.scrollvalue = savedScrollvalue
-        end
-    end
+    ShowStrip(col3, col3._customBarEntryTabGroup, GetCustomBarEntryTabs(selectedEntry),
+        CS.customBarSettingsTab or "appearance", GetCustomBarDetailScrollKey(),
+        ST._UnifiedRowPrimaryOwnsSurface())
 end
 
 -- Default page for the Resources home: the tabbed shared settings view.
@@ -704,8 +696,8 @@ local function ShowResourcesTabPage(col3, stripOnly)
             local scroll = AceGUI:Create("ScrollFrame")
             scroll:SetLayout("List")
             widget:AddChild(scroll)
-            col3._resourcesDetailScroll = scroll
-            col3._resourcesDetailScrollKey = "resources:" .. tab
+            widget._cdcScroll = scroll
+            widget._cdcScrollKey = "resources:" .. tab
             if tab == "general" then
                 ST._BuildResourceBarAnchoringPanel(scroll)
             elseif tab == "appearance" then
@@ -724,10 +716,6 @@ local function ShowResourcesTabPage(col3, stripOnly)
         col3._resourcesTabGroup = tabGroup
     end
 
-    local tabGroup = col3._resourcesTabGroup
-    ST._AnchorButtonsContentFrame(col3, tabGroup.frame)
-    tabGroup.frame:Show()
-
     local settings = CooldownCompanion:GetResourceBarSettings()
     local RESOURCE_HEALTH = ST._RB and ST._RB.RESOURCE_HEALTH
     local health = settings and settings.resources and RESOURCE_HEALTH
@@ -742,7 +730,6 @@ local function ShowResourcesTabPage(col3, stripOnly)
     if healthEnabled then
         tabs[#tabs + 1] = { value = "health", text = "Health" }
     end
-    tabGroup:SetTabs(tabs)
 
     local tab = CS.resourcesSettingsTab
     local valid = { general = true, appearance = true, layout = true }
@@ -750,34 +737,7 @@ local function ShowResourcesTabPage(col3, stripOnly)
     if not tab or not valid[tab] then tab = "general" end
     CS.resourcesSettingsTab = tab
 
-    -- Tabs-only pass: a selected bar owns the settings surface, so these
-    -- tabs stay in the row unselected and build nothing.
-    if stripOnly then
-        return
-    end
-
-    -- Preserve scroll position across value-change refreshes (same pattern
-    -- as the custom-bar detail tabs)
-    local savedOffset, savedScrollvalue
-    local currentScrollKey = "resources:" .. tab
-    if col3._resourcesDetailScroll and col3._resourcesDetailScrollKey == currentScrollKey then
-        local state = col3._resourcesDetailScroll.status or col3._resourcesDetailScroll.localstatus
-        if state and state.offset and state.offset > 0 then
-            savedOffset = state.offset
-            savedScrollvalue = state.scrollvalue
-        end
-    end
-
-    tabGroup:SelectTab(tab)
-    ST._UnifiedRowApply()
-
-    if savedOffset and col3._resourcesDetailScroll then
-        local state = col3._resourcesDetailScroll.status or col3._resourcesDetailScroll.localstatus
-        if state then
-            state.offset = savedOffset
-            state.scrollvalue = savedScrollvalue
-        end
-    end
+    ShowStrip(col3, col3._resourcesTabGroup, tabs, tab, "resources:" .. tab, stripOnly)
 end
 
 -- Refresh for the Resources home while Resource Bars are enabled (the
@@ -882,8 +842,8 @@ local function ShowCastBarSettings(col3)
             local scroll = AceGUI:Create("ScrollFrame")
             scroll:SetLayout("List")
             widget:AddChild(scroll)
-            col3._castBarHomeScroll = scroll
-            col3._castBarHomeScrollKey = "castbar:" .. tab
+            widget._cdcScroll = scroll
+            widget._cdcScrollKey = "castbar:" .. tab
             if tab == "general" then
                 ST._BuildCastBarAnchoringPanel(scroll)
             elseif tab == "appearance" then
@@ -900,49 +860,20 @@ local function ShowCastBarSettings(col3)
         col3._castBarHomeTabGroup = tabGroup
     end
 
-    local tabGroup = col3._castBarHomeTabGroup
-    ST._AnchorButtonsContentFrame(col3, tabGroup.frame)
-    tabGroup.frame:Show()
-    tabGroup:SetTabs(AddTabAccent({
-        { value = "general", text = "General" },
-        { value = "appearance", text = "Appearance" },
-        { value = "layout", text = "Layout" },
-    }))
-
     local tab = CS.castBarHomeTab
     if tab ~= "general" and tab ~= "appearance" and tab ~= "layout" then
         tab = "general"
     end
     CS.castBarHomeTab = tab
 
-    -- A panel tab is showing its own content: the cast bar keeps its place
-    -- in the row and stays selected, it just does not own the surface.
-    if ST._UnifiedRowPrimaryOwnsSurface() then
-        ST._UnifiedRowApply()
-        return
-    end
-
-    -- Preserve scroll position across value-change refreshes
-    local savedOffset, savedScrollvalue
-    local currentScrollKey = "castbar:" .. tab
-    if col3._castBarHomeScroll and col3._castBarHomeScrollKey == currentScrollKey then
-        local state = col3._castBarHomeScroll.status or col3._castBarHomeScroll.localstatus
-        if state and state.offset and state.offset > 0 then
-            savedOffset = state.offset
-            savedScrollvalue = state.scrollvalue
-        end
-    end
-
-    tabGroup:SelectTab(tab)
-    ST._UnifiedRowApply()
-
-    if savedOffset and col3._castBarHomeScroll then
-        local state = col3._castBarHomeScroll.status or col3._castBarHomeScroll.localstatus
-        if state then
-            state.offset = savedOffset
-            state.scrollvalue = savedScrollvalue
-        end
-    end
+    -- A primary tab is showing its own content: the cast bar keeps its
+    -- place in the row and stays selected, it just does not own the
+    -- surface.
+    ShowStrip(col3, col3._castBarHomeTabGroup, AddTabAccent({
+        { value = "general", text = "General" },
+        { value = "appearance", text = "Appearance" },
+        { value = "layout", text = "Layout" },
+    }), tab, "castbar:" .. tab, ST._UnifiedRowPrimaryOwnsSurface())
 end
 
 -- Player or target frame anchoring panel, below the pinned preview.
