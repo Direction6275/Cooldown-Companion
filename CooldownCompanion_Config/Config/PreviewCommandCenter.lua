@@ -488,8 +488,19 @@ end
 
 local function EnsureMenuFrame()
     if not CS.previewCommandCenterMenu then
-        CS.previewCommandCenterMenu = CreateFrame(
+        local menu = CreateFrame(
             "Frame", "CDCPreviewCommandCenterDropdown", UIParent, "UIDropDownMenuTemplate")
+        -- Open UPWARD, over the preview canvas, instead of down over the
+        -- settings below the divider - a menu laid over live settings
+        -- reads as chaos. ToggleDropDownMenu prefers these fields over its
+        -- own arguments when an anchor frame is passed, and still applies
+        -- its own screen clamp afterwards. `relativeTo` is deliberately
+        -- left unset so the anchor passed at open time wins.
+        menu.point = "BOTTOMLEFT"
+        menu.relativePoint = "TOPLEFT"
+        menu.xOffset = 0
+        menu.yOffset = 2
+        CS.previewCommandCenterMenu = menu
     end
     return CS.previewCommandCenterMenu
 end
