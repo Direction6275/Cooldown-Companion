@@ -22,7 +22,6 @@ local AddAnchorDropdown = ST._AddAnchorDropdown
 local HookSliderEditBox = ST._HookSliderEditBox
 local BuildAlphaControls = ST._BuildAlphaControls
 local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
-local AddPreviewBadge = ST._AddPreviewBadge
 local tabInfoButtons = CS.tabInfoButtons
 
 -- Shared constants from ResourceBarConstants
@@ -751,7 +750,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(absorbsCb)
-    local _, absorbsAdvBtn = HealthResource.AddEffectStyleControls(container, absorbsCb, health, {
+    HealthResource.AddEffectStyleControls(container, absorbsCb, health, {
         enabledKey = "showAbsorbs",
         advancedKey = "healthAbsorbs",
         colorKey = "healthAbsorbColor",
@@ -760,11 +759,6 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         textureLabel = "Absorb Texture",
         defaultColor = DEFAULT_HEALTH_ABSORB_COLOR,
     }, applyBars)
-    AddPreviewBadge(absorbsCb, absorbsAdvBtn, "Preview Absorbs", function()
-        return CooldownCompanion:IsHealthEffectPreviewActive("absorbs")
-    end, function(show)
-        CooldownCompanion:SetHealthEffectPreview("absorbs", show)
-    end, health.showAbsorbs == true)
 
     local healAbsorbsCb = AceGUI:Create("CheckBox")
     healAbsorbsCb:SetLabel("Show Healing Absorbs")
@@ -776,7 +770,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(healAbsorbsCb)
-    local _, healAbsorbsAdvBtn = HealthResource.AddEffectStyleControls(container, healAbsorbsCb, health, {
+    HealthResource.AddEffectStyleControls(container, healAbsorbsCb, health, {
         enabledKey = "showHealAbsorbs",
         advancedKey = "healthHealAbsorbs",
         colorKey = "healthHealAbsorbColor",
@@ -785,11 +779,6 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         textureLabel = "Healing Absorb Texture",
         defaultColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR,
     }, applyBars)
-    AddPreviewBadge(healAbsorbsCb, healAbsorbsAdvBtn, "Preview Healing Absorbs", function()
-        return CooldownCompanion:IsHealthEffectPreviewActive("healAbsorbs")
-    end, function(show)
-        CooldownCompanion:SetHealthEffectPreview("healAbsorbs", show)
-    end, health.showHealAbsorbs == true)
 
     local incomingHealsCb = AceGUI:Create("CheckBox")
     incomingHealsCb:SetLabel("Show Incoming Heals")
@@ -801,7 +790,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         CooldownCompanion:RefreshConfigPanel()
     end)
     container:AddChild(incomingHealsCb)
-    local _, incomingHealsAdvBtn = HealthResource.AddEffectStyleControls(container, incomingHealsCb, health, {
+    HealthResource.AddEffectStyleControls(container, incomingHealsCb, health, {
         enabledKey = "showIncomingHeals",
         advancedKey = "healthIncomingHeals",
         colorKey = "healthIncomingHealColor",
@@ -810,11 +799,6 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         textureLabel = "Incoming Heal Texture",
         defaultColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
     }, applyBars)
-    AddPreviewBadge(incomingHealsCb, incomingHealsAdvBtn, "Preview Incoming Heals", function()
-        return CooldownCompanion:IsHealthEffectPreviewActive("incomingHeals")
-    end, function(show)
-        CooldownCompanion:SetHealthEffectPreview("incomingHeals", show)
-    end, health.showIncomingHeals == true)
 
     local lowHealthAlertCb = AceGUI:Create("CheckBox")
     lowHealthAlertCb:SetLabel("Show Low Health Alert")
@@ -852,15 +836,10 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         lowHealthAlertInfoAnchor = lowHealthAlertCb.checkbg
         lowHealthAlertInfoOffset = lowHealthAlertCb.text:GetStringWidth() + 4
     end
-    local lowHealthAlertInfoBtn = CreateInfoButton(lowHealthAlertCb.frame, lowHealthAlertInfoAnchor, "LEFT", "RIGHT", lowHealthAlertInfoOffset, 0, {
+    CreateInfoButton(lowHealthAlertCb.frame, lowHealthAlertInfoAnchor, "LEFT", "RIGHT", lowHealthAlertInfoOffset, 0, {
         "Low Health Alert",
         {"Blizzard sets the low-health threshold to 35%. This cannot be configured.", 1, 1, 1, true},
     }, lowHealthAlertCb)
-    AddPreviewBadge(lowHealthAlertCb, lowHealthAlertInfoBtn, "Preview Low Health Alert", function()
-        return CooldownCompanion:IsHealthEffectPreviewActive("lowHealthAlert")
-    end, function(show)
-        CooldownCompanion:SetHealthEffectPreview("lowHealthAlert", show)
-    end, health.showLowHealthAlert == true)
 end
 
 CS.healthResourceUI = HealthResource

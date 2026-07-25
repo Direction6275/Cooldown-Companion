@@ -29,30 +29,9 @@ local KEYBIND_CUSTOM_TOOLTIP = {
     " ",
     {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
-local function ResolvePreviewOption(value)
-    if type(value) == "function" then
-        return value()
-    end
-    return value
-end
-
-local function RefreshConfigPanelForPreviewToggle()
-    if not CooldownCompanion.RefreshConfigPanel then
-        return false
-    end
-
-    local wasPreviewRefresh = CS.previewToggleRefreshActive
-    CS.previewToggleRefreshActive = true
-    CooldownCompanion:RefreshConfigPanel()
-    CS.previewToggleRefreshActive = wasPreviewRefresh
-    return true
-end
-
 local function IsAdvancedSettingsPanelContainer(container)
     return container and container._isAdvancedSettingsPanel == true
 end
-
-local ClearActivePreviewBadgeButton
 
 local function RefreshStructuralControls(container)
     if IsAdvancedSettingsPanelContainer(container) and CS.RefreshAdvancedSettingsPanel then
@@ -60,23 +39,6 @@ local function RefreshStructuralControls(container)
     elseif CooldownCompanion.RefreshConfigPanel then
         CooldownCompanion:RefreshConfigPanel()
     end
-end
-
-local function RefreshPreviewToggleButtons(container)
-    local buttons = container and container._previewToggleButtons
-    if type(buttons) ~= "table" then
-        return
-    end
-
-    for _, previewBtn in ipairs(buttons) do
-        if previewBtn and previewBtn._isActiveFn and previewBtn._offLabel then
-            previewBtn:SetText(previewBtn._isActiveFn() and "Preview: ON" or previewBtn._offLabel)
-        end
-    end
-end
-
-local function RefreshActiveAdvancedPreviewToggleButtons()
-    RefreshPreviewToggleButtons({ _previewToggleButtons = CS.advancedSettingsPreviewToggleButtons })
 end
 
 local function ApplyOverrideCheckboxIndent(checkbox, opts)
@@ -105,164 +67,6 @@ local function AddDurationFormatDropdown(container, settings, refreshCallback, o
     end)
     container:AddChild(durationDrop)
     return durationDrop
-end
-
-local function SetPreviewBadgeActive(btn, active)
-    if btn then
-        if not btn._activeHighlight then
-            local activeHighlight = btn:CreateTexture(nil, "BACKGROUND")
-            activeHighlight:SetPoint("TOPLEFT", -1, 1)
-            activeHighlight:SetPoint("BOTTOMRIGHT", 1, -1)
-            activeHighlight:SetColorTexture(0.85, 0.65, 0.0, 0.6)
-            activeHighlight:Hide()
-            btn._activeHighlight = activeHighlight
-        end
-
-        if active then
-            btn._activeHighlight:Show()
-        else
-            btn._activeHighlight:Hide()
-        end
-    end
-
-    if btn and btn._icon then
-        if active then
-            btn._icon:SetVertexColor(1, 0.82, 0, 1)
-        else
-            btn._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
-        end
-    end
-end
-
-function ClearActivePreviewBadgeButton()
-    local btn = CS.activePreviewBadgeButton
-    if btn then
-        SetPreviewBadgeActive(btn, false)
-    end
-    CS.activePreviewBadgeButton = nil
-end
-
-local function SetActivePreviewBadgeButton(btn, active)
-    SetPreviewBadgeActive(btn, active)
-
-    if active then
-        local previousBtn = CS.activePreviewBadgeButton
-        if previousBtn and previousBtn ~= btn then
-            SetPreviewBadgeActive(previousBtn, false)
-        end
-        CS.activePreviewBadgeButton = btn
-    elseif CS.activePreviewBadgeButton == btn then
-        CS.activePreviewBadgeButton = nil
-    end
-end
-
-local function AddPreviewBadge(parentWidget, anchorAfterFrame, label, isActiveFn, setActiveFn, enabled)
-    local hasCheckboxAnchor = parentWidget and parentWidget.frame and parentWidget.checkbg and parentWidget.text
-    local hasLabelAnchor = parentWidget and parentWidget.frame and parentWidget.label
-    if not enabled
-        or not (hasCheckboxAnchor or hasLabelAnchor)
-        or type(isActiveFn) ~= "function"
-        or type(setActiveFn) ~= "function"
-    then
-        return nil
-    end
-
-    local frame = parentWidget.frame
-    local btn = frame._cdcPreviewBtn
-    if not btn then
-        btn = CreateFrame("Button", nil, frame)
-        btn:SetSize(14, 14)
-        btn._icon = btn:CreateTexture(nil, "ARTWORK")
-        btn._icon:SetSize(13, 13)
-        btn._icon:SetPoint("CENTER")
-        btn._icon:SetAtlas("CreditsScreen-Assets-Buttons-Play", false)
-        frame._cdcPreviewBtn = btn
-    end
-
-    btn:SetParent(frame)
-    btn:ClearAllPoints()
-    if anchorAfterFrame and anchorAfterFrame:IsShown() then
-        btn:SetPoint("LEFT", anchorAfterFrame, "RIGHT", 4, 0)
-    elseif hasCheckboxAnchor then
-        btn:SetPoint("LEFT", parentWidget.checkbg, "RIGHT", parentWidget.text:GetStringWidth() + 6, 0)
-    else
-        btn:SetPoint("LEFT", parentWidget.label, "RIGHT", 4, 0)
-    end
-    btn:Show()
-    btn._icon:Show()
-
-    SetActivePreviewBadgeButton(btn, isActiveFn())
-    btn:SetScript("OnClick", function()
-        local showPreview = not isActiveFn()
-        if showPreview and CooldownCompanion.ClearAllConfigPreviews then
-            CooldownCompanion:ClearAllConfigPreviews()
-        end
-        setActiveFn(showPreview)
-        SetActivePreviewBadgeButton(btn, isActiveFn())
-        RefreshActiveAdvancedPreviewToggleButtons()
-        if ST._RefreshButtonsPreviewMirror then
-            ST._RefreshButtonsPreviewMirror()
-        end
-    end)
-    btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(label)
-        GameTooltip:Show()
-    end)
-    btn:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    local advancedBtn = frame._cdcAdvancedBtn
-    if not (advancedBtn and advancedBtn:GetParent() == frame) then
-        local prevOnRelease = parentWidget.events and parentWidget.events["OnRelease"]
-        parentWidget:SetCallback("OnRelease", function(...)
-            if prevOnRelease then
-                prevOnRelease(...)
-            end
-            btn:ClearAllPoints()
-            btn:Hide()
-            btn:SetParent(nil)
-            if CS.activePreviewBadgeButton == btn then
-                CS.activePreviewBadgeButton = nil
-            end
-        end)
-    end
-
-    return btn
-end
-
-local function AddConditionalPreviewBadge(parentWidget, anchorAfterFrame, label, previewKind, enabled, opts)
-    if not (CooldownCompanion.SetConditionalVisualPreviewActive and CooldownCompanion.IsConditionalVisualPreviewActive) then
-        return nil
-    end
-
-    local function ResolveTarget()
-        local groupId = ResolvePreviewOption(opts and opts.groupId) or CS.selectedGroup
-        local buttonIndex = ResolvePreviewOption(opts and opts.buttonIndex)
-        if opts and opts.requireButton and not buttonIndex then
-            return nil, nil
-        end
-        return groupId, buttonIndex
-    end
-
-    return AddPreviewBadge(parentWidget, anchorAfterFrame, label, function()
-        local groupId, buttonIndex = ResolveTarget()
-        if not groupId then
-            return false
-        end
-        return CooldownCompanion:IsConditionalVisualPreviewActive(groupId, buttonIndex, previewKind)
-    end, function(show)
-        local groupId, buttonIndex = ResolveTarget()
-        if groupId then
-            CooldownCompanion:SetConditionalVisualPreviewActive(
-                groupId,
-                buttonIndex,
-                previewKind,
-                show,
-                opts and opts.sampleState
-            )
-        end
-    end, enabled)
 end
 
 local function BuildCooldownTextControls(container, styleTable, refreshCallback, opts)
@@ -1788,11 +1592,6 @@ end
 ------------------------------------------------------------------------
 ST._BuildCooldownTextControls = BuildCooldownTextControls
 ST._AddDurationFormatDropdown = AddDurationFormatDropdown
-ST._AddPreviewBadge = AddPreviewBadge
-ST._RefreshConfigPanelForPreviewToggle = RefreshConfigPanelForPreviewToggle
-ST._ClearActivePreviewBadgeButton = ClearActivePreviewBadgeButton
-ST._RefreshAdvancedSettingsPreviewButtons = RefreshActiveAdvancedPreviewToggleButtons
-ST._AddConditionalPreviewBadge = AddConditionalPreviewBadge
 ST._BuildAuraTextControls = BuildAuraTextControls
 ST._AddPandemicMarkerControls = AddPandemicMarkerControls
 ST._BuildAuraStackTextControls = BuildAuraStackTextControls
