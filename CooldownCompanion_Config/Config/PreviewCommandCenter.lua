@@ -564,6 +564,20 @@ local function EnsureMenuFrame()
     if not CS.previewCommandCenterMenu then
         local menu = CreateFrame(
             "Frame", "CDCPreviewCommandCenterDropdown", UIParent, "UIDropDownMenuTemplate")
+        -- The list re-arms this on every open (ToggleDropDownMenu copies it
+        -- to listFrame.onHide) and fires it however the menu closes: the
+        -- global mouse-down handler, picking an item, another menu opening,
+        -- or our own CloseDropDownMenus. This plus ToggleDropDownMenu's
+        -- return value is ALL the open/closed state we track - the previous
+        -- guard read _G.DropDownList1 directly, but the dropdown code runs
+        -- in its own environment (GetCurrentEnvironment() at the top of
+        -- UIDropDownMenu.lua), so that global never matched the live list
+        -- and the guard was dead code: every click read "closed" and
+        -- reopened the menu, which looked exactly like it never closing.
+        menu.onHide = function()
+            CS.previewCommandCenterMenuOpen = nil
+            CS.previewCommandCenterMenuClosedAt = GetTime()
+        end
         -- Open UPWARD, over the preview canvas, instead of down over the
         -- settings below the divider - a menu laid over live settings
         -- reads as chaos. ToggleDropDownMenu prefers these fields over its
@@ -579,49 +593,11 @@ local function EnsureMenuFrame()
     return CS.previewCommandCenterMenu
 end
 
-local function IsPreviewMenuOpen()
-    local listFrame = _G.DropDownList1
-    return CS.previewCommandCenterMenu ~= nil
-        and listFrame ~= nil
-        and listFrame:IsShown()
-        and listFrame.dropdown == CS.previewCommandCenterMenu
-end
-
--- UIDropDownMenu_HandleGlobalMouseEvent closes the list on GLOBAL_MOUSE_DOWN
--- whenever the cursor is outside it - which includes a click on our own
--- chooser, and can land before our handlers run. When that happens the
--- click has already done the closing, so record it and let the click be
--- consumed rather than reopening the menu.
---
--- Deliberately does NOT test IsMouseButtonDown: during GLOBAL_MOUSE_DOWN
--- the button is not reliably reported as down yet, which is why the first
--- attempt at this guard let the menu reopen. Being over the chooser at
--- the moment the list hides is signal enough.
-local function HookPreviewMenuHide()
-    local listFrame = _G.DropDownList1
-    if not listFrame or CS.previewCommandCenterHideHooked then
-        return
-    end
-    CS.previewCommandCenterHideHooked = true
-    listFrame:HookScript("OnHide", function(frame)
-        if frame.dropdown ~= CS.previewCommandCenterMenu then
-            return
-        end
-        local chooser = CS.previewCommandCenterChooser
-        if chooser and MouseIsOver and MouseIsOver(chooser) then
-            CS.previewCommandCenterClosedByClick = true
-        end
-    end)
-end
-
 local function OpenPreviewMenu(bar)
     local panelId, _, buttonIndex = ResolveContext()
     if not panelId then
         return
     end
-
-    -- Opening supersedes any stale "the click already closed it" record.
-    CS.previewCommandCenterClosedByClick = nil
 
     local menu = EnsureMenuFrame()
     UIDropDownMenu_Initialize(menu, function(_, level)
@@ -662,8 +638,10 @@ local function OpenPreviewMenu(bar)
         end
     end, "MENU")
     menu:SetFrameStrata("FULLSCREEN_DIALOG")
-    ToggleDropDownMenu(1, nil, menu, bar.chooser, 0, 0)
-    HookPreviewMenuHide()
+    -- Returns true when it opened the list, false when it toggled it
+    -- closed or refused (empty menu).
+    local opened = ToggleDropDownMenu(1, nil, menu, bar.chooser, 0, 0)
+    CS.previewCommandCenterMenuOpen = opened and true or nil
 end
 
 local function EnsureBar(host)
@@ -709,24 +687,26 @@ local function EnsureBar(host)
         if self._refreshColors then self._refreshColors() end
         GameTooltip:Hide()
     end)
-    -- Fire on mouse DOWN so a second click closes the menu instead of
-    -- reopening it: the list auto-hides on the outside mouse-down, so by
-    -- mouse-up there would be nothing left for ToggleDropDownMenu to
-    -- toggle and it would just open again.
+    -- Fire on mouse DOWN, matching when the list does its own
+    -- outside-click auto-hide, so open and close feel identical.
     chooser:RegisterForClicks("LeftButtonDown")
-    chooser:SetScript("OnMouseDown", function()
-        CS.previewCommandCenterWasOpen = IsPreviewMenuOpen()
-    end)
     chooser:SetScript("OnClick", function()
-        if CS.previewCommandCenterWasOpen or CS.previewCommandCenterClosedByClick then
-            CS.previewCommandCenterWasOpen = nil
-            CS.previewCommandCenterClosedByClick = nil
+        -- Our click reached OnClick with the list still up: this click is
+        -- the close. (Covers the ordering where frame scripts run before
+        -- the global mouse-down handler.)
+        if CS.previewCommandCenterMenuOpen then
             CloseDropDownMenus()
+            return
+        end
+        -- The list already hid THIS SAME FRAME - the global mouse-down
+        -- handler closed it because our click landed outside the list.
+        -- That click was the close; consume it instead of reopening.
+        -- GetTime() is frame-constant, so equality means "this click".
+        if CS.previewCommandCenterMenuClosedAt == GetTime() then
             return
         end
         OpenPreviewMenu(bar)
     end)
-    CS.previewCommandCenterChooser = chooser
     bar.chooser = chooser
 
     local play = CreateFrame("Button", nil, bar)
