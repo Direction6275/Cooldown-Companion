@@ -18,10 +18,13 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
--- Delineation between the two clusters (no boxes): roughly one tab of
--- clear space, the entry icon at the head of the entry cluster, and the
--- accent tint on entry tab labels (applied by the tab-text builders).
-local CLUSTER_GAP = 80
+-- The entry cluster is right-aligned, so the clear space between the two
+-- clusters is normally whatever the window leaves over - it grows and
+-- shrinks as the window is resized. This is the floor: once the clusters
+-- would be closer than this, the entry cluster stops tracking the right
+-- edge and wraps instead. Delineation also carries the entry icon at the
+-- cluster head and the accent tint (applied by the tab-text builders).
+local MIN_CLUSTER_GAP = 40
 
 -- AceGUI BuildTabs geometry, mirrored here so the strips can be re-laid
 -- out without duplicating its row math: rows sit 20px apart, an untitled
@@ -30,10 +33,11 @@ local TAB_ROW_PITCH = 20
 local TAB_STRIP_INSET = 10
 local TAB_OVERLAP = 10
 
--- Wrap budget handed to the panel strip. Large enough that BuildTabs never
--- wraps it and never pads its tabs out to fill the row, so panel tabs keep
--- natural widths and stay put when the entry cluster appears or leaves.
-local PANEL_STRIP_BUDGET = 100000
+-- Wrap budget that makes BuildTabs lay a strip out at natural widths on a
+-- single row: too wide to wrap, and too wide to trip the rule that pads a
+-- tight row out to fill its width. Both clusters are measured and drawn
+-- this way whenever they fit, so every tab in the row is sized alike.
+local NATURAL_STRIP_BUDGET = 100000
 
 -- Floor for the entry cluster's wrap budget. Below this the cluster is
 -- unusable as a strip, so it is allowed to run past the right edge instead
@@ -86,61 +90,82 @@ end
 -- which is what its content pane needs.
 local function BuildPanelStrip(tabGroup, baseBuildTabs)
     tabGroup._cdcStripOffset = 0
-    tabGroup.frame.width = PANEL_STRIP_BUDGET
+    tabGroup.frame.width = NATURAL_STRIP_BUDGET
     baseBuildTabs(tabGroup)
 end
 
 local function BuildEntryStrip(tabGroup, baseBuildTabs)
-    local offset = 0
     local panel = GetPanelStrip()
-    if panel then
-        local panelWidth = MeasureStripWidth(panel)
-        if panelWidth > 0 then
-            offset = panelWidth + CLUSTER_GAP
-        end
-    end
+    local panelWidth = panel and MeasureStripWidth(panel) or 0
+    local full = tabGroup.frame:GetWidth() or 0
 
-    local remaining = (tabGroup.frame:GetWidth() or 0) - offset
-    if remaining < MIN_ENTRY_STRIP then
-        remaining = MIN_ENTRY_STRIP
-    end
-
-    tabGroup._cdcStripOffset = offset
-    tabGroup.frame.width = remaining
+    -- Lay the cluster out at natural widths first: that is both how it
+    -- renders when it fits and how its width is measured.
+    tabGroup.frame.width = NATURAL_STRIP_BUDGET
     baseBuildTabs(tabGroup)
 
-    if GetStripRowCount(tabGroup) == 1 then
-        -- The cluster fits beside the panel tabs. AceGUI pads a tight row
-        -- out to fill its width, which would size entry tabs differently
-        -- from panel tabs; rebuilding without the constraint keeps every
-        -- tab in the row sized the same way, and what fit padded still fits.
-        tabGroup.frame.width = PANEL_STRIP_BUDGET
-        baseBuildTabs(tabGroup)
+    if panelWidth <= 0 then
+        -- No panel cluster to sit beside (Other Class browsing hides it):
+        -- the entry tabs are the whole row.
+        tabGroup._cdcStripOffset = 0
+        return
     end
+
+    local clusterStart = full - MeasureStripWidth(tabGroup)
+    local earliestStart = panelWidth + MIN_CLUSTER_GAP
+    if clusterStart >= earliestStart then
+        -- Fits on one row: pin the cluster to the right edge so it tracks
+        -- the window instead of sitting a fixed distance from the panel
+        -- tabs, and the clear space between them carries the resize.
+        tabGroup._cdcStripOffset = clusterStart
+        return
+    end
+
+    -- Too tight for one row. Start right after the panel tabs and let
+    -- AceGUI wrap the cluster inside what is left; each wrapped row fills
+    -- that space, so the block stays flush with the right edge.
+    tabGroup._cdcStripOffset = earliestStart
+    tabGroup.frame.width = math.max(MIN_ENTRY_STRIP, full - earliestStart)
+    baseBuildTabs(tabGroup)
 end
 
 -- BuildTabs anchors the first tab of every row to the group's frame and
--- chains the rest off it, so shifting the row leaders moves whole rows.
-local function OffsetStripRows(tabGroup)
-    local offset = tabGroup._cdcStripOffset or 0
-    if offset <= 0 then return end
+-- chains the rest off it, so moving the row leaders moves whole rows. The
+-- anchors BuildTabs just wrote are recorded as the baseline, and every
+-- placement is measured from it, so placing a strip twice is a no-op.
+local function CaptureStripAnchors(tabGroup)
     for _, tab in ipairs(tabGroup.tabs) do
-        if tab:IsShown() then
-            local point, relativeTo, relativePoint, x, y = tab:GetPoint(1)
-            if point and relativeTo == tabGroup.frame then
-                tab:SetPoint(point, relativeTo, relativePoint, (x or 0) + offset, y or 0)
-            end
+        local point, relativeTo, relativePoint, x, y = tab:GetPoint(1)
+        if tab:IsShown() and point and relativeTo == tabGroup.frame then
+            tab._cdcBase = { point, relativePoint, x or 0, y or 0 }
+        else
+            tab._cdcBase = nil
+        end
+    end
+end
+
+local function PlaceStrip(tabGroup)
+    local dx = tabGroup._cdcStripOffset or 0
+    local dy = tabGroup._cdcRowShift or 0
+    for _, tab in ipairs(tabGroup.tabs) do
+        local base = tab._cdcBase
+        if base then
+            tab:SetPoint(base[1], tabGroup.frame, base[2], base[3] + dx, base[4] - dy)
         end
     end
 end
 
 -- Both strips share the row, so both content panes must clear the tallest
--- one; otherwise a wrapped entry row draws over panel-scope content.
+-- one; otherwise a wrapped entry row draws over panel-scope content. The
+-- shorter strip drops to the bottom row so its tabs still sit on the pane
+-- edge rather than floating above a band of empty space.
 local function ApplyRowCount(tabGroup, rows)
     if not tabGroup then return end
     local offset = TAB_STRIP_INSET + rows * TAB_ROW_PITCH
     tabGroup.borderoffset = offset
     tabGroup.border:SetPoint("TOPLEFT", 1, -offset)
+    tabGroup._cdcRowShift = math.max(0, rows - (tabGroup._cdcRowCount or 1)) * TAB_ROW_PITCH
+    PlaceStrip(tabGroup)
 end
 
 local ApplyUnifiedRow
@@ -156,8 +181,9 @@ local function InstallStripLayout(tabGroup, buildFn)
     local baseBuildTabs = tabGroup.BuildTabs
     tabGroup.BuildTabs = function(self)
         buildFn(self, baseBuildTabs)
-        OffsetStripRows(self)
+        CaptureStripAnchors(self)
         self._cdcRowCount = GetStripRowCount(self)
+        PlaceStrip(self)
         ApplyUnifiedRow()
     end
 end
@@ -222,9 +248,7 @@ function ApplyUnifiedRow()
         rows = math.max(rows, entry._cdcRowCount or 1)
     end
     ApplyRowCount(panel, rows)
-    if entryShown then
-        ApplyRowCount(entry, rows)
-    end
+    ApplyRowCount(entry, rows)
 
     local scope = entryShown and GetScope() or "panel"
     if scope == "panel" and not panel and entryShown then
