@@ -85,12 +85,15 @@ local function EntryTabIconMarkup(icon)
     return string.format("|T%s:13:13:0:0|t ", tostring(icon))
 end
 
+-- `text` stays untinted: it is what BuildTabs measures the tab against, and
+-- what the tab shows while it is the selected one, so selection still reads
+-- as a highlight. `accentText` is the tinted variant the row swaps in on
+-- every other entry tab.
 local function DecorateEntryTabs(tabs, iconMarkup)
     for index, tab in ipairs(tabs) do
-        tab.text = ST._GetClassColoredText(tab.text)
-        if index == 1 and iconMarkup ~= "" then
-            tab.text = iconMarkup .. tab.text
-        end
+        local prefix = (index == 1) and iconMarkup or ""
+        tab.accentText = prefix .. ST._GetClassColoredText(tab.text)
+        tab.text = prefix .. tab.text
     end
     return tabs
 end
@@ -120,10 +123,12 @@ local function BuildEntryMultiSelectTabs(group, multiCount, multiIndices)
         end
     end
 
+    local label = multiCount .. " entries"
     return {
         {
             value = "multiselect",
-            text = marker .. ST._GetClassColoredText(multiCount .. " entries"),
+            text = marker .. label,
+            accentText = marker .. ST._GetClassColoredText(label),
         },
     }
 end

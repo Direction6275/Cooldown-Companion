@@ -101,9 +101,10 @@ local function CaptureStripAnchors(tabGroup)
     for _, tab in ipairs(tabGroup.tabs) do
         local point, relativeTo, relativePoint, x, y = tab:GetPoint(1)
         if tab:IsShown() and point and relativeTo == tabGroup.frame then
-            tab._cdcBase = { point, relativePoint, x or 0, y or 0 }
+            tab._cdcBasePoint, tab._cdcBaseRelPoint = point, relativePoint
+            tab._cdcBaseX, tab._cdcBaseY = x or 0, y or 0
         else
-            tab._cdcBase = nil
+            tab._cdcBasePoint = nil
         end
     end
 end
@@ -112,9 +113,26 @@ local function PlaceStrip(tabGroup)
     local dx = tabGroup._cdcStripOffset or 0
     local dy = tabGroup._cdcRowShift or 0
     for _, tab in ipairs(tabGroup.tabs) do
-        local base = tab._cdcBase
-        if base then
-            tab:SetPoint(base[1], tabGroup.frame, base[2], base[3] + dx, base[4] - dy)
+        if tab._cdcBasePoint then
+            tab:SetPoint(tab._cdcBasePoint, tabGroup.frame, tab._cdcBaseRelPoint,
+                tab._cdcBaseX + dx, tab._cdcBaseY - dy)
+        end
+    end
+end
+
+-- The accent tint lives in the label text as a colour escape, because
+-- PanelTemplates rewrites tab fontstring colours on every select, deselect
+-- and hover. Selection still has to read though, so the selected tab drops
+-- the tint and takes the standard highlight colour while its neighbours
+-- keep it. Written straight to the fontstring: tab:SetText would re-measure
+-- and resize the tab outside BuildTabs' padding pass.
+local function RefreshStripAccent(tabGroup)
+    local tablist = tabGroup.tablist
+    if not tablist then return end
+    for index, entry in ipairs(tablist) do
+        local tab = tabGroup.tabs[index]
+        if tab and entry.accentText then
+            tab.Text:SetText(tab.selected and entry.text or entry.accentText)
         end
     end
 end
@@ -136,6 +154,7 @@ local ApplyUnifiedRow
 
 local function FinishStrip(tabGroup)
     CaptureStripAnchors(tabGroup)
+    RefreshStripAccent(tabGroup)
     tabGroup._cdcRowCount = GetStripRowCount(tabGroup)
 end
 
@@ -293,6 +312,11 @@ function ApplyUnifiedRow()
     if entry then
         SetStripActive(entry, entryShown and scope == "entry")
     end
+
+    -- Last: selection has settled across both strips, so the tint can be
+    -- lifted off whichever tab now reads as selected.
+    if panel then RefreshStripAccent(panel) end
+    if entry then RefreshStripAccent(entry) end
 
     applying = false
 end
