@@ -595,22 +595,9 @@ local function BuildDesaturationControls(container, styleTable, refreshCallback)
     container:AddChild(desatCb)
 end
 
-local function BuildShowTooltipsControls(container, styleTable, refreshCallback)
-    local cb = AceGUI:Create("CheckBox")
-    cb:SetLabel("Show Tooltips")
-    cb:SetValue(styleTable.showTooltips == true)
-    cb:SetFullWidth(true)
-    cb:SetCallback("OnValueChanged", function(widget, event, val)
-        styleTable.showTooltips = val
-        refreshCallback()
-    end)
-    container:AddChild(cb)
-    return cb
-end
-
 -- Tooltip position + combat hide (tracker D-C1). Group-level only (owner
 -- ruling 2026-07-24) and applied to both the normal button tooltip and the
--- aura display's tooltip. Callers add these only while Show Tooltips is on.
+-- aura display's tooltip. Lives in the Show Tooltips advanced panel.
 local TOOLTIP_ANCHOR_LIST = {
     default = "Default",
     above = "Above",
@@ -644,6 +631,38 @@ local function BuildTooltipBehaviorControls(container, styleTable, refreshCallba
     container:AddChild(combatCb)
 
     return drop, combatCb
+end
+
+-- opts.advanced: attach the gear that opens Tooltip Position / Hide in Combat
+-- (group-level tabs only — those keys are group style, with no per-entry
+-- override section, so the override editor calls this without opts).
+local function BuildShowTooltipsControls(container, styleTable, refreshCallback, opts)
+    opts = opts or {}
+
+    local cb = AceGUI:Create("CheckBox")
+    cb:SetLabel("Show Tooltips")
+    cb:SetValue(styleTable.showTooltips == true)
+    cb:SetFullWidth(true)
+    cb:SetCallback("OnValueChanged", function(widget, event, val)
+        styleTable.showTooltips = val
+        refreshCallback()
+    end)
+    container:AddChild(cb)
+
+    if not opts.advanced then
+        return cb
+    end
+
+    local _, advBtn = AddAdvancedToggle(cb, "tooltipBehavior",
+        opts.infoButtons or tabInfoButtons,
+        styleTable.showTooltips == true, {
+            title = "Tooltip Advanced",
+            build = function(panel)
+                BuildTooltipBehaviorControls(panel, styleTable, refreshCallback)
+            end,
+        })
+
+    return cb, advBtn
 end
 
 local function BuildShowOutOfRangeControls(container, styleTable, refreshCallback)
@@ -1857,7 +1876,6 @@ ST._BuildBorderControls = BuildBorderControls
 ST._BuildBackgroundColorControls = BuildBackgroundColorControls
 ST._BuildDesaturationControls = BuildDesaturationControls
 ST._BuildShowTooltipsControls = BuildShowTooltipsControls
-ST._BuildTooltipBehaviorControls = BuildTooltipBehaviorControls
 ST._BuildShowOutOfRangeControls = BuildShowOutOfRangeControls
 ST._BuildShowGCDSwipeControls = BuildShowGCDSwipeControls
 ST._BuildCooldownSwipeControls = BuildCooldownSwipeControls
