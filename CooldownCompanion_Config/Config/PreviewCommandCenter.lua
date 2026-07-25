@@ -72,6 +72,8 @@ end
 -- these; they always run on the whole panel.
 local function GroupOnlyFlagPreview(flag, groupSetter)
     return {
+        -- Panel-wide by nature, so it never follows the selection.
+        groupScoped = true,
         IsActive = function(panelId)
             return CooldownCompanion:IsPreviewFlagActive(panelId, nil, flag) == true
         end,
@@ -95,6 +97,7 @@ end
 
 local function TextureIndicatorPreview(indicatorKey)
     return {
+        groupScoped = true,
         IsActive = function(panelId)
             return CooldownCompanion:IsGroupTextureIndicatorPreviewActive(panelId, indicatorKey) == true
         end,
@@ -105,6 +108,7 @@ local function TextureIndicatorPreview(indicatorKey)
 end
 
 local TriggerEffectsPreview = {
+    groupScoped = true,
     IsActive = function(panelId)
         return CooldownCompanion:IsTriggerPanelEffectsPreviewActive(panelId) == true
     end,
@@ -478,6 +482,70 @@ local function SetPreviewRunning(control, panelId, buttonIndex, show)
 end
 
 ------------------------------------------------------------------------
+-- A running preview follows the selection (owner ruling 2026-07-25).
+-- Previewing is "show me what I am editing", so changing what you are
+-- editing re-scopes the preview rather than stranding it on the entry
+-- you just left - which read as broken, since the chooser scopes to the
+-- new selection and would report "stopped" while the old entry glowed.
+--
+-- Deselecting widens the preview back to the whole panel, which is the
+-- same rule read the other way. If the preview cannot apply to the new
+-- target (aura glow, and the new entry tracks no aura) it simply stops.
+--
+-- Safe to re-scope from here: this runs at the top of the mirror's build
+-- closure, so the slots are laid out after it and read the new state -
+-- no extra refresh, no re-entrancy.
+------------------------------------------------------------------------
+
+local function FindControlById(controlId)
+    if not controlId then
+        return nil
+    end
+    for _, control in ipairs(CONTROLS) do
+        if control.id == controlId then
+            return control
+        end
+    end
+    return nil
+end
+
+local function IsControlApplicable(control, applicable)
+    for _, candidate in ipairs(applicable) do
+        if candidate == control then
+            return true
+        end
+    end
+    return false
+end
+
+local function MigrateRunningPreview(panelId, buttonIndex, applicable)
+    local lastPanelId = CS.previewCommandCenterLastPanel
+    local lastButtonIndex = CS.previewCommandCenterLastButton
+    CS.previewCommandCenterLastPanel = panelId
+    CS.previewCommandCenterLastButton = buttonIndex
+
+    -- Only within one panel: a preview belongs to the panel it was
+    -- started on, and following the user across panels would be a
+    -- surprise rather than a convenience.
+    if lastPanelId ~= panelId or lastButtonIndex == buttonIndex then
+        return
+    end
+
+    local control = FindControlById(CS.previewCommandCenterSelection)
+    if not control or control.preview.groupScoped then
+        return
+    end
+    if control.preview.IsActive(panelId, lastButtonIndex) ~= true then
+        return
+    end
+
+    control.preview.SetActive(panelId, lastButtonIndex, false)
+    if IsControlApplicable(control, applicable) then
+        control.preview.SetActive(panelId, buttonIndex, true)
+    end
+end
+
+------------------------------------------------------------------------
 -- The bar: a chooser naming the selected preview, plus a play/stop
 -- button that arms it.
 --
@@ -503,6 +571,34 @@ local function EnsureMenuFrame()
         CS.previewCommandCenterMenu = menu
     end
     return CS.previewCommandCenterMenu
+end
+
+local function IsPreviewMenuOpen()
+    local listFrame = _G.DropDownList1
+    return CS.previewCommandCenterMenu ~= nil
+        and listFrame ~= nil
+        and listFrame:IsShown()
+        and listFrame.dropdown == CS.previewCommandCenterMenu
+end
+
+-- The list auto-hides on the outside mouse-down, which can land before
+-- our own handler and leave "was it open?" answering no - so record the
+-- close here too. Same guard the config's gear menu needs (Panel.lua).
+local function HookPreviewMenuHide()
+    local listFrame = _G.DropDownList1
+    if not listFrame or CS.previewCommandCenterHideHooked then
+        return
+    end
+    CS.previewCommandCenterHideHooked = true
+    listFrame:HookScript("OnHide", function(frame)
+        local chooser = CS.previewCommandCenterChooser
+        local closedByChooserClick = chooser
+            and MouseIsOver and MouseIsOver(chooser)
+            and IsMouseButtonDown and IsMouseButtonDown("LeftButton")
+        if frame.dropdown == CS.previewCommandCenterMenu and closedByChooserClick then
+            CS.previewCommandCenterClosedByClick = true
+        end
+    end)
 end
 
 local function OpenPreviewMenu(bar)
@@ -551,6 +647,7 @@ local function OpenPreviewMenu(bar)
     end, "MENU")
     menu:SetFrameStrata("FULLSCREEN_DIALOG")
     ToggleDropDownMenu(1, nil, menu, bar.chooser, 0, 0)
+    HookPreviewMenuHide()
 end
 
 local function EnsureBar(host)
@@ -596,9 +693,24 @@ local function EnsureBar(host)
         if self._refreshColors then self._refreshColors() end
         GameTooltip:Hide()
     end)
+    -- Fire on mouse DOWN so a second click closes the menu instead of
+    -- reopening it: the list auto-hides on the outside mouse-down, so by
+    -- mouse-up there would be nothing left for ToggleDropDownMenu to
+    -- toggle and it would just open again.
+    chooser:RegisterForClicks("LeftButtonDown")
+    chooser:SetScript("OnMouseDown", function()
+        CS.previewCommandCenterWasOpen = IsPreviewMenuOpen()
+    end)
     chooser:SetScript("OnClick", function()
+        if CS.previewCommandCenterWasOpen or CS.previewCommandCenterClosedByClick then
+            CS.previewCommandCenterWasOpen = nil
+            CS.previewCommandCenterClosedByClick = nil
+            CloseDropDownMenus()
+            return
+        end
         OpenPreviewMenu(bar)
     end)
+    CS.previewCommandCenterChooser = chooser
     bar.chooser = chooser
 
     local play = CreateFrame("Button", nil, bar)
@@ -697,6 +809,8 @@ local function UpdatePreviewCommandCenter(host)
         HideBar(host)
         return
     end
+
+    MigrateRunningPreview(panelId, buttonIndex, applicable)
 
     -- Whatever is actually running wins the selection, so a preview
     -- started from a surviving settings control still reads correctly
