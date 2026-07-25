@@ -493,9 +493,12 @@ local function GetHealthEffectConfig()
     return type(config) == "table" and config or nil
 end
 
-local function HealthEffectEnabled(settingKey)
-    local config = GetHealthEffectConfig()
-    return config ~= nil and config[settingKey] == true
+-- Takes the config resolved once per pass by CollectObjectControls rather
+-- than resolving its own: GetResourceDisplayConfig deep-copies the
+-- resource table on every call, and all four health gates want the same
+-- answer.
+local function HealthEffectEnabled(healthConfig, settingKey)
+    return healthConfig ~= nil and healthConfig[settingKey] == true
 end
 
 local function CastBarEnabled()
@@ -510,7 +513,7 @@ local OBJECT_CONTROLS = {
         label = "Preview Absorbs",
         group = GROUP_HEALTH_BAR,
         object = "health",
-        Applies = function() return HealthEffectEnabled("showAbsorbs") end,
+        Applies = function(healthConfig) return HealthEffectEnabled(healthConfig, "showAbsorbs") end,
         preview = HealthEffectPreview("absorbs"),
     },
     {
@@ -518,7 +521,7 @@ local OBJECT_CONTROLS = {
         label = "Preview Healing Absorbs",
         group = GROUP_HEALTH_BAR,
         object = "health",
-        Applies = function() return HealthEffectEnabled("showHealAbsorbs") end,
+        Applies = function(healthConfig) return HealthEffectEnabled(healthConfig, "showHealAbsorbs") end,
         preview = HealthEffectPreview("healAbsorbs"),
     },
     {
@@ -526,7 +529,7 @@ local OBJECT_CONTROLS = {
         label = "Preview Incoming Heals",
         group = GROUP_HEALTH_BAR,
         object = "health",
-        Applies = function() return HealthEffectEnabled("showIncomingHeals") end,
+        Applies = function(healthConfig) return HealthEffectEnabled(healthConfig, "showIncomingHeals") end,
         preview = HealthEffectPreview("incomingHeals"),
     },
     {
@@ -534,7 +537,7 @@ local OBJECT_CONTROLS = {
         label = "Preview Low Health Alert",
         group = GROUP_HEALTH_BAR,
         object = "health",
-        Applies = function() return HealthEffectEnabled("showLowHealthAlert") end,
+        Applies = function(healthConfig) return HealthEffectEnabled(healthConfig, "showLowHealthAlert") end,
         preview = HealthEffectPreview("lowHealthAlert"),
     },
     {
@@ -553,8 +556,12 @@ local OBJECT_CONTROLS = {
 -- bar's settings can be open below the divider there.
 local function CollectObjectControls(objects)
     local applicable = {}
+    -- Resolved once and handed to the gates that want it, since resolving
+    -- deep-copies the resource table. Skipped entirely on a surface that
+    -- hosts no health entries.
+    local healthConfig = objects.health and GetHealthEffectConfig() or nil
     for _, control in ipairs(OBJECT_CONTROLS) do
-        if objects[control.object] and control.Applies() then
+        if objects[control.object] and control.Applies(healthConfig) then
             applicable[#applicable + 1] = control
         end
     end

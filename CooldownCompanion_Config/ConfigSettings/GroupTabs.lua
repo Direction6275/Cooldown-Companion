@@ -2223,12 +2223,21 @@ local function BuildTextureEffectsTab(container, group)
     end
 end
 
-local function BuildBarModeEffects(container, group, style)
-    CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
-    CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
-    CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
-    CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
-    CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, false)
+-- Arriving at a different panel or display mode must not inherit the last
+-- one's running glow preview. Rebuilds of the SAME tab must NOT stop it:
+-- these previews are started from the preview command center, and
+-- previewing is a "turn it on, then adjust until it looks right"
+-- workflow - so any settings change that refreshes the config would
+-- otherwise kill the preview mid-adjustment. Same context gate the
+-- texture/trigger reset above uses.
+local function BuildBarModeEffects(container, group, style, previewContextChanged)
+    if previewContextChanged then
+        CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
+        CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, false)
+    end
     BuildBarEffectsTab(container, group, style)
 end
 
@@ -2468,7 +2477,9 @@ local function BuildEffectsTab(container)
     local style = group.style
 
     local displayMode = group.displayMode
-    if CS.lastEffectsPreviewGroup ~= CS.selectedGroup or CS.lastEffectsPreviewMode ~= displayMode then
+    local previewContextChanged = CS.lastEffectsPreviewGroup ~= CS.selectedGroup
+        or CS.lastEffectsPreviewMode ~= displayMode
+    if previewContextChanged then
         ResetEffectsTabPreviews()
         CS.lastEffectsPreviewGroup = CS.selectedGroup
         CS.lastEffectsPreviewMode = displayMode
@@ -2516,7 +2527,7 @@ local function BuildEffectsTab(container)
     end
 
     if displayMode == "bars" then
-        BuildBarModeEffects(container, group, style)
+        BuildBarModeEffects(container, group, style, previewContextChanged)
         return
     end
 
