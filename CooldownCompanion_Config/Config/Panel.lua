@@ -715,6 +715,58 @@ end
 local buttonSettingsScroll
 
 ------------------------------------------------------------------------
+-- Config window geometry (size and position persist account-wide)
+------------------------------------------------------------------------
+local CONFIG_WINDOW_DEFAULT_WIDTH = 1180
+local CONFIG_WINDOW_DEFAULT_HEIGHT = 780
+-- Must match the SetResizeBounds call in CreateConfigPanel.
+local CONFIG_WINDOW_MIN_WIDTH = 993
+local CONFIG_WINDOW_MIN_HEIGHT = 400
+
+local function SaveConfigWindowGeometry(content)
+    local db = CooldownCompanion.db
+    local global = db and db.global
+    -- GetLeft is nil until the frame has settled at least one layout pass.
+    if not (global and content:GetLeft()) then return end
+    local geo = global.configWindow
+    if not geo then
+        geo = {}
+        global.configWindow = geo
+    end
+    geo.width = content:GetWidth()
+    geo.height = content:GetHeight()
+    geo.left = content:GetLeft()
+    geo.top = content:GetTop()
+end
+
+-- Apply saved (or default) window size, clamped to the current screen: at
+-- UI scale 1.0 the whole screen is only 768 units tall, so the taller
+-- default and any geometry saved under a different scale/resolution must
+-- shrink to fit rather than overflow. A saved position is re-clamped the
+-- same way; with none saved the frame keeps AceGUI's centered default.
+local function ApplyConfigWindowGeometry(frame)
+    local content = frame.frame
+    local screenWidth = UIParent:GetWidth()
+    local screenHeight = UIParent:GetHeight()
+    local db = CooldownCompanion.db
+    local geo = db and db.global and db.global.configWindow
+    local width = (geo and geo.width) or CONFIG_WINDOW_DEFAULT_WIDTH
+    local height = (geo and geo.height) or CONFIG_WINDOW_DEFAULT_HEIGHT
+    width = math.max(CONFIG_WINDOW_MIN_WIDTH,
+        math.min(width, screenWidth * 0.95))
+    height = math.max(CONFIG_WINDOW_MIN_HEIGHT,
+        math.min(height, screenHeight * 0.9))
+    frame:SetWidth(width)
+    frame:SetHeight(height)
+    if geo and geo.left and geo.top then
+        local left = math.max(0, math.min(geo.left, screenWidth - width))
+        local top = math.max(height, math.min(geo.top, screenHeight))
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+    end
+end
+
+------------------------------------------------------------------------
 -- Main Panel Creation
 ------------------------------------------------------------------------
 local function CreateConfigPanel()
@@ -724,8 +776,7 @@ local function CreateConfigPanel()
     local frame = AceGUI:Create("Frame")
     frame:SetTitle("Cooldown Companion")
     frame:SetStatusText("")
-    frame:SetWidth(1180)
-    frame:SetHeight(700)
+    ApplyConfigWindowGeometry(frame)
     frame:SetLayout(nil) -- manual positioning
 
     -- Store the raw frame for raw child parenting
@@ -830,6 +881,11 @@ local function CreateConfigPanel()
     if titleMover then
         configDragAlphaHandles[titleMover] = true
         HookConfigDragAlphaHandle(titleMover)
+        -- AceGUI's own OnMouseUp has already run StopMovingOrSizing by the
+        -- time hooks fire, so the read here sees the settled position.
+        titleMover:HookScript("OnMouseUp", function()
+            SaveConfigWindowGeometry(content)
+        end)
     end
 
     -- Hide AceGUI's default sizer grips (replaced by custom resize grip below)
@@ -844,8 +900,8 @@ local function CreateConfigPanel()
     end
 
     -- Track full dimensions for minimize/expand restore
-    local fullHeight = 700
-    local fullWidth = 1180
+    local fullHeight = content:GetHeight()
+    local fullWidth = content:GetWidth()
 
     -- Custom resize grip — expand freely, shrink horizontally up to 30% (min 993px)
     content:SetResizable(true)
@@ -867,6 +923,29 @@ local function CreateConfigPanel()
         content:StopMovingOrSizing()
         fullWidth = content:GetWidth()
         fullHeight = content:GetHeight()
+        SaveConfigWindowGeometry(content)
+    end)
+    -- Double-click the grip: return to the default size (clamped to the
+    -- current screen), keeping the top-left corner planted since the grip
+    -- resizes from the bottom-right.
+    resizeGrip:SetScript("OnDoubleClick", function()
+        content:StopMovingOrSizing()
+        local screenWidth = UIParent:GetWidth()
+        local screenHeight = UIParent:GetHeight()
+        local width = math.max(CONFIG_WINDOW_MIN_WIDTH,
+            math.min(CONFIG_WINDOW_DEFAULT_WIDTH, screenWidth * 0.95))
+        local height = math.max(CONFIG_WINDOW_MIN_HEIGHT,
+            math.min(CONFIG_WINDOW_DEFAULT_HEIGHT, screenHeight * 0.9))
+        local left, top = content:GetLeft(), content:GetTop()
+        if left and top then
+            content:ClearAllPoints()
+            content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+        end
+        frame:SetWidth(width)
+        frame:SetHeight(height)
+        fullWidth = width
+        fullHeight = height
+        SaveConfigWindowGeometry(content)
     end)
 
     -- Hide the AceGUI status bar and add version text at bottom-right
@@ -1465,6 +1544,8 @@ local function CreateConfigPanel()
             content:SetHeight(fullHeight)
             content:SetWidth(fullWidth)
             content:Show()
+            -- A dragged mini frame moves the expanded window too.
+            SaveConfigWindowGeometry(content)
             CooldownCompanion:RefreshConfigPanel()
         else
             -- Collapse: save main frame position, then show mini frame at collapse button position
