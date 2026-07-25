@@ -826,88 +826,6 @@ local function ItemFallbacksCollapseKey()
     return tostring(CS.selectedGroup) .. "_" .. tostring(CS.selectedButton) .. "_itemfallbacks"
 end
 
--- The drop wrappers below are installed on frames shared by every tab (the
--- settings scroll and its ancestors) and stay wrapped after the fallbacks
--- section is gone, so the guard has to confirm the section is actually on
--- screen for this exact entry before it swallows a drop.
-local function IsFallbackDropTarget(buttonData)
-    if CS.buttonSettingsTab ~= "settings" then return false end
-    if not (buttonData and buttonData.type == "item") then return false end
-    if CS.collapsedSections[ItemFallbacksCollapseKey()] then return false end
-
-    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    local selected = group and CS.selectedButton and group.buttons[CS.selectedButton]
-    return selected == buttonData
-end
-
-local function InstallFallbackDropScript(frame, buttonData)
-    if not frame or not frame.SetScript then
-        return
-    end
-
-    if not frame._cdcFallbackDropWrapped and frame.GetScript then
-        frame._cdcFallbackOriginalOnReceiveDrag = frame:GetScript("OnReceiveDrag")
-        frame._cdcFallbackOriginalOnMouseUp = frame:GetScript("OnMouseUp")
-        frame._cdcFallbackDropWrapped = true
-    end
-    frame._cdcFallbackDropButtonData = buttonData
-
-    frame:SetScript("OnReceiveDrag", function(self, ...)
-        local activeButtonData = self._cdcFallbackDropButtonData
-        if IsFallbackDropTarget(activeButtonData) then
-            local cursorType = GetCursorInfo()
-            if cursorType == "item" then
-                TryReceiveFallbackItemDrop(activeButtonData)
-                return
-            end
-        end
-        local original = self._cdcFallbackOriginalOnReceiveDrag
-        if original then
-            return original(self, ...)
-        end
-    end)
-    frame:SetScript("OnMouseUp", function(self, button, ...)
-        local activeButtonData = self._cdcFallbackDropButtonData
-        if button ~= "LeftButton" or not IsFallbackDropTarget(activeButtonData) then
-            local original = self._cdcFallbackOriginalOnMouseUp
-            if original then
-                return original(self, button, ...)
-            end
-            return
-        end
-        if GetCursorInfo() and activeButtonData then
-            TryReceiveFallbackItemDrop(activeButtonData)
-            return
-        end
-
-        local original = self._cdcFallbackOriginalOnMouseUp
-        if original then
-            return original(self, button, ...)
-        end
-    end)
-end
-
-local function InstallFallbackColumnDropTargets(scroll, buttonData)
-    local seen = {}
-    local function addTarget(frame)
-        if frame and not seen[frame] then
-            seen[frame] = true
-            InstallFallbackDropScript(frame, buttonData)
-        end
-    end
-
-    addTarget(scroll and scroll.frame)
-    addTarget(scroll and scroll.scrollframe)
-    addTarget(scroll and scroll.content)
-
-    local parent = scroll and scroll.frame and scroll.frame:GetParent()
-    for _ = 1, 4 do
-        if not parent then break end
-        addTarget(parent)
-        parent = parent.GetParent and parent:GetParent() or nil
-    end
-end
-
 local function BuildFallbackRowText(itemID, rowIndex, isPrimary)
     local displayIndex = isPrimary and 1 or (rowIndex + 1)
     local prefix = tostring(displayIndex) .. ". "
@@ -1039,7 +957,6 @@ local function CreateFallbackItemRow(scroll, buttonData, itemID, rowIndex, isPri
     if isPrimary then
         row:SetColor(1, 1, 1)
         EnsureFallbackMoveButtons(row, buttonData, 0, true)
-        InstallFallbackDropScript(row.frame, buttonData)
     else
         EnsureFallbackMoveButtons(row, buttonData, rowIndex, false)
         InstallFallbackRowMenu(row, buttonData, rowIndex)
@@ -1074,9 +991,6 @@ local function BuildItemFallbacksSection(scroll, buttonData, infoButtons)
     heading.right:SetPoint("LEFT", infoBtn, "RIGHT", 4, 0)
 
     if collapsed then return end
-
-    InstallFallbackColumnDropTargets(scroll, buttonData)
-    InstallFallbackDropScript(heading.frame, buttonData)
 
     local primaryID = tonumber(buttonData.id)
     CreateFallbackItemRow(scroll, buttonData, primaryID, 0, true)
@@ -1119,8 +1033,6 @@ local function BuildItemFallbacksSection(scroll, buttonData, infoButtons)
     if addBox.editbox and addBox.editbox.Instructions then
         addBox.editbox.Instructions:Hide()
     end
-    InstallFallbackDropScript(addBox.frame, buttonData)
-    InstallFallbackDropScript(addBox.editbox, buttonData)
     if CS.SetupAutocompleteKeyHandler then
         CS.SetupAutocompleteKeyHandler(addBox)
     end
