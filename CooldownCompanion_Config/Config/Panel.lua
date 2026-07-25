@@ -1281,43 +1281,33 @@ local function CreateConfigPanel()
     gearBtn:RegisterForClicks("LeftButtonDown")
     CS.gearButton = gearBtn
 
-    local function IsGearDropdownOpen()
-        local listFrame = _G.DropDownList1
-        return CS.gearDropdownFrame and listFrame and listFrame:IsShown() and listFrame.dropdown == CS.gearDropdownFrame
-    end
-
-    local function HookGearDropdownHide()
-        local listFrame = _G.DropDownList1
-        if not listFrame or CS.gearDropdownHideHooked then return end
-        CS.gearDropdownHideHooked = true
-        listFrame:HookScript("OnHide", function(frame)
-            local currentGearButton = CS.gearButton
-            local gearClickHidden = currentGearButton
-                and MouseIsOver and MouseIsOver(currentGearButton)
-                and IsMouseButtonDown and IsMouseButtonDown("LeftButton")
-            if frame.dropdown == CS.gearDropdownFrame and gearClickHidden then
-                CS.gearDropdownClosedByGearClick = true
-            end
-        end)
-    end
-
-    -- Gear dropdown menu
-    gearBtn:SetScript("OnMouseDown", function()
-        CS.gearDropdownWasOpenOnMouseDown = IsGearDropdownOpen()
-    end)
-
+    -- Gear dropdown menu. Open/closed state comes from ToggleDropDownMenu's
+    -- return value plus the menu frame's onHide (re-armed on every open) —
+    -- never from sniffing _G.DropDownList1, which runs in the dropdown
+    -- code's own environment on 12.1 and never matches the live list (the
+    -- PreviewCommandCenter chooser uses this same pattern).
     gearBtn:SetScript("OnClick", function()
-        if CS.gearDropdownWasOpenOnMouseDown or CS.gearDropdownClosedByGearClick then
-            CS.gearDropdownWasOpenOnMouseDown = nil
-            CS.gearDropdownClosedByGearClick = nil
+        -- Our click reached OnClick with the list still up: this click is
+        -- the close. (Covers the ordering where frame scripts run before
+        -- the global mouse-down handler.)
+        if CS.gearDropdownOpen then
             CloseDropDownMenus()
-            CS.gearDropdownClosedByGearClick = nil
             return
         end
-        CS.gearDropdownWasOpenOnMouseDown = nil
+        -- The list already hid this same frame — the global mouse-down
+        -- handler closed it because our click landed outside the list.
+        -- That click was the close; consume it instead of reopening.
+        -- GetTime() is frame-constant, so equality means "this click".
+        if CS.gearDropdownClosedAt == GetTime() then
+            return
+        end
 
         if not CS.gearDropdownFrame then
             CS.gearDropdownFrame = CreateFrame("Frame", "CDCGearDropdown", UIParent, "UIDropDownMenuTemplate")
+            CS.gearDropdownFrame.onHide = function()
+                CS.gearDropdownOpen = nil
+                CS.gearDropdownClosedAt = GetTime()
+            end
         end
         UIDropDownMenu_Initialize(CS.gearDropdownFrame, function(self, level)
             local info2 = UIDropDownMenu_CreateInfo()
@@ -1440,8 +1430,10 @@ local function CreateConfigPanel()
             UIDropDownMenu_AddButton(info7, level)
         end, "MENU")
         CS.gearDropdownFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-        ToggleDropDownMenu(1, nil, CS.gearDropdownFrame, gearBtn, 0, 0)
-        HookGearDropdownHide()
+        -- Returns true when it opened the list, false when it toggled it
+        -- closed or refused (empty menu).
+        local opened = ToggleDropDownMenu(1, nil, CS.gearDropdownFrame, gearBtn, 0, 0)
+        CS.gearDropdownOpen = opened and true or nil
     end)
 
     -- Mini frame for collapsed state
