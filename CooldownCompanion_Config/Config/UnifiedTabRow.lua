@@ -265,11 +265,20 @@ local function InstallStripLayout(tabGroup, role)
             self._cdcBaseBuildTabs(self)
             return
         end
+        -- Nothing else would ever clear this guard, so an error inside the
+        -- layout pass would leave it set and silently disable the row for
+        -- the rest of the session. Clear it either way and let the error
+        -- carry on to the handler untouched.
         laying = true
-        if not LayoutUnifiedRow(self) then
+        local ok, result = pcall(LayoutUnifiedRow, self)
+        laying = false
+        if not ok then error(result, 0) end
+
+        if not result then
             -- This strip is not in the row right now (it or its host is
             -- hidden), so keep its own tabs current on their own terms; the
-            -- row is laid out again when it comes back.
+            -- row is laid out again when it comes back. No guard needed:
+            -- this path drives the base builder directly.
             self._cdcStripOffset = 0
             self._cdcRowShift = 0
             BuildStrip(self, NATURAL_STRIP_BUDGET)
@@ -277,7 +286,6 @@ local function InstallStripLayout(tabGroup, role)
             PlaceStrip(self)
             RefreshStripAccent(self, false)
         end
-        laying = false
     end
 end
 
@@ -323,15 +331,7 @@ local function SetStripActive(tabGroup, active)
     end
 end
 
--- Run after both strips have been given their tabs and the owning scope
--- has selected its tab: harmonises the row count and enforces one
--- selected tab across the row. Re-entrant guard: the row-count pass moves
--- a border, which can cascade a layout back through a strip.
-local applying = false
-function ApplyUnifiedRow()
-    if applying then return end
-    applying = true
-
+local function ApplyRowState()
     local primary = GetPrimaryStrip()
     local detail = GetDetailStrip()
 
@@ -358,8 +358,22 @@ function ApplyUnifiedRow()
     -- cluster wears it, and only while it shares the row.
     if primary then RefreshStripAccent(primary, false) end
     if detail then RefreshStripAccent(detail, primary ~= nil) end
+end
 
+-- Run after both strips have been given their tabs and the owning scope
+-- has selected its tab: harmonises the row count and enforces one selected
+-- tab across the row. Re-entrant guard: the row-count pass moves a border,
+-- which can cascade a layout back through a strip. Same reasoning as the
+-- layout guard above - the flag is cleared even when the pass raises, so
+-- one error cannot leave the row disabled for the session.
+local applying = false
+function ApplyUnifiedRow()
+    if applying then return end
+
+    applying = true
+    local ok, err = pcall(ApplyRowState)
     applying = false
+    if not ok then error(err, 0) end
 end
 
 ------------------------------------------------------------------------

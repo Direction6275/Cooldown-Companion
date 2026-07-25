@@ -777,8 +777,10 @@ local function RefreshResourcesWideColumn(col3)
         -- The module tabs are the left cluster of this home's unified row:
         -- they stay put while a bar is selected, and the bar's own tabs are
         -- appended beside them. Built first, since the bar strip is offset
-        -- by their measured width.
-        ShowResourcesTabPage(col3, wantsBarDetail and not ST._UnifiedRowPrimaryOwnsSurface())
+        -- by their measured width - which is also why the scope is read
+        -- directly here: every strip is still hidden at this point, so
+        -- PrimaryOwnsSurface would report false whatever the scope is.
+        ShowResourcesTabPage(col3, wantsBarDetail and ST._UnifiedRowGetScope() ~= "primary")
 
         local barShown = false
         if CS.selectedResourcePowerType then
