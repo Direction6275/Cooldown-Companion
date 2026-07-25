@@ -1834,9 +1834,12 @@ local function RefreshButtonsWideColumn()
 
         if browse then
             -- Other Class browsing has no panel-settings surface to offer,
-            -- so the entry cluster owns the whole row.
+            -- so the entry cluster owns the whole row. The remembered scope
+            -- is left alone rather than forced: with no primary strip in
+            -- the row the entry cluster owns the surface anyway, and
+            -- overwriting it here would lose the panel tab the owner was on
+            -- when they come back from browsing.
             if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
-            ST._UnifiedRowSetScope("detail")
         else
             local host = EnsureGroupSettingsHost(col3)
             AnchorButtonsContentFrame(col3, host)

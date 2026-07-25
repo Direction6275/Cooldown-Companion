@@ -335,10 +335,13 @@ local function ApplyRowState()
     local primary = GetPrimaryStrip()
     local detail = GetDetailStrip()
 
-    local rows = 1
-    if detail then
-        rows = math.max(rows, detail._cdcRowCount or 1)
-    end
+    -- The tallest strip sets the row height for both, whichever one it is.
+    -- Reading only the detail cluster here would leave a primary that wraps
+    -- deeper drawing its last row over its own content pane.
+    local rows = math.max(
+        primary and primary._cdcRowCount or 1,
+        detail and detail._cdcRowCount or 1
+    )
     ApplyRowCount(primary, rows)
     ApplyRowCount(detail, rows)
 
