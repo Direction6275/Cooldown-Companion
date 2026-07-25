@@ -11,7 +11,6 @@ local AddColorPicker = ST._AddColorPicker
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local HookSliderEditBox = ST._HookSliderEditBox
 local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
-local AddPreviewBadge = ST._AddPreviewBadge
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
 ------------------------------------------------------------------------
@@ -89,25 +88,13 @@ local function BuildCastBarAnchoringPanel(container)
     end)
     container:AddChild(enableCb)
 
-    local charCopyBtn = CreateCharacterCopyButton(enableCb, "castBar", "Cast Bar", function()
+    CreateCharacterCopyButton(enableCb, "castBar", "Cast Bar", function()
         CooldownCompanion:EvaluateCastBar()
         CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:RefreshConfigPanel()
     end)
 
     if not settings.enabled then return end
-
-    -- Live preview badge (ephemeral — not saved to DB): the cast bar is
-    -- invisible outside of casting, so the preview shows what layout can't
-    AddPreviewBadge(enableCb, charCopyBtn, "Preview Cast Bar", function()
-        return CooldownCompanion:IsCastBarPreviewActive()
-    end, function(show)
-        if show then
-            CooldownCompanion:StartCastBarPreview()
-        else
-            CooldownCompanion:StopCastBarPreview()
-        end
-    end, true)
 
     local isIndependent = settings.independentAnchorEnabled == true
 

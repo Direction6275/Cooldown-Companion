@@ -2224,13 +2224,11 @@ local function BuildTextureEffectsTab(container, group)
 end
 
 local function BuildBarModeEffects(container, group, style)
-    if not CS.previewToggleRefreshActive then
-        CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
-        CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
-        CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
-        CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
-        CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, false)
-    end
+    CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
+    CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
+    CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
+    CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
+    CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, false)
     BuildBarEffectsTab(container, group, style)
 end
 
@@ -2470,8 +2468,7 @@ local function BuildEffectsTab(container)
     local style = group.style
 
     local displayMode = group.displayMode
-    if not CS.previewToggleRefreshActive
-        and (CS.lastEffectsPreviewGroup ~= CS.selectedGroup or CS.lastEffectsPreviewMode ~= displayMode) then
+    if CS.lastEffectsPreviewGroup ~= CS.selectedGroup or CS.lastEffectsPreviewMode ~= displayMode then
         ResetEffectsTabPreviews()
         CS.lastEffectsPreviewGroup = CS.selectedGroup
         CS.lastEffectsPreviewMode = displayMode

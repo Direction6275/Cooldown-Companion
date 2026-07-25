@@ -443,6 +443,18 @@ local function ShowResourcesConflictScroll(col3)
     scroll:AddChild(label)
 end
 
+-- Single build entry for this workspace's pinned preview. The preview
+-- command center owns the host's bottom reserve, so it has to settle
+-- before the renderer measures itself; routing every rebuild through here
+-- keeps the two in step without a second hook, and refreshes the bar on
+-- divider drags, split reapplies and workspace switches alike.
+local function BuildResourcesLayoutPreview(host)
+    if ST._UpdateResourcesPreviewCommandCenter then
+        ST._UpdateResourcesPreviewCommandCenter(host)
+    end
+    ST._BuildLayoutOrderPanel(host)
+end
+
 -- Pinned Layout & Order preview at the top of the wide column, registered
 -- as the active wide preview so the shared divider drags and the persisted
 -- split reapply rebuild it.
@@ -459,7 +471,7 @@ local function UpdateResourcesPreviewHost(col3)
     if ST._SetActiveWidePreview then
         ST._SetActiveWidePreview(col3, host, function(hostFrame)
             if ST._BuildLayoutOrderPanel then
-                ST._BuildLayoutOrderPanel(hostFrame)
+                BuildResourcesLayoutPreview(hostFrame)
             end
         end)
     end
@@ -467,7 +479,7 @@ local function UpdateResourcesPreviewHost(col3)
         host:SetHeight(ST._ComputeWidePreviewHostHeight(col3))
     end
     host:Show()
-    ST._BuildLayoutOrderPanel(host)
+    BuildResourcesLayoutPreview(host)
 end
 
 -- Targeted preview rebuild (value changes that only affect the layout
@@ -477,7 +489,7 @@ local function RefreshResourcesLayoutPreview()
         local col3 = CS.configFrame and CS.configFrame.col3
         local host = col3 and col3._resourcesPreviewHost
         if host and host:IsShown() and ST._BuildLayoutOrderPanel then
-            ST._BuildLayoutOrderPanel(host)
+            BuildResourcesLayoutPreview(host)
         end
         return
     end

@@ -144,9 +144,9 @@ local function ResolvePreviewSkin(host)
     }
 end
 
--- Bottom chrome on the host (the preview command center on the buttons
--- workspace) claims a band the composition must stay clear of. The
--- Resources home sets no reserve, so it is unaffected.
+-- Bottom chrome on the host - the preview command center, on every
+-- workspace that has one - claims a band the composition must stay clear
+-- of. Hosts without a bar report 0.
 local function GetHostBottomReserve(host)
     return host and host._cdcPreviewReserveBottom or 0
 end

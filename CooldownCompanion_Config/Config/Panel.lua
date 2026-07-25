@@ -40,9 +40,6 @@ local RefreshVisibleConfigCompactRows = ST._RefreshVisibleConfigCompactRows
 local function ClearTransientConfigPreviewState()
     ClearHideActiveCurrentClassPanels()
     CS.textureConfigPreviewStage = nil
-    if CS.previewToggleRefreshActive then
-        return
-    end
     if CooldownCompanion.ClearAllConfigPreviews then
         CooldownCompanion:ClearAllConfigPreviews()
     end
@@ -1846,7 +1843,7 @@ local function CreateConfigPanel()
         end
         wipe(CS.buttonSettingsInfoButtons)
 
-        if (tabChanged or scopeChanged) and not CS.previewToggleRefreshActive then
+        if tabChanged or scopeChanged then
             CooldownCompanion:ClearAllConfigPreviews()
         end
         widget:ReleaseChildren()

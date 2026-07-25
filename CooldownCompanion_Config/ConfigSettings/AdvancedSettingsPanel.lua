@@ -213,7 +213,6 @@ local function BuildWindowContents()
     local scroll = AceGUI:Create("ScrollFrame")
     scroll:SetLayout("List")
     scroll._isAdvancedSettingsPanel = true
-    CS.advancedSettingsPreviewToggleButtons = nil
     if scroll.PauseLayout then
         scroll:PauseLayout()
     end
@@ -245,7 +244,6 @@ local function CleanupWindow(widget)
     end
 
     ClearAdvancedSettingsInfoButtons()
-    CS.advancedSettingsPreviewToggleButtons = nil
     widget:ReleaseChildren()
     AceGUI:Release(widget)
     advancedWindow = nil

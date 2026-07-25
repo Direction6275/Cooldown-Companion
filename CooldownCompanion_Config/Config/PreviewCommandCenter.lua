@@ -1,7 +1,7 @@
 --[[
     CooldownCompanion - PreviewCommandCenter
     The preview command center: a chooser naming one preview state plus a
-    play/stop button, pinned to the bottom-left of the buttons workspace's
+    play/stop button, pinned to the bottom-left of a workspace's pinned
     Live Preview surface, so the control that triggers a preview lives
     where the preview is actually visible.
 
@@ -11,10 +11,15 @@
     combination" - the one thing the model does not allow. It also drops
     the badge-soup problem and the need for a distinct glyph per state.
 
-    Scope follows the selection - with a single entry selected the preview
-    runs on that entry, with nothing (or a multi-select) on the whole
-    panel. Previews stay mutually exclusive across the whole config,
-    exactly as the settings-side badges have always been.
+    Two families of preview, two scoping rules:
+    - Panel previews (the buttons workspace) follow the selection: with a
+      single entry selected the preview runs on that entry, with nothing
+      (or a multi-select) on the whole panel.
+    - Object previews (the resource/cast bars) are bound to the bar they
+      belong to, so nothing narrows them and the chooser lists them under
+      the object's own menu group.
+    Previews stay mutually exclusive across the whole config, exactly as
+    the settings-side badges they replaced always were.
 
     The bar is a child of the preview host, so every path that hides the
     host (view switches, talent picker, config close) takes the bar with
@@ -26,6 +31,7 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
+local RB = ST._RB
 
 local BAR_HEIGHT = 20
 local BAR_BOTTOM_INSET = 3
@@ -116,6 +122,38 @@ local TriggerEffectsPreview = {
     end,
     SetActive = function(panelId, _, show)
         CooldownCompanion:SetTriggerPanelEffectsPreview(panelId, show)
+    end,
+}
+
+-- Previews owned by one config object rather than by a panel: they always
+-- run on the bar they belong to, so neither the selected panel nor the
+-- selected entry can narrow them (hence groupScoped - they never follow a
+-- selection). They also render on the REAL bar out in the world rather
+-- than in the config canvas, which is what makes them worth a control:
+-- absorbs and a cast in progress are otherwise invisible while editing.
+local function HealthEffectPreview(effectKey)
+    return {
+        groupScoped = true,
+        IsActive = function()
+            return CooldownCompanion:IsHealthEffectPreviewActive(effectKey) == true
+        end,
+        SetActive = function(_, _, show)
+            CooldownCompanion:SetHealthEffectPreview(effectKey, show)
+        end,
+    }
+end
+
+local CastBarPreview = {
+    groupScoped = true,
+    IsActive = function()
+        return CooldownCompanion:IsCastBarPreviewActive() == true
+    end,
+    SetActive = function(_, _, show)
+        if show then
+            CooldownCompanion:StartCastBarPreview()
+        else
+            CooldownCompanion:StopCastBarPreview()
+        end
     end,
 }
 
@@ -210,10 +248,10 @@ local function AnyTriggerEffectEnabled(group)
 end
 
 ------------------------------------------------------------------------
--- Every preview the buttons workspace can run, in menu order, grouped by
--- what the preview actually is: something CC draws on top, a situation
--- the button is in, or a readout it displays. Labels are the existing
--- ones verbatim - the no-rename ruling holds here too.
+-- Every panel preview, in menu order, grouped by what the preview
+-- actually is: something CC draws on top, a situation the button is in,
+-- or a readout it displays. Labels are the existing ones verbatim - the
+-- no-rename ruling holds here too.
 --
 -- Note the states are deliberately single entries. The old UI offered
 -- "Preview Cooldown Text", "Preview Cooldown Swipe", "Preview Cooldown
@@ -423,6 +461,133 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
 end
 
 ------------------------------------------------------------------------
+-- Object previews: the resource and cast bars.
+--
+-- Grouped by the bar they play on rather than by what they draw, because
+-- that is how the owner picks them ("show me what the health bar does"),
+-- and because it is the shape the future per-custom-bar aura previews
+-- slot into: one more group per bar, no widget or menu changes.
+--
+-- Availability reads the same effective config the runtime does, so an
+-- entry appears exactly when picking it would show something. All of
+-- these settings are explicit opt-ins (`== true`), unlike the
+-- default-ON button states above.
+------------------------------------------------------------------------
+
+local GROUP_HEALTH_BAR = "Health Bar"
+local GROUP_CAST_BAR = "Cast Bar"
+
+local function GetHealthEffectConfig()
+    local settings = CooldownCompanion.GetResourceBarSettings
+        and CooldownCompanion:GetResourceBarSettings()
+    if not (settings and settings.enabled == true) then
+        return nil
+    end
+    if not (RB and RB.IsResourceEnabled and RB.IsResourceEnabled(RB.RESOURCE_HEALTH, settings)) then
+        return nil
+    end
+    -- Resolved for the player's current spec, which is the one the live
+    -- health bar is running - the same table the runtime reads.
+    local config = RB.GetResourceDisplayConfig
+        and RB.GetResourceDisplayConfig(settings, RB.RESOURCE_HEALTH)
+    return type(config) == "table" and config or nil
+end
+
+local function HealthEffectEnabled(settingKey)
+    local config = GetHealthEffectConfig()
+    return config ~= nil and config[settingKey] == true
+end
+
+local function CastBarEnabled()
+    local settings = CooldownCompanion.GetCastBarSettings
+        and CooldownCompanion:GetCastBarSettings()
+    return settings ~= nil and settings.enabled == true
+end
+
+local OBJECT_CONTROLS = {
+    {
+        id = "healthAbsorbs",
+        label = "Preview Absorbs",
+        group = GROUP_HEALTH_BAR,
+        object = "health",
+        Applies = function() return HealthEffectEnabled("showAbsorbs") end,
+        preview = HealthEffectPreview("absorbs"),
+    },
+    {
+        id = "healthHealAbsorbs",
+        label = "Preview Healing Absorbs",
+        group = GROUP_HEALTH_BAR,
+        object = "health",
+        Applies = function() return HealthEffectEnabled("showHealAbsorbs") end,
+        preview = HealthEffectPreview("healAbsorbs"),
+    },
+    {
+        id = "healthIncomingHeals",
+        label = "Preview Incoming Heals",
+        group = GROUP_HEALTH_BAR,
+        object = "health",
+        Applies = function() return HealthEffectEnabled("showIncomingHeals") end,
+        preview = HealthEffectPreview("incomingHeals"),
+    },
+    {
+        id = "healthLowHealthAlert",
+        label = "Preview Low Health Alert",
+        group = GROUP_HEALTH_BAR,
+        object = "health",
+        Applies = function() return HealthEffectEnabled("showLowHealthAlert") end,
+        preview = HealthEffectPreview("lowHealthAlert"),
+    },
+    {
+        id = "castBar",
+        label = "Preview Cast Bar",
+        group = GROUP_CAST_BAR,
+        object = "cast",
+        Applies = CastBarEnabled,
+        preview = CastBarPreview,
+    },
+}
+
+-- Which objects a surface hosts. The homes list the objects that
+-- workspace configures; the buttons workspace lists the bars its unified
+-- anchor preview actually draws as lanes, which is also exactly when a
+-- bar's settings can be open below the divider there.
+local function CollectObjectControls(objects)
+    local applicable = {}
+    for _, control in ipairs(OBJECT_CONTROLS) do
+        if objects[control.object] and control.Applies() then
+            applicable[#applicable + 1] = control
+        end
+    end
+    return applicable
+end
+
+-- Which bars the unified anchor preview draws as lanes: the same
+-- attached-vs-independent test the lane renderer itself makes
+-- (ST._HasAttachedBarLanesToRender). A bar on its own independent anchor
+-- is not on that canvas and its settings cannot be opened there, so its
+-- previews stay on its own home.
+local function GetAnchorLaneObjects()
+    local rbSettings = CooldownCompanion.GetResourceBarSettings
+        and CooldownCompanion:GetResourceBarSettings()
+    local cbSettings = CooldownCompanion.GetCastBarSettings
+        and CooldownCompanion:GetCastBarSettings()
+    local layout = CooldownCompanion.GetSpecLayoutOrder
+        and CooldownCompanion:GetSpecLayoutOrder()
+    local IsTruthyConfigFlag = RB and RB.IsTruthyConfigFlag
+    if not (layout and IsTruthyConfigFlag) then
+        return {}
+    end
+    return {
+        health = rbSettings ~= nil
+            and rbSettings.enabled == true
+            and not IsTruthyConfigFlag(layout.independentAnchorEnabled),
+        cast = cbSettings ~= nil
+            and cbSettings.enabled == true
+            and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled),
+    }
+end
+
+------------------------------------------------------------------------
 -- Context: which panel the bar acts on, and whether a single selected
 -- entry narrows it. A multi-select keeps panel scope (the setters take
 -- one entry, and "nothing narrowed" is the ruled fallback).
@@ -454,33 +619,57 @@ local function ResolveContext()
 end
 
 ------------------------------------------------------------------------
+-- Surfaces: the two hosts that can carry a bar. Each one knows how to
+-- resolve the preview target, where its remembered choice lives (so the
+-- two never fight over one key), and how to repaint itself after a
+-- toggle.
+------------------------------------------------------------------------
+
+local BUTTONS_SURFACE = {
+    selectionKey = "previewCommandCenterSelection",
+    ResolveTarget = function()
+        local panelId, _, buttonIndex = ResolveContext()
+        if not panelId then
+            return false
+        end
+        return true, panelId, buttonIndex
+    end,
+    Repaint = function()
+        -- Rebuilds the mirror, which re-runs the update below and
+        -- repaints the bar from live state.
+        if ST._RefreshButtonsPreviewMirror then
+            ST._RefreshButtonsPreviewMirror()
+        end
+    end,
+}
+
+local RESOURCES_SURFACE = {
+    selectionKey = "resourcesPreviewCommandCenterSelection",
+    -- Object previews run on the bar they belong to: there is no panel or
+    -- entry to resolve, and no selection state that could fail.
+    ResolveTarget = function()
+        return true, nil, nil
+    end,
+    Repaint = function()
+        if ST._RefreshResourcesLayoutPreview then
+            ST._RefreshResourcesLayoutPreview()
+        end
+    end,
+}
+
+------------------------------------------------------------------------
 -- Running a preview
 --
 -- Previews are mutually exclusive across the whole config, so starting
--- one clears every other (including the settings-side badge highlight,
--- which ClearAllConfigPreviews resets).
+-- one clears every other.
 ------------------------------------------------------------------------
 
-local function SetPreviewRunning(control, panelId, buttonIndex, show)
-    if show then
-        if CooldownCompanion.ClearAllConfigPreviews then
-            CooldownCompanion:ClearAllConfigPreviews()
-        end
-    elseif ST._ClearActivePreviewBadgeButton then
-        ST._ClearActivePreviewBadgeButton()
+local function SetPreviewRunning(surface, control, panelId, buttonIndex, show)
+    if show and CooldownCompanion.ClearAllConfigPreviews then
+        CooldownCompanion:ClearAllConfigPreviews()
     end
     control.preview.SetActive(panelId, buttonIndex, show)
-
-    -- An open advanced popout can be showing "Preview: ON" for a preview
-    -- that was just cleared.
-    if ST._RefreshAdvancedSettingsPreviewButtons then
-        ST._RefreshAdvancedSettingsPreviewButtons()
-    end
-    -- Rebuilds the mirror, which re-runs the update below and repaints the
-    -- bar from live state.
-    if ST._RefreshButtonsPreviewMirror then
-        ST._RefreshButtonsPreviewMirror()
-    end
+    surface.Repaint()
 end
 
 ------------------------------------------------------------------------
@@ -596,8 +785,9 @@ local function EnsureMenuFrame()
 end
 
 local function OpenPreviewMenu(bar)
-    local panelId, _, buttonIndex = ResolveContext()
-    if not panelId then
+    local surface = bar._surface
+    local ok, panelId, buttonIndex = surface.ResolveTarget()
+    if not ok then
         return
     end
 
@@ -629,12 +819,12 @@ local function OpenPreviewMenu(bar)
             local info = UIDropDownMenu_CreateInfo()
             info.text = control.label
             -- Radio, not check: picking one is picking the only one.
-            info.checked = (CS.previewCommandCenterSelection == control.id)
+            info.checked = (CS[surface.selectionKey] == control.id)
             info.func = function()
                 CloseDropDownMenus()
-                CS.previewCommandCenterSelection = control.id
+                CS[surface.selectionKey] = control.id
                 -- Choosing a preview is asking to see it.
-                SetPreviewRunning(control, panelId, buttonIndex, true)
+                SetPreviewRunning(surface, control, panelId, buttonIndex, true)
             end
             UIDropDownMenu_AddButton(info, level)
         end
@@ -646,9 +836,10 @@ local function OpenPreviewMenu(bar)
     CS.previewCommandCenterMenuOpen = opened and true or nil
 end
 
-local function EnsureBar(host)
+local function EnsureBar(host, surface)
     local bar = host._cdcPreviewCommandCenter
     if bar then
+        bar._surface = surface
         return bar
     end
 
@@ -730,14 +921,15 @@ local function EnsureBar(host)
         if not control then
             return
         end
-        local panelId, _, buttonIndex = ResolveContext()
-        if not panelId then
+        local ok, panelId, buttonIndex = bar._surface.ResolveTarget()
+        if not ok then
             return
         end
-        SetPreviewRunning(control, panelId, buttonIndex, not self._running)
+        SetPreviewRunning(bar._surface, control, panelId, buttonIndex, not self._running)
     end)
     bar.play = play
 
+    bar._surface = surface
     host._cdcPreviewCommandCenter = bar
     return bar
 end
@@ -778,10 +970,58 @@ local function HideBar(host)
 end
 
 ------------------------------------------------------------------------
--- Update entry point. Called at the top of the buttons preview's build
--- closure, so it runs on every rebuild path (selection change, panel
--- switch, divider drag, preview toggle) and - critically - BEFORE the
--- mirror measures itself, since it owns the host's bottom reserve.
+-- Shared bar update: resolve which entry the chooser names, whether it is
+-- running, and show the bar. Both surfaces reach this having already
+-- decided what they can offer.
+------------------------------------------------------------------------
+
+local function UpdateBar(host, surface, applicable)
+    if #applicable == 0 then
+        HideBar(host)
+        return nil, false
+    end
+
+    local ok, panelId, buttonIndex = surface.ResolveTarget()
+    if not ok then
+        HideBar(host)
+        return nil, false
+    end
+
+    -- Whatever is actually running wins the selection, so a preview
+    -- started elsewhere still reads correctly here. Otherwise keep the
+    -- remembered choice, falling back to the first applicable one when it
+    -- does not apply to this surface.
+    local selected, running
+    local remembered
+    for _, control in ipairs(applicable) do
+        if control.preview.IsActive(panelId, buttonIndex) == true then
+            selected, running = control, true
+            break
+        end
+        if control.id == CS[surface.selectionKey] then
+            remembered = control
+        end
+    end
+    if not selected then
+        selected, running = remembered or applicable[1], false
+    end
+    CS[surface.selectionKey] = selected.id
+
+    local bar = EnsureBar(host, surface)
+    bar._applicable = applicable
+    ApplyBarState(bar, selected, running)
+
+    host._cdcPreviewReserveBottom = BAR_RESERVE
+    bar:Show()
+    return selected, running
+end
+
+------------------------------------------------------------------------
+-- Buttons workspace entry point. Called at the top of the buttons
+-- preview's build closure, so it runs on every rebuild path (selection
+-- change, panel switch, divider drag, preview toggle) and - critically -
+-- BEFORE the mirror measures itself, since it owns the host's bottom
+-- reserve.
 ------------------------------------------------------------------------
 
 local function UpdatePreviewCommandCenter(host)
@@ -803,6 +1043,17 @@ local function UpdatePreviewCommandCenter(host)
         end
     end
 
+    -- On the anchor panel the canvas draws the attached bar lanes and
+    -- their settings open below the divider, so the bars' previews belong
+    -- in this menu too - the rule everywhere is that the chooser lists
+    -- every preview for what the canvas is showing. Appended after the
+    -- panel groups, under their own object headers.
+    if ST._ShouldUseUnifiedAnchorPreview and ST._ShouldUseUnifiedAnchorPreview(panelId) then
+        for _, control in ipairs(CollectObjectControls(GetAnchorLaneObjects())) do
+            applicable[#applicable + 1] = control
+        end
+    end
+
     if #applicable == 0 then
         HideBar(host)
         return
@@ -810,38 +1061,31 @@ local function UpdatePreviewCommandCenter(host)
 
     MigrateRunningPreview(panelId, buttonIndex, applicable)
 
-    -- Whatever is actually running wins the selection, so a preview
-    -- started from a surviving settings control still reads correctly
-    -- here. Otherwise keep the remembered choice, falling back to the
-    -- first applicable one when it does not apply to this panel.
-    local selected, running
-    local remembered
-    for _, control in ipairs(applicable) do
-        if control.preview.IsActive(panelId, buttonIndex) == true then
-            selected, running = control, true
-            break
-        end
-        if control.id == CS.previewCommandCenterSelection then
-            remembered = control
-        end
-    end
-    if not selected then
-        selected, running = remembered or applicable[1], false
-    end
-    CS.previewCommandCenterSelection = selected.id
+    local _, running = UpdateBar(host, BUTTONS_SURFACE, applicable)
     -- Read by the migration above on the next pass, since the selection
     -- seam clears previews before we get to look at live state.
     CS.previewCommandCenterWasRunning = running
+end
 
-    local bar = EnsureBar(host)
-    bar._applicable = applicable
-    ApplyBarState(bar, selected, running)
+------------------------------------------------------------------------
+-- Resources / Cast Bar & Unit Frames entry point. Both homes share one
+-- preview host and one renderer, so they share one bar; what differs is
+-- which objects that home configures.
+------------------------------------------------------------------------
 
-    host._cdcPreviewReserveBottom = BAR_RESERVE
-    bar:Show()
+local function UpdateResourcesPreviewCommandCenter(host)
+    if not host then
+        return
+    end
+
+    -- The health bar is a Resources-workspace object; the cast bar is
+    -- drawn on both homes and owns one of them.
+    local objects = { cast = true, health = CS.resourcesEntrySelected == true }
+    UpdateBar(host, RESOURCES_SURFACE, CollectObjectControls(objects))
 end
 
 ------------------------------------------------------------------------
 -- ST._ exports
 ------------------------------------------------------------------------
 ST._UpdatePreviewCommandCenter = UpdatePreviewCommandCenter
+ST._UpdateResourcesPreviewCommandCenter = UpdateResourcesPreviewCommandCenter

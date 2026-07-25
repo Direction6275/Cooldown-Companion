@@ -156,8 +156,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             container._activePanelSettingsTab = tab
             CS.selectedTab = tab
             CS.panelSettingsTab = tab
-            local preservePreviews = CS.previewToggleRefreshActive == true
-            if (tabChanged or scopeChanged) and not preservePreviews then
+            if tabChanged or scopeChanged then
                 CooldownCompanion:ClearAllConfigPreviews()
             end
             -- Clean up raw (?) info buttons BEFORE releasing children, so they
