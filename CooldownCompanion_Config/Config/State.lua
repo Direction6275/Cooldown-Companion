@@ -203,6 +203,12 @@ ST._configState = {
     selectedContainerTab = "general",
     buttonSettingsTab = "settings",
     panelSettingsTab = "appearance",
+    -- Which half of the unified tab row owns the settings surface while a
+    -- detail cluster (entry, entry multi-select, attached bar, resource) is
+    -- in it: "detail" (the default - selecting one zooms into it) or
+    -- "primary" (a panel or module tab was opened without dropping that
+    -- selection).
+    unifiedRowScope = "detail",
     newInput = "",
     tutorialAnchors = {},
     tutorialFrame = nil,
@@ -2827,6 +2833,9 @@ local function ToggleConfigPanelMultiSelect(panelId)
 end
 
 local function SelectConfigButton(panelId, buttonIndex, opts)
+    -- Selecting an entry always jumps to its cluster in the tab row, even
+    -- if a panel tab was the last thing shown.
+    CS.unifiedRowScope = "detail"
     local panelChanged = CS.selectedGroup ~= panelId
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
@@ -2885,6 +2894,7 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     CS.unifiedBarKind = nil
     wipe(CS.selectedButtons)
     CS.buttonSettingsTab = "loadconditions"
+    CS.unifiedRowScope = "detail"
     CooldownCompanion:ClearAllConfigPreviews()
     RefreshAlphaDriverForConfigSelection()
 end
@@ -2928,6 +2938,9 @@ local function SelectConfigCustomBar(customBarId, opts)
     end
 
     ClearConfigResourceSelection()
+    -- Selecting a bar jumps to its own tabs, the same way selecting an
+    -- entry does, even if a module tab was the last thing shown.
+    CS.unifiedRowScope = "detail"
     CS.selectedCustomBarId = customBarId
     if opts and opts.resetTab then
         SetConfigCustomBarSettingsTab("appearance")
@@ -2985,6 +2998,9 @@ local function SelectConfigResource(powerType, opts)
     CS.selectedCustomBarId = nil
     CS.customBarSpecExpandedId = nil
     wipe(CS.selectedCustomBars)
+    -- Selecting a resource jumps to its own tabs, the same way selecting an
+    -- entry does, even if a module tab was the last thing shown.
+    CS.unifiedRowScope = "detail"
     SetConfigCustomBarSettingsTab("appearance")
     if opts and opts.clearButtonMulti then
         CS.selectedRotationAssistantEntry = nil
@@ -3073,7 +3089,10 @@ local function SelectUnifiedAnchorBar(slot)
         return false
     end
 
-    -- The bar's settings own the settings area; entry selection ends.
+    -- The bar's settings own the settings area; entry selection ends. Like
+    -- selecting an entry, this jumps to the bar's own tabs even if a panel
+    -- tab was the last thing shown.
+    CS.unifiedRowScope = "detail"
     ClearSelectedButton()
     return true
 end

@@ -142,7 +142,6 @@ local function RefreshColumn3()
         -- Hide content that shares the col3 content area
         if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
         if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
-        if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
         if col3._panelTabGroup then col3._panelTabGroup.frame:Hide() end
         if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
         if col3._browseEntryScroll then col3._browseEntryScroll.frame:Hide() end
@@ -162,7 +161,6 @@ local function RefreshColumn3()
         -- Hide button settings content that lives on the same col3 content area
         if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
         if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
-        if col3.multiSelectScroll then col3.multiSelectScroll.frame:Hide() end
         if col3._panelTabGroup then col3._panelTabGroup.frame:Hide() end
         if col3._panelMultiSelectScroll then col3._panelMultiSelectScroll.frame:Hide() end
         if col3._browseEntryScroll then col3._browseEntryScroll.frame:Hide() end

@@ -35,6 +35,7 @@ Config\DragReorder.lua
 Config\Column1.lua
 Config\PanelShared.lua
 Config\Column3.lua
+Config\UnifiedTabRow.lua
 Config\GroupSettingsHost.lua
 Config\ButtonsWideColumn.lua
 Config\ResourcesWideColumn.lua

@@ -49,17 +49,13 @@ local function BuildButtonSettingsTabs(group, buttonData)
         }
     end
 
-    local isEquipmentSlot = CooldownCompanion.IsEquipmentSlotEntry
-        and CooldownCompanion.IsEquipmentSlotEntry(buttonData)
+    -- Sound Alerts and Item Fallbacks are not tabs: they live as bottom
+    -- sections of this entry's Settings ("Condition" on trigger panels) tab.
     if GroupUsesTriggerPanelEntries(group) then
-        local tabs = {
+        return {
             { value = "settings", text = "Condition" },
             { value = "loadconditions", text = "Load Conditions" },
         }
-        if not isEquipmentSlot then
-            tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
-        end
-        return tabs
     end
 
     local tabs = {
@@ -67,11 +63,6 @@ local function BuildButtonSettingsTabs(group, buttonData)
     }
     if EntryOffersAuraTab(group, buttonData) then
         tabs[#tabs + 1] = { value = "aura", text = "Aura" }
-    end
-    if buttonData and buttonData.type == "item" then
-        tabs[#tabs + 1] = { value = "fallbacks", text = "Fallbacks" }
-    elseif not isEquipmentSlot then
-        tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
     end
 
     -- Texture panels only ever manage a single texture entry, so the
@@ -82,6 +73,64 @@ local function BuildButtonSettingsTabs(group, buttonData)
     tabs[#tabs + 1] = { value = "loadconditions", text = "Load Conditions" }
 
     return tabs
+end
+
+-- Entry tabs are appended to the panel tabs in one shared row. The gap in
+-- front of the cluster, the entry's own icon on its first tab, and the
+-- selection accent on every entry label are what separate the two scopes -
+-- and what tells the two "Load Conditions" tabs apart without renaming
+-- either of them.
+local function EntryTabIconMarkup(icon)
+    if not icon or icon == "" then return "" end
+    return string.format("|T%s:13:13:0:0|t ", tostring(icon))
+end
+
+-- `text` stays untinted: it is what BuildTabs measures the tab against, and
+-- what the tab shows while it is the selected one, so selection still reads
+-- as a highlight. `accentText` is the tinted variant the row swaps in on
+-- every other entry tab.
+local function DecorateEntryTabs(tabs, iconMarkup)
+    for index, tab in ipairs(tabs) do
+        local prefix = (index == 1) and iconMarkup or ""
+        tab.accentText = prefix .. ST._GetClassColoredText(tab.text)
+        tab.text = prefix .. tab.text
+    end
+    return tabs
+end
+
+local function GetSelectedEntryIconMarkup(group, buttonData)
+    if CooldownCompanion:IsRotationAssistantGroup(group) then
+        return EntryTabIconMarkup(CooldownCompanion:GetRotationAssistantFallbackIcon())
+    end
+    if not buttonData then return "" end
+    return EntryTabIconMarkup(ST._GetButtonIcon(buttonData))
+end
+
+-- Multi-select is one appended tab: a stacked marker built from the first
+-- two selected entries' icons, plus the count.
+local function BuildEntryMultiSelectTabs(group, multiCount, multiIndices)
+    local sorted = {}
+    for _, index in ipairs(multiIndices) do
+        sorted[#sorted + 1] = index
+    end
+    table.sort(sorted)
+
+    local marker = ""
+    for position = 1, math.min(2, #sorted) do
+        local entryData = group and group.buttons and group.buttons[sorted[position]]
+        if entryData then
+            marker = marker .. EntryTabIconMarkup(ST._GetButtonIcon(entryData))
+        end
+    end
+
+    local label = multiCount .. " entries"
+    return {
+        {
+            value = "multiselect",
+            text = marker .. label,
+            accentText = marker .. ST._GetClassColoredText(label),
+        },
+    }
 end
 
 local function BuildSortedSoundOptionOrder(soundOptions)
@@ -243,33 +292,25 @@ local function ConfigureSoundPreviewRow(item, buttonData, group)
     end
 end
 
+local function SoundAlertsCollapseKey()
+    return tostring(CS.selectedGroup) .. "_" .. tostring(CS.selectedButton) .. "_soundalerts"
+end
+
+-- Expects a Flow container: the per-event sound rows pair side by side, while
+-- the heading and helper labels stay full width.
 local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
-    -- Two-column layout: the per-event sound rows pair side by side; the
-    -- heading and helper labels stay full width.
-    scroll:SetLayout("Flow")
+    local soundHeading, soundCollapsed, soundCollapseBtn =
+        BuildCollapsibleSection(scroll, "Sound Alerts", SoundAlertsCollapseKey())
 
-    local soundHeading = AceGUI:Create("Heading")
-    soundHeading:SetText("Sound Alerts")
-    ColorHeading(soundHeading)
-    soundHeading:SetHeight(22)
-    soundHeading:SetFullWidth(true)
-    soundHeading.label:ClearAllPoints()
-    soundHeading.label:SetPoint("CENTER", soundHeading.frame, "CENTER", 0, 2)
-    soundHeading.left:ClearAllPoints()
-    soundHeading.left:SetPoint("LEFT", soundHeading.frame, "LEFT", 3, 0)
-    soundHeading.left:SetPoint("RIGHT", soundHeading.label, "LEFT", -5, 0)
-    soundHeading.right:ClearAllPoints()
-    soundHeading.right:SetPoint("RIGHT", soundHeading.frame, "RIGHT", -3, 0)
-    soundHeading.right:SetPoint("LEFT", soundHeading.label, "RIGHT", 5, 0)
-    scroll:AddChild(soundHeading)
-
-    local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundHeading.label, "LEFT", "RIGHT", 4, 0, {
+    local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundCollapseBtn, "LEFT", "RIGHT", 2, 0, {
         "Sound Alerts",
         {"Sound alerts are played through the Master channel and follow your game's Master volume setting.", 1, 1, 1, true},
     }, infoButtons)
     soundHeading.right:ClearAllPoints()
     soundHeading.right:SetPoint("RIGHT", soundHeading.frame, "RIGHT", -3, 0)
     soundHeading.right:SetPoint("LEFT", soundInfoBtn, "RIGHT", 4, 0)
+
+    if soundCollapsed then return end
 
     local validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData)
     if not validEvents then
@@ -346,46 +387,23 @@ local function BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
     end
 end
 
-local function BuildSpellSoundAlertsTab(scroll, buttonData, infoButtons)
-    if buttonData.type ~= "spell" then
-        local notSpellLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(notSpellLabel)
-        notSpellLabel:SetText("|cff888888Sound alerts are available for spell buttons only.|r")
-        notSpellLabel:SetFullWidth(true)
-        scroll:AddChild(notSpellLabel)
-        return
-    end
-
-    BuildSpellSoundAlertsSection(scroll, buttonData, infoButtons)
-end
-
-local function BuildTriggerPanelSoundAlertsTab(scroll, group, buttonData, infoButtons)
+local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons)
     if not (group and group.displayMode == "trigger") then
         return
     end
 
-    local soundHeading = AceGUI:Create("Heading")
-    soundHeading:SetText("Sound Alerts")
-    ColorHeading(soundHeading)
-    soundHeading:SetHeight(22)
-    soundHeading:SetFullWidth(true)
-    soundHeading.label:ClearAllPoints()
-    soundHeading.label:SetPoint("CENTER", soundHeading.frame, "CENTER", 0, 2)
-    soundHeading.left:ClearAllPoints()
-    soundHeading.left:SetPoint("LEFT", soundHeading.frame, "LEFT", 3, 0)
-    soundHeading.left:SetPoint("RIGHT", soundHeading.label, "LEFT", -5, 0)
-    soundHeading.right:ClearAllPoints()
-    soundHeading.right:SetPoint("RIGHT", soundHeading.frame, "RIGHT", -3, 0)
-    soundHeading.right:SetPoint("LEFT", soundHeading.label, "RIGHT", 5, 0)
-    scroll:AddChild(soundHeading)
+    local soundHeading, soundCollapsed, soundCollapseBtn =
+        BuildCollapsibleSection(scroll, "Sound Alerts", SoundAlertsCollapseKey())
 
-    local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundHeading.label, "LEFT", "RIGHT", 4, 0, {
+    local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundCollapseBtn, "LEFT", "RIGHT", 2, 0, {
         "Sound Alerts",
         {"Plays when the trigger texture appears. This is panel-level and not tied to any one condition. Uses the Master channel and follows your game's Master volume setting.", 1, 1, 1, true},
     }, infoButtons)
     soundHeading.right:ClearAllPoints()
     soundHeading.right:SetPoint("RIGHT", soundHeading.frame, "RIGHT", -3, 0)
     soundHeading.right:SetPoint("LEFT", soundInfoBtn, "RIGHT", 4, 0)
+
+    if soundCollapsed then return end
 
     local soundOptions = CooldownCompanion:GetSoundAlertOptions()
     local soundOptionOrder = BuildSortedSoundOptionOrder(soundOptions)
@@ -411,6 +429,32 @@ local function BuildTriggerPanelSoundAlertsTab(scroll, group, buttonData, infoBu
 
     row:AddChild(soundDrop)
     scroll:AddChild(row)
+end
+
+-- Sound alerts sit at the foot of the entry's Settings tab ("Condition" on
+-- trigger panels) on every panel type. Entries that never had a sound surface
+-- (equipment slots, and anything that is not a spell outside trigger panels)
+-- add nothing rather than a section that only says "not available".
+local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButtons)
+    if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+        return
+    end
+
+    if group and group.displayMode == "trigger" then
+        BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons)
+        return
+    end
+
+    if not (buttonData and buttonData.type == "spell") then return end
+
+    -- The event rows pair two-across, so they get their own Flow host: the
+    -- Settings tab's scroll is a List and must stay one. Layout is set before
+    -- AddChild so the first layout pass already flows.
+    local host = AceGUI:Create("SimpleGroup")
+    host:SetFullWidth(true)
+    host:SetLayout("Flow")
+    scroll:AddChild(host)
+    BuildSpellSoundAlertsSection(host, buttonData, infoButtons)
 end
 
 local function CreateCenteredSubHeading(text)
@@ -765,20 +809,6 @@ local function AddItemFallback(buttonData, itemID)
     return true
 end
 
-local function TryReceiveFallbackItemDrop(buttonData)
-    local cursorType, cursorID = GetCursorInfo()
-    if cursorType ~= "item" or not cursorID then
-        return false
-    end
-
-    local added = AddItemFallback(buttonData, cursorID)
-    ClearCursor()
-    if added then
-        RefreshFallbackEntry(CS.selectedGroup)
-    end
-    return added
-end
-
 local function UpdatePrimaryFallbackItem(buttonData, itemID)
     buttonData.id = itemID
     buttonData.name = GetItemFallbackName(itemID)
@@ -836,72 +866,8 @@ local function MoveFallbackPriorityItem(buttonData, sourceIndex, targetIndex)
     return true
 end
 
-local function InstallFallbackDropScript(frame, buttonData)
-    if not frame or not frame.SetScript then
-        return
-    end
-
-    if not frame._cdcFallbackDropWrapped and frame.GetScript then
-        frame._cdcFallbackOriginalOnReceiveDrag = frame:GetScript("OnReceiveDrag")
-        frame._cdcFallbackOriginalOnMouseUp = frame:GetScript("OnMouseUp")
-        frame._cdcFallbackDropWrapped = true
-    end
-    frame._cdcFallbackDropButtonData = buttonData
-
-    frame:SetScript("OnReceiveDrag", function(self, ...)
-        local activeButtonData = self._cdcFallbackDropButtonData
-        if CS.buttonSettingsTab == "fallbacks" and activeButtonData then
-            local cursorType = GetCursorInfo()
-            if cursorType == "item" then
-                TryReceiveFallbackItemDrop(activeButtonData)
-                return
-            end
-        end
-        local original = self._cdcFallbackOriginalOnReceiveDrag
-        if original then
-            return original(self, ...)
-        end
-    end)
-    frame:SetScript("OnMouseUp", function(self, button, ...)
-        local activeButtonData = self._cdcFallbackDropButtonData
-        if CS.buttonSettingsTab ~= "fallbacks" or button ~= "LeftButton" then
-            local original = self._cdcFallbackOriginalOnMouseUp
-            if original then
-                return original(self, button, ...)
-            end
-            return
-        end
-        if GetCursorInfo() and activeButtonData then
-            TryReceiveFallbackItemDrop(activeButtonData)
-            return
-        end
-
-        local original = self._cdcFallbackOriginalOnMouseUp
-        if original then
-            return original(self, button, ...)
-        end
-    end)
-end
-
-local function InstallFallbackColumnDropTargets(scroll, buttonData)
-    local seen = {}
-    local function addTarget(frame)
-        if frame and not seen[frame] then
-            seen[frame] = true
-            InstallFallbackDropScript(frame, buttonData)
-        end
-    end
-
-    addTarget(scroll and scroll.frame)
-    addTarget(scroll and scroll.scrollframe)
-    addTarget(scroll and scroll.content)
-
-    local parent = scroll and scroll.frame and scroll.frame:GetParent()
-    for _ = 1, 4 do
-        if not parent then break end
-        addTarget(parent)
-        parent = parent.GetParent and parent:GetParent() or nil
-    end
+local function ItemFallbacksCollapseKey()
+    return tostring(CS.selectedGroup) .. "_" .. tostring(CS.selectedButton) .. "_itemfallbacks"
 end
 
 local function BuildFallbackRowText(itemID, rowIndex, isPrimary)
@@ -1012,10 +978,6 @@ local function InstallFallbackRowMenu(entry, buttonData, rowIndex)
     entry.frame:SetScript("OnMouseUp", function(_, button)
         if button == "RightButton" then
             ShowFallbackRowMenu(buttonData, rowIndex)
-            return
-        end
-        if button == "LeftButton" and GetCursorInfo() then
-            TryReceiveFallbackItemDrop(buttonData)
         end
     end)
 end
@@ -1035,7 +997,6 @@ local function CreateFallbackItemRow(scroll, buttonData, itemID, rowIndex, isPri
     if isPrimary then
         row:SetColor(1, 1, 1)
         EnsureFallbackMoveButtons(row, buttonData, 0, true)
-        InstallFallbackDropScript(row.frame, buttonData)
     else
         EnsureFallbackMoveButtons(row, buttonData, rowIndex, false)
         InstallFallbackRowMenu(row, buttonData, rowIndex)
@@ -1045,36 +1006,19 @@ local function CreateFallbackItemRow(scroll, buttonData, itemID, rowIndex, isPri
     return row
 end
 
-local function BuildItemFallbacksTab(scroll, buttonData, infoButtons)
-    if not (buttonData and buttonData.type == "item") then
-        local label = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(label)
-        label:SetText("Fallbacks are available for item entries only.")
-        label:SetFullWidth(true)
-        scroll:AddChild(label)
-        return
-    end
-
-    if CooldownCompanion.IsItemEquippable(buttonData) then
-        local label = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(label)
-        label:SetText("Fallbacks are available for non-equippable consumable items only.")
-        label:SetFullWidth(true)
-        scroll:AddChild(label)
-        return
-    end
+-- Item fallbacks sit at the foot of the entry's Settings tab. Entries that
+-- never had a fallbacks surface (non-items, equippable items) add nothing
+-- rather than a section that only says "not available".
+local function BuildItemFallbacksSection(scroll, buttonData, infoButtons)
+    if not (buttonData and buttonData.type == "item") then return end
+    if CooldownCompanion.IsItemEquippable(buttonData) then return end
 
     NormalizeItemFallbacks(buttonData)
-    InstallFallbackColumnDropTargets(scroll, buttonData)
 
-    local heading = AceGUI:Create("Heading")
-    heading:SetText("Item Fallbacks")
-    ColorHeading(heading)
-    heading:SetFullWidth(true)
-    InstallFallbackDropScript(heading.frame, buttonData)
-    scroll:AddChild(heading)
+    local heading, collapsed, collapseBtn =
+        BuildCollapsibleSection(scroll, "Item Fallbacks", ItemFallbacksCollapseKey())
 
-    local infoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
+    local infoBtn = CreateInfoButton(heading.frame, collapseBtn, "LEFT", "RIGHT", 2, 0, {
         "Item Fallbacks",
         {"Use arrows to set item priority.", 1, 1, 1, true},
         {"If a higher-priority item is unavailable, the next available fallback can appear instead.", 1, 1, 1, true},
@@ -1085,6 +1029,8 @@ local function BuildItemFallbacksTab(scroll, buttonData, infoButtons)
     heading.right:ClearAllPoints()
     heading.right:SetPoint("RIGHT", heading.frame, "RIGHT", -3, 0)
     heading.right:SetPoint("LEFT", infoBtn, "RIGHT", 4, 0)
+
+    if collapsed then return end
 
     local primaryID = tonumber(buttonData.id)
     CreateFallbackItemRow(scroll, buttonData, primaryID, 0, true)
@@ -1127,8 +1073,6 @@ local function BuildItemFallbacksTab(scroll, buttonData, infoButtons)
     if addBox.editbox and addBox.editbox.Instructions then
         addBox.editbox.Instructions:Hide()
     end
-    InstallFallbackDropScript(addBox.frame, buttonData)
-    InstallFallbackDropScript(addBox.editbox, buttonData)
     if CS.SetupAutocompleteKeyHandler then
         CS.SetupAutocompleteKeyHandler(addBox)
     end
@@ -1183,36 +1127,10 @@ local function RefreshButtonSettingsColumn()
         end
     end
 
-    if multiCount >= 2 then
-        -- Multiselect: hide tabs and placeholder, show dedicated scroll
-        bsCol.bsTabGroup.frame:Hide()
-        if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
-
-        if not bsCol.multiSelectScroll then
-            local scroll = AceGUI:Create("ScrollFrame")
-            scroll:SetLayout("List")
-            scroll.frame:SetParent(bsCol.content)
-            scroll.frame:ClearAllPoints()
-            scroll.frame:SetPoint("TOPLEFT", bsCol.content, "TOPLEFT", 0, 0)
-            scroll.frame:SetPoint("BOTTOMRIGHT", bsCol.content, "BOTTOMRIGHT", 0, 0)
-            bsCol.multiSelectScroll = scroll
-        end
-        bsCol.multiSelectScroll:ReleaseChildren()
-        bsCol.multiSelectScroll.frame:Show()
-        local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-        local uniformType = group and GetMultiSelectUniformType(group, multiIndices) or nil
-        RefreshButtonSettingsMultiSelect(bsCol.multiSelectScroll, multiCount, multiIndices, uniformType)
-        return
-    end
-
-    -- Hide multiselect scroll when not in multiselect mode
-    if bsCol.multiSelectScroll then
-        bsCol.multiSelectScroll.frame:Hide()
-    end
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
 
     -- Check if a valid single button is selected
     local hasSelection = false
-    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local rotationAssistantSelection = group
         and CooldownCompanion:IsRotationAssistantGroup(group)
         and CS.selectedRotationAssistantEntry == true
@@ -1224,43 +1142,77 @@ local function RefreshButtonSettingsColumn()
         end
     end
 
-    if hasSelection then
+    -- The entry cluster of the unified row: one tab for a multi-select,
+    -- this entry's tab set for a single selection, nothing at all when the
+    -- selection went away.
+    local entryTabs, activeTab
+    if multiCount >= 2 and group then
+        entryTabs = BuildEntryMultiSelectTabs(group, multiCount, multiIndices)
+        activeTab = "multiselect"
+    elseif hasSelection then
         local buttonData = group and group.buttons and group.buttons[CS.selectedButton]
-        bsCol.bsTabGroup:SetTabs(BuildButtonSettingsTabs(group, buttonData))
-        local isEquipmentSlot = CooldownCompanion.IsEquipmentSlotEntry
-            and CooldownCompanion.IsEquipmentSlotEntry(buttonData)
 
         if rotationAssistantSelection then
             CS.buttonSettingsTab = "loadconditions"
+        elseif CS.buttonSettingsTab == "soundalerts" or CS.buttonSettingsTab == "fallbacks" then
+            -- Both are sections of Settings now; migrate saved tab keys.
+            CS.buttonSettingsTab = "settings"
         elseif GroupUsesTriggerPanelEntries(group)
             and CS.buttonSettingsTab ~= "settings"
-            and CS.buttonSettingsTab ~= "loadconditions"
-            and (CS.buttonSettingsTab ~= "soundalerts" or isEquipmentSlot) then
+            and CS.buttonSettingsTab ~= "loadconditions" then
             CS.buttonSettingsTab = "settings"
         elseif GroupUsesTexturePanelEntries(group) and CS.buttonSettingsTab == "overrides" then
             CS.buttonSettingsTab = "settings"
-        elseif isEquipmentSlot
-            and (CS.buttonSettingsTab == "soundalerts" or CS.buttonSettingsTab == "fallbacks") then
-            CS.buttonSettingsTab = "settings"
-        elseif buttonData and buttonData.type == "item" and CS.buttonSettingsTab == "soundalerts" then
-            CS.buttonSettingsTab = "fallbacks"
-        elseif buttonData and buttonData.type ~= "item" and CS.buttonSettingsTab == "fallbacks" then
-            CS.buttonSettingsTab = "soundalerts"
         elseif CS.buttonSettingsTab == "aura" and not EntryOffersAuraTab(group, buttonData) then
             CS.buttonSettingsTab = "settings"
         end
 
-        if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
-        bsCol.bsTabGroup.frame:Show()
-        bsCol.bsTabGroup:SelectTab(CS.buttonSettingsTab or (rotationAssistantSelection and "loadconditions" or "settings"))
-    else
+        entryTabs = DecorateEntryTabs(
+            BuildButtonSettingsTabs(group, buttonData),
+            GetSelectedEntryIconMarkup(group, buttonData)
+        )
+        activeTab = CS.buttonSettingsTab or (rotationAssistantSelection and "loadconditions" or "settings")
+    end
+
+    if not entryTabs then
         bsCol.bsTabGroup.frame:Hide()
         if bsCol.bsPlaceholder then
-            local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
             bsCol.bsPlaceholder:SetText(GroupUsesTriggerPanelEntries(group) and "Select an entry to configure" or "Select a spell or item to configure")
             bsCol.bsPlaceholder:Show()
         end
+        ST._UnifiedRowApply()
+        return
     end
+
+    if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
+    -- Shown before the tabs are built so the row lays out against its final
+    -- state in one pass.
+    bsCol.bsTabGroup.frame:Show()
+    bsCol.bsTabGroup:SetTabs(entryTabs)
+
+    -- A panel tab is showing its own content: the entry keeps its place in
+    -- the row and its remembered tab, but selecting it here would pull the
+    -- surface back to entry scope.
+    if not ST._UnifiedRowPrimaryOwnsSurface() then
+        bsCol.bsTabGroup:SelectTab(activeTab)
+    end
+    ST._UnifiedRowApply()
+end
+
+-- Content for the appended multi-select tab (the batch surface that used to
+-- take the whole settings area over).
+function ST._BuildEntryMultiSelectTab(scroll)
+    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not group then return end
+
+    local multiCount, multiIndices = 0, {}
+    for index in pairs(CS.selectedButtons) do
+        multiCount = multiCount + 1
+        multiIndices[#multiIndices + 1] = index
+    end
+    if multiCount < 2 then return end
+
+    RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, GetMultiSelectUniformType(group, multiIndices))
 end
 
 local function ConfigureInlineEditBoxInstructions(editBoxWidget, placeholderText, currentValue)
@@ -1364,13 +1316,12 @@ end
 -- Expose for Config.lua
 ST._BuildItemSettings = BuildItemSettings
 ST._BuildEquipItemSettings = BuildEquipItemSettings
-ST._BuildItemFallbacksTab = BuildItemFallbacksTab
+ST._BuildItemFallbacksSection = BuildItemFallbacksSection
 ST._RefreshButtonSettingsColumn = RefreshButtonSettingsColumn
 ST._RefreshButtonSettingsMultiSelect = RefreshButtonSettingsMultiSelect
 ST._RefreshPanelMultiSelect = RefreshPanelMultiSelect
 ST._BuildCustomNameSection = BuildCustomNameSection
 ST._BuildCustomKeybindSection = BuildCustomKeybindSection
 ST._BuildOverridesTab = BuildOverridesTab
-ST._BuildSpellSoundAlertsTab = BuildSpellSoundAlertsTab
-ST._BuildTriggerPanelSoundAlertsTab = BuildTriggerPanelSoundAlertsTab
+ST._BuildEntrySoundAlertsSection = BuildEntrySoundAlertsSection
 ST._BuildTriggerConditionSettings = BuildTriggerConditionSettings

@@ -1908,7 +1908,11 @@ end
 ------------------------------------------------------------------------
 -- PER-BUTTON VISIBILITY SETTINGS
 ------------------------------------------------------------------------
-local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchContext)
+-- insertBeforeTalents: optional callback run between the Visibility Rules and
+-- Talent Conditions sections. Talent Conditions is the last section of the
+-- entry Settings tab by owner ruling, so everything the caller wants above it
+-- goes through here rather than after the call.
+local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchContext, insertBeforeTalents)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local isTexturePanel = group.displayMode == "textures"
@@ -2524,6 +2528,10 @@ local function BuildVisibilitySettings(scroll, buttonData, infoButtons, batchCon
 
 
     end -- not visCollapsed
+
+    if insertBeforeTalents then
+        insertBeforeTalents()
+    end
 
     ------------------------------------------------------------------------
     -- TALENT CONDITIONS (independent section, not nested under Visibility Rules)
