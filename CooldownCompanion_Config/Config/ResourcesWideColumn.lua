@@ -261,6 +261,18 @@ local function BuildCastIntroLinks(currentItem)
     return links
 end
 
+-- Attached-bar tabs join the unified tab row beside the panel tabs, so they
+-- carry the same accent tint the entry cluster does: `text` is what the tab
+-- measures against and what the selected one shows, `accentText` is what
+-- the rest wear while the row is shared. UnifiedTabRow drops the tint when
+-- the strip owns the whole row (the Resources and Cast Bar homes).
+local function AddTabAccent(tabs)
+    for _, tab in ipairs(tabs) do
+        tab.accentText = ST._GetClassColoredText(tab.text)
+    end
+    return tabs
+end
+
 local function GetCustomBarEntryTabs(entry)
     local tabs = {
         { value = "appearance", text = "Appearance" },
@@ -268,7 +280,7 @@ local function GetCustomBarEntryTabs(entry)
 
     tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
     tabs[#tabs + 1] = { value = "loadconditions", text = "Load Conditions" }
-    return tabs
+    return AddTabAccent(tabs)
 end
 
 local function IsCustomBarEntryTabAllowed(entry, tab)
@@ -288,13 +300,16 @@ local function GetResourceSettingsDetailScrollKey()
     return tostring(CS.selectedResourcePowerType) .. ":" .. tostring(CS.resourceSettingsSpecID)
 end
 
+-- Returns the plain label and its accent-tinted twin; the spec icon stays
+-- outside the colour escape.
 local function GetResourceSettingsSpecTabText(info, specID)
     local specName = (info and info.name) or tostring(specID)
     local icon = info and info.icon
+    local prefix = ""
     if icon and icon ~= "" then
-        return string.format("|T%s:13:13:0:0|t %s", tostring(icon), specName)
+        prefix = string.format("|T%s:13:13:0:0|t ", tostring(icon))
     end
-    return specName
+    return prefix .. specName, prefix .. ST._GetClassColoredText(specName)
 end
 
 local function GetResourceSettingsSpecTabs(powerType)
@@ -307,9 +322,11 @@ local function GetResourceSettingsSpecTabs(powerType)
     local tabs = {}
     for _, specID in ipairs(RBP.GetResourceApplicableSpecIDs(powerType) or {}) do
         local info = specInfoByID and specInfoByID[specID] or nil
+        local text, accentText = GetResourceSettingsSpecTabText(info, specID)
         tabs[#tabs + 1] = {
             value = tostring(specID),
-            text = GetResourceSettingsSpecTabText(info, specID),
+            text = text,
+            accentText = accentText,
         }
     end
     return tabs
@@ -527,6 +544,9 @@ local function ShowResourceSettingsPanel(col3)
         tabGroup:SetLayout("Fill")
         tabGroup.frame:SetParent(col3.content)
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+            -- Selecting a bar tab hands the settings surface to the bar;
+            -- any panel tabs sharing the row just go unselected.
+            ST._UnifiedRowSetScope("detail")
             SetConfigResourceSettingsSpecID(tab)
             widget:ReleaseChildren()
 
@@ -544,14 +564,26 @@ local function ShowResourceSettingsPanel(col3)
                 label:SetFullWidth(true)
                 scroll:AddChild(label)
             end
+
+            -- One selected tab across the whole row, and the panel strip
+            -- (if it shares the row) drops back to tabs-only.
+            ST._UnifiedRowApply()
         end)
+        ST._UnifiedRowInstallStrip(tabGroup, true)
         col3._resourceSettingsTabGroup = tabGroup
     end
 
     local tabGroup = col3._resourceSettingsTabGroup
     ST._AnchorButtonsContentFrame(col3, tabGroup.frame)
-    tabGroup:SetTabs(tabs)
     tabGroup.frame:Show()
+    tabGroup:SetTabs(tabs)
+
+    -- A panel tab is showing its own content: the bar keeps its place in
+    -- the row and stays selected, it just does not own the surface.
+    if ST._UnifiedRowPanelOwnsSurface() then
+        ST._UnifiedRowApply()
+        return true
+    end
 
     local savedOffset, savedScrollvalue
     local currentScrollKey = GetResourceSettingsDetailScrollKey()
@@ -564,6 +596,7 @@ local function ShowResourceSettingsPanel(col3)
     end
 
     tabGroup:SelectTab(tostring(CS.resourceSettingsSpecID))
+    ST._UnifiedRowApply()
 
     if savedOffset and col3._resourceSettingsDetailScroll then
         local state = col3._resourceSettingsDetailScroll.status or col3._resourceSettingsDetailScroll.localstatus
@@ -593,6 +626,9 @@ local function ShowCustomBarDetail(col3, selectedEntry)
         tabGroup:SetLayout("Fill")
         tabGroup.frame:SetParent(col3.content)
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+            -- Selecting a bar tab hands the settings surface to the bar;
+            -- any panel tabs sharing the row just go unselected.
+            ST._UnifiedRowSetScope("detail")
             SetConfigCustomBarSettingsTab(tab)
             ClearInfoButtons(CS.customBarInfoButtons)
             widget:ReleaseChildren()
@@ -603,14 +639,26 @@ local function ShowCustomBarDetail(col3, selectedEntry)
             col3._customBarsDetailScroll = scroll
             col3._customBarDetailScrollKey = GetCustomBarDetailScrollKey()
             ST._BuildCustomAuraBarPanel(scroll, CS.selectedCustomBarId, CS.customBarSettingsTab)
+
+            -- One selected tab across the whole row, and the panel strip
+            -- (if it shares the row) drops back to tabs-only.
+            ST._UnifiedRowApply()
         end)
+        ST._UnifiedRowInstallStrip(tabGroup, true)
         col3._customBarEntryTabGroup = tabGroup
     end
 
     local tabGroup = col3._customBarEntryTabGroup
     ST._AnchorButtonsContentFrame(col3, tabGroup.frame)
-    tabGroup:SetTabs(GetCustomBarEntryTabs(selectedEntry))
     tabGroup.frame:Show()
+    tabGroup:SetTabs(GetCustomBarEntryTabs(selectedEntry))
+
+    -- A panel tab is showing its own content: the bar keeps its place in
+    -- the row and stays selected, it just does not own the surface.
+    if ST._UnifiedRowPanelOwnsSurface() then
+        ST._UnifiedRowApply()
+        return
+    end
 
     local savedOffset, savedScrollvalue
     local currentScrollKey = GetCustomBarDetailScrollKey()
@@ -623,6 +671,7 @@ local function ShowCustomBarDetail(col3, selectedEntry)
     end
 
     tabGroup:SelectTab(CS.customBarSettingsTab or "appearance")
+    ST._UnifiedRowApply()
 
     if savedOffset and col3._customBarsDetailScroll then
         local state = col3._customBarsDetailScroll.status or col3._customBarsDetailScroll.localstatus
@@ -788,6 +837,9 @@ local function ShowCastBarSettings(col3)
         tabGroup:SetLayout("Fill")
         tabGroup.frame:SetParent(col3.content)
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+            -- Selecting a bar tab hands the settings surface to the bar;
+            -- any panel tabs sharing the row just go unselected.
+            ST._UnifiedRowSetScope("detail")
             CS.castBarHomeTab = tab
             -- Clean up info buttons from the previous tab before recycling widgets
             ClearInfoButtons(CS.tabInfoButtons)
@@ -804,23 +856,36 @@ local function ShowCastBarSettings(col3)
             elseif tab == "layout" then
                 ST._BuildCastBarPositioningPanel(scroll)
             end
+
+            -- One selected tab across the whole row, and the panel strip
+            -- (if it shares the row) drops back to tabs-only.
+            ST._UnifiedRowApply()
         end)
+        ST._UnifiedRowInstallStrip(tabGroup, true)
         col3._castBarHomeTabGroup = tabGroup
     end
 
     local tabGroup = col3._castBarHomeTabGroup
     ST._AnchorButtonsContentFrame(col3, tabGroup.frame)
-    tabGroup:SetTabs({
+    tabGroup.frame:Show()
+    tabGroup:SetTabs(AddTabAccent({
         { value = "general", text = "General" },
         { value = "appearance", text = "Appearance" },
         { value = "layout", text = "Layout" },
-    })
+    }))
 
     local tab = CS.castBarHomeTab
     if tab ~= "general" and tab ~= "appearance" and tab ~= "layout" then
         tab = "general"
     end
     CS.castBarHomeTab = tab
+
+    -- A panel tab is showing its own content: the cast bar keeps its place
+    -- in the row and stays selected, it just does not own the surface.
+    if ST._UnifiedRowPanelOwnsSurface() then
+        ST._UnifiedRowApply()
+        return
+    end
 
     -- Preserve scroll position across value-change refreshes
     local savedOffset, savedScrollvalue
@@ -833,8 +898,8 @@ local function ShowCastBarSettings(col3)
         end
     end
 
-    tabGroup.frame:Show()
     tabGroup:SelectTab(tab)
+    ST._UnifiedRowApply()
 
     if savedOffset and col3._castBarHomeScroll then
         local state = col3._castBarHomeScroll.status or col3._castBarHomeScroll.localstatus

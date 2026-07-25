@@ -1,29 +1,30 @@
 --[[
     CooldownCompanion - Config/UnifiedTabRow
-    One visual tab row spanning the two AceGUI TabGroups of the buttons
-    workspace: the panel-scope strip owned by GroupSettingsHost and the
-    entry-scope strip created in Panel.lua. The groups stay separate -
-    each keeps its own content pipeline, scroll restore and info-button
-    lifecycle - and only their tab strips are made to share a row.
+    One visual tab row across two AceGUI TabGroups: the panel-scope strip
+    owned by GroupSettingsHost on the left, and whichever detail strip is
+    up on the right - the entry tabs from Panel.lua, or one of the
+    attached-bar surfaces in ResourcesWideColumn. The groups stay separate,
+    each keeping its own content pipeline, scroll restore and info-button
+    lifecycle; only their tab strips are made to share a row.
 
-    Panel tabs are pinned to a single natural-width row on the left and
-    never reflow. Selecting an entry appends that entry's tabs after a
-    tab-width gap; they wrap inside whatever space is left. Exactly one
-    tab reads as selected across both strips, and only the scope that owns
-    the surface shows content, so a panel tab can be opened without
-    dropping the entry selection.
+    Selecting an entry or a bar appends its tabs to the right of the panel
+    tabs, pinned to the right edge so the clear space between the clusters
+    carries the resize; when they no longer fit, the row is split between
+    them and both wrap. Exactly one tab reads as selected across the row,
+    and only the scope that owns the surface shows content, so a panel tab
+    can be opened without dropping the entry or bar selection.
 ]]
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
--- The entry cluster is right-aligned, so the clear space between the two
+-- The detail cluster is right-aligned, so the clear space between the two
 -- clusters is normally whatever the window leaves over - it grows and
 -- shrinks as the window is resized. This is the floor: once the clusters
--- would be closer than this, the entry cluster stops tracking the right
--- edge and wraps instead. Delineation also carries the entry icon at the
--- cluster head and the accent tint (applied by the tab-text builders).
+-- would be closer than this, the row is split between them instead.
+-- Delineation also carries the entry icon at the cluster head (entry tabs)
+-- and the accent tint, both supplied by the tab-text builders.
 local MIN_CLUSTER_GAP = 40
 
 -- AceGUI BuildTabs geometry, mirrored here so the strips can be re-laid
@@ -72,9 +73,20 @@ local function GetPanelStrip()
     return tabGroup
 end
 
-local function GetEntryStrip()
-    local col3 = CS.configFrame and CS.configFrame.col3
-    return col3 and col3.bsTabGroup or nil
+-- Every strip that can take the right-hand slot registers here: the entry
+-- tabs and the attached-bar surfaces (resource, cast, custom). Only one is
+-- ever shown at a time - the workspace hides the others before showing the
+-- one it wants - so the detail cluster is simply whichever is up.
+local detailStrips = {}
+
+local function GetDetailStrip()
+    local panel = GetPanelStrip()
+    for _, tabGroup in ipairs(detailStrips) do
+        if tabGroup ~= panel and tabGroup.frame:IsShown() then
+            return tabGroup
+        end
+    end
+    return nil
 end
 
 local function GetStripRowCount(tabGroup)
@@ -126,13 +138,18 @@ end
 -- the tint and takes the standard highlight colour while its neighbours
 -- keep it. Written straight to the fontstring: tab:SetText would re-measure
 -- and resize the tab outside BuildTabs' padding pass.
-local function RefreshStripAccent(tabGroup)
+--
+-- The tint marks a cluster as the second one in the row, so it is only
+-- worn when there is a first cluster to be told apart from: a strip that
+-- owns the whole row (the Resources and Cast Bar homes, Other Class
+-- browsing) reads as plain tabs.
+local function RefreshStripAccent(tabGroup, tinted)
     local tablist = tabGroup.tablist
     if not tablist then return end
     for index, entry in ipairs(tablist) do
         local tab = tabGroup.tabs[index]
         if tab and entry.accentText then
-            tab.Text:SetText(tab.selected and entry.text or entry.accentText)
+            tab.Text:SetText((tinted and not tab.selected) and entry.accentText or entry.text)
         end
     end
 end
@@ -154,7 +171,6 @@ local ApplyUnifiedRow
 
 local function FinishStrip(tabGroup)
     CaptureStripAnchors(tabGroup)
-    RefreshStripAccent(tabGroup)
     tabGroup._cdcRowCount = GetStripRowCount(tabGroup)
 end
 
@@ -164,8 +180,7 @@ end
 -- different assumptions.
 local function LayoutUnifiedRow(trigger)
     local panel = GetPanelStrip()
-    local entry = GetEntryStrip()
-    if entry and not entry.frame:IsShown() then entry = nil end
+    local detail = GetDetailStrip()
 
     local full = 0
     if panel then
@@ -173,47 +188,47 @@ local function LayoutUnifiedRow(trigger)
         panel._cdcStripOffset = 0
         full = panel.frame:GetWidth() or 0
     end
-    if entry then
-        BuildStrip(entry, NATURAL_STRIP_BUDGET)
-        entry._cdcStripOffset = 0
-        full = math.max(full, entry.frame:GetWidth() or 0)
+    if detail then
+        BuildStrip(detail, NATURAL_STRIP_BUDGET)
+        detail._cdcStripOffset = 0
+        full = math.max(full, detail.frame:GetWidth() or 0)
     end
 
     local panelWidth = panel and MeasureStripWidth(panel) or 0
-    local entryWidth = entry and MeasureStripWidth(entry) or 0
+    local detailWidth = detail and MeasureStripWidth(detail) or 0
 
-    if panelWidth > 0 and entryWidth > 0 then
-        if panelWidth + MIN_CLUSTER_GAP + entryWidth <= full then
+    if panelWidth > 0 and detailWidth > 0 then
+        if panelWidth + MIN_CLUSTER_GAP + detailWidth <= full then
             -- Both clusters fit side by side: panel tabs stay put on the
-            -- left and the entry cluster is pinned to the right edge, so
+            -- left and the detail cluster is pinned to the right edge, so
             -- the clear space between them carries the resize.
-            entry._cdcStripOffset = full - entryWidth
+            detail._cdcStripOffset = full - detailWidth
         else
             -- Too tight for one row. Split the row between the clusters in
             -- proportion to their natural widths so they wrap by the same
-            -- amount and the stack stays balanced, instead of the entry
-            -- cluster absorbing all of it.
+            -- amount and the stack stays balanced, instead of one of them
+            -- absorbing all of it.
             local available = math.max(MIN_STRIP_WIDTH * 2, full - MIN_CLUSTER_GAP)
-            local panelShare = math.floor(available * panelWidth / (panelWidth + entryWidth))
+            local panelShare = math.floor(available * panelWidth / (panelWidth + detailWidth))
             panelShare = math.max(MIN_STRIP_WIDTH, panelShare)
-            local entryShare = math.max(MIN_STRIP_WIDTH, available - panelShare)
+            local detailShare = math.max(MIN_STRIP_WIDTH, available - panelShare)
             BuildStrip(panel, panelShare)
-            BuildStrip(entry, entryShare)
-            entry._cdcStripOffset = panelShare + MIN_CLUSTER_GAP
+            BuildStrip(detail, detailShare)
+            detail._cdcStripOffset = panelShare + MIN_CLUSTER_GAP
         end
-    elseif entryWidth > full and full > 0 then
-        -- Entry cluster alone (Other Class browsing hides the panel tabs)
-        -- and wider than the row.
-        BuildStrip(entry, full)
+    elseif detailWidth > full and full > 0 then
+        -- Detail cluster alone (the Resources and Cast Bar homes, Other
+        -- Class browsing) and wider than the row.
+        BuildStrip(detail, full)
     elseif panelWidth > full and full > 0 then
         BuildStrip(panel, full)
     end
 
     if panel then FinishStrip(panel) end
-    if entry then FinishStrip(entry) end
+    if detail then FinishStrip(detail) end
     ApplyUnifiedRow()
 
-    return trigger == panel or trigger == entry
+    return trigger == panel or trigger == detail
 end
 
 -- Wraps the widget's own BuildTabs so every rebuild - SetTabs, a window
@@ -221,9 +236,12 @@ end
 -- whole row, and so a rebuild that changes the row count takes both
 -- content panes with it.
 local laying = false
-local function InstallStripLayout(tabGroup)
+local function InstallStripLayout(tabGroup, isDetailStrip)
     if not tabGroup or tabGroup._cdcUnifiedStrip then return end
     tabGroup._cdcUnifiedStrip = true
+    if isDetailStrip then
+        detailStrips[#detailStrips + 1] = tabGroup
+    end
 
     tabGroup._cdcBaseBuildTabs = tabGroup.BuildTabs
     tabGroup.BuildTabs = function(self)
@@ -243,6 +261,7 @@ local function InstallStripLayout(tabGroup)
             BuildStrip(self, NATURAL_STRIP_BUDGET)
             FinishStrip(self)
             PlaceStrip(self)
+            RefreshStripAccent(self, false)
         end
         laying = false
     end
@@ -252,15 +271,23 @@ end
 -- Scope: which strip owns the settings surface
 ------------------------------------------------------------------------
 
--- The remembered scope only means anything while an entry is selected;
--- with no entry cluster in the row the panel strip always owns the
--- surface.
+-- The remembered scope only means anything while a detail cluster (an
+-- entry, an entry multi-select, or an attached bar) is in the row; with
+-- only panel tabs there, the panel strip always owns the surface.
 local function GetScope()
-    return CS.unifiedRowScope == "panel" and "panel" or "entry"
+    return CS.unifiedRowScope == "panel" and "panel" or "detail"
 end
 
 local function SetScope(scope)
-    CS.unifiedRowScope = (scope == "panel") and "panel" or "entry"
+    CS.unifiedRowScope = (scope == "panel") and "panel" or "detail"
+end
+
+-- Asked by the detail surfaces before they select a tab: panel scope only
+-- means anything where there are panel tabs to have selected. A stale
+-- "panel" carried into the Resources home or Other Class browsing must not
+-- leave that workspace with nothing showing.
+local function PanelOwnsSurface()
+    return GetScope() == "panel" and GetPanelStrip() ~= nil
 end
 
 local function SetStripActive(tabGroup, active)
@@ -292,31 +319,31 @@ function ApplyUnifiedRow()
     applying = true
 
     local panel = GetPanelStrip()
-    local entry = GetEntryStrip()
-    local entryShown = entry and entry.frame:IsShown() or false
+    local detail = GetDetailStrip()
 
     local rows = 1
-    if entryShown then
-        rows = math.max(rows, entry._cdcRowCount or 1)
+    if detail then
+        rows = math.max(rows, detail._cdcRowCount or 1)
     end
     ApplyRowCount(panel, rows)
-    ApplyRowCount(entry, rows)
+    ApplyRowCount(detail, rows)
 
-    local scope = entryShown and GetScope() or "panel"
-    if scope == "panel" and not panel and entryShown then
-        -- No panel strip in the row (Other Class browsing hides it): the
-        -- entry cluster is the only thing that can own the surface.
-        scope = "entry"
+    -- With a detail cluster in the row the remembered scope decides; with
+    -- only panel tabs there, they own the surface by default.
+    local panelActive
+    if detail then
+        panelActive = PanelOwnsSurface()
+    else
+        panelActive = panel ~= nil
     end
-    SetStripActive(panel, scope == "panel")
-    if entry then
-        SetStripActive(entry, entryShown and scope == "entry")
-    end
+    SetStripActive(panel, panelActive)
+    SetStripActive(detail, not panelActive)
 
     -- Last: selection has settled across both strips, so the tint can be
-    -- lifted off whichever tab now reads as selected.
-    if panel then RefreshStripAccent(panel) end
-    if entry then RefreshStripAccent(entry) end
+    -- lifted off whichever tab now reads as selected. Only the detail
+    -- cluster wears it, and only while it shares the row.
+    if panel then RefreshStripAccent(panel, false) end
+    if detail then RefreshStripAccent(detail, panel ~= nil) end
 
     applying = false
 end
@@ -324,9 +351,10 @@ end
 ------------------------------------------------------------------------
 -- ST._ exports
 ------------------------------------------------------------------------
--- Both strips install the same layout: which cluster a strip is comes from
--- where it sits in the row, not from how it was registered.
+-- Every strip installs the same layout; pass true for the ones that can
+-- take the right-hand slot (entry tabs, attached-bar surfaces).
 ST._UnifiedRowInstallStrip = InstallStripLayout
 ST._UnifiedRowGetScope = GetScope
 ST._UnifiedRowSetScope = SetScope
+ST._UnifiedRowPanelOwnsSurface = PanelOwnsSurface
 ST._UnifiedRowApply = ApplyUnifiedRow

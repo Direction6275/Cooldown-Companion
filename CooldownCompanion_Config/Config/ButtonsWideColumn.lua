@@ -1774,11 +1774,24 @@ local function RefreshButtonsWideColumn()
     local unifiedBarKind = not browse and GetValidatedUnifiedBarKind() or nil
     if unifiedBarKind then
         HideEntrySurfaces(col3)
-        if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
         UpdatePanelPreview(col3)
         UpdateAddBox(col3)
         UpdateEditingContext(col3)
         ReapplyPanelPreviewSplit()
+
+        -- The bar's tabs join the panel tabs in the row, same as an entry's:
+        -- panel tabs first, since the bar strip is offset by their width.
+        -- Without a selected panel there is no panel scope to offer, so the
+        -- bar keeps the row to itself.
+        if CS.selectedGroup then
+            local host = EnsureGroupSettingsHost(col3)
+            AnchorButtonsContentFrame(col3, host)
+            host:Show()
+            ST._RefreshGroupSettingsHost(host, nil, ST._UnifiedRowGetScope() ~= "panel")
+        elseif col3.groupSettingsHost then
+            col3.groupSettingsHost:Hide()
+        end
+
         local shown = false
         if unifiedBarKind == "resource" then
             shown = ST._ShowResourceSettingsSurface
@@ -1823,7 +1836,7 @@ local function RefreshButtonsWideColumn()
             -- Other Class browsing has no panel-settings surface to offer,
             -- so the entry cluster owns the whole row.
             if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
-            ST._UnifiedRowSetScope("entry")
+            ST._UnifiedRowSetScope("detail")
         else
             local host = EnsureGroupSettingsHost(col3)
             AnchorButtonsContentFrame(col3, host)

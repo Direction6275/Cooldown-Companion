@@ -1840,8 +1840,8 @@ local function CreateConfigPanel()
         local tabChanged = previousTab ~= nil and previousTab ~= tab
         -- Selecting an entry tab hands the settings surface back to entry
         -- scope; the panel tabs stay in the row, just unselected.
-        local scopeChanged = ST._UnifiedRowGetScope() ~= "entry"
-        ST._UnifiedRowSetScope("entry")
+        local scopeChanged = ST._UnifiedRowGetScope() ~= "detail"
+        ST._UnifiedRowSetScope("detail")
         col3._activeButtonSettingsTab = tab
         if tab ~= "multiselect" then
             CS.buttonSettingsTab = tab
@@ -1937,9 +1937,9 @@ local function CreateConfigPanel()
     bsTabGroup.frame:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
     bsTabGroup.frame:Hide()
 
-    -- Entry tabs are the right cluster of the unified tab row: offset past
-    -- the panel tabs and laid out against the space they leave.
-    ST._UnifiedRowInstallStrip(bsTabGroup)
+    -- Entry tabs are one of the right-hand clusters of the unified tab row:
+    -- offset past the panel tabs and laid out against the space they leave.
+    ST._UnifiedRowInstallStrip(bsTabGroup, true)
 
     col3.bsTabGroup = bsTabGroup
 

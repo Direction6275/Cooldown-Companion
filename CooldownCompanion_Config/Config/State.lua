@@ -203,10 +203,11 @@ ST._configState = {
     selectedContainerTab = "general",
     buttonSettingsTab = "settings",
     panelSettingsTab = "appearance",
-    -- Which half of the unified tab row owns the settings surface while an
-    -- entry is selected: "entry" (the default - selecting an entry zooms
-    -- into it) or "panel" (a panel tab was opened without deselecting).
-    unifiedRowScope = "entry",
+    -- Which half of the unified tab row owns the settings surface while a
+    -- detail cluster (entry, entry multi-select, attached bar) is in it:
+    -- "detail" (the default - selecting one zooms into it) or "panel" (a
+    -- panel tab was opened without dropping that selection).
+    unifiedRowScope = "detail",
     newInput = "",
     tutorialAnchors = {},
     tutorialFrame = nil,
@@ -2833,7 +2834,7 @@ end
 local function SelectConfigButton(panelId, buttonIndex, opts)
     -- Selecting an entry always jumps to its cluster in the tab row, even
     -- if a panel tab was the last thing shown.
-    CS.unifiedRowScope = "entry"
+    CS.unifiedRowScope = "detail"
     local panelChanged = CS.selectedGroup ~= panelId
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
@@ -2892,7 +2893,7 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     CS.unifiedBarKind = nil
     wipe(CS.selectedButtons)
     CS.buttonSettingsTab = "loadconditions"
-    CS.unifiedRowScope = "entry"
+    CS.unifiedRowScope = "detail"
     CooldownCompanion:ClearAllConfigPreviews()
     RefreshAlphaDriverForConfigSelection()
 end
@@ -3081,7 +3082,10 @@ local function SelectUnifiedAnchorBar(slot)
         return false
     end
 
-    -- The bar's settings own the settings area; entry selection ends.
+    -- The bar's settings own the settings area; entry selection ends. Like
+    -- selecting an entry, this jumps to the bar's own tabs even if a panel
+    -- tab was the last thing shown.
+    CS.unifiedRowScope = "detail"
     ClearSelectedButton()
     return true
 end
