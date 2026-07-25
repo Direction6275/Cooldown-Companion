@@ -40,7 +40,6 @@ local BuildBarReadyTextControls = ST._BuildBarReadyTextControls
 local BuildTextFontControls = ST._BuildTextFontControls
 local BuildTextColorsControls = ST._BuildTextColorsControls
 local BuildTextBackgroundControls = ST._BuildTextBackgroundControls
-local AddPreviewToggleButton = ST._AddPreviewToggleButton
 local AddConditionalPreviewButton = ST._AddConditionalPreviewButton
 
 local function GetHiddenOverrideReasonText(reason)
@@ -103,40 +102,18 @@ local function PrimeSelectedReadyGlowNormalTransition(groupId, buttonIndex)
     button._readyGlowStartTime = GetTime()
 end
 
+-- Sections that still open a preview popout. The glow/indicator toggles
+-- and the cooldown / unusable / out-of-range states moved to the preview
+-- command center on the Live Preview surface (one home per preview), so
+-- only the fine-grained previews with no command-center equivalent are
+-- left here.
 local PREVIEWABLE_OVERRIDE_SECTIONS = {
-    cooldownText = true,
     auraText = true,
     auraStackText = true,
     chargeText = true,
-    cooldownSwipe = true,
     auraDurationSwipe = true,
     lossOfControl = true,
-    iconFillTimer = true,
-    desaturation = true,
-    showOutOfRange = true,
-    unusableDimming = true,
-    iconTint = true,
-    procGlow = true,
-    auraIndicator = true,
-    readyGlow = true,
-    barActiveAura = true,
 }
-
-local function AddSelectedButtonPreviewToggle(container, label, previewFlag, setPreviewFn)
-    if not AddPreviewToggleButton then
-        return
-    end
-
-    AddPreviewToggleButton(container, label, function()
-        return CS.selectedGroup
-            and CS.selectedButton
-            and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, CS.selectedButton, previewFlag)
-    end, function(show)
-        if CS.selectedGroup and CS.selectedButton then
-            setPreviewFn(CooldownCompanion, CS.selectedGroup, CS.selectedButton, show)
-        end
-    end)
-end
 
 local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
     local fmtHeading = AceGUI:Create("Heading")
@@ -145,22 +122,9 @@ local function AddTextOverrideSection(scroll, buttonData, group, infoButtons)
     fmtHeading:SetFullWidth(true)
     scroll:AddChild(fmtHeading)
 
-    local function BuildFormatOverridePreviewAdvanced(panel)
-        if AddConditionalPreviewButton then
-            local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
-            AddConditionalPreviewButton(panel, "Preview Cooldown State", "cooldown", target)
-            AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable", target)
-            AddConditionalPreviewButton(panel, "Preview Out of Range State", "out_of_range", target)
-        end
-    end
-
-    local _, fmtPreviewAdvBtn = AddAdvancedToggle(fmtHeading, "buttonTextFormatPreview", infoButtons, nil, {
-        title = "Format Override Advanced",
-        build = BuildFormatOverridePreviewAdvanced,
-    })
-    fmtPreviewAdvBtn:SetPoint("LEFT", fmtHeading.label, "RIGHT", 4, 0)
-
-    local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtPreviewAdvBtn, "LEFT", "RIGHT", 4, 0, {
+    -- The cooldown / unusable / out-of-range previews this heading used to
+    -- open now live on the preview command center.
+    local fmtInfo = CreateInfoButton(fmtHeading.frame, fmtHeading.label, "LEFT", "RIGHT", 4, 0, {
         {"Per-Button Format Override", 1, 0.82, 0, true},
         " ",
         {"Overrides the group format string for this button only.", 1, 1, 1},
@@ -442,21 +406,9 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                 if PREVIEWABLE_OVERRIDE_SECTIONS[sectionId] then
                     local previewAdvBtn
                     local function BuildOverridePreviewAdvanced(panel)
-                        if sectionId == "procGlow" and overrides.procGlowStyle ~= "none" then
-                            AddSelectedButtonPreviewToggle(panel, "Preview Proc Glow", "_procGlowPreview", CooldownCompanion.SetProcGlowPreview)
-                        elseif sectionId == "auraIndicator" and overrides.auraGlowStyle ~= "none" then
-                            AddSelectedButtonPreviewToggle(panel, "Preview Aura Glow", "_auraGlowPreview", CooldownCompanion.SetAuraGlowPreview)
-                        elseif sectionId == "readyGlow" and overrides.readyGlowStyle and overrides.readyGlowStyle ~= "none" then
-                            AddSelectedButtonPreviewToggle(panel, "Preview Ready Glow Style", "_readyGlowPreview", CooldownCompanion.SetReadyGlowPreview)
-                        elseif sectionId == "barActiveAura" then
-                            AddSelectedButtonPreviewToggle(panel, "Preview Active Aura Indicator", "_barAuraEffectPreview", CooldownCompanion.SetBarAuraEffectPreview)
-                        end
-
                         if AddConditionalPreviewButton then
                             local target = { buttonIndex = function() return CS.selectedButton end, requireButton = true }
-                            if sectionId == "cooldownText" or sectionId == "cooldownSwipe" or sectionId == "desaturation" then
-                                AddConditionalPreviewButton(panel, "Preview Cooldown State", "cooldown", target)
-                            elseif sectionId == "auraText" then
+                            if sectionId == "auraText" then
                                 AddConditionalPreviewButton(panel, "Preview Aura Duration Text", "aura_duration_text", target)
                             elseif sectionId == "auraStackText" then
                                 AddConditionalPreviewButton(panel, "Preview Aura Stack Text", "aura_stack_text", target)
@@ -468,16 +420,6 @@ function ST._BuildOverridesTab(scroll, buttonData, infoButtons)
                                 AddConditionalPreviewButton(panel, "Preview Aura Duration Swipe", "aura_duration_swipe", target)
                             elseif sectionId == "lossOfControl" then
                                 AddConditionalPreviewButton(panel, "Preview Loss of Control", "loss_of_control", target)
-                            elseif sectionId == "iconFillTimer" and overrides.iconFillEnabled == true and group.masqueEnabled ~= true then
-                                AddConditionalPreviewButton(panel, "Preview Cooldown Fill", "cooldown", target)
-                            elseif sectionId == "showOutOfRange" then
-                                AddConditionalPreviewButton(panel, "Preview Out of Range State", "out_of_range", target)
-                            elseif sectionId == "unusableDimming" then
-                                AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable", target)
-                            elseif sectionId == "iconTint" then
-                                AddConditionalPreviewButton(panel, "Preview Cooldown Tint", "cooldown", target)
-                                AddConditionalPreviewButton(panel, "Preview Unusable State", "unusable", target)
-                                AddConditionalPreviewButton(panel, "Preview Out of Range Tint", "out_of_range", target)
                             end
                         end
                     end

@@ -23,7 +23,6 @@ local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 local ColorHeading = ST._ColorHeading
-local AddPreviewBadge = ST._AddPreviewBadge
 
 -- Imports from SectionBuilders.lua
 local BuildLossOfControlControls = ST._BuildLossOfControlControls
@@ -373,8 +372,7 @@ local function BuildBarAppearanceTab(container, group, style)
         title = "Cooldown Text Advanced",
         build = BuildBarCooldownTextAdvanced,
     })
-    local timePromoteBtn = CreateCheckboxPromoteButton(showTimeCbBasic, timeAdvBtn, "cooldownText", group, style)
-    AddConditionalPreviewBadge(showTimeCbBasic, timePromoteBtn or timeAdvBtn, "Preview Cooldown Text", "cooldown", style.showCooldownText)
+    CreateCheckboxPromoteButton(showTimeCbBasic, timeAdvBtn, "cooldownText", group, style)
 
     -- Show Charge Text toggle
     local chargeTextCb = AceGUI:Create("CheckBox")
@@ -512,14 +510,7 @@ local function BuildBarActiveAuraSection(container, group, style, setWidth)
         build = BuildBarActiveAuraAdvanced,
     })
     local aaiPromoteBtn = CreateCheckboxPromoteButton(enableCb, aaiAdvBtn, "barActiveAura", group, style)
-    local aaiPreviewBtn = AddPreviewBadge(enableCb, aaiPromoteBtn or aaiAdvBtn, "Preview Active Aura Indicator", function()
-        return CS.selectedGroup and CooldownCompanion:IsPreviewFlagActive(CS.selectedGroup, nil, "_barAuraEffectPreview")
-    end, function(show)
-        if CS.selectedGroup then
-            CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, show)
-        end
-    end, indicatorOn)
-    CreateInfoButton(enableCb.frame, aaiPreviewBtn or aaiPromoteBtn or aaiAdvBtn, "LEFT", "RIGHT", 4, 0, {
+    CreateInfoButton(enableCb.frame, aaiPromoteBtn or aaiAdvBtn, "LEFT", "RIGHT", 4, 0, {
         "Active Aura Indicator",
         {"Adds a border effect to a bar while its tracked aura is active, with optional fill pulse and fill color shift. The preview shows the bar as if the aura were running.", 1, 1, 1, true},
     }, tabInfoButtons)
@@ -587,8 +578,7 @@ local function BuildBarEffectsTab(container, group, style)
             CooldownCompanion:RefreshConfigPanel()
         end)
         SetCompactWidth(unusableCb)
-        local unusablePromoteBtn = CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
-        AddConditionalPreviewBadge(unusableCb, unusablePromoteBtn or unusableAdvBtn, "Preview Unusable State", "unusable", style.showUnusable)
+        CreateCheckboxPromoteButton(unusableCb, unusableAdvBtn, "unusableDimming", group, style)
 
         local tooltipCb, tooltipAdvBtn = BuildShowTooltipsControls(container, style, function()
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
