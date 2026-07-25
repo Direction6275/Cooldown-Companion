@@ -1,34 +1,45 @@
 --[[
     CooldownCompanion - PreviewCommandCenter
-    The preview command center: a strip of preview toggles pinned to the
-    bottom of the buttons workspace's Live Preview surface, so the controls
-    that trigger a preview live where the preview is actually visible.
+    The preview command center: a chooser naming one preview state plus a
+    play/stop button, pinned to the bottom-left of the buttons workspace's
+    Live Preview surface, so the control that triggers a preview lives
+    where the preview is actually visible.
 
-    Scope follows the selection - with a single entry selected the toggles
-    preview that entry, with nothing (or a multi-select) they preview the
-    whole panel. Previews stay mutually exclusive across the whole config,
+    A chooser rather than a row of toggle badges (owner ruling 2026-07-25,
+    after seeing the row in game): exactly one preview can ever be live,
+    and a row of independently-clickable badges reads as "check any
+    combination" - the one thing the model does not allow. It also drops
+    the badge-soup problem and the need for a distinct glyph per state.
+
+    Scope follows the selection - with a single entry selected the preview
+    runs on that entry, with nothing (or a multi-select) on the whole
+    panel. Previews stay mutually exclusive across the whole config,
     exactly as the settings-side badges have always been.
 
-    The strip is a child of the preview host, so every path that hides the
+    The bar is a child of the preview host, so every path that hides the
     host (view switches, talent picker, texture browser, config close)
-    takes the strip with it - it is deliberately NOT a new col3 surface.
+    takes the bar with it - it is deliberately NOT a new col3 surface.
 ]]
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
-local STRIP_HEIGHT = 20
-local STRIP_BOTTOM_INSET = 3
-local BUTTON_SIZE = 18
-local ICON_SIZE = 13
-local BUTTON_SPACING = 6
-local STATUS_GAP = 10
-local PREVIEW_ATLAS = "CreditsScreen-Assets-Buttons-Play"
+local BAR_HEIGHT = 20
+local BAR_BOTTOM_INSET = 3
+local BAR_LEFT_INSET = 4
+local PLAY_SIZE = 18
+local PLAY_ICON_SIZE = 13
+local CHEVRON_SIZE = 10
+local LABEL_GAP = 3
+local PLAY_GAP = 6
+local PLAY_ATLAS = "CreditsScreen-Assets-Buttons-Play"
+local STOP_ATLAS = "CreditsScreen-Assets-Buttons-Pause"
+local CHEVRON_ATLAS = "uitools-icon-chevron-down"
 
--- Vertical band the strip claims inside the host. The preview renderers
+-- Vertical band the bar claims inside the host. The preview renderers
 -- read this off the host and keep their content above it.
-local STRIP_RESERVE = STRIP_HEIGHT + STRIP_BOTTOM_INSET
+local BAR_RESERVE = BAR_HEIGHT + BAR_BOTTOM_INSET
 
 ------------------------------------------------------------------------
 -- Preview state adapters
@@ -285,7 +296,7 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
 end
 
 ------------------------------------------------------------------------
--- Context: which panel the strip acts on, and whether a single selected
+-- Context: which panel the bar acts on, and whether a single selected
 -- entry narrows it. A multi-select keeps panel scope (the setters take
 -- one entry, and "nothing narrowed" is the ruled fallback).
 ------------------------------------------------------------------------
@@ -316,146 +327,189 @@ local function ResolveContext()
 end
 
 ------------------------------------------------------------------------
--- Strip frame
+-- Running a preview
+--
+-- Previews are mutually exclusive across the whole config, so starting
+-- one clears every other (including the settings-side badge highlight,
+-- which ClearAllConfigPreviews resets).
 ------------------------------------------------------------------------
 
-local function SetButtonActive(btn, active)
-    if not btn._activeHighlight then
-        local highlight = btn:CreateTexture(nil, "BACKGROUND")
-        highlight:SetPoint("TOPLEFT", -1, 1)
-        highlight:SetPoint("BOTTOMRIGHT", 1, -1)
-        highlight:SetColorTexture(0.85, 0.65, 0.0, 0.6)
-        highlight:Hide()
-        btn._activeHighlight = highlight
+local function SetPreviewRunning(control, panelId, buttonIndex, show)
+    if show then
+        if CooldownCompanion.ClearAllConfigPreviews then
+            CooldownCompanion:ClearAllConfigPreviews()
+        end
+    elseif ST._ClearActivePreviewBadgeButton then
+        ST._ClearActivePreviewBadgeButton()
     end
-    if active then
-        btn._activeHighlight:Show()
-        btn._icon:SetVertexColor(1, 0.82, 0, 1)
-    else
-        btn._activeHighlight:Hide()
-        btn._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
+    control.preview.SetActive(panelId, buttonIndex, show)
+
+    -- An open advanced popout can be showing "Preview: ON" for a preview
+    -- that was just cleared.
+    if ST._RefreshAdvancedSettingsPreviewButtons then
+        ST._RefreshAdvancedSettingsPreviewButtons()
+    end
+    -- Rebuilds the mirror, which re-runs the update below and repaints the
+    -- bar from live state.
+    if ST._RefreshButtonsPreviewMirror then
+        ST._RefreshButtonsPreviewMirror()
     end
 end
 
-local function EnsureStrip(host)
-    local strip = host._cdcPreviewCommandCenter
-    if strip then
-        return strip
+------------------------------------------------------------------------
+-- The bar: a chooser naming the selected preview, plus a play/stop
+-- button that arms it.
+--
+-- A dropdown rather than a row of toggles because exactly one preview can
+-- ever be live - a row of independently-clickable badges reads as "check
+-- any combination", which is the one thing the model does not allow.
+------------------------------------------------------------------------
+
+local function EnsureMenuFrame()
+    if not CS.previewCommandCenterMenu then
+        CS.previewCommandCenterMenu = CreateFrame(
+            "Frame", "CDCPreviewCommandCenterDropdown", UIParent, "UIDropDownMenuTemplate")
+    end
+    return CS.previewCommandCenterMenu
+end
+
+local function OpenPreviewMenu(bar)
+    local panelId, _, buttonIndex = ResolveContext()
+    if not panelId then
+        return
     end
 
-    strip = CreateFrame("Frame", nil, host)
-    strip:SetHeight(STRIP_HEIGHT)
-    strip:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, STRIP_BOTTOM_INSET)
-    strip:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, STRIP_BOTTOM_INSET)
-    -- Above the mirror's own frames so the strip is never drawn under a
-    -- slot that overhangs its cell (glows render outside the slot rect).
-    strip:SetFrameLevel(host:GetFrameLevel() + 20)
-    strip.buttons = {}
-
-    -- Every toggle wears the same play badge, so a shared status line
-    -- carries the name of whichever control is hovered (or currently
-    -- previewing). Reads as status, not helper prose.
-    local status = strip:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    status:SetHeight(STRIP_HEIGHT)
-    status:SetJustifyH("LEFT")
-    status:SetWordWrap(false)
-    strip.status = status
-
-    host._cdcPreviewCommandCenter = strip
-    return strip
+    local menu = EnsureMenuFrame()
+    UIDropDownMenu_Initialize(menu, function(_, level)
+        for _, control in ipairs(bar._applicable or {}) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = control.label
+            -- Radio, not check: picking one is picking the only one.
+            info.checked = (CS.previewCommandCenterSelection == control.id)
+            info.func = function()
+                CloseDropDownMenus()
+                CS.previewCommandCenterSelection = control.id
+                -- Choosing a preview is asking to see it.
+                SetPreviewRunning(control, panelId, buttonIndex, true)
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end, "MENU")
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")
+    ToggleDropDownMenu(1, nil, menu, bar.chooser, 0, 0)
 end
 
-local function SetStatusText(strip, text)
-    strip.status:SetText(text or "")
-end
-
--- The active control's name is the resting status; hovering shows the
--- hovered one instead.
-local function RefreshRestingStatus(strip)
-    SetStatusText(strip, strip._activeLabel)
-end
-
-local function AcquireButton(strip, index)
-    local btn = strip.buttons[index]
-    if btn then
-        return btn
+local function EnsureBar(host)
+    local bar = host._cdcPreviewCommandCenter
+    if bar then
+        return bar
     end
 
-    btn = CreateFrame("Button", nil, strip)
-    btn:SetSize(BUTTON_SIZE, BUTTON_SIZE)
-    btn._icon = btn:CreateTexture(nil, "ARTWORK")
-    btn._icon:SetSize(ICON_SIZE, ICON_SIZE)
-    btn._icon:SetPoint("CENTER")
-    btn._icon:SetAtlas(PREVIEW_ATLAS, false)
+    bar = CreateFrame("Frame", nil, host)
+    bar:SetHeight(BAR_HEIGHT)
+    bar:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", BAR_LEFT_INSET, BAR_BOTTOM_INSET)
+    bar:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, BAR_BOTTOM_INSET)
+    -- Above the mirror's own frames so the bar is never drawn under a slot
+    -- that overhangs its cell (glows render outside the slot rect).
+    bar:SetFrameLevel(host:GetFrameLevel() + 20)
 
-    btn:SetScript("OnEnter", function(self)
-        SetStatusText(strip, self._label)
+    -- Chooser: label + chevron, no backdrop (hierarchy from position and
+    -- color, never boxes).
+    local chooser = CreateFrame("Button", nil, bar)
+    chooser:SetHeight(BAR_HEIGHT)
+    chooser:SetPoint("LEFT", bar, "LEFT", 0, 0)
+
+    local label = chooser:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("LEFT", chooser, "LEFT", 0, 0)
+    label:SetJustifyH("LEFT")
+    label:SetWordWrap(false)
+    chooser.label = label
+
+    local chevron = chooser:CreateTexture(nil, "ARTWORK")
+    chevron:SetSize(CHEVRON_SIZE, CHEVRON_SIZE)
+    chevron:SetPoint("LEFT", label, "RIGHT", LABEL_GAP, 0)
+    chevron:SetAtlas(CHEVRON_ATLAS, false)
+    chooser.chevron = chevron
+
+    chooser:SetScript("OnEnter", function(self)
+        self.label:SetTextColor(1, 1, 1, 1)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(self._label)
+        GameTooltip:AddLine("Choose a preview")
+        GameTooltip:AddLine("Only one preview runs at a time.", 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
-    btn:SetScript("OnLeave", function()
-        RefreshRestingStatus(strip)
+    chooser:SetScript("OnLeave", function(self)
+        if self._refreshColors then self._refreshColors() end
         GameTooltip:Hide()
     end)
-    btn:SetScript("OnClick", function(self)
-        if not self._control then
+    chooser:SetScript("OnClick", function()
+        OpenPreviewMenu(bar)
+    end)
+    bar.chooser = chooser
+
+    local play = CreateFrame("Button", nil, bar)
+    play:SetSize(PLAY_SIZE, PLAY_SIZE)
+    play:SetPoint("LEFT", chooser, "RIGHT", PLAY_GAP, 0)
+    play._icon = play:CreateTexture(nil, "ARTWORK")
+    play._icon:SetSize(PLAY_ICON_SIZE, PLAY_ICON_SIZE)
+    play._icon:SetPoint("CENTER")
+    play._icon:SetAtlas(PLAY_ATLAS, false)
+
+    play:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(self._running and "Stop preview" or "Start preview")
+        GameTooltip:Show()
+    end)
+    play:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    play:SetScript("OnClick", function(self)
+        local control = bar._selected
+        if not control then
             return
         end
         local panelId, _, buttonIndex = ResolveContext()
         if not panelId then
             return
         end
-
-        local show = not self._control.preview.IsActive(panelId, buttonIndex)
-        -- Previews are mutually exclusive across the whole config: turning
-        -- one on clears every other (including the settings-side badge
-        -- highlight, which ClearAllConfigPreviews resets).
-        if show then
-            if CooldownCompanion.ClearAllConfigPreviews then
-                CooldownCompanion:ClearAllConfigPreviews()
-            end
-        elseif ST._ClearActivePreviewBadgeButton then
-            ST._ClearActivePreviewBadgeButton()
-        end
-        self._control.preview.SetActive(panelId, buttonIndex, show)
-
-        -- An open advanced popout can be showing "Preview: ON" for the
-        -- preview just cleared.
-        if ST._RefreshAdvancedSettingsPreviewButtons then
-            ST._RefreshAdvancedSettingsPreviewButtons()
-        end
-        -- Rebuilds the mirror, which re-runs the update below and repaints
-        -- the strip from live state.
-        if ST._RefreshButtonsPreviewMirror then
-            ST._RefreshButtonsPreviewMirror()
-        end
+        SetPreviewRunning(control, panelId, buttonIndex, not self._running)
     end)
+    bar.play = play
 
-    strip.buttons[index] = btn
-    return btn
+    host._cdcPreviewCommandCenter = bar
+    return bar
 end
 
-local function LayoutButtons(strip, shown)
-    local count = #shown
-    local totalWidth = count * BUTTON_SIZE + math.max(0, count - 1) * BUTTON_SPACING
-    local firstOffset = -(totalWidth / 2) + (BUTTON_SIZE / 2)
+local function ApplyBarState(bar, control, running)
+    bar._selected = control
+    bar.play._running = running
 
-    for index, btn in ipairs(shown) do
-        btn:ClearAllPoints()
-        btn:SetPoint("CENTER", strip, "CENTER",
-            firstOffset + (index - 1) * (BUTTON_SIZE + BUTTON_SPACING), 0)
+    bar.chooser.label:SetText(control.label)
+    bar.chooser:SetWidth(bar.chooser.label:GetStringWidth() + LABEL_GAP + CHEVRON_SIZE)
+
+    bar.chooser._refreshColors = function()
+        if running then
+            bar.chooser.label:SetTextColor(1, 0.82, 0, 1)
+        else
+            bar.chooser.label:SetTextColor(0.72, 0.72, 0.72, 1)
+        end
     end
+    bar.chooser._refreshColors()
 
-    strip.status:ClearAllPoints()
-    strip.status:SetPoint("LEFT", strip, "CENTER", (totalWidth / 2) + STATUS_GAP, 0)
+    if running then
+        bar.chooser.chevron:SetVertexColor(1, 0.82, 0, 1)
+        bar.play._icon:SetAtlas(STOP_ATLAS, false)
+        bar.play._icon:SetVertexColor(1, 0.82, 0, 1)
+    else
+        bar.chooser.chevron:SetVertexColor(0.72, 0.72, 0.72, 0.85)
+        bar.play._icon:SetAtlas(PLAY_ATLAS, false)
+        bar.play._icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
+    end
 end
 
-local function HideStrip(host)
+local function HideBar(host)
     host._cdcPreviewReserveBottom = nil
-    local strip = host and host._cdcPreviewCommandCenter
-    if strip then
-        strip:Hide()
+    local bar = host and host._cdcPreviewCommandCenter
+    if bar then
+        bar:Hide()
     end
 end
 
@@ -473,7 +527,7 @@ local function UpdatePreviewCommandCenter(host)
 
     local panelId, group, buttonIndex = ResolveContext()
     if not panelId then
-        HideStrip(host)
+        HideBar(host)
         return
     end
 
@@ -486,39 +540,36 @@ local function UpdatePreviewCommandCenter(host)
     end
 
     if #applicable == 0 then
-        HideStrip(host)
+        HideBar(host)
         return
     end
 
-    local strip = EnsureStrip(host)
-    local shown = {}
-    local activeLabel
-
-    for index, control in ipairs(applicable) do
-        local btn = AcquireButton(strip, index)
-        btn._control = control
-        btn._label = control.label
-        local active = control.preview.IsActive(panelId, buttonIndex) == true
-        SetButtonActive(btn, active)
-        if active then
-            activeLabel = control.label
+    -- Whatever is actually running wins the selection, so a preview
+    -- started from a surviving settings control still reads correctly
+    -- here. Otherwise keep the remembered choice, falling back to the
+    -- first applicable one when it does not apply to this panel.
+    local selected, running
+    local remembered
+    for _, control in ipairs(applicable) do
+        if control.preview.IsActive(panelId, buttonIndex) == true then
+            selected, running = control, true
+            break
         end
-        btn:Show()
-        shown[#shown + 1] = btn
+        if control.id == CS.previewCommandCenterSelection then
+            remembered = control
+        end
     end
-
-    for index = #applicable + 1, #strip.buttons do
-        local btn = strip.buttons[index]
-        btn._control = nil
-        btn:Hide()
+    if not selected then
+        selected, running = remembered or applicable[1], false
     end
+    CS.previewCommandCenterSelection = selected.id
 
-    strip._activeLabel = activeLabel
-    RefreshRestingStatus(strip)
-    LayoutButtons(strip, shown)
+    local bar = EnsureBar(host)
+    bar._applicable = applicable
+    ApplyBarState(bar, selected, running)
 
-    host._cdcPreviewReserveBottom = STRIP_RESERVE
-    strip:Show()
+    host._cdcPreviewReserveBottom = BAR_RESERVE
+    bar:Show()
 end
 
 ------------------------------------------------------------------------
