@@ -1266,7 +1266,9 @@ end
 -- has been shrunk to fit. The badge is permanent (a small corner glyph
 -- reads as chrome, and the setting it stands for has no other visual); the
 -- name is laid out here but only shown while the preview is hovered.
-local function ApplySlotIdentityMarks(preview, frame, scale)
+-- widthOverride: for the drag ghost, whose slot takes its size from anchors
+-- and would measure nothing until the next layout pass.
+local function ApplySlotIdentityMarks(preview, frame, scale, widthOverride)
     local layer = frame and frame.identityLayer
     if not layer then return end
     local slot = frame.slotData
@@ -1312,7 +1314,7 @@ local function ApplySlotIdentityMarks(preview, frame, scale)
             -- inherits its size by anchor and reports nothing until the
             -- next layout pass.
             local available = math_max(1,
-                (frame:GetWidth() or 0) - (LAYOUT_PREVIEW_IDENTITY_INSET * 2))
+                (widthOverride or frame:GetWidth() or 0) - (LAYOUT_PREVIEW_IDENTITY_INSET * 2))
             label:SetWidth(math_min(label:GetStringWidth() + 1, available))
         end
         layer._cdcHasLabel = true
@@ -2634,6 +2636,14 @@ local function ConfigureGhost(preview, slotData, slotFrame)
     ConfigureSlotPreview(ghostSlot, slotData, preview, ghost:GetWidth(), ghost:GetHeight(), slotFrame.shortText:IsShown())
     ghost.previewBarInfo = ghostSlot.previewBarInfo
     ghost.castPreview = ghostSlot.castPreview
+
+    -- The ghost carries the dragged bar's name too. Its own slot is at
+    -- alpha 0 for the duration, so without this the one bar you are
+    -- actually moving is the only one left unnamed. Scale 1: the ghost
+    -- hangs off UIParent, not off the scaled preview content.
+    ghostSlot.slotData = slotData
+    ghostSlot._cdcIdentityVertical = slotFrame._cdcIdentityVertical
+    ApplySlotIdentityMarks(preview, ghostSlot, 1, ghost:GetWidth())
     ghost:SetAlpha(0.92)
     ghost:Show()
     preview.ghostActive = true
