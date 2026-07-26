@@ -417,9 +417,12 @@ function ST.GetStackSegmentsTexture(max)
 end
 
 -- Lay out `max` capacity blocks over `host` with the atlas proportions.
--- Forced opaque like the bar backdrop: a translucent block would let the
--- layer underneath bleed through while the aura display is occluding it.
-function ST.LayoutStackBlocks(blocks, host, max, vertical, color)
+-- Opaque by default like the bar backdrop: a translucent block would let
+-- the layer underneath bleed through while the aura display is occluding
+-- it. Occlusion-free hosts (pure aura custom bars) pass `alpha` so their
+-- blocks follow the configured background instead — nothing renders
+-- beneath them that needs hiding.
+function ST.LayoutStackBlocks(blocks, host, max, vertical, color, alpha)
     local length = vertical and host:GetHeight() or host:GetWidth()
     if length <= 0 then
         ST.HideStackBlocks(blocks)
@@ -430,7 +433,7 @@ function ST.LayoutStackBlocks(blocks, host, max, vertical, color)
     for i, tex in ipairs(blocks) do
         if i <= max then
             local start = (i - 1) * (blockLen + gap)
-            tex:SetColorTexture(color[1] or 0.1, color[2] or 0.1, color[3] or 0.1, 1)
+            tex:SetColorTexture(color[1] or 0.1, color[2] or 0.1, color[3] or 0.1, alpha or 1)
             tex:ClearAllPoints()
             if vertical then
                 -- VERTICAL fills bottom-up; blocks stack from the bottom.

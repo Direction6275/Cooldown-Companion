@@ -1076,12 +1076,23 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
         return
     end
 
-    -- Aura tab (the aura pass): the tracking section is the whole tab, the
-    -- same shape as the panel entry Aura tab. Aura-look controls (colors,
-    -- texts, effects) stay on Appearance, as panel bar styles do.
+    -- Aura tab (the aura pass): the tracking section plus the active-aura
+    -- effects, the same shape as the panel entry Aura tab. Aura-look
+    -- colors and texts stay on Appearance with the rest of the bar style.
     if activeTab == "aura" then
         if cab.spellID then
             BuildCustomBarAuraTrackingSection(container, cab, infoButtons)
+
+            -- Shared builder (SectionBuilders): the cabConfig speaks the
+            -- same barAura* key family as the panel bar style tables.
+            local isAuraTracked = (not isSpellCustomBar) or cab.auraTracking == true
+            if isAuraTracked and ST._BuildBarActiveAuraControls then
+                AddCustomBarSettingsHeading(container, "Effects", infoButtons, {
+                    "Effects the bar plays while the tracked aura is active: a border effect, a fill pulse, and a fill color shift.",
+                    "Use the preview in the command center below the bar list to see them without a live aura.",
+                })
+                ST._BuildBarActiveAuraControls(container, cab, function() CooldownCompanion:ApplyResourceBars() end)
+            end
         end
         return
     end
@@ -1272,17 +1283,6 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                         title = stackTextLabel .. " Advanced",
                         build = BuildStackTextAdvanced,
                     })
-                end
-
-                -- ---- Active aura effects (aura-tracked bars) ----
-                -- Shared builder (SectionBuilders): the cabConfig speaks the
-                -- same barAura* key family as the panel bar style tables.
-                if isAuraTracked and ST._BuildBarActiveAuraControls then
-                    AddCustomBarSettingsHeading(container, "Effects", infoButtons, {
-                        "Effects the bar plays while the tracked aura is active: a border effect, a fill pulse, and a fill color shift.",
-                        "Use the preview in the command center below the bar list to see them without a live aura.",
-                    })
-                    ST._BuildBarActiveAuraControls(container, customBars[cabIdx], cabApplyBars)
                 end
 
                 -- ---- Talent Conditions section ----

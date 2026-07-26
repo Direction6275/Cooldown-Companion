@@ -361,7 +361,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
         end
 
         local style = BuildStyleAdapter(barInfo.cabConfig, settings)
-        ST.LayoutStackBlocks(blocks, rect, max, frame._isVertical, style.barBgColor)
+        -- Occlusion-free host: these blocks ARE the bar's background, so
+        -- they carry the configured background alpha instead of the panel
+        -- callers' forced-opaque occlusion default.
+        local bgColor = style.barBgColor or { 0, 0, 0, 0.5 }
+        ST.LayoutStackBlocks(blocks, rect, max, frame._isVertical, bgColor, bgColor[4] or 1)
         ST.LayoutStackBlockBorders(borders, blocks, max, style)
         -- Owner ruling (panel parity): each stack is its own widget — the
         -- background slab and the whole-bar border ring come off; the blocks
