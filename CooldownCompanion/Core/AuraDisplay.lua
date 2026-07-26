@@ -424,8 +424,11 @@ end
 -- `alpha = 0` lays the blocks out without drawing them at all, which is how
 -- occlusion-free hosts get anchor rects for their per-block border rings
 -- while the CC layer underneath supplies the visible background.
-function ST.LayoutStackBlocks(blocks, host, max, vertical, color, alpha)
-    local length = vertical and host:GetHeight() or host:GetWidth()
+-- `length` overrides the measured host extent, for callers that know the
+-- size but whose host has not been through a layout pass yet (the config
+-- canvas builds its bars and lays out its lanes in the same frame).
+function ST.LayoutStackBlocks(blocks, host, max, vertical, color, alpha, length)
+    length = length or (vertical and host:GetHeight() or host:GetWidth())
     if length <= 0 then
         ST.HideStackBlocks(blocks)
         return

@@ -332,22 +332,29 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- apply iteration).
     ------------------------------------------------------------------------
 
-    local function WantsAbsentStackBlocks(barInfo)
+    -- opts (config preview only): includeShell keeps the blocks for a
+    -- hideWhenInactive bar, which the live bar never draws — the config
+    -- canvas renders shell bars so they stay visible and editable.
+    -- maxStacks supplies a max the shared runtime cache does not hold
+    -- (a bar the config shows but no live slot is currently running).
+    local function WantsAbsentStackBlocks(barInfo, opts)
         local cabConfig = barInfo and barInfo.cabConfig
         if not (cabConfig and barInfo.customBarId) then return nil end
         if IsSpellCustomBarConfig(cabConfig) then return nil end
-        if cabConfig.hideWhenInactive == true then return nil end -- shell: kit renders the whole bar
+        if cabConfig.hideWhenInactive == true and not (opts and opts.includeShell) then
+            return nil -- shell: kit renders the whole bar
+        end
         if not WantsStackMode(cabConfig, false) then return nil end
         if cabConfig.displayMode == "continuous" then return nil end
-        local max = GetCustomBarCachedStackMax(barInfo)
+        local max = (opts and opts.maxStacks) or GetCustomBarCachedStackMax(barInfo)
         if not max or max <= 1 or max > ST.STACK_SEGMENT_ATLAS_MAX then return nil end
         return max
     end
 
-    local function ApplyCustomBarAbsentStackVisuals(barInfo, settings)
+    local function ApplyCustomBarAbsentStackVisuals(barInfo, settings, opts)
         local frame = barInfo and barInfo.frame
         if not frame then return end
-        local max = WantsAbsentStackBlocks(barInfo)
+        local max = WantsAbsentStackBlocks(barInfo, opts)
         if not max then
             if frame._ccCabStackBlocksActive then
                 frame._ccCabStackBlocksActive = nil
@@ -400,7 +407,10 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- they carry the configured background alpha instead of the panel
         -- callers' forced-opaque occlusion default.
         local bgColor = style.barBgColor or { 0, 0, 0, 0.5 }
-        ST.LayoutStackBlocks(blocks, rect, max, frame._isVertical, bgColor, bgColor[4] or 1)
+        -- The inset rect sits inside the border ring on both ends, so a
+        -- caller-supplied bar length loses two insets to become the rect's.
+        local rectLength = opts and opts.barLength and (opts.barLength - (inset * 2)) or nil
+        ST.LayoutStackBlocks(blocks, rect, max, frame._isVertical, bgColor, bgColor[4] or 1, rectLength)
         ST.LayoutStackBlockBorders(borders, blocks, max, style)
         -- Owner ruling (panel parity): each stack is its own widget — the
         -- background slab and the whole-bar border ring come off; the blocks
@@ -488,6 +498,21 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- module is created before this one; it looks the function up on RB at
     -- call time).
     RB.ApplyCustomBarAbsentStackVisuals = ApplyCustomBarAbsentStackVisuals
+
+    -- The automatic stack max for a cabConfig, resolved straight from game
+    -- data through the same adapter the rebind collector uses. For the
+    -- CONFIG canvas, which renders bars that may have no live slot running
+    -- and therefore no cached max. Deliberately does not write the runtime
+    -- cache: that cache is the in-combat safety net and the rebind pass
+    -- owns it.
+    function RB.ResolveCustomBarStackMax(cabConfig, settings)
+        if not IsAuraTrackedCustomBar(cabConfig) then return nil end
+        settings = settings or GetResourceBarSettings()
+        if not settings then return nil end
+        local buttonData = BuildEntryAdapter(cabConfig, settings)
+        if not CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then return nil end
+        return CooldownCompanion:GetAuraStackBarMax(buttonData)
+    end
 
     ------------------------------------------------------------------------
     -- Frame-identity repair. Bar frames are recycled by STACK POSITION, so

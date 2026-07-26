@@ -1,40 +1,67 @@
 --[[
     CooldownCompanion - ResourceBarPreview
-    Resource bar preview data and preview-mode public controls.
+    Ready-state rendering for the config preview, plus the preview-mode
+    public controls.
+
+    THE FIDELITY PRINCIPLE (owner ruling 2026-07-26). The config preview is
+    an accurate reflection of what the live display looks like — reflecting
+    the CONFIGURATION, not the live moment. Like the panel mirror, it does
+    not track whether a spell happens to be on cooldown or what the current
+    resource value is this second; transient state belongs to the explicit
+    preview states in the command center.
+
+    At rest that means READY state, rendered through the real display code
+    with real game data:
+      * Resources render FULL against their real maximums, with the real
+        text formats (no fabricated 65/100 or 650K/1M).
+      * Spell custom bars render ready: full fill, no duration text, and a
+        charge readout only when the spell actually has charges.
+      * Aura custom bars render their aura-ABSENT look — for a stacks-mode
+        bar that is the real capacity blocks (see
+        RB.ApplyCustomBarAbsentStackVisuals), not a continuous fill.
+
+    Values pass straight to the C-level widget APIs and SetFormattedText, so
+    a secret maximum in combat is carried through rather than read.
 ]]
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
-local math_floor = math.floor
-local math_min = math.min
-local math_max = math.max
-
 local RB = ST._RB
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 
-local FormatTime = CooldownCompanion.FormatTime
-local NormalizeCustomAuraStackTextFormat = RB.NormalizeCustomAuraStackTextFormat
 local GetResourceAuraConfiguredMaxStacks = RB.GetResourceAuraConfiguredMaxStacks
 local HideResourceAuraStackSegments = RB.HideResourceAuraStackSegments
 local ApplyResourceAuraStackSegments = RB.ApplyResourceAuraStackSegments
 local ClearResourceAuraVisuals = RB.ClearResourceAuraVisuals
-local IsCustomAuraMaxThresholdEnabled = RB.IsCustomAuraMaxThresholdEnabled
-local IsCustomAuraMaxBarEffectEnabled = RB.IsCustomAuraMaxBarEffectEnabled
-local GetCustomAuraMaxBarEffectColor = RB.GetCustomAuraMaxBarEffectColor
-local ApplyCustomAuraMaxBarEffects = RB.ApplyCustomAuraMaxBarEffects
-local ClearCustomAuraMaxBarEffects = RB.ClearCustomAuraMaxBarEffects
-local SetCustomAuraMaxThresholdRange = RB.SetCustomAuraMaxThresholdRange
-local SetMaxStacksIndicatorActive = RB.SetMaxStacksIndicatorActive
 local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
 local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
 local GetResourceColors = RB.GetResourceColors
 local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
 local SetSegmentedText = RB.SetSegmentedText
+local SetMaxStacksIndicatorActive = RB.SetMaxStacksIndicatorActive
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
+
+-- Ready state for a charge spell: its real maximum charges, or nil when the
+-- spell has none (the old renderer showed a hardcoded "1 / 2" on every spell
+-- bar, charges or not). Config-time, out of combat: a plain data read.
+local function GetReadyChargeCount(cabConfig)
+    local baseSpellID = cabConfig and tonumber(cabConfig.spellID)
+    if not baseSpellID then return nil end
+    local runtimeSpellID = C_Spell.GetOverrideSpell(baseSpellID)
+    if not runtimeSpellID or runtimeSpellID == 0 then
+        runtimeSpellID = baseSpellID
+    end
+    local charges = C_Spell.GetSpellCharges(runtimeSpellID)
+    local maxCharges = charges and tonumber(charges.maxCharges)
+    if maxCharges and maxCharges > 1 then
+        return maxCharges
+    end
+    return nil
+end
 
 function RB.CreateResourceBarPreviewModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
@@ -48,7 +75,7 @@ function RB.CreateResourceBarPreviewModule(deps)
     local ClearCustomAuraBarIndicatorState = deps.ClearCustomAuraBarIndicatorState
 
     ------------------------------------------------------------------------
-    -- Preview mode
+    -- Ready-state rendering
     ------------------------------------------------------------------------
 
     local function ApplyPreviewDataToBar(barInfo, settings)
@@ -58,7 +85,10 @@ function RB.CreateResourceBarPreviewModule(deps)
 
         local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
 
-        local function ApplyResourceAuraLanePreview(barInfo, previewRatio)
+        -- Resource aura overlay lane (aura-pass Phase 2 rebuilds this; the
+        -- shape survives as its base). Full, like every other ready-state
+        -- fill.
+        local function ApplyResourceAuraLaneReadyState(barInfo)
             local powerType = barInfo.powerType
             if not powerType then return end
 
@@ -84,130 +114,119 @@ function RB.CreateResourceBarPreviewModule(deps)
                 auraColor = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
             end
 
-            local previewStacks = math_max(1, math_floor((auraMaxStacks * previewRatio) + 0.5))
-            ApplyResourceAuraStackSegments(barInfo.frame, settings, previewStacks, auraMaxStacks, auraColor)
+            ApplyResourceAuraStackSegments(barInfo.frame, settings, auraMaxStacks, auraMaxStacks, auraColor)
+        end
+
+        -- Text at a full bar: the real formats against the real maximum.
+        -- Percent legs are written as 100 rather than read back from the
+        -- unit, because the bar being rendered is full by construction.
+        local function SetFullBarText(bar, maxValue)
+            if not (bar.text and bar.text:IsShown()) then return end
+            local textFormat = bar._textFormat
+            if textFormat == "current" then
+                bar.text:SetFormattedText("%d", maxValue)
+            elseif textFormat == "percent" then
+                bar.text:SetFormattedText("%d", 100)
+            else
+                bar.text:SetFormattedText("%d / %d", maxValue, maxValue)
+            end
         end
 
         ClearResourceAuraVisuals(barInfo.frame)
         if barInfo.barType == "continuous" then
-            SetStatusBarSmoothRange(barInfo.frame, 0, 100)
-            SetStatusBarSmoothValue(barInfo.frame, 65)
-            if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                local textFormat = barInfo.frame._textFormat
-                if textFormat == "current" then
-                    barInfo.frame.text:SetText("65")
-                elseif textFormat == "percent" then
-                    barInfo.frame.text:SetText("65")
-                else
-                    barInfo.frame.text:SetText("65 / 100")
-                end
-            end
+            local maxPower = UnitPowerMax("player", barInfo.powerType or 0)
+            SetStatusBarSmoothRange(barInfo.frame, 0, maxPower)
+            SetStatusBarSmoothValue(barInfo.frame, maxPower)
+            SetFullBarText(barInfo.frame, maxPower)
         elseif barInfo.barType == "health_continuous" then
-            SetStatusBarSmoothRange(barInfo.frame, 0, 100)
-            SetStatusBarSmoothValue(barInfo.frame, 65)
+            local maxHealth = UnitHealthMax("player")
+            SetStatusBarSmoothRange(barInfo.frame, 0, maxHealth)
+            SetStatusBarSmoothValue(barInfo.frame, maxHealth)
             local config = HealthBar.GetConfig(settings)
-            HealthBar.ApplyFillColor(barInfo.frame, config, 0.65)
-            HealthBar.ApplyBackgroundColor(barInfo.frame, config, 0.65)
-            HealthBar.UpdateEffectBars(barInfo.frame, config, 100, HEALTH_EFFECTS.preview)
+            HealthBar.ApplyFillColor(barInfo.frame, config, 1)
+            HealthBar.ApplyBackgroundColor(barInfo.frame, config, 1)
+            HealthBar.UpdateEffectBars(barInfo.frame, config, maxHealth, HEALTH_EFFECTS.preview)
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
                 local textFormat = barInfo.frame._textFormat
+                local abbreviated = AbbreviateNumbers(maxHealth)
                 if textFormat == "current" then
-                    barInfo.frame.text:SetText("650K")
+                    barInfo.frame.text:SetFormattedText("%s", abbreviated)
                 elseif textFormat == "current_max" then
-                    barInfo.frame.text:SetText("650K / 1M")
+                    barInfo.frame.text:SetFormattedText("%s / %s", abbreviated, abbreviated)
                 elseif textFormat == "current_percent" then
-                    barInfo.frame.text:SetText("650K | 65%")
+                    barInfo.frame.text:SetFormattedText("%s | %d%%", abbreviated, 100)
                 elseif textFormat == "current_percent_no_sign" then
-                    barInfo.frame.text:SetText("650K | 65")
+                    barInfo.frame.text:SetFormattedText("%s | %d", abbreviated, 100)
                 elseif textFormat == "percent_no_sign" then
-                    barInfo.frame.text:SetText("65")
+                    barInfo.frame.text:SetFormattedText("%d", 100)
                 else
-                    barInfo.frame.text:SetText("65%")
+                    barInfo.frame.text:SetFormattedText("%d%%", 100)
                 end
             end
         elseif barInfo.barType == "segmented" then
             local n = #barInfo.frame.segments
-            local filled = math_floor(n * 0.6)
-            local previewValue = filled + 0.5
-            for i, seg in ipairs(barInfo.frame.segments) do
-                if i <= filled then
-                    SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
-                elseif i == filled + 1 then
-                    SetStatusBarSegmentedValue(seg, 0.5, segmentedSmoothing)
-                else
-                    SetStatusBarSegmentedValue(seg, 0, segmentedSmoothing)
-                end
+            for _, seg in ipairs(barInfo.frame.segments) do
+                SetStatusBarSegmentedValue(seg, n, segmentedSmoothing)
             end
-            ApplySegmentedPreviewColors(barInfo.frame, barInfo.powerType, settings, previewValue)
-            ApplyResourceAuraLanePreview(barInfo, 0.5)
-            SetSegmentedText(barInfo.frame, previewValue, n)
+            -- Resolves the at-max color leg for every filled segment, the
+            -- same one the live bar shows at full.
+            ApplySegmentedPreviewColors(barInfo.frame, barInfo.powerType, settings, n)
+            ApplyResourceAuraLaneReadyState(barInfo)
+            SetSegmentedText(barInfo.frame, n, n)
         elseif barInfo.barType == "stagger_continuous" then
-            SetStatusBarSmoothRange(barInfo.frame, 0, 100)
-            SetStatusBarSmoothValue(barInfo.frame, 45)
-            local _, yellowColor = GetResourceColors(101, settings)
-            barInfo.frame:SetStatusBarColor(yellowColor[1], yellowColor[2], yellowColor[3], 1)
+            -- A full stagger pool: the real threshold logic puts that in the
+            -- red band, so that is what a full stagger bar genuinely looks
+            -- like. Stagger has no natural "ready" fill; full keeps it
+            -- consistent with every other resource.
+            local maxHealth = UnitHealthMax("player")
+            SetStatusBarSmoothRange(barInfo.frame, 0, maxHealth)
+            SetStatusBarSmoothValue(barInfo.frame, maxHealth)
+            local _, _, redColor = GetResourceColors(101, settings)
+            barInfo.frame:SetStatusBarColor(redColor[1], redColor[2], redColor[3], 1)
             barInfo.frame.brightnessOverlay:Hide()
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
                 local textFormat = barInfo.frame._textFormat
                 if textFormat == "current" then
-                    barInfo.frame.text:SetText("45")
+                    barInfo.frame.text:SetFormattedText("%d", maxHealth)
                 elseif textFormat == "percent" then
-                    barInfo.frame.text:SetText("45%")
+                    barInfo.frame.text:SetFormattedText("%d%%", 100)
                 else
-                    barInfo.frame.text:SetText("45 / 100")
+                    barInfo.frame.text:SetFormattedText("%d / %d", maxHealth, maxHealth)
                 end
             end
         elseif barInfo.barType == "mw_segmented" then
             local half = #barInfo.frame.segments
-            local previewStacks = math_min(GetMWMaxStacks(), math_max(1, math_floor((GetMWMaxStacks() * 0.7) + 0.5)))
-            if GetMWMaxStacks() > 5 then
-                previewStacks = math_min(GetMWMaxStacks(), math_max(previewStacks, 7))
-            end
+            local maxStacks = GetMWMaxStacks()
             for i = 1, half do
-                SetStatusBarSegmentedValue(barInfo.frame.segments[i], previewStacks, segmentedSmoothing)
-                SetStatusBarSegmentedValue(barInfo.frame.overlaySegments[i], previewStacks, segmentedSmoothing)
-                if previewStacks > (half + i - 1) then
-                    barInfo.frame.overlaySegments[i]:SetAlpha(1)
-                else
-                    barInfo.frame.overlaySegments[i]:SetAlpha(0)
-                end
+                SetStatusBarSegmentedValue(barInfo.frame.segments[i], maxStacks, segmentedSmoothing)
+                SetStatusBarSegmentedValue(barInfo.frame.overlaySegments[i], maxStacks, segmentedSmoothing)
+                -- At full every overlay half is reached.
+                barInfo.frame.overlaySegments[i]:SetAlpha(maxStacks > (half + i - 1) and 1 or 0)
             end
-            ApplyResourceAuraLanePreview(barInfo, 0.5)
-            SetSegmentedText(barInfo.frame, previewStacks, GetMWMaxStacks())
+            ApplyResourceAuraLaneReadyState(barInfo)
+            SetSegmentedText(barInfo.frame, maxStacks, maxStacks)
         elseif barInfo.barType == "custom_cooldown" then
+            -- Spell custom bar, ready: full fill in the bar's own color
+            -- (StyleCustomAuraBar already applied it), no cooldown or aura
+            -- duration text. A stacks-display spell bar reads the same at
+            -- rest — its aura shape belongs to the kit, which renders only
+            -- while the aura runs.
             local cabConfig = barInfo.cabConfig
-            local isSpellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
-            -- The aura pass: the stack max is automatic (OOC-cached from
-            -- game data). Same resolution order as the runtime, so preview
-            -- and live render agree; the manual key is dormant legacy.
-            local maxStacks = RB.GetCustomBarCachedStackMax(barInfo)
-                or (cabConfig and cabConfig.maxStacks) or 1
-            local previewValue
-            if isSpellAuraStackDisplay then
-                SetStatusBarSmoothRange(barInfo.frame, 0, maxStacks)
-                previewValue = math.ceil(maxStacks * 0.65)
-                SetStatusBarSmoothValue(barInfo.frame, previewValue)
-            else
-                SetStatusBarSmoothRange(barInfo.frame, 0, 1)
-                previewValue = 0.45
-                SetStatusBarSmoothValue(barInfo.frame, previewValue)
-            end
+            SetStatusBarSmoothRange(barInfo.frame, 0, 1)
+            SetStatusBarImmediateValue(barInfo.frame, 1)
             if barInfo.frame.thresholdOverlay then
                 SetStatusBarImmediateValue(barInfo.frame.thresholdOverlay, 0)
                 barInfo.frame.thresholdOverlay:Hide()
             end
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                if isSpellAuraStackDisplay then
-                    barInfo.frame.text:SetText("")
-                else
-                    barInfo.frame.text:SetText(FormatTime(12.3, cabConfig))
-                end
+                barInfo.frame.text:SetText("")
             end
             if barInfo.frame.stackText and barInfo.frame.stackText:IsShown() then
-                if isSpellAuraStackDisplay then
-                    RB.UpdateSpellCustomBarAuraStackText(barInfo.frame, cabConfig, previewValue, maxStacks, true)
+                local maxCharges = GetReadyChargeCount(cabConfig)
+                if maxCharges then
+                    barInfo.frame.stackText:SetFormattedText("%d / %d", maxCharges, maxCharges)
                 else
-                    barInfo.frame.stackText:SetText("1 / 2")
+                    barInfo.frame.stackText:SetText("")
                 end
             end
             ClearCustomAuraBarIndicatorState(barInfo, true)
@@ -218,141 +237,30 @@ function RB.CreateResourceBarPreviewModule(deps)
                 end
             end
         elseif barInfo.barType == "custom_continuous" then
+            -- Aura custom bar, aura ABSENT: an empty fill. Stacks-mode bars
+            -- get their capacity blocks from the aura host's absent-state
+            -- pass (the canvas calls it alongside this); the empty fill is
+            -- what shows beneath either way.
             local cabConfig = barInfo.cabConfig
-            local isActive = cabConfig and cabConfig.trackingMode == "active"
-            -- Automatic OOC-cached max, same order as the runtime (see the
-            -- custom_cooldown branch above).
-            local maxStacks = RB.GetCustomBarCachedStackMax(barInfo)
-                or (cabConfig and cabConfig.maxStacks) or 1
             ClearCustomAuraBarIndicatorState(barInfo, false)
-            local previewValue
-            if isActive then
-                SetStatusBarSmoothRange(barInfo.frame, 0, 1)
-                previewValue = 0.65
-                SetStatusBarSmoothValue(barInfo.frame, previewValue)
-            else
-                SetStatusBarSmoothRange(barInfo.frame, 0, maxStacks)
-                previewValue = math.ceil(maxStacks * 0.65)
-                SetStatusBarSmoothValue(barInfo.frame, previewValue)
-            end
+            SetStatusBarSmoothRange(barInfo.frame, 0, 1)
+            SetStatusBarImmediateValue(barInfo.frame, 0)
             -- Max-stack threshold and its effects were dropped by owner
             -- ruling (the aura pass); the runtime forces them dark, so the
             -- preview must too or it advertises unreachable visuals from
             -- dormant keys.
             if barInfo.frame.thresholdOverlay then
-                if ClearCustomAuraMaxBarEffects then
-                    ClearCustomAuraMaxBarEffects(barInfo.frame.thresholdOverlay, nil)
-                end
                 SetStatusBarImmediateValue(barInfo.frame.thresholdOverlay, 0)
                 barInfo.frame.thresholdOverlay:Hide()
             end
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                barInfo.frame.text:SetText(FormatTime(12.3, cabConfig))
+                barInfo.frame.text:SetText("")
             end
             if barInfo.frame.stackText and barInfo.frame.stackText:IsShown() then
-                if isActive then
-                    barInfo.frame.stackText:SetFormattedText("%d", 3)
-                else
-                    local stackTextFormat = NormalizeCustomAuraStackTextFormat(cabConfig and cabConfig.stackTextFormat)
-                    if stackTextFormat == "current" then
-                        barInfo.frame.stackText:SetFormattedText("%d", previewValue)
-                    else
-                        barInfo.frame.stackText:SetFormattedText("%d / %d", previewValue, maxStacks)
-                    end
-                end
+                barInfo.frame.stackText:SetText("")
             end
             -- Max-stack indicator dropped with the threshold (owner ruling).
             if barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
-                SetMaxStacksIndicatorActive(barInfo, false)
-            end
-        elseif barInfo.barType == "custom_segmented" then
-            local cabConfig = barInfo.cabConfig
-            local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
-            local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
-            local maxStackBarEffectsEnabled = IsCustomAuraMaxBarEffectEnabled and IsCustomAuraMaxBarEffectEnabled(cabConfig)
-            local thresholdVisible = thresholdEnabled or maxStackBarEffectsEnabled
-            local thresholdColor = maxStackBarEffectsEnabled and GetCustomAuraMaxBarEffectColor
-                and GetCustomAuraMaxBarEffectColor(cabConfig)
-            local indicatorPreview = cabConfig and cabConfig.maxStacksGlowEnabled
-            local n = #barInfo.frame.segments
-            local fill = indicatorPreview and n or math.ceil(n * 0.6)
-            for _, seg in ipairs(barInfo.frame.segments) do
-                SetStatusBarSegmentedValue(seg, fill, segmentedSmoothing)
-            end
-            if barInfo.frame.thresholdSegments then
-                for _, seg in ipairs(barInfo.frame.thresholdSegments) do
-                    if thresholdVisible then
-                        SetCustomAuraMaxThresholdRange(seg, maxStacks)
-                        if thresholdColor then
-                            seg:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], thresholdColor[4] or 1)
-                        end
-                        if maxStackBarEffectsEnabled and ApplyCustomAuraMaxBarEffects then
-                            ApplyCustomAuraMaxBarEffects(seg, cabConfig, thresholdColor)
-                        elseif ClearCustomAuraMaxBarEffects then
-                            ClearCustomAuraMaxBarEffects(seg, thresholdColor)
-                        end
-                        SetStatusBarSegmentedValue(seg, fill, segmentedSmoothing)
-                        seg:Show()
-                    else
-                        if ClearCustomAuraMaxBarEffects then
-                            ClearCustomAuraMaxBarEffects(seg, thresholdColor)
-                        end
-                        SetStatusBarImmediateValue(seg, 0)
-                        seg:Hide()
-                    end
-                end
-            end
-            if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
-                SetStatusBarSegmentedValue(barInfo._maxStacksIndicator, maxStacks, segmentedSmoothing)
-                if SetMaxStacksIndicatorActive then
-                    SetMaxStacksIndicatorActive(barInfo, true)
-                end
-            elseif barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
-                SetMaxStacksIndicatorActive(barInfo, false)
-            end
-        elseif barInfo.barType == "custom_overlay" then
-            local cabConfig = barInfo.cabConfig
-            local maxStacks = (cabConfig and cabConfig.maxStacks) or 1
-            local indicatorPreview = cabConfig and cabConfig.maxStacksGlowEnabled
-            local previewStacks = indicatorPreview and maxStacks or math.ceil(maxStacks * 0.7)
-            local thresholdEnabled = IsCustomAuraMaxThresholdEnabled(cabConfig)
-            local maxStackBarEffectsEnabled = IsCustomAuraMaxBarEffectEnabled and IsCustomAuraMaxBarEffectEnabled(cabConfig)
-            local thresholdVisible = thresholdEnabled or maxStackBarEffectsEnabled
-            local thresholdColor = maxStackBarEffectsEnabled and GetCustomAuraMaxBarEffectColor
-                and GetCustomAuraMaxBarEffectColor(cabConfig)
-            local half = barInfo.halfSegments or 1
-            for i = 1, half do
-                SetStatusBarSegmentedValue(barInfo.frame.segments[i], previewStacks, segmentedSmoothing)
-                SetStatusBarSegmentedValue(barInfo.frame.overlaySegments[i], previewStacks, segmentedSmoothing)
-                if barInfo.frame.thresholdSegments and barInfo.frame.thresholdSegments[i] then
-                    local seg = barInfo.frame.thresholdSegments[i]
-                    if thresholdVisible then
-                        SetCustomAuraMaxThresholdRange(seg, maxStacks)
-                        if thresholdColor then
-                            seg:SetStatusBarColor(thresholdColor[1], thresholdColor[2], thresholdColor[3], thresholdColor[4] or 1)
-                        end
-                        if maxStackBarEffectsEnabled and ApplyCustomAuraMaxBarEffects then
-                            ApplyCustomAuraMaxBarEffects(seg, cabConfig, thresholdColor)
-                        elseif ClearCustomAuraMaxBarEffects then
-                            ClearCustomAuraMaxBarEffects(seg, thresholdColor)
-                        end
-                        SetStatusBarSegmentedValue(seg, previewStacks, segmentedSmoothing)
-                        seg:Show()
-                    else
-                        if ClearCustomAuraMaxBarEffects then
-                            ClearCustomAuraMaxBarEffects(seg, thresholdColor)
-                        end
-                        SetStatusBarImmediateValue(seg, 0)
-                        seg:Hide()
-                    end
-                end
-            end
-            if cabConfig and cabConfig.maxStacksGlowEnabled and barInfo._maxStacksIndicator then
-                SetStatusBarSegmentedValue(barInfo._maxStacksIndicator, maxStacks, segmentedSmoothing)
-                if SetMaxStacksIndicatorActive then
-                    SetMaxStacksIndicatorActive(barInfo, true)
-                end
-            elseif barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
                 SetMaxStacksIndicatorActive(barInfo, false)
             end
         end

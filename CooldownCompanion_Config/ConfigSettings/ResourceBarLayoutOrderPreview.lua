@@ -65,6 +65,23 @@ local LAYOUT_PREVIEW_ANIM_DURATION = 0.08
 local LAYOUT_PREVIEW_EMPTY_DROP_SIZE = 8
 local LAYOUT_PREVIEW_MAX_REAL_ICONS = 4
 
+-- Custom-bar identity marks. Two bars in the same color are otherwise
+-- indistinguishable without clicking each one, so the canvas labels them —
+-- the one sanctioned permanent deviation from the fidelity principle (owner
+-- ruling 2026-07-26). Deliberately config-chrome: small, dimmed, truncated,
+-- in the config's own font rather than the bar's configured text fonts, so
+-- it reads as something the config drew and never as bar content. Custom
+-- bars only; resources are identified by their well-known colors.
+local LAYOUT_PREVIEW_IDENTITY_ALPHA = 0.72
+local LAYOUT_PREVIEW_IDENTITY_FONT_SCREEN_SIZE = 10
+local LAYOUT_PREVIEW_IDENTITY_INSET = 4
+-- Shell (Show Only While Aura Active) bars carry the bar-mode panel
+-- mirror's crossed-eye badge, same atlas and counter-scale convention, so
+-- the two previews say "this one only shows while its aura runs" the same
+-- way. The atlas has substantial transparent padding around its glyph.
+local LAYOUT_PREVIEW_VISIBILITY_BADGE_ATLAS = "GM-icon-visibleDis-pressed"
+local LAYOUT_PREVIEW_VISIBILITY_BADGE_SCREEN_SIZE = 18
+
 local GetLayoutPreviewIcon
 
 local function CloneColor(color, fallback)
@@ -411,6 +428,17 @@ local function CreateSlotFrame(parent)
     frame.selectedHighlight.side1 = frame.selectedHighlight:CreateTexture(nil, "OVERLAY")
     frame.selectedHighlight.side2 = frame.selectedHighlight:CreateTexture(nil, "OVERLAY")
     frame.selectedHighlight:Hide()
+
+    -- Config-chrome identity marks (custom bars only), above the bar
+    -- visuals but below the hover/selection highlights so those still read
+    -- as the topmost state.
+    frame.identityLayer = CreateFrame("Frame", nil, frame)
+    frame.identityLayer:SetAllPoints(frame.previewCanvas)
+    frame.identityLayer:EnableMouse(false)
+    frame.identityLayer.label = frame.identityLayer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.identityLayer.label:SetWordWrap(false)
+    frame.identityLayer.badge = frame.identityLayer:CreateTexture(nil, "OVERLAY", nil, 7)
+    frame.identityLayer:Hide()
 
     return frame
 end
@@ -832,6 +860,27 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
         rbSettings.resources = rbSettings.resources or {}
     end
 
+    -- Per-slot thickness, resolved exactly as the apply pass resolves it
+    -- (ResourceBar.lua, the customBarHeights branch): the override only
+    -- applies when that layout flag is on, and the axis decides which
+    -- stored key wins. Without this every slot rendered at one uniform
+    -- thickness, so a bar with an override previewed at the wrong size.
+    local globalThickness = includeResourceSlots
+        and tonumber(GetResourceGlobalThickness(rbSettings)) or nil
+
+    local function ResolveSlotThickness(slotLayout)
+        if not (layout.customBarHeights and type(slotLayout) == "table") then
+            return globalThickness
+        end
+        local override
+        if isVerticalLayout then
+            override = slotLayout.barWidth or slotLayout.barHeight
+        else
+            override = slotLayout.barHeight or slotLayout.barWidth
+        end
+        return tonumber(override) or globalThickness
+    end
+
     local function GetSlotColor(powerType)
         if powerType == RESOURCE_HEALTH then
             local health = rbSettings.resources and rbSettings.resources[RESOURCE_HEALTH]
@@ -886,6 +935,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                 powerType = powerType,
                 label = POWER_NAMES[powerType] or ("Power " .. powerType),
                 shortLabel = POWER_SHORT_NAMES[powerType] or GetShortLabel(POWER_NAMES[powerType] or ("Power " .. powerType)),
+                thickness = ResolveSlotThickness(layout.resources[powerType]),
                 color = GetSlotColor(powerType),
                 icon = resourceConfig.previewIcon or LAYOUT_PREVIEW_ICON_FALLBACK,
                 getPos = function()
@@ -953,6 +1003,8 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                     },
                     label = slotName,
                     shortLabel = GetShortLabel(label),
+                    thickness = ResolveSlotThickness(
+                        GetCustomBarLayout(rbSettings, nil, customAura, false)),
                     color = CloneColor(customAura.barColor, { 0.52, 0.64, 1.0, 1 }),
                     icon = C_Spell.GetSpellTexture(customAura.spellID) or LAYOUT_PREVIEW_ICON_FALLBACK,
                     getPos = function()
@@ -1001,6 +1053,10 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
             kind = "cast",
             label = "Cast Bar",
             shortLabel = "Cast",
+            -- The cast bar's own height, not the stack's: it used to be
+            -- folded into one max with the resource thickness, which
+            -- clamped every bar up to whichever was taller.
+            thickness = cbSettings.stylingEnabled and (tonumber(cbSettings.height) or 15) or 11,
             color = CloneColor(cbSettings.barColor, { 1.0, 0.72, 0.18, 1 }),
             icon = LAYOUT_PREVIEW_ICON_FALLBACK,
             getPos = function()
@@ -1189,9 +1245,86 @@ local function ConfigureSlotChrome(frame, slot, skin, isVertical)
         frame.selectedHighlight:SetFrameLevel(frame:GetFrameLevel() + 19)
         frame.selectedHighlight:Hide()
     end
+    if frame.identityLayer then
+        frame.identityLayer:SetFrameLevel(frame:GetFrameLevel() + 18)
+        frame.identityLayer:Hide()
+    end
 
     frame.previewCanvas:ClearAllPoints()
     frame.previewCanvas:SetAllPoints(frame)
+end
+
+-- Identity marks for one custom-bar slot. Runs AFTER the content scale is
+-- known so both marks can counter-scale and stay legible on a preview that
+-- has been shrunk to fit.
+local function ApplySlotIdentityMarks(frame, scale)
+    local layer = frame and frame.identityLayer
+    if not layer then return end
+    local slot = frame.slotData
+    if not (slot and slot.kind == "custom") then
+        layer:Hide()
+        return
+    end
+
+    scale = math_max(scale or 1, 0.01)
+    local isVertical = frame._cdcIdentityVertical == true
+
+    -- A narrow vertical bar cannot carry a name, so it gets the same short
+    -- label the drag chrome uses.
+    local text = isVertical and slot.shortLabel or slot.label
+    -- Slot labels are stored as "Custom Bar: <name>"; the prefix is noise
+    -- when every labelled bar in the canvas is a custom bar.
+    if type(text) == "string" then
+        text = string.gsub(text, "^Custom Bar:%s*", "")
+    end
+
+    local label = layer.label
+    if text and text ~= "" then
+        local fontFile, _, flags = label:GetFont()
+        label:SetFont(fontFile,
+            math_max(8, math_min(14, LAYOUT_PREVIEW_IDENTITY_FONT_SCREEN_SIZE / scale)),
+            flags or "")
+        label:SetText(text)
+        label:SetTextColor(1, 1, 1, LAYOUT_PREVIEW_IDENTITY_ALPHA)
+        label:ClearAllPoints()
+        if isVertical then
+            label:SetJustifyH("CENTER")
+            label:SetPoint("CENTER", layer, "CENTER", 0, 0)
+            label:SetWidth(0)
+        else
+            label:SetJustifyH("LEFT")
+            label:SetPoint("LEFT", layer, "LEFT", LAYOUT_PREVIEW_IDENTITY_INSET, 0)
+            -- Fixed width + no word wrap truncates with an ellipsis rather
+            -- than overflowing the bar. Measured off the slot frame, which
+            -- was explicitly sized; the layer only inherits that by anchor
+            -- and would report nothing until the next layout pass.
+            label:SetWidth(math_max(1,
+                (frame:GetWidth() or 0) - (LAYOUT_PREVIEW_IDENTITY_INSET * 2)))
+        end
+        label:Show()
+    else
+        label:Hide()
+    end
+
+    local badge = layer.badge
+    local config = slot.customEntry and slot.customEntry.config
+    if type(config) == "table" and config.hideWhenInactive == true then
+        local size = math_min(24, math_max(12,
+            LAYOUT_PREVIEW_VISIBILITY_BADGE_SCREEN_SIZE / scale))
+        badge:SetAtlas(LAYOUT_PREVIEW_VISIBILITY_BADGE_ATLAS, false)
+        badge:SetSize(size, size)
+        badge:ClearAllPoints()
+        if isVertical then
+            badge:SetPoint("TOP", layer, "TOP", 0, 0)
+        else
+            badge:SetPoint("RIGHT", layer, "RIGHT", 0, 0)
+        end
+        badge:Show()
+    else
+        badge:Hide()
+    end
+
+    layer:Show()
 end
 
 local function HideUnusedSlotVisuals(frame)
@@ -1225,6 +1358,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             height,
             segmentGap
         )
+        frame._cdcCustomBarLength = preview.isVerticalLayout and height or width
     elseif slot.powerType == 101 then
         if not barInfo or barInfo.barType ~= "stagger_continuous" then
             if barInfo and barInfo.frame then
@@ -1317,6 +1451,25 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         barInfo.frame:SetPoint("BOTTOMRIGHT", frame.previewCanvas, "BOTTOMRIGHT", 0, 0)
         barInfo.frame:Show()
         ApplyPreviewBarState(barInfo, rbSettings)
+        -- The aura-absent layer for stacks-mode aura bars: the real
+        -- capacity blocks and their per-block rings, the same call the live
+        -- apply pass makes. Without it a stack bar previewed as one
+        -- continuous fill — the headline fidelity gap.
+        --
+        -- includeShell because the canvas renders hide-while-inactive bars
+        -- (they must stay visible to edit); barLength because the bar frame
+        -- has not been through a layout pass this frame, so the block layout
+        -- cannot measure it; maxStacks because a bar the config shows may
+        -- have no live slot running and therefore no cached max.
+        if slot.kind == "custom" and RB.ApplyCustomBarAbsentStackVisuals then
+            local cabConfig = slot.customEntry and slot.customEntry.config
+            RB.ApplyCustomBarAbsentStackVisuals(barInfo, rbSettings, {
+                includeShell = true,
+                barLength = frame._cdcCustomBarLength,
+                maxStacks = RB.ResolveCustomBarStackMax
+                    and RB.ResolveCustomBarStackMax(cabConfig, rbSettings) or nil,
+            })
+        end
     end
 end
 
@@ -1575,17 +1728,60 @@ local function AcquirePrimaryPanelFrame(preview, parent, panelData)
     return RenderMirroredPanel(preview, parent, panelData)
 end
 
-local function BuildLaneSlotGeometry(lane, index)
+-- Bars are not all the same thickness: the layout supports a per-slot
+-- override and the cast bar carries its own height. The lane therefore
+-- positions from an ordered list of extents rather than from one repeated
+-- slot size, and `sizes` lets a caller pass a hypothetical order (drag
+-- hit-testing works against the list with the dragged slot removed).
+local function GetSlotExtent(slot, fallback)
+    local thickness = tonumber(slot and slot.thickness)
+    if thickness and thickness > 0 then
+        return math_max(8, math_floor(thickness))
+    end
+    return fallback
+end
+
+local function BuildSlotExtents(slots, fallback)
+    local sizes = {}
+    for index, slot in ipairs(slots) do
+        sizes[index] = GetSlotExtent(slot, fallback)
+    end
+    return sizes
+end
+
+local function GetExtentTotal(sizes, gap, fallbackSize)
+    local count = sizes and #sizes or 0
+    if count <= 0 then
+        return math_max(LAYOUT_PREVIEW_EMPTY_DROP_SIZE, fallbackSize or LAYOUT_PREVIEW_EMPTY_DROP_SIZE)
+    end
+    local total = 0
+    for _, size in ipairs(sizes) do
+        total = total + size
+    end
+    return total + ((count - 1) * gap)
+end
+
+local function BuildLaneSlotGeometry(lane, index, sizes)
+    sizes = sizes or lane.renderSizes or {}
+    local gap = lane.slotGap or LAYOUT_PREVIEW_GAP
     local laneWidth = lane.frame:GetWidth() or lane.slotWidth or 1
     local laneHeight = lane.frame:GetHeight() or lane.slotHeight or 1
+    local defaultExtent = lane.defaultExtent
+        or (lane.axis == "x" and lane.slotWidth or lane.slotHeight)
+        or LAYOUT_PREVIEW_EMPTY_DROP_SIZE
+
+    local offset = 0
+    for i = 1, index - 1 do
+        offset = offset + (sizes[i] or defaultExtent) + gap
+    end
+    local extent = sizes[index] or defaultExtent
+
     if lane.axis == "x" then
-        local x = (index - 1) * (lane.slotWidth + LAYOUT_PREVIEW_GAP)
         local y = -math_floor(math_max(0, laneHeight - lane.slotHeight) / 2)
-        return x, y, lane.slotWidth, lane.slotHeight
+        return offset, y, extent, lane.slotHeight
     end
     local x = math_floor(math_max(0, laneWidth - lane.slotWidth) / 2)
-    local y = -((index - 1) * (lane.slotHeight + LAYOUT_PREVIEW_GAP))
-    return x, y, lane.slotWidth, lane.slotHeight
+    return x, -offset, lane.slotWidth, extent
 end
 
 local function GetScaledFrameRect(frame)
@@ -1636,10 +1832,13 @@ local function BuildStableLaneSlots(lane, draggedSlotId)
             table_insert(filtered, slot)
         end
     end
+    -- Hit-test against the order WITHOUT the dragged slot, so the rects
+    -- match what the lane would look like if it were dropped elsewhere.
+    local filteredSizes = BuildSlotExtents(filtered, lane.defaultExtent)
 
     local slotRects = {}
     for index = 1, #filtered do
-        local x, y, w, h = BuildLaneSlotGeometry(lane, index)
+        local x, y, w, h = BuildLaneSlotGeometry(lane, index, filteredSizes)
         local left = laneScale.left + (x * laneScale.scaleX)
         local top = laneScale.top + (y * laneScale.scaleY)
         local right = left + (w * laneScale.scaleX)
@@ -1718,16 +1917,31 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         baseHeight = height,
         slotWidth = slotWidth,
         slotHeight = slotHeight,
+        -- Along-axis fallback for a slot with no resolved thickness; the
+        -- cross-axis size stays uniform (attached bars stretch to the
+        -- anchor, exactly as the live stack does).
+        defaultExtent = axis == "x" and slotWidth or slotHeight,
+        slotGap = preview.slotGap or LAYOUT_PREVIEW_GAP,
         baseExtent = axis == "x" and width or height,
         acceptedCategory = acceptedCategory,
         visualSlots = {},
         slotFramesById = {},
     }
+    lane.naturalSizes = BuildSlotExtents(slotModels, lane.defaultExtent)
+    lane.renderSizes = lane.naturalSizes
 
     for index, slotModel in ipairs(slotModels) do
         local slotFrame = AcquireSlot(preview, laneFrame)
-        ConfigureSlotPreview(slotFrame, slotModel, preview, slotWidth, slotHeight, axis == "x")
+        local slotExtent = lane.naturalSizes[index]
+        ConfigureSlotPreview(
+            slotFrame, slotModel, preview,
+            axis == "x" and slotExtent or slotWidth,
+            axis == "x" and slotHeight or slotExtent,
+            axis == "x")
         slotFrame.slotData = slotModel
+        -- Read by the identity-mark pass, which runs after the content
+        -- scale is known and no longer has the lane in hand.
+        slotFrame._cdcIdentityVertical = axis == "x"
         preview.renderedSelectionKeys[slotModel.id] = true
 
         -- Mark the bar currently being configured: held hover-style glow
@@ -1756,7 +1970,7 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         end
         if isSelected and slotFrame.selectedHighlight then
             local marker = slotFrame.selectedHighlight
-            local arrowSize = math_max(14, math_min(28, (axis == "x" and slotWidth or slotHeight) + 6))
+            local arrowSize = math_max(14, math_min(28, slotExtent + 6))
             marker.side1:SetSize(arrowSize, arrowSize)
             marker.side2:SetSize(arrowSize, arrowSize)
             marker.side1:ClearAllPoints()
@@ -1872,11 +2086,13 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
     return lane
 end
 
-local function GetLaneExtent(count, slotSize)
-    if count <= 0 then
-        return math_max(LAYOUT_PREVIEW_EMPTY_DROP_SIZE, slotSize or LAYOUT_PREVIEW_EMPTY_DROP_SIZE)
-    end
-    return (count * slotSize) + (math_max(0, count - 1) * LAYOUT_PREVIEW_GAP)
+-- The lane's along-axis size for a set of slots, honoring each slot's own
+-- thickness and the configured inter-bar spacing.
+local function GetLaneExtent(preview, slots, slotSize)
+    return GetExtentTotal(
+        BuildSlotExtents(slots, slotSize),
+        preview.slotGap or LAYOUT_PREVIEW_GAP,
+        slotSize)
 end
 
 local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel, slots, slotHeight)
@@ -1886,8 +2102,8 @@ local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
     local aboveSlots = SortSlotsForSide(slots, "above", true)
     local belowSlots = SortSlotsForSide(slots, "below", false)
     local slotFrameHeight = math_max(8, slotHeight)
-    local aboveHeight = GetLaneExtent(#aboveSlots, slotFrameHeight)
-    local belowHeight = GetLaneExtent(#belowSlots, slotFrameHeight)
+    local aboveHeight = GetLaneExtent(preview, aboveSlots, slotFrameHeight)
+    local belowHeight = GetLaneExtent(preview, belowSlots, slotFrameHeight)
     -- Live attached bars stretch to the anchor frame's width, so slots
     -- follow the acquired panel frame (the real mirror when injected),
     -- not the facsimile's precomputed size.
@@ -1916,7 +2132,7 @@ end
 local function RenderIndependentHorizontalLayout(preview, content, layoutDrag, slots, slotWidth, slotHeight)
     local stackSlots, stackSide, reversed = SortSlotsForIndependentStack(slots, "above", "below")
     local slotFrameHeight = math_max(8, slotHeight)
-    local stackHeight = GetLaneExtent(#stackSlots, slotFrameHeight)
+    local stackHeight = GetLaneExtent(preview, stackSlots, slotFrameHeight)
 
     local lane = BuildLane(
         preview,
@@ -1940,7 +2156,7 @@ end
 
 local function RenderIndependentVerticalLayout(preview, content, layoutDrag, slots, slotHeight, slotWidth)
     local stackSlots, stackSide, reversed = SortSlotsForIndependentStack(slots, "left", "right")
-    local stackWidth = GetLaneExtent(#stackSlots, slotWidth)
+    local stackWidth = GetLaneExtent(preview, stackSlots, slotWidth)
 
     local lane = BuildLane(
         preview,
@@ -1970,8 +2186,8 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
         local castSlotFrameHeight = math_max(8, horizontalBarHeight)
         local castAbove = SortSlotsForSide(castSlots, "above", true)
         local castBelow = SortSlotsForSide(castSlots, "below", false)
-        local castAboveHeight = GetLaneExtent(#castAbove, castSlotFrameHeight)
-        local castBelowHeight = GetLaneExtent(#castBelow, castSlotFrameHeight)
+        local castAboveHeight = GetLaneExtent(preview, castAbove, castSlotFrameHeight)
+        local castBelowHeight = GetLaneExtent(preview, castBelow, castSlotFrameHeight)
 
         local castAboveLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castAboveHeight, "y", "above", true, castAbove, panelWidth, castSlotFrameHeight, "cast")
         castAboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
@@ -1998,8 +2214,8 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
     local panelHeight = panelFrame:GetHeight()
     local leftSlots = SortSlotsForSide(primarySlots, "left", true)
     local rightSlots = SortSlotsForSide(primarySlots, "right", false)
-    local leftWidth = GetLaneExtent(#leftSlots, verticalBarWidth)
-    local rightWidth = GetLaneExtent(#rightSlots, verticalBarWidth)
+    local leftWidth = GetLaneExtent(preview, leftSlots, verticalBarWidth)
+    local rightWidth = GetLaneExtent(preview, rightSlots, verticalBarWidth)
     local verticalBarHeight = panelHeight
 
     local leftLane = BuildLane(preview, content, layoutDrag, nil, leftWidth, panelHeight, "x", "left", true, leftSlots, verticalBarWidth, verticalBarHeight, "primary")
@@ -2026,8 +2242,8 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
         local castSlotFrameHeight = math_max(8, horizontalBarHeight)
         local castAbove = SortSlotsForSide(castSlots, "above", true)
         local castBelow = SortSlotsForSide(castSlots, "below", false)
-        local castAboveHeight = GetLaneExtent(#castAbove, castSlotFrameHeight)
-        local castBelowHeight = GetLaneExtent(#castBelow, castSlotFrameHeight)
+        local castAboveHeight = GetLaneExtent(preview, castAbove, castSlotFrameHeight)
+        local castBelowHeight = GetLaneExtent(preview, castBelow, castSlotFrameHeight)
 
         local castAboveLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castAboveHeight, "y", "above", true, castAbove, panelWidth, castSlotFrameHeight, "cast")
         castAboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", leftWidth + LAYOUT_PREVIEW_GAP, -(panelHeight + LAYOUT_PREVIEW_SECTION_GAP))
@@ -2253,33 +2469,47 @@ end
 
 local function UpdateLanePreview(preview, lane, draggedSlotId, dropTarget)
     local gapIndex = (dropTarget and dropTarget.lane == lane and dropTarget.insertIndex) or nil
-    local renderIndex = 1
-    local visibleFrames = {}
 
+    -- Render order for this frame: the lane's slots with the dragged one
+    -- lifted out, and the drop gap (sized to the bar being dragged)
+    -- inserted where it would land. Positions come from this list, so bars
+    -- of different thicknesses shuffle correctly.
+    local ordered = {}
+    local sizes = {}
     for _, slot in ipairs(lane.slotModels or {}) do
         local slotFrame = lane.slotFramesById[slot.id]
-        if slotFrame then
-            if slot.id == draggedSlotId then
-                slotFrame:SetAlpha(0)
-            else
-                local displayIndex = renderIndex
-                if gapIndex and displayIndex >= gapIndex then
-                    displayIndex = displayIndex + 1
-                end
-                local x, y, w, h = BuildLaneSlotGeometry(lane, displayIndex)
-                QueueSlotTween(preview, slotFrame, lane.frame, x, y, w, h, 1, LAYOUT_PREVIEW_ANIM_DURATION)
-                slotFrame:SetShown(true)
-                slotFrame:SetAlpha(1)
-                table_insert(visibleFrames, slotFrame)
-                renderIndex = renderIndex + 1
-            end
+        if slotFrame and slot.id ~= draggedSlotId then
+            ordered[#ordered + 1] = slotFrame
+            sizes[#sizes + 1] = GetSlotExtent(slot, lane.defaultExtent)
         end
+    end
+    if gapIndex then
+        gapIndex = math_max(1, math_min(#ordered + 1, gapIndex))
+        table_insert(sizes, gapIndex, preview.draggedSlotExtent or lane.defaultExtent)
+    end
+    lane.renderSizes = sizes
+
+    local visibleFrames = {}
+    for _, slot in ipairs(lane.slotModels or {}) do
+        local slotFrame = lane.slotFramesById[slot.id]
+        if slotFrame and slot.id == draggedSlotId then
+            slotFrame:SetAlpha(0)
+        end
+    end
+    for index, slotFrame in ipairs(ordered) do
+        local displayIndex = index
+        if gapIndex and displayIndex >= gapIndex then
+            displayIndex = displayIndex + 1
+        end
+        local x, y, w, h = BuildLaneSlotGeometry(lane, displayIndex)
+        QueueSlotTween(preview, slotFrame, lane.frame, x, y, w, h, 1, LAYOUT_PREVIEW_ANIM_DURATION)
+        slotFrame:SetShown(true)
+        slotFrame:SetAlpha(1)
+        table_insert(visibleFrames, slotFrame)
     end
 
     lane.visualSlots = visibleFrames
-    local slotSize = (lane.axis == "x") and lane.slotWidth or lane.slotHeight
-    local visualCount = #visibleFrames + (gapIndex and 1 or 0)
-    local requiredExtent = GetLaneExtent(visualCount, slotSize)
+    local requiredExtent = GetExtentTotal(sizes, lane.slotGap or LAYOUT_PREVIEW_GAP, lane.defaultExtent)
     local overflow = math_max(0, requiredExtent - (lane.baseExtent or requiredExtent))
     if lane.setPreviewOverflow then
         lane.setPreviewOverflow(overflow)
@@ -2297,6 +2527,7 @@ local function UpdateLanePreview(preview, lane, draggedSlotId, dropTarget)
 end
 
 local function ResetLanePreview(preview, lane)
+    lane.renderSizes = lane.naturalSizes
     for index, slot in ipairs(lane.slotModels or {}) do
         local slotFrame = lane.slotFramesById[slot.id]
         if slotFrame then
@@ -2355,6 +2586,7 @@ local function CreateLayoutDragModel(preview)
     layoutDrag.onActivate = function(state)
         if not (state and state.widget and state.slotData) then return end
         layoutDrag.draggedSlotId = state.slotData.id
+        preview.draggedSlotExtent = GetSlotExtent(state.slotData, nil)
         ConfigureGhost(preview, state.slotData, state.widget)
         for _, lane in ipairs(layoutDrag.lanes) do
             UpdateLanePreview(preview, lane, state.slotData.id, state.dropTarget)
@@ -2367,6 +2599,7 @@ local function CreateLayoutDragModel(preview)
     layoutDrag.onUpdate = function(state, cursorX, cursorY, dropTarget)
         if not (state and state.slotData) then return end
         layoutDrag.draggedSlotId = state.slotData.id
+        preview.draggedSlotExtent = GetSlotExtent(state.slotData, nil)
         for _, lane in ipairs(layoutDrag.lanes) do
             UpdateLanePreview(preview, lane, state.slotData.id, dropTarget)
         end
@@ -2382,6 +2615,7 @@ local function CreateLayoutDragModel(preview)
 
     layoutDrag.onCancel = function()
         layoutDrag.draggedSlotId = nil
+        preview.draggedSlotExtent = nil
         for _, lane in ipairs(layoutDrag.lanes) do
             ResetLanePreview(preview, lane)
         end
@@ -2470,6 +2704,13 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
 
     ResetPreviewState(preview)
     preview.layout = layout
+    -- The real spacing between stacked bars, not a fixed 4px. (The gap
+    -- between the icon panel and the lanes is a different setting,
+    -- GetResourceAnchorGap, and still renders as the fixed chrome gap.)
+    preview.slotGap = math_max(0, tonumber(layout and layout.barSpacing)
+        or tonumber(preview.rbSettings and preview.rbSettings.barSpacing)
+        or LAYOUT_PREVIEW_GAP)
+    preview.draggedSlotExtent = nil
     HidePreviewMessage(preview)
 
     local rbSettings = preview.rbSettings
@@ -2596,9 +2837,11 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     elseif sourcePanel and layoutDrag then
         local resourceThickness = (rbSettings and tonumber(GetResourceGlobalThickness(rbSettings)))
             or math_floor(sourcePanel.iconHeight * 0.56)
-        local castBarHeight = cbSettings and (cbSettings.stylingEnabled and (cbSettings.height or 15) or 11)
-            or resourceThickness
-        local horizontalBarHeight = math_max(8, math_floor(math_max(resourceThickness, castBarHeight)))
+        -- Fallback thickness only: every slot now carries its own (the cast
+        -- bar its configured height, resources and custom bars their
+        -- per-slot override). This used to be one max across both, which
+        -- clamped every bar up to whichever was tallest.
+        local horizontalBarHeight = math_max(8, math_floor(resourceThickness))
         local verticalBarWidth = math_max(8, math_floor(resourceThickness))
 
         if preview.isVerticalLayout then
@@ -2641,6 +2884,12 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     content:SetScale(scale)
     content:ClearAllPoints()
     content:SetPoint("CENTER", root, "CENTER", 0, 0)
+
+    -- Identity marks last: they counter-scale against the fit above, so
+    -- they can only be laid out once it is known.
+    for index = 1, (preview.used.slots or 0) do
+        ApplySlotIdentityMarks(preview.pools.slots[index], scale)
+    end
 
     FinalizePreviewState(preview)
 end
