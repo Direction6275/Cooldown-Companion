@@ -1,6 +1,7 @@
 --[[
     CooldownCompanion - ResourceBarAuraHost
-    Custom-bar hosting for the AuraContainer display (the aura pass, Phase 1).
+    Custom-bar hosting for the AuraContainer display (the aura pass, Phase 1)
+    and resource-bar aura overlays (Phase 2).
 
     Bar-mode panels are the reference implementation (Core/AuraDisplay.lua);
     this module owns only what genuinely differs on the custom-bar host:
@@ -55,6 +56,13 @@ function RB.CreateResourceBarAuraHostModule(deps)
     local SetCustomBarCachedStackMax = RB.SetCustomBarCachedStackMax
     local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
     local HidePixelBorders = RB.HidePixelBorders
+    local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
+    local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
+    local GetResourceAuraTrackingMode = RB.GetResourceAuraTrackingMode
+    local GetResourceDisplayConfig = RB.GetResourceDisplayConfig
+    local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
+    local IsVerticalFillReversed = RB.IsVerticalFillReversed
+    local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 
     local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
     local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
@@ -474,6 +482,157 @@ function RB.CreateResourceBarAuraHostModule(deps)
     end
 
     ------------------------------------------------------------------------
+    -- Resource-bar aura overlays (Phase 2). Same holder discipline as the
+    -- custom bars, keyed by powerType — the stable resource identity (bar
+    -- frames and barInfo tables are recycled by stack position, so nothing
+    -- here may key on a slot). One overlay entry per resource per spec,
+    -- read through the surviving scoped keys (auraOverlayEntries family);
+    -- the kit renders the chosen shapes, all Blizzard-driven.
+    ------------------------------------------------------------------------
+
+    local resourceHolders = {} -- powerType -> holder frame
+
+    local RESOURCE_OVERLAY_BAR_TYPES = {
+        continuous = true,
+        segmented = true,
+        mw_segmented = true,
+        stagger_continuous = true,
+    }
+
+    local function EnsureResourceHolder(powerType)
+        local holder = resourceHolders[powerType]
+        if not holder then
+            holder = CreateFrame("Frame", nil, GetAuraHostRoot())
+            holder:EnableMouse(false)
+            holder._ccAuraHostKind = "resourceBar"
+            holder._isBar = true
+            holder.statusBar = holder
+            holder._cdcClickThroughMotion = true
+            holder._ccBounds = CreateFrame("Frame", nil, holder)
+            holder._ccBounds:EnableMouse(false)
+            holder._barBounds = holder._ccBounds
+            -- Anchor rect for the full aura display shape: a plain CC
+            -- square centered on the bar. The kit's icon/swipe/texts anchor
+            -- to it; it renders nothing itself.
+            holder._ccDisplayRect = CreateFrame("Frame", nil, holder)
+            holder._ccDisplayRect:EnableMouse(false)
+            holder._ccDisplayRect:SetPoint("CENTER", holder, "CENTER", 0, 0)
+            holder._ccDisplayRect:SetSize(24, 24)
+            resourceHolders[powerType] = holder
+        end
+        return holder
+    end
+
+    -- Where a resource holder mounts. Continuous-style bars carry their own
+    -- pixel-border ring inside the bar rect, so the holder insets to keep
+    -- the ring visible (the panel statusBar-mount contract). Segment
+    -- clusters draw their rings per segment — the cluster frame has no ring
+    -- of its own, and the tint must span the whole cluster (owner ruling),
+    -- so those mount at the full rect.
+    local function GetResourceHolderInset(barInfo, borderInset)
+        if barInfo.barType == "segmented" or barInfo.barType == "mw_segmented" then
+            return 0
+        end
+        return borderInset
+    end
+
+    -- Which overlay shapes an entry renders. New entries carry explicit
+    -- shape* booleans; live-era entries with none set default from the
+    -- closest live intent — "stacks" tracking meant the stack lane,
+    -- everything else meant the fill recolor, whose combat-grade
+    -- replacement is the whole-bar tint. Read-time defaulting only; the
+    -- stored keys are never rewritten (no migrations).
+    local function ResolveResourceOverlayShapes(entry)
+        if entry.shapeTint ~= nil or entry.shapeDurationLane ~= nil
+            or entry.shapeStackLane ~= nil or entry.shapeStackText ~= nil
+            or entry.shapeAuraDisplay ~= nil then
+            return {
+                tint = entry.shapeTint == true,
+                durationLane = entry.shapeDurationLane == true,
+                stackLane = entry.shapeStackLane == true,
+                stackText = entry.shapeStackText == true,
+                display = entry.shapeAuraDisplay == true,
+            }
+        end
+        if GetResourceAuraTrackingMode(entry) == "stacks" then
+            return { stackLane = true, stackText = true }
+        end
+        return { tint = true }
+    end
+
+    -- Overlay entry -> the buttonData vocabulary Core/Aura.lua reads. The
+    -- unit is left to the rebind pass's shared polarity resolve (auraUnit
+    -- is its fallback for uncached spells). No soundAlerts: resource
+    -- overlays carry no sound events.
+    local function BuildResourceOverlayEntryAdapter(entry, settings, shapes)
+        local layout = GetSpecLayoutOrder(settings)
+        return {
+            type = "spell",
+            id = tonumber(entry.auraColorSpellID),
+            addedAs = "aura",
+            auraTracking = true,
+            auraUnit = entry.auraUnit,
+            auraBar = {
+                mode = shapes.stackLane and "stacks" or "duration",
+                segmentGap = (layout and layout.segmentGap) or settings.segmentGap or 4,
+                segmentedSmoothing = GetResourceSegmentedSmoothing(settings),
+            },
+        }
+    end
+
+    -- Overlay entry + resource settings -> the StyleSlotKit vocabulary,
+    -- plus the resourceShapes table the kit's resource branch lays shapes
+    -- from. No barAura* effect keys: resource overlays carry no glow/pulse
+    -- family (border glow declined by ruling), and the absent indicator
+    -- key reads as effects-off.
+    local function BuildResourceOverlayStyleAdapter(entry, settings, powerType, shapes)
+        local style = {}
+
+        style.barTexture = GetResourceDisplayValue(settings, "barTexture", "Solid")
+        style.barBgColor = GetResourceDisplayValue(settings, "backgroundColor", { 0, 0, 0, 0.5 })
+        style.backgroundColor = style.barBgColor
+        local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
+        style.borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 })
+        style.borderSize = borderStyle == "pixel" and GetResourceDisplayValue(settings, "borderSize", 1) or 0
+        style.borderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM)
+
+        local color = entry.auraActiveColor
+        if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
+            color = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
+        end
+        style.barAuraColor = color
+        -- Overwritten by the collector from the live frame's fill direction.
+        style.barReverseFill = false
+
+        -- Texts ride the resource text styling (one home per control).
+        local resourceConfig = GetResourceDisplayConfig(settings, powerType)
+        local font = (resourceConfig and resourceConfig.textFont) or DEFAULT_RESOURCE_TEXT_FONT
+        local fontSize = tonumber(resourceConfig and resourceConfig.textFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
+        local outline = (resourceConfig and resourceConfig.textFontOutline) or DEFAULT_RESOURCE_TEXT_OUTLINE
+        local fontColor = resourceConfig and resourceConfig.textFontColor
+        if type(fontColor) ~= "table" or fontColor[1] == nil or fontColor[2] == nil or fontColor[3] == nil then
+            fontColor = DEFAULT_RESOURCE_TEXT_COLOR
+        end
+        style.auraTextFont, style.auraTextFontSize = font, fontSize
+        style.auraTextFontOutline, style.auraTextFontColor = outline, fontColor
+        style.auraStackFont, style.auraStackFontSize = font, fontSize
+        style.auraStackFontOutline, style.auraStackFontColor = outline, fontColor
+        -- The timer text belongs to the full display shape; the stack text
+        -- is its own shape.
+        style.showAuraText = shapes.display == true
+        style.showAuraStackText = shapes.stackText == true
+
+        style.showBarIcon = false
+        style.showBarNameText = false
+        style.showKeybindText = false
+        style.pandemicMarkerEnabled = false
+
+        style.resourceShapes = shapes
+        style.resourceDisplaySize = tonumber(entry.displaySize) or 24
+        return style
+    end
+
+    ------------------------------------------------------------------------
     -- The want collector: called by RunAuraRebind (structurally OOC) after
     -- the panel pass. Appends one want record per live aura-tracked custom
     -- bar, re-anchors holders, refreshes the stack-max cache, and re-lays
@@ -483,6 +642,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
     function ST._CollectCustomBarAuraWants(wanted)
         local settings = GetResourceBarSettings()
         local collected -- customBarId -> true
+        local collectedResources -- powerType -> true
 
         if settings and settings.enabled then
             local inset = GetCustomBarBorderInset(settings)
@@ -536,6 +696,66 @@ function RB.CreateResourceBarAuraHostModule(deps)
                         collected = collected or {}
                         collected[barInfo.customBarId] = true
                     end
+                elseif frame and barInfo.powerType ~= nil
+                    and RESOURCE_OVERLAY_BAR_TYPES[barInfo.barType]
+                    and frame:IsShown() then
+                    -- Resource overlay leg (Phase 2): one want per shown
+                    -- resource bar whose resource has a current-spec entry.
+                    local resource = settings.resources and settings.resources[barInfo.powerType]
+                    local entry = resource and IsResourceAuraOverlayEnabled(resource)
+                        and GetActiveResourceAuraEntry(resource) or nil
+                    local auraSpellID = entry and tonumber(entry.auraColorSpellID) or nil
+                    if auraSpellID and auraSpellID > 0 then
+                        local shapes = ResolveResourceOverlayShapes(entry)
+                        local buttonData = BuildResourceOverlayEntryAdapter(entry, settings, shapes)
+                        local spellSet = CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData)
+                        if spellSet then
+                            -- Stack lane fill max: automatic, game-data
+                            -- resolved, OOC (owner ruling — no manual max
+                            -- anywhere). A nil resolve means "not a
+                            -- stacking aura": the lane (not the whole
+                            -- entry) degrades away.
+                            local stackBarMax
+                            if shapes.stackLane then
+                                stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData)
+                                if not stackBarMax then
+                                    shapes.stackLane = false
+                                    buttonData.auraBar.mode = "duration"
+                                end
+                            end
+
+                            local holder = EnsureResourceHolder(barInfo.powerType)
+                            AnchorHolderToBar(holder, frame,
+                                GetResourceHolderInset(barInfo, inset))
+                            -- Orientation from the LAYOUT, not the frame:
+                            -- segment-cluster frames never carry the
+                            -- _isVertical/_reverseFill fields continuous
+                            -- bars do, and every resource bar follows the
+                            -- global layout orientation anyway.
+                            local vertical = IsVerticalResourceLayout(settings) == true
+                            holder._isVertical = vertical
+                            holder:Show()
+
+                            local style = BuildResourceOverlayStyleAdapter(
+                                entry, settings, barInfo.powerType, shapes)
+                            style.barReverseFill = vertical
+                                and IsVerticalFillReversed(settings) == true or false
+                            local size = style.resourceDisplaySize
+                            holder._ccDisplayRect:SetSize(size, size)
+
+                            wanted[#wanted + 1] = {
+                                button = holder,
+                                buttonData = buttonData,
+                                spellSet = spellSet,
+                                -- unit resolved by the rebind pass's shared
+                                -- polarity rule (want.unit left nil).
+                                style = style,
+                                stackBarMax = stackBarMax,
+                            }
+                            collectedResources = collectedResources or {}
+                            collectedResources[barInfo.powerType] = true
+                        end
+                    end
                 end
             end
         end
@@ -545,6 +765,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- the belt-and-braces CC-side mirror.
         for customBarId, holder in pairs(holders) do
             if not (collected and collected[customBarId]) then
+                holder:Hide()
+            end
+        end
+        for powerType, holder in pairs(resourceHolders) do
+            if not (collectedResources and collectedResources[powerType]) then
                 holder:Hide()
             end
         end
@@ -601,6 +826,27 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- restricted max lookup.
         AnchorHolderToBar(holder, frame,
             GetCustomBarHolderInset(barInfo, GetCustomBarBorderInset(settings)))
+    end
+
+    -- The resource-holder mirror of the repair above, keyed by powerType.
+    -- Resource slots recycle exactly as readily on a form change; the mount
+    -- rule here is plain barType + settings reads, so it is equally valid
+    -- in combat.
+    function RB.SyncResourceBarAuraHostAnchor(barInfo)
+        local frame = barInfo and barInfo.frame
+        local powerType = barInfo and barInfo.powerType
+        if not (frame and powerType ~= nil) then return end
+        local holder = resourceHolders[powerType]
+        -- Never bound (or parked and hidden): the rebind owns those.
+        if not (holder and holder._ccAnchoredFrame) then return end
+        if holder._ccAnchoredFrame == frame then return end
+        local settings = GetResourceBarSettings()
+        if not settings then return end
+        AnchorHolderToBar(holder, frame,
+            GetResourceHolderInset(barInfo, GetCustomBarBorderInset(settings)))
+        -- Layout-derived, like the collector: cluster frames carry no
+        -- _isVertical field for AnchorHolderToBar to read.
+        holder._isVertical = IsVerticalResourceLayout(settings) == true
     end
 
     -- Addon methods rather than module-locals on purpose: ApplyResourceBars
