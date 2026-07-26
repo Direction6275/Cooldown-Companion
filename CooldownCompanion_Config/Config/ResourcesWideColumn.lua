@@ -323,6 +323,9 @@ local function GetCustomBarEntryTabs(entry)
         { value = "appearance", text = "Appearance" },
     }
 
+    if type(entry) == "table" and entry.spellID then
+        tabs[#tabs + 1] = { value = "aura", text = "Aura" }
+    end
     tabs[#tabs + 1] = { value = "soundalerts", text = "Sound Alerts" }
     tabs[#tabs + 1] = { value = "loadconditions", text = "Load Conditions" }
     return AddTabAccent(tabs)
@@ -331,6 +334,9 @@ end
 local function IsCustomBarEntryTabAllowed(entry, tab)
     if tab == "appearance" or tab == "soundalerts" or tab == "loadconditions" then
         return true
+    end
+    if tab == "aura" then
+        return type(entry) == "table" and entry.spellID ~= nil
     end
     return false
 end

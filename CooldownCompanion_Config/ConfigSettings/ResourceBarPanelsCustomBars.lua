@@ -1076,6 +1076,16 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
         return
     end
 
+    -- Aura tab (the aura pass): the tracking section is the whole tab, the
+    -- same shape as the panel entry Aura tab. Aura-look controls (colors,
+    -- texts, effects) stay on Appearance, as panel bar styles do.
+    if activeTab == "aura" then
+        if cab.spellID then
+            BuildCustomBarAuraTrackingSection(container, cab, infoButtons)
+        end
+        return
+    end
+
             -- Per-slot bar thickness override
             if layout and layout.customBarHeights then
                 AddCustomBarSettingsHeading(container, "Size")
@@ -1104,14 +1114,11 @@ local function BuildCustomAuraBarPanel(container, customBarId, activeTab)
                 container:AddChild(cabHeightSlider)
             end
 
-            -- ---- Aura / Colors / Texts sections ----
+            -- ---- Colors / Texts sections ----
             if cab.spellID then
                 local cabIdx = capturedIdx
                 local cabApplyBars = function() CooldownCompanion:ApplyResourceBars() end
                 local isAuraTracked = (not isSpellCustomBar) or cab.auraTracking == true
-
-                -- Aura tracking (the aura pass): panel Aura-tab vocabulary.
-                BuildCustomBarAuraTrackingSection(container, cab, infoButtons)
 
                 local colorHeading = AceGUI:Create("Heading")
                 colorHeading:SetText("Colors")
