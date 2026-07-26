@@ -1793,9 +1793,15 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     local applyBars = function() CooldownCompanion:ApplyResourceBars() end
     local healthResourceID = RESOURCE_HEALTH
     if showResourceSettings then
-        local hasSegmentedThreshold = SEGMENTED_TYPES[resourceSettingsPowerType] == true or resourceSettingsPowerType == 100
-        local hasContinuousTick = resourceSettingsPowerType ~= 101 and resourceSettingsPowerType ~= healthResourceID
-        showThresholdsTicks = hasSegmentedThreshold or hasContinuousTick
+        -- Same split the section itself makes below, and the runtime makes
+        -- in GetContinuousTickEntriesConfig: segmented resources — Maelstrom
+        -- Weapon among them — get threshold colours, every other real power
+        -- type gets tick markers, and the two invented ids (Stagger, Health)
+        -- get neither. The section shows if either half applies.
+        local isSegmented = SEGMENTED_TYPES[resourceSettingsPowerType] == true
+            or resourceSettingsPowerType == 100
+        showThresholdsTicks = isSegmented
+            or (resourceSettingsPowerType ~= 101 and resourceSettingsPowerType ~= healthResourceID)
     end
     local displaySpecID = opts and tonumber(opts.specID) or CS._GetCurrentConfigSpecID()
     local displayProfile = displaySpecID and CS._GetSpecResourceDisplayProfile(settings, displaySpecID) or nil
