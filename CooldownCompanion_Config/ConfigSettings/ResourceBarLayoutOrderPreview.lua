@@ -81,7 +81,7 @@ local LAYOUT_PREVIEW_MAX_REAL_ICONS = 4
 -- Custom bars only; resources are identified by their well-known colors.
 local LAYOUT_PREVIEW_IDENTITY_FONT_SCREEN_SIZE = 10
 local LAYOUT_PREVIEW_IDENTITY_INSET = 4
-local LAYOUT_PREVIEW_IDENTITY_PLATE_COLOR = { 0, 0, 0, 0.78 }
+local LAYOUT_PREVIEW_IDENTITY_FONT_OUTLINE = "OUTLINE, SLUG"
 -- Shell (Show Only While Aura Active) bars carry the bar-mode panel
 -- mirror's crossed-eye badge, same atlas and counter-scale convention, so
 -- the two previews say "this one only shows while its aura runs" the same
@@ -442,10 +442,6 @@ local function CreateSlotFrame(parent)
     frame.identityLayer = CreateFrame("Frame", nil, frame)
     frame.identityLayer:SetAllPoints(frame.previewCanvas)
     frame.identityLayer:EnableMouse(false)
-    -- Plate behind the name so it stays legible over any bar color, and
-    -- so the label reads as an overlay laid on top rather than as text the
-    -- bar is displaying.
-    frame.identityLayer.labelBg = frame.identityLayer:CreateTexture(nil, "ARTWORK")
     frame.identityLayer.label = frame.identityLayer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.identityLayer.label:SetWordWrap(false)
     frame.identityLayer.badge = frame.identityLayer:CreateTexture(nil, "OVERLAY", nil, 7)
@@ -1293,12 +1289,15 @@ local function ApplySlotIdentityMarks(preview, frame, scale)
     end
 
     local label = layer.label
-    local labelBg = layer.labelBg
     if text and text ~= "" then
-        local fontFile, _, flags = label:GetFont()
+        local fontFile = label:GetFont()
+        -- Slug outline instead of a backing plate: it keeps the name
+        -- legible over any bar color without laying an opaque rectangle
+        -- across the bar the owner is trying to look at.
         label:SetFont(fontFile,
             math_max(8, math_min(14, LAYOUT_PREVIEW_IDENTITY_FONT_SCREEN_SIZE / scale)),
-            flags or "")
+            LAYOUT_PREVIEW_IDENTITY_FONT_OUTLINE)
+        ST.ApplyFontShadowForOutline(label, LAYOUT_PREVIEW_IDENTITY_FONT_OUTLINE)
         label:SetText(text)
         label:SetTextColor(1, 1, 1, 1)
         label:SetJustifyH("CENTER")
@@ -1316,20 +1315,11 @@ local function ApplySlotIdentityMarks(preview, frame, scale)
                 (frame:GetWidth() or 0) - (LAYOUT_PREVIEW_IDENTITY_INSET * 2))
             label:SetWidth(math_min(label:GetStringWidth() + 1, available))
         end
-        labelBg:SetColorTexture(
-            LAYOUT_PREVIEW_IDENTITY_PLATE_COLOR[1], LAYOUT_PREVIEW_IDENTITY_PLATE_COLOR[2],
-            LAYOUT_PREVIEW_IDENTITY_PLATE_COLOR[3], LAYOUT_PREVIEW_IDENTITY_PLATE_COLOR[4])
-        labelBg:ClearAllPoints()
-        labelBg:SetPoint("TOPLEFT", label, "TOPLEFT", -3, 1)
-        labelBg:SetPoint("BOTTOMRIGHT", label, "BOTTOMRIGHT", 3, -1)
         layer._cdcHasLabel = true
-        local shown = preview.identityLabelsShown == true
-        label:SetShown(shown)
-        labelBg:SetShown(shown)
+        label:SetShown(preview.identityLabelsShown == true)
     else
         layer._cdcHasLabel = nil
         label:Hide()
-        labelBg:Hide()
     end
 
     local badge = layer.badge
@@ -1353,16 +1343,28 @@ local function ApplySlotIdentityMarks(preview, frame, scale)
     layer:Show()
 end
 
-local function AnyPreviewSlotHovered(preview)
+-- Only a CUSTOM bar reveals the names: resources are identified by their
+-- own well-known colors and never carry a label, so passing over one has
+-- no reason to light the set up.
+local function AnyCustomPreviewSlotHovered(preview)
     local pool = preview.pools and preview.pools.slots
     if not pool then return false end
     for index = 1, (preview.used.slots or 0) do
         local frame = pool[index]
-        if frame and frame:IsShown() and frame:IsMouseOver() then
+        if frame and frame.slotData and frame.slotData.kind == "custom"
+            and frame:IsShown() and frame:IsMouseOver() then
             return true
         end
     end
     return false
+end
+
+-- A reorder freezes the reveal wherever it was when the drag began. Slots
+-- tween out from under the cursor while dragging, so enter/leave fire
+-- continuously and the names flickered; and mid-reorder is precisely when
+-- a stable read of which bar is which is worth the most.
+local function IsLayoutDragActive()
+    return CS.dragState ~= nil and CS.dragState.kind == LAYOUT_PREVIEW_DRAG_KIND
 end
 
 -- Reveal or hide every custom bar's name at once. Hovering ONE bar names
@@ -1370,7 +1372,7 @@ end
 -- hovered bar would not give (the tooltip already does that).
 local function SetIdentityLabelsShown(preview, shown)
     shown = shown == true
-    if preview.identityLabelsShown == shown then
+    if IsLayoutDragActive() or preview.identityLabelsShown == shown then
         return
     end
     preview.identityLabelsShown = shown
@@ -1380,7 +1382,6 @@ local function SetIdentityLabelsShown(preview, shown)
         local layer = pool[index] and pool[index].identityLayer
         if layer and layer._cdcHasLabel then
             layer.label:SetShown(shown)
-            layer.labelBg:SetShown(shown)
         end
     end
 end
@@ -2100,8 +2101,11 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             if self.hoverHighlight then
                 self.hoverHighlight:Show()
             end
-            -- Names every custom bar, not just this one.
-            SetIdentityLabelsShown(preview, true)
+            -- Names every custom bar, not just this one — and only a
+            -- custom bar triggers it.
+            if slotModel.kind == "custom" then
+                SetIdentityLabelsShown(preview, true)
+            end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(slotModel.label or "Bar", 1, 1, 1)
             local dragHelp
@@ -2127,7 +2131,7 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             -- by then the neighbour's OnEnter has fired and this reports
             -- the cursor still inside the stack.
             C_Timer.After(0, function()
-                SetIdentityLabelsShown(preview, AnyPreviewSlotHovered(preview))
+                SetIdentityLabelsShown(preview, AnyCustomPreviewSlotHovered(preview))
             end)
             GameTooltip:Hide()
         end)
@@ -2683,6 +2687,12 @@ local function CreateLayoutDragModel(preview)
     layoutDrag.onCancel = function()
         layoutDrag.draggedSlotId = nil
         preview.draggedSlotExtent = nil
+        -- Thaw the reveal once the drag really is over. Deferred because
+        -- this runs while CS.dragState is still set (CancelDrag clears it
+        -- immediately after), which is what the freeze keys on.
+        C_Timer.After(0, function()
+            SetIdentityLabelsShown(preview, AnyCustomPreviewSlotHovered(preview))
+        end)
         for _, lane in ipairs(layoutDrag.lanes) do
             ResetLanePreview(preview, lane)
         end
@@ -2957,7 +2967,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     -- the cursor already resting on a bar (a value change repaints the
     -- preview under it), so the reveal state is re-derived rather than
     -- assumed off.
-    preview.identityLabelsShown = AnyPreviewSlotHovered(preview)
+    preview.identityLabelsShown = AnyCustomPreviewSlotHovered(preview)
     for index = 1, (preview.used.slots or 0) do
         ApplySlotIdentityMarks(preview, preview.pools.slots[index], scale)
     end
