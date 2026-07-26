@@ -509,7 +509,18 @@ function RB.CreateResourceBarAuraHostModule(deps)
         continuous = true,
         segmented = true,
         mw_segmented = true,
+        mw_segments = true,
+        mw_continuous = true,
         stagger_continuous = true,
+    }
+
+    -- Bar shapes drawn as a row of separate segment widgets. They have no
+    -- whole-bar border ring for the holder to sit inside (each segment
+    -- carries its own), and the tint must span the whole cluster.
+    local SEGMENT_CLUSTER_BAR_TYPES = {
+        segmented = true,
+        mw_segmented = true,
+        mw_segments = true,
     }
 
     local function EnsureResourceHolder(powerType)
@@ -543,7 +554,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- of its own, and the tint must span the whole cluster (owner ruling),
     -- so those mount at the full rect.
     local function GetResourceHolderInset(barInfo, borderInset)
-        if barInfo.barType == "segmented" or barInfo.barType == "mw_segmented" then
+        if SEGMENT_CLUSTER_BAR_TYPES[barInfo.barType] then
             return 0
         end
         return borderInset

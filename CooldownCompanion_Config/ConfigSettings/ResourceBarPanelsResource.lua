@@ -1815,6 +1815,27 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         BuildResourceColorControls(container, settings, resourceSettingsPowerType, _colorSpecID, effectiveBarTextureName, applyBars)
     end
 
+    -- Maelstrom Weapon stack shape. Only this resource has a choice: its
+    -- stacks can run past the segment count, which is what the overlay
+    -- layer exists for, and the other two shapes drop it.
+    if showResourceSettings and resourceSettingsPowerType == 100 then
+        local mwStyleDrop = AceGUI:Create("Dropdown")
+        mwStyleDrop:SetLabel("Stack Display")
+        mwStyleDrop:SetList({
+            overlay = "Overlay",
+            segments = "One Segment Per Stack",
+            continuous = "Continuous",
+        }, { "overlay", "segments", "continuous" })
+        mwStyleDrop:SetValue(ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwDisplayStyle", "overlay"))
+        mwStyleDrop:SetFullWidth(true)
+        mwStyleDrop:SetCallback("OnValueChanged", function(widget, event, val)
+            WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwDisplayStyle",
+                val ~= "overlay" and val or nil)
+            applyBars()
+        end)
+        container:AddChild(mwStyleDrop)
+    end
+
     if showBarText then
     if not showResourceSettings then
     -- Bar Texture

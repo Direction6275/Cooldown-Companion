@@ -405,14 +405,48 @@ function RB.CreateResourceBarPreviewModule(deps)
         elseif barInfo.barType == "mw_segmented" then
             local half = #barInfo.frame.segments
             local maxStacks = GetMWMaxStacks()
+            -- A full Maelstrom bar is at its maximum, so every style
+            -- previews in the max colour — what the real bar shows there.
+            local _, _, mwMaxColor = GetResourceColors(100, settings)
             for i = 1, half do
                 SetStatusBarSegmentedValue(barInfo.frame.segments[i], maxStacks, segmentedSmoothing)
                 SetStatusBarSegmentedValue(barInfo.frame.overlaySegments[i], maxStacks, segmentedSmoothing)
                 -- At full every overlay half is reached.
                 barInfo.frame.overlaySegments[i]:SetAlpha(maxStacks > (half + i - 1) and 1 or 0)
+                barInfo.frame.segments[i]:SetStatusBarColor(mwMaxColor[1], mwMaxColor[2], mwMaxColor[3], 1)
+                barInfo.frame.overlaySegments[i]:SetStatusBarColor(mwMaxColor[1], mwMaxColor[2], mwMaxColor[3], 1)
             end
             ApplyResourceAuraLaneReadyState(barInfo)
             SetSegmentedText(barInfo.frame, maxStacks, maxStacks)
+        elseif barInfo.barType == "mw_segments" then
+            -- One segment per stack, all full at rest.
+            local maxStacks = GetMWMaxStacks()
+            local _, _, mwMaxColor = GetResourceColors(100, settings)
+            for _, seg in ipairs(barInfo.frame.segments) do
+                SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
+                seg:SetStatusBarColor(mwMaxColor[1], mwMaxColor[2], mwMaxColor[3], 1)
+            end
+            ApplyResourceAuraLaneReadyState(barInfo)
+            SetSegmentedText(barInfo.frame, maxStacks, maxStacks)
+        elseif barInfo.barType == "mw_continuous" then
+            local maxStacks = GetMWMaxStacks()
+            local _, _, mwMaxColor = GetResourceColors(100, settings)
+            SetStatusBarSmoothRange(barInfo.frame, 0, maxStacks)
+            SetStatusBarSmoothValue(barInfo.frame, maxStacks)
+            barInfo.frame:SetStatusBarColor(mwMaxColor[1], mwMaxColor[2], mwMaxColor[3], 1)
+            if barInfo.frame.brightnessOverlay then
+                barInfo.frame.brightnessOverlay:Hide()
+            end
+            if barInfo.frame.text and barInfo.frame.text:IsShown() then
+                local textFormat = barInfo.frame._textFormat
+                if textFormat == "current" then
+                    barInfo.frame.text:SetFormattedText("%d", maxStacks)
+                elseif textFormat == "percent" then
+                    barInfo.frame.text:SetFormattedText("%d", 100)
+                else
+                    barInfo.frame.text:SetFormattedText("%d / %d", maxStacks, maxStacks)
+                end
+            end
         elseif barInfo.barType == "custom_cooldown" then
             -- Spell custom bar, ready: full fill in the bar's own color
             -- (StyleCustomAuraBar already applied it), no cooldown or aura

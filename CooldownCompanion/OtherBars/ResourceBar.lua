@@ -1281,8 +1281,11 @@ end
 -- Update logic: Maelstrom Weapon (overlay bar, plain applications)
 ------------------------------------------------------------------------
 
-local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
-    if not holder or not holder.segments then return end
+local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache, barType)
+    if not holder then return end
+    -- The continuous style has no segments; every other style does.
+    local isContinuous = barType == "mw_continuous"
+    if not (isContinuous or holder.segments) then return end
     if not settings then
         settings = GetResourceBarSettings()
     end
@@ -1307,6 +1310,11 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
         stacks = mwAura.applications or 0
     end
     if issecretvalue and issecretvalue(stacks) then
+        if isContinuous then
+            SetStatusBarImmediateValue(holder, 0)
+            if holder.text then holder.text:SetText("") end
+            return
+        end
         for i = 1, #holder.segments do
             SetStatusBarImmediateValue(holder.segments[i], 0)
             if holder.overlaySegments and holder.overlaySegments[i] then
@@ -1318,10 +1326,47 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
         return
     end
 
-    local half = #holder.segments
     local baseColor, overlayColor, maxColor = GetResourceColors(100, settings)
     local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(RESOURCE_MAELSTROM_WEAPON, settings, stacks)
     local isMax = stacks > 0 and stacks == mwMaxStacks
+    -- Colour precedence is identical in all three shapes: at max wins, then
+    -- a configured threshold, then the resource's own colour.
+    local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or baseColor)
+
+    if isContinuous then
+        -- One bar, empty to full, the stack maximum as its range.
+        SetStatusBarSmoothRange(holder, 0, mwMaxStacks)
+        SetStatusBarSegmentedValue(holder, stacks, segmentedSmoothing)
+        holder:SetStatusBarColor(activeColor[1], activeColor[2], activeColor[3], 1)
+        if holder.brightnessOverlay then
+            holder.brightnessOverlay:Hide()
+        end
+        if holder.text and holder.text:IsShown() then
+            local textFormat = holder._textFormat
+            if textFormat == "current" then
+                holder.text:SetFormattedText("%d", stacks)
+            elseif textFormat == "percent" then
+                holder.text:SetFormattedText("%d", (stacks / mwMaxStacks) * 100)
+            else
+                holder.text:SetFormattedText("%d / %d", stacks, mwMaxStacks)
+            end
+        end
+        return
+    end
+
+    if barType == "mw_segments" then
+        -- One segment per stack: each fills whole, like every other
+        -- discrete resource.
+        for i = 1, #holder.segments do
+            local seg = holder.segments[i]
+            SetStatusBarSegmentedValue(seg, i <= stacks and 1 or 0, segmentedSmoothing)
+            seg:SetStatusBarColor(activeColor[1], activeColor[2], activeColor[3], 1)
+        end
+        SetSegmentedText(holder, stacks, mwMaxStacks)
+        return
+    end
+
+    local half = #holder.segments
 
     for i = 1, half do
         local baseSeg = holder.segments[i]
@@ -1550,8 +1595,10 @@ local function OnUpdate(self, elapsed)
                 HealthBar.Update(barInfo.frame, settings)
             elseif barInfo.barType == "segmented" then
                 UpdateSegmentedBar(barInfo.frame, barInfo.powerType, settings, auraActiveCache)
-            elseif barInfo.barType == "mw_segmented" then
-                UpdateMaelstromWeaponBar(barInfo.frame, settings, auraActiveCache)
+            elseif barInfo.barType == "mw_segmented"
+                or barInfo.barType == "mw_segments"
+                or barInfo.barType == "mw_continuous" then
+                UpdateMaelstromWeaponBar(barInfo.frame, settings, auraActiveCache, barInfo.barType)
             elseif barInfo.barType == "stagger_continuous" then
                 UpdateStaggerBar(barInfo.frame, settings)
             elseif barInfo.barType == "custom_cooldown" then
@@ -2008,34 +2055,92 @@ function CooldownCompanion:ApplyResourceBars(opts)
             StyleContinuousBar(barInfo.frame, powerType, settings)
 
         elseif powerType == RESOURCE_MAELSTROM_WEAPON then
-            -- Maelstrom Weapon: overlay bar with dedicated update
-            local halfSegments = mwMaxStacks <= 5 and mwMaxStacks or (mwMaxStacks / 2)
+            -- Maelstrom Weapon renders in one of three shapes (see
+            -- GetMWDisplayStyle). The stack source is the same in all of
+            -- them; only the widget differs, so each style materializes the
+            -- matching bar frame here and UpdateMaelstromWeaponBar renders
+            -- to it. The style is read once per apply, never per tick, and
+            -- reached through RB rather than a new file-level local:
+            -- ApplyResourceBars sits at Lua 5.1's 60-upvalue ceiling.
+            local mwStyle = RB.GetMWDisplayStyle(settings)
 
-            if not barInfo or barInfo.barType ~= "mw_segmented"
-                or #barInfo.frame.segments ~= halfSegments then
-                if barInfo and barInfo.frame then
-                    ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                    ClearResourceAuraVisuals(barInfo.frame)
-                    barInfo.frame:Hide()
+            if mwStyle == "continuous" then
+                if not barInfo or barInfo.barType ~= "mw_continuous" then
+                    if barInfo and barInfo.frame then
+                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
+                        ClearResourceAuraVisuals(barInfo.frame)
+                        barInfo.frame:Hide()
+                    end
+                    local bar = CreateContinuousBar(targetContainer)
+                    barInfo = { frame = bar, barType = "mw_continuous", powerType = powerType }
+                    resourceBarFrames[idx] = barInfo
+                else
+                    barInfo.powerType = powerType
                 end
-                local holder = CreateOverlayBar(targetContainer, halfSegments)
-                barInfo = { frame = holder, barType = "mw_segmented", powerType = powerType }
-                resourceBarFrames[idx] = barInfo
+
+                barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+                -- Shares the continuous styling path, so texture, borders,
+                -- background, and the bar text all follow the same resource
+                -- settings every other continuous bar uses.
+                StyleContinuousBar(barInfo.frame, powerType, settings)
+
+            elseif mwStyle == "segments" then
+                -- One segment per stack, no overlay layer: the plain
+                -- segmented widget every other discrete resource uses.
+                if not barInfo or barInfo.barType ~= "mw_segments"
+                    or #barInfo.frame.segments ~= mwMaxStacks then
+                    if barInfo and barInfo.frame then
+                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
+                        ClearResourceAuraVisuals(barInfo.frame)
+                        barInfo.frame:Hide()
+                    end
+                    local holder = CreateSegmentedBar(targetContainer, mwMaxStacks)
+                    barInfo = { frame = holder, barType = "mw_segments", powerType = powerType }
+                    resourceBarFrames[idx] = barInfo
+                else
+                    barInfo.powerType = powerType
+                end
+
+                barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+                LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
+
+                local baseColor = GetResourceColors(100, settings)
+                for i = 1, mwMaxStacks do
+                    barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                end
+                StyleSegmentedText(barInfo.frame, powerType, settings)
+
             else
-                barInfo.powerType = powerType
-            end
+                -- Overlay: five segments carrying a second colour layer for
+                -- stacks past five (the default shape).
+                local halfSegments = mwMaxStacks <= 5 and mwMaxStacks or (mwMaxStacks / 2)
 
-            barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
-            LayoutOverlaySegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings, halfSegments)
+                if not barInfo or barInfo.barType ~= "mw_segmented"
+                    or #barInfo.frame.segments ~= halfSegments then
+                    if barInfo and barInfo.frame then
+                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
+                        ClearResourceAuraVisuals(barInfo.frame)
+                        barInfo.frame:Hide()
+                    end
+                    local holder = CreateOverlayBar(targetContainer, halfSegments)
+                    barInfo = { frame = holder, barType = "mw_segmented", powerType = powerType }
+                    resourceBarFrames[idx] = barInfo
+                else
+                    barInfo.powerType = powerType
+                end
 
-            -- Apply initial colors
-            local baseColor, overlayColor = GetResourceColors(100, settings)
-            for i = 1, halfSegments do
-                barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
-                barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
-                barInfo.frame.overlaySegments[i]:Show()
+                barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
+                LayoutOverlaySegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings, halfSegments)
+
+                -- Apply initial colors
+                local baseColor, overlayColor = GetResourceColors(100, settings)
+                for i = 1, halfSegments do
+                    barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
+                    barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
+                    barInfo.frame.overlaySegments[i]:Show()
+                end
+                StyleSegmentedText(barInfo.frame, powerType, settings)
             end
-            StyleSegmentedText(barInfo.frame, powerType, settings)
 
         elseif isCustomEntry then
             barInfo = PrepareCustomAuraBar(
