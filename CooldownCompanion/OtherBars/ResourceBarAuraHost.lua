@@ -351,6 +351,21 @@ function RB.CreateResourceBarAuraHostModule(deps)
         return max
     end
 
+    -- Where this bar's aura visuals mount. Normally inside the border ring,
+    -- so the CC ring stays visible around the aura display (the panel
+    -- statusBar-mount contract). A stacks-mode bar has NO whole-bar ring —
+    -- owner ruling: the blocks and their per-block rings are the bar, and
+    -- the outer ring comes off — so reserving space for it left the blocks
+    -- short of the bar's edges with a dead margin around them. Those bars
+    -- mount at the full rect instead. The kit fill uses this same answer,
+    -- so it keeps landing exactly on the blocks beneath it.
+    local function GetCustomBarHolderInset(barInfo, borderInset)
+        if WantsAbsentStackBlocks(barInfo) then
+            return 0
+        end
+        return borderInset
+    end
+
     local function ApplyCustomBarAbsentStackVisuals(barInfo, settings, opts)
         local frame = barInfo and barInfo.frame
         if not frame then return end
@@ -374,8 +389,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
 
         settings = settings or GetResourceBarSettings()
         if not settings then return end
-        local inset = GetCustomBarBorderInset(settings)
-        local rect = EnsureInsetRect(frame, inset)
+        -- Full rect, no border inset: the blocks ARE the bar here (see
+        -- GetCustomBarHolderInset), so they run edge to edge and their
+        -- per-block rings draw inside them, exactly as every other CC bar
+        -- draws its ring inside its own fill.
+        local rect = EnsureInsetRect(frame, 0)
 
         local blocks = frame._ccCabStackBlocks
         if not blocks then
@@ -407,9 +425,9 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- they carry the configured background alpha instead of the panel
         -- callers' forced-opaque occlusion default.
         local bgColor = style.barBgColor or { 0, 0, 0, 0.5 }
-        -- The inset rect sits inside the border ring on both ends, so a
-        -- caller-supplied bar length loses two insets to become the rect's.
-        local rectLength = opts and opts.barLength and (opts.barLength - (inset * 2)) or nil
+        -- The rect is the bar's full rect, so a caller-supplied bar length
+        -- is the block run's length unchanged.
+        local rectLength = opts and opts.barLength or nil
         ST.LayoutStackBlocks(blocks, rect, max, frame._isVertical, bgColor, bgColor[4] or 1, rectLength)
         ST.LayoutStackBlockBorders(borders, blocks, max, style)
         -- Owner ruling (panel parity): each stack is its own widget — the
@@ -450,15 +468,12 @@ function RB.CreateResourceBarAuraHostModule(deps)
                     local buttonData = BuildEntryAdapter(cabConfig, settings)
                     local spellSet = CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData)
                     if spellSet then
-                        local holder = EnsureHolder(barInfo.customBarId)
-                        AnchorHolderToBar(holder, frame, inset)
-                        holder:Show()
-
-                        local style = BuildStyleAdapter(cabConfig, settings)
-                        style.barReverseFill = frame._reverseFill or false
-
                         -- Stack fill max: automatic, game-data resolved,
                         -- OOC (owner ruling — no manual max anywhere).
+                        -- Resolved BEFORE the holder is anchored: whether
+                        -- this bar renders as stack blocks decides where
+                        -- the holder mounts, and that answer comes from the
+                        -- cached max.
                         local stackBarMax
                         if CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then
                             stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData)
@@ -466,6 +481,14 @@ function RB.CreateResourceBarAuraHostModule(deps)
                         -- Keyed by the BAR, so it survives the slot churn a
                         -- form change causes (see the helper's note).
                         SetCustomBarCachedStackMax(barInfo.customBarId, stackBarMax)
+
+                        local holder = EnsureHolder(barInfo.customBarId)
+                        AnchorHolderToBar(holder, frame, GetCustomBarHolderInset(barInfo, inset))
+                        holder:Show()
+
+                        local style = BuildStyleAdapter(cabConfig, settings)
+                        style.barReverseFill = frame._reverseFill or false
+
                         ApplyCustomBarAbsentStackVisuals(barInfo, settings)
 
                         wanted[#wanted + 1] = {
@@ -540,7 +563,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
         if holder._ccAnchoredFrame == frame then return end
         local settings = GetResourceBarSettings()
         if not settings then return end
-        AnchorHolderToBar(holder, frame, GetCustomBarBorderInset(settings))
+        -- Same mount rule as the rebind pass. Safe in combat: the stack-
+        -- blocks test reads the customBarId-keyed cache, never the
+        -- restricted max lookup.
+        AnchorHolderToBar(holder, frame,
+            GetCustomBarHolderInset(barInfo, GetCustomBarBorderInset(settings)))
     end
 
     -- Addon methods rather than module-locals on purpose: ApplyResourceBars
