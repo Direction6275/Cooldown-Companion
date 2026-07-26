@@ -511,11 +511,16 @@ local function StyleActiveBarFill(fill, fillTex, pulseAG, pulseAnim, csAG, csAni
     fill:SetRotatesTexture(rotates == true)
     fill:SetStatusBarTexture(fillTexture or CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
     fill:SetAlpha(1)
-    fill:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
 
     pulseAG:Stop()
     csAG:Stop()
+    -- Residual-anim vertex reset BEFORE the color write, never after:
+    -- SetStatusBarColor lands on this same fill-texture vertex channel, so
+    -- a trailing white reset clobbers the configured color to white (the
+    -- aura-pass 1B white-fill bug — bind-time prints proved the correct
+    -- color arriving while the fill rendered white).
     fillTex:SetVertexColor(1, 1, 1, 1)
+    fill:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
     local indicatorOn = ST.IsBarAuraIndicatorEnabled(style)
     if indicatorOn and style.barAuraPulseEnabled then
         pulseAnim:SetDuration(style.barAuraPulseSpeed or 0.5)

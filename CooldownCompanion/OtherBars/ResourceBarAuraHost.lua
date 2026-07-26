@@ -389,7 +389,14 @@ function RB.CreateResourceBarAuraHostModule(deps)
             for _, barInfo in ipairs(resourceBarFrames) do
                 local cabConfig = barInfo and barInfo.cabConfig
                 local frame = barInfo and barInfo.frame
-                if frame and barInfo.customBarId and IsAuraTrackedCustomBar(cabConfig)
+                -- Hardened against stale slot state: the barType must be a
+                -- live custom shape AND the entry must still be runtime-
+                -- eligible (enabled, talent/load conditions) — cabConfig
+                -- alone lingered on recycled slots.
+                if frame and barInfo.customBarId
+                    and (barInfo.barType == "custom_continuous" or barInfo.barType == "custom_cooldown")
+                    and IsAuraTrackedCustomBar(cabConfig)
+                    and CooldownCompanion:IsCustomBarRuntimeEligible(cabConfig)
                     and frame:IsShown() then
                     local buttonData = BuildEntryAdapter(cabConfig, settings)
                     local spellSet = CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData)

@@ -2079,6 +2079,15 @@ function CooldownCompanion:ApplyResourceBars(opts)
         if barInfo.frame:GetParent() ~= targetContainer then
             barInfo.frame:SetParent(targetContainer)
         end
+        -- Slot reuse hygiene (aura pass): a slot moving from a custom bar
+        -- to a resource bar kept the old cabConfig/customBarId, and the
+        -- aura-host collector then bound an aura display onto the resource
+        -- bar (the phantom custom_bar_12 bind).
+        if not isCustomEntry then
+            barInfo.cabConfig = nil
+            barInfo.customBarId = nil
+            barInfo.customBarIndex = nil
+        end
         barInfo._side = sideList[idx]
         barInfo._order = orderList[idx]
         barInfo._effectiveThickness = effectiveThickness
