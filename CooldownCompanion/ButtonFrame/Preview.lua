@@ -950,9 +950,9 @@ function CooldownCompanion:ClearAllConfigPreviews()
     if self.StopCastBarPreview then
         self:StopCastBarPreview()
     end
-    if self.StopResourceBarPreview then
-        self:StopResourceBarPreview()
-    end
+    -- The resource-bar unlock assist is deliberately NOT cleared here: it is
+    -- visibility for dragging, not a preview, and it belongs to whether the
+    -- stack is unlocked.
     if self.RefreshAlphaUpdateDriver then
         self:RefreshAlphaUpdateDriver()
     end

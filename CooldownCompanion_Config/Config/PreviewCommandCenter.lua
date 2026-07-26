@@ -128,9 +128,9 @@ local TriggerEffectsPreview = {
 -- Previews owned by one config object rather than by a panel: they always
 -- run on the bar they belong to, so neither the selected panel nor the
 -- selected entry can narrow them (hence groupScoped - they never follow a
--- selection). They also render on the REAL bar out in the world rather
--- than in the config canvas, which is what makes them worth a control:
--- absorbs and a cast in progress are otherwise invisible while editing.
+-- selection). What makes them worth a control is that the resting bar
+-- cannot show them at all: absorbs and a cast in progress only exist for a
+-- moment, so the canvas has to be told to stage one.
 local function HealthEffectPreview(effectKey)
     return {
         groupScoped = true,
@@ -157,10 +157,10 @@ local CastBarPreview = {
     end,
 }
 
--- Custom-bar active-aura preview (the aura pass): a CC-side stand-in on
--- the real bar out in the world — fill, texts, and effects render as if
--- the aura were running; the aura slot kit is never touched. Keyed by the
--- stored config table (the identity the runtime carries).
+-- Custom-bar active-aura preview (the aura pass): a CC-side stand-in on the
+-- config canvas — fill, texts, and effects render as if the aura were
+-- running; the real bar and the aura slot kit are never touched. Keyed by
+-- the stored config table (the identity the runtime carries).
 local function CustomBarAuraPreview(cabConfig)
     return {
         groupScoped = true,
@@ -523,6 +523,28 @@ local function CastBarEnabled()
     return settings ~= nil and settings.enabled == true
 end
 
+-- Does a canvas cast lane exist ANYWHERE for the current configuration?
+-- Distinct from "is the control offered on this surface": navigating away
+-- from a home must not stop a running preview, but the cast bar being
+-- disabled or moved to its own anchor leaves the preview with nothing to
+-- render on, and it would silently resume when the setting came back.
+local function HasCastPreviewDestination()
+    local settings = CooldownCompanion.GetCastBarSettings
+        and CooldownCompanion:GetCastBarSettings()
+    local IsTruthyConfigFlag = RB and RB.IsTruthyConfigFlag
+    return settings ~= nil
+        and settings.enabled == true
+        and IsTruthyConfigFlag ~= nil
+        and not IsTruthyConfigFlag(settings.independentAnchorEnabled)
+end
+
+local function StopStrandedCastPreview()
+    if HasCastPreviewDestination() then return end
+    if CooldownCompanion:IsCastBarPreviewActive() then
+        CooldownCompanion:StopCastBarPreview()
+    end
+end
+
 local OBJECT_CONTROLS = {
     {
         id = "healthAbsorbs",
@@ -572,6 +594,7 @@ local OBJECT_CONTROLS = {
 -- bar's settings can be open below the divider there.
 local function CollectObjectControls(objects)
     local applicable = {}
+    StopStrandedCastPreview()
     -- Resolved once and handed to the gates that want it, since resolving
     -- deep-copies the resource table. Skipped entirely on a surface that
     -- hosts no health entries.
@@ -1137,8 +1160,15 @@ local function UpdateResourcesPreviewCommandCenter(host)
     -- The health bar is a Resources-workspace object; the cast bar is
     -- drawn on both homes and owns one of them. Custom bars are Resources
     -- objects too — their aura previews live here.
+    --
+    -- The cast bar qualifies only when THIS canvas actually draws a cast
+    -- lane. Testing "the cast bar is attached" was not enough: an
+    -- independent resource stack drops the cast slot from this home even
+    -- with the cast bar attached, and the control then named a preview that
+    -- repainted a cast-free canvas and visibly did nothing.
     local objects = {
-        cast = true,
+        cast = ST._ResourcesPreviewRendersCastSlot ~= nil
+            and ST._ResourcesPreviewRendersCastSlot() == true,
         health = CS.resourcesEntrySelected == true,
         customBars = CS.resourcesEntrySelected == true or CS.selectedCustomBarId ~= nil,
     }

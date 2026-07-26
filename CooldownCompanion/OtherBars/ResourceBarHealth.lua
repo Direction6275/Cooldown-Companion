@@ -35,6 +35,10 @@ local HEALTH_EFFECT_JOIN_OVERLAP = 1
 local HealthBar
 local HEALTH_EFFECTS
 
+-- The absence of a preview, as a table, so the live path can say so
+-- explicitly instead of falling through to whatever the config has armed.
+local NO_HEALTH_EFFECT_PREVIEW = {}
+
 local function EnsureNonNilNumber(value)
     if type(value) == "nil" then
         return 0
@@ -434,12 +438,40 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
         return
     end
 
-    preview = preview or HEALTH_EFFECTS.preview
+    -- A supplied preview table means CANVAS mode: the config canvas renders
+    -- exactly the effects it armed and nothing else. Without one, the real
+    -- health bar renders exactly what the player's state says. The two never
+    -- mix. They used to: every branch read `config.showX or preview.X`, so an
+    -- ENABLED setting reached the live prediction APIs on the canvas too, and
+    -- the resting preview drifted with real shields, heals and damage — while
+    -- the shared preview table leaked the other way onto the live bar.
+    local canvasMode = preview ~= nil
+    preview = preview or NO_HEALTH_EFFECT_PREVIEW
+
+    -- The stand-in amounts below are shares of the maximum, and a secret
+    -- maximum cannot be multiplied (agent-reference/secret-values.md). The
+    -- config closes on combat, so this is a guard rather than a mode: those
+    -- stand-ins simply stay dark if it ever is secret.
+    local previewMax = maxHealth
+    if issecretvalue and issecretvalue(maxHealth) then
+        previewMax = nil
+    end
+
+    -- Which effects render at all: the armed previews on the canvas, the
+    -- enabled settings on the live bar. Never the union.
+    local function WantsEffect(previewKey, settingKey)
+        if canvasMode then
+            return preview[previewKey] == true
+        end
+        return config[settingKey] == true
+    end
 
     if bar.lowHealthAlertBar then
         HealthBar.ApplyLowHealthAlertStyle(bar.lowHealthAlertBar, config)
-        if config.showLowHealthAlert == true or preview.lowHealthAlert == true then
-            HealthBar.ApplyLowHealthAlertColor(bar, config, preview.lowHealthAlert == true)
+        if WantsEffect("lowHealthAlert", "showLowHealthAlert") then
+            -- Canvas mode takes the flat configured colour; the curve leg
+            -- reads live health, which is exactly what must not happen here.
+            HealthBar.ApplyLowHealthAlertColor(bar, config, canvasMode)
             bar.lowHealthAlertBar:SetAlpha(0.6 + (0.4 * math_sin(GetTime() * 2 * math_pi / HEALTH_EFFECTS.lowHealthAlertPulseSpeed)))
             bar.lowHealthAlertBar:Show()
         else
@@ -449,14 +481,17 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
         end
     end
 
-    local incomingHealsVisible = config.showIncomingHeals == true or preview.incomingHeals == true
+    local incomingHealsVisible = WantsEffect("incomingHeals", "showIncomingHeals")
+        and (not canvasMode or previewMax ~= nil)
     local incomingHealAnchorTexture = nil
     if bar.incomingHealBar then
         HealthBar.ApplyEffectStyle(bar.incomingHealBar, config, "healthIncomingHealColor", HEALTH_EFFECTS.incomingHealColor, "healthIncomingHealTexture")
         if incomingHealsVisible then
             SetStatusBarSmoothRange(bar.incomingHealBar, 0, maxHealth)
-            if preview.incomingHeals == true then
-                SetStatusBarSmoothValue(bar.incomingHealBar, 18)
+            if canvasMode then
+                -- A share of the bar, not a raw amount: the preview renders
+                -- against the player's real maximum.
+                SetStatusBarSmoothValue(bar.incomingHealBar, previewMax * 0.18)
             else
                 SetStatusBarSmoothValue(bar.incomingHealBar, EnsureNonNilNumber(GetNetHealingCalc():GetIncomingHeals()))
             end
@@ -472,14 +507,14 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
         HealthBar.LayoutForwardEffectBar(bar, bar.absorbBar, incomingHealAnchorTexture, true)
         HealthBar.ApplyEffectStyle(bar.absorbBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
         HealthBar.ApplyEffectStyle(bar.absorbOverflowBar, config, "healthAbsorbColor", HEALTH_EFFECTS.absorbColor, "healthAbsorbTexture")
-        if config.showAbsorbs == true or preview.absorbs == true then
+        if WantsEffect("absorbs", "showAbsorbs") and (not canvasMode or previewMax ~= nil) then
             local missingHealthAbsorb
             local absorbOverflowing
             local overflowAbsorb
-            if preview.absorbs == true then
+            if canvasMode then
                 missingHealthAbsorb = 0
                 absorbOverflowing = true
-                overflowAbsorb = 28
+                overflowAbsorb = previewMax * 0.28
             else
                 HEALTH_EFFECTS.absorbMissingCalc:SetDamageAbsorbClampMode(
                     incomingHealsVisible
@@ -519,10 +554,10 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
 
     if bar.healAbsorbBar then
         HealthBar.ApplyEffectStyle(bar.healAbsorbBar, config, "healthHealAbsorbColor", HEALTH_EFFECTS.healAbsorbColor, "healthHealAbsorbTexture")
-        if config.showHealAbsorbs == true or preview.healAbsorbs == true then
+        if WantsEffect("healAbsorbs", "showHealAbsorbs") and (not canvasMode or previewMax ~= nil) then
             SetStatusBarSmoothRange(bar.healAbsorbBar, 0, maxHealth)
-            if preview.healAbsorbs == true then
-                SetStatusBarSmoothValue(bar.healAbsorbBar, 22)
+            if canvasMode then
+                SetStatusBarSmoothValue(bar.healAbsorbBar, previewMax * 0.22)
             else
                 local healAbsorbCalc = incomingHealsVisible and GetNetHealingCalc() or GetStandaloneHealingCalc()
                 SetStatusBarSmoothValue(bar.healAbsorbBar, EnsureNonNilNumber(healAbsorbCalc:GetHealAbsorbs()))

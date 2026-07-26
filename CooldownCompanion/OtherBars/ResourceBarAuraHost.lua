@@ -38,6 +38,7 @@ local CooldownCompanion = ST.Addon
 local ipairs = ipairs
 local pairs = pairs
 local tonumber = tonumber
+local math_min = math.min
 local CreateFrame = CreateFrame
 
 local RB = ST._RB
@@ -332,22 +333,57 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- apply iteration).
     ------------------------------------------------------------------------
 
-    local function WantsAbsentStackBlocks(barInfo)
+    -- opts (config preview only): includeShell keeps the blocks for a
+    -- hideWhenInactive bar, which the live bar never draws — the config
+    -- canvas renders shell bars so they stay visible and editable.
+    -- maxStacks supplies a max the shared runtime cache does not hold
+    -- (a bar the config shows but no live slot is currently running).
+    local function WantsAbsentStackBlocks(barInfo, opts)
         local cabConfig = barInfo and barInfo.cabConfig
         if not (cabConfig and barInfo.customBarId) then return nil end
         if IsSpellCustomBarConfig(cabConfig) then return nil end
-        if cabConfig.hideWhenInactive == true then return nil end -- shell: kit renders the whole bar
+        if cabConfig.hideWhenInactive == true and not (opts and opts.includeShell) then
+            return nil -- shell: kit renders the whole bar
+        end
         if not WantsStackMode(cabConfig, false) then return nil end
         if cabConfig.displayMode == "continuous" then return nil end
-        local max = GetCustomBarCachedStackMax(barInfo)
+        local max = (opts and opts.maxStacks) or GetCustomBarCachedStackMax(barInfo)
         if not max or max <= 1 or max > ST.STACK_SEGMENT_ATLAS_MAX then return nil end
         return max
     end
 
-    local function ApplyCustomBarAbsentStackVisuals(barInfo, settings)
+    -- Where this bar's aura visuals mount. Normally inside the border ring,
+    -- so the CC ring stays visible around the aura display (the panel
+    -- statusBar-mount contract). A stacks-mode bar has NO whole-bar ring —
+    -- owner ruling: the blocks and their per-block rings are the bar, and
+    -- the outer ring comes off — so reserving space for it left the blocks
+    -- short of the bar's edges with a dead margin around them. Those bars
+    -- mount at the full rect instead. The kit fill uses this same answer,
+    -- so it keeps landing exactly on the blocks beneath it.
+    -- includeShell here, unlike the absent-state pass: a Show Only While
+    -- Aura Active bar draws no blocks of its own (the kit renders the whole
+    -- bar), but it is still a stacks bar with no whole-bar ring — its CC
+    -- frame sits at alpha 0, so the reserved ring space was a margin around
+    -- nothing, and its kit blocks stopped short of the bar's real edges
+    -- while an identical non-shell bar's reached them.
+    local function GetCustomBarHolderInset(barInfo, borderInset)
+        if WantsAbsentStackBlocks(barInfo, { includeShell = true }) then
+            return 0
+        end
+        return borderInset
+    end
+
+    -- Does this bar render as capacity blocks rather than as one fill? The
+    -- config canvas asks before painting a preview: on a block bar the blocks
+    -- ARE the bar, and a status-bar fill would draw straight over them.
+    function RB.WantsCustomBarStackBlocks(barInfo, opts)
+        return WantsAbsentStackBlocks(barInfo, opts)
+    end
+
+    local function ApplyCustomBarAbsentStackVisuals(barInfo, settings, opts)
         local frame = barInfo and barInfo.frame
         if not frame then return end
-        local max = WantsAbsentStackBlocks(barInfo)
+        local max = WantsAbsentStackBlocks(barInfo, opts)
         if not max then
             if frame._ccCabStackBlocksActive then
                 frame._ccCabStackBlocksActive = nil
@@ -367,8 +403,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
 
         settings = settings or GetResourceBarSettings()
         if not settings then return end
-        local inset = GetCustomBarBorderInset(settings)
-        local rect = EnsureInsetRect(frame, inset)
+        -- Full rect, no border inset: the blocks ARE the bar here (see
+        -- GetCustomBarHolderInset), so they run edge to edge and their
+        -- per-block rings draw inside them, exactly as every other CC bar
+        -- draws its ring inside its own fill.
+        local rect = EnsureInsetRect(frame, 0)
 
         local blocks = frame._ccCabStackBlocks
         if not blocks then
@@ -400,7 +439,29 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- they carry the configured background alpha instead of the panel
         -- callers' forced-opaque occlusion default.
         local bgColor = style.barBgColor or { 0, 0, 0, 0.5 }
-        ST.LayoutStackBlocks(blocks, rect, max, frame._isVertical, bgColor, bgColor[4] or 1)
+        -- The rect is the bar's full rect, so a caller-supplied bar length
+        -- is the block run's length unchanged.
+        local rectLength = opts and opts.barLength or nil
+        ST.LayoutStackBlocks(blocks, rect, max, frame._isVertical, bgColor, bgColor[4] or 1, rectLength)
+        -- litStacks (config preview only): the Active Aura stand-in. On a
+        -- live bar the kit paints its atlas fill over these same blocks; with
+        -- no kit on the canvas, CC lights them itself, in the same colour the
+        -- kit's stack fill uses.
+        local lit = opts and tonumber(opts.litStacks) or nil
+        if lit and lit > 0 then
+            local auraColor = style.barAuraColor or { 0.2, 1.0, 0.2, 1.0 }
+            for i = 1, math_min(lit, max) do
+                local tex = blocks[i]
+                if tex then
+                    tex:SetColorTexture(
+                        auraColor[1] or 0.2,
+                        auraColor[2] or 1.0,
+                        auraColor[3] or 0.2,
+                        auraColor[4] ~= nil and auraColor[4] or 1
+                    )
+                end
+            end
+        end
         ST.LayoutStackBlockBorders(borders, blocks, max, style)
         -- Owner ruling (panel parity): each stack is its own widget — the
         -- background slab and the whole-bar border ring come off; the blocks
@@ -440,15 +501,12 @@ function RB.CreateResourceBarAuraHostModule(deps)
                     local buttonData = BuildEntryAdapter(cabConfig, settings)
                     local spellSet = CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData)
                     if spellSet then
-                        local holder = EnsureHolder(barInfo.customBarId)
-                        AnchorHolderToBar(holder, frame, inset)
-                        holder:Show()
-
-                        local style = BuildStyleAdapter(cabConfig, settings)
-                        style.barReverseFill = frame._reverseFill or false
-
                         -- Stack fill max: automatic, game-data resolved,
                         -- OOC (owner ruling — no manual max anywhere).
+                        -- Resolved BEFORE the holder is anchored: whether
+                        -- this bar renders as stack blocks decides where
+                        -- the holder mounts, and that answer comes from the
+                        -- cached max.
                         local stackBarMax
                         if CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then
                             stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData)
@@ -456,6 +514,14 @@ function RB.CreateResourceBarAuraHostModule(deps)
                         -- Keyed by the BAR, so it survives the slot churn a
                         -- form change causes (see the helper's note).
                         SetCustomBarCachedStackMax(barInfo.customBarId, stackBarMax)
+
+                        local holder = EnsureHolder(barInfo.customBarId)
+                        AnchorHolderToBar(holder, frame, GetCustomBarHolderInset(barInfo, inset))
+                        holder:Show()
+
+                        local style = BuildStyleAdapter(cabConfig, settings)
+                        style.barReverseFill = frame._reverseFill or false
+
                         ApplyCustomBarAbsentStackVisuals(barInfo, settings)
 
                         wanted[#wanted + 1] = {
@@ -489,6 +555,21 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- call time).
     RB.ApplyCustomBarAbsentStackVisuals = ApplyCustomBarAbsentStackVisuals
 
+    -- The automatic stack max for a cabConfig, resolved straight from game
+    -- data through the same adapter the rebind collector uses. For the
+    -- CONFIG canvas, which renders bars that may have no live slot running
+    -- and therefore no cached max. Deliberately does not write the runtime
+    -- cache: that cache is the in-combat safety net and the rebind pass
+    -- owns it.
+    function RB.ResolveCustomBarStackMax(cabConfig, settings)
+        if not IsAuraTrackedCustomBar(cabConfig) then return nil end
+        settings = settings or GetResourceBarSettings()
+        if not settings then return nil end
+        local buttonData = BuildEntryAdapter(cabConfig, settings)
+        if not CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then return nil end
+        return CooldownCompanion:GetAuraStackBarMax(buttonData)
+    end
+
     ------------------------------------------------------------------------
     -- Frame-identity repair. Bar frames are recycled by STACK POSITION, so
     -- anything that changes the stack's length — shapeshifting a resource in
@@ -515,7 +596,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
         if holder._ccAnchoredFrame == frame then return end
         local settings = GetResourceBarSettings()
         if not settings then return end
-        AnchorHolderToBar(holder, frame, GetCustomBarBorderInset(settings))
+        -- Same mount rule as the rebind pass. Safe in combat: the stack-
+        -- blocks test reads the customBarId-keyed cache, never the
+        -- restricted max lookup.
+        AnchorHolderToBar(holder, frame,
+            GetCustomBarHolderInset(barInfo, GetCustomBarBorderInset(settings)))
     end
 
     -- Addon methods rather than module-locals on purpose: ApplyResourceBars

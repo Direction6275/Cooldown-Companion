@@ -38,7 +38,12 @@ local hooksInstalled = false
 local castEventFrame = nil
 local castEventFrameEnabled = false
 local fillMaskLeft, fillMaskRight = nil, nil
-local isPreviewActive = false
+-- Two different things, deliberately separate (owner ruling 2026-07-26).
+-- The unlock assist paints the real bar so an independent cast bar can be
+-- positioned; the command-center preview is a config-canvas state and never
+-- touches the world.
+local isUnlockAssistActive = false
+local isCanvasPreviewActive = false
 local originalFXSizes = nil
 local independentMoverFrame = nil
 local InstallHooks
@@ -312,13 +317,17 @@ UpdateIndependentCastBarDragState = function(settings)
         frame._coordLabel:SetShown(unlocked or false)
     end
 
-    -- Force preview on while unlocked so cast bar is visible for positioning
-    if unlocked and not isPreviewActive then
-        CooldownCompanion:StartCastBarPreview()
-        frame._cdcForcedPreview = true
-    elseif not unlocked and frame._cdcForcedPreview then
-        frame._cdcForcedPreview = false
-        CooldownCompanion:StopCastBarPreview()
+    -- Show a stand-in cast while unlocked so the bar is visible for
+    -- positioning. Unlike a resource bar, a cast bar that is not casting has
+    -- nothing of its own to show, so this one has to invent its contents —
+    -- and an independent cast bar is positioned out in the world, with no
+    -- config-canvas mirror to drag instead.
+    if unlocked and not isUnlockAssistActive then
+        CooldownCompanion:StartCastBarUnlockAssist()
+        frame._cdcUnlockAssist = true
+    elseif not unlocked and frame._cdcUnlockAssist then
+        frame._cdcUnlockAssist = false
+        CooldownCompanion:StopCastBarUnlockAssist()
     end
 end
 
@@ -334,9 +343,9 @@ local function HideIndependentCastBarMover()
     if independentMoverFrame._coordLabel then
         independentMoverFrame._coordLabel:Hide()
     end
-    if independentMoverFrame._cdcForcedPreview then
-        independentMoverFrame._cdcForcedPreview = false
-        CooldownCompanion:StopCastBarPreview()
+    if independentMoverFrame._cdcUnlockAssist then
+        independentMoverFrame._cdcUnlockAssist = false
+        CooldownCompanion:StopCastBarUnlockAssist()
     end
 end
 
@@ -890,9 +899,9 @@ local function EnsureCastEventFrame()
     castEventFrame = CreateFrame("Frame")
     castEventFrame:SetScript("OnEvent", function(self, event, unit)
         if unit and unit ~= "player" then return end
-        -- Real cast started — end preview if active
-        if isPreviewActive then
-            isPreviewActive = false
+        -- Real cast started — drop the unlock stand-in so the real cast shows
+        if isUnlockAssistActive then
+            isUnlockAssistActive = false
         end
         ScheduleReapply()
     end)
@@ -999,8 +1008,20 @@ function CooldownCompanion:RevertCastBar()
     -- Restore FX regions to original sizes
     RevertFXScaling(cb)
 
-    -- End preview if active
-    isPreviewActive = false
+    -- End the unlock stand-in if active: it paints THIS bar, so it goes when
+    -- the bar does.
+    --
+    -- The config-canvas preview deliberately does NOT go with it. This
+    -- teardown runs for transient live conditions -- no anchor group yet, an
+    -- anchor frame that is momentarily hidden, an anchor that is not
+    -- icon-like -- and the canvas keeps rendering from saved settings through
+    -- all of them, the same reason RevertResourceBars leaves canvas state
+    -- alone. Clearing here killed a running preview because of live-frame
+    -- availability it has nothing to do with. Ownership sits with
+    -- ClearAllConfigPreviews and the command center's stranded-preview stop,
+    -- which ask whether the cast bar is configured at all rather than whether
+    -- it happens to be drawable this instant.
+    isUnlockAssistActive = false
 
     -- Restore spark visibility and size (CLASSIC: 8x20)
     if cb.Spark then
@@ -1414,12 +1435,15 @@ function CooldownCompanion:GetCastBarRuntimeDebugInfo()
 end
 
 ------------------------------------------------------------------------
--- Preview: show the cast bar with fake cast data for settings preview.
--- State is ephemeral (local flag, not saved to DB).  Preview ends when:
+-- Unlock assist: show the real cast bar with a stand-in cast so it can be
+-- dragged. State is ephemeral (local flag, not saved to DB) and ends when:
 --   • a real cast event fires
---   • the user unchecks Preview
+--   • the bar is locked again
 --   • the cast bar panel is deactivated / config panel closed
 --   • the feature is disabled / anchor reverts
+--
+-- This is the one place CC still paints a fabricated value onto a live
+-- display, and only because an idle cast bar has nothing to position by.
 ------------------------------------------------------------------------
 
 local function ApplyPreview()
@@ -1484,15 +1508,15 @@ local function ApplyPreview()
     end
 end
 
-function CooldownCompanion:StartCastBarPreview()
-    isPreviewActive = true
+function CooldownCompanion:StartCastBarUnlockAssist()
+    isUnlockAssistActive = true
     self:ApplyCastBarSettings()
     ApplyPreview()
 end
 
-function CooldownCompanion:StopCastBarPreview()
-    if not isPreviewActive then return end
-    isPreviewActive = false
+function CooldownCompanion:StopCastBarUnlockAssist()
+    if not isUnlockAssistActive then return end
+    isUnlockAssistActive = false
 
     local cb = PlayerCastingBarFrame
     if not cb then return end
@@ -1503,8 +1527,18 @@ function CooldownCompanion:StopCastBarPreview()
     end
 end
 
+-- The command-center cast preview: state only. The cast it stands for is
+-- animated on the config canvas's cast facsimile, never on the real bar.
+function CooldownCompanion:StartCastBarPreview()
+    isCanvasPreviewActive = true
+end
+
+function CooldownCompanion:StopCastBarPreview()
+    isCanvasPreviewActive = false
+end
+
 function CooldownCompanion:IsCastBarPreviewActive()
-    return isPreviewActive
+    return isCanvasPreviewActive
 end
 
 ------------------------------------------------------------------------
