@@ -1019,11 +1019,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             barInfo._sndPrevCharges = nil
             barInfo._sndPrevChargeRecharging = nil
             barInfo._sndPrevChargeCooldownStart = nil
-            -- The automatic stack max belongs to the bar that was here, not
-            -- the one moving in; the OOC rebind refreshes it, but nothing
-            -- may read the old bar's value in the meantime.
-            barInfo._ccCabStackMax = nil
-            barInfo._ccCabStackMaxBarId = nil
         end
         barInfo.cabConfig = cabConfig
         barInfo.powerType = legacyPowerType

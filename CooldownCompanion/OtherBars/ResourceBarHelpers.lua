@@ -330,14 +330,26 @@ local function IsSpellCustomBarAuraStackDisplay(cab)
         and GetCustomBarTrackingMode(cab, true) ~= "active"
 end
 
--- The automatic aura stack max (the aura pass), cached on the slot by the
--- OOC rebind collector so in-combat re-applies never touch the restricted
--- lookup. Always read through here: the cache outlives slot reassignment,
--- so the recorded owner must match the bar asking for it.
+-- The automatic aura stack max (the aura pass), resolved from game data by
+-- the OOC rebind collector so in-combat re-applies never touch the
+-- restricted lookup.
+--
+-- Keyed by customBarId, NOT by slot. Bar frames and their barInfo tables
+-- are recycled by stack position, so shapeshifting a resource in or out
+-- hands a bar a different slot — and a slot-keyed cache would be empty
+-- exactly when combat forbids recomputing it, dropping the capacity blocks
+-- and their per-stack rings for the rest of the fight.
+local customBarStackMaxById = {}
+
+local function SetCustomBarCachedStackMax(customBarId, maxStacks)
+    if type(customBarId) ~= "string" then return end
+    customBarStackMaxById[customBarId] = maxStacks
+end
+
 local function GetCustomBarCachedStackMax(barInfo)
-    if type(barInfo) ~= "table" then return nil end
-    if barInfo._ccCabStackMaxBarId ~= barInfo.customBarId then return nil end
-    return barInfo._ccCabStackMax
+    local customBarId = type(barInfo) == "table" and barInfo.customBarId or nil
+    if type(customBarId) ~= "string" then return nil end
+    return customBarStackMaxById[customBarId]
 end
 
 local function NormalizeCustomBarEntryType(cab)
@@ -2021,6 +2033,7 @@ RB.GetCustomBarEntryType = GetCustomBarEntryType
 RB.IsSpellCustomBarConfig = IsSpellCustomBarConfig
 RB.IsSpellCustomBarAuraStackDisplay = IsSpellCustomBarAuraStackDisplay
 RB.GetCustomBarCachedStackMax = GetCustomBarCachedStackMax
+RB.SetCustomBarCachedStackMax = SetCustomBarCachedStackMax
 RB.GetResolvedCustomAuraBarAuraUnit = GetResolvedCustomAuraBarAuraUnit
 RB.EnsureCustomAuraBarAuraUnit = EnsureCustomAuraBarAuraUnit
 RB.GetSpecLayoutOrder = GetSpecLayoutOrder

@@ -51,6 +51,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
     local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
     local IsSpellCustomBarConfig = RB.IsSpellCustomBarConfig
     local GetCustomBarCachedStackMax = RB.GetCustomBarCachedStackMax
+    local SetCustomBarCachedStackMax = RB.SetCustomBarCachedStackMax
     local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
     local HidePixelBorders = RB.HidePixelBorders
 
@@ -452,8 +453,9 @@ function RB.CreateResourceBarAuraHostModule(deps)
                         if CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData) then
                             stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData)
                         end
-                        barInfo._ccCabStackMax = stackBarMax
-                        barInfo._ccCabStackMaxBarId = barInfo.customBarId
+                        -- Keyed by the BAR, so it survives the slot churn a
+                        -- form change causes (see the helper's note).
+                        SetCustomBarCachedStackMax(barInfo.customBarId, stackBarMax)
                         ApplyCustomBarAbsentStackVisuals(barInfo, settings)
 
                         wanted[#wanted + 1] = {
