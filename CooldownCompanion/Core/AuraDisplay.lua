@@ -419,9 +419,11 @@ end
 -- Lay out `max` capacity blocks over `host` with the atlas proportions.
 -- Opaque by default like the bar backdrop: a translucent block would let
 -- the layer underneath bleed through while the aura display is occluding
--- it. Occlusion-free hosts (pure aura custom bars) pass `alpha` so their
--- blocks follow the configured background instead — nothing renders
--- beneath them that needs hiding.
+-- it. Custom-bar hosts pass `alpha` so their blocks follow the configured
+-- background instead — nothing renders beneath them that needs hiding.
+-- `alpha = 0` lays the blocks out without drawing them at all, which is how
+-- occlusion-free hosts get anchor rects for their per-block border rings
+-- while the CC layer underneath supplies the visible background.
 function ST.LayoutStackBlocks(blocks, host, max, vertical, color, alpha)
     local length = vertical and host:GetHeight() or host:GetWidth()
     if length <= 0 then
@@ -1060,24 +1062,37 @@ local function StyleSlotKit(slot, button, buttonData, style)
             kit.barBackdrop:SetColorTexture(bg[1] or 0.1, bg[2] or 0.1, bg[3] or 0.1, 1)
             kit.barBackdrop:SetAlpha(1)
         end
-        if widgetStack and not occlusionFree then
+        if widgetStack then
             -- Block geometry reads the CC statusBar (sanctioned anchor
             -- target + CC-owned width), matching BarMode's block set exactly.
-            -- Alpha: forced opaque is an OCCLUSION rule, so it applies only
-            -- where something renders beneath. On a custom-bar shell the CC
-            -- frame is at whole-frame alpha 0 and these blocks are the whole
-            -- background, so they follow the configured alpha — otherwise the
-            -- shell toggle would visibly change a bar's opacity.
             local blockBg = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
+            -- Alpha: forced opaque is an OCCLUSION rule, so it applies only
+            -- where something renders beneath.
+            --   * occlusion-free: the CC-side blocks under the holder ARE
+            --     the background, so the kit's stay invisible.
+            --   * custom-bar shell: the CC frame is at whole-frame alpha 0,
+            --     so these blocks are the whole background and follow the
+            --     configured alpha (otherwise the shell toggle would change
+            --     a bar's opacity).
+            --   * panels: opaque, occluding whatever runs beneath.
+            local blockAlpha
+            if occlusionFree then
+                blockAlpha = 0
+            elseif isCustomBarHost then
+                blockAlpha = blockBg[4] or 1
+            end
             ST.LayoutStackBlocks(kit.stackBgBlocks, button.statusBar or slotButton,
-                slot.boundStackMax, button._isVertical, blockBg,
-                isCustomBarHost and (blockBg[4] or 1) or nil)
+                slot.boundStackMax, button._isVertical, blockBg, blockAlpha)
+            -- The per-block rings always come from the KIT, even when its
+            -- blocks are invisible (they are laid out purely to anchor
+            -- these). The kit's rings live inside the fill frame and draw
+            -- above it; the CC-side rings sit on the bar frame, which the
+            -- holder and its fill cover entirely — so relying on those made
+            -- a segmented bar read as one continuous fill for exactly as
+            -- long as the aura was up.
             ST.LayoutStackBlockBorders(kit.stackBlockBorders, kit.stackBgBlocks,
                 slot.boundStackMax, style)
         else
-            -- Occlusion-free widget stacks keep the CC-side capacity blocks
-            -- visible beneath (ResourceBarAuraHost lays them on the same
-            -- inset rect); the kit contributes only the atlas fill.
             ST.HideStackBlocks(kit.stackBgBlocks)
             ST.HideStackBlockBorders(kit.stackBlockBorders)
         end
