@@ -415,6 +415,14 @@ local function ClearStaleRecycledBarRuntimeState(frame)
     end
     frame._cdcIndependentAlphaTarget = nil
     frame._cdcIndependentLastAlpha = nil
+    -- Aura-pass absent-state blocks: hidden for the apply pass;
+    -- FinalizeAppliedBarVisibility re-lays them from the cached max for
+    -- bars that still want them (recycled frames stay clean).
+    if frame._ccCabStackBlocksActive then
+        frame._ccCabStackBlocksActive = nil
+        ST.HideStackBlocks(frame._ccCabStackBlocks)
+        ST.HideStackBlockBorders(frame._ccCabStackBlockBorders)
+    end
     EntryRuntime.ClearTrackedAuraOwnerState(frame, nil, CLEAR_CUSTOM_AURA_STACKS_OPTS)
     EntryRuntime.ReleaseTrackedAuraScratch(frame)
     frame._parsedAuraIDs = nil
@@ -1364,6 +1372,14 @@ local FinalizeAppliedBarVisibility = customBarsModule.FinalizeAppliedBarVisibili
 local HideUnusedResourceBarFrames = customBarsModule.HideUnusedResourceBarFrames
 local PrepareCustomAuraBar = customBarsModule.PrepareCustomAuraBar
 
+-- Custom-bar aura hosting (the aura pass): stable holders + adapters for
+-- the AuraContainer display in Core/AuraDisplay.lua. Reached via
+-- CooldownCompanion methods, not locals: ApplyResourceBars sits at the
+-- 60-upvalue ceiling.
+RB.CreateResourceBarAuraHostModule({
+    resourceBarFrames = resourceBarFrames,
+})
+
 ------------------------------------------------------------------------
 -- Relayout: reposition bars within their containers by visibility/order
 -- Called from ApplyResourceBars() and from OnUpdate when layoutDirty.
@@ -2153,6 +2169,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         if independentWrapperFrame then frames[#frames + 1] = independentWrapperFrame end
         if containerFrameAbove then frames[#frames + 1] = containerFrameAbove end
         if containerFrameBelow then frames[#frames + 1] = containerFrameBelow end
+        frames[#frames + 1] = self:GetCustomBarAuraHostRoot()
         if #frames > 0 then
             CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, frames)
         end
@@ -2167,6 +2184,12 @@ function CooldownCompanion:ApplyResourceBars(opts)
         local groupAlpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
         containerFrameAbove:SetAlpha(groupAlpha)
         containerFrameBelow:SetAlpha(groupAlpha)
+        -- Aura host root rides the same alpha writes: the kit visuals fade
+        -- with the bars they decorate (plain CC frame; alpha propagates
+        -- down through the holders into the slot subtrees engine-side).
+        -- Captured as a local: the sync closure below shadows `self`.
+        local auraHostRoot = self:GetCustomBarAuraHostRoot()
+        auraHostRoot:SetAlpha(groupAlpha)
 
         if not alphaSyncFrame then
             alphaSyncFrame = CreateFrame("Frame")
@@ -2184,6 +2207,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 lastAlpha = alpha
                 if containerFrameAbove then containerFrameAbove:SetAlpha(alpha) end
                 if containerFrameBelow then containerFrameBelow:SetAlpha(alpha) end
+                auraHostRoot:SetAlpha(alpha)
             end
         end)
     else
@@ -2196,6 +2220,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         local frames = {}
         if containerFrameAbove then frames[#frames + 1] = containerFrameAbove end
         if containerFrameBelow then frames[#frames + 1] = containerFrameBelow end
+        frames[#frames + 1] = self:GetCustomBarAuraHostRoot()
         if #frames > 0 then
             CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, frames)
         end
@@ -2205,6 +2230,12 @@ function CooldownCompanion:ApplyResourceBars(opts)
     if isPreviewActive then
         ApplyPreviewData()
     end
+
+    -- Custom-bar aura displays (the aura pass): holders re-anchor to the
+    -- frames this apply may have recreated, and slot filters re-bind, in
+    -- the coalesced OOC rebind pass.
+    self:SetCustomBarAuraHostApplied(true)
+    self:RequestAuraRebind("custom-bars")
 end
 
 ------------------------------------------------------------------------
@@ -2232,6 +2263,13 @@ function CooldownCompanion:RevertResourceBars()
         if containerFrameBelow then containerFrameBelow:SetAlpha(savedContainerAlpha) end
     end
     savedContainerAlpha = nil
+
+    -- Aura host root goes dark with the bars (safe in combat: plain CC
+    -- frame; a hidden container is inert and self-refreshes on show). The
+    -- rebind request parks the custom-bar displays once OOC.
+    self:SetCustomBarAuraHostApplied(false)
+    self:GetCustomBarAuraHostRoot():SetAlpha(1)
+    self:RequestAuraRebind("custom-bars")
 
     -- Stop OnUpdate
     if onUpdateFrame then
