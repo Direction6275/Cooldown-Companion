@@ -1051,6 +1051,15 @@ local function StyleSlotKit(slot, button, buttonData, style)
         -- bars keep the opaque backdrop (a live cooldown fill and its texts
         -- render beneath and must be occluded), as do panel bars and shells.
         local occlusionFree = isCustomBarHost and buttonData.addedAs == "aura" and not shellEntry
+        -- TEMP DEBUG (segmented-combat investigation; remove after
+        -- validation): the style-pass fill decision for stack binds.
+        if slot.boundStackMax then
+            CooldownCompanion:Print(("DBG stack-style spell=%s host=%s useStackFill=%s widgetStack=%s occlusionFree=%s shell=%s max=%d"):format(
+                tostring(buttonData.id), isCustomBarHost and "customBar" or "panel",
+                tostring(useStackFill), tostring(widgetStack),
+                tostring(occlusionFree), tostring(shellEntry ~= nil and shellEntry ~= false),
+                slot.boundStackMax))
+        end
         if shellEntry or widgetStack or occlusionFree then
             kit.barBackdrop:SetAlpha(0)
         else
@@ -1479,6 +1488,15 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
         if wantMax > 1 and ST.STATUS_BAR_INTERPOLATION_SMOOTH then
             wantSmooth = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "continuous"
                 or CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData) == ST.SEGMENTED_SMOOTHING_ON
+        end
+        -- TEMP DEBUG (segmented-combat investigation; remove after
+        -- validation): CC-side bind decisions only, panel and custom-bar
+        -- hosts both print so the two registrations can be compared.
+        if wantMax > 1 then
+            CooldownCompanion:Print(("DBG stack-bind spell=%s host=%s unit=%s max=%d smooth=%s recall=%s"):format(
+                tostring(buttonData.id), button._ccAuraHostKind or "panel",
+                tostring(unit), wantMax, tostring(wantSmooth),
+                tostring(kit.stackFillMax ~= wantMax or kit.stackFillSmooth ~= wantSmooth)))
         end
         if kit.stackFillMax ~= wantMax or kit.stackFillSmooth ~= wantSmooth then
             record.slotButton:SetApplicationBar(kit.stackFill, {
