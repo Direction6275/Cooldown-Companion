@@ -97,9 +97,39 @@ function RB.CreateResourceBarAuraHostModule(deps)
             holder._isBar = true
             holder.statusBar = holder
             holder._cdcClickThroughMotion = true
+            -- The bar's FULL footprint (the holder itself mounts inside the
+            -- border ring). The kit's shell replicas anchor here instead of
+            -- to the bar frame: bar frames are slot-position recycled, so a
+            -- custom bar is handed a different one whenever the stack grows
+            -- or shrinks — and those replicas live in the slot subtree,
+            -- which cannot be re-anchored in combat. This frame is CC-owned
+            -- and its identity never changes.
+            holder._ccBounds = CreateFrame("Frame", nil, holder)
+            holder._ccBounds:EnableMouse(false)
+            holder._barBounds = holder._ccBounds
             holders[customBarId] = holder
         end
         return holder
+    end
+
+    -- All holder geometry in one place: the mount rect inside the border
+    -- ring, the full-footprint bounds child, orientation, and level. Plain
+    -- CC frames throughout — nothing here reaches the slot subtree, so it
+    -- is equally valid in combat.
+    local function AnchorHolderToBar(holder, frame, inset)
+        holder:ClearAllPoints()
+        holder:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)
+        holder:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset, inset)
+        local bounds = holder._ccBounds
+        bounds:ClearAllPoints()
+        bounds:SetPoint("TOPLEFT", holder, "TOPLEFT", -inset, inset)
+        bounds:SetPoint("BOTTOMRIGHT", holder, "BOTTOMRIGHT", inset, -inset)
+        holder._isVertical = frame._isVertical == true
+        -- Above the bar's textLayer (bar+2): the kit must render over every
+        -- CC-side bar visual. Same-strata level ordering; the root already
+        -- matches the resource containers' MEDIUM strata.
+        holder:SetFrameLevel(frame:GetFrameLevel() + 3)
+        holder._ccAnchoredFrame = frame
     end
 
     ------------------------------------------------------------------------
@@ -410,25 +440,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
                     local spellSet = CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData)
                     if spellSet then
                         local holder = EnsureHolder(barInfo.customBarId)
-                        holder:ClearAllPoints()
-                        holder:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)
-                        holder:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset, inset)
-                        holder._isVertical = frame._isVertical == true
-                        -- Full bar rect for the kit's shell replicas (the
-                        -- shell bg + border ring must match the bar's real
-                        -- footprint, not the inset mount) — same field name
-                        -- the panel shell branch reads.
-                        holder._barBounds = frame
-                        -- TEMP DEBUG (frame-identity investigation; remove
-                        -- after confirmation): what this holder is anchored
-                        -- to as of this OOC rebind.
-                        holder._ccDbgAnchorFrame = frame
-                        holder._ccDbgReported = nil
-                        -- Above the bar's textLayer (bar+2): the kit must
-                        -- render over every CC-side bar visual. Same-strata
-                        -- level ordering; the root already matches the
-                        -- resource containers' MEDIUM strata.
-                        holder:SetFrameLevel(frame:GetFrameLevel() + 3)
+                        AnchorHolderToBar(holder, frame, inset)
                         holder:Show()
 
                         local style = BuildStyleAdapter(cabConfig, settings)
@@ -476,42 +488,32 @@ function RB.CreateResourceBarAuraHostModule(deps)
     RB.ApplyCustomBarAbsentStackVisuals = ApplyCustomBarAbsentStackVisuals
 
     ------------------------------------------------------------------------
-    -- TEMP DEBUG (frame-identity investigation; remove after confirmation).
-    -- Reports when the slot serving a custom bar hands it a DIFFERENT frame
-    -- than the one its aura holder is anchored to. Plain CC-side reads only
-    -- — never touches the slot subtree.
+    -- Frame-identity repair. Bar frames are recycled by STACK POSITION, so
+    -- anything that changes the stack's length — shapeshifting a resource in
+    -- or out, most of all — hands a custom bar a different frame than the one
+    -- its aura holder was anchored to. Out of combat the rebind pass fixes
+    -- that on the next frame; in combat the rebind is deferred to combat end,
+    -- so the display would sit on whatever now occupies the old position
+    -- (validated in game 2026-07-26: the display landed on the resources).
+    --
+    -- Re-anchoring is pure CC-side geometry, which is why it is safe here:
+    -- the holder is a CC frame under a CC root, and the aura subtree beneath
+    -- it moves with its parent without any call reaching a slot object. The
+    -- BIND (filters, stack max, styling) stays OOC-only as always — nothing
+    -- about the aura state changes when the bar merely relocates.
     ------------------------------------------------------------------------
-    local dbgFrameIds, dbgNextFrameId = {}, 0
-    local function DbgFrameId(frame)
-        if not frame then return "nil" end
-        if not dbgFrameIds[frame] then
-            dbgNextFrameId = dbgNextFrameId + 1
-            dbgFrameIds[frame] = dbgNextFrameId
-        end
-        return "F" .. dbgFrameIds[frame]
-    end
 
-    function RB.DebugCheckCustomBarFrameIdentity(barInfo)
+    function RB.SyncCustomBarAuraHostAnchor(barInfo)
         local frame = barInfo and barInfo.frame
         local customBarId = barInfo and barInfo.customBarId
         if not (frame and customBarId) then return end
         local holder = holders[customBarId]
-        local anchored = holder and holder._ccDbgAnchorFrame
-        if not anchored then return end
-        if anchored == frame then
-            if holder._ccDbgReported then
-                CooldownCompanion:Print(("DBG frame-identity %s RESTORED -> %s"):format(
-                    tostring(customBarId), DbgFrameId(frame)))
-                holder._ccDbgReported = nil
-            end
-            return
-        end
-        if holder._ccDbgReported == frame then return end
-        holder._ccDbgReported = frame
-        CooldownCompanion:Print(("DBG frame-identity %s MOVED: bar now %s, aura display still anchored to %s | combat=%s shell=%s"):format(
-            tostring(customBarId), DbgFrameId(frame), DbgFrameId(anchored),
-            tostring(InCombatLockdown()),
-            tostring(barInfo.cabConfig and barInfo.cabConfig.hideWhenInactive == true)))
+        -- Never bound (or parked and hidden): the rebind owns those.
+        if not (holder and holder._ccAnchoredFrame) then return end
+        if holder._ccAnchoredFrame == frame then return end
+        local settings = GetResourceBarSettings()
+        if not settings then return end
+        AnchorHolderToBar(holder, frame, GetCustomBarBorderInset(settings))
     end
 
     -- Addon methods rather than module-locals on purpose: ApplyResourceBars

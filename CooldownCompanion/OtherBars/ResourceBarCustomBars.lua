@@ -875,10 +875,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if RB.ApplyCustomBarAbsentStackVisuals then
                 RB.ApplyCustomBarAbsentStackVisuals(barInfo)
             end
-            -- TEMP DEBUG (frame-identity investigation; remove after
-            -- confirmation).
-            if RB.DebugCheckCustomBarFrameIdentity then
-                RB.DebugCheckCustomBarFrameIdentity(barInfo)
+            -- Follow the bar if the stack handed it a different frame (a
+            -- form change adding or removing a resource does exactly that).
+            -- In combat this is the only thing that can repair it — the
+            -- rebind pass is deferred to combat end.
+            if RB.SyncCustomBarAuraHostAnchor then
+                RB.SyncCustomBarAuraHostAnchor(barInfo)
             end
         else
             barInfo.frame:Show()

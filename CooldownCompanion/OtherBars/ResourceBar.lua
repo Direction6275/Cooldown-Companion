@@ -422,6 +422,13 @@ local function ClearStaleRecycledBarRuntimeState(frame)
         frame._ccCabStackBlocksActive = nil
         ST.HideStackBlocks(frame._ccCabStackBlocks)
         ST.HideStackBlockBorders(frame._ccCabStackBlockBorders)
+        -- Blocks mode zeroes the background region (the blocks ARE the
+        -- background there). Restore it with the blocks: this frame may be
+        -- handed to a resource bar next, and only custom bars re-run the
+        -- absent-state pass that would otherwise repair it.
+        if frame.bg then
+            frame.bg:SetAlpha(1)
+        end
     end
     EntryRuntime.ClearTrackedAuraOwnerState(frame, nil, CLEAR_CUSTOM_AURA_STACKS_OPTS)
     EntryRuntime.ReleaseTrackedAuraScratch(frame)
@@ -1919,17 +1926,6 @@ function CooldownCompanion:ApplyResourceBars(opts)
 
     -- Hide existing bars that we don't need
     HideUnusedResourceBarFrames(#filtered + 1)
-
-    -- TEMP DEBUG (frame-identity investigation; remove after confirmation):
-    -- the stack's length is what shifts every slot below an added resource.
-    -- No new upvalues on purpose (this function sits at Lua's 60 ceiling):
-    -- the previous count rides on the addon table and _G supplies the rest.
-    if self._ccDbgLastBarCount ~= #filtered then
-        self:Print(("DBG stack-size %s -> %s | combat=%s"):format(
-            tostring(self._ccDbgLastBarCount), #filtered,
-            tostring(_G.InCombatLockdown())))
-        self._ccDbgLastBarCount = #filtered
-    end
 
     for idx, entry in ipairs(filtered) do
         local isCustomEntry = type(entry) == "table" and entry.kind == "custom"
