@@ -298,6 +298,12 @@ ST._RB = {
     CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS,
     CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION,
     RAGING_MAELSTROM_SPELL_ID = RAGING_MAELSTROM_SPELL_ID,
+    -- The APPLIED Maelstrom Weapon aura (CumulativeAura=5 in SpellAuraOptions,
+    -- 10 with Raging Maelstrom). Not live's 187880, which is the proc trigger
+    -- carrying no stacks — live only resolved the real aura through a CDM
+    -- viewer frame's auraInstanceID, a path 12.1 closed. Written inline
+    -- rather than as a local: this chunk is at Lua 5.1's 200-local ceiling.
+    MW_AURA_SPELL_ID = 344179,
     RESOURCE_HEALTH = RESOURCE_HEALTH,
     RESOURCE_MAELSTROM_WEAPON = RESOURCE_MAELSTROM_WEAPON,
 

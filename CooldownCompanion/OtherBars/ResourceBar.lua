@@ -50,6 +50,7 @@ local RB = ST._RB
 local UPDATE_INTERVAL = RB.UPDATE_INTERVAL
 local PERCENT_SCALE_CURVE = RB.PERCENT_SCALE_CURVE
 local RAGING_MAELSTROM_SPELL_ID = RB.RAGING_MAELSTROM_SPELL_ID
+local MW_AURA_SPELL_ID = RB.MW_AURA_SPELL_ID
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local RESOURCE_MAELSTROM_WEAPON = RB.RESOURCE_MAELSTROM_WEAPON
 local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
@@ -1287,9 +1288,35 @@ local function UpdateMaelstromWeaponBar(holder, settings, auraActiveCache)
     end
     local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
 
-    -- 12.1 demolition: MW stack reads removed (aura data blocked in combat).
-    -- The bar renders permanently empty until the AuraContainer rebuild.
+    -- Maelstrom Weapon stacks (the aura pass, Phase 2). MW carries the
+    -- server-side per-spell never-secret flag — validated on PTR 7 by
+    -- dumping the aura mid-combat: a fully PLAIN AuraData with a readable
+    -- `applications`, exactly the carve-out the API docs describe for
+    -- resource-like auras. So the bar reads its own stacks and keeps the
+    -- full Lua render (dual-colour halves, threshold and max colours,
+    -- segment text) instead of a Blizzard-driven kit shape.
+    --
+    -- GetPlayerAuraBySpellID is the RequiresNonSecretAura read path: it
+    -- returns NOTHING for a secret aura rather than erroring, so this is
+    -- safe in every restricted context. The secret guard below covers the
+    -- flag being changed by a future build (retest-each-build discipline) —
+    -- a secret reaching the comparisons underneath would be a hard error.
     local stacks = 0
+    local mwAura = C_UnitAuras.GetPlayerAuraBySpellID(MW_AURA_SPELL_ID)
+    if mwAura then
+        stacks = mwAura.applications or 0
+    end
+    if issecretvalue and issecretvalue(stacks) then
+        for i = 1, #holder.segments do
+            SetStatusBarImmediateValue(holder.segments[i], 0)
+            if holder.overlaySegments and holder.overlaySegments[i] then
+                SetStatusBarImmediateValue(holder.overlaySegments[i], 0)
+                holder.overlaySegments[i]:SetAlpha(0)
+            end
+        end
+        ClearSegmentedText(holder)
+        return
+    end
 
     local half = #holder.segments
     local baseColor, overlayColor, maxColor = GetResourceColors(100, settings)
