@@ -1766,12 +1766,6 @@ RB.StyleSegmentedBar = StyleSegmentedBar
 
 function CooldownCompanion:ApplyResourceBars(opts)
     opts = opts or {}
-    -- TEMP DEBUG (segmented-combat investigation; remove after validation):
-    -- flag any full apply that runs while combat-locked. _G access on
-    -- purpose: the file-local would be a 61st upvalue for this function.
-    if _G.InCombatLockdown() then
-        self:Print("DBG apply-in-combat")
-    end
     if not opts.skipRuntimeGate
         and self.RefreshBarsAndFramesRuntimeFeatureGate
         and not self:RefreshBarsAndFramesRuntimeFeatureGate("resourceBars", "resource-apply") then

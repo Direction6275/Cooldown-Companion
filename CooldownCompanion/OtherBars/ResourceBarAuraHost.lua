@@ -101,32 +101,6 @@ function RB.CreateResourceBarAuraHostModule(deps)
         return holder
     end
 
-    -- TEMP DEBUG (segmented-combat investigation; remove after validation):
-    -- CC-owned frame state at the combat boundary — never touches the slot
-    -- subtree, never reads aura state.
-    do
-        local dbg = CreateFrame("Frame")
-        dbg:RegisterEvent("PLAYER_REGEN_DISABLED")
-        dbg:RegisterEvent("PLAYER_REGEN_ENABLED")
-        dbg:SetScript("OnEvent", function(_, event)
-            local tag = event == "PLAYER_REGEN_DISABLED" and "combat+" or "combat-"
-            local root = GetAuraHostRoot()
-            CooldownCompanion:Print(("DBG %s root shown=%s alpha=%.2f"):format(
-                tag, tostring(root:IsShown()), root:GetAlpha()))
-            for customBarId, holder in pairs(holders) do
-                if holder:IsShown() then
-                    local bar = holder._barBounds
-                    CooldownCompanion:Print(("DBG %s %s holder effA=%.2f lvl=%d %dx%d | bar shown=%s effA=%s lvl=%s"):format(
-                        tag, tostring(customBarId), holder:GetEffectiveAlpha(),
-                        holder:GetFrameLevel(), holder:GetWidth() + 0.5, holder:GetHeight() + 0.5,
-                        bar and tostring(bar:IsShown()) or "nil",
-                        bar and ("%.2f"):format(bar:GetEffectiveAlpha()) or "nil",
-                        bar and tostring(bar:GetFrameLevel()) or "nil"))
-                end
-            end
-        end)
-    end
-
     ------------------------------------------------------------------------
     -- Geometry: the border inset. Resource pixel borders draw INSIDE the
     -- bar rect on an overlay layer; the kit renders at a higher frame level
@@ -339,12 +313,6 @@ function RB.CreateResourceBarAuraHostModule(deps)
         local frame = barInfo and barInfo.frame
         if not frame then return end
         local max = WantsAbsentStackBlocks(barInfo)
-        -- TEMP DEBUG (segmented-combat investigation; remove after
-        -- validation): flag CC-side block work that runs combat-locked.
-        if InCombatLockdown() and barInfo.customBarId then
-            CooldownCompanion:Print(("DBG blocks-in-combat %s max=%s"):format(
-                tostring(barInfo.customBarId), tostring(max)))
-        end
         if not max then
             if frame._ccCabStackBlocksActive then
                 frame._ccCabStackBlocksActive = nil
