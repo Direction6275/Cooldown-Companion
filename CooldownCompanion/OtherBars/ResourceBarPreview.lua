@@ -322,10 +322,19 @@ function RB.CreateResourceBarPreviewModule(deps)
             -- leaves them nowhere to go, and the low-health alert has no
             -- missing health to cover. The partial fill IS the preview
             -- state; at rest the bar is full like every other resource.
-            local fraction = HealthBar.HasActiveEffectPreview()
-                and HEALTH_EFFECT_PREVIEW_FILL
-                or 1
-            local health = maxHealth * fraction
+            --
+            -- Only when the maximum can actually be divided: it may be a
+            -- secret value, and arithmetic on one is forbidden (see
+            -- agent-reference/secret-values.md). The resting leg below never
+            -- computes on it at all — range and value pass straight through.
+            local wounded = HealthBar.HasActiveEffectPreview()
+                and not (issecretvalue and issecretvalue(maxHealth))
+            local health = maxHealth
+            local fraction = 1
+            if wounded then
+                fraction = HEALTH_EFFECT_PREVIEW_FILL
+                health = maxHealth * fraction
+            end
             SetStatusBarSmoothRange(barInfo.frame, 0, maxHealth)
             SetStatusBarSmoothValue(barInfo.frame, health)
             HealthBar.ApplyFillColor(barInfo.frame, config, fraction)
