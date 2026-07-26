@@ -1920,6 +1920,17 @@ function CooldownCompanion:ApplyResourceBars(opts)
     -- Hide existing bars that we don't need
     HideUnusedResourceBarFrames(#filtered + 1)
 
+    -- TEMP DEBUG (frame-identity investigation; remove after confirmation):
+    -- the stack's length is what shifts every slot below an added resource.
+    -- No new upvalues on purpose (this function sits at Lua's 60 ceiling):
+    -- the previous count rides on the addon table and _G supplies the rest.
+    if self._ccDbgLastBarCount ~= #filtered then
+        self:Print(("DBG stack-size %s -> %s | combat=%s"):format(
+            tostring(self._ccDbgLastBarCount), #filtered,
+            tostring(_G.InCombatLockdown())))
+        self._ccDbgLastBarCount = #filtered
+    end
+
     for idx, entry in ipairs(filtered) do
         local isCustomEntry = type(entry) == "table" and entry.kind == "custom"
         local powerType = isCustomEntry and nil or entry

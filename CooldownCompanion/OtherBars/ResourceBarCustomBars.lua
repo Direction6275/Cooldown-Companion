@@ -875,6 +875,11 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             if RB.ApplyCustomBarAbsentStackVisuals then
                 RB.ApplyCustomBarAbsentStackVisuals(barInfo)
             end
+            -- TEMP DEBUG (frame-identity investigation; remove after
+            -- confirmation).
+            if RB.DebugCheckCustomBarFrameIdentity then
+                RB.DebugCheckCustomBarFrameIdentity(barInfo)
+            end
         else
             barInfo.frame:Show()
         end

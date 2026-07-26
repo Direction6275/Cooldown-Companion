@@ -419,6 +419,11 @@ function RB.CreateResourceBarAuraHostModule(deps)
                         -- footprint, not the inset mount) — same field name
                         -- the panel shell branch reads.
                         holder._barBounds = frame
+                        -- TEMP DEBUG (frame-identity investigation; remove
+                        -- after confirmation): what this holder is anchored
+                        -- to as of this OOC rebind.
+                        holder._ccDbgAnchorFrame = frame
+                        holder._ccDbgReported = nil
                         -- Above the bar's textLayer (bar+2): the kit must
                         -- render over every CC-side bar visual. Same-strata
                         -- level ordering; the root already matches the
@@ -469,6 +474,45 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- module is created before this one; it looks the function up on RB at
     -- call time).
     RB.ApplyCustomBarAbsentStackVisuals = ApplyCustomBarAbsentStackVisuals
+
+    ------------------------------------------------------------------------
+    -- TEMP DEBUG (frame-identity investigation; remove after confirmation).
+    -- Reports when the slot serving a custom bar hands it a DIFFERENT frame
+    -- than the one its aura holder is anchored to. Plain CC-side reads only
+    -- — never touches the slot subtree.
+    ------------------------------------------------------------------------
+    local dbgFrameIds, dbgNextFrameId = {}, 0
+    local function DbgFrameId(frame)
+        if not frame then return "nil" end
+        if not dbgFrameIds[frame] then
+            dbgNextFrameId = dbgNextFrameId + 1
+            dbgFrameIds[frame] = dbgNextFrameId
+        end
+        return "F" .. dbgFrameIds[frame]
+    end
+
+    function RB.DebugCheckCustomBarFrameIdentity(barInfo)
+        local frame = barInfo and barInfo.frame
+        local customBarId = barInfo and barInfo.customBarId
+        if not (frame and customBarId) then return end
+        local holder = holders[customBarId]
+        local anchored = holder and holder._ccDbgAnchorFrame
+        if not anchored then return end
+        if anchored == frame then
+            if holder._ccDbgReported then
+                CooldownCompanion:Print(("DBG frame-identity %s RESTORED -> %s"):format(
+                    tostring(customBarId), DbgFrameId(frame)))
+                holder._ccDbgReported = nil
+            end
+            return
+        end
+        if holder._ccDbgReported == frame then return end
+        holder._ccDbgReported = frame
+        CooldownCompanion:Print(("DBG frame-identity %s MOVED: bar now %s, aura display still anchored to %s | combat=%s shell=%s"):format(
+            tostring(customBarId), DbgFrameId(frame), DbgFrameId(anchored),
+            tostring(InCombatLockdown()),
+            tostring(barInfo.cabConfig and barInfo.cabConfig.hideWhenInactive == true)))
+    end
 
     -- Addon methods rather than module-locals on purpose: ApplyResourceBars
     -- sits at Lua 5.1's 60-upvalue ceiling, and `self` reaches these for
