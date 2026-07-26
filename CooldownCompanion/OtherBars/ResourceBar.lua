@@ -134,8 +134,10 @@ local lastAppliedLayout = nil
 local lastAppliedIndependentStack = false
 local resourceBarFrames = {}   -- array of bar frame objects (ordered by stacking)
 local activeResources = {}     -- array of power type ints currently displayed
-local isPreviewActive = false
-local ApplyPreviewData
+-- Unlock-to-position assist, not a preview: the real bars are forced visible
+-- so an independent stack can be dragged. Their data stays real (owner
+-- ruling 2026-07-26 — previews live in the config canvas and nowhere else).
+local isUnlockAssistActive = false
 local savedContainerAlpha = nil
 local alphaSyncFrame = nil
 local lastAppliedBarSpacing = nil
@@ -211,17 +213,6 @@ local function ClearCustomAuraBarIndicatorState(barInfo, clearPreviewFlags)
     EntryRuntime.ClearTrackedAuraOwnerState(bar, nil, CLEAR_CUSTOM_AURA_STACKS_OPTS)
 
     ClearCustomAuraBarIndicatorVisualState(barInfo, clearPreviewFlags)
-end
-
-local function ApplyCustomAuraBarPreviewState(barInfo)
-    local bar = barInfo and barInfo.frame
-    local cabConfig = barInfo and barInfo.cabConfig
-    if not (bar and cabConfig) then
-        return
-    end
-
-    bar._barAuraActivePreview = activeCustomAuraBarActivePreviews[cabConfig] and true or nil
-    bar._pandemicPreview = activeCustomAuraBarPandemicPreviews[cabConfig] and true or nil
 end
 
 local function AnimateCustomAuraBarIndicator(bar)
@@ -689,13 +680,15 @@ UpdateIndependentStackDragState = function(settings, placementSettings)
         frame._coordLabel:SetShown(unlocked or false)
     end
 
-    -- Force preview on while unlocked so bars are visible for positioning
-    if unlocked and not isPreviewActive then
-        CooldownCompanion:StartResourceBarPreview()
-        frame._cdcForcedPreview = true
-    elseif not unlocked and frame._cdcForcedPreview then
-        frame._cdcForcedPreview = false
-        CooldownCompanion:StopResourceBarPreview()
+    -- Force the bars visible while unlocked so they can be dragged. Their
+    -- contents stay real — a health bar shows your health, a shell bar shows
+    -- its (empty) frame instead of nothing at all.
+    if unlocked and not isUnlockAssistActive then
+        CooldownCompanion:StartResourceBarUnlockAssist()
+        frame._cdcUnlockAssist = true
+    elseif not unlocked and frame._cdcUnlockAssist then
+        frame._cdcUnlockAssist = false
+        CooldownCompanion:StopResourceBarUnlockAssist()
     end
 end
 
@@ -711,9 +704,9 @@ local function HideIndependentWrapperFrame()
     if independentWrapperFrame._coordLabel then
         independentWrapperFrame._coordLabel:Hide()
     end
-    if independentWrapperFrame._cdcForcedPreview then
-        independentWrapperFrame._cdcForcedPreview = false
-        CooldownCompanion:StopResourceBarPreview()
+    if independentWrapperFrame._cdcUnlockAssist then
+        independentWrapperFrame._cdcUnlockAssist = false
+        CooldownCompanion:StopResourceBarUnlockAssist()
     end
 end
 
@@ -1361,8 +1354,8 @@ local RelayoutBars
 local RelayoutResourceStack
 local customBarsModule = RB.CreateResourceBarCustomBarsModule({
     resourceBarFrames = resourceBarFrames,
-    GetPreviewActive = function()
-        return isPreviewActive
+    GetUnlockAssistActive = function()
+        return isUnlockAssistActive
     end,
     MarkLayoutDirty = function()
         layoutDirty = true
@@ -1371,7 +1364,6 @@ local customBarsModule = RB.CreateResourceBarCustomBarsModule({
     ClearCustomAuraBarIndicatorState = ClearCustomAuraBarIndicatorState,
     ClearCustomAuraBarIndicatorVisualState = ClearCustomAuraBarIndicatorVisualState,
     UpdateCustomAuraBarIndicatorVisuals = UpdateCustomAuraBarIndicatorVisuals,
-    ApplyCustomAuraBarPreviewState = ApplyCustomAuraBarPreviewState,
 })
 local UpdateCustomAuraBar = customBarsModule.UpdateCustomAuraBar
 local ShouldUpdateHiddenCustomAuraPandemicWake = customBarsModule.ShouldUpdateHiddenCustomAuraPandemicWake
@@ -1520,11 +1512,6 @@ local function OnUpdate(self, elapsed)
     elapsed_acc = 0
 
     local settings = GetResourceBarSettings()
-    if isPreviewActive then
-        HealthBar.RefreshEffectPreviewAnimation(settings)
-        return
-    end
-
     local auraActiveCache = segmentedUpdateScratch.auraActiveCache
     wipe(auraActiveCache)
 
@@ -2060,9 +2047,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
             barInfo.frame:SetSize(effectiveWidth, effectiveHeight)
             LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
             StyleSegmentedBar(barInfo.frame, powerType, settings)
-            if not isPreviewActive then
-                UpdateSegmentedBar(barInfo.frame, powerType, settings, {})
-            end
+            UpdateSegmentedBar(barInfo.frame, powerType, settings, {})
         else
             -- Continuous bar
             if not barInfo or barInfo.barType ~= "continuous" then
@@ -2099,7 +2084,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         barInfo._order = orderList[idx]
         barInfo._effectiveThickness = effectiveThickness
 
-        FinalizeAppliedBarVisibility(barInfo, isPreviewActive)
+        FinalizeAppliedBarVisibility(barInfo)
     end
 
     activeResources = filtered
@@ -2242,11 +2227,6 @@ function CooldownCompanion:ApplyResourceBars(opts)
         end
     end
 
-    -- Re-apply preview visuals if preview mode is active
-    if isPreviewActive then
-        ApplyPreviewData()
-    end
-
     -- Custom-bar aura displays (the aura pass): holders re-anchor to the
     -- frames this apply may have recreated, and slot filters re-bind, in
     -- the coalesced OOC rebind pass.
@@ -2314,9 +2294,8 @@ function CooldownCompanion:RevertResourceBars()
     if containerFrameBelow then containerFrameBelow:Hide() end
     HideIndependentWrapperFrame()
 
-    isPreviewActive = false
+    isUnlockAssistActive = false
     wipe(HEALTH_EFFECTS.preview)
-    HEALTH_EFFECTS.forcedPreview = nil
     wipe(activeCustomAuraBarActivePreviews)
     wipe(activeCustomAuraBarPandemicPreviews)
     activeResources = {}
@@ -2340,102 +2319,30 @@ function CooldownCompanion:GetSpecLayoutOrder()
     return GetSpecLayoutOrder(settings)
 end
 
--- Custom-bar aura preview (the aura pass): a CC-side stand-in on the real
--- bar — fill, texts, and the surviving CC animators render as if the aura
--- were running; the slot kit is never touched. Keyed by the stored config
--- table (the same identity barInfo.cabConfig carries).
+-- Custom-bar aura preview (the aura pass): which bars have their Active Aura
+-- stand-in armed, keyed by the stored config table (the same identity
+-- barInfo.cabConfig carries, and the one the config canvas reads back).
+--
+-- State only. The stand-in renders on the config canvas and the live bar is
+-- never touched (owner ruling 2026-07-26); the canvas repaints itself when
+-- the command center flips this.
 function CooldownCompanion:SetCustomAuraBarActivePreview(cabConfig, active)
     if type(cabConfig) ~= "table" then return end
     activeCustomAuraBarActivePreviews[cabConfig] = active and true or nil
-    for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.cabConfig == cabConfig and barInfo.frame then
-            ApplyCustomAuraBarPreviewState(barInfo)
-            -- Re-runs the update, the shell alpha (previews lift the
-            -- shell), and the absent-state blocks in one pass.
-            FinalizeAppliedBarVisibility(barInfo, isPreviewActive)
-        end
-    end
-    if layoutDirty then
-        RelayoutResourceStack()
-    end
 end
 
 function CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig)
     return activeCustomAuraBarActivePreviews[cabConfig] == true
 end
 
--- ClearAllCustomAuraBarPreviews stays (Preview.lua recycled-frame safety).
 function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     wipe(activeCustomAuraBarActivePreviews)
     wipe(activeCustomAuraBarPandemicPreviews)
-
-    local anyUpdated = false
-    for _, barInfo in ipairs(resourceBarFrames) do
-        local frame = barInfo.frame
-        if frame and (frame._barAuraActivePreview or frame._pandemicPreview) then
-            frame._barAuraActivePreview = nil
-            frame._pandemicPreview = nil
-            -- Finalize, not a bare update: the preview lifted the shell
-            -- alpha, and nothing else on this path lowers it — a bulk clear
-            -- (config close, entry switch, another preview starting) would
-            -- otherwise leave a hide-while-inactive bar showing its empty
-            -- absent state until the next ApplyResourceBars.
-            if type(barInfo.customBarId) == "string" then
-                FinalizeAppliedBarVisibility(barInfo, isPreviewActive)
-            elseif barInfo.barType == "custom_cooldown" then
-                RB.UpdateCustomCooldownBar(barInfo)
-            else
-                UpdateCustomAuraBar(barInfo)
-            end
-            if barInfo.barType == "custom_continuous" or barInfo.barType == "custom_cooldown" then
-                AnimateCustomAuraBarIndicator(frame)
-            end
-            anyUpdated = true
-        end
-    end
-
-    if anyUpdated and layoutDirty then
-        RelayoutResourceStack()
-    end
 end
 
-function HealthBar.HasActiveEffectPreview()
-    local preview = HEALTH_EFFECTS.preview
-    return preview.absorbs == true
-        or preview.healAbsorbs == true
-        or preview.incomingHeals == true
-        or preview.lowHealthAlert == true
-end
-
-function HealthBar.RefreshEffectPreviewState()
-    if isPreviewActive and ApplyPreviewData then
-        ApplyPreviewData()
-        return
-    end
-
-    local settings = GetResourceBarSettings()
-    local config = HealthBar.GetConfig(settings)
-    for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.barType == "health_continuous" and barInfo.frame then
-            HealthBar.UpdateEffectBars(barInfo.frame, config, UnitHealthMax("player"), HEALTH_EFFECTS.preview)
-        end
-    end
-end
-
-function HealthBar.RefreshEffectPreviewAnimation(settings)
-    local preview = HEALTH_EFFECTS.preview
-    if preview.lowHealthAlert ~= true then
-        return
-    end
-
-    local config = HealthBar.GetConfig(settings)
-    for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.barType == "health_continuous" and barInfo.frame and barInfo.frame:IsShown() then
-            HealthBar.UpdateEffectBars(barInfo.frame, config, 100, preview)
-        end
-    end
-end
-
+-- Health-effect previews are state only, like the custom-bar aura previews:
+-- absorbs, incoming heals and the low-health alert render on the config
+-- canvas's health facsimile, never on the real bar.
 function CooldownCompanion:SetHealthEffectPreview(effectKey, show)
     if effectKey ~= "absorbs"
         and effectKey ~= "healAbsorbs"
@@ -2445,22 +2352,6 @@ function CooldownCompanion:SetHealthEffectPreview(effectKey, show)
     end
 
     HEALTH_EFFECTS.preview[effectKey] = show and true or nil
-    if show then
-        if not isPreviewActive then
-            HEALTH_EFFECTS.forcedPreview = true
-            self:StartResourceBarPreview()
-        else
-            HealthBar.RefreshEffectPreviewState()
-        end
-        return
-    end
-
-    if not HealthBar.HasActiveEffectPreview() and HEALTH_EFFECTS.forcedPreview then
-        HEALTH_EFFECTS.forcedPreview = nil
-        self:StopResourceBarPreview()
-    else
-        HealthBar.RefreshEffectPreviewState()
-    end
 end
 
 function CooldownCompanion:IsHealthEffectPreviewActive(effectKey)
@@ -2468,17 +2359,7 @@ function CooldownCompanion:IsHealthEffectPreviewActive(effectKey)
 end
 
 function CooldownCompanion:ClearAllHealthEffectPreviews()
-    if not HealthBar.HasActiveEffectPreview() then
-        return
-    end
-
     wipe(HEALTH_EFFECTS.preview)
-    if HEALTH_EFFECTS.forcedPreview then
-        HEALTH_EFFECTS.forcedPreview = nil
-        self:StopResourceBarPreview()
-    else
-        HealthBar.RefreshEffectPreviewState()
-    end
 end
 
 function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
@@ -2578,15 +2459,14 @@ end
 -- Preview mode
 ------------------------------------------------------------------------
 
-local previewModule = RB.CreateResourceBarPreviewModule({
-    resourceBarFrames = resourceBarFrames,
+RB.CreateResourceBarPreviewModule({
     HealthBar = HealthBar,
     HEALTH_EFFECTS = HEALTH_EFFECTS,
-    GetPreviewActive = function()
-        return isPreviewActive
+    GetUnlockAssistActive = function()
+        return isUnlockAssistActive
     end,
-    SetPreviewActive = function(value)
-        isPreviewActive = value == true
+    SetUnlockAssistActive = function(value)
+        isUnlockAssistActive = value == true
     end,
     GetMWMaxStacks = function()
         return mwMaxStacks
@@ -2598,7 +2478,6 @@ local previewModule = RB.CreateResourceBarPreviewModule({
     UpdateCustomAuraBarIndicatorVisuals = UpdateCustomAuraBarIndicatorVisuals,
     AnimateCustomAuraBarIndicator = AnimateCustomAuraBarIndicator,
 })
-ApplyPreviewData = previewModule.ApplyPreviewData
 
 ------------------------------------------------------------------------
 -- Hook installation and initialization

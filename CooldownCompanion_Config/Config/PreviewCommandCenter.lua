@@ -128,9 +128,9 @@ local TriggerEffectsPreview = {
 -- Previews owned by one config object rather than by a panel: they always
 -- run on the bar they belong to, so neither the selected panel nor the
 -- selected entry can narrow them (hence groupScoped - they never follow a
--- selection). They also render on the REAL bar out in the world rather
--- than in the config canvas, which is what makes them worth a control:
--- absorbs and a cast in progress are otherwise invisible while editing.
+-- selection). What makes them worth a control is that the resting bar
+-- cannot show them at all: absorbs and a cast in progress only exist for a
+-- moment, so the canvas has to be told to stage one.
 local function HealthEffectPreview(effectKey)
     return {
         groupScoped = true,
@@ -157,10 +157,10 @@ local CastBarPreview = {
     end,
 }
 
--- Custom-bar active-aura preview (the aura pass): a CC-side stand-in on
--- the real bar out in the world — fill, texts, and effects render as if
--- the aura were running; the aura slot kit is never touched. Keyed by the
--- stored config table (the identity the runtime carries).
+-- Custom-bar active-aura preview (the aura pass): a CC-side stand-in on the
+-- config canvas — fill, texts, and effects render as if the aura were
+-- running; the real bar and the aura slot kit are never touched. Keyed by
+-- the stored config table (the identity the runtime carries).
 local function CustomBarAuraPreview(cabConfig)
     return {
         groupScoped = true,

@@ -1,7 +1,7 @@
 --[[
     CooldownCompanion - ResourceBarPreview
-    Ready-state rendering for the config preview, plus the preview-mode
-    public controls.
+    Rendering for the config preview canvas, plus the unlock-to-position
+    assist for an independent stack out in the world.
 
     THE FIDELITY PRINCIPLE (owner ruling 2026-07-26). The config preview is
     an accurate reflection of what the live display looks like — reflecting
@@ -93,11 +93,10 @@ local function GetStandInStackMax(barInfo, cabConfig, settings)
 end
 
 function RB.CreateResourceBarPreviewModule(deps)
-    local resourceBarFrames = deps.resourceBarFrames
     local HealthBar = deps.HealthBar
     local HEALTH_EFFECTS = deps.HEALTH_EFFECTS
-    local GetPreviewActive = deps.GetPreviewActive
-    local SetPreviewActive = deps.SetPreviewActive
+    local GetUnlockAssistActive = deps.GetUnlockAssistActive
+    local SetUnlockAssistActive = deps.SetUnlockAssistActive
     local GetMWMaxStacks = deps.GetMWMaxStacks
     local GetResourceBarSettings = deps.GetResourceBarSettings or RB.GetResourceBarSettings
     local ApplySegmentedPreviewColors = deps.ApplySegmentedPreviewColors
@@ -421,38 +420,35 @@ function RB.CreateResourceBarPreviewModule(deps)
         return GetMWMaxStacks()
     end
 
-    local function ApplyPreviewData()
-        local settings = GetResourceBarSettings()
+    ------------------------------------------------------------------------
+    -- Unlock-to-position assist
+    --
+    -- Deliberately NOT a preview. An independent resource stack is dragged
+    -- out in the world, so the bars have to be visible to be positioned —
+    -- including a Show Only While Aura Active bar, whose CC frame renders
+    -- nothing of its own and would otherwise be an invisible drag target.
+    -- Nothing here fabricates data: the bars show what they always show.
+    ------------------------------------------------------------------------
 
-        for _, barInfo in ipairs(resourceBarFrames) do
-            if barInfo.frame and barInfo.frame:IsShown() then
-                ApplyPreviewDataToBar(barInfo, settings)
-            end
-        end
+    function CooldownCompanion:StartResourceBarUnlockAssist()
+        if GetUnlockAssistActive() then return end
+        SetUnlockAssistActive(true)
+        self:ApplyResourceBars()
     end
 
-    function CooldownCompanion:StartResourceBarPreview()
-        SetPreviewActive(true)
-        self:ApplyResourceBars()  -- ApplyPreviewData() called at end when isPreviewActive
-    end
-
-    function CooldownCompanion:StopResourceBarPreview()
-        if not GetPreviewActive() then return end
-        SetPreviewActive(false)
-        wipe(HEALTH_EFFECTS.preview)
-        HEALTH_EFFECTS.forcedPreview = nil
+    function CooldownCompanion:StopResourceBarUnlockAssist()
+        if not GetUnlockAssistActive() then return end
+        SetUnlockAssistActive(false)
         if self.ApplyResourceBars then
             self:ApplyResourceBars()
         end
     end
 
-    function CooldownCompanion:IsResourceBarPreviewActive()
-        return GetPreviewActive()
+    function CooldownCompanion:IsResourceBarUnlockAssistActive()
+        return GetUnlockAssistActive()
     end
 
-
     return {
-        ApplyPreviewData = ApplyPreviewData,
         ApplyPreviewDataToBar = ApplyPreviewDataToBar,
     }
 end

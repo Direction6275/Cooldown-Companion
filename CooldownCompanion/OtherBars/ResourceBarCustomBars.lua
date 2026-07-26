@@ -84,14 +84,13 @@ end
 
 function RB.CreateResourceBarCustomBarsModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
-    local GetPreviewActive = deps.GetPreviewActive
+    local GetUnlockAssistActive = deps.GetUnlockAssistActive
     local MarkLayoutDirty = deps.MarkLayoutDirty
     local ClearStaleRecycledBarRuntimeState = deps.ClearStaleRecycledBarRuntimeState
     local ClearCustomAuraBarIndicatorState = deps.ClearCustomAuraBarIndicatorState
     local ClearCustomAuraBarIndicatorVisualState = deps.ClearCustomAuraBarIndicatorVisualState
         or ClearCustomAuraBarIndicatorState
     local UpdateCustomAuraBarIndicatorVisuals = deps.UpdateCustomAuraBarIndicatorVisuals
-    local ApplyCustomAuraBarPreviewState = deps.ApplyCustomAuraBarPreviewState
     local customBarPresentationRefreshPending = false
 
     ------------------------------------------------------------------------
@@ -144,11 +143,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         local auraCooldownDuration
         local isActive = cabConfig.trackingMode == "active"
         local bar = barInfo.barType == "custom_continuous" and barInfo.frame or nil
+        -- DEAD as of the preview migration: only the config canvas sets these
+        -- flags, and the canvas renders through ApplyPreviewBarState rather
+        -- than through here. The legs below are kept for the Phase 3 sweep
+        -- rather than unpicked mid-migration; they cannot fire on a live bar.
         local auraPreview = bar and bar._barAuraActivePreview
         local pandemicPreview = bar and bar._pandemicPreview
-        -- Previews render on stack bars too (the aura pass): the CC-side
-        -- stand-in fills to the preview stack count against the OOC-cached
-        -- automatic max.
         local indicatorPreview = auraPreview or pandemicPreview
         local maxStacks = RB.GetCustomBarCachedStackMax(barInfo) or cabConfig.maxStacks or 1
         local configUnit = EnsureCustomAuraBarAuraUnit(cabConfig, cabConfig.spellID)
@@ -197,7 +197,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             end
         end
 
-        if spellAuraStackDisplay and not auraPresent and not GetPreviewActive() then
+        if spellAuraStackDisplay and not auraPresent then
             if barInfo.frame then
                 barInfo.frame._customAuraStackValue = nil
                 barInfo.frame._customAuraApplicationsValue = nil
@@ -477,14 +477,12 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             and cooldownResult.state == ST.CooldownLogic.STATE_COOLDOWN
         local auraState = ResolveSpellCustomBarAuraState(barInfo)
         local auraPresent = auraState and auraState.ready == true and auraState.auraPresent == true
+        -- DEAD as of the preview migration, same as in UpdateCustomAuraBar:
+        -- the stand-in moved to the config canvas, which never reaches here.
         local auraPreview = bar._barAuraActivePreview == true
         local pandemicPreview = bar._pandemicPreview == true
         local spellAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay(cabConfig)
         local indicatorPreview = auraPreview or pandemicPreview
-        -- Stack-mode spell bars leave the live aura render to the kit (the
-        -- early return below), but the preview stand-in still renders here:
-        -- the kit is never driven by a preview, so gating stack mode out
-        -- entirely would leave the command-center toggle showing nothing.
         local renderAuraState = cabConfig.auraTracking == true
             and (not spellAuraStackDisplay or indicatorPreview)
             and (auraPresent or indicatorPreview)
@@ -837,10 +835,9 @@ function RB.CreateResourceBarCustomBarsModule(deps)
     -- reserved in combat (no reflow) — documented, accepted. Whole-frame
     -- alpha, not per-region: the kit lives in a separate holder subtree,
     -- and abandoned frames are never reused so a zeroed alpha cannot leak
-    -- into another bar type. Every preview lifts the shell so the bar is
-    -- editable: the per-bar command-center flags AND the whole-stack
-    -- preview, which paints its data into this frame and would otherwise
-    -- render it invisible (nothing else raises a zeroed whole-frame alpha).
+    -- into another bar type. The unlock assist lifts the shell so the bar
+    -- can be dragged at all: nothing else raises a zeroed whole-frame alpha,
+    -- and an invisible drag target is not a target.
     local function ApplyCustomBarShellAlpha(barInfo)
         local bar = barInfo.frame
         local cabConfig = barInfo.cabConfig
@@ -849,24 +846,21 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             or cabConfig.auraTracking == true
         local shell = auraTracked
             and cabConfig.hideWhenInactive == true
-            and not (bar._barAuraActivePreview or bar._pandemicPreview)
-            and not GetPreviewActive()
+            and not GetUnlockAssistActive()
         bar:SetAlpha(shell and 0 or 1)
     end
 
-    local function FinalizeAppliedBarVisibility(barInfo, previewActive)
+    local function FinalizeAppliedBarVisibility(barInfo)
         if barInfo and type(barInfo.customBarId) == "string" then
             -- The aura pass (12.1): aura-state visibility is gone by design;
             -- custom bars always show. hideWhenInactive renders as the kit
             -- shell (the CC frame stays as the layout shell and aura host).
             barInfo.frame:Show()
             ApplyCustomBarShellAlpha(barInfo)
-            if not previewActive then
-                if barInfo.barType == "custom_cooldown" then
-                    RB.UpdateCustomCooldownBar(barInfo)
-                else
-                    UpdateCustomAuraBar(barInfo)
-                end
+            if barInfo.barType == "custom_cooldown" then
+                RB.UpdateCustomCooldownBar(barInfo)
+            else
+                UpdateCustomAuraBar(barInfo)
             end
             -- CC-side absent-state stack blocks re-lay from the OOC-cached
             -- max (this runs after ClearStaleRecycledBarRuntimeState hid the
@@ -1024,7 +1018,6 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         barInfo.powerType = legacyPowerType
         barInfo.customBarId = customBarId
         barInfo.customBarIndex = cabIndex
-        ApplyCustomAuraBarPreviewState(barInfo)
         barInfo.frame:SetSize(customWidth, customHeight)
         barInfo.frame._isVertical = customIsVertical
         barInfo.frame._reverseFill = customReverseFill
