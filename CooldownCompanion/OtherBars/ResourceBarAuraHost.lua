@@ -360,8 +360,14 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- short of the bar's edges with a dead margin around them. Those bars
     -- mount at the full rect instead. The kit fill uses this same answer,
     -- so it keeps landing exactly on the blocks beneath it.
+    -- includeShell here, unlike the absent-state pass: a Show Only While
+    -- Aura Active bar draws no blocks of its own (the kit renders the whole
+    -- bar), but it is still a stacks bar with no whole-bar ring — its CC
+    -- frame sits at alpha 0, so the reserved ring space was a margin around
+    -- nothing, and its kit blocks stopped short of the bar's real edges
+    -- while an identical non-shell bar's reached them.
     local function GetCustomBarHolderInset(barInfo, borderInset)
-        if WantsAbsentStackBlocks(barInfo) then
+        if WantsAbsentStackBlocks(barInfo, { includeShell = true }) then
             return 0
         end
         return borderInset

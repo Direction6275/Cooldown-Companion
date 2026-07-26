@@ -1884,12 +1884,37 @@ end
 -- positions from an ordered list of extents rather than from one repeated
 -- slot size, and `sizes` lets a caller pass a hypothetical order (drag
 -- hit-testing works against the list with the dragged slot removed).
+-- The configured thickness verbatim. The thickness sliders run 4-40 in 0.1
+-- steps and the live layout uses the saved value directly, so flooring it
+-- and clamping it up to 8 made every bar under 8px preview at the wrong
+-- size and threw away every fractional value — inside the pass whose whole
+-- point is that the preview matches. A thin bar is a thin drag target; that
+-- is handled by expanding the hit rect, not by drawing the bar wrong.
 local function GetSlotExtent(slot, fallback)
     local thickness = tonumber(slot and slot.thickness)
     if thickness and thickness > 0 then
-        return math_max(8, math_floor(thickness))
+        return thickness
     end
     return fallback
+end
+
+-- Smallest comfortable grab area for a reorder drag. Thin bars keep their
+-- true size and borrow the empty space around them instead, capped at half
+-- the inter-bar gap so neighbouring slots never claim the same pixels.
+local LAYOUT_PREVIEW_MIN_HIT_EXTENT = 10
+
+local function ApplySlotHitExpansion(frame, extent, gap, isVerticalSlot)
+    local missing = LAYOUT_PREVIEW_MIN_HIT_EXTENT - (tonumber(extent) or 0)
+    local pad = 0
+    if missing > 0 then
+        pad = math_min(missing / 2, math_max(0, (tonumber(gap) or 0) / 2))
+    end
+    -- Negative insets EXPAND the mouse rect beyond the frame.
+    if isVerticalSlot then
+        frame:SetHitRectInsets(-pad, -pad, 0, 0)
+    else
+        frame:SetHitRectInsets(0, 0, -pad, -pad)
+    end
 end
 
 local function BuildSlotExtents(slots, fallback)
@@ -2090,6 +2115,7 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             axis == "x" and slotHeight or slotExtent,
             axis == "x")
         slotFrame.slotData = slotModel
+        ApplySlotHitExpansion(slotFrame, slotExtent, lane.slotGap, axis == "x")
         -- Read by the identity-mark pass, which runs after the content
         -- scale is known and no longer has the lane in hand.
         slotFrame._cdcIdentityVertical = axis == "x"
