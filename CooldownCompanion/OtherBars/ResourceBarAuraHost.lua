@@ -59,7 +59,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
     local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
     local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
     local GetResourceAuraTrackingMode = RB.GetResourceAuraTrackingMode
-    local GetResourceDisplayConfig = RB.GetResourceDisplayConfig
+    local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
     local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
     local IsVerticalFillReversed = RB.IsVerticalFillReversed
     local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
@@ -535,13 +535,6 @@ function RB.CreateResourceBarAuraHostModule(deps)
             holder._ccBounds = CreateFrame("Frame", nil, holder)
             holder._ccBounds:EnableMouse(false)
             holder._barBounds = holder._ccBounds
-            -- Anchor rect for the full aura display shape: a plain CC
-            -- square centered on the bar. The kit's icon/swipe/texts anchor
-            -- to it; it renders nothing itself.
-            holder._ccDisplayRect = CreateFrame("Frame", nil, holder)
-            holder._ccDisplayRect:EnableMouse(false)
-            holder._ccDisplayRect:SetPoint("CENTER", holder, "CENTER", 0, 0)
-            holder._ccDisplayRect:SetSize(24, 24)
             resourceHolders[powerType] = holder
         end
         return holder
@@ -560,26 +553,16 @@ function RB.CreateResourceBarAuraHostModule(deps)
         return borderInset
     end
 
-    -- Which overlay shapes an entry renders. New entries carry explicit
-    -- shape* booleans; live-era entries with none set default from the
-    -- closest live intent — "stacks" tracking meant the stack lane,
-    -- everything else meant the fill recolor, whose combat-grade
-    -- replacement is the whole-bar tint. Read-time defaulting only; the
-    -- stored keys are never rewritten (no migrations).
-    local function ResolveResourceOverlayShapes(entry)
-        if entry.shapeTint ~= nil or entry.shapeDurationLane ~= nil
-            or entry.shapeStackLane ~= nil or entry.shapeStackText ~= nil
-            or entry.shapeAuraDisplay ~= nil then
-            return {
-                tint = entry.shapeTint == true,
-                durationLane = entry.shapeDurationLane == true,
-                stackLane = entry.shapeStackLane == true,
-                stackText = entry.shapeStackText == true,
-                display = entry.shapeAuraDisplay == true,
-            }
-        end
-        if GetResourceAuraTrackingMode(entry) == "stacks" then
-            return { stackLane = true, stackText = true }
+    -- Which overlay shape an entry renders. The two modes mirror live's
+    -- Tracking Mode and stay mutually exclusive: "active" recolors the
+    -- resource while the aura runs — dead in combat on 12.1, so the
+    -- combat-grade replacement is the whole-bar tint — and "stacks" runs
+    -- the stack lane. Stack mode is offered on the same resources live
+    -- offers it on; anything else falls back to the tint.
+    local function ResolveResourceOverlayShapes(entry, powerType)
+        if GetResourceAuraTrackingMode(entry) == "stacks"
+            and SupportsResourceAuraStackMode(powerType) then
+            return { stackLane = true }
         end
         return { tint = true }
     end
@@ -609,7 +592,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- from. No barAura* effect keys: resource overlays carry no glow/pulse
     -- family (border glow declined by ruling), and the absent indicator
     -- key reads as effects-off.
-    local function BuildResourceOverlayStyleAdapter(entry, settings, powerType, shapes)
+    local function BuildResourceOverlayStyleAdapter(entry, settings, shapes)
         local style = {}
 
         style.barTexture = GetResourceDisplayValue(settings, "barTexture", "Solid")
@@ -628,23 +611,10 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- Overwritten by the collector from the live frame's fill direction.
         style.barReverseFill = false
 
-        -- Texts ride the resource text styling (one home per control).
-        local resourceConfig = GetResourceDisplayConfig(settings, powerType)
-        local font = (resourceConfig and resourceConfig.textFont) or DEFAULT_RESOURCE_TEXT_FONT
-        local fontSize = tonumber(resourceConfig and resourceConfig.textFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
-        local outline = (resourceConfig and resourceConfig.textFontOutline) or DEFAULT_RESOURCE_TEXT_OUTLINE
-        local fontColor = resourceConfig and resourceConfig.textFontColor
-        if type(fontColor) ~= "table" or fontColor[1] == nil or fontColor[2] == nil or fontColor[3] == nil then
-            fontColor = DEFAULT_RESOURCE_TEXT_COLOR
-        end
-        style.auraTextFont, style.auraTextFontSize = font, fontSize
-        style.auraTextFontOutline, style.auraTextFontColor = outline, fontColor
-        style.auraStackFont, style.auraStackFontSize = font, fontSize
-        style.auraStackFontOutline, style.auraStackFontColor = outline, fontColor
-        -- The timer text belongs to the full display shape; the stack text
-        -- is its own shape.
-        style.showAuraText = shapes.display == true
-        style.showAuraStackText = shapes.stackText == true
+        -- Live's overlay carries no text of its own: the resource bar's own
+        -- text keeps saying what the resource is doing.
+        style.showAuraText = false
+        style.showAuraStackText = false
 
         style.showBarIcon = false
         style.showBarNameText = false
@@ -652,7 +622,6 @@ function RB.CreateResourceBarAuraHostModule(deps)
         style.pandemicMarkerEnabled = false
 
         style.resourceShapes = shapes
-        style.resourceDisplaySize = tonumber(entry.displaySize) or 24
         return style
     end
 
@@ -730,20 +699,22 @@ function RB.CreateResourceBarAuraHostModule(deps)
                         and GetActiveResourceAuraEntry(resource) or nil
                     local auraSpellID = entry and tonumber(entry.auraColorSpellID) or nil
                     if auraSpellID and auraSpellID > 0 then
-                        local shapes = ResolveResourceOverlayShapes(entry)
+                        local shapes = ResolveResourceOverlayShapes(entry, barInfo.powerType)
                         local buttonData = BuildResourceOverlayEntryAdapter(entry, settings, shapes)
                         local spellSet = CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData)
                         if spellSet then
                             -- Stack lane fill max: automatic, game-data
                             -- resolved, OOC (owner ruling — no manual max
                             -- anywhere). A nil resolve means "not a
-                            -- stacking aura": the lane (not the whole
-                            -- entry) degrades away.
+                            -- stacking aura", and stack mode falls back to
+                            -- the tint exactly as live's falls back to the
+                            -- recolor when no max is configured.
                             local stackBarMax
                             if shapes.stackLane then
                                 stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData)
                                 if not stackBarMax then
                                     shapes.stackLane = false
+                                    shapes.tint = true
                                     buttonData.auraBar.mode = "duration"
                                 end
                             end
@@ -761,12 +732,9 @@ function RB.CreateResourceBarAuraHostModule(deps)
                             holder._isVertical = vertical
                             holder:Show()
 
-                            local style = BuildResourceOverlayStyleAdapter(
-                                entry, settings, barInfo.powerType, shapes)
+                            local style = BuildResourceOverlayStyleAdapter(entry, settings, shapes)
                             style.barReverseFill = vertical
                                 and IsVerticalFillReversed(settings) == true or false
-                            local size = style.resourceDisplaySize
-                            holder._ccDisplayRect:SetSize(size, size)
 
                             wanted[#wanted + 1] = {
                                 button = holder,
