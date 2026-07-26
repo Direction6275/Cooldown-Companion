@@ -1104,8 +1104,10 @@ local function StyleSlotKit(slot, button, buttonData, style)
                 kit.barTint:SetPoint("TOPLEFT", slotButton, "TOPLEFT", 0, 0)
                 kit.barTint:SetPoint("BOTTOMRIGHT", slotButton, "BOTTOMRIGHT", 0, 0)
                 -- The wash strength rides the color's own alpha (live-era
-                -- entries carry RGB only, so they take the default).
-                kit.barTint:SetColorTexture(c[1] or 1, c[2] or 0.84, c[3] or 0, c[4] or 0.35)
+                -- entries carry RGB only, so they take the default the host
+                -- hands over — the config canvas stands in at the same one).
+                kit.barTint:SetColorTexture(c[1] or 1, c[2] or 0.84, c[3] or 0,
+                    c[4] or style.resourceTintAlpha or 0.35)
                 kit.barTint:SetAlpha(1)
             else
                 kit.barTint:SetAlpha(0)

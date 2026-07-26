@@ -313,6 +313,17 @@ ST._RB = {
     DEFAULT_MW_MAX_COLOR = DEFAULT_MW_MAX_COLOR,
     DEFAULT_CUSTOM_AURA_MAX_COLOR = DEFAULT_CUSTOM_AURA_MAX_COLOR,
     DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
+    -- How strong the overlay's whole-bar tint is when the entry's colour
+    -- carries no alpha of its own. Written inline: this chunk sits at the
+    -- 200-local ceiling.
+    RESOURCE_OVERLAY_TINT_ALPHA = 0.35,
+    -- How far above a resource bar its aura overlay mounts. Clear of every
+    -- layer the bar draws: segment children at bar+3, MW overlay segments
+    -- at +4, the CC-side aura lane pool at +7, the text layer at +8. Frame
+    -- level beats draw layer, so anything short of this renders behind the
+    -- bar it decorates. The config canvas stands the overlay in at the same
+    -- height, which is why this is shared rather than local to the host.
+    RESOURCE_OVERLAY_HOLDER_LEVEL = 9,
     DEFAULT_SEG_THRESHOLD_COLOR = DEFAULT_SEG_THRESHOLD_COLOR,
     DEFAULT_HEALTH_BAR_COLOR = DEFAULT_HEALTH_BAR_COLOR,
     DEFAULT_HEALTH_BAR_OPACITY = DEFAULT_HEALTH_BAR_OPACITY,

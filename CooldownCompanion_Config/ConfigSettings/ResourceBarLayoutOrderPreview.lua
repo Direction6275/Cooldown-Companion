@@ -1584,6 +1584,13 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         barInfo.frame:SetPoint("TOPLEFT", frame.previewCanvas, "TOPLEFT", 0, 0)
         barInfo.frame:SetPoint("BOTTOMRIGHT", frame.previewCanvas, "BOTTOMRIGHT", 0, 0)
         barInfo.frame:Show()
+        -- The resource overlay's Active Aura preview state, on the canvas
+        -- rather than out in the world (owner ruling 2026-07-26). Keyed by
+        -- power type, and written every pass so stopping the preview clears
+        -- it from a recycled frame. Set before the render, which reads it.
+        barInfo.frame._resourceAuraActivePreview = barInfo.powerType ~= nil
+            and CooldownCompanion:IsResourceAuraActivePreviewActive(barInfo.powerType)
+            or nil
         ApplyPreviewBarState(barInfo, rbSettings)
         -- The aura-absent layer for stacks-mode aura bars: the real
         -- capacity blocks and their per-block rings, the same call the live

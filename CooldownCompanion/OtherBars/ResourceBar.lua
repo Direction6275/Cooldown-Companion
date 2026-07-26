@@ -147,6 +147,10 @@ local layoutDirty = false
 local independentWrapperFrame = nil
 local activeCustomAuraBarActivePreviews = {}
 local activeCustomAuraBarPandemicPreviews = {}
+-- Resource aura overlay previews, keyed by POWER TYPE. Never by barInfo or
+-- frame: a form change rebuilds the positional bar array, and the power
+-- type is the only identity that survives it.
+local activeResourceAuraPreviews = {}
 local segmentedUpdateScratch = { auraActiveCache = {} }
 local HealthBar = RB.HealthBar
 local HEALTH_EFFECTS = RB.HealthEffects
@@ -2451,6 +2455,7 @@ function CooldownCompanion:DisableResourceBarRuntime()
     -- teardown above, and clearing here is the point.
     self:ClearAllHealthEffectPreviews()
     self:ClearAllCustomAuraBarPreviews()
+    self:ClearAllResourceAuraPreviews()
 end
 
 function CooldownCompanion:GetSpecCustomAuraBars()
@@ -2484,6 +2489,25 @@ end
 function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     wipe(activeCustomAuraBarActivePreviews)
     wipe(activeCustomAuraBarPandemicPreviews)
+end
+
+-- Resource aura overlay preview (the aura pass, Phase 2): which resources
+-- have their Active Aura stand-in armed. State only, same as the custom-bar
+-- previews above — the stand-in renders on the config canvas and the live
+-- bar is never touched (owner ruling 2026-07-26).
+function CooldownCompanion:SetResourceAuraActivePreview(powerType, active)
+    powerType = tonumber(powerType)
+    if not powerType then return end
+    activeResourceAuraPreviews[powerType] = active and true or nil
+end
+
+function CooldownCompanion:IsResourceAuraActivePreviewActive(powerType)
+    powerType = tonumber(powerType)
+    return powerType ~= nil and activeResourceAuraPreviews[powerType] == true
+end
+
+function CooldownCompanion:ClearAllResourceAuraPreviews()
+    wipe(activeResourceAuraPreviews)
 end
 
 function HealthBar.HasActiveEffectPreview()

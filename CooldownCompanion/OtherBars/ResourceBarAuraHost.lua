@@ -63,6 +63,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
     local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
     local IsVerticalFillReversed = RB.IsVerticalFillReversed
     local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
+    local RESOURCE_OVERLAY_TINT_ALPHA = RB.RESOURCE_OVERLAY_TINT_ALPHA
 
     local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
     local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
@@ -498,12 +499,9 @@ function RB.CreateResourceBarAuraHostModule(deps)
 
     local resourceHolders = {} -- powerType -> holder frame
 
-    -- Clear of every layer a resource bar draws: segment children at bar+3,
-    -- MW overlay segments at +4, the CC-side aura lane pool at +7, and the
-    -- text layer at +8. Frame level beats draw layer, so anything short of
-    -- this renders behind the bar it is meant to decorate (the Phase 1
-    -- FRAME-LEVEL lesson, re-applied to a much taller stack).
-    local HOLDER_LEVEL_RESOURCE = 9
+    -- Shared with the config canvas, which stands the overlay in at the
+    -- same height (see the constant for what it has to clear).
+    local HOLDER_LEVEL_RESOURCE = RB.RESOURCE_OVERLAY_HOLDER_LEVEL
 
     local RESOURCE_OVERLAY_BAR_TYPES = {
         continuous = true,
@@ -608,6 +606,10 @@ function RB.CreateResourceBarAuraHostModule(deps)
             color = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
         end
         style.barAuraColor = color
+        -- The tint's strength when the colour carries no alpha. Handed over
+        -- as style rather than read from RB by the kit: the style adapter is
+        -- where this module and Core/AuraDisplay meet.
+        style.resourceTintAlpha = RESOURCE_OVERLAY_TINT_ALPHA
         -- Overwritten by the collector from the live frame's fill direction.
         style.barReverseFill = false
 
@@ -634,6 +636,14 @@ function RB.CreateResourceBarAuraHostModule(deps)
         end
         return ResolveResourceOverlayShapes(entry, powerType).stackLane
             and "stacks" or "active"
+    end
+
+    -- The inset the kit will mount this bar's holder at, so the config
+    -- canvas can stand the overlay in on the same rect the live one covers.
+    function RB.GetResourceOverlayHolderInset(barInfo)
+        local settings = GetResourceBarSettings()
+        if not (settings and barInfo) then return 0 end
+        return GetResourceHolderInset(barInfo, GetCustomBarBorderInset(settings)) or 0
     end
 
     -- The automatic stack max for an overlay entry, resolved straight from
