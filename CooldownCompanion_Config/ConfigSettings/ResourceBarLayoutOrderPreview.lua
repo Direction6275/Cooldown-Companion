@@ -65,6 +65,13 @@ local LAYOUT_PREVIEW_ANIM_DURATION = 0.08
 local LAYOUT_PREVIEW_EMPTY_DROP_SIZE = 8
 local LAYOUT_PREVIEW_MAX_REAL_ICONS = 4
 
+-- The cast facsimile. A cast bar has no ready state, so the resting slot
+-- shows a cast frozen part-way — enough to judge and to drag. The preview
+-- state runs the same cast on a loop.
+local CAST_PREVIEW_DURATION = 1.5
+local CAST_PREVIEW_REST_FILL = 0.65
+local CAST_PREVIEW_SPELL_NAME = "Preview Cast"
+
 -- Custom-bar identity, revealed on hover (owner ruling 2026-07-26, after
 -- seeing a permanent label in game). The preview must be clean at rest AND
 -- identify every bar at a glance; those only conflict if identity is
@@ -1566,6 +1573,16 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                     RB.AnimatePreviewBarAura(entry.barInfo)
                 end,
             })
+        elseif barInfo.barType == "health_continuous"
+            and RB.IsHealthEffectPreviewAnimated
+            and RB.IsHealthEffectPreviewAnimated() then
+            table_insert(preview.animated, {
+                barInfo = barInfo,
+                settings = rbSettings,
+                Tick = function(entry)
+                    RB.AnimatePreviewHealthEffects(entry.barInfo, entry.settings)
+                end,
+            })
         end
     end
 end
@@ -1629,6 +1646,27 @@ local function HideCastPixelBorders(castPreview)
     end
 end
 
+-- Place the fill, the spark and the countdown for one moment of a cast.
+-- `progress` is 0..1; the resting facsimile sits at CAST_PREVIEW_REST_FILL
+-- because a cast bar has no ready state to show and the slot still has to be
+-- visible and draggable.
+local function SetCastPreviewProgress(castPreview, progress)
+    local bar = castPreview.bar
+    SetStatusBarSmoothRange(bar, 0, 100)
+    SetStatusBarSmoothValue(bar, progress * 100)
+    if bar.spark:IsShown() then
+        -- The measured length is the fallback, not the source: the slot is
+        -- built and laid out in the same frame, so the anchor chain may not
+        -- have resolved yet on the first pass.
+        local barLength = castPreview.barLength or bar:GetWidth() or 0
+        bar.spark:ClearAllPoints()
+        bar.spark:SetPoint("CENTER", bar, "LEFT", barLength * progress, 0)
+    end
+    if bar.timeText:IsShown() then
+        bar.timeText:SetFormattedText("%.1f s", CAST_PREVIEW_DURATION * (1 - progress))
+    end
+end
+
 local function ConfigureCastPreview(frame, slot, preview, width, height)
     HideUnusedSlotVisuals(frame)
 
@@ -1639,7 +1677,6 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
     local iconFrame = castPreview.iconFrame
     local icon = castPreview.icon
     local border = castPreview.border
-    local liveCastBar = PlayerCastingBarFrame
 
     root:SetParent(frame.previewCanvas)
     root:ClearAllPoints()
@@ -1659,8 +1696,7 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
         end
         iconFrame:SetSize(iconSize, iconSize)
         iconFrame:Show()
-        local liveIcon = liveCastBar and liveCastBar.Icon and liveCastBar.Icon:GetTexture()
-        icon:SetTexture(liveIcon or slot.icon or LAYOUT_PREVIEW_ICON_FALLBACK)
+        icon:SetTexture(slot.icon or LAYOUT_PREVIEW_ICON_FALLBACK)
         if settings.iconFlipSide then
             iconFrame:ClearAllPoints()
             iconFrame:SetPoint("TOPRIGHT", root, "TOPRIGHT", 0, 0)
@@ -1677,16 +1713,13 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
     bar:ClearAllPoints()
     bar:SetPoint("TOPLEFT", root, "TOPLEFT", barLeft, 0)
     bar:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", barRight, 0)
-    SetStatusBarSmoothRange(bar, 0, 100)
-    SetStatusBarSmoothValue(bar, 65)
+    castPreview.barLength = math_max(0, width + barRight - barLeft)
     bar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(settings.barTexture or "Solid"))
-    local liveR, liveG, liveB, liveA = liveCastBar and liveCastBar.GetStatusBarColor and liveCastBar:GetStatusBarColor()
+    -- The configured colour, not the live cast bar's current one: this is the
+    -- cast bar as configured, and reading the world bar would mirror whatever
+    -- the last real cast happened to leave behind.
     local barColor = settings.barColor or { 1, 0.72, 0.18, 1 }
-    if liveR ~= nil then
-        bar:SetStatusBarColor(liveR, liveG or 1, liveB or 1, liveA ~= nil and liveA or 1)
-    else
-        bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] ~= nil and barColor[4] or 1)
-    end
+    bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] ~= nil and barColor[4] or 1)
     local backgroundColor = settings.backgroundColor or { 0, 0, 0, 0.5 }
     bar.bg:SetColorTexture(backgroundColor[1], backgroundColor[2], backgroundColor[3], backgroundColor[4] ~= nil and backgroundColor[4] or 1)
 
@@ -1717,8 +1750,7 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
         bar.nameText:ClearAllPoints()
         bar.nameText:SetPoint("LEFT", bar, "LEFT", 4, 0)
         bar.nameText:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
-        local liveText = liveCastBar and liveCastBar.Text and liveCastBar.Text:GetText()
-        bar.nameText:SetText((liveText and liveText ~= "") and liveText or "Preview Cast")
+        bar.nameText:SetText(CAST_PREVIEW_SPELL_NAME)
         bar.nameText:Show()
     end
 
@@ -1731,8 +1763,6 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
         ST.ApplyFontShadowForOutline(bar.timeText, timeOutline)
         bar.timeText:ClearAllPoints()
         bar.timeText:SetPoint("RIGHT", bar, "RIGHT", -4 + (settings.castTimeXOffset or 0), settings.castTimeYOffset or 0)
-        local liveTime = liveCastBar and liveCastBar.CastTimeText and liveCastBar.CastTimeText:GetText()
-        bar.timeText:SetText((liveTime and liveTime ~= "") and liveTime or "1.5 s")
         bar.timeText:Show()
     end
 
@@ -1741,9 +1771,25 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
     else
         bar.spark:SetWidth(8)
         bar.spark:SetHeight(math_max(8, height * 1.66))
-        bar.spark:ClearAllPoints()
-        bar.spark:SetPoint("CENTER", bar, "LEFT", (bar:GetWidth() or width) * 0.65, 0)
         bar.spark:Show()
+    end
+
+    -- The cast bar's preview state: a cast in progress, looping. Nothing on
+    -- the resting bar can stand in for one, which is what makes it worth a
+    -- control in the first place.
+    if CooldownCompanion:IsCastBarPreviewActive() then
+        castPreview.startedAt = GetTime()
+        table_insert(preview.animated, {
+            castPreview = castPreview,
+            Tick = function(entry, now)
+                local elapsed = (now - entry.castPreview.startedAt) % CAST_PREVIEW_DURATION
+                SetCastPreviewProgress(entry.castPreview, elapsed / CAST_PREVIEW_DURATION)
+            end,
+        })
+        SetCastPreviewProgress(castPreview, 0)
+    else
+        castPreview.startedAt = nil
+        SetCastPreviewProgress(castPreview, CAST_PREVIEW_REST_FILL)
     end
 end
 

@@ -200,6 +200,24 @@ function RB.CreateResourceBarPreviewModule(deps)
         AnimateCustomAuraBarIndicator(bar)
     end
 
+    -- The low-health alert is a pulse, so its preview only reads as itself
+    -- while something re-runs the effect pass. Same call the resting render
+    -- makes; UpdateEffectBars takes the alpha from the clock.
+    function RB.IsHealthEffectPreviewAnimated()
+        return HEALTH_EFFECTS.preview.lowHealthAlert == true
+    end
+
+    function RB.AnimatePreviewHealthEffects(barInfo, settings)
+        local bar = barInfo and barInfo.frame
+        if not (bar and bar:IsShown()) then return end
+        HealthBar.UpdateEffectBars(
+            bar,
+            HealthBar.GetConfig(settings or GetResourceBarSettings()),
+            UnitHealthMax("player"),
+            HEALTH_EFFECTS.preview
+        )
+    end
+
     ------------------------------------------------------------------------
     -- Ready-state rendering
     ------------------------------------------------------------------------
