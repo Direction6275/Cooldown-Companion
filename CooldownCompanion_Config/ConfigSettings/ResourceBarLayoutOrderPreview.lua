@@ -1697,7 +1697,15 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
     root:SetPoint("BOTTOMRIGHT", frame.previewCanvas, "BOTTOMRIGHT", 0, 0)
     root:Show()
 
-    local iconShown = settings.showIcon ~= false
+    -- Effective appearance, the same split the live bar makes: with Styling
+    -- off the real cast bar reverts to Blizzard visuals and every custom
+    -- setting on this panel is dormant (CastBar.lua gates its whole styling
+    -- layer on it, and the inline icon area is only reserved when it is on).
+    -- The facsimile used to paint those settings regardless, advertising a
+    -- look the live bar would never wear.
+    local styled = settings.stylingEnabled == true
+
+    local iconShown = styled and settings.showIcon ~= false
     local iconSize = height
     local iconGap = 4
     local barLeft = 0
@@ -1727,19 +1735,21 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
     bar:SetPoint("TOPLEFT", root, "TOPLEFT", barLeft, 0)
     bar:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", barRight, 0)
     castPreview.barLength = math_max(0, width + barRight - barLeft)
-    bar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(settings.barTexture or "Solid"))
+    bar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(
+        (styled and settings.barTexture) or "Solid"))
     -- The configured colour, not the live cast bar's current one: this is the
     -- cast bar as configured, and reading the world bar would mirror whatever
     -- the last real cast happened to leave behind.
-    local barColor = settings.barColor or { 1, 0.72, 0.18, 1 }
+    local barColor = (styled and settings.barColor) or { 1, 0.72, 0.18, 1 }
     bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] ~= nil and barColor[4] or 1)
-    local backgroundColor = settings.backgroundColor or { 0, 0, 0, 0.5 }
+    local backgroundColor = (styled and settings.backgroundColor) or { 0, 0, 0, 0.5 }
     bar.bg:SetColorTexture(backgroundColor[1], backgroundColor[2], backgroundColor[3], backgroundColor[4] ~= nil and backgroundColor[4] or 1)
 
     border:Hide()
     HideCastPixelBorders(castPreview)
 
-    local borderStyle = settings.borderStyle or "pixel"
+    -- Mirrors CastBar.lua's own resolution verbatim.
+    local borderStyle = styled and (settings.borderStyle or "pixel") or "blizzard"
     if borderStyle == "pixel" then
         ApplyPixelBorders(castPreview.pixelBorders, bar, settings.borderColor or { 0, 0, 0, 1 }, settings.borderSize or 1, ST.GetBorderRenderMode(settings))
         if iconFrame:IsShown() and settings.iconOffset then
@@ -1753,12 +1763,19 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
         border:Show()
     end
 
-    if settings.showNameText == false then
+    -- Text and spark visibility follow the live contract too: with Styling
+    -- off the real bar shows all three unconditionally (ApplyPreview and the
+    -- spark resolution in CastBar.lua), so the per-element toggles are
+    -- dormant along with the fonts.
+    if styled and settings.showNameText == false then
         bar.nameText:Hide()
     else
-        local font = CooldownCompanion:FetchFont(settings.nameFont or DEFAULT_RESOURCE_TEXT_FONT)
-        local nameOutline = ST.GetEffectiveFontOutline(settings.nameFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
-        bar.nameText:SetFont(font, settings.nameFontSize or DEFAULT_RESOURCE_TEXT_SIZE, nameOutline)
+        local font = CooldownCompanion:FetchFont(
+            (styled and settings.nameFont) or DEFAULT_RESOURCE_TEXT_FONT)
+        local nameOutline = ST.GetEffectiveFontOutline(
+            (styled and settings.nameFontOutline) or DEFAULT_RESOURCE_TEXT_OUTLINE)
+        bar.nameText:SetFont(font,
+            (styled and settings.nameFontSize) or DEFAULT_RESOURCE_TEXT_SIZE, nameOutline)
         ST.ApplyFontShadowForOutline(bar.nameText, nameOutline)
         bar.nameText:ClearAllPoints()
         bar.nameText:SetPoint("LEFT", bar, "LEFT", 4, 0)
@@ -1767,19 +1784,24 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
         bar.nameText:Show()
     end
 
-    if settings.showCastTimeText == false then
+    if styled and settings.showCastTimeText == false then
         bar.timeText:Hide()
     else
-        local font = CooldownCompanion:FetchFont(settings.castTimeFont or DEFAULT_RESOURCE_TEXT_FONT)
-        local timeOutline = ST.GetEffectiveFontOutline(settings.castTimeFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
-        bar.timeText:SetFont(font, settings.castTimeFontSize or DEFAULT_RESOURCE_TEXT_SIZE, timeOutline)
+        local font = CooldownCompanion:FetchFont(
+            (styled and settings.castTimeFont) or DEFAULT_RESOURCE_TEXT_FONT)
+        local timeOutline = ST.GetEffectiveFontOutline(
+            (styled and settings.castTimeFontOutline) or DEFAULT_RESOURCE_TEXT_OUTLINE)
+        bar.timeText:SetFont(font,
+            (styled and settings.castTimeFontSize) or DEFAULT_RESOURCE_TEXT_SIZE, timeOutline)
         ST.ApplyFontShadowForOutline(bar.timeText, timeOutline)
         bar.timeText:ClearAllPoints()
-        bar.timeText:SetPoint("RIGHT", bar, "RIGHT", -4 + (settings.castTimeXOffset or 0), settings.castTimeYOffset or 0)
+        bar.timeText:SetPoint("RIGHT", bar, "RIGHT",
+            -4 + (styled and settings.castTimeXOffset or 0),
+            styled and settings.castTimeYOffset or 0)
         bar.timeText:Show()
     end
 
-    if settings.showSpark == false then
+    if styled and settings.showSpark == false then
         bar.spark:Hide()
     else
         bar.spark:SetWidth(8)
