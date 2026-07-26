@@ -1137,8 +1137,13 @@ local function UpdateResourcesPreviewCommandCenter(host)
     -- The health bar is a Resources-workspace object; the cast bar is
     -- drawn on both homes and owns one of them. Custom bars are Resources
     -- objects too — their aura previews live here.
+    --
+    -- The cast bar only qualifies while it is attached, because that is when
+    -- the canvas draws it as a lane and previews render on the canvas. A cast
+    -- bar on its own independent anchor has no canvas representation at all,
+    -- so offering the control there would name a preview nothing can show.
     local objects = {
-        cast = true,
+        cast = GetAnchorLaneObjects().cast == true,
         health = CS.resourcesEntrySelected == true,
         customBars = CS.resourcesEntrySelected == true or CS.selectedCustomBarId ~= nil,
     }
