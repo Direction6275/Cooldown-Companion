@@ -40,6 +40,9 @@ local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 local PREVIEW_FILL = RB.CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL
 local PREVIEW_STACKS = RB.CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
 local PREVIEW_DURATION = RB.CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION
+-- How wounded the player is while a health-effect preview runs. The effect
+-- bars are sized as shares of the real maximum, so this leaves them room.
+local HEALTH_EFFECT_PREVIEW_FILL = 0.65
 
 local GetResourceAuraConfiguredMaxStacks = RB.GetResourceAuraConfiguredMaxStacks
 local HideResourceAuraStackSegments = RB.HideResourceAuraStackSegments
@@ -283,27 +286,37 @@ function RB.CreateResourceBarPreviewModule(deps)
             SetFullBarText(barInfo.frame, maxPower)
         elseif barInfo.barType == "health_continuous" then
             local maxHealth = UnitHealthMax("player")
-            SetStatusBarSmoothRange(barInfo.frame, 0, maxHealth)
-            SetStatusBarSmoothValue(barInfo.frame, maxHealth)
             local config = HealthBar.GetConfig(settings)
-            HealthBar.ApplyFillColor(barInfo.frame, config, 1)
-            HealthBar.ApplyBackgroundColor(barInfo.frame, config, 1)
+            -- A health-effect preview needs a wounded player. Absorbs and
+            -- incoming heals are drawn FORWARD from the fill, so a full bar
+            -- leaves them nowhere to go, and the low-health alert has no
+            -- missing health to cover. The partial fill IS the preview
+            -- state; at rest the bar is full like every other resource.
+            local fraction = HealthBar.HasActiveEffectPreview()
+                and HEALTH_EFFECT_PREVIEW_FILL
+                or 1
+            local health = maxHealth * fraction
+            SetStatusBarSmoothRange(barInfo.frame, 0, maxHealth)
+            SetStatusBarSmoothValue(barInfo.frame, health)
+            HealthBar.ApplyFillColor(barInfo.frame, config, fraction)
+            HealthBar.ApplyBackgroundColor(barInfo.frame, config, fraction)
             HealthBar.UpdateEffectBars(barInfo.frame, config, maxHealth, HEALTH_EFFECTS.preview)
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
                 local textFormat = barInfo.frame._textFormat
-                local abbreviated = AbbreviateNumbers(maxHealth)
+                local abbreviated = AbbreviateNumbers(health)
+                local percent = fraction * 100
                 if textFormat == "current" then
                     barInfo.frame.text:SetFormattedText("%s", abbreviated)
                 elseif textFormat == "current_max" then
-                    barInfo.frame.text:SetFormattedText("%s / %s", abbreviated, abbreviated)
+                    barInfo.frame.text:SetFormattedText("%s / %s", abbreviated, AbbreviateNumbers(maxHealth))
                 elseif textFormat == "current_percent" then
-                    barInfo.frame.text:SetFormattedText("%s | %d%%", abbreviated, 100)
+                    barInfo.frame.text:SetFormattedText("%s | %d%%", abbreviated, percent)
                 elseif textFormat == "current_percent_no_sign" then
-                    barInfo.frame.text:SetFormattedText("%s | %d", abbreviated, 100)
+                    barInfo.frame.text:SetFormattedText("%s | %d", abbreviated, percent)
                 elseif textFormat == "percent_no_sign" then
-                    barInfo.frame.text:SetFormattedText("%d", 100)
+                    barInfo.frame.text:SetFormattedText("%d", percent)
                 else
-                    barInfo.frame.text:SetFormattedText("%d%%", 100)
+                    barInfo.frame.text:SetFormattedText("%d%%", percent)
                 end
             end
         elseif barInfo.barType == "segmented" then

@@ -456,7 +456,9 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
         if incomingHealsVisible then
             SetStatusBarSmoothRange(bar.incomingHealBar, 0, maxHealth)
             if preview.incomingHeals == true then
-                SetStatusBarSmoothValue(bar.incomingHealBar, 18)
+                -- A share of the bar, not a raw amount: the preview renders
+                -- against the player's real maximum.
+                SetStatusBarSmoothValue(bar.incomingHealBar, maxHealth * 0.18)
             else
                 SetStatusBarSmoothValue(bar.incomingHealBar, EnsureNonNilNumber(GetNetHealingCalc():GetIncomingHeals()))
             end
@@ -479,7 +481,7 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
             if preview.absorbs == true then
                 missingHealthAbsorb = 0
                 absorbOverflowing = true
-                overflowAbsorb = 28
+                overflowAbsorb = maxHealth * 0.28
             else
                 HEALTH_EFFECTS.absorbMissingCalc:SetDamageAbsorbClampMode(
                     incomingHealsVisible
@@ -522,7 +524,7 @@ function HealthBar.UpdateEffectBars(bar, config, maxHealth, preview)
         if config.showHealAbsorbs == true or preview.healAbsorbs == true then
             SetStatusBarSmoothRange(bar.healAbsorbBar, 0, maxHealth)
             if preview.healAbsorbs == true then
-                SetStatusBarSmoothValue(bar.healAbsorbBar, 22)
+                SetStatusBarSmoothValue(bar.healAbsorbBar, maxHealth * 0.22)
             else
                 local healAbsorbCalc = incomingHealsVisible and GetNetHealingCalc() or GetStandaloneHealingCalc()
                 SetStatusBarSmoothValue(bar.healAbsorbBar, EnsureNonNilNumber(healAbsorbCalc:GetHealAbsorbs()))

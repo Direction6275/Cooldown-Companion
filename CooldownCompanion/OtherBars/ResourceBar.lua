@@ -2340,6 +2340,14 @@ function CooldownCompanion:ClearAllCustomAuraBarPreviews()
     wipe(activeCustomAuraBarPandemicPreviews)
 end
 
+function HealthBar.HasActiveEffectPreview()
+    local preview = HEALTH_EFFECTS.preview
+    return preview.absorbs == true
+        or preview.healAbsorbs == true
+        or preview.incomingHeals == true
+        or preview.lowHealthAlert == true
+end
+
 -- Health-effect previews are state only, like the custom-bar aura previews:
 -- absorbs, incoming heals and the low-health alert render on the config
 -- canvas's health facsimile, never on the real bar.
