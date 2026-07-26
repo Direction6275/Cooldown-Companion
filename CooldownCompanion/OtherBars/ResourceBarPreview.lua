@@ -22,13 +22,24 @@
 
     Values pass straight to the C-level widget APIs and SetFormattedText, so
     a secret maximum in combat is carried through rather than read.
+
+    On top of the resting look sit the preview STATES, which the command
+    center arms one at a time. Those are the sanctioned fabrications — an
+    aura that is not running, a cast that is not being cast — and they render
+    on the config canvas only.
 ]]
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local EntryRuntime = ST.EntryRuntime
+
+local math_min = math.min
 
 local RB = ST._RB
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
+local PREVIEW_FILL = RB.CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL
+local PREVIEW_STACKS = RB.CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
+local PREVIEW_DURATION = RB.CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION
 
 local GetResourceAuraConfiguredMaxStacks = RB.GetResourceAuraConfiguredMaxStacks
 local HideResourceAuraStackSegments = RB.HideResourceAuraStackSegments
@@ -44,6 +55,13 @@ local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
+
+local FormatTime = CooldownCompanion.FormatTime
+local UnbindDurationText = CooldownCompanion.UnbindDurationText or function() end
+local SetAuraStackCountText = EntryRuntime.SetAuraStackCountText
+local NormalizeCustomAuraStackTextFormat = RB.NormalizeCustomAuraStackTextFormat
+local IsSpellCustomBarConfig = RB.IsSpellCustomBarConfig
+local IsSpellCustomBarAuraStackDisplay = RB.IsSpellCustomBarAuraStackDisplay
 
 -- Ready state for a charge spell: its real maximum charges, or nil when the
 -- spell has none (the old renderer showed a hardcoded "1 / 2" on every spell
@@ -63,6 +81,17 @@ local function GetReadyChargeCount(cabConfig)
     return nil
 end
 
+-- Stack capacity the Active Aura stand-in fills against. The cached
+-- automatic max belongs to a live slot; a bar the config shows may have no
+-- slot running, so the config-time resolver is the fallback.
+local function GetStandInStackMax(barInfo, cabConfig, settings)
+    local max = RB.GetCustomBarCachedStackMax(barInfo)
+    if not max and RB.ResolveCustomBarStackMax then
+        max = RB.ResolveCustomBarStackMax(cabConfig, settings)
+    end
+    return tonumber(max) or 1
+end
+
 function RB.CreateResourceBarPreviewModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
     local HealthBar = deps.HealthBar
@@ -73,6 +102,103 @@ function RB.CreateResourceBarPreviewModule(deps)
     local GetResourceBarSettings = deps.GetResourceBarSettings or RB.GetResourceBarSettings
     local ApplySegmentedPreviewColors = deps.ApplySegmentedPreviewColors
     local ClearCustomAuraBarIndicatorState = deps.ClearCustomAuraBarIndicatorState
+    local UpdateCustomAuraBarIndicatorVisuals = deps.UpdateCustomAuraBarIndicatorVisuals
+    local AnimateCustomAuraBarIndicator = deps.AnimateCustomAuraBarIndicator
+
+    ------------------------------------------------------------------------
+    -- The Active Aura stand-in
+    --
+    -- What a custom bar shows while its command-center preview runs. The
+    -- values are invented (no aura is running), which is exactly why this is
+    -- a preview STATE and not the resting look: fill, duration, stacks and
+    -- the aura effects, rendered onto whichever frame the caller owns.
+    --
+    -- The config canvas is the only caller — previews never touch the live
+    -- display (owner ruling 2026-07-26).
+    ------------------------------------------------------------------------
+
+    local function ApplyCustomBarAuraStandIn(barInfo, settings)
+        local bar = barInfo.frame
+        local cabConfig = barInfo.cabConfig
+        if not (bar and cabConfig and bar._barAuraActivePreview) then
+            return false
+        end
+
+        local isSpellBar = IsSpellCustomBarConfig(cabConfig)
+        if isSpellBar and cabConfig.auraTracking ~= true then
+            return false
+        end
+
+        -- "Stacks" here means the bar fills against a stack count rather than
+        -- against a duration: a spell bar set to the aura stack display, or a
+        -- pure aura bar in any tracking mode other than "active".
+        local stacksMode = isSpellBar
+            and IsSpellCustomBarAuraStackDisplay(cabConfig)
+            or (not isSpellBar and cabConfig.trackingMode ~= "active")
+
+        local barColor = cabConfig.barColor or {0.5, 0.5, 1, 1}
+        bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] ~= nil and barColor[4] or 1)
+
+        local maxStacks = 1
+        local stacks = 1
+        if stacksMode then
+            maxStacks = GetStandInStackMax(barInfo, cabConfig, settings)
+            stacks = math_min(PREVIEW_STACKS, maxStacks)
+            SetStatusBarSmoothRange(bar, 0, maxStacks)
+            SetStatusBarImmediateValue(bar, stacks)
+        else
+            SetStatusBarSmoothRange(bar, 0, 1)
+            SetStatusBarImmediateValue(bar, PREVIEW_FILL)
+        end
+
+        if bar.thresholdOverlay then
+            SetStatusBarImmediateValue(bar.thresholdOverlay, 0)
+            bar.thresholdOverlay:Hide()
+        end
+
+        if bar.text and bar.text:IsShown() then
+            UnbindDurationText(bar.text)
+            bar.text:SetText(FormatTime(PREVIEW_DURATION, cabConfig))
+        elseif bar.text then
+            UnbindDurationText(bar.text)
+        end
+
+        if bar.stackText and bar.stackText:IsShown() then
+            if stacksMode then
+                SetAuraStackCountText(
+                    bar.stackText,
+                    stacks,
+                    maxStacks,
+                    NormalizeCustomAuraStackTextFormat(cabConfig.stackTextFormat)
+                )
+            else
+                -- A duration-mode aura bar has one application to report, the
+                -- same "current" readout the live bar gives it.
+                SetAuraStackCountText(bar.stackText, PREVIEW_STACKS, maxStacks, "current")
+            end
+        end
+
+        -- Glow, pulse and colour shift. Self-gating on tracking mode, and it
+        -- reads the preview flag off the frame for the aura-active legs.
+        if UpdateCustomAuraBarIndicatorVisuals then
+            UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig, false)
+        end
+        if barInfo._maxStacksIndicator and SetMaxStacksIndicatorActive then
+            SetMaxStacksIndicatorActive(barInfo, false)
+        end
+        return true
+    end
+
+    -- Per-frame leg of the stand-in: the pulse and colour-shift animations,
+    -- which are time-driven rather than state-driven. The canvas ticks this;
+    -- the live stack has its own driver.
+    function RB.AnimatePreviewBarAura(barInfo)
+        local bar = barInfo and barInfo.frame
+        if not (bar and bar._barAuraActivePreview and AnimateCustomAuraBarIndicator) then
+            return
+        end
+        AnimateCustomAuraBarIndicator(bar)
+    end
 
     ------------------------------------------------------------------------
     -- Ready-state rendering
@@ -212,6 +338,9 @@ function RB.CreateResourceBarPreviewModule(deps)
             -- rest — its aura shape belongs to the kit, which renders only
             -- while the aura runs.
             local cabConfig = barInfo.cabConfig
+            if ApplyCustomBarAuraStandIn(barInfo, settings) then
+                return
+            end
             SetStatusBarSmoothRange(barInfo.frame, 0, 1)
             SetStatusBarImmediateValue(barInfo.frame, 1)
             if barInfo.frame.thresholdOverlay then
@@ -242,6 +371,9 @@ function RB.CreateResourceBarPreviewModule(deps)
             -- pass (the canvas calls it alongside this); the empty fill is
             -- what shows beneath either way.
             local cabConfig = barInfo.cabConfig
+            if ApplyCustomBarAuraStandIn(barInfo, settings) then
+                return
+            end
             ClearCustomAuraBarIndicatorState(barInfo, false)
             SetStatusBarSmoothRange(barInfo.frame, 0, 1)
             SetStatusBarImmediateValue(barInfo.frame, 0)

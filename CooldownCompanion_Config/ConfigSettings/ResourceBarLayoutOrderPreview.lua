@@ -202,6 +202,10 @@ local function EnsurePreviewState(host)
         },
         used = {},
         tweens = {},
+        -- Slots whose rendered state is time-driven: the Active Aura
+        -- stand-in's pulse and colour shift, the low-health alert, the cast
+        -- sweep. Rebuilt every pass, ticked by TickPreview while non-empty.
+        animated = {},
         skin = ResolvePreviewSkin(host),
     }
     host._cdcLayoutPreview = preview
@@ -233,6 +237,8 @@ local function ResetPreviewState(preview)
     preview.renderedSelectionKeys = {}
     preview.independentResources = false
     preview.layoutDrag = nil
+    preview.animated = preview.animated or {}
+    wipe(preview.animated)
     preview.root:Show()
     preview.root:SetScript("OnUpdate", nil)
 end
@@ -1233,9 +1239,24 @@ local function TickPreview(preview)
 
     UpdateGhostPosition(preview.ghost)
 
-    if not activeTween and not preview.ghostActive then
+    for _, entry in ipairs(preview.animated) do
+        entry.Tick(entry, now)
+    end
+
+    if not activeTween and not preview.ghostActive and #preview.animated == 0 then
         preview.root:SetScript("OnUpdate", nil)
     end
+end
+
+-- A running preview keeps the ticker alive on its own, independently of the
+-- drag tweens that otherwise own it.
+local function StartPreviewAnimationDriver(preview)
+    if #preview.animated == 0 then
+        return
+    end
+    preview.root:SetScript("OnUpdate", function()
+        TickPreview(preview)
+    end)
 end
 
 local function ConfigureSlotChrome(frame, slot, skin, isVertical)
@@ -1420,6 +1441,13 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             segmentGap
         )
         frame._cdcCustomBarLength = preview.isVerticalLayout and height or width
+        -- The Active Aura preview state, on the canvas rather than out in the
+        -- world (owner ruling 2026-07-26). Written every pass so stopping the
+        -- preview clears it from a recycled frame.
+        local cabConfig = slot.customEntry and slot.customEntry.config
+        barInfo.frame._barAuraActivePreview = cabConfig
+            and CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig)
+            or nil
     elseif slot.powerType == 101 then
         if not barInfo or barInfo.barType ~= "stagger_continuous" then
             if barInfo and barInfo.frame then
@@ -1529,6 +1557,14 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 barLength = frame._cdcCustomBarLength,
                 maxStacks = RB.ResolveCustomBarStackMax
                     and RB.ResolveCustomBarStackMax(cabConfig, rbSettings) or nil,
+            })
+        end
+        if barInfo.frame._barAuraActivePreview and RB.AnimatePreviewBarAura then
+            table_insert(preview.animated, {
+                barInfo = barInfo,
+                Tick = function(entry)
+                    RB.AnimatePreviewBarAura(entry.barInfo)
+                end,
             })
         end
     end
@@ -2983,6 +3019,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     end
 
     FinalizePreviewState(preview)
+    StartPreviewAnimationDriver(preview)
 end
 
 function ST._GetLayoutPreviewRenderedSelectionKeys(host)

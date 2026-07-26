@@ -2595,6 +2595,8 @@ local previewModule = RB.CreateResourceBarPreviewModule({
     ApplySegmentedPreviewColors = ApplySegmentedPreviewColors,
     ClearCustomAuraBarIndicatorState = ClearCustomAuraBarIndicatorState,
     ClearCustomAuraBarIndicatorVisualState = ClearCustomAuraBarIndicatorVisualState,
+    UpdateCustomAuraBarIndicatorVisuals = UpdateCustomAuraBarIndicatorVisuals,
+    AnimateCustomAuraBarIndicator = AnimateCustomAuraBarIndicator,
 })
 ApplyPreviewData = previewModule.ApplyPreviewData
 
