@@ -126,7 +126,13 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- ring, the full-footprint bounds child, orientation, and level. Plain
     -- CC frames throughout — nothing here reaches the slot subtree, so it
     -- is equally valid in combat.
-    local function AnchorHolderToBar(holder, frame, inset)
+    -- levelOffset: how far above the bar frame the kit renders. Custom bars
+    -- use 3 (their textLayer sits at bar+2, and everything CC draws on a
+    -- custom bar lives at or below it). Resource bars stack far taller —
+    -- segment children at +3, MW overlay segments at +4, and the text layer
+    -- at +8 — so a resource holder at +3 would render UNDERNEATH the very
+    -- segments it decorates. They pass 9 (see HOLDER_LEVEL_RESOURCE).
+    local function AnchorHolderToBar(holder, frame, inset, levelOffset)
         holder:ClearAllPoints()
         holder:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)
         holder:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset, inset)
@@ -135,10 +141,10 @@ function RB.CreateResourceBarAuraHostModule(deps)
         bounds:SetPoint("TOPLEFT", holder, "TOPLEFT", -inset, inset)
         bounds:SetPoint("BOTTOMRIGHT", holder, "BOTTOMRIGHT", inset, -inset)
         holder._isVertical = frame._isVertical == true
-        -- Above the bar's textLayer (bar+2): the kit must render over every
-        -- CC-side bar visual. Same-strata level ordering; the root already
-        -- matches the resource containers' MEDIUM strata.
-        holder:SetFrameLevel(frame:GetFrameLevel() + 3)
+        -- The kit must render over every CC-side bar visual. Same-strata
+        -- level ordering; the root already matches the resource containers'
+        -- MEDIUM strata.
+        holder:SetFrameLevel(frame:GetFrameLevel() + (levelOffset or 3))
         holder._ccAnchoredFrame = frame
     end
 
@@ -492,6 +498,13 @@ function RB.CreateResourceBarAuraHostModule(deps)
 
     local resourceHolders = {} -- powerType -> holder frame
 
+    -- Clear of every layer a resource bar draws: segment children at bar+3,
+    -- MW overlay segments at +4, the CC-side aura lane pool at +7, and the
+    -- text layer at +8. Frame level beats draw layer, so anything short of
+    -- this renders behind the bar it is meant to decorate (the Phase 1
+    -- FRAME-LEVEL lesson, re-applied to a much taller stack).
+    local HOLDER_LEVEL_RESOURCE = 9
+
     local RESOURCE_OVERLAY_BAR_TYPES = {
         continuous = true,
         segmented = true,
@@ -726,7 +739,8 @@ function RB.CreateResourceBarAuraHostModule(deps)
 
                             local holder = EnsureResourceHolder(barInfo.powerType)
                             AnchorHolderToBar(holder, frame,
-                                GetResourceHolderInset(barInfo, inset))
+                                GetResourceHolderInset(barInfo, inset),
+                                HOLDER_LEVEL_RESOURCE)
                             -- Orientation from the LAYOUT, not the frame:
                             -- segment-cluster frames never carry the
                             -- _isVertical/_reverseFill fields continuous
@@ -843,7 +857,8 @@ function RB.CreateResourceBarAuraHostModule(deps)
         local settings = GetResourceBarSettings()
         if not settings then return end
         AnchorHolderToBar(holder, frame,
-            GetResourceHolderInset(barInfo, GetCustomBarBorderInset(settings)))
+            GetResourceHolderInset(barInfo, GetCustomBarBorderInset(settings)),
+            HOLDER_LEVEL_RESOURCE)
         -- Layout-derived, like the collector: cluster frames carry no
         -- _isVertical field for AnchorHolderToBar to read.
         holder._isVertical = IsVerticalResourceLayout(settings) == true
